@@ -42,10 +42,9 @@ const {
   normalizeRepositorySlug,
 } = require("./adapters/public-pull-request-service");
 const {
-  cacheGeneratedImageDataUrl,
-  cacheGeneratedImageForItem,
   imageViewSourcePath,
 } = require("./adapters/generated-image-cache-service");
+const { createGeneratedImageContentService } = require("./adapters/generated-image-content-service");
 const {
   createMobileArchiveIndexService,
   normalizeThreadId,
@@ -63,6 +62,8 @@ const {
   createThreadGoalService,
   normalizeThreadGoalStatus,
 } = require("./adapters/thread-goal-service");
+const { createThreadGoalActionService } = require("./adapters/thread-goal-action-service");
+const { createRuntimePermissionPolicyService } = require("./adapters/runtime-permission-policy-service");
 const { createWorkspaceRegistryService } = require("./adapters/workspace-registry-service");
 const {
   createCodexProfileService,
@@ -113,7 +114,10 @@ const {
   stripThreadListDetailFields,
   stripThreadListResultDetailFields,
 } = require("./adapters/thread-list-summary-service");
-const { createThreadTurnCompactionPolicyService } = require("./adapters/thread-turn-compaction-policy-service");
+const { createThreadDetailCompactionService } = require("./adapters/thread-detail-compaction-service");
+const { createThreadEventNotificationService } = require("./adapters/thread-event-notification-service");
+const { createRateLimitRuntimeService } = require("./adapters/rate-limit-runtime-service");
+const { createThreadVisibilityService } = require("./adapters/thread-visibility-service");
 const { createThreadCompletionDiagnosticService } = require("./adapters/thread-completion-diagnostic-service");
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
 const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
@@ -125,9 +129,15 @@ const { createThreadMessageRouteService } = require("./adapters/thread-message-r
 const { handleThreadListRoute } = require("./adapters/thread-list-route-service");
 const { createCodexAppServerClient } = require("./adapters/codex-app-server-client-service");
 const { createStaticFileService } = require("./adapters/static-file-service");
+const { createServerRuntimeUtils } = require("./adapters/server-runtime-utils");
+const { createServerHttpRuntimeService } = require("./adapters/server-http-runtime-service");
 const { createRuntimeSettingsService } = require("./adapters/runtime-settings-service");
 const { createCoreApiRouteService } = require("./adapters/core-api-route-service");
 const { createAppMaintenanceService } = require("./adapters/app-maintenance-service");
+const { createAppServerRequestPolicyService } = require("./adapters/app-server-request-policy-service");
+const { createRolloutDetailEnrichmentService } = require("./adapters/rollout-detail-enrichment-service");
+const { createThreadDetailRolloutBackfillService } = require("./adapters/thread-detail-rollout-backfill-service");
+const { createApiDispatchRouteService } = require("./adapters/api-dispatch-route-service");
 const {
   createAutoTurnRecoveryService,
   turnStartResultTurnId,
@@ -137,65 +147,33 @@ const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const USER_HOME = process.env.USERPROFILE || process.env.HOME || process.cwd();
 
-function uniqueStrings(values) {
-  const seen = new Set();
-  const result = [];
-  for (const value of values || []) {
-    const text = String(value || "").trim();
-    if (!text || seen.has(text)) continue;
-    seen.add(text);
-    result.push(text);
-  }
-  return result;
-}
-
-function detectDevelopmentWorkspaceRoot(appRoot) {
-  let current = path.resolve(String(appRoot || process.cwd()));
-  while (current && current !== path.dirname(current)) {
-    if (path.basename(current) === "HermesMobileDev") return current;
-    current = path.dirname(current);
-  }
-  const fallbackRoots = uniqueStrings([
-    process.env.HERMES_MOBILE_DEV_ROOT || "",
-    "/Users/hermes-dev/HermesMobileDev",
-  ]);
-  for (const candidate of fallbackRoots) {
-    const resolved = path.resolve(candidate);
-    try {
-      if (path.basename(resolved) === "HermesMobileDev" && fs.statSync(resolved).isDirectory()) {
-        return resolved;
-      }
-    } catch (_) {}
-  }
-  return "";
-}
-
-function normalizePathForEarlyCompare(value) {
-  return path.resolve(String(value || "")).toLowerCase();
-}
-
-function sameEarlyFsPath(left, right) {
-  const a = String(left || "").trim();
-  const b = String(right || "").trim();
-  return Boolean(a && b && normalizePathForEarlyCompare(a) === normalizePathForEarlyCompare(b));
-}
-
-function defaultMuxEndpointFileForCodexHome(codexHome) {
-  const home = String(codexHome || "").trim();
-  return home ? path.join(path.resolve(home), "app-server-mux", "endpoint.json") : "";
-}
-
-function resolveMuxEndpointFile(env, codexHome, codexHomeResolution = {}) {
-  const fallback = defaultMuxEndpointFileForCodexHome(codexHome);
-  const configured = String(env && env.CODEX_MOBILE_MUX_ENDPOINT_FILE || "").trim();
-  if (!configured) return fallback;
-  const envCodexHome = codexHomeResolution && codexHomeResolution.envCodexHome || "";
-  const staleEnvDefault = envCodexHome
-    && codexHomeResolution.envCodexHomeIgnored
-    && sameEarlyFsPath(configured, defaultMuxEndpointFileForCodexHome(envCodexHome))
-    && !sameEarlyFsPath(configured, fallback);
-  return staleEnvDefault ? fallback : path.resolve(configured);
-}
+const serverRuntimeUtils = createServerRuntimeUtils({
+  fs,
+  path,
+  crypto,
+  env: process.env,
+  appRoot: APP_ROOT,
+  publicRoot: PUBLIC_ROOT,
+  userHome: USER_HOME,
+  getCodexHome: () => CODEX_HOME,
+  getAppVersion: () => APP_VERSION,
+});
+const {
+  appShellBuildId,
+  assertCommandAvailable,
+  clientBuildId,
+  codexAppServerChildEnv,
+  currentPublicBuildConfig,
+  detectDevelopmentWorkspaceRoot,
+  findExecutableInDirs,
+  optionListFromEnv,
+  pathEntriesFromEnvPath,
+  readPackageVersion,
+  readServiceWorkerCacheName,
+  resolveDefaultCodexExecutable,
+  resolveMuxEndpointFile,
+  uniqueStrings,
+} = serverRuntimeUtils;
 
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
 const CODEX_PROFILE_BOOTSTRAP = resolveActiveCodexHomeFromStore({
@@ -251,6 +229,57 @@ const SHARED_CHAIN_RESTART_TASK_NAME = process.env.CODEX_MOBILE_RESTART_TASK_NAM
 const SHARED_CHAIN_RESTART_DELAY_MS = Math.max(500, Number(process.env.CODEX_MOBILE_SHARED_CHAIN_RESTART_DELAY_MS || "900"));
 const DISABLE_AUTH = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_AUTH || "");
 const AUTH_KEY_FILE = process.env.CODEX_MOBILE_KEY_FILE || path.join(RUNTIME_ROOT, "access_key");
+const serverHttpRuntimeService = createServerHttpRuntimeService({
+  fs,
+  path,
+  crypto,
+  env: process.env,
+  authKeyFile: AUTH_KEY_FILE,
+  disableAuth: DISABLE_AUTH,
+  getAuthKey: () => AUTH_KEY,
+  getHermesPluginService: () => hermesPluginService,
+  getCodexHome: () => CODEX_HOME,
+  getMobileWebLogFile: () => MOBILE_WEB_LOG_FILE,
+  getMobileWebLogMaxBytes: () => MOBILE_WEB_LOG_MAX_BYTES,
+  getMobileWebLogKeepBytes: () => MOBILE_WEB_LOG_KEEP_BYTES,
+  getMaxStructuredChars: () => MAX_STRUCTURED_CHARS,
+});
+const {
+  readCodexConfigDefaults,
+  loadAuthKey,
+  timingSafeEquals,
+  parseCookies,
+  getUrl,
+  bearerTokenFromRequest,
+  requestAuthToken,
+  pushUniqueAuthToken,
+  requestAuthTokens,
+  isAccessKeyAuthorized,
+  isAuthorized,
+  isHttpsRequest,
+  pluginSessionCookieHeader,
+  sendJson,
+  hermesOriginFromRequest,
+  requestBaseUrl,
+  trimLogFile,
+  trimRuntimeLogs,
+  safeLogDetails,
+  logThreadDetail,
+  logThreadList,
+  logContinuation,
+  logMessageSubmit,
+  logClientEvent,
+  isTurnSteerUnsupportedError,
+  isStaleActiveTurnError,
+  isCodexAccountAuthError,
+  codexAccountAuthErrorPayload,
+  truncateMiddle,
+  truncateTail,
+  redactInlineImageDataUrls,
+  compactStructured,
+  compactStringArray,
+  statusText,
+} = serverHttpRuntimeService;
 const AUTH_KEY = DISABLE_AUTH ? "" : loadAuthKey();
 const HERMES_PLUGIN_REGISTRATION_FILE = process.env.CODEX_MOBILE_HERMES_PLUGIN_REGISTRATION_FILE
   || path.join(RUNTIME_ROOT, "hermes-plugin-registration.json");
@@ -411,6 +440,13 @@ function syncRegisteredWorkspaceTrust(codexHome = CODEX_HOME) {
   }
 }
 
+function ensureWorkspaceVisibleForContinuation(cwd) {
+  const registered = workspaceRegistryService.registerExisting({ cwd });
+  syncRegisteredWorkspaceTrust(CODEX_HOME);
+  syncKnownCodexMobileMcpToolsets();
+  return registered;
+}
+
 function syncCodexMobileMcpToolset(codexHome = CODEX_HOME) {
   try {
     const result = ensureCodexMobileMcpServer({
@@ -473,6 +509,15 @@ const threadGoalService = createThreadGoalService({
   dbPath: GOALS_DB,
   userHome: USER_HOME,
 });
+let threadGoalActionService = null;
+let currentThreadGoalForAction = null;
+let isThreadGoalRpcUnsupportedError = null;
+let runThreadGoalAction = null;
+let setThreadGoal = null;
+let setThreadGoalRpc = null;
+let threadGoalFromRpcResult = null;
+let threadGoalSetParams = null;
+let threadEventNotificationService;
 const threadSideChatService = createThreadSideChatService({
   storageFile: THREAD_SIDE_CHAT_FILE,
   scopeId: THREAD_SIDE_CHAT_SCOPE_ID,
@@ -503,6 +548,78 @@ const threadSideChatService = createThreadSideChatService({
     };
   },
 });
+const threadVisibilityService = createThreadVisibilityService({
+  archivedSessionsDir: ARCHIVED_SESSIONS_DIR,
+  codexHome: CODEX_HOME,
+  defaultCodexHome: DEFAULT_CODEX_HOME,
+  fallbackDisplayText,
+  getCodex: () => codex,
+  getMutationRpcTimeoutMs: () => MUTATION_RPC_TIMEOUT_MS,
+  isThreadListLiveStatus,
+  isThreadListUnknownStatus,
+  mobileArchiveIndexService,
+  normalizeThreadId,
+  readGlobalState,
+  readSessionIndexEntries,
+  readStartedThread,
+  readStateDbThread,
+  readThreadSummaryFromAppServer,
+  removeThreadFromThreadListFallbackCache,
+  rolloutStatsAnnotator: annotateThreadRolloutStats,
+  runSqliteJson,
+  sqlString,
+  stateDb: STATE_DB,
+  statusText,
+  threadSideChatService,
+  timestampToMs,
+  userHome: USER_HOME,
+  workspaceRegistryService,
+  rowToFallbackThread,
+});
+const {
+  normalizeFsPath,
+  visibleWorkspaceRoots,
+  visibleWorkspaceKeys,
+  visibleWorkspaceNames,
+  visibleProjectlessThreadIds,
+  visibilityFromGlobalState,
+  codexWorktreeRepoName,
+  threadWorkspaceVisible,
+  threadProjectlessVisible,
+  anyThreadMatchesVisibleWorkspace,
+  threadMatchesWorkspaceCwd,
+  isBackupRolloutPath,
+  isSubagentThreadSummary,
+  isSideChatSidecarThreadSummary,
+  threadSummaryHasDisplayText,
+  isResidualFallbackThreadSummary,
+  isUnmaterializedThreadListPlaceholder,
+  shouldHideThreadListSummary,
+  archivedSessionDirectories,
+  addArchivedSessionIdsFromDir,
+  archivedSessionThreadIds,
+  threadHasArchiveSignal,
+  rememberMobileArchivedThreadId,
+  archivedResultWithMobileIndex,
+  alreadyArchivedResult,
+  mobileArchivedFallbackResult,
+  isThreadIdArchivedLocally,
+  isHiddenThread,
+  filterThreadListByCwd,
+  isThreadIdLikeTitle,
+  isRecoverableThreadListTitle,
+  sessionIndexDisplayName,
+  applySessionIndexTitleToThread,
+  hydrateThreadListTitlesFromSessionIndex,
+  hydrateThreadListResultTitlesFromSessionIndex,
+  filterVisibleThreads,
+  mergeThreadStateFromStateDb,
+  archiveVisibleThread,
+  isThreadArchiveNoOpError,
+  archiveThreadId,
+  filterFallbackThreads,
+  readStateDbFallback,
+} = threadVisibilityService;
 const mediaFileService = createMediaFileService({
   env: process.env,
   runtimeRoot: RUNTIME_ROOT,
@@ -544,6 +661,18 @@ const {
   stripMarkdownFileTarget,
   uploadPathForId,
 } = mediaFileService;
+const isCodexMobileUploadFilePath = (filePath) => isPathInside(UPLOAD_ROOT, filePath);
+const generatedImageContentService = createGeneratedImageContentService({
+  path,
+  generatedImageRoot: GENERATED_IMAGE_ROOT,
+  filePreviewMediaMaxBytes: FILE_PREVIEW_MEDIA_MAX_BYTES,
+  filePreviewImageContentTypes: FILE_PREVIEW_IMAGE_CONTENT_TYPES,
+  generatedImageContentUrl,
+  hasDeniedPreviewPathSegment,
+});
+const {
+  attachGeneratedImageContent,
+} = generatedImageContentService;
 const staticFileService = createStaticFileService({
   publicRoot: PUBLIC_ROOT,
   mimeFor,
@@ -564,7 +693,6 @@ function serveFilePreviewContent(req, res, requestedPath, allowedRoots) {
 let threadDetailProjectionService;
 let threadDetailResponsePreparationService;
 let threadSummaryStateService;
-let threadTaskCardRouteService;
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
   onTerminalReturnCard: async (event) => homeAiAutonomousDeliveryReturnService.send(event, { workspaceId: "owner" }),
@@ -759,26 +887,242 @@ const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_R
 const MUX_REPLAY_NOTIFICATION_LIMIT = Math.max(0, Number(process.env.CODEX_MOBILE_MUX_REPLAY_NOTIFICATION_LIMIT || "200"));
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
+const runtimePermissionPolicyService = createRuntimePermissionPolicyService({
+  path,
+  permissionModeOptions: PERMISSION_MODE_OPTIONS,
+  codexConfigDefaults: CODEX_CONFIG_DEFAULTS,
+});
+const {
+  applyPermissionModeOverride,
+  defaultPermissionModeFromConfigDefaults,
+  isFullAccessRuntime,
+  normalizeEnumValue,
+  normalizePermissionProfile,
+  normalizeSandboxPolicy,
+  normalizeSandboxPolicyType,
+  publicRuntimeSettings,
+  readOnlySandboxPolicy,
+  sandboxModeFromPolicy,
+  workspaceDelegationWriteGuardPermissionProfile,
+  workspaceWriteSandboxPolicy,
+} = runtimePermissionPolicyService;
+threadGoalActionService = createThreadGoalActionService({
+  codexRequest: (...args) => codex.request(...args),
+  goalForThread: (threadId) => threadGoalService.goalForThread(threadId),
+  httpStatusError,
+  mutationRpcTimeoutMs: MUTATION_RPC_TIMEOUT_MS,
+  normalizeThreadGoalStatus,
+  readRpcTimeoutMs: READ_RPC_TIMEOUT_MS,
+});
+({
+  currentThreadGoalForAction,
+  isThreadGoalRpcUnsupportedError,
+  runThreadGoalAction,
+  setThreadGoal,
+  setThreadGoalRpc,
+  threadGoalFromRpcResult,
+  threadGoalSetParams,
+} = threadGoalActionService);
 const PROCESS_STARTED_AT_MS = Date.now();
 
 let clients = new Map();
 let clientHeartbeats = new WeakMap();
-let latestLiveRateLimits = null;
-let latestLiveRateLimitsSource = null;
-let latestSnapshotRateLimits = null;
-const latestLiveRateLimitsByModel = new Map();
-const latestSnapshotRateLimitsByModel = new Map();
-let lastRolloutRateLimitScanAt = 0;
 const LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS = 10000;
 const latestRuntimeContextByPath = new Map();
-const latestItemTimestampsByPath = new Map();
-const latestTurnUsageSummariesByPath = new Map();
-const latestFinalReceiptsByPath = new Map();
-const latestUserInputAnchorsByPath = new Map();
-const latestToolOutputImagesByPath = new Map();
 const rolloutEnrichmentIndexService = createRolloutEnrichmentIndexService({
   maxIndexes: RUNTIME_CONTEXT_CACHE_MAX,
 });
+let appendRolloutToolOutputImagesToThread;
+let insertProjectedItemByTimestamp;
+let itemTimestampCandidateId;
+let itemTimestampMatchText;
+let readRolloutEnrichmentEntries;
+let readRolloutEnrichmentText;
+let readRolloutItemTimestampCandidates;
+let readRolloutRuntimeScanText;
+let readRolloutTail;
+let readRolloutToolOutputImageItems;
+let readRolloutTurnUsageSummaries;
+let rolloutEntryTurnId;
+let rolloutTimestampFields;
+let timestampTextsMatch;
+let visibleItemId;
+let appendMissingRolloutCompletionTurnsToThread;
+let appendRolloutActiveAssistantItemsToDetailResult;
+let appendRolloutEmptyCompletionDiagnosticsToThread;
+let appendRolloutFinalReceiptsToThread;
+let appendRolloutUserInputAnchorsToDetailResult;
+let backfillMissingRolloutCompletionTurnsForDetailResult;
+let dedupeSyntheticActiveAssistantMessagesInThread;
+let enrichThreadItemTimestampsFromRollout;
+let finalizeActiveAssistantProjectionDetailResult;
+let inferTurnItemDisplayTimestamps;
+let itemDisplayTimestampMs;
+let orderTurnItemsByDisplayTimestamp;
+let turnCompletionUsageSummary;
+const threadDetailCompactionService = createThreadDetailCompactionService({
+  fs,
+  path,
+  operationalItemTypes: OPERATIONAL_ITEM_TYPES,
+  maxTextChars: MAX_TEXT_CHARS,
+  maxCommandOutputChars: MAX_COMMAND_OUTPUT_CHARS,
+  maxCommandOutputCharsPerTurn: MAX_COMMAND_OUTPUT_CHARS_PER_TURN,
+  maxLiveOperationItems: MAX_LIVE_OPERATION_ITEMS,
+  maxThreadTurns: MAX_THREAD_TURNS,
+  pendingSteerEchoStore,
+  statusText,
+  isCompletedStatus,
+  isLiveTurn,
+  truncateMiddle,
+  truncateTail,
+  compactStringArray,
+  compactStructured,
+  attachGeneratedImageContent,
+  isCodexMobileUploadFilePath,
+  normalizeFsPath,
+  imageViewSourcePath,
+  parseJsonLine,
+  rolloutPathForThread,
+  rolloutStatsForPath,
+  reconcileThreadActiveTurnWithRolloutEvidence,
+  normalizeSupersededLiveTurns,
+  pruneSupersededLiveShellTurns,
+  workspaceContextStatsForCwd,
+  dedupeUserMessageEchoesInThread,
+  normalizeStaleContextOnlyActiveThread,
+  annotateThreadRolloutStats,
+  readRolloutTail: (...args) => readRolloutTail(...args),
+  readRolloutToolOutputImageItems: (...args) => readRolloutToolOutputImageItems(...args),
+  readRolloutTurnUsageSummaries: (...args) => readRolloutTurnUsageSummaries(...args),
+  rolloutEntryTurnId: (...args) => rolloutEntryTurnId(...args),
+  rolloutTimestampFields: (...args) => rolloutTimestampFields(...args),
+  appendRolloutToolOutputImagesToThread: (...args) => appendRolloutToolOutputImagesToThread(...args),
+  appendMissingRolloutCompletionTurnsToThread: (...args) => appendMissingRolloutCompletionTurnsToThread(...args),
+  appendRolloutFinalReceiptsToThread: (...args) => appendRolloutFinalReceiptsToThread(...args),
+  appendRolloutEmptyCompletionDiagnosticsToThread: (...args) => appendRolloutEmptyCompletionDiagnosticsToThread(...args),
+  enrichThreadItemTimestampsFromRollout: (...args) => enrichThreadItemTimestampsFromRollout(...args),
+  inferTurnItemDisplayTimestamps: (...args) => inferTurnItemDisplayTimestamps(...args),
+  orderTurnItemsByDisplayTimestamp: (...args) => orderTurnItemsByDisplayTimestamp(...args),
+  attachTurnUsageSummaries,
+});
+const {
+  compactItem,
+  compactThread,
+  compactThreadReadResult,
+  compactTurn,
+  compactTurnsListResult,
+  isAssistantReceiptItem,
+  isContextCompactionType,
+  isEndedTurn,
+  isOperationalItem,
+  isTurnDiagnosticItem,
+  isTurnUsageSummaryItem,
+  isUserQuestionItem,
+  isVisualReceiptItem,
+  isWebSearchLikeItem,
+  olderTurnsCursorBeforeTurn,
+  userMessageHasVisualAttachment,
+} = threadDetailCompactionService;
+const rolloutDetailEnrichmentService = createRolloutDetailEnrichmentService({
+  fs,
+  path,
+  crypto,
+  rolloutEnrichmentIndexService,
+  normalizeFsPath,
+  timestampToMs,
+  isContextCompactionType,
+  isWebSearchLikeItem,
+  isOperationalItem,
+  collectTurnUsageSummariesFromEntries,
+  collectTurnUsageSummariesFromRolloutText,
+  attachGeneratedImageContent,
+  isPathInside,
+  uploadRoot: UPLOAD_ROOT,
+  maxRolloutContextBytes: MAX_ROLLOUT_CONTEXT_BYTES,
+  maxRuntimeContextScanBytes: MAX_RUNTIME_CONTEXT_SCAN_BYTES,
+  maxRolloutEnrichmentContextBytes: MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES,
+  runtimeContextCacheTtlMs: RUNTIME_CONTEXT_CACHE_TTL_MS,
+  runtimeContextCacheMax: RUNTIME_CONTEXT_CACHE_MAX,
+});
+({
+  appendRolloutToolOutputImagesToThread,
+  insertProjectedItemByTimestamp,
+  itemTimestampCandidateId,
+  itemTimestampMatchText,
+  readRolloutEnrichmentEntries,
+  readRolloutEnrichmentText,
+  readRolloutItemTimestampCandidates,
+  readRolloutRuntimeScanText,
+  readRolloutTail,
+  readRolloutToolOutputImageItems,
+  readRolloutTurnUsageSummaries,
+  rolloutEntryTurnId,
+  rolloutTimestampFields,
+  timestampTextsMatch,
+  visibleItemId,
+} = rolloutDetailEnrichmentService);
+const threadDetailRolloutBackfillService = createThreadDetailRolloutBackfillService({
+  fs,
+  runtimeContextCacheTtlMs: RUNTIME_CONTEXT_CACHE_TTL_MS,
+  runtimeContextCacheMax: RUNTIME_CONTEXT_CACHE_MAX,
+  threadDetailCompletedProgressMessages: THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES,
+  threadDetailProgressiveActiveUserTextChars: THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS,
+  maxThreadTurns: MAX_THREAD_TURNS,
+  normalizeFsPath,
+  statusText,
+  timestampToMs,
+  stableTextHash,
+  finalReceiptTextFromParams,
+  readRolloutEnrichmentEntries,
+  rolloutEntryTurnId,
+  rolloutTimestampFields,
+  rolloutPathForThread,
+  readRolloutTurnUsageSummaries,
+  readRolloutItemTimestampCandidates,
+  rolloutStatsForPath,
+  readStateDbThread,
+  readStartedThread,
+  clonePlainJson,
+  cloneThreadForUsageDecoration,
+  collectRolloutUserInputAnchors,
+  appendLatestCompletedUserInputAnchors,
+  compactThread,
+  sortTurnsChronologically,
+  insertProjectedItemByTimestamp,
+  visibleItemId,
+  itemTimestampCandidateId,
+  itemTimestampMatchText,
+  timestampTextsMatch,
+  isAssistantReceiptItem,
+  isTurnDiagnosticItem,
+  isCompletedStatus,
+  isLiveTurn,
+  isThreadListRestStatus,
+  isThreadListLiveStatus,
+  turnIdentifier,
+  turnSortTimestampMs,
+  turnStartedAtMs,
+  redactInlineImageDataUrls,
+  isContextCompactionType,
+  isWebSearchLikeItem,
+  isOperationalItem,
+  createThreadCompletionDiagnosticService,
+});
+({
+  appendMissingRolloutCompletionTurnsToThread,
+  appendRolloutActiveAssistantItemsToDetailResult,
+  appendRolloutEmptyCompletionDiagnosticsToThread,
+  appendRolloutFinalReceiptsToThread,
+  appendRolloutUserInputAnchorsToDetailResult,
+  backfillMissingRolloutCompletionTurnsForDetailResult,
+  dedupeSyntheticActiveAssistantMessagesInThread,
+  enrichThreadItemTimestampsFromRollout,
+  finalizeActiveAssistantProjectionDetailResult,
+  inferTurnItemDisplayTimestamps,
+  itemDisplayTimestampMs,
+  orderTurnItemsByDisplayTimestamp,
+  turnCompletionUsageSummary,
+} = threadDetailRolloutBackfillService);
 const latestThreadIdByTurnId = new Map();
 const recentStartedThreads = new Map();
 const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
@@ -820,6 +1164,7 @@ const continuationThreadService = createContinuationThreadService({
   codexRequest: (...args) => codex.request(...args),
   readGlobalState,
   visibilityFromGlobalState,
+  ensureWorkspaceVisible: ensureWorkspaceVisibleForContinuation,
   normalizeFsPath,
   readStateDbThread,
   readStartedThread,
@@ -871,479 +1216,24 @@ const continuationThreadService = createContinuationThreadService({
 const {
   createContinuationJob,
   getContinuationJob,
+  pruneContinuationJobs,
   publicContinuationJob,
   startThreadFromRequestBody,
 } = continuationThreadService;
-const SERVER_REQUEST_METHODS = new Set([
-  "item/commandExecution/requestApproval",
-  "item/fileChange/requestApproval",
-  "item/permissions/requestApproval",
-  "item/tool/requestUserInput",
-  "item/tool/call",
-  "mcpServer/elicitation/request",
-  "account/chatgptAuthTokens/refresh",
-  "execCommandApproval",
-  "applyPatchApproval",
-]);
-const ACTIONABLE_APPROVAL_METHODS = new Set([
-  "item/commandExecution/requestApproval",
-  "item/fileChange/requestApproval",
-  "item/permissions/requestApproval",
-  "execCommandApproval",
-  "applyPatchApproval",
-]);
-const ACTIONABLE_USER_INPUT_METHODS = new Set([
-  "item/tool/requestUserInput",
-  "mcpServer/elicitation/request",
-]);
-const ACTIONABLE_SERVER_REQUEST_METHODS = new Set([
-  ...ACTIONABLE_APPROVAL_METHODS,
-  ...ACTIONABLE_USER_INPUT_METHODS,
-]);
-const CODEGRAPH_READONLY_MCP_TOOLS = new Set([
-  "codegraph_search",
-  "codegraph_explore",
-  "codegraph_node",
-  "codegraph_callers",
-]);
-
-function optionListFromEnv(name, fallback) {
-  const values = String(process.env[name] || "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return [...new Set(values.length ? values : fallback)];
-}
-
-function readPackageVersion() {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(APP_ROOT, "package.json"), "utf8"));
-    return String(pkg.version || "0.0.0");
-  } catch (_) {
-    return "0.0.0";
-  }
-}
-
-function readServiceWorkerCacheName() {
-  try {
-    const source = fs.readFileSync(path.join(PUBLIC_ROOT, "sw.js"), "utf8");
-    const match = source.match(/CACHE_NAME\s*=\s*["']([^"']+)["']/);
-    return match ? String(match[1] || "") : "";
-  } catch (_) {
-    return "";
-  }
-}
-
-function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
-  const parts = [`app=${APP_VERSION}`, `sw=${cacheName}`];
-  for (const file of [
-    "index.html",
-    "styles.css",
-    "api-client.js",
-    "runtime-settings.js",
-    "draft-store.js",
-    "markdown-renderer.js",
-    "viewport-metrics.js",
-    "conversation-scroll.js",
-    "image-compressor.js",
-    "plugin-embed.js",
-    "plugin-voice-input.js",
-    "home-ai-diagnostic-reporting.js",
-    "thread-diagnostic-events.js",
-    "frontend-runtime-health.js",
-    "build-refresh-policy.js",
-    "thread-performance-metrics.js",
-    "thread-list-load-policy.js",
-    "thread-list-stable-order.js",
-    "client-render-stability-guard.js",
-    "live-operation-dock-state.js",
-    "thread-detail-state.js",
-    "thread-detail-render-plan.js",
-    "thread-detail-merge-state.js",
-    "thread-detail-v4-merge-state.js",
-    "thread-detail-patch-plan.js",
-    "thread-detail-dom-patch.js",
-    "thread-detail-actions.js",
-    "thread-tile-actions.js",
-    "thread-tile-state.js",
-    "thread-tile-layout.js",
-    "app.js",
-    "sw.js",
-    "manifest.json",
-  ]) {
-    try {
-      const stat = fs.statSync(path.join(PUBLIC_ROOT, file));
-      parts.push(`${file}:${stat.size}:${Math.trunc(stat.mtimeMs)}`);
-    } catch (_) {
-      parts.push(`${file}:missing`);
-    }
-  }
-  return crypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 16);
-}
-
-function clientBuildId(cacheName = readServiceWorkerCacheName(), buildId = appShellBuildId(cacheName)) {
-  return `${APP_VERSION}|${cacheName || buildId}`;
-}
-
-function currentPublicBuildConfig() {
-  const shellCacheName = readServiceWorkerCacheName();
-  const buildId = appShellBuildId(shellCacheName);
-  return {
-    buildId,
-    clientBuildId: clientBuildId(shellCacheName, buildId),
-    shellCacheName,
-  };
-}
-
-function readCodexConfigDefaults() {
-  const configPath = path.join(CODEX_HOME, "config.toml");
-  try {
-    const text = fs.readFileSync(configPath, "utf8");
-    const model = /^\s*model\s*=\s*"([^"]+)"/m.exec(text);
-    const effort = /^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m.exec(text);
-    const summary = /^\s*model_reasoning_summary\s*=\s*"([^"]+)"/m.exec(text);
-    const verbosity = /^\s*model_verbosity\s*=\s*"([^"]+)"/m.exec(text);
-    const sandboxMode = /^\s*sandbox_mode\s*=\s*"([^"]+)"/m.exec(text);
-    const approvalPolicy = /^\s*(approval_policy|approval_mode)\s*=\s*"([^"]+)"/m.exec(text);
-    return {
-      model: model ? model[1] : "",
-      reasoningEffort: effort ? effort[1] : "",
-      reasoningSummary: summary ? summary[1] : "",
-      modelVerbosity: verbosity ? verbosity[1] : "",
-      sandboxMode: sandboxMode ? sandboxMode[1] : "",
-      approvalPolicy: approvalPolicy ? approvalPolicy[2] : "",
-    };
-  } catch (_) {
-    return { model: "", reasoningEffort: "", reasoningSummary: "", modelVerbosity: "", sandboxMode: "", approvalPolicy: "" };
-  }
-}
-
-function commandNeedsFilesystemCheck(command) {
-  const value = String(command || "");
-  return path.isAbsolute(value) || value.includes("/") || value.includes("\\");
-}
-
-function pathEntriesFromEnvPath(value) {
-  return String(value || "")
-    .split(path.delimiter)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
-function executableCandidateNames(command) {
-  const value = String(command || "").trim();
-  if (!value) return [];
-  if (commandNeedsFilesystemCheck(value) || process.platform !== "win32") return [value];
-  const pathext = String(process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM")
-    .split(";")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-  const lower = value.toLowerCase();
-  if (pathext.some((ext) => lower.endsWith(ext))) return [value];
-  return [value, ...pathext.map((ext) => `${value}${ext}`)];
-}
-
-function isExecutableFile(filePath) {
-  try {
-    fs.accessSync(filePath, fs.constants.X_OK);
-    return true;
-  } catch (_) {
-    return process.platform === "win32" && fs.existsSync(filePath);
-  }
-}
-
-function findExecutableInDirs(command, dirs) {
-  const names = executableCandidateNames(command);
-  for (const dir of dirs) {
-    for (const name of names) {
-      const candidate = path.join(dir, name);
-      if (isExecutableFile(candidate)) return candidate;
-    }
-  }
-  return "";
-}
-
-function commonCodexExecutableDirs() {
-  const dirs = pathEntriesFromEnvPath(process.env.PATH);
-  if (process.platform !== "win32") {
-    dirs.push(
-      "/opt/homebrew/bin",
-      "/usr/local/bin",
-      "/opt/local/bin",
-      "/usr/bin",
-      path.join(USER_HOME, ".local", "bin"),
-      path.join(USER_HOME, ".npm-global", "bin"),
-      path.join(USER_HOME, ".yarn", "bin"),
-      path.join(USER_HOME, ".bun", "bin"),
-      path.join(USER_HOME, ".cargo", "bin"),
-      path.join(USER_HOME, "Library", "pnpm"),
-    );
-  }
-  return Array.from(new Set(dirs));
-}
-
-function resolveDefaultCodexExecutable() {
-  const explicit = String(process.env.CODEX_MOBILE_CODEX_EXE || "").trim();
-  if (explicit) return explicit;
-  return findExecutableInDirs("codex", commonCodexExecutableDirs()) || "codex";
-}
-
-function assertCommandAvailable(command, label) {
-  const value = String(command || "").trim();
-  if (!value) throw new Error(`${label} is not configured`);
-  if (commandNeedsFilesystemCheck(value) && !isExecutableFile(value)) {
-    throw new Error(`${label} not found: ${value}`);
-  }
-  if (!commandNeedsFilesystemCheck(value) && !findExecutableInDirs(value, pathEntriesFromEnvPath(process.env.PATH))) {
-    throw new Error(`${label} not found on PATH: ${value}`);
-  }
-}
-
-function codexAppServerChildEnv(extra = {}) {
-  const env = Object.assign({}, process.env);
-  for (const key of Object.keys(env)) {
-    if (key === "CODEX_CLI_PATH" || key.startsWith("CODEX_MUX_")) {
-      delete env[key];
-    }
-  }
-  if (CODEX_HOME) env.CODEX_HOME = CODEX_HOME;
-  Object.assign(env, extra);
-  return env;
-}
-
-function loadAuthKey() {
-  if (process.env.CODEX_MOBILE_KEY && process.env.CODEX_MOBILE_KEY.trim()) {
-    return process.env.CODEX_MOBILE_KEY.trim();
-  }
-  try {
-    const value = fs.readFileSync(AUTH_KEY_FILE, "utf8").trim();
-    if (value) return value;
-  } catch (_) {
-    // Create a durable local key so reloads and server restarts do not invalidate phone sessions.
-  }
-  const key = crypto.randomBytes(18).toString("base64url");
-  fs.mkdirSync(path.dirname(AUTH_KEY_FILE), { recursive: true });
-  fs.writeFileSync(AUTH_KEY_FILE, `${key}\n`, { encoding: "utf8", mode: 0o600 });
-  return key;
-}
-
-function timingSafeEquals(a, b) {
-  const left = Buffer.from(String(a || ""), "utf8");
-  const right = Buffer.from(String(b || ""), "utf8");
-  if (left.length !== right.length) return false;
-  return crypto.timingSafeEqual(left, right);
-}
-
-function parseCookies(header) {
-  const out = {};
-  for (const part of String(header || "").split(";")) {
-    const idx = part.indexOf("=");
-    if (idx < 0) continue;
-    out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
-  }
-  return out;
-}
-
-function getUrl(req) {
-  return new URL(req.url, `http://${req.headers.host || "localhost"}`);
-}
-
-function bearerTokenFromRequest(req) {
-  const header = String(req.headers.authorization || req.headers.Authorization || "").trim();
-  const match = header.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1].trim() : "";
-}
-
-function requestAuthToken(req) {
-  return requestAuthTokens(req)[0] || "";
-}
-
-function pushUniqueAuthToken(tokens, value) {
-  const token = String(value || "").trim();
-  if (token && !tokens.includes(token)) tokens.push(token);
-}
-
-function requestAuthTokens(req) {
-  const url = getUrl(req);
-  const cookies = parseCookies(req.headers.cookie);
-  const tokens = [];
-  pushUniqueAuthToken(tokens, req.headers["x-codex-mobile-key"]);
-  pushUniqueAuthToken(tokens, bearerTokenFromRequest(req));
-  pushUniqueAuthToken(tokens, url.searchParams.get("key"));
-  pushUniqueAuthToken(tokens, url.searchParams.get("codexPluginLaunch"));
-  pushUniqueAuthToken(tokens, cookies.codex_mobile_plugin_session);
-  pushUniqueAuthToken(tokens, cookies.codex_mobile_key);
-  return tokens;
-}
-
-function isAccessKeyAuthorized(req) {
-  if (DISABLE_AUTH) return true;
-  return requestAuthTokens(req).some((token) => timingSafeEquals(token, AUTH_KEY));
-}
-
-function isAuthorized(req) {
-  if (isAccessKeyAuthorized(req)) return true;
-  const tokens = requestAuthTokens(req);
-  if (tokens.some((token) => hermesPluginService.isSessionAuthorized(token))) return true;
-  return tokens.some((token) => hermesPluginService.isLaunchTokenAuthorized(token));
-}
-
-function isHttpsRequest(req) {
-  return String(req && (req.headers["x-forwarded-proto"] || req.headers["x-forwarded-protocol"]) || "").split(",")[0].trim().toLowerCase() === "https";
-}
-
-function pluginSessionCookieHeader(req, session) {
-  const sessionKey = String(session && session.session_key || "").trim();
-  if (!sessionKey) return "";
-  const maxAge = Math.max(1, Math.floor(Number(session && session.expires_in || 0) || 0));
-  const parts = [
-    `codex_mobile_plugin_session=${encodeURIComponent(sessionKey)}`,
-    "Path=/",
-    `Max-Age=${maxAge}`,
-    "SameSite=Lax",
-    "HttpOnly",
-  ];
-  if (isHttpsRequest(req)) parts.push("Secure");
-  return parts.join("; ");
-}
-
-function sendJson(res, status, data, headers = {}) {
-  if (!res || res.destroyed || res.writableEnded) return;
-  const body = JSON.stringify(data);
-  res.writeHead(status, Object.assign({
-    "Content-Type": "application/json; charset=utf-8",
-    "Content-Length": Buffer.byteLength(body),
-    "Cache-Control": "no-store",
-  }, headers || {}));
-  res.end(body);
-}
-
-function hermesOriginFromRequest(req, url) {
-  return String(
-    (url && (url.searchParams.get("hermesOrigin") || url.searchParams.get("hermes_origin") || url.searchParams.get("appOrigin") || url.searchParams.get("origin")))
-    || req.headers["x-hermes-origin"]
-    || req.headers.origin
-    || "",
-  ).trim();
-}
-
-function requestBaseUrl(req) {
-  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim().toLowerCase();
-  const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
-  const proto = forwardedProto === "https" ? "https" : "http";
-  const host = forwardedHost || String(req.headers.host || "").trim();
-  return host ? `${proto}://${host}` : "";
-}
-
-let lastLogTrimAt = 0;
-
-function trimLogFile(filePath, maxBytes, keepBytes) {
-  try {
-    const stat = fs.statSync(filePath);
-    if (!stat.isFile() || stat.size <= maxBytes) return false;
-    const bytesToKeep = Math.max(0, Math.min(keepBytes, stat.size));
-    const fd = fs.openSync(filePath, "r");
-    try {
-      const buffer = Buffer.alloc(bytesToKeep);
-      const offset = stat.size - bytesToKeep;
-      const bytesRead = fs.readSync(fd, buffer, 0, bytesToKeep, offset);
-      fs.writeFileSync(filePath, buffer.subarray(0, bytesRead));
-    } finally {
-      fs.closeSync(fd);
-    }
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-function trimRuntimeLogs(options = {}) {
-  const now = Date.now();
-  if (!options.force && now - lastLogTrimAt < 60_000) return;
-  lastLogTrimAt = now;
-  trimLogFile(MOBILE_WEB_LOG_FILE, MOBILE_WEB_LOG_MAX_BYTES, MOBILE_WEB_LOG_KEEP_BYTES);
-}
-
-function logThreadDetail(event, details = {}) {
-  trimRuntimeLogs();
-  const safeDetails = {};
-  for (const [key, value] of Object.entries(details || {})) {
-    if (value === undefined) continue;
-    if (value instanceof Error) {
-      safeDetails[key] = value.message || String(value);
-    } else if (typeof value === "string") {
-      safeDetails[key] = value.length > 600 ? `${value.slice(0, 600)}...` : value;
-    } else {
-      safeDetails[key] = value;
-    }
-  }
-  console.log(`[thread-detail] ${event} ${JSON.stringify(safeDetails)}`);
-}
-
-function logThreadList(event, details = {}) {
-  trimRuntimeLogs();
-  const safeDetails = {};
-  for (const [key, value] of Object.entries(details || {})) {
-    if (value === undefined) continue;
-    if (value instanceof Error) {
-      safeDetails[key] = value.message || String(value);
-    } else if (typeof value === "string") {
-      safeDetails[key] = value.length > 600 ? `${value.slice(0, 600)}...` : value;
-    } else {
-      safeDetails[key] = value;
-    }
-  }
-  console.log(`[thread-list] ${event} ${JSON.stringify(safeDetails)}`);
-}
-
-function safeLogDetails(details = {}) {
-  const safeDetails = {};
-  for (const [key, value] of Object.entries(details || {})) {
-    if (value === undefined) continue;
-    if (value instanceof Error) {
-      safeDetails[key] = value.message || String(value);
-    } else if (typeof value === "string") {
-      safeDetails[key] = value.length > 600 ? `${value.slice(0, 600)}...` : value;
-    } else {
-      safeDetails[key] = value;
-    }
-  }
-  return safeDetails;
-}
-
-function logContinuation(event, details = {}) {
-  trimRuntimeLogs();
-  console.log(`[continuation] ${event} ${JSON.stringify(safeLogDetails(details))}`);
-}
-
-function logMessageSubmit(event, details = {}) {
-  trimRuntimeLogs();
-  console.log(`[message-submit] ${event} ${JSON.stringify(safeLogDetails(details))}`);
-}
-
-function isTurnSteerUnsupportedError(err) {
-  const message = String((err && err.message) || err || "").toLowerCase();
-  return /method not found|unknown method/.test(message);
-}
-
-function isStaleActiveTurnError(err) {
-  const message = String((err && err.message) || err || "").toLowerCase();
-  return /not found|not active|inactive|completed|interrupted|expected turn|expected active turn id|no active turn|turn.*not.*running|turn.*not.*active/.test(message);
-}
-
-function isCodexAccountAuthError(err) {
-  const message = String((err && err.message) || err || "").toLowerCase();
-  return /token_expired|refresh_token_reused|refresh token|access token|unauthorized|401/.test(message);
-}
-
-function codexAccountAuthErrorPayload(err) {
-  return {
-    ok: false,
-    error: "Codex 账号登录已失效，请重新登录该账号，或切换到可用账号后重试。",
-    code: "codex_account_auth_invalid",
-    detail: boundedProfilePreflightDetail(err),
-  };
-}
+const appServerRequestPolicyService = createAppServerRequestPolicyService({
+  compactStructured,
+  truncateMiddle,
+});
+const {
+  ACTIONABLE_APPROVAL_METHODS,
+  SERVER_REQUEST_METHODS,
+  approvalResponsePayload,
+  codeGraphMcpElicitationToolName,
+  codeGraphReadOnlyMcpElicitationDecision,
+  compactApprovalText,
+  publicServerRequest,
+  serverRequestResponsePayload,
+} = appServerRequestPolicyService;
 
 async function staleActiveTurnPreflight(codexClient, threadId, activeTurnId) {
   if (!activeTurnId) return { stale: false, reason: "no-active-turn" };
@@ -1377,542 +1267,6 @@ async function staleActiveTurnPreflight(codexClient, threadId, activeTurnId) {
     staleMs: STALE_ACTIVE_TURN_MS,
     terminalIdleMs: TERMINAL_IDLE_ACTIVE_TURN_MS,
   });
-}
-
-function logClientEvent(event, details = {}) {
-  trimRuntimeLogs();
-  console.log(`[client-event] ${event} ${JSON.stringify(Object.assign({
-    ts: new Date().toISOString(),
-  }, safeLogDetails(details)))}`);
-}
-
-function truncateMiddle(value, maxChars, label) {
-  const text = String(value ?? "");
-  if (text.length <= maxChars) return text;
-  const head = Math.floor(maxChars * 0.42);
-  const tail = maxChars - head;
-  return `${text.slice(0, head)}\n\n[${label} truncated: ${text.length} chars total, showing first ${head} and last ${tail}]\n\n${text.slice(-tail)}`;
-}
-
-function truncateTail(value, maxChars, label) {
-  const text = String(value ?? "");
-  if (text.length <= maxChars) return text;
-  return `[${label} truncated: ${text.length} chars total, showing last ${maxChars}]\n\n${text.slice(-maxChars)}`;
-}
-
-function redactInlineImageDataUrls(value) {
-  const text = String(value ?? "");
-  if (!/data:image\//i.test(text)) return text;
-  return text.replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=_-]+/gi, (match) => (
-    `[inline image data omitted: ${match.length} chars]`
-  ));
-}
-
-function compactStructured(value) {
-  if (value == null) return value;
-  let raw;
-  try {
-    raw = JSON.stringify(value);
-  } catch (_) {
-    raw = String(value);
-  }
-  const redacted = redactInlineImageDataUrls(raw);
-  if (redacted.length <= MAX_STRUCTURED_CHARS) {
-    if (redacted === raw) return value;
-    try {
-      return JSON.parse(redacted);
-    } catch (_) {
-      return redacted;
-    }
-  }
-  if (raw.length <= MAX_STRUCTURED_CHARS) return value;
-  return {
-    truncated: true,
-    totalChars: raw.length,
-    inlineImagesRedacted: redacted !== raw || undefined,
-    preview: truncateMiddle(redacted, MAX_STRUCTURED_CHARS, "structured payload"),
-  };
-}
-
-function compactStringArray(values, maxChars, label) {
-  if (!Array.isArray(values)) return values;
-  return values.map((value) => (
-    typeof value === "string"
-      ? truncateMiddle(redactInlineImageDataUrls(value), maxChars, label)
-      : compactStructured(value)
-  ));
-}
-
-function statusText(status) {
-  if (!status) return "";
-  if (typeof status === "string") return status;
-  return status.type || JSON.stringify(status);
-}
-
-function normalizeFsPath(value) {
-  return String(value || "")
-    .replace(/^\\\\\?\\/, "")
-    .replace(/[\\/]+/g, "\\")
-    .replace(/\\+$/, "")
-    .toLowerCase();
-}
-
-function visibleWorkspaceRoots(globalState = readGlobalState()) {
-  const roots = new Set();
-  for (const key of ["active-workspace-roots", "electron-saved-workspace-roots", "project-order"]) {
-    const values = globalState[key];
-    if (!Array.isArray(values)) continue;
-    for (const value of values) {
-      if (typeof value === "string" && value.trim()) roots.add(value);
-    }
-  }
-  for (const workspace of workspaceRegistryService.list()) {
-    if (workspace && workspace.cwd) roots.add(workspace.cwd);
-  }
-  return roots;
-}
-
-function visibleWorkspaceKeys(globalState = readGlobalState()) {
-  return new Set([...visibleWorkspaceRoots(globalState)].map(normalizeFsPath).filter(Boolean));
-}
-
-function visibleWorkspaceNames(globalState = readGlobalState()) {
-  return new Set([...visibleWorkspaceRoots(globalState)]
-    .map((root) => path.basename(path.resolve(root)))
-    .filter(Boolean));
-}
-
-function visibleProjectlessThreadIds(globalState = readGlobalState()) {
-  const ids = globalState["projectless-thread-ids"];
-  return new Set(Array.isArray(ids) ? ids.filter((id) => typeof id === "string" && id) : []);
-}
-
-function visibilityFromGlobalState(globalState = readGlobalState()) {
-  return {
-    workspaceKeys: visibleWorkspaceKeys(globalState),
-    workspaceNames: visibleWorkspaceNames(globalState),
-    projectlessThreadIds: visibleProjectlessThreadIds(globalState),
-  };
-}
-
-function codexWorktreeRepoName(cwd) {
-  const value = String(cwd || "").trim();
-  if (!value) return "";
-  const homes = [CODEX_HOME, DEFAULT_CODEX_HOME].filter(Boolean);
-  for (const home of homes) {
-    const relative = path.relative(path.join(home, "worktrees"), path.resolve(value));
-    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) continue;
-    const parts = relative.split(path.sep).filter(Boolean);
-    if (parts.length >= 2) return parts[1];
-  }
-  return "";
-}
-
-function threadWorkspaceVisible(cwd, visibility = null) {
-  const view = visibility || visibilityFromGlobalState();
-  const cwdKey = normalizeFsPath(cwd);
-  if (cwdKey && view.workspaceKeys && view.workspaceKeys.has(cwdKey)) return true;
-  const worktreeRepo = codexWorktreeRepoName(cwd);
-  return Boolean(worktreeRepo && view.workspaceNames && view.workspaceNames.has(worktreeRepo));
-}
-
-function threadProjectlessVisible(thread, visibility = null) {
-  const view = visibility || visibilityFromGlobalState();
-  const id = String(thread && thread.id || "").trim();
-  return Boolean(id && view.projectlessThreadIds && view.projectlessThreadIds.has(id));
-}
-
-function anyThreadMatchesVisibleWorkspace(threads, visibility = null) {
-  const view = visibility || visibilityFromGlobalState();
-  if (!view.workspaceKeys || view.workspaceKeys.size <= 0) return false;
-  for (const thread of Array.isArray(threads) ? threads : []) {
-    if (!thread || typeof thread !== "object" || shouldHideThreadListSummary(thread)) continue;
-    const cwd = String(thread.cwd || "").trim();
-    if (cwd && threadWorkspaceVisible(cwd, view)) return true;
-    if (threadProjectlessVisible(thread, view)) return true;
-  }
-  return false;
-}
-
-function threadMatchesWorkspaceCwd(threadCwd, selectedCwd) {
-  const selected = String(selectedCwd || "").trim();
-  if (!selected) return true;
-  if (normalizeFsPath(threadCwd) === normalizeFsPath(selected)) return true;
-  const worktreeRepo = codexWorktreeRepoName(threadCwd);
-  return Boolean(worktreeRepo && worktreeRepo === path.basename(path.resolve(selected)));
-}
-
-function imageViewInlineDataUrl(item) {
-  if (!item || typeof item !== "object") return "";
-  const candidates = [
-    item.url,
-    item.imageUrl,
-    item.image_url,
-    item.arguments && (item.arguments.url || item.arguments.imageUrl || item.arguments.image_url),
-    item.result && (item.result.url || item.result.imageUrl || item.result.image_url),
-  ];
-  for (const candidate of candidates) {
-    const value = candidate && typeof candidate === "object"
-      ? candidate.url || candidate.uri || candidate.href
-      : candidate;
-    if (typeof value === "string" && /^data:image\//i.test(value.trim())) return value.trim();
-  }
-  return "";
-}
-
-const GENERATED_IMAGE_SOURCE_FIELD_KEYS = [
-  "path",
-  "filePath",
-  "file_path",
-  "imagePath",
-  "image_path",
-  "savedPath",
-  "saved_path",
-  "sourcePath",
-  "source_path",
-  "url",
-  "imageUrl",
-  "image_url",
-];
-
-function imageViewSourceFieldValue(value) {
-  if (value && typeof value === "object") return String(value.url || value.uri || value.href || "").trim();
-  return String(value || "").trim();
-}
-
-function isBrowserApiImageUrl(value) {
-  return /^\/api\/(?:generated-images\/file|uploads\/file|files\/preview\/content)(?:[?#]|$)/.test(String(value || "").trim());
-}
-
-function isAbsoluteLocalImageSource(value) {
-  const text = String(value || "").trim();
-  return Boolean(text && (
-    path.isAbsolute(text)
-    || /^[A-Za-z]:[\\/]/.test(text)
-    || /^\\\\/.test(text)
-  ));
-}
-
-function isImageFileNameLike(value) {
-  return /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|tiff|webp)(?:[?#].*)?$/i.test(String(value || "").trim());
-}
-
-function isUnsafeGeneratedImageSourceValue(value) {
-  const text = imageViewSourceFieldValue(value);
-  if (!text || isBrowserApiImageUrl(text)) return false;
-  if (/^data:image\//i.test(text)) return true;
-  if (/^file:\/\//i.test(text)) return true;
-  if (/^(?:https?:|blob:)/i.test(text)) return false;
-  if (isAbsoluteLocalImageSource(text)) return true;
-  return isImageFileNameLike(text);
-}
-
-function generatedImageSourceDisplayName(item) {
-  const explicit = item && (item.fileName || item.file_name || item.label || item.caption || item.id);
-  const source = imageViewSourcePath(item) || imageViewSourceFieldValue(item && (item.url || item.imageUrl || item.image_url));
-  const basename = path.basename(String(source || explicit || "image"));
-  return basename || "image";
-}
-
-function removeUnsafeGeneratedImageSources(item) {
-  if (!item || typeof item !== "object") return item;
-  const targets = [item];
-  if (item.arguments && typeof item.arguments === "object") targets.push(item.arguments);
-  if (item.result && typeof item.result === "object") targets.push(item.result);
-  for (const target of targets) {
-    for (const key of GENERATED_IMAGE_SOURCE_FIELD_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(target, key) && isUnsafeGeneratedImageSourceValue(target[key])) delete target[key];
-    }
-  }
-  return item;
-}
-
-function generatedImageHasUnsafeSource(item) {
-  if (!item || typeof item !== "object") return false;
-  const targets = [item];
-  if (item.arguments && typeof item.arguments === "object") targets.push(item.arguments);
-  if (item.result && typeof item.result === "object") targets.push(item.result);
-  return targets.some((target) => GENERATED_IMAGE_SOURCE_FIELD_KEYS.some((key) => (
-    Object.prototype.hasOwnProperty.call(target, key) && isUnsafeGeneratedImageSourceValue(target[key])
-  )));
-}
-
-function markGeneratedImageUnavailable(item) {
-  if (!item || typeof item !== "object") return item;
-  const fileName = generatedImageSourceDisplayName(item);
-  delete item.contentUrl;
-  delete item.content_url;
-  removeUnsafeGeneratedImageSources(item);
-  if (!item.fileName && !item.file_name) item.fileName = fileName;
-  item.generatedImage = {
-    fileName,
-    unavailable: true,
-    reason: "source_unavailable",
-  };
-  return item;
-}
-
-function applyGeneratedImageCacheResult(item, cached) {
-  if (!item || !cached) return item;
-  item.contentUrl = generatedImageContentUrl(cached.cacheId);
-  if (!item.fileName && !item.file_name) item.fileName = cached.fileName;
-  item.generatedImage = {
-    fileName: cached.fileName,
-    contentType: cached.contentType,
-    sizeBytes: cached.sizeBytes,
-  };
-  removeUnsafeGeneratedImageSources(item);
-  return item;
-}
-
-function attachGeneratedImageContent(item, options = {}) {
-  if (!item || (item.type !== "imageView" && item.type !== "imageGeneration")) return item;
-  if (item.contentUrl || item.content_url) return item;
-  const dataUrl = imageViewInlineDataUrl(item);
-  if (dataUrl) {
-    const cachedDataUrl = cacheGeneratedImageDataUrl(dataUrl, {
-      cacheRoot: GENERATED_IMAGE_ROOT,
-      threadId: options.threadId || "",
-      maxBytes: FILE_PREVIEW_MEDIA_MAX_BYTES,
-      contentTypes: FILE_PREVIEW_IMAGE_CONTENT_TYPES,
-    });
-    if (!cachedDataUrl) return markGeneratedImageUnavailable(item);
-    return applyGeneratedImageCacheResult(item, cachedDataUrl);
-  }
-  const hasUnsafeSource = generatedImageHasUnsafeSource(item);
-  const sourcePath = imageViewSourcePath(item);
-  const cached = cacheGeneratedImageForItem(item, {
-    cacheRoot: GENERATED_IMAGE_ROOT,
-    threadId: options.threadId || "",
-    maxBytes: FILE_PREVIEW_MEDIA_MAX_BYTES,
-    contentTypes: FILE_PREVIEW_IMAGE_CONTENT_TYPES,
-    isDeniedPath: hasDeniedPreviewPathSegment,
-  });
-  if (!cached) {
-    if (sourcePath || hasUnsafeSource) return markGeneratedImageUnavailable(item);
-    return item;
-  }
-  return applyGeneratedImageCacheResult(item, cached);
-}
-
-function isBackupRolloutPath(value) {
-  return /\.jsonl\.(bak|backup|old)(?:\b|[-_.])/i.test(String(value || ""));
-}
-
-function isSubagentThreadSummary(thread) {
-  return Boolean(thread && (
-    thread.isSpawnedChildThread
-    || String(thread.agentNickname || thread.agent_nickname || "").trim()
-    || String(thread.agentRole || thread.agent_role || "").trim()
-  ));
-}
-
-function isSideChatSidecarThreadSummary(thread) {
-  return Boolean(thread && threadSideChatService.isSidecarThreadId(thread.id || thread.threadId));
-}
-
-function threadSummaryHasDisplayText(thread) {
-  if (!thread || typeof thread !== "object") return false;
-  const id = String(thread.id || "").trim();
-  for (const value of [thread.name, thread.title, thread.preview, thread.first_user_message]) {
-    const text = String(value || "").trim();
-    if (text && !isRecoverableThreadListTitle(text, id)) return true;
-  }
-  return false;
-}
-
-function isResidualFallbackThreadSummary(thread) {
-  if (!thread || typeof thread !== "object" || !thread.mobileFallback) return false;
-  const id = normalizeThreadId(thread.id);
-  if (!id || threadSummaryHasDisplayText(thread)) return false;
-  return !isThreadListLiveStatus(thread.status);
-}
-
-function isUnmaterializedThreadListPlaceholder(thread) {
-  if (!thread || typeof thread !== "object") return false;
-  const id = normalizeThreadId(thread.id);
-  if (!id) return false;
-  if (!isThreadListUnknownStatus(thread.status)) return false;
-  if (threadSummaryHasDisplayText(thread)) return false;
-  if (String(thread.cwd || "").trim()) return false;
-  if (Array.isArray(thread.turns) && thread.turns.length) return false;
-  const display = String(thread.name || thread.title || thread.preview || "").trim();
-  return !display || isRecoverableThreadListTitle(display, id);
-}
-
-function shouldHideThreadListSummary(thread, archivedIds = null) {
-  if (threadHasArchiveSignal(thread, archivedIds)) return true;
-  if (isSubagentThreadSummary(thread)) return true;
-  if (isSideChatSidecarThreadSummary(thread)) return true;
-  return isResidualFallbackThreadSummary(thread) || isUnmaterializedThreadListPlaceholder(thread);
-}
-
-function archivedSessionDirectories() {
-  const dirs = new Set([ARCHIVED_SESSIONS_DIR]);
-  dirs.add(path.join(DEFAULT_CODEX_HOME, "archived_sessions"));
-  const homesRoot = path.join(USER_HOME, ".codex-homes");
-  try {
-    for (const entry of fs.readdirSync(homesRoot, { withFileTypes: true })) {
-      if (!entry || !entry.isDirectory()) continue;
-      dirs.add(path.join(homesRoot, entry.name, "archived_sessions"));
-    }
-  } catch (_) {
-    // Older installs may not have profile-specific homes.
-  }
-  return [...dirs];
-}
-
-function addArchivedSessionIdsFromDir(ids, dir) {
-  try {
-    for (const name of fs.readdirSync(dir)) {
-      const match = String(name || "").match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-      const id = normalizeThreadId(match && match[1]);
-      if (id) ids.add(id);
-    }
-  } catch (_) {
-    // Missing archived_sessions directories are normal for fresh profiles.
-  }
-}
-
-function archivedSessionThreadIds() {
-  const ids = mobileArchiveIndexService.threadIds();
-  for (const dir of archivedSessionDirectories()) {
-    addArchivedSessionIdsFromDir(ids, dir);
-  }
-  return ids;
-}
-
-function threadHasArchiveSignal(thread, archivedIds = null) {
-  if (!thread || typeof thread !== "object") return false;
-  const id = normalizeThreadId(thread.id);
-  const status = statusText(thread.status).toLowerCase();
-  const location = String(thread.path || thread.rolloutPath || thread.rollout_path || "").toLowerCase();
-  const archivedThreadIds = archivedIds && typeof archivedIds.has === "function" ? archivedIds : archivedSessionThreadIds();
-  return Boolean(thread.archived || thread.archivedAt || thread.archived_at || thread.isArchived)
-    || Boolean(thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt)
-    || Boolean(id && archivedThreadIds.has(id))
-    || /archived|deleted|removed/.test(status)
-    || /[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)
-    || isBackupRolloutPath(location);
-}
-
-function rememberMobileArchivedThreadId(threadId) {
-  try {
-    const remembered = mobileArchiveIndexService.remember(threadId);
-    if (remembered) removeThreadFromThreadListFallbackCache(threadId);
-    return remembered;
-  } catch (err) {
-    console.warn(`Failed to update Mobile archived thread index: ${err.message || String(err)}`);
-    return false;
-  }
-}
-
-function archivedResultWithMobileIndex(result, threadId) {
-  if (result && typeof result === "object" && result.archived === false) return result;
-  const mobileArchived = rememberMobileArchivedThreadId(threadId);
-  const out = result && typeof result === "object" ? Object.assign({}, result) : { archived: true };
-  if (!Object.prototype.hasOwnProperty.call(out, "archived")) out.archived = true;
-  if (mobileArchived) out.mobileArchived = true;
-  return out;
-}
-
-function alreadyArchivedResult(source, threadId, shouldRemember = true) {
-  const out = { archived: true, alreadyArchived: true };
-  if (source) out.source = source;
-  if (shouldRemember && rememberMobileArchivedThreadId(threadId)) out.mobileArchived = true;
-  return out;
-}
-
-function mobileArchivedFallbackResult(source, threadId, err) {
-  const mobileArchived = rememberMobileArchivedThreadId(threadId);
-  return {
-    archived: Boolean(mobileArchived),
-    source: source || "mobile-index-fallback",
-    mobileArchived,
-    archiveError: err ? String(err.message || err) : "",
-  };
-}
-
-function isThreadIdArchivedLocally(threadId) {
-  const id = normalizeThreadId(threadId);
-  return Boolean(id && archivedSessionThreadIds().has(id));
-}
-
-function isHiddenThread(thread, visibility = null, options = {}) {
-  if (!thread || typeof thread !== "object") return true;
-  const view = visibility || visibilityFromGlobalState();
-  if (shouldHideThreadListSummary(thread, options.archivedIds)) return true;
-  if (threadProjectlessVisible(thread, view)) return false;
-  if (view.workspaceKeys && view.workspaceKeys.size > 0) {
-    const cwd = String(thread.cwd || "").trim();
-    if (cwd) return !threadWorkspaceVisible(cwd, view);
-    return true;
-  }
-  return false;
-}
-
-function filterThreadListByCwd(result, cwd) {
-  if (!cwd || !result || typeof result !== "object") return result;
-  const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) out.data = out.data.filter((thread) => threadMatchesWorkspaceCwd(thread && thread.cwd, cwd));
-  if (Array.isArray(out.threads)) out.threads = out.threads.filter((thread) => threadMatchesWorkspaceCwd(thread && thread.cwd, cwd));
-  return out;
-}
-
-function isThreadIdLikeTitle(value, threadId = "") {
-  const text = String(value || "").trim();
-  const id = String(threadId || "").trim();
-  if (!text) return true;
-  if (id && text === id) return true;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text);
-}
-
-function isRecoverableThreadListTitle(value, threadId = "") {
-  const text = String(value || "").trim();
-  return isThreadIdLikeTitle(text, threadId)
-    || /^#\s*Continuation Bootstrap Index\b/i.test(text)
-    || /This thread is a same-workspace continuation created by Codex Mobile Web/i.test(text);
-}
-
-function sessionIndexDisplayName(entry) {
-  return fallbackDisplayText(entry && (entry.thread_name || entry.name || entry.title), 120);
-}
-
-function applySessionIndexTitleToThread(thread, entry) {
-  if (!thread || typeof thread !== "object") return thread;
-  const id = String(thread.id || "").trim();
-  const name = sessionIndexDisplayName(entry);
-  if (!id || !name) return thread;
-  const next = Object.assign({}, thread, {
-    name,
-    preview: name,
-  });
-  const updatedAt = entry && (entry.updated_at || entry.updatedAt);
-  if (updatedAt && timestampToMs(updatedAt) >= timestampToMs(next.updatedAt || next.updated_at)) {
-    next.updatedAt = Math.floor(timestampToMs(updatedAt) / 1000);
-  }
-  return next;
-}
-
-function hydrateThreadListTitlesFromSessionIndex(threads, indexEntries = readSessionIndexEntries()) {
-  if (!Array.isArray(threads) || !threads.length || !indexEntries || typeof indexEntries.get !== "function") {
-    return threads;
-  }
-  return threads.map((thread) => {
-    if (!thread || typeof thread !== "object") return thread;
-    const id = String(thread.id || "").trim();
-    if (!id) return thread;
-    const entry = indexEntries.get(id);
-    return applySessionIndexTitleToThread(thread, entry);
-  });
-}
-
-function hydrateThreadListResultTitlesFromSessionIndex(result, indexEntries = readSessionIndexEntries()) {
-  if (!result || typeof result !== "object") return result;
-  const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) out.data = hydrateThreadListTitlesFromSessionIndex(out.data, indexEntries);
-  if (Array.isArray(out.threads)) out.threads = hydrateThreadListTitlesFromSessionIndex(out.threads, indexEntries);
-  return out;
 }
 
 let threadListSummaryMergeService = null;
@@ -1993,98 +1347,6 @@ function sortThreadListSummaries(threads) {
     .map((thread, index) => ({ thread, index, timestampMs: threadListSummaryTimestampMs(thread) }))
     .sort((a, b) => (b.timestampMs - a.timestampMs) || (a.index - b.index))
     .map((entry) => entry.thread);
-}
-
-function filterVisibleThreads(result, globalState = readGlobalState(), options = {}) {
-  const visibility = visibilityFromGlobalState(globalState);
-  const archivedIds = options.archivedIds && typeof options.archivedIds.has === "function"
-    ? options.archivedIds
-    : archivedSessionThreadIds();
-  const annotateRolloutStats = (thread) => annotateThreadRolloutStats(thread, {
-    rolloutStatsForPath: options.rolloutStatsForPath,
-  });
-  if (!result || typeof result !== "object") return result;
-  const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) {
-    const merged = mergeThreadStateFromStateDb(out.data, { archivedIds });
-    const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(merged, visibility);
-    out.data = merged
-      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility, { archivedIds }) : shouldHideThreadListSummary(thread, archivedIds)))
-      .map(annotateRolloutStats);
-  }
-  if (Array.isArray(out.threads)) {
-    const merged = mergeThreadStateFromStateDb(out.threads, { archivedIds });
-    const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(merged, visibility);
-    out.threads = merged
-      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility, { archivedIds }) : shouldHideThreadListSummary(thread, archivedIds)))
-      .map(annotateRolloutStats);
-  }
-  return out;
-}
-
-function mergeThreadStateFromStateDb(threads, options = {}) {
-  if (!Array.isArray(threads) || !threads.length || !fs.existsSync(STATE_DB)) return threads;
-  const ids = Array.from(new Set(threads.map((thread) => String(thread && thread.id || "").trim()).filter(Boolean)));
-  if (!ids.length) return threads;
-  const inClause = ids.map((id) => sqlString(id)).join(", ");
-  const query = [
-    "select id,title,first_user_message,cwd,updated_at,archived,archived_at,rollout_path,model,reasoning_effort,agent_nickname,agent_role,",
-    "exists(select 1 from thread_spawn_edges where child_thread_id=threads.id) as is_spawned_child",
-    "from threads",
-    `where id in (${inClause});`,
-  ].join(" ");
-  try {
-    const result = runSqliteJson(STATE_DB, query, { timeoutMs: 5000, maxBuffer: 1024 * 1024, userHome: USER_HOME });
-    if (!result.ok) return threads;
-    const rows = result.rows;
-    if (!Array.isArray(rows) || !rows.length) return threads;
-    const stateById = new Map();
-    const archivedIds = options.archivedIds && typeof options.archivedIds.has === "function"
-      ? options.archivedIds
-      : archivedSessionThreadIds();
-    for (const row of rows) {
-      const id = String(row && row.id || "").trim();
-      if (!id) continue;
-      stateById.set(id, {
-        name: row.title || null,
-        preview: row.first_user_message || null,
-        cwd: typeof row.cwd === "string" ? row.cwd.replace(/^\\\\\?\\/, "") : null,
-        updatedAt: Number(row.updated_at || 0),
-        archived: Boolean(Number(row.archived || 0))
-          || archivedIds.has(id)
-          || /[/\\]archived_sessions[/\\]/i.test(String(row.rollout_path || ""))
-          || isBackupRolloutPath(row.rollout_path),
-        archivedAt: row.archived_at || null,
-        model: row.model || null,
-        effort: row.reasoning_effort || null,
-        agentNickname: row.agent_nickname || null,
-        agentRole: row.agent_role || null,
-        isSpawnedChildThread: Boolean(Number(row.is_spawned_child || 0)),
-      });
-    }
-    return threads.map((thread) => {
-      if (!thread || typeof thread !== "object") return thread;
-      const state = stateById.get(String(thread.id || "").trim());
-      if (!state) return thread;
-      const next = Object.assign({}, thread);
-      if (state.name) next.name = state.name;
-      if (state.preview && (!next.preview || String(next.preview) === String(thread.id || ""))) next.preview = state.preview;
-      if (state.cwd) next.cwd = state.cwd;
-      if (state.updatedAt && timestampToMs(state.updatedAt) >= timestampToMs(thread.updatedAt)) next.updatedAt = state.updatedAt;
-      if (state.model) next.model = state.model;
-      if (state.effort) next.effort = state.effort;
-      if (state.agentNickname) next.agentNickname = state.agentNickname;
-      if (state.agentRole) next.agentRole = state.agentRole;
-      if (state.isSpawnedChildThread) next.isSpawnedChildThread = true;
-      if (state.archived) {
-        next.archived = true;
-        next.archivedAt = state.archivedAt || thread.archivedAt || thread.archived_at || null;
-      }
-      return next;
-    });
-  } catch (_) {
-    return threads;
-  }
 }
 
 function isCompletedStatus(status) {
@@ -2332,180 +1594,9 @@ function turnListFromResult(result) {
   return [];
 }
 
-function isContextCompactionType(type) {
-  return /context.*compaction|context.*compression|context_compaction|context_compression/i.test(String(type || ""));
-}
-
-function contextCompactionNotice(pending) {
-  return pending ? "历史上下文正在压缩" : "历史上下文已压缩";
-}
-
-function contextCompactionMobileState(item, options = {}) {
-  if (options.contextCompactionPending === true) return "pending";
-  if (options.contextCompactionPending === false) return "complete";
-  const text = statusText(item && item.status).toLowerCase();
-  if (!text) return "";
-  if (isCompletedStatus(text)) return "complete";
-  if (/(running|active|queued|processing|inprogress|in_progress|in-progress|pending|started)/.test(text)) {
-    return "pending";
-  }
-  return "";
-}
-
-function isPathLikeValue(value) {
-  const text = String(value || "");
-  if (!text || text.includes("\n") || text.includes("\r")) return false;
-  return /^[A-Za-z]:[\\/]/.test(text)
-    || /^\\\\\?\\/.test(text)
-    || /^[/\\][^/\\]+/.test(text)
-    || /[\\/][^/\\]+\.[A-Za-z0-9]{1,12}$/.test(text);
-}
-
-function isFileNameLikeValue(value) {
-  const text = String(value || "");
-  return Boolean(text && !text.includes("\n") && !text.includes("\r") && /^[^\\/]+\.[A-Za-z0-9]{1,12}$/.test(text));
-}
-
-function collectFileNames(value, out = [], keyHint = "") {
-  if (out.length >= 5 || value == null) return out;
-  if (typeof value === "string") {
-    const keyLooksPath = /^(path|file|filepath|filename|name|target|source|uri)$/i.test(keyHint);
-    if (isPathLikeValue(value) || (keyLooksPath && isFileNameLikeValue(value))) out.push(value);
-    return out;
-  }
-  if (Array.isArray(value)) {
-    for (const entry of value) collectFileNames(entry, out, keyHint);
-    return out;
-  }
-  if (typeof value === "object") {
-    for (const [key, entry] of Object.entries(value)) {
-      if (/^(path|file|filePath|filename|name|target|source|uri)$/i.test(key) && typeof entry === "string"
-        && (isPathLikeValue(entry) || isFileNameLikeValue(entry))) {
-        out.push(entry);
-        if (out.length >= 5) return out;
-        continue;
-      }
-      collectFileNames(entry, out, key);
-      if (out.length >= 5) return out;
-    }
-  }
-  return out;
-}
-
-function isWebSearchLikeItem(item) {
-  if (!item || typeof item !== "object") return false;
-  return /web[_-]?search|websearch|search_query|image_query/i.test([
-    item.type,
-    item.tool,
-    item.name,
-    item.namespace,
-    item.server,
-  ].filter(Boolean).join(" "));
-}
-
-function isOperationalItem(item) {
-  return item && (OPERATIONAL_ITEM_TYPES.has(item.type) || isWebSearchLikeItem(item));
-}
-
-function collectSearchSummaries(value, out = [], keyHint = "") {
-  if (out.length >= 3 || value == null) return out;
-  const keyLooksSearch = /^(q|query|searchQuery|url|pattern)$/i.test(keyHint);
-  const keyLooksQueryList = /^queries$/i.test(keyHint);
-  if (typeof value === "string") {
-    const text = value.replace(/\s+/g, " ").trim();
-    if ((keyLooksSearch || keyLooksQueryList) && text) out.push(text);
-    return out;
-  }
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      collectSearchSummaries(entry, out, keyLooksQueryList ? "query" : keyHint);
-      if (out.length >= 3) return out;
-    }
-    return out;
-  }
-  if (typeof value === "object") {
-    for (const [key, entry] of Object.entries(value)) {
-      collectSearchSummaries(entry, out, key);
-      if (out.length >= 3) return out;
-    }
-  }
-  return out;
-}
-
-function searchSummaryFromOperation(item) {
-  const summaries = collectSearchSummaries(item && (item.action || item.arguments || item.result || item.contentItems || item));
-  return [...new Set(summaries)].slice(0, 3).join(" | ");
-}
-
-function compactItemTimestampFields(item) {
-  const fields = {};
-  for (const key of [
-    "createdAtMs",
-    "createdAt",
-    "created_at_ms",
-    "created_at",
-    "startedAtMs",
-    "startedAt",
-    "started_at_ms",
-    "started_at",
-    "timestampMs",
-    "timestamp",
-    "completedAtMs",
-    "completedAt",
-    "completed_at_ms",
-    "completed_at",
-    "mobileDisplayTimestampMs",
-    "mobileDisplayTimestamp",
-  ]) {
-    if (item && item[key] !== undefined) fields[key] = item[key];
-  }
-  if (item && item.mobileDisplayTimestampInferred !== undefined) {
-    fields.mobileDisplayTimestampInferred = item.mobileDisplayTimestampInferred === true;
-  }
-  return fields;
-}
-
-function compactOperationalItem(out) {
-  const isWebSearch = isWebSearchLikeItem(out);
-  const command = typeof out.command === "string"
-    ? out.command
-    : (isWebSearch ? searchSummaryFromOperation(out) : undefined);
-  const compact = {
-    id: out.id,
-    type: isWebSearch ? "dynamicToolCall" : out.type,
-    ...compactItemTimestampFields(out),
-    status: out.status,
-    server: out.server,
-    namespace: out.namespace,
-    tool: isWebSearch ? "Web Search" : out.tool,
-    callId: out.callId || out.call_id,
-    command: typeof command === "string" ? truncateMiddle(command, 180, "command") : undefined,
-    fileNames: [...new Set(Array.isArray(out.fileNames) && out.fileNames.length
-      ? out.fileNames
-      : collectFileNames(out.changes || out.arguments || out.result || out.contentItems))].slice(0, 5),
-    mobileLiveOperation: true,
-  };
-  return Object.fromEntries(Object.entries(compact).filter(([, value]) => {
-    if (Array.isArray(value)) return value.length > 0;
-    return value !== undefined;
-  }));
-}
-
 function parseJsonLine(line) {
   try {
     return JSON.parse(line);
-  } catch (_) {
-    return null;
-  }
-}
-
-function parseJsonObject(value) {
-  if (!value) return null;
-  if (typeof value === "object") return value;
-  if (typeof value !== "string") return null;
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" ? parsed : null;
   } catch (_) {
     return null;
   }
@@ -2518,278 +1609,6 @@ function lastString(...values) {
   return "";
 }
 
-function normalizeEnumValue(value, allowed) {
-  const text = String(value || "").trim();
-  return allowed.has(text) ? text : "";
-}
-
-function normalizePermissionModeValue(value) {
-  const text = String(value || "").trim().toLowerCase();
-  const aliases = {
-    "full-access": "full",
-    "workspace-write": "auto",
-    "read-only": "auto",
-    "auto-review": "auto",
-    "auto-reviewing": "auto",
-    config: "custom",
-    "config.toml": "custom",
-    "custom-config": "custom",
-  };
-  const normalized = aliases[text] || text;
-  return PERMISSION_MODE_OPTIONS.includes(normalized) ? normalized : "";
-}
-
-function normalizeSandboxPolicyType(type) {
-  const text = String(type || "").trim();
-  return {
-    "danger-full-access": "dangerFullAccess",
-    dangerFullAccess: "dangerFullAccess",
-    disabled: "dangerFullAccess",
-    "no-sandbox": "dangerFullAccess",
-    "read-only": "readOnly",
-    readOnly: "readOnly",
-    "workspace-write": "workspaceWrite",
-    workspaceWrite: "workspaceWrite",
-    "external-sandbox": "externalSandbox",
-    externalSandbox: "externalSandbox",
-  }[text] || "";
-}
-
-function sandboxModeFromPolicy(policy) {
-  const type = normalizeSandboxPolicyType(policy && policy.type);
-  return {
-    dangerFullAccess: "danger-full-access",
-    readOnly: "read-only",
-    workspaceWrite: "workspace-write",
-  }[type] || "";
-}
-
-function normalizeSandboxPolicy(value) {
-  const policy = parseJsonObject(value);
-  if (!policy) return null;
-  const type = normalizeSandboxPolicyType(policy.type);
-  if (type === "dangerFullAccess") return { type };
-  if (type === "readOnly") {
-    return {
-      type,
-      networkAccess: Boolean(policy.networkAccess ?? policy.network_access),
-    };
-  }
-  if (type === "externalSandbox") {
-    return {
-      type,
-      networkAccess: policy.networkAccess || policy.network_access || "restricted",
-    };
-  }
-  if (type === "workspaceWrite") {
-    return {
-      type,
-      writableRoots: Array.isArray(policy.writableRoots) ? policy.writableRoots : (Array.isArray(policy.writable_roots) ? policy.writable_roots : []),
-      networkAccess: Boolean(policy.networkAccess ?? policy.network_access),
-      excludeTmpdirEnvVar: Boolean(policy.excludeTmpdirEnvVar ?? policy.exclude_tmpdir_env_var),
-      excludeSlashTmp: Boolean(policy.excludeSlashTmp ?? policy.exclude_slash_tmp),
-    };
-  }
-  return null;
-}
-
-function normalizePermissionProfile(value) {
-  const profile = parseJsonObject(value);
-  if (!profile) return null;
-  const fileSystem = profile.fileSystem || profile.file_system || null;
-  return {
-    type: profile.type || profile.kind || null,
-    network: profile.network || null,
-    fileSystem: fileSystem ? {
-      type: fileSystem.type || null,
-      entries: Array.isArray(fileSystem.entries) ? fileSystem.entries : [],
-      ...(fileSystem.globScanMaxDepth || fileSystem.glob_scan_max_depth
-        ? { globScanMaxDepth: fileSystem.globScanMaxDepth || fileSystem.glob_scan_max_depth }
-        : {}),
-    } : null,
-  };
-}
-
-function isRootWritePermissionProfile(profile) {
-  const entries = profile
-    && profile.fileSystem
-    && Array.isArray(profile.fileSystem.entries)
-    ? profile.fileSystem.entries
-    : [];
-  return entries.some((entry) => {
-    const pathValue = entry && entry.path;
-    return entry
-      && entry.access === "write"
-      && pathValue
-      && pathValue.type === "special"
-      && pathValue.value
-      && pathValue.value.kind === "root";
-  });
-}
-
-function isFullAccessRuntime(sandboxPolicy, permissionProfile) {
-  return normalizeSandboxPolicyType(sandboxPolicy && sandboxPolicy.type) === "dangerFullAccess"
-    || isRootWritePermissionProfile(permissionProfile);
-}
-
-function permissionModeFromRuntimeSettings(settings) {
-  if (!settings) return "";
-  const sandboxType = normalizeSandboxPolicyType(settings.sandboxPolicy && settings.sandboxPolicy.type);
-  if (sandboxType === "dangerFullAccess" || isRootWritePermissionProfile(settings.permissionProfile)) return "full";
-  if (sandboxType === "externalSandbox" || settings.permissionProfile) return "custom";
-  if (sandboxType === "workspaceWrite" || sandboxType === "readOnly") return "auto";
-  return "default";
-}
-
-function defaultPermissionModeFromConfigDefaults() {
-  const sandboxType = normalizeSandboxPolicyType(CODEX_CONFIG_DEFAULTS.sandboxMode);
-  if (sandboxType === "dangerFullAccess") return "full";
-  if (sandboxType === "workspaceWrite" || sandboxType === "readOnly") return "auto";
-  return "default";
-}
-
-function publicRuntimeSettings(settings) {
-  if (!settings) return null;
-  const sandboxType = normalizeSandboxPolicyType(settings.sandboxPolicy && settings.sandboxPolicy.type);
-  return Object.fromEntries(Object.entries({
-    permissionMode: permissionModeFromRuntimeSettings(settings),
-    approvalPolicy: settings.approvalPolicy || null,
-    sandboxPolicyType: sandboxType || null,
-    reasoningSummary: settings.reasoningSummary || null,
-    modelVerbosity: settings.modelVerbosity || null,
-  }).filter(([, value]) => value != null && value !== ""));
-}
-
-function workspaceWriteSandboxPolicy(cwd, inheritedPolicy) {
-  const inherited = normalizeSandboxPolicyType(inheritedPolicy && inheritedPolicy.type) === "workspaceWrite"
-    ? inheritedPolicy
-    : {};
-  const writableRoots = Array.isArray(inherited.writableRoots) && inherited.writableRoots.length
-    ? inherited.writableRoots
-    : (cwd ? [cwd] : []);
-  return {
-    type: "workspaceWrite",
-    writableRoots,
-    networkAccess: Boolean(inherited.networkAccess),
-    excludeTmpdirEnvVar: Boolean(inherited.excludeTmpdirEnvVar),
-    excludeSlashTmp: Boolean(inherited.excludeSlashTmp),
-  };
-}
-
-function workspaceDelegationWriteGuardPermissionProfile(cwd, inheritedPolicy) {
-  const workspace = String(cwd || "").trim();
-  const policy = workspaceDelegationWriteGuardSandboxPolicy(workspace, inheritedPolicy);
-  const entries = [
-    {
-      path: { type: "special", value: { kind: "root" } },
-      access: "read",
-    },
-  ];
-  for (const root of policy.writableRoots || []) {
-    if (!root) continue;
-    entries.push({
-      path: { type: "path", path: root },
-      access: "write",
-    });
-    entries.push({
-      path: { type: "path", path: path.join(root, ".agents") },
-      access: "read",
-    });
-    entries.push({
-      path: { type: "path", path: path.join(root, ".codex") },
-      access: "read",
-    });
-    entries.push({
-      path: { type: "path", path: path.join(root, ".git") },
-      access: "write",
-    });
-  }
-  if (!policy.excludeSlashTmp) {
-    entries.push({
-      path: { type: "special", value: { kind: "slash_tmp" } },
-      access: "write",
-    });
-  }
-  if (!policy.excludeTmpdirEnvVar) {
-    entries.push({
-      path: { type: "special", value: { kind: "tmpdir" } },
-      access: "write",
-    });
-  }
-  return {
-    type: "managed",
-    fileSystem: {
-      type: "restricted",
-      entries,
-    },
-    network: policy.networkAccess ? "enabled" : "restricted",
-  };
-}
-
-function readOnlySandboxPolicy(inheritedPolicy) {
-  const inherited = normalizeSandboxPolicyType(inheritedPolicy && inheritedPolicy.type) === "readOnly"
-    ? inheritedPolicy
-    : {};
-  return {
-    type: "readOnly",
-    networkAccess: Boolean(inherited.networkAccess),
-  };
-}
-
-function applyPermissionModeOverride(settings, mode, cwd) {
-  const normalized = normalizePermissionModeValue(mode);
-  if (!normalized) return settings;
-  const next = Object.assign({}, settings || {});
-  if (normalized === "default") {
-    if (!cwd) return next;
-    next.approvalPolicy = "on-request";
-    next.sandboxPolicy = workspaceWriteSandboxPolicy(cwd, next.sandboxPolicy);
-    next.sandboxMode = "workspace-write";
-    next.permissionProfile = null;
-    return next;
-  }
-  if (normalized === "auto") {
-    if (!cwd) return next;
-    next.approvalPolicy = "on-request";
-    next.sandboxPolicy = workspaceWriteSandboxPolicy(cwd, next.sandboxPolicy);
-    next.sandboxMode = "workspace-write";
-    next.permissionProfile = null;
-    return next;
-  }
-  if (normalized === "full") {
-    next.approvalPolicy = "never";
-    next.sandboxPolicy = { type: "dangerFullAccess" };
-    next.sandboxMode = "danger-full-access";
-    next.permissionProfile = null;
-    return next;
-  }
-  if (normalized === "custom") {
-    const sandboxType = normalizeSandboxPolicyType(CODEX_CONFIG_DEFAULTS.sandboxMode);
-    const approvalPolicy = normalizeEnumValue(
-      CODEX_CONFIG_DEFAULTS.approvalPolicy,
-      new Set(["untrusted", "on-request", "on-failure", "never"]),
-    );
-    if (sandboxType === "dangerFullAccess") {
-      next.approvalPolicy = approvalPolicy || "never";
-      next.sandboxPolicy = { type: "dangerFullAccess" };
-      next.sandboxMode = "danger-full-access";
-      next.permissionProfile = null;
-    } else if (sandboxType === "readOnly") {
-      next.approvalPolicy = approvalPolicy || "on-request";
-      next.sandboxPolicy = readOnlySandboxPolicy(next.sandboxPolicy);
-      next.sandboxMode = "read-only";
-      next.permissionProfile = null;
-    } else if (sandboxType === "workspaceWrite") {
-      next.approvalPolicy = approvalPolicy || "on-request";
-      next.sandboxPolicy = workspaceWriteSandboxPolicy(cwd, next.sandboxPolicy);
-      next.sandboxMode = "workspace-write";
-      next.permissionProfile = null;
-    }
-    return next;
-  }
-  return settings;
-}
-
 function incrementBoundedDiagnosticCounter(diagnostics, key, amount = 1) {
   if (!diagnostics || typeof diagnostics !== "object") return;
   if (!/^[a-z][a-zA-Z0-9]{0,80}$/.test(String(key || ""))) return;
@@ -2798,1568 +1617,6 @@ function incrementBoundedDiagnosticCounter(diagnostics, key, amount = 1) {
   if (!Number.isFinite(delta) || delta <= 0) return;
   const next = (Number.isFinite(current) && current > 0 ? current : 0) + delta;
   diagnostics[key] = Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(next));
-}
-
-function readRolloutTail(rolloutPath, maxBytes = MAX_ROLLOUT_CONTEXT_BYTES, options = {}) {
-  if (maxBytes && typeof maxBytes === "object") {
-    options = maxBytes;
-    maxBytes = MAX_ROLLOUT_CONTEXT_BYTES;
-  }
-  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
-  let fd = null;
-  try {
-    const stat = fs.statSync(rolloutPath);
-    const limit = Math.max(1, Number(maxBytes) || MAX_ROLLOUT_CONTEXT_BYTES);
-    const start = Math.max(0, stat.size - limit);
-    const length = stat.size - start;
-    const buffer = Buffer.alloc(length);
-    fd = fs.openSync(rolloutPath, "r");
-    fs.readSync(fd, buffer, 0, length, start);
-    const counterPrefix = String(options.counterPrefix || "");
-    if (counterPrefix) {
-      incrementBoundedDiagnosticCounter(options.diagnostics, `${counterPrefix}ReadCount`);
-      incrementBoundedDiagnosticCounter(options.diagnostics, `${counterPrefix}Bytes`, length);
-    }
-    return buffer.toString("utf8");
-  } catch (_) {
-    return "";
-  } finally {
-    if (fd !== null) {
-      try {
-        fs.closeSync(fd);
-      } catch (_) {}
-    }
-  }
-}
-
-function readRolloutRuntimeScanText(rolloutPath) {
-  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
-  try {
-    const stat = fs.statSync(rolloutPath);
-    if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_RUNTIME_CONTEXT_SCAN_BYTES) return "";
-    return fs.readFileSync(rolloutPath, "utf8");
-  } catch (_) {
-    return "";
-  }
-}
-
-function readRolloutEnrichmentText(rolloutPath) {
-  const full = readRolloutRuntimeScanText(rolloutPath);
-  if (full) return full;
-  return readRolloutTail(rolloutPath, MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES);
-}
-
-function readRolloutEnrichmentEntries(rolloutPath) {
-  const indexed = rolloutEnrichmentIndexService.read(rolloutPath);
-  if (indexed && !indexed.readError) {
-    return Array.isArray(indexed.entries) ? indexed.entries : [];
-  }
-  return readRolloutEnrichmentText(rolloutPath)
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map(parseJsonLine)
-    .filter(Boolean);
-}
-
-function rememberItemTimestampCandidates(key, payload) {
-  latestItemTimestampsByPath.set(key, {
-    cachedAt: Date.now(),
-    payload: payload || null,
-  });
-  while (latestItemTimestampsByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
-    const firstKey = latestItemTimestampsByPath.keys().next().value;
-    latestItemTimestampsByPath.delete(firstKey);
-  }
-}
-
-function rememberTurnUsageSummaries(key, payload) {
-  latestTurnUsageSummariesByPath.set(key, {
-    cachedAt: Date.now(),
-    payload: payload || null,
-  });
-  while (latestTurnUsageSummariesByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
-    const firstKey = latestTurnUsageSummariesByPath.keys().next().value;
-    latestTurnUsageSummariesByPath.delete(firstKey);
-  }
-}
-
-function rememberRolloutFinalReceipts(key, payload) {
-  latestFinalReceiptsByPath.set(key, {
-    cachedAt: Date.now(),
-    payload: payload || null,
-  });
-  while (latestFinalReceiptsByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
-    const firstKey = latestFinalReceiptsByPath.keys().next().value;
-    latestFinalReceiptsByPath.delete(firstKey);
-  }
-}
-
-function cloneRolloutUserInputAnchorPayload(payload) {
-  const byTurn = new Map();
-  const sourceByTurn = payload && payload.byTurn instanceof Map ? payload.byTurn : new Map();
-  for (const [turnId, items] of sourceByTurn.entries()) {
-    byTurn.set(turnId, Array.isArray(items) ? items.map(clonePlainJson) : []);
-  }
-  return {
-    byTurn,
-    scopedCount: Number(payload && payload.scopedCount) || 0,
-  };
-}
-
-function rememberRolloutUserInputAnchors(key, payload) {
-  latestUserInputAnchorsByPath.set(key, {
-    cachedAt: Date.now(),
-    payload: cloneRolloutUserInputAnchorPayload(payload),
-  });
-  while (latestUserInputAnchorsByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
-    const firstKey = latestUserInputAnchorsByPath.keys().next().value;
-    latestUserInputAnchorsByPath.delete(firstKey);
-  }
-}
-
-function rememberToolOutputImages(key, payload) {
-  latestToolOutputImagesByPath.set(key, {
-    cachedAt: Date.now(),
-    payload: payload || null,
-  });
-  while (latestToolOutputImagesByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
-    const firstKey = latestToolOutputImagesByPath.keys().next().value;
-    latestToolOutputImagesByPath.delete(firstKey);
-  }
-}
-
-function rolloutEntryTurnId(entry) {
-  const payload = entry && entry.payload;
-  return String((payload && (
-    payload.turn_id
-    || payload.turnId
-    || (payload.turn && payload.turn.id)
-    || (payload.turn && payload.turn.turn_id)
-  )) || entry.turn_id || entry.turnId || "");
-}
-
-function rolloutItemTimestampCandidateType(entry) {
-  if (!entry || !entry.payload) return "";
-  const payload = entry.payload;
-  if (entry.type === "event_msg") {
-    if (payload.type === "user_message") return "userMessage";
-    if (payload.type === "agent_message") return "agentMessage";
-    if (payload.type === "agent_reasoning") return "reasoning";
-    if (payload.type === "exec_command_end") return "commandExecution";
-    if (payload.type === "patch_apply_end") return "fileChange";
-    if (payload.type === "web_search_end") return "dynamicToolCall";
-    if (payload.type === "context_compacted" || isContextCompactionType(payload.type)) return "contextCompaction";
-    return "";
-  }
-  if (entry.type !== "response_item") return "";
-  if (payload.type === "message") {
-    if (payload.role === "user") return "userMessage";
-    if (payload.role === "assistant") return "agentMessage";
-    return "";
-  }
-  if (payload.type === "reasoning") return "reasoning";
-  if (payload.type === "function_call") return "commandExecution";
-  if (payload.type === "web_search_call") return "dynamicToolCall";
-  if (payload.type === "custom_tool_call") return payload.name === "apply_patch" ? "fileChange" : "dynamicToolCall";
-  return "";
-}
-
-function normalizeTimestampMatchText(value) {
-  if (value == null) return "";
-  if (typeof value === "string") return value.replace(/\s+/g, " ").trim();
-  if (Array.isArray(value)) {
-    return value.map((entry) => {
-      if (typeof entry === "string") return entry;
-      if (!entry || typeof entry !== "object") return "";
-      return entry.text || entry.message || entry.content || "";
-    }).join(" ").replace(/\s+/g, " ").trim();
-  }
-  if (typeof value === "object") {
-    return normalizeTimestampMatchText(value.text || value.message || value.content || value.summary || "");
-  }
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function rolloutItemTimestampCandidateText(entry) {
-  const payload = entry && entry.payload;
-  if (!payload || typeof payload !== "object") return "";
-  return normalizeTimestampMatchText(
-    payload.message
-    || payload.text
-    || payload.content
-    || payload.summary
-    || payload.output,
-  );
-}
-
-function rolloutItemTimestampCandidateId(entry) {
-  const payload = entry && entry.payload;
-  return String((payload && (payload.id || payload.call_id || payload.item_id || payload.itemId)) || "");
-}
-
-function itemTimestampCandidateId(item) {
-  return String((item && (item.id || item.call_id || item.callId || item.item_id || item.itemId)) || "");
-}
-
-function visibleItemId(item) {
-  return String((item && (item.id || item.itemId || item.item_id)) || "").trim();
-}
-
-function itemTimestampMatchText(item) {
-  if (!item || typeof item !== "object") return "";
-  return normalizeTimestampMatchText(
-    item.text
-    || item.message
-    || item.content
-    || item.summary
-    || item.output,
-  );
-}
-
-function timestampTextsMatch(left, right) {
-  const a = normalizeTimestampMatchText(left);
-  const b = normalizeTimestampMatchText(right);
-  if (!a || !b) return false;
-  const shortA = a.slice(0, 240);
-  const shortB = b.slice(0, 240);
-  return shortA === shortB || shortA.startsWith(shortB) || shortB.startsWith(shortA);
-}
-
-const DEDUPED_ROLLOUT_TIMESTAMP_TYPES = new Set(["userMessage", "agentMessage", "reasoning"]);
-
-function appendRolloutItemTimestampCandidate(list, candidate) {
-  if (!candidate || !candidate.itemType || !candidate.timestampMs) return;
-  const last = list.length ? list[list.length - 1] : null;
-  if (last
-    && DEDUPED_ROLLOUT_TIMESTAMP_TYPES.has(candidate.itemType)
-    && last.itemType === candidate.itemType
-    && Math.abs(last.timestampMs - candidate.timestampMs) <= 50) {
-    if (!last.text && candidate.text) last.text = candidate.text;
-    return;
-  }
-  list.push(candidate);
-}
-
-function rolloutTimestampFields(entry) {
-  const timestampMs = timestampToMs(entry && entry.timestamp);
-  if (!timestampMs) return {};
-  return {
-    startedAtMs: timestampMs,
-    startedAt: new Date(timestampMs).toISOString(),
-  };
-}
-
-function readRolloutItemTimestampCandidates(rolloutPath) {
-  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
-    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
-  }
-  let cacheKey = "";
-  try {
-    const stat = fs.statSync(rolloutPath);
-    cacheKey = runtimeContextCacheKey(rolloutPath, stat);
-    const cached = latestItemTimestampsByPath.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
-      return cached.payload || { byTurn: new Map(), unscoped: [], scopedCount: 0 };
-    }
-  } catch (_) {
-    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
-  }
-  const byTurn = new Map();
-  const unscoped = [];
-  let scopedCount = 0;
-  let currentTurnId = "";
-  const entries = readRolloutEnrichmentEntries(rolloutPath);
-  for (const entry of entries) {
-    if (!entry || !entry.type) continue;
-    const payload = entry.payload || {};
-    const explicitTurnId = rolloutEntryTurnId(entry);
-    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
-    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) {
-      currentTurnId = explicitTurnId;
-    }
-    const itemType = rolloutItemTimestampCandidateType(entry);
-    const timestampMs = timestampToMs(entry.timestamp);
-    if (!itemType || !timestampMs) continue;
-    const turnId = explicitTurnId || currentTurnId;
-    const candidate = {
-      turnId,
-      itemType,
-      timestampMs,
-      timestamp: new Date(timestampMs).toISOString(),
-      entryId: rolloutItemTimestampCandidateId(entry),
-      text: rolloutItemTimestampCandidateText(entry),
-    };
-    if (turnId) {
-      if (!byTurn.has(turnId)) byTurn.set(turnId, []);
-      appendRolloutItemTimestampCandidate(byTurn.get(turnId), candidate);
-      scopedCount += 1;
-    } else {
-      appendRolloutItemTimestampCandidate(unscoped, candidate);
-    }
-  }
-  const payload = { byTurn, unscoped, scopedCount };
-  if (cacheKey) rememberItemTimestampCandidates(cacheKey, payload);
-  return payload;
-}
-
-function normalizedTurnIdSet(turnIds) {
-  const ids = new Set();
-  for (const id of turnIds || []) {
-    const text = String(id || "").trim();
-    if (text) ids.add(text);
-  }
-  return ids;
-}
-
-function missingUsageTurnIds(payload, turnIds) {
-  const ids = normalizedTurnIdSet(turnIds);
-  if (!ids.size) return [];
-  const byTurnId = payload && payload.byTurnId instanceof Map ? payload.byTurnId : new Map();
-  return Array.from(ids).filter((id) => !byTurnId.has(id));
-}
-
-function targetUsageCacheKey(rolloutPath, turnIds) {
-  const ids = Array.from(normalizedTurnIdSet(turnIds)).sort();
-  if (!ids.length) return "";
-  return `${normalizeFsPath(rolloutPath)}:target-usage:${ids.join(",")}`;
-}
-
-function readRolloutTurnUsageSummaries(rolloutPath, options = {}) {
-  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
-    return { byTurnId: new Map(), unscoped: [] };
-  }
-  const targetTurnIds = Array.isArray(options.targetTurnIds) ? options.targetTurnIds : [];
-  const targetKey = targetUsageCacheKey(rolloutPath, targetTurnIds);
-  if (targetKey) {
-    const targetCached = latestTurnUsageSummariesByPath.get(targetKey);
-    if (targetCached && Date.now() - targetCached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS
-      && missingUsageTurnIds(targetCached.payload, targetTurnIds).length === 0) {
-      return targetCached.payload || { byTurnId: new Map(), unscoped: [] };
-    }
-  }
-  let cacheKey = "";
-  try {
-    const stat = fs.statSync(rolloutPath);
-    cacheKey = runtimeContextCacheKey(rolloutPath, stat);
-    const cached = latestTurnUsageSummariesByPath.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS
-      && missingUsageTurnIds(cached.payload, targetTurnIds).length === 0) {
-      return cached.payload || { byTurnId: new Map(), unscoped: [] };
-    }
-  } catch (_) {
-    return { byTurnId: new Map(), unscoped: [] };
-  }
-  let payload = collectTurnUsageSummariesFromRolloutText(readRolloutTail(rolloutPath));
-  if (missingUsageTurnIds(payload, targetTurnIds).length > 0) {
-    payload = collectTurnUsageSummariesFromEntries(readRolloutEnrichmentEntries(rolloutPath));
-  }
-  if (cacheKey) rememberTurnUsageSummaries(cacheKey, payload);
-  if (targetKey) rememberTurnUsageSummaries(targetKey, payload);
-  return payload;
-}
-
-function toolOutputImageUrlValue(part) {
-  if (!part || typeof part !== "object") return "";
-  const raw = part.url || part.image_url || part.imageUrl || part.uri || part.href || "";
-  const value = raw && typeof raw === "object" ? raw.url || raw.uri || raw.href : raw;
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function toolOutputImagePathValue(part) {
-  if (!part || typeof part !== "object") return "";
-  const candidates = [
-    part.path,
-    part.filePath,
-    part.file_path,
-    part.imagePath,
-    part.image_path,
-    part.savedPath,
-    part.saved_path,
-    part.sourcePath,
-    part.source_path,
-  ];
-  const found = candidates.find((value) => typeof value === "string" && value.trim());
-  return found ? found.trim() : "";
-}
-
-function isToolOutputImagePart(part) {
-  if (!part || typeof part !== "object") return false;
-  const type = String(part.type || "").replace(/[-_]/g, "").toLowerCase();
-  const url = toolOutputImageUrlValue(part);
-  if (/^data:image\//i.test(url)) return true;
-  return type === "image"
-    || type === "inputimage"
-    || type === "imageurl"
-    || type === "localimage"
-    || type === "imageview"
-    || Boolean(url && /image/i.test(type));
-}
-
-function parseToolOutputStructuredValue(value) {
-  if (typeof value !== "string") return value;
-  const text = value.trim();
-  if (!text || !/^[{\[]/.test(text)) return value;
-  try {
-    return JSON.parse(text);
-  } catch (_) {
-    return value;
-  }
-}
-
-function collectToolOutputImageCandidates(value, out = [], seen = new Set(), depth = 0) {
-  if (out.length >= 20 || value == null || depth > 6) return out;
-  const parsed = parseToolOutputStructuredValue(value);
-  if (typeof parsed === "string") {
-    const text = parsed.trim();
-    if (/^data:image\//i.test(text)) out.push({ url: text });
-    return out;
-  }
-  if (Array.isArray(parsed)) {
-    for (const entry of parsed) collectToolOutputImageCandidates(entry, out, seen, depth + 1);
-    return out;
-  }
-  if (typeof parsed !== "object" || seen.has(parsed)) return out;
-  seen.add(parsed);
-  if (isToolOutputImagePart(parsed)) {
-    const url = toolOutputImageUrlValue(parsed);
-    const imagePath = toolOutputImagePathValue(parsed);
-    if (url || imagePath) out.push({ url, path: imagePath });
-  }
-  for (const entry of Object.values(parsed)) collectToolOutputImageCandidates(entry, out, seen, depth + 1);
-  return out;
-}
-
-function parseToolCallArguments(value) {
-  if (!value) return {};
-  if (typeof value === "object") return value;
-  if (typeof value !== "string") return {};
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (_) {
-    return {};
-  }
-}
-
-function viewImageToolPath(payload) {
-  if (!payload || typeof payload !== "object") return "";
-  if (String(payload.name || "") !== "view_image") return "";
-  const args = parseToolCallArguments(payload.arguments || payload.input || payload.params);
-  const candidates = [
-    args.path,
-    args.imagePath,
-    args.image_path,
-    args.filePath,
-    args.file_path,
-  ];
-  const found = candidates.find((value) => typeof value === "string" && value.trim());
-  return found ? found.trim() : "";
-}
-
-function isCodexMobileUploadFilePath(filePath) {
-  const text = String(filePath || "").trim();
-  if (!text) return false;
-  return isPathInside(UPLOAD_ROOT, path.resolve(text));
-}
-
-function shouldSuppressToolOutputImageCandidates(callInfo) {
-  return Boolean(callInfo && callInfo.tool === "view_image" && isCodexMobileUploadFilePath(callInfo.viewImagePath));
-}
-
-function toolOutputImageFingerprint(candidate) {
-  return crypto
-    .createHash("sha256")
-    .update(String(candidate && (candidate.url || candidate.path) || ""))
-    .digest("hex")
-    .slice(0, 16);
-}
-
-function toolOutputImageItemFromCandidate(entry, payload, candidate, index, options = {}) {
-  const fingerprint = toolOutputImageFingerprint(candidate);
-  const callId = String(payload && payload.call_id || "");
-  const id = `tool-output-image-${callId || "call"}-${index}-${fingerprint}`;
-  const imageItem = {
-    id,
-    type: "imageView",
-    callId,
-    source: "tool_output",
-    fileName: "view_image output",
-    label: "view_image output",
-    ...rolloutTimestampFields(entry),
-  };
-  if (candidate && candidate.path) imageItem.path = candidate.path;
-  if (candidate && candidate.url) imageItem.url = candidate.url;
-  attachGeneratedImageContent(imageItem, { threadId: options.threadId || "" });
-  const isInlineDataImage = candidate && typeof candidate.url === "string" && /^data:image\//i.test(candidate.url);
-  const isLocalImagePath = candidate && candidate.path;
-  if ((isInlineDataImage || isLocalImagePath) && !imageItem.contentUrl && !imageItem.content_url) return null;
-  return imageItem;
-}
-
-function cloneRolloutToolOutputImagePayload(payload) {
-  const byTurn = new Map();
-  const sourceByTurn = payload && payload.byTurn instanceof Map ? payload.byTurn : new Map();
-  for (const [turnId, items] of sourceByTurn.entries()) {
-    byTurn.set(turnId, Array.isArray(items) ? items.map((item) => Object.assign({}, item)) : []);
-  }
-  const suppressedUploadViewImageCallIdsByTurn = new Map();
-  const sourceSuppressedByTurn = payload && payload.suppressedUploadViewImageCallIdsByTurn instanceof Map
-    ? payload.suppressedUploadViewImageCallIdsByTurn
-    : new Map();
-  for (const [turnId, callIds] of sourceSuppressedByTurn.entries()) {
-    suppressedUploadViewImageCallIdsByTurn.set(String(turnId || ""), new Set(callIds instanceof Set
-      ? [...callIds]
-      : (Array.isArray(callIds) ? callIds : [])));
-  }
-  const suppressedUploadViewImageCallIds = payload && payload.suppressedUploadViewImageCallIds instanceof Set
-    ? new Set(payload.suppressedUploadViewImageCallIds)
-    : new Set();
-  return {
-    byTurn,
-    unscoped: Array.isArray(payload && payload.unscoped)
-      ? payload.unscoped.map((item) => Object.assign({}, item))
-      : [],
-    scopedCount: Number(payload && payload.scopedCount) || 0,
-    suppressedUploadViewImageCallIds,
-    suppressedUploadViewImageCallIdsByTurn,
-  };
-}
-
-function turnCompletionBoundaryMs(turn) {
-  for (const key of [
-    "completedAtMs",
-    "completedAt",
-    "completed_at_ms",
-    "completed_at",
-    "updatedAtMs",
-    "updatedAt",
-    "updated_at_ms",
-    "updated_at",
-  ]) {
-    const timestamp = timestampToMs(turn && turn[key]);
-    if (timestamp) return timestamp;
-  }
-  return 0;
-}
-
-function rolloutToolOutputImageMatchesTurnByTime(turns, index, item) {
-  const timestamp = itemDisplayTimestampMs(item);
-  if (!timestamp || !Array.isArray(turns) || index < 0 || index >= turns.length) return false;
-  const turn = turns[index];
-  const start = turnSortTimestampMs(turn);
-  const nextStart = index + 1 < turns.length ? turnSortTimestampMs(turns[index + 1]) : 0;
-  const completed = turnCompletionBoundaryMs(turn);
-  if (!start && !nextStart && !completed) return false;
-  const slackMs = 2000;
-  if (start && timestamp < start - slackMs) return false;
-  if (nextStart && timestamp >= nextStart - slackMs) return false;
-  if (!nextStart && completed && timestamp > completed + slackMs) return false;
-  return true;
-}
-
-function unscopedRolloutToolOutputImagesForTurn(turns, index, items) {
-  const unscoped = Array.isArray(items) ? items : [];
-  if (!unscoped.length) return [];
-  const matched = unscoped.filter((item) => rolloutToolOutputImageMatchesTurnByTime(turns, index, item));
-  if (matched.length) return matched;
-  if (turns.length === 1 && unscoped.every((item) => !itemDisplayTimestampMs(item))) return unscoped;
-  return [];
-}
-
-function insertProjectedItemByTimestamp(items, item) {
-  if (!Array.isArray(items)) return;
-  const timestamp = itemDisplayTimestampMs(item);
-  if (!timestamp) {
-    items.push(item);
-    return;
-  }
-  const index = items.findIndex((existing) => {
-    const existingTimestamp = itemDisplayTimestampMs(existing);
-    return existingTimestamp && existingTimestamp > timestamp;
-  });
-  if (index < 0) items.push(item);
-  else items.splice(index, 0, item);
-}
-
-function isRolloutFinalReceiptRestingStatus(status) {
-  const text = statusText(status).toLowerCase();
-  if (!text) return false;
-  if (/failed|fail|cancel|error|interrupt|running|active|progress|pending/.test(text)) return false;
-  return /^(idle|completed|success|succeeded|done|finished|closed)$/.test(text);
-}
-
-function canAttachRolloutFinalReceipt(status, options = {}) {
-  const text = statusText(status).toLowerCase();
-  if (!text) return Boolean(options.allowRestingThreadStatus);
-  if (/failed|fail|cancel|error|interrupt|running|active|progress|pending/.test(text)) return false;
-  if (/completed|success|succeeded|done|finished|closed/.test(text)) return true;
-  return Boolean(options.allowRestingThreadStatus && /^(idle|unknown|notloaded|not_loaded|not-loaded)$/.test(text));
-}
-
-function normalizeFinalReceiptText(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function assistantReceiptText(item) {
-  if (!isAssistantReceiptItem(item)) return "";
-  if (typeof item.text === "string") return item.text;
-  if (typeof item.message === "string") return item.message;
-  if (typeof item.content === "string") return item.content;
-  if (Array.isArray(item.content)) {
-    return item.content
-      .map((part) => {
-        if (!part || typeof part !== "object") return "";
-        if (typeof part.text === "string") return part.text;
-        if (typeof part.content === "string") return part.content;
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-  return "";
-}
-
-function turnHasMatchingAssistantReceipt(turn, receiptItem) {
-  const receiptId = visibleItemId(receiptItem);
-  const receiptText = normalizeFinalReceiptText(assistantReceiptText(receiptItem));
-  return Array.isArray(turn && turn.items) && turn.items.some((item) => {
-    if (!isAssistantReceiptItem(item)) return false;
-    if (receiptId && visibleItemId(item) === receiptId) return true;
-    const text = normalizeFinalReceiptText(assistantReceiptText(item));
-    return Boolean(receiptText && text === receiptText);
-  });
-}
-
-function cloneRolloutFinalReceiptPayload(payload) {
-  const byTurn = new Map();
-  const sourceByTurn = payload && payload.byTurn instanceof Map ? payload.byTurn : new Map();
-  for (const [turnId, item] of sourceByTurn.entries()) {
-    byTurn.set(turnId, item && typeof item === "object" ? Object.assign({}, item) : item);
-  }
-  return {
-    byTurn,
-    scopedCount: Number(payload && payload.scopedCount) || 0,
-  };
-}
-
-function rolloutFinalReceiptItem(entry, turnId, text) {
-  const completedAtMs = rolloutCompletionTimestampMs(entry);
-  const timestampFields = completedAtMs
-    ? { completedAtMs, completedAt: new Date(completedAtMs).toISOString() }
-    : rolloutTimestampFields(entry);
-  return {
-    id: `mobile-final-receipt-${turnId || stableTextHash(text)}`,
-    type: "agentMessage",
-    text,
-    source: "rollout_task_complete",
-    mobileSyntheticFinalReceipt: true,
-    ...timestampFields,
-  };
-}
-
-function rolloutProgressTextFromValue(value) {
-  if (value == null) return "";
-  if (typeof value === "string") return redactInlineImageDataUrls(value).trim();
-  if (Array.isArray(value)) {
-    return value.map((entry) => rolloutProgressTextFromValue(entry)).filter(Boolean).join("\n").trim();
-  }
-  if (typeof value === "object") {
-    if (typeof value.text === "string") return redactInlineImageDataUrls(value.text).trim();
-    if (typeof value.message === "string") return redactInlineImageDataUrls(value.message).trim();
-    if (typeof value.content === "string") return redactInlineImageDataUrls(value.content).trim();
-    if (typeof value.output === "string") return redactInlineImageDataUrls(value.output).trim();
-    if (Array.isArray(value.content)) return rolloutProgressTextFromValue(value.content);
-    if (Array.isArray(value.summary)) return rolloutProgressTextFromValue(value.summary);
-  }
-  return "";
-}
-
-function rolloutProgressTextFromEntry(entry) {
-  const payload = entry && entry.payload && typeof entry.payload === "object" ? entry.payload : {};
-  if (entry && entry.type === "event_msg" && payload.type === "agent_message") {
-    return rolloutProgressTextFromValue(payload.message || payload.text || payload.content || payload.summary);
-  }
-  if (entry && entry.type === "response_item" && payload.type === "message") {
-    const role = String(payload.role || payload.author || "").toLowerCase();
-    if (role === "assistant") {
-      return rolloutProgressTextFromValue(payload.content || payload.message || payload.text || payload.summary);
-    }
-  }
-  return "";
-}
-
-function rolloutProgressItem(entry, turnId, text, index) {
-  const timestampFields = rolloutTimestampFields(entry);
-  return {
-    id: `mobile-progress-message-${turnId || "unscoped"}-${index}-${stableTextHash(text)}`,
-    type: "agentMessage",
-    text,
-    source: "rollout_agent_message",
-    mobileSyntheticProgressMessage: true,
-    ...timestampFields,
-  };
-}
-
-function rolloutActiveAssistantItem(entry, turnId, text, index) {
-  return Object.assign({}, rolloutProgressItem(entry, turnId, text, index), {
-    source: "rollout_active_assistant",
-    mobileSyntheticActiveAssistant: true,
-  });
-}
-
-function appendRolloutProgressMessage(progressByTurn, entry, turnId) {
-  if (!turnId || THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES <= 0) return;
-  const text = rolloutProgressTextFromEntry(entry);
-  if (!text) return;
-  const normalized = normalizeFinalReceiptText(text);
-  if (!normalized) return;
-  let list = progressByTurn.get(turnId);
-  if (!list) {
-    list = [];
-    progressByTurn.set(turnId, list);
-  }
-  if (list.some((item) => normalizeFinalReceiptText(assistantReceiptText(item)) === normalized)) return;
-  list.push(rolloutProgressItem(entry, turnId, text, list.length));
-  if (list.length > THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES) {
-    list.splice(0, list.length - THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES);
-  }
-}
-
-function rolloutCompletionTimestampMs(entry) {
-  const payload = entry && entry.payload && typeof entry.payload === "object" ? entry.payload : {};
-  return timestampToMs(payload.completed_at || payload.completedAt || entry.timestamp || payload.timestamp);
-}
-
-function rolloutCompletionTurnFromEntry(entry, turnId, text, progressItems = []) {
-  const payload = entry && entry.payload && typeof entry.payload === "object" ? entry.payload : {};
-  const completedAtMs = rolloutCompletionTimestampMs(entry);
-  const normalizedFinalText = normalizeFinalReceiptText(text);
-  const seenProgress = new Set();
-  const retainedProgressItems = (Array.isArray(progressItems) ? progressItems : [])
-    .filter((item) => {
-      const normalized = normalizeFinalReceiptText(assistantReceiptText(item));
-      if (!normalized || normalized === normalizedFinalText || seenProgress.has(normalized)) return false;
-      seenProgress.add(normalized);
-      return true;
-    })
-    .slice(-THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES)
-    .map(clonePlainJson);
-  const durationMs = Number(payload.duration_ms || payload.durationMs || 0);
-  const turn = {
-    id: turnId,
-    status: "completed",
-    items: [...retainedProgressItems, rolloutFinalReceiptItem(entry, turnId, text)],
-    source: "rollout_task_complete",
-    mobileSyntheticCompletionTurn: true,
-  };
-  if (retainedProgressItems.length) turn.mobileSyntheticProgressMessageCount = retainedProgressItems.length;
-  if (completedAtMs) {
-    turn.completedAt = Math.floor(completedAtMs / 1000);
-    turn.completedAtMs = completedAtMs;
-  }
-  if (Number.isFinite(durationMs) && durationMs > 0) {
-    turn.durationMs = durationMs;
-    if (completedAtMs && durationMs <= completedAtMs) {
-      turn.startedAt = Math.floor((completedAtMs - durationMs) / 1000);
-      turn.startedAtMs = completedAtMs - durationMs;
-    }
-  }
-  return turn;
-}
-
-function cloneRolloutCompletionTurnPayload(payload) {
-  const byTurn = new Map();
-  const sourceByTurn = payload && payload.byTurn instanceof Map ? payload.byTurn : new Map();
-  for (const [turnId, turn] of sourceByTurn.entries()) {
-    byTurn.set(turnId, clonePlainJson(turn));
-  }
-  return {
-    byTurn,
-    scopedCount: Number(payload && payload.scopedCount) || 0,
-  };
-}
-
-function cloneRolloutAssistantItemsPayload(payload) {
-  const byTurn = new Map();
-  const sourceByTurn = payload && payload.byTurn instanceof Map ? payload.byTurn : new Map();
-  for (const [turnId, items] of sourceByTurn.entries()) {
-    byTurn.set(turnId, Array.isArray(items) ? items.map(clonePlainJson) : []);
-  }
-  return {
-    byTurn,
-    scopedCount: Number(payload && payload.scopedCount) || 0,
-  };
-}
-
-function readRolloutCompletionTurns(rolloutPath) {
-  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
-    return { byTurn: new Map(), scopedCount: 0 };
-  }
-  let cacheKey = "";
-  try {
-    const stat = fs.statSync(rolloutPath);
-    cacheKey = `${runtimeContextCacheKey(rolloutPath, stat)}:completion-turns`;
-    const cached = latestFinalReceiptsByPath.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
-      return cloneRolloutCompletionTurnPayload(cached.payload);
-    }
-  } catch (_) {
-    return { byTurn: new Map(), scopedCount: 0 };
-  }
-  const byTurn = new Map();
-  const progressByTurn = new Map();
-  let scopedCount = 0;
-  let currentTurnId = "";
-  for (const entry of readRolloutEnrichmentEntries(rolloutPath)) {
-    if (!entry || !entry.type) continue;
-    const payload = entry.payload || {};
-    const explicitTurnId = rolloutEntryTurnId(entry);
-    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
-    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
-    const turnId = explicitTurnId || currentTurnId;
-    appendRolloutProgressMessage(progressByTurn, entry, turnId);
-    if (entry.type !== "event_msg" || !/^(task_complete|task_completed)$/.test(String(payload.type || ""))) continue;
-    if (!turnId) continue;
-    const text = finalReceiptTextFromParams(payload);
-    if (!text) continue;
-    byTurn.set(turnId, rolloutCompletionTurnFromEntry(entry, turnId, text, progressByTurn.get(turnId) || []));
-    scopedCount += 1;
-  }
-  const payload = { byTurn, scopedCount };
-  if (cacheKey) rememberRolloutFinalReceipts(cacheKey, payload);
-  return cloneRolloutCompletionTurnPayload(payload);
-}
-
-function readRolloutActiveAssistantItems(rolloutPath, options = {}) {
-  const targetTurnIds = Array.isArray(options.targetTurnIds)
-    ? options.targetTurnIds.map((id) => String(id || "").trim()).filter(Boolean)
-    : [];
-  const targetSet = new Set(targetTurnIds);
-  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath) || !targetSet.size) {
-    return { byTurn: new Map(), scopedCount: 0 };
-  }
-  let cacheKey = "";
-  try {
-    const stat = fs.statSync(rolloutPath);
-    cacheKey = `${runtimeContextCacheKey(rolloutPath, stat)}:active-assistant:${targetTurnIds.sort().join(",")}`;
-    const cached = latestFinalReceiptsByPath.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
-      return cloneRolloutAssistantItemsPayload(cached.payload);
-    }
-  } catch (_) {
-    return { byTurn: new Map(), scopedCount: 0 };
-  }
-
-  const byTurn = new Map();
-  let scopedCount = 0;
-  let currentTurnId = "";
-  for (const entry of readRolloutEnrichmentEntries(rolloutPath)) {
-    if (!entry || !entry.type) continue;
-    const payload = entry.payload || {};
-    const explicitTurnId = rolloutEntryTurnId(entry);
-    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
-    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
-    const turnId = explicitTurnId || currentTurnId;
-    if (!turnId || !targetSet.has(turnId)) continue;
-    const payloadType = String(payload.type || "").toLowerCase();
-    const payloadRole = String(payload.role || payload.author || "").toLowerCase();
-    if (entry.type !== "response_item" || payloadType !== "message" || payloadRole !== "assistant") continue;
-    const text = rolloutProgressTextFromEntry(entry);
-    if (!text) continue;
-    let items = byTurn.get(turnId);
-    if (!items) {
-      items = [];
-      byTurn.set(turnId, items);
-    }
-    items.push(rolloutActiveAssistantItem(entry, turnId, text, items.length));
-    scopedCount += 1;
-  }
-  const payload = { byTurn, scopedCount };
-  if (cacheKey) rememberRolloutFinalReceipts(cacheKey, payload);
-  return cloneRolloutAssistantItemsPayload(payload);
-}
-
-function threadUpdatedAtOnlyMs(thread) {
-  return timestampToMs(thread && (thread.updatedAt || thread.updated_at || thread.updatedAtMs || thread.updated_at_ms));
-}
-
-function turnCompletionTimestampMs(turn) {
-  return timestampToMs(turn && (
-    turn.completedAtMs
-    || turn.completedAt
-    || turn.completed_at_ms
-    || turn.completed_at
-    || turn.finishedAt
-    || turn.finished_at
-  )) || turnSortTimestampMs(turn);
-}
-
-function latestExistingCompletedTurnTimestampMs(thread) {
-  if (!thread || !Array.isArray(thread.turns)) return 0;
-  let latest = 0;
-  for (const turn of thread.turns) {
-    if (!turn || isLiveTurn(turn) || !isCompletedStatus(turn.status)) continue;
-    latest = Math.max(latest, turnCompletionTimestampMs(turn));
-  }
-  return latest;
-}
-
-function appendMissingRolloutCompletionTurnsToThread(thread) {
-  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return thread;
-  const threadIsResting = isThreadListRestStatus(thread.status);
-  const threadIsLive = isThreadListLiveStatus(thread.status);
-  if (!threadIsResting && !threadIsLive) return thread;
-  const rolloutPath = rolloutPathForThread(thread);
-  if (!rolloutPath) return thread;
-  const payload = readRolloutCompletionTurns(rolloutPath);
-  if (!payload || !(payload.byTurn instanceof Map) || !payload.byTurn.size) return thread;
-  const existingIds = new Set(thread.turns.map(turnIdentifier).filter(Boolean));
-  const updatedAtMs = threadUpdatedAtOnlyMs(thread);
-  const latestExistingCompletedMs = latestExistingCompletedTurnTimestampMs(thread);
-  const candidates = Array.from(payload.byTurn.values())
-    .filter((turn) => turn && turn.id && !existingIds.has(String(turn.id)))
-    .filter((turn) => {
-      const completedAtMs = timestampToMs(turn.completedAtMs || turn.completedAt);
-      if (!completedAtMs) return false;
-      if (threadIsLive) {
-        return !latestExistingCompletedMs || completedAtMs >= latestExistingCompletedMs - 1000;
-      }
-      if (!updatedAtMs) return true;
-      return completedAtMs >= updatedAtMs - 5000;
-    })
-    .sort((a, b) => turnSortTimestampMs(a) - turnSortTimestampMs(b));
-  if (!candidates.length) return thread;
-  thread.turns.push(...candidates.map(clonePlainJson));
-  thread.turns = sortTurnsChronologically(thread.turns);
-  thread.mobileAppendedRolloutCompletionTurn = candidates[candidates.length - 1].id || true;
-  return thread;
-}
-
-function backfillMissingRolloutCompletionTurnsForDetailResult(result, details = {}) {
-  if (!result || typeof result !== "object" || !result.thread || typeof result.thread !== "object") return result;
-  const thread = result.thread;
-  if (!Array.isArray(thread.turns)) return result;
-  const readMode = String(result.readMode || thread.mobileReadMode || details.readMode || details.source || "");
-  const threadIsLive = isThreadListLiveStatus(thread.status);
-  if (!threadIsLive && readMode !== "projection-active-overlay") return result;
-  const candidate = Object.assign({}, thread, {
-    turns: thread.turns.map((turn) => clonePlainJson(turn)),
-  });
-  const beforeTurnCount = candidate.turns.length;
-  const beforeMarker = candidate.mobileAppendedRolloutCompletionTurn || "";
-  appendMissingRolloutCompletionTurnsToThread(candidate);
-  if (candidate.turns.length === beforeTurnCount
-    && String(candidate.mobileAppendedRolloutCompletionTurn || "") === String(beforeMarker || "")) {
-    return result;
-  }
-  const compacted = compactThread(candidate, { maxTurns: MAX_THREAD_TURNS });
-  compacted.mobileDetailCompletionBackfilled = true;
-  return Object.assign({}, result, { thread: compacted });
-}
-
-function readRolloutFinalReceiptItems(rolloutPath) {
-  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
-    return { byTurn: new Map(), scopedCount: 0 };
-  }
-  let cacheKey = "";
-  try {
-    const stat = fs.statSync(rolloutPath);
-    cacheKey = runtimeContextCacheKey(rolloutPath, stat);
-    const cached = latestFinalReceiptsByPath.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
-      return cloneRolloutFinalReceiptPayload(cached.payload);
-    }
-  } catch (_) {
-    return { byTurn: new Map(), scopedCount: 0 };
-  }
-  const byTurn = new Map();
-  let scopedCount = 0;
-  let currentTurnId = "";
-  for (const entry of readRolloutEnrichmentEntries(rolloutPath)) {
-    if (!entry || !entry.type) continue;
-    const payload = entry.payload || {};
-    const explicitTurnId = rolloutEntryTurnId(entry);
-    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
-    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
-    if (entry.type !== "event_msg" || !/^(task_complete|task_completed)$/.test(String(payload.type || ""))) continue;
-    const turnId = explicitTurnId || currentTurnId;
-    if (!turnId) continue;
-    const text = finalReceiptTextFromParams(payload);
-    if (!text) continue;
-    byTurn.set(turnId, rolloutFinalReceiptItem(entry, turnId, text));
-    scopedCount += 1;
-  }
-  const payload = { byTurn, scopedCount };
-  if (cacheKey) rememberRolloutFinalReceipts(cacheKey, payload);
-  return cloneRolloutFinalReceiptPayload(payload);
-}
-
-let threadCompletionDiagnosticService = null;
-
-function getThreadCompletionDiagnosticService() {
-  if (!threadCompletionDiagnosticService) {
-    threadCompletionDiagnosticService = createThreadCompletionDiagnosticService({
-      fs,
-      cacheTtlMs: RUNTIME_CONTEXT_CACHE_TTL_MS,
-      cacheMaxEntries: RUNTIME_CONTEXT_CACHE_MAX,
-      cacheKeyForStat: runtimeContextCacheKey,
-      finalReceiptTextFromParams,
-      insertProjectedItemByTimestamp,
-      isAssistantReceiptItem,
-      isDiagnosticReceiptItem: isTurnDiagnosticItem,
-      readRolloutEnrichmentEntries,
-      rolloutCompletionTimestampMs,
-      rolloutEntryTurnId,
-      rolloutPathForThread,
-      stableTextHash,
-      visibleItemId,
-    });
-  }
-  return threadCompletionDiagnosticService;
-}
-
-function appendRolloutEmptyCompletionDiagnosticsToThread(thread) {
-  return getThreadCompletionDiagnosticService().appendEmptyCompletionDiagnosticsToThread(thread);
-}
-
-function appendRolloutFinalReceiptsToThread(thread) {
-  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns) || !thread.turns.length) return thread;
-  const rolloutPath = rolloutPathForThread(thread);
-  if (!rolloutPath) return thread;
-  const payload = readRolloutFinalReceiptItems(rolloutPath);
-  if (!payload || !(payload.byTurn instanceof Map) || !payload.byTurn.size) return thread;
-  const allowRestingThreadStatus = isRolloutFinalReceiptRestingStatus(thread.status);
-  for (const turn of thread.turns) {
-    if (!turn || !canAttachRolloutFinalReceipt(turn.status, { allowRestingThreadStatus })) continue;
-    const turnId = String(turn.id || turn.turnId || "").trim();
-    const item = turnId ? payload.byTurn.get(turnId) : null;
-    if (!item) continue;
-    if (turnHasMatchingAssistantReceipt(turn, item)) continue;
-    turn.items = Array.isArray(turn.items) ? turn.items : [];
-    const existingIds = new Set(turn.items.map(visibleItemId).filter(Boolean));
-    const id = visibleItemId(item);
-    if (!id || existingIds.has(id)) continue;
-    insertProjectedItemByTimestamp(turn.items, Object.assign({}, item));
-  }
-  return thread;
-}
-
-function readRolloutUserInputAnchorItems(rolloutPath) {
-  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
-    return { byTurn: new Map(), scopedCount: 0 };
-  }
-  let cacheKey = "";
-  try {
-    const stat = fs.statSync(rolloutPath);
-    cacheKey = `${runtimeContextCacheKey(rolloutPath, stat)}:user-input-anchors`;
-    const cached = latestUserInputAnchorsByPath.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
-      return cloneRolloutUserInputAnchorPayload(cached.payload);
-    }
-  } catch (_) {
-    return { byTurn: new Map(), scopedCount: 0 };
-  }
-  const payload = collectRolloutUserInputAnchors(readRolloutEnrichmentEntries(rolloutPath), {
-    textLimit: THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS,
-    maxPerTurn: 4,
-  });
-  if (cacheKey) rememberRolloutUserInputAnchors(cacheKey, payload);
-  return cloneRolloutUserInputAnchorPayload(payload);
-}
-
-function appendRolloutUserInputAnchorsToDetailResult(result) {
-  const thread = result && result.thread;
-  if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return result;
-  const rolloutPath = rolloutPathForThread(thread);
-  if (!rolloutPath) return result;
-  const payload = readRolloutUserInputAnchorItems(rolloutPath);
-  if (!payload || !(payload.byTurn instanceof Map) || !payload.byTurn.size) return result;
-  const out = Object.assign({}, result, {
-    thread: cloneThreadForUsageDecoration(thread),
-  });
-  const backfilled = appendLatestCompletedUserInputAnchors(out.thread, payload);
-  if (!backfilled || backfilled.changed !== true) return result;
-  out.thread = backfilled.thread;
-  return out;
-}
-
-function appendRolloutActiveAssistantItemsToDetailResult(result) {
-  const thread = result && result.thread;
-  if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return result;
-  const rolloutPath = rolloutPathForThread(thread);
-  if (!rolloutPath) return result;
-  const activeTurnIds = thread.turns
-    .filter((turn) => turn && isLiveTurn(turn))
-    .map(turnIdentifier)
-    .filter(Boolean);
-  if (!activeTurnIds.length) return result;
-  const payload = readRolloutActiveAssistantItems(rolloutPath, { targetTurnIds: activeTurnIds });
-  if (!payload || !(payload.byTurn instanceof Map) || !payload.byTurn.size) return result;
-  const out = Object.assign({}, result, {
-    thread: cloneThreadForUsageDecoration(thread),
-  });
-  let changed = false;
-  for (const turn of out.thread.turns) {
-    if (!turn || !isLiveTurn(turn)) continue;
-    const turnId = turnIdentifier(turn);
-    const rolloutItems = turnId ? payload.byTurn.get(turnId) : null;
-    if (!Array.isArray(rolloutItems) || !rolloutItems.length) continue;
-    turn.items = Array.isArray(turn.items) ? turn.items : [];
-    const existingIds = new Set(turn.items.map(visibleItemId).filter(Boolean));
-    const existingTexts = new Set(turn.items
-      .filter(isAssistantReceiptItem)
-      .map((item) => normalizeFinalReceiptText(assistantReceiptText(item)))
-      .filter(Boolean));
-    for (const item of rolloutItems) {
-      const id = visibleItemId(item);
-      const normalized = normalizeFinalReceiptText(assistantReceiptText(item));
-      if ((id && existingIds.has(id)) || (normalized && existingTexts.has(normalized))) continue;
-      insertProjectedItemByTimestamp(turn.items, clonePlainJson(item));
-      if (id) existingIds.add(id);
-      if (normalized) existingTexts.add(normalized);
-      changed = true;
-    }
-    if (changed) orderTurnItemsByDisplayTimestamp(turn);
-  }
-  if (!changed) return result;
-  out.thread.mobileActiveRolloutAssistantBackfilled = true;
-  return out;
-}
-
-function syntheticActiveAssistantMessage(item) {
-  return Boolean(item && isAssistantReceiptItem(item) && (
-    item.mobileSyntheticProgressMessage === true
-    || item.mobileSyntheticActiveAssistant === true
-    || /^rollout_/i.test(String(item.source || ""))
-    || /^mobile-progress-message-/.test(String(item.id || ""))
-  ));
-}
-
-function nativeActiveAssistantMessage(item) {
-  if (!item || !isAssistantReceiptItem(item)) return false;
-  const id = String(item.id || item.itemId || item.messageId || "").trim();
-  return /^msg_/i.test(id);
-}
-
-function legacySyntheticActiveAssistantMessage(item) {
-  if (!item || !isAssistantReceiptItem(item)) return false;
-  const id = String(item.id || item.itemId || "").trim();
-  return /^item-\d+$/i.test(id);
-}
-
-function dedupeSyntheticActiveAssistantMessagesInThread(thread) {
-  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return { thread, removed: 0 };
-  let removed = 0;
-  for (const turn of thread.turns) {
-    if (!turn || !isLiveTurn(turn) || !Array.isArray(turn.items) || turn.items.length < 2) continue;
-    const nativeAssistantTexts = new Set();
-    const nativeMessageAssistantTexts = new Set();
-    const syntheticAssistantTexts = new Set();
-    for (const item of turn.items) {
-      if (!isAssistantReceiptItem(item)) continue;
-      const normalized = normalizeFinalReceiptText(assistantReceiptText(item));
-      if (!normalized) continue;
-      if (syntheticActiveAssistantMessage(item)) continue;
-      nativeAssistantTexts.add(normalized);
-      if (nativeActiveAssistantMessage(item)) nativeMessageAssistantTexts.add(normalized);
-    }
-    const nextItems = [];
-    for (const item of turn.items) {
-      if (syntheticActiveAssistantMessage(item)) {
-        const normalized = normalizeFinalReceiptText(assistantReceiptText(item));
-        if (normalized && nativeAssistantTexts.has(normalized)) {
-          removed += 1;
-          continue;
-        }
-        if (normalized && syntheticAssistantTexts.has(normalized)) {
-          removed += 1;
-          continue;
-        }
-        if (normalized) syntheticAssistantTexts.add(normalized);
-      } else if (legacySyntheticActiveAssistantMessage(item)) {
-        const normalized = normalizeFinalReceiptText(assistantReceiptText(item));
-        if (normalized && nativeMessageAssistantTexts.has(normalized)) {
-          removed += 1;
-          continue;
-        }
-      }
-      nextItems.push(item);
-    }
-    if (nextItems.length !== turn.items.length) {
-      const turnRemoved = turn.items.length - nextItems.length;
-      turn.items = nextItems;
-      turn.mobileSyntheticActiveAssistantDeduped = (turn.mobileSyntheticActiveAssistantDeduped || 0) + turnRemoved;
-    }
-  }
-  if (removed) thread.mobileSyntheticActiveAssistantDeduped = (thread.mobileSyntheticActiveAssistantDeduped || 0) + removed;
-  return { thread, removed };
-}
-
-function finalizeActiveAssistantProjectionDetailResult(result) {
-  if (!result || typeof result !== "object" || !result.thread) return result;
-  const sourceThread = result.thread;
-  if (!Array.isArray(sourceThread.turns) || !sourceThread.turns.some((turn) => turn && isLiveTurn(turn))) return result;
-  const thread = clonePlainJson(result.thread);
-  enrichThreadItemTimestampsFromRollout(thread);
-  const deduped = dedupeSyntheticActiveAssistantMessagesInThread(thread);
-  return Object.assign({}, result, { thread: deduped.thread || thread });
-}
-
-function orderTurnItemsByDisplayTimestamp(turn) {
-  if (!turn || !Array.isArray(turn.items) || turn.items.length < 2) return turn;
-  turn.items = turn.items
-    .map((item, index) => ({ item, index, timestamp: itemDisplayTimestampMs(item) }))
-    .sort((left, right) => {
-      if (left.timestamp && right.timestamp && left.timestamp !== right.timestamp) {
-        return left.timestamp - right.timestamp;
-      }
-      return left.index - right.index;
-    })
-    .map((entry) => entry.item);
-  return turn;
-}
-
-function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
-  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
-    return {
-      byTurn: new Map(),
-      unscoped: [],
-      scopedCount: 0,
-      suppressedUploadViewImageCallIds: new Set(),
-      suppressedUploadViewImageCallIdsByTurn: new Map(),
-    };
-  }
-  let cacheKey = "";
-  try {
-    const stat = fs.statSync(rolloutPath);
-    cacheKey = runtimeContextCacheKey(rolloutPath, stat);
-    const cached = latestToolOutputImagesByPath.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
-      return cloneRolloutToolOutputImagePayload(cached.payload);
-    }
-  } catch (_) {
-    return {
-      byTurn: new Map(),
-      unscoped: [],
-      scopedCount: 0,
-      suppressedUploadViewImageCallIds: new Set(),
-      suppressedUploadViewImageCallIdsByTurn: new Map(),
-    };
-  }
-
-  const entries = readRolloutEnrichmentEntries(rolloutPath);
-  const toolCallInfoById = new Map();
-  const suppressedUploadViewImageCallIds = new Set();
-  const suppressedUploadViewImageCallIdsByTurn = new Map();
-  let currentSuppressionTurnId = "";
-  for (const entry of entries) {
-    if (!entry || !entry.type) continue;
-    const payload = entry.payload || {};
-    const explicitTurnId = rolloutEntryTurnId(entry);
-    if (entry.type === "turn_context" && explicitTurnId) currentSuppressionTurnId = explicitTurnId;
-    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentSuppressionTurnId = explicitTurnId;
-    if (entry.type !== "response_item" || !/^(function_call|custom_tool_call)$/.test(String(payload.type || ""))) continue;
-    const callId = String(payload.call_id || "");
-    if (!callId) continue;
-    toolCallInfoById.set(callId, {
-      tool: String(payload.name || ""),
-      viewImagePath: viewImageToolPath(payload),
-    });
-    if (shouldSuppressToolOutputImageCandidates(toolCallInfoById.get(callId))) {
-      suppressedUploadViewImageCallIds.add(callId);
-      const turnId = explicitTurnId || currentSuppressionTurnId;
-      if (turnId) {
-        if (!suppressedUploadViewImageCallIdsByTurn.has(turnId)) {
-          suppressedUploadViewImageCallIdsByTurn.set(turnId, new Set());
-        }
-        suppressedUploadViewImageCallIdsByTurn.get(turnId).add(callId);
-      }
-    }
-  }
-  const byTurn = new Map();
-  const unscoped = [];
-  const seenIds = new Set();
-  const seenImageKeys = new Set();
-  let scopedCount = 0;
-  let currentTurnId = "";
-  for (const entry of entries) {
-    const payload = entry.payload || {};
-    const explicitTurnId = rolloutEntryTurnId(entry);
-    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
-    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
-    if (entry.type !== "response_item" || !/^(function_call_output|custom_tool_call_output)$/.test(String(payload.type || ""))) continue;
-    const callInfo = toolCallInfoById.get(String(payload.call_id || ""));
-    if (shouldSuppressToolOutputImageCandidates(callInfo)) continue;
-    const candidates = collectToolOutputImageCandidates(payload.output);
-    if (!candidates.length) continue;
-    const turnId = explicitTurnId || currentTurnId;
-    const items = candidates
-      .filter((candidate) => {
-        const key = `${String(payload.call_id || "")}:${toolOutputImageFingerprint(candidate)}`;
-        if (seenImageKeys.has(key)) return false;
-        seenImageKeys.add(key);
-        return true;
-      })
-      .map((candidate, index) => toolOutputImageItemFromCandidate(entry, payload, candidate, index, options))
-      .filter(Boolean)
-      .filter((item) => {
-        const id = visibleItemId(item);
-        if (!id || seenIds.has(id)) return false;
-        seenIds.add(id);
-        return true;
-      });
-    if (!items.length) continue;
-    if (turnId) {
-      if (!byTurn.has(turnId)) byTurn.set(turnId, []);
-      byTurn.get(turnId).push(...items);
-      scopedCount += items.length;
-    } else {
-      unscoped.push(...items);
-    }
-  }
-  const payload = {
-    byTurn,
-    unscoped,
-    scopedCount,
-    suppressedUploadViewImageCallIds,
-    suppressedUploadViewImageCallIdsByTurn,
-  };
-  if (cacheKey) rememberToolOutputImages(cacheKey, payload);
-  return cloneRolloutToolOutputImagePayload(payload);
-}
-
-function appendRolloutToolOutputImagesToThread(thread, existingPayload = null) {
-  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns) || !thread.turns.length) return thread;
-  const rolloutPath = rolloutPathForThread(thread);
-  if (!rolloutPath) return thread;
-  const payload = existingPayload || readRolloutToolOutputImageItems(rolloutPath, {
-    threadId: thread.id || thread.threadId || "",
-  });
-  if (!payload) return thread;
-  thread.turns.forEach((turn, index) => {
-    if (!turn || !Array.isArray(turn.items)) return;
-    const turnId = String(turn.id || turn.turnId || "").trim();
-    let imageItems = turnId && payload.byTurn instanceof Map ? payload.byTurn.get(turnId) : null;
-    if ((!imageItems || !imageItems.length)
-      && payload.scopedCount === 0
-      && Array.isArray(payload.unscoped)
-      && payload.unscoped.length) {
-      imageItems = unscopedRolloutToolOutputImagesForTurn(thread.turns, index, payload.unscoped);
-    }
-    if (!Array.isArray(imageItems) || !imageItems.length) return;
-    const existingIds = new Set(turn.items.map(visibleItemId).filter(Boolean));
-    for (const item of imageItems) {
-      const id = visibleItemId(item);
-      if (!id || existingIds.has(id)) continue;
-      insertProjectedItemByTimestamp(turn.items, Object.assign({}, item));
-      existingIds.add(id);
-    }
-  });
-  return thread;
-}
-
-function turnCompletionUsageSummary(threadId, turnId) {
-  const summary = readStateDbThread(threadId) || readStartedThread(threadId);
-  const rolloutPath = rolloutPathForThread(summary);
-  if (!rolloutPath) return null;
-  const summaries = readRolloutTurnUsageSummaries(rolloutPath);
-  const turnSummary = turnId && summaries.byTurnId instanceof Map
-    ? summaries.byTurnId.get(String(turnId))
-    : null;
-  const unscoped = Array.isArray(summaries.unscoped) && summaries.unscoped.length
-    ? summaries.unscoped[summaries.unscoped.length - 1]
-    : null;
-  const usageSummary = turnSummary || unscoped;
-  if (!usageSummary) return null;
-  const stats = rolloutStatsForPath(rolloutPath);
-  return Object.assign({}, usageSummary, {
-    rolloutSizeBytes: Number(stats.sizeBytes) || undefined,
-    rolloutWarningThresholdBytes: Number(stats.warningThresholdBytes) || undefined,
-    rolloutOverWarningThreshold: Boolean(stats.overWarningThreshold),
-  });
-}
-
-function itemDirectTimestampMs(item) {
-  for (const key of [
-    "createdAtMs",
-    "createdAt",
-    "created_at_ms",
-    "created_at",
-    "startedAtMs",
-    "startedAt",
-    "started_at_ms",
-    "started_at",
-    "timestampMs",
-    "timestamp",
-  ]) {
-    const timestamp = timestampToMs(item && item[key]);
-    if (timestamp) return timestamp;
-  }
-  return 0;
-}
-
-function itemDisplayTimestampMs(item) {
-  return itemDirectTimestampMs(item)
-    || timestampToMs(item && (item.mobileDisplayTimestampMs || item.mobileDisplayTimestamp));
-}
-
-const DISPLAY_TIMESTAMP_INFERABLE_TYPES = new Set([
-  "agentMessage",
-  "filePreview",
-  "imageGeneration",
-  "imageView",
-  "plan",
-  "turnDiagnostic",
-  "userMessage",
-]);
-
-function itemCanUseInferredDisplayTimestamp(item) {
-  return Boolean(item && DISPLAY_TIMESTAMP_INFERABLE_TYPES.has(String(item.type || "")));
-}
-
-function turnCompletedDisplayTimestampMs(turn) {
-  return timestampToMs(turn && (
-    turn.completedAtMs
-    || turn.completedAt
-    || turn.completed_at_ms
-    || turn.completed_at
-    || turn.finishedAt
-    || turn.finished_at
-    || turn.updatedAtMs
-    || turn.updatedAt
-  ));
-}
-
-function nearestPreviousItemDisplayTimestampMs(items, index) {
-  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-    const timestamp = itemDisplayTimestampMs(items[cursor]);
-    if (timestamp) return timestamp;
-  }
-  return 0;
-}
-
-function nearestNextItemDisplayTimestampMs(items, index) {
-  for (let cursor = index + 1; cursor < items.length; cursor += 1) {
-    const timestamp = itemDisplayTimestampMs(items[cursor]);
-    if (timestamp) return timestamp;
-  }
-  return 0;
-}
-
-function inferredDisplayTimestampForItem(items, index, turn) {
-  const previous = nearestPreviousItemDisplayTimestampMs(items, index);
-  const next = nearestNextItemDisplayTimestampMs(items, index);
-  if (previous && next && next >= previous) return Math.min(next, previous + 1);
-  if (previous) return previous + 1;
-  if (next) return Math.max(1, next - 1);
-  if (isCompletedStatus(turn && turn.status)) return turnCompletedDisplayTimestampMs(turn) || turnStartedAtMs(turn);
-  return turnStartedAtMs(turn) || 0;
-}
-
-function inferTurnItemDisplayTimestamps(turn) {
-  if (!turn || !Array.isArray(turn.items) || turn.items.length < 1) return turn;
-  for (let index = 0; index < turn.items.length; index += 1) {
-    const item = turn.items[index];
-    if (!item || itemDisplayTimestampMs(item) || !itemCanUseInferredDisplayTimestamp(item)) continue;
-    const timestamp = inferredDisplayTimestampForItem(turn.items, index, turn);
-    if (!timestamp) continue;
-    item.mobileDisplayTimestampMs = timestamp;
-    item.mobileDisplayTimestamp = new Date(timestamp).toISOString();
-    item.mobileDisplayTimestampInferred = true;
-  }
-  return turn;
-}
-
-function timestampCandidateTypesForItem(item) {
-  if (!item || typeof item !== "object") return [];
-  const type = String(item.type || "");
-  if (!type) return [];
-  const aliases = [type];
-  if (isContextCompactionType(type)) aliases.push("contextCompaction");
-  if (isWebSearchLikeItem(item)) aliases.push("dynamicToolCall");
-  if (isOperationalItem(item)) {
-    if (type === "commandExecution") aliases.push("commandExecution");
-    else if (type === "fileChange") aliases.push("fileChange");
-    else aliases.push("dynamicToolCall");
-  }
-  return [...new Set(aliases.filter(Boolean))];
-}
-
-function takeNextTimestampCandidate(candidates, aliases) {
-  if (!Array.isArray(candidates) || !candidates.length || !Array.isArray(aliases) || !aliases.length) return null;
-  for (const candidate of candidates) {
-    if (!candidate || candidate.used) continue;
-    if (!aliases.includes(candidate.itemType)) continue;
-    candidate.used = true;
-    return candidate;
-  }
-  return null;
-}
-
-function takeTimestampCandidateForItem(candidates, item, aliases) {
-  if (!Array.isArray(candidates) || !candidates.length || !item || !Array.isArray(aliases) || !aliases.length) return null;
-  const itemId = itemTimestampCandidateId(item);
-  if (itemId) {
-    for (const candidate of candidates) {
-      if (!candidate || candidate.used) continue;
-      if (!aliases.includes(candidate.itemType)) continue;
-      if (candidate.entryId !== itemId) continue;
-      candidate.used = true;
-      return candidate;
-    }
-  }
-  const itemType = String(item.type || "");
-  const itemText = itemTimestampMatchText(item);
-  if ((itemType === "agentMessage" || itemType === "userMessage" || itemType === "plan") && itemText) {
-    for (const candidate of candidates) {
-      if (!candidate || candidate.used) continue;
-      if (!aliases.includes(candidate.itemType)) continue;
-      if (!timestampTextsMatch(candidate.text, itemText)) continue;
-      candidate.used = true;
-      return candidate;
-    }
-    return null;
-  }
-  return takeNextTimestampCandidate(candidates, aliases);
-}
-
-function applyRolloutItemTimestamp(item, candidate) {
-  if (!item || !candidate || !candidate.timestampMs || itemDirectTimestampMs(item)) return;
-  item.startedAtMs = candidate.timestampMs;
-  item.startedAt = candidate.timestamp || new Date(candidate.timestampMs).toISOString();
-}
-
-function enrichTurnItemTimestampsFromCandidates(turn, candidates) {
-  if (!turn || !Array.isArray(turn.items) || !Array.isArray(candidates) || !candidates.length) return turn;
-  const orderedCandidates = candidates.map((candidate) => Object.assign({}, candidate, { used: false }));
-  for (const item of turn.items) {
-    if (!item || itemDisplayTimestampMs(item)) continue;
-    const candidate = takeTimestampCandidateForItem(orderedCandidates, item, timestampCandidateTypesForItem(item));
-    if (candidate) applyRolloutItemTimestamp(item, candidate);
-  }
-  return turn;
-}
-
-function enrichThreadItemTimestampsFromRollout(thread) {
-  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns) || !thread.turns.length) return thread;
-  const rolloutPath = rolloutPathForThread(thread);
-  if (!rolloutPath) return thread;
-  const candidates = readRolloutItemTimestampCandidates(rolloutPath);
-  if (!candidates) return thread;
-  const latestIndex = thread.turns.length - 1;
-  thread.turns.forEach((turn, index) => {
-    const turnId = String((turn && turn.id) || "");
-    let turnCandidates = turnId && candidates.byTurn ? candidates.byTurn.get(turnId) : null;
-    if ((!turnCandidates || !turnCandidates.length)
-      && index === latestIndex
-      && candidates.scopedCount === 0
-      && Array.isArray(candidates.unscoped)
-      && candidates.unscoped.length) {
-      turnCandidates = candidates.unscoped;
-    }
-    enrichTurnItemTimestampsFromCandidates(turn, turnCandidates || []);
-  });
-  return thread;
 }
 
 function rolloutPathForThread(thread) {
@@ -5051,1245 +2308,110 @@ function applyCodexFastServiceTier(params, enabled) {
   return params;
 }
 
-function statusFromRawOperation(payload) {
-  const status = String(payload.status || "").toLowerCase();
-  if (status) return status;
-  if (typeof payload.success === "boolean") return payload.success ? "completed" : "failed";
-  if (typeof payload.exit_code === "number") return payload.exit_code === 0 ? "completed" : "failed";
-  return "running";
-}
-
-function commandFromRawPayload(payload) {
-  if (Array.isArray(payload.parsed_cmd) && payload.parsed_cmd[0] && payload.parsed_cmd[0].cmd) {
-    return String(payload.parsed_cmd[0].cmd);
-  }
-  if (Array.isArray(payload.command)) return payload.command.join(" ");
-  if (payload.arguments && typeof payload.arguments === "object" && !Array.isArray(payload.arguments)) {
-    return String(payload.arguments.command
-      || payload.arguments.cmd
-      || payload.arguments.shellCommand
-      || payload.arguments.shell_command
-      || "");
-  }
-  if (typeof payload.arguments === "string") {
-    const parsed = parseJsonLine(payload.arguments);
-    if (parsed) {
-      return String(parsed.command
-        || parsed.cmd
-        || parsed.shellCommand
-        || parsed.shell_command
-        || "");
-    }
-  }
-  return "";
-}
-
-function fileNamesFromPatchInput(input) {
-  const names = [];
-  for (const line of String(input || "").split(/\r?\n/)) {
-    const match = /^(?:\*\*\* (?:Add|Update|Delete) File:|\*\*\* Move to:)\s+(.+)$/.exec(line.trim());
-    if (match) names.push(match[1].trim());
-  }
-  return [...new Set(names)].slice(0, 5);
-}
-
-function rawOperationFromEntry(entry) {
-  if (!entry || !entry.payload) return null;
-  const payload = entry.payload;
-  if (entry.type === "event_msg" && payload.type === "web_search_end") {
-    return compactOperationalItem({
-      id: `raw-${payload.call_id || entry.timestamp || "web-search"}`,
-      type: "web_search_call",
-      callId: payload.call_id,
-      ...rolloutTimestampFields(entry),
-      status: statusFromRawOperation(payload),
-      tool: "Web Search",
-      command: searchSummaryFromOperation(payload),
-      action: payload.action,
-    });
-  }
-  if (entry.type === "event_msg" && payload.type === "exec_command_end") {
-    return compactOperationalItem({
-      id: `raw-${payload.call_id || entry.timestamp || "command"}`,
-      type: "commandExecution",
-      callId: payload.call_id,
-      ...rolloutTimestampFields(entry),
-      status: statusFromRawOperation(payload),
-      command: commandFromRawPayload(payload),
-    });
-  }
-  if (entry.type === "event_msg" && payload.type === "patch_apply_end") {
-    return compactOperationalItem({
-      id: `raw-${payload.call_id || entry.timestamp || "patch"}`,
-      type: "fileChange",
-      callId: payload.call_id,
-      ...rolloutTimestampFields(entry),
-      status: statusFromRawOperation(payload),
-      fileNames: Object.keys(payload.changes || {}).slice(0, 5),
-    });
-  }
-  if (entry.type === "response_item" && payload.type === "function_call") {
-    return compactOperationalItem({
-      id: `raw-${payload.call_id || entry.timestamp || "function"}`,
-      type: "commandExecution",
-      callId: payload.call_id,
-      ...rolloutTimestampFields(entry),
-      status: statusFromRawOperation(payload),
-      command: commandFromRawPayload(payload),
-    });
-  }
-  if (entry.type === "response_item" && payload.type === "web_search_call") {
-    return compactOperationalItem({
-      id: `raw-${payload.call_id || entry.timestamp || "web-search"}`,
-      type: "web_search_call",
-      callId: payload.call_id,
-      ...rolloutTimestampFields(entry),
-      status: statusFromRawOperation(payload),
-      tool: "Web Search",
-      command: searchSummaryFromOperation(payload),
-      action: payload.action,
-    });
-  }
-  if (entry.type === "response_item" && payload.type === "custom_tool_call") {
-    const fileNames = payload.name === "apply_patch" ? fileNamesFromPatchInput(payload.input) : [];
-    return compactOperationalItem({
-      id: `raw-${payload.call_id || entry.timestamp || "tool"}`,
-      type: fileNames.length ? "fileChange" : "dynamicToolCall",
-      callId: payload.call_id,
-      ...rolloutTimestampFields(entry),
-      status: statusFromRawOperation(payload),
-      tool: payload.name,
-      fileNames,
-    });
-  }
-  return null;
-}
-
-function rawOperationOutputCallId(entry) {
-  if (!entry || !entry.payload) return "";
-  const payload = entry.payload;
-  if (entry.type === "response_item" && /^(function_call_output|custom_tool_call_output)$/.test(String(payload.type || ""))) {
-    return String(payload.call_id || "");
-  }
-  if (entry.type === "event_msg" && /^(exec_command_end|patch_apply_end|web_search_end)$/.test(String(payload.type || ""))) {
-    return String(payload.call_id || "");
-  }
-  return "";
-}
-
-function statusFromRawOperationOutput(payload) {
-  const status = statusFromRawOperation(payload || {});
-  return status === "running" ? "completed" : status;
-}
-
-function operationKey(item) {
-  if (!item || typeof item !== "object") return "";
-  const callId = String(item.callId || item.call_id || "");
-  if (callId) return `${item.type || "operation"}:${callId}`;
-  if (item.id) return `id:${item.id}`;
-  return "";
-}
-
-function operationSignature(item) {
-  if (!item || typeof item !== "object") return "";
-  if (item.type === "commandExecution" && item.command) return `command:${String(item.command)}`;
-  if (item.type === "fileChange" && Array.isArray(item.fileNames) && item.fileNames.length > 0) {
-    return `file:${String(item.tool || "")}:${item.fileNames.join("|")}`;
-  }
-  if ((item.type === "dynamicToolCall" || item.type === "mcpToolCall") && item.tool) {
-    return `tool:${String(item.tool)}:${String(item.action || "")}`;
-  }
-  if (isWebSearchLikeItem(item) && (item.command || item.action)) {
-    return `web:${String(item.command || "")}:${String(item.action || "")}`;
-  }
-  return "";
-}
-
-function readRecentRawOperations(thread, turnId = "", options = {}) {
-  const rolloutPath = thread && (thread.path || thread.rolloutPath || thread.rollout_path);
-  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return [];
-  try {
-    const lines = readRolloutTail(rolloutPath).split(/\r?\n/).filter(Boolean).slice(-800);
-    const operations = [];
-    const completedCallIds = new Set();
-    const completedCallStatuses = new Map();
-    let currentTurnId = "";
-    for (const line of lines) {
-      const entry = parseJsonLine(line);
-      if (!entry || !entry.payload) continue;
-      const payload = entry.payload || {};
-      const explicitTurnId = rolloutEntryTurnId(entry);
-      if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
-      if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) {
-        currentTurnId = explicitTurnId;
-      }
-      const outputCallId = rawOperationOutputCallId(entry);
-      if (outputCallId) {
-        const outputStatus = statusFromRawOperationOutput(payload);
-        completedCallIds.add(outputCallId);
-        completedCallStatuses.set(outputCallId, outputStatus);
-        for (const operation of operations) {
-          if (operation && operation.callId === outputCallId && !isCompletedStatus(operation.status)) {
-            operation.status = outputStatus;
-          }
-        }
-      }
-      const operation = rawOperationFromEntry(entry);
-      if (!operation) continue;
-      operation.rolloutTurnId = explicitTurnId || currentTurnId || "";
-      if (operation.callId && completedCallIds.has(operation.callId)) {
-        operation.status = completedCallStatuses.get(operation.callId) || "completed";
-      }
-      operations.push(operation);
-    }
-    const targetTurnId = String(turnId || "");
-    const includeCompleted = Boolean(options.includeCompleted);
-    const maxOperations = Math.max(1, Math.min(50, Number(options.maxOperations || MAX_LIVE_OPERATION_ITEMS)));
-    const selected = [];
-    const seenOperationKeys = new Set();
-    for (let index = operations.length - 1; index >= 0; index -= 1) {
-      const operation = operations[index];
-      const operationTurnId = String(operation.rolloutTurnId || "");
-      const operationCompleted = isCompletedStatus(operation.status)
-        || (operation.callId && completedCallIds.has(operation.callId));
-      if (targetTurnId && operationTurnId && operationTurnId !== targetTurnId) continue;
-      if (operationCompleted && !includeCompleted) continue;
-      if (targetTurnId && operationCompleted && operationTurnId !== targetTurnId) continue;
-      const key = operationKey(operation) || `${operation.type || "operation"}:${operation.id || index}`;
-      if (seenOperationKeys.has(key)) continue;
-      seenOperationKeys.add(key);
-      selected.push(operation);
-      if (selected.length >= maxOperations) break;
-    }
-    return selected.reverse();
-  } catch (_) {
-    return [];
-  }
-  return [];
-}
-
-function readLatestRawOperation(thread, turnId = "", options = {}) {
-  const operations = readRecentRawOperations(thread, turnId, {
-    ...options,
-    maxOperations: 1,
-  });
-  return operations[0] || null;
-}
-
-function mergeRawOperationIntoItem(existing, rawOperation) {
-  if (!existing || !rawOperation) return;
-  if (rawOperation.status && (!existing.status || isCompletedStatus(rawOperation.status))) {
-    existing.status = rawOperation.status;
-  }
-  for (const field of ["startedAt", "startedAtMs", "updatedAt", "updatedAtMs", "completedAt", "completedAtMs", "command", "tool", "action"]) {
-    if (existing[field] === undefined && rawOperation[field] !== undefined) existing[field] = rawOperation[field];
-  }
-  if ((!Array.isArray(existing.fileNames) || existing.fileNames.length === 0)
-    && Array.isArray(rawOperation.fileNames) && rawOperation.fileNames.length > 0) {
-    existing.fileNames = rawOperation.fileNames;
-  }
-}
-
-function mergeRecentRawOperationsIntoTurn(thread, turn, options = {}) {
-  if (!turn || !Array.isArray(turn.items)) return;
-  const rawOperations = readRecentRawOperations(thread, turn.id, {
-    includeCompleted: true,
-    maxOperations: options.maxOperations || MAX_LIVE_OPERATION_ITEMS,
-  });
-  if (rawOperations.length === 0) return;
-  const allowNewRawOperations = isLiveTurn(turn) || options.allowNewOperations === true;
-
-  const existingByKey = new Map();
-  const existingBySignature = new Map();
-  for (const item of turn.items) {
-    if (!isOperationalItem(item)) continue;
-    const key = operationKey(item);
-    if (key) existingByKey.set(key, item);
-    const signature = operationSignature(item);
-    if (signature) existingBySignature.set(signature, item);
-  }
-
-  for (const rawOperation of rawOperations) {
-    const key = operationKey(rawOperation);
-    const signature = operationSignature(rawOperation);
-    const existing = (key ? existingByKey.get(key) : null)
-      || (signature ? existingBySignature.get(signature) : null);
-    if (existing) {
-      mergeRawOperationIntoItem(existing, rawOperation);
-      continue;
-    }
-    if (!allowNewRawOperations) continue;
-    turn.items.push(rawOperation);
-    if (key) existingByKey.set(key, rawOperation);
-    if (signature) existingBySignature.set(signature, rawOperation);
-  }
-}
-
-function turnHasSyntheticProgressMessages(turn) {
-  return Array.isArray(turn && turn.items)
-    && turn.items.some((item) => item && item.mobileSyntheticProgressMessage === true);
-}
-
-function compactItem(item, options = {}) {
-  if (!item || typeof item !== "object") return item;
-  const out = Object.assign({}, item);
-  if (isContextCompactionType(out.type)) {
-    const compactionState = contextCompactionMobileState(out, options);
-    const compacted = {
-      id: out.id,
-      type: out.type,
-      ...compactItemTimestampFields(out),
-      status: out.status,
-    };
-    if (!compactionState) return compacted;
-    const pending = compactionState === "pending";
-    return {
-      ...compacted,
-      mobileCompactionStatus: pending ? "running" : "completed",
-      mobileNotice: contextCompactionNotice(pending),
-    };
-  }
-  if (isOperationalItem(out)) {
-    return compactOperationalItem(out);
-  }
-  if (out.type === "imageView" || out.type === "imageGeneration") attachGeneratedImageContent(out, options);
-  if (typeof out.text === "string") out.text = truncateMiddle(out.text, MAX_TEXT_CHARS, "text");
-  if (Array.isArray(out.content)) out.content = compactStringArray(out.content, MAX_TEXT_CHARS, "content");
-  if (Array.isArray(out.summary)) out.summary = compactStringArray(out.summary, MAX_TEXT_CHARS, "summary");
-  if (out.type === "commandExecution" && typeof out.aggregatedOutput === "string") {
-    out.outputTotalChars = out.outputTotalChars || out.aggregatedOutput.length;
-    out.outputTruncated = out.aggregatedOutput.length > MAX_COMMAND_OUTPUT_CHARS || Boolean(out.outputTruncated);
-    out.aggregatedOutput = truncateTail(out.aggregatedOutput, MAX_COMMAND_OUTPUT_CHARS, "command output");
-  }
-  if (out.result) out.result = compactStructured(out.result);
-  if (out.contentItems) out.contentItems = compactStructured(out.contentItems);
-  if (out.changes) out.changes = compactStructured(out.changes);
-  return out;
-}
-
-const threadTurnCompactionPolicyService = createThreadTurnCompactionPolicyService({
-  isLiveTurn,
-  isCompletedStatus,
-  isOperationalItem,
-  isUserQuestionItem,
-  isUserVisibleInputItem,
-  isAssistantReceiptItem,
-  isVisualReceiptItem,
-  isTurnUsageSummaryItem,
-  isDiagnosticReceiptItem: isTurnDiagnosticItem,
+const rateLimitRuntimeService = createRateLimitRuntimeService({
+  archivedSessionsDir: ARCHIVED_SESSIONS_DIR,
+  codexHome: CODEX_HOME,
+  incrementBoundedDiagnosticCounter,
+  isRateLimitRolloutSourceAccountScoped,
+  modelOptions: MODEL_OPTIONS,
+  sessionsDir: SESSIONS_DIR,
+});
+const {
+  compactRateLimitWindow,
+  compactRateLimits,
+  normalizeModelKey,
+  addRateLimitModelKey,
+  isSparkModelKey,
+  rateLimitModelKeys,
+  rateLimitWindows,
+  hasCurrentRateLimitWindow,
+  isTrustedLiveRateLimitSource,
+  storeRateLimits,
+  recordRateLimits,
+  recordRateLimitReadResult,
+  canExposeRateLimitsForActiveHome,
+  activeRateLimits,
+  activeRateLimitsByModelMap,
+  liveQuotaSnapshotForProfiles,
+  compareRecentRolloutDirents,
+  collectRecentRolloutFiles,
+  readRolloutTailForRateLimits,
+  loadRecentRateLimitsFromRollouts,
+  rateLimitsByModelObject,
+  latestLiveRateLimits,
+} = rateLimitRuntimeService;
+threadEventNotificationService = createThreadEventNotificationService({
+  clients,
+  clientHeartbeats,
+  maxDeltaChars: MAX_DELTA_CHARS,
+  compactItem,
+  compactTurn,
+  compactRateLimits,
+  truncateMiddle,
+  truncateTail,
+  recordRateLimits,
+  timestampToMs,
+  turnStartResultTurnId,
+  rememberLocalActiveThreadStatus,
+  clearLocalActiveThreadStatus,
+  applyThreadStatusPayloadToThreadListFallbackCache,
+  getThreadDetailProjectionService: () => threadDetailProjectionService,
+  threadDetailActiveWindowPrewarmService,
+  getCodex: () => codex,
+  logThreadDetail,
+  logger: console,
 });
 
-function trailingOperationIndexes(items, allowLiveOperation, maxOperations = 1) {
-  return threadTurnCompactionPolicyService.trailingOperationIndexes(items, allowLiveOperation, maxOperations);
-}
-
-function isUserQuestionItem(item) {
-  if (!item || typeof item !== "object") return false;
-  const type = String(item.type || "").toLowerCase();
-  if (type === "usermessage") return true;
-  if (type === "message") {
-    const role = String(item.role || item.author || "").toLowerCase();
-    return role === "user";
-  }
-  return false;
-}
-
-function isUserVisibleInputItem(item) {
-  if (isUserQuestionItem(item)) return true;
-  return isContextCompactionType(item && item.type);
-}
-
-function userMessageContentParts(item) {
-  return Array.isArray(item && item.content) ? item.content : [];
-}
-
-function imageUrlValueForUserMessagePart(part) {
-  if (!part || typeof part !== "object") return "";
-  const raw = part.url || part.image_url || part.imageUrl || "";
-  if (raw && typeof raw === "object") return String(raw.url || raw.uri || raw.href || "");
-  return String(raw || "");
-}
-
-function textValueForUserMessagePart(part) {
-  if (!part || typeof part !== "object") return "";
-  if (typeof part.text === "string") return part.text;
-  if (typeof part.input_text === "string") return part.input_text;
-  if (part.type === "input_text" && typeof part.content === "string") return part.content;
-  return "";
-}
-
-function isImageUserMessagePart(part) {
-  if (!part || typeof part !== "object") return false;
-  const type = String(part.type || "");
-  const url = imageUrlValueForUserMessagePart(part);
-  return type === "image"
-    || type === "localImage"
-    || type === "input_image"
-    || type === "image_url"
-    || /^data:image\//i.test(url)
-    || /\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(String(part.path || url || ""));
-}
-
-function textContainsRenderableUploadSummary(text) {
-  const value = String(text || "");
-  return /(^|\n)[ \t]*(?:>[ \t]*)?Uploaded attachments:[\s\S]*-\s+.+\(\s*image\b[\s\S]*\.codex-mobile-web[\\/]+uploads[\\/][\s\S]*\.(?:png|jpe?g|webp|gif)\b/i.test(value);
-}
-
-function normalizedCodexMobileUploadPath(filePath) {
-  const text = String(filePath || "").trim();
-  if (!text) return "";
-  try {
-    const resolved = path.resolve(text);
-    return isCodexMobileUploadFilePath(resolved) ? normalizeFsPath(resolved) : "";
-  } catch (_) {
-    return "";
-  }
-}
-
-function uploadedImagePathsFromText(text) {
-  const paths = [];
-  for (const line of String(text || "").split(/\r?\n/)) {
-    if (!/\bimage\b/i.test(line)) continue;
-    const match = /:\s*(.+?)\s*$/.exec(line);
-    const normalized = normalizedCodexMobileUploadPath(match && match[1]);
-    if (normalized) paths.push(normalized);
-  }
-  return paths;
-}
-
-function userMessageUploadedImagePaths(item) {
-  const paths = [
-    ...uploadedImagePathsFromText(item && item.text),
-    ...uploadedImagePathsFromText(item && item.message),
-  ];
-  for (const part of userMessageContentParts(item)) {
-    paths.push(...uploadedImagePathsFromText(textValueForUserMessagePart(part)));
-    const imagePath = part && (part.path || imageUrlValueForUserMessagePart(part));
-    const normalized = normalizedCodexMobileUploadPath(imagePath);
-    if (normalized) paths.push(normalized);
-  }
-  return paths;
-}
-
-function userMessageHasVisualAttachment(item) {
-  if (!isUserQuestionItem(item)) return false;
-  if (textContainsRenderableUploadSummary(item.text) || textContainsRenderableUploadSummary(item.message)) return true;
-  return userMessageContentParts(item).some((part) => {
-    if (isImageUserMessagePart(part)) return true;
-    return textContainsRenderableUploadSummary(textValueForUserMessagePart(part));
-  });
-}
-
-function isAssistantReceiptItem(item) {
-  if (!item || typeof item !== "object") return false;
-  const type = String(item.type || "").toLowerCase();
-  if (type === "agentmessage" || type === "plan") return true;
-  if (type === "message") {
-    const role = String(item.role || item.author || "").toLowerCase();
-    return role === "assistant";
-  }
-  return false;
-}
-
-function isTurnUsageSummaryItem(item) {
-  return Boolean(item && typeof item === "object" && item.type === "turnUsageSummary");
-}
-
-function isTurnDiagnosticItem(item) {
-  return Boolean(item && typeof item === "object" && item.type === "turnDiagnostic");
-}
-
-function isVisualReceiptItem(item) {
-  return Boolean(item && typeof item === "object" && (item.type === "imageView" || item.type === "imageGeneration"));
-}
-
-function imageViewUploadSourcePath(item) {
-  if (!isVisualReceiptItem(item)) return "";
-  return normalizedCodexMobileUploadPath(imageViewSourcePath(item));
-}
-
-function imageViewCallId(item) {
-  return String(item && (
-    item.callId
-    || item.call_id
-    || item.toolCallId
-    || item.tool_call_id
-    || item.arguments && (item.arguments.callId || item.arguments.call_id || item.arguments.toolCallId || item.arguments.tool_call_id)
-    || item.result && (item.result.callId || item.result.call_id || item.result.toolCallId || item.result.tool_call_id)
-  ) || "").trim();
-}
-
-function fsPathDisplayBasename(value) {
-  const normalized = String(value || "").trim().replace(/\\/g, "/").replace(/\/+$/, "");
-  return normalized ? normalized.split("/").pop().toLowerCase() : "";
-}
-
-function imageViewDisplayBasename(item) {
-  const source = imageViewSourcePath(item)
-    || item && (item.fileName || item.file_name || item.label || item.caption || item.name || item.id);
-  return fsPathDisplayBasename(source);
-}
-
-function visualReceiptSuppressionKeys(item) {
-  if (!isVisualReceiptItem(item)) return [];
-  const keys = new Set();
-  const id = String(item && item.id || "").trim();
-  const callId = imageViewCallId(item);
-  const displayBasename = imageViewDisplayBasename(item);
-  if (id) keys.add(`id:${id}`);
-  if (callId) keys.add(`call:${callId}`);
-  if (displayBasename) keys.add(`name:${displayBasename}`);
-  return [...keys];
-}
-
-function suppressedUploadViewImageCallIdSet(options = {}) {
-  const value = options.suppressedUploadViewImageCallIds;
-  if (value instanceof Set) return value;
-  if (Array.isArray(value)) return new Set(value.map((entry) => String(entry || "").trim()).filter(Boolean));
-  return new Set();
-}
-
-function isUploadImageEchoReceipt(item, uploadBasenames, suppressedCallIds) {
-  if (!isVisualReceiptItem(item)) return false;
-  const callId = imageViewCallId(item);
-  if (callId && suppressedCallIds.has(callId)) return true;
-  const displayBasename = imageViewDisplayBasename(item);
-  return Boolean(displayBasename && uploadBasenames.has(displayBasename));
-}
-
-function uploadImageEchoContextForTurnItems(items, options = {}) {
-  const userUploadPaths = new Set();
-  const uploadBasenames = new Set();
-  for (const item of items) {
-    if (!isUserQuestionItem(item)) continue;
-    for (const uploadPath of userMessageUploadedImagePaths(item)) {
-      userUploadPaths.add(uploadPath);
-      const basename = fsPathDisplayBasename(uploadPath);
-      if (basename) uploadBasenames.add(basename);
-    }
-  }
-  return {
-    userUploadPaths,
-    uploadBasenames,
-    suppressedCallIds: suppressedUploadViewImageCallIdSet(options),
-  };
-}
-
-function shouldSuppressUploadImageEchoItem(item, context) {
-  if (!context || !context.userUploadPaths || !context.userUploadPaths.size) return false;
-  const imagePath = imageViewUploadSourcePath(item);
-  if (imagePath && context.userUploadPaths.has(imagePath)) return true;
-  return isUploadImageEchoReceipt(item, context.uploadBasenames, context.suppressedCallIds);
-}
-
-function uploadImageEchoSuppressionKeysForTurnItems(items, options = {}) {
-  if (!Array.isArray(items)) return [];
-  const context = uploadImageEchoContextForTurnItems(items, options);
-  if (!context.userUploadPaths.size) return [];
-  const keys = new Set();
-  for (const callId of context.suppressedCallIds) {
-    if (callId) keys.add(`call:${callId}`);
-  }
-  for (const item of items) {
-    if (!shouldSuppressUploadImageEchoItem(item, context)) continue;
-    visualReceiptSuppressionKeys(item).forEach((key) => keys.add(key));
-  }
-  return [...keys].sort();
-}
-
-function filterDuplicateUploadImageViewsInTurnItems(items, options = {}) {
-  if (!Array.isArray(items) || items.length < 2) return items;
-  const context = uploadImageEchoContextForTurnItems(items, options);
-  if (!context.userUploadPaths.size) return items;
-  return items.filter((item) => {
-    return !shouldSuppressUploadImageEchoItem(item, context);
-  });
-}
-
-function receiptOnlyItemIndexes(items) {
-  return threadTurnCompactionPolicyService.receiptOnlyItemIndexes(items);
-}
-
-function isEndedTurn(turn) {
-  return threadTurnCompactionPolicyService.isEndedTurn(turn);
-}
-
-function findPreviousEndedTurnIndex(turns, startIndex) {
-  return threadTurnCompactionPolicyService.findPreviousEndedTurnIndex(turns, startIndex);
-}
-
-function turnHasVisibleDetailItems(turn) {
-  return threadTurnCompactionPolicyService.turnHasVisibleDetailItems(turn);
-}
-
-function findPreviousVisibleNonLiveTurnIndex(turns, startIndex) {
-  return threadTurnCompactionPolicyService.findPreviousVisibleNonLiveTurnIndex(turns, startIndex);
-}
-
-function operationDetailTurnIndexes(turns) {
-  return threadTurnCompactionPolicyService.operationDetailTurnIndexes(turns);
-}
-
-function compactTurn(turn, options = {}) {
-  if (!turn || typeof turn !== "object") return turn;
-  const out = Object.assign({}, turn);
-  if (Array.isArray(out.items)) {
-    const suppressedVisualReceiptKeys = uploadImageEchoSuppressionKeysForTurnItems(out.items, options);
-    if (suppressedVisualReceiptKeys.length) out.mobileSuppressedVisualReceiptKeys = suppressedVisualReceiptKeys;
-    else delete out.mobileSuppressedVisualReceiptKeys;
-    const sourceItems = filterDuplicateUploadImageViewsInTurnItems(out.items, options);
-    const allowOperation = Boolean(options.allowOperations)
-      || (Boolean(options.allowLiveOperation) && isLiveTurn(out));
-    const operationIndexes = trailingOperationIndexes(
-      sourceItems,
-      allowOperation,
-      options.maxOperationItems || MAX_LIVE_OPERATION_ITEMS,
-    );
-    const receiptIndexes = options.receiptOnly ? receiptOnlyItemIndexes(sourceItems) : null;
-    out.items = sourceItems.map((item) => compactItem(item, options)).filter((item, index) => {
-      if (receiptIndexes) return receiptIndexes.has(index);
-      if (!isOperationalItem(item)) return true;
-      return operationIndexes.has(index);
-    });
-    let remainingOutputBudget = MAX_COMMAND_OUTPUT_CHARS_PER_TURN;
-    for (let i = out.items.length - 1; i >= 0; i--) {
-      const item = out.items[i];
-      if (!item || item.type !== "commandExecution" || typeof item.aggregatedOutput !== "string") continue;
-      const output = item.aggregatedOutput;
-      if (remainingOutputBudget <= 0) {
-        item.outputOmitted = true;
-        item.outputTruncated = true;
-        item.outputTotalChars = item.outputTotalChars || output.length;
-        item.aggregatedOutput = "";
-        continue;
-      }
-      if (output.length > remainingOutputBudget) {
-        item.outputTruncated = true;
-        item.outputTotalChars = item.outputTotalChars || output.length;
-        item.aggregatedOutput = truncateTail(output, remainingOutputBudget, "turn command output");
-        remainingOutputBudget = 0;
-        continue;
-      }
-      remainingOutputBudget -= output.length;
-    }
-  }
-  return out;
-}
-
-function compactThread(thread, options = {}) {
-  if (!thread || typeof thread !== "object") return thread;
-  const out = Object.assign({}, thread);
-  const rolloutPath = rolloutPathForThread(out);
-  const rolloutStats = rolloutStatsForPath(rolloutPath);
-  const maxTurns = Math.max(1, Math.min(200, Number(options.maxTurns || MAX_THREAD_TURNS)));
-  if (Array.isArray(out.turns)) {
-    pendingSteerEchoStore.injectIntoThread(out);
-    reconcileThreadActiveTurnWithRolloutEvidence(out, options);
-    normalizeSupersededLiveTurns(out);
-    pruneSupersededLiveShellTurns(out);
-    appendMissingRolloutCompletionTurnsToThread(out);
-    const omitted = Math.max(0, out.turns.length - maxTurns);
-    if (omitted > 0) {
-      out.mobileOmittedTurnCount = omitted;
-      out.turns = out.turns.slice(-maxTurns);
-      out.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn(out.turns[0]);
-    }
-    enrichThreadItemTimestampsFromRollout(out);
-    const toolOutputImagePayload = readRolloutToolOutputImageItems(rolloutPath, {
-      threadId: out.id || out.threadId || "",
-    });
-    appendRolloutToolOutputImagesToThread(out, toolOutputImagePayload);
-    appendRolloutFinalReceiptsToThread(out);
-    appendRolloutEmptyCompletionDiagnosticsToThread(out);
-    attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {
-      targetTurnIds: out.turns.map((turn) => turn && turn.id).filter(Boolean),
-    }), {
-      rolloutStats,
-      workspaceContextStats: workspaceContextStatsForCwd(out.cwd),
-    });
-    const operationDetailIndexes = operationDetailTurnIndexes(out.turns);
-    for (const index of operationDetailIndexes) {
-      mergeRecentRawOperationsIntoTurn(out, out.turns[index], { maxOperations: 50, allowNewOperations: true });
-    }
-    const latestIndex = out.turns.length - 1;
-    out.turns = out.turns.map((turn, index) => compactTurn(turn, {
-      allowOperations: operationDetailIndexes.has(index) && !turnHasSyntheticProgressMessages(turn),
-      maxOperationItems: operationDetailIndexes.has(index) && !turnHasSyntheticProgressMessages(turn) ? "all" : MAX_LIVE_OPERATION_ITEMS,
-      receiptOnly: !operationDetailIndexes.has(index),
-      threadId: out.id || out.threadId || "",
-      suppressedUploadViewImageCallIds: toolOutputImagePayload.suppressedUploadViewImageCallIdsByTurn instanceof Map
-        ? toolOutputImagePayload.suppressedUploadViewImageCallIdsByTurn.get(String(turn && turn.id || "")) || new Set()
-        : new Set(),
-    })).map(inferTurnItemDisplayTimestamps).map(orderTurnItemsByDisplayTimestamp);
-    const latest = out.turns[latestIndex];
-    if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
-      && !latest.items.some((item) => isOperationalItem(item))) {
-      const rawOperation = readLatestRawOperation(out, latest.id, { includeCompleted: true });
-      if (rawOperation) latest.items.push(rawOperation);
-    }
-    dedupeUserMessageEchoesInThread(out);
-  }
-  return normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(out), options);
-}
-
-function compactThreadReadResult(result, options = {}) {
-  if (!result || typeof result !== "object") return result;
-  const out = Object.assign({}, result);
-  if (out.thread) out.thread = compactThread(out.thread, options);
-  return out;
-}
-
-function compactTurnsListResult(result, options = {}) {
-  if (!result || typeof result !== "object") return result;
-  const out = Object.assign({}, result);
-  const enrich = (turns) => {
-    const threadId = String(options.threadId || "").trim();
-    const summary = options.summary && typeof options.summary === "object" ? options.summary : {};
-    const thread = Object.assign({}, summary, { id: threadId || summary.id || summary.threadId || "", turns });
-    appendRolloutFinalReceiptsToThread(thread);
-    return Array.isArray(thread.turns) ? thread.turns : turns;
-  };
-  if (Array.isArray(out.data)) out.data = enrich(out.data).map((turn) => compactTurn(turn, { receiptOnly: true }));
-  if (Array.isArray(out.turns)) out.turns = enrich(out.turns).map((turn) => compactTurn(turn, { receiptOnly: true }));
-  return out;
-}
-
-function olderTurnsCursorBeforeTurn(turn) {
-  const turnId = String(turn && turn.id || turn && turn.turnId || "").trim();
-  if (!turnId) return null;
-  return JSON.stringify({ turnId, includeAnchor: false });
-}
-
 function compactNotification(payload) {
-  if (!payload || payload.type !== "notification" || !payload.params) return payload;
-  if (String(payload.method || "").startsWith("turn/diff/")) {
-    return null;
-  }
-  if (payload.method === "item/commandExecution/outputDelta" || payload.method === "item/fileChange/outputDelta") {
-    return null;
-  }
-  if (payload.method === "item/reasoning/textDelta" || payload.method === "item/reasoning/summaryTextDelta") {
-    return null;
-  }
-  const out = {
-    type: payload.type,
-    method: payload.method,
-    params: Object.assign({}, payload.params),
-  };
-  const threadId = notificationThreadId(payload);
-  if (out.params.item) {
-    out.params.item = compactItem(out.params.item, {
-      threadId,
-      contextCompactionPending: payload.method === "item/started"
-        ? true
-        : payload.method === "item/completed"
-          ? false
-          : undefined,
-    });
-  }
-  if (out.params.turn) out.params.turn = compactTurn(out.params.turn, { allowLiveOperation: true, threadId });
-  if (payload.method === "account/rateLimits/updated" && out.params.rateLimits) {
-    out.params.rateLimits = compactRateLimits(out.params.rateLimits);
-  }
-  if (payload.method === "item/commandExecution/outputDelta" && typeof out.params.delta === "string") {
-    out.params.originalDeltaChars = out.params.delta.length;
-    out.params.deltaTruncated = out.params.delta.length > MAX_DELTA_CHARS;
-    out.params.delta = truncateTail(out.params.delta, MAX_DELTA_CHARS, "command output delta");
-  }
-  if ((payload.method === "item/agentMessage/delta" || payload.method === "item/reasoning/textDelta" || payload.method === "item/reasoning/summaryTextDelta") && typeof out.params.delta === "string") {
-    out.params.originalDeltaChars = out.params.delta.length;
-    out.params.deltaTruncated = out.params.delta.length > MAX_DELTA_CHARS;
-    out.params.delta = truncateMiddle(out.params.delta, MAX_DELTA_CHARS, "text delta");
-  }
-  return out;
+  return threadEventNotificationService.compactNotification(payload);
 }
 
-function compactRateLimitWindow(value) {
-  if (!value || typeof value !== "object") return null;
-  const usedPercent = value.usedPercent ?? value.used_percent;
-  const windowDurationMins = value.windowDurationMins ?? value.window_minutes;
-  const resetsAt = value.resetsAt ?? value.resets_at;
-  return Object.fromEntries(Object.entries({
-    usedPercent: Number.isFinite(Number(usedPercent)) ? Number(usedPercent) : undefined,
-    windowDurationMins: Number.isFinite(Number(windowDurationMins)) ? Number(windowDurationMins) : undefined,
-    resetsAt: Number.isFinite(Number(resetsAt)) ? Number(resetsAt) : undefined,
-  }).filter(([, entry]) => entry !== undefined));
+function broadcast(payload) {
+  return threadEventNotificationService.broadcast(payload);
 }
 
-function compactRateLimits(value) {
-  if (!value || typeof value !== "object") return null;
-  const compacted = Object.fromEntries(Object.entries({
-    limitId: value.limitId || value.limit_id || undefined,
-    limitName: value.limitName || value.limit_name || undefined,
-    model: value.model || undefined,
-    primary: compactRateLimitWindow(value.primary),
-    secondary: compactRateLimitWindow(value.secondary),
-    credits: value.credits || null,
-    planType: value.planType || value.plan_type || undefined,
-    rateLimitReachedType: value.rateLimitReachedType || value.rate_limit_reached_type || null,
-  }).filter(([, entry]) => entry !== undefined));
-  const modelKeys = rateLimitModelKeys(compacted);
-  if (modelKeys.length) compacted.modelKeys = modelKeys;
-  return compacted;
+function notificationThreadId(payload) {
+  return threadEventNotificationService.notificationThreadId(payload);
 }
 
-function normalizeModelKey(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/_/g, "-")
-    .replace(/[^a-z0-9.]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "", options = {}) {
+  return threadEventNotificationService.scheduleActiveWindowPrewarm(threadId, summary, reason, options);
 }
 
-function addRateLimitModelKey(keys, value) {
-  const key = normalizeModelKey(value);
-  if (key) keys.add(key);
+function scheduleActiveWindowPrewarmFromNotification(payload) {
+  return threadEventNotificationService.scheduleActiveWindowPrewarmFromNotification(payload);
 }
 
-function isSparkModelKey(key) {
-  return /\bspark\b/.test(normalizeModelKey(key));
+function scheduleActiveWindowPrewarmFromThreadListResult(result, reason = "") {
+  return threadEventNotificationService.scheduleActiveWindowPrewarmFromThreadListResult(result, reason);
 }
 
-function rateLimitModelKeys(rateLimits) {
-  if (!rateLimits || typeof rateLimits !== "object") return [];
-  const keys = new Set();
-  if (Array.isArray(rateLimits.modelKeys)) {
-    for (const value of rateLimits.modelKeys) addRateLimitModelKey(keys, value);
-  }
-  addRateLimitModelKey(keys, rateLimits.model);
-  addRateLimitModelKey(keys, rateLimits.limitName);
-  const limitNameKey = normalizeModelKey(rateLimits.limitName);
-  for (const model of MODEL_OPTIONS) {
-    const modelKey = normalizeModelKey(model);
-    if (modelKey && limitNameKey === modelKey) keys.add(modelKey);
-  }
-  const limitId = normalizeModelKey(rateLimits.limitId);
-  if (limitId === "codex-bengalfox") keys.add("gpt-5.3-codex-spark");
-  else if (limitId === "codex") {
-    for (const model of MODEL_OPTIONS) {
-      const modelKey = normalizeModelKey(model);
-      if (modelKey && !isSparkModelKey(modelKey)) keys.add(modelKey);
-    }
-  }
-  return [...keys];
+function threadStatusChangedPayload(threadId, status, meta = {}) {
+  return threadEventNotificationService.threadStatusChangedPayload(threadId, status, meta);
 }
 
-function rateLimitWindows(rateLimits) {
-  return [rateLimits && rateLimits.primary, rateLimits && rateLimits.secondary]
-    .filter((windowInfo) => windowInfo && Number.isFinite(Number(windowInfo.usedPercent)));
+function broadcastThreadStatusChanged(threadId, status, meta = {}) {
+  return threadEventNotificationService.broadcastThreadStatusChanged(threadId, status, meta);
 }
 
-function hasCurrentRateLimitWindow(rateLimits) {
-  const nowSeconds = Date.now() / 1000;
-  return rateLimitWindows(rateLimits).some((windowInfo) => {
-    const resetsAt = Number(windowInfo.resetsAt || 0);
-    return !resetsAt || resetsAt > nowSeconds;
-  });
+function notifyLocalTurnStarted(threadId, result, meta = {}) {
+  return threadEventNotificationService.notifyLocalTurnStarted(threadId, result, meta);
 }
 
-function isTrustedLiveRateLimitSource(source) {
-  return source === "managed-child-live" || source === "profile-mux-live";
+function threadStatusChangedPayloadFromTurnNotification(payload) {
+  return threadEventNotificationService.threadStatusChangedPayloadFromTurnNotification(payload);
 }
 
-function storeRateLimits(compacted, byModel) {
-  for (const key of compacted.modelKeys || rateLimitModelKeys(compacted)) {
-    byModel.set(normalizeModelKey(key), compacted);
-  }
-  return compacted;
+function updateLocalActiveThreadStatusFromNotification(payload) {
+  return threadEventNotificationService.updateLocalActiveThreadStatusFromNotification(payload);
 }
 
-function recordRateLimits(value, options = {}) {
-  const compacted = compactRateLimits(value);
-  if (!compacted || !hasCurrentRateLimitWindow(compacted)) return null;
-  const source = String(options.source || "live");
-  if (options.source === "rollout") {
-    latestSnapshotRateLimits = compacted;
-    return storeRateLimits(compacted, latestSnapshotRateLimitsByModel);
-  }
-  if (!isRateLimitRolloutSourceAccountScoped(CODEX_HOME) && !isTrustedLiveRateLimitSource(source)) {
-    latestLiveRateLimits = null;
-    latestLiveRateLimitsSource = null;
-    latestLiveRateLimitsByModel.clear();
-    return null;
-  }
-  latestLiveRateLimits = compacted;
-  latestLiveRateLimitsSource = source;
-  return storeRateLimits(compacted, latestLiveRateLimitsByModel);
+function shouldSendEventToClient(payload, client = {}) {
+  return threadEventNotificationService.shouldSendEventToClient(payload, client);
 }
 
-function recordRateLimitReadResult(value, options = {}) {
-  if (!value || typeof value !== "object") return null;
-  const source = String(options.source || "live");
-  if (source !== "rollout" && !isRateLimitRolloutSourceAccountScoped(CODEX_HOME) && !isTrustedLiveRateLimitSource(source)) {
-    latestLiveRateLimits = null;
-    latestLiveRateLimitsSource = null;
-    latestLiveRateLimitsByModel.clear();
-    return null;
-  }
-
-  const snapshots = [];
-  const addSnapshot = (raw, fallbackLimitId = "") => {
-    if (!raw || typeof raw !== "object") return;
-    const candidate = fallbackLimitId && !raw.limitId
-      ? Object.assign({ limitId: fallbackLimitId }, raw)
-      : raw;
-    const compacted = compactRateLimits(candidate);
-    if (!compacted || !hasCurrentRateLimitWindow(compacted)) return;
-    snapshots.push(compacted);
-  };
-
-  addSnapshot(value.rateLimits);
-  if (value.rateLimitsByLimitId && typeof value.rateLimitsByLimitId === "object") {
-    for (const [limitId, snapshot] of Object.entries(value.rateLimitsByLimitId)) {
-      addSnapshot(snapshot, limitId);
-    }
-  }
-
-  if (snapshots.length === 0) return null;
-  const targetMap = source === "rollout" ? latestSnapshotRateLimitsByModel : latestLiveRateLimitsByModel;
-  for (const snapshot of snapshots) storeRateLimits(snapshot, targetMap);
-  const preferred = snapshots.find((snapshot) => normalizeModelKey(snapshot.limitId) === "codex") || snapshots[0];
-  if (source === "rollout") {
-    latestSnapshotRateLimits = preferred;
-  } else {
-    latestLiveRateLimits = preferred;
-    latestLiveRateLimitsSource = source;
-  }
-  return preferred;
-}
-
-function canExposeRateLimitsForActiveHome() {
-  return isRateLimitRolloutSourceAccountScoped(CODEX_HOME) || isTrustedLiveRateLimitSource(latestLiveRateLimitsSource);
-}
-
-function activeRateLimits() {
-  if (!canExposeRateLimitsForActiveHome()) return null;
-  return latestLiveRateLimits || latestSnapshotRateLimits;
-}
-
-function activeRateLimitsByModelMap() {
-  if (!canExposeRateLimitsForActiveHome()) return new Map();
-  return latestLiveRateLimitsByModel.size ? latestLiveRateLimitsByModel : latestSnapshotRateLimitsByModel;
-}
-
-function liveQuotaSnapshotForProfiles() {
-  if (!canExposeRateLimitsForActiveHome()) {
-    return { rateLimits: null, rateLimitsByModel: {}, source: null };
-  }
-  return {
-    rateLimits: latestLiveRateLimits,
-    rateLimitsByModel: Object.fromEntries([...latestLiveRateLimitsByModel.entries()]),
-    source: latestLiveRateLimits ? (latestLiveRateLimitsSource || "active-live") : null,
-  };
-}
-
-function compareRecentRolloutDirents(left, right) {
-  const leftIsDir = Boolean(left && typeof left.isDirectory === "function" && left.isDirectory());
-  const rightIsDir = Boolean(right && typeof right.isDirectory === "function" && right.isDirectory());
-  if (leftIsDir !== rightIsDir) return leftIsDir ? -1 : 1;
-  const leftName = String(left && left.name || "");
-  const rightName = String(right && right.name || "");
-  if (leftName === rightName) return 0;
-  return leftName < rightName ? 1 : -1;
-}
-
-function collectRecentRolloutFiles(root, options = {}) {
-  const maxFiles = Number(options.maxFiles || 160);
-  const maxDepth = Number(options.maxDepth || 6);
-  const diagnostics = options.diagnostics && typeof options.diagnostics === "object" ? options.diagnostics : null;
-  const out = [];
-  const visit = (dir, depth) => {
-    if (out.length >= maxFiles * 4 || depth > maxDepth) return;
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-      incrementBoundedDiagnosticCounter(diagnostics, "rolloutDirectoryReadCount");
-    } catch (_) {
-      return;
-    }
-    for (const entry of entries.sort(compareRecentRolloutDirents)) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        visit(fullPath, depth + 1);
-        continue;
-      }
-      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-      try {
-        incrementBoundedDiagnosticCounter(diagnostics, "rolloutFileStatCount");
-        const stat = fs.statSync(fullPath);
-        out.push({ path: fullPath, mtimeMs: Number(stat.mtimeMs || 0), size: Number(stat.size || 0) });
-        incrementBoundedDiagnosticCounter(diagnostics, "rolloutFileCollectedCount");
-      } catch (_) {
-        // A rollout may disappear while the app rotates files.
-      }
-    }
-  };
-  visit(root, 0);
-  incrementBoundedDiagnosticCounter(diagnostics, "rolloutFileSortedCount", out.length);
-  return out
-    .sort((a, b) => b.mtimeMs - a.mtimeMs)
-    .slice(0, maxFiles);
-}
-
-function readRolloutTailForRateLimits(filePath, maxBytes = 2 * 1024 * 1024) {
-  try {
-    const stat = fs.statSync(filePath);
-    if (!stat.isFile() || stat.size <= 0) return "";
-    const bytesToRead = Math.min(maxBytes, stat.size);
-    const fd = fs.openSync(filePath, "r");
-    try {
-      const buffer = Buffer.alloc(bytesToRead);
-      fs.readSync(fd, buffer, 0, bytesToRead, stat.size - bytesToRead);
-      return buffer.toString("utf8");
-    } finally {
-      fs.closeSync(fd);
-    }
-  } catch (_) {
-    return "";
-  }
-}
-
-function loadRecentRateLimitsFromRollouts(options = {}) {
-  const now = Date.now();
-  const force = options.force === true;
-  if (!force && now - lastRolloutRateLimitScanAt < 60000) return;
-  lastRolloutRateLimitScanAt = now;
-  if (!isRateLimitRolloutSourceAccountScoped(CODEX_HOME)) return;
-  const files = [
-    ...collectRecentRolloutFiles(SESSIONS_DIR, { maxFiles: 140 }),
-    ...collectRecentRolloutFiles(ARCHIVED_SESSIONS_DIR, { maxFiles: 60, maxDepth: 1 }),
-  ].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 180);
-  const latestByGroup = new Map();
-  for (const file of files) {
-    const tail = readRolloutTailForRateLimits(file.path);
-    if (!tail.includes("rate_limits")) continue;
-    const lines = tail.split(/\r?\n/).filter(Boolean).reverse();
-    for (const line of lines) {
-      let entry;
-      try {
-        entry = JSON.parse(line);
-      } catch (_) {
-        continue;
-      }
-      const rateLimits = entry && entry.payload && entry.payload.rate_limits;
-      const compacted = compactRateLimits(rateLimits);
-      if (!compacted || !hasCurrentRateLimitWindow(compacted)) continue;
-      const group = normalizeModelKey(compacted.limitId);
-      if (!group) continue;
-      const eventMs = Date.parse(entry.timestamp || "") || file.mtimeMs || 0;
-      const existing = latestByGroup.get(group);
-      if (!existing || eventMs > existing.eventMs) {
-        latestByGroup.set(group, { eventMs, rateLimits: compacted });
-      }
-    }
-  }
-  for (const entry of [...latestByGroup.values()].sort((a, b) => a.eventMs - b.eventMs)) {
-    recordRateLimits(entry.rateLimits, { source: "rollout" });
-  }
-}
-
-function rateLimitsByModelObject() {
-  return Object.fromEntries([...activeRateLimitsByModelMap().entries()]);
-}
-
-function compactApprovalText(value, maxChars = 1200) {
-  return truncateMiddle(String(value ?? ""), maxChars, "approval text");
-}
-
-function commandTextFromApproval(method, params = {}) {
-  if (method === "execCommandApproval" && Array.isArray(params.command)) return params.command.join(" ");
-  if (typeof params.command === "string") return params.command;
-  if (Array.isArray(params.commandActions) && params.commandActions.length) {
-    return params.commandActions.map((action) => action && action.command).filter(Boolean).join(" && ");
-  }
-  return "";
-}
-
-function fileNamesFromApproval(method, params = {}) {
-  if (method === "applyPatchApproval" && params.fileChanges && typeof params.fileChanges === "object") {
-    return Object.keys(params.fileChanges).slice(0, 12);
-  }
-  return [];
-}
-
-function compactUserInputQuestions(params = {}) {
-  if (!Array.isArray(params.questions)) return [];
-  return params.questions.slice(0, 8).map((question) => {
-    const options = Array.isArray(question && question.options)
-      ? question.options.slice(0, 12).map((option) => Object.fromEntries(Object.entries({
-        label: option && option.label ? compactApprovalText(option.label, 240) : "",
-        description: option && option.description ? compactApprovalText(option.description, 500) : "",
-      }).filter(([, value]) => value !== "")))
-      : [];
-    return Object.fromEntries(Object.entries({
-      id: question && question.id ? String(question.id) : "",
-      header: question && question.header ? compactApprovalText(question.header, 240) : "",
-      question: question && question.question ? compactApprovalText(question.question, 1200) : "",
-      isOther: Boolean(question && question.isOther),
-      options,
-    }).filter(([, value]) => {
-      if (Array.isArray(value)) return value.length > 0;
-      return value !== "" && value !== false;
-    }));
-  });
-}
-
-function compactApprovalParams(method, params = {}) {
-  return Object.fromEntries(Object.entries({
-    threadId: params.threadId || params.conversationId || null,
-    turnId: params.turnId || null,
-    itemId: params.itemId || params.callId || null,
-    approvalId: params.approvalId || null,
-    reason: params.reason ? compactApprovalText(params.reason, 900) : null,
-    command: commandTextFromApproval(method, params) ? compactApprovalText(commandTextFromApproval(method, params), 1800) : null,
-    cwd: params.cwd || null,
-    grantRoot: params.grantRoot || null,
-    fileNames: fileNamesFromApproval(method, params),
-    permissions: method === "item/permissions/requestApproval" ? compactStructured(params.permissions || {}) : null,
-    networkApprovalContext: params.networkApprovalContext || null,
-    questions: method === "item/tool/requestUserInput" ? compactUserInputQuestions(params) : [],
-    elicitationId: method === "mcpServer/elicitation/request" ? params.elicitationId || null : null,
-    title: method === "mcpServer/elicitation/request" && params.title ? compactApprovalText(params.title, 240) : null,
-    message: method === "mcpServer/elicitation/request" && params.message ? compactApprovalText(params.message, 1200) : null,
-    schema: method === "mcpServer/elicitation/request" && params.schema ? compactStructured(params.schema) : null,
-    elicitation: method === "mcpServer/elicitation/request" && params.elicitation ? compactStructured(params.elicitation) : null,
-  }).filter(([, value]) => {
-    if (Array.isArray(value)) return value.length > 0;
-    return value !== null && value !== undefined && value !== "";
-  }));
-}
-
-function publicServerRequest(request) {
-  return {
-    id: String(request.id),
-    method: request.method,
-    status: request.status || "waiting",
-    decision: request.decision || null,
-    receivedAt: request.receivedAt || null,
-    respondedAt: request.respondedAt || null,
-    actionable: ACTIONABLE_SERVER_REQUEST_METHODS.has(request.method),
-    params: compactApprovalParams(request.method, request.params || {}),
-  };
-}
-
-function codeGraphMcpElicitationToolName(request) {
-  if (!request || request.method !== "mcpServer/elicitation/request") return "";
-  const params = request.params && typeof request.params === "object" ? request.params : {};
-  const candidates = [
-    params.serverName,
-    params.server_name,
-    params.server,
-    params.mcpServer,
-    params.mcp_server,
-    params.toolName,
-    params.tool_name,
-    params.name,
-    params.title,
-    params.message,
-    params.elicitation,
-    params.schema,
-  ];
-  const text = candidates.map((value) => (typeof value === "string" ? value : JSON.stringify(value || ""))).join("\n");
-  const explicitServer = [params.serverName, params.server_name, params.server, params.mcpServer, params.mcp_server]
-    .some((value) => /^codegraph$/i.test(String(value || "").trim()) || /\bcodegraph\b/i.test(String(value || "")));
-  const messageMentionsCodeGraphServer = /\bcodegraph\b[\s-]*(?:MCP\s+)?server\b/i.test(text);
-  if (!explicitServer && !messageMentionsCodeGraphServer) return "";
-  const quoted = /\bcodegraph MCP server\b[\s\S]*?\btool\s+["“]([^"”]+)["”]/i.exec(text);
-  const raw = quoted ? quoted[1] : ((/\b(codegraph_[a-z0-9_]+)\b/i.exec(text) || [])[1] || "");
-  const toolName = String(raw || "").trim();
-  return CODEGRAPH_READONLY_MCP_TOOLS.has(toolName) ? toolName : "";
-}
-
-function codeGraphReadOnlyMcpElicitationDecision(request) {
-  const toolName = codeGraphMcpElicitationToolName(request);
-  return toolName ? { action: "allow", toolName } : null;
-}
-
-function grantedPermissionsFromRequest(params = {}) {
-  const permissions = params.permissions || {};
-  const granted = {};
-  if (permissions.network) granted.network = permissions.network;
-  if (permissions.fileSystem) granted.fileSystem = permissions.fileSystem;
-  return granted;
-}
-
-function approvalResponsePayload(request, decision) {
-  const method = request && request.method;
-  const params = (request && request.params) || {};
-  if (!["allow_once", "allow_session", "deny"].includes(decision)) {
-    throw new Error("Invalid approval decision");
-  }
-  if (method === "item/commandExecution/requestApproval") {
-    return {
-      result: {
-        decision: decision === "allow_once" ? "accept" : decision === "allow_session" ? "acceptForSession" : "decline",
-      },
-    };
-  }
-  if (method === "item/fileChange/requestApproval") {
-    return {
-      result: {
-        decision: decision === "allow_once" ? "accept" : decision === "allow_session" ? "acceptForSession" : "decline",
-      },
-    };
-  }
-  if (method === "execCommandApproval" || method === "applyPatchApproval") {
-    return {
-      result: {
-        decision: decision === "allow_once" ? "approved" : decision === "allow_session" ? "approved_for_session" : "denied",
-      },
-    };
-  }
-  if (method === "item/permissions/requestApproval") {
-    if (decision === "deny") {
-      return { error: { code: -32001, message: "Permission request denied" } };
-    }
-    return {
-      result: {
-        permissions: grantedPermissionsFromRequest(params),
-        scope: decision === "allow_session" ? "session" : "turn",
-        strictAutoReview: false,
-      },
-    };
-  }
-  throw new Error(`Unsupported server request method: ${method || "unknown"}`);
-}
-
-function userInputResponsePayload(request, body = {}) {
-  const params = (request && request.params) || {};
-  const questions = Array.isArray(params.questions) ? params.questions : [];
-  if (body.answers && typeof body.answers === "object") {
-    return { result: { answers: body.answers } };
-  }
-  const responseText = String(body.responseText || body.text || "").trim();
-  const questionId = String(body.questionId || (questions[0] && questions[0].id) || "answer");
-  return {
-    result: {
-      answers: responseText ? { [questionId]: { answers: [responseText] } } : {},
-    },
-  };
-}
-
-function mcpElicitationResponsePayload(body = {}) {
-  const action = body.action === "decline" || body.decision === "deny" ? "decline" : "accept";
-  if (action === "decline") return { result: { action, content: null } };
-  const responseText = String(body.responseText || body.text || "").trim();
-  const result = { action, content: {} };
-  if (body.content && typeof body.content === "object") result.content = body.content;
-  else if (responseText) result.content = { response: responseText };
-  return { result };
-}
-
-function serverRequestResponsePayload(request, body = {}) {
-  const method = request && request.method;
-  if (ACTIONABLE_APPROVAL_METHODS.has(method)) {
-    return approvalResponsePayload(request, String(body.decision || ""));
-  }
-  if (method === "item/tool/requestUserInput") return userInputResponsePayload(request, body);
-  if (method === "mcpServer/elicitation/request") return mcpElicitationResponsePayload(body);
-  throw new Error(`Unsupported server request method: ${method || "unknown"}`);
+function removeEventClient(res) {
+  return threadEventNotificationService.removeEventClient(res);
 }
 
 function readRawBody(req, limitBytes) {
@@ -6353,7 +2475,7 @@ const {
   workspaceDelegationPublicSettings,
 } = runtimeSettingsService;
 
-threadTaskCardRouteService = createThreadTaskCardRouteService({
+const threadTaskCardRouteService = createThreadTaskCardRouteService({
   appRoot: APP_ROOT,
   threadTaskCardService,
   threadTaskCardDraftTag: THREAD_TASK_CARD_DRAFT_TAG,
@@ -6389,6 +2511,56 @@ threadTaskCardRouteService = createThreadTaskCardRouteService({
   createTargetError: (statusCode, code, message, details = {}) => httpStatusErrorWithDetails(statusCode, code, message || code, details),
   logger: console,
 });
+const {
+  workspaceDelegationTargetHints,
+  workspaceDelegationDynamicToolSpec,
+  taskCardReturnDynamicToolSpec,
+  taskCardRuntimeDynamicTools,
+  workspaceDelegationDynamicTools,
+  attachTaskCardRuntimeDynamicTools,
+  workspaceDelegationScriptFallbackInstruction,
+  taskCardReturnScriptFallbackInstruction,
+  attachWorkspaceDelegationRuntimeGuidance,
+  normalizeThreadTaskCardWorkflowMode,
+  normalizeThreadTaskCardReasoningEffort,
+  uniqueThreadTaskCardTargetIds,
+  threadTaskCardTargetReferenceText,
+  threadTaskCardTargetReferenceEntry,
+  threadTaskCardTargetReferenceEntries,
+  threadTaskCardTargetReferences,
+  isThreadIdLike,
+  threadTaskCardTargetUpdatedAt,
+  publicThreadTaskCardTarget,
+  threadTaskCardTargetError,
+  threadTaskCardTargetVisibility,
+  threadTaskCardVisibleTargetThreads,
+  threadTaskCardCanonicalTargetForCwd,
+  threadTaskCardCanonicalTargetForThread,
+  threadTaskCardCanonicalVisibleTargets,
+  readThreadTaskCardTargetSummary,
+  readThreadTaskCardVisibleTargetSummary,
+  readThreadTaskCardExecutionTargetSummary,
+  applyHomeAiDeployLaneRoutingPolicy,
+  assertThreadTaskCardTargetDeliverable,
+  resolveThreadTaskCardTargetReference,
+  resolvedThreadTaskCardTargetIds,
+  threadTaskCardThreadCallIdempotencyKey,
+  buildThreadTaskCardCreatePayload,
+  createThreadTaskCardsFromSourceThread,
+  parseDynamicToolArguments,
+  dynamicToolTextResponse,
+  dynamicToolJsonResponse,
+  dynamicToolErrorPayload,
+  dynamicToolServerRequestResponsePayload,
+  parseThreadTaskCardDraftText,
+  threadTaskCardDraftIdempotencyKey,
+  threadTaskCardItemText,
+  summarizeTaskCardText,
+  truncateThreadTaskCardBody,
+  taskCardSourceThreadTitle,
+  materializeThreadTaskCardDraftsForThread,
+  prepareThreadTaskCardsToResult,
+} = threadTaskCardRouteService;
 const webPushRuntimeService = createWebPushRuntimeService({
   fs,
   readJsonFile,
@@ -6426,42 +2598,6 @@ function truncateToolDescriptionText(value, maxChars = 220) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text || text.length <= maxChars) return text;
   return `${text.slice(0, Math.max(1, maxChars - 3)).trimEnd()}...`;
-}
-
-function workspaceDelegationTargetHints() {
-  return threadTaskCardRouteService.workspaceDelegationTargetHints();
-}
-
-function workspaceDelegationDynamicToolSpec() {
-  return threadTaskCardRouteService.workspaceDelegationDynamicToolSpec();
-}
-
-function taskCardReturnDynamicToolSpec() {
-  return threadTaskCardRouteService.taskCardReturnDynamicToolSpec();
-}
-
-function taskCardRuntimeDynamicTools(settings = readRuntimeSettings()) {
-  return threadTaskCardRouteService.taskCardRuntimeDynamicTools(settings);
-}
-
-function workspaceDelegationDynamicTools(settings = readRuntimeSettings()) {
-  return threadTaskCardRouteService.workspaceDelegationDynamicTools(settings);
-}
-
-function attachTaskCardRuntimeDynamicTools(params, settings = readRuntimeSettings()) {
-  return threadTaskCardRouteService.attachTaskCardRuntimeDynamicTools(params, settings);
-}
-
-function workspaceDelegationScriptFallbackInstruction(params = {}) {
-  return threadTaskCardRouteService.workspaceDelegationScriptFallbackInstruction(params);
-}
-
-function taskCardReturnScriptFallbackInstruction(params = {}) {
-  return threadTaskCardRouteService.taskCardReturnScriptFallbackInstruction(params);
-}
-
-function attachWorkspaceDelegationRuntimeGuidance(params, settings = readRuntimeSettings()) {
-  return threadTaskCardRouteService.attachWorkspaceDelegationRuntimeGuidance(params, settings);
 }
 
 function workspaceDelegationDynamicToolName(tool) {
@@ -6729,260 +2865,6 @@ function maybeMaterializeThreadTaskCardDrafts(method, params) {
 
 function maybeSendTurnCompletedPush(method, params) {
   return webPushRuntimeService.maybeSendTurnCompletedPush(method, params);
-}
-
-function broadcast(payload) {
-  if (payload && payload.type === "notification") {
-    updateLocalActiveThreadStatusFromNotification(payload);
-    const statusPayload = threadStatusChangedPayloadFromTurnNotification(payload);
-    if (statusPayload) {
-      applyThreadStatusPayloadToThreadListFallbackCache(statusPayload);
-      broadcast(statusPayload);
-    }
-    try {
-      threadDetailProjectionService.applyNotification(payload.method, payload.params || {});
-    } catch (err) {
-      console.error(`[thread projection] notification update failed: ${err.message || String(err)}`);
-    }
-    scheduleActiveWindowPrewarmFromNotification(payload);
-  }
-  const compacted = compactNotification(payload);
-  if (!compacted) return;
-  const body = `data: ${JSON.stringify(compacted)}\n\n`;
-  for (const [res, client] of [...clients.entries()]) {
-    if (!shouldSendEventToClient(compacted, client)) continue;
-    try {
-      if (res.destroyed || res.writableEnded || !res.write(body)) {
-        removeEventClient(res);
-      }
-    } catch (_) {
-      removeEventClient(res);
-    }
-  }
-}
-
-function notificationThreadId(payload) {
-  if (!payload || payload.type !== "notification" || !payload.params) return "";
-  return String(payload.params.threadId || payload.params.conversationId || "");
-}
-
-function threadSummaryLooksActive(summary) {
-  if (!summary || typeof summary !== "object") return false;
-  if (summary.activeTurnId || summary.active_turn_id) return true;
-  const local = summary.mobileLocalActiveStatus && typeof summary.mobileLocalActiveStatus === "object"
-    ? summary.mobileLocalActiveStatus
-    : null;
-  if (local && (local.turnId || local.turn_id)) return true;
-  const statusValue = summary.status && typeof summary.status === "object"
-    ? summary.status.type
-    : summary.status || summary.mobileStatus || local && local.status;
-  return /^(active|running|started|pending|queued|processing|inprogress|in_progress|in-progress)$/i
-    .test(String(statusValue || "").trim());
-}
-
-function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "", options = {}) {
-  const id = String(threadId || summary && (summary.id || summary.threadId || summary.thread_id) || "").trim();
-  if (!id) return { scheduled: false, reason: "missing-thread-id" };
-  return threadDetailActiveWindowPrewarmService.schedule({
-    codex,
-    threadId: id,
-    summary,
-    reason,
-    delayMs: options.delayMs,
-    bypassMinInterval: options.bypassMinInterval === true,
-    preemptPending: options.preemptPending === true,
-    threadLog: (event, details = {}) => logThreadDetail(`active_window_prewarm_${event}`, Object.assign({ threadId: id }, details)),
-  });
-}
-
-const recentWindowProjectionRefreshPending = new Map();
-
-function scheduleRecentWindowProjectionRefresh(input = {}) {
-  const id = String(input.threadId || input.summary && (input.summary.id || input.summary.threadId || input.summary.thread_id) || "").trim();
-  if (!id) return { scheduled: false, reason: "missing-thread-id" };
-  if (!input.projection) return { scheduled: false, reason: "projection-input-unavailable" };
-  if (recentWindowProjectionRefreshPending.has(id)) return { scheduled: false, reason: "already-pending" };
-  const reason = String(input.reason || "stale-partial").slice(0, 80);
-  recentWindowProjectionRefreshPending.set(id, { reason, scheduledAtMs: Date.now() });
-  const timer = setTimeout(() => {
-    const threadLog = typeof input.threadLog === "function"
-      ? input.threadLog
-      : (event, details = {}) => logThreadDetail(`recent_window_refresh_${event}`, Object.assign({ threadId: id }, details));
-    turnsListThreadReadResult(
-      id,
-      input.summary || null,
-      input.runtimeSettings || null,
-      "",
-      "turns-list-background-refresh",
-      threadLog,
-    ).then((result) => {
-      if (result && result.thread) {
-        const seeded = threadDetailProjectionService.seed(input.projection, result, {
-          partial: true,
-          partialKind: "recent-window",
-        });
-        logThreadDetail("recent_window_refresh_done", {
-          threadId: id,
-          trigger: reason,
-          status: seeded && seeded.skipped ? "skipped" : "seeded",
-          seedReason: seeded && seeded.reason || "",
-        });
-      } else {
-        logThreadDetail("recent_window_refresh_skipped", {
-          threadId: id,
-          trigger: reason,
-          status: "empty-result",
-        });
-      }
-    }).catch((err) => {
-      logThreadDetail("recent_window_refresh_failed", {
-        threadId: id,
-        trigger: reason,
-        error: err && err.message ? String(err.message).slice(0, 120) : String(err).slice(0, 120),
-      });
-    }).finally(() => {
-      recentWindowProjectionRefreshPending.delete(id);
-    });
-  }, 25);
-  if (timer && typeof timer.unref === "function") timer.unref();
-  return { scheduled: true, reason: "scheduled" };
-}
-
-function scheduleActiveWindowPrewarmFromNotification(payload) {
-  if (!payload || payload.type !== "notification" || !payload.params) return;
-  const method = String(payload.method || "");
-  if (method !== "turn/started" && method !== "turn/completed" && method !== "thread/status/changed") return;
-  const threadId = notificationThreadId(payload);
-  if (!threadId) return;
-  if (method === "thread/status/changed" && !threadSummaryLooksActive(payload.params)) return;
-  const canBypassThrottle = method === "turn/started" || method === "turn/completed";
-  scheduleActiveWindowPrewarm(threadId, null, method, {
-    delayMs: canBypassThrottle ? 0 : undefined,
-    bypassMinInterval: canBypassThrottle,
-    preemptPending: canBypassThrottle,
-  });
-}
-
-function scheduleActiveWindowPrewarmFromThreadListResult(result, reason = "") {
-  const rows = Array.isArray(result && result.data)
-    ? result.data
-    : Array.isArray(result && result.threads)
-      ? result.threads
-      : [];
-  for (const thread of rows) {
-    if (!threadSummaryLooksActive(thread)) continue;
-    scheduleActiveWindowPrewarm(thread.id || thread.threadId || thread.thread_id, thread, reason || "thread-list");
-  }
-}
-
-function threadStatusChangedPayload(threadId, status, meta = {}) {
-  const id = String(threadId || "").trim();
-  if (!id) return null;
-  const params = {
-    threadId: id,
-    status: status || { type: "notLoaded" },
-  };
-  const source = String(meta.source || "").trim();
-  const turnId = String(meta.turnId || "").trim();
-  const eventAtMs = timestampToMs(meta.eventAtMs || meta.eventAt || meta.completedAtMs || meta.completedAt || meta.startedAtMs || meta.startedAt);
-  if (source) params.source = source;
-  if (turnId) params.turnId = turnId;
-  if (eventAtMs) params.eventAtMs = eventAtMs;
-  if (meta.mobileReplay) params.mobileReplay = true;
-  return {
-    type: "notification",
-    method: "thread/status/changed",
-    params,
-  };
-}
-
-function broadcastThreadStatusChanged(threadId, status, meta = {}) {
-  const payload = threadStatusChangedPayload(threadId, status, meta);
-  if (!payload) return false;
-  applyThreadStatusPayloadToThreadListFallbackCache(payload);
-  broadcast(payload);
-  return true;
-}
-
-function notifyLocalTurnStarted(threadId, result, meta = {}) {
-  const id = String(threadId || "").trim();
-  const turnId = turnStartResultTurnId(result);
-  if (!id) return turnId;
-  rememberLocalActiveThreadStatus(id, turnId, { source: String(meta.source || "local-turn-start") });
-  if (turnId && threadDetailProjectionService) {
-    threadDetailProjectionService.applyNotification("turn/started", {
-      threadId: id,
-      turn: Object.assign({ id: turnId, status: { type: "active" } }, result && result.turn && typeof result.turn === "object" ? result.turn : {}),
-    });
-  }
-  scheduleActiveWindowPrewarm(id, { id, status: { type: "active" }, activeTurnId: turnId }, "local-turn-start");
-  broadcastThreadStatusChanged(id, { type: "active" }, {
-    source: String(meta.source || "local-turn-start"),
-    turnId,
-  });
-  return turnId;
-}
-
-function threadStatusChangedPayloadFromTurnNotification(payload) {
-  if (!payload || payload.type !== "notification" || !payload.params) return null;
-  const method = String(payload.method || "");
-  if (method !== "turn/started" && method !== "turn/completed") return null;
-  const threadId = notificationThreadId(payload);
-  if (!threadId) return null;
-  const turn = payload.params.turn && typeof payload.params.turn === "object" ? payload.params.turn : {};
-  const turnId = String(turn.id || payload.params.turnId || "");
-  const status = method === "turn/started"
-    ? { type: "active" }
-    : (turn.status || payload.params.status || { type: "completed" });
-  const eventAtMs = method === "turn/started"
-    ? timestampToMs(turn.startedAtMs || turn.startedAt || turn.createdAtMs || turn.createdAt || payload.params.startedAtMs || payload.params.startedAt)
-    : timestampToMs(turn.completedAtMs || turn.completedAt || turn.finishedAtMs || turn.finishedAt || turn.updatedAtMs || turn.updatedAt || payload.params.completedAtMs || payload.params.completedAt || payload.params.finishedAtMs || payload.params.finishedAt || payload.params.updatedAtMs || payload.params.updatedAt);
-  const fallbackEventAtMs = payload.params.mobileReplay ? 0 : Date.now();
-  return threadStatusChangedPayload(threadId, status, {
-    source: method,
-    turnId,
-    eventAtMs: eventAtMs || fallbackEventAtMs,
-    mobileReplay: Boolean(payload.params.mobileReplay),
-  });
-}
-
-function updateLocalActiveThreadStatusFromNotification(payload) {
-  if (!payload || payload.type !== "notification" || !payload.params) return;
-  const method = String(payload.method || "");
-  if (method !== "turn/started" && method !== "turn/completed") return;
-  const threadId = notificationThreadId(payload);
-  if (!threadId) return;
-  const turn = payload.params.turn && typeof payload.params.turn === "object" ? payload.params.turn : {};
-  const turnId = String(turn.id || payload.params.turnId || "");
-  if (method === "turn/started") {
-    rememberLocalActiveThreadStatus(threadId, turnId, { source: method });
-  } else {
-    clearLocalActiveThreadStatus(threadId);
-  }
-}
-
-function shouldSendEventToClient(payload, client = {}) {
-  if (!payload || payload.type !== "notification") return true;
-  if (payload.method === "account/rateLimits/updated") return false;
-  if (payload.method === "thread/started"
-    || payload.method === "thread/status/changed"
-    || payload.method === "thread/name/updated"
-    || payload.method === "thread/archived") {
-    return true;
-  }
-  const threadId = notificationThreadId(payload);
-  if (!threadId) return true;
-  return Boolean(client.threadId) && client.threadId === threadId;
-}
-
-function removeEventClient(res) {
-  const heartbeat = clientHeartbeats.get(res);
-  if (heartbeat) clearInterval(heartbeat);
-  clientHeartbeats.delete(res);
-  clients.delete(res);
-  try {
-    if (!res.destroyed && !res.writableEnded) res.end();
-  } catch (_) {}
 }
 
 function getFreePort() {
@@ -7518,18 +3400,6 @@ function rememberProjectlessThreadId(threadId) {
   }
 }
 
-function statusTurnId(status) {
-  return threadSummaryStateService.statusTurnId(status);
-}
-
-function rowToFallbackThread(row) {
-  return threadSummaryStateService.rowToFallbackThread(row);
-}
-
-function sqlString(value) {
-  return threadSummaryStateService.sqlString(value);
-}
-
 function agentInstructionFilesForCwd(cwd) {
   const files = [];
   if (!cwd || typeof cwd !== "string") return files;
@@ -7605,50 +3475,6 @@ function isRecoverableThreadTitleUpdateError(err) {
   return /thread metadata unavailable before name update|metadata unavailable before name update|database disk image is malformed/i.test(message);
 }
 
-async function archiveVisibleThread(threadId, visibility) {
-  if (!threadId) return { archived: false };
-  const summary = readStateDbThread(threadId)
-    || readStartedThread(threadId)
-    || await readThreadSummaryFromAppServer(codex, threadId).catch(() => null);
-  if (summary && isHiddenThread(summary, visibility)) {
-    throw new Error("Source thread is archived, deleted, or outside visible workspaces");
-  }
-  const result = await codex.request("thread/archive", { threadId }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-  return archivedResultWithMobileIndex(result, threadId);
-}
-
-function isThreadArchiveNoOpError(err) {
-  const message = String((err && err.message) || "").toLowerCase();
-  const code = String((err && err.code) || "").toLowerCase();
-  return /already|archived|not found|notexisting|不存在|已归档|does not exist|no such/.test(message)
-    || /thread_not_found|thread-not-found|not_found|not-found/.test(code);
-}
-
-async function archiveThreadId(threadId, visibility = visibilityFromGlobalState()) {
-  if (!threadId) return { archived: false };
-  if (isThreadIdArchivedLocally(threadId)) return alreadyArchivedResult("mobile-index", threadId, false);
-  const summary = readStateDbThread(threadId) || readStartedThread(threadId);
-  if (summary && isHiddenThread(summary, visibility)) {
-    return alreadyArchivedResult("state-db", threadId);
-  }
-  try {
-    const result = await codex.request("thread/archive", { threadId }, {
-      timeoutMs: MUTATION_RPC_TIMEOUT_MS,
-      retry: false,
-    });
-    return archivedResultWithMobileIndex(result, threadId);
-  } catch (err) {
-    const rechecked = readStateDbThread(threadId) || readStartedThread(threadId);
-    if (rechecked && isHiddenThread(rechecked, visibility)) {
-      return alreadyArchivedResult("state-db", threadId);
-    }
-    if (isThreadArchiveNoOpError(err)) {
-      return alreadyArchivedResult("", threadId);
-    }
-    throw err;
-  }
-}
-
 function httpStatusError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
@@ -7660,193 +3486,6 @@ function httpStatusErrorWithDetails(statusCode, code, message, details = {}) {
   err.code = code;
   err.details = details && typeof details === "object" ? details : {};
   return err;
-}
-
-const THREAD_GOAL_OBJECTIVE_MAX_CHARS = 4000;
-
-function normalizeThreadGoalObjectiveInput(value) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  if (!text) return "";
-  return text.length > THREAD_GOAL_OBJECTIVE_MAX_CHARS
-    ? text.slice(0, THREAD_GOAL_OBJECTIVE_MAX_CHARS).trimEnd()
-    : text;
-}
-
-function normalizeThreadGoalTokenBudgetInput(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0) return null;
-  return Math.trunc(number);
-}
-
-function isThreadGoalRpcUnsupportedError(err) {
-  const message = String((err && err.message) || "").toLowerCase();
-  const code = String((err && err.code) || "").toLowerCase();
-  return /method not found|unknown method|not supported|unsupported|thread\/goal\/(set|clear|get)/.test(message)
-    || /method_not_found|method-not-found|unsupported|not_supported/.test(code);
-}
-
-function threadGoalFromRpcResult(result) {
-  if (!result || typeof result !== "object") return null;
-  const goal = result.goal && typeof result.goal === "object" ? result.goal : result;
-  return goal && typeof goal === "object" ? goal : null;
-}
-
-function isCompletedThreadGoal(goal) {
-  if (!goal || typeof goal !== "object") return false;
-  return normalizeThreadGoalStatus(goal.status) === "complete";
-}
-
-function currentThreadGoalForSet(threadId) {
-  try {
-    return threadGoalService.goalForThread(threadId);
-  } catch {
-    return null;
-  }
-}
-
-async function clearThreadGoalForSet(threadId) {
-  return codex.request("thread/goal/clear", { threadId }, {
-    timeoutMs: MUTATION_RPC_TIMEOUT_MS,
-    retry: false,
-  });
-}
-
-async function getThreadGoalRpc(threadId) {
-  return codex.request("thread/goal/get", { threadId }, {
-    timeoutMs: READ_RPC_TIMEOUT_MS,
-    retry: false,
-  });
-}
-
-async function setThreadGoalRpc(params) {
-  return codex.request("thread/goal/set", params, {
-    timeoutMs: MUTATION_RPC_TIMEOUT_MS,
-    retry: false,
-  });
-}
-
-function threadGoalForActionFallback(threadId) {
-  try {
-    return currentThreadGoalForSet(threadId);
-  } catch {
-    return null;
-  }
-}
-
-async function currentThreadGoalForAction(threadId) {
-  try {
-    return threadGoalFromRpcResult(await getThreadGoalRpc(threadId)) || threadGoalForActionFallback(threadId);
-  } catch (err) {
-    if (isThreadGoalRpcUnsupportedError(err)) {
-      throw httpStatusError(501, "Thread goal actions are not supported by the running Codex app-server; restart Mobile Web with Codex CLI 0.135.0 or newer.");
-    }
-    return threadGoalForActionFallback(threadId);
-  }
-}
-
-function threadGoalTokenBudgetParam(inputTokenBudget, currentGoal = null) {
-  const inputBudget = normalizeThreadGoalTokenBudgetInput(inputTokenBudget);
-  if (inputBudget !== null) return inputBudget;
-  const currentBudget = normalizeThreadGoalTokenBudgetInput(currentGoal && (currentGoal.tokenBudget ?? currentGoal.token_budget));
-  return currentBudget;
-}
-
-function threadGoalSetParams(threadId, objective, tokenBudget, extra = {}) {
-  const params = Object.assign({ threadId, objective }, extra || {});
-  if (tokenBudget !== null) params.tokenBudget = tokenBudget;
-  return params;
-}
-
-async function setThreadGoal(threadId, input = {}) {
-  const id = String(threadId || "").trim();
-  const objective = normalizeThreadGoalObjectiveInput(input.objective || input.goal || input.text);
-  if (!id) throw httpStatusError(400, "Thread id is required");
-  if (!objective) throw httpStatusError(400, "Goal objective is required");
-  const params = { threadId: id, objective };
-  const tokenBudget = normalizeThreadGoalTokenBudgetInput(input.tokenBudget ?? input.token_budget);
-  if (tokenBudget !== null) params.tokenBudget = tokenBudget;
-  try {
-    let clearedCompletedGoal = false;
-    if (isCompletedThreadGoal(currentThreadGoalForSet(id))) {
-      await clearThreadGoalForSet(id);
-      clearedCompletedGoal = true;
-    }
-    let result = await setThreadGoalRpc(params);
-    let goal = threadGoalFromRpcResult(result);
-    if (!clearedCompletedGoal && isCompletedThreadGoal(goal)) {
-      await clearThreadGoalForSet(id);
-      clearedCompletedGoal = true;
-      result = await setThreadGoalRpc(params);
-      goal = threadGoalFromRpcResult(result);
-    }
-    return { ok: true, goal: goal || result, result, clearedCompletedGoal };
-  } catch (err) {
-    if (isThreadGoalRpcUnsupportedError(err)) {
-      throw httpStatusError(501, "Thread goal set is not supported by the running Codex app-server; restart Mobile Web with Codex CLI 0.135.0 or newer.");
-    }
-    throw err;
-  }
-}
-
-async function runThreadGoalAction(threadId, input = {}) {
-  const id = String(threadId || "").trim();
-  const action = String(input.action || "").trim().toLowerCase();
-  if (!id) throw httpStatusError(400, "Thread id is required");
-  if (!action) throw httpStatusError(400, "Goal action is required");
-  if (action === "cancel" || action === "clear") {
-    try {
-      await clearThreadGoalForSet(id);
-      return { ok: true, action: "cancel", goal: null };
-    } catch (err) {
-      if (isThreadGoalRpcUnsupportedError(err)) {
-        throw httpStatusError(501, "Thread goal clear is not supported by the running Codex app-server; restart Mobile Web with Codex CLI 0.135.0 or newer.");
-      }
-      throw err;
-    }
-  }
-
-  const currentGoal = await currentThreadGoalForAction(id);
-  const objective = normalizeThreadGoalObjectiveInput(input.objective || input.goal || input.text || currentGoal && currentGoal.objective);
-  if (!objective) throw httpStatusError(400, "Goal objective is required");
-  const tokenBudget = threadGoalTokenBudgetParam(input.tokenBudget ?? input.token_budget, currentGoal);
-
-  if (action === "continue" || action === "resume") {
-    if (normalizeThreadGoalStatus(currentGoal && currentGoal.status) === "active") {
-      return { ok: true, action: "continue", goal: currentGoal, changed: false };
-    }
-    try {
-      await clearThreadGoalForSet(id);
-      const result = await setThreadGoalRpc(threadGoalSetParams(id, objective, tokenBudget));
-      const goal = threadGoalFromRpcResult(result) || await currentThreadGoalForAction(id);
-      return { ok: true, action: "continue", goal: goal || result, result, changed: true };
-    } catch (err) {
-      if (isThreadGoalRpcUnsupportedError(err)) {
-        throw httpStatusError(501, "Thread goal continue is not supported by the running Codex app-server; restart Mobile Web with Codex CLI 0.135.0 or newer.");
-      }
-      throw err;
-    }
-  }
-
-  if (action === "pause") {
-    try {
-      const result = await setThreadGoalRpc(threadGoalSetParams(id, objective, tokenBudget, { status: "blocked" }));
-      let goal = threadGoalFromRpcResult(result);
-      if (normalizeThreadGoalStatus(goal && goal.status) !== "blocked") goal = await currentThreadGoalForAction(id);
-      if (normalizeThreadGoalStatus(goal && goal.status) !== "blocked") {
-        throw httpStatusError(501, "Thread goal pause is not supported by the running Codex app-server.");
-      }
-      return { ok: true, action: "pause", goal, result, changed: true };
-    } catch (err) {
-      if (err && err.statusCode) throw err;
-      if (isThreadGoalRpcUnsupportedError(err)) {
-        throw httpStatusError(501, "Thread goal pause is not supported by the running Codex app-server; restart Mobile Web with Codex CLI 0.135.0 or newer.");
-      }
-      throw err;
-    }
-  }
-
-  throw httpStatusError(400, `Unsupported goal action: ${action}`);
 }
 
 function isUnmaterializedThreadError(err) {
@@ -7887,6 +3526,18 @@ function readStartedThread(threadId) {
   pruneStartedThreadCache();
   const entry = recentStartedThreads.get(String(threadId || ""));
   return entry && entry.thread ? annotateThreadRolloutStats(entry.thread) : null;
+}
+
+function statusTurnId(status) {
+  return threadSummaryStateService.statusTurnId(status);
+}
+
+function rowToFallbackThread(row) {
+  return threadSummaryStateService.rowToFallbackThread(row);
+}
+
+function sqlString(value) {
+  return threadSummaryStateService.sqlString(value);
 }
 
 function pruneLocalActiveThreadStatuses(now = Date.now()) {
@@ -7963,6 +3614,14 @@ function mergeThreadDisplaySummary(base, display, options = {}) {
 
 function mergeThreadRuntimeFromStateDb(thread, summary = null) {
   return threadSummaryStateService.mergeThreadRuntimeFromStateDb(thread, summary);
+}
+
+function detailReadThreadSummaryForFallbackCache(body = {}) {
+  return threadSummaryStateService.detailReadThreadSummaryForFallbackCache(body);
+}
+
+function syncThreadDetailReadResultToThreadListFallbackCache(payload = {}) {
+  return threadSummaryStateService.syncThreadDetailReadResultToThreadListFallbackCache(payload);
 }
 
 async function readThreadSummaryFromAppServer(codex, threadId) {
@@ -8167,162 +3826,6 @@ function threadDisplayTitle(thread) {
   return id;
 }
 
-function normalizeThreadTaskCardWorkflowMode(value) {
-  return threadTaskCardRouteService.normalizeThreadTaskCardWorkflowMode(value);
-}
-
-function normalizeThreadTaskCardReasoningEffort(value) {
-  return threadTaskCardRouteService.normalizeThreadTaskCardReasoningEffort(value);
-}
-
-function uniqueThreadTaskCardTargetIds(values, fallback = "") {
-  return threadTaskCardRouteService.uniqueThreadTaskCardTargetIds(values, fallback);
-}
-
-function threadTaskCardTargetReferenceText(value) {
-  return threadTaskCardRouteService.threadTaskCardTargetReferenceText(value);
-}
-
-function threadTaskCardTargetReferenceEntry(kind, value) {
-  return threadTaskCardRouteService.threadTaskCardTargetReferenceEntry(kind, value);
-}
-
-function threadTaskCardTargetReferenceEntries(body = {}) {
-  return threadTaskCardRouteService.threadTaskCardTargetReferenceEntries(body);
-}
-
-function threadTaskCardTargetReferences(body = {}) {
-  return threadTaskCardRouteService.threadTaskCardTargetReferences(body);
-}
-
-function isThreadIdLike(value) {
-  return threadTaskCardRouteService.isThreadIdLike(value);
-}
-
-function threadTaskCardTargetUpdatedAt(thread) {
-  return threadTaskCardRouteService.threadTaskCardTargetUpdatedAt(thread);
-}
-
-function publicThreadTaskCardTarget(thread) {
-  return threadTaskCardRouteService.publicThreadTaskCardTarget(thread);
-}
-
-function threadTaskCardTargetError(code, message, details = {}, statusCode = 400) {
-  return threadTaskCardRouteService.threadTaskCardTargetError(code, message, details, statusCode);
-}
-
-function threadTaskCardTargetVisibility(options = {}) {
-  return threadTaskCardRouteService.threadTaskCardTargetVisibility(options);
-}
-
-function threadTaskCardVisibleTargetThreads(options = {}) {
-  return threadTaskCardRouteService.threadTaskCardVisibleTargetThreads(options);
-}
-
-function threadTaskCardCanonicalTargetForCwd(cwd, visibleThreads = []) {
-  return threadTaskCardRouteService.threadTaskCardCanonicalTargetForCwd(cwd, visibleThreads);
-}
-
-function threadTaskCardCanonicalTargetForThread(thread, visibleThreads = []) {
-  return threadTaskCardRouteService.threadTaskCardCanonicalTargetForThread(thread, visibleThreads);
-}
-
-function threadTaskCardCanonicalVisibleTargets(visibleThreads = []) {
-  return threadTaskCardRouteService.threadTaskCardCanonicalVisibleTargets(visibleThreads);
-}
-
-function readThreadTaskCardTargetSummary(threadId, options = {}) {
-  return threadTaskCardRouteService.readThreadTaskCardTargetSummary(threadId, options);
-}
-
-function readThreadTaskCardVisibleTargetSummary(threadId) {
-  return threadTaskCardRouteService.readThreadTaskCardVisibleTargetSummary(threadId);
-}
-
-function readThreadTaskCardExecutionTargetSummary(card) {
-  return threadTaskCardRouteService.readThreadTaskCardExecutionTargetSummary(card);
-}
-
-function applyHomeAiDeployLaneRoutingPolicy(payload = {}, sourceSummary = null, options = {}) {
-  return threadTaskCardRouteService.applyHomeAiDeployLaneRoutingPolicy(payload, sourceSummary, options);
-}
-
-function assertThreadTaskCardTargetDeliverable(thread, details = {}, options = {}) {
-  return threadTaskCardRouteService.assertThreadTaskCardTargetDeliverable(thread, details, options);
-}
-
-function resolveThreadTaskCardTargetReference(value, sourceThreadId = "", options = {}) {
-  return threadTaskCardRouteService.resolveThreadTaskCardTargetReference(value, sourceThreadId, options);
-}
-
-function resolvedThreadTaskCardTargetIds(body = {}, sourceThreadId = "", options = {}) {
-  return threadTaskCardRouteService.resolvedThreadTaskCardTargetIds(body, sourceThreadId, options);
-}
-
-function threadTaskCardThreadCallIdempotencyKey(sourceThreadId, body = {}, targetThreadIds = []) {
-  return threadTaskCardRouteService.threadTaskCardThreadCallIdempotencyKey(sourceThreadId, body, targetThreadIds);
-}
-
-function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "", options = {}) {
-  return threadTaskCardRouteService.buildThreadTaskCardCreatePayload(body, sourceThreadId, options);
-}
-
-async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}, options = {}) {
-  return threadTaskCardRouteService.createThreadTaskCardsFromSourceThread(sourceThreadId, body, options);
-}
-
-function parseDynamicToolArguments(value) {
-  return threadTaskCardRouteService.parseDynamicToolArguments(value);
-}
-
-function dynamicToolTextResponse(text, options = {}) {
-  return threadTaskCardRouteService.dynamicToolTextResponse(text, options);
-}
-
-function dynamicToolJsonResponse(payload, options = {}) {
-  return threadTaskCardRouteService.dynamicToolJsonResponse(payload, options);
-}
-
-function dynamicToolErrorPayload(code, message, extra = {}) {
-  return threadTaskCardRouteService.dynamicToolErrorPayload(code, message, extra);
-}
-
-async function dynamicToolServerRequestResponsePayload(request) {
-  return threadTaskCardRouteService.dynamicToolServerRequestResponsePayload(request);
-}
-
-function parseThreadTaskCardDraftText(value) {
-  return threadTaskCardRouteService.parseThreadTaskCardDraftText(value);
-}
-
-function threadTaskCardDraftIdempotencyKey(threadId, turnId, draft) {
-  return threadTaskCardRouteService.threadTaskCardDraftIdempotencyKey(threadId, turnId, draft);
-}
-
-function threadTaskCardItemText(item) {
-  return threadTaskCardRouteService.threadTaskCardItemText(item);
-}
-
-function summarizeTaskCardText(value) {
-  return threadTaskCardRouteService.summarizeTaskCardText(value);
-}
-
-function truncateThreadTaskCardBody(value, maxChars = THREAD_TASK_CARD_BODY_MAX_CHARS) {
-  return threadTaskCardRouteService.truncateThreadTaskCardBody(value, maxChars);
-}
-
-function taskCardSourceThreadTitle(sourceThreadId, requestedTitle = "", sourceSummary = null) {
-  return threadTaskCardRouteService.taskCardSourceThreadTitle(sourceThreadId, requestedTitle, sourceSummary);
-}
-
-async function materializeThreadTaskCardDraftsForThread(thread) {
-  return threadTaskCardRouteService.materializeThreadTaskCardDraftsForThread(thread);
-}
-
-async function prepareThreadTaskCardsToResult(result) {
-  return threadTaskCardRouteService.prepareThreadTaskCardsToResult(result);
-}
-
 function hasTurnUsageSummaryPayload(summaries) {
   return threadDetailResponsePreparationService.hasTurnUsageSummaryPayload(summaries);
 }
@@ -8353,52 +3856,6 @@ async function readFullThreadDetailForOrchestrator({ threadId, summary, runtimeS
 
 function fallbackThreadReadResultForOrchestrator({ threadId, summary, runtimeSettings, warning, mode }) {
   return threadDetailResponsePreparationService.fallbackThreadReadResultForOrchestrator({ threadId, summary, runtimeSettings, warning, mode });
-}
-
-function filterFallbackThreads(threads, filters = {}) {
-  const globalState = filters.globalState || readGlobalState();
-  const visibility = visibilityFromGlobalState(globalState);
-  const archivedIds = filters.archivedIds && typeof filters.archivedIds.has === "function"
-    ? filters.archivedIds
-    : archivedSessionThreadIds();
-  const cwdFilter = String(filters.cwd || "").trim();
-  const search = String(filters.searchTerm || "").trim().toLowerCase();
-  const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(threads, visibility);
-  return threads
-    .filter((thread) => {
-      if (shouldHideThreadListSummary(thread, archivedIds)) return false;
-      if (!shouldFilterByWorkspace) return true;
-      if (threadProjectlessVisible(thread, visibility)) return true;
-      const cwd = String(thread && thread.cwd || "").trim();
-      if (cwd) return threadWorkspaceVisible(cwd, visibility);
-      return false;
-    })
-    .filter((thread) => threadMatchesWorkspaceCwd(thread && thread.cwd, cwdFilter))
-    .filter((thread) => {
-      if (!search) return true;
-      return [thread.name, thread.preview, thread.cwd, thread.id]
-        .some((value) => String(value || "").toLowerCase().includes(search));
-    });
-}
-
-function readStateDbFallback(limit = 80, filters = {}) {
-  if (!fs.existsSync(STATE_DB)) return [];
-  const rowLimit = Math.max(limit * 5, 200);
-  const query = [
-    "select id,title,first_user_message,cwd,rollout_path,archived,archived_at,updated_at,model,reasoning_effort,sandbox_policy,approval_mode,agent_nickname,agent_role,",
-    "exists(select 1 from thread_spawn_edges where child_thread_id=threads.id) as is_spawned_child",
-    "from threads",
-    "order by updated_at desc",
-    `limit ${Math.min(1000, rowLimit)};`,
-  ].join(" ");
-  try {
-    const result = runSqliteJson(STATE_DB, query, { timeoutMs: 5000, maxBuffer: 5 * 1024 * 1024, userHome: USER_HOME });
-    if (!result.ok) return [];
-    const rows = result.rows;
-    return filterFallbackThreads(rows.map(rowToFallbackThread), filters).slice(0, limit);
-  } catch (_) {
-    return [];
-  }
 }
 
 const threadListFallbackSourceService = createThreadListFallbackSourceService({
@@ -8531,14 +3988,6 @@ function removeThreadFromThreadListFallbackCache(threadId) {
 
 function upsertThreadListFallbackCacheThread(thread, options = {}) {
   return threadListFallbackCacheService.upsertThread(thread, options);
-}
-
-function detailReadThreadSummaryForFallbackCache(body = {}) {
-  return threadSummaryStateService.detailReadThreadSummaryForFallbackCache(body);
-}
-
-function syncThreadDetailReadResultToThreadListFallbackCache(payload = {}) {
-  return threadSummaryStateService.syncThreadDetailReadResultToThreadListFallbackCache(payload);
 }
 
 function updateThreadListFallbackCacheStatus(threadId, status, meta = {}) {
@@ -8733,374 +4182,90 @@ function tokenUsageWorkspaceCwds(globalState = readGlobalState()) {
   ];
 }
 
-async function handleApi(req, res) {
-  const url = getUrl(req);
-  const publicCoreRouteResult = await coreApiRouteService.handlePublicRoute({
-    url,
-    req,
-    res,
-    readBody: () => readBody(req),
-    sendJson: (status, body, headers) => sendJson(res, status, body, headers),
-  });
-  if (publicCoreRouteResult.handled) return;
-  if (!isAuthorized(req)) {
-    sendJson(res, 401, { error: "Unauthorized" });
-    return;
-  }
-  const authorizedCoreRouteResult = await coreApiRouteService.handleAuthorizedRoute({
-    url,
-    req,
-    res,
-    readBody: () => readBody(req),
-    sendJson: (status, body, headers) => sendJson(res, status, body, headers),
-  });
-  if (authorizedCoreRouteResult.handled) return;
-  const webPushRouteResult = await webPushRuntimeService.handleRoute({
-    url,
-    method: req.method,
-    req,
-    readBody: () => readBody(req),
-    sendJson: (status, body) => sendJson(res, status, body),
-  });
-  if (webPushRouteResult.handled) {
-    return;
-  }
-  const mediaFileRouteResult = await mediaFileService.handleMediaFileRoute({
-    url,
-    method: req.method,
-    req,
-    res,
-    sendJson: (status, body) => sendJson(res, status, body),
-  });
-  if (mediaFileRouteResult.handled) {
-    return;
-  }
-  const threadSideChatRouteResult = await handleThreadSideChatRoute({
-    url,
-    method: req.method,
-    readBody: () => readBody(req),
-    threadSideChatService,
-    orchestrationService: threadSideChatOrchestrationService,
-    sendJson: (status, body) => sendJson(res, status, body),
-  });
-  if (threadSideChatRouteResult.handled) {
-    return;
-  }
-  const threadTaskCardRouteResult = await threadTaskCardRouteService.handleRoute({
-    url,
-    method: req.method,
-    readBody: () => readBody(req),
-    sendJson: (status, body) => sendJson(res, status, body),
-  });
-  if (threadTaskCardRouteResult.handled) {
-    return;
-  }
-  if (url.pathname === "/api/workspaces" && req.method === "GET") {
-    sendJson(res, 200, { data: await listWorkspaces() });
-    return;
-  }
-  if (url.pathname === "/api/workspaces" && req.method === "POST") {
-    try {
-      const body = await readBody(req);
-      const created = workspaceRegistryService.create(body);
-      syncRegisteredWorkspaceTrust(CODEX_HOME);
-      syncKnownCodexMobileMcpToolsets();
-      sendJson(res, 200, created);
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/thread-continuations" && req.method === "POST") {
-    const body = await readBody(req);
-    const job = createContinuationJob(body);
-    sendJson(res, 202, publicContinuationJob(job));
-    return;
-  }
-  if (url.pathname === "/api/chatgpt-pro/status" && req.method === "GET") {
-    sendJson(res, 200, chatGptProBridgeService.status());
-    return;
-  }
-  if (url.pathname === "/api/chatgpt-pro/planner/status" && req.method === "GET") {
-    sendJson(res, 200, {
-      ok: true,
-      planner: chatGptProPlannerService.status(),
-      mcp: chatGptProMcpService.status(),
-    });
-    return;
-  }
-  if (url.pathname === "/api/chatgpt-pro/planner/artifacts" && req.method === "GET") {
-    try {
-      sendJson(res, 200, chatGptProPlannerService.listPlannerArtifacts({
-        limit: url.searchParams.get("limit") || 20,
-        type: url.searchParams.get("type") || "",
-        threadId: url.searchParams.get("threadId") || url.searchParams.get("thread_id") || "",
-        cwd: url.searchParams.get("cwd") || "",
-      }));
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/chatgpt-pro/planner/artifacts" && req.method === "POST") {
-    try {
-      const body = await readBody(req);
-      sendJson(res, 201, { ok: true, artifact: chatGptProPlannerService.createPlannerArtifact(body) });
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  const chatGptPlannerArtifactMatch = url.pathname.match(/^\/api\/chatgpt-pro\/planner\/artifacts\/([^/]+)$/);
-  if (chatGptPlannerArtifactMatch && req.method === "GET") {
-    try {
-      sendJson(res, 200, chatGptProPlannerService.readPlannerArtifact({
-        id: decodeURIComponent(chatGptPlannerArtifactMatch[1]),
-      }));
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/chatgpt-pro/generate" && req.method === "POST") {
-    try {
-      const body = await readBody(req);
-      const prompt = String(body.prompt || body.text || "").trim();
-      if (!chatGptProBridgeService.isRequestText(prompt)) {
-        sendJson(res, 400, { ok: false, error: "Use @ChatGPT Pro to start a ChatGPT Pro bridge request." });
-        return;
-      }
-      const sourceSummary = await chatGptProSourceSummary(body);
-      sendJson(res, 202, await chatGptProBridgeService.start(Object.assign({}, body, {
-        prompt,
-        sourceSummary,
-      })));
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  const continuationJobMatch = url.pathname.match(/^\/api\/thread-continuations\/([^/]+)$/);
-  if (continuationJobMatch && req.method === "GET") {
-    pruneContinuationJobs();
-    const jobId = decodeURIComponent(continuationJobMatch[1]);
-    const job = getContinuationJob(jobId);
-    if (!job) {
-      sendJson(res, 404, { error: "Continuation job not found" });
-      return;
-    }
-    sendJson(res, 200, publicContinuationJob(job));
-    return;
-  }
-  const threadMessageRouteResult = await threadMessageRouteService.handleRoute({
-    url,
-    method: req.method,
-    readBody: () => readBody(req),
-    readMessageBody: (threadId) => readMessageBody(req, threadId),
-    sendJson: (status, body) => sendJson(res, status, body),
-  });
-  if (threadMessageRouteResult.handled) {
-    return;
-  }
-  const threadArchive = url.pathname.match(/^\/api\/threads\/([^/]+)\/archive$/);
-  if (threadArchive && req.method === "POST") {
-    const threadId = decodeURIComponent(threadArchive[1]);
-    const visibility = visibilityFromGlobalState();
-    const result = await archiveThreadId(threadId, visibility);
-    sendJson(res, 200, result || { archived: true });
-    return;
-  }
-  const threadGoal = url.pathname.match(/^\/api\/threads\/([^/]+)\/goal$/);
-  if (threadGoal && req.method === "POST") {
-    try {
-      const threadId = decodeURIComponent(threadGoal[1]);
-      const body = await readBody(req);
-      sendJson(res, 200, await setThreadGoal(threadId, body));
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  const threadGoalAction = url.pathname.match(/^\/api\/threads\/([^/]+)\/goal\/actions$/);
-  if (threadGoalAction && req.method === "POST") {
-    try {
-      const threadId = decodeURIComponent(threadGoalAction[1]);
-      const body = await readBody(req);
-      sendJson(res, 200, await runThreadGoalAction(threadId, body));
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  const threadListRouteResult = await handleThreadListRoute({
-    url,
-    method: req.method,
-    sendJson: (status, body, headers) => sendJson(res, status, body, headers),
-    archivedSessionThreadIds,
-    readSessionIndexEntries,
-    rolloutStatsForPath,
-    threadDisplaySummaryCache,
-    mergeThreadDisplaySummary,
-    normalizeStaleContextOnlyActiveThread,
-    readGlobalState,
-    visibilityFromGlobalState,
-    normalizeFsPath,
-    threadListResponseCoalescer,
-    readThreadListCachedFallback,
-    readThreadListFallback,
-    threadListFallbackBaselineWorkTimingFields,
-    threadListFallbackSourceDiagnosticTimingFields,
-    normalizeThreadListResultStatuses,
-    attachThreadListStateToResult,
-    tokenUsageStatsService,
-    tokenUsageWorkspaceCwds,
-    threadListTokenUsageTimingFields,
-    logThreadList,
-    scheduleActiveWindowPrewarmFromThreadListResult,
-    codex,
-    filterVisibleThreads,
-    filterThreadListByCwd,
-    shouldDeferThreadListFallbackForActiveDetail,
-    hydrateThreadListResultTitlesFromSessionIndex,
-    upsertThreadListFallbackCacheThreads,
-    mergeThreadSummaryListWithDiagnostics,
-    normalizeThreadSummaryLiveStatus,
-    threadListDefaultWarmFallbackEnabled: THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED,
-    readRpcTimeoutMs: READ_RPC_TIMEOUT_MS,
-  });
-  if (threadListRouteResult.handled) return;
-  const threadRename = url.pathname.match(/^\/api\/threads\/([^/]+)\/name$/);
-  if (threadRename && (req.method === "PATCH" || req.method === "POST")) {
-    const threadId = decodeURIComponent(threadRename[1]);
-    const body = await readBody(req);
-    const name = String(body.name || body.title || "").trim();
-    if (!threadId) {
-      sendJson(res, 400, { error: "Thread id is required" });
-      return;
-    }
-    if (!name) {
-      sendJson(res, 400, { error: "Thread name is required" });
-      return;
-    }
-    if (name.length > 120) {
-      sendJson(res, 400, { error: "Thread name is too long" });
-      return;
-    }
-    try {
-      const updated = await tryUpdateThreadTitle(threadId, name);
-      const titleIndexed = persistThreadTitleToSessionIndex(threadId, name);
-      if (!updated && !titleIndexed) {
-        sendJson(res, 501, { error: "Thread rename is not supported by this app-server" });
-        return;
-      }
-      rememberStartedThread(Object.assign({}, readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || {}, {
-        id: threadId,
-        name,
-        preview: name,
-        status: { type: "notLoaded" },
-      }));
-      sendJson(res, 200, {
-        ok: true,
-        threadId,
-        name,
-        titleUpdated: updated,
-        titleIndexed,
-        warning: updated ? "" : "Thread rename was stored in the Mobile fallback index; app-server rename is unavailable.",
-      });
-    } catch (err) {
-      if (isRecoverableThreadTitleUpdateError(err)) {
-        const titleIndexed = persistThreadTitleToSessionIndex(threadId, name);
-        if (titleIndexed) {
-          rememberStartedThread(Object.assign({}, readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || {}, {
-            id: threadId,
-            name,
-            preview: name,
-            status: { type: "notLoaded" },
-          }));
-          sendJson(res, 200, {
-            ok: true,
-            threadId,
-            name,
-            titleUpdated: false,
-            titleIndexed,
-            warning: "Thread rename was stored in the Mobile fallback index; app-server title update is temporarily unavailable.",
-          });
-          return;
-        }
-      }
-      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
-    }
-    return;
-  }
-  const threadRead = url.pathname.match(/^\/api\/threads\/([^/]+)$/);
-  if (threadRead && req.method === "GET") {
-    trackThreadDetailRequestLifecycle(res);
-    const threadId = decodeURIComponent(threadRead[1]);
-    await handleThreadDetailReadRoute({
-      codex,
-      threadId,
-      url,
-      readThreadDetail: (request) => threadDetailReadOrchestrationService.readThreadDetail(request),
-      sendJson: (status, body) => sendJson(res, status, body),
-      onThreadDetailReadResult: (payload) => syncThreadDetailReadResultToThreadListFallbackCache(payload),
-      logThreadDetail,
-    });
-    return;
-  }
-  const threadTurns = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns$/);
-  if (threadTurns && req.method === "GET") {
-    const threadId = decodeURIComponent(threadTurns[1]);
-    const summary = readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || null;
-    const cursor = parseThreadTurnsCursor(url.searchParams.get("cursor"));
-    const params = {
-      threadId,
-      limit: Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || String(MAX_THREAD_TURNS)))),
-      sortDirection: url.searchParams.get("sortDirection") || "asc",
-    };
-    if (cursor) params.cursor = cursor;
-    sendJson(res, 200, compactTurnsListResult(
-      await codex.request("thread/turns/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false }),
-      { threadId, summary },
-    ));
-    return;
-  }
-  sendJson(res, 404, { error: "Not found" });
-}
-
-function handleEvents(req, res) {
-  if (!isAuthorized(req)) {
-    sendJson(res, 401, { error: "Unauthorized" });
-    return;
-  }
-  const url = getUrl(req);
-  const client = {
-    threadId: String(url.searchParams.get("threadId") || ""),
-  };
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream; charset=utf-8",
-    "Cache-Control": "no-cache, no-transform",
-    "Connection": "keep-alive",
-    "X-Accel-Buffering": "no",
-  });
-  res.write(`data: ${JSON.stringify({ type: "status", status: codex.status() })}\n\n`);
-  for (const request of codex.pendingServerRequests()) {
-    res.write(`data: ${JSON.stringify({ type: "serverRequest", request })}\n\n`);
-  }
-  clients.set(res, client);
-  const heartbeat = setInterval(() => {
-    try {
-      if (res.destroyed || res.writableEnded || !res.write(": keepalive\n\n")) {
-        removeEventClient(res);
-      }
-    } catch (_) {
-      removeEventClient(res);
-    }
-  }, 25000);
-  clientHeartbeats.set(res, heartbeat);
-  req.on("close", () => {
-    removeEventClient(res);
-  });
-}
+const apiDispatchRouteService = createApiDispatchRouteService({
+  READ_RPC_TIMEOUT_MS,
+  MAX_THREAD_TURNS,
+  CODEX_HOME,
+  archiveThreadId,
+  archivedSessionThreadIds,
+  attachThreadListStateToResult,
+  chatGptProBridgeService,
+  chatGptProMcpService,
+  chatGptProPlannerService,
+  chatGptProSourceSummary,
+  clients,
+  clientHeartbeats,
+  codex,
+  compactTurnsListResult,
+  coreApiRouteService,
+  createContinuationJob,
+  filterThreadListByCwd,
+  filterVisibleThreads,
+  getContinuationJob,
+  getUrl,
+  handleThreadDetailReadRoute,
+  handleThreadListRoute,
+  handleThreadSideChatRoute,
+  hydrateThreadListResultTitlesFromSessionIndex,
+  isAuthorized,
+  isRecoverableThreadTitleUpdateError,
+  listWorkspaces,
+  logThreadDetail,
+  logThreadList,
+  mediaFileService,
+  mergeThreadDisplaySummary,
+  mergeThreadSummaryListWithDiagnostics,
+  normalizeFsPath,
+  normalizeStaleContextOnlyActiveThread,
+  normalizeThreadListResultStatuses,
+  normalizeThreadSummaryLiveStatus,
+  parseThreadTurnsCursor,
+  persistThreadTitleToSessionIndex,
+  pruneContinuationJobs,
+  publicContinuationJob,
+  readBody,
+  readGlobalState,
+  readMessageBody,
+  readRolloutSessionFallbackThread,
+  readSessionIndexEntries,
+  readStartedThread,
+  readStateDbThread,
+  readThreadListCachedFallback,
+  readThreadListFallback,
+  rememberStartedThread,
+  removeEventClient,
+  rolloutStatsForPath,
+  runThreadGoalAction,
+  scheduleActiveWindowPrewarmFromThreadListResult,
+  sendJson,
+  setThreadGoal,
+  shouldDeferThreadListFallbackForActiveDetail,
+  syncKnownCodexMobileMcpToolsets,
+  syncRegisteredWorkspaceTrust,
+  syncThreadDetailReadResultToThreadListFallbackCache,
+  threadDetailReadOrchestrationService,
+  threadDisplaySummaryCache,
+  threadListDefaultWarmFallbackEnabled: THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED,
+  threadListFallbackBaselineWorkTimingFields,
+  threadListFallbackSourceDiagnosticTimingFields,
+  threadListResponseCoalescer,
+  threadListTokenUsageTimingFields,
+  threadMessageRouteService,
+  threadSideChatOrchestrationService,
+  threadSideChatService,
+  threadTaskCardRouteService,
+  tokenUsageStatsService,
+  tokenUsageWorkspaceCwds,
+  tryUpdateThreadTitle,
+  upsertThreadListFallbackCacheThreads,
+  visibilityFromGlobalState,
+  webPushRuntimeService,
+  workspaceRegistryService,
+});
+const {
+  handleApi,
+  handleEvents,
+} = apiDispatchRouteService;
 
 const server = http.createServer(async (req, res) => {
   try {

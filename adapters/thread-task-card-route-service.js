@@ -119,8 +119,9 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         "Do not use this for ordinary discussion, read-only references that do not require target-workspace inspection, or work that clearly belongs in the current thread workspace.",
         "The model must decide from the user's request whether delegation is required; do not rely on local keyword or path heuristics.",
         "Use only a current non-archived target thread. Archived, deleted, hidden, subagent, or non-detail-readable targetThreadId values are rejected by the server.",
-        "Several normal threads may share the same cwd/workspace. Prefer an exact targetThreadId or exact targetThreadTitle for the intended thread; do not retarget only because another thread in the same cwd was updated more recently.",
-        "Use targetWorkspace/cwd only when the request intentionally names a workspace rather than a specific thread; cwd targeting chooses a current visible thread for that workspace.",
+        "Thread identity is the exact targetThreadId. Titles and cwd/workspace values are hints only and must not be treated as stable identity.",
+        "Several normal threads may share the same cwd/workspace. Use targetThreadId for the intended thread; title-only routing fails closed when ambiguous.",
+        "Use targetWorkspace/cwd only when that workspace has exactly one visible deliverable thread. If multiple visible threads share the cwd, the server rejects the request with target_workspace_ambiguous instead of choosing one.",
         targetHints ? `Visible target hints:\n${targetHints}` : "",
       ].filter(Boolean).join("\n\n"),
       inputSchema: {

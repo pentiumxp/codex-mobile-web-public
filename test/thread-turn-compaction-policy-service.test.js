@@ -131,10 +131,13 @@ test("default live-turn detection preserves interrupted shell behavior", () => {
 });
 
 test("server compaction merges rollout operations into operation-detail turns", () => {
-  const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
-  const compactThreadBody = functionBody(serverJs, "compactThread");
-  assert.match(serverJs, /function mergeRecentRawOperationsIntoTurn\(/);
-  assert.doesNotMatch(serverJs, /function mergeRecentRawOperationsIntoLiveTurn\(/);
+  const compactionJs = fs.readFileSync(
+    path.resolve(__dirname, "..", "adapters", "thread-detail-compaction-service.js"),
+    "utf8",
+  );
+  const compactThreadBody = functionBody(compactionJs, "compactThread");
+  assert.match(compactionJs, /function mergeRecentRawOperationsIntoTurn\(/);
+  assert.doesNotMatch(compactionJs, /function mergeRecentRawOperationsIntoLiveTurn\(/);
   assert.match(compactThreadBody, /const operationDetailIndexes = operationDetailTurnIndexes\(out\.turns\);/);
   assert.match(compactThreadBody, /for \(const index of operationDetailIndexes\) \{[\s\S]*mergeRecentRawOperationsIntoTurn\(out, out\.turns\[index\], \{ maxOperations: 50, allowNewOperations: true \}\);[\s\S]*\}/);
   assert.ok(
@@ -145,9 +148,12 @@ test("server compaction merges rollout operations into operation-detail turns", 
 });
 
 test("server compaction policy preserves context compaction as a visible input anchor", () => {
-  const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
-  assert.match(serverJs, /function isUserVisibleInputItem\(/);
-  assert.match(functionBody(serverJs, "isUserVisibleInputItem"), /isUserQuestionItem\(item\)/);
-  assert.match(functionBody(serverJs, "isUserVisibleInputItem"), /isContextCompactionType\(item && item\.type\)/);
-  assert.match(serverJs, /createThreadTurnCompactionPolicyService\(\{[\s\S]*isUserVisibleInputItem,[\s\S]*isAssistantReceiptItem,/);
+  const compactionJs = fs.readFileSync(
+    path.resolve(__dirname, "..", "adapters", "thread-detail-compaction-service.js"),
+    "utf8",
+  );
+  assert.match(compactionJs, /function isUserVisibleInputItem\(/);
+  assert.match(functionBody(compactionJs, "isUserVisibleInputItem"), /isUserQuestionItem\(item\)/);
+  assert.match(functionBody(compactionJs, "isUserVisibleInputItem"), /isContextCompactionType\(item && item\.type\)/);
+  assert.match(compactionJs, /createThreadTurnCompactionPolicyService\(\{[\s\S]*isUserVisibleInputItem,[\s\S]*isAssistantReceiptItem,/);
 });

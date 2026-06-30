@@ -216,8 +216,13 @@ such as relative filenames, raw `data:image`, stale `blob:`, `file://`, or
 external URLs as `<img src>`; generated image cards should use
 `/api/generated-images/file` content URLs or bounded failed cards, and browser
 self-check image failures include source-kind metadata. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
-self-check plus browser self-check for deploy-time one-shot checks and periodic
-metadata-only JSONL monitoring, while Home AI remains responsible for
+self-check, client-event stall scan, and explicit deploy-time browser
+self-check. `adapters/runtime-job-scheduler-service.js` owns the child-check
+schedule, browser permission, timeout budget, and foreground-preemptibility
+metadata. Periodic LaunchAgent monitoring defaults to API/client-event checks
+only, so the resident checker does not become a recurring HeadlessChrome
+production load test; run with `--gate-mode deploy` or `--browser-mode full`
+for the full browser gate. Home AI remains responsible for
 Owner-approved repair-card dispatch. Runtime self-check results now pass
 through `adapters/runtime-self-check-gate-service.js`: user-visible H1/H2
 projection, image, duplicate-message, timestamp, list/detail, submit, and

@@ -6,10 +6,16 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
 const autoTurnRecoveryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "auto-turn-recovery-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
+const serverRuntimeUtilsJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "server-runtime-utils.js"), "utf8");
+const serverHttpRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "server-http-runtime-service.js"), "utf8");
+const runtimePermissionPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "runtime-permission-policy-service.js"), "utf8");
+const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "rate-limit-runtime-service.js"), "utf8");
+const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
 const threadListFallbackSourceServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-source-service.js"), "utf8");
@@ -176,48 +182,48 @@ test("server default model falls back to GPT-5.5", () => {
   assert.match(serverJs, /const DEFAULT_MODEL = MODEL_OPTIONS\[0\] \|\| "gpt-5\.5";/);
   assert.match(coreApiRouteServiceJs, /defaultModel: codexConfigDefaults\.model \|\| defaultModel/);
   assert.match(coreApiRouteServiceJs, /defaultPermissionMode: defaultPermissionModeFromConfigDefaults\(\)/);
-  assert.match(serverJs, /function defaultPermissionModeFromConfigDefaults\(\)[\s\S]*dangerFullAccess[\s\S]*return "full"/);
-  assert.match(serverJs, /disabled:\s*"dangerFullAccess"/);
-  assert.match(serverJs, /"no-sandbox":\s*"dangerFullAccess"/);
+  assert.match(runtimePermissionPolicyServiceJs, /function defaultPermissionModeFromConfigDefaults\(\)[\s\S]*dangerFullAccess[\s\S]*return "full"/);
+  assert.match(runtimePermissionPolicyServiceJs, /disabled:\s*"dangerFullAccess"/);
+  assert.match(runtimePermissionPolicyServiceJs, /"no-sandbox":\s*"dangerFullAccess"/);
 });
 
 test("server resolves the default Codex executable from macOS install paths", () => {
   assert.match(serverJs, /const CODEX_EXE = resolveDefaultCodexExecutable\(\);/);
-  assert.match(serverJs, /function resolveDefaultCodexExecutable\(/);
-  assert.match(serverJs, /process\.env\.CODEX_MOBILE_CODEX_EXE/);
-  assert.match(serverJs, /function pathEntriesFromEnvPath\(/);
-  assert.match(serverJs, /path\.delimiter/);
-  assert.match(serverJs, /\/opt\/homebrew\/bin/);
-  assert.match(serverJs, /path\.join\(USER_HOME, "\.local", "bin"\)/);
-  assert.match(serverJs, /findExecutableInDirs\("codex", commonCodexExecutableDirs\(\)\)/);
+  assert.match(serverRuntimeUtilsJs, /function resolveDefaultCodexExecutable\(/);
+  assert.match(serverRuntimeUtilsJs, /CODEX_MOBILE_CODEX_EXE/);
+  assert.match(serverRuntimeUtilsJs, /function pathEntriesFromEnvPath\(/);
+  assert.match(serverRuntimeUtilsJs, /path\.delimiter/);
+  assert.match(serverRuntimeUtilsJs, /\/opt\/homebrew\/bin/);
+  assert.match(serverRuntimeUtilsJs, /path\.join\(userHome, "\.local", "bin"\)/);
+  assert.match(serverRuntimeUtilsJs, /findExecutableInDirs\("codex", commonCodexExecutableDirs\(\)\)/);
 });
 
 test("server maps quota groups to shared Codex and independent Spark models", () => {
-  const start = serverJs.indexOf("function rateLimitModelKeys(");
-  const end = serverJs.indexOf("function recordRateLimits(", start);
+  const start = rateLimitRuntimeServiceJs.indexOf("function rateLimitModelKeys(");
+  const end = rateLimitRuntimeServiceJs.indexOf("function recordRateLimits(", start);
   assert.ok(start > 0 && end > start, "missing server quota mapping function");
-  const body = serverJs.slice(start, end);
+  const body = rateLimitRuntimeServiceJs.slice(start, end);
 
   assert.match(body, /limitId === "codex-bengalfox"[\s\S]*gpt-5\.3-codex-spark/, "Spark quota should map to Spark only");
   assert.match(body, /limitId === "codex"[\s\S]*!isSparkModelKey\(modelKey\)/, "Codex quota should map to non-Spark models");
 });
 
 test("server hydrates rollout quota snapshots without overwriting live quota", () => {
-  assert.match(serverJs, /function loadRecentRateLimitsFromRollouts\(/, "server should scan local rollout evidence");
-  assert.match(serverJs, /isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)/, "server should only scan account-scoped rollout quota evidence");
-  assert.match(serverJs, /entry && entry\.payload && entry\.payload\.rate_limits/, "server should read native rollout rate_limits");
-  assert.match(serverJs, /recordRateLimits\(entry\.rateLimits,\s*\{\s*source:\s*"rollout"\s*\}\)/, "rollout scan should write snapshot quota");
-  assert.match(serverJs, /function canExposeRateLimitsForActiveHome\(\)[\s\S]*isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)/, "server should gate quota exposure to account-scoped homes");
-  assert.match(serverJs, /function isTrustedLiveRateLimitSource\([\s\S]*managed-child-live[\s\S]*profile-mux-live/, "owned live quota should be exposable for shared profile homes");
-  assert.match(serverJs, /function recordRateLimits\([\s\S]*!isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)[\s\S]*latestLiveRateLimits = null/, "source-less live quota should be ignored for shared profile homes");
-  assert.match(serverJs, /function recordRateLimitReadResult\([\s\S]*rateLimitsByLimitId[\s\S]*latestLiveRateLimitsSource = source/, "rate-limit read RPC should hydrate model quota snapshots");
+  assert.match(rateLimitRuntimeServiceJs, /function loadRecentRateLimitsFromRollouts\(/, "server should scan local rollout evidence");
+  assert.match(rateLimitRuntimeServiceJs, /isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)/, "server should only scan account-scoped rollout quota evidence");
+  assert.match(rateLimitRuntimeServiceJs, /entry && entry\.payload && entry\.payload\.rate_limits/, "server should read native rollout rate_limits");
+  assert.match(rateLimitRuntimeServiceJs, /recordRateLimits\(entry\.rateLimits,\s*\{\s*source:\s*"rollout"\s*\}\)/, "rollout scan should write snapshot quota");
+  assert.match(rateLimitRuntimeServiceJs, /function canExposeRateLimitsForActiveHome\(\)[\s\S]*isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)/, "server should gate quota exposure to account-scoped homes");
+  assert.match(rateLimitRuntimeServiceJs, /function isTrustedLiveRateLimitSource\([\s\S]*managed-child-live[\s\S]*profile-mux-live/, "owned live quota should be exposable for shared profile homes");
+  assert.match(rateLimitRuntimeServiceJs, /function recordRateLimits\([\s\S]*!isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)[\s\S]*latestLiveRateLimits = null/, "source-less live quota should be ignored for shared profile homes");
+  assert.match(rateLimitRuntimeServiceJs, /function recordRateLimitReadResult\([\s\S]*rateLimitsByLimitId[\s\S]*latestLiveRateLimitsSource = source/, "rate-limit read RPC should hydrate model quota snapshots");
   assert.match(codexAppServerClientServiceJs, /await this\.refreshRateLimits\(\);[\s\S]*this\.ready = true/, "initialize should refresh quota before broadcasting ready status");
   assert.match(codexAppServerClientServiceJs, /async refreshRateLimitsIfMissing\(\)[\s\S]*LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS/, "server should rehydrate missing live quota after app-server startup");
   assert.match(codexAppServerClientServiceJs, /this\.sendRpc\("account\/rateLimits\/read"[\s\S]*resetOnTimeout:\s*false/, "quota refresh should call the official app-server read RPC without resetting the transport on timeout");
   assert.match(codexAppServerClientServiceJs, /rateLimitSource\(\)[\s\S]*this\.isMuxEndpoint\(\)[\s\S]*"profile-mux-live"/, "profile mux quota should be marked as owned by the active profile endpoint");
   assert.match(codexAppServerClientServiceJs, /recordRateLimits\(msg\.params\.rateLimits,\s*\{[\s\S]*source:\s*this\.rateLimitSource\(\)/, "quota notifications should use the same trusted source classifier as quota reads");
-  assert.match(serverJs, /function codexAppServerChildEnv\([\s\S]*CODEX_CLI_PATH[\s\S]*CODEX_MUX_/, "managed child app-server env should drop desktop bridge variables");
-  assert.match(serverJs, /if \(CODEX_HOME\) env\.CODEX_HOME = CODEX_HOME;[\s\S]*Object\.assign\(env, extra\);/, "explicit child env should be able to override the active CODEX_HOME for profile preflight");
+  assert.match(serverRuntimeUtilsJs, /function codexAppServerChildEnv\([\s\S]*CODEX_CLI_PATH[\s\S]*CODEX_MUX_/, "managed child app-server env should drop desktop bridge variables");
+  assert.match(serverRuntimeUtilsJs, /if \(codexHome\) out\.CODEX_HOME = codexHome;[\s\S]*Object\.assign\(out, extra\);/, "explicit child env should be able to override the active CODEX_HOME for profile preflight");
   assert.match(codexAppServerClientServiceJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: codexAppServerChildEnv\(\{ CODEX_HOME \}\)/, "managed child app-server should inherit the resolved active CODEX_HOME without desktop bridge env");
   assert.match(codexAppServerClientServiceJs, /async startOwnedMuxAndConnect\(\)/, "Mobile Web should be able to own a shared mux instead of depending on Desktop");
   assert.match(codexAppServerClientServiceJs, /CODEX_MUX_STANDALONE:\s*"1"[\s\S]*CODEX_MUX_KEEP_ALIVE:\s*"1"[\s\S]*CODEX_MUX_PUBLISH_ENDPOINT:\s*"1"/, "Mobile-owned mux should stay alive after Desktop exits and publish the active profile endpoint");
@@ -229,7 +235,7 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(codexAppServerClientServiceJs, /persistentOwnedMux:\s*PERSIST_MOBILE_OWNED_MUX/, "status should expose persistent owned mux mode");
   assert.match(codexAppServerClientServiceJs, /mobileOwnedMux:\s*this\.muxChild \? \{[\s\S]*pid:[\s\S]*running:/, "status should expose bounded Mobile-owned mux runtime evidence");
   assert.match(serverJs, /if \(!PERSIST_MOBILE_OWNED_MUX && codex\.muxChild && codex\.muxChild\.exitCode === null\) codex\.muxChild\.kill\(\)/, "server shutdown should preserve persistent owned mux children");
-  assert.match(serverJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
+  assert.match(rateLimitRuntimeServiceJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
   assert.match(coreApiRouteServiceJs, /\/api\/public-config"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should refresh and include active quota");
   assert.match(coreApiRouteServiceJs, /\/api\/status"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*const status = codex\.status\(\);[\s\S]*sendJson\(200, status\)/, "status should refresh and include hydrated quota snapshots");
 });
@@ -296,13 +302,15 @@ test("server runtime inheritance includes model and reasoning effort", () => {
     "request cwd fallback should only run after source-thread cwd lookup",
   );
 
-  const guardProfileBody = functionBody(serverJs, "workspaceDelegationWriteGuardPermissionProfile");
+  const guardProfileBody = functionBody(runtimePermissionPolicyServiceJs, "workspaceDelegationWriteGuardPermissionProfile");
   assert.match(guardProfileBody, /kind: "root"[\s\S]*access: "read"/, "guard profile should keep root read-only");
+  assert.match(guardProfileBody, /path: \{ type: "path", path: root \}[\s\S]*access: "read"[\s\S]*path: \{ type: "path", path: root \}[\s\S]*access: "write"/, "guard profile should allow reading and writing the current workspace root");
+  assert.match(guardProfileBody, /path\.join\(root, "\.git"\)[\s\S]*access: "read"[\s\S]*path\.join\(root, "\.git"\)[\s\S]*access: "write"/, "guard profile should allow reading and writing git metadata inside the current workspace");
   assert.match(guardProfileBody, /path\.join\(root, "\.git"\)[\s\S]*access: "write"/, "guard profile should allow git metadata writes inside the current workspace");
   assert.match(guardProfileBody, /path\.join\(root, "\.codex"\)[\s\S]*access: "read"/, "guard profile should keep workspace .codex metadata read-only");
   assert.match(guardProfileBody, /path\.join\(root, "\.agents"\)[\s\S]*access: "read"/, "guard profile should keep workspace .agents metadata read-only");
 
-  const normalizeProfileBody = functionBody(serverJs, "normalizePermissionProfile");
+  const normalizeProfileBody = functionBody(runtimePermissionPolicyServiceJs, "normalizePermissionProfile");
   assert.match(normalizeProfileBody, /type: profile\.type \|\| profile\.kind \|\| null/, "runtime inheritance should preserve permission profile type");
   assert.match(normalizeProfileBody, /type: fileSystem\.type \|\| null/, "runtime inheritance should preserve permission profile file-system type");
 
@@ -426,10 +434,10 @@ test("manual rename falls back to Mobile title index when app-server metadata is
   assert.match(helperBody, /thread metadata unavailable before name update/, "metadata-unavailable rename error should be recognized");
   assert.match(helperBody, /database disk image is malformed/, "malformed state db rename error should be recognized");
 
-  const routeIndex = serverJs.indexOf('const threadRename = url.pathname.match');
-  const routeEnd = serverJs.indexOf('const threadRead = url.pathname.match', routeIndex);
+  const routeIndex = apiDispatchRouteServiceJs.indexOf('const threadRename = url.pathname.match');
+  const routeEnd = apiDispatchRouteServiceJs.indexOf('const threadRead = url.pathname.match', routeIndex);
   assert.ok(routeIndex > 0 && routeEnd > routeIndex, "missing thread rename route");
-  const routeBody = serverJs.slice(routeIndex, routeEnd);
+  const routeBody = apiDispatchRouteServiceJs.slice(routeIndex, routeEnd);
 
   assert.match(routeBody, /persistThreadTitleToSessionIndex\(threadId, name\)/, "manual rename should persist fallback title");
   assert.match(routeBody, /titleUpdated: updated/, "manual rename response should expose app-server update status");
@@ -439,10 +447,10 @@ test("manual rename falls back to Mobile title index when app-server metadata is
 });
 
 test("server does not broadcast source-less quota notifications to clients", () => {
-  const start = serverJs.indexOf("function shouldSendEventToClient(");
-  const end = serverJs.indexOf("function removeEventClient(", start);
+  const start = threadEventNotificationServiceJs.indexOf("function shouldSendEventToClient(");
+  const end = threadEventNotificationServiceJs.indexOf("function removeEventClient(", start);
   assert.ok(start > 0 && end > start, "missing event filtering function");
-  const body = serverJs.slice(start, end);
+  const body = threadEventNotificationServiceJs.slice(start, end);
 
   assert.match(body, /payload\.method === "account\/rateLimits\/updated"[\s\S]*return false;/);
 });
@@ -480,8 +488,8 @@ test("existing-thread message send refreshes the sidebar thread list", () => {
 });
 
 test("send auth failures return stable codes and render message receipts", () => {
-  assert.match(serverJs, /function isCodexAccountAuthError\(/);
-  assert.match(serverJs, /code:\s*"codex_account_auth_invalid"/);
+  assert.match(serverHttpRuntimeServiceJs, /function isCodexAccountAuthError\(/);
+  assert.match(serverHttpRuntimeServiceJs, /code:\s*"codex_account_auth_invalid"/);
   assert.match(threadMessageRouteServiceJs, /sendJson\(409,\s*codexAccountAuthErrorPayload\(err\)\)/);
 
   const sendStart = appJs.indexOf("async function sendMessage(");
@@ -494,8 +502,8 @@ test("send auth failures return stable codes and render message receipts", () =>
 });
 
 test("workspace creation route stores mobile-visible workspaces outside Codex global state", () => {
-  const routeIndex = serverJs.indexOf('url.pathname === "/api/workspaces" && req.method === "POST"');
-  const newMessageIndex = serverJs.indexOf("threadMessageRouteService.handleRoute");
+  const routeIndex = apiDispatchRouteServiceJs.indexOf('url.pathname === "/api/workspaces" && req.method === "POST"');
+  const newMessageIndex = apiDispatchRouteServiceJs.indexOf("threadMessageRouteService.handleRoute");
   assert.ok(routeIndex > 0, "missing POST /api/workspaces route");
   assert.ok(routeIndex < newMessageIndex, "workspace creation should be available before new-thread submission");
   assert.match(serverJs, /createWorkspaceRegistryService/, "server should use the workspace registry service");
@@ -503,30 +511,45 @@ test("workspace creation route stores mobile-visible workspaces outside Codex gl
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_CREATE_ROOTS/, "workspace creation roots should be configurable");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT/, "workspace default creation root should be configurable");
   assert.match(serverJs, /detectDevelopmentWorkspaceRoot\(APP_ROOT\)/, "workspace creation should default to the development root when available");
-  assert.match(serverJs, /process\.env\.HERMES_MOBILE_DEV_ROOT/, "workspace default should allow a central Hermes dev root override");
-  assert.match(serverJs, /"\/Users\/hermes-dev\/HermesMobileDev"/, "Mac production should fall back to the shared Hermes development root when it exists");
-  assert.match(serverJs, /fs\.statSync\(resolved\)\.isDirectory\(\)/, "development root fallback should be existence-checked");
+  assert.match(serverRuntimeUtilsJs, /HERMES_MOBILE_DEV_ROOT/, "workspace default should allow a central Hermes dev root override");
+  assert.match(serverRuntimeUtilsJs, /"\/Users\/hermes-dev\/HermesMobileDev"/, "Mac production should fall back to the shared Hermes development root when it exists");
+  assert.match(serverRuntimeUtilsJs, /fs\.statSync\(resolved\)\.isDirectory\(\)/, "development root fallback should be existence-checked");
   assert.match(serverJs, /defaultCreateRoot:\s*WORKSPACE_DEFAULT_CREATE_ROOT/, "server should pass the default root to the registry service");
-  assert.match(serverJs, /workspaceRegistryService\.create\(body\)/, "POST route should delegate creation to the registry service");
-  assert.match(serverJs, /syncRegisteredWorkspaceTrust\(CODEX_HOME\)/, "workspace creation should trust the new workspace for the active Codex profile");
+  assert.match(apiDispatchRouteServiceJs, /requestedCwd[\s\S]*workspaceRegistryService\.registerExisting\(body\)[\s\S]*workspaceRegistryService\.create\(body\)/, "POST route should create simple-name workspaces or register existing cwd paths");
+  assert.match(apiDispatchRouteServiceJs, /syncRegisteredWorkspaceTrust\(CODEX_HOME\)/, "workspace creation should trust the new workspace for the active Codex profile");
   assert.match(serverJs, /workspaceRegistryService\.list\(\)[\s\S]*roots\.add\(workspace\.cwd\)/, "registered workspaces should become visible to thread routes");
 });
 
+test("continuation start can register an existing allowed workspace before visible-workspace validation", () => {
+  const startContinuationBody = functionBody(continuationThreadServiceJs, "startThreadFromRequestBody");
+  assert.match(continuationThreadServiceJs, /ensureWorkspaceVisible/);
+  assert.match(startContinuationBody, /await ensureWorkspaceVisible\(cwd\)/);
+  assert.match(startContinuationBody, /visibility = visibilityFromGlobalState\(globalState\)/);
+  assert.ok(
+    startContinuationBody.indexOf("await ensureWorkspaceVisible(cwd)") < startContinuationBody.indexOf("throw httpStatusError(403"),
+    "existing workspace registration must happen before the visibility rejection",
+  );
+  assert.match(serverJs, /function ensureWorkspaceVisibleForContinuation\(cwd\)/);
+  assert.match(serverJs, /workspaceRegistryService\.registerExisting\(\{ cwd \}\)/);
+  assert.match(serverJs, /ensureWorkspaceVisible:\s*ensureWorkspaceVisibleForContinuation/);
+});
+
 test("existing-message route falls back when active turn steering is stale", () => {
-  const helperIndex = serverJs.indexOf("function isTurnSteerUnsupportedError(");
-  const staleHelperIndex = serverJs.indexOf("function isStaleActiveTurnError(");
+  const helperIndex = serverHttpRuntimeServiceJs.indexOf("function isTurnSteerUnsupportedError(");
+  const staleHelperIndex = serverHttpRuntimeServiceJs.indexOf("function isStaleActiveTurnError(");
   const preflightIndex = serverJs.indexOf("async function staleActiveTurnPreflight(");
   assert.ok(helperIndex > 0, "missing turn/steer unsupported helper");
   assert.ok(staleHelperIndex > helperIndex, "missing stale active-turn helper");
-  assert.ok(preflightIndex > staleHelperIndex, "missing stale active-turn preflight helper");
+  assert.ok(preflightIndex > 0, "missing stale active-turn preflight helper");
 
-  const helperBody = serverJs.slice(helperIndex, serverJs.indexOf("function logClientEvent", helperIndex));
+  const helperBody = serverHttpRuntimeServiceJs.slice(helperIndex, serverHttpRuntimeServiceJs.indexOf("function isCodexAccountAuthError", helperIndex));
   assert.match(helperBody, /method not found\|unknown method/, "unsupported helper should only match method support errors");
   assert.doesNotMatch(helperBody, /method not found\|unknown method\|not found/, "generic not found must not be treated as unsupported turn/steer");
   assert.match(helperBody, /not found\|not active\|inactive\|completed\|interrupted\|expected turn\|expected active turn id\|no active turn/, "stale helper should catch stale active-turn errors");
-  assert.match(helperBody, /detectStaleActiveTurnForSubmission/, "preflight should use service-owned stale-turn detection");
-  assert.match(helperBody, /thread\/turns\/list/, "preflight should inspect latest durable turn state");
-  assert.match(helperBody, /limit:\s*20/, "preflight should inspect enough recent turns to detect superseded active turns");
+  const preflightBody = serverJs.slice(preflightIndex, serverJs.indexOf("let threadListSummaryMergeService", preflightIndex));
+  assert.match(preflightBody, /detectStaleActiveTurnForSubmission/, "preflight should use service-owned stale-turn detection");
+  assert.match(preflightBody, /thread\/turns\/list/, "preflight should inspect latest durable turn state");
+  assert.match(preflightBody, /limit:\s*20/, "preflight should inspect enough recent turns to detect superseded active turns");
 
   const routeIndex = threadMessageRouteServiceJs.indexOf('const messages = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/messages$/);');
   const fallbackIndex = threadMessageRouteServiceJs.indexOf('const interrupt = url.pathname.match', routeIndex);

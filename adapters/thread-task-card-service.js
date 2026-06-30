@@ -22,6 +22,9 @@ const EXECUTION_LEASE_PAUSED = "paused";
 const EXECUTION_LEASE_CANCELLED = "cancelled";
 const EXECUTION_LEASE_COMPLETED = "completed";
 const MAX_LEASE_TURN_IDS = 24;
+const STORE_LOCK_TIMEOUT_MS = 10_000;
+const STORE_LOCK_STALE_MS = 30_000;
+const STORE_LOCK_POLL_MS = 25;
 
 function nowIso(nowFn) {
   const value = typeof nowFn === "function" ? nowFn() : Date.now();
@@ -136,6 +139,10 @@ function defaultStore() {
   return { cards: [], workflows: [] };
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function storeError(message, details = {}, statusCode = 503) {
   const err = errorWithStatus(message, statusCode);
   err.code = message;
@@ -181,9 +188,67 @@ function loadStore(file) {
 
 function saveStore(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tempFile = `${file}.tmp`;
-  fs.writeFileSync(tempFile, `${JSON.stringify(data, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  fs.renameSync(tempFile, file);
+  const tempFile = `${file}.${process.pid}.${Date.now()}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  try {
+    fs.writeFileSync(tempFile, `${JSON.stringify(data, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    fs.renameSync(tempFile, file);
+  } catch (err) {
+    try {
+      if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+    } catch (_) {
+      // Best-effort cleanup; preserve the original persistence failure.
+    }
+    throw err;
+  }
+}
+
+async function acquireStoreLock(file) {
+  const lockDir = `${file}.lock`;
+  const startedAt = Date.now();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  for (;;) {
+    try {
+      fs.mkdirSync(lockDir, { mode: 0o700 });
+      fs.writeFileSync(path.join(lockDir, "owner.json"), `${JSON.stringify({
+        pid: process.pid,
+        acquiredAt: new Date().toISOString(),
+      })}\n`, { encoding: "utf8", mode: 0o600 });
+      return () => {
+        try {
+          fs.rmSync(lockDir, { recursive: true, force: true });
+        } catch (_) {
+          // Best-effort cleanup; the next writer can reap a stale lock.
+        }
+      };
+    } catch (err) {
+      if (!err || err.code !== "EEXIST") {
+        throw storeError("task_card_store_lock_failed", {
+          reason: err && err.code ? err.code : "lock_failed",
+        });
+      }
+      let ageMs = 0;
+      try {
+        const stat = fs.statSync(lockDir);
+        ageMs = Math.max(0, Date.now() - Math.trunc(Number(stat.mtimeMs) || 0));
+      } catch (_) {
+        ageMs = 0;
+      }
+      if (ageMs > STORE_LOCK_STALE_MS) {
+        try {
+          fs.rmSync(lockDir, { recursive: true, force: true });
+          continue;
+        } catch (_) {
+          // Another writer may be cleaning it up. Fall through to wait.
+        }
+      }
+      if (Date.now() - startedAt > STORE_LOCK_TIMEOUT_MS) {
+        throw storeError("task_card_store_lock_timeout", {
+          lockAgeMs: ageMs,
+        });
+      }
+      await delay(STORE_LOCK_POLL_MS);
+    }
+  }
 }
 
 function cardForThread(card, threadId) {
@@ -926,7 +991,7 @@ function transitionAllowed(card, action, actorThreadId) {
     if (cardIsTerminal(card)) {
       throw errorWithStatus("task_card_terminal_no_return_required", 409);
     }
-    if (card.status !== "pending" && card.status !== "approved") {
+    if (card.status !== "pending" && card.status !== "approved" && card.status !== "approving") {
       throw errorWithStatus(`task_card_not_returnable:${card.status}`, 409);
     }
     return;
@@ -967,12 +1032,15 @@ function createThreadTaskCardService(options = {}) {
     const previous = writeQueue;
     writeQueue = previous.finally(() => next);
     await previous;
+    let releaseStoreLock = null;
     try {
+      releaseStoreLock = await acquireStoreLock(storageFile);
       const store = loadStore(storageFile);
       const result = await mutator(store);
       saveStore(storageFile, store);
       return result;
     } finally {
+      if (releaseStoreLock) releaseStoreLock();
       release();
     }
   }
@@ -1113,6 +1181,7 @@ function createThreadTaskCardService(options = {}) {
       let workflow = null;
       if (automatic) {
         if (!card) throw errorWithStatus("task_card_not_found", 404);
+        if (card.status === "approving") return { approvalInFlight: true, card: clone(card) };
         if (card.status !== "pending") return null;
         workflow = activeWorkflowForCard(store, card);
         if (!workflow) return null;
@@ -1121,11 +1190,24 @@ function createThreadTaskCardService(options = {}) {
         if (!actorThread) throw errorWithStatus("actor_thread_id_required");
         if (!card) throw errorWithStatus("task_card_not_found", 404);
         if (card.status === "approved") return { alreadyApproved: true, card: clone(card) };
+        if (card.status === "approving") {
+          if (stringValue(card.source && card.source.threadId) !== actorThread) {
+            throw errorWithStatus("direct_approval_requires_source_thread", 403);
+          }
+          return { approvalInFlight: true, card: clone(card) };
+        }
         if (card.status !== "pending") throw errorWithStatus(`task_card_not_pending:${card.status}`, 409);
         if (stringValue(card.source && card.source.threadId) !== actorThread) {
           throw errorWithStatus("direct_approval_requires_source_thread", 403);
         }
       } else {
+        if (!card) throw errorWithStatus("task_card_not_found", 404);
+        if (card.status === "approving") {
+          if (stringValue(card.target && card.target.threadId) !== actorThread) {
+            throw errorWithStatus("approve_requires_target_thread", 403);
+          }
+          return { approvalInFlight: true, card: clone(card) };
+        }
         transitionAllowed(card, "approve", actorThreadId);
       }
       const timestamp = nowIso(options.now);
@@ -1151,6 +1233,13 @@ function createThreadTaskCardService(options = {}) {
       return { card: clone(card) };
     });
     if (!prepared) return null;
+    if (prepared.approvalInFlight) {
+      return {
+        card: publicCard(prepared.card, publicThreadId || actorThread || prepared.card.target.threadId),
+        execution: null,
+        approvalInFlight: true,
+      };
+    }
     if (prepared.alreadyApproved) {
       return {
         card: publicCard(prepared.card, publicThreadId || actorThread || prepared.card.target.threadId),

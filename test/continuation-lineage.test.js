@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
+const threadVisibilityServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-visibility-service.js"), "utf8");
 
 function functionBodyFrom(source, name) {
   const patterns = [
@@ -143,7 +144,7 @@ test("continuation result persists lineage after bootstrap and archive attempt",
 });
 
 test("continuation archive fallback writes the Mobile archive index", () => {
-  const fallbackBody = functionBodyFrom(serverJs, "mobileArchivedFallbackResult");
+  const fallbackBody = functionBodyFrom(threadVisibilityServiceJs, "mobileArchivedFallbackResult");
   assert.match(fallbackBody, /rememberMobileArchivedThreadId\(threadId\)/);
   assert.match(fallbackBody, /archived: Boolean\(mobileArchived\)/);
   assert.match(fallbackBody, /archiveError: err \? String\(err\.message \|\| err\) : ""/);

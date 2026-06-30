@@ -67,6 +67,11 @@
     return Array.isArray(thread.turns) && thread.turns.length > 0;
   }
 
+  function threadHasVisualBaselineLoadedDetailState(thread) {
+    if (!threadHasLoadedDetailState(thread)) return false;
+    return Array.isArray(thread.turns) && thread.turns.length > 0;
+  }
+
   function statusKind(value) {
     if (!value) return "";
     if (typeof value === "string") return value;
@@ -438,6 +443,16 @@
         reason: "current-thread-load-error",
       };
     }
+    if (threadHasVisualBaselineLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread)) {
+      return {
+        shouldUseCachedCurrent: true,
+        shouldRefreshCurrent: true,
+        shouldReportEmptyCachedDetail: false,
+        reason: summaryIsNewerThanCachedDetail(summaryThread, thread)
+          ? "active-loaded-detail-summary-newer-refresh-baseline"
+          : "active-loaded-detail-refresh-baseline",
+      };
+    }
     if (summaryIsNewerThanCachedDetail(summaryThread, thread)) {
       return {
         shouldUseCachedCurrent: false,
@@ -749,6 +764,7 @@
     sameThreadDetailRenderEvidence,
     threadHasLoadedDetailState,
     threadHasReusableLoadedDetailState,
+    threadHasVisualBaselineLoadedDetailState,
     threadIsSummaryOnlyCurrentThread,
     threadListSummaryFromDetailThread,
   };

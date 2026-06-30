@@ -748,11 +748,12 @@ dynamic source-write decision layer. For ordinary non-exempt workspaces,
 `thread/start`, `thread/resume`, and `turn/start` use a real
 `workspace-write` / managed profile plus `approvalPolicy:"on-request"` so direct
 tool calls are still constrained by the app-server sandbox. The profile keeps
-root read-only, allows writes to the current cwd, temporary directories, and the
-current cwd's `.git` metadata, and keeps `.codex` / `.agents` under the cwd
-read-only. The workspace-write sandbox policy also lists the current `.git` as
-an explicit writable root because the app-server sandbox can otherwise keep git
-metadata read-only even when the managed permission profile allows it.
+root read-only, allows reads and writes to the current cwd, temporary directory
+writes, and reads/writes to the current cwd's `.git` metadata, and keeps
+`.codex` / `.agents` under the cwd read-only. The workspace-write sandbox
+policy also lists the current `.git` as an explicit writable root because the
+app-server sandbox can otherwise keep git metadata read-only even when the
+managed permission profile allows it.
 `adapters/workspace-source-write-guard-service.js` auto-allows reads,
 MCP calls, network, current-workspace writes, and current-workspace `.git`
 approval requests, while auto-denying explicit file changes, patches,

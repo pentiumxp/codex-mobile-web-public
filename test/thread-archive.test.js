@@ -9,6 +9,8 @@ const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"),
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
+const threadVisibilityServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-visibility-service.js"), "utf8");
 const threadListFallbackSourceServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-source-service.js"), "utf8");
 
 function appFunctionBody(name) {
@@ -66,27 +68,27 @@ test("thread long-press action sheet can copy session id", () => {
 });
 
 test("archive state merge keeps backup and archived-session filters active", () => {
-  const matches = serverJs.match(/function mergeThreadStateFromStateDb\(/g) || [];
+  const matches = threadVisibilityServiceJs.match(/function mergeThreadStateFromStateDb\(/g) || [];
   assert.equal(matches.length, 1);
   assert.match(serverJs, /MOBILE_ARCHIVED_THREAD_IDS_FILE/);
   assert.match(serverJs, /createMobileArchiveIndexService/);
-  assert.match(serverJs, /function isBackupRolloutPath\(/);
-  assert.match(serverJs, /archivedSessionThreadIds\(\)/);
-  assert.match(serverJs, /mobileArchiveIndexService\.threadIds\(\)/);
-  assert.match(serverJs, /threadHasArchiveSignal\(thread, archivedIds\)/);
-  assert.match(serverJs, /isBackupRolloutPath\(row\.rollout_path\)/);
-  assert.ok(serverJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/archive$/)"));
+  assert.match(threadVisibilityServiceJs, /function isBackupRolloutPath\(/);
+  assert.match(threadVisibilityServiceJs, /archivedSessionThreadIds\(\)/);
+  assert.match(threadVisibilityServiceJs, /mobileArchiveIndexService\.threadIds\(\)/);
+  assert.match(threadVisibilityServiceJs, /threadHasArchiveSignal\(thread, archivedIds\)/);
+  assert.match(threadVisibilityServiceJs, /isBackupRolloutPath\(row\.rollout_path\)/);
+  assert.ok(apiDispatchRouteServiceJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/archive$/)"));
 });
 
 test("archive route remembers ids in Mobile local archive index", () => {
-  assert.match(serverJs, /function rememberMobileArchivedThreadId\(/);
-  assert.match(serverJs, /function archivedResultWithMobileIndex\(/);
-  assert.match(serverJs, /function alreadyArchivedResult\(/);
-  assert.match(serverJs, /function isThreadIdArchivedLocally\(/);
-  assert.match(serverJs, /if \(isThreadIdArchivedLocally\(threadId\)\) return alreadyArchivedResult\("mobile-index", threadId, false\);/);
-  assert.match(serverJs, /return archivedResultWithMobileIndex\(result, threadId\);/);
-  assert.match(serverJs, /return alreadyArchivedResult\("state-db", threadId\);/);
-  assert.match(serverJs, /return alreadyArchivedResult\("", threadId\);/);
+  assert.match(threadVisibilityServiceJs, /function rememberMobileArchivedThreadId\(/);
+  assert.match(threadVisibilityServiceJs, /function archivedResultWithMobileIndex\(/);
+  assert.match(threadVisibilityServiceJs, /function alreadyArchivedResult\(/);
+  assert.match(threadVisibilityServiceJs, /function isThreadIdArchivedLocally\(/);
+  assert.match(threadVisibilityServiceJs, /if \(isThreadIdArchivedLocally\(threadId\)\) return alreadyArchivedResult\("mobile-index", threadId, false\);/);
+  assert.match(threadVisibilityServiceJs, /return archivedResultWithMobileIndex\(result, threadId\);/);
+  assert.match(threadVisibilityServiceJs, /return alreadyArchivedResult\("state-db", threadId\);/);
+  assert.match(threadVisibilityServiceJs, /return alreadyArchivedResult\("", threadId\);/);
 });
 
 test("projectless session-index fallback skips archived sessions", () => {
@@ -105,10 +107,10 @@ test("projectless session-index fallback skips archived sessions", () => {
 });
 
 test("thread list hides subagent child threads", () => {
-  assert.match(serverJs, /function isSubagentThreadSummary\(/);
-  assert.match(serverJs, /agentNickname/);
-  assert.match(serverJs, /agentRole/);
-  assert.match(serverJs, /isSpawnedChildThread/);
-  assert.match(serverJs, /exists\(select 1 from thread_spawn_edges where child_thread_id=threads\.id\) as is_spawned_child/);
-  assert.match(serverJs, /if \(isSubagentThreadSummary\(thread\)\) return true;/);
+  assert.match(threadVisibilityServiceJs, /function isSubagentThreadSummary\(/);
+  assert.match(threadVisibilityServiceJs, /agentNickname/);
+  assert.match(threadVisibilityServiceJs, /agentRole/);
+  assert.match(threadVisibilityServiceJs, /isSpawnedChildThread/);
+  assert.match(threadVisibilityServiceJs, /exists\(select 1 from thread_spawn_edges where child_thread_id=threads\.id\) as is_spawned_child/);
+  assert.match(threadVisibilityServiceJs, /if \(isSubagentThreadSummary\(thread\)\) return true;/);
 });

@@ -5,7 +5,7 @@ const crypto = require("node:crypto");
 const DEFAULT_LABEL = "com.hermesmobile.codex-mobile-runtime-self-check";
 const DEFAULT_INTERVAL_SECONDS = 600;
 const DEFAULT_MAX_EVENT_AGE_MS = 20 * 60 * 1000;
-const DEFAULT_REQUIRED_CHECK_NAMES = ["api-thread", "browser-runtime", "client-events"];
+const DEFAULT_REQUIRED_CHECK_NAMES = ["api-thread", "client-events"];
 
 function safeToken(value, fallback = "", maxLength = 120) {
   const text = String(value || "").trim();

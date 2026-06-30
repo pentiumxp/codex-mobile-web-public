@@ -201,6 +201,18 @@ archived and sub-agent rows. If this regresses, run:
 node --test test\thread-visibility.test.js
 ```
 
+If a workspace-delegation continuation can `stat` a target workspace and create
+then read back a new temporary file under that root, but `readdir`, existing
+source file opens, `git status`, or `apply_patch` fail with `EPERM` /
+`Operation not permitted`, inspect the managed permission profile. It must grant
+both read and write access to the target workspace root and its `.git`
+metadata. Also check inherited `workspaceWrite.writableRoots`: a later turn that
+inherits only `<workspace>/.git` must be normalized back to include the
+workspace root before `.git`, otherwise the thread can enter the cwd but cannot
+read existing source files. Already-running turns keep the sandbox they were
+started with, so a fixed listener still requires a new continuation for the
+affected workspace.
+
 ## Shared Mux Drift
 
 Evidence of mux drift:
@@ -1643,15 +1655,18 @@ ambiguous failure instead of a bounded task-card diagnostic.
 
 For source-thread direct task-card creation through
 `/api/threads/:sourceThreadId/task-cards`, target resolution is intentionally
-stricter than the manual pending-card API. Exact `targetThreadId` and exact
-`targetThreadTitle` are thread identity and may point to any normal
-non-archived thread, even when several threads share the same cwd/workspace.
-`400 target_thread_self` means the caller tried to send a card to the same
-source thread. `409 target_thread_archived` means the target is archived,
-deleted, or otherwise not deliverable. `404 target_thread_not_visible` means
-the id/title/cwd is not currently deliverable. `targetCwd` /
-`targetWorkspace` are fuzzy workspace targets and choose a current visible
-thread for that workspace. Dynamic tool calls and
+stricter than the manual pending-card API. Exact `targetThreadId` is the
+thread identity and may point to any normal non-archived thread. Exact
+`targetThreadTitle` is accepted only when it uniquely matches one visible
+deliverable target; duplicate titles fail with `409 target_thread_title_ambiguous`.
+`targetCwd` / `targetWorkspace` are workspace hints, not identity, and are
+accepted only when exactly one visible deliverable thread owns that cwd. If
+several threads share the cwd, creation fails with
+`409 target_workspace_ambiguous` and bounded candidate metadata instead of
+choosing a thread. `400 target_thread_self` means the caller tried to send a
+card to the same source thread. `409 target_thread_archived` means the target
+is archived, deleted, or otherwise not deliverable. `404 target_thread_not_visible`
+means the id/title/cwd is not currently deliverable. Dynamic tool calls and
 `scripts/create-thread-task-card.js` share this same guard.
 
 ## `#` Task-card Command Does Not Parse

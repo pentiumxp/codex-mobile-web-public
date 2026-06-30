@@ -216,9 +216,9 @@ test("source-thread task cards allow exact same-workspace thread targets", () =>
     resolveThreadTaskCardTargetReference(crossWorkspaceThreadId, sourceThreadId, options),
     crossWorkspaceThreadId,
   );
-  assert.equal(
-    resolveThreadTaskCardTargetReference(currentCwd, sourceThreadId, options),
-    platformAuditThreadId,
+  assert.throws(
+    () => resolveThreadTaskCardTargetReference(currentCwd, sourceThreadId, options),
+    (err) => err && err.code === "target_workspace_ambiguous" && err.statusCode === 409,
   );
   assert.deepEqual(
     resolvedThreadTaskCardTargetIds({ targetThreadId: pluginAuditThreadId, targetCwd: currentCwd }, sourceThreadId, options),

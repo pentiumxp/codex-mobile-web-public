@@ -194,12 +194,42 @@ function hasStructuredDeployKind(input = {}) {
   ].includes(value);
 }
 
+function hasExplicitThreadTarget(input = {}) {
+  const scalarTargets = [
+    input.targetThreadId,
+    input.target_thread_id,
+    input.targetThreadTitle,
+    input.target_thread_title,
+  ];
+  if (scalarTargets.some((value) => String(value || "").trim())) return true;
+  const listTargets = [
+    input.targetThreadIds,
+    input.target_thread_ids,
+    input.targetThreadTitles,
+    input.target_thread_titles,
+  ];
+  return listTargets.some((value) => {
+    if (Array.isArray(value)) return value.some((item) => String(item || "").trim());
+    return String(value || "").trim();
+  });
+}
+
 function isHostPlatformRepairText(text) {
   return /(?:home ai central|host-owned|host owned|deploy-contract|deploy contract|proxy|launchd|gateway|schema|platform repair|home ai source|control-plane|控制平面|部署契约|宿主|平台修复)/i.test(text);
 }
 
 function isDeployRoutingRepairText(text) {
-  return /(?:target discovery|target resolver|target resolution|thread routing|deploy lane routing|deploy thread routing|routing visibility|missing .*deploy thread|archived .*hint|路由调度|线程路由|部署线程.*路由|部署线程.*可见|目标解析)/i.test(text);
+  return /(?:target discovery|target resolver|target resolution|thread routing|deploy lane routing|deploy thread routing|routing visibility|missing .*deploy thread|archived .*hint|wrong target|wrong thread|correct(?:ed)? routing target|not the deploy lane|implementation thread|route(?:d|s|ing)? .*wrong|路由调度|线程路由|部署线程.*路由|部署线程.*可见|目标解析|错误线程|错路由|实现线程)/i.test(text);
+}
+
+function isWorkspacePermissionRepairText(text) {
+  return /(?:workspace .*read permission|workspace .*write permission|source .*read permission|permission profile|managed permission|operation not permitted|read existing source|cannot read .*source|只读权限|读权限|写权限|权限.*profile|无法读取|不能读取)/i.test(text);
+}
+
+function isRepairOrRoutingText(text) {
+  return isHostPlatformRepairText(text)
+    || isDeployRoutingRepairText(text)
+    || isWorkspacePermissionRepairText(text);
 }
 
 function isDeploymentText(text) {
@@ -213,8 +243,7 @@ function isPluginDeploymentText(text) {
 function isRoutinePluginDeploymentRequest(input = {}, sourceThread = {}, options = {}) {
   const text = boundedTaskText(input);
   if (hasStructuredDeployKind(input)) return true;
-  if (isHostPlatformRepairText(text)) return false;
-  if (isDeployRoutingRepairText(text)) return false;
+  if (isRepairOrRoutingText(text)) return false;
   if (!isDeploymentText(text)) return false;
   return isPluginSourceCwd(sourceThread && sourceThread.cwd, options) || isPluginDeploymentText(text);
 }
@@ -287,6 +316,11 @@ function planHomeAiDeployLaneRouting(input = {}) {
   const targets = Array.isArray(input.targetThreads) ? input.targetThreads.filter(Boolean) : [];
   const visibleThreads = Array.isArray(input.visibleThreads) ? input.visibleThreads.filter(Boolean) : [];
   const options = input.options || {};
+  if (!hasStructuredDeployKind(body)
+    && hasExplicitThreadTarget(body)
+    && targets.some((thread) => thread && !isHomeAiDeployLaneThread(thread, options))) {
+    return { action: "allow", reason: "explicit_non_deploy_target" };
+  }
   if (!isRoutinePluginDeploymentRequest(body, sourceThread, options)) {
     return { action: "allow", reason: "not_routine_plugin_deployment" };
   }
@@ -364,6 +398,7 @@ module.exports = {
   findHomeAiDeployLaneThreads,
   homeAiDeployLaneAssignments,
   homeAiDeployLaneTitles,
+  hasExplicitThreadTarget,
   isHomeAiControlPlaneCwd,
   isHomeAiDeployLaneThread,
   isPluginSourceCwd,

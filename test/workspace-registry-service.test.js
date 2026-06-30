@@ -60,6 +60,40 @@ test("workspace registry is idempotent for an existing directory", () => {
   assert.deepEqual(service.list().map((workspace) => workspace.cwd), [existing]);
 });
 
+test("workspace registry registers an existing workspace under an allowed root", () => {
+  const root = tempRoot();
+  const pluginRoot = path.join(root, "plugins");
+  const music = path.join(pluginRoot, "music");
+  fs.mkdirSync(music, { recursive: true });
+  const service = createWorkspaceRegistryService({
+    storageFile: path.join(root, "workspaces.json"),
+    homeDir: root,
+    createRoots: [root],
+  });
+
+  const result = service.registerExisting({ cwd: music, label: "Music" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.workspace.cwd, music);
+  assert.equal(result.workspace.label, "Music");
+  assert.deepEqual(service.list().map((workspace) => workspace.cwd), [music]);
+  assert.deepEqual(service.registeredPaths(), [music]);
+});
+
+test("workspace registry rejects registering existing paths outside allowed roots", () => {
+  const root = tempRoot();
+  const otherRoot = tempRoot();
+  const music = path.join(otherRoot, "music");
+  fs.mkdirSync(music, { recursive: true });
+  const service = createWorkspaceRegistryService({
+    storageFile: path.join(root, "workspaces.json"),
+    homeDir: root,
+    createRoots: [root],
+  });
+
+  assert.throws(() => service.registerExisting({ cwd: music }), /outside the allowed create roots/);
+});
+
 test("workspace registry prefers configured default root before Documents fallback", () => {
   const home = tempRoot();
   const devRoot = tempRoot();

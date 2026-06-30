@@ -113,17 +113,19 @@ stores pending cards only. Passing `pending:true`, `autoApprove:false`, or
 `direct:false` also keeps the card in the manual-pending flow even when the
 switch is enabled.
 
-Workspace/cwd targeting is a convenience, not an identity guarantee. When
-several visible threads share the same cwd, the routing service prefers live or
-idle implementation threads over recently updated terminal threads; exact
-thread ids or exact titles still win when the caller intentionally targets a
-specific historical thread. Routine plugin deployment cards are also corrected
-after target resolution: once the source workspace and card text identify a
-routine plugin deploy, the server retargets the card to the configured live
-deploy lane for that plugin even if the model initially selected an ordinary
-Home AI thread or a same-cwd Codex Mobile implementation/PR thread. Deploy-lane
-repair, target-discovery, and routing-visibility cards remain implementation
-work and are not treated as routine plugin deployments.
+Thread id is the task-card routing identity. Titles and cwd/workspace values are
+hints only. Workspace/cwd targeting is allowed only when exactly one visible,
+deliverable thread owns that cwd; when several visible threads share the same
+cwd, the routing service fails closed with `target_workspace_ambiguous` and
+returns bounded candidate metadata so the caller can retry with an exact
+`targetThreadId`. Exact titles also fail closed when multiple visible threads
+share the same title. Routine plugin deployment cards are corrected after target
+resolution: once the source workspace and card text identify a routine plugin
+deploy, the server retargets the card to the configured live deploy lane for
+that plugin even if the model initially selected an ordinary Home AI thread or
+a same-cwd Codex Mobile implementation/PR thread. Deploy-lane repair,
+target-discovery, and routing-visibility cards remain implementation work and
+are not treated as routine plugin deployments.
 
 Approved cards that execute inside configured Home AI deploy-lane threads run
 with a deploy-lane no-approval runtime override: `approvalPolicy=never` and

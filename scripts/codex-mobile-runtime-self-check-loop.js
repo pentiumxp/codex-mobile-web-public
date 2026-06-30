@@ -9,6 +9,12 @@ const {
   classifyRuntimeSelfCheckGate,
 } = require("../adapters/runtime-self-check-gate-service");
 const {
+  defaultBrowserModeForGate,
+  normalizeBrowserMode,
+  resolveRuntimeSelfCheckPlan,
+  runtimeSelfCheckJob,
+} = require("../adapters/runtime-job-scheduler-service");
+const {
   runtimeCheckFromClientEventSummary,
   summarizeClientEventLog,
 } = require("../adapters/client-event-stall-self-check-service");
@@ -23,7 +29,8 @@ function usage() {
     "  node scripts/codex-mobile-runtime-self-check-loop.js [options]",
     "",
     "Runs metadata-only Codex Mobile runtime self-checks. Default is one pass.",
-    "Use --loop for periodic checks, for example every 10 minutes.",
+    "Periodic mode defaults to API/client-event checks only so it does not",
+    "turn the resident LaunchAgent into a recurring browser load test.",
     "",
     "Options:",
     "  --server <url>          Codex Mobile server. Default: http://127.0.0.1:8787",
@@ -36,6 +43,7 @@ function usage() {
     "  --browser-submit-thread-id <id> Optional target thread for submit exercise. Defaults to first selected thread.",
     "  --browser-submit-message <text> Submit exercise message. Default asks for OK only.",
     "  --browser-submit-sample-delays-ms <csv> Submit exercise sample delays. Default: 100,350,900,1600,2800,6000.",
+    "  --browser-mode <off|full> Browser check mode. Default: off for periodic, full for deploy.",
     "  --gate-mode <mode>     Gate mode label for output. Default: periodic.",
     "  --interval-ms <n>       Loop interval. Default: 600000.",
     "  --iterations <n>        Maximum loop iterations. Default: unlimited with --loop, 1 otherwise.",
@@ -75,6 +83,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     browserSubmitThreadId: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SUBMIT_THREAD_ID || "").trim(),
     browserSubmitMessage: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SUBMIT_MESSAGE || "").slice(0, 500),
     browserSubmitSampleDelaysMs: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SUBMIT_SAMPLE_DELAYS_MS || "100,350,900,1600,2800,6000"),
+    browserMode: normalizeBrowserMode(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_BROWSER_MODE || ""),
     gateMode: String(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_GATE_MODE || "periodic").trim() || "periodic",
     intervalMs: positiveInt(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_INTERVAL_MS || String(DEFAULT_INTERVAL_MS), DEFAULT_INTERVAL_MS),
     iterations: 1,
@@ -108,6 +117,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--browser-submit-thread-id") options.browserSubmitThreadId = next();
     else if (arg === "--browser-submit-message") options.browserSubmitMessage = next().slice(0, 500);
     else if (arg === "--browser-submit-sample-delays-ms") options.browserSubmitSampleDelaysMs = next();
+    else if (arg === "--browser-mode") options.browserMode = normalizeBrowserMode(next(), "full");
     else if (arg === "--gate-mode") options.gateMode = next();
     else if (arg === "--interval-ms") options.intervalMs = positiveInt(next(), options.intervalMs);
     else if (arg === "--iterations") options.iterations = positiveInt(next(), options.iterations, 1000000);
@@ -125,6 +135,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
   }
   options.threadIds = options.threadIds.map((id) => String(id || "").trim()).filter(Boolean);
   if (options.loop && !argv.includes("--iterations")) options.iterations = 0;
+  options.browserMode = defaultBrowserModeForGate(options.gateMode, options.browserMode);
   return options;
 }
 
@@ -134,12 +145,13 @@ function boundedErrorCode(value) {
     .slice(0, 80) || "self_check_failed";
 }
 
-function runNodeScript(scriptPath, args = [], deps = {}) {
+function runNodeScript(scriptPath, args = [], deps = {}, job = {}) {
   const runner = deps.execFile || childProcess.execFile;
+  const timeout = positiveInt(job.timeoutMs, CHILD_SELF_CHECK_TIMEOUT_MS);
   return new Promise((resolve) => {
     runner(process.execPath, [scriptPath, ...args], {
       cwd: path.resolve(__dirname, ".."),
-      timeout: CHILD_SELF_CHECK_TIMEOUT_MS,
+      timeout,
       maxBuffer: 16 * 1024 * 1024,
     }, (error, stdout, stderr) => {
       let parsed = null;
@@ -206,12 +218,15 @@ function baseArgs(options = {}) {
 async function runOnce(options = {}, deps = {}) {
   const startedAt = new Date().toISOString();
   const checks = [];
+  const jobPlan = resolveRuntimeSelfCheckPlan(options);
   const root = path.resolve(__dirname, "..");
-  if (!options.skipApi) {
-    const result = await runNodeScript(path.join(root, "scripts", "codex-mobile-thread-self-check.js"), baseArgs(options), deps);
+  const apiJob = runtimeSelfCheckJob(jobPlan, "api-thread");
+  if (apiJob && apiJob.enabled) {
+    const result = await runNodeScript(path.join(root, "scripts", "codex-mobile-thread-self-check.js"), baseArgs(options), deps, apiJob);
     checks.push(summarizeCheck("api-thread", result));
   }
-  if (!options.skipBrowser) {
+  const browserJob = runtimeSelfCheckJob(jobPlan, "browser-runtime");
+  if (browserJob && browserJob.enabled) {
     const browserArgs = baseArgs(options).concat([
       "--sample-threads",
       String(positiveInt(options.sampleThreads, 3, 20)),
@@ -226,10 +241,11 @@ async function runOnce(options = {}, deps = {}) {
     if (options.browserSubmitThreadId) browserArgs.push("--submit-thread-id", options.browserSubmitThreadId);
     if (options.browserSubmitMessage) browserArgs.push("--submit-message", options.browserSubmitMessage);
     if (options.browserSubmitSampleDelaysMs) browserArgs.push("--submit-sample-delays-ms", options.browserSubmitSampleDelaysMs);
-    const result = await runNodeScript(path.join(root, "scripts", "codex-mobile-browser-runtime-self-check.js"), browserArgs, deps);
+    const result = await runNodeScript(path.join(root, "scripts", "codex-mobile-browser-runtime-self-check.js"), browserArgs, deps, browserJob);
     checks.push(summarizeCheck("browser-runtime", result));
   }
-  if (!options.skipClientEvents) {
+  const clientEventsJob = runtimeSelfCheckJob(jobPlan, "client-events");
+  if (clientEventsJob && clientEventsJob.enabled) {
     const clientEventSummary = summarizeClientEventLog({
       logCandidates: options.clientEventLog ? [options.clientEventLog] : null,
       tailBytes: options.clientEventTailBytes,
@@ -242,6 +258,11 @@ async function runOnce(options = {}, deps = {}) {
     privacy: "metadata_only",
     startedAt,
     completedAt: new Date().toISOString(),
+    profile: {
+      browserMode: jobPlan.profile.browserMode,
+      scheduler: "runtime-job-scheduler-service",
+    },
+    runtimeJobs: jobPlan.jobs,
     checks,
   };
   event.issueCount = checks.reduce((total, check) => total + check.issueCount, 0);
@@ -289,6 +310,7 @@ if (require.main === module) {
 
 module.exports = {
   DEFAULT_INTERVAL_MS,
+  normalizeBrowserMode,
   parseArgs,
   runLoop,
   runOnce,

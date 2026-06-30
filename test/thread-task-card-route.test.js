@@ -6,13 +6,16 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
 const autoTurnRecoveryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "auto-turn-recovery-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
+const appServerRequestPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "app-server-request-policy-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
 const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-summary-state-service.js"), "utf8");
+const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"), "utf8");
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-routing-service.js"), "utf8");
 const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
 const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-response-preparation-service.js"), "utf8");
@@ -67,7 +70,7 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.doesNotMatch(serverJs, /createThreadTaskCardIntentService/);
   assert.match(serverJs, /CODEX_MOBILE_THREAD_TASK_CARD_FILE/);
   assert.match(serverJs, /createThreadTaskCardRouteService/);
-  assert.match(serverJs, /threadTaskCardRouteService\.handleRoute/);
+  assert.match(apiDispatchRouteServiceJs, /threadTaskCardRouteService\.handleRoute/);
   assert.match(taskCardRouteServiceJs, /"\/api\/thread-task-cards"/);
   assert.doesNotMatch(taskCardRouteServiceJs, /"\/api\/thread-task-cards\/parse"/);
   assert.match(taskCardRouteServiceJs, /const threadTaskCardApprove = url\.pathname\.match\(/);
@@ -110,37 +113,37 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(serverJs, /CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION/);
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED/);
   assert.match(runtimeSettingsServiceJs, /function workspaceDelegationPublicSettings\(/);
-  assert.match(serverJs, /function workspaceDelegationDynamicToolSpec\(/);
-  assert.match(serverJs, /function taskCardReturnDynamicToolSpec\(/);
-  assert.match(serverJs, /function attachTaskCardRuntimeDynamicTools\(/);
-  assert.match(serverJs, /function attachWorkspaceDelegationRuntimeGuidance\(/);
-  assert.match(serverJs, /function taskCardReturnScriptFallbackInstruction\(/);
-  assert.match(serverJs, /function workspaceDelegationScriptFallbackInstruction\(/);
+  assert.match(taskCardRouteServiceJs, /function workspaceDelegationDynamicToolSpec\(/);
+  assert.match(taskCardRouteServiceJs, /function taskCardReturnDynamicToolSpec\(/);
+  assert.match(taskCardRouteServiceJs, /function attachTaskCardRuntimeDynamicTools\(/);
+  assert.match(taskCardRouteServiceJs, /function attachWorkspaceDelegationRuntimeGuidance\(/);
+  assert.match(taskCardRouteServiceJs, /function taskCardReturnScriptFallbackInstruction\(/);
+  assert.match(taskCardRouteServiceJs, /function workspaceDelegationScriptFallbackInstruction\(/);
   assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "workspaceDelegationTargetHints"), /threadTaskCardCanonicalVisibleTargets/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationTargetHints"), /threadTaskCardVisibleTargetThreads\(\)/);
   assert.match(serverJs, /function workspaceDelegationRpcDiagnostics\(/);
   assert.match(serverJs, /function logWorkspaceDelegationRpc\(/);
   assert.match(taskCardRouteServiceJs, /function workspaceDelegationDynamicToolCallDiagnostics\(/);
   assert.match(taskCardRouteServiceJs, /function logWorkspaceDelegationDynamicToolCall\(/);
-  assert.match(serverJs, /function dynamicToolServerRequestResponsePayload\(/);
+  assert.match(taskCardRouteServiceJs, /function dynamicToolServerRequestResponsePayload\(/);
   assert.match(runtimeSettingsServiceJs, /function setWorkspaceDelegationEnabled\(/);
   assert.match(coreApiRouteServiceJs, /url\.pathname === "\/api\/settings\/workspace-delegation"/);
   assert.match(functionBody(runtimeSettingsServiceJs, "workspaceDelegationPublicSettings"), /failureRecovery:\s*enabled \? "source_model_tool_call_with_dynamic_source_write_guard" : "off"/);
   assert.match(functionBody(runtimeSettingsServiceJs, "workspaceDelegationPublicSettings"), /serverAutoTaskCardFromFailures:\s*false/);
-  assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
-  assert.match(serverJs, /function threadTaskCardThreadCallIdempotencyKey\(/);
-  assert.match(serverJs, /function normalizeThreadTaskCardReasoningEffort\(/);
-  assert.match(serverJs, /function resolvedThreadTaskCardTargetIds\(/);
-  assert.match(serverJs, /function threadTaskCardVisibleTargetThreads\(/);
-  assert.match(serverJs, /function threadTaskCardCanonicalVisibleTargets\(/);
-  assert.match(serverJs, /function threadTaskCardCanonicalTargetForCwd\(/);
+  assert.match(taskCardRouteServiceJs, /function buildThreadTaskCardCreatePayload\(/);
+  assert.match(taskCardRouteServiceJs, /function threadTaskCardThreadCallIdempotencyKey\(/);
+  assert.match(taskCardRouteServiceJs, /function normalizeThreadTaskCardReasoningEffort\(/);
+  assert.match(taskCardRouteServiceJs, /function resolvedThreadTaskCardTargetIds\(/);
+  assert.match(taskCardRouteServiceJs, /function threadTaskCardVisibleTargetThreads\(/);
+  assert.match(taskCardRouteServiceJs, /function threadTaskCardCanonicalVisibleTargets\(/);
+  assert.match(taskCardRouteServiceJs, /function threadTaskCardCanonicalTargetForCwd\(/);
   assert.match(taskCardRouteServiceJs, /createThreadTaskCardRoutingService/);
   assert.match(taskCardRouteServiceJs, /const threadTaskCardRoutingService = createThreadTaskCardRoutingService\(\{/);
   assert.match(functionBody(taskCardRouteServiceJs, "resolveThreadTaskCardTargetReference"), /threadTaskCardRoutingService\.resolveTargetReference\(value, sourceThreadId, options\)/);
   assert.match(routingServiceJs, /function createThreadTaskCardRoutingService\(/);
   assert.match(routingServiceJs, /function resolveTargetReference\(/);
   assert.match(routingServiceJs, /const visibleThreads = visibleTargetThreads\(options\)/);
-  assert.match(serverJs, /function assertThreadTaskCardTargetDeliverable\(/);
+  assert.match(taskCardRouteServiceJs, /function assertThreadTaskCardTargetDeliverable\(/);
   assert.match(routingServiceJs, /target_thread_self/);
   assert.match(routingServiceJs, /target_thread_archived/);
   assert.match(routingServiceJs, /target_thread_not_visible/);
@@ -228,13 +231,15 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolCallDiagnostics"), /bodyMarkdown:[\s\S]*args\.bodyMarkdown/);
   assert.match(routingServiceJs, /targetWorkspace/);
   assert.match(routingServiceJs, /targetCwd/);
-  assert.match(routingServiceJs, /canonicalTargetForCwd\(rawPath, visibleThreads\)/);
+  assert.match(routingServiceJs, /visibleTargetsForCwd\(rawPath, visibleThreads, sourceThreadId\)/);
+  assert.match(routingServiceJs, /target_workspace_ambiguous/);
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /Thread identity is the exact targetThreadId/);
   const sourceThreadTaskCardCreateRoute = taskCardRouteServiceJs.slice(
     taskCardRouteServiceJs.indexOf('const sourceThreadTaskCardCreate = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/task-cards$/);'),
     taskCardRouteServiceJs.indexOf('if (url.pathname === "/api/thread-task-cards" && method === "POST")'),
   );
   assert.match(sourceThreadTaskCardCreateRoute, /details: err\.details/);
-  assert.match(serverJs, /"item\/tool\/call"/);
+  assert.match(appServerRequestPolicyServiceJs, /"item\/tool\/call"/);
   assert.match(taskCardRouteServiceJs, /const service = options\.threadTaskCardService \|\| threadTaskCardService/);
   assert.match(taskCardRouteServiceJs, /service\.approveFromSource\(card\.id, payload\.sourceThreadId\)/);
   assert.match(taskCardRouteServiceJs, /direct: autoApprove/);
@@ -368,22 +373,22 @@ test("approved task-card visible target summary helper is runtime executable", (
 });
 
 test("server broadcasts lightweight thread status for background turn notifications", () => {
-  const broadcastBody = functionBody(serverJs, "broadcast");
+  const broadcastBody = functionBody(threadEventNotificationServiceJs, "broadcast");
   assert.match(broadcastBody, /threadStatusChangedPayloadFromTurnNotification\(payload\)/);
   assert.match(broadcastBody, /applyThreadStatusPayloadToThreadListFallbackCache\(statusPayload\);\s*broadcast\(statusPayload\);/);
 
-  const statusPayloadBody = functionBody(serverJs, "threadStatusChangedPayloadFromTurnNotification");
+  const statusPayloadBody = functionBody(threadEventNotificationServiceJs, "threadStatusChangedPayloadFromTurnNotification");
   assert.match(statusPayloadBody, /method !== "turn\/started" && method !== "turn\/completed"/);
   assert.match(statusPayloadBody, /method === "turn\/started"[\s\S]*\{ type: "active" \}/);
   assert.match(statusPayloadBody, /turn\.status \|\| payload\.params\.status \|\| \{ type: "completed" \}/);
 
-  const eventFilterBody = functionBody(serverJs, "shouldSendEventToClient");
+  const eventFilterBody = functionBody(threadEventNotificationServiceJs, "shouldSendEventToClient");
   assert.match(eventFilterBody, /payload\.method === "thread\/status\/changed"[\s\S]*return true;/);
-  assert.match(functionBody(serverJs, "broadcastThreadStatusChanged"), /applyThreadStatusPayloadToThreadListFallbackCache\(payload\);\s*broadcast\(payload\);/);
+  assert.match(functionBody(threadEventNotificationServiceJs, "broadcastThreadStatusChanged"), /applyThreadStatusPayloadToThreadListFallbackCache\(payload\);\s*broadcast\(payload\);/);
 });
 
 test("server broadcasts active status immediately for local turn starts", () => {
-  const helperBody = functionBody(serverJs, "notifyLocalTurnStarted");
+  const helperBody = functionBody(threadEventNotificationServiceJs, "notifyLocalTurnStarted");
   assert.match(helperBody, /const turnId = turnStartResultTurnId\(result\)/);
   assert.match(helperBody, /rememberLocalActiveThreadStatus\(id, turnId/);
   assert.match(helperBody, /threadDetailProjectionService\.applyNotification\("turn\/started"/);
@@ -393,8 +398,8 @@ test("server broadcasts active status immediately for local turn starts", () => 
   assert.match(threadSummaryStateServiceJs, /const localActiveThreadStatuses = dependencies\.localActiveThreadStatuses instanceof Map/);
   assert.match(serverJs, /function applyLocalActiveThreadStatusToSummary\(/);
   assert.match(functionBody(serverJs, "applyLocalActiveThreadStatusToSummary"), /threadSummaryStateService\.applyLocalActiveThreadStatusToSummary/);
-  assert.match(serverJs, /function updateLocalActiveThreadStatusFromNotification\(/);
-  assert.match(functionBody(serverJs, "broadcast"), /updateLocalActiveThreadStatusFromNotification\(payload\)/);
+  assert.match(threadEventNotificationServiceJs, /function updateLocalActiveThreadStatusFromNotification\(/);
+  assert.match(functionBody(threadEventNotificationServiceJs, "broadcast"), /updateLocalActiveThreadStatusFromNotification\(payload\)/);
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /threadDetailResponsePreparationService\.prepareThreadDetailResponseResult/);
   assert.match(functionBody(threadDetailResponsePreparationServiceJs, "prepareThreadDetailResponseResult"), /applyLocalActiveThreadStatusToResult/);
   assert.match(functionBody(serverJs, "normalizeThreadListResultStatuses"), /normalizeThreadSummaryLiveStatus/);
@@ -412,11 +417,11 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(serverJs, /const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft"/);
   assert.match(serverJs, /const THREAD_TASK_CARD_BODY_MAX_CHARS = 8_000/);
   assert.match(serverJs, /const THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK = 4/);
-  assert.match(serverJs, /function parseThreadTaskCardDraftText\(/);
-  assert.match(serverJs, /function truncateThreadTaskCardBody\(/);
-  assert.match(serverJs, /function materializeThreadTaskCardDraftsForThread\(/);
+  assert.match(taskCardRouteServiceJs, /function parseThreadTaskCardDraftText\(/);
+  assert.match(taskCardRouteServiceJs, /function truncateThreadTaskCardBody\(/);
+  assert.match(taskCardRouteServiceJs, /function materializeThreadTaskCardDraftsForThread\(/);
   assert.match(serverJs, /function maybeMaterializeThreadTaskCardDrafts\(/);
-  assert.match(serverJs, /function prepareThreadTaskCardsToResult\(/);
+  assert.match(taskCardRouteServiceJs, /function prepareThreadTaskCardsToResult\(/);
   assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /method !== "turn\/completed"/);
   assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /codex\.request\("thread\/turns\/list"/);
   assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /await materializeThreadTaskCardDraftsForThread\(thread\)/);
@@ -448,8 +453,8 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts,\s+maybeAutoReplyThreadTaskCard,/);
   assert.match(codexAppServerClientServiceJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
   assert.match(serverJs, /prepareResponse: prepareThreadDetailResponseResult/);
-  assert.match(serverJs, /threadDetailReadOrchestrationService\.readThreadDetail/);
-  assert.match(serverJs, /handleThreadDetailReadRoute\(\{/);
+  assert.match(apiDispatchRouteServiceJs, /threadDetailReadOrchestrationService\.readThreadDetail/);
+  assert.match(apiDispatchRouteServiceJs, /handleThreadDetailReadRoute\(\{/);
   assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailModeFromUrl\(url\) === "recent"/);
   assert.match(threadDetailRouteServiceJs, /sendJson\(status, body\)/);
 });

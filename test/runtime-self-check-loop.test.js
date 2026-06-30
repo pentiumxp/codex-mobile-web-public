@@ -63,6 +63,17 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
   assert.equal(loop.clientEventMaxLines, 50);
   assert.equal(loop.clientEventWindowMs, 120000);
   assert.equal(loop.gateMode, "deploy");
+  assert.equal(loop.browserMode, "full");
+  assert.equal(loop.skipBrowser, false);
+
+  const periodic = runtimeLoop.parseArgs(["--loop"]);
+  assert.equal(periodic.gateMode, "periodic");
+  assert.equal(periodic.browserMode, "off");
+  assert.equal(periodic.skipBrowser, false);
+
+  const forcedPeriodicBrowser = runtimeLoop.parseArgs(["--loop", "--browser-mode", "full"]);
+  assert.equal(forcedPeriodicBrowser.browserMode, "full");
+  assert.equal(forcedPeriodicBrowser.skipBrowser, false);
 });
 
 test("runtime self-check summary keeps only bounded metadata", () => {
@@ -114,6 +125,7 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
     skipApi: false,
     skipBrowser: false,
     output,
+    gateMode: "deploy",
   }, {
     execFile(_node, args, _options, callback) {
       const script = String(args[0] || "");
@@ -151,6 +163,10 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
   assert.equal(result.ok, true);
   const line = fs.readFileSync(output, "utf8").trim();
   assert.match(line, /"privacy":"metadata_only"/);
+  assert.match(line, /"browserMode":"full"/);
+  assert.match(line, /"scheduler":"runtime-job-scheduler-service"/);
+  assert.match(line, /"runtimeJobs":/);
+  assert.match(line, /"name":"browser-runtime","enabled":true/);
   assert.match(line, /"gate":/);
   assert.match(line, /"deployPass":true/);
   assert.doesNotMatch(line, /private-thread-id|raw prompt|cookie|token|Authorization/i);
@@ -298,6 +314,29 @@ test("runtime self-check loop keeps empty child output as execution failure", as
   assert.match(result.gate.actionableIssueCodes[0], /^Command_failed:/);
   const browserCheck = result.checks.find((check) => check.name === "browser-runtime");
   assert.match(browserCheck.errorCode, /^Command_failed:/);
+});
+
+test("runtime self-check loop records skipped periodic browser budget", async () => {
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    gateMode: "periodic",
+    browserMode: "off",
+    skipApi: true,
+    skipBrowser: false,
+    skipClientEvents: true,
+    output: "",
+  }, {
+    execFile() {
+      throw new Error("no child self-check should run");
+    },
+  });
+
+  assert.deepEqual(result.checks, []);
+  assert.deepEqual(result.runtimeJobs.map((job) => [job.name, job.enabled, job.reason]), [
+    ["api-thread", false, "skip_flag"],
+    ["browser-runtime", false, "browser_mode_off"],
+    ["client-events", false, "skip_flag"],
+  ]);
 });
 
 test("runtime self-check loop includes recent client-event stall summary", async () => {

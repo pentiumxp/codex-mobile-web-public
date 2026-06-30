@@ -11,6 +11,8 @@ const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const mediaFileServiceJs = fs.readFileSync(path.join(root, "adapters", "media-file-service.js"), "utf8");
+const generatedImageContentServiceJs = fs.readFileSync(path.join(root, "adapters", "generated-image-content-service.js"), "utf8");
+const threadDetailCompactionServiceJs = fs.readFileSync(path.join(root, "adapters", "thread-detail-compaction-service.js"), "utf8");
 const { uploadPathForId } = require("../server");
 
 function functionBody(source, name) {
@@ -74,13 +76,14 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(appJs, /imageView: "Image"/);
   assert.match(appJs, /imageGeneration: "Image"/);
   assert.match(serverJs, /GENERATED_IMAGE_ROOT/);
-  assert.match(serverJs, /cacheGeneratedImageForItem/);
-  assert.match(serverJs, /cacheGeneratedImageDataUrl/);
+  assert.match(generatedImageContentServiceJs, /cacheGeneratedImageForItem/);
+  assert.match(generatedImageContentServiceJs, /cacheGeneratedImageDataUrl/);
   assert.match(serverJs, /readRolloutToolOutputImageItems/);
   assert.match(mediaFileServiceJs, /\/api\/generated-images\/file/);
   assert.match(mediaFileServiceJs, /\/api\/uploads\/file/);
   assert.match(mediaFileServiceJs, /url\.searchParams\.get\("id"\)/);
-  assert.match(serverJs, /out\.type === "imageView" \|\| out\.type === "imageGeneration"/);
+  assert.match(generatedImageContentServiceJs, /item\.type !== "imageView" && item\.type !== "imageGeneration"/);
+  assert.match(threadDetailCompactionServiceJs, /out\.type === "imageView" \|\| out\.type === "imageGeneration"/);
   assert.match(appJs, /function canRenderImageAttachment\(attachment\)/);
   assert.match(appJs, /imageAttachments[\s\S]*\.filter\(canRenderImageAttachment\)[\s\S]*renderInputImage\(\{ path: attachment\.path \}, attachment, index\)/);
   assert.match(appJs, /FILE_PREVIEW_SWIPE_CLOSE_MIN_PX/);

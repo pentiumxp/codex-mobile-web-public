@@ -4,11 +4,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { createServerHttpRuntimeService } = require("../adapters/server-http-runtime-service");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const staticFileServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "static-file-service.js"), "utf8");
+const serverHttpRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "server-http-runtime-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const pluginEmbedJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "plugin-embed.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
@@ -52,15 +54,35 @@ test("server exposes Hermes plugin manifest, registration, origin, launch, sessi
   assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE/);
   assert.match(coreApiRouteServiceJs, /notificationDelegateConfigured/);
   assert.match(coreApiRouteServiceJs, /isAccessKeyAuthorized\(req\)/);
-  assert.match(serverJs, /const tokens = requestAuthTokens\(req\);[\s\S]*tokens\.some\(\(token\) => hermesPluginService\.isSessionAuthorized\(token\)\)/);
-  assert.match(serverJs, /codex_mobile_plugin_session/);
+  assert.match(serverHttpRuntimeServiceJs, /const tokens = requestAuthTokens\(req\);[\s\S]*tokens\.some\(\(token\) => hermesPluginService\.isSessionAuthorized\(token\)\)/);
   assert.match(coreApiRouteServiceJs, /pluginSessionCookieHeader\(req, session\)/);
-  assert.match(serverJs, /Authorization/);
+  assert.match(serverHttpRuntimeServiceJs, /Authorization/);
   assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_BASE_URL/);
   assert.match(serverJs, /CODEX_MOBILE_PUBLIC_BASE_URL/);
   assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS/);
   assert.match(staticFileServiceJs, /Content-Security-Policy/);
   assert.match(staticFileServiceJs, /frameAncestorsHeader\(\)/);
+});
+
+test("HTTP runtime accepts Hermes plugin session cookies as auth tokens", () => {
+  const httpRuntime = createServerHttpRuntimeService({
+    disableAuth: false,
+    getAuthKey: () => "mobile-access-key",
+    getHermesPluginService: () => ({
+      isSessionAuthorized: (token) => token === "plugin-session-key",
+      isLaunchTokenAuthorized: () => false,
+    }),
+  });
+  const req = {
+    url: "/api/threads",
+    headers: {
+      host: "127.0.0.1:8787",
+      cookie: "codex_mobile_plugin_session=plugin-session-key",
+    },
+  };
+  assert.deepEqual(httpRuntime.requestAuthTokens(req), ["plugin-session-key"]);
+  assert.equal(httpRuntime.isAccessKeyAuthorized(req), false);
+  assert.equal(httpRuntime.isAuthorized(req), true);
 });
 
 test("Hermes plugin launch token is a browser-session key, not local storage login state", () => {

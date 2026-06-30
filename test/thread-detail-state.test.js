@@ -426,10 +426,28 @@ test("thread detail state plans open-thread cache reuse without accepting empty 
       mobileDetailLoaded: true,
     },
   }), {
-    shouldUseCachedCurrent: false,
-    shouldUseActivePreview: true,
+    shouldUseCachedCurrent: true,
+    shouldRefreshCurrent: true,
     shouldReportEmptyCachedDetail: false,
-    reason: "active-detail-cache-not-reusable",
+    reason: "active-loaded-detail-refresh-baseline",
+  });
+
+  assert.deepEqual(planThreadOpenCacheReuse({
+    requestedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    summaryThread: { id: "thread-1", updatedAt: "2026-06-30T02:05:00.000Z" },
+    currentThread: {
+      id: "thread-1",
+      updatedAt: "2026-06-30T02:00:00.000Z",
+      status: { type: "active" },
+      turns: [{ id: "turn-active", status: "running", items: [{ id: "old-receipt" }] }],
+      mobileDetailLoaded: true,
+    },
+  }), {
+    shouldUseCachedCurrent: true,
+    shouldRefreshCurrent: true,
+    shouldReportEmptyCachedDetail: false,
+    reason: "active-loaded-detail-summary-newer-refresh-baseline",
   });
 
   assert.deepEqual(planThreadOpenCacheReuse({

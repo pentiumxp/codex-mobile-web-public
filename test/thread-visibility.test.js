@@ -7,7 +7,20 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const serverHttpRuntimeServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "server-http-runtime-service.js"),
+  "utf8",
+);
+const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
+const threadDetailCompactionServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-compaction-service.js"),
+  "utf8",
+);
+const threadEventNotificationServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"),
+  "utf8",
+);
 const threadDetailReadOrchestrationServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-read-orchestration-service.js"),
   "utf8",
@@ -208,7 +221,7 @@ test("turn completion status broadcasts carry fresh event time for thread-list h
 });
 
 test("active-window prewarm follows turn notifications that can move projection state", () => {
-  const body = functionBody(serverJs, "scheduleActiveWindowPrewarmFromNotification");
+  const body = functionBody(threadEventNotificationServiceJs, "scheduleActiveWindowPrewarmFromNotification");
 
   assert.match(body, /method !== "turn\/started" && method !== "turn\/completed" && method !== "thread\/status\/changed"/);
   assert.match(body, /method === "thread\/status\/changed" && !threadSummaryLooksActive\(payload\.params\)/);
@@ -271,8 +284,8 @@ test("thread detail uses full thread/read before bounded turns/list fallback", (
   assert.doesNotMatch(serverJs, /shouldSkipThreadDetailRpc/);
   assert.doesNotMatch(serverJs, /large-rollout-turns-list/);
   assert.doesNotMatch(serverJs, /skip_detail_rpc/);
-  const routeStart = serverJs.indexOf("const threadRead = url.pathname.match");
-  assert.ok(serverJs.indexOf("threadDetailReadOrchestrationService.readThreadDetail", routeStart) > routeStart);
+  const routeStart = apiDispatchRouteServiceJs.indexOf("const threadRead = url.pathname.match");
+  assert.ok(apiDispatchRouteServiceJs.indexOf("threadDetailReadOrchestrationService.readThreadDetail", routeStart) > routeStart);
   const threadReadIndex = threadDetailReadOrchestrationServiceJs.indexOf("await readFullThread(");
   const turnsListIndex = threadDetailReadOrchestrationServiceJs.indexOf("await turnsListThreadReadResult(", threadReadIndex);
   assert.ok(threadReadIndex > 0, "thread detail orchestration should call full thread/read");
@@ -287,15 +300,15 @@ test("thread detail uses full thread/read before bounded turns/list fallback", (
 test("thread detail defaults to ten turns and exposes an older cursor when compacted", () => {
   assert.match(serverJs, /CODEX_MOBILE_THREAD_TURNS \|\| "10"/);
   assert.match(serverJs, /CODEX_MOBILE_FULL_THREAD_TURNS \|\| "10"/);
-  assert.match(serverJs, /function olderTurnsCursorBeforeTurn\(turn\)/);
-  assert.match(serverJs, /return JSON\.stringify\(\{ turnId, includeAnchor: false \}\);/);
-  assert.match(serverJs, /out\.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn\(out\.turns\[0\]\);/);
-  assert.match(serverJs, /handleThreadDetailReadRoute\(\{/);
+  assert.match(threadDetailCompactionServiceJs, /function olderTurnsCursorBeforeTurn\(turn\)/);
+  assert.match(threadDetailCompactionServiceJs, /return JSON\.stringify\(\{ turnId, includeAnchor: false \}\);/);
+  assert.match(threadDetailCompactionServiceJs, /out\.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn\(out\.turns\[0\]\);/);
+  assert.match(apiDispatchRouteServiceJs, /handleThreadDetailReadRoute\(\{/);
   assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailModeFromUrl\(url\) === "recent";/);
   assert.match(threadDetailReadOrchestrationServiceJs, /planActiveThreadDetailReadPolicy\(\{ summary, preferRecentTurns \}\)/);
   assert.match(threadDetailReadOrchestrationServiceJs, /if \(activeReadPolicy\.shouldUseInitialTurnsList\) \{/);
   assert.match(threadDetailReadOrchestrationServiceJs, /"turns-list-initial"/);
-  assert.match(serverJs, /limit: Math\.max\(1, Math\.min\(100, Number\(url\.searchParams\.get\("limit"\) \|\| String\(MAX_THREAD_TURNS\)\)\)\)/);
+  assert.match(apiDispatchRouteServiceJs, /limit: Math\.max\(1, Math\.min\(100, Number\(url\.searchParams\.get\("limit"\) \|\| String\(MAX_THREAD_TURNS\)\)\)\)/);
 });
 
 test("fallback thread list keeps migrated Windows cwd rows when no visible workspace matches", () => {
@@ -1063,13 +1076,15 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const summaryMergeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-summary-merge-service.js"), "utf8");
   const requestContextServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-request-context-service.js"), "utf8");
   const responseCoalescerServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-response-coalescer-service.js"), "utf8");
+  const visibilityServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-visibility-service.js"), "utf8");
+  const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "rate-limit-runtime-service.js"), "utf8");
   const routeIndex = routeServiceJs.indexOf('async function handleThreadListRoute(options = {})');
   assert.ok(routeIndex >= 0, "missing thread list route");
   const routeBody = routeServiceJs.slice(routeIndex);
 
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
-  assert.match(serverJs, /function compareRecentRolloutDirents\(left, right\)/);
-  assert.match(serverJs, /entries\.sort\(compareRecentRolloutDirents\)/);
+  assert.match(rateLimitRuntimeServiceJs, /function compareRecentRolloutDirents\(left, right\)/);
+  assert.match(rateLimitRuntimeServiceJs, /entries\.sort\(compareRecentRolloutDirents\)/);
   assert.match(threadListFallbackSourceServiceJs, /function readSessionIndexEntriesForFallback\(maxLines = 2000, options = \{\}\)/);
   assert.match(threadListFallbackSourceServiceJs, /const sourceContext = options\.sourceContext && typeof options\.sourceContext === "object"/);
   assert.match(threadListFallbackSourceServiceJs, /incrementBoundedDiagnosticCounter\(diagnostics, "sessionIndexReuseCount"\)/);
@@ -1077,12 +1092,12 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(threadListFallbackSourceServiceJs, /function readSessionIndexFallback\(limit = 80, filters = \{\}\) \{[\s\S]*readSessionIndexEntriesForFallback\(1000, \{[\s\S]*diagnostics,[\s\S]*sourceContext: filters\.sourceContext,[\s\S]*\}\)/);
   assert.match(threadListFallbackSourceServiceJs, /readRolloutSessionFallbackThreadFromFile\(file, indexEntries\.get\(id\) \|\| \{ id \}, \{[\s\S]*includeStatus: false,[\s\S]*diagnostics,[\s\S]*\}\)/);
   assert.match(threadListFallbackSourceServiceJs, /filterFallbackThreads\(threads, Object\.assign\(\{\}, filters, \{ archivedIds \}\)\)[\s\S]*\.slice\(0, limit\)[\s\S]*\.map\(\(thread\) => attachRolloutFallbackStatus\(thread, \{ diagnostics \}\)\)/);
-  assert.match(serverJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*const archivedIds = filters\.archivedIds[\s\S]*archivedSessionThreadIds\(\)/);
-  assert.match(serverJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*shouldHideThreadListSummary\(thread, archivedIds\)/);
+  assert.match(visibilityServiceJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*const archivedIds = filters\.archivedIds[\s\S]*archivedSessionThreadIds\(\)/);
+  assert.match(visibilityServiceJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*shouldHideThreadListSummary\(thread, archivedIds\)/);
   assert.match(threadListFallbackSourceServiceJs, /function rolloutLatestTurnEvidence\(rolloutPath, stat = null, options = \{\}\) \{[\s\S]*const tail = typeof options\.tail === "string" \? options\.tail : readRolloutTail\(rolloutPath\)/);
   assert.match(threadListFallbackSourceServiceJs, /function inferRolloutFallbackStatus\(rolloutPath, stat = null, nowMs = Date\.now\(\), options = \{\}\) \{[\s\S]*counterPrefix: "rolloutStatusTail"[\s\S]*staleContextOnlyActiveEvidenceForRollout\(rolloutPath, \{ stat, nowMs, tail \}\)/);
   assert.match(serverJs, /function readThreadListFallback\(/);
-  assert.match(serverJs, /function logThreadList\(event, details = \{\}\)/);
+  assert.match(serverHttpRuntimeServiceJs, /function logThreadList\(event, details = \{\}\)/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);
   assert.match(serverJs, /createThreadListFallbackCacheService/);
   assert.match(baselineServiceJs, /createThreadListFallbackBaselineService/);
@@ -1252,8 +1267,8 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const stateAttachStartedAtMs = Date\.now\(\)/);
   assert.match(routeBody, /markTiming\("stateAttachMs", stateAttachStartedAtMs\)/);
   assert.match(routeBody, /attachThreadListStateToResult\(\{\s*data: normalizedFallback,\s*\}\)/);
-  const threadReadIndex = serverJs.indexOf('const threadRead = url.pathname.match(/^\\/api\\/threads\\/([^/]+)$/);');
-  const threadReadBody = serverJs.slice(threadReadIndex, serverJs.indexOf('const threadTurns = url.pathname.match', threadReadIndex));
+  const threadReadIndex = apiDispatchRouteServiceJs.indexOf('const threadRead = url.pathname.match(/^\\/api\\/threads\\/([^/]+)$/);');
+  const threadReadBody = apiDispatchRouteServiceJs.slice(threadReadIndex, apiDispatchRouteServiceJs.indexOf('const threadTurns = url.pathname.match', threadReadIndex));
   assert.match(threadReadBody, /trackThreadDetailRequestLifecycle\(res\);/);
 });
 

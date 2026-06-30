@@ -8,6 +8,10 @@ const { test } = require("node:test");
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const threadDetailCompactionServiceJs = fs.readFileSync(
+  path.join(root, "adapters", "thread-detail-compaction-service.js"),
+  "utf8",
+);
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const threadDetailMergeStateJs = fs.readFileSync(path.join(root, "public", "thread-detail-merge-state.js"), "utf8");
 const threadDetailPatchPlan = require(path.join(root, "public", "thread-detail-patch-plan.js"));
@@ -50,6 +54,14 @@ function serverFunctionBody(name) {
   return functionBodyFrom(serverJs, name);
 }
 
+function serverOrCompactionSourceForFunction(name) {
+  return serverJs.includes(`function ${name}(`) ? serverJs : threadDetailCompactionServiceJs;
+}
+
+function serverOrCompactionFunctionBody(name) {
+  return functionBodyFrom(serverOrCompactionSourceForFunction(name), name);
+}
+
 function evaluatedServerSupersededLivePruner() {
   const sources = [
     "isSupersededLiveTurn",
@@ -62,7 +74,7 @@ function evaluatedServerSupersededLivePruner() {
     "userMessageHasVisualAttachment",
     "isMeaningfulSupersededLiveItem",
     "pruneSupersededLiveShellTurns",
-  ].map((name) => functionSourceFrom(serverJs, name));
+  ].map((name) => functionSourceFrom(serverOrCompactionSourceForFunction(name), name));
   return Function(`
 function isReasoningOnlyItem(item) { return Boolean(item && item.type === "reasoning"); }
 function isTurnUsageSummaryItem(item) { return Boolean(item && item.type === "turnUsageSummary"); }
@@ -4649,12 +4661,12 @@ test("item merge delegates visible-field preservation to thread detail state pol
 });
 
 test("server only emits context compaction notices from explicit item state", () => {
-  const itemBody = serverFunctionBody("compactItem");
-  const turnBody = serverFunctionBody("compactTurn");
-  assert.match(serverJs, /function contextCompactionMobileState\(/);
-  assert.match(serverFunctionBody("contextCompactionMobileState"), /options\.contextCompactionPending === true/);
-  assert.match(serverFunctionBody("contextCompactionMobileState"), /options\.contextCompactionPending === false/);
-  assert.match(serverFunctionBody("contextCompactionMobileState"), /if \(!text\) return ""/);
+  const itemBody = serverOrCompactionFunctionBody("compactItem");
+  const turnBody = serverOrCompactionFunctionBody("compactTurn");
+  assert.match(threadDetailCompactionServiceJs, /function contextCompactionMobileState\(/);
+  assert.match(serverOrCompactionFunctionBody("contextCompactionMobileState"), /options\.contextCompactionPending === true/);
+  assert.match(serverOrCompactionFunctionBody("contextCompactionMobileState"), /options\.contextCompactionPending === false/);
+  assert.match(serverOrCompactionFunctionBody("contextCompactionMobileState"), /if \(!text\) return ""/);
   assert.match(itemBody, /const compactionState = contextCompactionMobileState\(out, options\)/);
   assert.match(itemBody, /if \(!compactionState\) return compacted/);
   assert.doesNotMatch(itemBody, /options\.contextCompactionPending !== false/);
@@ -6414,7 +6426,7 @@ test("thread merge drops superseded stale active turns", () => {
 });
 
 test("completed turns can render context and token usage summaries", () => {
-  assert.match(serverJs, /workspaceContextStats:\s*workspaceContextStatsForCwd\(out\.cwd\)/);
+  assert.match(threadDetailCompactionServiceJs, /workspaceContextStats:\s*workspaceContextStatsForCwd\(out\.cwd\)/);
   assert.match(appJs, /function renderTurnUsageSummary\(item\)/);
   assert.match(appJs, /function isTurnUsageSummaryItem\(item\)/);
   assert.match(appJs, /function dedupeTurnUsageSummaryItems\(items\)/);

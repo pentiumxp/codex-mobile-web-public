@@ -14,8 +14,16 @@ const {
 } = require("../adapters/turn-usage-summary-service");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const rolloutDetailEnrichmentServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "rollout-detail-enrichment-service.js"),
+  "utf8",
+);
 const threadDetailResponsePreparationServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-response-preparation-service.js"),
+  "utf8",
+);
+const threadDetailCompactionServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-compaction-service.js"),
   "utf8",
 );
 
@@ -297,13 +305,13 @@ test("parses rollout jsonl token counts and ignores malformed lines", () => {
 });
 
 test("thread detail usage read targets returned turns beyond the rollout tail", () => {
-  assert.match(serverJs, /function readRolloutRuntimeScanText\(rolloutPath\)/);
+  assert.match(rolloutDetailEnrichmentServiceJs, /function readRolloutRuntimeScanText\(rolloutPath\)/);
   assert.match(serverJs, /createRolloutEnrichmentIndexService/);
-  assert.match(serverJs, /function readRolloutEnrichmentEntries\(rolloutPath\)/);
-  assert.match(serverJs, /function missingUsageTurnIds\(payload, turnIds\)/);
-  assert.match(serverJs, /targetCached && Date\.now\(\) - targetCached\.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS\s*&& missingUsageTurnIds\(targetCached\.payload, targetTurnIds\)\.length === 0/);
-  assert.match(serverJs, /if \(missingUsageTurnIds\(payload, targetTurnIds\)\.length > 0\) \{\s*payload = collectTurnUsageSummariesFromEntries\(readRolloutEnrichmentEntries\(rolloutPath\)\);/);
-  assert.match(serverJs, /readRolloutTurnUsageSummaries\(rolloutPath, \{\s*targetTurnIds: out\.turns\.map\(\(turn\) => turn && turn\.id\)\.filter\(Boolean\),\s*\}\)/);
+  assert.match(rolloutDetailEnrichmentServiceJs, /function readRolloutEnrichmentEntries\(rolloutPath\)/);
+  assert.match(rolloutDetailEnrichmentServiceJs, /function missingUsageTurnIds\(payload, turnIds\)/);
+  assert.match(rolloutDetailEnrichmentServiceJs, /targetCached && Date\.now\(\) - targetCached\.cachedAt <= runtimeContextCacheTtlMs\s*&& missingUsageTurnIds\(targetCached\.payload, targetTurnIds\)\.length === 0/);
+  assert.match(rolloutDetailEnrichmentServiceJs, /if \(missingUsageTurnIds\(payload, targetTurnIds\)\.length > 0\) \{\s*payload = collectTurnUsageSummariesFromEntries\(readRolloutEnrichmentEntries\(rolloutPath\)\);/);
+  assert.match(threadDetailResponsePreparationServiceJs, /const targetTurnIds = thread\.turns\s*\.map\(\(turn\) => turn && \(turn\.id \|\| turn\.turnId \|\| turn\.turn_id\)\)\s*\.filter\(Boolean\);/);
   assert.match(serverJs, /createThreadDetailProjectionResultService/);
   assert.match(serverJs, /const threadDetailProjectionResultService = createThreadDetailProjectionResultService\(\{\s*maxTurns: MAX_FULL_THREAD_TURNS,\s*compactThreadReadResult,\s*decorateThreadReadResult: attachRolloutUsageSummariesToDetailResult,\s*mergeThreadDisplaySummary,/);
   assert.match(serverJs, /decorateThreadReadResult: attachRolloutUsageSummariesToDetailResult/);
@@ -329,15 +337,23 @@ test("thread detail rollout scans stay bounded for very large sessions", () => {
     /const rolloutEnrichmentIndexService = createRolloutEnrichmentIndexService\(\{\s*maxIndexes: RUNTIME_CONTEXT_CACHE_MAX,\s*\}\);/,
   );
   assert.match(
-    serverJs,
-    /if \(!stat\.isFile\(\) \|\| stat\.size <= 0 \|\| stat\.size > MAX_RUNTIME_CONTEXT_SCAN_BYTES\) return "";/,
+    rolloutDetailEnrichmentServiceJs,
+    /if \(!stat\.isFile\(\) \|\| stat\.size <= 0 \|\| stat\.size > maxRuntimeContextScanBytes\) return "";/,
+  );
+  assert.match(
+    rolloutDetailEnrichmentServiceJs,
+    /return readRolloutTail\(rolloutPath, maxRolloutEnrichmentContextBytes\);/,
+  );
+  assert.match(
+    rolloutDetailEnrichmentServiceJs,
+    /const indexed = rolloutEnrichmentIndexService\.read\(rolloutPath\);/,
   );
   assert.doesNotMatch(
-    serverJs,
+    rolloutDetailEnrichmentServiceJs,
     /const lines = fs\.readFileSync\(rolloutPath, "utf8"\)\.split\(\/\\r\?\\n\/\)\.filter\(Boolean\)\.slice\(-800\);/,
   );
   assert.match(
-    serverJs,
+    threadDetailCompactionServiceJs,
     /const lines = readRolloutTail\(rolloutPath\)\.split\(\/\\r\?\\n\/\)\.filter\(Boolean\)\.slice\(-800\);/,
   );
 });

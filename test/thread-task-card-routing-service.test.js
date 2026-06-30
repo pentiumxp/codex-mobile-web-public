@@ -75,7 +75,7 @@ test("visible target list dedupes and excludes archived, subagent, and sidecar t
   assert.deepEqual(service.visibleTargetThreads().map((thread) => thread.id), [keep.id]);
 });
 
-test("exact targetThreadId wins over same-workspace canonical cwd routing", () => {
+test("exact targetThreadId wins and ambiguous same-workspace cwd routing fails closed", () => {
   const cwd = "/tmp/codex-mobile-routing/shared";
   const sourceThreadId = "10000000-0000-4000-8000-000000000001";
   const exactThreadId = "10000000-0000-4000-8000-000000000002";
@@ -89,14 +89,61 @@ test("exact targetThreadId wins over same-workspace canonical cwd routing", () =
 
   assert.equal(service.resolveTargetReference(exactThreadId, sourceThreadId), exactThreadId);
   assert.equal(service.resolveTargetReference("Plugin Workspace Audit", sourceThreadId), exactThreadId);
-  assert.equal(service.resolveTargetReference(cwd, sourceThreadId), newestThreadId);
+  assert.throws(
+    () => service.resolveTargetReference(cwd, sourceThreadId),
+    (err) => err
+      && err.code === "target_workspace_ambiguous"
+      && err.statusCode === 409
+      && err.details
+      && err.details.matchCount === 2,
+  );
   assert.deepEqual(
     service.resolvedTargetIds({ targetThreadId: exactThreadId, targetCwd: cwd }, sourceThreadId),
     [exactThreadId],
   );
 });
 
-test("workspace cwd canonical routing prefers live implementation thread over recently updated completed threads", () => {
+test("workspace cwd routing is allowed only for a unique visible deliverable thread", () => {
+  const cwd = "/tmp/codex-mobile-routing/unique";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const targetThreadId = "10000000-0000-4000-8000-000000000002";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: targetThreadId, name: "Only implementation", cwd, updatedAt: 200 },
+    ],
+  });
+
+  assert.equal(service.resolveTargetReference(cwd, sourceThreadId), targetThreadId);
+  assert.equal(service.canonicalTargetForCwd(cwd, service.visibleTargetThreads()).id, targetThreadId);
+});
+
+test("ambiguous exact titles fail closed instead of selecting the first visible thread", () => {
+  const cwd = "/tmp/codex-mobile-routing/shared";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const firstThreadId = "10000000-0000-4000-8000-000000000002";
+  const secondThreadId = "10000000-0000-4000-8000-000000000003";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: firstThreadId, name: "codex mobile 06-30", cwd, updatedAt: 100 },
+      { id: secondThreadId, name: "codex mobile 06-30", cwd, updatedAt: 200 },
+    ],
+  });
+
+  assert.equal(service.resolveTargetReference(firstThreadId, sourceThreadId), firstThreadId);
+  assert.throws(
+    () => service.resolveTargetReference("codex mobile 06-30", sourceThreadId),
+    (err) => err
+      && err.code === "target_thread_title_ambiguous"
+      && err.statusCode === 409
+      && err.details
+      && err.details.matchCount === 2
+      && Array.isArray(err.details.matchedThreadIds)
+      && err.details.matchedThreadIds.includes(firstThreadId)
+      && err.details.matchedThreadIds.includes(secondThreadId),
+  );
+});
+
+test("same-workspace implementation and public-pr candidates fail closed for cwd-only routing", () => {
   const cwd = "/tmp/codex-mobile-routing/shared";
   const sourceThreadId = "10000000-0000-4000-8000-000000000001";
   const activeThreadId = "10000000-0000-4000-8000-000000000002";
@@ -110,11 +157,24 @@ test("workspace cwd canonical routing prefers live implementation thread over re
     ],
   });
 
-  assert.equal(service.resolveTargetReference(cwd, sourceThreadId), activeThreadId);
-  assert.equal(service.canonicalVisibleTargets(service.visibleTargetThreads())[0].id, activeThreadId);
+  assert.throws(
+    () => service.resolveTargetReference(cwd, sourceThreadId),
+    (err) => err
+      && err.code === "target_workspace_ambiguous"
+      && err.statusCode === 409
+      && err.details
+      && err.details.matchedThreads
+      && err.details.matchedThreads.some((thread) => thread.threadId === activeThreadId)
+      && err.details.matchedThreads.some((thread) => thread.threadId === publicPrThreadId)
+      && err.details.matchedThreads.some((thread) => thread.threadId === chatgptProThreadId),
+  );
+  assert.deepEqual(
+    service.canonicalVisibleTargets(service.visibleTargetThreads()).map((thread) => thread.id),
+    [activeThreadId, publicPrThreadId, chatgptProThreadId],
+  );
 });
 
-test("workspace cwd canonical routing still uses newest thread when all same-cwd candidates are terminal", () => {
+test("workspace cwd routing rejects multiple terminal same-cwd candidates", () => {
   const cwd = "/tmp/codex-mobile-routing/shared";
   const sourceThreadId = "10000000-0000-4000-8000-000000000001";
   const olderThreadId = "10000000-0000-4000-8000-000000000002";
@@ -126,7 +186,16 @@ test("workspace cwd canonical routing still uses newest thread when all same-cwd
     ],
   });
 
-  assert.equal(service.resolveTargetReference(cwd, sourceThreadId), newerThreadId);
+  assert.throws(
+    () => service.resolveTargetReference(cwd, sourceThreadId),
+    (err) => err
+      && err.code === "target_workspace_ambiguous"
+      && err.statusCode === 409
+      && err.details
+      && err.details.matchCount === 2
+      && err.details.matchedThreads[0].threadId === newerThreadId
+      && err.details.matchedThreads[1].threadId === olderThreadId,
+  );
 });
 
 test("readable exact thread id can resolve outside current visible list but must still be deliverable", () => {

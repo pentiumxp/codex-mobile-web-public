@@ -6,10 +6,10 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 test("server client-event log lines include bounded server timestamp", () => {
-  const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
-  const start = serverJs.indexOf("function logClientEvent");
+  const serviceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "server-http-runtime-service.js"), "utf8");
+  const start = serviceJs.indexOf("function logClientEvent");
   assert.ok(start >= 0);
-  const body = serverJs.slice(start, serverJs.indexOf("function truncateMiddle", start));
+  const body = serviceJs.slice(start, serviceJs.indexOf("function isTurnSteerUnsupportedError", start));
 
   assert.match(body, /ts:\s*new Date\(\)\.toISOString\(\)/);
   assert.match(body, /safeLogDetails\(details\)/);

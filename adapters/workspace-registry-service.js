@@ -189,6 +189,11 @@ function publicWorkspace(entry) {
   };
 }
 
+function pathIsInsideRoot(candidate, root) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
 function createWorkspaceRegistryService(options = {}) {
   const storageFile = path.resolve(String(options.storageFile || path.join(process.cwd(), "workspace-registry.json")));
   const fallbackRoots = defaultCreateRoots(options.homeDir, options.defaultCreateRoot);
@@ -276,6 +281,53 @@ function createWorkspaceRegistryService(options = {}) {
     return workspace;
   }
 
+  function resolveExistingWorkspacePath(value) {
+    const raw = String(value || "").trim();
+    if (!raw) throw statusError(400, "Workspace path is required");
+    if (!path.isAbsolute(raw)) throw statusError(400, "Workspace path must be absolute");
+    const cwd = canonicalDirectoryPath(raw, canonicalizeWorkspacePaths);
+    let stat = null;
+    try {
+      stat = fs.statSync(cwd);
+    } catch (err) {
+      throw statusError(404, err.message || "Workspace path does not exist");
+    }
+    if (!stat.isDirectory()) throw statusError(400, "Workspace path is not a directory");
+    const roots = availableCreateRoots();
+    const root = roots.find((candidate) => {
+      const rootKey = pathKey(candidate);
+      return pathKey(cwd) === rootKey || pathIsInsideRoot(cwd, candidate);
+    });
+    if (!root) throw statusError(403, "Workspace path is outside the allowed create roots");
+    return {
+      cwd,
+      parent: canonicalDirectoryPath(root, canonicalizeWorkspacePaths),
+    };
+  }
+
+  function registerExisting(input = {}) {
+    const resolved = resolveExistingWorkspacePath(input.cwd || input.path || input.workspace);
+    const label = String(input.label || path.basename(resolved.cwd) || resolved.cwd).trim();
+    const now = new Date().toISOString();
+    const store = loadStore();
+    const entry = upsertWorkspace(store, {
+      cwd: resolved.cwd,
+      label,
+      source: "mobile",
+      parent: resolved.parent,
+      createdAt: now,
+      updatedAt: now,
+    });
+    saveStore(store);
+    const desktopGlobalStateSyncedFiles = syncDesktopGlobalWorkspaceRoots(desktopGlobalStateFiles, entry.cwd);
+    return {
+      ok: true,
+      workspace: publicWorkspace(entry),
+      desktopGlobalStateSynced: desktopGlobalStateSyncedFiles.length > 0,
+      desktopGlobalStateSyncCount: desktopGlobalStateSyncedFiles.length,
+    };
+  }
+
   function create(input = {}) {
     const label = workspaceNameFromInput(input.name || input.label, maxNameLength);
     const parent = resolveCreateRoot(input.parent || input.root);
@@ -324,6 +376,7 @@ function createWorkspaceRegistryService(options = {}) {
 
   return {
     create,
+    registerExisting,
     list,
     registeredPaths,
     createRoots: availableCreateRoots,

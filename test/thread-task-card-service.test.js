@@ -11,9 +11,18 @@ const {
   normalizeCreateRequest,
 } = require("../adapters/thread-task-card-service");
 
+const taskCardServiceSource = fs.readFileSync(path.join(__dirname, "..", "adapters", "thread-task-card-service.js"), "utf8");
+
 function tempFile(name) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-thread-task-card-"));
   return path.join(dir, name);
+}
+
+function functionBody(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `${name} not found`);
+  const next = source.indexOf("\nfunction ", start + 1);
+  return source.slice(start, next === -1 ? source.length : next);
 }
 
 test("missing task-card store is treated as first-run empty state", () => {
@@ -26,6 +35,59 @@ test("missing task-card store is treated as first-run empty state", () => {
     pendingIncoming: 0,
     pendingOutgoing: 0,
   });
+});
+
+test("task-card store writes use unique temp files for concurrent writers", () => {
+  const saveStore = functionBody(taskCardServiceSource, "saveStore");
+  assert.match(saveStore, /crypto\.randomBytes/);
+  assert.match(saveStore, /process\.pid/);
+  assert.doesNotMatch(saveStore, /\$\{file\}\.tmp/);
+});
+
+test("task-card store writes are serialized across service instances", async () => {
+  const storageFile = tempFile("cards.json");
+  const serviceA = createThreadTaskCardService({
+    storageFile,
+    idGenerator: () => "ttc_writer_a",
+  });
+  const serviceB = createThreadTaskCardService({
+    storageFile,
+    idGenerator: () => "ttc_writer_b",
+  });
+
+  await Promise.all([
+    serviceA.create({
+      sourceWorkspaceId: "movie",
+      sourceThreadId: "thread-src",
+      sourceTurnId: "turn-src",
+      sourceThreadTitle: "Movie",
+      targetWorkspaceId: "movie-deploy",
+      targetThreadId: "thread-dst-a",
+      idempotencyKey: "movie:deploy:writer-a",
+      format: "markdown",
+      title: "Deploy Movie A",
+      summary: "Deploy request A.",
+      body: "Deploy request A.",
+    }),
+    serviceB.create({
+      sourceWorkspaceId: "movie",
+      sourceThreadId: "thread-src",
+      sourceTurnId: "turn-src",
+      sourceThreadTitle: "Movie",
+      targetWorkspaceId: "movie-deploy",
+      targetThreadId: "thread-dst-b",
+      idempotencyKey: "movie:deploy:writer-b",
+      format: "markdown",
+      title: "Deploy Movie B",
+      summary: "Deploy request B.",
+      body: "Deploy request B.",
+    }),
+  ]);
+
+  const store = JSON.parse(fs.readFileSync(storageFile, "utf8"));
+  const ids = store.cards.map((card) => card.id).sort();
+  assert.deepEqual(ids, ["ttc_writer_a", "ttc_writer_b"]);
+  assert.equal(fs.existsSync(`${storageFile}.lock`), false);
 });
 
 test("malformed task-card store fails closed instead of returning empty state", async () => {
@@ -1034,6 +1096,10 @@ test("approve persists a non-pending in-flight state before injected execution f
   const during = service.get(created.id, "thread-dst");
   assert.equal(during.status, "approving");
   assert.equal(during.canApprove, false);
+  const retry = await service.approve(created.id, "thread-dst");
+  assert.equal(retry.approvalInFlight, true);
+  assert.equal(retry.card.status, "approving");
+  assert.equal(retry.execution, null);
   assert.deepEqual(service.pendingCountsForThread("thread-dst"), {
     pendingTotal: 0,
     pendingIncoming: 0,
@@ -1044,6 +1110,50 @@ test("approve persists a non-pending in-flight state before injected execution f
   const result = await approving;
   assert.equal(result.card.status, "approved");
   assert.equal(result.card.injectedTurnId, "turn-after-inflight");
+});
+
+test("source-thread direct approval retry during in-flight injection is idempotent", async () => {
+  let markExecutionStarted;
+  let releaseExecution;
+  let executionCount = 0;
+  const executionStarted = new Promise((resolve) => { markExecutionStarted = resolve; });
+  const executionRelease = new Promise((resolve) => { releaseExecution = resolve; });
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => {
+      executionCount += 1;
+      markExecutionStarted();
+      await executionRelease;
+      return { threadId: card.target.threadId, turnId: "turn-source-direct-after-inflight" };
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "movie",
+    sourceThreadId: "thread-src",
+    sourceTurnId: "turn-src",
+    sourceThreadTitle: "Movie",
+    targetWorkspaceId: "movie-deploy",
+    targetThreadId: "thread-dst",
+    idempotencyKey: "movie:deploy:inflight",
+    format: "markdown",
+    title: "Deploy Movie",
+    summary: "Deploy and return.",
+    body: "Deploy request.",
+  });
+
+  const approving = service.approveFromSource(created.id, "thread-src");
+  await executionStarted;
+  const retry = await service.approveFromSource(created.id, "thread-src");
+  assert.equal(retry.approvalInFlight, true);
+  assert.equal(retry.card.status, "approving");
+  assert.equal(retry.execution, null);
+  assert.equal(executionCount, 1);
+
+  releaseExecution();
+  const result = await approving;
+  assert.equal(result.card.status, "approved");
+  assert.equal(result.card.injectedTurnId, "turn-source-direct-after-inflight");
+  assert.equal(executionCount, 1);
 });
 
 test("approve restores pending state if injected execution fails before acceptance", async () => {
@@ -1186,6 +1296,61 @@ test("reply can return an approved implementation card and is idempotent", async
   assert.equal(duplicate.replyCard.id, returned.replyCard.id);
   assert.equal(duplicate.replyCard.status, "approved");
   assert.equal(service.listForThread("thread-home").filter((card) => card.audit && card.audit.replyToCardId === created.id).length, 1);
+});
+
+test("reply can recover an accepted card left in approving after a lost final write", async () => {
+  const storageFile = tempFile("cards.json");
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile,
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "codex-mobile",
+    sourceThreadId: "thread-source",
+    sourceTurnId: "turn-source",
+    sourceThreadTitle: "Codex Mobile",
+    targetWorkspaceId: "codex-mobile-deploy",
+    targetThreadId: "thread-deploy",
+    idempotencyKey: "codex-mobile:deploy:lost-final-write",
+    format: "markdown",
+    title: "Deploy Codex Mobile",
+    summary: "Deploy and return.",
+    body: "Deploy and return.",
+  });
+
+  const store = JSON.parse(fs.readFileSync(storageFile, "utf8"));
+  const stored = store.cards.find((card) => card.id === created.id);
+  stored.status = "approving";
+  stored.audit = Object.assign({}, stored.audit || {}, {
+    directApprovingAt: new Date(0).toISOString(),
+    targetApprovalBypassed: true,
+  });
+  fs.writeFileSync(storageFile, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+
+  const returned = await service.reply(created.id, "thread-deploy", {
+    idempotencyKey: "return:codex-mobile:deploy:lost-final-write",
+    format: "markdown",
+    title: "Return: Deploy Codex Mobile",
+    status: "completed",
+    summary: "completed",
+    body: "Completed after recovering the original approving card.",
+    sourceWorkspaceId: "codex-mobile-deploy",
+    sourceThreadId: "thread-deploy",
+    sourceThreadTitle: "Codex Mobile Deploy",
+  });
+
+  assert.equal(returned.card.status, "replied");
+  assert.equal(returned.replyCard.status, "approved");
+  assert.equal(returned.replyCard.delivery.returnToSource, true);
+  assert.equal(returned.replyCard.delivery.terminal, true);
+  assert.equal(returned.replyCard.target.threadId, "thread-source");
+  assert.equal(returned.replyCard.injectedTurnId, "turn-1");
+  assert.match(executions[0].message.text, /Return policy: terminal receipt/);
+  assert.equal(service.get(created.id, "thread-deploy").status, "replied");
 });
 
 test("returnToSource uses explicit reply-to thread for multi-hop supplements", async () => {

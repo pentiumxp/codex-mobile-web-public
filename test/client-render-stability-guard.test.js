@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
-const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "adapters", "server-runtime-utils.js"), "utf8");
 
 function functionBody(name) {
   let start = appJs.indexOf(`function ${name}(`);
@@ -67,7 +67,7 @@ test("client render stability guard is part of the static shell", () => {
   assert.match(indexHtml, /<script src="\/client-render-stability-guard\.js"><\/script>/);
   assert.match(swJs, /"\/client-render-stability-guard\.js"/);
   assert.match(appJs, /"\/client-render-stability-guard\.js"/);
-  assert.match(serverJs, /"client-render-stability-guard\.js"/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v609"/);
-  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v609"/);
+  assert.match(serverRuntimeUtilsJs, /"client-render-stability-guard\.js"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v610"/);
+  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v610"/);
 });

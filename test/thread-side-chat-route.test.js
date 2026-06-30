@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const packageJson = fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf8");
+const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
 const routeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-side-chat-route-service.js"), "utf8");
 const orchestrationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-side-chat-orchestration-service.js"), "utf8");
 const requirements = fs.readFileSync(path.resolve(__dirname, "..", "docs", "THREAD_SIDE_CHAT_REQUIREMENTS.md"), "utf8");
@@ -20,7 +21,7 @@ test("server delegates side chat routes and orchestration to adapters", () => {
   assert.match(serverJs, /CODEX_MOBILE_THREAD_SIDE_CHAT_FILE/);
   assert.match(serverJs, /const threadSideChatService = createThreadSideChatService/);
   assert.match(serverJs, /const threadSideChatOrchestrationService = createThreadSideChatOrchestrationService/);
-  assert.match(serverJs, /orchestrationService: threadSideChatOrchestrationService/);
+  assert.match(apiDispatchRouteServiceJs, /orchestrationService: threadSideChatOrchestrationService/);
   assert.match(serverJs, /threadSideChatService\.isSidecarThreadId/);
   assert.match(serverJs, /executeCandidate:\s*async/);
   assert.match(serverJs, /maybeApplyQueuedThreadSideChat/);

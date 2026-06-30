@@ -16,6 +16,9 @@ function createContinuationThreadService(deps = {}) {
   const codex = { request: (...args) => codexRequest(...args) };
   const readGlobalState = deps.readGlobalState || (() => ({}));
   const visibilityFromGlobalState = deps.visibilityFromGlobalState || (() => ({ workspaceKeys: new Set() }));
+  const ensureWorkspaceVisible = typeof deps.ensureWorkspaceVisible === "function"
+    ? deps.ensureWorkspaceVisible
+    : null;
   const normalizeFsPath = deps.normalizeFsPath || ((value) => path.resolve(String(value || "")).toLowerCase());
   const readStateDbThread = deps.readStateDbThread || (() => null);
   const readStartedThread = deps.readStartedThread || (() => null);
@@ -1154,8 +1157,18 @@ async function startThreadFromRequestBody(body, options = {}) {
     throw httpStatusError(400, "Workspace is required to start a new thread");
   }
   progress("validate", "正在检查工作区");
-  const globalState = readGlobalState();
-  const visibility = visibilityFromGlobalState(globalState);
+  let globalState = readGlobalState();
+  let visibility = visibilityFromGlobalState(globalState);
+  if (
+    ensureWorkspaceVisible
+    && visibility.workspaceKeys
+    && visibility.workspaceKeys.size > 0
+    && !visibility.workspaceKeys.has(normalizeFsPath(cwd))
+  ) {
+    await ensureWorkspaceVisible(cwd);
+    globalState = readGlobalState();
+    visibility = visibilityFromGlobalState(globalState);
+  }
   if (visibility.workspaceKeys.size > 0 && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
     throw httpStatusError(403, "Workspace is not visible in Codex Desktop");
   }
@@ -1405,6 +1418,7 @@ async function runContinuationJob(job) {
     getContinuationJob,
     newThreadBootstrapInput,
     newThreadBootstrapPromptScoped,
+    pruneContinuationJobs,
     publicContinuationJob,
     sourceHandoffSection,
     startThreadFromRequestBody,

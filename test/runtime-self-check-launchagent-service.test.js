@@ -47,9 +47,9 @@ function healthyEvent() {
       observeOnlyIssueCount: 0,
       advisoryIssueCount: 0,
       executionFailureCount: 0,
-      checkNames: ["api-thread", "browser-runtime", "client-events"],
+      checkNames: ["api-thread", "client-events"],
     },
-    checks: [{ name: "api-thread" }, { name: "browser-runtime" }, { name: "client-events" }],
+    checks: [{ name: "api-thread" }, { name: "client-events" }],
   }, Date.parse("2026-06-29T09:40:00.000Z"));
 }
 
@@ -194,14 +194,14 @@ test("runtime self-check launchagent readback parses latest valid JSONL line", (
   assert.equal(event.completedAt, "new");
 });
 
-test("runtime self-check launchagent readback skips manual subset events when full checks are required", () => {
+test("runtime self-check launchagent readback skips manual subset events when periodic checks are required", () => {
   const event = service.parseLatestRuntimeSelfCheckEvent([
     JSON.stringify({
       ok: true,
       completedAt: "full",
       gate: {
         mode: "periodic",
-        checkNames: ["api-thread", "browser-runtime", "client-events"],
+        checkNames: ["api-thread", "client-events"],
       },
     }),
     JSON.stringify({
@@ -213,12 +213,12 @@ test("runtime self-check launchagent readback skips manual subset events when fu
       },
     }),
   ].join("\n"), {
-    requiredCheckNames: ["api-thread", "browser-runtime", "client-events"],
+    requiredCheckNames: ["api-thread", "client-events"],
   });
 
   assert.equal(event.ok, true);
   assert.equal(event.completedAt, "full");
-  assert.equal(service.eventHasRequiredCheckNames(event, ["api-thread", "browser-runtime", "client-events"]), true);
+  assert.equal(service.eventHasRequiredCheckNames(event, ["api-thread", "client-events"]), true);
 });
 
 test("runtime self-check launchagent CLI readback is metadata-only", () => {
@@ -231,7 +231,7 @@ test("runtime self-check launchagent CLI readback is metadata-only", () => {
     server: "http://127.0.0.1:8787",
     intervalSeconds: 600,
     maxAgeMs: 20 * 60 * 1000,
-    requiredCheckNames: ["api-thread", "browser-runtime", "client-events"],
+    requiredCheckNames: ["api-thread", "client-events"],
     domain: "gui/501",
   }, {
     nowMs: Date.parse("2026-06-29T09:40:00.000Z"),
@@ -248,11 +248,10 @@ test("runtime self-check launchagent CLI readback is metadata-only", () => {
           periodicHealthy: true,
           issueCount: 0,
           blockingIssueCount: 0,
-          checkNames: ["api-thread", "browser-runtime", "client-events"],
+          checkNames: ["api-thread", "client-events"],
         },
         checks: [
           { name: "api-thread", errorCode: "" },
-          { name: "browser-runtime", errorCode: "" },
           { name: "client-events", errorCode: "" },
         ],
       });
@@ -279,7 +278,7 @@ test("runtime self-check launchagent CLI readback is metadata-only", () => {
   assert.doesNotMatch(JSON.stringify(result), /private\/path|ignored|raw prompt|cookie|token/i);
 });
 
-test("runtime self-check launchagent CLI readback selects latest full periodic event", () => {
+test("runtime self-check launchagent CLI readback selects latest complete periodic event", () => {
   const result = readback.buildReadback({
     label: service.DEFAULT_LABEL,
     plistPath: "/ignored/plist",
@@ -289,7 +288,7 @@ test("runtime self-check launchagent CLI readback selects latest full periodic e
     server: "http://127.0.0.1:8787",
     intervalSeconds: 600,
     maxAgeMs: 20 * 60 * 1000,
-    requiredCheckNames: ["api-thread", "browser-runtime", "client-events"],
+    requiredCheckNames: ["api-thread", "client-events"],
     domain: "gui/501",
   }, {
     nowMs: Date.parse("2026-06-29T09:42:00.000Z"),
@@ -308,9 +307,9 @@ test("runtime self-check launchagent CLI readback selects latest full periodic e
             issueCount: 0,
             blockingIssueCount: 0,
             executionFailureCount: 0,
-            checkNames: ["api-thread", "browser-runtime", "client-events"],
+            checkNames: ["api-thread", "client-events"],
           },
-          checks: [{ name: "api-thread" }, { name: "browser-runtime" }, { name: "client-events" }],
+          checks: [{ name: "api-thread" }, { name: "client-events" }],
         }),
         JSON.stringify({
           ok: true,
@@ -347,6 +346,6 @@ test("runtime self-check launchagent CLI readback selects latest full periodic e
   });
 
   assert.equal(result.ok, true);
-  assert.deepEqual(result.latestEvent.checkNames, ["api-thread", "browser-runtime", "client-events"]);
+  assert.deepEqual(result.latestEvent.checkNames, ["api-thread", "client-events"]);
   assert.equal(result.latestEvent.ageMs, 120000);
 });
