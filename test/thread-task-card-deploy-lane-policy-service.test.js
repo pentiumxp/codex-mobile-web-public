@@ -141,6 +141,76 @@ test("plugin_deployment card for movie resolves to Movie Deploy Lane when live",
   assert.deepEqual(plan.targetThreadIds, ["deploy-movie"]);
 });
 
+test("Movie routine deployment from top-level workspace retargets Home AI Deploy to Movie Deploy Lane", () => {
+  const homeAiDeploy = normalizeHomeAiDeployLaneSummary(thread("deploy-home", "Home AI Deploy", homeAiCwd, {
+    updatedAt: 200,
+  }));
+  const movieDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-movie", "Movie Deploy Lane", homeAiCwd, {
+    updatedAt: 20,
+  }));
+
+  const plan = planHomeAiDeployLaneRouting({
+    body: {
+      title: "Deploy Movie v162 source route",
+      summary: "Deploy Movie v162 and run bounded production readback.",
+    },
+    sourceThread: thread("source-movie", "Movie", "/Users/hermes-dev/HermesMobileDev/Movie"),
+    targetThreads: [homeAiDeploy],
+    visibleThreads: [homeAiDeploy, movieDeployLane],
+  });
+
+  assert.equal(plan.action, "retarget");
+  assert.equal(plan.pluginId, "movie");
+  assert.deepEqual(plan.targetThreadIds, ["deploy-movie"]);
+});
+
+test("Movie routine deployment retargets wrong Codex Mobile same-cwd thread to Movie Deploy Lane", () => {
+  const wrongCodexThread = thread("codex-pr", "Codex Mobile Public PR", pluginCwd, {
+    status: "completed",
+    updatedAt: 500,
+  });
+  const movieDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-movie", "Movie Deploy Lane", homeAiCwd, {
+    updatedAt: 20,
+  }));
+
+  const plan = planHomeAiDeployLaneRouting({
+    body: {
+      title: "Deploy Movie v162 source route",
+      summary: "Deploy Movie v162 and run bounded production readback.",
+    },
+    sourceThread: thread("source-movie", "Movie", "/Users/hermes-dev/HermesMobileDev/Movie"),
+    targetThreads: [wrongCodexThread],
+    visibleThreads: [wrongCodexThread, movieDeployLane],
+  });
+
+  assert.equal(plan.action, "retarget");
+  assert.equal(plan.expectedDeployLaneTitle, "Movie Deploy Lane");
+  assert.deepEqual(plan.targetThreadIds, ["deploy-movie"]);
+});
+
+test("Movie deploy-routing repair card is not treated as a routine plugin deployment", () => {
+  const wrongCodexThread = thread("codex-pr", "Codex Mobile Public PR", pluginCwd, {
+    status: "completed",
+    updatedAt: 500,
+  });
+  const movieDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-movie", "Movie Deploy Lane", homeAiCwd, {
+    updatedAt: 20,
+  }));
+
+  const plan = planHomeAiDeployLaneRouting({
+    body: {
+      title: "Fix Movie deploy thread routing visibility",
+      summary: "Investigate Codex Mobile target discovery: missing Movie deploy thread and archived hint caused wrong target.",
+    },
+    sourceThread: thread("source-movie", "Movie", "/Users/hermes-dev/HermesMobileDev/Movie"),
+    targetThreads: [wrongCodexThread],
+    visibleThreads: [wrongCodexThread, movieDeployLane],
+  });
+
+  assert.equal(plan.action, "allow");
+  assert.equal(plan.reason, "not_routine_plugin_deployment");
+});
+
 test("routine plugin deploy card fails closed when Home AI Deploy lane is absent", () => {
   const ordinaryHomeAi = thread("home-1", "Home AI 06-22", homeAiCwd);
 

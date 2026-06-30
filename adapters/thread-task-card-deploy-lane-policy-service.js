@@ -90,7 +90,8 @@ function isPluginSourceCwd(cwd, options = {}) {
   const normalized = normalizeFsPath(cwd);
   if (!normalized) return false;
   if (isHomeAiControlPlaneCwd(cwd, options)) return false;
-  return normalized.includes(`${path.sep}plugins${path.sep}`);
+  if (normalized.includes(`${path.sep}plugins${path.sep}`)) return true;
+  return Boolean(pluginIdFromKnownWorkspaceCwd(normalized));
 }
 
 function isTerminalDeployLaneStatus(status) {
@@ -159,7 +160,14 @@ function routinePluginId(input = {}, sourceThread = {}) {
   const cwd = normalizeFsPath(sourceThread && sourceThread.cwd);
   if (cwd.endsWith(`${path.sep}plugins${path.sep}codex-mobile-web`)) return "codex-mobile-web";
   const pluginMatch = cwd.match(new RegExp(`${path.sep}plugins${path.sep}([^${path.sep}]+)$`));
-  return pluginMatch ? normalizePluginId(pluginMatch[1]) : "";
+  return pluginMatch ? normalizePluginId(pluginMatch[1]) : pluginIdFromKnownWorkspaceCwd(cwd);
+}
+
+function pluginIdFromKnownWorkspaceCwd(normalizedCwd) {
+  const cwd = String(normalizedCwd || "");
+  if (!cwd) return "";
+  if (cwd.endsWith(`${path.sep}hermesmobiledev${path.sep}movie`)) return "movie";
+  return "";
 }
 
 function boundedTaskText(input = {}) {
@@ -190,6 +198,10 @@ function isHostPlatformRepairText(text) {
   return /(?:home ai central|host-owned|host owned|deploy-contract|deploy contract|proxy|launchd|gateway|schema|platform repair|home ai source|control-plane|控制平面|部署契约|宿主|平台修复)/i.test(text);
 }
 
+function isDeployRoutingRepairText(text) {
+  return /(?:target discovery|target resolver|target resolution|thread routing|deploy lane routing|deploy thread routing|routing visibility|missing .*deploy thread|archived .*hint|路由调度|线程路由|部署线程.*路由|部署线程.*可见|目标解析)/i.test(text);
+}
+
 function isDeploymentText(text) {
   return /(?:\bdeploy(?:ment)?\b|deploy:macos|deploy-macos|production deploy|public-config|readback|部署|上线|生产部署)/i.test(text);
 }
@@ -202,6 +214,7 @@ function isRoutinePluginDeploymentRequest(input = {}, sourceThread = {}, options
   const text = boundedTaskText(input);
   if (hasStructuredDeployKind(input)) return true;
   if (isHostPlatformRepairText(text)) return false;
+  if (isDeployRoutingRepairText(text)) return false;
   if (!isDeploymentText(text)) return false;
   return isPluginSourceCwd(sourceThread && sourceThread.cwd, options) || isPluginDeploymentText(text);
 }
@@ -287,11 +300,6 @@ function planHomeAiDeployLaneRouting(input = {}) {
       duplicateTitles: duplicates,
     };
   }
-  const homeAiTargets = targets.filter((thread) => thread && isHomeAiControlPlaneCwd(thread.cwd, options));
-  const nonDeployHomeAiTargets = homeAiTargets.filter((thread) => !isHomeAiDeployLaneThread(thread, options));
-  if (!nonDeployHomeAiTargets.length) {
-    return { action: "allow", reason: "target_is_not_ordinary_home_ai" };
-  }
   const pluginId = routinePluginId(body, sourceThread);
   const laneMatch = findDeployLaneForPlugin([...targets, ...visibleThreads], pluginId, options);
   const deployLane = laneMatch.deployLane;
@@ -314,18 +322,23 @@ function planHomeAiDeployLaneRouting(input = {}) {
       deployLane,
     };
   }
+  const targetIds = Array.from(new Set(targets.map((thread) => thread && thread.id).filter(Boolean)));
+  if (targetIds.length === 1 && String(targetIds[0]) === String(deployLane.id || "")) {
+    return {
+      action: "allow",
+      reason: "target_is_expected_deploy_lane",
+      deployLane,
+      pluginId,
+      expectedDeployLaneTitle: laneMatch.title,
+    };
+  }
   return {
     action: "retarget",
     reason: "routine_plugin_deployment_uses_deploy_lane",
     deployLane,
     pluginId,
     expectedDeployLaneTitle: laneMatch.title,
-    targetThreadIds: Array.from(new Set(targets.map((thread) => {
-      if (thread && isHomeAiControlPlaneCwd(thread.cwd, options) && !isHomeAiDeployLaneThread(thread, options)) {
-        return deployLane.id;
-      }
-      return thread && thread.id;
-    }).filter(Boolean))),
+    targetThreadIds: [deployLane.id].filter(Boolean),
   };
 }
 

@@ -113,6 +113,18 @@ stores pending cards only. Passing `pending:true`, `autoApprove:false`, or
 `direct:false` also keeps the card in the manual-pending flow even when the
 switch is enabled.
 
+Workspace/cwd targeting is a convenience, not an identity guarantee. When
+several visible threads share the same cwd, the routing service prefers live or
+idle implementation threads over recently updated terminal threads; exact
+thread ids or exact titles still win when the caller intentionally targets a
+specific historical thread. Routine plugin deployment cards are also corrected
+after target resolution: once the source workspace and card text identify a
+routine plugin deploy, the server retargets the card to the configured live
+deploy lane for that plugin even if the model initially selected an ordinary
+Home AI thread or a same-cwd Codex Mobile implementation/PR thread. Deploy-lane
+repair, target-discovery, and routing-visibility cards remain implementation
+work and are not treated as routine plugin deployments.
+
 The supported local CLI wrapper is:
 
 ```bash

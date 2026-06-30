@@ -96,6 +96,39 @@ test("exact targetThreadId wins over same-workspace canonical cwd routing", () =
   );
 });
 
+test("workspace cwd canonical routing prefers live implementation thread over recently updated completed threads", () => {
+  const cwd = "/tmp/codex-mobile-routing/shared";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const activeThreadId = "10000000-0000-4000-8000-000000000002";
+  const publicPrThreadId = "10000000-0000-4000-8000-000000000003";
+  const chatgptProThreadId = "10000000-0000-4000-8000-000000000004";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: publicPrThreadId, name: "Codex Mobile Public PR", cwd, status: "completed", updatedAt: 900 },
+      { id: chatgptProThreadId, name: "ChatGPT Pro", cwd, status: "completed", updatedAt: 800 },
+      { id: activeThreadId, name: "codex mobile 06-30", cwd, status: { type: "active" }, updatedAt: 100 },
+    ],
+  });
+
+  assert.equal(service.resolveTargetReference(cwd, sourceThreadId), activeThreadId);
+  assert.equal(service.canonicalVisibleTargets(service.visibleTargetThreads())[0].id, activeThreadId);
+});
+
+test("workspace cwd canonical routing still uses newest thread when all same-cwd candidates are terminal", () => {
+  const cwd = "/tmp/codex-mobile-routing/shared";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const olderThreadId = "10000000-0000-4000-8000-000000000002";
+  const newerThreadId = "10000000-0000-4000-8000-000000000003";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: olderThreadId, name: "Older completed", cwd, status: "completed", updatedAt: 100 },
+      { id: newerThreadId, name: "Newer completed", cwd, status: "completed", updatedAt: 200 },
+    ],
+  });
+
+  assert.equal(service.resolveTargetReference(cwd, sourceThreadId), newerThreadId);
+});
+
 test("readable exact thread id can resolve outside current visible list but must still be deliverable", () => {
   const sourceThreadId = "10000000-0000-4000-8000-000000000001";
   const directThreadId = "10000000-0000-4000-8000-000000000006";
