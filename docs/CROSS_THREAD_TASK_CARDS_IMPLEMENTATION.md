@@ -382,18 +382,27 @@ foreign source root, including local Playwright / Chromium validation and
 diagnostics that write bounded artifacts to temporary paths. Inline JavaScript
 `=>` is not treated as shell redirection.
 
-Routine plugin production-deployment cards use a dedicated Home AI deployment
-lane instead of the ordinary Home AI implementation thread. Codex Mobile treats
-the exact `Home AI Deploy` thread in the Home AI control-plane cwd as a durable
-deployment lane and normalizes its resting thread-list status to `idle`, so it
-does not look like a completed one-shot target. The delegation target hints
-prioritize this lane even when other Home AI threads in the same cwd are newer.
-When a plugin source thread sends a routine plugin deploy card to an ordinary
-Home AI app-cwd thread, the creation path retargets the card to the deployment
-lane if that lane is available; if no lane is available it fails closed with
-`deploy_lane_required`. Home AI host/platform repair cards, deploy-script
-repairs, proxy/LaunchDaemon/Gateway/schema work, and deploy-lane repair work
-continue to route to the ordinary Home AI implementation thread.
+Routine plugin production-deployment cards use the configured Home AI deploy
+lane pool instead of the ordinary Home AI implementation thread. Codex Mobile
+treats these exact thread titles in the Home AI control-plane cwd as durable
+deployment lanes by default: `Home AI Deploy`, `Home AI Deploy Lane A`,
+`Home AI Deploy Lane B`, `Home AI Deploy Lane C`, `Codex Mobile Deploy Lane`,
+and `Movie Deploy Lane`; `HOMEAI_DEPLOY_THREAD_TITLES` can override that title
+set. Resting configured lanes are normalized to `idle` for target hints, so
+they do not look like completed one-shot targets. The delegation target hints
+prioritize configured lanes in stable title order before ordinary Home AI
+threads in the same cwd. When a plugin source thread sends a routine plugin
+deploy card to an ordinary Home AI app-cwd thread, the creation path retargets
+the card to the plugin's assigned lane if that lane is available. The default
+assignments pin `codex-mobile-web` / `codex-mobile` to
+`Codex Mobile Deploy Lane` and `movie` to `Movie Deploy Lane`;
+`HOMEAI_DEPLOY_LANE_ASSIGNMENTS` can override assignments, and unassigned
+plugin ids hash deterministically across the configured live lane titles.
+If the selected configured lane is missing or a configured lane title is
+ambiguous, creation fails closed with bounded deploy-lane evidence instead of
+silently falling back to ordinary Home AI. Home AI host/platform repair cards,
+deploy-script repairs, proxy/LaunchDaemon/Gateway/schema work, and deploy-lane
+repair work continue to route to the ordinary Home AI implementation thread.
 
 The old `danger-full-access` approval-proxy-only compatibility mode is available
 only when `CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1` is set and

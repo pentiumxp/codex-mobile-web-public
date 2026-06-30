@@ -46,6 +46,7 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   assert.equal(listedTools.find((entry) => entry.name === "list_threads").annotations.readOnlyHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "delegate_to_thread").annotations.destructiveHint, false);
   assert.equal(listedTools.find((entry) => entry.name === "return_to_source").annotations.idempotentHint, true);
+  assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.pluginId);
   const initialized = await handleMessage({ server: "http://127.0.0.1:1", key: "secret" }, { id: 1, method: "initialize" });
   assert.equal(initialized.serverInfo.name, "codex_mobile");
   assert.match(initialized.instructions, /delegate_to_thread/);
@@ -80,6 +81,7 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
       assert.equal(body.pending, false);
       assert.equal(body.body, "body");
       assert.equal(body.reasoningEffort, "xhigh");
+      assert.equal(body.pluginId, "codex-mobile-web");
       assert.deepEqual(body.targetThreadIds, ["thread-home"]);
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({
@@ -149,6 +151,7 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
     title: "title",
     bodyMarkdown: "body",
     reasoningEffort: "xhigh",
+    pluginId: "codex-mobile-web",
   });
   assert.equal(delegated.cardCount, 1);
   assert.equal(delegated.cards[0].id, "ttc_1");

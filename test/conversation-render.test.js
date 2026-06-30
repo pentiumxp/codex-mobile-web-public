@@ -2814,6 +2814,55 @@ test("injected cross-thread task card user messages render collapsed", () => {
   assert.doesNotMatch(html, /class="input-text"/);
 });
 
+test("continuation bootstrap and task-card continuation user messages render collapsed", () => {
+  const renderInputContent = evaluatedInputContentRenderer();
+  const bootstrapHtml = renderInputContent([
+    {
+      type: "input_text",
+      text: [
+        "# Continuation Bootstrap Index",
+        "",
+        "This thread is a same-workspace continuation created by Codex Mobile Web.",
+        "",
+        "## Source Thread",
+        "- Source thread id: 019eee6c-a6f5-7b20-bfb4-f96ccb6431b3",
+        "- Source thread title: codex mobile 06-22",
+        "",
+        "## Workspace Context Files",
+        "- Project context: /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web/.agent-context/PROJECT_CONTEXT.md",
+      ].join("\n"),
+    },
+  ]);
+
+  assert.match(bootstrapHtml, /data-thread-task-card-standalone/);
+  assert.match(bootstrapHtml, /<span>来源<\/span><strong>codex mobile 06-22<\/strong>/);
+  assert.match(bootstrapHtml, /<span>目的<\/span><strong>Continuation Bootstrap Index<\/strong>/);
+  assert.match(bootstrapHtml, /完整任务卡/);
+  assert.doesNotMatch(bootstrapHtml, /class="input-text"/);
+
+  const continuationHtml = renderInputContent([
+    {
+      type: "input_text",
+      text: [
+        "[Codex Mobile task-card continuation]",
+        "",
+        "Task card id: ttc_123",
+        "Source thread id: 019eed86-2002-7cc2-b0b7-937eb5355f36",
+        "",
+        "Continue the original task-card work from the earlier injected task-card message in this thread.",
+        "",
+        "Title: Continue deploy validation",
+      ].join("\n"),
+    },
+  ]);
+
+  assert.match(continuationHtml, /data-thread-task-card-standalone/);
+  assert.match(continuationHtml, /<span>来源<\/span><strong>019eed86-2002-7cc2-b0b7-937eb5355f36<\/strong>/);
+  assert.match(continuationHtml, /<span>目的<\/span><strong>Continue deploy validation<\/strong>/);
+  assert.match(continuationHtml, /完整任务卡/);
+  assert.doesNotMatch(continuationHtml, /class="input-text"/);
+});
+
 test("injected cross-thread task card items use dedicated card chrome instead of You", () => {
   assert.match(functionBody("renderItem"), /injectedThreadTaskCardTextForItem\(item\)/);
   assert.match(functionBody("renderInjectedThreadTaskCardItem"), /thread-task-card-injected/);

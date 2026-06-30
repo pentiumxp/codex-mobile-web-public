@@ -8003,6 +8003,10 @@ function workspaceDelegationDynamicToolSpec() {
           type: "string",
           description: "Optional bounded task-card kind, for example plugin_deployment for routine plugin deploy cards.",
         },
+        pluginId: {
+          type: "string",
+          description: "Optional Home AI plugin id for routine plugin deployment lane routing, for example codex-mobile-web or movie.",
+        },
         category: {
           type: "string",
           description: "Optional bounded task-card category.",
@@ -13181,11 +13185,14 @@ function applyHomeAiDeployLaneRoutingPolicy(payload = {}, sourceSummary = null, 
   if (plan.action === "reject") {
     throw threadTaskCardTargetError(
       plan.code || "deploy_lane_required",
-      plan.message || "Routine plugin deployment cards must target the Home AI Deploy lane.",
+      plan.message || "Routine plugin deployment cards must target a live configured deploy lane.",
       {
         reason: plan.reason || "deploy_lane_required",
         sourceThreadId: payload.sourceThreadId || "",
         targetThreadIds,
+        pluginId: plan.pluginId || "",
+        expectedDeployLaneTitle: plan.expectedDeployLaneTitle || "",
+        duplicateTitles: plan.duplicateTitles || undefined,
         deployLane: plan.deployLane ? publicThreadTaskCardTarget(plan.deployLane) : undefined,
       },
       409,

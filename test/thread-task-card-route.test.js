@@ -161,6 +161,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Several normal threads may share the same cwd\/workspace/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /reasoningEffort/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /REASONING_EFFORT_OPTIONS/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pluginId/);
+  assert.match(functionBody(serverJs, "applyHomeAiDeployLaneRoutingPolicy"), /expectedDeployLaneTitle/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /latest visible canonical thread/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pending:\s*\{/);
   assert.match(functionBody(serverJs, "taskCardReturnDynamicToolSpec"), /A plain final answer in the target thread is not a source-thread return card/);

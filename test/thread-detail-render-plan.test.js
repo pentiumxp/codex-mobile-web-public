@@ -187,6 +187,8 @@ test("thread detail history auto-backfill triggers for workflow dominated window
         turn("t3", [item("userMessage", "Task card id: ttc_2\nReturn required: yes")]),
         turn("t4", [item("agentMessage", "normal receipt")]),
         turn("t5", [item("userMessage", "Source thread: Home AI\nWorkflow mode: autonomous")]),
+        turn("t5b", [item("userMessage", "# Continuation Bootstrap Index\n\nThis thread is a same-workspace continuation created by Codex Mobile Web.")]),
+        turn("t5c", [item("userMessage", "[Codex Mobile task-card continuation]\n\nTask card id: ttc_3")]),
         turn("t6", [item("userMessage", "short normal user request")]),
       ],
     },
@@ -194,7 +196,7 @@ test("thread detail history auto-backfill triggers for workflow dominated window
 
   assert.equal(plan.shouldLoad, true);
   assert.equal(plan.reason, "workflow-dominated-window");
-  assert.equal(plan.counts.workflowItemCount, 3);
+  assert.equal(plan.counts.workflowItemCount, 5);
 });
 
 test("thread detail history auto-backfill leaves ordinary recent windows alone", () => {

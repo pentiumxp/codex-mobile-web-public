@@ -546,7 +546,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v606";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v607";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -18647,23 +18647,33 @@ function canRenderImageAttachment(attachment) {
 function isInjectedThreadTaskCardMessage(text) {
   const value = String(text || "").trimStart();
   return value.startsWith("[Cross-thread task card sent by source thread]")
-    || value.startsWith("[Cross-thread task card approved]");
+    || value.startsWith("[Cross-thread task card approved]")
+    || value.startsWith("[Codex Mobile task-card continuation]")
+    || /^#\s*Continuation Bootstrap Index\b/i.test(value);
 }
 
 function injectedThreadTaskCardLineValue(lines, label) {
-  const pattern = new RegExp(`^${label}:\\s*`, "i");
+  const pattern = new RegExp(`^\\s*(?:[-*]\\s*)?${label}:\\s*`, "i");
   const line = (Array.isArray(lines) ? lines : []).find((entry) => pattern.test(entry));
   return line ? line.replace(pattern, "").trim() : "";
 }
 
 function injectedThreadTaskCardPurpose(lines) {
+  const firstLine = String(Array.isArray(lines) ? lines[0] || "" : "").trim();
+  if (/^#\s*Continuation Bootstrap Index\b/i.test(firstLine)) return "Continuation Bootstrap Index";
+  if (/^\[Codex Mobile task-card continuation\]/i.test(firstLine)) {
+    const title = injectedThreadTaskCardLineValue(lines, "Title");
+    return title || "Task-card continuation";
+  }
   const title = injectedThreadTaskCardLineValue(lines, "Title");
   if (title) return title;
   const bodyLine = (Array.isArray(lines) ? lines : []).find((line) => {
     const text = String(line || "").trim();
     return text
       && !text.startsWith("[Cross-thread task card")
-      && !/^(Source workspace|Source thread|Approval|Workflow mode|Workflow id|Auto-return):/i.test(text);
+      && !text.startsWith("[Codex Mobile task-card continuation]")
+      && !/^#\s*Continuation Bootstrap Index\b/i.test(text)
+      && !/^(?:[-*]\s*)?(Source workspace|Source thread|Source thread id|Source thread title|Approval|Workflow mode|Workflow id|Auto-return|Continuation Target|Source Thread|Workspace Context Files):/i.test(text);
   });
   return bodyLine ? bodyLine.replace(/^#+\s*/, "").trim() : "Cross-thread task card";
 }
@@ -18671,9 +18681,13 @@ function injectedThreadTaskCardPurpose(lines) {
 function injectedThreadTaskCardMetadata(text) {
   const value = String(text || "").replace(/\r\n?/g, "\n").trim();
   const lines = value.split("\n");
+  const source = injectedThreadTaskCardLineValue(lines, "Source thread")
+    || injectedThreadTaskCardLineValue(lines, "Source thread title")
+    || injectedThreadTaskCardLineValue(lines, "Source thread id")
+    || (/^#\s*Continuation Bootstrap Index\b/i.test(value) ? "Continuation" : "source thread");
   return {
     value,
-    source: injectedThreadTaskCardLineValue(lines, "Source thread") || "source thread",
+    source,
     purpose: injectedThreadTaskCardPurpose(lines),
     charCount: value.length.toLocaleString(),
   };
