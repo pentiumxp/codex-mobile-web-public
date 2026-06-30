@@ -34059,3 +34059,91 @@ The previous full handoff was archived and should be opened only when old proven
     marker `browser runtime self-check refreshes API plan before settled delayed samples`.
   - Deploy-mode runtime gate should remain clean of H1/H2 browser expectation
     issues. Phase-B active-window latency remains a separate residual target.
+
+### 2026-06-30 - Browser Runtime Settled Plan Refresh Deployed
+
+- Private Home AI deploy completed for source ref `e10c1d7f5ece` with reason
+  `codex-mobile-browser-settled-plan-refresh`.
+- Deploy backup:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260630T001044Z-plugin-codex-mobile-web-codex-mobile-browser-settled-plan-refresh`.
+- Production `/api/public-config` returned HTTP `200`, version `0.1.11`,
+  build id `576c30a2eea33b2a`, client build id
+  `0.1.11|codex-mobile-shell-v598`, shell cache `codex-mobile-shell-v598`, and
+  `authRequired=true`.
+- Source/production SHA-256 parity passed for
+  `scripts/codex-mobile-browser-runtime-self-check.js`,
+  `test/browser-runtime-self-check-service.test.js`, `docs/MODULES.md`, and
+  `docs/TROUBLESHOOTING.md`.
+- Production markers confirmed the settled delayed sample refresh focused test,
+  the `delayMs >= options.minSettledDelayMs` branch, the
+  `refreshThreadPlanEntry(...)` call before settled snapshots, and docs wording
+  that the browser self-check refreshes the plan again before settled delayed
+  snapshots.
+- Deploy-mode runtime gate returned `ok=true`, `deployPass=true`,
+  `periodicHealthy=true`, issue count `0`, blocking issue count `0`, advisory
+  issue count `0`, execution failure count `0`, and child checks `api-thread`,
+  `browser-runtime`, and `client-events` all OK.
+- Target H2 `browser_turn_user_message_below_api_expectation` did not recur.
+- LaunchAgent full-check readback selected the latest deploy full-check event
+  with `deployPass=true`, `periodicHealthy=true`, issue count `0`, blocking
+  issue count `0`, advisory issue count `0`, execution failure count `0`, and
+  check names `api-thread`, `browser-runtime`, and `client-events`.
+- Return classification: `completed`. The prior Phase-B
+  `activeOverlayWindowMs` / `thread-detail-latency` residual remains separate.
+- No Public deploy was run.
+
+### 2026-06-30 - Active Overlay History-Window Retry Ready
+
+- Scope:
+  - Source-side repair for the remaining Phase-B
+    `activeOverlayWindowMs` / `thread-detail-latency` residual after
+    `codex-mobile-active-window-prewarm-summary-refresh`.
+  - Root-cause evidence from bounded production logs showed target-thread
+    `active_window_prewarm_done` hits with reason
+    `active-window-already-cached`, followed by foreground
+    `turns-list-active-overlay-window` coalesced reads and
+    `active_overlay_window_error` / `missing-projection-window` plans.
+- Root cause:
+  - Background prewarm used `activeOverlay=true` plus `omitActiveTurnId`, so it
+    could observe a history-only active-window cache as reusable.
+  - The foreground active-summary detail path first looked up the same active
+    projection window without `omitActiveTurnId`; when the ordinary active
+    signature check missed, it rebuilt `turns-list-active-overlay-window`.
+  - Even after a history-window retry, complete live overlay evidence should
+    not require a fresh active-window backfill read because the active turn is
+    supplied by the overlay provider.
+- Source change:
+  - `adapters/thread-detail-read-orchestration-service.js` now derives the live
+    active turn id from overlay input, retries the dedicated
+    `activeOverlayProjectionWindowLookup` with `activeOverlayStatusProven=true`
+    and `omitActiveTurnId` after an initial active-window miss, and skips a
+    fresh `turns-list-active-overlay-window` backfill read when that
+    history-only retry succeeds with complete overlay evidence.
+  - Added focused coverage in `test/thread-detail-read-orchestration-service.test.js`.
+  - Updated `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - `node --check adapters/thread-detail-read-orchestration-service.js` passed.
+  - `node --test test/thread-detail-read-orchestration-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-detail-active-window-prewarm-service.test.js test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-active-window-overlay-policy-service.test.js`
+    passed: `88` tests.
+  - `npm test -- --test-reporter=dot` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Next deployment step:
+  - Commit with message `fix: reuse active history window after prewarm`.
+  - Delegate private Home AI deploy with reason
+    `codex-mobile-active-history-window-foreground-retry`.
+  - Production readback should confirm source/prod parity for
+    `adapters/thread-detail-read-orchestration-service.js`,
+    `test/thread-detail-read-orchestration-service.test.js`,
+    `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Marker readback should include
+    `active_overlay_projection_window_retry`,
+    `history-window-without-active-turn`, and the focused test marker
+    `active overlay retries history-window lookup with active turn omitted before rebuilding window`.
+  - Phase-B should show `activeOverlayWindowMs=0` or otherwise no foreground
+    `turns-list-active-overlay-window` rebuild when a matching history-window
+    cache exists and overlay evidence is complete.

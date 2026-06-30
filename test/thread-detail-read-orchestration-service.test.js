@@ -966,6 +966,94 @@ test("active overlay incomplete evidence still falls through to full thread/read
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "active-thread-read");
 });
 
+test("active overlay retries history-window lookup with active turn omitted before rebuilding window", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "active" },
+      activeTurnId: "active-turn",
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`active-overlay-window-lookup:${options.activeOverlayStatusProven === true}:${options.omitActiveTurnId || ""}`);
+      if (!options.omitActiveTurnId) return { result: null, missReason: "dynamic-age-signature-mismatch" };
+      return {
+        result: {
+          thread: {
+            id: "thread-1",
+            turns: [{ id: "older-turn", items: [{ id: "agent-old", type: "agentMessage" }] }],
+            mobileReadMode: "projection-v4-dynamic",
+            mobileProjection: {
+              source: "dynamic",
+              version: "v4",
+              revision: 4,
+              updatedAtMs: 12000,
+              ageMs: 12,
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
+    resolveActiveWindowOverlay: ({ projectionThread }) => {
+      calls.push(`overlay-provider:${projectionThread ? projectionThread.mobileReadMode : "no-window"}`);
+      return {
+        activeTurnId: "active-turn",
+        overlaySource: "projection-live",
+        overlayCompleteness: "full",
+        overlayPartial: false,
+        operationCoverage: "present",
+        uploadCoverage: "none",
+        assistantDeltaCoverage: "",
+        receiptCoverage: "present",
+        overlayRevision: 5,
+        overlayTimestampMs: 13000,
+        overlayTurn: {
+          id: "active-turn",
+          status: { type: "running" },
+          items: [
+            { id: "cmd-1", type: "commandExecution" },
+            { id: "agent-live", type: "agentMessage", text: "live assistant" },
+            { id: "usage-1", type: "turnUsageSummary" },
+          ],
+        },
+      };
+    },
+    turnsListThreadReadResult: async ({ mode }) => {
+      calls.push(`turns-list:${mode}`);
+      throw new Error("turns-list should not be needed after history-window retry");
+    },
+    readFullThread: async () => {
+      calls.push("thread-read");
+      throw new Error("thread/read should not be needed after history-window retry");
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event) => calls.push(`log:${event}`),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-active-overlay");
+  assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
+    "active-overlay-window-lookup:false:",
+    "active-overlay-window-lookup:true:active-turn",
+  ]);
+  assert.ok(calls.includes("log:active_overlay_projection_window_retry"));
+  assert.equal(calls.some((call) => call.startsWith("turns-list:")), false);
+  assert.equal(calls.includes("thread-read"), false);
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "projection-active-overlay");
+  assert.equal(timings.projectionState, "hit");
+  assert.equal(timings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
+  assert.equal(Object.prototype.hasOwnProperty.call(timings.timings, "activeOverlayWindowMs"), false);
+});
+
 test("active overlay complete evidence backfills active turn from cached active-window without app-server reads", async () => {
   const { service, calls } = createHarness({
     summary: {

@@ -130,6 +130,16 @@ function activeTurnIdFromThread(thread) {
   return "";
 }
 
+function activeTurnIdFromOverlayInput(input) {
+  return nonEmptyText(input && input.activeTurnId)
+    || nonEmptyText(input && input.turnId)
+    || nonEmptyText(input && input.overlayTurn && (
+      input.overlayTurn.id
+      || input.overlayTurn.turnId
+      || input.overlayTurn.turn_id
+    ));
+}
+
 function projectionThreadIsPartial(thread) {
   if (!thread || typeof thread !== "object") return false;
   const projection = thread.mobileProjection && typeof thread.mobileProjection === "object"
@@ -736,6 +746,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       let projectionThread = overlayProjected && overlayProjected.thread || null;
       let overlayInput = null;
       let activeOverlayProjectionWindowLookupAttempted = false;
+      let activeOverlayHistoryWindowWithoutActiveTurn = false;
       try {
         const activeOverlayResolveStartedAtMs = now();
         const overlayResult = resolveActiveWindowOverlay({
@@ -757,10 +768,30 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       if (!projectionThread && overlayInput && overlayInput.overlayTurn && overlayWindowLookup) {
         const activeOverlayProjectionLookupStartedAtMs = now();
         activeOverlayProjectionWindowLookupAttempted = true;
+        const overlayTurnId = activeTurnIdFromOverlayInput(overlayInput);
         overlayProjectionLookup = overlayWindowLookup(projection, summary, runtimeSettings, {
           allowPartial: true,
           activeOverlay: true,
         });
+        if (activeOverlayProjectionWindowLookup
+          && (!overlayProjectionLookup || !overlayProjectionLookup.result)
+          && overlayTurnId) {
+          const retriedOverlayProjectionLookup = overlayWindowLookup(projection, summary, runtimeSettings, {
+            allowPartial: true,
+            activeOverlay: true,
+            activeOverlayStatusProven: true,
+            omitActiveTurnId: overlayTurnId,
+          });
+          if (retriedOverlayProjectionLookup && retriedOverlayProjectionLookup.result) {
+            overlayProjectionLookup = retriedOverlayProjectionLookup;
+            activeOverlayHistoryWindowWithoutActiveTurn = true;
+            threadLog("active_overlay_projection_window_retry", {
+              reason: "history-window-without-active-turn",
+            });
+          } else if (!overlayProjectionLookup && retriedOverlayProjectionLookup) {
+            overlayProjectionLookup = retriedOverlayProjectionLookup;
+          }
+        }
         if (overlayProjectionLookup && overlayProjectionLookup.missReason) {
           context.projectionMissReason = overlayProjectionLookup.missReason;
         }
@@ -939,7 +970,12 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             backfillSource = "cached-active-window";
           }
         }
-        if (!backfillThread && turnsListThreadReadResult && !activeOverlayWindowReadAttempted) {
+        const canUseHistoryWindowWithoutBackfill = activeOverlayHistoryWindowWithoutActiveTurn
+          && overlayCompletenessAllowsCachedActiveWindow(overlayInput);
+        if (!backfillThread
+          && turnsListThreadReadResult
+          && !activeOverlayWindowReadAttempted
+          && !canUseHistoryWindowWithoutBackfill) {
           const activeWindowStartedAtMs = now();
           try {
             activeOverlayWindowReadAttempted = true;

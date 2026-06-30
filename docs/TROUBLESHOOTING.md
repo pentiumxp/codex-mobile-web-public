@@ -428,6 +428,15 @@ post-restart or active-growth sample still spends seconds in app-server
 missing entirely, the stable identity changed, or the lookup lacked
 `activeOverlay=true` plus `omitActiveTurnId`; those cases remain authoritative
 app-server reads rather than client timeouts.
+Background prewarm `active-window-already-cached` is a weak cache-existence
+signal: it proves a projection-window lookup can return history rows, not that
+the foreground active-summary proof path has already accepted the same window.
+The foreground detail path should now retry the dedicated
+`activeOverlayProjectionWindowLookup` with `activeOverlayStatusProven=true` and
+`omitActiveTurnId=<active turn>` after an initial active-window miss. When that
+history-only retry succeeds and the live overlay evidence is already complete,
+foreground detail should merge the overlay directly and should not pay a fresh
+`turns-list-active-overlay-window` backfill read.
 If logs show a foreground detail request coalescing with background prewarm
 immediately after restart or after a new active turn starts, verify whether a
 persisted full projection existed before the active notification. Current

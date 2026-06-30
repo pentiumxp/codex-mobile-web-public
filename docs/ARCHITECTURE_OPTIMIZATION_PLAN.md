@@ -325,6 +325,15 @@ Current acceleration targets:
    so active growth alone should not force the history window to be rebuilt;
    `turn/started` and `turn/completed` remain the explicit boundary events that
    clear and repair that window.
+   A follow-up closes the foreground/prewarm contract gap where background
+   prewarm could report `active-window-already-cached`, but the active-summary
+   foreground detail path still looked up the projection window without
+   `omitActiveTurnId` and rebuilt `turns-list-active-overlay-window`. The
+   orchestrator now retries the dedicated active-overlay projection-window
+   lookup with the live active turn omitted after an initial active-window miss.
+   If that history-only retry succeeds and the live overlay evidence is already
+   complete, the foreground merge uses the cached history rows directly instead
+   of paying a fresh active-window backfill read.
    The history-baseline follow-up handles the related restart race where the
    active notification stream reaches the process before the warm full
    projection has been loaded into memory. The projection service now restores a
