@@ -286,6 +286,22 @@ function createThreadSummaryStateService(dependencies = {}) {
     return normalizeStaleContextOnlyActiveThread(cached ? (mergeThreadDisplaySummary(thread, cached, options) || thread) : thread);
   }
 
+  function copyThreadDisplayRolloutMetadata(target, display) {
+    if (!target || !display || typeof display !== "object") return target;
+    for (const key of ["path", "rolloutPath", "rollout_path"]) {
+      const value = display[key];
+      if (typeof value === "string" && value.trim()) target[key] = value;
+    }
+    for (const key of ["rolloutSizeBytes", "rolloutSizeUpdatedAtMs", "rolloutWarningThresholdBytes"]) {
+      const value = Number(display[key]);
+      if (Number.isFinite(value) && value > 0) target[key] = Math.trunc(value);
+    }
+    if (typeof display.rolloutOverWarningThreshold === "boolean") {
+      target.rolloutOverWarningThreshold = display.rolloutOverWarningThreshold;
+    }
+    return target;
+  }
+
   function mergeThreadDisplaySummary(base, display, options = {}) {
     if (!base) return display ? normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(display, options)) : null;
     if (!display) return normalizeStaleContextOnlyActiveThread(base);
@@ -310,6 +326,7 @@ function createThreadSummaryStateService(dependencies = {}) {
     }
     if (display.isSpawnedChildThread || display.is_spawned_child) next.isSpawnedChildThread = true;
     if (display.mobileFallback && !next.mobileFallback) next.mobileFallback = true;
+    copyThreadDisplayRolloutMetadata(next, display);
     return normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(next, options));
   }
 

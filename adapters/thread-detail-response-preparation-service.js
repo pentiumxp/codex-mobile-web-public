@@ -66,10 +66,12 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
   }
 
   function threadRolloutSizeBytes(thread) {
-    const size = Number(thread && thread.rolloutSizeBytes);
-    if (Number.isFinite(size) && size > 0) return size;
     const stats = rolloutStatsForPath(rolloutPathForThread(thread));
-    return stats ? stats.sizeBytes : 0;
+    if (stats && Number.isFinite(Number(stats.sizeBytes)) && Number(stats.sizeBytes) > 0) {
+      return Number(stats.sizeBytes);
+    }
+    const size = Number(thread && thread.rolloutSizeBytes);
+    return Number.isFinite(size) && size > 0 ? size : 0;
   }
 
   function fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "summary-fallback") {
