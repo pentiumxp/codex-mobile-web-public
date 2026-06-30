@@ -15,9 +15,9 @@ const {
 test("thread-list app-server fetch policy bounds default list overfetch", () => {
   assert.deepEqual(planThreadListAppServerFetch({ limit: 40 }), {
     requestedLimit: 40,
-    appServerLimit: 500,
+    appServerLimit: 80,
     reason: "default-preserve-visible-entry-window",
-    overfetchFactor: 12.5,
+    overfetchFactor: 2,
     cursor: false,
     archived: false,
     hasWorkspace: false,
@@ -26,9 +26,9 @@ test("thread-list app-server fetch policy bounds default list overfetch", () => 
 
   assert.deepEqual(planThreadListAppServerFetch({ limit: 80 }), {
     requestedLimit: 80,
-    appServerLimit: 500,
+    appServerLimit: 160,
     reason: "default-preserve-visible-entry-window",
-    overfetchFactor: 6.25,
+    overfetchFactor: 2,
     cursor: false,
     archived: false,
     hasWorkspace: false,
@@ -86,13 +86,13 @@ test("thread-list app-server fetch policy bounds search without copying the quer
 test("thread-list app-server fetch policy normalizes limits and timing fields", () => {
   const plan = planThreadListAppServerFetch({ limit: 999 });
   assert.equal(plan.requestedLimit, 200);
-  assert.equal(plan.appServerLimit, 500);
+  assert.equal(plan.appServerLimit, 400);
 
   assert.deepEqual(threadListAppServerFetchTimingFields(plan), {
     appServerRequestedLimit: 200,
-    appServerRequestLimit: 500,
+    appServerRequestLimit: 400,
     appServerRequestReason: "default-preserve-visible-entry-window",
-    appServerOverfetchFactor: 2.5,
+    appServerOverfetchFactor: 2,
   });
 
   assert.deepEqual(threadListAppServerFetchTimingFields({

@@ -3334,6 +3334,39 @@ Required validation:
   sample duration, because the user reported all threads feeling slow after the
   update.
 
+### 2026-06-30 Default List App-Server Window Regression
+
+The v600 deploy closed the v599 browser H2 regressions, but loading-speed
+readback and follow-up production sampling showed default thread-list first
+paint could still start a 500-row deferred app-server refresh even for small
+visible list requests. Detail responses measured tens to hundreds of
+milliseconds internally, while the caller waited much longer after list
+refresh, which points to resource contention around the deferred authoritative
+list refresh rather than a thread-detail projection miss.
+
+Root cause: `thread-list-app-server-fetch-policy-service` had drifted from the
+documented v535 contract. Search lists used bounded overfetch
+`max(limit * 2, 80)` capped at 500, but ordinary default lists still used a
+500-row floor. For default mobile list entries such as `limit=8`, this produced
+an overfetch factor above 60 and could compete with the immediate thread-detail
+open that follows a user tap.
+
+Scope:
+
+- default no-search/no-workspace/non-archived app-server follow-up windows use
+  bounded overfetch `max(limit * 2, 80)` capped at 500;
+- cursor pages remain exact;
+- workspace-filtered and archived paths keep the legacy 500-row preservation
+  window because filtering is not app-server-authoritative there.
+
+Required validation:
+
+- focused thread-list app-server fetch-policy tests;
+- production readback should show small default list requests reporting
+  `appServerRequestLimit=80` for `limit<=40` instead of 500;
+- repeated list-then-detail timing samples should show reduced caller elapsed
+  waits and no new runtime gate H1/H2 blockers.
+
 ## Release Rule
 
 Follow the current release order:

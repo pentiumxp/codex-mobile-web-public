@@ -34449,3 +34449,104 @@ The previous full handoff was archived and should be opened only when old proven
     runtime gate: thread list/detail timings, browser self-check duration, and
     absence of H1/H2 `browser_dom_sparse_after_nonempty`,
     `browser_pending_user_message_disappeared`, and latest-turn downgrade codes.
+
+### 2026-06-30 - v600 Active Loading Preview Deployed
+
+- Private Home AI deploy completed for source ref `bfca824440b1`
+  (`fix: preview active thread loading state`) with reason
+  `codex-mobile-v600-active-loading-preview`.
+- Deploy backup:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260630T011546Z-plugin-codex-mobile-web-codex-mobile-v600-active-loading-preview`.
+- Production `/api/public-config` returned HTTP `200`, version `0.1.11`,
+  build id `3d14ceb0823f5557`, client build id
+  `0.1.11|codex-mobile-shell-v600`, shell cache
+  `codex-mobile-shell-v600`, and `authRequired=true`.
+- Source/production SHA-256 parity passed for the v600 public runtime files,
+  browser-runtime self-check service, focused tests, and docs.
+- Production markers confirmed the v600 client build/cache markers,
+  `activeDetailLoadingPreviewThread`, `mobileActiveCachePreview`,
+  `shouldUseActivePreview`, `active-detail-cache-preview`, and focused tests
+  for active loading preview, latest-turn downgrade handling, and pending-user
+  disappearance handling.
+- Phase-B/source-thread timing readback returned `ok=true`,
+  `readMode=projection-v4-dynamic`, `totalMs=1673`,
+  `prepareResponseMs=387`, `turnsListInitialMs=0`,
+  `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=0`,
+  `activeOverlayMergeMs=0`, and decision H2 `thread-detail-latency` with next
+  action `split-thread-detail-latency`. Treat this as a separate loading-speed
+  residual; it is not the v599 sparse/pending-user browser H2.
+- Deploy-mode runtime gate against Movie and the Codex Mobile source thread
+  returned `ok=true`, `deployPass=true`, `periodicHealthy=true`, issue count
+  `5`, blocking issue count `0`, advisory issue count `5`, execution failure
+  count `0`, and child checks `api-thread`, `browser-runtime`, and
+  `client-events` all OK. Runtime duration was about `125496ms`.
+- v599 residual recurrence check:
+  - `browser_pending_user_message_disappeared` did not recur.
+  - `browser_latest_turn_item_count_downgraded` did not recur.
+  - `browser_latest_turn_assistant_message_downgraded` did not recur.
+  - `browser_dom_sparse_after_nonempty` remained only H3 advisory in early
+    non-settled samples and had no H2/reportable recurrence.
+- Client-events summary: parsed client events `211`, stall count `0`, H2 stall
+  count `0`, untimed/out-of-window stall counts `0`, max rAF delay `0`, max
+  scroll apply `0`, and max long task `0`.
+- LaunchAgent full-check readback selected the latest full-check event with
+  `ok=true`, loaded `true`, state `not_running`, `deployPass=true`,
+  `periodicHealthy=true`, issue count `5`, blocking issue count `0`, advisory
+  issue count `5`, execution failure count `0`, and check names `api-thread`,
+  `browser-runtime`, and `client-events`.
+- Return classification: `completed`, with a separate follow-up residual for
+  Phase-B H2 `thread-detail-latency`. No Public deploy was run.
+
+### 2026-06-30 - v601 Default List App-Server Window Source Slice In Progress
+
+- Scope:
+  - Follow-up to the v600 loading-speed readback and the user report that many
+    thread opens feel slow.
+  - v600 closed the v599 browser H2 classes, but Phase-B still showed a
+    separate loading-speed residual. Follow-up production sampling showed
+    detail service timings were often much lower than caller elapsed time after
+    a thread-list warm-fallback read, suggesting contention from the deferred
+    authoritative list refresh.
+- Evidence:
+  - A warm-fallback list sample for `limit=8` returned
+    `appServerDeferred=true` with `appServerRequestLimit=500` and
+    `appServerOverfetchFactor=62.5`.
+  - Subsequent detail samples had internal `totalMs` in the tens/hundreds of
+    milliseconds while caller elapsed time could be much higher, including one
+    multi-second sample after the list request.
+  - `docs/MODULES.md` and the v535 optimization note already specify default
+    list overfetch as `max(limit * 2, 80)` capped at 500; only Workspace and
+    archived paths intentionally preserve the legacy 500-row window.
+- Root-cause boundary:
+  - Failing layer is server-side thread-list app-server fetch policy, not
+    frontend render state and not thread-detail projection authority.
+  - The implementation drifted from the documented contract by using a 500-row
+    floor for ordinary default lists.
+- Source changes in progress:
+  - `adapters/thread-list-app-server-fetch-policy-service.js` now applies the
+    same bounded overfetch floor `80` to ordinary default lists.
+  - `test/thread-list-app-server-fetch-policy-service.test.js` now expects
+    default `limit=40 -> appServerLimit=80`, `limit=80 -> 160`, and bounded
+    `limit=200 -> 400`.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` and
+    `docs/TROUBLESHOOTING.md` document the regression and production
+    validation target.
+- Validation so far:
+  - `node --test test/thread-list-app-server-fetch-policy-service.test.js`
+    passed.
+  - Related tests passed:
+    `node --test test/thread-list-app-server-fetch-policy-service.test.js test/phase-b-readback-decision-service.test.js test/thread-diagnostic-events.test.js test/phase-b-readback-smoke.test.js`
+    (`60` tests).
+  - `node --check adapters/thread-list-app-server-fetch-policy-service.js`
+    passed.
+  - `npm test -- --test-reporter=dot` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Next:
+  - Commit and delegate private deploy with reason
+    `codex-mobile-v601-default-list-app-server-window`.
+  - Production readback should confirm small default list requests report
+    `appServerRequestLimit=80` for `limit<=40`, runtime gate remains clean of
+    H1/H2 blockers, and list-then-detail elapsed samples improve.

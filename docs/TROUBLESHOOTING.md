@@ -1206,6 +1206,13 @@ Do not infer from rollout file size alone. Separate:
   and whether the process cache was actually warm. A miss on this ordinary
   default/workspace path intentionally falls through to app-server instead of
   building a cold fallback baseline.
+- For small ordinary default list requests, check `appServerRequestLimit`.
+  It should follow bounded overfetch `max(limit * 2, 80)` capped at 500. A
+  default `limit=8`, `20`, or `40` request reporting `appServerRequestLimit=500`
+  has regressed to the old unconditional app-server window and can make thread
+  entry slow by competing with the immediate detail request after a user tap.
+  Workspace-filtered and archived list requests intentionally still preserve
+  the 500-row window.
 - Is app-server/mux CPU active?
 - Is the latest turn `inProgress` but no event has been written for minutes?
 
