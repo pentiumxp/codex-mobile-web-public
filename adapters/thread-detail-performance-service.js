@@ -128,6 +128,9 @@ function buildThreadDetailDiagnostics(input = {}) {
     "activeOverlayProjectionLookupMs",
     "activeOverlayPlanMs",
     "activeOverlayWindowMs",
+    "activeOverlayBackfillWindowMs",
+    "activeOverlayFullProjectionMs",
+    "activeOverlayHistoryBaselineMs",
     "activeOverlayMergeMs",
   ]) {
     output[key] = safeDurationMs(timings[key]);

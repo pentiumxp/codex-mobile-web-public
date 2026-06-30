@@ -103,6 +103,94 @@ test("thread detail self check detects duplicate client render keys", () => {
   assert.equal(issue.threadHash, "4b0a5fefc328e6b9");
 });
 
+test("thread detail self check detects duplicate user message events in one turn", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    items: [
+      { id: "item-1", type: "userMessage", startedAtMs: 1782710145041, text: "same user request" },
+      { id: "item-10114", type: "userMessage", startedAt: "2026-06-29T05:15:45.041Z", text: "same   user request" },
+      { id: "agent-live", type: "agentMessage", text: "working" },
+    ],
+  });
+
+  const report = analyzeThreadDetail(detail);
+  const issue = report.issues.find((entry) => entry.code === "duplicate_user_message_events");
+
+  assert.equal(report.ok, false);
+  assert.equal(issue.severity, "H2");
+  assert.equal(issue.count, 1);
+});
+
+test("thread detail self check detects visible item timestamp order mismatch", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    items: [
+      { id: "agent-late", type: "agentMessage", text: "late", startedAt: "2026-06-29T11:20:00.000Z" },
+      { id: "agent-early", type: "agentMessage", text: "early", startedAt: "2026-06-29T11:03:00.000Z" },
+      { id: "agent-mid", type: "agentMessage", text: "middle", startedAtMs: Date.parse("2026-06-29T11:15:00.000Z") },
+    ],
+  });
+
+  const report = analyzeThreadDetail(detail);
+  const issue = report.issues.find((entry) => entry.code === "visible_item_timestamp_order_mismatch");
+
+  assert.equal(report.ok, false);
+  assert.equal(issue.severity, "H2");
+  assert.equal(issue.surface, "thread-detail");
+  assert.equal(issue.count, 1);
+});
+
+test("thread detail self check accepts inferred user display timestamps", () => {
+  const detail = healthyDetail();
+  detail.thread.turns[0] = {
+    id: "turn-display-timestamp",
+    status: "completed",
+    startedAt: "2026-06-29T10:26:59.000Z",
+    completedAt: "2026-06-29T11:28:55.000Z",
+    items: [
+      {
+        id: "context-known",
+        type: "contextCompaction",
+        startedAtMs: Date.parse("2026-06-29T10:49:44.058Z"),
+      },
+      {
+        id: "user-inferred",
+        type: "userMessage",
+        mobileDisplayTimestampMs: Date.parse("2026-06-29T10:49:44.058Z") + 1,
+        mobileDisplayTimestampInferred: true,
+      },
+      {
+        id: "user-known",
+        type: "userMessage",
+        startedAtMs: Date.parse("2026-06-29T11:01:31.746Z"),
+      },
+      {
+        id: "assistant-final",
+        type: "agentMessage",
+        startedAtMs: Date.parse("2026-06-29T11:28:55.447Z"),
+      },
+      {
+        id: "usage",
+        type: "turnUsageSummary",
+        startedAtMs: Date.parse("2026-06-29T11:28:55.482Z"),
+      },
+    ],
+  };
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((entry) => entry.code);
+
+  assert.equal(itemTimestampMs(detail.thread.turns[0].items[1], detail.thread.turns[0], detail.thread), Date.parse("2026-06-29T10:49:44.058Z") + 1);
+  assert.equal(codes.includes("visible_item_timestamp_order_mismatch"), false);
+  assert.equal(codes.includes("visible_item_timestamp_missing"), false);
+});
+
 test("thread detail self check accepts naturally short completed replay receipts", () => {
   const detail = healthyDetail();
   detail.thread.mobileVisibleItemKeys = ["u1", "a1", "usage1"];
@@ -231,6 +319,52 @@ test("thread detail self check fails when active assistant items were budgeted a
   assert.equal(report.budget.activeAssistantItemsAfter, 1);
   assert.ok(codes.includes("active_turn_assistant_budget"));
   assert.ok(codes.includes("active_overlay_assistant_projection_gap"));
+});
+
+test("thread detail self check accepts active assistant gap explained by progressive replay budget", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.mobileActiveOverlay = {
+    reason: "overlay-evidence-complete",
+    source: "projection-live",
+    counts: {
+      items: 89,
+      assistantItems: 88,
+      operationItems: 0,
+      uploadItems: 0,
+      receiptItems: 0,
+      otherItems: 1,
+      unknownItems: 0,
+    },
+  };
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    items: [
+      { id: "u-live", type: "userMessage" },
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: `a-live-${index}`,
+        type: "agentMessage",
+      })),
+    ],
+  });
+  detail.thread.mobileDetailResponseBudget.activeTurnCount = 1;
+  detail.thread.mobileDetailResponseBudget.activeAssistantItemsBefore = 88;
+  detail.thread.mobileDetailResponseBudget.activeAssistantItemsAfter = 8;
+  detail.thread.mobileDetailResponseBudget.activeOmittedAssistantItems = 80;
+  detail.thread.mobileDetailResponseBudget.progressiveActiveBudgetApplied = true;
+  detail.thread.mobileDetailResponseBudget.progressiveReplayAssistantItems = 8;
+  detail.thread.mobileDetailResponseBudget.limitedReplayAssistantItems = 80;
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.equal(report.budget.progressiveActiveBudgetApplied, true);
+  assert.equal(report.budget.progressiveReplayAssistantItems, 8);
+  assert.equal(report.budget.limitedReplayAssistantItems, 80);
+  assert.ok(!codes.includes("active_turn_assistant_budget"));
+  assert.ok(!codes.includes("active_overlay_assistant_projection_gap"));
 });
 
 test("thread detail self check accepts active assistant overlay explained by synthetic dedupe", () => {
@@ -430,6 +564,24 @@ test("thread list self check detects duplicate ids and order mismatch", () => {
   assert.ok(codes.includes("thread_list_updated_order_mismatch"));
 });
 
+test("thread list self check detects unmaterialized id-title placeholders", () => {
+  const report = analyzeThreadList({
+    data: [{
+      id: "019f0abc-def0-7123-9abc-abcdef123456",
+      name: "019f0abc-def0-7123-9abc-abcdef123456",
+      preview: "019f0abc-def0-7123-9abc-abcdef123456",
+      status: { type: "notLoaded" },
+      updatedAt: 1782729717,
+    }],
+  });
+  const issue = report.issues.find((entry) => entry.code === "thread_list_unmaterialized_placeholder");
+
+  assert.equal(report.ok, false);
+  assert.equal(issue.severity, "H2");
+  assert.equal(issue.surface, "thread-list");
+  assert.equal(issue.status, "notLoaded");
+});
+
 test("thread list repeat detects lost rows and timestamp downgrade", () => {
   const report = compareThreadListReadbacks(
     { data: [{ id: "thread-a", updatedAt: 2000 }, { id: "thread-b", updatedAt: 1500 }] },
@@ -443,15 +595,16 @@ test("thread list repeat detects lost rows and timestamp downgrade", () => {
   assert.ok(codes.includes("thread_list_repeat_updated_at_downgrade"));
 });
 
-test("thread list repeat order change is warning-only", () => {
+test("thread list repeat raw order change stays metadata-only", () => {
   const report = compareThreadListReadbacks(
-    { data: [{ id: "thread-a", updatedAt: 2000 }, { id: "thread-b", updatedAt: 1000 }] },
-    { data: [{ id: "thread-b", updatedAt: 1000 }, { id: "thread-a", updatedAt: 2000 }] },
+    { data: [{ id: "thread-a", name: "Thread A", updatedAt: 2000 }, { id: "thread-b", name: "Thread B", updatedAt: 1000 }] },
+    { data: [{ id: "thread-b", name: "Thread B", updatedAt: 1000 }, { id: "thread-a", name: "Thread A", updatedAt: 2000 }] },
   );
 
   assert.equal(report.ok, true);
+  assert.equal(report.rawOrderChanged, true);
   assert.equal(report.issues[0].code, "thread_list_updated_order_mismatch");
-  assert.equal(report.issues.at(-1).code, "thread_list_repeat_order_changed");
+  assert.equal(report.issues.some((issue) => issue.code === "thread_list_repeat_order_changed"), false);
 });
 
 test("self check summary fails only on H1/H2 issues", () => {

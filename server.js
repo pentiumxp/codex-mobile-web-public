@@ -68,6 +68,7 @@ const { createHermesPluginService } = require("./adapters/hermes-plugin-service"
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
 const { createThreadTaskCardRoutingService } = require("./adapters/thread-task-card-routing-service");
 const {
+  isHomeAiDeployLaneThread,
   normalizeHomeAiDeployLaneSummary,
   planHomeAiDeployLaneRouting,
   prioritizeDelegationTargetHints,
@@ -85,6 +86,7 @@ const {
   resolveActiveCodexHomeFromStore,
   resolveEffectiveCodexHome,
 } = require("./adapters/codex-profile-service");
+const { createPublicConfigRuntimeCache } = require("./adapters/public-config-runtime-cache-service");
 const { ensureCodexMobileMcpServer } = require("./adapters/codex-mobile-mcp-config-service");
 const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
 const { createThreadDetailProjectionInputService } = require("./adapters/thread-detail-projection-input-service");
@@ -401,6 +403,7 @@ const codexProfileService = createCodexProfileService({
   runtimeRoot: RUNTIME_ROOT,
   activeCodexHome: CODEX_HOME,
 });
+const publicConfigRuntimeCache = createPublicConfigRuntimeCache();
 
 function syncRegisteredWorkspaceTrust(codexHome = CODEX_HOME) {
   try {
@@ -441,7 +444,7 @@ function syncKnownCodexMobileMcpToolsets(profileOptions = {}) {
   const homes = new Set([CODEX_HOME]);
   let profileError = "";
   try {
-    const profileState = codexProfileService.profiles(profileOptions);
+    const profileState = profileOptions.profileState || codexProfileService.profiles(profileOptions);
     for (const profile of profileState.profiles || []) {
       const codexHome = String(profile && profile.codexHome || "").trim();
       if (!codexHome) continue;
@@ -871,9 +874,14 @@ const threadTaskCardService = createThreadTaskCardService({
   executeApprovedCard: async (card, message) => {
     const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
     const inheritedRuntimeSettings = await resolveThreadRuntimeSettings(card.target.threadId);
-    const runtimeSettings = requestedReasoningEffort
-      ? Object.assign({}, inheritedRuntimeSettings, { reasoningEffort: requestedReasoningEffort })
+    const targetThread = readThreadTaskCardExecutionTargetSummary(card);
+    const targetIsDeployLane = isHomeAiDeployLaneThread(targetThread);
+    const baseRuntimeSettings = targetIsDeployLane
+      ? applyPermissionModeOverride(inheritedRuntimeSettings, "full", targetThread && targetThread.cwd || null)
       : inheritedRuntimeSettings;
+    const runtimeSettings = requestedReasoningEffort
+      ? Object.assign({}, baseRuntimeSettings, { reasoningEffort: requestedReasoningEffort })
+      : baseRuntimeSettings;
     try {
       await codex.request("thread/resume", applyResumeRuntimeSettings({
         threadId: card.target.threadId,
@@ -898,6 +906,9 @@ const threadTaskCardService = createThreadTaskCardService({
       runtime: {
         reasoningEffort: runtimeSettings.reasoningEffort || "",
         requestedReasoningEffort,
+        approvalPolicy: runtimeSettings.approvalPolicy || "",
+        sandboxPolicyType: runtimeSettings.sandboxPolicy && runtimeSettings.sandboxPolicy.type || "",
+        deployLaneNoApproval: targetIsDeployLane,
       },
     };
   },
@@ -955,12 +966,15 @@ const THREAD_DETAIL_ACTIVE_PROGRESSIVE_THREAD_BYTES = Math.max(0, Math.min(50 * 
 const THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_ITEMS = Math.max(0, Math.min(30, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_ITEMS || "6")));
 const THREAD_DETAIL_PROGRESSIVE_ACTIVE_REASONING_ITEMS = Math.max(0, Math.min(20, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_REASONING_ITEMS || "1")));
 const THREAD_DETAIL_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = Math.max(1, Math.min(50, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS || "4")));
+const THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS = Math.max(1, Math.min(500, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS || "8")));
+const THREAD_DETAIL_PROGRESSIVE_COMPLETED_REPLAY_ASSISTANT_ITEMS = Math.max(1, Math.min(500, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_REPLAY_ASSISTANT_ITEMS || "12")));
 const THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS = Math.max(0, Math.min(200 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS || String(12 * 1024))));
 const THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS = Math.max(0, Math.min(200 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS || String(6 * 1024))));
 const THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS = Math.max(0, Math.min(200 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS || String(10 * 1024))));
 const THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING = Math.max(0, Math.min(10000, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING || "48")));
 const THREAD_DETAIL_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES = Math.max(0, Math.min(50 * 1024 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES || String(160 * 1024))));
 const THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS = Math.max(0, Math.min(200 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS || String(8 * 1024))));
+const THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS = Math.max(0, Math.min(200 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS || "1024")));
 const THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS = Math.max(0, Math.min(60 * 60 * 1000, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS || String(30 * 1000))));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "collabAgentToolCall", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
@@ -974,7 +988,7 @@ const THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED = !/^(0|false|no|off)$/i.test(pr
 const THREAD_LIST_FALLBACK_PREWARM_ENABLED = !/^(0|false|no|off)$/i.test(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM || "1");
 const THREAD_LIST_FALLBACK_PREWARM_DELAY_MS = Math.max(
   0,
-  Math.min(10 * 60 * 1000, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS || "1500")),
+  Math.min(10 * 60 * 1000, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS || "0")),
 );
 const THREAD_LIST_FALLBACK_PREWARM_RETRY_MS = Math.max(
   100,
@@ -2291,7 +2305,9 @@ async function staleActiveTurnPreflight(codexClient, threadId, activeTurnId) {
 
 function logClientEvent(event, details = {}) {
   trimRuntimeLogs();
-  console.log(`[client-event] ${event} ${JSON.stringify(safeLogDetails(details))}`);
+  console.log(`[client-event] ${event} ${JSON.stringify(Object.assign({
+    ts: new Date().toISOString(),
+  }, safeLogDetails(details)))}`);
 }
 
 function truncateMiddle(value, maxChars, label) {
@@ -3058,11 +3074,23 @@ function isResidualFallbackThreadSummary(thread) {
   return !isThreadListLiveStatus(thread.status);
 }
 
+function isUnmaterializedThreadListPlaceholder(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const id = normalizeThreadId(thread.id);
+  if (!id) return false;
+  if (!isThreadListUnknownStatus(thread.status)) return false;
+  if (threadSummaryHasDisplayText(thread)) return false;
+  if (String(thread.cwd || "").trim()) return false;
+  if (Array.isArray(thread.turns) && thread.turns.length) return false;
+  const display = String(thread.name || thread.title || thread.preview || "").trim();
+  return !display || isRecoverableThreadListTitle(display, id);
+}
+
 function shouldHideThreadListSummary(thread, archivedIds = null) {
   if (threadHasArchiveSignal(thread, archivedIds)) return true;
   if (isSubagentThreadSummary(thread)) return true;
   if (isSideChatSidecarThreadSummary(thread)) return true;
-  return isResidualFallbackThreadSummary(thread);
+  return isResidualFallbackThreadSummary(thread) || isUnmaterializedThreadListPlaceholder(thread);
 }
 
 function archivedSessionDirectories() {
@@ -3772,8 +3800,13 @@ function compactItemTimestampFields(item) {
     "completedAt",
     "completed_at_ms",
     "completed_at",
+    "mobileDisplayTimestampMs",
+    "mobileDisplayTimestamp",
   ]) {
     if (item && item[key] !== undefined) fields[key] = item[key];
+  }
+  if (item && item.mobileDisplayTimestampInferred !== undefined) {
+    fields.mobileDisplayTimestampInferred = item.mobileDisplayTimestampInferred === true;
   }
   return fields;
 }
@@ -5492,7 +5525,7 @@ function turnCompletionUsageSummary(threadId, turnId) {
   });
 }
 
-function itemDisplayTimestampMs(item) {
+function itemDirectTimestampMs(item) {
   for (const key of [
     "createdAtMs",
     "createdAt",
@@ -5509,6 +5542,78 @@ function itemDisplayTimestampMs(item) {
     if (timestamp) return timestamp;
   }
   return 0;
+}
+
+function itemDisplayTimestampMs(item) {
+  return itemDirectTimestampMs(item)
+    || timestampToMs(item && (item.mobileDisplayTimestampMs || item.mobileDisplayTimestamp));
+}
+
+const DISPLAY_TIMESTAMP_INFERABLE_TYPES = new Set([
+  "agentMessage",
+  "filePreview",
+  "imageGeneration",
+  "imageView",
+  "plan",
+  "turnDiagnostic",
+  "userMessage",
+]);
+
+function itemCanUseInferredDisplayTimestamp(item) {
+  return Boolean(item && DISPLAY_TIMESTAMP_INFERABLE_TYPES.has(String(item.type || "")));
+}
+
+function turnCompletedDisplayTimestampMs(turn) {
+  return timestampToMs(turn && (
+    turn.completedAtMs
+    || turn.completedAt
+    || turn.completed_at_ms
+    || turn.completed_at
+    || turn.finishedAt
+    || turn.finished_at
+    || turn.updatedAtMs
+    || turn.updatedAt
+  ));
+}
+
+function nearestPreviousItemDisplayTimestampMs(items, index) {
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const timestamp = itemDisplayTimestampMs(items[cursor]);
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
+function nearestNextItemDisplayTimestampMs(items, index) {
+  for (let cursor = index + 1; cursor < items.length; cursor += 1) {
+    const timestamp = itemDisplayTimestampMs(items[cursor]);
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
+function inferredDisplayTimestampForItem(items, index, turn) {
+  const previous = nearestPreviousItemDisplayTimestampMs(items, index);
+  const next = nearestNextItemDisplayTimestampMs(items, index);
+  if (previous && next && next >= previous) return Math.min(next, previous + 1);
+  if (previous) return previous + 1;
+  if (next) return Math.max(1, next - 1);
+  if (isCompletedStatus(turn && turn.status)) return turnCompletedDisplayTimestampMs(turn) || turnStartedAtMs(turn);
+  return turnStartedAtMs(turn) || 0;
+}
+
+function inferTurnItemDisplayTimestamps(turn) {
+  if (!turn || !Array.isArray(turn.items) || turn.items.length < 1) return turn;
+  for (let index = 0; index < turn.items.length; index += 1) {
+    const item = turn.items[index];
+    if (!item || itemDisplayTimestampMs(item) || !itemCanUseInferredDisplayTimestamp(item)) continue;
+    const timestamp = inferredDisplayTimestampForItem(turn.items, index, turn);
+    if (!timestamp) continue;
+    item.mobileDisplayTimestampMs = timestamp;
+    item.mobileDisplayTimestamp = new Date(timestamp).toISOString();
+    item.mobileDisplayTimestampInferred = true;
+  }
+  return turn;
 }
 
 function timestampCandidateTypesForItem(item) {
@@ -5565,7 +5670,7 @@ function takeTimestampCandidateForItem(candidates, item, aliases) {
 }
 
 function applyRolloutItemTimestamp(item, candidate) {
-  if (!item || !candidate || !candidate.timestampMs || itemDisplayTimestampMs(item)) return;
+  if (!item || !candidate || !candidate.timestampMs || itemDirectTimestampMs(item)) return;
   item.startedAtMs = candidate.timestampMs;
   item.startedAt = candidate.timestamp || new Date(candidate.timestampMs).toISOString();
 }
@@ -5741,6 +5846,7 @@ const threadDetailActiveWindowPrewarmService = createThreadDetailActiveWindowPre
     warning,
     mode,
     threadLog,
+    responseBudgetEvidence,
   }) => turnsListThreadReadResult(
     threadId,
     summary,
@@ -5748,6 +5854,7 @@ const threadDetailActiveWindowPrewarmService = createThreadDetailActiveWindowPre
     warning,
     mode,
     threadLog,
+    responseBudgetEvidence,
   )),
   seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
   log: (event, details) => logThreadDetail(event, details),
@@ -6959,7 +7066,7 @@ function compactThread(thread, options = {}) {
       suppressedUploadViewImageCallIds: toolOutputImagePayload.suppressedUploadViewImageCallIdsByTurn instanceof Map
         ? toolOutputImagePayload.suppressedUploadViewImageCallIdsByTurn.get(String(turn && turn.id || "")) || new Set()
         : new Set(),
-    })).map(orderTurnItemsByDisplayTimestamp);
+    })).map(inferTurnItemDisplayTimestamps).map(orderTurnItemsByDisplayTimestamp);
     const latest = out.turns[latestIndex];
     if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
       && !latest.items.some((item) => isOperationalItem(item))) {
@@ -7891,6 +7998,22 @@ function workspaceDelegationDynamicToolSpec() {
           type: "string",
           description: "Alias for body.",
         },
+        replyToThreadId: {
+          type: "string",
+          description: "Optional terminal-return target thread id. Use when this card is a multi-hop supplement that must return to an original requester instead of the immediate source thread.",
+        },
+        replyToWorkspaceId: {
+          type: "string",
+          description: "Optional workspace/cwd for replyToThreadId.",
+        },
+        replyToThreadTitle: {
+          type: "string",
+          description: "Optional display title for replyToThreadId.",
+        },
+        replyToCardId: {
+          type: "string",
+          description: "Optional originating task-card id; when replyToThreadId is omitted, the service can resolve the terminal-return target from this card.",
+        },
         workflowMode: {
           type: "string",
           enum: ["manual", "autonomous"],
@@ -7904,6 +8027,10 @@ function workspaceDelegationDynamicToolSpec() {
         cardKind: {
           type: "string",
           description: "Optional bounded task-card kind, for example plugin_deployment for routine plugin deploy cards.",
+        },
+        pluginId: {
+          type: "string",
+          description: "Optional Home AI plugin id for routine plugin deployment lane routing, for example codex-mobile-web or movie.",
         },
         category: {
           type: "string",
@@ -9292,7 +9419,7 @@ function threadSummaryLooksActive(summary) {
     .test(String(statusValue || "").trim());
 }
 
-function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "") {
+function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "", options = {}) {
   const id = String(threadId || summary && (summary.id || summary.threadId || summary.thread_id) || "").trim();
   if (!id) return { scheduled: false, reason: "missing-thread-id" };
   return threadDetailActiveWindowPrewarmService.schedule({
@@ -9300,6 +9427,9 @@ function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "") {
     threadId: id,
     summary,
     reason,
+    delayMs: options.delayMs,
+    bypassMinInterval: options.bypassMinInterval === true,
+    preemptPending: options.preemptPending === true,
     threadLog: (event, details = {}) => logThreadDetail(`active_window_prewarm_${event}`, Object.assign({ threadId: id }, details)),
   });
 }
@@ -9360,11 +9490,15 @@ function scheduleRecentWindowProjectionRefresh(input = {}) {
 function scheduleActiveWindowPrewarmFromNotification(payload) {
   if (!payload || payload.type !== "notification" || !payload.params) return;
   const method = String(payload.method || "");
-  if (method !== "turn/started" && method !== "thread/status/changed") return;
+  if (method !== "turn/started" && method !== "turn/completed" && method !== "thread/status/changed") return;
   const threadId = notificationThreadId(payload);
   if (!threadId) return;
   if (method === "thread/status/changed" && !threadSummaryLooksActive(payload.params)) return;
-  scheduleActiveWindowPrewarm(threadId, null, method);
+  scheduleActiveWindowPrewarm(threadId, null, method, {
+    delayMs: 0,
+    bypassMinInterval: true,
+    preemptPending: true,
+  });
 }
 
 function scheduleActiveWindowPrewarmFromThreadListResult(result, reason = "") {
@@ -13045,6 +13179,42 @@ function readThreadTaskCardTargetSummary(threadId, options = {}) {
   return readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId);
 }
 
+function readThreadTaskCardVisibleTargetSummary(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  const visibleThreads = threadTaskCardVisibleTargetThreads();
+  return (Array.isArray(visibleThreads) ? visibleThreads : [])
+    .find((thread) => String(thread && (thread.id || thread.threadId || "") || "").trim() === id) || null;
+}
+
+function readThreadTaskCardExecutionTargetSummary(card) {
+  const target = card && card.target && typeof card.target === "object" ? card.target : {};
+  const threadId = String(target.threadId || "").trim();
+  const stored = readThreadTaskCardTargetSummary(threadId) || null;
+  const visible = readThreadTaskCardVisibleTargetSummary(threadId) || null;
+  const merged = Object.assign({}, stored || {}, target, visible || {});
+  if (!String(merged.id || "").trim()) merged.id = threadId;
+  if (!String(merged.threadId || "").trim()) merged.threadId = threadId;
+  const targetWorkspace = String(target.workspaceId || target.workspace || "").trim();
+  if (!String(merged.cwd || "").trim() && targetWorkspace) merged.cwd = targetWorkspace;
+  const visibleTitle = String(visible && (visible.name || visible.title || visible.threadName || visible.thread_name || visible.preview || "") || "").trim();
+  const storedTitle = String(stored && (stored.name || stored.title || stored.threadName || stored.thread_name || stored.preview || "") || "").trim();
+  const targetTitle = String(target.name || target.title || target.threadName || target.thread_name || target.preview || "").trim();
+  const title = visibleTitle || storedTitle || targetTitle;
+  if (title) {
+    if (visibleTitle) {
+      merged.title = title;
+      merged.name = title;
+      merged.preview = title;
+    } else {
+      if (!String(merged.title || "").trim()) merged.title = title;
+      if (!String(merged.name || "").trim()) merged.name = title;
+      if (!String(merged.preview || "").trim()) merged.preview = title;
+    }
+  }
+  return merged;
+}
+
 function taskCardPayloadTargetThreads(targetThreadIds = [], readThreadSummary = readThreadTaskCardTargetSummary) {
   return (Array.isArray(targetThreadIds) ? targetThreadIds : [])
     .map((threadId) => {
@@ -13076,11 +13246,14 @@ function applyHomeAiDeployLaneRoutingPolicy(payload = {}, sourceSummary = null, 
   if (plan.action === "reject") {
     throw threadTaskCardTargetError(
       plan.code || "deploy_lane_required",
-      plan.message || "Routine plugin deployment cards must target the Home AI Deploy lane.",
+      plan.message || "Routine plugin deployment cards must target a live configured deploy lane.",
       {
         reason: plan.reason || "deploy_lane_required",
         sourceThreadId: payload.sourceThreadId || "",
         targetThreadIds,
+        pluginId: plan.pluginId || "",
+        expectedDeployLaneTitle: plan.expectedDeployLaneTitle || "",
+        duplicateTitles: plan.duplicateTitles || undefined,
         deployLane: plan.deployLane ? publicThreadTaskCardTarget(plan.deployLane) : undefined,
       },
       409,
@@ -13129,6 +13302,9 @@ function threadTaskCardThreadCallIdempotencyKey(sourceThreadId, body = {}, targe
     reasoningEffort: normalizeThreadTaskCardReasoningEffort(body.reasoningEffort || body.reasoning_effort || body.effort),
     workflowMode: normalizeThreadTaskCardWorkflowMode(body.workflowMode),
     workflowId: String(body.workflowId || "").trim(),
+    replyToThreadId: String(body.replyToThreadId || body.reply_to_thread_id || body.returnTargetThreadId || body.return_target_thread_id || "").trim(),
+    replyToWorkspaceId: String(body.replyToWorkspaceId || body.reply_to_workspace_id || body.returnTargetWorkspaceId || body.return_target_workspace_id || "").trim(),
+    replyToCardId: String(body.replyToCardId || body.reply_to_card_id || body.originalTaskCardId || body.original_task_card_id || "").trim(),
   });
   return `thread-call:${stableTextHash(sourceThreadId)}:${stableTextHash(seed)}`;
 }
@@ -13744,18 +13920,22 @@ async function prepareThreadDetailResponseResult(result, details = {}) {
       progressiveActiveOperationItems: THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_ITEMS,
       progressiveActiveReasoningItems: THREAD_DETAIL_PROGRESSIVE_ACTIVE_REASONING_ITEMS,
       progressiveActiveAssistantItems: THREAD_DETAIL_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS,
+      progressiveReplayAssistantItems: THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS,
+      progressiveCompletedReplayAssistantItems: THREAD_DETAIL_PROGRESSIVE_COMPLETED_REPLAY_ASSISTANT_ITEMS,
       progressiveActiveTextChars: THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS,
       progressiveActiveOperationPayloadChars: THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS,
       progressiveActiveUserTextChars: THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS,
       progressiveVisibleItemCeiling: THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING,
       progressiveFirstPaintThreadByteCeiling: THREAD_DETAIL_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES,
       progressiveCompletedTextChars: THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS,
+      progressiveCompletedUserTextChars: THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS,
+      responseBudgetEvidence: details.responseBudgetEvidence || "",
     }),
     details,
   );
 }
 
-async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null) {
+async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null, responseBudgetEvidence = "") {
   const startedAtMs = Date.now();
   if (threadLog) {
     threadLog("turns_list_start", {
@@ -13785,7 +13965,7 @@ async function turnsListThreadReadResult(threadId, summary, runtimeSettings, war
       mode,
     });
   }
-  return prepareThreadDetailResponseResult(result, { threadId, source: mode });
+  return prepareThreadDetailResponseResult(result, { threadId, source: mode, responseBudgetEvidence });
 }
 
 async function readRawThreadDetailForOrchestrator({ threadId, summary, runtimeSettings }) {
@@ -13846,7 +14026,7 @@ function filterFallbackThreads(threads, filters = {}) {
   const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(threads, visibility);
   return threads
     .filter((thread) => {
-      if (threadHasArchiveSignal(thread, archivedIds) || isSubagentThreadSummary(thread)) return false;
+      if (shouldHideThreadListSummary(thread, archivedIds)) return false;
       if (!shouldFilterByWorkspace) return true;
       if (threadProjectlessVisible(thread, visibility)) return true;
       const cwd = String(thread && thread.cwd || "").trim();
@@ -14777,7 +14957,11 @@ async function handleApi(req, res) {
     const buildConfig = currentPublicBuildConfig();
     const workspaceDelegation = workspaceDelegationPublicSettings();
     const activeQuota = liveQuotaSnapshotForProfiles();
-    syncKnownCodexMobileMcpToolsets({ activeQuota });
+    const profileState = publicConfigRuntimeCache.getProfileState({
+      activeQuota,
+      loadProfiles: (options) => codexProfileService.profiles(options),
+    }).value;
+    syncKnownCodexMobileMcpToolsets({ activeQuota, profileState });
     sendJson(res, 200, {
       authRequired: !DISABLE_AUTH,
       title: "Codex Mobile Web",
@@ -14799,9 +14983,7 @@ async function handleApi(req, res) {
       defaultPermissionMode: defaultPermissionModeFromConfigDefaults(),
       rateLimits: activeRateLimits(),
       rateLimitsByModel: rateLimitsByModelObject(),
-      codexProfiles: codexProfileService.profiles({
-        activeQuota,
-      }),
+      codexProfiles: profileState,
       push: pushSubscriptionPublicStatus(),
       update: {
         enabled: !APP_UPDATE_DISABLED,
@@ -14938,6 +15120,7 @@ async function handleApi(req, res) {
         stepIndex: 9,
       });
       const profile = codexProfileService.setActiveProfile(targetProfile.id);
+      publicConfigRuntimeCache.invalidateProfiles();
       setProfileSwitchProgress(requestId, {
         targetProfileId: profile.id,
         targetProfileLabel: profile.label || profile.id,

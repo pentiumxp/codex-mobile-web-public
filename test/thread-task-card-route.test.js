@@ -161,6 +161,10 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Several normal threads may share the same cwd\/workspace/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /reasoningEffort/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /REASONING_EFFORT_OPTIONS/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pluginId/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /replyToThreadId/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /multi-hop supplement/);
+  assert.match(functionBody(serverJs, "applyHomeAiDeployLaneRoutingPolicy"), /expectedDeployLaneTitle/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /latest visible canonical thread/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pending:\s*\{/);
   assert.match(functionBody(serverJs, "taskCardReturnDynamicToolSpec"), /A plain final answer in the target thread is not a source-thread return card/);
@@ -195,6 +199,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /forcedDirect: true/);
   assert.match(functionBody(serverJs, "taskCardReturnDynamicToolBody"), /returnToSource: true/);
   assert.match(functionBody(serverJs, "taskCardReturnDynamicToolBody"), /const status = normalizedTaskCardReturnStatus/);
+  assert.match(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /replyToThreadId/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /logWorkspaceDelegationDynamicToolCall\(request, params, args, \{[\s\S]*outcome: "ok"/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /outcome: "unsupported_dynamic_tool"/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /outcome: "source_thread_id_required"/);
@@ -221,6 +226,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(createThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(createThreadTaskCardScript, /--pending/);
   assert.match(createThreadTaskCardScript, /--reasoning-effort <value>/);
+  assert.match(createThreadTaskCardScript, /--reply-to-thread <id>/);
+  assert.match(createThreadTaskCardScript, /replyToThreadId/);
   assert.match(createThreadTaskCardScript, /Settings -> 跨工作区委派/);
   assert.match(returnThreadTaskCardScript, /\/api\/thread-task-cards\/\$\{encodeURIComponent\(taskCardId\)\}\/reply/);
   assert.match(returnThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
@@ -261,16 +268,79 @@ test("approved task cards inherit target thread model and effort", () => {
   );
   assert.match(setupBlock, /const requestedReasoningEffort = String\(card && card\.delivery && card\.delivery\.reasoningEffort/);
   assert.match(setupBlock, /const inheritedRuntimeSettings = await resolveThreadRuntimeSettings\(card\.target\.threadId\);/);
-  assert.match(setupBlock, /Object\.assign\(\{\}, inheritedRuntimeSettings, \{ reasoningEffort: requestedReasoningEffort \}\)/);
+  assert.match(setupBlock, /const targetThread = readThreadTaskCardExecutionTargetSummary\(card\);/);
+  assert.match(setupBlock, /const targetIsDeployLane = isHomeAiDeployLaneThread\(targetThread\);/);
+  assert.match(setupBlock, /const baseRuntimeSettings = targetIsDeployLane/);
+  assert.match(setupBlock, /applyPermissionModeOverride\(inheritedRuntimeSettings, "full", targetThread && targetThread\.cwd \|\| null\)/);
+  assert.match(setupBlock, /Object\.assign\(\{\}, baseRuntimeSettings, \{ reasoningEffort: requestedReasoningEffort \}\)/);
   assert.match(setupBlock, /thread\/resume", applyResumeRuntimeSettings\(/);
   assert.match(setupBlock, /const turnParams = applyTurnRuntimeSettings\(/);
   assert.match(setupBlock, /codex\.request\("turn\/start", turnParams/);
   assert.match(setupBlock, /requestedReasoningEffort/);
   assert.match(setupBlock, /runtime:\s*\{[\s\S]*reasoningEffort: runtimeSettings\.reasoningEffort \|\| ""/);
+  assert.match(setupBlock, /approvalPolicy: runtimeSettings\.approvalPolicy \|\| ""/);
+  assert.match(setupBlock, /sandboxPolicyType: runtimeSettings\.sandboxPolicy && runtimeSettings\.sandboxPolicy\.type \|\| ""/);
+  assert.match(setupBlock, /deployLaneNoApproval: targetIsDeployLane/);
   assert.match(setupBlock, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{/);
   assert.match(setupBlock, /source: "thread-task-card-approval"/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.model\) params\.model = settings\.model;/);
+});
+
+test("approved task-card deploy lane runtime uses visible target metadata when stored summary is sparse", () => {
+  const helperBody = functionBody(serverJs, "readThreadTaskCardExecutionTargetSummary");
+  assert.match(helperBody, /const stored = readThreadTaskCardTargetSummary\(threadId\) \|\| null;/);
+  assert.match(helperBody, /const visible = readThreadTaskCardVisibleTargetSummary\(threadId\) \|\| null;/);
+  assert.match(helperBody, /Object\.assign\(\{\}, stored \|\| \{\}, target, visible \|\| \{\}\)/);
+  assert.match(helperBody, /if \(!String\(merged\.cwd \|\| ""\)\.trim\(\) && targetWorkspace\) merged\.cwd = targetWorkspace;/);
+  assert.match(helperBody, /const visibleTitle = String\(visible && \(visible\.name \|\| visible\.title/);
+  assert.match(helperBody, /const title = visibleTitle \|\| storedTitle \|\| targetTitle;/);
+  const visibleHelperBody = functionBody(serverJs, "readThreadTaskCardVisibleTargetSummary");
+  assert.match(visibleHelperBody, /threadTaskCardVisibleTargetThreads\(\)/);
+  assert.match(visibleHelperBody, /Array\.isArray\(visibleThreads\) \? visibleThreads : \[\]/);
+});
+
+test("approved task-card deploy lane runtime prefers live visible lane title over sparse stored summary", () => {
+  const executionTargetSummary = new Function(
+    "readThreadTaskCardTargetSummary",
+    "readThreadTaskCardVisibleTargetSummary",
+    `${functionSource(serverJs, "readThreadTaskCardExecutionTargetSummary")}; return readThreadTaskCardExecutionTargetSummary;`,
+  )(
+    () => ({ id: "thread-movie", title: "019f16e6-9b3d-7ec1-b593-3a6a41a24fb1" }),
+    () => ({ id: "thread-movie", name: "Movie Deploy Lane", cwd: "/Users/hermes-dev/HermesMobileDev/app" }),
+  );
+
+  const summary = executionTargetSummary({
+    target: {
+      threadId: "thread-movie",
+      workspaceId: "/Users/hermes-dev/HermesMobileDev/app",
+      title: "Home AI Deploy",
+    },
+  });
+
+  assert.equal(summary.name, "Movie Deploy Lane");
+  assert.equal(summary.title, "Movie Deploy Lane");
+  assert.equal(summary.preview, "Movie Deploy Lane");
+  assert.equal(summary.cwd, "/Users/hermes-dev/HermesMobileDev/app");
+});
+
+test("approved task-card visible target summary helper is runtime executable", () => {
+  const visibleTargetSummary = new Function(
+    "threadTaskCardVisibleTargetThreads",
+    `${functionSource(serverJs, "readThreadTaskCardVisibleTargetSummary")}; return readThreadTaskCardVisibleTargetSummary;`,
+  )(() => [
+    { id: "thread-other", name: "Other" },
+    { threadId: "thread-movie", name: "Movie Deploy Lane", cwd: "/Users/hermes-dev/HermesMobileDev/app" },
+  ]);
+
+  assert.equal(visibleTargetSummary("thread-movie").name, "Movie Deploy Lane");
+
+  const emptyVisibleTargetSummary = new Function(
+    "threadTaskCardVisibleTargetThreads",
+    `${functionSource(serverJs, "readThreadTaskCardVisibleTargetSummary")}; return readThreadTaskCardVisibleTargetSummary;`,
+  )(() => null);
+
+  assert.equal(emptyVisibleTargetSummary("thread-movie"), null);
 });
 
 test("server broadcasts lightweight thread status for background turn notifications", () => {

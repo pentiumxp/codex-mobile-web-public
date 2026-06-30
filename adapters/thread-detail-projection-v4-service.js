@@ -66,8 +66,6 @@ function comparableSignatureFields(signature) {
     policyVersion: String(signature.policyVersion || ""),
     threadId: String(signature.threadId || ""),
     rolloutPathHash: String(signature.rolloutPathHash || ""),
-    rolloutSizeBytes: safeNumber(signature.rolloutSizeBytes),
-    rolloutMtimeMs: safeNumber(signature.rolloutMtimeMs),
     maxTurns: safeNumber(signature.maxTurns),
   };
 }
@@ -85,8 +83,7 @@ function shouldUseActiveOverlayWindowCache(optionsForGet = {}) {
 
 function shouldClearActiveOverlayWindowCache(method) {
   return method === "turn/started"
-    || method === "turn/completed"
-    || method === "thread/status/changed";
+    || method === "turn/completed";
 }
 
 function createThreadDetailProjectionV4Service(options = {}) {

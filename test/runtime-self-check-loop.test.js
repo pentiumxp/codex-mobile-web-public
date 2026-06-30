@@ -35,6 +35,17 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
     "Reply OK only",
     "--browser-submit-sample-delays-ms",
     "100,600,1600",
+    "--skip-client-events",
+    "--client-event-log",
+    "/tmp/client-events.log",
+    "--client-event-tail-bytes",
+    "4096",
+    "--client-event-max-lines",
+    "50",
+    "--client-event-window-ms",
+    "120000",
+    "--gate-mode",
+    "deploy",
   ]);
   assert.equal(loop.loop, true);
   assert.equal(loop.intervalMs, 600000);
@@ -46,6 +57,12 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
   assert.equal(loop.browserSubmitThreadId, "submit-thread");
   assert.equal(loop.browserSubmitMessage, "Reply OK only");
   assert.equal(loop.browserSubmitSampleDelaysMs, "100,600,1600");
+  assert.equal(loop.skipClientEvents, true);
+  assert.equal(loop.clientEventLog, "/tmp/client-events.log");
+  assert.equal(loop.clientEventTailBytes, 4096);
+  assert.equal(loop.clientEventMaxLines, 50);
+  assert.equal(loop.clientEventWindowMs, 120000);
+  assert.equal(loop.gateMode, "deploy");
 });
 
 test("runtime self-check summary keeps only bounded metadata", () => {
@@ -73,6 +90,8 @@ test("runtime self-check summary keeps only bounded metadata", () => {
     clientBuildId: "0.1.11|codex-mobile-shell-v576",
     shellCacheName: "codex-mobile-shell-v576",
     errorCode: "",
+    issues: [],
+    diagnosticCandidates: [],
   });
   assert.doesNotMatch(JSON.stringify(summary), /raw prompt text|cookie|token|Authorization/i);
 });
@@ -91,6 +110,7 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
     browserSubmitThreadId: "private-submit-thread-id",
     browserSubmitMessage: "Reply OK only",
     browserSubmitSampleDelaysMs: "100,900,1600",
+    skipClientEvents: true,
     skipApi: false,
     skipBrowser: false,
     output,
@@ -131,6 +151,193 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
   assert.equal(result.ok, true);
   const line = fs.readFileSync(output, "utf8").trim();
   assert.match(line, /"privacy":"metadata_only"/);
+  assert.match(line, /"gate":/);
+  assert.match(line, /"deployPass":true/);
   assert.doesNotMatch(line, /private-thread-id|raw prompt|cookie|token|Authorization/i);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("runtime self-check gate lets slow-path observations remain nonblocking", async () => {
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: ["private-thread-id"],
+    sampleThreads: 1,
+    browserRounds: 1,
+    browserSampleDelaysMs: "100",
+    browserMinSettledDelayMs: 1000,
+    skipClientEvents: true,
+    skipApi: false,
+    skipBrowser: true,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    execFile(_node, _args, _options, callback) {
+      callback(null, JSON.stringify({
+        ok: false,
+        publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
+        summary: {
+          issueCount: 1,
+          blockingIssueCount: 1,
+          diagnosticCandidateCount: 1,
+          diagnosticCandidates: [{
+            category: "thread_session_slow_path",
+            diagnostic_type: "thread_detail_slow_path",
+            error_code: "thread_detail_slow_path",
+            severity_hint: "H2",
+          }],
+          issues: [],
+        },
+      }), "");
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.gate.deployPass, true);
+  assert.equal(result.gate.observeOnlyIssueCount, 1);
+  assert.deepEqual(result.gate.observeOnlyIssueCodes, ["thread_detail_slow_path"]);
+});
+
+test("runtime self-check gate blocks actionable browser regressions", async () => {
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: ["private-thread-id"],
+    sampleThreads: 1,
+    browserRounds: 1,
+    browserSampleDelaysMs: "100",
+    browserMinSettledDelayMs: 1000,
+    skipClientEvents: true,
+    skipApi: true,
+    skipBrowser: false,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    execFile(_node, _args, _options, callback) {
+      callback(null, JSON.stringify({
+        ok: false,
+        publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
+        browserReport: {
+          issueCount: 1,
+          blockingIssueCount: 1,
+          issues: [{
+            severity: "H2",
+            code: "browser_pending_user_message_disappeared",
+          }],
+        },
+      }), "");
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.gate.deployPass, false);
+  assert.deepEqual(result.gate.actionableIssueCodes, ["browser_pending_user_message_disappeared"]);
+});
+
+test("runtime self-check loop treats parsed child JSON as contract result", async () => {
+  let childOptions = null;
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: ["private-thread-id"],
+    sampleThreads: 1,
+    browserRounds: 1,
+    browserSampleDelaysMs: "100",
+    browserMinSettledDelayMs: 1000,
+    skipClientEvents: true,
+    skipApi: true,
+    skipBrowser: false,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    execFile(_node, _args, options, callback) {
+      childOptions = options;
+      const error = new Error("Command failed: private command");
+      callback(error, JSON.stringify({
+        ok: false,
+        publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
+        browserReport: {
+          issueCount: 1,
+          blockingIssueCount: 1,
+          issues: [{
+            severity: "H2",
+            code: "browser_pending_user_message_disappeared",
+          }],
+        },
+      }), "private stderr");
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(childOptions.timeout, 300000);
+  assert.equal(result.gate.executionFailureCount, 0);
+  assert.deepEqual(result.gate.actionableIssueCodes, ["browser_pending_user_message_disappeared"]);
+  const browserCheck = result.checks.find((check) => check.name === "browser-runtime");
+  assert.equal(browserCheck.errorCode, "");
+});
+
+test("runtime self-check loop keeps empty child output as execution failure", async () => {
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: ["private-thread-id"],
+    sampleThreads: 1,
+    browserRounds: 1,
+    browserSampleDelaysMs: "100",
+    browserMinSettledDelayMs: 1000,
+    skipClientEvents: true,
+    skipApi: true,
+    skipBrowser: false,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    execFile(_node, _args, _options, callback) {
+      callback(new Error("Command failed: private command"), "", "private stderr");
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.gate.executionFailureCount, 1);
+  assert.equal(result.gate.deployPass, false);
+  assert.match(result.gate.actionableIssueCodes[0], /^Command_failed:/);
+  const browserCheck = result.checks.find((check) => check.name === "browser-runtime");
+  assert.match(browserCheck.errorCode, /^Command_failed:/);
+});
+
+test("runtime self-check loop includes recent client-event stall summary", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-runtime-client-events-"));
+  const clientEventLog = path.join(dir, "client-events.log");
+  fs.writeFileSync(clientEventLog, [
+    '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:00.000Z","threadId":"private-thread","path":"/private","details":{"maxRafDelayMs":3200,"maxScrollApplyMs":7,"threadListCount":12},"userAgent":"private UA"}',
+  ].join("\n"), "utf8");
+  const realDateNow = Date.now;
+  Date.now = () => Date.parse("2026-06-29T17:40:10.000Z");
+
+  let result;
+  try {
+    result = await runtimeLoop.runOnce({
+      server: "http://127.0.0.1:8790",
+      threadIds: [],
+      sampleThreads: 1,
+      browserRounds: 1,
+      browserSampleDelaysMs: "100",
+      browserMinSettledDelayMs: 1000,
+      skipApi: true,
+      skipBrowser: true,
+      skipClientEvents: false,
+      clientEventLog,
+      clientEventTailBytes: 4096,
+      clientEventMaxLines: 20,
+      clientEventWindowMs: 30 * 60 * 1000,
+      output: "",
+      gateMode: "deploy",
+    });
+  } finally {
+    Date.now = realDateNow;
+  }
+
+  assert.equal(result.ok, false);
+  assert.equal(result.gate.deployPass, false);
+  assert.deepEqual(result.gate.actionableIssueCodes, ["browser_thread_list_interaction_blocked"]);
+  const clientEventsCheck = result.checks.find((check) => check.name === "client-events");
+  assert.equal(clientEventsCheck.blockingIssueCount, 1);
+  assert.equal(clientEventsCheck.sampleSummary.maxRafDelayMs, 3200);
+  assert.doesNotMatch(JSON.stringify(result), /private-thread|private UA|\/private/);
   fs.rmSync(dir, { recursive: true, force: true });
 });

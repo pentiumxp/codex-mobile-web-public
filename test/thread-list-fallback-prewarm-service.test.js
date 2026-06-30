@@ -13,7 +13,7 @@ const {
 test("thread-list fallback prewarm normalizes bounded default config", () => {
   assert.deepEqual(normalizePrewarmConfig({}), {
     enabled: true,
-    delayMs: 1500,
+    delayMs: 0,
     retryDelayMs: 2500,
     maxDeferrals: 5,
     limit: 40,
@@ -215,7 +215,7 @@ test("thread-list fallback prewarm disabled config does not schedule or read", (
   assert.deepEqual(service.schedule({ enabled: false }), {
     scheduled: false,
     reason: "disabled",
-    delayMs: 1500,
+    delayMs: 0,
     limit: 40,
     sourceSnapshotLimit: 1000,
   });
@@ -300,7 +300,7 @@ test("thread-list fallback prewarm public status is metadata-only", () => {
     },
   }, {
     enabled: true,
-    delayMs: 1500,
+    delayMs: 0,
     retryDelayMs: 2500,
     maxDeferrals: 5,
     limit: 40,
@@ -313,7 +313,7 @@ test("thread-list fallback prewarm public status is metadata-only", () => {
     running: false,
     completed: true,
     deferralCount: 2,
-    delayMs: 1500,
+    delayMs: 0,
     retryDelayMs: 2500,
     maxDeferrals: 5,
     limit: 40,

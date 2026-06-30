@@ -113,6 +113,30 @@ stores pending cards only. Passing `pending:true`, `autoApprove:false`, or
 `direct:false` also keeps the card in the manual-pending flow even when the
 switch is enabled.
 
+Workspace/cwd targeting is a convenience, not an identity guarantee. When
+several visible threads share the same cwd, the routing service prefers live or
+idle implementation threads over recently updated terminal threads; exact
+thread ids or exact titles still win when the caller intentionally targets a
+specific historical thread. Routine plugin deployment cards are also corrected
+after target resolution: once the source workspace and card text identify a
+routine plugin deploy, the server retargets the card to the configured live
+deploy lane for that plugin even if the model initially selected an ordinary
+Home AI thread or a same-cwd Codex Mobile implementation/PR thread. Deploy-lane
+repair, target-discovery, and routing-visibility cards remain implementation
+work and are not treated as routine plugin deployments.
+
+Approved cards that execute inside configured Home AI deploy-lane threads run
+with a deploy-lane no-approval runtime override: `approvalPolicy=never` and
+`dangerFullAccess`. This is intentionally scoped to configured deploy lanes so
+routine deploy/readback/self-check commands do not block behind interactive
+command approvals, while ordinary implementation, repair, and audit cards keep
+the existing workspace-delegation approval/write-guard behavior.
+The execution path must identify deploy lanes from the merged target card,
+visible target-thread metadata, and persisted thread summary, with the card
+target workspace used as a cwd fallback. This prevents sparse historical thread
+summaries from disabling the deploy-lane runtime override after routing has
+already selected the correct live lane.
+
 The supported local CLI wrapper is:
 
 ```bash
@@ -162,8 +186,12 @@ using that id. A target-thread `final` answer is not a source-thread return card
 and must not be counted as `completed`, `blocked`, or `redirected` by the
 source workflow. Return cards created by `codex_mobile.return_to_source`,
 `scripts/return-thread-task-card.js`, or `/reply` with `returnToSource:true`
-are source-direct approved into the original source thread and do not require a
-second source-thread approval. They are also terminal by default:
+are source-direct approved into the original source thread, or into an explicit
+`replyToThreadId` when the original work card carries one, and do not require a
+second source-thread approval. `source` still means the thread that created the
+work card; `replyTo` means the terminal return target for multi-hop supplements.
+Cards without `replyToThreadId` keep the historical direct-source return
+behavior. They are also terminal by default:
 `delivery.terminal=true`, `delivery.requiresReturn=false`, and
 `delivery.ackPolicy="none"`. Terminal return cards do not inject `Return
 required` guidance, do not expose a reply affordance, and cannot be replied to
@@ -186,6 +214,8 @@ the task-card service builds a Home AI Autonomous Delivery Loop event:
   "metadata": {
     "sourceThreadId": "original source thread id",
     "targetThreadId": "original target thread id",
+    "returnTargetThreadId": "explicit reply-to thread id when different from source",
+    "replyToThreadId": "explicit reply-to thread id when different from source",
     "workflowId": "workflow id when available",
     "terminal": true,
     "ackPolicy": "none"
@@ -240,7 +270,16 @@ calls with a new tool call id do not create duplicate cards. If the switch is of
 tool is not injected. If the tool is called without a target or source thread id
 cannot be inferred, the server returns a bounded error to the model instead of
 hanging the turn.
-The tool schema includes optional `reasoningEffort`. When supplied, the value is
+The tool schema includes optional `reasoningEffort` and optional
+`replyToThreadId` / `replyToWorkspaceId` / `replyToThreadTitle` /
+`replyToCardId`. Use `replyToThreadId` only for multi-hop supplements where the
+terminal return must go to an original requester rather than to the immediate
+source thread that is creating the supplement card. If only `replyToCardId` is
+known, the service resolves the return target from the referenced card's
+existing reply-to target or source thread. When supplied, the reply-to metadata
+is persisted on the work card, shown in injected task-card text as the return
+target, and used by both manual `return_to_source` and autonomous completion
+returns. When `reasoningEffort` is supplied, the value is
 stored on the card delivery metadata, shown in the injected task-card message as
 `Requested reasoning effort: ...`, and used to override the target turn's
 inherited runtime effort during `thread/resume` / `turn/start`. The approved card
@@ -382,18 +421,27 @@ foreign source root, including local Playwright / Chromium validation and
 diagnostics that write bounded artifacts to temporary paths. Inline JavaScript
 `=>` is not treated as shell redirection.
 
-Routine plugin production-deployment cards use a dedicated Home AI deployment
-lane instead of the ordinary Home AI implementation thread. Codex Mobile treats
-the exact `Home AI Deploy` thread in the Home AI control-plane cwd as a durable
-deployment lane and normalizes its resting thread-list status to `idle`, so it
-does not look like a completed one-shot target. The delegation target hints
-prioritize this lane even when other Home AI threads in the same cwd are newer.
-When a plugin source thread sends a routine plugin deploy card to an ordinary
-Home AI app-cwd thread, the creation path retargets the card to the deployment
-lane if that lane is available; if no lane is available it fails closed with
-`deploy_lane_required`. Home AI host/platform repair cards, deploy-script
-repairs, proxy/LaunchDaemon/Gateway/schema work, and deploy-lane repair work
-continue to route to the ordinary Home AI implementation thread.
+Routine plugin production-deployment cards use the configured Home AI deploy
+lane pool instead of the ordinary Home AI implementation thread. Codex Mobile
+treats these exact thread titles in the Home AI control-plane cwd as durable
+deployment lanes by default: `Home AI Deploy`, `Home AI Deploy Lane A`,
+`Home AI Deploy Lane B`, `Home AI Deploy Lane C`, `Codex Mobile Deploy Lane`,
+and `Movie Deploy Lane`; `HOMEAI_DEPLOY_THREAD_TITLES` can override that title
+set. Resting configured lanes are normalized to `idle` for target hints, so
+they do not look like completed one-shot targets. The delegation target hints
+prioritize configured lanes in stable title order before ordinary Home AI
+threads in the same cwd. When a plugin source thread sends a routine plugin
+deploy card to an ordinary Home AI app-cwd thread, the creation path retargets
+the card to the plugin's assigned lane if that lane is available. The default
+assignments pin `codex-mobile-web` / `codex-mobile` to
+`Codex Mobile Deploy Lane` and `movie` to `Movie Deploy Lane`;
+`HOMEAI_DEPLOY_LANE_ASSIGNMENTS` can override assignments, and unassigned
+plugin ids hash deterministically across the configured live lane titles.
+If the selected configured lane is missing or a configured lane title is
+ambiguous, creation fails closed with bounded deploy-lane evidence instead of
+silently falling back to ordinary Home AI. Home AI host/platform repair cards,
+deploy-script repairs, proxy/LaunchDaemon/Gateway/schema work, and deploy-lane
+repair work continue to route to the ordinary Home AI implementation thread.
 
 The old `danger-full-access` approval-proxy-only compatibility mode is available
 only when `CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1` is set and

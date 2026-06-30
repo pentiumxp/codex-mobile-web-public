@@ -196,6 +196,16 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
       responseBudgetOmittedOperationItems: 12,
       responseBudgetOmittedReasoningItems: 2,
       responseBudgetOmittedAssistantItems: 8,
+      responseBudgetProgressiveReplayAssistantItems: 24,
+      responseBudgetLimitedReplayAssistantItems: 8,
+      responseBudgetProgressiveCompletedReplayAssistantItems: 12,
+      responseBudgetProgressiveCompletedReplayAssistantBudgetApplied: true,
+      responseBudgetProgressiveCompletedReplayAssistantBudgetReason: "thread-byte-pressure",
+      responseBudgetProgressiveCompletedReplayAssistantBudgetScope: "active-first-paint",
+      responseBudgetLimitedCompletedReplayAssistantItems: 6,
+      responseBudgetCompletedReplayAssistantItemsBefore: 20,
+      responseBudgetCompletedReplayAssistantItemsAfter: 14,
+      responseBudgetCompletedReplayOmittedAssistantItems: 6,
       responseBudgetOmittedVisibleItems: 4,
       responseBudgetActiveTurnCount: 1,
       responseBudgetStaleActiveTurnCount: 1,
@@ -237,7 +247,90 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
       responseBudgetProgressiveActiveFirstPaintItemBudgetReason: "progressive-active-first-paint-byte-ceiling",
       responseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget: 155000,
       responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget: 93000,
+      responseBudgetProgressiveActiveFirstPaintBytesAfterTaskCardBudget: 120000,
+      responseBudgetProgressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget: 116000,
       responseBudgetProgressiveActiveFirstPaintOmittedVisibleItems: 5,
+      responseBudgetRetainedAssistantItemCountByTurnState: { active: 3, completed: 9 },
+      responseBudgetRetainedAssistantItemBytesByTurnState: { active: 7400, completed: 19000 },
+      responseBudgetRetainedAssistantItemBytesByShape: {
+        directText: 9000,
+        contentText: 14000,
+        contentAuxiliary: 1200,
+        itemAuxiliary: 2200,
+      },
+      responseBudgetRetainedActiveAssistantItemBytesByShape: {
+        directText: 3000,
+        contentText: 3500,
+        itemAuxiliary: 900,
+      },
+      responseBudgetRetainedCompletedAssistantItemBytesByShape: {
+        directText: 6000,
+        contentText: 10500,
+        contentAuxiliary: 1200,
+        itemAuxiliary: 1300,
+      },
+      responseBudgetRetainedUserInputItemCountByTurnState: { completed: 4, active: 1 },
+      responseBudgetRetainedUserInputItemBytesByTurnState: { completed: 32000, active: 9000 },
+      responseBudgetRetainedUserInputItemBytesByShape: {
+        directText: 25000,
+        contentText: 8000,
+        inlineImageData: 5000,
+        contentAuxiliary: 2000,
+        itemAuxiliary: 1000,
+      },
+      responseBudgetRetainedActiveUserInputItemBytesByShape: {
+        directText: 6000,
+        contentText: 2000,
+        inlineImageData: 1000,
+      },
+      responseBudgetRetainedCompletedUserInputItemBytesByShape: {
+        directText: 19000,
+        contentText: 6000,
+        inlineImageData: 4000,
+        contentAuxiliary: 2000,
+        itemAuxiliary: 1000,
+      },
+      responseBudgetProgressiveCompletedUserTextChars: 1024,
+      responseBudgetProgressiveCompletedUserInputBudgetApplied: true,
+      responseBudgetProgressiveCompletedUserInputBudgetReason: "first-paint-byte-pressure",
+      responseBudgetProgressiveCompletedUserInputBudgetScope: "active-first-paint",
+      responseBudgetProgressiveCompletedUserInputBudgetMode: "shared-newest-first",
+      responseBudgetProgressiveCompletedUserInputBytesBeforeBudget: 184000,
+      responseBudgetProgressiveCompletedUserInputBytesAfterBudget: 150000,
+      responseBudgetTruncatedCompletedUserInputItems: 7,
+      responseBudgetCompletedUserInputOriginalChars: 30000,
+      responseBudgetCompletedUserInputRetainedChars: 7168,
+      responseBudgetOmittedCompletedUserInputChars: 22832,
+      responseBudgetProgressiveCompletedUsageBudgetApplied: true,
+      responseBudgetProgressiveCompletedUsageBudgetReason: "first-paint-byte-pressure",
+      responseBudgetProgressiveCompletedUsageBudgetScope: "active-first-paint",
+      responseBudgetProgressiveCompletedUsageBytesBeforeBudget: 150000,
+      responseBudgetProgressiveCompletedUsageBytesAfterBudget: 142000,
+      responseBudgetTruncatedCompletedUsageItems: 5,
+      responseBudgetCompletedUsageOriginalBytes: 8000,
+      responseBudgetCompletedUsageRetainedBytes: 3500,
+      responseBudgetOmittedCompletedUsageBytes: 4500,
+      responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetApplied: true,
+      responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetReason: "first-paint-byte-pressure",
+      responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetScope: "active-first-paint",
+      responseBudgetProgressiveCompletedUsageSummaryOnlyBytesBeforeBudget: 120000,
+      responseBudgetProgressiveCompletedUsageSummaryOnlyBytesAfterBudget: 116000,
+      responseBudgetTruncatedCompletedUsageSummaryOnlyItems: 4,
+      responseBudgetCompletedUsageSummaryOnlyOriginalBytes: 3500,
+      responseBudgetCompletedUsageSummaryOnlyRetainedBytes: 2000,
+      responseBudgetOmittedCompletedUsageSummaryOnlyBytes: 1500,
+      responseBudgetProgressiveThreadTaskCardBudgetApplied: true,
+      responseBudgetProgressiveThreadTaskCardBudgetReason: "first-paint-byte-pressure",
+      responseBudgetProgressiveThreadTaskCardBudgetScope: "active-first-paint",
+      responseBudgetProgressiveThreadTaskCardOriginalCount: 24,
+      responseBudgetProgressiveThreadTaskCardCompactedCount: 16,
+      responseBudgetProgressiveThreadTaskCardActionableCount: 3,
+      responseBudgetProgressiveThreadTaskCardIneligibleCount: 1,
+      responseBudgetProgressiveThreadTaskCardOriginalBytes: 36000,
+      responseBudgetProgressiveThreadTaskCardRetainedBytes: 14000,
+      responseBudgetProgressiveThreadTaskCardOmittedBytes: 22000,
+      responseBudgetProgressiveThreadTaskCardBytesBeforeBudget: 142000,
+      responseBudgetProgressiveThreadTaskCardBytesAfterBudget: 120000,
       responseBudgetProgressiveCompletedTextBudgetApplied: true,
       responseBudgetProgressiveCompletedTextBudgetReason: "first-paint-byte-pressure",
       responseBudgetProgressiveCompletedTextBudgetScope: "active-first-paint",
@@ -273,6 +366,16 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.equal(decision.evidence.detailResponseBudgetOmittedOperationItems, 12);
   assert.equal(decision.evidence.detailResponseBudgetOmittedReasoningItems, 2);
   assert.equal(decision.evidence.detailResponseBudgetOmittedAssistantItems, 8);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveReplayAssistantItems, 24);
+  assert.equal(decision.evidence.detailResponseBudgetLimitedReplayAssistantItems, 8);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedReplayAssistantItems, 12);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedReplayAssistantBudgetApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedReplayAssistantBudgetReason, "thread-byte-pressure");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedReplayAssistantBudgetScope, "active-first-paint");
+  assert.equal(decision.evidence.detailResponseBudgetLimitedCompletedReplayAssistantItems, 6);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedReplayAssistantItemsBefore, 20);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedReplayAssistantItemsAfter, 14);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedReplayOmittedAssistantItems, 6);
   assert.equal(decision.evidence.detailResponseBudgetOmittedVisibleItems, 4);
   assert.equal(decision.evidence.detailResponseBudgetActiveTurnCount, 1);
   assert.equal(decision.evidence.detailResponseBudgetStaleActiveTurnCount, 1);
@@ -296,7 +399,90 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintItemBudgetReason, "progressive-active-first-paint-byte-ceiling");
   assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget, 155000);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 93000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterTaskCardBudget, 120000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget, 116000);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintOmittedVisibleItems, 5);
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedAssistantItemCountByTurnState, { active: 3, completed: 9 });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedAssistantItemBytesByTurnState, { active: 7400, completed: 19000 });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedAssistantItemBytesByShape, {
+    directText: 9000,
+    contentText: 14000,
+    contentAuxiliary: 1200,
+    itemAuxiliary: 2200,
+  });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedActiveAssistantItemBytesByShape, {
+    directText: 3000,
+    contentText: 3500,
+    itemAuxiliary: 900,
+  });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedCompletedAssistantItemBytesByShape, {
+    directText: 6000,
+    contentText: 10500,
+    contentAuxiliary: 1200,
+    itemAuxiliary: 1300,
+  });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedUserInputItemCountByTurnState, { completed: 4, active: 1 });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedUserInputItemBytesByTurnState, { completed: 32000, active: 9000 });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedUserInputItemBytesByShape, {
+    directText: 25000,
+    contentText: 8000,
+    inlineImageData: 5000,
+    contentAuxiliary: 2000,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedActiveUserInputItemBytesByShape, {
+    directText: 6000,
+    contentText: 2000,
+    inlineImageData: 1000,
+  });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedCompletedUserInputItemBytesByShape, {
+    directText: 19000,
+    contentText: 6000,
+    inlineImageData: 4000,
+    contentAuxiliary: 2000,
+    itemAuxiliary: 1000,
+  });
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserTextChars, 1024);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetReason, "first-paint-byte-pressure");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetScope, "active-first-paint");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetMode, "shared-newest-first");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBytesBeforeBudget, 184000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBytesAfterBudget, 150000);
+  assert.equal(decision.evidence.detailResponseBudgetTruncatedCompletedUserInputItems, 7);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedUserInputOriginalChars, 30000);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedUserInputRetainedChars, 7168);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedCompletedUserInputChars, 22832);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageBudgetApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageBudgetReason, "first-paint-byte-pressure");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageBudgetScope, "active-first-paint");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageBytesBeforeBudget, 150000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageBytesAfterBudget, 142000);
+  assert.equal(decision.evidence.detailResponseBudgetTruncatedCompletedUsageItems, 5);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedUsageOriginalBytes, 8000);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedUsageRetainedBytes, 3500);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedCompletedUsageBytes, 4500);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageSummaryOnlyBudgetApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageSummaryOnlyBudgetReason, "first-paint-byte-pressure");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageSummaryOnlyBudgetScope, "active-first-paint");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageSummaryOnlyBytesBeforeBudget, 120000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageSummaryOnlyBytesAfterBudget, 116000);
+  assert.equal(decision.evidence.detailResponseBudgetTruncatedCompletedUsageSummaryOnlyItems, 4);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedUsageSummaryOnlyOriginalBytes, 3500);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedUsageSummaryOnlyRetainedBytes, 2000);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedCompletedUsageSummaryOnlyBytes, 1500);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardBudgetApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardBudgetReason, "first-paint-byte-pressure");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardBudgetScope, "active-first-paint");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardOriginalCount, 24);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardCompactedCount, 16);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardActionableCount, 3);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardIneligibleCount, 1);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardOriginalBytes, 36000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardRetainedBytes, 14000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardOmittedBytes, 22000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardBytesBeforeBudget, 142000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardBytesAfterBudget, 120000);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedTextBudgetApplied, true);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedTextBudgetReason, "first-paint-byte-pressure");
   assert.equal(decision.evidence.detailResponseBudgetProgressiveFirstPaintBytesBeforeTextBudget, 220000);

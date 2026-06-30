@@ -67,6 +67,37 @@
       : "";
   }
 
+  function visibleItemRenderKeyForNode(node) {
+    if (!node || node.nodeType !== ELEMENT_NODE || typeof node.getAttribute !== "function") return "";
+    if (node.getAttribute("data-item") == null) return "";
+    return renderKeyForNode(node);
+  }
+
+  function visibleItemRenderKeysForArticle(article) {
+    return Array.from(article && article.childNodes || [])
+      .map(visibleItemRenderKeyForNode)
+      .filter(Boolean);
+  }
+
+  function visibleItemOrderMatches(article, expectedKeys) {
+    const expected = normalizedStringList(expectedKeys);
+    const rendered = visibleItemRenderKeysForArticle(article);
+    if (!expected.length || !rendered.length) return true;
+    if (expected.length !== rendered.length) return false;
+    for (let index = 0; index < expected.length; index += 1) {
+      if (expected[index] !== rendered[index]) return false;
+    }
+    return true;
+  }
+
+  function placeVisibleItemNode(article, node, lastPatchedNode) {
+    if (!article || typeof article.insertBefore !== "function" || !node) return node;
+    const anchor = lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild || null;
+    if (node === anchor) return node;
+    article.insertBefore(node, anchor || null);
+    return node;
+  }
+
   function canPatchNode(target, source) {
     if (!target || !source || target.nodeType !== source.nodeType) return false;
     if (target.nodeType !== ELEMENT_NODE) return true;
@@ -209,6 +240,9 @@
     const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
     const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
     const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
+    const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount);
+    const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount);
+    const excessiveDuplicateUserMessages = Math.max(0, duplicateUserMessageCount - expectedDuplicateUserMessageCount);
     const stableSignatureButMissingTurns = Boolean(
       stableSignature
       && expectedVisibleTurnCount > 0
@@ -221,13 +255,16 @@
       && renderedDomItemCount < expectedVisibleItemCount
     );
     const stableSignatureButDuplicateKeys = Boolean(stableSignature && duplicateRenderKeyCount > 0);
+    const stableSignatureButDuplicateUserMessages = Boolean(stableSignature && excessiveDuplicateUserMessages > 0);
     const stableSignatureButTurnOrderMismatch = Boolean(stableSignature && visibleTurnOrderMismatch(input));
     const stableSignatureDomInvalid = stableSignatureButMissingTurns
       || stableSignatureButMissingItems
       || stableSignatureButDuplicateKeys
+      || stableSignatureButDuplicateUserMessages
       || stableSignatureButTurnOrderMismatch;
     let invalidationReason = "signature-changed";
     if (stableSignatureButDuplicateKeys) invalidationReason = "stable-signature-duplicate-render-keys";
+    else if (stableSignatureButDuplicateUserMessages) invalidationReason = "stable-signature-duplicate-user-messages";
     else if (stableSignatureButTurnOrderMismatch) invalidationReason = "stable-signature-turn-order-mismatch";
     else if (stableSignatureButMissingItems) invalidationReason = "stable-signature-dom-item-mismatch";
     else if (stableSignatureButMissingTurns) {
@@ -397,6 +434,11 @@
     const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
     const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
     const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
+    const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount);
+    const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount);
+    if (Math.max(0, duplicateUserMessageCount - expectedDuplicateUserMessageCount) > 0) {
+      return "post-apply-duplicate-user-messages";
+    }
     if (duplicateRenderKeyCount > 0) return "post-apply-duplicate-render-keys";
     if (visibleTurnOrderMismatch(input)) return "post-apply-turn-order-mismatch";
     if (expectedVisibleItemCount > 0
@@ -484,17 +526,25 @@
     const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
     const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
     const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
+    const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount);
+    const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount);
     const reason = String(updatePlan.reason || "");
     const invalidationReasons = new Set([
       "stable-signature-dom-empty",
       "stable-signature-dom-turn-mismatch",
       "stable-signature-dom-item-mismatch",
       "stable-signature-duplicate-render-keys",
+      "stable-signature-duplicate-user-messages",
       "stable-signature-turn-order-mismatch",
     ]);
     const shouldInvalidate = Boolean(
       invalidationReasons.has(reason)
-      && (expectedVisibleTurnCount > 0 || expectedVisibleItemCount > 0 || duplicateRenderKeyCount > 0)
+      && (
+        expectedVisibleTurnCount > 0
+        || expectedVisibleItemCount > 0
+        || duplicateRenderKeyCount > 0
+        || duplicateUserMessageCount > expectedDuplicateUserMessageCount
+      )
     );
     if (!shouldInvalidate) {
       return {
@@ -518,6 +568,8 @@
       domCount: renderedDomTurnCount,
       domItemCount: renderedDomItemCount,
       duplicateRenderKeyCount,
+      duplicateUserMessageCount,
+      expectedDuplicateUserMessageCount,
       previousCount: boundedCount(input.previousChildCount),
     };
     return {
@@ -534,6 +586,8 @@
         expectedVisibleItemCount,
         renderedDomItemCount,
         duplicateRenderKeyCount,
+        duplicateUserMessageCount,
+        expectedDuplicateUserMessageCount,
         action: String(updatePlan.action || "").slice(0, 40),
       },
       reason,
@@ -862,23 +916,35 @@
         const existingNode = findElementByKey(operation.key, nextEntry);
         if (!existingNode) return result(false, "missing-existing-node", counts);
         if (operation.type === "reuse") {
-          lastPatchedNode = existingNode;
+          lastPatchedNode = placeVisibleItemNode(article, existingNode, lastPatchedNode);
           counts.reused += 1;
           continue;
         }
         const patchedNode = patchElement(existingNode, nextEntry);
         if (!patchedNode) return result(false, "patch-existing-node-failed", counts);
-        lastPatchedNode = patchedNode;
+        lastPatchedNode = placeVisibleItemNode(article, patchedNode, lastPatchedNode);
         counts.patched += 1;
         continue;
       }
       if (operation.type !== "insert") return result(false, "unknown-operation", counts);
       const source = renderElement(nextEntry);
       if (!source) return result(false, "render-insert-node-failed", counts);
-      const anchor = lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild;
+      const anchor = lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild || null;
       article.insertBefore(source, anchor || null);
       lastPatchedNode = source;
       counts.inserted += 1;
+    }
+    const nextKeys = new Set(patchPlan.operations
+      .map((operation) => normalizeOperation(operation))
+      .filter(Boolean)
+      .map((operation) => operation.key));
+    for (const child of Array.from(article.childNodes || [])) {
+      const key = visibleItemRenderKeyForNode(child);
+      if (!key || nextKeys.has(key)) continue;
+      if (typeof child.remove === "function") child.remove();
+    }
+    if (!visibleItemOrderMatches(article, Array.from(nextKeys))) {
+      return result(false, "post-apply-visible-item-order-mismatch", counts);
     }
     return result(true, "applied", counts);
   }

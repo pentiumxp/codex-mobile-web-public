@@ -4,7 +4,9 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
 const {
+  DEFAULT_HOME_AI_DEPLOY_LANE_TITLES,
   HOME_AI_DEPLOY_LANE_TITLE,
+  deployLaneTitleForPlugin,
   findHomeAiDeployLaneThread,
   isRoutinePluginDeploymentRequest,
   normalizeHomeAiDeployLaneSummary,
@@ -51,9 +53,28 @@ test("delegation target hints prioritize the Home AI Deploy lane over newer same
   assert.deepEqual(ordered.map((item) => item.id), ["deploy-1", "plugin-1", "home-1"]);
 });
 
-test("routine plugin deploy card targeting ordinary Home AI is retargeted to Home AI Deploy lane", () => {
+test("delegation target hints prioritize configured deploy lane pool in stable title order", () => {
+  const laneC = thread("deploy-c", "Home AI Deploy Lane C", homeAiCwd, { updatedAt: 400 });
+  const movie = thread("deploy-movie", "Movie Deploy Lane", homeAiCwd, { updatedAt: 100 });
+  const codex = thread("deploy-codex", "Codex Mobile Deploy Lane", homeAiCwd, { updatedAt: 200 });
+  const ordinary = thread("home-1", "Home AI 06-22", homeAiCwd, { updatedAt: 1000 });
+  const deploy = thread("deploy-1", HOME_AI_DEPLOY_LANE_TITLE, homeAiCwd, { updatedAt: 1 });
+
+  const ordered = prioritizeDelegationTargetHints([ordinary, laneC, movie, codex, deploy]);
+
+  assert.deepEqual(ordered.slice(0, 5).map((item) => item.name), [
+    HOME_AI_DEPLOY_LANE_TITLE,
+    "Home AI Deploy Lane C",
+    "Codex Mobile Deploy Lane",
+    "Movie Deploy Lane",
+    "Home AI 06-22",
+  ]);
+  assert.deepEqual(DEFAULT_HOME_AI_DEPLOY_LANE_TITLES.slice(0, 2), [HOME_AI_DEPLOY_LANE_TITLE, "Home AI Deploy Lane A"]);
+});
+
+test("routine plugin deploy card targeting ordinary Home AI is retargeted to assigned deploy lane", () => {
   const ordinaryHomeAi = thread("home-1", "Home AI 06-22", homeAiCwd, { updatedAt: 100 });
-  const deployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-1", HOME_AI_DEPLOY_LANE_TITLE, homeAiCwd, {
+  const deployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-codex", "Codex Mobile Deploy Lane", homeAiCwd, {
     updatedAt: 20,
   }));
 
@@ -69,7 +90,125 @@ test("routine plugin deploy card targeting ordinary Home AI is retargeted to Hom
 
   assert.equal(plan.action, "retarget");
   assert.equal(plan.reason, "routine_plugin_deployment_uses_deploy_lane");
-  assert.deepEqual(plan.targetThreadIds, ["deploy-1"]);
+  assert.deepEqual(plan.targetThreadIds, ["deploy-codex"]);
+});
+
+test("plugin_deployment card for codex-mobile-web resolves to Codex Mobile Deploy Lane when live", () => {
+  const ordinaryHomeAi = thread("home-1", "Home AI 06-22", homeAiCwd, { updatedAt: 100 });
+  const codexDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-codex", "Codex Mobile Deploy Lane", homeAiCwd, {
+    updatedAt: 20,
+  }));
+
+  const plan = planHomeAiDeployLaneRouting({
+    body: {
+      cardKind: "plugin_deployment",
+      pluginId: "codex-mobile-web",
+      title: "Deploy Codex Mobile plugin",
+      body: "Routine production deploy and readback.",
+    },
+    sourceThread: thread("source-1", "codex mobile", pluginCwd),
+    targetThreads: [ordinaryHomeAi],
+    visibleThreads: [ordinaryHomeAi, codexDeployLane],
+  });
+
+  assert.equal(plan.action, "retarget");
+  assert.equal(plan.pluginId, "codex-mobile-web");
+  assert.equal(plan.expectedDeployLaneTitle, "Codex Mobile Deploy Lane");
+  assert.deepEqual(plan.targetThreadIds, ["deploy-codex"]);
+});
+
+test("plugin_deployment card for movie resolves to Movie Deploy Lane when live", () => {
+  const ordinaryHomeAi = thread("home-1", "Home AI 06-22", homeAiCwd, { updatedAt: 100 });
+  const movieDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-movie", "Movie Deploy Lane", homeAiCwd, {
+    updatedAt: 20,
+  }));
+
+  const plan = planHomeAiDeployLaneRouting({
+    body: {
+      cardKind: "plugin_deployment",
+      pluginId: "movie",
+      title: "Deploy Movie plugin",
+      body: "Routine production deploy and readback.",
+    },
+    sourceThread: thread("source-1", "Movie", "/Users/hermes-dev/HermesMobileDev/Movie"),
+    targetThreads: [ordinaryHomeAi],
+    visibleThreads: [ordinaryHomeAi, movieDeployLane],
+  });
+
+  assert.equal(plan.action, "retarget");
+  assert.equal(plan.pluginId, "movie");
+  assert.equal(plan.expectedDeployLaneTitle, "Movie Deploy Lane");
+  assert.deepEqual(plan.targetThreadIds, ["deploy-movie"]);
+});
+
+test("Movie routine deployment from top-level workspace retargets Home AI Deploy to Movie Deploy Lane", () => {
+  const homeAiDeploy = normalizeHomeAiDeployLaneSummary(thread("deploy-home", "Home AI Deploy", homeAiCwd, {
+    updatedAt: 200,
+  }));
+  const movieDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-movie", "Movie Deploy Lane", homeAiCwd, {
+    updatedAt: 20,
+  }));
+
+  const plan = planHomeAiDeployLaneRouting({
+    body: {
+      title: "Deploy Movie v162 source route",
+      summary: "Deploy Movie v162 and run bounded production readback.",
+    },
+    sourceThread: thread("source-movie", "Movie", "/Users/hermes-dev/HermesMobileDev/Movie"),
+    targetThreads: [homeAiDeploy],
+    visibleThreads: [homeAiDeploy, movieDeployLane],
+  });
+
+  assert.equal(plan.action, "retarget");
+  assert.equal(plan.pluginId, "movie");
+  assert.deepEqual(plan.targetThreadIds, ["deploy-movie"]);
+});
+
+test("Movie routine deployment retargets wrong Codex Mobile same-cwd thread to Movie Deploy Lane", () => {
+  const wrongCodexThread = thread("codex-pr", "Codex Mobile Public PR", pluginCwd, {
+    status: "completed",
+    updatedAt: 500,
+  });
+  const movieDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-movie", "Movie Deploy Lane", homeAiCwd, {
+    updatedAt: 20,
+  }));
+
+  const plan = planHomeAiDeployLaneRouting({
+    body: {
+      title: "Deploy Movie v162 source route",
+      summary: "Deploy Movie v162 and run bounded production readback.",
+    },
+    sourceThread: thread("source-movie", "Movie", "/Users/hermes-dev/HermesMobileDev/Movie"),
+    targetThreads: [wrongCodexThread],
+    visibleThreads: [wrongCodexThread, movieDeployLane],
+  });
+
+  assert.equal(plan.action, "retarget");
+  assert.equal(plan.expectedDeployLaneTitle, "Movie Deploy Lane");
+  assert.deepEqual(plan.targetThreadIds, ["deploy-movie"]);
+});
+
+test("Movie deploy-routing repair card is not treated as a routine plugin deployment", () => {
+  const wrongCodexThread = thread("codex-pr", "Codex Mobile Public PR", pluginCwd, {
+    status: "completed",
+    updatedAt: 500,
+  });
+  const movieDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-movie", "Movie Deploy Lane", homeAiCwd, {
+    updatedAt: 20,
+  }));
+
+  const plan = planHomeAiDeployLaneRouting({
+    body: {
+      title: "Fix Movie deploy thread routing visibility",
+      summary: "Investigate Codex Mobile target discovery: missing Movie deploy thread and archived hint caused wrong target.",
+    },
+    sourceThread: thread("source-movie", "Movie", "/Users/hermes-dev/HermesMobileDev/Movie"),
+    targetThreads: [wrongCodexThread],
+    visibleThreads: [wrongCodexThread, movieDeployLane],
+  });
+
+  assert.equal(plan.action, "allow");
+  assert.equal(plan.reason, "not_routine_plugin_deployment");
 });
 
 test("routine plugin deploy card fails closed when Home AI Deploy lane is absent", () => {
@@ -88,6 +227,28 @@ test("routine plugin deploy card fails closed when Home AI Deploy lane is absent
   assert.equal(plan.action, "reject");
   assert.equal(plan.code, "deploy_lane_required");
   assert.equal(plan.reason, "deploy_lane_missing");
+  assert.equal(plan.expectedDeployLaneTitle, "Codex Mobile Deploy Lane");
+});
+
+test("routine plugin deploy card fails closed when configured deploy lane title is ambiguous", () => {
+  const ordinaryHomeAi = thread("home-1", "Home AI 06-22", homeAiCwd);
+  const deployA = thread("deploy-a", "Codex Mobile Deploy Lane", homeAiCwd);
+  const deployB = thread("deploy-b", "Codex Mobile Deploy Lane", homeAiCwd);
+
+  const plan = planHomeAiDeployLaneRouting({
+    body: {
+      cardKind: "plugin_deployment",
+      pluginId: "codex-mobile-web",
+      title: "Deploy Codex Mobile plugin",
+    },
+    sourceThread: thread("source-1", "codex mobile", pluginCwd),
+    targetThreads: [ordinaryHomeAi],
+    visibleThreads: [ordinaryHomeAi, deployA, deployB],
+  });
+
+  assert.equal(plan.action, "reject");
+  assert.equal(plan.code, "deploy_lane_ambiguous");
+  assert.deepEqual(plan.duplicateTitles, ["codex mobile deploy lane"]);
 });
 
 test("Home AI host/platform repair cards still route to ordinary Home AI", () => {
@@ -112,6 +273,12 @@ test("routine deployment classifier accepts structured card kind without task bo
     cardKind: "plugin_deployment",
     title: "bounded title",
   }, thread("source-1", "codex mobile", pluginCwd)), true);
+});
+
+test("deploy lane title assignment pins known plugin ids and hashes unknown plugin ids", () => {
+  assert.equal(deployLaneTitleForPlugin("codex-mobile-web"), "Codex Mobile Deploy Lane");
+  assert.equal(deployLaneTitleForPlugin("movie"), "Movie Deploy Lane");
+  assert.ok(DEFAULT_HOME_AI_DEPLOY_LANE_TITLES.includes(deployLaneTitleForPlugin("unknown-plugin")));
 });
 
 test("findHomeAiDeployLaneThread returns normalized deploy lane metadata", () => {

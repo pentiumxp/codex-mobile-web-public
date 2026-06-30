@@ -83,6 +83,9 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     activeOverlayProjectionLookupMs: 0,
     activeOverlayPlanMs: 0,
     activeOverlayWindowMs: 0,
+    activeOverlayBackfillWindowMs: 0,
+    activeOverlayFullProjectionMs: 0,
+    activeOverlayHistoryBaselineMs: 0,
     activeOverlayMergeMs: 0,
   });
 });
@@ -250,6 +253,9 @@ test("thread detail diagnostics expose bounded active overlay evidence", () => {
       activeOverlayProjectionLookupMs: 1.4,
       activeOverlayPlanMs: 0.6,
       activeOverlayWindowMs: 0,
+      activeOverlayBackfillWindowMs: 8.7,
+      activeOverlayFullProjectionMs: 2.3,
+      activeOverlayHistoryBaselineMs: 5.1,
       activeOverlayMergeMs: 4.1,
     },
     thread: {
@@ -274,6 +280,9 @@ test("thread detail diagnostics expose bounded active overlay evidence", () => {
   assert.equal(diagnostics.activeOverlayProjectionLookupMs, 1);
   assert.equal(diagnostics.activeOverlayPlanMs, 1);
   assert.equal(diagnostics.activeOverlayWindowMs, 0);
+  assert.equal(diagnostics.activeOverlayBackfillWindowMs, 9);
+  assert.equal(diagnostics.activeOverlayFullProjectionMs, 2);
+  assert.equal(diagnostics.activeOverlayHistoryBaselineMs, 5);
   assert.equal(diagnostics.activeOverlayMergeMs, 4);
   assert.equal(diagnostics.coldPathOwner, "warm-path");
   assert.doesNotMatch(JSON.stringify(diagnostics), /private-active-turn-id|private response body/);

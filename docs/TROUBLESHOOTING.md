@@ -20,7 +20,13 @@ Interpretation:
 | Mobile Web offline | `GET /api/public-config`, 8787 listener PID, startup log |
 | Messages not visible in Desktop | `/api/status` endpoint vs `endpoint.json`, Desktop launched through shared launcher |
 | Send appears accepted then disappears | active turn id, recent turn history, pending echo, latest rollout growth |
-| Same submitted user message appears twice while the turn is thinking | Inspect whether one item is a browser `local-user-*` echo and the other is a server `mux-user-*` or durable `userMessage` echo for the same `clientSubmissionId`. Clients after `codex-mobile-shell-v396` merge these at the thread-normalization layer using submission id, deterministic mux id suffix, and content signature; if duplication remains, compare `/api/threads/:id?mode=recent` against the open shell before adding render-layer filtering. |
+| Same submitted user message appears twice while the turn is thinking | Inspect whether one item is a browser `local-user-*` echo and the other is a server `mux-user-*` or durable `userMessage` echo for the same `clientSubmissionId`. Clients after `codex-mobile-shell-v396` merge these at the thread-normalization layer using submission id, deterministic mux id suffix, and content signature. If both duplicates are projection-index `item-*` user messages, compare bounded timestamps too: current servers collapse same-content/same-timestamp projection-index duplicates but keep repeated same-text user messages with different timestamps. If duplication remains, compare `/api/threads/:id?mode=recent` against the open shell before adding render-layer filtering. |
+| API thread detail has one user message but the browser still shows two | If `/api/threads/:id?mode=recent` has no duplicate user-message text or submission hash but browser self-check reports `browser_latest_turn_user_message_duplicate`, the failing layer is the client DOM authority path. Clients after `codex-mobile-shell-v589` include same-turn duplicate user-message counts in `conversationDomShape()` / `visibleConversationShape()` and invalidate stable signatures when the DOM contains more duplicate user-message cards than the current projection allows, forcing a full render from the authoritative projection. |
+| Message is actually sent but the Composer still shows failed/retry | Compare the failed browser `local-user-*` item with durable `userMessage` rows by `clientSubmissionId` and bounded text hash. Clients after `codex-mobile-shell-v602` hide failed optimistic echoes even when the durable matching user message is in an earlier completed turn, provided the bounded timestamps are near each other, and clear `mobileSendError` when merging a durable same-message row. If this regresses, inspect `shouldHideOptimisticUserMessageEcho()`, `optimisticEchoCanMatchEarlierDurable()`, `mergeLikelySameUserMessage()`, and `test/conversation-render.test.js`. |
+| Historical user text appears inside or after a final receipt | Compare `/api/threads/:id?mode=recent&budget=full` item order with the browser DOM. Clients after `codex-mobile-shell-v602` stop preserving local-only user rows when an incoming completed turn has an authoritative assistant receipt, so old local residue cannot be inserted between the final receipt and Usage or appended after the completed turn. If this regresses, inspect `thread-detail-state.js` `shouldPreserveLocalOnlyItem()` and the completed projection merge coverage in `test/conversation-render.test.js`. |
+| Visible messages are out of order but API order is correct | Inspect `/api/threads/:id?mode=recent&budget=full` item order first. If the API order is correct but the browser keeps an older DOM order after a local visible-item patch, the failing layer is `public/thread-detail-dom-patch.js`. Clients after `codex-mobile-shell-v599` move reused/patched visible item nodes to match the next projection order and validate post-apply `data-render-key` order; focused coverage is in `test/thread-detail-dom-patch.test.js`. |
+| Android shell Composer tap/long-press hides keyboard | Clients after `codex-mobile-shell-v584` do not blur an already-focused Android Composer on `pointerdown`. The stale-focus workaround is limited away from the active editing path, and Android recovery may retry focus without `resetActiveFocus` so long-press/caret/selection affordances do not close the IME. If this regresses, inspect `prepareMessageInputForNativeGesture()`, `releaseStaleAndroidMessageInputFocusBeforeNativeTap()`, and the focused Android tests in `test/new-thread-ui.test.js` / `test/mobile-viewport.test.js` before changing the native shell. |
+| User message timestamps jump backwards inside one turn | Clients after `codex-mobile-shell-v585` use `mobileDisplayTimestampMs` for projection user messages that lack a direct rollout timestamp and cannot be matched to a rollout candidate. Servers after the v603 response-budget timestamp repair also infer display-only timestamps at the final HTTP detail boundary for retained user/assistant items that still lack own timestamps after projection, budget, task-card, or user-anchor rewriting. This keeps item order and labels stable without overwriting `startedAt*` source fields. If this regresses, inspect `visible_item_timestamp_order_mismatch`, `browser_latest_turn_timestamp_missing`, and focused coverage in `test/thread-detail-response-budget-service.test.js`, `test/thread-item-timestamp-enrichment.test.js`, and `test/thread-detail-self-check-service.test.js` before changing client-side sorting. |
 | Thread looks stuck | rollout size/mtime, pending approvals, live command/tool process, latest turn status |
 | Old command appears running | latest turn id vs raw operation fallback call id/turn id, app version includes raw-operation fix |
 | PWA still shows old UI | `/api/public-config.clientBuildId`, browser shell cache, service worker cache name |
@@ -40,11 +46,15 @@ Interpretation:
 | After profile switch only a few workspaces or no threads appear | `/api/public-config.codexProfiles.activeCodexHome`, profile state links, and `state_5.sqlite` / `sessions` under the active home |
 | Threads are visible but names/times stay stale | `/api/threads` row `name`/`updatedAt`, state DB `title`/`updated_at`, rollout file mtime, fallback merge tests |
 | Large session first open is slow | On clients after `codex-mobile-shell-v495`, inspect `/api/client-events` `thread_detail_first_paint.serverTimings` and `performancePhase`. `warm-projection-cache` points away from rollout rebuild and toward network/DOM render, `warm-projection-partial` means `mode=recent` reused a signed current-window projection, `projection-stale-partial-hit` means first paint intentionally used a stale signed partial window and scheduled a background refresh, `cold-turns-list-initial` means the first recent window was loaded from bounded app-server turns-list and should report `projectionSeedStatus=seeded-partial` when projection input exists, and `cold-thread-read` points at full app-server read/projection seed. If `projectionState=miss`, inspect `projectionMissReason` before changing cache behavior: `entry-missing` means no cache exists, `partial-not-allowed` means a partial window was correctly rejected for a full read, `static-signature-mismatch` / dynamic signature mismatch reasons point at invalid full-cache lifecycle, and `signature-unavailable` points at projection input/stat construction. `dynamic-summary-stale` should require backing evidence such as rollout size/mtime or retained-window/policy change; summary timestamp-only movement is metadata freshness and should not force an app-server `turns/list` read. Thread-list slowness should be checked through `thread_list_rendered.serverTimings` / `performancePhase` and, on v556+ clients, repeated successful slow list loads should also emit `thread_list_slow_path` diagnostics. `mobileInitialSource=warm-fallback-cache` means the first paint used the process fallback cache; `mobileInitialSource=fallback-baseline` with `appServerDeferredReason=cold-fallback-initial` means the first paint still had to build the local baseline but did not wait for app-server `thread/list`; `appServerDeferredReason=warm-fallback-initial` means even that local baseline was already warm. When cold, compare `fallbackStateDbCount`, `fallbackRolloutCount`, `fallbackSessionIndexCount`, `fallbackBaselineSourceCount`, `fallbackBaselineResultCount`, and fallback source timings before changing cache or prewarm behavior. If prewarm is completed but a larger same-scope first-paint request still reports `fallbackCacheDecision=miss-rebuild`, inspect `threadListFallbackPrewarm.sourceSnapshotLimit`, `lastSourceSnapshotLimit`, and request limit before blaming app-server: the final fallback cache is limit-scoped, while the source snapshot should be wide enough to rebuild large first-paint windows without rereading rollout tails. If a deferred/full follow-up is slow, inspect `appServerRequestLimit`, `appServerResponsePayloadBytes`, `appServerRpcMs`, and `appServerUnattributedMs` separately from first-paint fallback work. |
+| Light endpoints and thread opens jitter to multi-second after runtime self-check | Check for orphaned headless Chrome self-check processes using a temporary profile named `codex-mobile-browser-self-check-*`, especially if logs still show older `clientBuildId` values after a deploy. Current browser self-check scripts launch Chrome in a cleanup-owned process group and register exit/signal cleanup handlers; if this regresses, inspect `cleanupChromeChild()`, `installChromeCleanupHandlers()`, and the runtime self-check child timeout path before changing thread-detail code. |
 | Thread list is slow only after deploy/restart | Inspect `/api/threads` `mobileDiagnostics.threadListTimings.fallbackCachePersistentRestored` and `fallbackCacheDecision`, then `/api/public-config.threadListFallbackPrewarm`. A restored warm cache should show `fallbackCachePersistentRestored=true` on the first default list hit after restart. If the runtime cache file is missing or corrupt, the server treats it as a cold cache miss and rebuilds from the normal sources; do not classify that as a network timeout unless `appServerRpcTimedOut=true` or the request actually fails. |
+| Thread list freezes and cannot scroll | On clients after `codex-mobile-shell-v597`, first inspect `/api/client-events` / Home AI diagnostic intake for `thread_list_interaction_stall`, `browser_thread_list_interaction_blocked`, or `browser_main_thread_long_task`. The live client records bounded rAF heartbeat delay, scroll-apply delay, long-task duration/count, scroll position, and thread-list row count when the thread list is visible. Clients after `codex-mobile-shell-v598` also report the same bounded evidence when the list DOM is present on the primary list route but has not yet become visibly intersecting, which covers freezes during list-entry/render-transition before the old visible-only monitor could emit. Runtime self-check loop builds after the client-event stall log integration also read the runtime log tail as a `client-events` child check, so a real-user >=3s `thread_list_runtime_stall` / `thread_list_interaction_stall` row can fail deploy/periodic gates even when the synthetic browser stress run does not reproduce the freeze. Newer server log lines include a bounded `ts` field, and the child check only treats timestamped stalls inside `--client-event-window-ms` (default 30 minutes) as blocking; stale or untimed historical rows are counted in `untimedStallEventCount` / `outOfWindowStallEventCount` without blocking. Also run the browser runtime self-check with thread-list stress enabled. The check reports `browser_thread_list_interaction_blocked` when a single list interaction probe has a blocked rAF/scroll application path, and `browser_main_thread_long_task` when Chrome records a >=1s main-thread long task. Inspect bounded fields such as `maxThreadListRafDelayMs`, `maxThreadListScrollApplyMs`, `maxLongTaskDurationMs`, `threadListCardCount`, `threadListMonitorable`, and the runtime-loop `client-events.sampleSummary`. A stress probe's total elapsed time includes intentional waits between opening the list and clicking thread cards, so do not treat `maxThreadListProbeElapsedMs` alone as a freeze unless the sample is not a stress probe or the per-frame fields are also high. |
 | Active large thread still uses full `thread/read` | Inspect `thread_detail_first_paint.serverTimings.activeFullReadRequired`, `activeFullReadReason`, `activeOverlayAction`, and `activeOverlayReason`. `overlay-provider-unavailable` means the safe orchestration seam is present but no authoritative provider is wired yet. Other `require-full-read` reasons such as `assistant-delta-unknown`, `receipt-evidence-unknown`, `active-turn-mismatch`, or `non-authoritative-overlay-source` are intentional fail-closed outcomes and should not be bypassed with a client refresh or UI dedupe layer. |
 | Running-thread indicator disappears | `/api/threads` row `status` and `rolloutSizeUpdatedAtMs`, rollout tail `task_started` / `task_complete`, `runningThreadIds`, stale browser shell |
 | Thread detail shakes during streaming output | Client shell version v317+, `/api/client-events` `conversation_render_ms`, `thread_refresh_ms.skippedDetailRender`, `thread_refresh_ms.locallyPatchedDetail`, compact Command dock height, stale PWA shell |
 | Thread detail reopens and temporarily loses already-visible messages | First run API self-check, then browser-runtime self-check. If `/api/threads/:id?mode=recent` is stable but Chrome samples report `browser_dom_sparse_after_nonempty`, the failing layer is client first-paint/DOM state rather than server projection. |
+| Entering an active thread first shows an old receipt, then updates seconds later | Check whether the first paint came from `cached-current` / loaded detail cache while the thread still has active evidence. Clients after `codex-mobile-shell-v599` no longer treat active/running loaded detail as reusable completed-state cache. Clients after `codex-mobile-shell-v600` use an active loading preview instead of an empty shell: completed history and current user input stay visible, stale active assistant/plan/Usage/operation progress is stripped, and the fresh detail read replaces the preview. Clients after `codex-mobile-shell-v604` also drop active-preview local/failed user echoes when an earlier durable user message already matches by submission id or bounded text, so a stale preview cannot show the same user message again after the previous final receipt. Inspect `activeDetailLoadingPreviewThread()`, `planThreadOpenCacheReuse()`, and `test/thread-detail-state.test.js`. |
+| Runtime gate reports browser timestamp gaps during active streaming | Check whether the missing timestamp kind is only `agentMessage` / `plan` on an incomplete active turn, or whether the sample also shows newer DOM assistant progress than the API plan plus a smaller budgeted visible item count. Newer browser self-checks keep those active assistant/plan timestamp gaps advisory because they are in-flight sampling races; missing user/task-card/diagnostic timestamps and completed/resting `browser_latest_turn_timestamp_missing` or `browser_turn_timestamp_missing` remain H2 and should be repaired in the renderer/projection timestamp contract. |
 | Listener/app-server update interrupts a running turn | Browser shell `codex-mobile-shell-v280+`, `/api/status.ready` recovery, bounded `auto_turn_recovery_result` client event, `/api/threads/:id/auto-recover` route |
 | macOS shows frequent `重连` or refresh prompts | 8787 listener PID, loopback and LAN `/api/public-config`, `/api/events` keepalive, `mobile-web.log` `EADDRINUSE`, stale `launchctl submit` labels |
 | Hermes host says plugin workspace access key file is missing | Host `com.hermesmobile.listener` env `HERMES_MOBILE_CODEX_PLUGIN_ACCESS_KEY_PATH`, readable key file under Hermes secrets, plugin manifest `tokenStatus` |
@@ -393,7 +403,27 @@ restart, the thread-list fallback prewarm should also schedule active-window
 prewarm for active rows when it completes; if the first active detail open is
 still cold after the fallback baseline has completed, inspect whether
 `thread-list-prewarm:completed` produced an active-window prewarm result before
-the detail request arrived.
+the detail request arrived. Startup fallback prewarm defaults to zero delay
+after listener start; if a detail request is already in flight, it should
+defer through `active-detail-in-flight` and retry instead of competing with the
+foreground detail request.
+If bounded logs show `active_window_prewarm_done` with
+`reason=projection-input-unavailable` mostly from
+`thread-list:warm_fallback_*`, the active fallback row likely lacks rollout
+path/stat evidence even though it proves active status. Current prewarm builds
+refresh the canonical thread summary once and retry projection input before
+skipping; if that still fails, inspect summary rollout path/stat availability
+rather than adding another foreground detail fallback.
+`turn/started`, `turn/completed`, and active `thread/status/changed`
+notification-triggered prewarm should fast-start with zero delay and bypass the
+ordinary recent-attempt throttle, because the client can refetch the thread
+detail immediately after receiving the same notification. Thread-list batch
+prewarm still uses the normal delay/min-interval guard, but notification jobs
+can preempt older pending ordinary prewarm so completion-boundary repairs are
+not hidden behind an obsolete pending task. If a first detail open still wins
+the race and pays `activeOverlayWindowMs`, compare the notification timestamp
+to the `active_window_prewarm_*` bounded log event before changing
+active-overlay proof policy.
 If the active thread has a stale full projection whose stable identity still
 matches, current servers can downgrade that full cache to a history-only
 `turns-list-active-overlay-window` by omitting the currently growing active
@@ -403,6 +433,15 @@ post-restart or active-growth sample still spends seconds in app-server
 missing entirely, the stable identity changed, or the lookup lacked
 `activeOverlay=true` plus `omitActiveTurnId`; those cases remain authoritative
 app-server reads rather than client timeouts.
+Background prewarm `active-window-already-cached` is a weak cache-existence
+signal: it proves a projection-window lookup can return history rows, not that
+the foreground active-summary proof path has already accepted the same window.
+The foreground detail path should now retry the dedicated
+`activeOverlayProjectionWindowLookup` with `activeOverlayStatusProven=true` and
+`omitActiveTurnId=<active turn>` after an initial active-window miss. When that
+history-only retry succeeds and the live overlay evidence is already complete,
+foreground detail should merge the overlay directly and should not pay a fresh
+`turns-list-active-overlay-window` backfill read.
 If logs show a foreground detail request coalescing with background prewarm
 immediately after restart or after a new active turn starts, verify whether a
 persisted full projection existed before the active notification. Current
@@ -485,7 +524,112 @@ remove user messages, assistant receipts/progress, Usage rows, images, or
 diagnostic rows just to hit the byte ceiling. A reason of
 `protected-visible-items` means the remaining payload is protected visible
 content and should be handled by a more specific content-budget rule, not by
-client refresh retries.
+client refresh retries. Newer server builds also report
+`progressiveActiveFirstPaintOverCeilingBytes`,
+`retainedVisibleItemCountByKind`, `retainedVisibleItemBytesByKind`,
+`retainedVisibleItemLargestKind`, and `retainedVisibleItemLargestBytes` in
+`mobileDetailResponseBudget` and Phase-B readback. Use those bounded counters
+to decide whether the remaining protected payload is dominated by operation,
+assistant, user-message, Usage, media, diagnostic, or other item shapes before
+adding a new budget rule.
+Normal `/api/threads/:id` UI detail reads default to compact
+`mobileDetailResponseBudget` evidence to avoid spending first-paint bytes on
+zero/empty diagnostic fields. If an operator or self-check needs the full
+budget contract, request the same detail endpoint with `budget=full`; the
+Phase-B, browser-runtime, and API thread self-check scripts do this explicitly.
+Do not classify missing long-tail budget fields from a compact response as a
+budget-policy regression until the same read has been repeated with full
+budget evidence.
+If the retained visible item budget is already bounded but the total detail
+JSON remains over the active first-paint byte ceiling, inspect the task-card
+budget fields next:
+`progressiveThreadTaskCardBudgetApplied`,
+`progressiveThreadTaskCardBudgetReason`,
+`progressiveThreadTaskCardOriginalCount`,
+`progressiveThreadTaskCardCompactedCount`,
+`progressiveThreadTaskCardActionableCount`,
+`progressiveThreadTaskCardSettledCompactedCount`,
+`progressiveThreadTaskCardOriginalBytes`,
+`progressiveThreadTaskCardRetainedBytes`,
+`progressiveThreadTaskCardOmittedBytes`,
+`progressiveThreadTaskCardBytesBeforeBudget`,
+`progressiveThreadTaskCardIneligibleCount`,
+`progressiveThreadTaskCardBytesAfterBudget`, and
+`progressiveActiveFirstPaintBytesAfterTaskCardBudget`. This pass compacts
+task-card metadata to an action-safe first-paint shape. Pending/actionable
+cards keep their action booleans and minimal workflow/source/target/message
+fields needed by the renderer, while full card details remain available through
+`GET /api/thread-task-cards/:id?threadId=<thread-id>` when a card is opened.
+Settled non-actionable cards can be reduced further to id/status/thread-role
+placeholders with `mobileTaskCardSettledCompacted`; use
+`progressiveThreadTaskCardSettledCompactedCount` to confirm that this
+placeholder path is active.
+When `assistant` is the dominant retained kind, inspect
+`retainedAssistantItemCountByTurnState` and
+`retainedAssistantItemBytesByTurnState`, then inspect the metadata-only
+`retainedAssistantItemBytesByShape` buckets before changing assistant budgets.
+`active` bytes belong to the current live assistant/plan progress and should
+not be reduced with the same rule as historical replay. `completed` bytes point
+at retained completed/replay assistant rows and are the candidate for a
+separate completed-replay first-paint policy. `staleActive` indicates an
+ordering/state repair target, not a generic content budget.
+If active first-paint byte pressure is dominated by completed `userMessage`
+items, newer servers can preview only historical/completed user input through
+`mobileFirstPaintUserInputBudget`; the active/current user input remains outside
+that completed-user budget. Inspect
+`progressiveCompletedUserTextChars`,
+`progressiveCompletedUserInputBudgetApplied`,
+`progressiveCompletedUserInputBudgetReason`,
+`progressiveCompletedUserInputBytesBeforeBudget`,
+`progressiveCompletedUserInputBytesAfterBudget`,
+`truncatedCompletedUserInputItems`, and
+`omittedCompletedUserInputChars`. Newer builds also report
+`progressiveCompletedUserInputBudgetMode=shared-newest-first`: the completed
+user-input preview budget is shared across retained historical user inputs and
+is assigned from newer completed inputs toward older ones. The active/current
+user input remains outside this completed-user budget. When the shared budget
+is exhausted, older completed user inputs keep a short first-paint placeholder
+instead of becoming empty, so API user-message expectations and browser DOM
+visibility stay aligned. That placeholder carries a short stable token so
+multiple exhausted historical inputs in the same turn do not collapse into one
+browser-visible user card. The default shared limit is controlled by
+`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS` and defaults
+to 1024 characters. This is an HTTP first-paint preview only; it does not mutate
+the rollout/session record.
+If the same active first-paint response remains over budget because completed
+`turnUsageSummary` rows still carry full internal summary metadata, newer
+servers compact only the completed Usage summary payload to fields consumed by
+the Usage UI. Affected rows carry `mobileFirstPaintUsageBudget`, and the
+thread budget reports `progressiveCompletedUsageBudgetApplied`,
+`progressiveCompletedUsageBudgetReason`,
+`progressiveCompletedUsageBytesBeforeBudget`,
+`progressiveCompletedUsageBytesAfterBudget`,
+`truncatedCompletedUsageItems`, and `omittedCompletedUsageBytes`. This is an
+HTTP response-shaping rule: the Usage row remains visible, persisted rollout
+data is unchanged, and the budget must preserve rendered fields such as context
+window usage, risk level, last/total token usage, rollout size, and workspace
+context size counters. The per-row marker is intentionally lightweight and the
+service should skip a Usage compaction when the marker overhead would make the
+row or full thread response larger; verify that
+`progressiveCompletedUsageBytesAfterBudget` is below
+`progressiveCompletedUsageBytesBeforeBudget` before treating the compact as a
+payload win.
+If task-card/user-input/first-stage Usage budgets still leave the active
+first-paint response over the byte ceiling, newer servers run a second Usage
+pass that keeps only the summary fields needed for the compact Usage display:
+context percent, risk level, rollout size/over-threshold state, and
+`totalTokenUsage.totalTokens`. Affected rows keep the same
+`mobileFirstPaintUsageBudget` marker with `scope=completed-summary-only` and
+`detailOmitted=true`; thread-level readback reports
+`progressiveCompletedUsageSummaryOnlyBudgetApplied`,
+`progressiveCompletedUsageSummaryOnlyBudgetReason`,
+`progressiveCompletedUsageSummaryOnlyBytesBeforeBudget`,
+`progressiveCompletedUsageSummaryOnlyBytesAfterBudget`,
+`truncatedCompletedUsageSummaryOnlyItems`, and
+`omittedCompletedUsageSummaryOnlyBytes`. `progressiveActiveFirstPaintOverCeilingBytes`
+is computed from
+`progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget` when that pass
+runs.
 On v558+ clients, a per-turn `mobileVisibleItemBudget` also renders as a small
 first-paint omission notice in the conversation. That notice has a
 `data-render-key` and enters the conversation signature, but intentionally does
@@ -505,7 +649,9 @@ second-stage first-paint byte fields:
 `omittedCompletedTextChars`. Those fields mean non-current completed
 assistant/reasoning receipts were reduced to first-paint previews marked with
 `mobileFirstPaintTextBudget`; the current active turn still uses
-`mobileActiveTextBudget`. In resting recent detail, scope
+`mobileActiveTextBudget`. In active first-paint scope, protected completed
+replay text can also be previewed because the live active turn owns the current
+reading state. In resting recent detail, scope
 `resting-history-first-paint` means historical completed receipts were previewed
 while the latest completed turn stayed protected. If those completed receipts
 are not the cause, inspect
@@ -515,6 +661,18 @@ retained active operation items for `mobileOperationPayloadBudget` /
 output tail in the default first paint.
 On-demand expansion of omitted historical assistant progress is a separate
 route/API feature, not part of the default first paint.
+
+If `turnsListInitialMs` dominates while the final read still returns
+`projection-active-overlay` and `activeFullReadReason=initial-window-active-turn`,
+the summary missed active state and the route discovered the live turn too late
+through generic `turns-list-initial`. Current builds should use live overlay
+preprobe evidence to try `turns-list-active-overlay-window` before generic
+initial reads; a successful repair reports
+`activeFullReadReason=projection-live-active-turn`,
+`activeOverlayWindowFirst=true`, and `projectionSeedSource` from the active
+overlay projection window. If that still falls back to `turns-list-initial`,
+inspect active-overlay provider completeness and active-window projection lookup
+miss reasons before changing response budgets.
 
 For thread-list loads that are "warm" but still cost tens or hundreds of
 milliseconds, inspect `mobileDiagnostics.threadListTimings.stateAttachMs` and
@@ -622,6 +780,10 @@ Expected current behavior:
   appears below the final assistant receipt or Usage row, inspect
   `composerTargetActiveTurnId()`, `insertLocalSubmittedUserMessage()`, and
   `adapters/message-pending-echo-service.js` before adding UI-side dedupe.
+- Server builds after the projection-index duplicate fix also fold same-content
+  `item-*` user messages only when their bounded timestamps match. This is a
+  projection-event repair, not text-only dedupe: two same-text user messages
+  sent at different times must still render as two messages.
 
 ## Active Goal Output Disappears After Re-entering A Large Thread
 
@@ -645,6 +807,12 @@ Cause to check:
   changes after the projection seed, completed/idle/error-like threads should
   miss and reseed; active threads only keep the dynamic projection for a short
   stale window while notifications continue arriving.
+- `turns-list-active-overlay-window` is a history-only active-window cache.
+  It intentionally omits the live active turn, so active-turn rollout
+  size/mtime growth must not invalidate that history cache by itself. It should
+  be invalidated by turn-boundary events such as `turn/started` or
+  `turn/completed`, then repaired by notification or thread-list active-window
+  prewarm.
 - On current servers, warm `projection-v4-cache` / `projection-v4-dynamic` hits
   may report `mobileProjection.normalization=reused-visible-metadata` when the
   cached v4 result already has complete visible keys. That is the expected fast
@@ -760,6 +928,9 @@ Cause to check:
   final sample recovers. It intentionally checks the Usage tool item exists but
   does not require a separate Usage title/timestamp, because the visible time
   belongs to the adjacent final assistant receipt.
+  Current checks also report `duplicate_user_message_events` when one turn has
+  same-content user messages with the same bounded timestamp, which usually
+  means the projection/live-overlay layer double-counted one submitted event.
 - If the API self-check is clean but the real client still flickers, clears a
   thread detail to `No visible turns.`, shows duplicate DOM items, or loses a
   just-visible thread after reopening, run the browser-runtime check:
@@ -780,6 +951,9 @@ Cause to check:
   `browser_latest_turn_assistant_text_duplicate`. These are latest-turn scoped
   checks: a healthy whole-conversation item total no longer hides the user
   message or latest assistant rows disappearing inside the active/latest turn.
+  Assistant text duplicates are H2 for completed/resting receipt shapes and H3
+  for active progressive shapes where the DOM has newer budgeted assistant
+  progress than the API plan and repeated short status fragments are advisory.
   Clients after `codex-mobile-shell-v578` split ordinary user-message and
   injected task-card expectations, and also report
   `browser_latest_turn_user_message_below_api_expectation`,
@@ -788,7 +962,30 @@ Cause to check:
   `browser_latest_turn_reasoning_items_visible`. These checks catch the class
   where the API has the submitted user input but the DOM latest turn does not,
   or where command/reasoning process rows leak into the ordinary conversation
-  instead of staying in the operation status surface.
+  instead of staying in the operation status surface. Task-card injected DOM is
+  a userMessage presentation, so newer analyzer builds count
+  `.thread-task-card-injected` as visible user input for ordinary user-message
+  visibility while still enforcing task-card-specific expectation counts.
+  Current checks also compare bounded DOM/API structure for every recent
+  visible turn, not only the latest turn. `browser_turn_assistant_missing`,
+  `browser_turn_user_message_below_api_expectation`,
+  `browser_turn_task_card_below_api_expectation`,
+  `browser_turn_usage_missing`, `browser_turn_timestamp_missing`, and
+  `browser_turn_user_message_after_usage` catch the class where an ended turn
+  visually shows only user cards, loses assistant/Usage rows, or renders a
+  user-message card after the Usage row even though `/api/threads/:id` returned
+  a complete turn. These reports include only turn hashes and bounded counts.
+  Current checks also report `browser_api_latest_turn_user_message_duplicate`
+  when the API expectation already contains duplicate same-event user messages,
+  and `browser_latest_turn_user_message_duplicate` when the real DOM latest
+  turn shows repeated same-text user cards.
+  Current image failure reports include bounded `imageFailureKindCounts` and
+  `firstImageFailure` metadata, such as `generated-image`,
+  `hermes-proxy-generated-image`, `protected-placeholder`, `unsafe-source`,
+  `missingSrc`, natural dimensions, and recovery counters. These fields
+  distinguish missing `src`, unsafe source, failed protected recovery, and
+  missing generated-image cache routes without printing raw URLs, paths, or
+  image bytes.
   Clients after `codex-mobile-shell-v579` preserve a non-bottom user-reading
   viewport anchor across full conversation renders, local refresh patch
   transactions, visible item inserts, visible item replacements, and live text
@@ -803,7 +1000,13 @@ Cause to check:
   `entry-animate` / `entry-leave` translation animations because those 6-8px
   entry transforms are visible as thread-open jitter in the reading surface.
   If jitter remains after v581, treat it as a scroll-anchor or local-patch
-  sequencing issue, not an animation issue. With explicit `--exercise-submit`, the browser check sends one short
+  sequencing issue, not an animation issue. The browser self-check also runs
+  a bounded thread-list interaction stress by default. It opens the list,
+  scroll-probes it, clicks thread cards, returns to the list, and records
+  metadata-only rAF/scroll/long-task evidence. `browser_thread_list_interaction_blocked`
+  is H2 only when the per-frame interaction path is blocked; stress probe
+  wall-clock time includes intentional waits and is preserved as trend metadata.
+  With explicit `--exercise-submit`, the browser check sends one short
   Composer message through the real UI path, asking for an OK-only reply, then
   samples whether the submitted user card becomes visible, disappears, or
   jitters. Use `--submit-thread-id <id>` to target a dedicated thread, or omit
@@ -821,12 +1024,45 @@ Cause to check:
   uploads, query strings, cookies, access keys, tokens, screenshots, or logs.
 - After each deployment that changes thread-detail, projection, image rendering,
   timestamps, or client refresh behavior, run the combined one-shot self-check:
-  `node scripts/codex-mobile-runtime-self-check-loop.js --server http://127.0.0.1:8787 --json`.
+  `node scripts/codex-mobile-runtime-self-check-loop.js --server http://127.0.0.1:8787 --gate-mode deploy --json`.
   For periodic local monitoring, run the same script with
   `--loop --interval-ms 600000`; it appends metadata-only JSONL records to
-  `~/.codex-mobile-web/logs/runtime-self-check.jsonl`. The loop records issue
-  counts and build/cache ids only and must not directly dispatch repair cards;
-  Home AI diagnostic intake and Owner approval own the repair-card step.
+  `~/.codex-mobile-web/logs/runtime-self-check.jsonl`. Read the top-level
+  `gate` object before treating a sample as blocking. `gate.deployPass=false`
+  means a user-visible H1/H2 projection, duplicate-message, image, timestamp,
+  submit, list/detail, or child execution issue remains actionable. Slow but
+  eventually successful `thread_session_slow_path` samples remain
+  `observeOnlyIssueCodes` by default; keep them as performance evidence rather
+  than creating repeated repair cards. The loop records issue counts and
+  build/cache ids only and must not directly dispatch repair cards; Home AI
+  diagnostic intake and Owner approval own the repair-card step. Child
+  self-check CLIs can intentionally exit nonzero when their JSON report has
+  `ok=false`; treat the parsed JSON report as the health contract, and treat the
+  child as an execution failure only when no parseable JSON report was emitted.
+  Browser-runtime child checks can legitimately take several minutes while
+  opening Chrome, switching threads, and sampling delayed DOM states; the
+  parent loop allows a bounded 300s child timeout, still below the 10-minute
+  periodic interval. Newer browser-runtime checks refresh the API thread plan
+  after each sampled thread is opened and refresh it again before settled
+  delayed snapshots at or above the configured settled-delay threshold. This
+  avoids comparing active-thread DOM samples against stale API expectations
+  while keeping short-delay samples on the lower-cost path.
+- To verify the 10-minute macOS periodic checker itself, run:
+  `node scripts/codex-mobile-runtime-self-check-launchagent-readback.js --json`.
+  A healthy result has `ok=true`, `launchctl.loaded=true`,
+  `latestEvent.hasGate=true`, `latestEvent.gateMode=periodic`, and
+  `latestEvent.periodicHealthy=true`. A historical nonzero
+  `launchctl.lastExitCode` is not itself a failure when the latest fresh gate
+  event is healthy; it remains actionable only when the latest event is stale,
+  missing, or unhealthy.
+  The readback selects the latest JSONL event that contains the expected full
+  periodic check set (`api-thread`, `browser-runtime`, and `client-events` by
+  default). Manual diagnostic runs such as `--skip-api --skip-browser` may write
+  to the same JSONL file, but they must not replace the LaunchAgent health
+  evidence. Use `--required-checks` only when the scheduled plist intentionally
+  runs a different check set.
+  The readback is inspect-only and reports path hashes plus bounded counts; it
+  must not be used to install, unload, or kickstart launchd jobs.
 - If opening a thread takes 1-2s before latest detail appears, run Phase-B
   readback against that thread:
   `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --thread-id <id> --json`.
@@ -835,7 +1071,19 @@ Cause to check:
   `activeOverlayMs >= 800` as a latency finding instead of reporting ready;
   `totalMs >= 1500` or `activeOverlayMs >= 1000` is H2. If the owner is
   `active-overlay-latency`, continue in the active-overlay provider/read
-  orchestration path; if the owner is `thread-detail-latency`, split the
+  orchestration path. Check `activeOverlayWindowMs` first for app-server
+  active-window RPC rebuilds, then `activeOverlayBackfillWindowMs` /
+  `activeOverlayFullProjectionMs` / `activeOverlayHistoryBaselineMs` for local
+  active-overlay merge/projection CPU work. If `activeOverlayMs` is high while
+  those child fields stay low, repair the diagnostics split before changing
+  runtime behavior. For live projection overlays, a complete signed
+  `projection-live` snapshot should not perform a fresh
+  `turns-list-active-overlay-window` read on every detail request. Partial,
+  notification-shell, or missing-signature overlays should still force the
+  fresh active-window read. If production shows high
+  `activeOverlayBackfillWindowMs` together with `activeOverlayWindowMs` after
+  this rule, inspect why the overlay was classified incomplete before tuning
+  app-server RPCs. If the owner is `thread-detail-latency`, split the
   summary/projection/prepare/transport stages before changing the renderer.
 - Clients after `codex-mobile-shell-v575` keep a reusable in-memory thread
   detail snapshot in `state.threadTileDetails`. When reopening a thread that
@@ -871,7 +1119,14 @@ Cause to check:
   reasoning rows remain budgeted. Historical completed turns keep the latest
   assistant/plan receipt, and `mobileOmittedAssistantItemCount` /
   `mobileDetailResponseBudget` record omitted historical progress-row counts.
-  If `progressiveActiveBudgetApplied=true`, retained active
+  If `progressiveActiveBudgetApplied=true`, active replay turns may be bounded
+  by `progressiveReplayAssistantItems`; completed replay turns may be bounded
+  separately by `progressiveCompletedReplayAssistantItems`.
+  `limitedReplayAssistantItems` records the total replay assistant/plan rows
+  intentionally omitted by the server first-paint budget, while
+  `limitedCompletedReplayAssistantItems` records the completed replay subset.
+  Treat that as response shaping evidence, not a browser render drop. If
+  `progressiveActiveBudgetApplied=true`, retained active
   assistant/reasoning text fields may also carry
   `mobileActiveTextBudget`; that is a pressure-triggered first-paint preview.
   If `progressiveCompletedTextBudgetScope=resting-history-first-paint`, the
@@ -953,6 +1208,13 @@ Do not infer from rollout file size alone. Separate:
   and whether the process cache was actually warm. A miss on this ordinary
   default/workspace path intentionally falls through to app-server instead of
   building a cold fallback baseline.
+- For small ordinary default list requests, check `appServerRequestLimit`.
+  It should follow bounded overfetch `max(limit * 2, 80)` capped at 500. A
+  default `limit=8`, `20`, or `40` request reporting `appServerRequestLimit=500`
+  has regressed to the old unconditional app-server window and can make thread
+  entry slow by competing with the immediate detail request after a user tap.
+  Workspace-filtered and archived list requests intentionally still preserve
+  the 500-row window.
 - Is app-server/mux CPU active?
 - Is the latest turn `inProgress` but no event has been written for minutes?
 
@@ -1080,6 +1342,17 @@ If the original user upload renders as a thumbnail but a later Codex/plan reply 
 The parser should recognize LF and CRLF summaries, plus Markdown blockquote-style quoted lines such as `> Uploaded attachments:` and `> - IMG_0001.jpg (...)`. It should also treat raw app-server `input_text` parts as text and `input_image` / `image_url` parts as images, including object-shaped `image_url.url`. The saved upload path must still be under `%USERPROFILE%\.codex-mobile-web\uploads`. Current clients should turn default-runtime upload paths into `/api/uploads/file?id=<upload-root-relative-id>` so the browser image `src` does not include a local absolute path; `/api/uploads/file?path=...` remains a compatibility fallback for old clients and non-default upload roots.
 
 If the DOM contains an `<img>` for the saved upload path but the browser still shows a broken or blank thumbnail, check the upload route response headers. Saved `.jpg`, `.jpeg`, `.webp`, `.gif`, and `.png` files must return image MIME types such as `image/jpeg` rather than `application/octet-stream`. In Hermes/Home AI embed mode, the `<img>` should keep the browser-visible same-origin `/api/uploads/file` or `/api/generated-images/file` URL as `src` plus `data-protected-image-src`; when the iframe page is served under `/api/hermes-plugins/<plugin-id>/proxy/`, the browser-visible URL must include that same plugin proxy prefix instead of the Home AI host root `/api`. Scheduled image scans should not proactively convert still-loading embedded direct images into `data:image/...` or `blob:` URLs. If the image actually errors, recovery may fetch with the current session key; embedded/iOS recovery should retry a cache-busted same-origin URL first.
+
+For `Image` cards from `imageView` / `imageGeneration`, the safe render contract
+is stricter than for user uploads. A visible image card should render from a
+server-provided `contentUrl` under `/api/generated-images/file` or from an
+authorized absolute local path that the server can preview. If the item only
+contains a relative filename, raw `data:image`, stale `blob:`, `file://`, or
+external URL, the client must not put that value into `<img src>` because the
+browser will show a broken icon and Home AI proxy logs may never see a generated
+image request. Current clients render those uncached/unsafe sources as bounded
+failed image cards with no raw path/text. The source-side fix is still to cache
+tool output images through the generated-image cache during projection.
 
 If Codex generates an image as Markdown or plain text `data:image/png;base64,...`, inspect `public/markdown-renderer.js`. Current builds render safe bitmap data images (`png`, `jpeg`, `webp`, `gif`) as bounded `<img>` figures and intentionally reject SVG data images.
 
@@ -1440,6 +1713,23 @@ popup appears in Hermes embed mode, check whether the browser is still using the
 old native `window.confirm(...)` path. Current builds should render an in-app
 continuation dialog inside the iframe, because native confirm dialogs are not
 reliable in the plugin host path.
+
+## Compression Continuation Has No Visible Progress
+
+When the user presses `压缩续接` and confirms with `继续`, clients after
+`codex-mobile-shell-v606` keep the in-app dialog visible, disable the action
+buttons, and show the current continuation step until the job finishes or
+fails. The client should also emit bounded events:
+`continuation_start_requested`, `continuation_job_created`,
+`continuation_job_poll`, and either `continuation_job_done` or
+`continuation_job_failed`.
+
+If the user reports that nothing happened, first check client events for
+`continuation_start_requested`. Absence of that event means the frontend did
+not enter the confirmed submit path. If it is present but no
+`continuation_job_created` follows, inspect the `POST /api/thread-continuations`
+request. If a job id is present, inspect `/api/thread-continuations/:id` and the
+server `[continuation]` progress logs.
 
 ## Hermes Plugin Seems To Reload Without Explanation
 

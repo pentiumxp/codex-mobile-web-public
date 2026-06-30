@@ -4,6 +4,8 @@ const {
   sameUserMessageContent,
 } = require("./message-pending-echo-service");
 
+const PROJECTION_INDEX_DUPLICATE_WINDOW_MS = 5_000;
+
 function text(value) {
   return String(value || "").trim();
 }
@@ -71,11 +73,69 @@ function sameClientSubmission(left, right) {
   return Boolean(a && b && a === b);
 }
 
+function timestampMs(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return value > 1_000_000_000_000 ? Math.trunc(value) : Math.trunc(value * 1000);
+  }
+  if (/^\d+(?:\.\d+)?$/.test(String(value))) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric > 1_000_000_000_000 ? Math.trunc(numeric) : Math.trunc(numeric * 1000);
+    }
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function itemTimestampMs(item) {
+  return timestampMs(item && (
+    item.startedAtMs
+    || item.startedAt
+    || item.createdAtMs
+    || item.createdAt
+    || item.timestampMs
+    || item.timestamp
+    || item.updatedAtMs
+    || item.updatedAt
+  ));
+}
+
+function sameProjectionIndexTimestamp(left, right) {
+  const a = itemTimestampMs(left);
+  const b = itemTimestampMs(right);
+  return Boolean(a && b && a === b);
+}
+
+function nearProjectionIndexTimestamp(left, right) {
+  const a = itemTimestampMs(left);
+  const b = itemTimestampMs(right);
+  return Boolean(a && b && Math.abs(a - b) <= PROJECTION_INDEX_DUPLICATE_WINDOW_MS);
+}
+
+function userMessagesMayBeSameEvent(left, right) {
+  if (!isUserMessage(left) || !isUserMessage(right)) return false;
+  if (sameClientSubmission(left, right)) return true;
+  if (isSyntheticUserMessage(left) || isSyntheticUserMessage(right)) return true;
+  const leftProjectionIndex = isProjectionIndexUserMessage(left);
+  const rightProjectionIndex = isProjectionIndexUserMessage(right);
+  if (leftProjectionIndex && rightProjectionIndex) return nearProjectionIndexTimestamp(left, right);
+  if (leftProjectionIndex !== rightProjectionIndex) {
+    return leftProjectionIndex ? hasDurableNonIndexId(right) : hasDurableNonIndexId(left);
+  }
+  return false;
+}
+
 function userMessagesAreSameEvent(left, right) {
   if (!isUserMessage(left) || !isUserMessage(right)) return false;
+  if (!userMessagesMayBeSameEvent(left, right)) return false;
   if (!sameUserMessageContent(left, right)) return false;
   const leftProjectionIndex = isProjectionIndexUserMessage(left);
   const rightProjectionIndex = isProjectionIndexUserMessage(right);
+  if (leftProjectionIndex && rightProjectionIndex) {
+    return nearProjectionIndexTimestamp(left, right);
+  }
   if (leftProjectionIndex !== rightProjectionIndex) {
     return leftProjectionIndex ? hasDurableNonIndexId(right) : hasDurableNonIndexId(left);
   }

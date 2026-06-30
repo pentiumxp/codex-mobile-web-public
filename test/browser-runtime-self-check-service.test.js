@@ -1,11 +1,13 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
 const service = require(path.join(__dirname, "..", "adapters", "browser-runtime-self-check-service.js"));
 const script = require(path.join(__dirname, "..", "scripts", "codex-mobile-browser-runtime-self-check.js"));
+const scriptSource = fs.readFileSync(path.join(__dirname, "..", "scripts", "codex-mobile-browser-runtime-self-check.js"), "utf8");
 
 test("browser runtime self-check catches sparse DOM after confirmed nonempty target content", () => {
   const report = service.analyzeBrowserRuntimeSamples({
@@ -153,9 +155,27 @@ test("browser runtime self-check catches latest usage timestamp and image failur
       latestTimestampExpectedItems: 2,
       latestTimestampMissingItems: 1,
       imageCount: 2,
+      imageFigureCount: 2,
       imageFailedFigureCount: 1,
       brokenCompleteImageCount: 1,
       imageFailureCount: 2,
+      imageFailureKindCounts: {
+        "failed-class": 1,
+        "protected-placeholder": 1,
+        "hermes-proxy-generated-image": 1,
+      },
+      imageFailureDetails: [{
+        reason: "failed-class",
+        figureKind: "image-view",
+        displaySourceKind: "protected-placeholder",
+        protectedSourceKind: "hermes-proxy-generated-image",
+        missingSrc: false,
+        hasImage: true,
+        complete: true,
+        naturalWidth: 0,
+        naturalHeight: 0,
+        recoveryCount: 2,
+      }],
       turns: 3,
       items: 9,
       renderKeys: 12,
@@ -165,7 +185,337 @@ test("browser runtime self-check catches latest usage timestamp and image failur
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_usage_missing"));
   assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_timestamp_missing"));
-  assert.ok(report.issues.some((issue) => issue.code === "browser_image_render_failed"));
+  const imageIssue = report.issues.find((issue) => issue.code === "browser_image_render_failed");
+  assert.ok(imageIssue);
+  assert.equal(imageIssue.imageFigureCount, 2);
+  assert.equal(imageIssue.imageFailureKindCounts["protected-placeholder"], 1);
+  assert.equal(imageIssue.firstImageFailure.protectedSourceKind, "hermes-proxy-generated-image");
+  assert.equal(report.sampleSummary.maxImageFigures, 2);
+});
+
+test("browser runtime self-check catches per-turn DOM/API structure mismatches", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "turn-structure",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        completed: true,
+        expectedItemCount: 3,
+        expectedUserMessageCount: 1,
+        expectedAssistantMessageCount: 1,
+        expectedUsageRequired: true,
+        expectedTimestampItemCount: 2,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        itemCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 0,
+        usageCount: 1,
+        timestampExpectedItems: 1,
+        timestampMissingItems: 1,
+        userAfterUsageCount: 1,
+      }],
+      turns: 1,
+      items: 2,
+      renderKeys: 2,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_turn_assistant_missing"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_turn_user_message_after_usage"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_turn_timestamp_missing"));
+  const issue = report.issues.find((entry) => entry.code === "browser_turn_user_message_after_usage");
+  assert.equal(issue.turnShape.turnHash, "turn-a");
+  assert.equal(issue.turnShape.actualUserMessageCount, 1);
+  assert.equal(issue.turnShape.actualAssistantMessageCount, 0);
+});
+
+test("browser runtime self-check counts task-card DOM as visible user input", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "turn-task-card-user-input",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        completed: true,
+        expectedItemCount: 3,
+        expectedUserMessageCount: 1,
+        expectedAssistantMessageCount: 1,
+        expectedUsageRequired: true,
+        expectedTimestampItemCount: 2,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        itemCount: 26,
+        userMessageCount: 0,
+        taskCardUserMessageCount: 1,
+        assistantMessageCount: 24,
+        usageCount: 1,
+        timestampExpectedItems: 25,
+        timestampMissingItems: 0,
+        userAfterUsageCount: 0,
+      }],
+      turns: 1,
+      items: 26,
+      renderKeys: 26,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.blockingIssueCount, 0);
+  assert.equal(report.issues.some((issue) => issue.code === "browser_turn_user_message_below_api_expectation"), false);
+});
+
+test("browser runtime self-check keeps active progressive timestamp gaps advisory", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "active-progressive",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "turn-active",
+      latestTimestampExpectedItems: 27,
+      latestTimestampMissingItems: 1,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-active",
+        completed: false,
+        expectedItemCount: 34,
+        expectedUserMessageCount: 0,
+        expectedTaskCardUserMessageCount: 2,
+        expectedAssistantMessageCount: 24,
+        expectedUsageRequired: false,
+        expectedTimestampItemCount: 27,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-active",
+        itemCount: 27,
+        userMessageCount: 0,
+        taskCardUserMessageCount: 2,
+        assistantMessageCount: 25,
+        usageCount: 0,
+        timestampExpectedItems: 27,
+        timestampMissingItems: 1,
+        userAfterUsageCount: 0,
+      }],
+      turns: 1,
+      items: 27,
+      renderKeys: 27,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.blockingIssueCount, 0);
+  const latestIssue = report.issues.find((entry) => entry.code === "browser_latest_turn_timestamp_missing");
+  assert.ok(latestIssue);
+  assert.equal(latestIssue.severity, "H3");
+  assert.equal(latestIssue.activeProgressive, true);
+  const turnIssue = report.issues.find((entry) => entry.code === "browser_turn_timestamp_missing");
+  assert.ok(turnIssue);
+  assert.equal(turnIssue.severity, "H3");
+  assert.equal(turnIssue.turnShape.completed, false);
+});
+
+test("browser runtime self-check keeps early active assistant timestamp gaps advisory", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "active-assistant-gap",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "turn-active",
+      latestTimestampExpectedItems: 27,
+      latestTimestampMissingItems: 1,
+      latestTimestampMissingKindCounts: { agentMessage: 1 },
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-active",
+        completed: false,
+        expectedItemCount: 34,
+        expectedUserMessageCount: 0,
+        expectedTaskCardUserMessageCount: 2,
+        expectedAssistantMessageCount: 24,
+        expectedUsageRequired: false,
+        expectedTimestampItemCount: 27,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-active",
+        itemCount: 34,
+        userMessageCount: 0,
+        taskCardUserMessageCount: 2,
+        assistantMessageCount: 24,
+        usageCount: 0,
+        timestampExpectedItems: 27,
+        timestampMissingItems: 1,
+        timestampMissingKindCounts: { agentMessage: 1 },
+        userAfterUsageCount: 0,
+      }],
+      turns: 1,
+      items: 34,
+      renderKeys: 34,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.blockingIssueCount, 0);
+  const latestIssue = report.issues.find((entry) => entry.code === "browser_latest_turn_timestamp_missing");
+  assert.equal(latestIssue.severity, "H3");
+  assert.equal(latestIssue.latestTimestampMissingKindCounts.agentMessage, 1);
+  const turnIssue = report.issues.find((entry) => entry.code === "browser_turn_timestamp_missing");
+  assert.equal(turnIssue.severity, "H3");
+  assert.equal(turnIssue.turnShape.timestampMissingKindCounts.agentMessage, 1);
+});
+
+test("browser runtime self-check still blocks active user timestamp gaps", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "active-user-gap",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "turn-active",
+      latestTimestampExpectedItems: 3,
+      latestTimestampMissingItems: 1,
+      latestTimestampMissingKindCounts: { userMessage: 1 },
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-active",
+        completed: false,
+        expectedItemCount: 4,
+        expectedUserMessageCount: 1,
+        expectedAssistantMessageCount: 1,
+        expectedUsageRequired: false,
+        expectedTimestampItemCount: 3,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-active",
+        itemCount: 4,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        usageCount: 0,
+        timestampExpectedItems: 3,
+        timestampMissingItems: 1,
+        timestampMissingKindCounts: { userMessage: 1 },
+        userAfterUsageCount: 0,
+      }],
+      turns: 1,
+      items: 4,
+      renderKeys: 4,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.equal(report.blockingIssueCount, 2);
+  assert.ok(report.issues.some((entry) => entry.code === "browser_latest_turn_timestamp_missing" && entry.severity === "H2"));
+  assert.ok(report.issues.some((entry) => entry.code === "browser_turn_timestamp_missing" && entry.severity === "H2"));
+});
+
+test("browser runtime self-check still blocks completed timestamp gaps", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "completed-gap",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "turn-completed",
+      latestTimestampExpectedItems: 3,
+      latestTimestampMissingItems: 1,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-completed",
+        completed: true,
+        expectedItemCount: 4,
+        expectedUserMessageCount: 1,
+        expectedAssistantMessageCount: 1,
+        expectedUsageRequired: true,
+        expectedTimestampItemCount: 3,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-completed",
+        itemCount: 4,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        usageCount: 1,
+        timestampExpectedItems: 3,
+        timestampMissingItems: 1,
+        userAfterUsageCount: 0,
+      }],
+      turns: 1,
+      items: 4,
+      renderKeys: 4,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.equal(report.blockingIssueCount, 2);
+  assert.ok(report.issues.some((entry) => entry.code === "browser_latest_turn_timestamp_missing" && entry.severity === "H2"));
+  assert.ok(report.issues.some((entry) => entry.code === "browser_turn_timestamp_missing" && entry.severity === "H2"));
+});
+
+test("browser runtime self-check accepts receipt-only assistant compaction in older turns", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "receipt-only-history",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        completed: true,
+        expectedItemCount: 34,
+        expectedUserMessageCount: 1,
+        expectedTaskCardUserMessageCount: 5,
+        expectedAssistantMessageCount: 24,
+        expectedUsageRequired: true,
+        expectedTimestampItemCount: 30,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        itemCount: 8,
+        userMessageCount: 1,
+        taskCardUserMessageCount: 5,
+        assistantMessageCount: 1,
+        usageCount: 1,
+        timestampExpectedItems: 7,
+        timestampMissingItems: 0,
+        userAfterUsageCount: 0,
+      }],
+      turns: 1,
+      items: 8,
+      renderKeys: 8,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.issueCount, 0);
 });
 
 test("browser runtime self-check catches latest turn assistant text duplicates", () => {
@@ -188,6 +538,142 @@ test("browser runtime self-check catches latest turn assistant text duplicates",
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_assistant_text_duplicate"));
   assert.equal(report.sampleSummary.maxLatestTurnAssistantTextDuplicates, 1);
+});
+
+test("browser runtime self-check keeps long active assistant progress duplicates advisory", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "latest-turn-progress-duplicate",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnAssistantMessageCount: 24,
+      latestTurnAssistantTextDuplicateCount: 1,
+      turns: 3,
+      items: 36,
+      renderKeys: 36,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  const duplicateIssue = report.issues.find((issue) => issue.code === "browser_latest_turn_assistant_text_duplicate");
+  assert.ok(duplicateIssue);
+  assert.equal(duplicateIssue.severity, "H3");
+  assert.equal(report.blockingIssueCount, 0);
+});
+
+test("browser runtime self-check keeps active progressive assistant duplicates advisory", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "latest-turn-active-progress-duplicate",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "turn-a",
+      latestTurnAssistantMessageCount: 8,
+      latestTurnAssistantTextDuplicateCount: 1,
+      expectedTurnShapes: [{
+        turnHash: "turn-a",
+        completed: false,
+        expectedItemCount: 21,
+        expectedAssistantMessageCount: 4,
+        expectedUsageRequired: false,
+      }],
+      domTurnShapes: [{
+        turnHash: "turn-a",
+        completed: false,
+        itemCount: 13,
+        assistantMessageCount: 8,
+        usageCount: 0,
+      }],
+      turns: 3,
+      items: 36,
+      renderKeys: 36,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  const duplicateIssue = report.issues.find((issue) => issue.code === "browser_latest_turn_assistant_text_duplicate");
+  assert.ok(duplicateIssue);
+  assert.equal(duplicateIssue.severity, "H3");
+  assert.equal(duplicateIssue.activeProgressive, true);
+  assert.equal(duplicateIssue.turnShape.completed, false);
+  assert.equal(report.blockingIssueCount, 0);
+});
+
+test("browser runtime self-check catches latest turn user message duplicates", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "latest-user-duplicate",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      expectedLatestUserMessageCount: 2,
+      expectedLatestUserMessageDuplicateCount: 1,
+      latestTurnUserMessageCount: 2,
+      latestTurnUserTextDuplicateCount: 1,
+      latestTurnUserNodeDetails: [
+        {
+          index: 0,
+          textHash: "hash-a",
+          dataItemHash: "item-a",
+          renderKeyHash: "render-a",
+          clientSubmissionHash: "",
+          hasTimestamp: true,
+          classKind: "durable",
+        },
+        {
+          index: 1,
+          textHash: "hash-a",
+          dataItemHash: "",
+          renderKeyHash: "",
+          clientSubmissionHash: "submit-a",
+          hasTimestamp: true,
+          classKind: "local-pending",
+        },
+      ],
+      turns: 3,
+      items: 12,
+      renderKeys: 12,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_api_latest_turn_user_message_duplicate"));
+  const duplicateIssue = report.issues.find((issue) => issue.code === "browser_latest_turn_user_message_duplicate");
+  assert.ok(duplicateIssue);
+  assert.equal(duplicateIssue.latestTurnUserNodeDetails.length, 2);
+  assert.equal(duplicateIssue.latestTurnUserNodeDetails[1].classKind, "local-pending");
+  assert.equal(report.sampleSummary.maxExpectedLatestUserMessageDuplicates, 1);
+  assert.equal(report.sampleSummary.maxLatestTurnUserTextDuplicates, 1);
+});
+
+test("browser runtime self-check ignores null samples in summary", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [
+      null,
+      {
+        label: "healthy",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        latestTurnMatchesTarget: true,
+        turns: 3,
+        items: 12,
+        renderKeys: 12,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.sampleSummary.sampleCount, 1);
 });
 
 test("browser runtime self-check catches latest turn item and message count downgrades", () => {
@@ -236,6 +722,49 @@ test("browser runtime self-check catches latest turn item and message count down
   assert.equal(report.sampleSummary.maxLatestTurnAssistantMessages, 4);
 });
 
+test("browser runtime self-check does not treat loading previews as latest turn downgrades", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "rich-latest-turn",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        latestTurnMatchesTarget: true,
+        latestTurnHash: "latest-turn-hash",
+        latestTurnItemCount: 8,
+        latestTurnUserMessageCount: 1,
+        latestTurnAssistantMessageCount: 4,
+        turns: 4,
+        items: 24,
+        delayMs: 1200,
+      },
+      {
+        label: "active-preview",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        loadingNote: true,
+        latestTurnMatchesTarget: true,
+        latestTurnHash: "latest-turn-hash",
+        latestTurnItemCount: 2,
+        latestTurnUserMessageCount: 1,
+        latestTurnAssistantMessageCount: 0,
+        turns: 4,
+        items: 12,
+        delayMs: 1600,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(!report.issues.some((issue) => issue.code === "browser_latest_turn_item_count_downgraded"));
+  assert.ok(!report.issues.some((issue) => issue.code === "browser_latest_turn_assistant_message_downgraded"));
+});
+
 test("browser runtime self-check catches latest turn user messages below API expectation", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{
@@ -255,6 +784,29 @@ test("browser runtime self-check catches latest turn user messages below API exp
 
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_user_message_below_api_expectation"));
+});
+
+test("browser runtime self-check counts latest task-card DOM as visible user input", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "latest-task-card-user-input",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      expectedLatestUserMessageCount: 1,
+      latestTurnUserMessageCount: 0,
+      latestTurnTaskCardItemCount: 1,
+      turns: 3,
+      items: 12,
+      renderKeys: 12,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.blockingIssueCount, 0);
+  assert.equal(report.issues.some((issue) => issue.code === "browser_latest_turn_user_message_below_api_expectation"), false);
 });
 
 test("browser runtime self-check catches latest turn task card below API expectation", () => {
@@ -335,6 +887,43 @@ test("browser runtime self-check catches pending user message disappearing after
 
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.code === "browser_pending_user_message_disappeared"));
+  assert.equal(report.sampleSummary.maxClientSubmissions, 1);
+});
+
+test("browser runtime self-check does not treat loading previews as pending user disappearance", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "pending-visible",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 4,
+        items: 20,
+        latestTurnUserMessageCount: 1,
+        clientSubmissionCount: 1,
+        delayMs: 1200,
+      },
+      {
+        label: "active-preview",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        loadingNote: true,
+        turns: 4,
+        items: 12,
+        latestTurnUserMessageCount: 0,
+        clientSubmissionCount: 0,
+        delayMs: 1600,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(!report.issues.some((issue) => issue.code === "browser_pending_user_message_disappeared"));
   assert.equal(report.sampleSummary.maxClientSubmissions, 1);
 });
 
@@ -499,6 +1088,66 @@ test("browser runtime self-check catches submitted message card jitter", () => {
   assert.equal(report.sampleSummary.maxSubmittedMessageShiftPx, 8);
 });
 
+test("browser runtime self-check catches blocked thread list interaction", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "thread-list-probe",
+      probeKind: "thread-list-interaction",
+      threadHash: "thread-list",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      threadListAvailable: true,
+      threadListScrollable: true,
+      threadListCardCount: 40,
+      threadListProbeElapsedMs: 2200,
+      threadListMaxRafDelayMs: 1300,
+      threadListMaxScrollApplyMs: 1320,
+      longTaskCount: 2,
+      longTaskMaxDurationMs: 1280,
+      longTaskTotalDurationMs: 1800,
+      turns: 0,
+      items: 0,
+      renderKeys: 0,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_thread_list_interaction_blocked"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_main_thread_long_task"));
+  assert.equal(report.sampleSummary.maxThreadListRafDelayMs, 1300);
+  assert.equal(report.sampleSummary.maxLongTaskDurationMs, 1280);
+});
+
+test("browser runtime self-check ignores expected stress probe elapsed time without per-frame blocking", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "thread-list-stress",
+      probeKind: "thread-list-interaction",
+      stressProbe: true,
+      threadHash: "thread-list",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      threadListAvailable: true,
+      threadListScrollable: true,
+      threadListCardCount: 40,
+      threadListProbeElapsedMs: 4500,
+      threadListMaxRafDelayMs: 150,
+      threadListMaxScrollApplyMs: 150,
+      longTaskCount: 0,
+      longTaskMaxDurationMs: 0,
+      turns: 0,
+      items: 0,
+      renderKeys: 0,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.issueCount, 0);
+  assert.equal(report.sampleSummary.maxThreadListProbeElapsedMs, 4500);
+});
+
 test("browser runtime self-check catches duplicate DOM keys and runtime exceptions", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{
@@ -563,6 +1212,10 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /expectedLatestUsageRequired/);
   assert.match(expression, /expectedLatestUserMessageCount/);
   assert.match(expression, /expectedLatestTaskCardUserMessageCount/);
+  assert.match(expression, /expectedTurnShapes/);
+  assert.match(expression, /domTurnShapes/);
+  assert.match(expression, /userAfterUsageCount/);
+  assert.match(expression, /longTaskMaxDurationMs/);
   assert.match(expression, /latestTurnHash/);
   assert.match(expression, /latestTurnUserMessageCount/);
   assert.match(expression, /latestTurnTaskCardItemCount/);
@@ -574,6 +1227,9 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /latestTurnAssistantTextDuplicateCount/);
   assert.match(expression, /latestTimestampMissingItems/);
   assert.match(expression, /imageFailureCount/);
+  assert.match(expression, /imageSourceKind/);
+  assert.match(expression, /imageFailureKindCounts/);
+  assert.match(expression, /imageFailureDetails/);
   assert.match(expression, /brokenCompleteImageCount/);
   assert.match(expression, /data-client-submission-hash/);
   assert.match(expression, /visualAnchorKeyHash/);
@@ -584,6 +1240,55 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /emptyState/);
   assert.match(expression, /codexMobileCurrentThreadId/);
   assert.doesNotMatch(expression, /innerText|location\.href|document\.cookie|Authorization|Bearer/);
+});
+
+test("browser runtime self-check refreshes API plan before settled delayed samples", () => {
+  const input = script.snapshotInputForPlanEntry({
+    id: "private-thread-id",
+    threadHash: "thread-hash",
+    expectedTurnHashes: ["turn-a"],
+    expectedLatestTurnHash: "turn-a",
+    expectedLatestUsageRequired: true,
+    expectedLatestUserMessageCount: 1,
+    expectedLatestUserMessageDuplicateCount: 0,
+    expectedLatestTaskCardUserMessageCount: 2,
+    expectedTurnShapes: [{ turnHash: "turn-a" }],
+  }, {
+    label: "sample",
+    delayMs: 100,
+  });
+
+  assert.equal(input.threadId, "private-thread-id");
+  assert.equal(input.expectedLatestTaskCardUserMessageCount, 2);
+  assert.deepEqual(input.expectedTurnShapes, [{ turnHash: "turn-a" }]);
+  assert.match(
+    script.run.toString(),
+    /let snapshotPlan = await refreshThreadPlanEntry\(options, key, entry\);\s+for \(const delayMs of options\.sampleDelaysMs\)/,
+  );
+  assert.match(script.run.toString(), /if \(delayMs >= options\.minSettledDelayMs\)/);
+  assert.match(script.run.toString(), /snapshotPlan = await refreshThreadPlanEntry\(options, key, snapshotPlan\);/);
+  assert.match(script.run.toString(), /snapshotExpression\(snapshotInputForPlanEntry\(snapshotPlan/);
+  assert.match(script.run.toString(), /snapshotExpression\(snapshotInputForPlanEntry\(submitPostPlan/);
+});
+
+test("browser runtime self-check script exposes thread-list interaction probe", () => {
+  const expression = script.threadListInteractionProbeExpression("thread-list-test");
+
+  assert.match(expression, /thread-list-interaction/);
+  assert.match(expression, /threadListProbeElapsedMs/);
+  assert.match(expression, /threadListMaxRafDelayMs/);
+  assert.match(expression, /threadListMaxScrollApplyMs/);
+  assert.match(expression, /longTaskMaxDurationMs/);
+});
+
+test("browser runtime self-check script exposes thread-list stress probe", () => {
+  const expression = script.threadListStressProbeExpression("thread-list-stress", 2);
+
+  assert.match(expression, /thread-list-stress/);
+  assert.match(expression, /stressProbe/);
+  assert.match(expression, /openMenu/);
+  assert.match(expression, /data-thread/);
+  assert.match(expression, /threadListMaxRafDelayMs/);
 });
 
 test("browser runtime self-check exposes explicit composer submit exercise", () => {
@@ -602,4 +1307,16 @@ test("browser runtime self-check route and console classifiers are bounded", () 
   assert.equal(script.routeKind("http://127.0.0.1:8787/private/path?cookie=value"), "other");
   assert.equal(script.safeConsoleText("Failed to load resource: the server responded with a status of 500"), "resource_load_failed");
   assert.equal(script.safeConsoleText("Uncaught TypeError: private value"), "uncaught");
+});
+
+test("browser runtime self-check launches Chrome in a cleanup-owned process group", () => {
+  assert.match(scriptSource, /const activeChromeCleanups = new Set\(\)/);
+  assert.match(scriptSource, /function cleanupChromeChild\(/);
+  assert.match(scriptSource, /process\.kill\(-child\.pid, signal\)/);
+  assert.match(scriptSource, /function installChromeCleanupHandlers\(/);
+  assert.match(scriptSource, /process\.once\("exit"/);
+  assert.match(scriptSource, /process\.once\(signal/);
+  assert.match(scriptSource, /detached:\s*true/);
+  assert.match(scriptSource, /activeChromeCleanups\.add\(cleanup\)/);
+  assert.match(scriptSource, /activeChromeCleanups\.delete\(cleanup\)/);
 });

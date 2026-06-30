@@ -202,14 +202,32 @@ load failures. The browser self-check now also detects repeated few-pixel
 visual-anchor jitter and can explicitly exercise the real Composer submit path
 with one short OK-only message via `--exercise-submit`, so submitted user-card
 visibility and small send-time layout shifts are testable without printing
-message bodies. Clients after `codex-mobile-shell-v581` also prevent stale
+message bodies. The API and browser self-checks also flag same-event duplicate
+user cards: the server layer treats same-content projection-index user messages
+as one event only when their bounded timestamps match, while the browser check
+reports latest-turn duplicate user cards separately from assistant-text
+duplicates. Clients after `codex-mobile-shell-v581` also prevent stale
 active-turn identities from steering new user input into already completed
 turns, discard pending steer echoes once their target turn has completed, and
 disable conversation-body entry/leave translation animations so repeated thread
-opens do not create a few-pixel reading jitter. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
+opens do not create a few-pixel reading jitter. Clients after
+`codex-mobile-shell-v582` refuse to render uncached/unsafe `imageView` sources
+such as relative filenames, raw `data:image`, stale `blob:`, `file://`, or
+external URLs as `<img src>`; generated image cards should use
+`/api/generated-images/file` content URLs or bounded failed cards, and browser
+self-check image failures include source-kind metadata. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
 self-check plus browser self-check for deploy-time one-shot checks and periodic
 metadata-only JSONL monitoring, while Home AI remains responsible for
-Owner-approved repair-card dispatch.
+Owner-approved repair-card dispatch. Runtime self-check results now pass
+through `adapters/runtime-self-check-gate-service.js`: user-visible H1/H2
+projection, image, duplicate-message, timestamp, list/detail, submit, and
+browser execution failures remain deploy-blocking/reportable, while
+`thread_session_slow_path` / detail-list slow-success evidence is observe-only
+by default so repeated performance samples do not create repair-card noise.
+`scripts/codex-mobile-runtime-self-check-launchagent-readback.js` provides the
+same metadata-only gate readback for the macOS periodic LaunchAgent, verifying
+that the 10-minute checker is loaded, writing fresh gate-bearing JSONL, and
+not stuck on a stale failure.
 
 The active-window coalescing slice targets the "long spinner, then eventual
 success" shape seen on active large sessions. That shape is not a network/RPC

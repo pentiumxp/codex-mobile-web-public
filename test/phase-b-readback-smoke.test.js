@@ -110,7 +110,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
           running: false,
           completed: true,
           deferralCount: 0,
-          delayMs: 1500,
+          delayMs: 0,
           retryDelayMs: 2500,
           maxDeferrals: 5,
           limit: 40,
@@ -196,6 +196,16 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             omittedOperationItems: 14,
             omittedReasoningItems: 3,
             omittedAssistantItems: 7,
+            progressiveReplayAssistantItems: 8,
+            limitedReplayAssistantItems: 7,
+            progressiveCompletedReplayAssistantItems: 12,
+            progressiveCompletedReplayAssistantBudgetApplied: true,
+            progressiveCompletedReplayAssistantBudgetReason: "active-byte-pressure",
+            progressiveCompletedReplayAssistantBudgetScope: "active-first-paint",
+            limitedCompletedReplayAssistantItems: 5,
+            completedReplayAssistantItemsBefore: 18,
+            completedReplayAssistantItemsAfter: 13,
+            completedReplayOmittedAssistantItems: 5,
             omittedVisibleItems: 2,
             activeTurnCount: 1,
             staleActiveTurnCount: 1,
@@ -217,6 +227,47 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             activeUserInputOriginalChars: 25000,
             activeUserInputRetainedChars: 9000,
             omittedActiveUserInputChars: 16000,
+            progressiveCompletedUserTextChars: 1024,
+            progressiveCompletedUserInputBudgetApplied: true,
+            progressiveCompletedUserInputBudgetReason: "first-paint-byte-pressure",
+            progressiveCompletedUserInputBudgetScope: "active-first-paint",
+            progressiveCompletedUserInputBudgetMode: "shared-newest-first",
+            progressiveCompletedUserInputBytesBeforeBudget: 185000,
+            progressiveCompletedUserInputBytesAfterBudget: 158000,
+            truncatedCompletedUserInputItems: 8,
+            completedUserInputOriginalChars: 31000,
+            completedUserInputRetainedChars: 8192,
+            omittedCompletedUserInputChars: 22808,
+            progressiveCompletedUsageBudgetApplied: true,
+            progressiveCompletedUsageBudgetReason: "first-paint-byte-pressure",
+            progressiveCompletedUsageBudgetScope: "active-first-paint",
+            progressiveCompletedUsageBytesBeforeBudget: 158000,
+            progressiveCompletedUsageBytesAfterBudget: 149000,
+            truncatedCompletedUsageItems: 6,
+            completedUsageOriginalBytes: 9300,
+            completedUsageRetainedBytes: 3900,
+            omittedCompletedUsageBytes: 5400,
+            progressiveCompletedUsageSummaryOnlyBudgetApplied: true,
+            progressiveCompletedUsageSummaryOnlyBudgetReason: "first-paint-byte-pressure",
+            progressiveCompletedUsageSummaryOnlyBudgetScope: "active-first-paint",
+            progressiveCompletedUsageSummaryOnlyBytesBeforeBudget: 116000,
+            progressiveCompletedUsageSummaryOnlyBytesAfterBudget: 111000,
+            truncatedCompletedUsageSummaryOnlyItems: 5,
+            completedUsageSummaryOnlyOriginalBytes: 3900,
+            completedUsageSummaryOnlyRetainedBytes: 2100,
+            omittedCompletedUsageSummaryOnlyBytes: 1800,
+            progressiveThreadTaskCardBudgetApplied: true,
+            progressiveThreadTaskCardBudgetReason: "first-paint-byte-pressure",
+            progressiveThreadTaskCardBudgetScope: "active-first-paint",
+            progressiveThreadTaskCardOriginalCount: 24,
+            progressiveThreadTaskCardCompactedCount: 18,
+            progressiveThreadTaskCardActionableCount: 2,
+            progressiveThreadTaskCardIneligibleCount: 1,
+            progressiveThreadTaskCardOriginalBytes: 36000,
+            progressiveThreadTaskCardRetainedBytes: 12000,
+            progressiveThreadTaskCardOmittedBytes: 24000,
+            progressiveThreadTaskCardBytesBeforeBudget: 140000,
+            progressiveThreadTaskCardBytesAfterBudget: 116000,
             progressiveActiveTextChars: 12000,
             truncatedActiveTextItems: 2,
             activeTextOriginalChars: 58000,
@@ -237,7 +288,57 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             progressiveActiveFirstPaintItemBudgetReason: "progressive-active-first-paint-byte-ceiling",
             progressiveActiveFirstPaintBytesBeforeItemBudget: 150000,
             progressiveActiveFirstPaintBytesAfterItemBudget: 92000,
+            progressiveActiveFirstPaintBytesAfterTaskCardBudget: 116000,
+            progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget: 111000,
             progressiveActiveFirstPaintOmittedVisibleItems: 6,
+            progressiveActiveFirstPaintOverCeilingBytes: 12696,
+            retainedVisibleItemCountByKind: { operation: 12, assistant: 4, userMessage: 1 },
+            retainedVisibleItemBytesByKind: { operation: 52000, assistant: 18000, userMessage: 9000 },
+            retainedAssistantItemCountByTurnState: { active: 2, completed: 2 },
+            retainedAssistantItemBytesByTurnState: { active: 7000, completed: 11000 },
+            retainedAssistantItemBytesByShape: {
+              directText: 6000,
+              contentText: 9000,
+              contentAuxiliary: 1000,
+              itemAuxiliary: 2000,
+            },
+            retainedActiveAssistantItemBytesByShape: {
+              directText: 2500,
+              contentText: 3500,
+              itemAuxiliary: 1000,
+            },
+            retainedCompletedAssistantItemBytesByShape: {
+              directText: 3500,
+              contentText: 5500,
+              contentAuxiliary: 1000,
+              itemAuxiliary: 1000,
+            },
+            retainedUserInputItemCountByTurnState: { completed: 2, active: 1 },
+            retainedUserInputItemBytesByTurnState: { completed: 12000, active: 3000 },
+            retainedUserInputItemBytesByShape: {
+              directText: 9000,
+              contentText: 2500,
+              inlineImageData: 1500,
+              contentAuxiliary: 1000,
+              itemAuxiliary: 1000,
+            },
+            retainedActiveUserInputItemBytesByShape: {
+              directText: 2000,
+              contentText: 500,
+              inlineImageData: 400,
+              itemAuxiliary: 100,
+            },
+            retainedCompletedUserInputItemBytesByShape: {
+              directText: 7000,
+              contentText: 2000,
+              inlineImageData: 1100,
+              contentAuxiliary: 1000,
+              itemAuxiliary: 900,
+            },
+            retainedVisibleItemCountForByteStats: 31,
+            retainedVisibleItemBytesForByteStats: 88000,
+            retainedVisibleItemLargestKind: "operation",
+            retainedVisibleItemLargestBytes: 13000,
             progressiveCompletedTextBudgetApplied: true,
             progressiveCompletedTextBudgetReason: "first-paint-byte-ceiling",
             progressiveCompletedTextBudgetScope: "active-first-paint",
@@ -276,6 +377,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
               projectionMs: 4,
               activeOverlayMs: 5,
               activeOverlayProjectionLookupMs: 2,
+              activeOverlayBackfillWindowMs: 7,
+              activeOverlayFullProjectionMs: 0,
+              activeOverlayHistoryBaselineMs: 3,
               activeOverlayMergeMs: 1,
               prepareResponseMs: 6,
               threadReadMs: 0,
@@ -352,6 +456,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.activeOverlayWindowFirst, true);
   assert.equal(report.detail.projectionMs, 4);
   assert.equal(report.detail.activeOverlayProjectionLookupMs, 2);
+  assert.equal(report.detail.activeOverlayBackfillWindowMs, 7);
+  assert.equal(report.detail.activeOverlayFullProjectionMs, 0);
+  assert.equal(report.detail.activeOverlayHistoryBaselineMs, 3);
   assert.equal(report.detail.prepareResponseMs, 6);
   assert.equal(report.detail.threadReadMs, 0);
   assert.equal(report.detail.responseBudgetVersion, "thread-detail-response-budget-v2");
@@ -363,6 +470,16 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetOmittedOperationItems, 14);
   assert.equal(report.detail.responseBudgetOmittedReasoningItems, 3);
   assert.equal(report.detail.responseBudgetOmittedAssistantItems, 7);
+  assert.equal(report.detail.responseBudgetProgressiveReplayAssistantItems, 8);
+  assert.equal(report.detail.responseBudgetLimitedReplayAssistantItems, 7);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedReplayAssistantItems, 12);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedReplayAssistantBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedReplayAssistantBudgetReason, "active-byte-pressure");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedReplayAssistantBudgetScope, "active-first-paint");
+  assert.equal(report.detail.responseBudgetLimitedCompletedReplayAssistantItems, 5);
+  assert.equal(report.detail.responseBudgetCompletedReplayAssistantItemsBefore, 18);
+  assert.equal(report.detail.responseBudgetCompletedReplayAssistantItemsAfter, 13);
+  assert.equal(report.detail.responseBudgetCompletedReplayOmittedAssistantItems, 5);
   assert.equal(report.detail.responseBudgetOmittedVisibleItems, 2);
   assert.equal(report.detail.responseBudgetActiveTurnCount, 1);
   assert.equal(report.detail.responseBudgetStaleActiveTurnCount, 1);
@@ -372,6 +489,47 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetProgressiveActiveTurnOriginalBytes, 86000);
   assert.equal(report.detail.responseBudgetTruncatedActiveUserInputItems, 1);
   assert.equal(report.detail.responseBudgetOmittedActiveUserInputChars, 16000);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUserTextChars, 1024);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBudgetReason, "first-paint-byte-pressure");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBudgetScope, "active-first-paint");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBudgetMode, "shared-newest-first");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBytesBeforeBudget, 185000);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBytesAfterBudget, 158000);
+  assert.equal(report.detail.responseBudgetTruncatedCompletedUserInputItems, 8);
+  assert.equal(report.detail.responseBudgetCompletedUserInputOriginalChars, 31000);
+  assert.equal(report.detail.responseBudgetCompletedUserInputRetainedChars, 8192);
+  assert.equal(report.detail.responseBudgetOmittedCompletedUserInputChars, 22808);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageBudgetReason, "first-paint-byte-pressure");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageBudgetScope, "active-first-paint");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageBytesBeforeBudget, 158000);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageBytesAfterBudget, 149000);
+  assert.equal(report.detail.responseBudgetTruncatedCompletedUsageItems, 6);
+  assert.equal(report.detail.responseBudgetCompletedUsageOriginalBytes, 9300);
+  assert.equal(report.detail.responseBudgetCompletedUsageRetainedBytes, 3900);
+  assert.equal(report.detail.responseBudgetOmittedCompletedUsageBytes, 5400);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetReason, "first-paint-byte-pressure");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetScope, "active-first-paint");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageSummaryOnlyBytesBeforeBudget, 116000);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageSummaryOnlyBytesAfterBudget, 111000);
+  assert.equal(report.detail.responseBudgetTruncatedCompletedUsageSummaryOnlyItems, 5);
+  assert.equal(report.detail.responseBudgetCompletedUsageSummaryOnlyOriginalBytes, 3900);
+  assert.equal(report.detail.responseBudgetCompletedUsageSummaryOnlyRetainedBytes, 2100);
+  assert.equal(report.detail.responseBudgetOmittedCompletedUsageSummaryOnlyBytes, 1800);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBudgetReason, "first-paint-byte-pressure");
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBudgetScope, "active-first-paint");
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardOriginalCount, 24);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardCompactedCount, 18);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardActionableCount, 2);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardIneligibleCount, 1);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardOriginalBytes, 36000);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardRetainedBytes, 12000);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardOmittedBytes, 24000);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBytesBeforeBudget, 140000);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBytesAfterBudget, 116000);
   assert.equal(report.detail.responseBudgetTruncatedActiveTextItems, 2);
   assert.equal(report.detail.responseBudgetOmittedActiveTextChars, 39000);
   assert.equal(report.detail.responseBudgetTruncatedActiveOperationPayloadItems, 3);
@@ -383,15 +541,116 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintItemBudgetReason, "progressive-active-first-paint-byte-ceiling");
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget, 150000);
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 92000);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesAfterTaskCardBudget, 116000);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget, 111000);
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOmittedVisibleItems, 6);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOverCeilingBytes, 12696);
+  assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemCountByKind, { operation: 12, assistant: 4, userMessage: 1 });
+  assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemBytesByKind, { operation: 52000, assistant: 18000, userMessage: 9000 });
+  assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemCountByTurnState, { active: 2, completed: 2 });
+  assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemBytesByTurnState, { active: 7000, completed: 11000 });
+  assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemBytesByShape, {
+    directText: 6000,
+    contentText: 9000,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 2000,
+  });
+  assert.deepEqual(report.detail.responseBudgetRetainedActiveAssistantItemBytesByShape, {
+    directText: 2500,
+    contentText: 3500,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(report.detail.responseBudgetRetainedCompletedAssistantItemBytesByShape, {
+    directText: 3500,
+    contentText: 5500,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(report.detail.responseBudgetRetainedUserInputItemCountByTurnState, { completed: 2, active: 1 });
+  assert.deepEqual(report.detail.responseBudgetRetainedUserInputItemBytesByTurnState, { completed: 12000, active: 3000 });
+  assert.deepEqual(report.detail.responseBudgetRetainedUserInputItemBytesByShape, {
+    directText: 9000,
+    contentText: 2500,
+    inlineImageData: 1500,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(report.detail.responseBudgetRetainedActiveUserInputItemBytesByShape, {
+    directText: 2000,
+    contentText: 500,
+    inlineImageData: 400,
+    itemAuxiliary: 100,
+  });
+  assert.deepEqual(report.detail.responseBudgetRetainedCompletedUserInputItemBytesByShape, {
+    directText: 7000,
+    contentText: 2000,
+    inlineImageData: 1100,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 900,
+  });
+  assert.equal(report.detail.responseBudgetRetainedVisibleItemCountForByteStats, 31);
+  assert.equal(report.detail.responseBudgetRetainedVisibleItemBytesForByteStats, 88000);
+  assert.equal(report.detail.responseBudgetRetainedVisibleItemLargestKind, "operation");
+  assert.equal(report.detail.responseBudgetRetainedVisibleItemLargestBytes, 13000);
   assert.equal(report.detail.responseBudgetProgressiveCompletedTextBudgetApplied, true);
   assert.equal(report.detail.responseBudgetProgressiveCompletedTextBudgetScope, "active-first-paint");
   assert.equal(report.detail.responseBudgetProgressiveFirstPaintBytesBeforeTextBudget, 210000);
   assert.equal(report.detail.responseBudgetProgressiveFirstPaintBytesAfterTextBudget, 150000);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveApplied, true);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveCompletedReplayAssistantBudgetApplied, true);
+  assert.equal(report.decision.evidence.detailResponseBudgetLimitedCompletedReplayAssistantItems, 5);
   assert.equal(report.decision.evidence.detailResponseBudgetOmittedActiveTextChars, 39000);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetApplied, true);
+  assert.equal(report.decision.evidence.detailResponseBudgetOmittedCompletedUserInputChars, 22808);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveCompletedUsageBudgetApplied, true);
+  assert.equal(report.decision.evidence.detailResponseBudgetOmittedCompletedUsageBytes, 5400);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveThreadTaskCardBudgetApplied, true);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveThreadTaskCardCompactedCount, 18);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveThreadTaskCardIneligibleCount, 1);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveThreadTaskCardOmittedBytes, 24000);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintItemBudgetApplied, true);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 92000);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterTaskCardBudget, 116000);
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedVisibleItemBytesByKind, {
+    operation: 52000,
+    assistant: 18000,
+    userMessage: 9000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedAssistantItemBytesByTurnState, {
+    active: 7000,
+    completed: 11000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedAssistantItemBytesByShape, {
+    directText: 6000,
+    contentText: 9000,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 2000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedActiveAssistantItemBytesByShape, {
+    directText: 2500,
+    contentText: 3500,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedCompletedAssistantItemBytesByShape, {
+    directText: 3500,
+    contentText: 5500,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedUserInputItemBytesByShape, {
+    directText: 9000,
+    contentText: 2500,
+    inlineImageData: 1500,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedActiveUserInputItemBytesByShape, {
+    directText: 2000,
+    contentText: 500,
+    inlineImageData: 400,
+    itemAuxiliary: 100,
+  });
+  assert.equal(report.decision.evidence.detailResponseBudgetRetainedVisibleItemLargestKind, "operation");
   assert.match(report.threadList.firstThreadHash, /^[a-f0-9]{16}$/);
   assert.match(report.detail.requestedThreadHash, /^[a-f0-9]{16}$/);
   assert.deepEqual(seen.map((item) => item.path), [

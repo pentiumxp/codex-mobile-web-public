@@ -79,6 +79,8 @@
   function textLooksLikeWorkflowCard(value) {
     const body = String(value || "");
     return /^\s*\[Cross-thread task card/im.test(body)
+      || /^\s*\[Codex Mobile task-card continuation\]/im.test(body)
+      || /^\s*#\s*Continuation Bootstrap Index\b/im.test(body)
       || /^\s*Task card id:/im.test(body)
       || /^\s*Source workspace:/im.test(body)
       || /^\s*Source thread:/im.test(body)

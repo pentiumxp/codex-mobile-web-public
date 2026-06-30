@@ -63,7 +63,170 @@
 
   function threadHasReusableLoadedDetailState(thread) {
     if (!threadHasLoadedDetailState(thread)) return false;
+    if (threadHasActiveDetailEvidence(thread)) return false;
     return Array.isArray(thread.turns) && thread.turns.length > 0;
+  }
+
+  function statusKind(value) {
+    if (!value) return "";
+    if (typeof value === "string") return value;
+    if (value && typeof value === "object") return String(value.type || value.status || value.kind || "");
+    return "";
+  }
+
+  function turnIsSettled(turn) {
+    const kind = statusKind(turn && turn.status).toLowerCase();
+    return kind === "completed" || kind === "failed" || kind === "cancelled" || kind === "canceled";
+  }
+
+  function threadHasActiveDetailEvidence(thread) {
+    if (!thread || typeof thread !== "object") return false;
+    if (thread.activeTurnId || thread.mobileRolloutActiveTurn) return true;
+    const kind = statusKind(thread.status).toLowerCase();
+    if (["active", "running", "in_progress", "in-progress", "pending", "processing", "status-error"].includes(kind)) {
+      return true;
+    }
+    if (!Array.isArray(thread.turns)) return false;
+    return thread.turns.some((turn) => {
+      const kind = statusKind(turn && turn.status);
+      return Boolean(kind && !turnIsSettled(turn));
+    });
+  }
+
+  function activeTurnIdentifier(value) {
+    if (!value) return "";
+    if (typeof value === "string") return value;
+    if (value && typeof value === "object") return String(value.id || value.turnId || value.activeTurnId || "");
+    return "";
+  }
+
+  function activeTurnIdsForThread(thread) {
+    const ids = new Set();
+    const direct = activeTurnIdentifier(thread && thread.activeTurnId);
+    const rollout = activeTurnIdentifier(thread && thread.mobileRolloutActiveTurn);
+    if (direct) ids.add(direct);
+    if (rollout) ids.add(rollout);
+    return ids;
+  }
+
+  function turnIsActivePreviewTarget(thread, turn, index, turns) {
+    if (!turn || typeof turn !== "object") return false;
+    const turnId = String(turn.id || "");
+    const activeIds = activeTurnIdsForThread(thread);
+    if (turnId && activeIds.has(turnId)) return true;
+    const kind = statusKind(turn.status);
+    if (kind && !turnIsSettled(turn)) return true;
+    const threadKind = statusKind(thread && thread.status).toLowerCase();
+    if (["active", "running", "in_progress", "in-progress", "pending", "processing", "status-error"].includes(threadKind)) {
+      return index === turns.length - 1;
+    }
+    return false;
+  }
+
+  function activePreviewSafeItem(item) {
+    if (!item || typeof item !== "object") return false;
+    const type = String(item.type || "").toLowerCase();
+    return type === "usermessage"
+      || type === "taskcard"
+      || type === "turndiagnostic"
+      || type === "contextcompaction";
+  }
+
+  function previewUserMessageText(item) {
+    if (!item || item.type !== "userMessage") return "";
+    if (typeof item.text === "string") return item.text.trim();
+    if (typeof item.message === "string") return item.message.trim();
+    const content = Array.isArray(item.content) ? item.content : [];
+    return content.map((part) => {
+      if (typeof part === "string") return part;
+      if (!part || typeof part !== "object") return "";
+      if (typeof part.text === "string") return part.text;
+      if (typeof part.value === "string") return part.value;
+      if (typeof part.content === "string") return part.content;
+      return "";
+    }).join("").trim();
+  }
+
+  function previewUserMessageSubmissionIds(item) {
+    if (!item || item.type !== "userMessage") return [];
+    return [
+      item.clientSubmissionId,
+      item.submissionId,
+      item.mobileSubmissionId,
+      item.id && /^local-user-/.test(String(item.id)) ? String(item.id).replace(/^local-user-/, "") : "",
+    ].map((value) => String(value || "").trim()).filter(Boolean);
+  }
+
+  function previewUserMessageHasSubmissionId(item, submissionId) {
+    if (!submissionId || !item || item.type !== "userMessage") return false;
+    return previewUserMessageSubmissionIds(item).includes(submissionId);
+  }
+
+  function isPreviewOptimisticUserMessage(item) {
+    if (!item || item.type !== "userMessage") return false;
+    return Boolean(item.mobilePendingSubmission
+      || item.mobileSendError
+      || /^local-user-/.test(String(item.id || "")));
+  }
+
+  function previewDurableUserMessageMatchesOptimistic(durableItem, optimisticItem) {
+    if (!durableItem || !optimisticItem) return false;
+    if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
+    if (isPreviewOptimisticUserMessage(durableItem) || !isPreviewOptimisticUserMessage(optimisticItem)) return false;
+    const submissionIds = previewUserMessageSubmissionIds(optimisticItem);
+    if (submissionIds.some((submissionId) => previewUserMessageHasSubmissionId(durableItem, submissionId))) return true;
+    const durableText = previewUserMessageText(durableItem);
+    const optimisticText = previewUserMessageText(optimisticItem);
+    return Boolean(durableText && optimisticText && durableText === optimisticText);
+  }
+
+  function threadHasDurableUserMessageMatchingPreviewEcho(thread, optimisticItem) {
+    if (!thread || !Array.isArray(thread.turns) || !isPreviewOptimisticUserMessage(optimisticItem)) return false;
+    return thread.turns.some((turn) => (Array.isArray(turn && turn.items) ? turn.items : [])
+      .some((candidate) => previewDurableUserMessageMatchesOptimistic(candidate, optimisticItem)));
+  }
+
+  function activePreviewItemAllowed(thread, item) {
+    if (!activePreviewSafeItem(item)) return false;
+    if (item && item.type === "userMessage" && threadHasDurableUserMessageMatchingPreviewEcho(thread, item)) return false;
+    return true;
+  }
+
+  function cloneActivePreviewItem(item) {
+    if (!item || typeof item !== "object") return item;
+    const clone = Object.assign({}, item);
+    if (Array.isArray(item.content)) {
+      clone.content = item.content.map((entry) => (
+        entry && typeof entry === "object" ? Object.assign({}, entry) : entry
+      ));
+    }
+    return clone;
+  }
+
+  function activeDetailLoadingPreviewThread(thread) {
+    if (!threadHasLoadedDetailState(thread) || !threadHasActiveDetailEvidence(thread)) return null;
+    const turns = Array.isArray(thread.turns) ? thread.turns : [];
+    if (!turns.length) return null;
+    let previewedActiveTurn = false;
+    const nextTurns = turns.map((turn, index) => {
+      if (!turn || typeof turn !== "object") return turn;
+      if (!turnIsActivePreviewTarget(thread, turn, index, turns)) return turn;
+      previewedActiveTurn = true;
+      return Object.assign({}, turn, {
+        items: Array.isArray(turn.items)
+          ? turn.items.filter((item) => activePreviewItemAllowed(thread, item)).map(cloneActivePreviewItem)
+          : [],
+        mobileActiveCachePreview: true,
+        mobileLoading: true,
+      });
+    });
+    if (!previewedActiveTurn) return null;
+    return Object.assign({}, thread, {
+      turns: nextTurns,
+      mobileLoading: true,
+      mobileLoadError: "",
+      mobileActiveCachePreview: true,
+    });
   }
 
   function rolloutSizeBytesFromThread(thread) {
@@ -192,6 +355,37 @@
     return evidence;
   }
 
+  function timestampMs(value) {
+    if (value === null || value === undefined || value === "") return 0;
+    const numberValue = Number(value);
+    if (Number.isFinite(numberValue) && numberValue > 0) {
+      return numberValue > 1_000_000_000_000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1000);
+    }
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }
+
+  function threadUpdatedAtMs(thread) {
+    if (!thread || typeof thread !== "object") return 0;
+    return timestampMs(thread.updatedAtMs)
+      || timestampMs(thread.updatedAt)
+      || timestampMs(thread.updated_at_ms)
+      || timestampMs(thread.updated_at)
+      || timestampMs(thread.lastActivityAtMs)
+      || timestampMs(thread.lastActivityAt)
+      || timestampMs(thread.last_activity_at_ms)
+      || timestampMs(thread.last_activity_at)
+      || 0;
+  }
+
+  function summaryIsNewerThanCachedDetail(summaryThread, cachedThread, toleranceMs = 1000) {
+    const summaryMs = threadUpdatedAtMs(summaryThread);
+    const cachedMs = threadUpdatedAtMs(cachedThread);
+    if (!summaryMs) return false;
+    if (!cachedMs) return true;
+    return summaryMs > cachedMs + Math.max(0, Number(toleranceMs || 0));
+  }
+
   function hasNonemptyThreadDetailRenderEvidence(evidence) {
     return Boolean(evidence && (boundedCount(evidence.turnCount) || boundedCount(evidence.visibleItemCount)));
   }
@@ -200,6 +394,7 @@
     const requestedThreadId = String(input.requestedThreadId || input.threadId || "").trim();
     const currentThreadId = String(input.currentThreadId || "").trim();
     const thread = input.currentThread || input.thread || null;
+    const summaryThread = input.summaryThread || input.summary || null;
     const threadId = String(thread && thread.id || "").trim();
     if (!requestedThreadId) {
       return {
@@ -243,11 +438,26 @@
         reason: "current-thread-load-error",
       };
     }
+    if (summaryIsNewerThanCachedDetail(summaryThread, thread)) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "summary-newer-than-cached-detail",
+      };
+    }
     if (threadHasReusableLoadedDetailState(thread)) {
       return {
         shouldUseCachedCurrent: true,
         shouldReportEmptyCachedDetail: false,
         reason: "reusable-loaded-detail",
+      };
+    }
+    if (threadHasLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread)) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldUseActivePreview: true,
+        shouldReportEmptyCachedDetail: false,
+        reason: "active-detail-cache-not-reusable",
       };
     }
     if (threadHasLoadedDetailState(thread) && Array.isArray(thread.turns) && thread.turns.length === 0) {
@@ -452,6 +662,7 @@
       if (!item || itemVisibleWeight(item) <= 0) return false;
       if (visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys)) return false;
       if (shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn)) return false;
+      if (item.type === "userMessage" && completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)) return false;
       if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
       return preserveLocalVisible && !isReasoningItem(item);
     }
@@ -523,6 +734,7 @@
 
   return {
     buildThreadDetailRenderEvidence,
+    activeDetailLoadingPreviewThread,
     createThreadDetailStatePolicy,
     emptyDetailHistoryEvidenceForThread,
     hasNonemptyThreadDetailRenderEvidence,

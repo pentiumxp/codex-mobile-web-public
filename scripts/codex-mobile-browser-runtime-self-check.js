@@ -17,6 +17,55 @@ const {
 const DEFAULT_SERVER = "http://127.0.0.1:8787";
 const DEFAULT_CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const DEFAULT_VIEWPORT = "390x844";
+const activeChromeCleanups = new Set();
+let chromeCleanupHandlersInstalled = false;
+
+function cleanupChromeChild(child, userDataDir, signal = "SIGTERM") {
+  if (child && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+    } catch (_) {
+      try {
+        child.kill(signal);
+      } catch (_) {}
+    }
+  }
+  if (userDataDir) {
+    try {
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    } catch (_) {}
+  }
+}
+
+function installChromeCleanupHandlers() {
+  if (chromeCleanupHandlersInstalled) return;
+  chromeCleanupHandlersInstalled = true;
+  const cleanupAll = (signal = "SIGTERM") => {
+    for (const cleanup of Array.from(activeChromeCleanups)) {
+      try {
+        cleanup(signal);
+      } catch (_) {}
+    }
+  };
+  process.once("exit", () => cleanupAll("SIGKILL"));
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.once(signal, () => {
+      cleanupAll("SIGTERM");
+      setTimeout(() => {
+        cleanupAll("SIGKILL");
+        process.exit(128 + (signal === "SIGINT" ? 2 : signal === "SIGTERM" ? 15 : 1));
+      }, 250).unref();
+    });
+  }
+  process.once("uncaughtException", (err) => {
+    cleanupAll("SIGKILL");
+    throw err;
+  });
+  process.once("unhandledRejection", (err) => {
+    cleanupAll("SIGKILL");
+    throw err;
+  });
+}
 
 function usage() {
   return [
@@ -38,6 +87,7 @@ function usage() {
     "  --list-limit <n>           Thread-list limit. Default: 10.",
     "  --rounds <n>               Thread switch rounds. Default: 3.",
     "  --sample-delays-ms <csv>   Delays after each switch. Default: 350,1200,2800.",
+    "  --thread-list-stress-rounds <n> Thread-list open/scroll/click stress rounds. Default: 2.",
     "  --exercise-submit          Send one short UI message through Composer in the target test thread.",
     "  --submit-thread-id <id>    Dedicated thread id for --exercise-submit. Defaults to first selected thread.",
     "  --submit-message <text>    Test message. Default asks for a one-token OK reply.",
@@ -55,6 +105,12 @@ function usage() {
 function readPositiveInt(value, fallback, max = 100000) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return fallback;
+  return Math.min(max, Math.trunc(number));
+}
+
+function readNonNegativeInt(value, fallback, max = 100000) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return fallback;
   return Math.min(max, Math.trunc(number));
 }
 
@@ -91,6 +147,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     listLimit: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_LIST_LIMIT || "10", 10, 100),
     rounds: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_ROUNDS || "3", 3, 20),
     sampleDelaysMs: parseDelayList(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SAMPLE_DELAYS_MS || ""),
+    threadListStressRounds: readNonNegativeInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_THREAD_LIST_STRESS_ROUNDS || "2", 2, 20),
     exerciseSubmit: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_EXERCISE_SUBMIT || "")),
     submitThreadId: String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_THREAD_ID || "").trim(),
     submitMessage: String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_MESSAGE || "Codex Mobile self-check test. Reply exactly: OK").slice(0, 500),
@@ -118,6 +175,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--list-limit") options.listLimit = readPositiveInt(next(), options.listLimit, 100);
     else if (arg === "--rounds") options.rounds = readPositiveInt(next(), options.rounds, 20);
     else if (arg === "--sample-delays-ms") options.sampleDelaysMs = parseDelayList(next(), options.sampleDelaysMs);
+    else if (arg === "--thread-list-stress-rounds") options.threadListStressRounds = readNonNegativeInt(next(), options.threadListStressRounds, 20);
     else if (arg === "--exercise-submit") options.exerciseSubmit = true;
     else if (arg === "--submit-thread-id") options.submitThreadId = next();
     else if (arg === "--submit-message") options.submitMessage = next().slice(0, 500);
@@ -243,6 +301,55 @@ function isInjectedThreadTaskCardItem(item = {}) {
   return parts.some((part) => isInjectedThreadTaskCardText(inputTextValue(part)));
 }
 
+function userMessageComparableText(item = {}) {
+  const parts = Array.isArray(item.content) ? item.content : [];
+  const values = [];
+  for (const part of parts) {
+    const value = inputTextValue(part);
+    if (value) values.push(value);
+  }
+  if (typeof item.text === "string") values.push(item.text);
+  if (typeof item.message === "string") values.push(item.message);
+  return values.join("\n").replace(/\s+/g, " ").trim();
+}
+
+function timestampMs(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const number = Number(value);
+  if (Number.isFinite(number) && number > 0) {
+    return number > 1_000_000_000_000 ? Math.trunc(number) : Math.trunc(number * 1000);
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function itemTimestampMs(item = {}) {
+  return timestampMs(
+    item.startedAtMs
+    || item.startedAt
+    || item.createdAtMs
+    || item.createdAt
+    || item.timestampMs
+    || item.timestamp
+    || item.mobileDisplayTimestampMs
+    || item.mobileDisplayTimestamp,
+  );
+}
+
+function duplicateLatestUserMessageEventCount(userItems = []) {
+  const seen = new Set();
+  let duplicates = 0;
+  for (const item of userItems) {
+    const textHash = shortHash(userMessageComparableText(item));
+    const time = itemTimestampMs(item);
+    if (!textHash || !time) continue;
+    const key = `${textHash}:${time}`;
+    if (seen.has(key)) duplicates += 1;
+    else seen.add(key);
+  }
+  return duplicates;
+}
+
 function latestTurnExpectation(detail = {}) {
   const thread = detail && (detail.thread || detail.data || detail);
   const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
@@ -250,6 +357,7 @@ function latestTurnExpectation(detail = {}) {
   const items = Array.isArray(latest && latest.items) ? latest.items : [];
   const userItems = items.filter((item) => item && /^userMessage$/i.test(String(item.type || "")));
   const injectedTaskCardUserItems = userItems.filter(isInjectedThreadTaskCardItem);
+  const ordinaryUserItems = userItems.filter((item) => !isInjectedThreadTaskCardItem(item));
   const itemTypes = items
     .map((item) => String(item && item.type || "unknown").trim() || "unknown")
     .slice(0, 80);
@@ -257,11 +365,34 @@ function latestTurnExpectation(detail = {}) {
     expectedLatestUsageRequired: Boolean(latest && completedStatus(latest.status) && itemTypes.includes("turnUsageSummary")),
     expectedLatestItemCount: items.length,
     expectedLatestUserMessageCount: Math.max(0, userItems.length - injectedTaskCardUserItems.length),
+    expectedLatestUserMessageDuplicateCount: duplicateLatestUserMessageEventCount(ordinaryUserItems),
     expectedLatestTaskCardUserMessageCount: injectedTaskCardUserItems.length,
     expectedLatestOperationItemCount: itemTypes.filter((type) => /^(commandExecution|fileChange|dynamicToolCall|mcpToolCall|collabAgentToolCall)$/i.test(type)).length,
     expectedLatestReasoningItemCount: itemTypes.filter((type) => /^reasoning$/i.test(type)).length,
     expectedLatestTimestampItemCount: itemTypes.filter((type) => /^(userMessage|agentMessage|plan|turnDiagnostic)$/i.test(type)).length,
   };
+}
+
+function turnShapeExpectation(detail = {}) {
+  const thread = detail && (detail.thread || detail.data || detail);
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  return turns.slice(-20).map((turn, index) => {
+    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    const userItems = items.filter((item) => item && /^userMessage$/i.test(String(item.type || "")));
+    const injectedTaskCardUserItems = userItems.filter(isInjectedThreadTaskCardItem);
+    const itemTypes = items.map((item) => String(item && item.type || "unknown").trim() || "unknown");
+    return {
+      index,
+      turnHash: browserStableHash(turn && turn.id || ""),
+      completed: completedStatus(turn && turn.status),
+      expectedItemCount: items.length,
+      expectedUserMessageCount: Math.max(0, userItems.length - injectedTaskCardUserItems.length),
+      expectedTaskCardUserMessageCount: injectedTaskCardUserItems.length,
+      expectedAssistantMessageCount: itemTypes.filter((type) => /^(agentMessage|plan)$/i.test(type)).length,
+      expectedUsageRequired: Boolean(completedStatus(turn && turn.status) && itemTypes.includes("turnUsageSummary")),
+      expectedTimestampItemCount: itemTypes.filter((type) => /^(userMessage|agentMessage|plan|turnDiagnostic)$/i.test(type)).length,
+    };
+  });
 }
 
 function safeThreadPlan(ids = []) {
@@ -277,10 +408,15 @@ async function loadThreadPlan(options, key, ids) {
   for (const id of ids) {
     let expectedTurnHashes = [];
     let expectation = latestTurnExpectation();
+    let expectedTurnShapes = [];
     try {
-      const detail = await fetchJson(requestUrl(options, `/api/threads/${encodeURIComponent(id)}`, { mode: "recent" }), options, key);
+      const detail = await fetchJson(requestUrl(options, `/api/threads/${encodeURIComponent(id)}`, {
+        mode: "recent",
+        budget: "full",
+      }), options, key);
       expectedTurnHashes = visibleTurnIds(detail).map(browserStableHash);
       expectation = latestTurnExpectation(detail);
+      expectedTurnShapes = turnShapeExpectation(detail);
     } catch (_) {
       expectedTurnHashes = [];
     }
@@ -293,13 +429,39 @@ async function loadThreadPlan(options, key, ids) {
       expectedLatestUsageRequired: expectation.expectedLatestUsageRequired,
       expectedLatestItemCount: expectation.expectedLatestItemCount,
       expectedLatestUserMessageCount: expectation.expectedLatestUserMessageCount,
+      expectedLatestUserMessageDuplicateCount: expectation.expectedLatestUserMessageDuplicateCount,
       expectedLatestTaskCardUserMessageCount: expectation.expectedLatestTaskCardUserMessageCount,
       expectedLatestOperationItemCount: expectation.expectedLatestOperationItemCount,
       expectedLatestReasoningItemCount: expectation.expectedLatestReasoningItemCount,
       expectedLatestTimestampItemCount: expectation.expectedLatestTimestampItemCount,
+      expectedTurnShapes,
     });
   }
   return plan;
+}
+
+async function refreshThreadPlanEntry(options, key, entry) {
+  if (!entry || !entry.id) return entry;
+  try {
+    const plan = await loadThreadPlan(options, key, [entry.id]);
+    return plan[0] || entry;
+  } catch (_) {
+    return entry;
+  }
+}
+
+function snapshotInputForPlanEntry(entry, extra = {}) {
+  return Object.assign({
+    threadId: entry.id,
+    threadHash: entry.threadHash,
+    expectedTurnHashes: entry.expectedTurnHashes,
+    expectedLatestTurnHash: entry.expectedLatestTurnHash,
+    expectedLatestUsageRequired: entry.expectedLatestUsageRequired,
+    expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
+    expectedLatestUserMessageDuplicateCount: entry.expectedLatestUserMessageDuplicateCount,
+    expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
+    expectedTurnShapes: entry.expectedTurnShapes,
+  }, extra);
 }
 
 async function getFreePort() {
@@ -449,6 +611,7 @@ async function waitForJson(url, timeoutMs) {
 
 async function launchChrome(options) {
   if (!fs.existsSync(options.chromePath)) throw new Error("chrome_not_found");
+  installChromeCleanupHandlers();
   const port = await getFreePort();
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-browser-self-check-"));
   const args = [
@@ -465,17 +628,15 @@ async function launchChrome(options) {
   args.push("about:blank");
   const child = childProcess.spawn(options.chromePath, args, {
     stdio: ["ignore", "ignore", "ignore"],
-    detached: false,
+    detached: true,
   });
+  const cleanup = (signal = "SIGTERM") => cleanupChromeChild(child, userDataDir, signal);
+  activeChromeCleanups.add(cleanup);
   const close = async () => {
-    try {
-      if (!child.killed) child.kill("SIGTERM");
-    } catch (_) {}
+    cleanup("SIGTERM");
     await sleep(250);
-    try {
-      if (!child.killed) child.kill("SIGKILL");
-    } catch (_) {}
-    fs.rmSync(userDataDir, { recursive: true, force: true });
+    cleanup("SIGKILL");
+    activeChromeCleanups.delete(cleanup);
   };
   const listUrl = `http://127.0.0.1:${port}/json/list`;
   const pages = await waitForJson(listUrl, options.timeoutMs);
@@ -509,6 +670,11 @@ async function evaluate(cdp, expression, timeoutMs = 10000) {
       returnByValue: true,
       timeout: timeoutMs,
     });
+    if (result && result.exceptionDetails) {
+      const details = result.exceptionDetails || {};
+      const description = details.exception && (details.exception.description || details.exception.value);
+      throw new Error(description || details.text || "runtime_evaluate_exception");
+    }
     return runtimeValue(result);
   } finally {
     clearTimeout(timer);
@@ -535,6 +701,157 @@ function browserInitScript(key, initialThreadId = "") {
         }
         localStorage.setItem("codexMobileThreadDisplayMode", "single");
       } catch (_) {}
+      try {
+        window.__codexSelfCheckLongTasks = [];
+        if ("PerformanceObserver" in window) {
+          const observer = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+              window.__codexSelfCheckLongTasks.push({
+                startTime: Math.max(0, Math.round(Number(entry.startTime || 0))),
+                duration: Math.max(0, Math.round(Number(entry.duration || 0))),
+              });
+            }
+            if (window.__codexSelfCheckLongTasks.length > 80) {
+              window.__codexSelfCheckLongTasks = window.__codexSelfCheckLongTasks.slice(-80);
+            }
+          });
+          observer.observe({ entryTypes: ["longtask"] });
+        }
+      } catch (_) {}
+    })();
+  `;
+}
+
+function threadListInteractionProbeExpression(label = "thread-list-probe") {
+  return `
+    (async () => {
+      const stableHash = (value) => {
+        const text = String(value || "");
+        let hash = 2166136261;
+        for (let index = 0; index < text.length; index += 1) {
+          hash ^= text.charCodeAt(index);
+          hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(16).padStart(8, "0");
+      };
+      const raf = () => new Promise((resolve) => {
+        const startedAt = performance.now();
+        const done = () => resolve(Math.max(0, Math.round(performance.now() - startedAt)));
+        if (typeof requestAnimationFrame === "function") requestAnimationFrame(done);
+        else setTimeout(done, 16);
+      });
+      const list = document.getElementById("threadList");
+      const app = document.getElementById("app");
+      const longTasks = Array.isArray(window.__codexSelfCheckLongTasks) ? window.__codexSelfCheckLongTasks.slice(-40) : [];
+      const longTaskDurations = longTasks.map((entry) => Math.max(0, Math.round(Number(entry && entry.duration || 0))));
+      const result = {
+        label: ${JSON.stringify(String(label || "thread-list-probe").slice(0, 80))},
+        probeKind: "thread-list-interaction",
+        threadHash: stableHash("thread-list-interaction"),
+        appVisible: Boolean(app && app.getBoundingClientRect && app.getBoundingClientRect().height > 0),
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 0,
+        items: 0,
+        renderKeys: 0,
+        threadListAvailable: Boolean(list),
+        threadListCardCount: list ? list.querySelectorAll("[data-thread]").length : 0,
+        threadListScrollable: Boolean(list && list.scrollHeight > list.clientHeight + 4),
+        threadListScrollHeight: list ? Math.trunc(list.scrollHeight || 0) : 0,
+        threadListClientHeight: list ? Math.trunc(list.clientHeight || 0) : 0,
+        threadListProbeElapsedMs: 0,
+        threadListMaxRafDelayMs: 0,
+        threadListMaxScrollApplyMs: 0,
+        threadListScrollMovedCount: 0,
+        longTaskCount: longTaskDurations.length,
+        longTaskMaxDurationMs: longTaskDurations.length ? Math.max(...longTaskDurations) : 0,
+        longTaskTotalDurationMs: longTaskDurations.reduce((total, value) => total + value, 0),
+      };
+      if (!list) return result;
+      const startedAt = performance.now();
+      const originalTop = list.scrollTop || 0;
+      const maxTop = Math.max(0, list.scrollHeight - list.clientHeight);
+      const targets = [
+        Math.min(maxTop, originalTop + 96),
+        Math.max(0, originalTop - 48),
+        originalTop,
+      ];
+      for (const target of targets) {
+        const before = performance.now();
+        list.scrollTop = target;
+        const rafDelay = await raf();
+        const elapsed = Math.max(0, Math.round(performance.now() - before));
+        result.threadListMaxRafDelayMs = Math.max(result.threadListMaxRafDelayMs, rafDelay);
+        result.threadListMaxScrollApplyMs = Math.max(result.threadListMaxScrollApplyMs, elapsed);
+        if (Math.abs(Number(list.scrollTop || 0) - target) <= 2) result.threadListScrollMovedCount += 1;
+      }
+      result.threadListProbeElapsedMs = Math.max(0, Math.round(performance.now() - startedAt));
+      list.scrollTop = originalTop;
+      return result;
+    })();
+  `;
+}
+
+function threadListStressProbeExpression(label = "thread-list-stress", rounds = 2) {
+  return `
+    (async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const boundedRounds = Math.max(0, Math.min(20, Math.trunc(Number(${JSON.stringify(rounds)} || 0))));
+      const probe = async () => await ${threadListInteractionProbeExpression("__stress_inner__")};
+      const openList = async () => {
+        const button = document.getElementById("openMenu");
+        if (button && typeof button.click === "function") {
+          button.click();
+          await wait(180);
+        }
+      };
+      const stableHash = (value) => {
+        const text = String(value || "");
+        let hash = 2166136261;
+        for (let index = 0; index < text.length; index += 1) {
+          hash ^= text.charCodeAt(index);
+          hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(16).padStart(8, "0");
+      };
+      const startedAt = performance.now();
+      const results = [];
+      for (let index = 0; index < boundedRounds; index += 1) {
+        await openList();
+        results.push(await probe());
+        const buttons = Array.from(document.querySelectorAll("[data-thread]"));
+        const target = buttons[index % Math.max(1, buttons.length)];
+        if (target && typeof target.click === "function") {
+          target.click();
+          await wait(260);
+        }
+      }
+      await openList();
+      results.push(await probe());
+      const maxOf = (key) => results.reduce((max, row) => Math.max(max, Math.max(0, Math.round(Number(row && row[key] || 0)))), 0);
+      const list = document.getElementById("threadList");
+      return {
+        label: ${JSON.stringify(String(label || "thread-list-stress").slice(0, 80))},
+        probeKind: "thread-list-interaction",
+        stressProbe: true,
+        threadHash: stableHash("thread-list-interaction"),
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 0,
+        items: 0,
+        renderKeys: 0,
+        threadListAvailable: Boolean(list),
+        threadListCardCount: list ? list.querySelectorAll("[data-thread]").length : 0,
+        threadListScrollable: Boolean(list && list.scrollHeight > list.clientHeight + 4),
+        threadListProbeElapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        threadListMaxRafDelayMs: maxOf("threadListMaxRafDelayMs"),
+        threadListMaxScrollApplyMs: maxOf("threadListMaxScrollApplyMs"),
+        threadListScrollMovedCount: maxOf("threadListScrollMovedCount"),
+        longTaskCount: maxOf("longTaskCount"),
+        longTaskMaxDurationMs: maxOf("longTaskMaxDurationMs"),
+        longTaskTotalDurationMs: maxOf("longTaskTotalDurationMs"),
+      };
     })();
   `;
 }
@@ -575,7 +892,9 @@ function snapshotExpression(input = {}) {
   const expectedLatestTurnHash = String(input.expectedLatestTurnHash || "");
   const expectedLatestUsageRequired = Boolean(input.expectedLatestUsageRequired);
   const expectedLatestUserMessageCount = Math.max(0, Number(input.expectedLatestUserMessageCount || 0) || 0);
+  const expectedLatestUserMessageDuplicateCount = Math.max(0, Number(input.expectedLatestUserMessageDuplicateCount || 0) || 0);
   const expectedLatestTaskCardUserMessageCount = Math.max(0, Number(input.expectedLatestTaskCardUserMessageCount || 0) || 0);
+  const expectedTurnShapes = Array.isArray(input.expectedTurnShapes) ? input.expectedTurnShapes.slice(-20) : [];
   const label = String(input.label || "");
   const delayMs = Math.max(0, Number(input.delayMs || 0) || 0);
   const exerciseSubmit = Boolean(input.exerciseSubmit);
@@ -589,7 +908,9 @@ function snapshotExpression(input = {}) {
       const expectedLatestTurnHash = ${JSON.stringify(expectedLatestTurnHash)};
       const expectedLatestUsageRequired = ${JSON.stringify(expectedLatestUsageRequired)};
       const expectedLatestUserMessageCount = ${JSON.stringify(expectedLatestUserMessageCount)};
+      const expectedLatestUserMessageDuplicateCount = ${JSON.stringify(expectedLatestUserMessageDuplicateCount)};
       const expectedLatestTaskCardUserMessageCount = ${JSON.stringify(expectedLatestTaskCardUserMessageCount)};
+      const expectedTurnShapes = ${JSON.stringify(expectedTurnShapes)};
       const label = ${JSON.stringify(label)};
       const delayMs = ${JSON.stringify(delayMs)};
       const exerciseSubmit = ${JSON.stringify(exerciseSubmit)};
@@ -613,6 +934,35 @@ function snapshotExpression(input = {}) {
           else seen.add(row);
         }
         return duplicates;
+      };
+      const imageSourceKind = (value) => {
+        const text = String(value || "").trim();
+        if (!text) return "empty";
+        if (/^(?:[a-zA-Z]:[\\\\/]|\\\\\\\\|\\/Users\\/|\\/private\\/|\\/Volumes\\/)/.test(text)) return "local-path-leak";
+        if (/(?:%2FUsers%2F|\\/Users\\/|\\.codex-mobile-web|[?&]path=)/i.test(text)) return "local-path-leak";
+        if (/^data:image\\/gif;base64,R0lGODlhAQABAIAAAAAAAP\\/\\/\\/ywAAAAAAQABAAACAUwAOw==/i.test(text)) return "protected-placeholder";
+        if (/^data:image\\//i.test(text)) return "data-image";
+        if (/^blob:/i.test(text)) return "blob";
+        if (/^file:\\/\\//i.test(text)) return "file-url";
+        try {
+          const parsed = new URL(text, window.location.origin);
+          const pathname = parsed.pathname || "";
+          if (parsed.origin !== window.location.origin) return "remote";
+          if (/\\/api\\/hermes-plugins\\/[^/]+\\/proxy\\/api\\/generated-images\\/file$/.test(pathname)) return "hermes-proxy-generated-image";
+          if (/\\/api\\/hermes-plugins\\/[^/]+\\/proxy\\/api\\/uploads\\/file$/.test(pathname)) return "hermes-proxy-upload";
+          if (/\\/api\\/hermes-plugins\\/[^/]+\\/proxy\\/api\\/files\\/preview\\/content$/.test(pathname)) return "hermes-proxy-file-preview";
+          if (pathname === "/api/generated-images/file") return "generated-image";
+          if (pathname === "/api/uploads/file") return "upload";
+          if (pathname === "/api/files/preview/content") return "file-preview";
+          if (pathname.startsWith("/api/")) return "api";
+          return "same-origin";
+        } catch (_) {
+          return "unknown";
+        }
+      };
+      const addKindCount = (map, key) => {
+        const safeKey = String(key || "unknown").replace(/[^a-z0-9_.:-]+/gi, "_").slice(0, 80) || "unknown";
+        map[safeKey] = (map[safeKey] || 0) + 1;
       };
       const visible = (node) => {
         if (!node) return false;
@@ -644,6 +994,23 @@ function snapshotExpression(input = {}) {
       const timestampExpectedSelector = ".item.userMessage, .item.agentMessage, .item.plan, .item.turnDiagnostic, .item.thread-task-card-injected";
       const timestampExpectedNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(timestampExpectedSelector)) : [];
       const timestampMissingNodes = timestampExpectedNodes.filter((node) => !node.querySelector(".item-timestamp"));
+      const timestampMissingKind = (node) => {
+        const className = String(node && node.className || "");
+        if (className.includes("thread-task-card-injected")) return "threadTaskCard";
+        if (className.includes("userMessage")) return "userMessage";
+        if (className.includes("agentMessage")) return "agentMessage";
+        if (className.includes("plan")) return "plan";
+        if (className.includes("turnDiagnostic")) return "turnDiagnostic";
+        return "unknown";
+      };
+      const countTimestampMissingKinds = (nodes) => {
+        const counts = {};
+        nodes.forEach((node) => {
+          const kind = timestampMissingKind(node);
+          counts[kind] = (counts[kind] || 0) + 1;
+        });
+        return counts;
+      };
       const latestUsageCount = latestTurnNode ? latestTurnNode.querySelectorAll(".item.turnUsageSummary").length : 0;
       const latestItemNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll("[data-item]")) : [];
       const latestUserNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(".item.userMessage")) : [];
@@ -658,12 +1025,128 @@ function snapshotExpression(input = {}) {
         })
         .filter(Boolean)
         .map(stableHash);
+      const latestUserTextHashes = latestUserNodes
+        .map((node) => {
+          const body = node.querySelector(".item-body") || node;
+          return String(body.textContent || "").replace(/\\s+/g, " ").trim();
+        })
+        .filter(Boolean)
+        .map(stableHash);
+      const latestUserNodeDetails = latestUserNodes.slice(0, 6).map((node, index) => {
+        const body = node.querySelector(".item-body") || node;
+        const text = String(body.textContent || "").replace(/\\s+/g, " ").trim();
+        const className = String(node.className || "");
+        return {
+          index,
+          textHash: stableHash(text),
+          dataItemHash: stableHash(node.getAttribute("data-item") || ""),
+          renderKeyHash: stableHash(node.getAttribute("data-render-key") || ""),
+          clientSubmissionHash: stableHash(node.getAttribute("data-client-submission-hash") || ""),
+          hasTimestamp: Boolean(node.querySelector(".item-timestamp")),
+          classKind: className.includes("local-pending")
+            ? "local-pending"
+            : (className.includes("failed") ? "failed" : "durable"),
+        };
+      });
+      const itemNodesForTurn = (turnNode) => Array.from(turnNode.querySelectorAll("[data-item]"))
+        .filter((node) => {
+          const closestTurn = node.closest("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]");
+          return closestTurn === turnNode;
+        });
+      const domTurnShapes = turnNodes.slice(-20).map((turnNode, index) => {
+        const nodes = itemNodesForTurn(turnNode);
+        const usageIndexes = [];
+        const userIndexes = [];
+        let assistantMessageCount = 0;
+        let taskCardUserMessageCount = 0;
+        let timestampExpectedItems = 0;
+        let timestampMissingItems = 0;
+        const timestampMissingKindCounts = {};
+        nodes.forEach((node, itemIndex) => {
+          const className = String(node.className || "");
+          if (className.includes("turnUsageSummary")) usageIndexes.push(itemIndex);
+          if (className.includes("userMessage")) userIndexes.push(itemIndex);
+          if (className.includes("thread-task-card-injected")) taskCardUserMessageCount += 1;
+          if (className.includes("agentMessage") || className.includes("plan")) assistantMessageCount += 1;
+          if (className.includes("userMessage")
+            || className.includes("agentMessage")
+            || className.includes("plan")
+            || className.includes("turnDiagnostic")
+            || className.includes("thread-task-card-injected")) {
+            timestampExpectedItems += 1;
+            if (!node.querySelector(".item-timestamp")) {
+              timestampMissingItems += 1;
+              const kind = timestampMissingKind(node);
+              timestampMissingKindCounts[kind] = (timestampMissingKindCounts[kind] || 0) + 1;
+            }
+          }
+        });
+        const lastUsageIndex = usageIndexes.length ? Math.max(...usageIndexes) : -1;
+        return {
+          index,
+          turnHash: stableHash(turnNode.getAttribute("data-turn") || turnNode.getAttribute("data-thread-tile-turn") || ""),
+          itemCount: nodes.length,
+          userMessageCount: userIndexes.length,
+          taskCardUserMessageCount,
+          assistantMessageCount,
+          usageCount: usageIndexes.length,
+          timestampExpectedItems,
+          timestampMissingItems,
+          timestampMissingKindCounts,
+          userAfterUsageCount: lastUsageIndex >= 0 ? userIndexes.filter((itemIndex) => itemIndex > lastUsageIndex).length : 0,
+        };
+      });
+      const imageFigures = Array.from(renderRoot.querySelectorAll(".input-image, .image-view, .markdown-image"));
       const imageNodes = Array.from(renderRoot.querySelectorAll(".input-image img, .image-view img, .markdown-image img"));
       const failedFigures = Array.from(renderRoot.querySelectorAll(".input-image.image-load-failed, .image-view.image-load-failed, .markdown-image.image-load-failed"));
       const brokenCompleteImages = imageNodes.filter((image) => {
         if (!image || image.loading === "lazy" && !image.complete) return false;
         return image.complete && Number(image.naturalWidth || 0) === 0 && Number(image.naturalHeight || 0) === 0;
       });
+      const failedImageDetails = [];
+      const imageFailureKindCounts = {};
+      const collectFailedImage = (figure, reason) => {
+        if (!figure || failedImageDetails.length >= 8) return;
+        const image = figure.querySelector("img");
+        const displayValue = image ? String(image.currentSrc || image.src || image.getAttribute("src") || "") : "";
+        const protectedValue = image && image.dataset ? String(image.dataset.protectedImageSrc || "") : "";
+        const displaySourceKind = imageSourceKind(displayValue);
+        const protectedSourceKind = imageSourceKind(protectedValue);
+        addKindCount(imageFailureKindCounts, reason);
+        addKindCount(imageFailureKindCounts, displaySourceKind);
+        if (protectedSourceKind !== "empty") addKindCount(imageFailureKindCounts, protectedSourceKind);
+        failedImageDetails.push({
+          reason,
+          figureKind: figure.classList && figure.classList.contains("input-image")
+            ? "input-image"
+            : (figure.classList && figure.classList.contains("image-view")
+              ? "image-view"
+              : (figure.classList && figure.classList.contains("markdown-image") ? "markdown-image" : "unknown")),
+          displaySourceKind,
+          protectedSourceKind,
+          sourceHash: stableHash([displaySourceKind, protectedSourceKind, displayValue ? displayValue.length : 0].join("|")),
+          missingSrc: !displayValue && !protectedValue,
+          hasImage: Boolean(image),
+          complete: Boolean(image && image.complete),
+          naturalWidth: image ? Number(image.naturalWidth || 0) : 0,
+          naturalHeight: image ? Number(image.naturalHeight || 0) : 0,
+          failedClass: true,
+          hydrating: Boolean(image && image.dataset && image.dataset.protectedImageHydrating === "1"),
+          hydrated: Boolean(image && image.dataset && image.dataset.protectedImageHydrated === "1"),
+          recoveryCount: Number(image && image.dataset && image.dataset.protectedImageRecoveryCount || 0),
+          unsafeSourceKind: String(figure.getAttribute("data-image-source-kind") || ""),
+        });
+      };
+      const failedFigureSet = new Set(failedFigures);
+      imageFigures.forEach((figure) => {
+        if (failedFigureSet.has(figure)) collectFailedImage(figure, "failed-class");
+      });
+      brokenCompleteImages.forEach((image) => {
+        const figure = image && image.closest ? image.closest(".input-image, .image-view, .markdown-image") : null;
+        if (figure && !failedFigureSet.has(figure)) collectFailedImage(figure, "broken-complete");
+      });
+      const longTasks = Array.isArray(window.__codexSelfCheckLongTasks) ? window.__codexSelfCheckLongTasks.slice(-40) : [];
+      const longTaskDurations = longTasks.map((entry) => Math.max(0, Math.round(Number(entry && entry.duration || 0))));
       const storageMatchesTarget = (() => {
         try { return localStorage.getItem("codexMobileCurrentThreadId") === threadId; } catch (_) { return false; }
       })();
@@ -715,7 +1198,10 @@ function snapshotExpression(input = {}) {
         latestTurnMatchesTarget: latestMatches,
         expectedLatestUsageRequired,
         expectedLatestUserMessageCount,
+        expectedLatestUserMessageDuplicateCount,
         expectedLatestTaskCardUserMessageCount,
+        expectedTurnShapes,
+        domTurnShapes,
         latestTurnHash,
         latestTurnItemCount: latestItemNodes.length,
         latestTurnUserMessageCount: latestUserNodes.length,
@@ -727,14 +1213,23 @@ function snapshotExpression(input = {}) {
         actualLatestTurnAssistantMessageCount: actualLatestAssistantNodes.length,
         latestTurnOperationItemCount: latestOperationNodes.length,
         latestTurnReasoningItemCount: latestReasoningNodes.length,
+        latestTurnUserTextDuplicateCount: duplicateCount(latestUserTextHashes),
+        latestTurnUserNodeDetails: latestUserNodeDetails,
         latestTurnAssistantTextDuplicateCount: duplicateCount(latestAssistantTextHashes),
         latestTurnUsageCount: latestUsageCount,
         latestTimestampExpectedItems: timestampExpectedNodes.length,
         latestTimestampMissingItems: timestampMissingNodes.length,
+        latestTimestampMissingKindCounts: countTimestampMissingKinds(timestampMissingNodes),
         imageCount: imageNodes.length,
+        imageFigureCount: imageFigures.length,
         imageFailedFigureCount: failedFigures.length,
         brokenCompleteImageCount: brokenCompleteImages.length,
         imageFailureCount: failedFigures.length + brokenCompleteImages.length,
+        imageFailureKindCounts,
+        imageFailureDetails: failedImageDetails,
+        longTaskCount: longTaskDurations.length,
+        longTaskMaxDurationMs: longTaskDurations.length ? Math.max(...longTaskDurations) : 0,
+        longTaskTotalDurationMs: longTaskDurations.reduce((total, value) => total + value, 0),
         threadCards: document.querySelectorAll("[data-thread]").length,
         turns: turnNodes.length,
         items: itemNodes.length,
@@ -825,6 +1320,7 @@ async function run(options = parseArgs(), deps = {}) {
       expectedLatestUsageRequired: Boolean(entry.expectedLatestUsageRequired),
       expectedLatestItemCount: entry.expectedLatestItemCount,
       expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
+      expectedLatestUserMessageDuplicateCount: entry.expectedLatestUserMessageDuplicateCount,
       expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
       expectedLatestOperationItemCount: entry.expectedLatestOperationItemCount,
       expectedLatestReasoningItemCount: entry.expectedLatestReasoningItemCount,
@@ -909,23 +1405,39 @@ async function run(options = parseArgs(), deps = {}) {
     await cdp.send("Page.navigate", { url: options.server });
     await waitForLoad(cdp, options.timeoutMs);
     await sleep(900);
+    samples.push(await evaluate(cdp, threadListInteractionProbeExpression("thread-list-initial"), options.timeoutMs).catch((err) => ({
+      label: "thread-list-initial",
+      probeKind: "thread-list-interaction",
+      appVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      errorCode: boundedToken(err && err.message, "thread_list_probe_failed"),
+    })));
+    if (options.threadListStressRounds > 0) {
+      samples.push(await evaluate(cdp, threadListStressProbeExpression("thread-list-stress", options.threadListStressRounds), options.timeoutMs).catch((err) => ({
+        label: "thread-list-stress",
+        probeKind: "thread-list-interaction",
+        stressProbe: true,
+        appVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        errorCode: boundedToken(err && err.message, "thread_list_stress_probe_failed"),
+      })));
+    }
 
     for (let round = 0; round < options.rounds; round += 1) {
       for (const entry of threadPlan) {
         await evaluate(cdp, openThreadExpression(entry.id), options.timeoutMs).catch(() => null);
+        let snapshotPlan = await refreshThreadPlanEntry(options, key, entry);
         for (const delayMs of options.sampleDelaysMs) {
           await sleep(delayMs);
-          const sample = await evaluate(cdp, snapshotExpression({
-            threadId: entry.id,
-            threadHash: entry.threadHash,
-            expectedTurnHashes: entry.expectedTurnHashes,
-            expectedLatestTurnHash: entry.expectedLatestTurnHash,
-            expectedLatestUsageRequired: entry.expectedLatestUsageRequired,
-            expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
-            expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
+          if (delayMs >= options.minSettledDelayMs) {
+            snapshotPlan = await refreshThreadPlanEntry(options, key, snapshotPlan);
+          }
+          const sample = await evaluate(cdp, snapshotExpression(snapshotInputForPlanEntry(snapshotPlan, {
             label: `round-${round + 1}-delay-${delayMs}`,
             delayMs,
-          }), options.timeoutMs).catch((err) => ({
+          })), options.timeoutMs).catch((err) => ({
             label: `round-${round + 1}-delay-${delayMs}`,
             threadHash: entry.threadHash,
             delayMs,
@@ -935,6 +1447,14 @@ async function run(options = parseArgs(), deps = {}) {
           samples.push(sample);
         }
       }
+      samples.push(await evaluate(cdp, threadListInteractionProbeExpression(`thread-list-round-${round + 1}`), options.timeoutMs).catch((err) => ({
+        label: `thread-list-round-${round + 1}`,
+        probeKind: "thread-list-interaction",
+        appVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        errorCode: boundedToken(err && err.message, "thread_list_probe_failed"),
+      })));
     }
 
     if (options.exerciseSubmit) {
@@ -945,20 +1465,14 @@ async function run(options = parseArgs(), deps = {}) {
         report.submitExercise.targetThreadHash = submitTarget.threadHash;
         await evaluate(cdp, openThreadExpression(submitTarget.id), options.timeoutMs).catch(() => null);
         await sleep(500);
-        samples.push(await evaluate(cdp, snapshotExpression({
-          threadId: submitTarget.id,
-          threadHash: submitTarget.threadHash,
-          expectedTurnHashes: submitTarget.expectedTurnHashes,
-          expectedLatestTurnHash: submitTarget.expectedLatestTurnHash,
-          expectedLatestUsageRequired: submitTarget.expectedLatestUsageRequired,
-          expectedLatestUserMessageCount: submitTarget.expectedLatestUserMessageCount,
-          expectedLatestTaskCardUserMessageCount: submitTarget.expectedLatestTaskCardUserMessageCount,
+        const submitPrePlan = await refreshThreadPlanEntry(options, key, submitTarget);
+        samples.push(await evaluate(cdp, snapshotExpression(snapshotInputForPlanEntry(submitPrePlan, {
           label: "submit-pre",
           delayMs: 0,
           exerciseSubmit: true,
           submitPhase: "pre",
           submitOk: false,
-        }), options.timeoutMs).catch((err) => ({
+        })), options.timeoutMs).catch((err) => ({
           label: "submit-pre",
           threadHash: submitTarget.threadHash,
           delayMs: 0,
@@ -978,20 +1492,14 @@ async function run(options = parseArgs(), deps = {}) {
         for (const delayMs of options.submitSampleDelaysMs) {
           await sleep(delayMs);
           const phase = `post-${delayMs}`;
-          samples.push(await evaluate(cdp, snapshotExpression({
-            threadId: submitTarget.id,
-            threadHash: submitTarget.threadHash,
-            expectedTurnHashes: submitTarget.expectedTurnHashes,
-            expectedLatestTurnHash: submitTarget.expectedLatestTurnHash,
-            expectedLatestUsageRequired: submitTarget.expectedLatestUsageRequired,
-            expectedLatestUserMessageCount: submitTarget.expectedLatestUserMessageCount,
-            expectedLatestTaskCardUserMessageCount: submitTarget.expectedLatestTaskCardUserMessageCount,
+          const submitPostPlan = await refreshThreadPlanEntry(options, key, submitTarget);
+          samples.push(await evaluate(cdp, snapshotExpression(snapshotInputForPlanEntry(submitPostPlan, {
             label: `submit-${phase}`,
             delayMs,
             exerciseSubmit: true,
             submitPhase: phase,
             submitOk: Boolean(submitResult && submitResult.ok),
-          }), options.timeoutMs).catch((err) => ({
+          })), options.timeoutMs).catch((err) => ({
             label: `submit-${phase}`,
             threadHash: submitTarget.threadHash,
             delayMs,
@@ -1060,7 +1568,10 @@ module.exports = {
   routeKind,
   run,
   safeConsoleText,
+  snapshotInputForPlanEntry,
   snapshotExpression,
   submitComposerExpression,
+  threadListInteractionProbeExpression,
+  threadListStressProbeExpression,
   usage,
 };

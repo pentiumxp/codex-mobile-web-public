@@ -33,6 +33,11 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function visibleUserInputCount(row = {}) {
+  return toNumber(row.userMessageCount || row.latestTurnUserMessageCount)
+    + toNumber(row.taskCardUserMessageCount || row.latestTurnTaskCardItemCount);
+}
+
 function isSparseSample(sample = {}) {
   return toNumber(sample.turns) <= 1 && toNumber(sample.items) <= 3;
 }
@@ -47,16 +52,19 @@ function sampleIsConfirmed(sample = {}) {
 }
 
 function summarizeSamples(samples = []) {
-  const normalized = toArray(samples);
+  const normalized = toArray(samples).filter((sample) => sample && typeof sample === "object");
   const turnCounts = normalized.map((sample) => toNumber(sample.turns));
   const itemCounts = normalized.map((sample) => toNumber(sample.items));
   const renderKeyCounts = normalized.map((sample) => toNumber(sample.renderKeys));
   const imageFailureCounts = normalized.map((sample) => toNumber(sample.imageFailureCount));
+  const imageFigureCounts = normalized.map((sample) => toNumber(sample.imageFigureCount));
   const timestampMissingCounts = normalized.map((sample) => toNumber(sample.latestTimestampMissingItems));
   const latestTurnItemCounts = normalized.map((sample) => toNumber(sample.latestTurnItemCount));
   const latestTurnUserMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnUserMessageCount));
   const latestTurnTaskCardItemCounts = normalized.map((sample) => toNumber(sample.latestTurnTaskCardItemCount));
   const latestTurnAssistantMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnAssistantMessageCount));
+  const latestTurnUserTextDuplicateCounts = normalized.map((sample) => toNumber(sample.latestTurnUserTextDuplicateCount));
+  const expectedLatestUserMessageDuplicateCounts = normalized.map((sample) => toNumber(sample.expectedLatestUserMessageDuplicateCount));
   const actualLatestTurnUserMessageCounts = normalized.map((sample) => toNumber(sample.actualLatestTurnUserMessageCount));
   const actualLatestTurnTaskCardItemCounts = normalized.map((sample) => toNumber(sample.actualLatestTurnTaskCardItemCount));
   const actualLatestTurnAssistantMessageCounts = normalized.map((sample) => toNumber(sample.actualLatestTurnAssistantMessageCount));
@@ -68,6 +76,12 @@ function summarizeSamples(samples = []) {
   const visualAnchorShiftPixels = normalized.map((sample) => toNumber(sample.visualAnchorShiftPx));
   const submittedMessageShiftCounts = normalized.map((sample) => toNumber(sample.submittedMessageSmallJitterCount));
   const submittedMessageShiftPixels = normalized.map((sample) => toNumber(sample.submittedMessageShiftPx));
+  const longTaskCounts = normalized.map((sample) => toNumber(sample.longTaskCount));
+  const longTaskMaxDurations = normalized.map((sample) => toNumber(sample.longTaskMaxDurationMs));
+  const longTaskTotalDurations = normalized.map((sample) => toNumber(sample.longTaskTotalDurationMs));
+  const threadListProbeElapsedMs = normalized.map((sample) => toNumber(sample.threadListProbeElapsedMs));
+  const threadListMaxRafDelayMs = normalized.map((sample) => toNumber(sample.threadListMaxRafDelayMs));
+  const threadListMaxScrollApplyMs = normalized.map((sample) => toNumber(sample.threadListMaxScrollApplyMs));
   return {
     sampleCount: normalized.length,
     minTurns: normalized.length ? Math.min(...turnCounts) : 0,
@@ -76,11 +90,14 @@ function summarizeSamples(samples = []) {
     maxItems: normalized.length ? Math.max(...itemCounts) : 0,
     maxRenderKeys: normalized.length ? Math.max(...renderKeyCounts) : 0,
     maxImageFailures: normalized.length ? Math.max(...imageFailureCounts) : 0,
+    maxImageFigures: normalized.length ? Math.max(...imageFigureCounts) : 0,
     maxLatestTimestampMissingItems: normalized.length ? Math.max(...timestampMissingCounts) : 0,
     maxLatestTurnItems: normalized.length ? Math.max(...latestTurnItemCounts) : 0,
     maxLatestTurnUserMessages: normalized.length ? Math.max(...latestTurnUserMessageCounts) : 0,
     maxLatestTurnTaskCardItems: normalized.length ? Math.max(...latestTurnTaskCardItemCounts) : 0,
     maxLatestTurnAssistantMessages: normalized.length ? Math.max(...latestTurnAssistantMessageCounts) : 0,
+    maxLatestTurnUserTextDuplicates: normalized.length ? Math.max(...latestTurnUserTextDuplicateCounts) : 0,
+    maxExpectedLatestUserMessageDuplicates: normalized.length ? Math.max(...expectedLatestUserMessageDuplicateCounts) : 0,
     maxActualLatestTurnUserMessages: normalized.length ? Math.max(...actualLatestTurnUserMessageCounts) : 0,
     maxActualLatestTurnTaskCardItems: normalized.length ? Math.max(...actualLatestTurnTaskCardItemCounts) : 0,
     maxActualLatestTurnAssistantMessages: normalized.length ? Math.max(...actualLatestTurnAssistantMessageCounts) : 0,
@@ -92,6 +109,12 @@ function summarizeSamples(samples = []) {
     maxVisualAnchorShiftPx: normalized.length ? Math.max(...visualAnchorShiftPixels) : 0,
     maxSubmittedMessageSmallJitterCount: normalized.length ? Math.max(...submittedMessageShiftCounts) : 0,
     maxSubmittedMessageShiftPx: normalized.length ? Math.max(...submittedMessageShiftPixels) : 0,
+    maxLongTaskCount: normalized.length ? Math.max(...longTaskCounts) : 0,
+    maxLongTaskDurationMs: normalized.length ? Math.max(...longTaskMaxDurations) : 0,
+    maxLongTaskTotalDurationMs: normalized.length ? Math.max(...longTaskTotalDurations) : 0,
+    maxThreadListProbeElapsedMs: normalized.length ? Math.max(...threadListProbeElapsedMs) : 0,
+    maxThreadListRafDelayMs: normalized.length ? Math.max(...threadListMaxRafDelayMs) : 0,
+    maxThreadListScrollApplyMs: normalized.length ? Math.max(...threadListMaxScrollApplyMs) : 0,
     sparseSampleCount: normalized.filter(isSparseSample).length,
     nonEmptySampleCount: normalized.filter(isNonEmptySample).length,
   };
@@ -99,6 +122,107 @@ function summarizeSamples(samples = []) {
 
 function sampleThreadHash(sample = {}) {
   return String(sample.threadHash || "").slice(0, 32);
+}
+
+function safeLatestUserNodeDetails(value) {
+  return toArray(value).slice(0, 6).map((entry, index) => {
+    const row = entry && typeof entry === "object" ? entry : {};
+    return {
+      index: Math.max(0, Math.trunc(toNumber(row.index, index))),
+      textHash: safeLabel(row.textHash, ""),
+      dataItemHash: safeLabel(row.dataItemHash, ""),
+      renderKeyHash: safeLabel(row.renderKeyHash, ""),
+      clientSubmissionHash: safeLabel(row.clientSubmissionHash, ""),
+      hasTimestamp: row.hasTimestamp === true,
+      classKind: safeLabel(row.classKind, "unknown"),
+    };
+  });
+}
+
+function safeTurnShape(value = {}) {
+  const row = value && typeof value === "object" ? value : {};
+  return {
+    index: Math.max(0, Math.trunc(toNumber(row.index))),
+    turnHash: safeLabel(row.turnHash, ""),
+    completed: row.completed === true,
+    expectedItemCount: toNumber(row.expectedItemCount),
+    actualItemCount: toNumber(row.itemCount),
+    expectedUserMessageCount: toNumber(row.expectedUserMessageCount),
+    actualUserMessageCount: toNumber(row.userMessageCount),
+    actualVisibleUserInputCount: visibleUserInputCount(row),
+    expectedAssistantMessageCount: toNumber(row.expectedAssistantMessageCount),
+    actualAssistantMessageCount: toNumber(row.assistantMessageCount),
+    expectedTaskCardUserMessageCount: toNumber(row.expectedTaskCardUserMessageCount),
+    actualTaskCardUserMessageCount: toNumber(row.taskCardUserMessageCount),
+    expectedUsageRequired: row.expectedUsageRequired === true,
+    actualUsageCount: toNumber(row.usageCount),
+    timestampMissingItems: toNumber(row.timestampMissingItems),
+    timestampMissingKindCounts: safeTimestampKindCounts(row.timestampMissingKindCounts),
+    userAfterUsageCount: toNumber(row.userAfterUsageCount),
+  };
+}
+
+function safeTimestampKindCounts(value = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const result = {};
+  for (const kind of ["agentMessage", "plan", "userMessage", "threadTaskCard", "turnDiagnostic", "unknown"]) {
+    const count = toNumber(source[kind]);
+    if (count > 0) result[kind] = count;
+  }
+  return result;
+}
+
+function hasTimestampKindCounts(value = {}) {
+  return Object.keys(safeTimestampKindCounts(value)).length > 0;
+}
+
+function activeProgressiveTurnShape(value = {}) {
+  const row = value && typeof value === "object" ? value : {};
+  const kindCounts = safeTimestampKindCounts(row.timestampMissingKindCounts);
+  const hasKinds = hasTimestampKindCounts(kindCounts);
+  const assistantTimestampGap = toNumber(kindCounts.agentMessage) + toNumber(kindCounts.plan);
+  const nonAssistantTimestampGap = toNumber(kindCounts.userMessage)
+    + toNumber(kindCounts.threadTaskCard)
+    + toNumber(kindCounts.turnDiagnostic)
+    + toNumber(kindCounts.unknown);
+  const activeAssistantTimestampGap = row.completed !== true
+    && hasKinds
+    && assistantTimestampGap > 0
+    && nonAssistantTimestampGap <= 0
+    && row.expectedUsageRequired !== true
+    && toNumber(row.expectedAssistantMessageCount) > 0
+    && toNumber(row.assistantMessageCount) >= toNumber(row.expectedAssistantMessageCount);
+  const activeBudgetedProgress = row.completed !== true
+    && toNumber(row.expectedAssistantMessageCount) > 0
+    && toNumber(row.assistantMessageCount) > toNumber(row.expectedAssistantMessageCount)
+    && toNumber(row.expectedItemCount) > 0
+    && toNumber(row.itemCount) < toNumber(row.expectedItemCount);
+  return activeAssistantTimestampGap || activeBudgetedProgress;
+}
+
+function matchedTurnShapes(sample = {}) {
+  const domByHash = new Map();
+  for (const row of toArray(sample.domTurnShapes)) {
+    const turnHash = safeLabel(row && row.turnHash, "");
+    if (turnHash) domByHash.set(turnHash, row);
+  }
+  const rows = [];
+  for (const expected of toArray(sample.expectedTurnShapes)) {
+    const turnHash = safeLabel(expected && expected.turnHash, "");
+    if (!turnHash || !domByHash.has(turnHash)) continue;
+    rows.push(Object.assign({}, expected, domByHash.get(turnHash), { turnHash }));
+  }
+  return rows;
+}
+
+function matchedLatestTurnShape(sample = {}) {
+  const latestHash = safeLabel(sample.latestTurnHash, "");
+  const rows = matchedTurnShapes(sample);
+  if (latestHash) {
+    const exact = rows.find((row) => safeLabel(row && row.turnHash, "") === latestHash);
+    if (exact) return exact;
+  }
+  return rows.length ? rows[rows.length - 1] : null;
 }
 
 function issue(severity, code, sample = {}, details = {}) {
@@ -110,6 +234,7 @@ function issue(severity, code, sample = {}, details = {}) {
   if (sample.label) item.sample = safeLabel(sample.label);
   if (sample.threadHash) item.threadHash = sampleThreadHash(sample);
   if (sample.delayMs !== undefined) item.delayMs = Math.max(0, Math.trunc(toNumber(sample.delayMs)));
+  if (sample.errorCode) item.errorCode = safeLabel(sample.errorCode, "sample_error");
   return item;
 }
 
@@ -126,6 +251,33 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     if (!sample || typeof sample !== "object") continue;
     if (!sample.appVisible) issues.push(issue("H2", "browser_app_not_visible", sample));
     if (sample.loginVisible) issues.push(issue("H2", "browser_login_visible", sample));
+    if (toNumber(sample.longTaskMaxDurationMs) >= 1000) {
+      issues.push(issue("H2", "browser_main_thread_long_task", sample, {
+        longTaskCount: toNumber(sample.longTaskCount),
+        longTaskMaxDurationMs: toNumber(sample.longTaskMaxDurationMs),
+        longTaskTotalDurationMs: toNumber(sample.longTaskTotalDurationMs),
+      }));
+    }
+    if (String(sample.probeKind || "") === "thread-list-interaction") {
+      const threadListProbeElapsedMs = toNumber(sample.threadListProbeElapsedMs);
+      const threadListMaxRafDelayMs = toNumber(sample.threadListMaxRafDelayMs);
+      const threadListMaxScrollApplyMs = toNumber(sample.threadListMaxScrollApplyMs);
+      const stressProbe = sample.stressProbe === true;
+      const elapsedBlocked = !stressProbe && threadListProbeElapsedMs >= 1500;
+      if (elapsedBlocked || threadListMaxRafDelayMs >= 750 || threadListMaxScrollApplyMs >= 750) {
+        issues.push(issue("H2", "browser_thread_list_interaction_blocked", sample, {
+          threadListAvailable: sample.threadListAvailable === true,
+          threadListCardCount: toNumber(sample.threadListCardCount),
+          threadListScrollable: sample.threadListScrollable === true,
+          stressProbe,
+          threadListProbeElapsedMs,
+          threadListMaxRafDelayMs,
+          threadListMaxScrollApplyMs,
+          longTaskCount: toNumber(sample.longTaskCount),
+          longTaskMaxDurationMs: toNumber(sample.longTaskMaxDurationMs),
+        }));
+      }
+    }
     if (toNumber(sample.duplicateRenderKeys) > 0) {
       issues.push(issue("H2", "browser_duplicate_render_keys", sample, {
         duplicateRenderKeys: toNumber(sample.duplicateRenderKeys),
@@ -137,27 +289,65 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       }));
     }
     if (sampleIsConfirmed(sample) && toNumber(sample.imageFailureCount) > 0) {
+      const imageFailureDetails = toArray(sample.imageFailureDetails).slice(0, 4);
+      const imageFailureKindCounts = sample.imageFailureKindCounts && typeof sample.imageFailureKindCounts === "object"
+        ? Object.fromEntries(Object.entries(sample.imageFailureKindCounts).slice(0, 12).map(([key, value]) => [
+          safeLabel(key, "kind"),
+          toNumber(value),
+        ]))
+        : {};
       issues.push(issue("H2", "browser_image_render_failed", sample, {
         imageCount: toNumber(sample.imageCount),
+        imageFigureCount: toNumber(sample.imageFigureCount),
         imageFailureCount: toNumber(sample.imageFailureCount),
         failedFigureCount: toNumber(sample.imageFailedFigureCount),
         brokenCompleteImageCount: toNumber(sample.brokenCompleteImageCount),
+        imageFailureKindCounts,
+        firstImageFailure: imageFailureDetails[0] || null,
       }));
     }
     if (sampleIsConfirmed(sample)
       && sample.latestTurnMatchesTarget
       && toNumber(sample.latestTimestampMissingItems) > 0) {
-      issues.push(issue("H2", "browser_latest_turn_timestamp_missing", sample, {
+      const latestShape = matchedLatestTurnShape(sample);
+      const activeProgressive = activeProgressiveTurnShape(latestShape);
+      issues.push(issue(activeProgressive ? "H3" : "H2", "browser_latest_turn_timestamp_missing", sample, {
         latestTimestampExpectedItems: toNumber(sample.latestTimestampExpectedItems),
         latestTimestampMissingItems: toNumber(sample.latestTimestampMissingItems),
+        latestTimestampMissingKindCounts: safeTimestampKindCounts(sample.latestTimestampMissingKindCounts),
+        activeProgressive,
+        turnShape: activeProgressive ? safeTurnShape(latestShape) : undefined,
       }));
     }
     if (sampleIsConfirmed(sample)
       && sample.latestTurnMatchesTarget
       && toNumber(sample.latestTurnAssistantTextDuplicateCount) > 0) {
-      issues.push(issue("H2", "browser_latest_turn_assistant_text_duplicate", sample, {
-        latestTurnAssistantMessageCount: toNumber(sample.latestTurnAssistantMessageCount),
+      const latestTurnAssistantMessageCount = toNumber(sample.latestTurnAssistantMessageCount);
+      const latestShape = matchedLatestTurnShape(sample);
+      const activeProgressive = activeProgressiveTurnShape(latestShape);
+      const severity = activeProgressive || latestTurnAssistantMessageCount > 8 ? "H3" : "H2";
+      issues.push(issue(severity, "browser_latest_turn_assistant_text_duplicate", sample, {
+        latestTurnAssistantMessageCount,
         latestTurnAssistantTextDuplicateCount: toNumber(sample.latestTurnAssistantTextDuplicateCount),
+        activeProgressive,
+        turnShape: activeProgressive ? safeTurnShape(latestShape) : undefined,
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.expectedLatestUserMessageDuplicateCount) > 0) {
+      issues.push(issue("H2", "browser_api_latest_turn_user_message_duplicate", sample, {
+        expectedLatestUserMessageCount: toNumber(sample.expectedLatestUserMessageCount),
+        expectedLatestUserMessageDuplicateCount: toNumber(sample.expectedLatestUserMessageDuplicateCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.latestTurnUserTextDuplicateCount) > 0) {
+      issues.push(issue("H2", "browser_latest_turn_user_message_duplicate", sample, {
+        latestTurnUserMessageCount: toNumber(sample.latestTurnUserMessageCount),
+        latestTurnUserTextDuplicateCount: toNumber(sample.latestTurnUserTextDuplicateCount),
+        latestTurnUserNodeDetails: safeLatestUserNodeDetails(sample.latestTurnUserNodeDetails),
       }));
     }
     if (sampleIsConfirmed(sample)
@@ -174,13 +364,51 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         latestTurnReasoningItemCount: toNumber(sample.latestTurnReasoningItemCount),
       }));
     }
+    for (const turnShape of matchedTurnShapes(sample)) {
+      if (toNumber(turnShape.expectedUserMessageCount) > 0
+        && visibleUserInputCount(turnShape) < toNumber(turnShape.expectedUserMessageCount)) {
+        issues.push(issue("H2", "browser_turn_user_message_below_api_expectation", sample, {
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
+      if (toNumber(turnShape.expectedTaskCardUserMessageCount) > 0
+        && toNumber(turnShape.taskCardUserMessageCount) < toNumber(turnShape.expectedTaskCardUserMessageCount)) {
+        issues.push(issue("H2", "browser_turn_task_card_below_api_expectation", sample, {
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
+      if (toNumber(turnShape.expectedAssistantMessageCount) > 0
+        && toNumber(turnShape.assistantMessageCount) <= 0) {
+        issues.push(issue("H2", "browser_turn_assistant_missing", sample, {
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
+      if (turnShape.expectedUsageRequired === true && toNumber(turnShape.usageCount) <= 0) {
+        issues.push(issue("H2", "browser_turn_usage_missing", sample, {
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
+      if (toNumber(turnShape.userAfterUsageCount) > 0) {
+        issues.push(issue("H2", "browser_turn_user_message_after_usage", sample, {
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
+      if (toNumber(turnShape.expectedTimestampItemCount) > 0 && toNumber(turnShape.timestampMissingItems) > 0) {
+        const activeProgressive = activeProgressiveTurnShape(turnShape);
+        issues.push(issue(activeProgressive ? "H3" : "H2", "browser_turn_timestamp_missing", sample, {
+          activeProgressive,
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
+    }
     if (sampleIsConfirmed(sample)
       && sample.latestTurnMatchesTarget
       && toNumber(sample.expectedLatestUserMessageCount) > 0
-      && toNumber(sample.latestTurnUserMessageCount) < toNumber(sample.expectedLatestUserMessageCount)) {
+      && visibleUserInputCount(sample) < toNumber(sample.expectedLatestUserMessageCount)) {
       issues.push(issue("H2", "browser_latest_turn_user_message_below_api_expectation", sample, {
         expectedLatestUserMessageCount: toNumber(sample.expectedLatestUserMessageCount),
         latestTurnUserMessageCount: toNumber(sample.latestTurnUserMessageCount),
+        latestTurnTaskCardItemCount: toNumber(sample.latestTurnTaskCardItemCount),
       }));
     }
     if (sampleIsConfirmed(sample)
@@ -303,7 +531,13 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           settled,
         }));
       }
-      if (seenNonEmpty && settled && items > 0 && maxConfirmedItems > 0 && items < Math.max(3, Math.floor(maxConfirmedItems * 0.55))) {
+      const loadingPreviewSample = Boolean(sample.loadingNote) && !sample.emptyState;
+      if (!loadingPreviewSample
+        && seenNonEmpty
+        && settled
+        && items > 0
+        && maxConfirmedItems > 0
+        && items < Math.max(3, Math.floor(maxConfirmedItems * 0.55))) {
         issues.push(issue("H2", "browser_dom_visible_items_downgraded_after_nonempty", sample, {
           threadHash,
           previousMaxItems: maxConfirmedItems,
@@ -313,7 +547,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           contentConfirmed: sample.contentConfirmed !== false,
         }));
       }
-      if (sampleIsConfirmed(sample) && settled && sample.latestTurnMatchesTarget && latestTurnHash) {
+      if (!loadingPreviewSample && sampleIsConfirmed(sample) && settled && sample.latestTurnMatchesTarget && latestTurnHash) {
         const previous = latestTurnWindows.get(latestTurnHash) || {
           itemCount: 0,
           userMessageCount: 0,
@@ -354,6 +588,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       }
       if (sampleIsConfirmed(sample)
         && settled
+        && !loadingPreviewSample
         && maxClientSubmissions > 0
         && toNumber(sample.clientSubmissionCount) === 0
         && toNumber(sample.latestTurnUserMessageCount) < maxLatestTurnUserMessages) {

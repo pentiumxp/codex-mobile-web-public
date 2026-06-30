@@ -477,6 +477,17 @@ function createThreadListFallbackCacheService(options = {}) {
     };
   }
 
+  function cachedThreadsForFilters(cached, limit = 80, filters = {}, diagnostics = null) {
+    const input = Array.isArray(cached && cached.threads) ? cached.threads : [];
+    const filtered = filterFallbackThreads(input, filters);
+    const merged = mergeThreadSummaryList(filtered);
+    const out = Array.isArray(merged) ? merged : filtered;
+    if (diagnostics && typeof diagnostics === "object") {
+      diagnostics.cacheFilteredDropCount = boundedCounter(Math.max(0, input.length - filtered.length));
+    }
+    return out.slice(0, Math.max(1, Math.min(200, Number(limit || 80))));
+  }
+
   function readFallback(limit = 80, filters = {}) {
     const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
     const key = cacheKey(limit, filters);
@@ -505,7 +516,7 @@ function createThreadListFallbackCacheService(options = {}) {
           diagnostics.workspaceDerivedCacheLimit = cached.compatibleLimit || 0;
         }
       }
-      return cached.threads;
+      return cachedThreadsForFilters(cached, limit, filters, diagnostics);
     }
     if (diagnostics) {
       diagnostics.cacheHit = false;
@@ -611,7 +622,7 @@ function createThreadListFallbackCacheService(options = {}) {
         diagnostics.workspaceDerivedCacheLimit = cached.compatibleLimit || 0;
       }
     }
-    return cached.threads;
+    return cachedThreadsForFilters(cached, limit, filters, diagnostics);
   }
 
   return {

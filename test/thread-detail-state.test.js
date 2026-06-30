@@ -5,6 +5,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const {
+  activeDetailLoadingPreviewThread,
   buildThreadDetailRenderEvidence,
   createThreadDetailStatePolicy,
   emptyDetailHistoryEvidenceForThread,
@@ -359,6 +360,11 @@ test("thread detail loaded-state policy distinguishes empty detail from summary 
 
   assert.equal(threadHasReusableLoadedDetailState({ id: "thread-1", turns: [], mobileDetailLoaded: true }), false);
   assert.equal(threadHasReusableLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1", items: [] }] }), true);
+  assert.equal(threadHasReusableLoadedDetailState({
+    id: "thread-1",
+    activeTurnId: "turn-active",
+    turns: [{ id: "turn-active", status: "running", items: [{ id: "assistant-old" }] }],
+  }), false);
   assert.equal(threadHasReusableLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1" }], mobileLoading: true }), false);
 
   assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [] }, "thread-1"), true);
@@ -377,6 +383,53 @@ test("thread detail state plans open-thread cache reuse without accepting empty 
     shouldUseCachedCurrent: true,
     shouldReportEmptyCachedDetail: false,
     reason: "reusable-loaded-detail",
+  });
+
+  assert.deepEqual(planThreadOpenCacheReuse({
+    requestedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    summaryThread: { id: "thread-1", updatedAt: "2026-06-30T02:05:00.000Z" },
+    currentThread: {
+      id: "thread-1",
+      updatedAt: "2026-06-30T02:00:00.000Z",
+      turns: [{ id: "turn-1", items: [] }],
+      mobileDetailLoaded: true,
+    },
+  }), {
+    shouldUseCachedCurrent: false,
+    shouldReportEmptyCachedDetail: false,
+    reason: "summary-newer-than-cached-detail",
+  });
+
+  assert.deepEqual(planThreadOpenCacheReuse({
+    requestedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    summaryThread: { id: "thread-1", updatedAt: "2026-06-30T02:05:00.000Z" },
+    currentThread: {
+      id: "thread-1",
+      turns: [{ id: "turn-1", items: [] }],
+      mobileDetailLoaded: true,
+    },
+  }), {
+    shouldUseCachedCurrent: false,
+    shouldReportEmptyCachedDetail: false,
+    reason: "summary-newer-than-cached-detail",
+  });
+
+  assert.deepEqual(planThreadOpenCacheReuse({
+    requestedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    currentThread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      turns: [{ id: "turn-active", status: "running", items: [{ id: "old-receipt" }] }],
+      mobileDetailLoaded: true,
+    },
+  }), {
+    shouldUseCachedCurrent: false,
+    shouldUseActivePreview: true,
+    shouldReportEmptyCachedDetail: false,
+    reason: "active-detail-cache-not-reusable",
   });
 
   assert.deepEqual(planThreadOpenCacheReuse({
@@ -408,6 +461,99 @@ test("thread detail state plans open-thread cache reuse without accepting empty 
     shouldReportEmptyCachedDetail: false,
     reason: "current-thread-loading",
   });
+});
+
+test("thread detail state builds active loading preview without stale assistant progress", () => {
+  const source = {
+    id: "thread-1",
+    status: "running",
+    activeTurnId: "turn-active",
+    mobileDetailLoaded: true,
+    turns: [
+      {
+        id: "turn-completed",
+        status: "completed",
+        items: [{ id: "completed-assistant", type: "agentMessage", text: "done" }],
+      },
+      {
+        id: "turn-active",
+        status: "running",
+        items: [
+          { id: "active-user", type: "userMessage", content: [{ type: "text", text: "current request" }] },
+          { id: "old-assistant", type: "agentMessage", text: "old receipt" },
+          { id: "old-plan", type: "plan", text: "old plan" },
+          { id: "old-usage", type: "turnUsageSummary" },
+          { id: "old-command", type: "commandExecution", command: "npm test" },
+        ],
+      },
+    ],
+  };
+
+  const preview = activeDetailLoadingPreviewThread(source);
+
+  assert.ok(preview);
+  assert.equal(preview.mobileLoading, true);
+  assert.equal(preview.mobileActiveCachePreview, true);
+  assert.equal(preview.turns[0], source.turns[0]);
+  assert.equal(preview.turns[1].mobileActiveCachePreview, true);
+  assert.equal(preview.turns[1].mobileLoading, true);
+  assert.deepEqual(preview.turns[1].items.map((item) => item.id), ["active-user"]);
+  assert.notEqual(preview.turns[1].items[0], source.turns[1].items[0]);
+});
+
+test("thread detail state drops active preview optimistic user echoes matched by durable input", () => {
+  const source = {
+    id: "thread-1",
+    status: "running",
+    activeTurnId: "turn-active",
+    mobileDetailLoaded: true,
+    turns: [
+      {
+        id: "turn-completed",
+        status: "completed",
+        items: [
+          {
+            id: "durable-user",
+            type: "userMessage",
+            clientSubmissionId: "sub-1",
+            content: [{ type: "text", text: "already sent" }],
+          },
+          { id: "completed-assistant", type: "agentMessage", text: "done" },
+        ],
+      },
+      {
+        id: "turn-active",
+        status: "running",
+        items: [
+          {
+            id: "local-user-sub-1",
+            type: "userMessage",
+            clientSubmissionId: "sub-1",
+            mobilePendingSubmission: true,
+            content: [{ type: "text", text: "already sent" }],
+          },
+          {
+            id: "local-user-late",
+            type: "userMessage",
+            mobileSendError: { message: "failed" },
+            content: [{ type: "text", text: "already sent" }],
+          },
+          {
+            id: "local-user-new",
+            type: "userMessage",
+            mobilePendingSubmission: true,
+            content: [{ type: "text", text: "new pending" }],
+          },
+          { id: "active-task", type: "taskCard" },
+        ],
+      },
+    ],
+  };
+
+  const preview = activeDetailLoadingPreviewThread(source);
+
+  assert.ok(preview);
+  assert.deepEqual(preview.turns[1].items.map((item) => item.id), ["local-user-new", "active-task"]);
 });
 
 test("thread detail state plans open-thread loading shell from summary without detail ownership", () => {

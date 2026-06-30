@@ -144,6 +144,30 @@ test("projectless visible thread ids stay open even when app-server reports a te
   assert.deepEqual(filtered.map((thread) => thread.id), ["thread-projectless"]);
 });
 
+test("fallback thread list hides unmaterialized id-title placeholders", () => {
+  const placeholderId = "019f0abc-def0-7123-9abc-abcdef123456";
+  const filtered = filterFallbackThreads([
+    {
+      id: placeholderId,
+      name: placeholderId,
+      preview: placeholderId,
+      status: { type: "notLoaded" },
+      updatedAt: 1782729717,
+    },
+    {
+      id: "thread-real",
+      name: "Real thread",
+      preview: "Real thread",
+      status: { type: "completed" },
+      updatedAt: 1782729700,
+    },
+  ], {
+    globalState: globalStateForRoots([]),
+  });
+
+  assert.deepEqual(filtered.map((thread) => thread.id), ["thread-real"]);
+});
+
 test("thread turns cursor accepts app-server JSON cursor objects from query strings", () => {
   assert.equal(parseThreadTurnsCursor('{"turnId":"turn-1","includeAnchor":false}'), '{"turnId":"turn-1","includeAnchor":false}');
   assert.equal(parseThreadTurnsCursor('"{\\"turnId\\":\\"turn-2\\",\\"includeAnchor\\":false}"'), '{"turnId":"turn-2","includeAnchor":false}');
@@ -172,6 +196,16 @@ test("turn completion status broadcasts carry fresh event time for thread-list h
   assert.equal(payload.params.source, "turn/completed");
   assert.equal(payload.params.turnId, "turn-status-a");
   assert.equal(payload.params.eventAtMs, 1_782_300_000_123);
+});
+
+test("active-window prewarm follows turn notifications that can move projection state", () => {
+  const body = functionBody(serverJs, "scheduleActiveWindowPrewarmFromNotification");
+
+  assert.match(body, /method !== "turn\/started" && method !== "turn\/completed" && method !== "thread\/status\/changed"/);
+  assert.match(body, /method === "thread\/status\/changed" && !threadSummaryLooksActive\(payload\.params\)/);
+  assert.match(body, /delayMs:\s*0/);
+  assert.match(body, /bypassMinInterval:\s*true/);
+  assert.match(body, /preemptPending:\s*true/);
 });
 
 test("replayed turn completion status does not invent a fresh event time", () => {
@@ -1032,7 +1066,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /readRolloutSessionFallbackThreadFromFile\(file, indexEntries\.get\(id\) \|\| \{ id \}, \{[\s\S]*includeStatus: false,[\s\S]*diagnostics,[\s\S]*\}\)/);
   assert.match(serverJs, /filterFallbackThreads\(threads, Object\.assign\(\{\}, filters, \{ archivedIds \}\)\)[\s\S]*\.slice\(0, limit\)[\s\S]*\.map\(\(thread\) => attachRolloutFallbackStatus\(thread, \{ diagnostics \}\)\)/);
   assert.match(serverJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*const archivedIds = filters\.archivedIds[\s\S]*archivedSessionThreadIds\(\)/);
-  assert.match(serverJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*threadHasArchiveSignal\(thread, archivedIds\)/);
+  assert.match(serverJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*shouldHideThreadListSummary\(thread, archivedIds\)/);
   assert.match(serverJs, /function rolloutLatestTurnEvidence\(rolloutPath, stat = null, options = \{\}\) \{[\s\S]*const tail = typeof options\.tail === "string" \? options\.tail : readRolloutTail\(rolloutPath\)/);
   assert.match(serverJs, /function inferRolloutFallbackStatus\(rolloutPath, stat = null, nowMs = Date\.now\(\), options = \{\}\) \{[\s\S]*counterPrefix: "rolloutStatusTail"[\s\S]*staleContextOnlyActiveEvidenceForRollout\(rolloutPath, \{ stat, nowMs, tail \}\)/);
   assert.match(serverJs, /function readThreadListFallback\(/);
@@ -1076,6 +1110,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(threadListSummaryServiceJs, /"mobileDetailLoaded"/);
   assert.match(serverJs, /const threadListFallbackCacheService = createThreadListFallbackCacheService\(\{\s*ttlMs: THREAD_LIST_FALLBACK_CACHE_TTL_MS,/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_ENABLED = !\/\^\(0\|false\|no\|off\)\$\/i\.test\(process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM \|\| "1"\)/);
+  assert.match(serverJs, /process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS \|\| "0"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_RETRY_MS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_RETRY_MS \|\| "2500"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS \|\| "5"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_LIMIT = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT \|\| "40"/);

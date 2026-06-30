@@ -81,6 +81,29 @@ function threadTaskCardTargetUpdatedAt(thread) {
   return Number.isFinite(value) ? value : 0;
 }
 
+function threadTaskCardTargetStatusText(thread) {
+  const status = thread && thread.status;
+  if (!status) return "";
+  if (typeof status === "string") return status.trim().toLowerCase();
+  if (typeof status === "object") return String(status.type || status.status || "").trim().toLowerCase();
+  return String(status || "").trim().toLowerCase();
+}
+
+function threadTaskCardTargetLivenessRank(thread) {
+  const status = threadTaskCardTargetStatusText(thread);
+  if (/^(active|running|processing|inprogress|in_progress|in-progress)$/i.test(status)) return 0;
+  if (/^(idle|queued|pending)$/i.test(status)) return 1;
+  if (!status) return 2;
+  if (/^(completed|complete|failed|failure|cancelled|canceled|interrupted|error)$/i.test(status)) return 4;
+  return 3;
+}
+
+function compareThreadTaskCardCanonicalTargets(left, right) {
+  const rankDelta = threadTaskCardTargetLivenessRank(left) - threadTaskCardTargetLivenessRank(right);
+  if (rankDelta) return rankDelta;
+  return threadTaskCardTargetUpdatedAt(right) - threadTaskCardTargetUpdatedAt(left);
+}
+
 function createThreadTaskCardRoutingService(deps = {}) {
   const normalizePath = typeof deps.normalizeFsPath === "function" ? deps.normalizeFsPath : normalizeFsPath;
   const displayTitle = typeof deps.threadDisplayTitle === "function" ? deps.threadDisplayTitle : defaultThreadDisplayTitle;
@@ -123,7 +146,7 @@ function createThreadTaskCardRoutingService(deps = {}) {
     let best = null;
     for (const thread of visibleThreads || []) {
       if (!thread || normalizePath(thread.cwd || "") !== wanted) continue;
-      if (!best || threadTaskCardTargetUpdatedAt(thread) > threadTaskCardTargetUpdatedAt(best)) {
+      if (!best || compareThreadTaskCardCanonicalTargets(thread, best) < 0) {
         best = thread;
       }
     }
@@ -138,7 +161,7 @@ function createThreadTaskCardRoutingService(deps = {}) {
   function canonicalVisibleTargets(visibleThreads = []) {
     const out = [];
     const seenCwds = new Set();
-    for (const thread of [...(visibleThreads || [])].sort((a, b) => threadTaskCardTargetUpdatedAt(b) - threadTaskCardTargetUpdatedAt(a))) {
+    for (const thread of [...(visibleThreads || [])].sort(compareThreadTaskCardCanonicalTargets)) {
       if (!thread || !thread.id) continue;
       const cwd = normalizePath(thread.cwd || "");
       if (!cwd) {
@@ -302,5 +325,6 @@ module.exports = {
   threadTaskCardTargetReferenceEntry,
   threadTaskCardTargetReferences,
   threadTaskCardTargetReferenceText,
+  threadTaskCardTargetLivenessRank,
   threadTaskCardTargetUpdatedAt,
 };

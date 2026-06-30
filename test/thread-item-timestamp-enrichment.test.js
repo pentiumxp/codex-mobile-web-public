@@ -58,6 +58,60 @@ test("thread detail items receive per-item timestamps from rollout events", () =
   }
 });
 
+test("compact thread infers display timestamp for unmatched visible user messages", () => {
+  const thread = compactThread({
+    id: "thread-display-timestamp",
+    updatedAt: "2026-06-29T11:30:00.000Z",
+    turns: [{
+      id: "turn-display-timestamp",
+      status: "completed",
+      startedAt: "2026-06-29T10:26:59.000Z",
+      completedAt: "2026-06-29T11:28:55.000Z",
+      items: [
+        {
+          id: "context-known",
+          type: "contextCompaction",
+          startedAtMs: Date.parse("2026-06-29T10:49:44.058Z"),
+        },
+        {
+          id: "user-unmatched",
+          type: "userMessage",
+          content: [{ type: "text", text: "unmatched projected user message" }],
+        },
+        {
+          id: "user-known",
+          type: "userMessage",
+          startedAtMs: Date.parse("2026-06-29T11:01:31.746Z"),
+          content: [{ type: "text", text: "later user message" }],
+        },
+        {
+          id: "assistant-final",
+          type: "agentMessage",
+          startedAtMs: Date.parse("2026-06-29T11:28:55.447Z"),
+          text: "done",
+        },
+        {
+          id: "usage",
+          type: "turnUsageSummary",
+          startedAtMs: Date.parse("2026-06-29T11:28:55.482Z"),
+        },
+      ],
+    }],
+  });
+
+  const items = thread.turns[0].items;
+  const unmatched = items.find((item) => item.id === "user-unmatched");
+  assert.ok(unmatched);
+  assert.equal(unmatched.mobileDisplayTimestampInferred, true);
+  assert.equal(unmatched.mobileDisplayTimestampMs, Date.parse("2026-06-29T10:49:44.058Z") + 1);
+  assert.deepEqual(items.map((item) => item.id), [
+    "context-known",
+    "user-unmatched",
+    "user-known",
+    "assistant-final",
+  ]);
+});
+
 test("active synthetic assistant progress duplicates native assistant text are removed", () => {
   const thread = {
     id: "thread-active-dedupe",

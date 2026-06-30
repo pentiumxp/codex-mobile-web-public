@@ -5,8 +5,10 @@ const { test } = require("node:test");
 
 const {
   classifyActiveOverlayItem,
+  itemDisplayTimestampMs,
   mergeActiveOverlayTurnWithWindowBackfill,
   mergeProjectionThreadWithActiveOverlay,
+  orderItemsByDisplayTimestamp,
   planActiveWindowOverlay,
   summarizeActiveOverlayTurnEvidence,
 } = require("../adapters/thread-detail-active-window-overlay-policy-service");
@@ -414,6 +416,51 @@ test("active overlay turn backfill preserves earlier assistant items from active
   assert.equal(merged.mobileActiveOverlayBackfill.mergedItems, 4);
 });
 
+test("active overlay turn backfill orders visible items by display timestamp", () => {
+  const merged = mergeActiveOverlayTurnWithWindowBackfill({
+    id: "active-turn",
+    status: "inProgress",
+    items: [
+      { id: "agent-early", type: "agentMessage", text: "early overlay", createdAt: "2026-06-29T11:03:00.000Z" },
+      { id: "agent-mid", type: "agentMessage", text: "middle overlay", createdAtMs: Date.parse("2026-06-29T11:15:00.000Z") },
+    ],
+  }, {
+    id: "thread-1",
+    turns: [{
+      id: "active-turn",
+      status: "inProgress",
+      items: [
+        { id: "agent-late", type: "agentMessage", text: "late cached window", startedAtMs: Date.parse("2026-06-29T11:20:00.000Z") },
+      ],
+    }],
+  });
+
+  assert.deepEqual(merged.items.map((item) => item.id), ["agent-early", "agent-mid", "agent-late"]);
+});
+
+test("display timestamp order matches client fallback for completed turns", () => {
+  const turn = {
+    id: "turn-completed",
+    status: "completed",
+    startedAt: "2026-06-29T11:00:00.000Z",
+    completedAt: "2026-06-29T11:30:00.000Z",
+  };
+  const thread = { id: "thread-1", turns: [turn] };
+  const items = [
+    { id: "assistant-final", type: "agentMessage", text: "final" },
+    { id: "user", type: "userMessage" },
+    { id: "usage", type: "turnUsageSummary" },
+  ];
+
+  assert.equal(itemDisplayTimestampMs(items[0], turn, thread), Date.parse("2026-06-29T11:30:00.000Z"));
+  assert.equal(itemDisplayTimestampMs(items[2], turn, thread), 0);
+  assert.deepEqual(orderItemsByDisplayTimestamp(items, turn, thread).map((item) => item.id), [
+    "user",
+    "assistant-final",
+    "usage",
+  ]);
+});
+
 test("active overlay turn backfill dedupes matching user message echoes", () => {
   const merged = mergeActiveOverlayTurnWithWindowBackfill({
     id: "active-turn",
@@ -449,6 +496,26 @@ test("active overlay turn backfill dedupes matching user message echoes", () => 
   assert.equal(merged.mobileActiveOverlayBackfill.overlayItems, 2);
   assert.equal(merged.mobileActiveOverlayBackfill.mergedItems, 3);
   assert.equal(merged.mobileActiveOverlayBackfill.dedupedUserMessageEchoes, 1);
+});
+
+test("active overlay turn backfill avoids deep cloning large item payloads", () => {
+  const largePayload = { body: "x".repeat(1024) };
+  const windowItem = { id: "agent-1", type: "agentMessage", payload: largePayload };
+  const overlayItem = { id: "agent-2", type: "agentMessage", payload: largePayload };
+  const merged = mergeActiveOverlayTurnWithWindowBackfill({
+    id: "active-turn",
+    items: [overlayItem],
+  }, {
+    id: "active-turn",
+    items: [windowItem],
+  });
+
+  assert.notEqual(merged.items[0], windowItem);
+  assert.notEqual(merged.items[1], overlayItem);
+  assert.equal(merged.items[0].payload, largePayload);
+  assert.equal(merged.items[1].payload, largePayload);
+  merged.items[0].id = "changed-result-id";
+  assert.equal(windowItem.id, "agent-1");
 });
 
 test("active window overlay merge compacts overlay turn before response merge", () => {

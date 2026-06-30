@@ -139,7 +139,7 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(platformPointer, /development visual check passes/);
 });
 
-test("Android composer stale focus is released before the native tap", () => {
+test("Android composer focused native tap preserves IME focus", () => {
   const prepareBody = functionBody("prepareMessageInputForNativeGesture");
   const recoverBody = functionBody("recoverMessageInputKeyboardFromGesture");
   const shouldRecoverBody = functionBody("shouldRecoverMessageInputKeyboard");
@@ -149,10 +149,11 @@ test("Android composer stale focus is released before the native tap", () => {
   assert.match(prepareBody, /releaseStaleAndroidMessageInputFocusBeforeNativeTap\(input\)/);
   assert.doesNotMatch(prepareBody, /focusMessageInput|preventDefault/);
   assert.match(releaseBody, /messageInputKeyboardVisible\(\)/);
+  assert.match(releaseBody, /document\.activeElement === input[\s\S]*return false/);
   assert.match(releaseBody, /input\.blur\(\)/);
   assert.match(shouldRecoverBody, /if \(!isAndroidBrowser\(\) && !isHermesEmbedMode\(\)\) return false;/);
   assert.doesNotMatch(shouldRecoverBody, /if \(isAndroidBrowser\(\)\) return false;/);
-  assert.match(recoverBody, /if \(isAndroidBrowser\(\)\) return false;/);
+  assert.doesNotMatch(recoverBody, /if \(isAndroidBrowser\(\)\) return false;/);
   assert.match(recoverBody, /resetActiveFocus: true/);
   assert.match(recoverBody, /allowAndroidActiveFocusReset: true/);
 });
@@ -310,7 +311,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("loadThread"), /applyThreadDetailFirstPaintTelemetryEffectsPlan\(cachedTelemetryPlan, \{ thread: state\.currentThread \}\);/);
   assert.match(functionBody("loadThread"), /const firstPaintTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintTelemetryEffects\(Object\.assign\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*\}, firstPaintReportingStage\.telemetryInput\)\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailFirstPaintTelemetryEffectsPlan\(firstPaintTelemetryPlan, \{ thread: result\.thread \}\);/);
-  assert.match(functionBody("loadThread"), /threadDiagnosticEventsApi\.threadDetailLoadFailedDiagnosticEvent\(\{[\s\S]*errorCode: diagnosticErrorCode\(err, "thread_detail_load_failed"\),[\s\S]*durationBucket: diagnosticDurationBucket\(roundedDurationMs\(switchStartedAt\)\),[\s\S]*statusCode: diagnosticErrorStatus\(err\),[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\)/);
+  assert.match(functionBody("loadThread"), /const suppressLoadFailureDiagnostic = options\.suppressLoadFailureDiagnostic === true;/);
+  assert.match(functionBody("loadThread"), /if \(suppressLoadFailureDiagnostic\) \{[\s\S]*postClientEvent\("thread_detail_load_failure_diagnostic_suppressed"[\s\S]*\} else \{[\s\S]*threadDiagnosticEventsApi\.threadDetailLoadFailedDiagnosticEvent\(\{[\s\S]*errorCode: diagnosticErrorCode\(err, "thread_detail_load_failed"\),[\s\S]*durationBucket: diagnosticDurationBucket\(roundedDurationMs\(switchStartedAt\)\),[\s\S]*statusCode: diagnosticErrorStatus\(err\),[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\)/);
   assert.doesNotMatch(functionBody("loadThread"), /recordHomeAiDiagnosticFailure\(\{[\s\S]*diagnostic_type: "thread_detail_load_failed"/);
   assert.match(functionBody("loadThread"), /threadDetailRenderPlanApi\.planThreadDetailSwitchStartClientEvent\(\{/);
   assert.match(functionBody("loadThread"), /threadDetailRenderPlanApi\.planThreadDetailSwitchCancelledClientEvent\(\{/);
@@ -337,7 +339,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /postStartupStage\("public_config_failed"/);
   assert.match(appJs, /requestHermesPluginRefresh\("public_config_failed", \{ force: true \}\)/);
   assert.match(appJs, /state\.startupThreadOpenPending = Boolean\(startupThreadId \|\| savedThreadId \|\| \(startupPluginRouteHint && startupPluginRouteHint\.threadId\)\);/);
-  assert.match(appJs, /const earlyRestorePromise = savedThreadId && !startupThreadId[\s\S]*loadThread\(savedThreadId, \{ source: "restore-startup" \}\)/);
+  assert.match(appJs, /const earlyRestorePromise = savedThreadId && !startupThreadId[\s\S]*loadThread\(savedThreadId, \{ source: "restore-startup", suppressLoadFailureDiagnostic: true \}\)/);
   assert.match(appJs, /const status = await api\("\/api\/status"\)\.catch/);
   assert.match(appJs, /const workspacesStartedAt = nowPerfMs\(\);\s*\n\s*await loadWorkspaces\(\);/);
   assert.match(appJs, /await loadWorkspaces\(\);[\s\S]*await loadThreads\(\{ silent: startupThreadOpenPending, deferFallback: true \}\);/);

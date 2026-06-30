@@ -306,6 +306,10 @@ const state = {
   threadListLoadedAtMs: 0,
   threadListDeferredFallbackTimer: null,
   threadListDeferredSilentTimer: null,
+  threadListRuntimeHeartbeatFrame: null,
+  threadListRuntimeLastFrameAt: 0,
+  threadListRuntimeLastReportAt: 0,
+  threadListRuntimeLongTaskObserver: null,
   threadActionMenuId: "",
   threadLongPress: null,
   renameThreadId: "",
@@ -542,7 +546,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v581";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v607";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -569,6 +573,9 @@ const PUBLIC_CONFIG_TIMEOUT_MS = 8000;
 const PUBLIC_CONFIG_RETRY_DELAYS_MS = [0, 300, 1200];
 const THREAD_LOAD_STALL_MS = 12000;
 const THREAD_LIST_SLOW_PATH_MS = 1500;
+const THREAD_LIST_RUNTIME_STALL_MIN_MS = 1000;
+const THREAD_LIST_RUNTIME_STALL_H2_MS = 3000;
+const THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS = 15000;
 const PERF_EVENT_THROTTLE_MS = 2000;
 const PERF_RENDER_REPORT_MIN_MS = 16;
 const PERF_SLOW_RENDER_REPORT_MS = 50;
@@ -5225,6 +5232,45 @@ function shouldHideDurableLiveUserMessage(turn, item, index = 0, thread = null) 
   return false;
 }
 
+function durableUserMessageMatchesOptimisticEcho(durableItem, optimisticItem) {
+  if (!durableItem || !optimisticItem) return false;
+  if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
+  if (isOptimisticUserMessage(durableItem) || !isOptimisticUserMessage(optimisticItem)) return false;
+  return userMessagesShareSubmissionId(durableItem, optimisticItem)
+    || userMessagesLikelySame(durableItem, optimisticItem);
+}
+
+function threadHasDurableUserMessageWithSubmissionId(thread, optimisticItem) {
+  const submissionIds = userMessageSubmissionIdCandidates(optimisticItem);
+  if (!submissionIds.length || !thread || !Array.isArray(thread.turns)) return false;
+  return thread.turns.some((candidateTurn) => (Array.isArray(candidateTurn && candidateTurn.items) ? candidateTurn.items : [])
+    .some((candidate) => candidate
+      && candidate.type === "userMessage"
+      && !isOptimisticUserMessage(candidate)
+      && submissionIds.some((submissionId) => userMessageHasSubmissionId(candidate, submissionId))));
+}
+
+function threadHasDurableUserMessageMatchingOptimisticEcho(thread, optimisticItem) {
+  if (!thread || !Array.isArray(thread.turns) || !isOptimisticUserMessage(optimisticItem)) return false;
+  return thread.turns.some((candidateTurn) => (Array.isArray(candidateTurn && candidateTurn.items) ? candidateTurn.items : [])
+    .some((candidate) => candidate
+      && candidate.type === "userMessage"
+      && !isOptimisticUserMessage(candidate)
+      && optimisticEchoCanMatchEarlierDurable(candidate, optimisticItem)));
+}
+
+function shouldHideOptimisticUserMessageEcho(turn, item, index = 0, thread = null) {
+  if (!item || item.type !== "userMessage" || !isOptimisticUserMessage(item)) return false;
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  const sameTurnDurableMatch = items.some((candidate, candidateIndex) => (
+    candidateIndex !== index && durableUserMessageMatchesOptimisticEcho(candidate, item)
+  ));
+  if (sameTurnDurableMatch) return true;
+  const contextThread = renderContextThread(thread);
+  return threadHasDurableUserMessageWithSubmissionId(contextThread, item)
+    || threadHasDurableUserMessageMatchingOptimisticEcho(contextThread, item);
+}
+
 function isSupersededLiveTurn(turn) {
   return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive)));
 }
@@ -5297,6 +5343,7 @@ function visibleItemsForTurn(turn, thread = null) {
       return;
     }
     if (shouldHideSupersededLiveUserMessage(turn, item)) return;
+    if (shouldHideOptimisticUserMessageEcho(turn, item, index, contextThread)) return;
     if (shouldHideDurableLiveUserMessage(turn, item, index, contextThread)) return;
     if (isContextCompactionItem(item)) {
       const notice = contextCompactionNotice(item, turn, contextThread);
@@ -5695,11 +5742,78 @@ function userMessagesLikelySame(left, right) {
 }
 
 function userMessagesCanShadow(left, right) {
+  const leftSubmittedEcho = Boolean(String(left && left.clientSubmissionId || "").trim() && !(left && left.mobileSendError));
+  const rightSubmittedEcho = Boolean(String(right && right.clientSubmissionId || "").trim() && !(right && right.mobileSendError));
+  const projectionIndexId = (item) => String(item && (item.id || item.itemId || item.item_id) || "").trim().match(/^item-(\d+)$/i);
+  const leftProjectionIndex = Boolean(projectionIndexId(left));
+  const rightProjectionIndex = Boolean(projectionIndexId(right));
+  const itemTimeMs = (item) => {
+    const value = item && (
+      item.startedAtMs
+      || item.startedAt
+      || item.createdAtMs
+      || item.createdAt
+      || item.timestampMs
+      || item.timestamp
+      || item.updatedAtMs
+      || item.updatedAt
+    );
+    if (value === null || value === undefined || value === "") return 0;
+    const numberValue = Number(value);
+    if (Number.isFinite(numberValue) && numberValue > 0) {
+      return numberValue > 1_000_000_000_000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1000);
+    }
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  };
+  const leftProjectionTime = itemTimeMs(left);
+  const rightProjectionTime = itemTimeMs(right);
+  const projectionIndexEcho = Boolean(leftProjectionIndex && rightProjectionIndex
+    && leftProjectionTime
+    && rightProjectionTime
+    && Math.abs(leftProjectionTime - rightProjectionTime) <= 5000);
   return Boolean(left && right
     && left.type === "userMessage"
     && right.type === "userMessage"
-    && (isOptimisticUserMessage(left) || isOptimisticUserMessage(right))
+    && (isOptimisticUserMessage(left) || isOptimisticUserMessage(right) || leftSubmittedEcho || rightSubmittedEcho || projectionIndexEcho)
     && userMessagesLikelySame(left, right));
+}
+
+function userMessageTimestampMs(item) {
+  const value = item && (
+    item.startedAtMs
+    || item.startedAt
+    || item.createdAtMs
+    || item.createdAt
+    || item.timestampMs
+    || item.timestamp
+    || item.updatedAtMs
+    || item.updatedAt
+    || item.mobileDisplayTimestampMs
+  );
+  if (value === null || value === undefined || value === "") return 0;
+  const numberValue = Number(value);
+  if (Number.isFinite(numberValue) && numberValue > 0) {
+    return numberValue > 1_000_000_000_000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1000);
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function userMessagesHaveNearbyTimestamps(left, right, windowMs = 10 * 60 * 1000) {
+  const leftMs = userMessageTimestampMs(left);
+  const rightMs = userMessageTimestampMs(right);
+  return Boolean(leftMs && rightMs && Math.abs(leftMs - rightMs) <= windowMs);
+}
+
+function optimisticEchoCanMatchEarlierDurable(durableItem, optimisticItem) {
+  if (!durableItem || !optimisticItem) return false;
+  if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
+  if (isOptimisticUserMessage(durableItem) || !isOptimisticUserMessage(optimisticItem)) return false;
+  if (userMessagesShareSubmissionId(durableItem, optimisticItem)) return true;
+  if (!optimisticItem.mobileSendError) return false;
+  return userMessagesLikelySame(durableItem, optimisticItem)
+    && userMessagesHaveNearbyTimestamps(durableItem, optimisticItem);
 }
 
 function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
@@ -5726,7 +5840,12 @@ function removeShadowedMuxUserMessages(items) {
 function userMessageShadowPriority(item) {
   if (!item || item.type !== "userMessage") return 0;
   if (/^local-user-/.test(String(item.id || ""))) return 1;
-  if (isMuxUserMessage(item) || item.mobilePendingSubmission) return 2;
+  if (isMuxUserMessage(item) || item.mobilePendingSubmission || String(item.clientSubmissionId || "").trim()) return 2;
+  const projectionMatch = String(item.id || item.itemId || item.item_id || "").trim().match(/^item-(\d+)$/i);
+  if (projectionMatch) {
+    const projectionIndex = Math.max(0, Math.min(999999, Number(projectionMatch[1]) || 0));
+    return 2 + (projectionIndex / 1000000);
+  }
   return 3;
 }
 
@@ -5742,6 +5861,7 @@ function mergeLikelySameUserMessage(existingItem, incomingItem) {
   if (preferred && preferred.startedAtMs && !merged.startedAtMs) merged.startedAtMs = preferred.startedAtMs;
   if (preferred && !isOptimisticUserMessage(preferred)) {
     delete merged.mobilePendingSubmission;
+    delete merged.mobileSendError;
   }
   const durableIncomingReplacesOptimistic = incomingItem
     && !isOptimisticUserMessage(incomingItem)
@@ -5809,6 +5929,7 @@ function shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserM
     if (!real || !real.item || real.item.id === item.id) return false;
     if (!userMessagesCanShadow(real.item, item)) return false;
     if (real.turnIndex >= turnIndex) return true;
+    if (optimisticEchoCanMatchEarlierDurable(real.item, item)) return true;
     return userMessageHasVisualAttachment(real.item) && userMessageHasVisualAttachment(item);
   });
 }
@@ -6909,6 +7030,156 @@ function applyFrontendRuntimeHealthEffectsPlan(plan) {
   for (const effect of effects) applyFrontendRuntimeHealthEffect(effect);
 }
 
+function threadListRuntimeMetrics() {
+  const list = $("threadList");
+  if (!list || typeof list.getBoundingClientRect !== "function") {
+    return {
+      present: false,
+      visible: false,
+      threadListCount: 0,
+      scrollTop: 0,
+      scrollHeight: 0,
+    };
+  }
+  const rect = list.getBoundingClientRect();
+  const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
+  const viewportHeight = Math.max(0, window.innerHeight || document.documentElement.clientHeight || 0);
+  const visible = document.visibilityState !== "hidden"
+    && rect.width > 0
+    && rect.height > 0
+    && rect.bottom > 0
+    && rect.right > 0
+    && rect.top < viewportHeight
+    && rect.left < viewportWidth;
+  return {
+    present: true,
+    visible,
+    threadListCount: list.querySelectorAll("[data-thread]").length,
+    scrollTop: Math.max(0, Math.round(Number(list.scrollTop || 0))),
+    scrollHeight: Math.max(0, Math.round(Number(list.scrollHeight || 0))),
+  };
+}
+
+function recordThreadListRuntimeStall(input = {}) {
+  const now = Date.now();
+  if (now - Number(state.threadListRuntimeLastReportAt || 0) < THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS) return false;
+  const metrics = threadListRuntimeMetrics();
+  const routeKind = diagnosticRouteKind();
+  const threadListMonitorable = metrics.visible
+    || (metrics.present && document.visibilityState !== "hidden" && (
+      routeKind === "embedded-primary" || routeKind === "standalone-root"
+    ));
+  const plan = frontendRuntimeHealthApi.threadListInteractionStallEffects(Object.assign({
+    threadListVisible: metrics.visible,
+    threadListMonitorable,
+    routeKind,
+    minDelayMs: THREAD_LIST_RUNTIME_STALL_MIN_MS,
+    h2ThresholdMs: THREAD_LIST_RUNTIME_STALL_H2_MS,
+    threadListCount: metrics.threadListCount,
+    scrollTop: metrics.scrollTop,
+    scrollHeight: metrics.scrollHeight,
+  }, input || {}));
+  if (!plan.effects || !plan.effects.length) return false;
+  state.threadListRuntimeLastReportAt = now;
+  applyFrontendRuntimeHealthEffectsPlan(plan);
+  postPerformanceEvent("thread_list_runtime_stall", {
+    action: input.action || "thread-list-runtime",
+    routeKind,
+    maxRafDelayMs: Math.max(0, Math.round(Number(input.maxRafDelayMs || 0))),
+    maxScrollApplyMs: Math.max(0, Math.round(Number(input.maxScrollApplyMs || 0))),
+    maxLongTaskMs: Math.max(0, Math.round(Number(input.maxLongTaskMs || 0))),
+    longTaskCount: Math.max(0, Math.round(Number(input.longTaskCount || 0))),
+    threadListCount: metrics.threadListCount,
+    threadListVisible: Boolean(metrics.visible),
+    threadListMonitorable: Boolean(threadListMonitorable),
+  }, { key: "thread-list-runtime-stall", minIntervalMs: THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS });
+  return true;
+}
+
+function sampleThreadListInputDelay(action = "thread-list-input") {
+  const metrics = threadListRuntimeMetrics();
+  if (!metrics.visible) return;
+  const list = $("threadList");
+  const startedAt = nowPerfMs();
+  const startScrollTop = list ? Number(list.scrollTop || 0) : 0;
+  requestAnimationFrame(() => {
+    const rafDelayMs = roundedDurationMs(startedAt);
+    requestAnimationFrame(() => {
+      const elapsedMs = roundedDurationMs(startedAt);
+      const nextScrollTop = list ? Number(list.scrollTop || 0) : startScrollTop;
+      const scrollApplyMs = nextScrollTop !== startScrollTop ? elapsedMs : rafDelayMs;
+      recordThreadListRuntimeStall({
+        action,
+        maxRafDelayMs: rafDelayMs,
+        maxScrollApplyMs: scrollApplyMs,
+        elapsedMs,
+      });
+    });
+  });
+}
+
+function startThreadListRuntimeHeartbeat() {
+  if (state.threadListRuntimeHeartbeatFrame) return;
+  const tick = (timestamp) => {
+    const previous = Number(state.threadListRuntimeLastFrameAt || 0);
+    if (previous > 0) {
+      const delayMs = Math.max(0, Math.round(Number(timestamp || 0) - previous));
+      if (delayMs >= THREAD_LIST_RUNTIME_STALL_MIN_MS) {
+        recordThreadListRuntimeStall({
+          action: "thread-list-heartbeat",
+          maxRafDelayMs: delayMs,
+          elapsedMs: delayMs,
+        });
+      }
+    }
+    state.threadListRuntimeLastFrameAt = Number(timestamp || nowPerfMs());
+    state.threadListRuntimeHeartbeatFrame = requestAnimationFrame(tick);
+  };
+  state.threadListRuntimeHeartbeatFrame = requestAnimationFrame(tick);
+}
+
+function startThreadListRuntimeLongTaskObserver() {
+  if (state.threadListRuntimeLongTaskObserver || typeof PerformanceObserver !== "function") return;
+  try {
+    const observer = new PerformanceObserver((list) => {
+      let maxLongTaskMs = 0;
+      let longTaskCount = 0;
+      for (const entry of list.getEntries()) {
+        const duration = Math.max(0, Math.round(Number(entry && entry.duration || 0)));
+        if (duration < THREAD_LIST_RUNTIME_STALL_MIN_MS) continue;
+        maxLongTaskMs = Math.max(maxLongTaskMs, duration);
+        longTaskCount += 1;
+      }
+      if (maxLongTaskMs > 0) {
+        recordThreadListRuntimeStall({
+          action: "thread-list-longtask",
+          maxLongTaskMs,
+          longTaskCount,
+          elapsedMs: maxLongTaskMs,
+        });
+      }
+    });
+    observer.observe({ type: "longtask", buffered: true });
+    state.threadListRuntimeLongTaskObserver = observer;
+  } catch (_) {
+    state.threadListRuntimeLongTaskObserver = null;
+  }
+}
+
+function startThreadListRuntimeStallMonitoring() {
+  const list = $("threadList");
+  if (list) {
+    ["pointerdown", "touchstart", "wheel", "scroll"].forEach((eventName) => {
+      list.addEventListener(eventName, () => sampleThreadListInputDelay(`thread-list-${eventName}`), { passive: true });
+    });
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") state.threadListRuntimeLastFrameAt = 0;
+  });
+  startThreadListRuntimeHeartbeat();
+  startThreadListRuntimeLongTaskObserver();
+}
+
 function conversationHasClientSubmissionHash(submissionHash) {
   const hash = String(submissionHash || "").trim();
   const conversation = $("conversation");
@@ -7015,6 +7286,7 @@ function conversationDomShape() {
     return {
       renderKeyCount: 0,
       duplicateRenderKeyCount: 0,
+      duplicateUserMessageCount: 0,
       turnCount: 0,
       itemCount: 0,
     };
@@ -7027,20 +7299,75 @@ function conversationDomShape() {
     if (seen.has(key)) duplicateRenderKeyCount += 1;
     else seen.add(key);
   }
+  let duplicateUserMessageCount = 0;
+  for (const turnNode of Array.from(conversation.querySelectorAll("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]"))) {
+    duplicateUserMessageCount += duplicateUserMessageSignatureCount(
+      Array.from(turnNode.querySelectorAll(".item.userMessage")),
+      (node) => domUserMessageDuplicateSignature(turnNode, node),
+    );
+  }
   return {
     renderKeyCount: seen.size,
     duplicateRenderKeyCount,
+    duplicateUserMessageCount,
     turnCount: conversation.querySelectorAll("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]").length,
     itemCount: conversation.querySelectorAll("[data-item]").length,
   };
 }
 
+function duplicateUserMessageSignatureCount(entries, signatureForEntry) {
+  const seen = new Set();
+  let duplicates = 0;
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const signature = String(signatureForEntry(entry) || "").trim();
+    if (!signature) continue;
+    if (seen.has(signature)) duplicates += 1;
+    else seen.add(signature);
+  }
+  return duplicates;
+}
+
+function domUserMessageDuplicateSignature(turnNode, node) {
+  if (!node || !node.getAttribute) return "";
+  const turnId = String(
+    turnNode && turnNode.getAttribute && (turnNode.getAttribute("data-turn") || turnNode.getAttribute("data-thread-tile-turn")) || "",
+  ).trim();
+  const submissionHash = String(node.getAttribute("data-client-submission-hash") || "").trim();
+  if (submissionHash) return `submission:${turnId}:${submissionHash}`;
+  const body = node.querySelector && node.querySelector(".item-body");
+  const text = String((body || node).textContent || "").replace(/\s+/g, " ").trim();
+  return text ? `text:${turnId}:${stableTextHash(text)}` : "";
+}
+
+function visibleUserMessageDuplicateSignature(turn, item) {
+  if (!item || item.type !== "userMessage") return "";
+  const turnId = String(turn && turn.id || turn && turn.mobileVisibleKey || "").trim();
+  const submissionHash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
+  if (submissionHash) return `submission:${turnId}:${submissionHash}`;
+  const comparable = userMessageComparableParts(item);
+  const text = String(
+    comparable.text
+    || itemTextValue(item && item.text)
+    || itemTextValue(item && item.message)
+    || itemTextValue(item && item.content)
+    || "",
+  ).replace(/\s+/g, " ").trim();
+  return text ? `text:${turnId}:${stableTextHash(text)}` : "";
+}
+
 function visibleConversationShape(thread) {
   const turns = visibleTurnsForConversation(thread);
   const visibleItemCount = turns.reduce((total, turn) => total + visibleItemsForTurn(turn, thread).length, 0);
+  const duplicateUserMessageCount = turns.reduce((total, turn) => {
+    const userMessages = visibleItemsForTurn(turn, thread)
+      .map((entry) => entry && entry.item)
+      .filter((item) => item && item.type === "userMessage");
+    return total + duplicateUserMessageSignatureCount(userMessages, (item) => visibleUserMessageDuplicateSignature(turn, item));
+  }, 0);
   return {
     visibleTurnCount: turns.length,
     visibleItemCount,
+    duplicateUserMessageCount,
   };
 }
 
@@ -7285,14 +7612,22 @@ function threadTileVisibleShape(ids = state.threadTileActiveIds) {
   return (Array.isArray(ids) ? ids : []).reduce((shape, id) => {
     const thread = threadTileDisplayThread(id);
     visibleTurnsForConversation(thread).forEach((turn) => {
-      const itemCount = visibleItemsForTurn(turn, thread).length;
+      const visibleItems = visibleItemsForTurn(turn, thread);
+      const itemCount = visibleItems.length;
       if (itemCount > 0) {
         shape.turnCount += 1;
         shape.visibleItemCount += itemCount;
+        const userMessages = visibleItems
+          .map((entry) => entry && entry.item)
+          .filter((item) => item && item.type === "userMessage");
+        shape.duplicateUserMessageCount += duplicateUserMessageSignatureCount(
+          userMessages,
+          (item) => visibleUserMessageDuplicateSignature(turn, item),
+        );
       }
     });
     return shape;
-  }, { turnCount: 0, visibleItemCount: 0 });
+  }, { turnCount: 0, visibleItemCount: 0, duplicateUserMessageCount: 0 });
 }
 
 function threadTileVisibleTurnCount(ids = state.threadTileActiveIds) {
@@ -8449,7 +8784,7 @@ async function bootstrap() {
     hasPluginRouteThreadId: Boolean(startupPluginRouteHint && startupPluginRouteHint.threadId),
   });
   const earlyRestorePromise = savedThreadId && !startupThreadId
-    ? loadThread(savedThreadId, { source: "restore-startup" }).catch((err) => {
+    ? loadThread(savedThreadId, { source: "restore-startup", suppressLoadFailureDiagnostic: true }).catch((err) => {
       localStorage.removeItem(STORAGE_THREAD_ID);
       showError(err);
       renderCurrentThread();
@@ -8666,7 +9001,10 @@ async function openExternalThreadSelection(threadId, options = {}) {
       // Loading the thread by id can still succeed without refreshing workspace shortcuts.
     }
   }
-  await loadThread(id, { source: "external" });
+  await loadThread(id, {
+    source: String(options.source || "external").slice(0, 40),
+    suppressLoadFailureDiagnostic: options.suppressLoadFailureDiagnostic === true,
+  });
 }
 
 async function openHermesPluginRouteHint(hint) {
@@ -8683,6 +9021,8 @@ async function openHermesPluginRouteHint(hint) {
     state.pendingPluginRouteHint = plan.pendingHint || null;
     await openExternalThreadSelection(plan.threadId, {
       statusMessage: plan.statusMessage,
+      source: "route-hint",
+      suppressLoadFailureDiagnostic: true,
     });
     if (!plan.targetId) {
       setPluginRouteDiagnostic("Opened notification thread", { error: false });
@@ -9305,6 +9645,7 @@ async function loadThread(threadId, options = {}) {
   const switchStartedAt = nowPerfMs();
   const fromThreadId = state.currentThreadId || "";
   const source = String(options.source || "unknown").slice(0, 40);
+  const suppressLoadFailureDiagnostic = options.suppressLoadFailureDiagnostic === true;
   if (threadId !== fromThreadId) resetComposerRuntimeSelection();
   if (threadId !== fromThreadId) {
     state.subagentPanelOpen = false;
@@ -9329,6 +9670,7 @@ async function loadThread(threadId, options = {}) {
     requestedThreadId: threadId,
     currentThreadId: state.currentThreadId,
     currentThread: state.currentThread,
+    summaryThread: state.threads.find((thread) => thread && thread.id === threadId),
   });
   if (cacheReusePlan.shouldReportEmptyCachedDetail) {
     recordEmptyCachedDetailReuseBlocked(cacheReusePlan.reason, state.currentThread, { source });
@@ -9394,9 +9736,15 @@ async function loadThread(threadId, options = {}) {
     requestedThreadId: threadId,
     currentThreadId: threadId,
     currentThread: cachedThread,
+    summaryThread: summary,
   });
+  const activePreviewThread = cachedDetailOpenPlan.shouldUseActivePreview
+    ? threadDetailStateApi.activeDetailLoadingPreviewThread(cachedThread)
+    : null;
   const loadingShellPlan = cachedDetailOpenPlan.shouldUseCachedCurrent
     ? { currentThreadId: threadId, thread: cachedThread, reason: "cached-detail-first-paint" }
+    : activePreviewThread
+      ? { currentThreadId: threadId, thread: activePreviewThread, reason: "active-detail-cache-preview" }
     : threadDetailStateApi.planThreadOpenLoadingShell({ threadId, summaryThread: summary });
   state.currentThreadId = loadingShellPlan.currentThreadId || threadId;
   state.startupThreadOpenPending = false;
@@ -9408,7 +9756,7 @@ async function loadThread(threadId, options = {}) {
     mobileLoading: true,
     mobileLoadError: "",
   };
-  if (cachedDetailOpenPlan.shouldUseCachedCurrent) {
+  if (cachedDetailOpenPlan.shouldUseCachedCurrent || activePreviewThread) {
     const cachedPreRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPreRenderEffects({
       threadId,
       hasEvents: Boolean(state.events),
@@ -9422,7 +9770,7 @@ async function loadThread(threadId, options = {}) {
     const cachedCurrentPostRenderPlan = threadDetailRenderPlanApi.planThreadDetailCachedCurrentPostRenderEffects({
       threadId,
       seq,
-      source: "cached-detail-first-paint",
+      source: activePreviewThread ? "active-detail-cache-preview" : "cached-detail-first-paint",
       replacedTilePane: replacedTilePaneForThreadListOpen,
       hasSideChat: state.threadSideChats.has(threadId),
     });
@@ -9470,12 +9818,22 @@ async function loadThread(threadId, options = {}) {
       error: err.message || String(err),
     });
     applyThreadDetailSwitchClientEventPlan(errorEventPlan);
-    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailLoadFailedDiagnosticEvent({
-      errorCode: diagnosticErrorCode(err, "thread_detail_load_failed"),
-      durationBucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
-      statusCode: diagnosticErrorStatus(err),
-      threadHash: diagnosticThreadHash(threadId),
-    }));
+    if (suppressLoadFailureDiagnostic) {
+      postClientEvent("thread_detail_load_failure_diagnostic_suppressed", {
+        source,
+        threadHash: diagnosticThreadHash(threadId),
+        errorCode: diagnosticErrorCode(err, "thread_detail_load_failed"),
+        statusCode: diagnosticErrorStatus(err),
+        durationBucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
+      });
+    } else {
+      recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailLoadFailedDiagnosticEvent({
+        errorCode: diagnosticErrorCode(err, "thread_detail_load_failed"),
+        durationBucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
+        statusCode: diagnosticErrorStatus(err),
+        threadHash: diagnosticThreadHash(threadId),
+      }));
+    }
     throw err;
   } finally {
     clearThreadLoadWatchdog();
@@ -12508,6 +12866,27 @@ function continuationDialogOpen() {
   return Boolean(dialog && !dialog.classList.contains("hidden"));
 }
 
+function setContinuationDialogStatus(message, options = {}) {
+  const statusNode = $("continuationStatus");
+  if (!statusNode) return;
+  const text = String(message || "").trim();
+  statusNode.textContent = text;
+  statusNode.classList.toggle("hidden", !text);
+  statusNode.classList.toggle("error", Boolean(options.error));
+}
+
+function setContinuationDialogBusy(busy, message = "", options = {}) {
+  const isBusy = Boolean(busy);
+  const confirm = $("continuationConfirm");
+  const cancel = $("continuationCancel");
+  if (confirm) {
+    confirm.disabled = isBusy;
+    confirm.textContent = isBusy ? "处理中" : "继续";
+  }
+  if (cancel) cancel.disabled = isBusy;
+  setContinuationDialogStatus(message, options);
+}
+
 function openContinuationDialog(sourceThread) {
   const thread = sourceThread || state.currentThread || {};
   const threadId = String(thread.id || state.currentThreadId || "").trim();
@@ -12531,17 +12910,33 @@ function openContinuationDialog(sourceThread) {
       size ? `当前 rollout 大小：${size}` : "",
     ].filter(Boolean).join(" ");
   }
+  setContinuationDialogBusy(false);
+  postClientEvent("continuation_dialog_opened", {
+    sourceThreadId: threadId,
+    hasWorkspace: Boolean(cwd),
+    rolloutBytes: Number(thread.rolloutSizeBytes || 0) || 0,
+  });
   dialog.classList.remove("hidden");
   setTimeout(clearTextSelection, 0);
   publishPluginNavigationState({ force: true });
   return true;
 }
 
-function closeContinuationDialog() {
+function closeContinuationDialog(options = {}) {
+  if (state.continuationBusy && !options.force) {
+    setContinuationDialogStatus("续接任务正在运行，请稍等。");
+    postClientEvent("continuation_dialog_close_blocked", {
+      jobId: state.continuationJobId || "",
+      sourceThreadId: state.continuationSourceThreadId || "",
+    });
+    return false;
+  }
   const dialog = $("continuationDialog");
   if (dialog) dialog.classList.add("hidden");
   state.continuationDialogThreadId = "";
+  setContinuationDialogBusy(false);
   publishPluginNavigationState({ force: true });
+  return true;
 }
 
 function continuationDialogSourceThread() {
@@ -13114,6 +13509,12 @@ function updateConversationHtml(html, signature, options = {}) {
   const duplicateRenderKeyCount = Object.prototype.hasOwnProperty.call(options, "duplicateRenderKeyCount")
     ? Math.max(0, Number(options.duplicateRenderKeyCount || 0))
     : preDomShape.duplicateRenderKeyCount;
+  const duplicateUserMessageCount = Object.prototype.hasOwnProperty.call(options, "duplicateUserMessageCount")
+    ? Math.max(0, Number(options.duplicateUserMessageCount || 0))
+    : preDomShape.duplicateUserMessageCount;
+  const expectedDuplicateUserMessageCount = Object.prototype.hasOwnProperty.call(options, "expectedDuplicateUserMessageCount")
+    ? Math.max(0, Number(options.expectedDuplicateUserMessageCount || 0))
+    : 0;
   const renderedDomTurnIds = Array.isArray(options.renderedDomTurnIds)
     ? options.renderedDomTurnIds.map(String).filter(Boolean)
     : conversationDomTurnIds(conversation);
@@ -13132,6 +13533,8 @@ function updateConversationHtml(html, signature, options = {}) {
     expectedVisibleItemCount,
     renderedDomItemCount,
     duplicateRenderKeyCount,
+    duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount,
     expectedTurnIds,
     renderedDomTurnIds,
   });
@@ -13162,6 +13565,8 @@ function updateConversationHtml(html, signature, options = {}) {
     expectedVisibleItemCount,
     renderedDomItemCount,
     duplicateRenderKeyCount,
+    duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount,
     previousChildCount,
     threadId: state.currentThreadId || "",
   });
@@ -13198,6 +13603,8 @@ function updateConversationHtml(html, signature, options = {}) {
     expectedVisibleItemCount,
     renderedDomItemCount: postDomShape.itemCount,
     duplicateRenderKeyCount: postDomShape.duplicateRenderKeyCount,
+    duplicateUserMessageCount: postDomShape.duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount,
     expectedTurnIds,
     renderedDomTurnIds: conversationDomTurnIds(conversation),
     readMode: state.currentThread && state.currentThread.mobileReadMode || "",
@@ -14733,6 +15140,8 @@ function renderThreadTileLayout(layout, options = {}) {
     expectedVisibleItemCount: visibleShape.visibleItemCount,
     renderedDomItemCount: renderedDomShape.itemCount,
     duplicateRenderKeyCount: renderedDomShape.duplicateRenderKeyCount,
+    duplicateUserMessageCount: renderedDomShape.duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount: visibleShape.duplicateUserMessageCount,
     action: "thread-tile-empty-state",
     routeKind: "thread-tile",
     threadHash: diagnosticHash(`thread-tile:${ids.join("|")}`),
@@ -16099,6 +16508,8 @@ function renderCurrentThread(options = {}) {
     renderedDomTurnCount: conversationDomTurnIds().length,
     renderedDomItemCount: renderDomShape.itemCount,
     duplicateRenderKeyCount: renderDomShape.duplicateRenderKeyCount,
+    duplicateUserMessageCount: renderDomShape.duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount: renderVisibleShape.duplicateUserMessageCount,
     expectedTurnIds: visibleRenderableTurnIds(thread),
     renderedDomTurnIds: conversationDomTurnIds(),
     source: "single-thread-render",
@@ -17139,13 +17550,24 @@ async function waitForContinuationJob(jobId) {
     });
     $("connectionState").classList.toggle("error", job.status === "failed");
     $("connectionState").textContent = continuationJobStatusText(job);
+    setContinuationDialogStatus(continuationJobStatusText(job), { error: job.status === "failed" });
+    postClientEvent("continuation_job_poll", {
+      jobId: id,
+      status: String(job.status || ""),
+      step: String(job.step || ""),
+    });
     markActivity(job.step || "续接任务");
     if (job.status === "done") {
       clearRememberedContinuationJob(id);
+      postClientEvent("continuation_job_done", { jobId: id });
       return job.result || job;
     }
     if (job.status === "failed") {
       clearRememberedContinuationJob(id);
+      postClientEvent("continuation_job_failed", {
+        jobId: id,
+        message: String(job.error || job.message || "Continuation job failed"),
+      });
       throw new Error(job.error || job.message || "Continuation job failed");
     }
     await sleep(delayMs);
@@ -17175,7 +17597,15 @@ async function resumeRememberedContinuationJob() {
 async function startNewThreadFromThread(sourceThread, event) {
   if (event) event.preventDefault();
   if (event) event.stopPropagation();
-  if (state.continuationBusy) return;
+  if (state.continuationBusy) {
+    setContinuationDialogStatus("续接任务已经在运行，请稍等。");
+    $("connectionState").textContent = "续接任务已经在运行";
+    postClientEvent("continuation_start_ignored_busy", {
+      jobId: state.continuationJobId || "",
+      sourceThreadId: state.continuationSourceThreadId || "",
+    });
+    return;
+  }
   const thread = sourceThread || state.currentThread || {};
   if (!continuationDialogOpen()) {
     openContinuationDialog(thread);
@@ -17183,7 +17613,6 @@ async function startNewThreadFromThread(sourceThread, event) {
   }
   const button = event && event.currentTarget;
   const cwd = thread.cwd ? String(thread.cwd).trim() : String(state.selectedCwd || "").trim();
-  closeContinuationDialog();
   const sourceThreadId = thread.id || state.currentThreadId || "";
   const body = {
     cwd,
@@ -17205,9 +17634,17 @@ async function startNewThreadFromThread(sourceThread, event) {
   }
   state.continuationBusy = true;
   if (button) button.disabled = true;
+  setContinuationDialogBusy(true, "正在创建续接任务。");
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = "正在创建续接任务";
   markActivity("创建续接任务");
+  let completed = false;
+  let failed = false;
+  postClientEvent("continuation_start_requested", {
+    sourceThreadId,
+    hasWorkspace: Boolean(body.cwd),
+    hermesPluginMode: Boolean(body.hermesPluginMode),
+  });
   try {
     const job = await api("/api/thread-continuations", {
       method: "POST",
@@ -17215,13 +17652,30 @@ async function startNewThreadFromThread(sourceThread, event) {
       timeoutMs: 30000,
     });
     $("connectionState").textContent = continuationJobStatusText(job);
+    setContinuationDialogStatus(continuationJobStatusText(job));
+    postClientEvent("continuation_job_created", {
+      jobId: String(job.jobId || ""),
+      status: String(job.status || ""),
+      pluginMode: String(job.pluginMode || ""),
+    });
     const result = await waitForContinuationJob(job.jobId);
+    closeContinuationDialog({ force: true });
+    completed = true;
     await openContinuationResult(result);
   } catch (err) {
+    failed = true;
+    setContinuationDialogBusy(false, err && err.message ? err.message : String(err), { error: true });
+    postClientEvent("continuation_start_failed", {
+      sourceThreadId,
+      message: err && err.message ? err.message : String(err),
+    });
     showError(err);
   } finally {
     clearRememberedContinuationJob();
     state.continuationBusy = false;
+    if (!failed) {
+      setContinuationDialogBusy(false, completed || !continuationDialogOpen() ? "" : "续接任务未完成，可以重试。");
+    }
     if (button) button.disabled = false;
   }
 }
@@ -17987,7 +18441,9 @@ function itemTimestampMs(item, turn = null, thread = null) {
     || numericTimestampMs(item.updated_at_ms)
     || numericTimestampMs(item.updated_at)
     || numericTimestampMs(item.timestampMs)
-    || numericTimestampMs(item.timestamp);
+    || numericTimestampMs(item.timestamp)
+    || numericTimestampMs(item.mobileDisplayTimestampMs)
+    || numericTimestampMs(item.mobileDisplayTimestamp);
   if (itemStarted) return itemStarted;
   if (item.type === "agentMessage" || item.type === "plan") {
     return numericTimestampMs(item.completedAtMs)
@@ -18191,23 +18647,33 @@ function canRenderImageAttachment(attachment) {
 function isInjectedThreadTaskCardMessage(text) {
   const value = String(text || "").trimStart();
   return value.startsWith("[Cross-thread task card sent by source thread]")
-    || value.startsWith("[Cross-thread task card approved]");
+    || value.startsWith("[Cross-thread task card approved]")
+    || value.startsWith("[Codex Mobile task-card continuation]")
+    || /^#\s*Continuation Bootstrap Index\b/i.test(value);
 }
 
 function injectedThreadTaskCardLineValue(lines, label) {
-  const pattern = new RegExp(`^${label}:\\s*`, "i");
+  const pattern = new RegExp(`^\\s*(?:[-*]\\s*)?${label}:\\s*`, "i");
   const line = (Array.isArray(lines) ? lines : []).find((entry) => pattern.test(entry));
   return line ? line.replace(pattern, "").trim() : "";
 }
 
 function injectedThreadTaskCardPurpose(lines) {
+  const firstLine = String(Array.isArray(lines) ? lines[0] || "" : "").trim();
+  if (/^#\s*Continuation Bootstrap Index\b/i.test(firstLine)) return "Continuation Bootstrap Index";
+  if (/^\[Codex Mobile task-card continuation\]/i.test(firstLine)) {
+    const title = injectedThreadTaskCardLineValue(lines, "Title");
+    return title || "Task-card continuation";
+  }
   const title = injectedThreadTaskCardLineValue(lines, "Title");
   if (title) return title;
   const bodyLine = (Array.isArray(lines) ? lines : []).find((line) => {
     const text = String(line || "").trim();
     return text
       && !text.startsWith("[Cross-thread task card")
-      && !/^(Source workspace|Source thread|Approval|Workflow mode|Workflow id|Auto-return):/i.test(text);
+      && !text.startsWith("[Codex Mobile task-card continuation]")
+      && !/^#\s*Continuation Bootstrap Index\b/i.test(text)
+      && !/^(?:[-*]\s*)?(Source workspace|Source thread|Source thread id|Source thread title|Approval|Workflow mode|Workflow id|Auto-return|Continuation Target|Source Thread|Workspace Context Files):/i.test(text);
   });
   return bodyLine ? bodyLine.replace(/^#+\s*/, "").trim() : "Cross-thread task card";
 }
@@ -18215,9 +18681,13 @@ function injectedThreadTaskCardPurpose(lines) {
 function injectedThreadTaskCardMetadata(text) {
   const value = String(text || "").replace(/\r\n?/g, "\n").trim();
   const lines = value.split("\n");
+  const source = injectedThreadTaskCardLineValue(lines, "Source thread")
+    || injectedThreadTaskCardLineValue(lines, "Source thread title")
+    || injectedThreadTaskCardLineValue(lines, "Source thread id")
+    || (/^#\s*Continuation Bootstrap Index\b/i.test(value) ? "Continuation" : "source thread");
   return {
     value,
-    source: injectedThreadTaskCardLineValue(lines, "Source thread") || "source thread",
+    source,
     purpose: injectedThreadTaskCardPurpose(lines),
     charCount: value.length.toLocaleString(),
   };
@@ -19562,6 +20032,29 @@ function imageViewContentUrl(item) {
   )) || "");
 }
 
+function safeImageViewApiUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const origin = typeof window !== "undefined" && window.location && window.location.origin
+      ? window.location.origin
+      : "http://127.0.0.1";
+    const parsed = new URL(raw, origin);
+    if (parsed.origin === origin && protectedImageUpstreamPathname(parsed.pathname)) {
+      return authenticatedApiContentUrl(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+    }
+  } catch (_) {}
+  return "";
+}
+
+function safeImageViewFallbackUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^(?:data:image\/|blob:|file:\/\/)/i.test(raw)) return "";
+  if (isLikelyAbsoluteLocalPath(raw)) return "";
+  return safeImageViewApiUrl(raw);
+}
+
 function isImageViewUnavailable(item) {
   return Boolean(item && (
     item.imageUnavailable
@@ -19574,11 +20067,16 @@ function renderImageView(item) {
   const filePath = imageViewPath(item);
   const contentUrl = imageViewContentUrl(item);
   const url = imageViewUrl(item);
-  const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath, { threadId: renderContextThreadId() }) : url);
+  const src = contentUrl
+    ? safeImageViewApiUrl(contentUrl)
+    : (filePath && isLikelyAbsoluteLocalPath(filePath)
+      ? imageContentUrlForPath(filePath, { threadId: renderContextThreadId() })
+      : safeImageViewFallbackUrl(url));
   const label = shortPath(filePath || item.label || item.fileName || item.file_name || item.caption || url || item.id || "image");
   if (isImageViewUnavailable(item)) {
     return `<figure class="image-view image-load-failed"></figure>`;
   }
+  if (!src && (contentUrl || filePath || url)) return `<figure class="image-view image-load-failed" data-image-source-kind="unsafe-source"></figure>`;
   if (!src) return renderStructuredBlock(item, "Image");
   const displaySrc = protectedImageDisplaySrc(src);
   return `<figure class="image-view">
@@ -22203,10 +22701,12 @@ function recoverMessageInputKeyboardFromGesture() {
   const wasFocused = Boolean(state.messageInputPointerWasFocused);
   state.messageInputPointerWasFocused = false;
   if (!wasFocused) return false;
-  if (isAndroidBrowser()) return false;
   if (!shouldRecoverMessageInputKeyboard()) return false;
   state.messageInputKeyboardRecoveryAt = Date.now();
-  return focusMessageInput({
+  return focusMessageInput(isAndroidBrowser() ? {
+    moveCaretToEnd: false,
+    retry: true,
+  } : {
     moveCaretToEnd: false,
     resetActiveFocus: true,
     allowAndroidActiveFocusReset: true,
@@ -22226,6 +22726,7 @@ function messageInputCanEnableForNativeGesture() {
 function releaseStaleAndroidMessageInputFocusBeforeNativeTap(input) {
   if (!input || !isAndroidBrowser()) return false;
   if (!state.messageInputPointerWasFocused) return false;
+  if (document.activeElement === input) return false;
   if (!messageInputCanEnableForNativeGesture()) return false;
   if (state.composerComposing || messageInputKeyboardVisible()) return false;
   const now = Date.now();
@@ -24819,6 +25320,7 @@ async function start() {
   const startStartedAt = nowPerfMs();
   state.startupInProgress = true;
   wireUi();
+  startThreadListRuntimeStallMonitoring();
   installCodexMobileVisualHarnessFacade();
   if (isHermesEmbedMode()) showPluginStartupLoading();
   startRelativeTimeTimer();

@@ -67,7 +67,7 @@ Keep `.codex` read-only except through app-server RPCs. Do not patch rollout fil
 
 ### Public Config And Login
 
-`GET /api/public-config` exposes auth requirement, version/build ids, runtime option lists, upload limits, rollout warning threshold, quota snapshots, Push support, self-update availability, public PR check availability, and the Hermes plugin endpoint paths. The browser uses this before showing the app shell and also reuses the same quota snapshot when a page-refresh prompt is clicked, so a PWA reload that does not fully recreate the iOS app scene still updates the visible quota chips.
+`GET /api/public-config` exposes auth requirement, version/build ids, runtime option lists, upload limits, rollout warning threshold, quota snapshots, Push support, self-update availability, public PR check availability, and the Hermes plugin endpoint paths. The browser uses this before showing the app shell and also reuses the same quota snapshot when a page-refresh prompt is clicked, so a PWA reload that does not fully recreate the iOS app scene still updates the visible quota chips. Build metadata is read on every request, while the profile/quota snapshot assembly may use a short process-local TTL through `adapters/public-config-runtime-cache-service.js` so repeated startup/refresh probes do not rescan profile rollout quota tails for the same active quota evidence.
 
 Authentication uses `x-codex-mobile-key`, `Authorization: Bearer`, the existing cookie, or the existing `key` query parameter against the runtime access key file. Do not print the key in logs or chat output.
 
@@ -593,7 +593,14 @@ active-looking turns and receive completed-turn budgets for response shaping.
 When the returned detail window is under high item-count or byte pressure, the
 same response-budget service enables progressive active limits for the current
 active turn's operation, reasoning, and assistant/plan tails. Under that
-progressive active pressure only, oversized retained active assistant/reasoning
+progressive active pressure only, replay assistant/plan progress is no longer
+unbounded: active and protected latest-completed replay turns keep a trailing
+assistant/plan tail controlled by
+`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS` (default `8`)
+before any lower-value process rows are considered. This keeps the latest
+user-visible progress readable without making a large active overlay ship every
+historical assistant fragment on first paint. Under the same pressure, oversized
+retained active assistant/reasoning
 text fields may be reduced to a bounded first-paint preview with
 `mobileActiveTextBudget` metadata and `mobileTextTruncated=true`; ordinary
 small active turns and completed-turn receipts keep their existing text
@@ -1090,6 +1097,9 @@ request. It must not freeze `buildId`, `clientBuildId`, or `shellCacheName` at
 Node startup, because a deploy can update static files while the old listener is
 still alive. The browser compares only real app-shell build fields
 (`clientBuildId`, `shellCacheName`, `buildId`), not the ordinary app `version`.
+Only the profile/quota portion of the response is cached briefly; profile switch
+invalidates that cache, and active quota changes produce a distinct cache
+signature.
 
 Refresh is manual in standalone mode. The browser may check for a new
 server-started build after startup, foreground/focus recovery, EventSource

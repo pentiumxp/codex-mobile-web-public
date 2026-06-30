@@ -397,6 +397,28 @@ test("conversation HTML update plan invalidates stable signatures for item/key/o
   assert.equal(duplicateKeys.action, "set-inner-html");
   assert.equal(duplicateKeys.reason, "stable-signature-duplicate-render-keys");
 
+  const duplicateUserMessages = domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    expectedVisibleTurnCount: 2,
+    renderedDomTurnCount: 2,
+    duplicateUserMessageCount: 2,
+    expectedDuplicateUserMessageCount: 1,
+  });
+  assert.equal(duplicateUserMessages.action, "set-inner-html");
+  assert.equal(duplicateUserMessages.reason, "stable-signature-duplicate-user-messages");
+
+  const expectedDuplicateUserMessages = domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    expectedVisibleTurnCount: 2,
+    renderedDomTurnCount: 2,
+    duplicateUserMessageCount: 1,
+    expectedDuplicateUserMessageCount: 1,
+  });
+  assert.equal(expectedDuplicateUserMessages.action, "hydrate-existing");
+  assert.equal(expectedDuplicateUserMessages.reason, "signature-stable");
+
   const orderMismatch = domPatch.planConversationHtmlUpdate({
     signature: "sig-a",
     renderedConversationSignature: "sig-a",
@@ -515,6 +537,8 @@ test("conversation DOM authority invalidation is planned from stable empty DOM m
     domCount: 0,
     domItemCount: 0,
     duplicateRenderKeyCount: 0,
+    duplicateUserMessageCount: 0,
+    expectedDuplicateUserMessageCount: 0,
     previousCount: 2,
   });
   assert.equal(plan.shouldPostClientEvent, true);
@@ -527,6 +551,8 @@ test("conversation DOM authority invalidation is planned from stable empty DOM m
     expectedVisibleItemCount: 6,
     renderedDomItemCount: 0,
     duplicateRenderKeyCount: 0,
+    duplicateUserMessageCount: 0,
+    expectedDuplicateUserMessageCount: 0,
     action: "set-inner-html",
   });
 });
@@ -685,6 +711,12 @@ test("conversation post-apply DOM consistency requires fallback for partial patc
 });
 
 test("conversation post-apply DOM consistency reports duplicate keys and order mismatches", () => {
+  assert.equal(domPatch.planConversationPostApplyDomConsistency({
+    applicationPlan: { finalAction: "patch-html" },
+    duplicateUserMessageCount: 2,
+    expectedDuplicateUserMessageCount: 1,
+  }).reason, "post-apply-duplicate-user-messages");
+
   assert.equal(domPatch.planConversationPostApplyDomConsistency({
     applicationPlan: { finalAction: "set-inner-html" },
     duplicateRenderKeyCount: 2,
@@ -1260,6 +1292,89 @@ test("visible item dom patch inserts before the first child when no previous nod
 
   assert.equal(result.ok, true);
   assert.deepEqual(article.nodes.map((node) => node.key), ["a", "b"]);
+});
+
+test("visible item dom patch reorders reused nodes to match the next visible item order", () => {
+  const article = createArticle([createNode("assistant-0839"), createNode("user-0834")]);
+  const result = applyFixture(article, {
+    canPatch: true,
+    operations: [
+      { type: "reuse", key: "user-0834", nextEntry: { key: "user-0834" } },
+      { type: "reuse", key: "assistant-0839", nextEntry: { key: "assistant-0839" } },
+    ],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reused, 2);
+  assert.deepEqual(article.nodes.map((node) => node.key), ["user-0834", "assistant-0839"]);
+});
+
+test("visible item dom patch validates reordered DOM item order after reuse", () => {
+  const article = createDomElement("article", {}, [
+    createDomElement("section", { "data-render-key": "assistant-0839", "data-item": "assistant" }),
+    createDomElement("section", { "data-render-key": "user-0834", "data-item": "user" }),
+  ]);
+  const result = domPatch.applyVisibleItemRefreshDomPatch({
+    article,
+    patchPlan: {
+      canPatch: true,
+      operations: [
+        { type: "reuse", key: "user-0834", nextEntry: { key: "user-0834" } },
+        { type: "reuse", key: "assistant-0839", nextEntry: { key: "assistant-0839" } },
+      ],
+    },
+    findElementByKey: (key) => article.childNodes
+      .find((node) => node.getAttribute && node.getAttribute("data-render-key") === key) || null,
+    renderElement: (entry) => createDomElement("section", { "data-render-key": entry.key, "data-item": entry.key }),
+    patchElement: (node) => node,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    article.childNodes.map((node) => node.getAttribute("data-render-key")),
+    ["user-0834", "assistant-0839"],
+  );
+});
+
+test("visible item dom patch removes stale visible item nodes after filtering", () => {
+  const stalePending = createDomElement("section", {
+    "data-render-key": "item|thread|turn|local-user-submit",
+    "data-item": "local-user-submit",
+  }, [createDomText("pending")]);
+  const durable = createDomElement("section", {
+    "data-render-key": "item|thread|turn|durable-user",
+    "data-item": "durable-user",
+  }, [createDomText("durable")]);
+  const status = createDomElement("div", {
+    "data-render-key": "status|thread|turn",
+  }, [createDomText("running")]);
+  const article = createDomElement("article", {}, [stalePending, durable, status]);
+  const findElementByKey = (key) => article.childNodes
+    .find((node) => node.getAttribute && node.getAttribute("data-render-key") === key) || null;
+
+  const result = domPatch.applyVisibleItemRefreshDomPatch({
+    article,
+    patchPlan: {
+      canPatch: true,
+      operations: [
+        {
+          type: "reuse",
+          key: "item|thread|turn|durable-user",
+          nextEntry: { key: "item|thread|turn|durable-user" },
+        },
+      ],
+    },
+    findElementByKey,
+    renderElement: (entry) => createDomElement("section", { "data-render-key": entry.key, "data-item": entry.key }),
+    patchElement: (node) => node,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(stalePending.parentNode, null);
+  assert.deepEqual(
+    article.childNodes.map((node) => node.getAttribute("data-render-key")),
+    ["item|thread|turn|durable-user", "status|thread|turn"],
+  );
 });
 
 test("visible item dom patch returns bounded failure reasons", () => {

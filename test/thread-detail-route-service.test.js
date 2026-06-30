@@ -28,6 +28,7 @@ test("thread detail route service maps mode=recent to orchestration and sends re
         type: "read",
         threadId: request.threadId,
         preferRecentTurns: request.preferRecentTurns,
+        responseBudgetEvidence: request.responseBudgetEvidence,
         codex: request.codex,
       });
       request.threadLog("projection_hit", { mode: "projection-v4-cache" });
@@ -50,6 +51,7 @@ test("thread detail route service maps mode=recent to orchestration and sends re
   assert.equal(calls[0].type, "read");
   assert.equal(calls[0].threadId, "thread-1");
   assert.equal(calls[0].preferRecentTurns, true);
+  assert.equal(calls[0].responseBudgetEvidence, "compact");
   assert.deepEqual(calls[1], {
     type: "log",
     event: "projection_hit",
@@ -79,7 +81,11 @@ test("thread detail route service preserves complete=false without final complet
     url: routeUrl("/api/threads/thread-1"),
     now: () => 2000,
     readThreadDetail: async (request) => {
-      calls.push({ type: "read", preferRecentTurns: request.preferRecentTurns });
+      calls.push({
+        type: "read",
+        preferRecentTurns: request.preferRecentTurns,
+        responseBudgetEvidence: request.responseBudgetEvidence,
+      });
       return {
         status: 504,
         mode: "thread-read-raw-error",
@@ -98,13 +104,42 @@ test("thread detail route service preserves complete=false without final complet
     complete: false,
   });
   assert.deepEqual(calls, [
-    { type: "read", preferRecentTurns: false },
+    { type: "read", preferRecentTurns: false, responseBudgetEvidence: "compact" },
     { type: "send", status: 504, body: { error: "timeout" } },
   ]);
 });
 
+test("thread detail route service forwards full response-budget evidence for diagnostics", async () => {
+  const calls = [];
+  const result = await handleThreadDetailReadRoute({
+    threadId: "thread-1",
+    url: routeUrl("/api/threads/thread-1?mode=recent&budget=full"),
+    readThreadDetail: async (request) => {
+      calls.push({
+        type: "read",
+        preferRecentTurns: request.preferRecentTurns,
+        responseBudgetEvidence: request.responseBudgetEvidence,
+      });
+      return {
+        status: 200,
+        mode: "projection-v4-cache",
+        body: { thread: { id: "thread-1" } },
+      };
+    },
+    sendJson: (status, body) => calls.push({ type: "send", status, body }),
+  });
+
+  assert.equal(result.handled, true);
+  assert.deepEqual(calls[0], {
+    type: "read",
+    preferRecentTurns: true,
+    responseBudgetEvidence: "full",
+  });
+});
+
 test("thread detail route service lets caller observe read result without blocking response", async () => {
   const calls = [];
+  const scheduled = [];
   const result = await handleThreadDetailReadRoute({
     threadId: "thread-1",
     url: routeUrl("/api/threads/thread-1?mode=recent"),
@@ -115,6 +150,7 @@ test("thread detail route service lets caller observe read result without blocki
       body: { thread: { id: "thread-1", status: { type: "completed" } } },
     }),
     sendJson: (status, body) => calls.push({ type: "send", status, body }),
+    schedulePostReadResult: (callback) => scheduled.push(callback),
     onThreadDetailReadResult: async (payload) => {
       calls.push({ type: "observe", payload });
       throw new Error("observer failed");
@@ -128,7 +164,21 @@ test("thread detail route service lets caller observe read result without blocki
     status: 200,
     body: { thread: { id: "thread-1", status: { type: "completed" } } },
   });
+  assert.equal(calls[1].event, "complete");
+  assert.equal(scheduled.length, 1);
+  scheduled[0]();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(calls[1], {
+    type: "log",
+    event: "complete",
+    details: {
+      threadId: "thread-1",
+      elapsedMs: 0,
+      status: 200,
+      mode: "projection-v4-cache",
+    },
+  });
+  assert.deepEqual(calls[2], {
     type: "observe",
     payload: {
       threadId: "thread-1",
@@ -138,9 +188,8 @@ test("thread detail route service lets caller observe read result without blocki
       complete: true,
     },
   });
-  assert.equal(calls[2].type, "log");
-  assert.equal(calls[2].event, "post_read_result_sync_failed");
-  assert.equal(calls[3].event, "complete");
+  assert.equal(calls[3].type, "log");
+  assert.equal(calls[3].event, "post_read_result_sync_failed");
 });
 
 test("thread detail route service rejects invalid wiring without side effects", async () => {

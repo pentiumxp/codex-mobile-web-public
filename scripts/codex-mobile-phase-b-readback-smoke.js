@@ -47,6 +47,23 @@ function readPositiveInt(value, fallback) {
   return Math.floor(number);
 }
 
+function boundedNumberMap(value = {}, limit = 12, maxValue = 100 * 1024 * 1024) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const entries = Object.entries(source)
+    .map(([key, raw]) => {
+      const number = Number(raw);
+      if (!Number.isFinite(number) || number <= 0) return null;
+      return [
+        String(key || "unknown").slice(0, 40),
+        Math.max(0, Math.min(maxValue, Math.trunc(number))),
+      ];
+    })
+    .filter(Boolean)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, Math.max(1, Math.trunc(Number(limit) || 12)));
+  return Object.fromEntries(entries);
+}
+
 function normalizeBaseUrl(value) {
   const url = new URL(value || "http://127.0.0.1:8787");
   if (!url.pathname.endsWith("/")) url.pathname += "/";
@@ -489,6 +506,16 @@ function summarizeDetailResponseBudget(budget = {}) {
     responseBudgetOmittedOperationItems: boundedCount(source.omittedOperationItems),
     responseBudgetOmittedReasoningItems: boundedCount(source.omittedReasoningItems),
     responseBudgetOmittedAssistantItems: boundedCount(source.omittedAssistantItems),
+    responseBudgetProgressiveReplayAssistantItems: boundedCount(source.progressiveReplayAssistantItems),
+    responseBudgetLimitedReplayAssistantItems: boundedCount(source.limitedReplayAssistantItems),
+    responseBudgetProgressiveCompletedReplayAssistantItems: boundedCount(source.progressiveCompletedReplayAssistantItems),
+    responseBudgetProgressiveCompletedReplayAssistantBudgetApplied: source.progressiveCompletedReplayAssistantBudgetApplied === true,
+    responseBudgetProgressiveCompletedReplayAssistantBudgetReason: compactLabel(source.progressiveCompletedReplayAssistantBudgetReason, 100),
+    responseBudgetProgressiveCompletedReplayAssistantBudgetScope: compactLabel(source.progressiveCompletedReplayAssistantBudgetScope, 80),
+    responseBudgetLimitedCompletedReplayAssistantItems: boundedCount(source.limitedCompletedReplayAssistantItems),
+    responseBudgetCompletedReplayAssistantItemsBefore: boundedCount(source.completedReplayAssistantItemsBefore),
+    responseBudgetCompletedReplayAssistantItemsAfter: boundedCount(source.completedReplayAssistantItemsAfter),
+    responseBudgetCompletedReplayOmittedAssistantItems: boundedCount(source.completedReplayOmittedAssistantItems),
     responseBudgetOmittedVisibleItems: boundedCount(source.omittedVisibleItems),
     responseBudgetActiveTurnCount: boundedCount(source.activeTurnCount),
     responseBudgetStaleActiveTurnCount: boundedCount(source.staleActiveTurnCount),
@@ -510,6 +537,47 @@ function summarizeDetailResponseBudget(budget = {}) {
     responseBudgetActiveUserInputOriginalChars: boundedCount(source.activeUserInputOriginalChars),
     responseBudgetActiveUserInputRetainedChars: boundedCount(source.activeUserInputRetainedChars),
     responseBudgetOmittedActiveUserInputChars: boundedCount(source.omittedActiveUserInputChars),
+    responseBudgetProgressiveCompletedUserTextChars: boundedCount(source.progressiveCompletedUserTextChars),
+    responseBudgetProgressiveCompletedUserInputBudgetApplied: source.progressiveCompletedUserInputBudgetApplied === true,
+    responseBudgetProgressiveCompletedUserInputBudgetReason: compactLabel(source.progressiveCompletedUserInputBudgetReason, 100),
+    responseBudgetProgressiveCompletedUserInputBudgetScope: compactLabel(source.progressiveCompletedUserInputBudgetScope, 80),
+    responseBudgetProgressiveCompletedUserInputBudgetMode: compactLabel(source.progressiveCompletedUserInputBudgetMode, 80),
+    responseBudgetProgressiveCompletedUserInputBytesBeforeBudget: boundedBytes(source.progressiveCompletedUserInputBytesBeforeBudget),
+    responseBudgetProgressiveCompletedUserInputBytesAfterBudget: boundedBytes(source.progressiveCompletedUserInputBytesAfterBudget),
+    responseBudgetTruncatedCompletedUserInputItems: boundedCount(source.truncatedCompletedUserInputItems),
+    responseBudgetCompletedUserInputOriginalChars: boundedCount(source.completedUserInputOriginalChars),
+    responseBudgetCompletedUserInputRetainedChars: boundedCount(source.completedUserInputRetainedChars),
+    responseBudgetOmittedCompletedUserInputChars: boundedCount(source.omittedCompletedUserInputChars),
+    responseBudgetProgressiveCompletedUsageBudgetApplied: source.progressiveCompletedUsageBudgetApplied === true,
+    responseBudgetProgressiveCompletedUsageBudgetReason: compactLabel(source.progressiveCompletedUsageBudgetReason, 100),
+    responseBudgetProgressiveCompletedUsageBudgetScope: compactLabel(source.progressiveCompletedUsageBudgetScope, 80),
+    responseBudgetProgressiveCompletedUsageBytesBeforeBudget: boundedBytes(source.progressiveCompletedUsageBytesBeforeBudget),
+    responseBudgetProgressiveCompletedUsageBytesAfterBudget: boundedBytes(source.progressiveCompletedUsageBytesAfterBudget),
+    responseBudgetTruncatedCompletedUsageItems: boundedCount(source.truncatedCompletedUsageItems),
+    responseBudgetCompletedUsageOriginalBytes: boundedBytes(source.completedUsageOriginalBytes),
+    responseBudgetCompletedUsageRetainedBytes: boundedBytes(source.completedUsageRetainedBytes),
+    responseBudgetOmittedCompletedUsageBytes: boundedBytes(source.omittedCompletedUsageBytes),
+    responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetApplied: source.progressiveCompletedUsageSummaryOnlyBudgetApplied === true,
+    responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetReason: compactLabel(source.progressiveCompletedUsageSummaryOnlyBudgetReason, 100),
+    responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetScope: compactLabel(source.progressiveCompletedUsageSummaryOnlyBudgetScope, 80),
+    responseBudgetProgressiveCompletedUsageSummaryOnlyBytesBeforeBudget: boundedBytes(source.progressiveCompletedUsageSummaryOnlyBytesBeforeBudget),
+    responseBudgetProgressiveCompletedUsageSummaryOnlyBytesAfterBudget: boundedBytes(source.progressiveCompletedUsageSummaryOnlyBytesAfterBudget),
+    responseBudgetTruncatedCompletedUsageSummaryOnlyItems: boundedCount(source.truncatedCompletedUsageSummaryOnlyItems),
+    responseBudgetCompletedUsageSummaryOnlyOriginalBytes: boundedBytes(source.completedUsageSummaryOnlyOriginalBytes),
+    responseBudgetCompletedUsageSummaryOnlyRetainedBytes: boundedBytes(source.completedUsageSummaryOnlyRetainedBytes),
+    responseBudgetOmittedCompletedUsageSummaryOnlyBytes: boundedBytes(source.omittedCompletedUsageSummaryOnlyBytes),
+    responseBudgetProgressiveThreadTaskCardBudgetApplied: source.progressiveThreadTaskCardBudgetApplied === true,
+    responseBudgetProgressiveThreadTaskCardBudgetReason: compactLabel(source.progressiveThreadTaskCardBudgetReason, 100),
+    responseBudgetProgressiveThreadTaskCardBudgetScope: compactLabel(source.progressiveThreadTaskCardBudgetScope, 80),
+    responseBudgetProgressiveThreadTaskCardOriginalCount: boundedCount(source.progressiveThreadTaskCardOriginalCount),
+    responseBudgetProgressiveThreadTaskCardCompactedCount: boundedCount(source.progressiveThreadTaskCardCompactedCount),
+    responseBudgetProgressiveThreadTaskCardActionableCount: boundedCount(source.progressiveThreadTaskCardActionableCount),
+    responseBudgetProgressiveThreadTaskCardIneligibleCount: boundedCount(source.progressiveThreadTaskCardIneligibleCount),
+    responseBudgetProgressiveThreadTaskCardOriginalBytes: boundedBytes(source.progressiveThreadTaskCardOriginalBytes),
+    responseBudgetProgressiveThreadTaskCardRetainedBytes: boundedBytes(source.progressiveThreadTaskCardRetainedBytes),
+    responseBudgetProgressiveThreadTaskCardOmittedBytes: boundedBytes(source.progressiveThreadTaskCardOmittedBytes),
+    responseBudgetProgressiveThreadTaskCardBytesBeforeBudget: boundedBytes(source.progressiveThreadTaskCardBytesBeforeBudget),
+    responseBudgetProgressiveThreadTaskCardBytesAfterBudget: boundedBytes(source.progressiveThreadTaskCardBytesAfterBudget),
     responseBudgetProgressiveActiveTextChars: boundedCount(source.progressiveActiveTextChars),
     responseBudgetTruncatedActiveTextItems: boundedCount(source.truncatedActiveTextItems),
     responseBudgetActiveTextOriginalChars: boundedCount(source.activeTextOriginalChars),
@@ -530,7 +598,30 @@ function summarizeDetailResponseBudget(budget = {}) {
     responseBudgetProgressiveActiveFirstPaintItemBudgetReason: compactLabel(source.progressiveActiveFirstPaintItemBudgetReason, 100),
     responseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget: boundedBytes(source.progressiveActiveFirstPaintBytesBeforeItemBudget),
     responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget: boundedBytes(source.progressiveActiveFirstPaintBytesAfterItemBudget),
+    responseBudgetProgressiveActiveFirstPaintBytesAfterTaskCardBudget: boundedBytes(source.progressiveActiveFirstPaintBytesAfterTaskCardBudget),
+    responseBudgetProgressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget: boundedBytes(source.progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget),
     responseBudgetProgressiveActiveFirstPaintOmittedVisibleItems: boundedCount(source.progressiveActiveFirstPaintOmittedVisibleItems),
+    responseBudgetProgressiveActiveFirstPaintOverCeilingBytes: boundedBytes(source.progressiveActiveFirstPaintOverCeilingBytes),
+    responseBudgetRetainedVisibleItemCountByKind: boundedNumberMap(source.retainedVisibleItemCountByKind, 12, 100000),
+    responseBudgetRetainedVisibleItemBytesByKind: boundedNumberMap(source.retainedVisibleItemBytesByKind, 12),
+    responseBudgetRetainedAssistantItemCountByTurnState: boundedNumberMap(source.retainedAssistantItemCountByTurnState, 8, 100000),
+    responseBudgetRetainedAssistantItemBytesByTurnState: boundedNumberMap(source.retainedAssistantItemBytesByTurnState, 8),
+    responseBudgetRetainedAssistantItemBytesByShape: boundedNumberMap(source.retainedAssistantItemBytesByShape, 12),
+    responseBudgetRetainedActiveAssistantItemBytesByShape: boundedNumberMap(source.retainedActiveAssistantItemBytesByShape, 12),
+    responseBudgetRetainedCompletedAssistantItemBytesByShape: boundedNumberMap(source.retainedCompletedAssistantItemBytesByShape, 12),
+    responseBudgetRetainedStaleActiveAssistantItemBytesByShape: boundedNumberMap(source.retainedStaleActiveAssistantItemBytesByShape, 12),
+    responseBudgetRetainedOtherAssistantItemBytesByShape: boundedNumberMap(source.retainedOtherAssistantItemBytesByShape, 12),
+    responseBudgetRetainedUserInputItemCountByTurnState: boundedNumberMap(source.retainedUserInputItemCountByTurnState, 8, 100000),
+    responseBudgetRetainedUserInputItemBytesByTurnState: boundedNumberMap(source.retainedUserInputItemBytesByTurnState, 8),
+    responseBudgetRetainedUserInputItemBytesByShape: boundedNumberMap(source.retainedUserInputItemBytesByShape, 12),
+    responseBudgetRetainedActiveUserInputItemBytesByShape: boundedNumberMap(source.retainedActiveUserInputItemBytesByShape, 12),
+    responseBudgetRetainedCompletedUserInputItemBytesByShape: boundedNumberMap(source.retainedCompletedUserInputItemBytesByShape, 12),
+    responseBudgetRetainedStaleActiveUserInputItemBytesByShape: boundedNumberMap(source.retainedStaleActiveUserInputItemBytesByShape, 12),
+    responseBudgetRetainedOtherUserInputItemBytesByShape: boundedNumberMap(source.retainedOtherUserInputItemBytesByShape, 12),
+    responseBudgetRetainedVisibleItemCountForByteStats: boundedCount(source.retainedVisibleItemCountForByteStats),
+    responseBudgetRetainedVisibleItemBytesForByteStats: boundedBytes(source.retainedVisibleItemBytesForByteStats),
+    responseBudgetRetainedVisibleItemLargestKind: compactLabel(source.retainedVisibleItemLargestKind, 40),
+    responseBudgetRetainedVisibleItemLargestBytes: boundedBytes(source.retainedVisibleItemLargestBytes),
     responseBudgetProgressiveCompletedTextBudgetApplied: source.progressiveCompletedTextBudgetApplied === true,
     responseBudgetProgressiveCompletedTextBudgetReason: compactLabel(source.progressiveCompletedTextBudgetReason, 100),
     responseBudgetProgressiveCompletedTextBudgetScope: compactLabel(source.progressiveCompletedTextBudgetScope, 80),
@@ -657,6 +748,9 @@ function summarizeThreadDetail(result = {}, requestedThreadId = "") {
     activeOverlayProjectionLookupMs: boundedNumber(timings && timings.activeOverlayProjectionLookupMs),
     activeOverlayPlanMs: boundedNumber(timings && timings.activeOverlayPlanMs),
     activeOverlayWindowMs: boundedNumber(timings && timings.activeOverlayWindowMs),
+    activeOverlayBackfillWindowMs: boundedNumber(timings && timings.activeOverlayBackfillWindowMs),
+    activeOverlayFullProjectionMs: boundedNumber(timings && timings.activeOverlayFullProjectionMs),
+    activeOverlayHistoryBaselineMs: boundedNumber(timings && timings.activeOverlayHistoryBaselineMs),
     activeOverlayMergeMs: boundedNumber(timings && timings.activeOverlayMergeMs),
     prepareResponseMs: boundedNumber(timings && timings.prepareResponseMs),
     threadReadMs: boundedNumber(timings && timings.threadReadMs),
@@ -747,6 +841,7 @@ async function run(options = {}, env = process.env) {
   if (!options.skipDetail && threadId) {
     const detailResult = await fetchJson(requestUrl(options, `/api/threads/${encodeURIComponent(threadId)}`, {
       mode: "recent",
+      budget: "full",
     }), options, key);
     report.detail = summarizeThreadDetail(detailResult, threadId);
   }

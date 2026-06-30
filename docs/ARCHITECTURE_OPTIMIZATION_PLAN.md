@@ -185,7 +185,15 @@ Current acceleration targets:
    `thread-detail-response-budget-service` trims operation/reasoning tails and
    rebuilds v4 visible keys, while task-card lists now carry summary metadata
    only and load full card bodies through `GET /api/thread-task-cards/:id` when
-   the user expands a card.
+   the user expands a card. Later first-paint byte slices keep the same service
+   boundary for task-card metadata: when active progressive response budgeting
+   has already protected all visible items but the detail JSON is still over
+   the active first-paint ceiling, task cards are reduced to an action-safe
+   first-paint shape that keeps pending-card buttons and minimal
+   workflow/source/target/message metadata while the single-card detail endpoint
+   remains authoritative for full card details. Settled non-actionable cards
+   can be reduced further to id/status/thread-role placeholders because the
+   thread-detail renderer only exposes pending target cards for action.
    The follow-up active-detail hot-path slice keeps that same proof gate but
    changes the common active window source. A naive reuse of the active dynamic
    projection regressed production because the lookup still cloned/normalized
@@ -218,6 +226,35 @@ Current acceleration targets:
    1.3 seconds in `activeOverlayWindowMs`, while repeated reads immediately
    returned with `activeOverlayWindowMs=0`. That is not the older timeout
    failure; it is a synchronous active-window rebuild from app-server
+   on the first read. A later active Codex Mobile sample showed a different
+   warm-path peak: `activeOverlayWindowMs=0`, `prepareResponseMs` around
+   35-45ms, but `activeOverlayMs` still around 1.8-3.0s. The owning layer was
+   local active-overlay backfill merge, not app-server RPC. The backfill helper
+   was deep-cloning every active-window and live-overlay item with
+   `JSON.stringify` before merging, so large command/assistant payloads paid a
+   repeated CPU serialization cost even when the overlay proof itself was
+   ready. The root-cause fix is to keep top-level result immutability while
+   using shallow item copies for the merge and to expose
+   `activeOverlayBackfillWindowMs`, `activeOverlayFullProjectionMs`, and
+   `activeOverlayHistoryBaselineMs` through detail diagnostics / Phase-B
+   readback so future peaks are attributable instead of hidden under
+   `activeOverlayMs`. The next residual showed that the remaining peak was not
+   the merge helper itself but the orchestration rule that treated every
+   `projection-live` overlay as requiring a fresh app-server active-window read.
+   The corrected rule only forces that read for partial, notification-shell,
+   missing-signature, or otherwise incomplete live overlays. Complete signed
+   live overlays can reuse the projection cache; partial projection windows
+   still repair history from the local full projection baseline instead of
+   weakening the evidence gate.
+   A later Phase B sample exposed another active-window ordering gap:
+   `turnsListInitialMs` dominated while the response still ended as
+   `projection-active-overlay` with `activeFullReadReason=initial-window-active-turn`.
+   In that shape, summary state missed active status but the live overlay
+   provider already had a concrete active turn. Read orchestration now uses that
+   live overlay preprobe to try the dedicated `turns-list-active-overlay-window`
+   before generic `turns-list-initial`, so active evidence is proved through the
+   active-window path first and repeated reads can seed/reuse the active-window
+   projection cache.
    `thread/turns/list`. The follow-up server slice adds
    `thread-detail-active-window-prewarm-service`: turn/status notifications and
    thread-list refreshes now schedule a deduplicated background
@@ -230,10 +267,25 @@ Current acceleration targets:
    status metadata. This does not loosen the active-overlay proof gate; it
    moves the expected window build out of the user-visible first-detail request
    whenever the notification/list path has enough time to prewarm it. The
+   `turn/started`, `turn/completed`, and active `thread/status/changed`
+   notification-triggered prewarm path now starts with zero delay and bypasses
+   the recent-attempt throttle, because the client often refetches detail
+   immediately after receiving the same turn/status notification. Notification
+   jobs can preempt older pending thread-list prewarm so a stale ordinary job
+   cannot block completion-boundary active-window repair; thread-list batch
+   prewarm remains delayed and throttled. The
    follow-up active-overlay policy fix treats that preseeded window as
    history-only evidence: its projection revision cannot mark the separately
    supplied live active-turn overlay stale, while ordinary projection windows
    still keep the stale assistant-delta fail-closed rule.
+   A later production log sample showed most background prewarm attempts from
+   `thread-list:warm_fallback_*` skipping with `projection-input-unavailable`:
+   the fallback row proved active status but did not carry enough rollout-path
+   and stat evidence for a projection signature. The prewarm coordinator now
+   treats that as an incomplete-summary case, refreshes the canonical summary
+   once, and retries projection input before skipping. This keeps ownership at
+   the projection-input boundary and avoids moving the same app-server
+   active-window read back into the foreground detail request.
    A later runtime sample showed a remaining cold-path gap: background prewarm
    and the foreground first detail open could race and both start the same
    `turns-list-active-overlay-window` app-server read for one active thread.
@@ -256,7 +308,9 @@ Current acceleration targets:
    active thread summaries are passed through an internal hook to schedule
    active-window prewarm. The hook does not alter public fallback status or
    expose private row data; it only starts the existing bounded active-window
-   prewarm earlier after restart.
+   prewarm earlier after restart. Startup fallback prewarm now defaults to
+   zero delay after listener start while retaining the active-detail-in-flight
+   defer/retry guard.
    The stale-full-history follow-up handles a remaining successful-but-slow
    case after process restart or active-turn growth: a full projection may still
    contain a valid history window, but the ordinary signature check rejects it
@@ -265,6 +319,21 @@ Current acceleration targets:
    full entry into a history-only `turns-list-active-overlay-window`; ordinary
    lookups and resting threads keep rejecting the mismatch and reseed through
    the authoritative app-server path.
+   Once that history-only active-window cache is seeded, its comparable
+   signature also ignores active-turn rollout size/mtime movement after an
+   exact hash miss. The live active turn is supplied by the overlay proof seam,
+   so active growth alone should not force the history window to be rebuilt;
+   `turn/started` and `turn/completed` remain the explicit boundary events that
+   clear and repair that window.
+   A follow-up closes the foreground/prewarm contract gap where background
+   prewarm could report `active-window-already-cached`, but the active-summary
+   foreground detail path still looked up the projection window without
+   `omitActiveTurnId` and rebuilt `turns-list-active-overlay-window`. The
+   orchestrator now retries the dedicated active-overlay projection-window
+   lookup with the live active turn omitted after an initial active-window miss.
+   If that history-only retry succeeds and the live overlay evidence is already
+   complete, the foreground merge uses the cached history rows directly instead
+   of paying a fresh active-window backfill read.
    The history-baseline follow-up handles the related restart race where the
    active notification stream reaches the process before the warm full
    projection has been loaded into memory. The projection service now restores a
@@ -2422,8 +2491,17 @@ Deployable scope:
 - The same service applies pressure-triggered progressive active limits when
   the detail window crosses the item-count threshold or active/thread byte
   thresholds, lowering active operation/reasoning tails while protecting
-  current active and latest-replay assistant/plan progress rows. Under that
-  progressive active pressure only, oversized retained active
+  current active and latest-replay assistant/plan progress rows. The replay
+  protection is bounded under progressive active pressure: active turns keep a
+  trailing assistant/plan tail controlled by
+  `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS` (default
+  `8`), while protected completed replay turns keep a separate tail controlled
+  by `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_REPLAY_ASSISTANT_ITEMS`
+  (default `12`). The response records `progressiveReplayAssistantItems`,
+  `progressiveCompletedReplayAssistantItems`, `limitedReplayAssistantItems`,
+  and `limitedCompletedReplayAssistantItems`. This prevents a large active
+  overlay from retaining every older completed assistant fragment while
+  preserving the newest active progress. Under that progressive active pressure only, oversized retained active
   assistant/reasoning text fields are reduced to a bounded first-paint preview
   and marked with `mobileActiveTextBudget` / `mobileTextTruncated`. The text
   preview budget can be disabled for diagnostics with
@@ -2468,10 +2546,66 @@ Deployable scope:
   `160KB`), non-current/historical completed assistant/reasoning receipts are
   reduced to bounded previews using
   `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS` (default `8KB`
-  per item). Resting responses protect the latest completed turn. Items carry
-  `mobileFirstPaintTextBudget`; the response records before/after first-paint
-  byte counts, scope, skipped-latest count, and completed-text counters in
-  `mobileDetailResponseBudget`.
+  per item). Under active first-paint pressure this preview rule can include the
+  protected latest completed replay turn because the live active turn is the
+  current reading target; resting responses still protect the latest completed
+  turn. Items carry `mobileFirstPaintTextBudget`; the response records
+  before/after first-paint byte counts, scope, skipped-latest count, and
+  completed-text counters in `mobileDetailResponseBudget`.
+- The protected-byte attribution follow-up does not change budget policy. It
+  records bounded retained visible item counts/bytes by kind plus the largest
+  retained item kind/size in `mobileDetailResponseBudget`, Phase-B readback,
+  and decision evidence. This closes the evidence gap when
+  `progressiveActiveFirstPaintItemBudgetReason` is
+  `protected-visible-items` or `no-removable-visible-items`: the next slice can
+  target the dominant protected shape instead of weakening user/assistant/Usage
+  protection generically.
+- When that protected attribution identifies assistant rows, the next evidence
+  slice records retained assistant counts/bytes by turn state (`active`,
+  `completed`, `staleActive`, `other`). Completed/replay assistant pressure can
+  then be tightened through the completed replay assistant first-paint budget
+  without weakening the current active assistant progress budget.
+- Production readback after that attribution slice showed the protected active
+  first-paint over-ceiling payload was dominated by completed `userMessage`
+  items, not the current active input. The follow-up budget previews only
+  historical/completed user input under active first-paint byte pressure using
+  `mobileFirstPaintUserInputBudget` and
+  `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS` (default
+  1024 chars). Later tightening makes that completed-user-input limit a shared
+  newest-first first-paint budget across retained historical inputs instead of
+  a per-row budget. Older completed inputs that exceed the shared budget retain
+  a short placeholder so API-visible user-message counts still line up with
+  browser-visible DOM rows; the placeholder includes a short stable token so
+  multiple exhausted historical inputs in one turn stay distinct under client
+  user-message shadowing/dedupe rules. It preserves active/current user input
+  and does not mutate the stored rollout/session data.
+- The next protected-payload slice handles completed `turnUsageSummary` rows
+  under the same active first-paint byte pressure. It preserves the Usage row
+  and the fields consumed by the UI, but drops repeated internal summary
+  metadata from the HTTP response with `mobileFirstPaintUsageBudget` and
+  `progressiveCompletedUsageBudgetApplied`. This keeps Usage visible while
+  avoiding a generic budget that would hide user input, active assistant
+  progress, images, or diagnostics. Production readback of the first version
+  showed the per-row evidence marker could offset the summary savings for small
+  Usage rows, so the follow-up makes that marker lightweight and skips Usage
+  compaction unless the row remains smaller after the marker is attached.
+  When task-card and user-input budgets leave only a small active first-paint
+  residual, the follow-up Usage pass can compact already-budgeted completed
+  Usage rows to summary-only fields: context percent, risk level, rollout size
+  and threshold state, plus `totalTokenUsage.totalTokens`. That pass is still
+  HTTP response shaping only, keeps the Usage row visible, and reports
+  `progressiveCompletedUsageSummaryOnly*` plus
+  `progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget` so Phase-B can
+  attribute the remaining byte pressure without touching user/assistant text or
+  `mobileVisibleItemKeys`.
+- A later HTTP evidence slice keeps the budget policy and v4 visible-key
+  contract unchanged but reduces ordinary first-paint detail bytes by emitting
+  compact `mobileDetailResponseBudget` evidence on normal `/api/threads/:id`
+  reads. The compact shape keeps the version, applied/progressive flags, key
+  omitted/truncated counters, first-paint byte counters, and bounded retained
+  item maps, while dropping zero/empty long-tail diagnostics. Phase-B,
+  browser-runtime, and API thread self-checks request `budget=full` so deploy
+  gates still validate the full response-budget contract.
 - A later summary-phase slice targets warm projection hits whose `summaryMs`
   dominates `totalMs` even though `threadReadMs=0`. Detail summary resolution
   now merges the existing display-summary cache for local summaries and skips
@@ -2946,6 +3080,72 @@ Required validation:
   blockers before using the result as a deployment gate.
 - Full local checks and central deploy/readback when this module is released.
 
+### 2026-06-29 Runtime Self-Check Gate v2
+
+This module turns the production self-check loop into an explicit deployment
+and periodic-health gate instead of leaving callers to infer policy from raw
+child-check `ok` flags.
+
+Root cause addressed: after slow-path diagnostics were added, repeated
+`thread_session_slow_path` samples could look like H2 failures even when the
+thread eventually loaded correctly. At the same time, user-visible projection,
+image, duplicate-message, timestamp, submit, and list/detail failures must
+still block deploys and remain reportable.
+
+Scope:
+
+- `adapters/runtime-self-check-gate-service.js` owns the deterministic policy:
+  H1/H2 user-visible runtime regressions and self-check execution failures are
+  deploy-blocking/reportable; slow-success thread-session timing findings are
+  observe-only; lower severity nonblocking findings are advisory.
+- `scripts/codex-mobile-runtime-self-check-loop.js` emits the service result as
+  `gate` with `deployPass`, reportable/observe-only/advisory counts, and
+  bounded issue-code groups. `--gate-mode deploy` labels deploy-time runs while
+  periodic loop output stays metadata-only JSONL.
+- The gate does not dispatch repair cards and does not alter thread projection
+  or browser rendering. Home AI diagnostic intake and Owner approval still own
+  remediation-card creation.
+
+Required validation:
+
+- Focused tests for the gate service and runtime loop policy.
+- Full local checks and `git diff --check`.
+- Private deployment through the Home AI Deploy lane, followed by production
+  runtime self-check with `--gate-mode deploy`.
+
+### 2026-06-29 Runtime Self-Check Scheduler Readback v2
+
+This module makes the existing macOS 10-minute runtime self-check LaunchAgent
+auditable from source-controlled tooling. It does not create a new renderer
+fallback, change projection authority, or dispatch repair cards.
+
+Root cause addressed: the periodic checker existed as a local LaunchAgent, but
+operators still had to inspect `launchctl` and raw JSONL tails manually to know
+whether the checker was loaded, fresh, gate-bearing, and healthy. That made
+post-deploy closure depend on ad hoc shell evidence instead of a repeatable
+bounded readback.
+
+Scope:
+
+- `adapters/runtime-self-check-launchagent-service.js` owns pure readback
+  policy for plist shape, launchctl state, latest JSONL gate event, freshness,
+  and health classification.
+- `scripts/codex-mobile-runtime-self-check-launchagent-readback.js` reads the
+  user LaunchAgent, current launchctl state, and latest runtime self-check JSONL
+  without mutating launchd. It reports only metadata-safe state, counts, path
+  hashes, and issue codes.
+- Missing/unloaded/stale/no-gate/unhealthy periodic self-check state is
+  blocking. A checker that is actively running after a previous nonzero exit is
+  advisory, so natural recovery is not marked failed before the current run can
+  write a fresh result.
+
+Required validation:
+
+- Focused LaunchAgent service/readback tests.
+- Live readback against `com.hermesmobile.codex-mobile-runtime-self-check`.
+- Full local checks and central private deploy/readback when this module is
+  released.
+
 ### 2026-06-28 Initial Active Window Overlay Module
 
 Production readback after the recent rich-replay repair showed a remaining
@@ -3019,6 +3219,153 @@ Required validation:
 - central plugin deployment and production self-check/readback proving active
   raw/detail assistant counts match and `projection-active-overlay` responses
   report `activeOverlayCompleteness=full` or `backfilled`, not `partial`.
+
+### 2026-06-29 Public Config Hot-Path Module
+
+After the active-overlay fresh-window rule reduced large active-thread detail
+reads to low hundreds or tens of milliseconds, repeated production probes still
+showed `/api/public-config` taking hundreds of milliseconds and occasionally
+close to one second. This request is part of startup, refresh, embedded recovery,
+and self-check entry, so it can make thread entry feel unstable even when
+thread-detail itself is warm.
+
+Root cause boundary:
+
+- `public-config` was assembling profile/quota state and then calling MCP
+  registration with another profile enumeration in the same request;
+- `codex-profile-service.profiles()` scans account-scoped rollout quota tails for
+  each known profile, which is correct profile evidence but unnecessary to repeat
+  for every immediate startup/refresh probe when active quota evidence has not
+  changed;
+- build identity fields (`buildId`, `clientBuildId`, `shellCacheName`) must still
+  be read live on every request and cannot be cached at Node startup.
+
+Deployable scope:
+
+- add `adapters/public-config-runtime-cache-service.js` as the owner of the
+  short process-local profile/quota snapshot cache;
+- key the cache by bounded active quota evidence and expire it quickly;
+- invalidate it when profile switching writes a new active profile;
+- reuse the single profile state for both public response assembly and
+  `syncKnownCodexMobileMcpToolsets()` so one request does not scan profiles
+  twice;
+- keep profile-list and profile-switch routes strongly current.
+
+Required validation:
+
+- focused service tests for cache hit, active-quota signature miss, TTL expiry,
+  and explicit invalidation;
+- existing profile/restart/new-thread route assertions proving quota refresh and
+  MCP toolset registration remain wired;
+- production readback comparing repeated `/api/public-config` wall time before
+  and after deploy, plus Phase-B/runtime self-check gate for regression.
+
+### 2026-06-30 Active Thread Frontend Consistency Hotfix
+
+User-reported regressions exposed three browser-owned consistency failures while
+the server/API projection remained authoritative:
+
+- visible items could remain in an older DOM order after a local patch reused
+  existing nodes, even when `/api/threads/:id?mode=recent&budget=full` returned
+  the correct order;
+- entering an active thread could first paint a previously cached in-progress
+  receipt for several seconds before the fresh detail response arrived;
+- a sent user message could be durable and visible while the local failed
+  optimistic Composer echo still showed a retry state.
+
+Scope:
+
+- `public/thread-detail-dom-patch.js` now moves reused/patched visible-item DOM
+  nodes into the next projection order and validates post-apply item order.
+- `public/thread-detail-state.js` rejects active/running loaded detail as
+  reusable `cached-current` first-paint state, returning
+  `active-detail-cache-not-reusable` so active threads use a loading/fresh detail
+  path instead of stale exit-state detail.
+- `public/app.js` hides failed optimistic user-message echoes once a durable
+  matching user message is visible and clears `mobileSendError` when the durable
+  row wins a same-message merge.
+- Static shell/cache identity advances to `codex-mobile-shell-v599`.
+
+Required validation:
+
+- focused DOM patch, thread-detail state, conversation render, and static build
+  guard tests;
+- broader render/self-check tests covering browser runtime expectations;
+- full local checks, `git diff --check`, CodeGraph sync/status, then central
+  private deploy/readback before considering the user-visible regressions
+  closed.
+
+### 2026-06-30 Active Thread Loading Preview Follow-Up
+
+The v599 production deploy proved the ordering and failed-retry markers were
+present, but the deploy-mode browser gate still failed on
+`browser_dom_sparse_after_nonempty` and `browser_pending_user_message_disappeared`.
+The API child remained clean and client-event stalls were zero, so the residual
+was a browser first-paint state transition rather than server projection order
+or a main-thread stall.
+
+Root cause: v599 correctly stopped treating active cached detail as reusable
+completed-state detail, but the fallback path first painted an empty loading
+shell while waiting for `/api/threads/:id?mode=recent`. On slow active-thread
+detail reads or repeated browser self-check switches, that empty shell looked
+like a real content disappearance and made thread entry feel slow.
+
+Scope:
+
+- `public/thread-detail-state.js` builds an active loading preview from cached
+  active detail. Completed history and current user input remain visible, while
+  stale active assistant/plan/Usage/operation progress is stripped before fresh
+  detail replaces the preview.
+- `public/app.js` uses that preview for thread-open first paint when
+  `planThreadOpenCacheReuse()` returns `shouldUseActivePreview`.
+- `adapters/browser-runtime-self-check-service.js` treats nonempty loading
+  previews as transitional for latest-turn downgrade and pending-message
+  disappearance checks, while still blocking empty/sparse settled samples and
+  real completed/resting downgrades.
+- Static shell/cache identity advances to `codex-mobile-shell-v600`.
+
+Required validation:
+
+- focused active-preview and browser-runtime self-check tests;
+- runtime deploy gate after private deploy must be clean of H1/H2
+  `browser_dom_sparse_after_nonempty`,
+  `browser_pending_user_message_disappeared`, and latest-turn downgrade codes;
+- loading-speed readback should record thread-list/detail timings and browser
+  sample duration, because the user reported all threads feeling slow after the
+  update.
+
+### 2026-06-30 Default List App-Server Window Regression
+
+The v600 deploy closed the v599 browser H2 regressions, but loading-speed
+readback and follow-up production sampling showed default thread-list first
+paint could still start a 500-row deferred app-server refresh even for small
+visible list requests. Detail responses measured tens to hundreds of
+milliseconds internally, while the caller waited much longer after list
+refresh, which points to resource contention around the deferred authoritative
+list refresh rather than a thread-detail projection miss.
+
+Root cause: `thread-list-app-server-fetch-policy-service` had drifted from the
+documented v535 contract. Search lists used bounded overfetch
+`max(limit * 2, 80)` capped at 500, but ordinary default lists still used a
+500-row floor. For default mobile list entries such as `limit=8`, this produced
+an overfetch factor above 60 and could compete with the immediate thread-detail
+open that follows a user tap.
+
+Scope:
+
+- default no-search/no-workspace/non-archived app-server follow-up windows use
+  bounded overfetch `max(limit * 2, 80)` capped at 500;
+- cursor pages remain exact;
+- workspace-filtered and archived paths keep the legacy 500-row preservation
+  window because filtering is not app-server-authoritative there.
+
+Required validation:
+
+- focused thread-list app-server fetch-policy tests;
+- production readback should show small default list requests reporting
+  `appServerRequestLimit=80` for `limit<=40` instead of 500;
+- repeated list-then-detail timing samples should show reduced caller elapsed
+  waits and no new runtime gate H1/H2 blockers.
 
 ## Release Rule
 

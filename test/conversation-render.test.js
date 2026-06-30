@@ -385,6 +385,9 @@ function evaluatedImageViewRenderer(options = {}) {
     "imageViewPath",
     "imageViewUrl",
     "imageViewContentUrl",
+    "isLikelyAbsoluteLocalPath",
+    "safeImageViewApiUrl",
+    "safeImageViewFallbackUrl",
     "isImageViewUnavailable",
     "renderImageView",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -618,6 +621,9 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "userMessageTimestampMs",
+    "userMessagesHaveNearbyTimestamps",
+    "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -706,6 +712,9 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "userMessageTimestampMs",
+    "userMessagesHaveNearbyTimestamps",
+    "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -801,6 +810,9 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "userMessageTimestampMs",
+    "userMessagesHaveNearbyTimestamps",
+    "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -946,6 +958,9 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "userMessageTimestampMs",
+    "userMessagesHaveNearbyTimestamps",
+    "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
     "userMessageShadowPriority",
@@ -995,6 +1010,9 @@ function evaluatedLiveUserMessageUpsert() {
     "userMessagePathNameOverlap",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "userMessageTimestampMs",
+    "userMessagesHaveNearbyTimestamps",
+    "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
     "userMessageShadowPriority",
@@ -1065,6 +1083,9 @@ function evaluatedVisibleItemsForTurn() {
     "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessagesLikelySame",
+    "userMessageTimestampMs",
+    "userMessagesHaveNearbyTimestamps",
+    "optimisticEchoCanMatchEarlierDurable",
     "pruneRecentSubmittedUserMessages",
     "recentSubmittedUserRecordBelongsToThread",
     "isRecentlySubmittedUserMessage",
@@ -1076,6 +1097,10 @@ function evaluatedVisibleItemsForTurn() {
     "liveTurnHasUserVisibleTextReplyAfter",
     "userMessageHasVisualAttachment",
     "shouldHideDurableLiveUserMessage",
+    "durableUserMessageMatchesOptimisticEcho",
+    "threadHasDurableUserMessageWithSubmissionId",
+    "threadHasDurableUserMessageMatchingOptimisticEcho",
+    "shouldHideOptimisticUserMessageEcho",
     "isSupersededLiveTurn",
     "shouldHideSupersededLiveUserMessage",
     "isRawThreadReadMode",
@@ -1229,6 +1254,9 @@ function evaluatedLocalSubmissionInserter() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "userMessageTimestampMs",
+    "userMessagesHaveNearbyTimestamps",
+    "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
     "userMessageShadowPriority",
@@ -2138,6 +2166,161 @@ test("live turn keeps current submitted durable user message when projection dro
   );
 });
 
+test("live turn hides local pending echo once durable user message is in the same turn", () => {
+  const harness = evaluatedVisibleItemsForTurn();
+  const liveTurn = {
+    live: true,
+    items: [
+      {
+        id: "local-user-submit-current",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-current",
+        content: [{ type: "text", text: "current long user message" }],
+      },
+      {
+        id: "real-user-current",
+        type: "userMessage",
+        content: [{ type: "input_text", text: "current   long user message" }],
+      },
+      { id: "assistant-progress", type: "agentMessage", text: "working" },
+    ],
+  };
+  assert.deepEqual(
+    harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
+    ["real-user-current", "assistant-progress"],
+  );
+});
+
+test("normalizer collapses durable submitted user echoes after pending state is cleared", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [{
+      id: "turn-current",
+      items: [
+        {
+          id: "real-user-current",
+          type: "userMessage",
+          content: [{ type: "input_text", text: "current long user message" }],
+        },
+        {
+          id: "echo-user-current",
+          type: "userMessage",
+          clientSubmissionId: "submit-current",
+          content: [{ type: "text", text: "current   long user message" }],
+        },
+        { id: "assistant-progress", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  const userMessages = thread.turns[0].items.filter((item) => item.type === "userMessage");
+  assert.equal(userMessages.length, 1);
+  assert.equal(userMessages[0].id, "real-user-current");
+  assert.equal(userMessages[0].clientSubmissionId, "submit-current");
+  assert.deepEqual(
+    thread.turns[0].items.map((item) => item.id),
+    ["real-user-current", "assistant-progress"],
+  );
+});
+
+test("live turn hides failed local pending user message after durable match appears", () => {
+  const harness = evaluatedVisibleItemsForTurn();
+  const liveTurn = {
+    live: true,
+    items: [
+      {
+        id: "local-user-submit-current",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-current",
+        mobileSendError: { message: "send failed" },
+        content: [{ type: "text", text: "current long user message" }],
+      },
+      {
+        id: "real-user-current",
+        type: "userMessage",
+        content: [{ type: "input_text", text: "current long user message" }],
+      },
+    ],
+  };
+  assert.deepEqual(
+    harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
+    ["real-user-current"],
+  );
+
+  const failedOnlyTurn = {
+    live: true,
+    items: [liveTurn.items[0]],
+  };
+  assert.deepEqual(
+    harness.visibleItemsForTurn(failedOnlyTurn).map((entry) => entry.item.id),
+    ["local-user-submit-current"],
+  );
+});
+
+test("later failed optimistic user echo is hidden after a nearby durable completed turn", () => {
+  const harness = evaluatedVisibleItemsForTurn();
+  const completedTurn = {
+    id: "server-turn",
+    status: { type: "completed" },
+    items: [
+      {
+        id: "real-user-current",
+        type: "userMessage",
+        startedAtMs: 1782780000000,
+        content: [{ type: "input_text", text: "current long user message" }],
+      },
+      { id: "assistant-final", type: "agentMessage", text: "done" },
+      { id: "usage", type: "turnUsageSummary" },
+    ],
+  };
+  const localEchoTurn = {
+    id: "local-turn-submit-current",
+    live: true,
+    items: [{
+      id: "local-user-submit-current",
+      type: "userMessage",
+      startedAtMs: 1782780010000,
+      mobilePendingSubmission: true,
+      clientSubmissionId: "submit-current",
+      mobileSendError: { message: "send failed" },
+      content: [{ type: "text", text: "current   long user message" }],
+    }],
+  };
+  const thread = { id: "thread-live", turns: [completedTurn, localEchoTurn] };
+
+  assert.deepEqual(
+    harness.visibleItemsForTurn(localEchoTurn, thread).map((entry) => entry.item.id),
+    [],
+  );
+});
+
+test("live turn keeps repeated durable user messages visible", () => {
+  const harness = evaluatedVisibleItemsForTurn();
+  const liveTurn = {
+    live: true,
+    items: [
+      {
+        id: "real-user-one",
+        type: "userMessage",
+        content: [{ type: "input_text", text: "OK" }],
+      },
+      {
+        id: "real-user-two",
+        type: "userMessage",
+        content: [{ type: "input_text", text: "OK" }],
+      },
+    ],
+  };
+  assert.deepEqual(
+    harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
+    ["real-user-one", "real-user-two"],
+  );
+});
+
 test("existing thread send inserts a local pending user turn before server projection catches up", () => {
   const harness = evaluatedLocalSubmissionInserter();
   const inserted = harness.insertLocalSubmittedUserMessage("thread-live", "continue work", [], "submit-123");
@@ -2363,14 +2546,15 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("conversationRenderSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("loadThread"), /const cachedThread = state\.threadTileDetails && state\.threadTileDetails\.get\(threadId\);/);
-  assert.match(functionBody("loadThread"), /const cachedDetailOpenPlan = planThreadOpenCacheReuse\(\{[\s\S]*requestedThreadId: threadId,[\s\S]*currentThreadId: threadId,[\s\S]*currentThread: cachedThread,[\s\S]*\}\);/);
-  assert.match(functionBody("loadThread"), /const loadingShellPlan = cachedDetailOpenPlan\.shouldUseCachedCurrent[\s\S]*\? \{ currentThreadId: threadId, thread: cachedThread, reason: "cached-detail-first-paint" \}[\s\S]*: threadDetailStateApi\.planThreadOpenLoadingShell\(\{ threadId, summaryThread: summary \}\);/);
+  assert.match(functionBody("loadThread"), /const cachedDetailOpenPlan = planThreadOpenCacheReuse\(\{[\s\S]*requestedThreadId: threadId,[\s\S]*currentThreadId: threadId,[\s\S]*currentThread: cachedThread,[\s\S]*summaryThread: summary,[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /const activePreviewThread = cachedDetailOpenPlan\.shouldUseActivePreview[\s\S]*threadDetailStateApi\.activeDetailLoadingPreviewThread\(cachedThread\)/);
+  assert.match(functionBody("loadThread"), /const loadingShellPlan = cachedDetailOpenPlan\.shouldUseCachedCurrent[\s\S]*\? \{ currentThreadId: threadId, thread: cachedThread, reason: "cached-detail-first-paint" \}[\s\S]*: activePreviewThread[\s\S]*\? \{ currentThreadId: threadId, thread: activePreviewThread, reason: "active-detail-cache-preview" \}[\s\S]*: threadDetailStateApi\.planThreadOpenLoadingShell\(\{ threadId, summaryThread: summary \}\);/);
   assert.match(functionBody("loadThread"), /state\.currentThreadId = loadingShellPlan\.currentThreadId \|\| threadId;/);
   assert.match(functionBody("loadThread"), /state\.currentThread = loadingShellPlan\.thread \|\| \{[\s\S]*id: threadId,[\s\S]*name: threadId,[\s\S]*preview: threadId,[\s\S]*turns: \[\],[\s\S]*mobileLoading: true,[\s\S]*mobileLoadError: "",[\s\S]*\};/);
   assert.match(functionBody("loadThread"), /const loadingShellPostStatePlan = threadDetailRenderPlanApi\.planThreadDetailLoadingShellPostStateEffects\(\{[\s\S]*threadId,[\s\S]*source,[\s\S]*\}\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailPostRenderEffectsPlan\(loadingShellPostStatePlan, \{ thread: state\.currentThread \}\);/);
-  assert.match(functionBody("loadThread"), /if \(cachedDetailOpenPlan\.shouldUseCachedCurrent\) \{/);
-  assert.match(functionBody("loadThread"), /source: "cached-detail-first-paint"/);
+  assert.match(functionBody("loadThread"), /if \(cachedDetailOpenPlan\.shouldUseCachedCurrent \|\| activePreviewThread\) \{/);
+  assert.match(functionBody("loadThread"), /source: activePreviewThread \? "active-detail-cache-preview" : "cached-detail-first-paint"/);
   assert.match(functionBody("loadThread"), /renderCurrentThread\(\{ stickToBottom: true \}\);/);
   assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /rememberReusableThreadDetail\(state\.currentThread\)/);
   assert.doesNotMatch(functionBody("loadThread"), /followThreadOpenToBottom\(threadId\);\s*\n\s*restoreDraftForCurrentTarget\(\);\s*\n\s*renderComposerSettings\(\);\s*\n\s*syncActiveTurnFromThread\(\);\s*\n\s*renderThreads\(\);\s*\n\s*renderCurrentThread\(\{ stickToBottom: true \}\);/);
@@ -2630,6 +2814,55 @@ test("injected cross-thread task card user messages render collapsed", () => {
   assert.doesNotMatch(html, /class="input-text"/);
 });
 
+test("continuation bootstrap and task-card continuation user messages render collapsed", () => {
+  const renderInputContent = evaluatedInputContentRenderer();
+  const bootstrapHtml = renderInputContent([
+    {
+      type: "input_text",
+      text: [
+        "# Continuation Bootstrap Index",
+        "",
+        "This thread is a same-workspace continuation created by Codex Mobile Web.",
+        "",
+        "## Source Thread",
+        "- Source thread id: 019eee6c-a6f5-7b20-bfb4-f96ccb6431b3",
+        "- Source thread title: codex mobile 06-22",
+        "",
+        "## Workspace Context Files",
+        "- Project context: /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web/.agent-context/PROJECT_CONTEXT.md",
+      ].join("\n"),
+    },
+  ]);
+
+  assert.match(bootstrapHtml, /data-thread-task-card-standalone/);
+  assert.match(bootstrapHtml, /<span>来源<\/span><strong>codex mobile 06-22<\/strong>/);
+  assert.match(bootstrapHtml, /<span>目的<\/span><strong>Continuation Bootstrap Index<\/strong>/);
+  assert.match(bootstrapHtml, /完整任务卡/);
+  assert.doesNotMatch(bootstrapHtml, /class="input-text"/);
+
+  const continuationHtml = renderInputContent([
+    {
+      type: "input_text",
+      text: [
+        "[Codex Mobile task-card continuation]",
+        "",
+        "Task card id: ttc_123",
+        "Source thread id: 019eed86-2002-7cc2-b0b7-937eb5355f36",
+        "",
+        "Continue the original task-card work from the earlier injected task-card message in this thread.",
+        "",
+        "Title: Continue deploy validation",
+      ].join("\n"),
+    },
+  ]);
+
+  assert.match(continuationHtml, /data-thread-task-card-standalone/);
+  assert.match(continuationHtml, /<span>来源<\/span><strong>019eed86-2002-7cc2-b0b7-937eb5355f36<\/strong>/);
+  assert.match(continuationHtml, /<span>目的<\/span><strong>Continue deploy validation<\/strong>/);
+  assert.match(continuationHtml, /完整任务卡/);
+  assert.doesNotMatch(continuationHtml, /class="input-text"/);
+});
+
 test("injected cross-thread task card items use dedicated card chrome instead of You", () => {
   assert.match(functionBody("renderItem"), /injectedThreadTaskCardTextForItem\(item\)/);
   assert.match(functionBody("renderInjectedThreadTaskCardItem"), /thread-task-card-injected/);
@@ -2776,6 +3009,29 @@ test("Hermes proxy embedded generated image urls render through the plugin proxy
   assert.match(html, /<img src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
   assert.match(html, /data-protected-image-src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
   assert.doesNotMatch(html, /<img src="\/api\/generated-images\/file/);
+});
+
+test("imageView unsafe uncached sources render as failed cards instead of broken images", () => {
+  const renderImageView = evaluatedImageViewRenderer({
+    embedded: true,
+    pathname: "/api/hermes-plugins/codex-mobile/proxy/",
+  });
+
+  for (const item of [
+    { type: "imageView", contentUrl: "data:image/png;base64,iVBORw0KGgo=" },
+    { type: "imageView", contentUrl: "blob:http://127.0.0.1:8787/stale-image" },
+    { type: "imageView", contentUrl: "https://example.invalid/generated.png" },
+    { type: "imageView", url: "assistant-output.png", fileName: "assistant-output.png" },
+    { type: "imageView", url: "data:image/png;base64,iVBORw0KGgo=" },
+    { type: "imageView", url: "blob:http://127.0.0.1:8787/stale-image" },
+    { type: "imageView", url: "https://example.invalid/generated.png" },
+  ]) {
+    const html = renderImageView(item);
+    assert.match(html, /class="image-view image-load-failed"/);
+    assert.match(html, /data-image-source-kind="unsafe-source"/);
+    assert.doesNotMatch(html, /<img\b/);
+    assert.doesNotMatch(html, /assistant-output\.png|example\.invalid|base64|blob:/);
+  }
 });
 
 test("Hermes embedded protected images are not proactively converted into data urls", () => {
@@ -3641,11 +3897,14 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /: preDomShape\.turnCount/);
   assert.match(updateBody, /: preDomShape\.itemCount/);
   assert.match(updateBody, /: preDomShape\.duplicateRenderKeyCount/);
+  assert.match(updateBody, /: preDomShape\.duplicateUserMessageCount/);
   assert.match(updateBody, /expectedVisibleTurnCount,/);
   assert.match(updateBody, /renderedDomTurnCount,/);
   assert.match(updateBody, /expectedVisibleItemCount,/);
   assert.match(updateBody, /renderedDomItemCount,/);
   assert.match(updateBody, /duplicateRenderKeyCount,/);
+  assert.match(updateBody, /duplicateUserMessageCount,/);
+  assert.match(updateBody, /expectedDuplicateUserMessageCount,/);
   assert.match(updateBody, /expectedTurnIds,/);
   assert.match(updateBody, /renderedDomTurnIds,/);
   assert.match(updateBody, /threadDetailDomPatchApi\.planConversationDomAuthorityInvalidation\(\{/);
@@ -3667,11 +3926,15 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleItemCount: renderVisibleShape\.visibleItemCount/);
   assert.match(functionBody("renderCurrentThread"), /duplicateRenderKeyCount: renderDomShape\.duplicateRenderKeyCount/);
+  assert.match(functionBody("renderCurrentThread"), /duplicateUserMessageCount: renderDomShape\.duplicateUserMessageCount/);
+  assert.match(functionBody("renderCurrentThread"), /expectedDuplicateUserMessageCount: renderVisibleShape\.duplicateUserMessageCount/);
   assert.match(functionBody("renderCurrentThread"), /checkProjectionConsistency: true/);
   assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*shellUpdatePlan\.html,\s*shellUpdatePlan\.conversationSignature,\s*Object\.assign\(\{\}, shellUpdatePlan\.options, \{ userReadingCurrentTurn \}\),\s*\)/);
   assert.match(functionBody("visibleRenderableTurnIds"), /visibleItemsForTurn\(turn, thread\)\.length/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
-  assert.match(functionBody("threadTileVisibleShape"), /visibleItemsForTurn\(turn, thread\)\.length/);
+  assert.match(functionBody("threadTileVisibleShape"), /const visibleItems = visibleItemsForTurn\(turn, thread\);/);
+  assert.match(functionBody("threadTileVisibleShape"), /const itemCount = visibleItems\.length;/);
+  assert.match(functionBody("threadTileVisibleShape"), /duplicateUserMessageSignatureCount/);
   assert.match(functionBody("threadTileVisibleTurnCount"), /threadTileVisibleShape\(ids\)\.turnCount/);
   assert.match(functionBody("threadTileDomTurnCount"), /article\.thread-tile-turn\[data-thread-tile-turn\]/);
   assert.match(functionBody("renderThreadTileLayout"), /const visibleShape = threadTileVisibleShape\(ids\);/);
@@ -3679,6 +3942,8 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("renderThreadTileLayout"), /const renderedDomTurnCount = threadTileDomTurnCount\(\);/);
   assert.match(functionBody("renderThreadTileLayout"), /const renderedDomShape = conversationDomShape\(\);/);
   assert.match(functionBody("renderThreadTileLayout"), /expectedVisibleItemCount: visibleShape\.visibleItemCount/);
+  assert.match(functionBody("renderThreadTileLayout"), /duplicateUserMessageCount: renderedDomShape\.duplicateUserMessageCount/);
+  assert.match(functionBody("renderThreadTileLayout"), /expectedDuplicateUserMessageCount: visibleShape\.duplicateUserMessageCount/);
   assert.match(functionBody("renderThreadTileLayout"), /routeKind: "thread-tile"/);
   assert.match(functionBody("renderThreadTileLayout"), /currentVisibleItems: visibleShape\.visibleItemCount/);
   assert.match(functionBody("renderThreadTileLayout"), /source: "thread-tile-render"/);
@@ -3701,6 +3966,8 @@ test("thread detail refresh failure delegates diagnostic payloads to helper", ()
 
 test("thread detail load failure delegates diagnostic payloads to helper", () => {
   const body = functionBody("loadThread");
+  assert.match(body, /const suppressLoadFailureDiagnostic = options\.suppressLoadFailureDiagnostic === true;/);
+  assert.match(body, /if \(suppressLoadFailureDiagnostic\) \{[\s\S]*postClientEvent\("thread_detail_load_failure_diagnostic_suppressed"/);
   assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailLoadFailedDiagnosticEvent\(\{/);
   assert.match(body, /errorCode: diagnosticErrorCode\(err, "thread_detail_load_failed"\)/);
   assert.match(body, /durationBucket: diagnosticDurationBucket\(roundedDurationMs\(switchStartedAt\)\)/);
@@ -4108,6 +4375,8 @@ test("thread tile visible shape uses pane thread context for visible item filter
     "itemTextValue",
     "reasoningItemHasVisibleText",
     "isLatestCompletedProcessTurn",
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
     "visibleItemsForTurn",
     "visibleRenderableTurnIds",
     "threadTileVisibleShape",
@@ -4138,6 +4407,7 @@ function visibleTurnsForConversation(thread) { return thread && Array.isArray(th
 function threadTileDisplayThread(id) { return id === "pane-thread" ? paneThread : null; }
 function isReasoningItem() { return false; }
 function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideOptimisticUserMessageEcho() { return false; }
 function shouldHideDurableLiveUserMessage() { return false; }
 function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
 function isOperationalItem() { return false; }
@@ -4149,6 +4419,9 @@ function isRunningStatus(status) { return Boolean(status && (status === "running
 function isStaleActiveStatus() { return false; }
 function isIncompleteInterruptedTurn() { return false; }
 function turnHasActiveLiveItems() { return false; }
+function clientSubmissionDiagnosticHash() { return ""; }
+function userMessageComparableParts() { return { text: "", paths: [] }; }
+function stableTextHash(value) { return String(value || ""); }
 ${sources.join("\n")}
 return {
   tileShape: threadTileVisibleShape(["pane-thread"]),
@@ -4156,7 +4429,7 @@ return {
 };
 `)();
 
-  assert.deepEqual(result.tileShape, { turnCount: 1, visibleItemCount: 1 });
+  assert.deepEqual(result.tileShape, { turnCount: 1, visibleItemCount: 1, duplicateUserMessageCount: 0 });
   assert.deepEqual(result.paneTurnIds, ["pane-turn"]);
 });
 
@@ -4176,6 +4449,8 @@ test("visible conversation shape uses explicit thread context for visible item f
     "itemTextValue",
     "reasoningItemHasVisibleText",
     "isLatestCompletedProcessTurn",
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
     "visibleItemsForTurn",
     "visibleConversationShape",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -4203,6 +4478,7 @@ const state = {
 function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
 function isReasoningItem() { return false; }
 function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideOptimisticUserMessageEcho() { return false; }
 function shouldHideDurableLiveUserMessage() { return false; }
 function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
 function isOperationalItem() { return false; }
@@ -4214,11 +4490,43 @@ function isRunningStatus(status) { return Boolean(status && (status === "running
 function isStaleActiveStatus() { return false; }
 function isIncompleteInterruptedTurn() { return false; }
 function turnHasActiveLiveItems() { return false; }
+function clientSubmissionDiagnosticHash() { return ""; }
+function userMessageComparableParts() { return { text: "", paths: [] }; }
+function stableTextHash(value) { return String(value || ""); }
 ${sources.join("\n")}
 return visibleConversationShape(targetThread);
 `)();
 
-  assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 1 });
+  assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 1, duplicateUserMessageCount: 0 });
+});
+
+test("visible conversation shape counts duplicate user entries by entry item", () => {
+  const sources = [
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
+    "visibleConversationShape",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+function visibleItemsForTurn(turn) { return Array.isArray(turn && turn.entries) ? turn.entries : []; }
+function clientSubmissionDiagnosticHash(value) { return value ? "hash-" + String(value) : ""; }
+function userMessageComparableParts(item) { return { text: String(item && item.text || ""), paths: [] }; }
+function itemTextValue(value) { return String(value || ""); }
+function stableTextHash(value) { return "text-" + String(value || ""); }
+${sources.join("\n")}
+return visibleConversationShape({
+  turns: [{
+    id: "turn-current",
+    entries: [
+      { item: { id: "user-1", type: "userMessage", clientSubmissionId: "submit-current", text: "same" } },
+      { item: { id: "user-2", type: "userMessage", clientSubmissionId: "submit-current", text: "same" } },
+      { item: { id: "assistant-1", type: "agentMessage", text: "working" } },
+    ],
+  }],
+});
+`)();
+
+  assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 3, duplicateUserMessageCount: 1 });
 });
 
 test("visible item patch entries use render context thread for filtering and signatures", () => {
@@ -4267,6 +4575,7 @@ const state = {
 };
 function isReasoningItem() { return false; }
 function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideOptimisticUserMessageEcho() { return false; }
 function shouldHideDurableLiveUserMessage() { return false; }
 function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
 function isOperationalItem() { return false; }
@@ -4458,6 +4767,25 @@ test("optimistic user messages are shadowed by mux and durable echoes", () => {
   assert.equal(textItems.length, 1);
   assert.equal(textItems[0].id, muxText.id);
 
+  const failedLocalText = {
+    id: "local-user-submit-failed",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    mobileSendError: { message: "timeout after durable write" },
+    clientSubmissionId: "submit-failed",
+    content: [{ type: "text", text: "already sent but marked failed" }],
+  };
+  const durableFailedText = {
+    id: "real-user-submit-failed",
+    type: "userMessage",
+    clientSubmissionId: "submit-failed",
+    content: [{ type: "input_text", text: "already sent but marked failed" }],
+  };
+  const failedTextItems = mergeItemsPreservingLocalVisible([failedLocalText], [durableFailedText], true);
+  assert.equal(failedTextItems.length, 1);
+  assert.equal(failedTextItems[0].id, durableFailedText.id);
+  assert.equal(failedTextItems[0].mobileSendError, undefined);
+
   const localImage = {
     id: "local-user-submit-2",
     type: "userMessage",
@@ -4603,6 +4931,86 @@ test("cross-turn normalization keeps synthetic repeat when matching durable mess
   assert.equal(thread.turns[0].items[0].id, "real-user-1");
   assert.equal(thread.turns[1].items.length, 1);
   assert.equal(thread.turns[1].items[0].id, "mux-user-thread-1-turn-2-submit-2");
+});
+
+test("cross-turn normalization drops failed optimistic echo after nearby durable receipt", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "server-turn",
+        status: { type: "completed" },
+        items: [
+          {
+            id: "real-user-current",
+            type: "userMessage",
+            startedAtMs: 1782780000000,
+            content: [{ type: "input_text", text: "current long user message" }],
+          },
+          { id: "assistant-final", type: "agentMessage", text: "done" },
+          { id: "usage", type: "turnUsageSummary" },
+        ],
+      },
+      {
+        id: "local-turn-submit-current",
+        status: { type: "active" },
+        items: [{
+          id: "local-user-submit-current",
+          type: "userMessage",
+          startedAtMs: 1782780010000,
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-current",
+          mobileSendError: { message: "send failed" },
+          content: [{ type: "text", text: "current   long user message" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), [
+    "real-user-current",
+    "assistant-final",
+    "usage",
+  ]);
+  assert.deepEqual(thread.turns[1].items, []);
+});
+
+test("cross-turn normalization keeps distant failed repeat as a new attempted message", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "server-turn",
+        status: { type: "completed" },
+        items: [{
+          id: "real-user-old",
+          type: "userMessage",
+          startedAtMs: 1782700000000,
+          content: [{ type: "input_text", text: "repeat prompt" }],
+        }],
+      },
+      {
+        id: "local-turn-submit-new",
+        status: { type: "active" },
+        items: [{
+          id: "local-user-submit-new",
+          type: "userMessage",
+          startedAtMs: 1782780010000,
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-new",
+          mobileSendError: { message: "send failed" },
+          content: [{ type: "text", text: "repeat   prompt" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["real-user-old"]);
+  assert.deepEqual(thread.turns[1].items.map((item) => item.id), ["local-user-submit-new"]);
 });
 
 test("cross-turn normalization drops later optimistic upload image echoes after durable image appears", () => {
@@ -4948,6 +5356,13 @@ test("completed projection merge drops local-only live receipts when server rece
           command: "npm test",
           output: "local operation detail ".repeat(80),
         },
+        {
+          id: "local-user-stale-history",
+          type: "userMessage",
+          localOnly: true,
+          mobileLocalOnly: true,
+          content: [{ type: "text", text: "older local user message" }],
+        },
         { id: "local-live-receipt", type: "agentMessage", text: "I am still checking this." },
       ],
     }],
@@ -4981,6 +5396,7 @@ test("completed projection merge drops local-only live receipts when server rece
     "server-final-receipt",
     "mobile-turn-usage-turn-current",
   ]);
+  assert.equal(mergedItems.some((item) => item.id === "local-user-stale-history"), false);
   assert.deepEqual(
     mergedItems.filter((item) => item.type === "agentMessage").map((item) => item.id),
     ["server-final-receipt"],
@@ -5140,6 +5556,46 @@ test("v4 projection merge removes local pending message after durable user match
     "durable-user-current",
     "agent-progress",
   ]);
+});
+
+test("v4 projection merge replaces stale low-index user item with newer projection authority", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const startedAtMs = 1782735926996;
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 30,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [{
+        id: "item-3",
+        type: "userMessage",
+        startedAtMs,
+        content: [{ type: "text", text: "same active user message" }],
+      }],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 31,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [{
+        id: "item-28891",
+        type: "userMessage",
+        startedAtMs,
+        content: [{ type: "input_text", text: "same   active user message" }],
+      }],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["turn-current"]);
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), ["item-28891"]);
 });
 
 test("v4 projection merge corrects local SSE user message order from refresh", () => {

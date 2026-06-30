@@ -579,6 +579,9 @@ test("approve preserves requested reasoning effort in injected task-card metadat
         runtime: {
           reasoningEffort: "xhigh",
           requestedReasoningEffort: card.delivery.reasoningEffort,
+          approvalPolicy: "never",
+          sandboxPolicyType: "dangerFullAccess",
+          deployLaneNoApproval: true,
         },
       };
     },
@@ -604,6 +607,9 @@ test("approve preserves requested reasoning effort in injected task-card metadat
   assert.equal(result.card.delivery.reasoningEffort, "xhigh");
   assert.equal(result.card.injectionRuntime.reasoningEffort, "xhigh");
   assert.equal(result.card.injectionRuntime.requestedReasoningEffort, "xhigh");
+  assert.equal(result.card.injectionRuntime.approvalPolicy, "never");
+  assert.equal(result.card.injectionRuntime.sandboxPolicyType, "dangerFullAccess");
+  assert.equal(result.card.injectionRuntime.deployLaneNoApproval, true);
   assert.equal(executions[0].card.delivery.reasoningEffort, "xhigh");
   assert.match(executions[0].message.text, /Requested reasoning effort: xhigh/);
 });
@@ -891,6 +897,79 @@ test("autonomous workflow auto-returns to the source when the injected target tu
   assert.equal(executions.length, 2);
 });
 
+test("autonomous workflow auto-return can target an explicit reply-to thread", async () => {
+  const executions = [];
+  const returnEvents = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+    onTerminalReturnCard: async (event) => {
+      returnEvents.push(event);
+      return { status: 200 };
+    },
+  });
+  const card = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-hub",
+    sourceThreadTitle: "Home AI Deploy",
+    targetWorkspaceId: "codex-mobile",
+    targetThreadId: "thread-worker",
+    replyToWorkspaceId: "codex-mobile",
+    replyToThreadId: "thread-origin",
+    replyToThreadTitle: "Codex Mobile Source",
+    replyToCardId: "ttc_origin",
+    idempotencyKey: "workflow:auto-return:reply-to",
+    format: "markdown",
+    title: "Supplemental deploy evidence",
+    summary: "Return to original requester.",
+    body: "Collect supplemental evidence and close back to the original source thread.",
+    workflowMode: "autonomous",
+    workflowId: "reply-to-workflow",
+  });
+  const approved = await service.approve(card.id, "thread-worker");
+  assert.match(executions[0].message.text, /Return target thread id: thread-origin/);
+  assert.equal(approved.card.replyTo.threadId, "thread-origin");
+
+  const returned = await service.maybeAutoReplyCompletedTurn({
+    threadId: "thread-worker",
+    turnId: "turn-1",
+    completedAt: "2026-06-30T06:30:00.000Z",
+    finalReceiptText: "Supplemental evidence collected.",
+  });
+
+  assert.equal(returned.card.status, "approved");
+  assert.equal(returned.card.source.threadId, "thread-worker");
+  assert.equal(returned.card.target.threadId, "thread-origin");
+  assert.equal(returned.card.audit.returnRoutedByReplyTo, true);
+  assert.equal(returned.card.audit.returnTargetThreadId, "thread-origin");
+  assert.equal(returned.card.audit.originalSourceThreadId, "thread-hub");
+  assert.equal(returned.card.delivery.returnToSource, true);
+  assert.equal(returned.card.terminal, true);
+  assert.equal(returned.card.canReply, false);
+  assert.equal(returned.card.injectedTurnId, "turn-2");
+  assert.equal(executions[1].card.target.threadId, "thread-origin");
+  assert.match(executions[1].message.text, /Return policy: terminal receipt/);
+  assert.deepEqual(returnEvents, [{
+    taskCardId: card.id,
+    returnCardId: returned.card.id,
+    status: "completed",
+    title: "Auto return: Supplemental deploy evidence",
+    summary: "Target thread completed and returned the result automatically.",
+    metadata: {
+      sourceThreadId: "thread-hub",
+      targetThreadId: "thread-worker",
+      returnTargetThreadId: "thread-origin",
+      replyToThreadId: "thread-origin",
+      workflowId: "reply-to-workflow",
+      terminal: true,
+      ackPolicy: "none",
+    },
+  }]);
+});
+
 test("autonomous workflow auto-return titles do not stack prefixes", async () => {
   const service = createThreadTaskCardService({
     storageFile: tempFile("cards.json"),
@@ -1107,6 +1186,112 @@ test("reply can return an approved implementation card and is idempotent", async
   assert.equal(duplicate.replyCard.id, returned.replyCard.id);
   assert.equal(duplicate.replyCard.status, "approved");
   assert.equal(service.listForThread("thread-home").filter((card) => card.audit && card.audit.replyToCardId === created.id).length, 1);
+});
+
+test("returnToSource uses explicit reply-to thread for multi-hop supplements", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+  });
+  const supplement = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home-deploy",
+    sourceThreadTitle: "Home AI Deploy",
+    targetWorkspaceId: "home-ai",
+    targetThreadId: "thread-codex-deploy",
+    replyToWorkspaceId: "codex-mobile",
+    replyToThreadId: "thread-original-requester",
+    replyToThreadTitle: "Codex Mobile Source",
+    replyToCardId: "ttc_original_deploy",
+    idempotencyKey: "supplement:reply-to",
+    format: "markdown",
+    title: "Summarize approval friction",
+    summary: "Return to original requester.",
+    body: "Summarize the deploy-lane approval friction and return it to the original requester.",
+  });
+  await service.approveFromSource(supplement.id, "thread-home-deploy");
+  assert.match(executions[0].message.text, /Return target thread id: thread-original-requester/);
+
+  const returned = await service.reply(supplement.id, "thread-codex-deploy", {
+    idempotencyKey: "supplement:reply-to:return",
+    format: "markdown",
+    title: "Return: approval friction",
+    status: "completed",
+    summary: "completed",
+    body: "Approval friction summarized.",
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-codex-deploy",
+    sourceThreadTitle: "Codex Mobile Deploy Lane",
+  });
+
+  assert.equal(returned.card.status, "replied");
+  assert.equal(returned.replyCard.status, "approved");
+  assert.equal(returned.replyCard.source.threadId, "thread-codex-deploy");
+  assert.equal(returned.replyCard.target.threadId, "thread-original-requester");
+  assert.equal(returned.replyCard.target.workspaceId, "codex-mobile");
+  assert.equal(returned.replyCard.audit.originalSourceThreadId, "thread-home-deploy");
+  assert.equal(returned.replyCard.audit.returnTargetThreadId, "thread-original-requester");
+  assert.equal(returned.replyCard.audit.returnRoutedByReplyTo, true);
+  assert.equal(returned.replyCard.injectedTurnId, "turn-2");
+  assert.equal(executions[1].card.target.threadId, "thread-original-requester");
+  assert.equal(service.listForThread("thread-home-deploy").some((card) => card.id === returned.replyCard.id), false);
+  assert.equal(service.listForThread("thread-original-requester").some((card) => card.id === returned.replyCard.id), true);
+});
+
+test("reply-to can be resolved from an original task-card id", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+  });
+  const original = await service.create({
+    sourceWorkspaceId: "codex-mobile",
+    sourceThreadId: "thread-origin",
+    sourceThreadTitle: "Codex Mobile Source",
+    targetWorkspaceId: "home-ai",
+    targetThreadId: "thread-original-target",
+    idempotencyKey: "original:reply-to-card-id",
+    format: "markdown",
+    title: "Original deploy",
+    summary: "Original request.",
+    body: "Original request body.",
+  });
+  const supplement = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-hub",
+    sourceThreadTitle: "Home AI Deploy",
+    targetWorkspaceId: "home-ai",
+    targetThreadId: "thread-worker",
+    replyToCardId: original.id,
+    idempotencyKey: "supplement:reply-to-card-id",
+    format: "markdown",
+    title: "Supplement",
+    summary: "Resolve reply target from original card.",
+    body: "Supplement body.",
+  });
+
+  assert.equal(supplement.replyTo.threadId, "thread-origin");
+  assert.equal(supplement.replyTo.cardId, original.id);
+  await service.approveFromSource(supplement.id, "thread-hub");
+  const returned = await service.reply(supplement.id, "thread-worker", {
+    idempotencyKey: "supplement:reply-to-card-id:return",
+    format: "markdown",
+    title: "Return: supplement",
+    status: "completed",
+    summary: "completed",
+    body: "done",
+  });
+
+  assert.equal(returned.replyCard.target.threadId, "thread-origin");
+  assert.equal(returned.replyCard.audit.returnRoutedByReplyTo, true);
+  assert.equal(executions[1].card.target.threadId, "thread-origin");
 });
 
 test("explicit returnToSource replies are terminal and cannot start acknowledgement loops", async () => {
