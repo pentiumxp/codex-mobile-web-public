@@ -2089,15 +2089,22 @@ public behavior:
   approvals, and the pre-browser-auth ChatGPT Pro MCP connector. `server.js`
   now keeps only request context/body/response injection, the auth boundary,
   and the remaining thread/list/detail route-service composition.
+- `adapters/auto-turn-recovery-service.js` now owns automatic active-turn
+  recovery policy: running/cooldown/in-flight checks, recent live-turn
+  inspection, `turn/steer`, stale/unsupported steer fallback through
+  `thread/resume` and `turn/start`, mux user-message notification for steered
+  recovery, and local turn-start notification for replacement recovery turns.
+  `server.js` injects Codex RPC, runtime-setting helpers, classifiers, timeout
+  values, and `notifyLocalTurnStarted`.
 
-Local line-count evidence after the latest extraction: `server.js` is 9,935 lines,
+Local line-count evidence after the latest extraction: `server.js` is 9,849 lines,
 `thread-task-card-route-service.js` is 1,280 lines, and
 `thread-message-route-service.js` is 363 lines, and
 `thread-list-fallback-source-service.js` is 683 lines, and
 `thread-summary-state-service.js` is 383 lines, and
 `thread-detail-response-preparation-service.js` is 254 lines. The newer
-low-coupling static/profile-switch/runtime-settings/core-API adapters are 195,
-385, 236, and 554 lines respectively.
+low-coupling static/profile-switch/runtime-settings/core-API/auto-recovery
+adapters are 195, 385, 236, 554, and 153 lines respectively.
 This is a checkpoint, not the target state; `server.js` remains too large. The
 next high-yield backend splits should target remaining thread-detail enrichment
 helpers, thread-list fallback/cache compatibility wrappers, notification/runtime
@@ -2123,6 +2130,8 @@ Validation boundary:
   Hermes plugin, ChatGPT Pro MCP, workspace delegation, app update/public PR,
   GitHub preview, media public config, and thread-list prewarm public-config
   wiring after the core API route extraction;
+- focused auto-turn-recovery service tests covering turn-id extraction, live
+  steer recovery, cooldown dedupe, and stale-steer resume/start fallback;
 - `git diff --check` before commit.
 
 ### Phase 4: Browser And Visual Coverage

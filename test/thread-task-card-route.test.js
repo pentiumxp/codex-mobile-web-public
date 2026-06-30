@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const autoTurnRecoveryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "auto-turn-recovery-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
@@ -401,7 +402,7 @@ test("server broadcasts active status immediately for local turn starts", () => 
   assert.match(serverJs, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{[\s\S]*source: "thread-task-card-approval"/);
   assert.match(threadMessageRouteServiceJs, /notifyLocalTurnStarted\(threadId, turnResult, \{ source: "message-submit" \}\)/);
   assert.match(threadMessageRouteServiceJs, /notifyLocalTurnStarted\(threadId, turnResult, \{ source: "new-thread-message" \}\)/);
-  assert.match(serverJs, /notifyLocalTurnStarted\(id, result, \{ source: "auto-turn-recovery" \}\)/);
+  assert.match(autoTurnRecoveryServiceJs, /notifyLocalTurnStarted\(id, result, \{ source: "auto-turn-recovery" \}\)/);
   assert.match(serverJs, /notifyLocalTurnStarted\(threadId, result, \{ source: "side-chat-apply" \}\)/);
   assert.match(continuationThreadServiceJs, /notifyLocalTurnStarted\(threadId, result, \{ source: "continuation-source-handoff" \}\)/);
   assert.match(continuationThreadServiceJs, /notifyLocalTurnStarted\(threadId, bootstrap, \{ source: "continuation-bootstrap" \}\)/);

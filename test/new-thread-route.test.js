@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const autoTurnRecoveryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "auto-turn-recovery-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
@@ -552,15 +553,15 @@ test("existing-message route falls back when active turn steering is stale", () 
 });
 
 test("auto-recover route steers live turns before starting a replacement turn", () => {
-  const helperIndex = serverJs.indexOf("async function autoRecoverThreadTurn(");
+  const helperIndex = autoTurnRecoveryServiceJs.indexOf("async function autoRecoverThreadTurn(");
   assert.ok(helperIndex > 0, "missing automatic turn recovery helper");
-  const helperEnd = serverJs.indexOf("let threadDetailProjectionService", helperIndex);
-  const helperBody = serverJs.slice(helperIndex, helperEnd);
+  const helperEnd = autoTurnRecoveryServiceJs.indexOf("module.exports", helperIndex);
+  const helperBody = autoTurnRecoveryServiceJs.slice(helperIndex, helperEnd);
   assert.match(helperBody, /thread\/turns\/list/, "auto recovery should inspect latest turn state first");
   assert.match(helperBody, /turn\/steer/, "auto recovery should try to steer a still-live turn");
   assert.match(helperBody, /thread\/resume/, "auto recovery should resume the thread before fallback start");
   assert.match(helperBody, /turn\/start/, "auto recovery should start a replacement turn when steering is unavailable");
-  assert.match(helperBody, /AUTO_TURN_RECOVERY_COOLDOWN_MS/, "auto recovery should be cooldown guarded");
+  assert.match(serverJs, /cooldownMs:\s*AUTO_TURN_RECOVERY_COOLDOWN_MS/, "auto recovery should be cooldown guarded");
 
   const routeIndex = threadMessageRouteServiceJs.indexOf('const autoRecover = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/auto-recover$/);');
   const messagesIndex = threadMessageRouteServiceJs.indexOf('const messages = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/messages$/);');

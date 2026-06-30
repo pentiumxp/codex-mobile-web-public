@@ -134,6 +134,10 @@ const { createCodexAppServerClient } = require("./adapters/codex-app-server-clie
 const { createStaticFileService } = require("./adapters/static-file-service");
 const { createRuntimeSettingsService } = require("./adapters/runtime-settings-service");
 const { createCoreApiRouteService } = require("./adapters/core-api-route-service");
+const {
+  createAutoTurnRecoveryService,
+  turnStartResultTurnId,
+} = require("./adapters/auto-turn-recovery-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -475,8 +479,6 @@ const threadGoalService = createThreadGoalService({
   dbPath: GOALS_DB,
   userHome: USER_HOME,
 });
-const autoTurnRecoveryRecent = new Map();
-const autoTurnRecoveryInflight = new Map();
 const threadSideChatService = createThreadSideChatService({
   storageFile: THREAD_SIDE_CHAT_FILE,
   scopeId: THREAD_SIDE_CHAT_SCOPE_ID,
@@ -563,112 +565,6 @@ const {
 
 function serveFilePreviewContent(req, res, requestedPath, allowedRoots) {
   return mediaFileService.serveFilePreviewContent(req, res, requestedPath, allowedRoots, (status, body) => sendJson(res, status, body));
-}
-
-function autoTurnRecoveryKey(threadId) {
-  return String(threadId || "");
-}
-
-function pruneAutoTurnRecoveryRecent(nowMs = Date.now()) {
-  for (const [key, entry] of autoTurnRecoveryRecent.entries()) {
-    if (!entry || Number(entry.expiresAt || 0) <= nowMs) autoTurnRecoveryRecent.delete(key);
-  }
-}
-
-function turnStartResultTurnId(result) {
-  return String((result && result.turnId) || (result && result.id) || (result && result.turn && result.turn.id) || "");
-}
-
-async function autoRecoverThreadTurn(threadId, options = {}) {
-  const id = String(threadId || "").trim();
-  if (!id) throw httpStatusError(400, "Thread id is required");
-  if (!AUTO_TURN_RECOVERY_PROMPT) throw httpStatusError(409, "Automatic turn recovery is disabled");
-  const activeTurnId = String(options.activeTurnId || "").trim();
-  const wasRunning = Boolean(options.wasRunning || activeTurnId);
-  if (!wasRunning) {
-    return { skipped: true, reason: "not_marked_running", threadId: id };
-  }
-
-  pruneAutoTurnRecoveryRecent();
-  const key = autoTurnRecoveryKey(id);
-  if (autoTurnRecoveryInflight.has(key)) {
-    return autoTurnRecoveryInflight.get(key);
-  }
-  const recent = autoTurnRecoveryRecent.get(key);
-  if (recent && Number(recent.expiresAt || 0) > Date.now()) {
-    return {
-      skipped: true,
-      reason: "cooldown",
-      threadId: id,
-      action: recent.action || "",
-      turnId: recent.turnId || "",
-    };
-  }
-
-  const promise = (async () => {
-    const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(id), options.permissionMode, options.cwd || null);
-    const input = [{ type: "text", text: AUTO_TURN_RECOVERY_PROMPT }];
-    const turnsResult = await codex.request("thread/turns/list", {
-      threadId: id,
-      limit: 5,
-      sortDirection: "desc",
-    }, { timeoutMs: READ_RPC_TIMEOUT_MS, retry: true, resetOnTimeout: false });
-    const turns = turnListFromResult(turnsResult);
-    const liveTurn = turns.find((turn) => activeTurnId && turnIdentifier(turn) === activeTurnId && isLiveTurn(turn))
-      || turns.find((turn) => isLiveTurn(turn));
-    if (liveTurn) {
-      const liveTurnId = turnIdentifier(liveTurn);
-      try {
-        await codex.request("turn/steer", {
-          threadId: id,
-          input,
-          expectedTurnId: liveTurnId,
-        }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-        codex.notifyMuxUserMessage({
-          threadId: id,
-          turnId: liveTurnId,
-          input,
-          clientSubmissionId: `auto-recover-${Date.now()}`,
-        });
-        return { recovered: true, action: "steered", threadId: id, turnId: liveTurnId };
-      } catch (err) {
-        if (!isTurnSteerUnsupportedError(err) && !isStaleActiveTurnError(err)) throw err;
-      }
-    }
-
-    try {
-      await codex.request("thread/resume", applyResumeRuntimeSettings({
-        threadId: id,
-        cwd: options.cwd || null,
-        persistExtendedHistory: true,
-      }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    } catch (err) {
-      if (!/already|loaded|active/i.test(err.message || "")) throw err;
-    }
-    const params = applyTurnRuntimeSettings({
-      threadId: id,
-      input,
-    }, runtimeSettings);
-    if (options.cwd) params.cwd = options.cwd;
-    const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    const turnId = notifyLocalTurnStarted(id, result, { source: "auto-turn-recovery" });
-    return { recovered: true, action: "started", threadId: id, turnId };
-  })();
-
-  autoTurnRecoveryInflight.set(key, promise);
-  try {
-    const result = await promise;
-    if (result && result.recovered) {
-      autoTurnRecoveryRecent.set(key, {
-        expiresAt: Date.now() + AUTO_TURN_RECOVERY_COOLDOWN_MS,
-        action: result.action || "",
-        turnId: result.turnId || "",
-      });
-    }
-    return result;
-  } finally {
-    autoTurnRecoveryInflight.delete(key);
-  }
 }
 
 let threadDetailProjectionService;
@@ -7979,6 +7875,24 @@ const threadSideChatOrchestrationService = createThreadSideChatOrchestrationServ
   shortIdentifier,
   sleep,
   logger: console,
+});
+const { autoRecoverThreadTurn } = createAutoTurnRecoveryService({
+  applyPermissionModeOverride,
+  applyResumeRuntimeSettings,
+  applyTurnRuntimeSettings,
+  codex,
+  cooldownMs: AUTO_TURN_RECOVERY_COOLDOWN_MS,
+  httpStatusError,
+  isLiveTurn,
+  isStaleActiveTurnError,
+  isTurnSteerUnsupportedError,
+  mutationRpcTimeoutMs: MUTATION_RPC_TIMEOUT_MS,
+  notifyLocalTurnStarted,
+  prompt: AUTO_TURN_RECOVERY_PROMPT,
+  readRpcTimeoutMs: READ_RPC_TIMEOUT_MS,
+  resolveThreadRuntimeSettings,
+  turnIdentifier,
+  turnListFromResult,
 });
 const threadMessageRouteService = createThreadMessageRouteService({
   codex,
