@@ -28,7 +28,7 @@ layout and test strategy.
   - injection payload generation
   - multi-target expansion into one stored card per target
 
-- `adapters/home-ai-autonomous-delivery-return-service.js`
+- `services/task-cards/home-ai-autonomous-delivery-return-service.js`
   - Home AI Autonomous Delivery Loop return-card event client
   - normalizes the bounded payload for
     `POST /api/autonomous-delivery/return-card-events`
@@ -233,7 +233,7 @@ the task-card service builds a Home AI Autonomous Delivery Loop event:
 ```
 
 `server.js` wires that observer to
-`adapters/home-ai-autonomous-delivery-return-service.js`, which posts to
+`services/task-cards/home-ai-autonomous-delivery-return-service.js`, which posts to
 Home AI's `/api/autonomous-delivery/return-card-events` endpoint through the
 same trusted backend web-key path used by Hermes plugin callbacks. The observer
 is idempotent at the Codex side after a successful send and Home AI also dedupes

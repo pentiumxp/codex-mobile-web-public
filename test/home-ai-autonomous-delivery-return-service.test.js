@@ -6,7 +6,21 @@ const { test } = require("node:test");
 const {
   createHomeAiAutonomousDeliveryReturnService,
   normalizeAutonomousDeliveryReturnEvent,
-} = require("../adapters/home-ai-autonomous-delivery-return-service");
+} = require("../services/task-cards/home-ai-autonomous-delivery-return-service");
+
+const canonicalHomeAiAutonomousDeliveryReturnService = require("../services/task-cards/home-ai-autonomous-delivery-return-service");
+const adapterHomeAiAutonomousDeliveryReturnService = require("../adapters/home-ai-autonomous-delivery-return-service");
+
+test("Home AI autonomous delivery return adapter re-exports the canonical service boundary", () => {
+  assert.equal(
+    adapterHomeAiAutonomousDeliveryReturnService.createHomeAiAutonomousDeliveryReturnService,
+    canonicalHomeAiAutonomousDeliveryReturnService.createHomeAiAutonomousDeliveryReturnService,
+  );
+  assert.equal(
+    adapterHomeAiAutonomousDeliveryReturnService.normalizeAutonomousDeliveryReturnEvent,
+    canonicalHomeAiAutonomousDeliveryReturnService.normalizeAutonomousDeliveryReturnEvent,
+  );
+});
 
 test("Home AI autonomous delivery return service posts bounded terminal return metadata", async () => {
   const calls = [];

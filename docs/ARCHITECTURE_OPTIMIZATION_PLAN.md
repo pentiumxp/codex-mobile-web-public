@@ -2044,6 +2044,13 @@ acknowledgement, or block normal terminal return-card delivery. Unknown Home AI
 task-card ids are recorded as bounded `unknown_task_card` audit status on the
 return card.
 
+The Home AI return-card event client is now under
+`services/task-cards/home-ai-autonomous-delivery-return-service.js`; the adapter
+path is compatibility-only. This keeps terminal return-card workflow ownership,
+return-card observer event normalization, and outbound Home AI delivery-loop
+event reporting in the same task-card service boundary while preserving the
+existing backend web-key path.
+
 Remaining target:
 
 - Keep return-card delivery and Home AI delivery-loop event reporting separate:
