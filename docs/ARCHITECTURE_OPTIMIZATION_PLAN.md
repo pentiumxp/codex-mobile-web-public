@@ -4444,15 +4444,20 @@ Scope:
 
 - `scripts/publish-vite-shell-artifact.mjs` copies only the Vite shell manifest,
   shell entry chunk, and deferred topology chunk from `dist/frontend-shell/` to
-  `public/vite-shell/`.
+  `public/vite-shell/`, then generates an explicit `preview.html` module host.
 - `public/vite-shell/vite-shell-readback.json` records bounded hashes, sizes,
-  `stage: "vite-shell-public-preview-v1"`,
+  `stage: "vite-shell-preview-html-v1"`,
   `sourceBuildStage: "vite-shell-artifact-contract-v1"`, and
   `productionExecution: "classic-script-fallback"`.
 - `services/runtime/vite-shell-artifact-service.js` owns authorized production
   readback through `/api/vite-shell-artifact`. It compares the preview artifact
-  with the current public shell manifest and fails closed with bounded issue
-  codes when files, hashes, sizes, or build-stage markers drift.
+  with the current public shell manifest, verifies that `preview.html` loads the
+  published Vite entry as a module, and fails closed with bounded issue codes
+  when files, hashes, sizes, HTML markers, or build-stage markers drift.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  opens `/vite-shell/preview.html` in the same isolated-Chrome harness used by
+  the normal browser runtime checks. It proves the preview module entry ran,
+  the entry topology global is present, and the deferred topology chunk loaded.
 - The production `/` path, service-worker precache, and classic script order do
   not change in this stage. The Vite chunks are serveable static artifacts for
   readback and future cutover testing only.

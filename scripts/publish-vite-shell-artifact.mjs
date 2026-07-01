@@ -2,9 +2,10 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-export const VITE_SHELL_PUBLIC_ARTIFACT_STAGE = "vite-shell-public-preview-v1";
+export const VITE_SHELL_PUBLIC_ARTIFACT_STAGE = "vite-shell-preview-html-v1";
 export const VITE_SHELL_PUBLIC_ARTIFACT_ROOT = "public/vite-shell";
 export const VITE_SHELL_PUBLIC_READBACK_FILE = "vite-shell-readback.json";
+export const VITE_SHELL_PUBLIC_PREVIEW_FILE = "preview.html";
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -42,6 +43,31 @@ function fileRecord(root, relativePath) {
     bytes: buffer.length,
     sha256: sha256Hex(buffer),
   };
+}
+
+function bufferRecord(relativePath, body) {
+  const fileName = normalizeRelativeFileName(relativePath);
+  if (!fileName) return null;
+  const buffer = Buffer.isBuffer(body) ? body : Buffer.from(String(body || ""), "utf8");
+  return {
+    fileName,
+    bytes: buffer.length,
+    sha256: sha256Hex(buffer),
+  };
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function publicArtifactUrl(fileName) {
+  const relativePath = normalizeRelativeFileName(fileName);
+  if (!relativePath) return "";
+  return `/${VITE_SHELL_PUBLIC_ARTIFACT_ROOT.replace(/^public\//, "")}/${relativePath}`;
 }
 
 function requiredArtifactFiles(manifest) {
@@ -86,6 +112,26 @@ export function buildViteShellPublicReadback(options = {}) {
     }
   }
 
+  const preview = {
+    fileName: VITE_SHELL_PUBLIC_PREVIEW_FILE,
+    entryScript: viteBuild.viteEntry ? publicArtifactUrl(viteBuild.viteEntry.fileName) : "",
+  };
+  const readbackForPreview = {
+    stage: VITE_SHELL_PUBLIC_ARTIFACT_STAGE,
+    sourceBuildStage: viteBuild.stage || "",
+    productionExecution: viteBuild.productionExecution || "",
+    shellCacheName: String(manifest.shellCacheName || ""),
+    clientBuildId: String(manifest.clientBuildId || ""),
+    entry: viteBuild.viteEntry ? {
+      source: viteBuild.viteEntry.source || "",
+      fileName: normalizeRelativeFileName(viteBuild.viteEntry.fileName),
+    } : null,
+    preview,
+  };
+  const previewHtml = renderViteShellPreviewHtml(readbackForPreview);
+  const previewRecord = bufferRecord(VITE_SHELL_PUBLIC_PREVIEW_FILE, previewHtml);
+  if (previewRecord) publishedFiles.push(previewRecord);
+
   return {
     schemaVersion: 1,
     generatedBy: "codex-mobile-vite-shell-artifact-publisher",
@@ -102,6 +148,7 @@ export function buildViteShellPublicReadback(options = {}) {
       source: String(chunk && chunk.source || ""),
       fileName: normalizeRelativeFileName(chunk && chunk.fileName),
     })).filter((chunk) => chunk.fileName),
+    preview,
     counts: {
       entryGroups: Array.isArray(manifest.entryGroups) ? manifest.entryGroups.length : 0,
       publishedFiles: publishedFiles.length,
@@ -112,6 +159,38 @@ export function buildViteShellPublicReadback(options = {}) {
       issues,
     },
   };
+}
+
+export function renderViteShellPreviewHtml(readback = {}) {
+  const entryFileName = normalizeRelativeFileName(readback.entry && readback.entry.fileName);
+  const entryScript = readback.preview && readback.preview.entryScript
+    ? String(readback.preview.entryScript)
+    : publicArtifactUrl(entryFileName);
+  return [
+    "<!doctype html>",
+    "<html lang=\"en\">",
+    "<head>",
+    "  <meta charset=\"utf-8\">",
+    "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
+    "  <meta name=\"robots\" content=\"noindex,nofollow\">",
+    "  <title>Codex Mobile Vite Shell Preview</title>",
+    "</head>",
+    "<body>",
+    "  <main",
+    "    id=\"codex-vite-shell-preview\"",
+    `    data-stage=\"${escapeHtml(readback.stage)}\"`,
+    `    data-source-build-stage=\"${escapeHtml(readback.sourceBuildStage)}\"`,
+    `    data-production-execution=\"${escapeHtml(readback.productionExecution)}\"`,
+    `    data-client-build-id=\"${escapeHtml(readback.clientBuildId)}\"`,
+    `    data-shell-cache-name=\"${escapeHtml(readback.shellCacheName)}\"`,
+    "  >",
+    "    <h1>Codex Mobile Vite Shell Preview</h1>",
+    "  </main>",
+    `  <script type=\"module\" src=\"${escapeHtml(entryScript)}\"></script>`,
+    "</body>",
+    "</html>",
+    "",
+  ].join("\n");
 }
 
 function copyArtifactFile(sourceRoot, targetRoot, fileName) {
@@ -135,8 +214,13 @@ export function publishViteShellPublicArtifact(options = {}) {
   fs.rmSync(publicArtifactRoot, { recursive: true, force: true });
   fs.mkdirSync(publicArtifactRoot, { recursive: true });
   for (const file of readback.publishedFiles) {
+    if (file.fileName === VITE_SHELL_PUBLIC_PREVIEW_FILE) continue;
     copyArtifactFile(buildRoot, publicArtifactRoot, file.fileName);
   }
+  fs.writeFileSync(
+    path.join(publicArtifactRoot, VITE_SHELL_PUBLIC_PREVIEW_FILE),
+    renderViteShellPreviewHtml(readback)
+  );
   fs.writeFileSync(
     path.join(publicArtifactRoot, VITE_SHELL_PUBLIC_READBACK_FILE),
     `${JSON.stringify(readback, null, 2)}\n`

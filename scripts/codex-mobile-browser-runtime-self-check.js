@@ -86,6 +86,7 @@ function usage() {
     "  --sample-threads <n>       Thread-list rows to sample when no id is passed. Default: 3.",
     "  --list-limit <n>           Thread-list limit. Default: 10.",
     "  --startup-only             Check listener/static shell/browser startup only; skip thread sampling.",
+    "  --vite-preview-only        Check /vite-shell/preview.html Vite module artifact only.",
     "  --rounds <n>               Thread switch rounds. Default: 3.",
     "  --sample-delays-ms <csv>   Delays after each switch. Default: 350,1200,2800.",
     "  --thread-list-stress-rounds <n> Thread-list open/scroll/click stress rounds. Default: 2.",
@@ -147,6 +148,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     sampleThreads: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SAMPLE_THREADS || "3", 3, 20),
     listLimit: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_LIST_LIMIT || "10", 10, 100),
     startupOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_STARTUP_ONLY || "")),
+    vitePreviewOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_PREVIEW_ONLY || "")),
     rounds: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_ROUNDS || "3", 3, 20),
     sampleDelaysMs: parseDelayList(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SAMPLE_DELAYS_MS || ""),
     threadListStressRounds: readNonNegativeInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_THREAD_LIST_STRESS_ROUNDS || "2", 2, 20),
@@ -176,6 +178,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--sample-threads") options.sampleThreads = readPositiveInt(next(), options.sampleThreads, 20);
     else if (arg === "--list-limit") options.listLimit = readPositiveInt(next(), options.listLimit, 100);
     else if (arg === "--startup-only") options.startupOnly = true;
+    else if (arg === "--vite-preview-only") options.vitePreviewOnly = true;
     else if (arg === "--rounds") options.rounds = readPositiveInt(next(), options.rounds, 20);
     else if (arg === "--sample-delays-ms") options.sampleDelaysMs = parseDelayList(next(), options.sampleDelaysMs);
     else if (arg === "--thread-list-stress-rounds") options.threadListStressRounds = readNonNegativeInt(next(), options.threadListStressRounds, 20);
@@ -834,6 +837,90 @@ function startupProbeExpression(input = {}) {
   `;
 }
 
+function vitePreviewProbeExpression(input = {}) {
+  const expectedClientBuildId = String(input.clientBuildId || "");
+  const expectedShellCacheName = String(input.shellCacheName || "");
+  return `
+    (async () => {
+      const marker = document.getElementById("codex-vite-shell-preview");
+      const moduleScripts = Array.from(document.querySelectorAll("script[type='module']"))
+        .map((script) => {
+          try {
+            return new URL(script.getAttribute("src") || "", window.location.href).pathname;
+          } catch (_) {
+            return "";
+          }
+        })
+        .filter(Boolean);
+      const topology = window.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ || {};
+      let deferredLoaded = false;
+      let deferredGroupCount = 0;
+      try {
+        const deferred = await Promise.race([
+          window.__CODEX_MOBILE_VITE_DEFERRED_ENTRY_TOPOLOGY__,
+          new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+        ]);
+        deferredLoaded = Boolean(deferred);
+        deferredGroupCount = Array.isArray(deferred && deferred.codexMobileDeferredEntryGroups)
+          ? deferred.codexMobileDeferredEntryGroups.length
+          : 0;
+      } catch (_) {
+        deferredLoaded = false;
+      }
+      return {
+        label: "vite-preview",
+        probeKind: "vite-preview",
+        path: window.location.pathname,
+        markerVisible: Boolean(marker),
+        stage: marker ? String(marker.dataset.stage || "") : "",
+        sourceBuildStage: marker ? String(marker.dataset.sourceBuildStage || "") : "",
+        productionExecution: marker ? String(marker.dataset.productionExecution || "") : "",
+        clientBuildMatches: marker ? String(marker.dataset.clientBuildId || "") === ${JSON.stringify(expectedClientBuildId)} : false,
+        shellCacheMatches: marker ? String(marker.dataset.shellCacheName || "") === ${JSON.stringify(expectedShellCacheName)} : false,
+        moduleScriptCount: moduleScripts.length,
+        moduleScriptMatchesPreview: moduleScripts.some((scriptPath) => /^\\/vite-shell\\/assets\\/vite-shell-entry-/.test(scriptPath)),
+        moduleEntryLoaded: window.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ === "entry-topology-v1",
+        entryTopologyReady: Array.isArray(topology.startupGroups) && Array.isArray(topology.deferredGroups),
+        startupGroupCount: Array.isArray(topology.startupGroups) ? topology.startupGroups.length : 0,
+        deferredGroupCount,
+        deferredLoaded,
+      };
+    })()
+  `;
+}
+
+function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
+  const issues = [];
+  const append = (code, severity = "H2", extra = {}) => {
+    issues.push(Object.assign({
+      severity,
+      code,
+      surface: "browser-runtime",
+    }, extra));
+  };
+  if (!sample || sample.markerVisible !== true) append("vite_preview_marker_missing");
+  if (sample && sample.stage !== "vite-shell-preview-html-v1") append("vite_preview_stage_mismatch");
+  if (sample && sample.sourceBuildStage !== "vite-shell-artifact-contract-v1") append("vite_preview_source_build_stage_mismatch");
+  if (sample && sample.productionExecution !== "classic-script-fallback") append("vite_preview_execution_mode_mismatch");
+  if (sample && sample.clientBuildMatches !== true) append("vite_preview_client_build_mismatch");
+  if (sample && sample.shellCacheMatches !== true) append("vite_preview_shell_cache_mismatch");
+  if (sample && sample.moduleScriptMatchesPreview !== true) append("vite_preview_module_entry_missing");
+  if (sample && sample.moduleEntryLoaded !== true) append("vite_preview_module_entry_not_loaded");
+  if (sample && sample.entryTopologyReady !== true) append("vite_preview_entry_topology_missing");
+  if (sample && sample.deferredLoaded !== true) append("vite_preview_deferred_not_loaded");
+  if ((runtimeSignals.exceptions || []).length) append("vite_preview_browser_exception");
+  if ((runtimeSignals.consoleEvents || []).some((entry) => entry && entry.type === "error")) {
+    append("vite_preview_console_error");
+  }
+  const blockingIssueCount = issues.filter((issue) => /^(H1|H2)$/i.test(issue.severity || "")).length;
+  return {
+    ok: blockingIssueCount === 0,
+    issueCount: issues.length,
+    blockingIssueCount,
+    issues,
+  };
+}
+
 function threadListInteractionProbeExpression(label = "thread-list-probe") {
   return `
     (async () => {
@@ -1473,7 +1560,7 @@ async function run(options = parseArgs(), deps = {}) {
   const startedAt = new Date().toISOString();
   const config = await fetchJson(requestUrl(options, "/api/public-config"), options, key);
   const staticShell = await readStaticShellReadback(options, config);
-  const list = options.startupOnly
+  const list = (options.startupOnly || options.vitePreviewOnly)
     ? { data: [] }
     : await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
   const rows = threadRows(list);
@@ -1483,11 +1570,11 @@ async function run(options = parseArgs(), deps = {}) {
   if (options.exerciseSubmit && options.submitThreadId && !ids.includes(options.submitThreadId)) {
     ids.unshift(options.submitThreadId);
   }
-  const threadPlan = options.startupOnly ? [] : await loadThreadPlan(options, key, ids);
+  const threadPlan = (options.startupOnly || options.vitePreviewOnly) ? [] : await loadThreadPlan(options, key, ids);
   const report = {
     ok: false,
     startedAt,
-    mode: options.startupOnly ? "startup-only" : "full",
+    mode: options.vitePreviewOnly ? "vite-preview" : options.startupOnly ? "startup-only" : "full",
     endpoint: endpointKind(options.server),
     browser: { engine: "chrome-cdp", headed: Boolean(options.headed), viewport: options.viewport },
     publicConfig: {
@@ -1513,6 +1600,7 @@ async function run(options = parseArgs(), deps = {}) {
       expectedLatestTimestampItemCount: entry.expectedLatestTimestampItemCount,
     })),
     browserReport: null,
+    vitePreview: null,
     submitExercise: (!options.startupOnly && options.exerciseSubmit) ? {
       attempted: true,
       ok: false,
@@ -1521,7 +1609,7 @@ async function run(options = parseArgs(), deps = {}) {
       code: "not_run",
     } : null,
   };
-  if (!options.startupOnly && !threadPlan.length) {
+  if (!options.startupOnly && !options.vitePreviewOnly && !threadPlan.length) {
     report.browserReport = analyzeBrowserRuntimeSamples({ samples: [] });
     report.error = "no_threads_selected";
     return report;
@@ -1588,10 +1676,21 @@ async function run(options = parseArgs(), deps = {}) {
     await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
       source: browserInitScript(key, threadPlan[0] && threadPlan[0].id || ""),
     });
-    await cdp.send("Page.navigate", { url: options.server });
+    await cdp.send("Page.navigate", {
+      url: options.vitePreviewOnly ? requestUrl(options, "/vite-shell/preview.html") : options.server,
+    });
     await waitForLoad(cdp, options.timeoutMs);
     await sleep(900);
-    const startupSample = await evaluate(cdp, startupProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
+    if (options.vitePreviewOnly) {
+      report.vitePreview = await evaluate(cdp, vitePreviewProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
+        label: "vite-preview",
+        probeKind: "vite-preview",
+        markerVisible: false,
+        errorCode: boundedToken(err && err.message, "vite_preview_probe_failed"),
+      }));
+      samples.push(report.vitePreview);
+    }
+    const startupSample = options.vitePreviewOnly ? null : await evaluate(cdp, startupProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
       label: "startup",
       probeKind: "startup",
       appVisible: false,
@@ -1602,7 +1701,7 @@ async function run(options = parseArgs(), deps = {}) {
       renderKeys: 0,
       errorCode: boundedToken(err && err.message, "startup_probe_failed"),
     }));
-    samples.push(startupSample);
+    if (startupSample) samples.push(startupSample);
     if (options.startupOnly) {
       report.startup = {
         appVisible: startupSample.appVisible === true,
@@ -1614,7 +1713,7 @@ async function run(options = parseArgs(), deps = {}) {
         loadThreadReady: startupSample.loadThreadReady === true,
       };
     }
-    if (!options.startupOnly) {
+    if (!options.startupOnly && !options.vitePreviewOnly) {
       samples.push(await evaluate(cdp, threadListInteractionProbeExpression("thread-list-initial"), options.timeoutMs).catch((err) => ({
         label: "thread-list-initial",
         probeKind: "thread-list-interaction",
@@ -1668,7 +1767,7 @@ async function run(options = parseArgs(), deps = {}) {
       }
     }
 
-    if (!options.startupOnly && options.exerciseSubmit) {
+    if (!options.startupOnly && !options.vitePreviewOnly && options.exerciseSubmit) {
       const submitTarget = (options.submitThreadId
         ? threadPlan.find((entry) => entry.id === options.submitThreadId)
         : null) || threadPlan[0];
@@ -1728,6 +1827,15 @@ async function run(options = parseArgs(), deps = {}) {
     if (chrome) await chrome.close();
   }
 
+  if (options.vitePreviewOnly) {
+    report.browserReport = analyzeVitePreviewProbe(report.vitePreview, {
+      consoleEvents,
+      exceptions,
+    });
+    report.ok = report.browserReport.ok;
+    return report;
+  }
+
   report.browserReport = analyzeBrowserRuntimeSamples({
     samples,
     networkEvents,
@@ -1774,6 +1882,7 @@ if (require.main === module) {
 
 module.exports = {
   browserStableHash,
+  analyzeVitePreviewProbe,
   parseArgs,
   parseDelayList,
   parseViewport,
@@ -1788,4 +1897,5 @@ module.exports = {
   threadListInteractionProbeExpression,
   threadListStressProbeExpression,
   usage,
+  vitePreviewProbeExpression,
 };

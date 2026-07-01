@@ -116,8 +116,12 @@ test("core authorized route exposes bounded Vite shell artifact readback", async
       readPublicArtifactStatus: () => ({
         ok: true,
         available: true,
-        stage: "vite-shell-public-preview-v1",
-        publishedFileCount: 3,
+        stage: "vite-shell-preview-html-v1",
+        preview: {
+          fileName: "preview.html",
+          entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
+        },
+        publishedFileCount: 4,
         issueCodes: [],
       }),
     },
@@ -136,7 +140,8 @@ test("core authorized route exposes bounded Vite shell artifact readback", async
   assert.deepEqual(handled, { handled: true });
   assert.equal(sent.status, 200);
   assert.equal(sent.body.ok, true);
-  assert.equal(sent.body.stage, "vite-shell-public-preview-v1");
-  assert.equal(sent.body.publishedFileCount, 3);
+  assert.equal(sent.body.stage, "vite-shell-preview-html-v1");
+  assert.equal(sent.body.preview.fileName, "preview.html");
+  assert.equal(sent.body.publishedFileCount, 4);
   assert.deepEqual(sent.body.issueCodes, []);
 });

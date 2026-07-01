@@ -21,12 +21,54 @@ test("browser runtime self-check parses startup-only listener smoke option", () 
   assert.equal(options.json, true);
 });
 
+test("browser runtime self-check parses Vite preview-only smoke option", () => {
+  const options = script.parseArgs(["--server", "http://127.0.0.1:8787", "--vite-preview-only", "--json"]);
+  assert.equal(options.vitePreviewOnly, true);
+  assert.equal(options.json, true);
+});
+
+test("browser runtime self-check analyzes Vite preview module readiness", () => {
+  const passing = script.analyzeVitePreviewProbe({
+    markerVisible: true,
+    stage: "vite-shell-preview-html-v1",
+    sourceBuildStage: "vite-shell-artifact-contract-v1",
+    productionExecution: "classic-script-fallback",
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    moduleScriptMatchesPreview: true,
+    moduleEntryLoaded: true,
+    entryTopologyReady: true,
+    deferredLoaded: true,
+  }, { consoleEvents: [], exceptions: [] });
+  assert.equal(passing.ok, true);
+  assert.equal(passing.issueCount, 0);
+
+  const failing = script.analyzeVitePreviewProbe({
+    markerVisible: true,
+    stage: "wrong",
+    sourceBuildStage: "vite-shell-artifact-contract-v1",
+    productionExecution: "classic-script-fallback",
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    moduleScriptMatchesPreview: false,
+    moduleEntryLoaded: false,
+    entryTopologyReady: false,
+    deferredLoaded: false,
+  }, { consoleEvents: [{ type: "error" }], exceptions: [{ code: "runtime_exception" }] });
+  assert.equal(failing.ok, false);
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_stage_mismatch"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_module_entry_missing"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_browser_exception"));
+});
+
 test("browser runtime self-check reads client build from shell manifest assets", () => {
   assert.ok(scriptSource.includes('readAsset("/shell-asset-manifest.js")'));
   assert.ok(scriptSource.includes('readAsset("/shell-asset-manifest.json")'));
   assert.ok(scriptSource.includes('readAsset("/app-bootstrap.js")'));
   assert.ok(scriptSource.includes("shellManifestJs.text"));
   assert.ok(scriptSource.includes("shellManifestJson.text"));
+  assert.ok(scriptSource.includes("/vite-shell/preview.html"));
+  assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__"));
 });
 
 test("browser runtime self-check treats startup exceptions as blocking", () => {

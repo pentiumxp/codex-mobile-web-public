@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedBy": "codex-mobile-vite-shell-artifact-publisher",
-  "stage": "vite-shell-public-preview-v1",
+  "stage": "vite-shell-preview-html-v1",
   "sourceBuildStage": "vite-shell-artifact-contract-v1",
   "productionExecution": "classic-script-fallback",
   "shellCacheName": "codex-mobile-shell-v623",
@@ -16,9 +16,13 @@
       "fileName": "assets/vite-deferred-entry-topology-W6SJaXUJ.js"
     }
   ],
+  "preview": {
+    "fileName": "preview.html",
+    "entryScript": "/vite-shell/assets/vite-shell-entry-rafZvbtE.js"
+  },
   "counts": {
     "entryGroups": 6,
-    "publishedFiles": 3
+    "publishedFiles": 4
   },
   "publishedFiles": [
     {
@@ -35,6 +39,11 @@
       "fileName": "assets/vite-deferred-entry-topology-W6SJaXUJ.js",
       "bytes": 748,
       "sha256": "2fea61b93408a613898f883d89d731c10213dd42ad0b3317f19db78fba00f6ed"
+    },
+    {
+      "fileName": "preview.html",
+      "bytes": 727,
+      "sha256": "42f4ec8f408ab2ba61185228b77d8228c204f02df99c520ea5c8e94309a147e5"
     }
   ],
   "validation": {

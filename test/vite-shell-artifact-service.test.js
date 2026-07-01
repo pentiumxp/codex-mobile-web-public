@@ -19,6 +19,13 @@ function writeArtifact(root, options = {}) {
   fs.mkdirSync(path.join(artifactRoot, "assets"), { recursive: true });
   const entry = Buffer.from("export const entry = true;\n");
   const deferred = Buffer.from("export const deferred = true;\n");
+  const stage = options.stage || "vite-shell-preview-html-v1";
+  const preview = Buffer.from([
+    "<!doctype html>",
+    "<main id=\"codex-vite-shell-preview\" data-stage=\"vite-shell-preview-html-v1\"></main>",
+    "<script type=\"module\" src=\"/vite-shell/assets/vite-shell-entry-test.js\"></script>",
+    "",
+  ].join("\n"));
   const manifest = Buffer.from(JSON.stringify({
     shellCacheName: "codex-mobile-shell-test",
     clientBuildId: "0.1.11|codex-mobile-shell-test",
@@ -30,9 +37,10 @@ function writeArtifact(root, options = {}) {
   fs.writeFileSync(path.join(artifactRoot, "assets", "vite-shell-entry-test.js"), entry);
   fs.writeFileSync(path.join(artifactRoot, "assets", "vite-deferred-entry-topology-test.js"), deferred);
   fs.writeFileSync(path.join(artifactRoot, "codex-mobile-shell-manifest.json"), manifest);
+  fs.writeFileSync(path.join(artifactRoot, "preview.html"), preview);
   const readback = {
     schemaVersion: 1,
-    stage: options.stage || "vite-shell-public-preview-v1",
+    stage,
     sourceBuildStage: "vite-shell-artifact-contract-v1",
     productionExecution: "classic-script-fallback",
     shellCacheName: "codex-mobile-shell-test",
@@ -45,10 +53,15 @@ function writeArtifact(root, options = {}) {
       source: "frontend/vite-deferred-entry-topology.mjs",
       fileName: "assets/vite-deferred-entry-topology-test.js",
     }],
+    preview: {
+      fileName: "preview.html",
+      entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
+    },
     publishedFiles: [
       { fileName: "codex-mobile-shell-manifest.json", bytes: manifest.length, sha256: sha256Hex(manifest) },
       { fileName: "assets/vite-shell-entry-test.js", bytes: entry.length, sha256: sha256Hex(entry) },
       { fileName: "assets/vite-deferred-entry-topology-test.js", bytes: deferred.length, sha256: sha256Hex(deferred) },
+      { fileName: "preview.html", bytes: preview.length, sha256: sha256Hex(preview) },
     ],
     validation: { ok: true, issues: [] },
   };
@@ -73,11 +86,15 @@ test("Vite shell artifact status validates the guarded public preview files", ()
   const status = artifactService.readPublicArtifactStatus();
   assert.equal(status.ok, true);
   assert.equal(status.available, true);
-  assert.equal(status.stage, "vite-shell-public-preview-v1");
+  assert.equal(status.stage, "vite-shell-preview-html-v1");
   assert.equal(status.sourceBuildStage, "vite-shell-artifact-contract-v1");
   assert.equal(status.productionExecution, "classic-script-fallback");
   assert.equal(status.artifactRoot, "public/vite-shell");
-  assert.equal(status.publishedFileCount, 3);
+  assert.equal(status.publishedFileCount, 4);
+  assert.deepEqual(status.preview, {
+    fileName: "preview.html",
+    entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
+  });
   assert.deepEqual(status.issueCodes, []);
   assert.equal(status.publishedFiles.every((file) => file.exists && !path.isAbsolute(file.fileName)), true);
 });
@@ -137,8 +154,14 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   const readback = publishViteShellPublicArtifact({ root, buildRoot });
   const published = fs.readdirSync(path.join(root, "public", "vite-shell")).sort();
   assert.equal(readback.validation.ok, true);
-  assert.deepEqual(published, ["assets", "codex-mobile-shell-manifest.json", "vite-shell-readback.json"]);
+  assert.deepEqual(published, ["assets", "codex-mobile-shell-manifest.json", "preview.html", "vite-shell-readback.json"]);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "shell-extra.js")), false);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-shell-entry-test.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-deferred-entry-topology-test.js")), true);
+  const previewHtml = fs.readFileSync(path.join(root, "public", "vite-shell", "preview.html"), "utf8");
+  assert.match(previewHtml, /id="codex-vite-shell-preview"/);
+  assert.match(previewHtml, /type="module" src="\/vite-shell\/assets\/vite-shell-entry-test\.js"/);
+  assert.equal(readback.preview.fileName, "preview.html");
+  assert.equal(readback.preview.entryScript, "/vite-shell/assets/vite-shell-entry-test.js");
+  assert.equal(readback.counts.publishedFiles, 4);
 });
