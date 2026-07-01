@@ -9,9 +9,11 @@ const { test } = require("node:test");
 const {
   createThreadTaskCardService,
   normalizeCreateRequest,
-} = require("../adapters/thread-task-card-service");
+} = require("../services/task-cards/thread-task-card-service");
 
-const taskCardServiceSource = fs.readFileSync(path.join(__dirname, "..", "adapters", "thread-task-card-service.js"), "utf8");
+const canonicalTaskCardService = require("../services/task-cards/thread-task-card-service");
+const adapterTaskCardService = require("../adapters/thread-task-card-service");
+const taskCardServiceSource = fs.readFileSync(path.join(__dirname, "..", "services", "task-cards", "thread-task-card-service.js"), "utf8");
 
 function tempFile(name) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-thread-task-card-"));
@@ -35,6 +37,11 @@ test("missing task-card store is treated as first-run empty state", () => {
     pendingIncoming: 0,
     pendingOutgoing: 0,
   });
+});
+
+test("task-card service adapter re-exports the canonical service boundary", () => {
+  assert.equal(adapterTaskCardService.createThreadTaskCardService, canonicalTaskCardService.createThreadTaskCardService);
+  assert.equal(adapterTaskCardService.normalizeCreateRequest, canonicalTaskCardService.normalizeCreateRequest);
 });
 
 test("task-card store writes use unique temp files for concurrent writers", () => {

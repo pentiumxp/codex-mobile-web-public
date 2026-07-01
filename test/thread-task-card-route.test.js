@@ -75,6 +75,8 @@ function functionSource(source, name) {
 
 test("server exposes thread task card routes and enriches thread detail responses", () => {
   assert.match(serverJs, /createThreadTaskCardService/);
+  assert.match(serverJs, /require\("\.\/services\/task-cards\/thread-task-card-service"\)/);
+  assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-task-card-service"\)/);
   assert.match(serverJs, /createHomeAiAutonomousDeliveryReturnService/);
   assert.match(serverJs, /const homeAiAutonomousDeliveryReturnService = createHomeAiAutonomousDeliveryReturnService/);
   assert.match(serverJs, /onTerminalReturnCard: async \(event\) => homeAiAutonomousDeliveryReturnService\.send\(event, \{ workspaceId: "owner" \}\)/);

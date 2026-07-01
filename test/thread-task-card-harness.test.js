@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
-const { normalizeCreateRequest } = require("../adapters/thread-task-card-service");
+const { normalizeCreateRequest } = require("../services/task-cards/thread-task-card-service");
 
 function sampleCreateRequest(overrides = {}) {
   return Object.assign({

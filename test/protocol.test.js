@@ -23,7 +23,7 @@ const {
   resolvedThreadTaskCardTargetIds,
   serverRequestResponsePayload,
 } = require("../server");
-const { createThreadTaskCardService } = require("../adapters/thread-task-card-service");
+const { createThreadTaskCardService } = require("../services/task-cards/thread-task-card-service");
 
 const repoRoot = path.resolve(__dirname, "..");
 const muxPath = path.join(repoRoot, "codex-app-server-mux.js");

@@ -2071,6 +2071,12 @@ public behavior:
   guard-exemption classification, full-access compatibility mode, source-write
   guard log payloads, and Codex Fast service-tier selection. `server.js` injects
   state readers, visible workspace roots, and runtime permission helpers.
+- `services/task-cards/thread-task-card-service.js` now owns the core
+  cross-thread task-card store and workflow state machine: normalization,
+  JSON persistence/locking, idempotent create/reply, source/target
+  authorization, approval transitions, execution leases, autonomous workflow
+  grants, terminal return-card events, and pending-count decoration inputs.
+  `adapters/thread-task-card-service.js` is compatibility-only.
 - `server-routes/thread-message-route-service.js` now owns thread creation,
   new-message/existing-message, resume, auto-recover, and turn interrupt route
   behavior while `server.js` injects runtime settings, parsers, Codex transport,
@@ -2128,6 +2134,7 @@ public behavior:
 Local line-count evidence after the latest extraction: `server.js` is 4,188 lines,
 `server-routes/thread-task-card-route-service.js` is 1,273 lines,
 `services/task-cards/task-card-runtime-policy-service.js` is 345 lines, and
+`services/task-cards/thread-task-card-service.js` is 1,857 lines, and
 `server-routes/thread-message-route-service.js` is 363 lines, and
 `thread-list-fallback-source-service.js` is 683 lines, and
 `thread-summary-state-service.js` is 383 lines, and
@@ -2152,6 +2159,9 @@ Validation boundary:
 - focused task-card runtime-policy tests covering inherited model/effort/guidance,
   source-thread cwd precedence, workspace-delegation sandbox/source-write guard
   behavior, guard exemptions, and full-access compatibility mode;
+- focused task-card store/workflow tests covering JSON store locking,
+  idempotency, direct/source approval, execution leases, autonomous workflows,
+  terminal return cards, and compatibility adapter exports;
 - focused thread-list visibility/fallback tests covering session-index reuse,
   rollout status inference, local active overlay interaction, and fallback cache
   source diagnostics;
