@@ -410,15 +410,18 @@ test("web push runtime sends a completed-turn notification once after observed s
 
 test("server wires web push filtering to thread spawn edges", () => {
   const serverJs = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const notificationRuntimeServiceJs = fs.readFileSync(path.join(__dirname, "..", "services", "runtime", "notification-runtime-service.js"), "utf8");
   const runtimeTurnEventPipelineServiceJs = fs.readFileSync(path.join(__dirname, "..", "services", "runtime", "runtime-turn-event-pipeline-service.js"), "utf8");
   const pkg = fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8");
 
-  assert.match(serverJs, /shouldTrackTurnForWebPush/);
-  assert.match(serverJs, /resolveThreadTitleForNotification/);
+  assert.match(serverJs, /createNotificationRuntimeService/);
+  assert.match(notificationRuntimeServiceJs, /shouldTrackTurnForWebPush/);
+  assert.match(notificationRuntimeServiceJs, /resolveThreadTitleForNotification/);
   assert.match(serverJs, /classifyWebPushThreadId/);
-  assert.match(serverJs, /webPushRuntimeService\.classifyThreadId\(threadId\)/);
-  assert.match(serverJs, /const webPushRuntimeService = createWebPushRuntimeService/);
-  assert.match(serverJs, /runSqliteJson,\s*sqlString,/);
+  assert.match(notificationRuntimeServiceJs, /webPushRuntimeService\.classifyThreadId\(threadId\)/);
+  assert.match(notificationRuntimeServiceJs, /const webPushRuntimeService = webPushRuntimeServiceFactory/);
+  assert.match(notificationRuntimeServiceJs, /runSqliteJson: dependencies\.runSqliteJson/);
+  assert.match(notificationRuntimeServiceJs, /sqlString: dependencies\.sqlString/);
   assert.doesNotMatch(serverJs, /spawnSync\("sqlite3"/);
   assert.match(webPushRuntimeServiceJs, /thread_spawn_edges/);
   assert.match(webPushRuntimeServiceJs, /child_thread_id/);
@@ -431,6 +434,7 @@ test("server wires web push filtering to thread spawn edges", () => {
   assert.match(runtimeTurnEventPipelineServiceJs, /params && params\.turn && params\.turn\.thread && params\.turn\.thread\.id/);
   assert.match(pkg, /adapters\/sqlite-cli\.js/);
   assert.match(pkg, /adapters\/web-push-runtime-service\.js/);
+  assert.match(pkg, /services\/runtime\/notification-runtime-service\.js/);
 });
 
 test("server caches app-server thread display summaries before sqlite push title fallback", () => {

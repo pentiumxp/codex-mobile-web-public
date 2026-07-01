@@ -13,6 +13,7 @@ const serverRuntimeConfigServiceJs = fs.readFileSync(
 );
 const serverRouteCompositionServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "server-route-composition-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "core-api-route-service.js"), "utf8");
+const notificationRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "notification-runtime-service.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const staticFileServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "static-file-service.js"), "utf8");
 const serverHttpRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-http-runtime-service.js"), "utf8");
@@ -52,8 +53,9 @@ test("server exposes Hermes plugin manifest, registration, origin, launch, sessi
   assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/session"/);
   assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/notifications"/);
   assert.match(serverJs, /createHermesNotificationDelegateService/);
-  assert.match(serverJs, /createWebPushRuntimeService/);
-  assert.match(serverJs, /buildTurnCompletionDetailMessage/);
+  assert.match(serverJs, /createNotificationRuntimeService/);
+  assert.match(notificationRuntimeServiceJs, /webPushRuntimeServiceFactory/);
+  assert.match(notificationRuntimeServiceJs, /buildTurnCompletionDetailMessage/);
   assert.match(webPushRuntimeServiceJs, /detailMessage/);
   assert.match(webPushRuntimeServiceJs, /delegateTurnCompletedNotification/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL/);

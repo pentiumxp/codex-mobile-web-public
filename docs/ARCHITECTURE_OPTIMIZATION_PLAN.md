@@ -4044,6 +4044,29 @@ parity, media/static composition, upload/file-preview source guards,
 app-update/public PR/GitHub preview route guards, package syntax checks, and
 `git diff --check`.
 
+### 2026-07-01 Notification Runtime Composition Boundary
+
+The next server-thinning slice moves Web Push and completed-turn notification
+pipeline composition out of `server.js` into
+`services/runtime/notification-runtime-service.js`.
+
+Scope:
+
+- constructs `adapters/web-push-runtime-service.js`;
+- constructs `services/runtime/runtime-turn-event-pipeline-service.js`;
+- owns VAPID/subscription path injection, Web Push subagent classification
+  wiring, Hermes completed-turn notification delegation wiring, and the
+  turn-event pipeline's completed-turn notification dependency;
+- exposes route-facing `pushSubscriptionPublicStatus` and
+  `classifyWebPushThreadId` without requiring `server.js` to know the Web Push
+  service internals.
+
+The Web Push runtime service and turn-event pipeline remain the behavioral
+authorities. The new notification runtime service only owns their composition
+and late-bound dependency wiring. Validation should cover adapter parity,
+factory wiring, Web Push source guards, runtime-turn-event pipeline focused
+tests, package syntax checks, and `git diff --check`.
+
 ## Release Rule
 
 Follow the current release order:

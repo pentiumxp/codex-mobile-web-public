@@ -15,6 +15,7 @@ const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", 
 const routeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-side-chat-route-service.js"), "utf8");
 const routeAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-side-chat-route-service.js"), "utf8");
 const orchestrationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-side-chat-orchestration-service.js"), "utf8");
+const notificationRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "notification-runtime-service.js"), "utf8");
 const requirements = fs.readFileSync(path.resolve(__dirname, "..", "docs", "THREAD_SIDE_CHAT_REQUIREMENTS.md"), "utf8");
 const design = fs.readFileSync(path.resolve(__dirname, "..", "docs", "THREAD_SIDE_CHAT_DESIGN.md"), "utf8");
 const implementation = fs.readFileSync(path.resolve(__dirname, "..", "docs", "THREAD_SIDE_CHAT_IMPLEMENTATION.md"), "utf8");
@@ -28,9 +29,9 @@ test("server delegates side chat route and orchestration to owner modules", () =
   assert.match(serverJs, /const threadSideChatService = createThreadSideChatService/);
   assert.match(serverJs, /const threadSideChatOrchestrationService = createThreadSideChatOrchestrationService/);
   assert.match(apiDispatchRouteServiceJs, /orchestrationService: threadSideChatOrchestrationService/);
-  assert.match(serverJs, /threadSideChatService\.isSidecarThreadId/);
+  assert.match(notificationRuntimeServiceJs, /dependencies\.threadSideChatService\.isSidecarThreadId/);
   assert.match(serverJs, /executeCandidate:\s*async/);
-  assert.match(serverJs, /maybeApplyQueuedThreadSideChat/);
+  assert.match(notificationRuntimeServiceJs, /maybeApplyQueuedThreadSideChat/);
   assert.doesNotMatch(serverJs, /function sideChatReadOnlyRuntimeSettings/);
   assert.doesNotMatch(serverJs, /function ensureSideChatSidecarThread/);
   assert.doesNotMatch(serverJs, /function parentThreadSideChatContext/);

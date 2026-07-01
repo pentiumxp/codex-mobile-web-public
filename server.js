@@ -11,7 +11,6 @@ const {
   resolveThreadTitleForNotification,
   shouldTrackTurnForWebPush,
 } = require("./adapters/push-notification-service");
-const { createWebPushRuntimeService } = require("./adapters/web-push-runtime-service");
 const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
 const { createHermesNotificationDelegateService } = require("./adapters/hermes-notification-delegate-service");
 const { runSqliteJson } = require("./adapters/sqlite-cli");
@@ -76,7 +75,6 @@ const {
   stripThreadListResultDetailFields,
 } = require("./services/thread-list/thread-list-summary-service");
 const { createThreadEventNotificationService } = require("./services/runtime/thread-event-notification-service");
-const { createRuntimeTurnEventPipelineService } = require("./services/runtime/runtime-turn-event-pipeline-service");
 const { createServerEventRuntimeBoundaryService } = require("./services/runtime/server-event-runtime-boundary-service");
 const { createRateLimitRuntimeService } = require("./services/runtime/rate-limit-runtime-service");
 const { createThreadVisibilityService } = require("./adapters/thread-visibility-service");
@@ -99,6 +97,7 @@ const { createRuntimeSettingsService } = require("./services/runtime/runtime-set
 const { createThreadRuntimeSettingsService } = require("./services/runtime/thread-runtime-settings-service");
 const { createThreadRolloutRuntimeService } = require("./services/runtime/thread-rollout-runtime-service");
 const { createServerSupportRuntimeService } = require("./services/runtime/server-support-runtime-service");
+const { createNotificationRuntimeService } = require("./services/runtime/notification-runtime-service");
 const { createAppServerRequestPolicyService } = require("./services/runtime/app-server-request-policy-service");
 const { createServerRouteCompositionService } = require("./server-routes/server-route-composition-service");
 const {
@@ -1337,21 +1336,18 @@ const {
   writeRuntimeSettings,
   workspaceDelegationPublicSettings,
 } = runtimeSettingsService;
-const webPushRuntimeService = createWebPushRuntimeService({
+const notificationRuntimeService = createNotificationRuntimeService({
+  env: process.env,
   fs,
-  readJsonFile,
-  writeRuntimeJson,
-  vapidFile: process.env.CODEX_MOBILE_PUSH_VAPID_FILE || path.join(RUNTIME_ROOT, "web-push-vapid.json"),
-  subscriptionsFile: process.env.CODEX_MOBILE_PUSH_SUBSCRIPTIONS_FILE || path.join(RUNTIME_ROOT, "web-push-subscriptions.json"),
-  defaultSubject: "mailto:codex-mobile-web@example.com",
-  subject: process.env.CODEX_MOBILE_PUSH_SUBJECT || "",
-  subjectConfigured: Boolean(process.env.CODEX_MOBILE_PUSH_SUBJECT),
-  ttlSeconds: process.env.CODEX_MOBILE_PUSH_TTL_SECONDS || "3600",
+  path,
+  runtimeRoot: RUNTIME_ROOT,
   stateDb: STATE_DB,
   userHome: USER_HOME,
+  readJsonFile,
+  writeRuntimeJson,
   runSqliteJson,
   sqlString,
-  isSidecarThreadId: (threadId) => threadSideChatService.isSidecarThreadId(threadId),
+  threadSideChatService,
   shouldTrackTurnForWebPush,
   completedTurnHasNoFinalAgentMessage,
   resolveThreadTitleForNotification,
@@ -1364,21 +1360,13 @@ const webPushRuntimeService = createWebPushRuntimeService({
   hermesNotificationDelegateService,
   pushTurnId,
   pushThreadId,
-  isOldTurnEvent: isOldPushTurnEvent,
+  isOldPushTurnEvent,
   turnTimestampMs,
-  shortIdentifier,
-  logger: console,
-});
-runtimeTurnEventPipelineService = createRuntimeTurnEventPipelineService({
   latestThreadIdByTurnId,
+  timestampToMs,
   runtimeContextCacheMax: RUNTIME_CONTEXT_CACHE_MAX,
   processStartedAtMs: PROCESS_STARTED_AT_MS,
-  timestampToMs,
   getCodex: () => codex,
-  threadDisplaySummaryCache,
-  readStateDbThread,
-  readStartedThread,
-  turnCompletionUsageSummary,
   tokenUsageStatsService,
   tokenUsageWorkspaceCwds,
   threadTaskCardService,
@@ -1386,7 +1374,6 @@ runtimeTurnEventPipelineService = createRuntimeTurnEventPipelineService({
   threadSideChatOrchestrationService: {
     maybeApplyQueuedThreadSideChat: (...args) => threadSideChatOrchestrationService.maybeApplyQueuedThreadSideChat(...args),
   },
-  webPushRuntimeService,
   threadFromTurnsList,
   materializeThreadTaskCardDraftsForThread,
   threadTaskCardDraftTurnLookback: THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK,
@@ -1394,14 +1381,11 @@ runtimeTurnEventPipelineService = createRuntimeTurnEventPipelineService({
   shortIdentifier,
   logger: console,
 });
-
-function pushSubscriptionPublicStatus() {
-  return webPushRuntimeService.publicStatus();
-}
-
-function classifyWebPushThreadId(threadId) {
-  return webPushRuntimeService.classifyThreadId(threadId);
-}
+runtimeTurnEventPipelineService = notificationRuntimeService.runtimeTurnEventPipelineService;
+const {
+  pushSubscriptionPublicStatus,
+  classifyWebPushThreadId,
+} = notificationRuntimeService;
 
 const codexProfileSwitchService = createCodexProfileSwitchService({
   progressTtlMs: PROFILE_SWITCH_PROGRESS_TTL_MS,
@@ -1871,7 +1855,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   tryUpdateThreadTitle,
   upsertThreadListFallbackCacheThreads,
   visibilityFromGlobalState,
-  webPushRuntimeService,
+  webPushRuntimeService: notificationRuntimeService.webPushRuntimeService,
   workspaceDelegationPublicSettings,
   workspaceRegistryService,
   timingSafeEquals,
