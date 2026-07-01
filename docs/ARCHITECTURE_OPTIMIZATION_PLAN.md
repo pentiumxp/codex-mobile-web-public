@@ -2109,6 +2109,11 @@ public behavior:
   classification, display-summary merge semantics, state DB runtime metadata
   merge, and detail-read-to-thread-list fallback-cache synchronization. The old
   adapter path is compatibility-only.
+- `services/thread-list/thread-summary-read-model-service.js` now owns thread
+  summary read-model runtime glue: global-state/projectless-thread updates,
+  AGENTS startup instruction aggregation, recent started-thread cache, app-server
+  summary fallback through the display-summary cache, title-update fallback, and
+  display-title normalization. The old adapter path is compatibility-only.
 - `services/thread-list/thread-list-app-server-fetch-policy-service.js`,
   `thread-list-route-merge-service.js`,
   `thread-list-summary-merge-service.js`,
@@ -2185,15 +2190,16 @@ public behavior:
   `server.js` injects Codex RPC, runtime-setting helpers, classifiers, timeout
   values, and `notifyLocalTurnStarted`.
 
-Local line-count evidence after the latest extraction: `server.js` is 3,532 lines,
+Local line-count evidence after the latest extraction: `server.js` is 3,405 lines,
 `server-routes/thread-task-card-route-service.js` is 1,275 lines,
 `services/task-cards/task-card-runtime-policy-service.js` is 345 lines, and
 `services/task-cards/thread-task-card-service.js` is 1,857 lines,
 `services/task-cards/thread-task-card-routing-service.js` is 364 lines,
 `services/task-cards/thread-task-card-deploy-lane-policy-service.js` is 412 lines, and
 `server-routes/thread-message-route-service.js` is 363 lines, and
-`services/thread-list/thread-list-fallback-source-service.js` is 683 lines, and
+`services/thread-list/thread-list-fallback-source-service.js` is 683 lines,
 `services/thread-list/thread-summary-state-service.js` is 400 lines, and
+`services/thread-list/thread-summary-read-model-service.js` is 230 lines, and
 the remaining canonical `services/thread-list/` policy/merge/context/coalescer/
 diagnosis/summary services are 257, 212, 183, 86, 147, 165, and 47 lines, and
 `services/thread-detail/thread-detail-response-preparation-service.js` is 256 lines, and
@@ -2206,8 +2212,8 @@ next high-yield backend splits should target remaining thread-detail enrichment
 helpers, the remaining thread-list composition wrappers, residual notification/
 runtime side-effect groups, and any remaining API dispatcher glue because core
 route execution, app maintenance state/IO, thread-list fallback/source/cache/
-prewarm/summary-state, static serving, runtime settings, profile preflight,
-thread-detail active-turn evidence, and the main detail response-preparation
+prewarm/summary-state/read-model runtime, static serving, runtime settings,
+profile preflight, thread-detail active-turn evidence, and the main detail response-preparation
 order are now out of the entrypoint.
 
 Validation boundary:

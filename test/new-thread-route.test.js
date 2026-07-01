@@ -27,6 +27,7 @@ const taskCardRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "ad
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-message-route-service.js"), "utf8");
 const threadMessageRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
 const threadListFallbackSourceServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-fallback-source-service.js"), "utf8");
+const threadSummaryReadModelServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-summary-read-model-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 
@@ -159,8 +160,8 @@ test("new-message route allows Codex App style projectless threads", () => {
   assert.match(routeBody, /\.\.\.\(cwd \? \{ cwd \} : \{\}\)/);
   assert.match(routeBody, /const projectlessThreadRegistered = cwd \? false : rememberProjectlessThreadId\(threadId\);/);
   assert.match(routeBody, /projectlessThreadRegistered,/);
-  assert.match(serverJs, /function rememberProjectlessThreadId\(threadId\)/);
-  assert.match(serverJs, /state\["projectless-thread-ids"\] = existing\.concat\(\[id\]\);/);
+  assert.match(threadSummaryReadModelServiceJs, /function rememberProjectlessThreadId\(threadId\)/);
+  assert.match(threadSummaryReadModelServiceJs, /state\["projectless-thread-ids"\] = existing\.concat\(\[id\]\);/);
 });
 
 test("new-message route forwards new-thread runtime settings", () => {
@@ -446,7 +447,7 @@ test("continuation titles survive app-server rename gaps", () => {
 });
 
 test("manual rename falls back to Mobile title index when app-server metadata is unavailable", () => {
-  const helperBody = functionBody(serverJs, "isRecoverableThreadTitleUpdateError");
+  const helperBody = functionBody(threadSummaryReadModelServiceJs, "isRecoverableThreadTitleUpdateError");
   assert.match(helperBody, /thread metadata unavailable before name update/, "metadata-unavailable rename error should be recognized");
   assert.match(helperBody, /database disk image is malformed/, "malformed state db rename error should be recognized");
 

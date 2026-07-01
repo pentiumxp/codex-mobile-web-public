@@ -54,6 +54,11 @@ const serviceBoundaries = [
     adapter: require("../adapters/thread-detail-active-turn-evidence-service"),
     exports: ["createThreadDetailActiveTurnEvidenceService"],
   },
+  {
+    canonical: require("../services/thread-list/thread-summary-read-model-service"),
+    adapter: require("../adapters/thread-summary-read-model-service"),
+    exports: ["createThreadSummaryReadModelService"],
+  },
 ];
 
 test("runtime compatibility adapters re-export canonical service boundaries", () => {

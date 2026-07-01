@@ -437,6 +437,7 @@ test("server caches app-server thread display summaries before sqlite push title
   const serverJs = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   const threadListRouteServiceJs = fs.readFileSync(path.join(__dirname, "..", "server-routes", "thread-list-route-service.js"), "utf8");
   const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.join(__dirname, "..", "services", "thread-detail", "thread-detail-response-preparation-service.js"), "utf8");
+  const threadSummaryReadModelServiceJs = fs.readFileSync(path.join(__dirname, "..", "services", "thread-list", "thread-summary-read-model-service.js"), "utf8");
   const adapterJs = fs.readFileSync(path.join(__dirname, "..", "adapters", "push-notification-service.js"), "utf8");
 
   assert.match(adapterJs, /function createThreadDisplaySummaryCache\(options = \{\}\)/);
@@ -446,7 +447,7 @@ test("server caches app-server thread display summaries before sqlite push title
   assert.match(webPushRuntimeServiceJs, /threadDisplaySummaryCache\.read\(id\)\s*\|\|\s*readStateDbThread\(id\)\s*\|\|\s*readStartedThread\(id\)/);
   assert.match(webPushRuntimeServiceJs, /await readThreadSummaryFromAppServer\(threadId\)/);
   assert.match(serverJs, /readThreadSummaryFromAppServer: \(threadId\) => readThreadSummaryFromAppServer\(codex, threadId\)/);
-  assert.match(serverJs, /return normalizeStaleContextOnlyActiveThread\(threadDisplaySummaryCache\.remember\(thread\)\s*\|\|\s*annotateThreadRolloutStats\(thread\)\)/);
+  assert.match(threadSummaryReadModelServiceJs, /return normalizeStaleContextOnlyActiveThread\(threadDisplaySummaryCache\.remember\(thread\)\s*\|\|\s*annotateThreadRolloutStats\(thread\)\)/);
   assert.match(threadListRouteServiceJs, /threadDisplaySummaryCache\.rememberList\(result\)/);
   assert.match(threadDetailResponsePreparationServiceJs, /threadDisplaySummaryCache\.remember\(result\.thread\)/);
   assert.match(webPushRuntimeServiceJs, /sendTurnCompletedPush\(meta, turnId, completedAt, params\)/);

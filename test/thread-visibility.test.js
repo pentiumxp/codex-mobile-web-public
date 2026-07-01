@@ -38,6 +38,14 @@ const threadListRuntimeServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "thread-list", "thread-list-runtime-service.js"),
   "utf8",
 );
+const threadSummaryReadModelServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-list", "thread-summary-read-model-service.js"),
+  "utf8",
+);
+const threadSummaryReadModelAdapterJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-summary-read-model-service.js"),
+  "utf8",
+);
 const threadDetailActiveReadPolicyServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-active-read-policy-service.js"),
   "utf8",
@@ -1168,6 +1176,10 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(threadListFallbackSourceServiceJs, /function rolloutLatestTurnEvidence\(rolloutPath, stat = null, options = \{\}\) \{[\s\S]*const tail = typeof options\.tail === "string" \? options\.tail : readRolloutTail\(rolloutPath\)/);
   assert.match(threadListFallbackSourceServiceJs, /function inferRolloutFallbackStatus\(rolloutPath, stat = null, nowMs = Date\.now\(\), options = \{\}\) \{[\s\S]*counterPrefix: "rolloutStatusTail"[\s\S]*staleContextOnlyActiveEvidenceForRollout\(rolloutPath, \{ stat, nowMs, tail \}\)/);
   assert.match(serverJs, /function readThreadListFallback\(/);
+  assert.match(serverJs, /createThreadSummaryReadModelService\(/);
+  assert.match(threadSummaryReadModelServiceJs, /function rememberStartedThread\(thread\)/);
+  assert.match(threadSummaryReadModelServiceJs, /function readThreadSummaryFromAppServer\(codexClient, threadId\)/);
+  assert.match(threadSummaryReadModelAdapterJs, /services\/thread-list\/thread-summary-read-model-service/);
   assert.match(serverHttpRuntimeServiceJs, /function logThreadList\(event, details = \{\}\)/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);
   assert.match(threadListRuntimeServiceJs, /createThreadListFallbackCacheService/);
