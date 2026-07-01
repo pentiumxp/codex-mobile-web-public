@@ -927,6 +927,21 @@ function vitePreviewProbeExpression(input = {}) {
           entryGroupChunkStatuses.push({ path, status: 0, ok: false });
         }
       }
+      let entryGroupImportStatus = null;
+      try {
+        entryGroupImportStatus = await Promise.race([
+          window.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__,
+          new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+        ]);
+      } catch (_) {
+        entryGroupImportStatus = null;
+      }
+      const entryGroupRegistry = window.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
+      const entryGroupRegistryIds = Object.keys(entryGroupRegistry).sort();
+      const expectedEntryGroupIds = entryGroups
+        .map((group) => String(group && group.id || ""))
+        .filter(Boolean)
+        .sort();
       return {
         label: "vite-preview",
         probeKind: "vite-preview",
@@ -952,6 +967,17 @@ function vitePreviewProbeExpression(input = {}) {
         entryGroupChunkPreloadsMatch: entryGroupPreloads.length === entryGroups.length,
         entryGroupChunkStatusOk: entryGroupChunkStatuses.length === entryGroups.length
           && entryGroupChunkStatuses.every((entry) => entry && entry.ok),
+        entryGroupChunkImportReady: Boolean(entryGroupImportStatus),
+        entryGroupChunkImportCount: entryGroupImportStatus && Array.isArray(entryGroupImportStatus.imported)
+          ? entryGroupImportStatus.imported.length
+          : 0,
+        entryGroupChunkImportFailureCount: entryGroupImportStatus && Array.isArray(entryGroupImportStatus.failed)
+          ? entryGroupImportStatus.failed.length
+          : 0,
+        entryGroupChunkRegistryCount: entryGroupRegistryIds.length,
+        entryGroupChunkRegistryMatches: JSON.stringify(entryGroupRegistryIds) === JSON.stringify(expectedEntryGroupIds),
+        entryGroupChunkExecutionOk: Boolean(entryGroupImportStatus && entryGroupImportStatus.ok)
+          && JSON.stringify(entryGroupRegistryIds) === JSON.stringify(expectedEntryGroupIds),
         classicCompatibilityReady: Array.isArray(compatibility.classicGlobalExports) && classicGlobalExports.length > 0,
         classicCompatibilityAssetCount: classicGlobalExports.length,
         classicCompatibilityGlobalCount: classicGlobalNames.size,
@@ -985,6 +1011,7 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   if (sample && sample.startupCriticalAssetStatusOk !== true) append("vite_preview_startup_asset_fetch_failed");
   if (sample && sample.entryGroupChunkPreloadsMatch !== true) append("vite_preview_entry_group_chunk_preload_mismatch");
   if (sample && sample.entryGroupChunkStatusOk !== true) append("vite_preview_entry_group_chunk_fetch_failed");
+  if (sample && sample.entryGroupChunkExecutionOk !== true) append("vite_preview_entry_group_chunk_not_executed");
   if (sample && sample.classicCompatibilityReady !== true) append("vite_preview_classic_compatibility_missing");
   if (sample && sample.classicCompatibilityStartupGlobalsReady !== true) append("vite_preview_classic_startup_globals_missing");
   if (sample && sample.deferredLoaded !== true) append("vite_preview_deferred_not_loaded");

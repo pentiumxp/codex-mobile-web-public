@@ -272,6 +272,9 @@ function createViteShellArtifactService(dependencies = {}) {
           break;
         }
       }
+      if (readbackEntryGroupChunks.length && !previewHtml.includes("data-codex-vite-entry-group-imports=\"true\"")) {
+        issues.push({ code: "vite_shell_preview_entry_group_import_script_missing" });
+      }
     }
 
     return {

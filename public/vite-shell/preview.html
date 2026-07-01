@@ -48,5 +48,25 @@
     <h1>Codex Mobile Vite Shell Preview</h1>
   </main>
   <script type="module" src="/vite-shell/assets/vite-shell-entry-IFO198wQ.js"></script>
+  <script type="module" data-codex-vite-entry-group-imports="true">
+    const codexMobileViteEntryGroupChunkUrls = ["/vite-shell/assets/vite-entry-group-app-entry-BL4UA0EM.js","/vite-shell/assets/vite-entry-group-bootstrap-state-DZJ_Qdkf.js","/vite-shell/assets/vite-entry-group-feature-runtimes-DEz2yu06.js","/vite-shell/assets/vite-entry-group-foundation-BZcCJW9g.js","/vite-shell/assets/vite-entry-group-manifest-bVSy7y6Z.js","/vite-shell/assets/vite-entry-group-shell-services-CQvovHE_.js"];
+    const codexMobileViteEntryGroupChunkStatus = { expectedCount: codexMobileViteEntryGroupChunkUrls.length, imported: [], failed: [], ok: false };
+    globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_STATUS__ = codexMobileViteEntryGroupChunkStatus;
+    globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__ = Promise.all(codexMobileViteEntryGroupChunkUrls.map(async (url) => {
+      try {
+        await import(url);
+        codexMobileViteEntryGroupChunkStatus.imported.push(new URL(url, window.location.href).pathname);
+      } catch (_) {
+        codexMobileViteEntryGroupChunkStatus.failed.push(new URL(url, window.location.href).pathname);
+      }
+    })).then(() => {
+      const registry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
+      codexMobileViteEntryGroupChunkStatus.registryCount = Object.keys(registry).length;
+      codexMobileViteEntryGroupChunkStatus.ok = codexMobileViteEntryGroupChunkStatus.failed.length === 0
+        && codexMobileViteEntryGroupChunkStatus.imported.length === codexMobileViteEntryGroupChunkStatus.expectedCount
+        && codexMobileViteEntryGroupChunkStatus.registryCount === codexMobileViteEntryGroupChunkStatus.expectedCount;
+      return codexMobileViteEntryGroupChunkStatus;
+    });
+  </script>
 </body>
 </html>

@@ -42,6 +42,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     startupCriticalAssetStatusOk: true,
     entryGroupChunkPreloadsMatch: true,
     entryGroupChunkStatusOk: true,
+    entryGroupChunkExecutionOk: true,
     classicCompatibilityReady: true,
     classicCompatibilityStartupGlobalsReady: true,
     deferredLoaded: true,
@@ -63,6 +64,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     startupCriticalAssetStatusOk: false,
     entryGroupChunkPreloadsMatch: false,
     entryGroupChunkStatusOk: false,
+    entryGroupChunkExecutionOk: false,
     classicCompatibilityReady: false,
     classicCompatibilityStartupGlobalsReady: false,
     deferredLoaded: false,
@@ -74,6 +76,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_startup_asset_fetch_failed"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_entry_group_chunk_preload_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_entry_group_chunk_fetch_failed"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_entry_group_chunk_not_executed"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_compatibility_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_startup_globals_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_browser_exception"));
@@ -88,6 +91,8 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("/vite-shell/preview.html"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__"));
+  assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__"));
+  assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__"));
   assert.ok(scriptSource.includes("data-codex-vite-startup-asset"));
   assert.ok(scriptSource.includes("data-codex-vite-entry-group-chunk"));
 });

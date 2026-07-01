@@ -4574,6 +4574,27 @@ This is still a guarded asset contract, not an ESM runtime cutover. The
 business runtime still executes through the generated classic shell; Vite now
 has verifiable per-group chunk artifacts for the later module execution switch.
 
+The follow-up entry-group execution preview slice keeps the same production
+default but makes the guarded Vite preview execute those per-group chunks:
+
+- `scripts/publish-vite-shell-artifact.mjs` now emits a bounded inline module
+  script in `preview.html` that dynamically imports every published
+  entry-group chunk and records only count/status metadata in
+  `__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_STATUS__`.
+- The entry-group chunks populate
+  `__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__` with bounded group metadata; the
+  preview browser probe compares those registry ids with the generated
+  `entryGroups` topology.
+- `services/runtime/vite-shell-artifact-service.js` fails closed when a preview
+  artifact lists entry-group chunks but omits the import script.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  now treats missing execution/registry coverage as an H2 deploy-gate issue
+  (`vite_preview_entry_group_chunk_not_executed`).
+
+This still does not execute the default app through Vite. It proves the Vite
+preview path can load and run every generated group chunk before any future
+cutover asks those chunks to own real startup behavior.
+
 ## Release Rule
 
 Follow the current release order:

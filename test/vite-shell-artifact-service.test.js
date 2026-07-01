@@ -45,6 +45,9 @@ function writeArtifact(root, options = {}) {
     "<link rel=\"modulepreload\" href=\"/vite-shell/assets/vite-entry-group-app-entry-test.js\" data-codex-vite-entry-group-chunk=\"true\">",
     "<main id=\"codex-vite-shell-preview\" data-stage=\"vite-shell-preview-html-v1\"></main>",
     "<script type=\"module\" src=\"/vite-shell/assets/vite-shell-entry-test.js\"></script>",
+    "<script type=\"module\" data-codex-vite-entry-group-imports=\"true\">",
+    "globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__ = import('/vite-shell/assets/vite-entry-group-app-entry-test.js');",
+    "</script>",
     "",
   ].join("\n"));
   const manifest = Buffer.from(JSON.stringify({
@@ -267,6 +270,8 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.match(previewHtml, /data-entry-group-chunk-count="1"/);
   assert.match(previewHtml, /rel="preload" as="script" href="\/app\.js" data-codex-vite-startup-asset="true"/);
   assert.match(previewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-entry-group-app-entry-test\.js" data-codex-vite-entry-group-chunk="true"/);
+  assert.match(previewHtml, /data-codex-vite-entry-group-imports="true"/);
+  assert.match(previewHtml, /__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__/);
   assert.match(previewHtml, /type="module" src="\/vite-shell\/assets\/vite-shell-entry-test\.js"/);
   assert.equal(readback.preview.fileName, "preview.html");
   assert.equal(readback.preview.entryScript, "/vite-shell/assets/vite-shell-entry-test.js");
@@ -280,4 +285,34 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.equal(readback.counts.startupCriticalAssets, 1);
   assert.equal(readback.counts.entryGroupChunks, 1);
   assert.equal(readback.counts.publishedFiles, 5);
+});
+
+test("Vite shell artifact status fails closed when entry group import script is missing", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-import-missing-"));
+  const artifactRoot = writeArtifact(root);
+  const previewPath = path.join(artifactRoot, "preview.html");
+  const previewHtml = fs.readFileSync(previewPath, "utf8")
+    .replace(/<script type="module" data-codex-vite-entry-group-imports="true">[\s\S]*?<\/script>\n?/, "");
+  fs.writeFileSync(previewPath, previewHtml);
+  const readbackPath = path.join(artifactRoot, "vite-shell-readback.json");
+  const readback = JSON.parse(fs.readFileSync(readbackPath, "utf8"));
+  const previewBuffer = fs.readFileSync(previewPath);
+  readback.publishedFiles = readback.publishedFiles.map((file) => {
+    if (file.fileName !== "preview.html") return file;
+    return {
+      ...file,
+      bytes: previewBuffer.length,
+      sha256: sha256Hex(previewBuffer),
+    };
+  });
+  fs.writeFileSync(readbackPath, `${JSON.stringify(readback, null, 2)}\n`);
+
+  const currentManifest = JSON.parse(fs.readFileSync(path.join(artifactRoot, "codex-mobile-shell-manifest.json"), "utf8"));
+  const status = service.createViteShellArtifactService({
+    appRoot: root,
+    readShellAssetManifest: () => currentManifest,
+  }).readPublicArtifactStatus();
+  assert.equal(status.ok, false);
+  assert.ok(status.issueCodes.includes("vite_shell_preview_entry_group_import_script_missing"));
+  assert.ok(!status.issueCodes.includes("vite_artifact_file_hash_mismatch"));
 });
