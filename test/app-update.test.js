@@ -11,7 +11,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "adapters", "server-runtime-utils.js"), "utf8");
-const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "adapters", "core-api-route-service.js"), "utf8");
+const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
 const appMaintenanceServiceJs = fs.readFileSync(path.join(root, "adapters", "app-maintenance-service.js"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 

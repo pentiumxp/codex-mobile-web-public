@@ -13,7 +13,7 @@ const serverHttpRuntimeServiceJs = fs.readFileSync(
 );
 const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
 const apiDispatchRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
-const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
+const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "core-api-route-service.js"), "utf8");
 const threadDetailCompactionServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-compaction-service.js"),
   "utf8",

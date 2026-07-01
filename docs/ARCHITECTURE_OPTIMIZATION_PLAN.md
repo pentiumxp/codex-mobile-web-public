@@ -2091,20 +2091,21 @@ public behavior:
   helpers, thread-display public settings normalization, and workspace
   delegation settings snapshots/toggles while `server.js` injects the runtime
   file path and dynamic-tool constants.
-- `adapters/core-api-route-service.js` now owns the public and core authorized
+- `server-routes/core-api-route-service.js` now owns the public and core authorized
   API route groups for public config/login, Codex Profile list/switch/progress,
   Hermes plugin manifest/session/registration/launch/notifications, runtime
   settings routes, client events, app update/public PR/public release/GitHub
   preview utility routes, shared-chain restart, app status/reconnect, browser
   approvals, and the pre-browser-auth ChatGPT Pro MCP connector. `server.js`
   now keeps only request context/body/response injection, the auth boundary,
-  and the remaining thread/list/detail route-service composition.
+  and the remaining thread/list/detail route-service composition; the old
+  `adapters/core-api-route-service.js` path remains compatibility-only.
 - `adapters/app-maintenance-service.js` now owns the stateful implementation
   behind app update/public PR/public release/GitHub preview utility routes:
   safe git ref validation, credential-masked remote URLs, git status/apply
   execution, restart scheduling, bounded GitHub fetches, in-memory status
   caches, GitHub preview normalization, and public-release commit comparison.
-  `core-api-route-service.js` remains the HTTP route owner; `server.js` only
+  `server-routes/core-api-route-service.js` remains the HTTP route owner; `server.js` only
   injects environment-derived constants and shutdown wiring.
 - `adapters/auto-turn-recovery-service.js` now owns automatic active-turn
   recovery policy: running/cooldown/in-flight checks, recent live-turn

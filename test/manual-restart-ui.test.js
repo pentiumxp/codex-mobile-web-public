@@ -10,7 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
-const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "adapters", "core-api-route-service.js"), "utf8");
+const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
 const profileSwitchServiceJs = fs.readFileSync(path.join(root, "adapters", "codex-profile-switch-service.js"), "utf8");
 const restartScript = fs.readFileSync(path.join(root, "restart-codex-mobile-shared-chain.ps1"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
@@ -44,6 +44,7 @@ test("manual restart route delegates to the shared-chain restart service", () =>
   assert.match(coreApiRouteServiceJs, /activeProfileRestartOptions\(\)/);
   assert.match(coreApiRouteServiceJs, /sendJson\(202,\s*result\)/);
   assert.match(pkg, /adapters\/shared-chain-restart-service\.js/);
+  assert.match(pkg, /server-routes\/core-api-route-service\.js/);
   assert.match(pkg, /adapters\/core-api-route-service\.js/);
 });
 
