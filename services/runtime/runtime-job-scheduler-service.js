@@ -57,6 +57,15 @@ const RUNTIME_SELF_CHECK_JOBS = Object.freeze({
     periodicDefaultEnabled: false,
     deployDefaultEnabled: true,
   }),
+  "browser-vite-preview": normalizeRuntimeJobDeclaration("browser-vite-preview", {
+    maxConcurrency: 1,
+    cpuBudgetClass: "high",
+    realBrowserAllowed: true,
+    userRequestPreemptible: true,
+    periodicAllowed: true,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: true,
+  }),
   "client-events": normalizeRuntimeJobDeclaration("client-events", {
     maxConcurrency: 1,
     cpuBudgetClass: "low",
@@ -68,7 +77,7 @@ const RUNTIME_SELF_CHECK_JOBS = Object.freeze({
   }),
 });
 
-const JOB_ORDER = Object.freeze(["api-thread", "browser-runtime", "client-events"]);
+const JOB_ORDER = Object.freeze(["api-thread", "browser-runtime", "browser-vite-preview", "client-events"]);
 
 const RUNTIME_PREWARM_JOBS = Object.freeze({
   "thread-list-fallback-prewarm": normalizeRuntimeJobDeclaration("thread-list-fallback-prewarm", {
@@ -317,7 +326,7 @@ function enabledJob(spec) {
 
 function skipFlagForJobName(name) {
   if (name === "api-thread") return "skipApi";
-  if (name === "browser-runtime") return "skipBrowser";
+  if (name === "browser-runtime" || name === "browser-vite-preview") return "skipBrowser";
   if (name === "client-events") return "skipClientEvents";
   return "";
 }

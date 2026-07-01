@@ -4496,6 +4496,12 @@ classic shell in the same build-chain contract:
   `vite_shell_artifact_manifest_topology_mismatch` and
   `vite_shell_artifact_file_list_mismatch`; the production `/` path remains
   classic-script fallback.
+- `scripts/codex-mobile-runtime-self-check-loop.js` now includes a scheduler-owned
+  `browser-vite-preview` deploy job. The existing startup gate can stay
+  startup-only for the classic shell while the same gate also runs the Vite
+  preview browser smoke as a separate child check, so artifact execution drift
+  blocks deployment through the normal runtime gate rather than relying on a
+  manual post-deploy probe.
 
 ## Release Rule
 

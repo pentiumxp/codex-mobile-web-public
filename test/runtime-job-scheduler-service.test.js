@@ -129,13 +129,17 @@ test("runtime job scheduler keeps periodic checks lightweight by default", () =>
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").reason, "browser_mode_off");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").realBrowserAllowed, true);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").periodicAllowed, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").enabled, false);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").reason, "browser_mode_off");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").realBrowserAllowed, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").periodicAllowed, true);
 });
 
 test("runtime job scheduler enables browser checks for deploy gates", () => {
   const plan = service.resolveRuntimeSelfCheckPlan({ gateMode: "deploy" });
 
   assert.equal(plan.profile.browserMode, "full");
-  assert.deepEqual(plan.enabledJobNames, ["api-thread", "browser-runtime", "client-events"]);
+  assert.deepEqual(plan.enabledJobNames, ["api-thread", "browser-runtime", "browser-vite-preview", "client-events"]);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").timeoutMs, service.DEFAULT_JOB_TIMEOUT_MS);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").timeBudgetMs, service.DEFAULT_JOB_TIMEOUT_MS);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").maxConcurrency, 1);
@@ -143,6 +147,13 @@ test("runtime job scheduler enables browser checks for deploy gates", () => {
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").realBrowserAllowed, true);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").cpuBudgetClass, "high");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").userRequestPreemptible, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").timeoutMs, service.DEFAULT_JOB_TIMEOUT_MS);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").timeBudgetMs, service.DEFAULT_JOB_TIMEOUT_MS);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").maxConcurrency, 1);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").usesBrowser, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").realBrowserAllowed, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").cpuBudgetClass, "high");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").userRequestPreemptible, true);
 });
 
 test("runtime job scheduler allows explicit periodic browser diagnostics", () => {
@@ -152,7 +163,7 @@ test("runtime job scheduler allows explicit periodic browser diagnostics", () =>
   });
 
   assert.equal(plan.profile.browserMode, "full");
-  assert.deepEqual(plan.enabledJobNames, ["browser-runtime", "client-events"]);
+  assert.deepEqual(plan.enabledJobNames, ["browser-runtime", "browser-vite-preview", "client-events"]);
   assert.equal(service.runtimeSelfCheckJob(plan, "api-thread").enabled, false);
   assert.equal(service.runtimeSelfCheckJob(plan, "api-thread").reason, "periodic_not_default");
 });
@@ -166,6 +177,7 @@ test("runtime job scheduler distinguishes skip flags from budget policy", () => 
 
   assert.deepEqual(plan.enabledJobNames, ["api-thread"]);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").reason, "skip_flag");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "client-events").reason, "skip_flag");
 });
 

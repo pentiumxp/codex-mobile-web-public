@@ -43,6 +43,7 @@ function usage() {
     "  --browser-sample-delays-ms <csv> Browser delays after each switch. Default: 100,350,1200,2800,6000.",
     "  --browser-min-settled-delay-ms <n> Browser downgrade H2 threshold. Default: 1000.",
     "  --browser-startup-only Run only listener/static shell/browser startup smoke for browser job.",
+    "                         Deploy gates also run the Vite preview artifact smoke as a separate browser-vite-preview job.",
     "  --browser-exercise-submit Enable browser Composer submit exercise with a short OK-only prompt.",
     "  --browser-submit-thread-id <id> Optional target thread for submit exercise. Defaults to first selected thread.",
     "  --browser-submit-message <text> Submit exercise message. Default asks for OK only.",
@@ -232,6 +233,7 @@ async function runOnce(options = {}, deps = {}) {
     checks.push(summarizeCheck("api-thread", result));
   }
   const browserJob = runtimeSelfCheckJob(jobPlan, "browser-runtime");
+  const browserScript = path.join(root, "scripts", "codex-mobile-browser-runtime-self-check.js");
   if (browserJob && browserJob.enabled) {
     const browserArgs = baseArgs(options).concat([
       "--sample-threads",
@@ -248,8 +250,19 @@ async function runOnce(options = {}, deps = {}) {
     if (!options.browserStartupOnly && options.browserSubmitThreadId) browserArgs.push("--submit-thread-id", options.browserSubmitThreadId);
     if (!options.browserStartupOnly && options.browserSubmitMessage) browserArgs.push("--submit-message", options.browserSubmitMessage);
     if (!options.browserStartupOnly && options.browserSubmitSampleDelaysMs) browserArgs.push("--submit-sample-delays-ms", options.browserSubmitSampleDelaysMs);
-    const result = await runNodeScript(path.join(root, "scripts", "codex-mobile-browser-runtime-self-check.js"), browserArgs, deps, browserJob);
+    const result = await runNodeScript(browserScript, browserArgs, deps, browserJob);
     checks.push(summarizeCheck("browser-runtime", result));
+  }
+  const browserVitePreviewJob = runtimeSelfCheckJob(jobPlan, "browser-vite-preview");
+  if (browserVitePreviewJob && browserVitePreviewJob.enabled) {
+    const vitePreviewArgs = [
+      "--server",
+      options.server || DEFAULT_SERVER,
+      "--json",
+      "--vite-preview-only",
+    ];
+    const result = await runNodeScript(browserScript, vitePreviewArgs, deps, browserVitePreviewJob);
+    checks.push(summarizeCheck("browser-vite-preview", result));
   }
   const clientEventsJob = runtimeSelfCheckJob(jobPlan, "client-events");
   if (clientEventsJob && clientEventsJob.enabled) {
