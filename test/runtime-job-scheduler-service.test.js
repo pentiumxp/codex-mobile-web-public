@@ -122,7 +122,9 @@ test("runtime job scheduler keeps periodic checks lightweight by default", () =>
 
   assert.equal(plan.privacy, "metadata_only");
   assert.equal(plan.profile.browserMode, "off");
-  assert.deepEqual(plan.enabledJobNames, ["api-thread", "client-events"]);
+  assert.deepEqual(plan.enabledJobNames, ["client-events"]);
+  assert.equal(service.runtimeSelfCheckJob(plan, "api-thread").enabled, false);
+  assert.equal(service.runtimeSelfCheckJob(plan, "api-thread").reason, "periodic_not_default");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").enabled, false);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").reason, "browser_mode_off");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").realBrowserAllowed, true);
@@ -150,7 +152,9 @@ test("runtime job scheduler allows explicit periodic browser diagnostics", () =>
   });
 
   assert.equal(plan.profile.browserMode, "full");
-  assert.deepEqual(plan.enabledJobNames, ["api-thread", "browser-runtime", "client-events"]);
+  assert.deepEqual(plan.enabledJobNames, ["browser-runtime", "client-events"]);
+  assert.equal(service.runtimeSelfCheckJob(plan, "api-thread").enabled, false);
+  assert.equal(service.runtimeSelfCheckJob(plan, "api-thread").reason, "periodic_not_default");
 });
 
 test("runtime job scheduler distinguishes skip flags from budget policy", () => {
@@ -173,5 +177,5 @@ test("runtime job scheduler normalizes invalid modes to periodic safe defaults",
 
   assert.equal(plan.profile.gateMode, "periodic");
   assert.equal(plan.profile.browserMode, "off");
-  assert.deepEqual(plan.enabledJobNames, ["api-thread", "client-events"]);
+  assert.deepEqual(plan.enabledJobNames, ["client-events"]);
 });

@@ -45,7 +45,7 @@ const RUNTIME_SELF_CHECK_JOBS = Object.freeze({
     realBrowserAllowed: false,
     userRequestPreemptible: true,
     periodicAllowed: true,
-    periodicDefaultEnabled: true,
+    periodicDefaultEnabled: false,
     deployDefaultEnabled: true,
   }),
   "browser-runtime": normalizeRuntimeJobDeclaration("browser-runtime", {
@@ -331,7 +331,7 @@ function planRuntimeSelfCheckJob(name, options = {}) {
   if (skipFlag && options[skipFlag]) return disabledJob(spec, "skip_flag");
   if (gateMode === "periodic" && !spec.periodicAllowed) return disabledJob(spec, "periodic_not_allowed");
   if (spec.realBrowserAllowed && browserMode !== "full") return disabledJob(spec, "browser_mode_off");
-  if (gateMode === "periodic" && !spec.periodicDefaultEnabled && browserMode !== "full") {
+  if (gateMode === "periodic" && !spec.periodicDefaultEnabled && !(spec.realBrowserAllowed && browserMode === "full")) {
     return disabledJob(spec, "periodic_not_default");
   }
   if (gateMode === "deploy" && !spec.deployDefaultEnabled) return disabledJob(spec, "deploy_not_default");
