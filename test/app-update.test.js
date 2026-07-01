@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const appUpdateRuntimeJs = fs.readFileSync(path.join(root, "public", "app-update-runtime.js"), "utf8");
 const appUpdateSource = `${appUpdateRuntimeJs}\n${appJs}`;
 const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
+const sideChatRuntimeJs = fs.readFileSync(path.join(root, "public", "side-chat-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
@@ -119,7 +120,8 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appUpdateSource, /"\/thread-tile-layout\.js"/);
   assert.match(appUpdateSource, /"\/thread-tile-runtime\.js"/);
   assert.match(appUpdateSource, /"\/build-refresh-policy\.js"/);
-  assert.match(indexHtml, /<script src="\/thread-diagnostic-events\.js"><\/script>\s*\n\s*<script src="\/frontend-runtime-health\.js"><\/script>\s*\n\s*<script src="\/thread-status-hints\.js"><\/script>\s*\n\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*\n\s*<script src="\/thread-list-load-policy\.js"><\/script>\s*\n\s*<script src="\/thread-list-stable-order\.js"><\/script>\s*\n\s*<script src="\/thread-list-runtime\.js"><\/script>\s*\n\s*<script src="\/client-render-stability-guard\.js"><\/script>\s*\n\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-v4-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-runtime\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-state\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/thread-tile-runtime\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>\s*\n\s*<script src="\/app-update-runtime\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
+  assert.match(appUpdateSource, /"\/side-chat-runtime\.js"/);
+  assert.match(indexHtml, /<script src="\/thread-diagnostic-events\.js"><\/script>\s*\n\s*<script src="\/frontend-runtime-health\.js"><\/script>\s*\n\s*<script src="\/thread-status-hints\.js"><\/script>\s*\n\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*\n\s*<script src="\/thread-list-load-policy\.js"><\/script>\s*\n\s*<script src="\/thread-list-stable-order\.js"><\/script>\s*\n\s*<script src="\/thread-list-runtime\.js"><\/script>\s*\n\s*<script src="\/client-render-stability-guard\.js"><\/script>\s*\n\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-v4-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-runtime\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-state\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/thread-tile-runtime\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>\s*\n\s*<script src="\/app-update-runtime\.js"><\/script>\s*\n\s*<script src="\/side-chat-runtime\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
   assert.match(serverRuntimeUtilsJs, /"viewport-metrics\.js"/);
   assert.match(serverRuntimeUtilsJs, /"conversation-scroll\.js"/);
   assert.match(serverRuntimeUtilsJs, /"home-ai-diagnostic-reporting\.js"/);
@@ -144,6 +146,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(serverRuntimeUtilsJs, /"thread-tile-layout\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-tile-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"build-refresh-policy\.js"/);
+  assert.match(serverRuntimeUtilsJs, /"side-chat-runtime\.js"/);
   assert.match(indexHtml, /id="hardRefreshButton"/);
   assert.match(appUpdateSource, /function checkPageRefreshAvailability\(/);
   assert.match(appUpdateSource, /function refreshPageForNewBuild\(/);
@@ -292,7 +295,7 @@ test("mobile shell action dialogs do not depend on native browser modals", () =>
   assert.doesNotMatch(appUpdateSource, /\bconfirm\(/);
   assert.doesNotMatch(appUpdateSource, /\bprompt\(/);
   assert.match(functionBody(appUpdateSource, "handleAppUpdateClick"), /await requestAppConfirmation\(/);
-  assert.match(functionBody(appUpdateSource, "clearSideChat"), /await requestAppConfirmation\(/);
+  assert.match(functionBody(sideChatRuntimeJs, "clearSideChat"), /await requestAppConfirmation\(/);
   assert.match(functionBody(appUpdateSource, "createThreadTaskCardFromThread"), /await requestAppTextInput\(/);
   assert.match(functionBody(appUpdateSource, "replyTaskCard"), /await requestAppTextInput\(/);
   assert.doesNotMatch(functionBody(appUpdateSource, "requestCodexProfileSwitchConfirmation"), /window\.confirm/);

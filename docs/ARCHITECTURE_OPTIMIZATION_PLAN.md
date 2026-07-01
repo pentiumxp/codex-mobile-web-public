@@ -4191,6 +4191,39 @@ and affected UI tests, static shell/cache guards, `npm run --silent check`,
 `npm run --silent check:macos`, `git diff --check`, and the deploy-time
 startup-only listener/browser gate.
 
+### 2026-07-01 App JS Side Chat Runtime Boundary
+
+The next frontend-thinning slice moves the Subagent panel, side-chat transcript,
+server-backed draft/candidate actions, and Subagent edge-swipe gesture runtime
+out of `public/app.js` while preserving the static shell contract as
+`codex-mobile-shell-v618`.
+
+Scope:
+
+- `public/side-chat-runtime.js` owns Subagent item/status classification,
+  side-panel HTML rendering, side-chat state normalization, side-chat
+  send/clear/draft/candidate queue/apply/cancel orchestration through injected
+  server-route callbacks, hidden-sidecar busy/error presentation, visual-harness
+  side-chat fixtures, and Subagent edge-swipe gesture policy.
+- `public/app.js` keeps shared state, dependency injection, thread lifecycle
+  integration, compatibility wrappers for existing callers, and DOM event
+  wiring.
+- `public/index.html`, `public/sw.js`, `public/app.js` page-shell preload
+  assets, and `services/runtime/server-runtime-utils.js` include the new
+  runtime file so shell hash/cache behavior stays explicit.
+
+Local line-count readback before deployment: `public/app.js` is `20233` lines,
+`public/side-chat-runtime.js` is `1278` lines,
+`public/app-update-runtime.js` is `1204` lines,
+`public/thread-detail-runtime.js` is `1274` lines,
+`public/composer-runtime.js` is `2027` lines,
+`public/thread-list-runtime.js` is `902` lines, and
+`public/thread-tile-runtime.js` is `1853` lines. Validation should cover syntax
+checks for the side-chat runtime/static files, focused side-chat/Subagent/mobile
+UI tests, static shell/cache guards, `npm run --silent check`,
+`npm run --silent check:macos`, `git diff --check`, and the deploy-time
+startup-only listener/browser gate.
+
 ## Release Rule
 
 Follow the current release order:

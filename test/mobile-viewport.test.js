@@ -15,6 +15,7 @@ const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "publi
 const threadTileRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-tile-runtime.js"), "utf8");
 const threadDetailMergeStateJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-detail-merge-state.js"), "utf8");
 const threadDetailRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-detail-runtime.js"), "utf8");
+const sideChatRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "side-chat-runtime.js"), "utf8");
 const viewportMetricsJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "viewport-metrics.js"), "utf8");
 const platformPointer = fs.readFileSync(path.resolve(__dirname, "..", "docs", "HOME_AI_PLATFORM_CONTRACT.md"), "utf8");
 
@@ -204,10 +205,10 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("visual harness can replay empty cached detail openings without exposing thread content", () => {
-  const installBody = functionBody("installCodexMobileVisualHarnessFacade");
-  const harnessBody = functionBody("simulateEmptyCachedDetailOpenForHarness");
-  const stableDomHarnessBody = functionBody("simulateStableSignatureEmptyDomForHarness");
-  const shapeBody = functionBody("visualHarnessThreadShape");
+  const installBody = sourceFunctionBody(sideChatRuntimeJs, "installCodexMobileVisualHarnessFacade");
+  const harnessBody = sourceFunctionBody(sideChatRuntimeJs, "simulateEmptyCachedDetailOpenForHarness");
+  const stableDomHarnessBody = sourceFunctionBody(sideChatRuntimeJs, "simulateStableSignatureEmptyDomForHarness");
+  const shapeBody = sourceFunctionBody(sideChatRuntimeJs, "visualHarnessThreadShape");
   const smokeScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "codex-mobile-empty-detail-cache-smoke.js"), "utf8");
   const smokeHarness = require(path.resolve(__dirname, "..", "scripts", "codex-mobile-empty-detail-cache-smoke.js"));
 
@@ -280,6 +281,11 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /"\/thread-tile-runtime\.js"/);
   assert.match(swJs, /"\/composer-runtime\.js"/);
   assert.match(swJs, /"\/app-update-runtime\.js"/);
+  assert.match(swJs, /"\/side-chat-runtime\.js"/);
+  assert.match(appJs, /"\/side-chat-runtime\.js"/);
+  assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
+  assert.match(appJs, /const sideChatRuntimeApi = window\.CodexSideChatRuntime/);
+  assert.match(appJs, /function requireSideChatRuntime\(\)/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -298,10 +304,10 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(stylesCss, /html\.keyboard-open \.side-chat-form textarea\s*{[\s\S]*min-height:\s*44px;[\s\S]*max-height:\s*min\(14vh, 84px\);/);
   assert.match(appJs, /function ensureSideChatDraftVisible\(/);
   assert.match(appJs, /function autoSizeSideChatDraftTextarea\(/);
-  assert.match(appJs, /autoSizeSideChatDraftTextarea\(textarea\)/);
-  assert.match(appJs, /requestAnimationFrame\(ensureSideChatDraftVisible\)/);
+  assert.match(sideChatRuntimeJs, /autoSizeSideChatDraftTextarea\(textarea\)/);
+  assert.match(sideChatRuntimeJs, /requestAnimationFrame\(ensureSideChatDraftVisible\)/);
   assert.match(appJs, /function scheduleSideChatPoll\(/);
-  assert.match(appJs, /侧聊正在回复/);
+  assert.match(sideChatRuntimeJs, /侧聊正在回复/);
   assert.match(appJs, /function flushSideChatDraftNow\(/);
   assert.match(appJs, /threadDetailRenderPlanApi\.planThreadDetailLoadingShellPostStateEffects/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /loadSideChat\(sideChatThreadId, \{ silent: item\.silent !== false \}\)\.catch\(showError\);/);

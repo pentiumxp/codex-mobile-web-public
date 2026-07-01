@@ -41,13 +41,20 @@ the source of truth shown in the panel.
 
 ### Browser-side
 
+- `public/side-chat-runtime.js`
+  - owns Subagent item/status calculations for the upper section;
+  - renders the two-region side panel and side-chat transcript/composer;
+  - normalizes server side-chat state for the current thread;
+  - wires side-chat save/send/clear/apply/cancel/candidate actions through
+    injected server-route callbacks;
+  - autosaves side-chat draft state through server routes only;
+  - owns Subagent edge-swipe gesture policy and visual-harness fixtures.
+
 - `public/app.js`
-  - integrate the helper into current thread open/close lifecycle;
-  - convert the existing Subagent panel into a two-region side panel;
-  - keep existing Subagent item calculations available for the upper section;
-  - render the side-chat panel and wire side-chat save/apply/cancel actions;
-  - autosave side-chat draft state through server routes only;
-  - close or refresh the side panel on thread navigation.
+  - integrates the runtime into current thread open/close lifecycle;
+  - injects state, DOM, API, rendering, timing, and diagnostic dependencies;
+  - keeps compatibility wrappers for existing callers;
+  - closes or refreshes the side panel on thread navigation.
 
 - `public/styles.css`
   - split panel layout;

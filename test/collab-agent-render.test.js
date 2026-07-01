@@ -8,6 +8,7 @@ const { test } = require("node:test");
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const threadDetailRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-detail-runtime.js"), "utf8");
+const sideChatRuntimeJs = fs.readFileSync(path.join(root, "public", "side-chat-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
@@ -17,8 +18,32 @@ const threadDetailRuntimeFunctionNames = new Set([
   "liveTurnStatusDockItem",
   "visibleItemsForTurn",
 ]);
+const sideChatRuntimeFunctionNames = new Set([
+  "beginSubagentSwipe",
+  "currentSubagentItems",
+  "currentSubagentStatusKind",
+  "currentSubagentTurn",
+  "handleSubagentWheelSwipe",
+  "handleSideChatActionClick",
+  "isActiveSubagentItem",
+  "isHorizontalScrollableGestureTarget",
+  "isSubagentItem",
+  "openSubagentPanelFromGesture",
+  "createSideChatCandidateFromText",
+  "queueSideChatCandidate",
+  "applySideChatCandidate",
+  "renderSubagentPanel",
+  "renderSubagentStatusWindow",
+  "renderSideChatMessage",
+  "renderSideChatCandidate",
+  "renderSideChatPanel",
+  "scheduleSideChatDraftSave",
+  "subagentSwipeAvailable",
+  "updateSubagentPanelUi",
+]);
 
 function sourceForFunction(name) {
+  if (sideChatRuntimeFunctionNames.has(name)) return sideChatRuntimeJs;
   return threadDetailRuntimeFunctionNames.has(name) ? threadDetailRuntimeJs : appJs;
 }
 
