@@ -1,14 +1,14 @@
-//#region \0virtual:codex-mobile-shell-entry-group/app-entry
+//#region \0virtual:codex-mobile-shell-entry-group/manifest
 var codexMobileViteEntryGroup = {
-	"id": "app-entry",
-	"phase": "startup-critical",
+	"id": "manifest",
+	"phase": "startup-manifest",
 	"startupCritical": true,
-	"chunkTarget": "startup-app-shell",
-	"assets": [
-		"/runtime-wiring-runtime.js",
-		"/app-shell-runtime.js",
-		"/app.js"
-	],
+	"chunkTarget": "startup-manifest",
+	"assets": ["/shell-asset-manifest.js"],
+	"assetCount": 1,
+	"classicGlobalExports": [],
+	"classicGlobalExportAssetCount": 0,
+	"classicGlobalExportCount": 0,
 	"shellCacheName": "codex-mobile-shell-v624",
 	"clientBuildId": "0.1.11|codex-mobile-shell-v624"
 };

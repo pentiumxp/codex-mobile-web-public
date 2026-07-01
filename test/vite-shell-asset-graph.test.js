@@ -108,6 +108,15 @@ test("Vite shell build contract records entry chunks and classic fallback output
     contract.viteEntryGroupChunks.map((chunk) => chunk.groupId).sort(),
     manifest.entryGroups.map((group) => group.id).sort()
   );
+  const appEntryChunk = contract.viteEntryGroupChunks.find((chunk) => chunk.groupId === "app-entry");
+  assert.deepEqual(appEntryChunk.assets, [
+    "/runtime-wiring-runtime.js",
+    "/app-shell-runtime.js",
+    "/app.js",
+  ]);
+  assert.equal(appEntryChunk.assetCount, 3);
+  assert.equal(appEntryChunk.classicGlobalExportAssetCount, 2);
+  assert.equal(appEntryChunk.classicGlobalExportCount, 2);
   assert.ok(contract.outputFiles.includes("assets/vite-shell-entry-example.js"));
   assert.ok(contract.outputFiles.includes("assets/vite-deferred-entry-topology-example.js"));
   assert.ok(contract.outputFiles.includes("assets/vite-entry-group-app-entry-example.js"));
@@ -131,6 +140,8 @@ test("Vite entry group virtual modules preserve bounded group payloads", async (
   assert.match(source, /codexMobileViteEntryGroupRegistry\[codexMobileViteEntryGroup\.id\]/);
   assert.match(source, /"id": "app-entry"/);
   assert.match(source, /"\/app\.js"/);
+  assert.match(source, /"classicGlobalExports"/);
+  assert.match(source, /"classicGlobalExportCount": 2/);
 });
 
 test("frontend shell generator owns the index classic script block", async () => {

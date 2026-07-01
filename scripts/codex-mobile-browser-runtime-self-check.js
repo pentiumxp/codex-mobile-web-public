@@ -942,6 +942,40 @@ function vitePreviewProbeExpression(input = {}) {
         .map((group) => String(group && group.id || ""))
         .filter(Boolean)
         .sort();
+      const coverageForGroup = (group) => {
+        const assets = Array.isArray(group && group.assets) ? group.assets.map((asset) => String(asset || "")) : [];
+        const assetSet = new Set(assets);
+        const exportEntries = classicGlobalExports.filter((entry) => assetSet.has(String(entry && entry.asset || "")));
+        return {
+          assetCount: assets.length,
+          classicGlobalExportAssetCount: exportEntries.length,
+          classicGlobalExportCount: exportEntries.reduce((total, entry) => (
+            total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
+          ), 0),
+        };
+      };
+      const registryCoverage = [];
+      let entryGroupClassicCoverageOk = expectedEntryGroupIds.length > 0;
+      for (const group of entryGroups) {
+        const groupId = String(group && group.id || "");
+        if (!groupId) continue;
+        const expectedCoverage = coverageForGroup(group);
+        const actual = entryGroupRegistry[groupId] || {};
+        const groupOk = Number(actual.assetCount) === expectedCoverage.assetCount
+          && Number(actual.classicGlobalExportAssetCount) === expectedCoverage.classicGlobalExportAssetCount
+          && Number(actual.classicGlobalExportCount) === expectedCoverage.classicGlobalExportCount;
+        if (!groupOk) entryGroupClassicCoverageOk = false;
+        registryCoverage.push({
+          groupId,
+          ok: groupOk,
+          assetCount: Number(actual.assetCount) || 0,
+          expectedAssetCount: expectedCoverage.assetCount,
+          classicGlobalExportAssetCount: Number(actual.classicGlobalExportAssetCount) || 0,
+          expectedClassicGlobalExportAssetCount: expectedCoverage.classicGlobalExportAssetCount,
+          classicGlobalExportCount: Number(actual.classicGlobalExportCount) || 0,
+          expectedClassicGlobalExportCount: expectedCoverage.classicGlobalExportCount,
+        });
+      }
       return {
         label: "vite-preview",
         probeKind: "vite-preview",
@@ -978,6 +1012,12 @@ function vitePreviewProbeExpression(input = {}) {
         entryGroupChunkRegistryMatches: JSON.stringify(entryGroupRegistryIds) === JSON.stringify(expectedEntryGroupIds),
         entryGroupChunkExecutionOk: Boolean(entryGroupImportStatus && entryGroupImportStatus.ok)
           && JSON.stringify(entryGroupRegistryIds) === JSON.stringify(expectedEntryGroupIds),
+        entryGroupClassicCoverageOk,
+        entryGroupClassicCoverageGroupCount: registryCoverage.length,
+        entryGroupClassicCoverageMismatchCount: registryCoverage.filter((entry) => entry && entry.ok !== true).length,
+        entryGroupClassicCoverageGlobalCount: registryCoverage.reduce((total, entry) => (
+          total + (Number(entry && entry.classicGlobalExportCount) || 0)
+        ), 0),
         classicCompatibilityReady: Array.isArray(compatibility.classicGlobalExports) && classicGlobalExports.length > 0,
         classicCompatibilityAssetCount: classicGlobalExports.length,
         classicCompatibilityGlobalCount: classicGlobalNames.size,
@@ -1012,6 +1052,7 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   if (sample && sample.entryGroupChunkPreloadsMatch !== true) append("vite_preview_entry_group_chunk_preload_mismatch");
   if (sample && sample.entryGroupChunkStatusOk !== true) append("vite_preview_entry_group_chunk_fetch_failed");
   if (sample && sample.entryGroupChunkExecutionOk !== true) append("vite_preview_entry_group_chunk_not_executed");
+  if (sample && sample.entryGroupClassicCoverageOk !== true) append("vite_preview_entry_group_classic_coverage_mismatch");
   if (sample && sample.classicCompatibilityReady !== true) append("vite_preview_classic_compatibility_missing");
   if (sample && sample.classicCompatibilityStartupGlobalsReady !== true) append("vite_preview_classic_startup_globals_missing");
   if (sample && sample.deferredLoaded !== true) append("vite_preview_deferred_not_loaded");

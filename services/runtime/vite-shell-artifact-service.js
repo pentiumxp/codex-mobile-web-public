@@ -92,6 +92,27 @@ function entryGroupIds(manifest) {
     .filter(Boolean);
 }
 
+function entryGroupCoverageById(manifest) {
+  const topology = canonicalShellTopology(manifest);
+  const classicExports = Array.isArray(topology.classicGlobalExports) ? topology.classicGlobalExports : [];
+  const coverage = new Map();
+  for (const group of Array.isArray(topology.entryGroups) ? topology.entryGroups : []) {
+    const id = String(group && group.id || "").trim();
+    if (!id) continue;
+    const assets = Array.isArray(group.assets) ? group.assets : [];
+    const assetSet = new Set(assets);
+    const exportEntries = classicExports.filter((entry) => assetSet.has(entry && entry.asset));
+    coverage.set(id, {
+      assetCount: assets.length,
+      classicGlobalExportAssetCount: exportEntries.length,
+      classicGlobalExportCount: exportEntries.reduce((total, entry) => (
+        total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
+      ), 0),
+    });
+  }
+  return coverage;
+}
+
 function createViteShellArtifactService(dependencies = {}) {
   const appRoot = path.resolve(dependencies.appRoot || process.cwd());
   const publicArtifactRoot = path.resolve(
@@ -245,9 +266,21 @@ function createViteShellArtifactService(dependencies = {}) {
       const chunkGroupIds = readbackEntryGroupChunks
         .map((chunk) => String(chunk && chunk.groupId || "").trim())
         .filter(Boolean);
+      const expectedCoverage = entryGroupCoverageById(artifactManifest);
       for (const groupId of expectedGroupIds) {
         if (!chunkGroupIds.includes(groupId)) {
           issues.push({ code: "vite_shell_artifact_entry_group_chunk_missing", groupId });
+        }
+      }
+      for (const chunk of readbackEntryGroupChunks) {
+        const groupId = String(chunk && chunk.groupId || "").trim();
+        const coverage = expectedCoverage.get(groupId);
+        if (!coverage) continue;
+        if (Number(chunk.assetCount) !== coverage.assetCount
+          || Number(chunk.classicGlobalExportAssetCount) !== coverage.classicGlobalExportAssetCount
+          || Number(chunk.classicGlobalExportCount) !== coverage.classicGlobalExportCount) {
+          issues.push({ code: "vite_shell_artifact_entry_group_coverage_mismatch", groupId });
+          break;
         }
       }
     }
@@ -324,8 +357,18 @@ function createViteShellArtifactService(dependencies = {}) {
       deferredChunkCount: (readback.deferredChunks || []).length,
       entryGroupChunks: readbackEntryGroupChunks.map((chunk) => ({
         groupId: String(chunk && chunk.groupId || ""),
+        phase: String(chunk && chunk.phase || ""),
+        startupCritical: Boolean(chunk && chunk.startupCritical),
+        chunkTarget: String(chunk && chunk.chunkTarget || ""),
         fileName: normalizeRelativeFileName(chunk && chunk.fileName),
         entryScript: String(chunk && chunk.entryScript || ""),
+        assetCount: Number.isFinite(Number(chunk && chunk.assetCount)) ? Number(chunk.assetCount) : 0,
+        classicGlobalExportAssetCount: Number.isFinite(Number(chunk && chunk.classicGlobalExportAssetCount))
+          ? Number(chunk.classicGlobalExportAssetCount)
+          : 0,
+        classicGlobalExportCount: Number.isFinite(Number(chunk && chunk.classicGlobalExportCount))
+          ? Number(chunk.classicGlobalExportCount)
+          : 0,
       })).filter((chunk) => chunk.fileName),
       preview: preview ? {
         fileName: normalizeRelativeFileName(preview.fileName),

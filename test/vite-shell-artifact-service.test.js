@@ -79,9 +79,15 @@ function writeArtifact(root, options = {}) {
     }],
     entryGroupChunks: [{
       groupId: "app-entry",
+      phase: "startup-critical",
+      startupCritical: true,
+      chunkTarget: "startup-app-shell",
       source: "virtual:codex-mobile-shell-entry-group/app-entry",
       fileName: "assets/vite-entry-group-app-entry-test.js",
       entryScript: "/vite-shell/assets/vite-entry-group-app-entry-test.js",
+      assetCount: 1,
+      classicGlobalExportAssetCount: 1,
+      classicGlobalExportCount: 1,
     }],
     preview: {
       fileName: "preview.html",
@@ -142,8 +148,14 @@ test("Vite shell artifact status validates the guarded public preview files", ()
   assert.deepEqual(status.issueCodes, []);
   assert.deepEqual(status.entryGroupChunks, [{
     groupId: "app-entry",
+    phase: "startup-critical",
+    startupCritical: true,
+    chunkTarget: "startup-app-shell",
     fileName: "assets/vite-entry-group-app-entry-test.js",
     entryScript: "/vite-shell/assets/vite-entry-group-app-entry-test.js",
+    assetCount: 1,
+    classicGlobalExportAssetCount: 1,
+    classicGlobalExportCount: 1,
   }]);
   assert.equal(status.publishedFiles.every((file) => file.exists && !path.isAbsolute(file.fileName)), true);
 });
@@ -233,8 +245,14 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
     clientBuildId: "0.1.11|codex-mobile-shell-test",
     entryGroups: [{
       id: "app-entry",
+      phase: "startup-critical",
       startupCritical: true,
+      chunkTarget: "startup-app-shell",
       assets: ["/app.js"],
+    }],
+    classicGlobalExports: [{
+      asset: "/app.js",
+      globals: ["CodexAppShellRuntime"],
     }],
     viteBuild: {
       stage: "vite-shell-artifact-contract-v1",
@@ -250,8 +268,14 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
       }],
       viteEntryGroupChunks: [{
         groupId: "app-entry",
+        phase: "startup-critical",
+        startupCritical: true,
+        chunkTarget: "startup-app-shell",
         source: "virtual:codex-mobile-shell-entry-group/app-entry",
         fileName: "assets/vite-entry-group-app-entry-test.js",
+        assetCount: 1,
+        classicGlobalExportAssetCount: 1,
+        classicGlobalExportCount: 1,
       }],
     },
   }, null, 2));
@@ -277,9 +301,15 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.equal(readback.preview.entryScript, "/vite-shell/assets/vite-shell-entry-test.js");
   assert.deepEqual(readback.entryGroupChunks, [{
     groupId: "app-entry",
+    phase: "startup-critical",
+    startupCritical: true,
+    chunkTarget: "startup-app-shell",
     source: "virtual:codex-mobile-shell-entry-group/app-entry",
     fileName: "assets/vite-entry-group-app-entry-test.js",
     entryScript: "/vite-shell/assets/vite-entry-group-app-entry-test.js",
+    assetCount: 1,
+    classicGlobalExportAssetCount: 1,
+    classicGlobalExportCount: 1,
   }]);
   assert.deepEqual(readback.startupCriticalAssets, ["/app.js"]);
   assert.equal(readback.counts.startupCriticalAssets, 1);
@@ -315,4 +345,21 @@ test("Vite shell artifact status fails closed when entry group import script is 
   assert.equal(status.ok, false);
   assert.ok(status.issueCodes.includes("vite_shell_preview_entry_group_import_script_missing"));
   assert.ok(!status.issueCodes.includes("vite_artifact_file_hash_mismatch"));
+});
+
+test("Vite shell artifact status fails closed when entry group coverage drifts", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-coverage-drift-"));
+  const artifactRoot = writeArtifact(root);
+  const readbackPath = path.join(artifactRoot, "vite-shell-readback.json");
+  const readback = JSON.parse(fs.readFileSync(readbackPath, "utf8"));
+  readback.entryGroupChunks[0].classicGlobalExportCount = 0;
+  fs.writeFileSync(readbackPath, `${JSON.stringify(readback, null, 2)}\n`);
+
+  const currentManifest = JSON.parse(fs.readFileSync(path.join(artifactRoot, "codex-mobile-shell-manifest.json"), "utf8"));
+  const status = service.createViteShellArtifactService({
+    appRoot: root,
+    readShellAssetManifest: () => currentManifest,
+  }).readPublicArtifactStatus();
+  assert.equal(status.ok, false);
+  assert.ok(status.issueCodes.includes("vite_shell_artifact_entry_group_coverage_mismatch"));
 });

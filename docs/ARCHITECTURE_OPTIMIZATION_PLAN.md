@@ -4595,6 +4595,27 @@ This still does not execute the default app through Vite. It proves the Vite
 preview path can load and run every generated group chunk before any future
 cutover asks those chunks to own real startup behavior.
 
+The follow-up entry-group classic coverage slice keeps the default shell on
+classic execution while strengthening each generated group chunk contract:
+
+- `scripts/frontend-shell-asset-graph.mjs` annotates every Vite entry-group
+  chunk with its bounded classic assets, asset count, classic global-export
+  asset count, and classic global-export count.
+- `scripts/publish-vite-shell-artifact.mjs` preserves those counts in
+  `public/vite-shell/vite-shell-readback.json`.
+- `services/runtime/vite-shell-artifact-service.js` compares the readback
+  coverage counts with the current classic shell manifest and fails closed with
+  `vite_shell_artifact_entry_group_coverage_mismatch` when a chunk no longer
+  matches its group.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  compares the runtime `__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__` registry
+  against the generated entry topology/classic compatibility map and reports
+  `vite_preview_entry_group_classic_coverage_mismatch` as a deploy-gate H2.
+
+This still avoids a full ESM business-runtime rewrite. It proves the Vite
+preview chunks carry the same bounded compatibility surface as the classic
+script graph before those chunks can become startup/runtime owners.
+
 ## Release Rule
 
 Follow the current release order:

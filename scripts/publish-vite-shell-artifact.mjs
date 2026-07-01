@@ -139,9 +139,19 @@ export function buildViteShellPublicReadback(options = {}) {
   };
   const entryGroupChunks = (viteBuild.viteEntryGroupChunks || []).map((chunk) => ({
     groupId: String(chunk && chunk.groupId || ""),
+    phase: String(chunk && chunk.phase || ""),
+    startupCritical: Boolean(chunk && chunk.startupCritical),
+    chunkTarget: String(chunk && chunk.chunkTarget || ""),
     source: String(chunk && chunk.source || ""),
     fileName: normalizeRelativeFileName(chunk && chunk.fileName),
     entryScript: publicArtifactUrl(chunk && chunk.fileName),
+    assetCount: Number.isFinite(Number(chunk && chunk.assetCount)) ? Number(chunk.assetCount) : 0,
+    classicGlobalExportAssetCount: Number.isFinite(Number(chunk && chunk.classicGlobalExportAssetCount))
+      ? Number(chunk.classicGlobalExportAssetCount)
+      : 0,
+    classicGlobalExportCount: Number.isFinite(Number(chunk && chunk.classicGlobalExportCount))
+      ? Number(chunk.classicGlobalExportCount)
+      : 0,
   })).filter((chunk) => chunk.fileName);
   const startupAssets = startupCriticalAssets(manifest);
   const readbackForPreview = {

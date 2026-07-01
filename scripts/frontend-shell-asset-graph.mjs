@@ -311,6 +311,16 @@ function sanitizeEntryGroupId(value) {
     .replace(/^-+|-+$/g, "");
 }
 
+function classicGlobalExportsForAssets(manifest, assets) {
+  const assetSet = new Set(Array.isArray(assets) ? assets : []);
+  return (Array.isArray(manifest && manifest.classicGlobalExports) ? manifest.classicGlobalExports : [])
+    .filter((entry) => assetSet.has(entry && entry.asset))
+    .map((entry) => ({
+      asset: entry.asset,
+      globals: Array.isArray(entry.globals) ? entry.globals.slice() : [],
+    }));
+}
+
 function viteEntryGroupSourceId(groupId) {
   return `${VITE_ENTRY_GROUP_SOURCE_PREFIX}${sanitizeEntryGroupId(groupId)}`;
 }
@@ -432,10 +442,27 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     || (viteEntry && viteEntry.dynamicImports.includes(chunk.fileName)));
   const entryGroupChunks = chunks
     .filter((chunk) => String(chunk.source || "").startsWith(VITE_ENTRY_GROUP_SOURCE_PREFIX))
-    .map((chunk) => ({
-      ...chunk,
-      groupId: sanitizeEntryGroupId(String(chunk.source || "").slice(VITE_ENTRY_GROUP_SOURCE_PREFIX.length)),
-    }))
+    .map((chunk) => {
+      const groupId = sanitizeEntryGroupId(String(chunk.source || "").slice(VITE_ENTRY_GROUP_SOURCE_PREFIX.length));
+      const group = (Array.isArray(manifest.entryGroups) ? manifest.entryGroups : [])
+        .find((entryGroup) => sanitizeEntryGroupId(entryGroup && entryGroup.id) === groupId) || {};
+      const assets = Array.isArray(group.assets) ? group.assets.slice() : [];
+      const classicGlobalExports = classicGlobalExportsForAssets(manifest, assets);
+      return {
+        ...chunk,
+        groupId,
+        phase: String(group.phase || ""),
+        startupCritical: Boolean(group.startupCritical),
+        chunkTarget: String(group.chunkTarget || ""),
+        assets,
+        assetCount: assets.length,
+        classicGlobalExports,
+        classicGlobalExportAssetCount: classicGlobalExports.length,
+        classicGlobalExportCount: classicGlobalExports.reduce((total, entry) => (
+          total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
+        ), 0),
+      };
+    })
     .sort((a, b) => a.groupId.localeCompare(b.groupId));
   const classicShellAssets = assetOutputRecords(manifest);
   const outputFiles = [
@@ -524,12 +551,20 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
       if (!group) {
         throw new Error(`codex_mobile_vite_entry_group_missing:${groupId}`);
       }
+      const assets = Array.isArray(group.assets) ? group.assets.slice() : [];
+      const classicGlobalExports = classicGlobalExportsForAssets(manifest, assets);
       const payload = {
         id: group.id,
         phase: group.phase,
         startupCritical: Boolean(group.startupCritical),
         chunkTarget: group.chunkTarget,
-        assets: Array.isArray(group.assets) ? group.assets.slice() : [],
+        assets,
+        assetCount: assets.length,
+        classicGlobalExports,
+        classicGlobalExportAssetCount: classicGlobalExports.length,
+        classicGlobalExportCount: classicGlobalExports.reduce((total, entry) => (
+          total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
+        ), 0),
         shellCacheName: manifest.shellCacheName,
         clientBuildId: manifest.clientBuildId,
       };
