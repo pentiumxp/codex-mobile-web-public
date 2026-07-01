@@ -8,13 +8,14 @@ const { test } = require("node:test");
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const packageJson = fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf8");
 const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
-const routeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-side-chat-route-service.js"), "utf8");
+const routeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-side-chat-route-service.js"), "utf8");
+const routeAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-side-chat-route-service.js"), "utf8");
 const orchestrationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-side-chat-orchestration-service.js"), "utf8");
 const requirements = fs.readFileSync(path.resolve(__dirname, "..", "docs", "THREAD_SIDE_CHAT_REQUIREMENTS.md"), "utf8");
 const design = fs.readFileSync(path.resolve(__dirname, "..", "docs", "THREAD_SIDE_CHAT_DESIGN.md"), "utf8");
 const implementation = fs.readFileSync(path.resolve(__dirname, "..", "docs", "THREAD_SIDE_CHAT_IMPLEMENTATION.md"), "utf8");
 
-test("server delegates side chat routes and orchestration to adapters", () => {
+test("server delegates side chat route and orchestration to owner modules", () => {
   assert.match(serverJs, /createThreadSideChatService/);
   assert.match(serverJs, /createThreadSideChatOrchestrationService/);
   assert.match(serverJs, /handleThreadSideChatRoute/);
@@ -30,9 +31,10 @@ test("server delegates side chat routes and orchestration to adapters", () => {
   assert.doesNotMatch(serverJs, /function parentThreadSideChatContext/);
   assert.doesNotMatch(serverJs, /function startSideChatAssistantReply/);
   assert.doesNotMatch(serverJs, /sideChat[\s\S]{0,120}turn\/steer/);
+  assert.match(serverJs, /require\("\.\/server-routes\/thread-side-chat-route-service"\)/);
 });
 
-test("side chat adapters own route and hidden sidecar orchestration behavior", () => {
+test("side chat route module and adapters own route and hidden sidecar orchestration behavior", () => {
   assert.match(routeServiceJs, /GET/);
   assert.match(routeServiceJs, /\/api\\\/threads\\\/\(\[\^\/\]\+\)\\\/side-chat/);
   assert.match(routeServiceJs, /threadSideChatService\.get\(threadId\)/);
@@ -52,6 +54,8 @@ test("side chat adapters own route and hidden sidecar orchestration behavior", (
   assert.match(orchestrationServiceJs, /codex\.request\("turn\/start"/);
   assert.match(orchestrationServiceJs, /threadSideChatService\.maybeApplyQueuedCandidate\(threadId\)/);
   assert.match(orchestrationServiceJs, /readOnlySandboxPolicy/);
+  assert.match(routeAdapterJs, /require\("\.\.\/server-routes\/thread-side-chat-route-service"\)/);
+  assert.doesNotMatch(routeAdapterJs, /threadSideChatService\.addMessage/);
 });
 
 test("side chat persistence docs forbid browser-local storage", () => {
@@ -66,5 +70,6 @@ test("side chat persistence docs forbid browser-local storage", () => {
 test("package syntax check includes the side chat services", () => {
   assert.match(packageJson, /adapters\/thread-side-chat-service\.js/);
   assert.match(packageJson, /adapters\/thread-side-chat-orchestration-service\.js/);
+  assert.match(packageJson, /server-routes\/thread-side-chat-route-service\.js/);
   assert.match(packageJson, /adapters\/thread-side-chat-route-service\.js/);
 });

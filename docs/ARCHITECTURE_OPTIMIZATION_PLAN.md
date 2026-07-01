@@ -93,10 +93,11 @@ Current acceleration targets:
    owns a coherent domain decision or route group, inject all server-local side
    effects as dependencies, add focused service/route tests, then leave
    `server.js` as request/auth/context/dependency glue. The first extraction
-   in this sequence moved current-thread side-chat orchestration and
-   `/api/threads/:threadId/side-chat*` route handling into
-   `adapters/thread-side-chat-orchestration-service.js` and
-   `adapters/thread-side-chat-route-service.js`. The next extraction moved the
+   in this sequence moved current-thread side-chat orchestration into
+   `adapters/thread-side-chat-orchestration-service.js`; route handling for
+   `/api/threads/:threadId/side-chat*` now lives in
+   `server-routes/thread-side-chat-route-service.js`, with the old adapter path
+   kept as a compatibility export only. The next extraction moved the
    upload/local-file-preview/generated-image route group, upload message-body
    parsing, upload submission dedupe, and preview authorization policy into
    `adapters/media-file-service.js`. The third extraction moved continuation

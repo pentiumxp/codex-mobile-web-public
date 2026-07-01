@@ -11,7 +11,8 @@ const {
 } = require("../adapters/thread-side-chat-service");
 const {
   handleThreadSideChatRoute,
-} = require("../adapters/thread-side-chat-route-service");
+} = require("../server-routes/thread-side-chat-route-service");
+const adapterRouteService = require("../adapters/thread-side-chat-route-service");
 
 function tempFile(name) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-side-chat-route-"));
@@ -44,7 +45,11 @@ async function callRoute(options = {}) {
   return { result, sent };
 }
 
-test("side chat route returns persisted state and saves draft through the adapter boundary", async () => {
+test("side chat route adapter re-exports the canonical server route", () => {
+  assert.equal(adapterRouteService.handleThreadSideChatRoute, handleThreadSideChatRoute);
+});
+
+test("side chat route returns persisted state and saves draft through the route module", async () => {
   const threadSideChatService = makeService();
   const update = await callRoute({
     method: "PUT",
