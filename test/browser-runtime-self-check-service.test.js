@@ -353,8 +353,47 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("entryDynamicImportEntryGroupCountMatches"));
   assert.ok(scriptSource.includes("entryGroupClassicCoverageOk"));
   assert.ok(scriptSource.includes("classicCompatibilityStartupGlobalContractReady"));
+  assert.ok(scriptSource.includes("shellRefreshContractReady"));
+  assert.ok(scriptSource.includes("refreshPageForNewBuild"));
+  assert.ok(scriptSource.includes("clearAllShellCaches"));
+  assert.ok(scriptSource.includes("resetPageShellServiceWorker"));
+  assert.ok(scriptSource.includes("browser_startup_shell_refresh_contract_missing"));
   assert.ok(scriptSource.includes("data-codex-vite-startup-asset"));
   assert.ok(scriptSource.includes("data-codex-vite-entry-group-chunk"));
+});
+
+test("browser runtime startup gate blocks missing shell refresh contract", () => {
+  const report = {
+    browserReport: {
+      ok: true,
+      issues: [],
+      issueCount: 0,
+      blockingIssueCount: 0,
+    },
+  };
+  script.applyStartupGateIssues(report, {
+    clientBuildMatches: true,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    bootRecoveryVisible: false,
+    shellRefreshContractReady: false,
+    shellRefreshHardRefreshPresent: true,
+    shellRefreshPromptPresent: true,
+    shellRefreshRefreshPageReady: true,
+    shellRefreshClearCachesReady: true,
+    shellRefreshResetServiceWorkerReady: false,
+    shellRefreshServiceWorkerCapable: true,
+    shellRefreshCachesCapable: true,
+  }, { ok: true });
+
+  assert.equal(report.browserReport.ok, false);
+  assert.equal(report.browserReport.blockingIssueCount, 1);
+  const issue = report.browserReport.issues.find((item) => item.code === "browser_startup_shell_refresh_contract_missing");
+  assert.ok(issue);
+  assert.equal(issue.severity, "H2");
+  assert.equal(issue.resetServiceWorkerReady, false);
+  assert.equal(issue.serviceWorkerCapable, true);
 });
 
 test("browser runtime self-check treats startup exceptions as blocking", () => {

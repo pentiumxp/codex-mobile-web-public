@@ -4849,6 +4849,26 @@ cutover gap where the Vite app-preview host could boot in `?embed=hermes` mode
 but fail the actual one-time launch URL, session-cookie, and URL-scrub path
 that Hermes Mobile uses in production.
 
+The following shell-refresh guard keeps the Vite migration focused on build
+pipeline readiness instead of business-runtime rewrites:
+
+- The ordinary `--startup-only` browser gate now also proves the current shell
+  exposes the page-refresh recovery contract before any default Vite cutover:
+  hard-refresh control, page-refresh prompt node, `refreshPageForNewBuild`,
+  `clearAllShellCaches`, `resetPageShellServiceWorker`, service-worker
+  capability, and Cache API capability.
+- Missing shell-refresh capability is an H2
+  `browser_startup_shell_refresh_contract_missing` issue. This makes deploys
+  fail closed when the app could start but would not have a safe old-shell to
+  new-shell recovery path after a service-worker/cache mismatch.
+- The gate is intentionally attached to the existing startup browser job rather
+  than a separate Chrome job, so it increases coverage without adding another
+  deploy-time browser process.
+
+Production `/` still stays on classic-script fallback after this slice. The
+evidence target is narrower: prove the refresh/recovery path remains present
+while Vite owns more of the build and artifact graph.
+
 ## Release Rule
 
 Follow the current release order:

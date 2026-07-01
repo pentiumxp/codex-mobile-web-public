@@ -875,6 +875,23 @@ function startupProbeExpression(input = {}) {
       const app = document.getElementById("app");
       const login = document.getElementById("loginPanel");
       const bootRecovery = document.getElementById("bootRecovery");
+      const hardRefreshButton = document.getElementById("hardRefreshButton");
+      const pageRefreshPrompt = document.getElementById("pageRefreshPrompt");
+      const refreshFunctions = {
+        refreshPageForNewBuild: typeof window.refreshPageForNewBuild === "function",
+        clearAllShellCaches: typeof window.clearAllShellCaches === "function",
+        resetPageShellServiceWorker: typeof window.resetPageShellServiceWorker === "function",
+      };
+      const shellRefreshContractReady = Boolean(
+        hardRefreshButton
+        && pageRefreshPrompt
+        && refreshFunctions.refreshPageForNewBuild
+        && refreshFunctions.clearAllShellCaches
+        && refreshFunctions.resetPageShellServiceWorker
+        && window.navigator
+        && window.navigator.serviceWorker
+        && window.caches
+      );
       return {
         label: "startup",
         probeKind: "startup",
@@ -892,6 +909,15 @@ function startupProbeExpression(input = {}) {
         threadListRuntimeReady: Boolean(window.CodexThreadListRuntime && typeof window.CodexThreadListRuntime.createThreadListRuntime === "function"),
         threadTileRuntimeReady: Boolean(window.CodexThreadTileRuntime && typeof window.CodexThreadTileRuntime.createThreadTileRuntime === "function"),
         loadThreadReady: typeof window.loadThread === "function",
+        shellRefreshContractReady,
+        shellRefreshHardRefreshPresent: Boolean(hardRefreshButton),
+        shellRefreshPromptPresent: Boolean(pageRefreshPrompt),
+        shellRefreshPromptHidden: Boolean(!pageRefreshPrompt || pageRefreshPrompt.classList.contains("hidden")),
+        shellRefreshRefreshPageReady: refreshFunctions.refreshPageForNewBuild,
+        shellRefreshClearCachesReady: refreshFunctions.clearAllShellCaches,
+        shellRefreshResetServiceWorkerReady: refreshFunctions.resetPageShellServiceWorker,
+        shellRefreshServiceWorkerCapable: Boolean(window.navigator && window.navigator.serviceWorker),
+        shellRefreshCachesCapable: Boolean(window.caches),
       };
     })();
   `;
@@ -2041,6 +2067,20 @@ function applyStartupGateIssues(report, startupSample = {}, staticShell = {}) {
       surface: "browser-runtime",
     });
   }
+  if (startupSample && startupSample.shellRefreshContractReady === false) {
+    appendBrowserIssue(report, {
+      severity: "H2",
+      code: "browser_startup_shell_refresh_contract_missing",
+      surface: "browser-runtime",
+      hardRefreshPresent: startupSample.shellRefreshHardRefreshPresent === true,
+      refreshPromptPresent: startupSample.shellRefreshPromptPresent === true,
+      refreshPageReady: startupSample.shellRefreshRefreshPageReady === true,
+      clearCachesReady: startupSample.shellRefreshClearCachesReady === true,
+      resetServiceWorkerReady: startupSample.shellRefreshResetServiceWorkerReady === true,
+      serviceWorkerCapable: startupSample.shellRefreshServiceWorkerCapable === true,
+      cachesCapable: startupSample.shellRefreshCachesCapable === true,
+    });
+  }
 }
 
 async function run(options = parseArgs(), deps = {}) {
@@ -2236,6 +2276,7 @@ async function run(options = parseArgs(), deps = {}) {
           && startupSample.threadListRuntimeReady === true
           && startupSample.threadTileRuntimeReady === true,
         loadThreadReady: startupSample.loadThreadReady === true,
+        shellRefreshReady: startupSample.shellRefreshContractReady === true,
       };
     }
     if (!browserOnly) {
@@ -2442,6 +2483,7 @@ if (require.main === module) {
 
 module.exports = {
   analyzeViteAppPreviewProbe,
+  applyStartupGateIssues,
   browserStableHash,
   analyzeVitePreviewProbe,
   parseArgs,
