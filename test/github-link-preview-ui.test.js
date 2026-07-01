@@ -8,6 +8,7 @@ const { test } = require("node:test");
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const serverSupportRuntimeServiceJs = fs.readFileSync(path.join(root, "services", "runtime", "server-support-runtime-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
 const appMaintenanceServiceJs = fs.readFileSync(path.join(root, "adapters", "app-maintenance-service.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
@@ -51,7 +52,8 @@ test("client hydrates GitHub preview card shells from a server endpoint", () => 
 });
 
 test("server exposes a GitHub link preview route", () => {
-  assert.match(serverJs, /createAppMaintenanceService/);
+  assert.match(serverJs, /createServerSupportRuntimeService/);
+  assert.match(serverSupportRuntimeServiceJs, /createAppMaintenanceService/);
   assert.match(serverJs, /refreshGitHubLinkPreview/);
   assert.match(appMaintenanceServiceJs, /parseGitHubUrl/);
   assert.match(appMaintenanceServiceJs, /normalizeGitHubPreview/);

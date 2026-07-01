@@ -17,6 +17,10 @@ const serverHttpRuntimeServiceJs = fs.readFileSync(
 );
 const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
 const apiDispatchRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
+const serverRouteCompositionServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "server-routes", "server-route-composition-service.js"),
+  "utf8",
+);
 const threadManagementRouteServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "server-routes", "thread-management-route-service.js"),
   "utf8",
@@ -379,7 +383,8 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(threadDetailReadOrchestrationServiceJs, /"turns-list-initial"/);
   assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-runtime-service"\)/);
   assert.match(threadDetailRuntimeServiceJs, /require\("\.\/thread-detail-read-orchestration-service"\)/);
-  assert.match(serverJs, /require\("\.\/server-routes\/api-dispatch-route-service"\)/);
+  assert.match(serverJs, /require\("\.\/server-routes\/server-route-composition-service"\)/);
+  assert.match(serverRouteCompositionServiceJs, /require\("\.\/api-dispatch-route-service"\)/);
   assert.match(apiDispatchRouteAdapterJs, /require\("\.\.\/server-routes\/api-dispatch-route-service"\)/);
   assert.match(serverJs, /require\("\.\/server-routes\/thread-detail-route-service"\)/);
   assert.match(threadDetailReadOrchestrationAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-read-orchestration-service"\)/);

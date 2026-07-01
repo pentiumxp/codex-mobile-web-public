@@ -4021,6 +4021,29 @@ parity, source-summary generation, full-access bridge runtime application,
 MCP direct-task-card delegation wiring, existing ChatGPT Pro focused tests,
 package syntax checks, and `git diff --check`.
 
+### 2026-07-01 Media/Support Runtime Composition Boundary
+
+The next server-thinning slice moves media/static runtime composition and
+server support/app-maintenance wiring out of `server.js`.
+
+Scope:
+
+- `services/runtime/media-static-runtime-service.js` constructs the media-file,
+  generated-image-content, and static-file services, owns generated-image root
+  and file-preview media constants, and exposes the route-facing media/static
+  helpers as one bundle;
+- `services/runtime/server-support-runtime-service.js` owns shared bounded
+  runtime helpers and constructs `adapters/app-maintenance-service.js`;
+- `server.js` remains responsible for dependency injection and HTTP startup,
+  but no longer owns upload/static/generated-image composition, app-maintenance
+  construction, or local helper implementations.
+
+This completes the first-stage `server.js` target by bringing the entrypoint
+to `1999` lines while preserving behavior. Validation should cover adapter
+parity, media/static composition, upload/file-preview source guards,
+app-update/public PR/GitHub preview route guards, package syntax checks, and
+`git diff --check`.
+
 ## Release Rule
 
 Follow the current release order:

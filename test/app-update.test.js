@@ -11,6 +11,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
+const serverSupportRuntimeServiceJs = fs.readFileSync(path.join(root, "services", "runtime", "server-support-runtime-service.js"), "utf8");
 const serverRouteCompositionServiceJs = fs.readFileSync(path.join(root, "server-routes", "server-route-composition-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
 const appMaintenanceServiceJs = fs.readFileSync(path.join(root, "adapters", "app-maintenance-service.js"), "utf8");
@@ -226,7 +227,8 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(coreApiRouteServiceJs, /workspacePath:\s*appRoot/);
   assert.match(coreApiRouteServiceJs, /publicPullRequests:/);
   assert.match(coreApiRouteServiceJs, /\/api\/public-pull-requests\/status/);
-  assert.match(serverJs, /createAppMaintenanceService/);
+  assert.match(serverJs, /createServerSupportRuntimeService/);
+  assert.match(serverSupportRuntimeServiceJs, /createAppMaintenanceService/);
   assert.match(serverJs, /publicPrRepository:\s*PUBLIC_PR_REPOSITORY/);
   assert.match(appMaintenanceServiceJs, /publicPullRequestApiUrl\(publicPrRepository\)/);
   assert.match(appJs, /function renderPublicPrStatus\(\)/);

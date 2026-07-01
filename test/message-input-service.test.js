@@ -16,6 +16,7 @@ const {
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "core-api-route-service.js"), "utf8");
+const mediaStaticRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "media-static-runtime-service.js"), "utf8");
 const mediaFileServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "media-file-service.js"), "utf8");
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-message-route-service.js"), "utf8");
 
@@ -60,7 +61,8 @@ test("image context defaults to path reference instead of model image content", 
 });
 
 test("message routes use upload-aware extended-history persistence", () => {
-  assert.match(serverJs, /const mediaFileService = createMediaFileService\(/);
+  assert.match(serverJs, /createMediaStaticRuntimeService/);
+  assert.match(mediaStaticRuntimeServiceJs, /createMediaFileService/);
   assert.match(mediaFileServiceJs, /parsePersistExtendedHistoryEnv\(env\)/);
   assert.match(mediaFileServiceJs, /function persistExtendedHistoryForUploads\(uploads\)/);
   assert.match(threadMessageRouteServiceJs, /const persistExtendedHistory = persistExtendedHistoryForUploads\(uploads\);/);

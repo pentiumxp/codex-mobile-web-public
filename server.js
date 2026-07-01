@@ -17,7 +17,6 @@ const { createHermesNotificationDelegateService } = require("./adapters/hermes-n
 const { runSqliteJson } = require("./adapters/sqlite-cli");
 const { compactWorkspaceContext } = require("./adapters/continuation-handoff-compaction-service");
 const { createContinuationThreadService } = require("./adapters/continuation-thread-service");
-const { createMediaFileService } = require("./adapters/media-file-service");
 const { createPendingSteerEchoStore } = require("./adapters/message-pending-echo-service");
 const {
   detectStaleActiveTurnForSubmission,
@@ -36,7 +35,6 @@ const {
 const {
   imageViewSourcePath,
 } = require("./adapters/generated-image-cache-service");
-const { createGeneratedImageContentService } = require("./adapters/generated-image-content-service");
 const {
   createMobileArchiveIndexService,
   normalizeThreadId,
@@ -93,14 +91,14 @@ const {
   createCodexAppServerClient,
   getFreePort,
 } = require("./services/runtime/codex-app-server-client-service");
-const { createStaticFileService } = require("./adapters/static-file-service");
+const { createMediaStaticRuntimeService } = require("./services/runtime/media-static-runtime-service");
 const { createServerRuntimeUtils } = require("./services/runtime/server-runtime-utils");
 const { createServerRuntimeConfigService } = require("./services/runtime/server-runtime-config-service");
 const { createServerHttpRuntimeService } = require("./services/runtime/server-http-runtime-service");
 const { createRuntimeSettingsService } = require("./services/runtime/runtime-settings-service");
 const { createThreadRuntimeSettingsService } = require("./services/runtime/thread-runtime-settings-service");
 const { createThreadRolloutRuntimeService } = require("./services/runtime/thread-rollout-runtime-service");
-const { createAppMaintenanceService } = require("./adapters/app-maintenance-service");
+const { createServerSupportRuntimeService } = require("./services/runtime/server-support-runtime-service");
 const { createAppServerRequestPolicyService } = require("./services/runtime/app-server-request-policy-service");
 const { createServerRouteCompositionService } = require("./server-routes/server-route-composition-service");
 const {
@@ -423,6 +421,50 @@ const {
   syncKnownCodexMobileMcpToolsets,
   syncRegisteredWorkspaceTrust,
 } = runtimeWorkspaceBootstrapService;
+const serverSupportRuntimeService = createServerSupportRuntimeService({
+  appRoot: APP_ROOT,
+  appVersion: APP_VERSION,
+  appUpdateRemote: APP_UPDATE_REMOTE,
+  appUpdateBranch: APP_UPDATE_BRANCH,
+  appUpdateDisabled: APP_UPDATE_DISABLED,
+  appUpdateCheckTimeoutMs: APP_UPDATE_CHECK_TIMEOUT_MS,
+  appUpdateApplyTimeoutMs: APP_UPDATE_APPLY_TIMEOUT_MS,
+  appUpdateRestartDelayMs: APP_UPDATE_RESTART_DELAY_MS,
+  appUpdateCacheMs: APP_UPDATE_CACHE_MS,
+  publicPrCheckDisabled: PUBLIC_PR_CHECK_DISABLED,
+  publicPrRepository: PUBLIC_PR_REPOSITORY,
+  publicPrCheckTimeoutMs: PUBLIC_PR_CHECK_TIMEOUT_MS,
+  publicPrCheckCacheMs: PUBLIC_PR_CHECK_CACHE_MS,
+  githubLinkPreviewTimeoutMs: GITHUB_LINK_PREVIEW_TIMEOUT_MS,
+  githubLinkPreviewCacheMs: GITHUB_LINK_PREVIEW_CACHE_MS,
+  publicReleaseCheckDisabled: PUBLIC_RELEASE_CHECK_DISABLED,
+  publicReleaseRepository: PUBLIC_RELEASE_REPOSITORY,
+  publicReleaseBranch: PUBLIC_RELEASE_BRANCH,
+  publicReleaseCheckCacheMs: PUBLIC_RELEASE_CHECK_CACHE_MS,
+  shutdown,
+});
+const {
+  applyAppUpdate,
+  clonePlainJson,
+  compactOneLine,
+  httpStatusError,
+  httpStatusErrorWithDetails,
+  incrementBoundedDiagnosticCounter,
+  isUnmaterializedThreadError,
+  lastString,
+  parseJsonLine,
+  refreshAppUpdateStatus,
+  refreshGitHubLinkPreview,
+  refreshPublicPullRequestStatus,
+  refreshPublicReleaseStatus,
+  safeAppUpdateError,
+  scheduleAppRestart,
+  scheduleStartupAppUpdateCheck,
+  shortIdentifier,
+  sleep,
+  timestampToMs,
+  turnListFromResult,
+} = serverSupportRuntimeService;
 
 const tokenUsageStatsService = createTokenUsageStatsService({
   dbPath: TOKEN_USAGE_STATS_DB,
@@ -615,12 +657,14 @@ const {
   filterFallbackThreads,
   readStateDbFallback,
 } = threadVisibilityService;
-const mediaFileService = createMediaFileService({
+const mediaStaticRuntimeService = createMediaStaticRuntimeService({
   env: process.env,
+  path,
   runtimeRoot: RUNTIME_ROOT,
   userHome: USER_HOME,
   codexHome: CODEX_HOME,
   defaultCodexHome: DEFAULT_CODEX_HOME,
+  publicRoot: PUBLIC_ROOT,
   readBody,
   readRawBody,
   readGlobalState: (...args) => readGlobalState(...args),
@@ -629,20 +673,19 @@ const mediaFileService = createMediaFileService({
   readStateDbThread: (...args) => readStateDbThread(...args),
   readStartedThread: (...args) => readStartedThread(...args),
   rolloutPathForThread,
+  getUrl,
+  frameAncestorsHeader: () => hermesPluginService.frameAncestorsHeader(),
+  sendJson,
 });
-const IMAGE_EXTENSIONS = mediaFileService.imageExtensions;
-const FILE_PREVIEW_IMAGE_CONTENT_TYPES = mediaFileService.filePreviewImageContentTypes;
-const FILE_PREVIEW_MEDIA_MAX_BYTES = mediaFileService.filePreviewMediaMaxBytes;
-const UPLOAD_ROOT = mediaFileService.uploadRoot;
-const GENERATED_IMAGE_ROOT = mediaFileService.generatedImageRoot;
 const {
+  mediaFileService,
+  UPLOAD_ROOT,
   buildTurnInput,
   filePreviewAuthoritiesForThread,
   filePreviewContentDisposition,
   filePreviewContentType,
   filePreviewSkillRoots,
   generatedImageContentUrl,
-  hasDeniedPreviewPathSegment,
   isPathInside,
   messageSubmissionKeys,
   mimeFor,
@@ -653,37 +696,16 @@ const {
   readMessageBody,
   resolveFilePreviewPath,
   runMessageSubmissionOnce,
+  serveFilePreviewContent,
   stripMarkdownFileTarget,
   uploadPathForId,
-} = mediaFileService;
-const isCodexMobileUploadFilePath = (filePath) => isPathInside(UPLOAD_ROOT, filePath);
-const generatedImageContentService = createGeneratedImageContentService({
-  path,
-  generatedImageRoot: GENERATED_IMAGE_ROOT,
-  filePreviewMediaMaxBytes: FILE_PREVIEW_MEDIA_MAX_BYTES,
-  filePreviewImageContentTypes: FILE_PREVIEW_IMAGE_CONTENT_TYPES,
-  generatedImageContentUrl,
-  hasDeniedPreviewPathSegment,
-});
-const {
+  isCodexMobileUploadFilePath,
   attachGeneratedImageContent,
-} = generatedImageContentService;
-const staticFileService = createStaticFileService({
-  publicRoot: PUBLIC_ROOT,
-  mimeFor,
-  getUrl,
-  frameAncestorsHeader: () => hermesPluginService.frameAncestorsHeader(),
-});
-const {
   clearStaticCompressionCache,
   serveStatic,
   staticCompressionCacheStats,
   staticCompressionEncoding,
-} = staticFileService;
-
-function serveFilePreviewContent(req, res, requestedPath, allowedRoots) {
-  return mediaFileService.serveFilePreviewContent(req, res, requestedPath, allowedRoots, (status, body) => sendJson(res, status, body));
-}
+} = mediaStaticRuntimeService;
 
 let threadDetailResponsePreparationService;
 let threadSummaryStateService;
@@ -696,11 +718,6 @@ function requireThreadListServerBoundaryService() {
 
 function callThreadListServerBoundary(method, args) {
   return requireThreadListServerBoundaryService()[method](...args);
-}
-
-function clonePlainJson(value) {
-  if (value === undefined) return undefined;
-  return JSON.parse(JSON.stringify(value));
 }
 
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
@@ -1250,38 +1267,6 @@ function normalizeThreadListResultStatuses(...args) { return callThreadListServe
 function threadListSummaryTimestampMs(...args) { return callThreadListServerBoundary("threadListSummaryTimestampMs", args); }
 function sortThreadListSummaries(...args) { return callThreadListServerBoundary("sortThreadListSummaries", args); }
 
-function turnListFromResult(result) {
-  if (Array.isArray(result)) return result;
-  if (Array.isArray(result && result.data)) return result.data;
-  if (Array.isArray(result && result.turns)) return result.turns;
-  return [];
-}
-
-function parseJsonLine(line) {
-  try {
-    return JSON.parse(line);
-  } catch (_) {
-    return null;
-  }
-}
-
-function lastString(...values) {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return "";
-}
-
-function incrementBoundedDiagnosticCounter(diagnostics, key, amount = 1) {
-  if (!diagnostics || typeof diagnostics !== "object") return;
-  if (!/^[a-z][a-zA-Z0-9]{0,80}$/.test(String(key || ""))) return;
-  const current = Number(diagnostics[key] || 0);
-  const delta = Number(amount || 0);
-  if (!Number.isFinite(delta) || delta <= 0) return;
-  const next = (Number.isFinite(current) && current > 0 ? current : 0) + delta;
-  diagnostics[key] = Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(next));
-}
-
 const rateLimitRuntimeService = createRateLimitRuntimeService({
   archivedSessionsDir: ARCHIVED_SESSIONS_DIR,
   codexHome: CODEX_HOME,
@@ -1416,31 +1401,6 @@ function pushSubscriptionPublicStatus() {
 
 function classifyWebPushThreadId(threadId) {
   return webPushRuntimeService.classifyThreadId(threadId);
-}
-
-function timestampToMs(value) {
-  if (value == null || value === "") return 0;
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value > 1_000_000_000_000 ? value : value * 1000;
-  }
-  if (/^\d+(?:\.\d+)?$/.test(String(value))) {
-    const numeric = Number(value);
-    if (Number.isFinite(numeric)) return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
-  }
-  const parsed = Date.parse(String(value));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function compactOneLine(value, maxChars = 80) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  if (text.length <= maxChars) return text;
-  return `${text.slice(0, Math.max(1, maxChars - 3))}...`;
-}
-
-function shortIdentifier(value) {
-  const text = String(value || "").trim();
-  if (text.length <= 16) return text;
-  return `${text.slice(0, 8)}...${text.slice(-4)}`;
 }
 
 const codexProfileSwitchService = createCodexProfileSwitchService({
@@ -1673,60 +1633,6 @@ const {
   chatGptProPlannerService,
   chatGptProSourceSummary,
 } = chatGptProRuntimeService;
-const appMaintenanceService = createAppMaintenanceService({
-  appRoot: APP_ROOT,
-  appVersion: APP_VERSION,
-  appUpdateRemote: APP_UPDATE_REMOTE,
-  appUpdateBranch: APP_UPDATE_BRANCH,
-  appUpdateDisabled: APP_UPDATE_DISABLED,
-  appUpdateCheckTimeoutMs: APP_UPDATE_CHECK_TIMEOUT_MS,
-  appUpdateApplyTimeoutMs: APP_UPDATE_APPLY_TIMEOUT_MS,
-  appUpdateRestartDelayMs: APP_UPDATE_RESTART_DELAY_MS,
-  appUpdateCacheMs: APP_UPDATE_CACHE_MS,
-  publicPrCheckDisabled: PUBLIC_PR_CHECK_DISABLED,
-  publicPrRepository: PUBLIC_PR_REPOSITORY,
-  publicPrCheckTimeoutMs: PUBLIC_PR_CHECK_TIMEOUT_MS,
-  publicPrCheckCacheMs: PUBLIC_PR_CHECK_CACHE_MS,
-  githubLinkPreviewTimeoutMs: GITHUB_LINK_PREVIEW_TIMEOUT_MS,
-  githubLinkPreviewCacheMs: GITHUB_LINK_PREVIEW_CACHE_MS,
-  publicReleaseCheckDisabled: PUBLIC_RELEASE_CHECK_DISABLED,
-  publicReleaseRepository: PUBLIC_RELEASE_REPOSITORY,
-  publicReleaseBranch: PUBLIC_RELEASE_BRANCH,
-  publicReleaseCheckCacheMs: PUBLIC_RELEASE_CHECK_CACHE_MS,
-  shutdown,
-});
-const {
-  applyAppUpdate,
-  refreshAppUpdateStatus,
-  refreshGitHubLinkPreview,
-  refreshPublicPullRequestStatus,
-  refreshPublicReleaseStatus,
-  safeAppUpdateError,
-  scheduleAppRestart,
-  scheduleStartupAppUpdateCheck,
-} = appMaintenanceService;
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function httpStatusError(statusCode, message) {
-  const err = new Error(message);
-  err.statusCode = statusCode;
-  return err;
-}
-
-function httpStatusErrorWithDetails(statusCode, code, message, details = {}) {
-  const err = httpStatusError(statusCode, message || code);
-  err.code = code;
-  err.details = details && typeof details === "object" ? details : {};
-  return err;
-}
-
-function isUnmaterializedThreadError(err) {
-  return /not materialized yet|includeTurns is unavailable before first user message/i.test(err && err.message || String(err || ""));
-}
-
 threadListServerBoundaryService = createThreadListServerBoundaryService({
   codexHome: CODEX_HOME,
   sessionsDir: SESSIONS_DIR,

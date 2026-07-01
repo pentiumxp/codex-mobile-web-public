@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const mediaStaticRuntimeServiceJs = fs.readFileSync(path.join(root, "services", "runtime", "media-static-runtime-service.js"), "utf8");
 const mediaFileServiceJs = fs.readFileSync(path.join(root, "adapters", "media-file-service.js"), "utf8");
 const generatedImageContentServiceJs = fs.readFileSync(path.join(root, "adapters", "generated-image-content-service.js"), "utf8");
 const threadDetailCompactionServiceJs = fs.readFileSync(path.join(root, "adapters", "thread-detail-compaction-service.js"), "utf8");
@@ -75,7 +76,8 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(appJs, /if \(item\.type === "imageGeneration"\) return renderImageView\(item\)/);
   assert.match(appJs, /imageView: "Image"/);
   assert.match(appJs, /imageGeneration: "Image"/);
-  assert.match(serverJs, /GENERATED_IMAGE_ROOT/);
+  assert.match(serverJs, /createMediaStaticRuntimeService/);
+  assert.match(mediaStaticRuntimeServiceJs, /GENERATED_IMAGE_ROOT/);
   assert.match(generatedImageContentServiceJs, /cacheGeneratedImageForItem/);
   assert.match(generatedImageContentServiceJs, /cacheGeneratedImageDataUrl/);
   assert.match(serverJs, /readRolloutToolOutputImageItems/);
