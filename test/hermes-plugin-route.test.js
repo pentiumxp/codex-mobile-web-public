@@ -11,6 +11,7 @@ const serverRuntimeConfigServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "runtime", "server-runtime-config-service.js"),
   "utf8",
 );
+const serverRouteCompositionServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "server-route-composition-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "core-api-route-service.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const staticFileServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "static-file-service.js"), "utf8");
@@ -41,7 +42,8 @@ function functionBody(source, name) {
 }
 
 test("server exposes Hermes plugin manifest, registration, origin, launch, session, and notification routes", () => {
-  assert.match(serverJs, /createCoreApiRouteService/);
+  assert.match(serverJs, /createServerRouteCompositionService/);
+  assert.match(serverRouteCompositionServiceJs, /createCoreApiRouteService/);
   assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/manifest"/);
   assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/workspaces"/);
   assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/callbacks"/);

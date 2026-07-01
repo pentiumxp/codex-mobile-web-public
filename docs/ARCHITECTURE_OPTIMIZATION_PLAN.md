@@ -3954,6 +3954,28 @@ the API dispatch thread-detail lifecycle test, package syntax checks, and
 detail state bridge boundary before production deploy unless a production
 symptom requires faster release.
 
+### 2026-07-01 Server Route Composition Boundary
+
+The next thin-entrypoint slice moves top-level HTTP route composition out of
+`server.js` into `server-routes/server-route-composition-service.js`.
+
+Scope:
+
+- constructs `server-routes/core-api-route-service.js`;
+- constructs `server-routes/api-dispatch-route-service.js` and injects the core
+  route service into it;
+- owns top-level request dispatch for `/api/events`, other `/api/*` routes, and
+  static asset serving;
+- owns bounded fallback JSON responses for route exceptions and client-error
+  socket handling.
+
+`server.js` now keeps dependency construction plus HTTP server
+startup/shutdown/process wiring. The service has an adapter compatibility export
+at `adapters/server-route-composition-service.js`. Validation should cover
+factory wiring, top-level dispatch behavior, error/client-error handling, source
+guard movement from `server.js` to the composition service, package syntax
+checks, and `git diff --check`.
+
 ## Release Rule
 
 Follow the current release order:

@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const serverRouteCompositionServiceJs = fs.readFileSync(path.join(root, "server-routes", "server-route-composition-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
 const profileSwitchServiceJs = fs.readFileSync(path.join(root, "adapters", "codex-profile-switch-service.js"), "utf8");
 const runtimeWorkspaceBootstrapServiceJs = fs.readFileSync(path.join(root, "services", "runtime", "runtime-workspace-bootstrap-service.js"), "utf8");
@@ -39,7 +40,8 @@ test("sidebar exposes a confirmed manual restart action beside the version pill"
 
 test("manual restart route delegates to the shared-chain restart service", () => {
   assert.match(serverJs, /createSharedChainRestartService/);
-  assert.match(serverJs, /createCoreApiRouteService/);
+  assert.match(serverJs, /createServerRouteCompositionService/);
+  assert.match(serverRouteCompositionServiceJs, /createCoreApiRouteService/);
   assert.match(coreApiRouteServiceJs, /sharedChainRestartService\.restart/);
   assert.match(coreApiRouteServiceJs, /\/api\/restart\/shared-chain/);
   assert.match(coreApiRouteServiceJs, /activeProfileRestartOptions\(\)/);

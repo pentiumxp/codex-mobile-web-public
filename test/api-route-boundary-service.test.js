@@ -10,6 +10,9 @@ const {
   createEventStreamRouteService,
 } = require("../server-routes/event-stream-route-service");
 const {
+  createServerRouteCompositionService,
+} = require("../server-routes/server-route-composition-service");
+const {
   createThreadContinuationRouteService,
 } = require("../server-routes/thread-continuation-route-service");
 const {
@@ -24,6 +27,10 @@ function routeUrl(path) {
 }
 
 test("api boundary adapters re-export canonical route services", () => {
+  assert.equal(
+    require("../adapters/server-route-composition-service").createServerRouteCompositionService,
+    require("../server-routes/server-route-composition-service").createServerRouteCompositionService,
+  );
   assert.equal(
     require("../adapters/workspace-route-service").createWorkspaceRouteService,
     require("../server-routes/workspace-route-service").createWorkspaceRouteService,
@@ -44,6 +51,87 @@ test("api boundary adapters re-export canonical route services", () => {
     require("../adapters/event-stream-route-service").createEventStreamRouteService,
     require("../server-routes/event-stream-route-service").createEventStreamRouteService,
   );
+});
+
+test("server route composition wires core route service into API dispatch", () => {
+  const calls = [];
+  const coreApiRouteService = { core: true };
+  const service = createServerRouteCompositionService({
+    appVersion: "0.1-test",
+    coreApiRouteServiceFactory: (deps) => {
+      calls.push(["core", deps.appVersion]);
+      return coreApiRouteService;
+    },
+    apiDispatchRouteServiceFactory: (deps) => {
+      calls.push(["dispatch", deps.coreApiRouteService === coreApiRouteService]);
+      return {
+        handleApi() {},
+        handleEvents() {},
+      };
+    },
+  });
+
+  assert.equal(service.coreApiRouteService, coreApiRouteService);
+  assert.deepEqual(calls, [
+    ["core", "0.1-test"],
+    ["dispatch", true],
+  ]);
+});
+
+test("server route composition owns top-level request dispatch", async () => {
+  const calls = [];
+  const service = createServerRouteCompositionService({
+    getUrl: (req) => new URL(req.url, "http://127.0.0.1:8787"),
+    serveStatic: (req) => calls.push(["static", req.url]),
+    sendJson: (res, status, body) => calls.push(["json", status, body]),
+    coreApiRouteServiceFactory: () => ({}),
+    apiDispatchRouteServiceFactory: () => ({
+      handleApi: async (req) => calls.push(["api", req.url]),
+      handleEvents: (req) => calls.push(["events", req.url]),
+    }),
+    logger: { error: (message) => calls.push(["error", message]) },
+  });
+
+  await service.handleRequest({ url: "/api/events" }, {});
+  await service.handleRequest({ url: "/api/status" }, {});
+  await service.handleRequest({ url: "/index.html" }, {});
+
+  assert.deepEqual(calls, [
+    ["events", "/api/events"],
+    ["api", "/api/status"],
+    ["static", "/index.html"],
+  ]);
+});
+
+test("server route composition keeps bounded error response and client error handling", async () => {
+  const calls = [];
+  const service = createServerRouteCompositionService({
+    getUrl: (req) => new URL(req.url, "http://127.0.0.1:8787"),
+    serveStatic: () => {},
+    sendJson: (res, status, body) => calls.push(["json", status, body]),
+    coreApiRouteServiceFactory: () => ({}),
+    apiDispatchRouteServiceFactory: () => ({
+      handleApi: async () => {
+        throw new Error("route failed");
+      },
+      handleEvents: () => {},
+    }),
+    logger: { error: (message) => calls.push(["error", message]) },
+  });
+  const socketWrites = [];
+
+  await service.handleRequest({ url: "/api/fail" }, {});
+  service.handleClientError(new Error("bad request"), { end: (message) => socketWrites.push(message) });
+  service.handleClientError(Object.assign(new Error("reset"), { code: "ECONNRESET" }), { end: (message) => socketWrites.push(message) });
+
+  assert.deepEqual(calls, [
+    ["json", 500, { error: "route failed" }],
+    ["error", "[server] client error: bad request"],
+  ]);
+  assert.deepEqual(socketWrites, [
+    "HTTP/1.1 400 Bad Request\r\n\r\n",
+    "HTTP/1.1 400 Bad Request\r\n\r\n",
+  ]);
 });
 
 test("workspace route keeps list/register behavior and trust sync", async () => {

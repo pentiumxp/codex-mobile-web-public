@@ -106,10 +106,9 @@ const { createServerHttpRuntimeService } = require("./services/runtime/server-ht
 const { createRuntimeSettingsService } = require("./services/runtime/runtime-settings-service");
 const { createThreadRuntimeSettingsService } = require("./services/runtime/thread-runtime-settings-service");
 const { createThreadRolloutRuntimeService } = require("./services/runtime/thread-rollout-runtime-service");
-const { createCoreApiRouteService } = require("./server-routes/core-api-route-service");
 const { createAppMaintenanceService } = require("./adapters/app-maintenance-service");
 const { createAppServerRequestPolicyService } = require("./services/runtime/app-server-request-policy-service");
-const { createApiDispatchRouteService } = require("./server-routes/api-dispatch-route-service");
+const { createServerRouteCompositionService } = require("./server-routes/server-route-composition-service");
 const {
   createAutoTurnRecoveryService,
   turnStartResultTurnId,
@@ -1850,73 +1849,6 @@ const {
   scheduleAppRestart,
   scheduleStartupAppUpdateCheck,
 } = appMaintenanceService;
-const coreApiRouteService = createCoreApiRouteService({
-  activeProfileRestartOptions,
-  activeRateLimits,
-  appRoot: APP_ROOT,
-  appUpdateBranch: APP_UPDATE_BRANCH,
-  appUpdateDisabled: APP_UPDATE_DISABLED,
-  appUpdateRemote: APP_UPDATE_REMOTE,
-  appVersion: APP_VERSION,
-  applyAppUpdate,
-  authKey: AUTH_KEY,
-  chatGptProMcpService,
-  codex,
-  codexConfigDefaults: CODEX_CONFIG_DEFAULTS,
-  codexProfileService,
-  currentPublicBuildConfig,
-  defaultModel: DEFAULT_MODEL,
-  defaultPermissionModeFromConfigDefaults,
-  disableAuth: DISABLE_AUTH,
-  getProfileSwitchProgress,
-  hermesNotificationDelegateService,
-  hermesOriginFromRequest,
-  hermesPluginBaseUrl: HERMES_PLUGIN_BASE_URL,
-  hermesPluginService,
-  httpStatusError,
-  isAccessKeyAuthorized,
-  liveQuotaSnapshotForProfiles,
-  loadRecentRateLimitsFromRollouts,
-  logClientEvent,
-  mediaFileService,
-  modelOptions: MODEL_OPTIONS,
-  permissionModeOptions: PERMISSION_MODE_OPTIONS,
-  pluginSessionCookieHeader,
-  preflightCodexProfileSwitch,
-  profileSwitchLogDetail,
-  profileSwitchProgressRequestId,
-  publicConfigRuntimeCache,
-  publicPrCheckDisabled: PUBLIC_PR_CHECK_DISABLED,
-  publicPrRepository: PUBLIC_PR_REPOSITORY,
-  publicReleaseBranch: PUBLIC_RELEASE_BRANCH,
-  publicReleaseCheckDisabled: PUBLIC_RELEASE_CHECK_DISABLED,
-  publicReleaseRepository: PUBLIC_RELEASE_REPOSITORY,
-  pushSubscriptionPublicStatus,
-  rateLimitsByModelObject,
-  reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
-  refreshAppUpdateStatus,
-  refreshGitHubLinkPreview,
-  refreshPublicPullRequestStatus,
-  refreshPublicReleaseStatus,
-  requestAuthToken,
-  requestBaseUrl,
-  rolloutWarningBytes: ROLLOUT_WARNING_BYTES,
-  safeAppUpdateError,
-  scheduleAppRestart,
-  setProfileSwitchProgress,
-  setThreadDisplaySettings,
-  setWorkspaceDelegationEnabled,
-  sharedChainRestartDelayMs: SHARED_CHAIN_RESTART_DELAY_MS,
-  sharedChainRestartService,
-  syncCodexMobileMcpToolset,
-  syncKnownCodexMobileMcpToolsets,
-  syncRegisteredWorkspaceTrust,
-  threadDisplayPublicSettings,
-  threadListFallbackPrewarmPublicStatus,
-  timingSafeEquals,
-  workspaceDelegationPublicSettings,
-  workspaceRegistryService,
-});
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -2041,13 +1973,22 @@ function threadListFallbackSourceDiagnosticTimingFields(...args) { return callTh
 function threadListFallbackBaselineWorkTimingFields(...args) { return callThreadListServerBoundary("threadListFallbackBaselineWorkTimingFields", args); }
 function threadListTokenUsageTimingFields(...args) { return callThreadListServerBoundary("threadListTokenUsageTimingFields", args); }
 
-const apiDispatchRouteService = createApiDispatchRouteService({
+const serverRouteCompositionService = createServerRouteCompositionService({
   READ_RPC_TIMEOUT_MS,
   MAX_THREAD_TURNS,
   CODEX_HOME,
+  activeProfileRestartOptions,
+  activeRateLimits,
+  appRoot: APP_ROOT,
+  appUpdateBranch: APP_UPDATE_BRANCH,
+  appUpdateDisabled: APP_UPDATE_DISABLED,
+  appUpdateRemote: APP_UPDATE_REMOTE,
+  appVersion: APP_VERSION,
+  applyAppUpdate,
   archiveThreadId,
   archivedSessionThreadIds,
   attachThreadListStateToResult,
+  authKey: AUTH_KEY,
   chatGptProBridgeService,
   chatGptProMcpService,
   chatGptProPlannerService,
@@ -2055,33 +1996,63 @@ const apiDispatchRouteService = createApiDispatchRouteService({
   clients,
   clientHeartbeats,
   codex,
+  codexConfigDefaults: CODEX_CONFIG_DEFAULTS,
+  codexProfileService,
   compactTurnsListResult,
-  coreApiRouteService,
   createContinuationJob,
+  currentPublicBuildConfig,
+  defaultModel: DEFAULT_MODEL,
+  defaultPermissionModeFromConfigDefaults,
+  disableAuth: DISABLE_AUTH,
   filterThreadListByCwd,
   filterVisibleThreads,
   getContinuationJob,
+  getProfileSwitchProgress,
   getUrl,
   handleThreadDetailReadRoute,
   handleThreadListRoute,
   handleThreadSideChatRoute,
+  hermesNotificationDelegateService,
+  hermesOriginFromRequest,
+  hermesPluginBaseUrl: HERMES_PLUGIN_BASE_URL,
+  hermesPluginService,
+  httpStatusError,
   hydrateThreadListResultTitlesFromSessionIndex,
+  isAccessKeyAuthorized,
   isAuthorized,
   isRecoverableThreadTitleUpdateError,
   listWorkspaces,
+  liveQuotaSnapshotForProfiles,
+  loadRecentRateLimitsFromRollouts,
+  logClientEvent,
   logThreadDetail,
   logThreadList,
   mediaFileService,
   mergeThreadDisplaySummary,
   mergeThreadSummaryListWithDiagnostics,
+  modelOptions: MODEL_OPTIONS,
   normalizeFsPath,
   normalizeStaleContextOnlyActiveThread,
   normalizeThreadListResultStatuses,
   normalizeThreadSummaryLiveStatus,
+  permissionModeOptions: PERMISSION_MODE_OPTIONS,
   parseThreadTurnsCursor,
   persistThreadTitleToSessionIndex,
+  platform: process.platform,
+  pluginSessionCookieHeader,
+  preflightCodexProfileSwitch,
+  profileSwitchLogDetail,
+  profileSwitchProgressRequestId,
   pruneContinuationJobs,
   publicContinuationJob,
+  publicConfigRuntimeCache,
+  publicPrCheckDisabled: PUBLIC_PR_CHECK_DISABLED,
+  publicPrRepository: PUBLIC_PR_REPOSITORY,
+  publicReleaseBranch: PUBLIC_RELEASE_BRANCH,
+  publicReleaseCheckDisabled: PUBLIC_RELEASE_CHECK_DISABLED,
+  publicReleaseRepository: PUBLIC_RELEASE_REPOSITORY,
+  pushSubscriptionPublicStatus,
+  rateLimitsByModelObject,
   readBody,
   readGlobalState,
   readMessageBody,
@@ -2093,19 +2064,38 @@ const apiDispatchRouteService = createApiDispatchRouteService({
   readThreadListFallback,
   rememberStartedThread,
   removeEventClient,
+  requestAuthToken,
+  requestBaseUrl,
+  reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
+  refreshAppUpdateStatus,
+  refreshGitHubLinkPreview,
+  refreshPublicPullRequestStatus,
+  refreshPublicReleaseStatus,
+  rolloutWarningBytes: ROLLOUT_WARNING_BYTES,
   rolloutStatsForPath,
   runThreadGoalAction,
+  safeAppUpdateError,
   scheduleActiveWindowPrewarmFromThreadListResult,
+  scheduleAppRestart,
   sendJson,
+  serveStatic,
+  setProfileSwitchProgress,
   setThreadGoal,
+  setThreadDisplaySettings,
+  setWorkspaceDelegationEnabled,
   shouldDeferThreadListFallbackForActiveDetail,
+  sharedChainRestartDelayMs: SHARED_CHAIN_RESTART_DELAY_MS,
+  sharedChainRestartService,
+  syncCodexMobileMcpToolset,
   syncKnownCodexMobileMcpToolsets,
   syncRegisteredWorkspaceTrust,
   syncThreadDetailReadResultToThreadListFallbackCache,
   threadDetailReadOrchestrationService,
+  threadDisplayPublicSettings,
   threadDisplaySummaryCache,
   threadListDefaultWarmFallbackEnabled: THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED,
   threadListFallbackBaselineWorkTimingFields,
+  threadListFallbackPrewarmPublicStatus,
   threadListFallbackSourceDiagnosticTimingFields,
   threadListResponseCoalescer,
   threadListTokenUsageTimingFields,
@@ -2120,41 +2110,14 @@ const apiDispatchRouteService = createApiDispatchRouteService({
   upsertThreadListFallbackCacheThreads,
   visibilityFromGlobalState,
   webPushRuntimeService,
+  workspaceDelegationPublicSettings,
   workspaceRegistryService,
+  timingSafeEquals,
+  logger: console,
 });
-const {
-  handleApi,
-  handleEvents,
-} = apiDispatchRouteService;
+const server = http.createServer(serverRouteCompositionService.handleRequest);
 
-const server = http.createServer(async (req, res) => {
-  try {
-    const url = getUrl(req);
-    if (url.pathname === "/api/events") {
-      handleEvents(req, res);
-      return;
-    }
-    if (url.pathname.startsWith("/api/")) {
-      await handleApi(req, res);
-      return;
-    }
-    serveStatic(req, res);
-  } catch (err) {
-    try {
-      sendJson(res, 500, { error: err.message || String(err) });
-    } catch (sendErr) {
-      console.error(`[server] failed to send error response: ${sendErr.message || sendErr}`);
-    }
-  }
-});
-
-server.on("clientError", (err, socket) => {
-  try {
-    socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
-  } catch (_) {}
-  if (err && err.code === "ECONNRESET") return;
-  console.error(`[server] client error: ${err.message || err}`);
-});
+server.on("clientError", serverRouteCompositionService.handleClientError);
 
 process.on("uncaughtException", (err) => {
   console.error(`[server] uncaught exception: ${err && err.stack ? err.stack : err}`);

@@ -11,6 +11,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
+const serverRouteCompositionServiceJs = fs.readFileSync(path.join(root, "server-routes", "server-route-composition-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
 const appMaintenanceServiceJs = fs.readFileSync(path.join(root, "adapters", "app-maintenance-service.js"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
@@ -219,7 +220,8 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(indexHtml, /id="appNativeDialog"/);
   assert.match(stylesCss, /\.public-pr-status/);
   assert.match(stylesCss, /\.app-native-dialog/);
-  assert.match(serverJs, /createCoreApiRouteService/);
+  assert.match(serverJs, /createServerRouteCompositionService/);
+  assert.match(serverRouteCompositionServiceJs, /createCoreApiRouteService/);
   assert.match(serverJs, /appRoot:\s*APP_ROOT/);
   assert.match(coreApiRouteServiceJs, /workspacePath:\s*appRoot/);
   assert.match(coreApiRouteServiceJs, /publicPullRequests:/);

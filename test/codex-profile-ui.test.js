@@ -7,6 +7,7 @@ const test = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const serverRouteCompositionServiceJs = fs.readFileSync(path.join(root, "server-routes", "server-route-composition-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(
   path.join(root, "services", "runtime", "codex-app-server-client-service.js"),
@@ -49,7 +50,8 @@ test("settings panel exposes Codex profile account and switch UI", () => {
 
 test("server exposes profile list and active profile switch endpoints", () => {
   assert.match(serverJs, /createCodexProfileService/);
-  assert.match(serverJs, /createCoreApiRouteService/);
+  assert.match(serverJs, /createServerRouteCompositionService/);
+  assert.match(serverRouteCompositionServiceJs, /createCoreApiRouteService/);
   assert.match(codexAppServerClientServiceJs, /codexProfiles:\s*codexProfileService\.profiles\(\{/);
   assert.match(codexAppServerClientServiceJs, /activeQuota:\s*liveQuotaSnapshotForProfiles\(\)/);
   assert.match(coreApiRouteServiceJs, /url\.pathname === "\/api\/codex-profiles"/);
