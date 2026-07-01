@@ -112,11 +112,13 @@ test("Vite shell artifact status validates the guarded public preview files", ()
     entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
   });
   assert.equal(status.classicShellManifestMatch, true);
+  assert.equal(status.startupCriticalAssetCount, 1);
   assert.deepEqual(status.artifactManifest, {
     shellCacheName: "codex-mobile-shell-test",
     clientBuildId: "0.1.11|codex-mobile-shell-test",
     indexScriptCount: 2,
     entryGroupCount: 1,
+    startupCriticalAssetCount: 1,
     classicGlobalExportAssetCount: 1,
     classicGlobalExportCount: 1,
     pageShellAssetCount: 6,
@@ -208,7 +210,11 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   fs.writeFileSync(path.join(buildRoot, "codex-mobile-shell-manifest.json"), JSON.stringify({
     shellCacheName: "codex-mobile-shell-test",
     clientBuildId: "0.1.11|codex-mobile-shell-test",
-    entryGroups: [{ id: "app-entry" }],
+    entryGroups: [{
+      id: "app-entry",
+      startupCritical: true,
+      assets: ["/app.js"],
+    }],
     viteBuild: {
       stage: "vite-shell-artifact-contract-v1",
       productionExecution: "classic-script-fallback",
@@ -233,8 +239,12 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-deferred-entry-topology-test.js")), true);
   const previewHtml = fs.readFileSync(path.join(root, "public", "vite-shell", "preview.html"), "utf8");
   assert.match(previewHtml, /id="codex-vite-shell-preview"/);
+  assert.match(previewHtml, /data-startup-critical-asset-count="1"/);
+  assert.match(previewHtml, /rel="preload" as="script" href="\/app\.js" data-codex-vite-startup-asset="true"/);
   assert.match(previewHtml, /type="module" src="\/vite-shell\/assets\/vite-shell-entry-test\.js"/);
   assert.equal(readback.preview.fileName, "preview.html");
   assert.equal(readback.preview.entryScript, "/vite-shell/assets/vite-shell-entry-test.js");
+  assert.deepEqual(readback.startupCriticalAssets, ["/app.js"]);
+  assert.equal(readback.counts.startupCriticalAssets, 1);
   assert.equal(readback.counts.publishedFiles, 4);
 });

@@ -852,7 +852,19 @@ function vitePreviewProbeExpression(input = {}) {
           }
         })
         .filter(Boolean);
+      const startupPreloads = Array.from(document.querySelectorAll("link[rel='preload'][as='script'][data-codex-vite-startup-asset]"))
+        .map((link) => {
+          try {
+            return new URL(link.getAttribute("href") || "", window.location.href).pathname;
+          } catch (_) {
+            return "";
+          }
+        })
+        .filter(Boolean);
       const topology = window.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ || {};
+      const startupCriticalAssets = Array.isArray(topology.startupGroups)
+        ? topology.startupGroups.flatMap((group) => Array.isArray(group && group.assets) ? group.assets : [])
+        : [];
       const compatibility = window.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ || {};
       const requiredStartupGlobals = Array.isArray(compatibility.requiredStartupGlobals)
         ? compatibility.requiredStartupGlobals
@@ -880,6 +892,17 @@ function vitePreviewProbeExpression(input = {}) {
       } catch (_) {
         deferredLoaded = false;
       }
+      const startupAssetStatuses = [];
+      for (const assetPath of startupCriticalAssets) {
+        const path = String(assetPath || "");
+        if (!path || !path.startsWith("/")) continue;
+        try {
+          const response = await fetch(path, { cache: "no-store" });
+          startupAssetStatuses.push({ path, status: response.status, ok: response.ok });
+        } catch (_) {
+          startupAssetStatuses.push({ path, status: 0, ok: false });
+        }
+      }
       return {
         label: "vite-preview",
         probeKind: "vite-preview",
@@ -895,6 +918,11 @@ function vitePreviewProbeExpression(input = {}) {
         moduleEntryLoaded: window.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ === "entry-topology-v1",
         entryTopologyReady: Array.isArray(topology.startupGroups) && Array.isArray(topology.deferredGroups),
         startupGroupCount: Array.isArray(topology.startupGroups) ? topology.startupGroups.length : 0,
+        startupCriticalAssetCount: startupCriticalAssets.length,
+        startupCriticalPreloadCount: startupPreloads.length,
+        startupCriticalPreloadsMatch: JSON.stringify(startupPreloads) === JSON.stringify(startupCriticalAssets),
+        startupCriticalAssetStatusOk: startupAssetStatuses.length === startupCriticalAssets.length
+          && startupAssetStatuses.every((entry) => entry && entry.ok),
         classicCompatibilityReady: Array.isArray(compatibility.classicGlobalExports) && classicGlobalExports.length > 0,
         classicCompatibilityAssetCount: classicGlobalExports.length,
         classicCompatibilityGlobalCount: classicGlobalNames.size,
@@ -924,6 +952,8 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   if (sample && sample.moduleScriptMatchesPreview !== true) append("vite_preview_module_entry_missing");
   if (sample && sample.moduleEntryLoaded !== true) append("vite_preview_module_entry_not_loaded");
   if (sample && sample.entryTopologyReady !== true) append("vite_preview_entry_topology_missing");
+  if (sample && sample.startupCriticalPreloadsMatch !== true) append("vite_preview_startup_preload_mismatch");
+  if (sample && sample.startupCriticalAssetStatusOk !== true) append("vite_preview_startup_asset_fetch_failed");
   if (sample && sample.classicCompatibilityReady !== true) append("vite_preview_classic_compatibility_missing");
   if (sample && sample.classicCompatibilityStartupGlobalsReady !== true) append("vite_preview_classic_startup_globals_missing");
   if (sample && sample.deferredLoaded !== true) append("vite_preview_deferred_not_loaded");

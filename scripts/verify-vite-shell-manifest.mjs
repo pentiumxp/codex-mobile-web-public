@@ -96,6 +96,7 @@ if (!fs.existsSync(manifestPath)) {
       clientBuildId: built.clientBuildId,
       indexScripts: built.counts.indexScripts,
       emittedAssets: built.counts.emittedAssets,
+      startupCriticalAssets: built.counts.startupCriticalAssets,
       classicGlobalExports: built.counts.classicGlobalExports,
       viteBuildStage: built.viteBuild.stage,
     }));

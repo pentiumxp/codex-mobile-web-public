@@ -4527,6 +4527,27 @@ generated classic global-export contract:
 This still does not switch production `/` to Vite execution. It makes the
 classic-script compatibility surface explicit and testable first.
 
+The follow-up startup-asset preview slice keeps the same classic production
+default, but makes the Vite preview exercise the startup-critical asset graph:
+
+- `scripts/publish-vite-shell-artifact.mjs` now derives
+  `startupCriticalAssets` from startup-critical `entryGroups` and emits
+  explicit `<link rel="preload" as="script">` tags in
+  `public/vite-shell/preview.html`.
+- `public/vite-shell/vite-shell-readback.json` records
+  `startupCriticalAssets` and their count so production readback can prove the
+  preview host is tied to the current startup graph.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  now compares preview preload order with the module topology and fetches those
+  startup assets inside the browser probe. Missing preload coverage or failed
+  asset fetches are H2 deploy-gate failures.
+- `/api/vite-shell-artifact` exposes `startupCriticalAssetCount` as bounded
+  metadata alongside the existing entry-group and classic global-export counts.
+
+This advances the split-entry migration without running the app through Vite
+yet: startup-critical assets are now build-owned, published, preloaded, fetched,
+and deploy-gated before they become startup-critical Vite chunks.
+
 ## Release Rule
 
 Follow the current release order:

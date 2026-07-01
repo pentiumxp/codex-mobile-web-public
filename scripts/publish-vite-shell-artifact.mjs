@@ -81,6 +81,18 @@ function requiredArtifactFiles(manifest) {
   ]);
 }
 
+function startupCriticalAssets(manifest) {
+  const assets = [];
+  for (const group of Array.isArray(manifest && manifest.entryGroups) ? manifest.entryGroups : []) {
+    if (!group || !group.startupCritical) continue;
+    for (const asset of Array.isArray(group.assets) ? group.assets : []) {
+      const text = String(asset || "").trim();
+      if (text && text.startsWith("/")) assets.push(text);
+    }
+  }
+  return [...new Set(assets)];
+}
+
 export function buildViteShellPublicReadback(options = {}) {
   const root = path.resolve(options.root || process.cwd());
   const buildRoot = path.resolve(options.buildRoot || path.join(root, "dist", "frontend-shell"));
@@ -116,6 +128,7 @@ export function buildViteShellPublicReadback(options = {}) {
     fileName: VITE_SHELL_PUBLIC_PREVIEW_FILE,
     entryScript: viteBuild.viteEntry ? publicArtifactUrl(viteBuild.viteEntry.fileName) : "",
   };
+  const startupAssets = startupCriticalAssets(manifest);
   const readbackForPreview = {
     stage: VITE_SHELL_PUBLIC_ARTIFACT_STAGE,
     sourceBuildStage: viteBuild.stage || "",
@@ -127,6 +140,7 @@ export function buildViteShellPublicReadback(options = {}) {
       fileName: normalizeRelativeFileName(viteBuild.viteEntry.fileName),
     } : null,
     preview,
+    startupCriticalAssets: startupAssets,
   };
   const previewHtml = renderViteShellPreviewHtml(readbackForPreview);
   const previewRecord = bufferRecord(VITE_SHELL_PUBLIC_PREVIEW_FILE, previewHtml);
@@ -149,8 +163,10 @@ export function buildViteShellPublicReadback(options = {}) {
       fileName: normalizeRelativeFileName(chunk && chunk.fileName),
     })).filter((chunk) => chunk.fileName),
     preview,
+    startupCriticalAssets: startupAssets,
     counts: {
       entryGroups: Array.isArray(manifest.entryGroups) ? manifest.entryGroups.length : 0,
+      startupCriticalAssets: startupAssets.length,
       classicGlobalExportAssets: Array.isArray(manifest.classicGlobalExports) ? manifest.classicGlobalExports.length : 0,
       classicGlobalExports: Array.isArray(manifest.classicGlobalExports)
         ? manifest.classicGlobalExports.reduce((total, entry) => (
@@ -172,6 +188,9 @@ export function renderViteShellPreviewHtml(readback = {}) {
   const entryScript = readback.preview && readback.preview.entryScript
     ? String(readback.preview.entryScript)
     : publicArtifactUrl(entryFileName);
+  const startupPreloadTags = (Array.isArray(readback.startupCriticalAssets) ? readback.startupCriticalAssets : [])
+    .filter((asset) => String(asset || "").startsWith("/"))
+    .map((asset) => `  <link rel=\"preload\" as=\"script\" href=\"${escapeHtml(asset)}\" data-codex-vite-startup-asset=\"true\">`);
   return [
     "<!doctype html>",
     "<html lang=\"en\">",
@@ -179,6 +198,7 @@ export function renderViteShellPreviewHtml(readback = {}) {
     "  <meta charset=\"utf-8\">",
     "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
     "  <meta name=\"robots\" content=\"noindex,nofollow\">",
+    ...startupPreloadTags,
     "  <title>Codex Mobile Vite Shell Preview</title>",
     "</head>",
     "<body>",
@@ -189,6 +209,7 @@ export function renderViteShellPreviewHtml(readback = {}) {
     `    data-production-execution=\"${escapeHtml(readback.productionExecution)}\"`,
     `    data-client-build-id=\"${escapeHtml(readback.clientBuildId)}\"`,
     `    data-shell-cache-name=\"${escapeHtml(readback.shellCacheName)}\"`,
+    `    data-startup-critical-asset-count=\"${escapeHtml((readback.startupCriticalAssets || []).length)}\"`,
     "  >",
     "    <h1>Codex Mobile Vite Shell Preview</h1>",
     "  </main>",
@@ -244,6 +265,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       productionExecution: result.productionExecution,
       shellCacheName: result.shellCacheName,
       clientBuildId: result.clientBuildId,
+      startupCriticalAssets: result.counts.startupCriticalAssets,
       publishedFiles: result.counts.publishedFiles,
     }));
   } catch (err) {

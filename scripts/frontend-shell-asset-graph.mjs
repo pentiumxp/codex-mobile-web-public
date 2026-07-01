@@ -261,6 +261,9 @@ export function buildShellAssetManifest(root = process.cwd()) {
     if (!asset.exists) validation.issues.push({ code: "asset_file_missing", asset: asset.path });
   }
   validation.ok = validation.issues.length === 0;
+  const startupCriticalAssets = uniqueValues(graph.entryGroups
+    .filter((group) => group && group.startupCritical)
+    .flatMap((group) => Array.isArray(group.assets) ? group.assets : []));
   return {
     schemaVersion: SHELL_MANIFEST_SCHEMA_VERSION,
     generatedBy: "vite-codex-mobile-shell-asset-graph",
@@ -271,6 +274,7 @@ export function buildShellAssetManifest(root = process.cwd()) {
       swStaticAssets: graph.swStaticAssets.length,
       pageShellAssets: graph.pageShellAssets.length,
       serverHashAssets: graph.serverHashAssets.length,
+      startupCriticalAssets: startupCriticalAssets.length,
       classicGlobalExportAssets: graph.classicGlobalExports.length,
       classicGlobalExports: graph.classicGlobalExports.reduce((total, entry) => (
         total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)

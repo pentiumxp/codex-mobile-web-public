@@ -71,6 +71,19 @@ function manifestTopologyMatches(left, right) {
   return true;
 }
 
+function startupCriticalAssetCount(manifest) {
+  const assets = [];
+  const groups = canonicalShellTopology(manifest).entryGroups;
+  for (const group of Array.isArray(groups) ? groups : []) {
+    if (!group || !group.startupCritical) continue;
+    for (const asset of Array.isArray(group.assets) ? group.assets : []) {
+      const text = String(asset || "").trim();
+      if (text && text.startsWith("/")) assets.push(text);
+    }
+  }
+  return new Set(assets).size;
+}
+
 function createViteShellArtifactService(dependencies = {}) {
   const appRoot = path.resolve(dependencies.appRoot || process.cwd());
   const publicArtifactRoot = path.resolve(
@@ -250,6 +263,7 @@ function createViteShellArtifactService(dependencies = {}) {
         && artifactManifest.clientBuildId === readback.clientBuildId
         && (!publicShellManifest.shellCacheName || artifactManifest.shellCacheName === publicShellManifest.shellCacheName)
         && (!publicShellManifest.clientBuildId || artifactManifest.clientBuildId === publicShellManifest.clientBuildId)),
+      startupCriticalAssetCount: artifactManifest ? startupCriticalAssetCount(artifactManifest) : 0,
       artifactManifest: artifactManifest ? {
         shellCacheName: String(artifactManifest.shellCacheName || ""),
         clientBuildId: String(artifactManifest.clientBuildId || ""),
@@ -259,6 +273,7 @@ function createViteShellArtifactService(dependencies = {}) {
         entryGroupCount: Array.isArray(canonicalShellTopology(artifactManifest).entryGroups)
           ? canonicalShellTopology(artifactManifest).entryGroups.length
           : 0,
+        startupCriticalAssetCount: startupCriticalAssetCount(artifactManifest),
         classicGlobalExportAssetCount: Array.isArray(canonicalShellTopology(artifactManifest).classicGlobalExports)
           ? canonicalShellTopology(artifactManifest).classicGlobalExports.length
           : 0,

@@ -38,6 +38,8 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     moduleScriptMatchesPreview: true,
     moduleEntryLoaded: true,
     entryTopologyReady: true,
+    startupCriticalPreloadsMatch: true,
+    startupCriticalAssetStatusOk: true,
     classicCompatibilityReady: true,
     classicCompatibilityStartupGlobalsReady: true,
     deferredLoaded: true,
@@ -55,6 +57,8 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     moduleScriptMatchesPreview: false,
     moduleEntryLoaded: false,
     entryTopologyReady: false,
+    startupCriticalPreloadsMatch: false,
+    startupCriticalAssetStatusOk: false,
     classicCompatibilityReady: false,
     classicCompatibilityStartupGlobalsReady: false,
     deferredLoaded: false,
@@ -62,6 +66,8 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
   assert.equal(failing.ok, false);
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_stage_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_module_entry_missing"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_startup_preload_mismatch"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_startup_asset_fetch_failed"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_compatibility_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_startup_globals_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_browser_exception"));
@@ -76,6 +82,7 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("/vite-shell/preview.html"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__"));
+  assert.ok(scriptSource.includes("data-codex-vite-startup-asset"));
 });
 
 test("browser runtime self-check treats startup exceptions as blocking", () => {

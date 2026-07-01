@@ -8,6 +8,7 @@
     "swStaticAssets": 60,
     "pageShellAssets": 61,
     "serverHashAssets": 60,
+    "startupCriticalAssets": 22,
     "classicGlobalExportAssets": 47,
     "classicGlobalExports": 47,
     "emittedAssets": 61
