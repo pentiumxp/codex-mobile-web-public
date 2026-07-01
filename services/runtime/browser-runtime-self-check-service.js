@@ -71,6 +71,7 @@ function summarizeSamples(samples = []) {
   const latestTurnOperationItemCounts = normalized.map((sample) => toNumber(sample.latestTurnOperationItemCount));
   const latestTurnReasoningItemCounts = normalized.map((sample) => toNumber(sample.latestTurnReasoningItemCount));
   const latestTurnAssistantTextDuplicateCounts = normalized.map((sample) => toNumber(sample.latestTurnAssistantTextDuplicateCount));
+  const allUserEventDuplicateCounts = normalized.map((sample) => toNumber(sample.allUserEventDuplicateCount));
   const clientSubmissionCounts = normalized.map((sample) => toNumber(sample.clientSubmissionCount));
   const visualAnchorShiftCounts = normalized.map((sample) => toNumber(sample.visualAnchorSmallJitterCount));
   const visualAnchorShiftPixels = normalized.map((sample) => toNumber(sample.visualAnchorShiftPx));
@@ -104,6 +105,7 @@ function summarizeSamples(samples = []) {
     maxLatestTurnOperationItems: normalized.length ? Math.max(...latestTurnOperationItemCounts) : 0,
     maxLatestTurnReasoningItems: normalized.length ? Math.max(...latestTurnReasoningItemCounts) : 0,
     maxLatestTurnAssistantTextDuplicates: normalized.length ? Math.max(...latestTurnAssistantTextDuplicateCounts) : 0,
+    maxAllUserEventDuplicates: normalized.length ? Math.max(...allUserEventDuplicateCounts) : 0,
     maxClientSubmissions: normalized.length ? Math.max(...clientSubmissionCounts) : 0,
     maxVisualAnchorSmallJitterCount: normalized.length ? Math.max(...visualAnchorShiftCounts) : 0,
     maxVisualAnchorShiftPx: normalized.length ? Math.max(...visualAnchorShiftPixels) : 0,
@@ -658,6 +660,16 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           assistantMessageCount: Math.max(previous.assistantMessageCount, currentAssistants),
           activeProgressiveEver: progressiveWindow,
         });
+      }
+      if (sampleIsConfirmed(sample)
+        && settled
+        && !loadingPreviewSample
+        && toNumber(sample.allUserEventDuplicateCount) > 0) {
+        issues.push(issue("H2", "browser_user_message_event_duplicate", sample, {
+          threadHash,
+          duplicateCount: toNumber(sample.allUserEventDuplicateCount),
+          latestTurnDuplicateCount: toNumber(sample.latestTurnUserTextDuplicateCount),
+        }));
       }
       if (sampleIsConfirmed(sample)
         && settled

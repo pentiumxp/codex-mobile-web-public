@@ -631,7 +631,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v619";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v620";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5991,12 +5991,16 @@ function conversationDomShape() {
     else seen.add(key);
   }
   let duplicateUserMessageCount = 0;
+  const userMessageNodes = [];
   for (const turnNode of Array.from(conversation.querySelectorAll("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]"))) {
-    duplicateUserMessageCount += duplicateUserMessageSignatureCount(
-      Array.from(turnNode.querySelectorAll(".item.userMessage")),
-      (node) => domUserMessageDuplicateSignature(turnNode, node),
-    );
+    for (const node of Array.from(turnNode.querySelectorAll(".item.userMessage"))) {
+      userMessageNodes.push({ turnNode, node });
+    }
   }
+  duplicateUserMessageCount = duplicateUserMessageSignatureCount(
+    userMessageNodes,
+    (entry) => domUserMessageEventDuplicateSignature(entry.turnNode, entry.node),
+  );
   return {
     renderKeyCount: seen.size,
     duplicateRenderKeyCount,
@@ -6030,6 +6034,20 @@ function domUserMessageDuplicateSignature(turnNode, node) {
   return text ? `text:${turnId}:${stableTextHash(text)}` : "";
 }
 
+function domUserMessageEventDuplicateSignature(turnNode, node) {
+  if (!node || !node.getAttribute) return "";
+  const submissionHash = String(node.getAttribute("data-client-submission-hash") || "").trim();
+  if (submissionHash) return `submission:${submissionHash}`;
+  const body = node.querySelector && node.querySelector(".item-body");
+  const text = String((body || node).textContent || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  const timestamp = node.querySelector && node.querySelector(".item-timestamp");
+  const datetime = String(timestamp && timestamp.getAttribute && timestamp.getAttribute("datetime") || "").trim();
+  const timestampMs = datetime ? Date.parse(datetime) : 0;
+  if (Number.isFinite(timestampMs) && timestampMs > 0) return `text-time:${Math.floor(timestampMs / 5000)}:${stableTextHash(text)}`;
+  return domUserMessageDuplicateSignature(turnNode, node);
+}
+
 function visibleUserMessageDuplicateSignature(turn, item) {
   if (!item || item.type !== "userMessage") return "";
   const turnId = String(turn && turn.id || turn && turn.mobileVisibleKey || "").trim();
@@ -6046,15 +6064,40 @@ function visibleUserMessageDuplicateSignature(turn, item) {
   return text ? `text:${turnId}:${stableTextHash(text)}` : "";
 }
 
+function visibleUserMessageEventDuplicateSignature(turn, item) {
+  if (!item || item.type !== "userMessage") return "";
+  const submissionHash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
+  if (submissionHash) return `submission:${submissionHash}`;
+  const comparable = userMessageComparableParts(item);
+  const text = String(
+    comparable.text
+    || itemTextValue(item && item.text)
+    || itemTextValue(item && item.message)
+    || itemTextValue(item && item.content)
+    || "",
+  ).replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  const timestampMs = userMessageTimestampMs(item) || turnStartedAtMs(turn);
+  if (timestampMs) return `text-time:${Math.floor(timestampMs / 5000)}:${stableTextHash(text)}`;
+  return visibleUserMessageDuplicateSignature(turn, item);
+}
+
 function visibleConversationShape(thread) {
   const turns = visibleTurnsForConversation(thread);
-  const visibleItemCount = turns.reduce((total, turn) => total + visibleItemsForTurn(turn, thread).length, 0);
-  const duplicateUserMessageCount = turns.reduce((total, turn) => {
-    const userMessages = visibleItemsForTurn(turn, thread)
-      .map((entry) => entry && entry.item)
-      .filter((item) => item && item.type === "userMessage");
-    return total + duplicateUserMessageSignatureCount(userMessages, (item) => visibleUserMessageDuplicateSignature(turn, item));
-  }, 0);
+  let visibleItemCount = 0;
+  const userMessages = [];
+  for (const turn of turns) {
+    const visibleItems = visibleItemsForTurn(turn, thread);
+    visibleItemCount += visibleItems.length;
+    for (const entry of visibleItems) {
+      const item = entry && entry.item;
+      if (item && item.type === "userMessage") userMessages.push({ turn, item });
+    }
+  }
+  const duplicateUserMessageCount = duplicateUserMessageSignatureCount(
+    userMessages,
+    (entry) => visibleUserMessageEventDuplicateSignature(entry.turn, entry.item),
+  );
   return {
     visibleTurnCount: turns.length,
     visibleItemCount,

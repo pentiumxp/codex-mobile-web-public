@@ -777,6 +777,34 @@ test("browser runtime self-check catches latest turn user message duplicates", (
   assert.equal(report.sampleSummary.maxLatestTurnUserTextDuplicates, 1);
 });
 
+test("browser runtime self-check catches cross-turn user event duplicates", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "cross-turn-user-duplicate",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      allUserEventDuplicateCount: 1,
+      latestTurnUserMessageCount: 1,
+      latestTurnUserTextDuplicateCount: 0,
+      turns: 4,
+      items: 18,
+      renderKeys: 18,
+      delayMs: 1200,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  const duplicateIssue = report.issues.find((issue) => issue.code === "browser_user_message_event_duplicate");
+  assert.ok(duplicateIssue);
+  assert.equal(duplicateIssue.severity, "H2");
+  assert.equal(duplicateIssue.duplicateCount, 1);
+  assert.equal(report.sampleSummary.maxAllUserEventDuplicates, 1);
+});
+
 test("browser runtime self-check ignores null samples in summary", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [

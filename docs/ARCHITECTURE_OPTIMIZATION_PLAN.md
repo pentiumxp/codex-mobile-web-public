@@ -4228,7 +4228,7 @@ startup-only listener/browser gate.
 
 The next frontend-thinning slice moves media rendering, rich-preview hydration,
 and file/image preview behavior out of `public/app.js` while preserving the
-static shell contract as `codex-mobile-shell-v619`.
+static shell contract as `codex-mobile-shell-v620`.
 
 Scope:
 

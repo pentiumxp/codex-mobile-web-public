@@ -725,6 +725,26 @@ function createThreadDetailRuntime(deps = {}) {
     return Boolean(leftMs && rightMs && Math.abs(leftMs - rightMs) <= windowMs);
   }
 
+  function isProjectionIndexUserMessage(item) {
+    return Boolean(String(item && (item.id || item.itemId || item.item_id) || "").trim().match(/^item-\d+$/i));
+  }
+
+  function userMessagesAreSameEventAcrossTurns(left, right) {
+    if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
+    if (!userMessagesLikelySame(left, right)) return false;
+    if (userMessagesShareSubmissionId(left, right)) return true;
+    if (userMessagesCanShadow(left, right)) return true;
+    const leftTime = userMessageTimestampMs(left);
+    const rightTime = userMessageTimestampMs(right);
+    if (!leftTime || !rightTime || Math.abs(leftTime - rightTime) > 5000) return false;
+    return Boolean(
+      isOptimisticUserMessage(left)
+      || isOptimisticUserMessage(right)
+      || isProjectionIndexUserMessage(left)
+      || isProjectionIndexUserMessage(right)
+    );
+  }
+
   function durableTurnCanReceivePendingEcho(turn) {
     if (!turn) return false;
     const status = turn.status;
@@ -842,7 +862,8 @@ function createThreadDetailRuntime(deps = {}) {
       const turn = thread.turns[turnIndex];
       if (!turn || !Array.isArray(turn.items)) continue;
       turn.items = turn.items.filter((item, itemIndex) => !shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages)
-        && !shouldDropOptimisticUserMessageForHigherPriorityEcho(item, turnIndex, itemIndex, userMessages));
+        && !shouldDropOptimisticUserMessageForHigherPriorityEcho(item, turnIndex, itemIndex, userMessages)
+        && !shouldDropDuplicateUserMessageEvent(item, turnIndex, itemIndex, userMessages));
     }
     return thread;
   }
@@ -889,6 +910,24 @@ function createThreadDetailRuntime(deps = {}) {
         if (candidate.turnIndex === turnIndex && candidate.itemIndex <= itemIndex) return false;
       }
       return userMessagesCanShadow(candidate.item, item);
+    });
+  }
+
+  function shouldDropDuplicateUserMessageEvent(item, turnIndex, itemIndex, userMessages) {
+    if (!item || item.type !== "userMessage" || !Array.isArray(userMessages)) return false;
+    const itemHasVisualAttachment = userMessageHasVisualAttachment(item);
+    const itemPriority = userMessageShadowPriority(item);
+    return userMessages.some((candidate) => {
+      if (!candidate || !candidate.item || candidate.item === item || candidate.item.id === item.id) return false;
+      if (candidate.turnIndex < turnIndex) return false;
+      if (candidate.turnIndex === turnIndex && candidate.itemIndex <= itemIndex) return false;
+      const sameSubmission = userMessagesShareSubmissionId(candidate.item, item);
+      if ((itemHasVisualAttachment || userMessageHasVisualAttachment(candidate.item)) && !sameSubmission) return false;
+      if (!userMessagesAreSameEventAcrossTurns(candidate.item, item)) return false;
+      const candidatePriority = userMessageShadowPriority(candidate.item);
+      if (candidatePriority > itemPriority) return true;
+      if (candidatePriority === itemPriority) return true;
+      return false;
     });
   }
 
@@ -1234,6 +1273,8 @@ function createThreadDetailRuntime(deps = {}) {
     userMessagesCanShadow,
     userMessageTimestampMs,
     userMessagesHaveNearbyTimestamps,
+    isProjectionIndexUserMessage,
+    userMessagesAreSameEventAcrossTurns,
     durableTurnCanReceivePendingEcho,
     optimisticEchoCanMatchEarlierDurable,
     hasMatchingIncomingUserMessage,
@@ -1246,6 +1287,7 @@ function createThreadDetailRuntime(deps = {}) {
     threadUserMessageEntries,
     shouldDropOptimisticUserMessageForDurable,
     shouldDropOptimisticUserMessageForHigherPriorityEcho,
+    shouldDropDuplicateUserMessageEvent,
     threadDurableUserMessages,
     shouldDropInitialSubmissionEchoTurn,
     threadHasInitialSubmissionEcho,

@@ -1141,6 +1141,19 @@ function snapshotExpression(input = {}) {
         })
         .filter(Boolean)
         .map(stableHash);
+      const allUserEventHashes = Array.from(renderRoot.querySelectorAll(".item.userMessage"))
+        .map((node) => {
+          const submissionHash = String(node.getAttribute("data-client-submission-hash") || "").trim();
+          if (submissionHash) return "submission:" + submissionHash;
+          const body = node.querySelector(".item-body") || node;
+          const text = String(body.textContent || "").replace(/\\s+/g, " ").trim();
+          if (!text) return "";
+          const timestamp = node.querySelector(".item-timestamp");
+          const datetime = String(timestamp && timestamp.getAttribute("datetime") || "").trim();
+          const timestampMs = datetime ? Date.parse(datetime) : 0;
+          return Number.isFinite(timestampMs) && timestampMs > 0 ? "text-time:" + Math.floor(timestampMs / 5000) + ":" + stableHash(text) : "";
+        })
+        .filter(Boolean);
       const latestUserNodeDetails = latestUserNodes.slice(0, 6).map((node, index) => {
         const body = node.querySelector(".item-body") || node;
         const text = String(body.textContent || "").replace(/\\s+/g, " ").trim();
@@ -1324,6 +1337,7 @@ function snapshotExpression(input = {}) {
         latestTurnOperationItemCount: latestOperationNodes.length,
         latestTurnReasoningItemCount: latestReasoningNodes.length,
         latestTurnUserTextDuplicateCount: duplicateCount(latestUserTextHashes),
+        allUserEventDuplicateCount: duplicateCount(allUserEventHashes),
         latestTurnUserNodeDetails: latestUserNodeDetails,
         latestTurnAssistantTextDuplicateCount: duplicateCount(latestAssistantTextHashes),
         latestTurnUsageCount: latestUsageCount,

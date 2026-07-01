@@ -91,6 +91,8 @@ const threadDetailRuntimeFunctionNames = new Set([
   "userMessagesCanShadow",
   "userMessageTimestampMs",
   "userMessagesHaveNearbyTimestamps",
+  "isProjectionIndexUserMessage",
+  "userMessagesAreSameEventAcrossTurns",
   "durableTurnCanReceivePendingEcho",
   "optimisticEchoCanMatchEarlierDurable",
   "hasMatchingIncomingUserMessage",
@@ -103,6 +105,7 @@ const threadDetailRuntimeFunctionNames = new Set([
   "threadUserMessageEntries",
   "shouldDropOptimisticUserMessageForDurable",
   "shouldDropOptimisticUserMessageForHigherPriorityEcho",
+  "shouldDropDuplicateUserMessageEvent",
   "threadDurableUserMessages",
   "shouldDropInitialSubmissionEchoTurn",
   "threadHasInitialSubmissionEcho",
@@ -770,6 +773,8 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+  "isProjectionIndexUserMessage",
+  "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
@@ -862,6 +867,8 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+  "isProjectionIndexUserMessage",
+  "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
@@ -961,6 +968,8 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+  "isProjectionIndexUserMessage",
+  "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
@@ -974,6 +983,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
     "shouldDropOptimisticUserMessageForHigherPriorityEcho",
+  "shouldDropDuplicateUserMessageEvent",
     "threadDurableUserMessages",
     "shouldDropInitialSubmissionEchoTurn",
     "threadHasInitialSubmissionEcho",
@@ -1110,6 +1120,8 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+  "isProjectionIndexUserMessage",
+  "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
@@ -1122,6 +1134,7 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
     "shouldDropOptimisticUserMessageForHigherPriorityEcho",
+  "shouldDropDuplicateUserMessageEvent",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
@@ -1163,6 +1176,8 @@ function evaluatedLiveUserMessageUpsert() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+  "isProjectionIndexUserMessage",
+  "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
@@ -1175,6 +1190,7 @@ function evaluatedLiveUserMessageUpsert() {
     "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
     "shouldDropOptimisticUserMessageForHigherPriorityEcho",
+  "shouldDropDuplicateUserMessageEvent",
     "upsertItem",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -1237,6 +1253,8 @@ function evaluatedVisibleItemsForTurn() {
     "userMessagesLikelySame",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+  "isProjectionIndexUserMessage",
+  "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "pruneRecentSubmittedUserMessages",
@@ -1409,6 +1427,8 @@ function evaluatedLocalSubmissionInserter() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+  "isProjectionIndexUserMessage",
+  "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
@@ -1421,6 +1441,7 @@ function evaluatedLocalSubmissionInserter() {
     "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
     "shouldDropOptimisticUserMessageForHigherPriorityEcho",
+  "shouldDropDuplicateUserMessageEvent",
     "mergeSubmittedUserItemIntoTurn",
     "reconcileSubmittedUserMessageTurn",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -4091,7 +4112,8 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /threadDetailDomPatchApi\.planConversationHtmlPerformanceEvent\(\{/);
   assert.match(updateBody, /updatePlan,/);
   assert.match(updateBody, /applicationPlan,/);
-  assert.match(functionBody("visibleConversationShape"), /visibleItemsForTurn\(turn, thread\)\.length/);
+  assert.match(functionBody("visibleConversationShape"), /const visibleItems = visibleItemsForTurn\(turn, thread\);/);
+  assert.match(functionBody("visibleConversationShape"), /visibleItemCount \+= visibleItems\.length/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleItemCount: renderVisibleShape\.visibleItemCount/);
   assert.match(functionBody("renderCurrentThread"), /duplicateRenderKeyCount: renderDomShape\.duplicateRenderKeyCount/);
@@ -4673,15 +4695,18 @@ test("visible conversation shape counts duplicate user entries by entry item", (
   const sources = [
     "duplicateUserMessageSignatureCount",
     "visibleUserMessageDuplicateSignature",
+    "visibleUserMessageEventDuplicateSignature",
     "visibleConversationShape",
   ].map((name) => functionSourceFrom(appJs, name));
   const result = Function(`
-function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
-function visibleItemsForTurn(turn) { return Array.isArray(turn && turn.entries) ? turn.entries : []; }
-function clientSubmissionDiagnosticHash(value) { return value ? "hash-" + String(value) : ""; }
-function userMessageComparableParts(item) { return { text: String(item && item.text || ""), paths: [] }; }
-function itemTextValue(value) { return String(value || ""); }
-function stableTextHash(value) { return "text-" + String(value || ""); }
+  function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+  function visibleItemsForTurn(turn) { return Array.isArray(turn && turn.entries) ? turn.entries : []; }
+  function clientSubmissionDiagnosticHash(value) { return value ? "hash-" + String(value) : ""; }
+  function userMessageComparableParts(item) { return { text: String(item && item.text || ""), paths: [] }; }
+  function itemTextValue(value) { return String(value || ""); }
+  function userMessageTimestampMs(item) { return Number(item && item.startedAtMs || 0); }
+  function turnStartedAtMs(turn) { return Number(turn && turn.startedAtMs || 0); }
+  function stableTextHash(value) { return "text-" + String(value || ""); }
 ${sources.join("\n")}
 return visibleConversationShape({
   turns: [{
@@ -4696,6 +4721,74 @@ return visibleConversationShape({
 `)();
 
   assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 3, duplicateUserMessageCount: 1 });
+});
+
+test("visible conversation shape counts cross-turn same-event user duplicates", () => {
+  const sources = [
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
+    "visibleUserMessageEventDuplicateSignature",
+    "visibleConversationShape",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+  function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+  function visibleItemsForTurn(turn) { return Array.isArray(turn && turn.entries) ? turn.entries : []; }
+  function clientSubmissionDiagnosticHash(value) { return value ? "hash-" + String(value) : ""; }
+  function userMessageComparableParts(item) { return { text: String(item && item.text || ""), paths: [] }; }
+  function itemTextValue(value) { return String(value || ""); }
+  function userMessageTimestampMs(item) { return Number(item && item.startedAtMs || 0); }
+  function turnStartedAtMs(turn) { return Number(turn && turn.startedAtMs || 0); }
+  function stableTextHash(value) { return "text-" + String(value || ""); }
+${sources.join("\n")}
+return visibleConversationShape({
+  turns: [
+    {
+      id: "turn-stale",
+      entries: [{ item: { id: "item-1", type: "userMessage", startedAtMs: 1782916350000, text: "same event" } }],
+    },
+    {
+      id: "turn-current",
+      entries: [{ item: { id: "item-2", type: "userMessage", startedAtMs: 1782916350500, text: "same event" } }],
+    },
+  ],
+});
+`)();
+
+  assert.deepEqual(result, { visibleTurnCount: 2, visibleItemCount: 2, duplicateUserMessageCount: 1 });
+});
+
+test("visible conversation shape keeps repeated user text at different times", () => {
+  const sources = [
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
+    "visibleUserMessageEventDuplicateSignature",
+    "visibleConversationShape",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+  function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+  function visibleItemsForTurn(turn) { return Array.isArray(turn && turn.entries) ? turn.entries : []; }
+  function clientSubmissionDiagnosticHash(value) { return value ? "hash-" + String(value) : ""; }
+  function userMessageComparableParts(item) { return { text: String(item && item.text || ""), paths: [] }; }
+  function itemTextValue(value) { return String(value || ""); }
+  function userMessageTimestampMs(item) { return Number(item && item.startedAtMs || 0); }
+  function turnStartedAtMs(turn) { return Number(turn && turn.startedAtMs || 0); }
+  function stableTextHash(value) { return "text-" + String(value || ""); }
+${sources.join("\n")}
+return visibleConversationShape({
+  turns: [
+    {
+      id: "turn-first",
+      entries: [{ item: { id: "item-1", type: "userMessage", startedAtMs: 1782916200000, text: "repeat" } }],
+    },
+    {
+      id: "turn-second",
+      entries: [{ item: { id: "item-2", type: "userMessage", startedAtMs: 1782916800000, text: "repeat" } }],
+    },
+  ],
+});
+`)();
+
+  assert.deepEqual(result, { visibleTurnCount: 2, visibleItemCount: 2, duplicateUserMessageCount: 0 });
 });
 
 test("visible item patch entries use render context thread for filtering and signatures", () => {
@@ -5069,6 +5162,72 @@ test("cross-turn durable user messages remove only synthetic echoes", () => {
   assert.equal(thread.turns[1].items[0].id, "real-user-2");
   assert.equal(thread.turns[2].items.length, 1);
   assert.equal(thread.turns[2].items[0].id, "real-user-3");
+});
+
+test("cross-turn normalization drops same-event projection user duplicate", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "turn-stale",
+        status: { type: "completed" },
+        items: [{
+          id: "item-8",
+          type: "userMessage",
+          startedAtMs: 1782916350000,
+          content: [{ type: "input_text", text: "same event user input" }],
+        }],
+      },
+      {
+        id: "turn-current",
+        status: { type: "active" },
+        items: [{
+          id: "item-9",
+          type: "userMessage",
+          startedAtMs: 1782916350500,
+          content: [{ type: "input_text", text: "same   event user input" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items, []);
+  assert.deepEqual(thread.turns[1].items.map((item) => item.id), ["item-9"]);
+});
+
+test("cross-turn normalization keeps same text projection user messages at different times", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "turn-first",
+        status: { type: "completed" },
+        items: [{
+          id: "item-8",
+          type: "userMessage",
+          startedAtMs: 1782916200000,
+          content: [{ type: "input_text", text: "repeat user input" }],
+        }],
+      },
+      {
+        id: "turn-second",
+        status: { type: "completed" },
+        items: [{
+          id: "item-9",
+          type: "userMessage",
+          startedAtMs: 1782916800000,
+          content: [{ type: "input_text", text: "repeat user input" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["item-8"]);
+  assert.deepEqual(thread.turns[1].items.map((item) => item.id), ["item-9"]);
 });
 
 test("cross-turn normalization keeps synthetic repeat when matching durable message is earlier", () => {
