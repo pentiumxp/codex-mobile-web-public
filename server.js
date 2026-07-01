@@ -91,6 +91,7 @@ const {
 } = require("./services/runtime/codex-app-server-client-service");
 const { createMediaStaticRuntimeService } = require("./services/runtime/media-static-runtime-service");
 const { createServerRuntimeUtils } = require("./services/runtime/server-runtime-utils");
+const { createViteShellArtifactService } = require("./services/runtime/vite-shell-artifact-service");
 const { createServerRuntimeConfigService } = require("./services/runtime/server-runtime-config-service");
 const { createServerHttpRuntimeService } = require("./services/runtime/server-http-runtime-service");
 const { createRuntimeSettingsService } = require("./services/runtime/runtime-settings-service");
@@ -124,7 +125,12 @@ const {
   assertCommandAvailable,
   codexAppServerChildEnv,
   currentPublicBuildConfig,
+  readShellAssetManifest,
 } = serverRuntimeUtils;
+const viteShellArtifactService = createViteShellArtifactService({
+  appRoot: APP_ROOT,
+  readShellAssetManifest,
+});
 
 const serverRuntimeConfigService = createServerRuntimeConfigService({
   path,
@@ -1855,6 +1861,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   tryUpdateThreadTitle,
   upsertThreadListFallbackCacheThreads,
   visibilityFromGlobalState,
+  viteShellArtifactService,
   webPushRuntimeService: notificationRuntimeService.webPushRuntimeService,
   workspaceDelegationPublicSettings,
   workspaceRegistryService,

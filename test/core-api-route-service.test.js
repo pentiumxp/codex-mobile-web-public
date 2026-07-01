@@ -108,3 +108,35 @@ test("core public config route uses injected runtime dependencies", async () => 
   assert.equal(sent.body.workspaceDelegation.enabled, true);
   assert.equal(sent.body.threadListFallbackPrewarm.pending, false);
 });
+
+test("core authorized route exposes bounded Vite shell artifact readback", async () => {
+  let sent = null;
+  const service = createCoreApiRouteService({
+    viteShellArtifactService: {
+      readPublicArtifactStatus: () => ({
+        ok: true,
+        available: true,
+        stage: "vite-shell-public-preview-v1",
+        publishedFileCount: 3,
+        issueCodes: [],
+      }),
+    },
+  });
+
+  const handled = await service.handleAuthorizedRoute({
+    url: new URL("http://127.0.0.1:8787/api/vite-shell-artifact"),
+    req: { method: "GET", headers: {} },
+    res: {},
+    readBody: async () => ({}),
+    sendJson: (status, body) => {
+      sent = { status, body };
+    },
+  });
+
+  assert.deepEqual(handled, { handled: true });
+  assert.equal(sent.status, 200);
+  assert.equal(sent.body.ok, true);
+  assert.equal(sent.body.stage, "vite-shell-public-preview-v1");
+  assert.equal(sent.body.publishedFileCount, 3);
+  assert.deepEqual(sent.body.issueCodes, []);
+});

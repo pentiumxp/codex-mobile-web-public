@@ -84,6 +84,7 @@ function createServerRouteCompositionService(dependencies = {}) {
     threadDisplayPublicSettings: dependencies.threadDisplayPublicSettings,
     threadListFallbackPrewarmPublicStatus: dependencies.threadListFallbackPrewarmPublicStatus,
     timingSafeEquals: dependencies.timingSafeEquals,
+    viteShellArtifactService: dependencies.viteShellArtifactService,
     workspaceDelegationPublicSettings: dependencies.workspaceDelegationPublicSettings,
     workspaceRegistryService: dependencies.workspaceRegistryService,
   });

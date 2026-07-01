@@ -67,6 +67,7 @@ function createCoreApiRouteService(deps = {}) {
     threadDisplayPublicSettings,
     threadListFallbackPrewarmPublicStatus,
     timingSafeEquals,
+    viteShellArtifactService,
     workspaceDelegationPublicSettings,
     workspaceRegistryService,
     preflightCodexProfileSwitch,
@@ -465,6 +466,21 @@ function createCoreApiRouteService(deps = {}) {
         fetch: truthyParam(url.searchParams.get("fetch")),
         force: truthyParam(url.searchParams.get("force")),
       }));
+      return { handled: true };
+    }
+    if (url.pathname === "/api/vite-shell-artifact" && req.method === "GET") {
+      const status = viteShellArtifactService && typeof viteShellArtifactService.readPublicArtifactStatus === "function"
+        ? viteShellArtifactService.readPublicArtifactStatus()
+        : {
+            ok: false,
+            available: false,
+            issueCodes: ["vite_shell_artifact_service_unavailable"],
+            validation: {
+              ok: false,
+              issues: [{ code: "vite_shell_artifact_service_unavailable" }],
+            },
+          };
+      sendJson(200, status);
       return { handled: true };
     }
     if (url.pathname === "/api/app-update/apply" && req.method === "POST") {

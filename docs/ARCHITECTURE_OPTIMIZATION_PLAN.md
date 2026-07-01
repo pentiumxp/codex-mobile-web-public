@@ -4434,6 +4434,32 @@ This stage gives deploy/readback a stable artifact-level marker
 (`vite-shell-artifact-contract-v1`) before any production request path serves
 or executes Vite-built runtime chunks.
 
+### 2026-07-02 Vite Shell Public Artifact Stage 5
+
+The fifth Vite migration step publishes a minimal, guarded Vite preview
+artifact into the production static tree while keeping the default runtime on
+the ordered classic-script shell.
+
+Scope:
+
+- `scripts/publish-vite-shell-artifact.mjs` copies only the Vite shell manifest,
+  shell entry chunk, and deferred topology chunk from `dist/frontend-shell/` to
+  `public/vite-shell/`.
+- `public/vite-shell/vite-shell-readback.json` records bounded hashes, sizes,
+  `stage: "vite-shell-public-preview-v1"`,
+  `sourceBuildStage: "vite-shell-artifact-contract-v1"`, and
+  `productionExecution: "classic-script-fallback"`.
+- `services/runtime/vite-shell-artifact-service.js` owns authorized production
+  readback through `/api/vite-shell-artifact`. It compares the preview artifact
+  with the current public shell manifest and fails closed with bounded issue
+  codes when files, hashes, sizes, or build-stage markers drift.
+- The production `/` path, service-worker precache, and classic script order do
+  not change in this stage. The Vite chunks are serveable static artifacts for
+  readback and future cutover testing only.
+
+This stage gives deploy validation a real production artifact path without
+making Vite-built chunks startup-critical.
+
 ## Release Rule
 
 Follow the current release order:

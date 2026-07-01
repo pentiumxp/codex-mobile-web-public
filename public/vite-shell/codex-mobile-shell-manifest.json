@@ -1,0 +1,1541 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "vite-codex-mobile-shell-asset-graph",
+  "shellCacheName": "codex-mobile-shell-v623",
+  "clientBuildId": "0.1.11|codex-mobile-shell-v623",
+  "counts": {
+    "indexScripts": 51,
+    "swStaticAssets": 60,
+    "pageShellAssets": 61,
+    "serverHashAssets": 60,
+    "emittedAssets": 61
+  },
+  "indexScriptAssets": [
+    "/shell-asset-manifest.js",
+    "/api-client.js",
+    "/runtime-settings.js",
+    "/draft-store.js",
+    "/composer-runtime.js",
+    "/markdown-renderer.js",
+    "/viewport-metrics.js",
+    "/conversation-scroll.js",
+    "/image-compressor.js",
+    "/plugin-embed.js",
+    "/plugin-voice-input.js",
+    "/home-ai-diagnostic-reporting.js",
+    "/thread-diagnostic-events.js",
+    "/frontend-runtime-health.js",
+    "/thread-status-hints.js",
+    "/thread-performance-metrics.js",
+    "/thread-list-load-policy.js",
+    "/thread-list-stable-order.js",
+    "/thread-list-runtime.js",
+    "/client-render-stability-guard.js",
+    "/live-operation-dock-state.js",
+    "/thread-detail-state.js",
+    "/thread-detail-render-plan.js",
+    "/thread-detail-merge-state.js",
+    "/thread-detail-v4-merge-state.js",
+    "/thread-detail-runtime.js",
+    "/thread-detail-patch-plan.js",
+    "/thread-detail-dom-patch.js",
+    "/thread-detail-actions.js",
+    "/thread-tile-actions.js",
+    "/thread-tile-state.js",
+    "/thread-tile-layout.js",
+    "/thread-tile-runtime.js",
+    "/build-refresh-policy.js",
+    "/app-update-runtime.js",
+    "/side-chat-runtime.js",
+    "/media-preview-runtime.js",
+    "/app-bootstrap.js",
+    "/settings-runtime.js",
+    "/modal-runtime.js",
+    "/navigation-runtime.js",
+    "/api-client-runtime.js",
+    "/notification-ui-runtime.js",
+    "/pane-layout-runtime.js",
+    "/task-card-runtime.js",
+    "/conversation-render-runtime.js",
+    "/event-stream-runtime.js",
+    "/composer-bridge-runtime.js",
+    "/runtime-wiring-runtime.js",
+    "/app-shell-runtime.js",
+    "/app.js"
+  ],
+  "indexLinkAssets": [
+    "/manifest.json",
+    "/icons/icon.svg",
+    "/icons/apple-touch-icon.png",
+    "/styles.css"
+  ],
+  "swStaticAssets": [
+    "/",
+    "/index.html",
+    "/manifest.json",
+    "/icons/icon.svg",
+    "/icons/apple-touch-icon.png",
+    "/styles.css",
+    "/icons/icon-192.png",
+    "/icons/icon-512.png",
+    "/shell-asset-manifest.js",
+    "/api-client.js",
+    "/runtime-settings.js",
+    "/draft-store.js",
+    "/composer-runtime.js",
+    "/markdown-renderer.js",
+    "/viewport-metrics.js",
+    "/conversation-scroll.js",
+    "/image-compressor.js",
+    "/plugin-embed.js",
+    "/plugin-voice-input.js",
+    "/home-ai-diagnostic-reporting.js",
+    "/thread-diagnostic-events.js",
+    "/frontend-runtime-health.js",
+    "/thread-status-hints.js",
+    "/thread-performance-metrics.js",
+    "/thread-list-load-policy.js",
+    "/thread-list-stable-order.js",
+    "/thread-list-runtime.js",
+    "/client-render-stability-guard.js",
+    "/live-operation-dock-state.js",
+    "/thread-detail-state.js",
+    "/thread-detail-render-plan.js",
+    "/thread-detail-merge-state.js",
+    "/thread-detail-v4-merge-state.js",
+    "/thread-detail-runtime.js",
+    "/thread-detail-patch-plan.js",
+    "/thread-detail-dom-patch.js",
+    "/thread-detail-actions.js",
+    "/thread-tile-actions.js",
+    "/thread-tile-state.js",
+    "/thread-tile-layout.js",
+    "/thread-tile-runtime.js",
+    "/build-refresh-policy.js",
+    "/app-update-runtime.js",
+    "/side-chat-runtime.js",
+    "/media-preview-runtime.js",
+    "/app-bootstrap.js",
+    "/settings-runtime.js",
+    "/modal-runtime.js",
+    "/navigation-runtime.js",
+    "/api-client-runtime.js",
+    "/notification-ui-runtime.js",
+    "/pane-layout-runtime.js",
+    "/task-card-runtime.js",
+    "/conversation-render-runtime.js",
+    "/event-stream-runtime.js",
+    "/composer-bridge-runtime.js",
+    "/runtime-wiring-runtime.js",
+    "/app-shell-runtime.js",
+    "/app.js",
+    "/shell-asset-manifest.json"
+  ],
+  "pageShellAssets": [
+    "/",
+    "/index.html",
+    "/manifest.json",
+    "/icons/icon.svg",
+    "/icons/apple-touch-icon.png",
+    "/styles.css",
+    "/icons/icon-192.png",
+    "/icons/icon-512.png",
+    "/shell-asset-manifest.js",
+    "/api-client.js",
+    "/runtime-settings.js",
+    "/draft-store.js",
+    "/composer-runtime.js",
+    "/markdown-renderer.js",
+    "/viewport-metrics.js",
+    "/conversation-scroll.js",
+    "/image-compressor.js",
+    "/plugin-embed.js",
+    "/plugin-voice-input.js",
+    "/home-ai-diagnostic-reporting.js",
+    "/thread-diagnostic-events.js",
+    "/frontend-runtime-health.js",
+    "/thread-status-hints.js",
+    "/thread-performance-metrics.js",
+    "/thread-list-load-policy.js",
+    "/thread-list-stable-order.js",
+    "/thread-list-runtime.js",
+    "/client-render-stability-guard.js",
+    "/live-operation-dock-state.js",
+    "/thread-detail-state.js",
+    "/thread-detail-render-plan.js",
+    "/thread-detail-merge-state.js",
+    "/thread-detail-v4-merge-state.js",
+    "/thread-detail-runtime.js",
+    "/thread-detail-patch-plan.js",
+    "/thread-detail-dom-patch.js",
+    "/thread-detail-actions.js",
+    "/thread-tile-actions.js",
+    "/thread-tile-state.js",
+    "/thread-tile-layout.js",
+    "/thread-tile-runtime.js",
+    "/build-refresh-policy.js",
+    "/app-update-runtime.js",
+    "/side-chat-runtime.js",
+    "/media-preview-runtime.js",
+    "/app-bootstrap.js",
+    "/settings-runtime.js",
+    "/modal-runtime.js",
+    "/navigation-runtime.js",
+    "/api-client-runtime.js",
+    "/notification-ui-runtime.js",
+    "/pane-layout-runtime.js",
+    "/task-card-runtime.js",
+    "/conversation-render-runtime.js",
+    "/event-stream-runtime.js",
+    "/composer-bridge-runtime.js",
+    "/runtime-wiring-runtime.js",
+    "/app-shell-runtime.js",
+    "/app.js",
+    "/shell-asset-manifest.json",
+    "/sw.js"
+  ],
+  "serverHashAssets": [
+    "/index.html",
+    "/manifest.json",
+    "/icons/icon.svg",
+    "/icons/apple-touch-icon.png",
+    "/styles.css",
+    "/icons/icon-192.png",
+    "/icons/icon-512.png",
+    "/shell-asset-manifest.js",
+    "/api-client.js",
+    "/runtime-settings.js",
+    "/draft-store.js",
+    "/composer-runtime.js",
+    "/markdown-renderer.js",
+    "/viewport-metrics.js",
+    "/conversation-scroll.js",
+    "/image-compressor.js",
+    "/plugin-embed.js",
+    "/plugin-voice-input.js",
+    "/home-ai-diagnostic-reporting.js",
+    "/thread-diagnostic-events.js",
+    "/frontend-runtime-health.js",
+    "/thread-status-hints.js",
+    "/thread-performance-metrics.js",
+    "/thread-list-load-policy.js",
+    "/thread-list-stable-order.js",
+    "/thread-list-runtime.js",
+    "/client-render-stability-guard.js",
+    "/live-operation-dock-state.js",
+    "/thread-detail-state.js",
+    "/thread-detail-render-plan.js",
+    "/thread-detail-merge-state.js",
+    "/thread-detail-v4-merge-state.js",
+    "/thread-detail-runtime.js",
+    "/thread-detail-patch-plan.js",
+    "/thread-detail-dom-patch.js",
+    "/thread-detail-actions.js",
+    "/thread-tile-actions.js",
+    "/thread-tile-state.js",
+    "/thread-tile-layout.js",
+    "/thread-tile-runtime.js",
+    "/build-refresh-policy.js",
+    "/app-update-runtime.js",
+    "/side-chat-runtime.js",
+    "/media-preview-runtime.js",
+    "/app-bootstrap.js",
+    "/settings-runtime.js",
+    "/modal-runtime.js",
+    "/navigation-runtime.js",
+    "/api-client-runtime.js",
+    "/notification-ui-runtime.js",
+    "/pane-layout-runtime.js",
+    "/task-card-runtime.js",
+    "/conversation-render-runtime.js",
+    "/event-stream-runtime.js",
+    "/composer-bridge-runtime.js",
+    "/runtime-wiring-runtime.js",
+    "/app-shell-runtime.js",
+    "/app.js",
+    "/shell-asset-manifest.json",
+    "/sw.js"
+  ],
+  "entryGroups": [
+    {
+      "id": "manifest",
+      "phase": "startup-manifest",
+      "startupCritical": true,
+      "chunkTarget": "startup-manifest",
+      "assets": [
+        "/shell-asset-manifest.js"
+      ]
+    },
+    {
+      "id": "foundation",
+      "phase": "startup-prerequisite",
+      "startupCritical": true,
+      "chunkTarget": "startup-foundation",
+      "assets": [
+        "/api-client.js",
+        "/runtime-settings.js",
+        "/draft-store.js",
+        "/composer-runtime.js",
+        "/markdown-renderer.js",
+        "/viewport-metrics.js",
+        "/conversation-scroll.js",
+        "/image-compressor.js",
+        "/plugin-embed.js",
+        "/plugin-voice-input.js",
+        "/home-ai-diagnostic-reporting.js",
+        "/thread-diagnostic-events.js",
+        "/frontend-runtime-health.js",
+        "/thread-status-hints.js",
+        "/thread-performance-metrics.js",
+        "/thread-list-load-policy.js",
+        "/thread-list-stable-order.js"
+      ]
+    },
+    {
+      "id": "feature-runtimes",
+      "phase": "classic-runtime",
+      "startupCritical": false,
+      "chunkTarget": "deferred-feature-runtimes",
+      "assets": [
+        "/thread-list-runtime.js",
+        "/client-render-stability-guard.js",
+        "/live-operation-dock-state.js",
+        "/thread-detail-state.js",
+        "/thread-detail-render-plan.js",
+        "/thread-detail-merge-state.js",
+        "/thread-detail-v4-merge-state.js",
+        "/thread-detail-runtime.js",
+        "/thread-detail-patch-plan.js",
+        "/thread-detail-dom-patch.js",
+        "/thread-detail-actions.js",
+        "/thread-tile-actions.js",
+        "/thread-tile-state.js",
+        "/thread-tile-layout.js",
+        "/thread-tile-runtime.js",
+        "/build-refresh-policy.js",
+        "/app-update-runtime.js",
+        "/side-chat-runtime.js",
+        "/media-preview-runtime.js"
+      ]
+    },
+    {
+      "id": "bootstrap-state",
+      "phase": "startup-critical",
+      "startupCritical": true,
+      "chunkTarget": "startup-bootstrap",
+      "assets": [
+        "/app-bootstrap.js"
+      ]
+    },
+    {
+      "id": "shell-services",
+      "phase": "classic-runtime",
+      "startupCritical": false,
+      "chunkTarget": "deferred-shell-services",
+      "assets": [
+        "/settings-runtime.js",
+        "/modal-runtime.js",
+        "/navigation-runtime.js",
+        "/api-client-runtime.js",
+        "/notification-ui-runtime.js",
+        "/pane-layout-runtime.js",
+        "/task-card-runtime.js",
+        "/conversation-render-runtime.js",
+        "/event-stream-runtime.js",
+        "/composer-bridge-runtime.js"
+      ]
+    },
+    {
+      "id": "app-entry",
+      "phase": "startup-critical",
+      "startupCritical": true,
+      "chunkTarget": "startup-app-shell",
+      "assets": [
+        "/runtime-wiring-runtime.js",
+        "/app-shell-runtime.js",
+        "/app.js"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "path": "/",
+      "role": "static",
+      "sourcePath": "public/index.html",
+      "exists": true,
+      "bytes": 41626,
+      "sha256": "1dc5f9aac407c2f146ec03a74daa5b3c4461655ef819320a289a5f58a4735b2d"
+    },
+    {
+      "path": "/index.html",
+      "role": "static",
+      "sourcePath": "public/index.html",
+      "exists": true,
+      "bytes": 41626,
+      "sha256": "1dc5f9aac407c2f146ec03a74daa5b3c4461655ef819320a289a5f58a4735b2d"
+    },
+    {
+      "path": "/manifest.json",
+      "role": "static",
+      "sourcePath": "public/manifest.json",
+      "exists": true,
+      "bytes": 713,
+      "sha256": "674affab237d7194bd5fb79b54fe1b4a88aab090d79bb485d4b27907c2edbfd3"
+    },
+    {
+      "path": "/icons/icon.svg",
+      "role": "static",
+      "sourcePath": "public/icons/icon.svg",
+      "exists": true,
+      "bytes": 637,
+      "sha256": "29efd7f3de7c18a72f4b55f1ff8e61f4b134a41b96c4a8f5166dc3a6c88ffb0a"
+    },
+    {
+      "path": "/icons/apple-touch-icon.png",
+      "role": "static",
+      "sourcePath": "public/icons/apple-touch-icon.png",
+      "exists": true,
+      "bytes": 14960,
+      "sha256": "b1476770dbcc7b58ae48788fe8390402615149e7bd24bde5e9cc72444ff6038a"
+    },
+    {
+      "path": "/styles.css",
+      "role": "static",
+      "sourcePath": "public/styles.css",
+      "exists": true,
+      "bytes": 160271,
+      "sha256": "52cf74afafd1014bc0699697352b549e3f1fbd0d2586421e9d1c95cae0d8e63a"
+    },
+    {
+      "path": "/icons/icon-192.png",
+      "role": "static",
+      "sourcePath": "public/icons/icon-192.png",
+      "exists": true,
+      "bytes": 15872,
+      "sha256": "327855228d22d7bcf38b252977c327f43e2627ba1c031fd810e3c75d2ab1d668"
+    },
+    {
+      "path": "/icons/icon-512.png",
+      "role": "static",
+      "sourcePath": "public/icons/icon-512.png",
+      "exists": true,
+      "bytes": 32154,
+      "sha256": "cdb75c52fe36179fda31475b64406ec9e87a9092b2e354d19d0bb811b63c6d73"
+    },
+    {
+      "path": "/shell-asset-manifest.js",
+      "role": "script",
+      "sourcePath": "public/shell-asset-manifest.js",
+      "exists": true,
+      "bytes": 11593,
+      "sha256": "63ff2529be9762e2c35867f421b77a261ed5dad433634e0a9f3b819bd90bf7b0"
+    },
+    {
+      "path": "/api-client.js",
+      "role": "script",
+      "sourcePath": "public/api-client.js",
+      "exists": true,
+      "bytes": 4099,
+      "sha256": "e3e020230f50860a532fdf5778ccda6cd99eeb2195db26b9cf2984bffb133c69"
+    },
+    {
+      "path": "/runtime-settings.js",
+      "role": "script",
+      "sourcePath": "public/runtime-settings.js",
+      "exists": true,
+      "bytes": 3184,
+      "sha256": "b9083bd06a3ce1cfc46a195ab571ab3cf98d8e4d6db9600b5d791ede584bcb88"
+    },
+    {
+      "path": "/draft-store.js",
+      "role": "script",
+      "sourcePath": "public/draft-store.js",
+      "exists": true,
+      "bytes": 9065,
+      "sha256": "6d19ccfff79f22f09d831304cc81ebbcc320b57f31f9d6332c7fe719b98d5579"
+    },
+    {
+      "path": "/composer-runtime.js",
+      "role": "script",
+      "sourcePath": "public/composer-runtime.js",
+      "exists": true,
+      "bytes": 78205,
+      "sha256": "65170f637d14092cbd036b568d1c75a2054304939d10580794236326a25dd8e2"
+    },
+    {
+      "path": "/markdown-renderer.js",
+      "role": "script",
+      "sourcePath": "public/markdown-renderer.js",
+      "exists": true,
+      "bytes": 18044,
+      "sha256": "88493cc61907a2ed381bf899d32399b2e81eb98b89a1b959e44274e5020f853a"
+    },
+    {
+      "path": "/viewport-metrics.js",
+      "role": "script",
+      "sourcePath": "public/viewport-metrics.js",
+      "exists": true,
+      "bytes": 4306,
+      "sha256": "0257cde3a6361697101c177b1ca242b3e117d7cc2e4cdee81a3d71fc63018539"
+    },
+    {
+      "path": "/conversation-scroll.js",
+      "role": "script",
+      "sourcePath": "public/conversation-scroll.js",
+      "exists": true,
+      "bytes": 11683,
+      "sha256": "8b471196aca6422ccf50c6865ff496bead83c3c9957958a8ca478950be82ca63"
+    },
+    {
+      "path": "/image-compressor.js",
+      "role": "script",
+      "sourcePath": "public/image-compressor.js",
+      "exists": true,
+      "bytes": 5261,
+      "sha256": "7757d62af34099da30c740ed08217ca1085af8b24617dceabd262b655d2099c1"
+    },
+    {
+      "path": "/plugin-embed.js",
+      "role": "script",
+      "sourcePath": "public/plugin-embed.js",
+      "exists": true,
+      "bytes": 14761,
+      "sha256": "e54efe28042795850dad5160d0eb1ac71f6bf7f82899f006e7a32880ec6e2e42"
+    },
+    {
+      "path": "/plugin-voice-input.js",
+      "role": "script",
+      "sourcePath": "public/plugin-voice-input.js",
+      "exists": true,
+      "bytes": 8247,
+      "sha256": "925ca0a4a681130929b434437f16dfa7535a357ba5b55d7eeb2b6402092838c9"
+    },
+    {
+      "path": "/home-ai-diagnostic-reporting.js",
+      "role": "script",
+      "sourcePath": "public/home-ai-diagnostic-reporting.js",
+      "exists": true,
+      "bytes": 14358,
+      "sha256": "dd33c244a80fe43ab7c3b2dbd3a7a57b0727c2a83b9523e658f9ff024d2b96f8"
+    },
+    {
+      "path": "/thread-diagnostic-events.js",
+      "role": "script",
+      "sourcePath": "public/thread-diagnostic-events.js",
+      "exists": true,
+      "bytes": 46238,
+      "sha256": "df3b95d98ccf950cd2d1869218664e12d9b032805c937d78c5a5a1899f603db3"
+    },
+    {
+      "path": "/frontend-runtime-health.js",
+      "role": "script",
+      "sourcePath": "public/frontend-runtime-health.js",
+      "exists": true,
+      "bytes": 17014,
+      "sha256": "af420bac5334489a831113b1fe266b173eb87693cc3d4bf075211fde7622b1f0"
+    },
+    {
+      "path": "/thread-status-hints.js",
+      "role": "script",
+      "sourcePath": "public/thread-status-hints.js",
+      "exists": true,
+      "bytes": 9883,
+      "sha256": "4a0a8b01297b8cbfbbccfe0f347470683d0dada4ed778c4999dcaaad9147e0a3"
+    },
+    {
+      "path": "/thread-performance-metrics.js",
+      "role": "script",
+      "sourcePath": "public/thread-performance-metrics.js",
+      "exists": true,
+      "bytes": 27876,
+      "sha256": "a6f2bd048b70ebc530d0c2c49d8f1c6fa07637eefd9181f2a6c1924207b63aed"
+    },
+    {
+      "path": "/thread-list-load-policy.js",
+      "role": "script",
+      "sourcePath": "public/thread-list-load-policy.js",
+      "exists": true,
+      "bytes": 2160,
+      "sha256": "0de557c28bc45b6b9eb252dc9227083e17279053315bfd40cb7911f7c1b29d5f"
+    },
+    {
+      "path": "/thread-list-stable-order.js",
+      "role": "script",
+      "sourcePath": "public/thread-list-stable-order.js",
+      "exists": true,
+      "bytes": 3327,
+      "sha256": "5923fb2af75796c21bd74f307a4a665ff45fc8e9b09d5505bd35c287f528acc9"
+    },
+    {
+      "path": "/thread-list-runtime.js",
+      "role": "script",
+      "sourcePath": "public/thread-list-runtime.js",
+      "exists": true,
+      "bytes": 37167,
+      "sha256": "980ff4da476026886354b3a9b6d4854c08292fe7bfbe3d5943aa4b1cdc5bc58b"
+    },
+    {
+      "path": "/client-render-stability-guard.js",
+      "role": "script",
+      "sourcePath": "public/client-render-stability-guard.js",
+      "exists": true,
+      "bytes": 2528,
+      "sha256": "519eae05877fd1a0f7a38e355bcab8a3790205ddbe2fc6fec553307c88a601b2"
+    },
+    {
+      "path": "/live-operation-dock-state.js",
+      "role": "script",
+      "sourcePath": "public/live-operation-dock-state.js",
+      "exists": true,
+      "bytes": 6190,
+      "sha256": "4b8132044674329ac03900c46cd6b46f5b77e3ad3a53adc750932c847a7a3f42"
+    },
+    {
+      "path": "/thread-detail-state.js",
+      "role": "script",
+      "sourcePath": "public/thread-detail-state.js",
+      "exists": true,
+      "bytes": 30669,
+      "sha256": "1005a75d59988564afad5985601d50c2849f264e5c6156185779d64e8dbe1cbc"
+    },
+    {
+      "path": "/thread-detail-render-plan.js",
+      "role": "script",
+      "sourcePath": "public/thread-detail-render-plan.js",
+      "exists": true,
+      "bytes": 73097,
+      "sha256": "d7eb944fb1eda76881d445e7c8be0e77c99d6c8438a8ff355a03b0ce4983c966"
+    },
+    {
+      "path": "/thread-detail-merge-state.js",
+      "role": "script",
+      "sourcePath": "public/thread-detail-merge-state.js",
+      "exists": true,
+      "bytes": 7718,
+      "sha256": "718514720b1b6a0ad9fd05c1d2f1797e3ba325d1aa233188e1514b9b5a07d82c"
+    },
+    {
+      "path": "/thread-detail-v4-merge-state.js",
+      "role": "script",
+      "sourcePath": "public/thread-detail-v4-merge-state.js",
+      "exists": true,
+      "bytes": 12071,
+      "sha256": "b7123a22dbbb066ea3e84e1cc083255fd909dc2fe9e8d66939d49d3367d7727b"
+    },
+    {
+      "path": "/thread-detail-runtime.js",
+      "role": "script",
+      "sourcePath": "public/thread-detail-runtime.js",
+      "exists": true,
+      "bytes": 56512,
+      "sha256": "9219007d7d0bf6033e25c91558cb539311502ce9c1e8583492bd24b051751d77"
+    },
+    {
+      "path": "/thread-detail-patch-plan.js",
+      "role": "script",
+      "sourcePath": "public/thread-detail-patch-plan.js",
+      "exists": true,
+      "bytes": 7717,
+      "sha256": "e6324db973e487acd0072b0bef3a13ea35ff1a94561dbede9b59734d1c6469e4"
+    },
+    {
+      "path": "/thread-detail-dom-patch.js",
+      "role": "script",
+      "sourcePath": "public/thread-detail-dom-patch.js",
+      "exists": true,
+      "bytes": 46882,
+      "sha256": "59667cf5be12506e10ee555da156cfad788f15cad08eac2ed574f2c99805c2b7"
+    },
+    {
+      "path": "/thread-detail-actions.js",
+      "role": "script",
+      "sourcePath": "public/thread-detail-actions.js",
+      "exists": true,
+      "bytes": 5362,
+      "sha256": "f6c17f87950e2931e4471fa6884b8abedf486d1ee6176181c6395a062f017819"
+    },
+    {
+      "path": "/thread-tile-actions.js",
+      "role": "script",
+      "sourcePath": "public/thread-tile-actions.js",
+      "exists": true,
+      "bytes": 7380,
+      "sha256": "ee9cc825f59c90216a9585efe1a15ef7c18630a0797a27c3da5bdef2e13d786c"
+    },
+    {
+      "path": "/thread-tile-state.js",
+      "role": "script",
+      "sourcePath": "public/thread-tile-state.js",
+      "exists": true,
+      "bytes": 71980,
+      "sha256": "2977e432183e659be290af4a2b031d3fea856a25adf08e0954243f79e5290c37"
+    },
+    {
+      "path": "/thread-tile-layout.js",
+      "role": "script",
+      "sourcePath": "public/thread-tile-layout.js",
+      "exists": true,
+      "bytes": 8454,
+      "sha256": "7a151b025741ff5349aba7f522f405cf398da05bbdb15fffe5e8efdb76a5c8c3"
+    },
+    {
+      "path": "/thread-tile-runtime.js",
+      "role": "script",
+      "sourcePath": "public/thread-tile-runtime.js",
+      "exists": true,
+      "bytes": 74569,
+      "sha256": "0fa2d9a20e62ebb7eeb3682547864c857a0821fdcd0fb97aea9beb9d37bc3725"
+    },
+    {
+      "path": "/build-refresh-policy.js",
+      "role": "script",
+      "sourcePath": "public/build-refresh-policy.js",
+      "exists": true,
+      "bytes": 1532,
+      "sha256": "b103ff2e801a446f92693c6b3a3830af6ab24afdc46fad901ff1ea2e7a88d2ef"
+    },
+    {
+      "path": "/app-update-runtime.js",
+      "role": "script",
+      "sourcePath": "public/app-update-runtime.js",
+      "exists": true,
+      "bytes": 50221,
+      "sha256": "59262e2969ab6c42dd707b16a0b19a794b8276afd440d721e7389a6ffc1eb682"
+    },
+    {
+      "path": "/side-chat-runtime.js",
+      "role": "script",
+      "sourcePath": "public/side-chat-runtime.js",
+      "exists": true,
+      "bytes": 51946,
+      "sha256": "f8c3d723929f11bcfe1a6d7ce7c6a2aa2697b863cd5c0bf413c557bd758b0d49"
+    },
+    {
+      "path": "/media-preview-runtime.js",
+      "role": "script",
+      "sourcePath": "public/media-preview-runtime.js",
+      "exists": true,
+      "bytes": 95096,
+      "sha256": "fd665173935ba29c77db757fa8a3734f95d46e740fd8e9b81ba265fd5d2e44a8"
+    },
+    {
+      "path": "/app-bootstrap.js",
+      "role": "script",
+      "sourcePath": "public/app-bootstrap.js",
+      "exists": true,
+      "bytes": 35461,
+      "sha256": "f31b8f04636b958df1a985700e590529040a7bd2cdb846caedcf90e47d21d4b8"
+    },
+    {
+      "path": "/settings-runtime.js",
+      "role": "script",
+      "sourcePath": "public/settings-runtime.js",
+      "exists": true,
+      "bytes": 86728,
+      "sha256": "f6e05c783414bb9902877bde3a45730beae78b942648640ea24499f7fc3451ec"
+    },
+    {
+      "path": "/modal-runtime.js",
+      "role": "script",
+      "sourcePath": "public/modal-runtime.js",
+      "exists": true,
+      "bytes": 11321,
+      "sha256": "0f5fcb51fe6e779ba3853e2833d023cc9780abbb97b2e3ab53f632cad13b56d5"
+    },
+    {
+      "path": "/navigation-runtime.js",
+      "role": "script",
+      "sourcePath": "public/navigation-runtime.js",
+      "exists": true,
+      "bytes": 69902,
+      "sha256": "8eb4b5ff1b1a4745b9bc60bb4a5029e89f3f1452ccb20a28a6b95227ca57c6ac"
+    },
+    {
+      "path": "/api-client-runtime.js",
+      "role": "script",
+      "sourcePath": "public/api-client-runtime.js",
+      "exists": true,
+      "bytes": 45757,
+      "sha256": "9a3c8f177201dd957a1ed205a6ac7d85604320626e5e1c9c9acc338a0df53520"
+    },
+    {
+      "path": "/notification-ui-runtime.js",
+      "role": "script",
+      "sourcePath": "public/notification-ui-runtime.js",
+      "exists": true,
+      "bytes": 49013,
+      "sha256": "a90508e5f07c63fd66742d46a20a46dd2836e8f50658792a1cbcdd2844d6d9f2"
+    },
+    {
+      "path": "/pane-layout-runtime.js",
+      "role": "script",
+      "sourcePath": "public/pane-layout-runtime.js",
+      "exists": true,
+      "bytes": 199761,
+      "sha256": "9376a5abad2e89104a262f15476503fd89317c83a6af4fa82521eaf2e2c204c7"
+    },
+    {
+      "path": "/task-card-runtime.js",
+      "role": "script",
+      "sourcePath": "public/task-card-runtime.js",
+      "exists": true,
+      "bytes": 61106,
+      "sha256": "898a793ded3009ebeed21a92d1f05419c0e1460e14b309243d4ed00fbfe5e4ca"
+    },
+    {
+      "path": "/conversation-render-runtime.js",
+      "role": "script",
+      "sourcePath": "public/conversation-render-runtime.js",
+      "exists": true,
+      "bytes": 62399,
+      "sha256": "6726936652392fed23668cb4a2ff7100930f53fa4b81bfacf0fb8d7ff2ee8d09"
+    },
+    {
+      "path": "/event-stream-runtime.js",
+      "role": "script",
+      "sourcePath": "public/event-stream-runtime.js",
+      "exists": true,
+      "bytes": 58934,
+      "sha256": "fa54062f1aeedf6e4a9a617d3bdf5cad3b90f4d89a352e8b456bb429991ef1a8"
+    },
+    {
+      "path": "/composer-bridge-runtime.js",
+      "role": "script",
+      "sourcePath": "public/composer-bridge-runtime.js",
+      "exists": true,
+      "bytes": 28207,
+      "sha256": "d185a4ac33929ee77ccb181a68992504377e8551985e1f663eb77cb1be094762"
+    },
+    {
+      "path": "/runtime-wiring-runtime.js",
+      "role": "script",
+      "sourcePath": "public/runtime-wiring-runtime.js",
+      "exists": true,
+      "bytes": 8462,
+      "sha256": "de35d56b7e9f9c317d6ca8d30f499e06c662643d1a3f89ec1d894d22cd178ac2"
+    },
+    {
+      "path": "/app-shell-runtime.js",
+      "role": "script",
+      "sourcePath": "public/app-shell-runtime.js",
+      "exists": true,
+      "bytes": 41098,
+      "sha256": "1beb88ea0475465bf4da99fc12de6412b4e8aabdb8a760ddce9a2b95e7ef52fb"
+    },
+    {
+      "path": "/app.js",
+      "role": "script",
+      "sourcePath": "public/app.js",
+      "exists": true,
+      "bytes": 555,
+      "sha256": "64850d84241e2534e3b580024a699ff830530292d177794a8cb15e858001a607"
+    },
+    {
+      "path": "/shell-asset-manifest.json",
+      "role": "static",
+      "sourcePath": "public/shell-asset-manifest.json",
+      "exists": true,
+      "bytes": 10701,
+      "sha256": "33726624400362a2ea7734494497ee5b54e379ed25663e3b62540fcf9a07cd95"
+    },
+    {
+      "path": "/sw.js",
+      "role": "service-worker",
+      "sourcePath": "public/sw.js",
+      "exists": true,
+      "bytes": 4620,
+      "sha256": "e1d0f4978d992a41a18bb6b38d2263d727252e716b73f14123fde185d23c8632"
+    }
+  ],
+  "validation": {
+    "ok": true,
+    "issues": []
+  },
+  "viteBuild": {
+    "schemaVersion": 1,
+    "stage": "vite-shell-artifact-contract-v1",
+    "productionExecution": "classic-script-fallback",
+    "entrySource": "frontend/vite-shell-entry.mjs",
+    "deferredEntrySource": "frontend/vite-deferred-entry-topology.mjs",
+    "classicFallback": {
+      "indexHtmlAsset": "/index.html",
+      "outputRoot": "shell-assets",
+      "indexScriptAssets": [
+        "/shell-asset-manifest.js",
+        "/api-client.js",
+        "/runtime-settings.js",
+        "/draft-store.js",
+        "/composer-runtime.js",
+        "/markdown-renderer.js",
+        "/viewport-metrics.js",
+        "/conversation-scroll.js",
+        "/image-compressor.js",
+        "/plugin-embed.js",
+        "/plugin-voice-input.js",
+        "/home-ai-diagnostic-reporting.js",
+        "/thread-diagnostic-events.js",
+        "/frontend-runtime-health.js",
+        "/thread-status-hints.js",
+        "/thread-performance-metrics.js",
+        "/thread-list-load-policy.js",
+        "/thread-list-stable-order.js",
+        "/thread-list-runtime.js",
+        "/client-render-stability-guard.js",
+        "/live-operation-dock-state.js",
+        "/thread-detail-state.js",
+        "/thread-detail-render-plan.js",
+        "/thread-detail-merge-state.js",
+        "/thread-detail-v4-merge-state.js",
+        "/thread-detail-runtime.js",
+        "/thread-detail-patch-plan.js",
+        "/thread-detail-dom-patch.js",
+        "/thread-detail-actions.js",
+        "/thread-tile-actions.js",
+        "/thread-tile-state.js",
+        "/thread-tile-layout.js",
+        "/thread-tile-runtime.js",
+        "/build-refresh-policy.js",
+        "/app-update-runtime.js",
+        "/side-chat-runtime.js",
+        "/media-preview-runtime.js",
+        "/app-bootstrap.js",
+        "/settings-runtime.js",
+        "/modal-runtime.js",
+        "/navigation-runtime.js",
+        "/api-client-runtime.js",
+        "/notification-ui-runtime.js",
+        "/pane-layout-runtime.js",
+        "/task-card-runtime.js",
+        "/conversation-render-runtime.js",
+        "/event-stream-runtime.js",
+        "/composer-bridge-runtime.js",
+        "/runtime-wiring-runtime.js",
+        "/app-shell-runtime.js",
+        "/app.js"
+      ],
+      "entryGroups": [
+        {
+          "id": "manifest",
+          "phase": "startup-manifest",
+          "startupCritical": true,
+          "chunkTarget": "startup-manifest",
+          "assets": [
+            "/shell-asset-manifest.js"
+          ]
+        },
+        {
+          "id": "foundation",
+          "phase": "startup-prerequisite",
+          "startupCritical": true,
+          "chunkTarget": "startup-foundation",
+          "assets": [
+            "/api-client.js",
+            "/runtime-settings.js",
+            "/draft-store.js",
+            "/composer-runtime.js",
+            "/markdown-renderer.js",
+            "/viewport-metrics.js",
+            "/conversation-scroll.js",
+            "/image-compressor.js",
+            "/plugin-embed.js",
+            "/plugin-voice-input.js",
+            "/home-ai-diagnostic-reporting.js",
+            "/thread-diagnostic-events.js",
+            "/frontend-runtime-health.js",
+            "/thread-status-hints.js",
+            "/thread-performance-metrics.js",
+            "/thread-list-load-policy.js",
+            "/thread-list-stable-order.js"
+          ]
+        },
+        {
+          "id": "feature-runtimes",
+          "phase": "classic-runtime",
+          "startupCritical": false,
+          "chunkTarget": "deferred-feature-runtimes",
+          "assets": [
+            "/thread-list-runtime.js",
+            "/client-render-stability-guard.js",
+            "/live-operation-dock-state.js",
+            "/thread-detail-state.js",
+            "/thread-detail-render-plan.js",
+            "/thread-detail-merge-state.js",
+            "/thread-detail-v4-merge-state.js",
+            "/thread-detail-runtime.js",
+            "/thread-detail-patch-plan.js",
+            "/thread-detail-dom-patch.js",
+            "/thread-detail-actions.js",
+            "/thread-tile-actions.js",
+            "/thread-tile-state.js",
+            "/thread-tile-layout.js",
+            "/thread-tile-runtime.js",
+            "/build-refresh-policy.js",
+            "/app-update-runtime.js",
+            "/side-chat-runtime.js",
+            "/media-preview-runtime.js"
+          ]
+        },
+        {
+          "id": "bootstrap-state",
+          "phase": "startup-critical",
+          "startupCritical": true,
+          "chunkTarget": "startup-bootstrap",
+          "assets": [
+            "/app-bootstrap.js"
+          ]
+        },
+        {
+          "id": "shell-services",
+          "phase": "classic-runtime",
+          "startupCritical": false,
+          "chunkTarget": "deferred-shell-services",
+          "assets": [
+            "/settings-runtime.js",
+            "/modal-runtime.js",
+            "/navigation-runtime.js",
+            "/api-client-runtime.js",
+            "/notification-ui-runtime.js",
+            "/pane-layout-runtime.js",
+            "/task-card-runtime.js",
+            "/conversation-render-runtime.js",
+            "/event-stream-runtime.js",
+            "/composer-bridge-runtime.js"
+          ]
+        },
+        {
+          "id": "app-entry",
+          "phase": "startup-critical",
+          "startupCritical": true,
+          "chunkTarget": "startup-app-shell",
+          "assets": [
+            "/runtime-wiring-runtime.js",
+            "/app-shell-runtime.js",
+            "/app.js"
+          ]
+        }
+      ]
+    },
+    "viteEntry": {
+      "fileName": "assets/vite-shell-entry-rafZvbtE.js",
+      "name": "vite-shell-entry",
+      "source": "frontend/vite-shell-entry.mjs",
+      "isEntry": true,
+      "isDynamicEntry": false,
+      "imports": [],
+      "dynamicImports": [
+        "assets/vite-deferred-entry-topology-W6SJaXUJ.js"
+      ]
+    },
+    "viteDeferredChunks": [
+      {
+        "fileName": "assets/vite-deferred-entry-topology-W6SJaXUJ.js",
+        "name": "vite-deferred-entry-topology",
+        "source": "frontend/vite-deferred-entry-topology.mjs",
+        "isEntry": false,
+        "isDynamicEntry": true,
+        "imports": [
+          "assets/vite-shell-entry-rafZvbtE.js"
+        ],
+        "dynamicImports": []
+      }
+    ],
+    "classicShellAssets": [
+      {
+        "path": "/",
+        "sourcePath": "public/index.html",
+        "fileName": "shell-assets/index.html",
+        "bytes": 41626,
+        "sha256": "1dc5f9aac407c2f146ec03a74daa5b3c4461655ef819320a289a5f58a4735b2d"
+      },
+      {
+        "path": "/index.html",
+        "sourcePath": "public/index.html",
+        "fileName": "shell-assets/index.html",
+        "bytes": 41626,
+        "sha256": "1dc5f9aac407c2f146ec03a74daa5b3c4461655ef819320a289a5f58a4735b2d"
+      },
+      {
+        "path": "/manifest.json",
+        "sourcePath": "public/manifest.json",
+        "fileName": "shell-assets/manifest.json",
+        "bytes": 713,
+        "sha256": "674affab237d7194bd5fb79b54fe1b4a88aab090d79bb485d4b27907c2edbfd3"
+      },
+      {
+        "path": "/icons/icon.svg",
+        "sourcePath": "public/icons/icon.svg",
+        "fileName": "shell-assets/icons/icon.svg",
+        "bytes": 637,
+        "sha256": "29efd7f3de7c18a72f4b55f1ff8e61f4b134a41b96c4a8f5166dc3a6c88ffb0a"
+      },
+      {
+        "path": "/icons/apple-touch-icon.png",
+        "sourcePath": "public/icons/apple-touch-icon.png",
+        "fileName": "shell-assets/icons/apple-touch-icon.png",
+        "bytes": 14960,
+        "sha256": "b1476770dbcc7b58ae48788fe8390402615149e7bd24bde5e9cc72444ff6038a"
+      },
+      {
+        "path": "/styles.css",
+        "sourcePath": "public/styles.css",
+        "fileName": "shell-assets/styles.css",
+        "bytes": 160271,
+        "sha256": "52cf74afafd1014bc0699697352b549e3f1fbd0d2586421e9d1c95cae0d8e63a"
+      },
+      {
+        "path": "/icons/icon-192.png",
+        "sourcePath": "public/icons/icon-192.png",
+        "fileName": "shell-assets/icons/icon-192.png",
+        "bytes": 15872,
+        "sha256": "327855228d22d7bcf38b252977c327f43e2627ba1c031fd810e3c75d2ab1d668"
+      },
+      {
+        "path": "/icons/icon-512.png",
+        "sourcePath": "public/icons/icon-512.png",
+        "fileName": "shell-assets/icons/icon-512.png",
+        "bytes": 32154,
+        "sha256": "cdb75c52fe36179fda31475b64406ec9e87a9092b2e354d19d0bb811b63c6d73"
+      },
+      {
+        "path": "/shell-asset-manifest.js",
+        "sourcePath": "public/shell-asset-manifest.js",
+        "fileName": "shell-assets/shell-asset-manifest.js",
+        "bytes": 11593,
+        "sha256": "63ff2529be9762e2c35867f421b77a261ed5dad433634e0a9f3b819bd90bf7b0"
+      },
+      {
+        "path": "/api-client.js",
+        "sourcePath": "public/api-client.js",
+        "fileName": "shell-assets/api-client.js",
+        "bytes": 4099,
+        "sha256": "e3e020230f50860a532fdf5778ccda6cd99eeb2195db26b9cf2984bffb133c69"
+      },
+      {
+        "path": "/runtime-settings.js",
+        "sourcePath": "public/runtime-settings.js",
+        "fileName": "shell-assets/runtime-settings.js",
+        "bytes": 3184,
+        "sha256": "b9083bd06a3ce1cfc46a195ab571ab3cf98d8e4d6db9600b5d791ede584bcb88"
+      },
+      {
+        "path": "/draft-store.js",
+        "sourcePath": "public/draft-store.js",
+        "fileName": "shell-assets/draft-store.js",
+        "bytes": 9065,
+        "sha256": "6d19ccfff79f22f09d831304cc81ebbcc320b57f31f9d6332c7fe719b98d5579"
+      },
+      {
+        "path": "/composer-runtime.js",
+        "sourcePath": "public/composer-runtime.js",
+        "fileName": "shell-assets/composer-runtime.js",
+        "bytes": 78205,
+        "sha256": "65170f637d14092cbd036b568d1c75a2054304939d10580794236326a25dd8e2"
+      },
+      {
+        "path": "/markdown-renderer.js",
+        "sourcePath": "public/markdown-renderer.js",
+        "fileName": "shell-assets/markdown-renderer.js",
+        "bytes": 18044,
+        "sha256": "88493cc61907a2ed381bf899d32399b2e81eb98b89a1b959e44274e5020f853a"
+      },
+      {
+        "path": "/viewport-metrics.js",
+        "sourcePath": "public/viewport-metrics.js",
+        "fileName": "shell-assets/viewport-metrics.js",
+        "bytes": 4306,
+        "sha256": "0257cde3a6361697101c177b1ca242b3e117d7cc2e4cdee81a3d71fc63018539"
+      },
+      {
+        "path": "/conversation-scroll.js",
+        "sourcePath": "public/conversation-scroll.js",
+        "fileName": "shell-assets/conversation-scroll.js",
+        "bytes": 11683,
+        "sha256": "8b471196aca6422ccf50c6865ff496bead83c3c9957958a8ca478950be82ca63"
+      },
+      {
+        "path": "/image-compressor.js",
+        "sourcePath": "public/image-compressor.js",
+        "fileName": "shell-assets/image-compressor.js",
+        "bytes": 5261,
+        "sha256": "7757d62af34099da30c740ed08217ca1085af8b24617dceabd262b655d2099c1"
+      },
+      {
+        "path": "/plugin-embed.js",
+        "sourcePath": "public/plugin-embed.js",
+        "fileName": "shell-assets/plugin-embed.js",
+        "bytes": 14761,
+        "sha256": "e54efe28042795850dad5160d0eb1ac71f6bf7f82899f006e7a32880ec6e2e42"
+      },
+      {
+        "path": "/plugin-voice-input.js",
+        "sourcePath": "public/plugin-voice-input.js",
+        "fileName": "shell-assets/plugin-voice-input.js",
+        "bytes": 8247,
+        "sha256": "925ca0a4a681130929b434437f16dfa7535a357ba5b55d7eeb2b6402092838c9"
+      },
+      {
+        "path": "/home-ai-diagnostic-reporting.js",
+        "sourcePath": "public/home-ai-diagnostic-reporting.js",
+        "fileName": "shell-assets/home-ai-diagnostic-reporting.js",
+        "bytes": 14358,
+        "sha256": "dd33c244a80fe43ab7c3b2dbd3a7a57b0727c2a83b9523e658f9ff024d2b96f8"
+      },
+      {
+        "path": "/thread-diagnostic-events.js",
+        "sourcePath": "public/thread-diagnostic-events.js",
+        "fileName": "shell-assets/thread-diagnostic-events.js",
+        "bytes": 46238,
+        "sha256": "df3b95d98ccf950cd2d1869218664e12d9b032805c937d78c5a5a1899f603db3"
+      },
+      {
+        "path": "/frontend-runtime-health.js",
+        "sourcePath": "public/frontend-runtime-health.js",
+        "fileName": "shell-assets/frontend-runtime-health.js",
+        "bytes": 17014,
+        "sha256": "af420bac5334489a831113b1fe266b173eb87693cc3d4bf075211fde7622b1f0"
+      },
+      {
+        "path": "/thread-status-hints.js",
+        "sourcePath": "public/thread-status-hints.js",
+        "fileName": "shell-assets/thread-status-hints.js",
+        "bytes": 9883,
+        "sha256": "4a0a8b01297b8cbfbbccfe0f347470683d0dada4ed778c4999dcaaad9147e0a3"
+      },
+      {
+        "path": "/thread-performance-metrics.js",
+        "sourcePath": "public/thread-performance-metrics.js",
+        "fileName": "shell-assets/thread-performance-metrics.js",
+        "bytes": 27876,
+        "sha256": "a6f2bd048b70ebc530d0c2c49d8f1c6fa07637eefd9181f2a6c1924207b63aed"
+      },
+      {
+        "path": "/thread-list-load-policy.js",
+        "sourcePath": "public/thread-list-load-policy.js",
+        "fileName": "shell-assets/thread-list-load-policy.js",
+        "bytes": 2160,
+        "sha256": "0de557c28bc45b6b9eb252dc9227083e17279053315bfd40cb7911f7c1b29d5f"
+      },
+      {
+        "path": "/thread-list-stable-order.js",
+        "sourcePath": "public/thread-list-stable-order.js",
+        "fileName": "shell-assets/thread-list-stable-order.js",
+        "bytes": 3327,
+        "sha256": "5923fb2af75796c21bd74f307a4a665ff45fc8e9b09d5505bd35c287f528acc9"
+      },
+      {
+        "path": "/thread-list-runtime.js",
+        "sourcePath": "public/thread-list-runtime.js",
+        "fileName": "shell-assets/thread-list-runtime.js",
+        "bytes": 37167,
+        "sha256": "980ff4da476026886354b3a9b6d4854c08292fe7bfbe3d5943aa4b1cdc5bc58b"
+      },
+      {
+        "path": "/client-render-stability-guard.js",
+        "sourcePath": "public/client-render-stability-guard.js",
+        "fileName": "shell-assets/client-render-stability-guard.js",
+        "bytes": 2528,
+        "sha256": "519eae05877fd1a0f7a38e355bcab8a3790205ddbe2fc6fec553307c88a601b2"
+      },
+      {
+        "path": "/live-operation-dock-state.js",
+        "sourcePath": "public/live-operation-dock-state.js",
+        "fileName": "shell-assets/live-operation-dock-state.js",
+        "bytes": 6190,
+        "sha256": "4b8132044674329ac03900c46cd6b46f5b77e3ad3a53adc750932c847a7a3f42"
+      },
+      {
+        "path": "/thread-detail-state.js",
+        "sourcePath": "public/thread-detail-state.js",
+        "fileName": "shell-assets/thread-detail-state.js",
+        "bytes": 30669,
+        "sha256": "1005a75d59988564afad5985601d50c2849f264e5c6156185779d64e8dbe1cbc"
+      },
+      {
+        "path": "/thread-detail-render-plan.js",
+        "sourcePath": "public/thread-detail-render-plan.js",
+        "fileName": "shell-assets/thread-detail-render-plan.js",
+        "bytes": 73097,
+        "sha256": "d7eb944fb1eda76881d445e7c8be0e77c99d6c8438a8ff355a03b0ce4983c966"
+      },
+      {
+        "path": "/thread-detail-merge-state.js",
+        "sourcePath": "public/thread-detail-merge-state.js",
+        "fileName": "shell-assets/thread-detail-merge-state.js",
+        "bytes": 7718,
+        "sha256": "718514720b1b6a0ad9fd05c1d2f1797e3ba325d1aa233188e1514b9b5a07d82c"
+      },
+      {
+        "path": "/thread-detail-v4-merge-state.js",
+        "sourcePath": "public/thread-detail-v4-merge-state.js",
+        "fileName": "shell-assets/thread-detail-v4-merge-state.js",
+        "bytes": 12071,
+        "sha256": "b7123a22dbbb066ea3e84e1cc083255fd909dc2fe9e8d66939d49d3367d7727b"
+      },
+      {
+        "path": "/thread-detail-runtime.js",
+        "sourcePath": "public/thread-detail-runtime.js",
+        "fileName": "shell-assets/thread-detail-runtime.js",
+        "bytes": 56512,
+        "sha256": "9219007d7d0bf6033e25c91558cb539311502ce9c1e8583492bd24b051751d77"
+      },
+      {
+        "path": "/thread-detail-patch-plan.js",
+        "sourcePath": "public/thread-detail-patch-plan.js",
+        "fileName": "shell-assets/thread-detail-patch-plan.js",
+        "bytes": 7717,
+        "sha256": "e6324db973e487acd0072b0bef3a13ea35ff1a94561dbede9b59734d1c6469e4"
+      },
+      {
+        "path": "/thread-detail-dom-patch.js",
+        "sourcePath": "public/thread-detail-dom-patch.js",
+        "fileName": "shell-assets/thread-detail-dom-patch.js",
+        "bytes": 46882,
+        "sha256": "59667cf5be12506e10ee555da156cfad788f15cad08eac2ed574f2c99805c2b7"
+      },
+      {
+        "path": "/thread-detail-actions.js",
+        "sourcePath": "public/thread-detail-actions.js",
+        "fileName": "shell-assets/thread-detail-actions.js",
+        "bytes": 5362,
+        "sha256": "f6c17f87950e2931e4471fa6884b8abedf486d1ee6176181c6395a062f017819"
+      },
+      {
+        "path": "/thread-tile-actions.js",
+        "sourcePath": "public/thread-tile-actions.js",
+        "fileName": "shell-assets/thread-tile-actions.js",
+        "bytes": 7380,
+        "sha256": "ee9cc825f59c90216a9585efe1a15ef7c18630a0797a27c3da5bdef2e13d786c"
+      },
+      {
+        "path": "/thread-tile-state.js",
+        "sourcePath": "public/thread-tile-state.js",
+        "fileName": "shell-assets/thread-tile-state.js",
+        "bytes": 71980,
+        "sha256": "2977e432183e659be290af4a2b031d3fea856a25adf08e0954243f79e5290c37"
+      },
+      {
+        "path": "/thread-tile-layout.js",
+        "sourcePath": "public/thread-tile-layout.js",
+        "fileName": "shell-assets/thread-tile-layout.js",
+        "bytes": 8454,
+        "sha256": "7a151b025741ff5349aba7f522f405cf398da05bbdb15fffe5e8efdb76a5c8c3"
+      },
+      {
+        "path": "/thread-tile-runtime.js",
+        "sourcePath": "public/thread-tile-runtime.js",
+        "fileName": "shell-assets/thread-tile-runtime.js",
+        "bytes": 74569,
+        "sha256": "0fa2d9a20e62ebb7eeb3682547864c857a0821fdcd0fb97aea9beb9d37bc3725"
+      },
+      {
+        "path": "/build-refresh-policy.js",
+        "sourcePath": "public/build-refresh-policy.js",
+        "fileName": "shell-assets/build-refresh-policy.js",
+        "bytes": 1532,
+        "sha256": "b103ff2e801a446f92693c6b3a3830af6ab24afdc46fad901ff1ea2e7a88d2ef"
+      },
+      {
+        "path": "/app-update-runtime.js",
+        "sourcePath": "public/app-update-runtime.js",
+        "fileName": "shell-assets/app-update-runtime.js",
+        "bytes": 50221,
+        "sha256": "59262e2969ab6c42dd707b16a0b19a794b8276afd440d721e7389a6ffc1eb682"
+      },
+      {
+        "path": "/side-chat-runtime.js",
+        "sourcePath": "public/side-chat-runtime.js",
+        "fileName": "shell-assets/side-chat-runtime.js",
+        "bytes": 51946,
+        "sha256": "f8c3d723929f11bcfe1a6d7ce7c6a2aa2697b863cd5c0bf413c557bd758b0d49"
+      },
+      {
+        "path": "/media-preview-runtime.js",
+        "sourcePath": "public/media-preview-runtime.js",
+        "fileName": "shell-assets/media-preview-runtime.js",
+        "bytes": 95096,
+        "sha256": "fd665173935ba29c77db757fa8a3734f95d46e740fd8e9b81ba265fd5d2e44a8"
+      },
+      {
+        "path": "/app-bootstrap.js",
+        "sourcePath": "public/app-bootstrap.js",
+        "fileName": "shell-assets/app-bootstrap.js",
+        "bytes": 35461,
+        "sha256": "f31b8f04636b958df1a985700e590529040a7bd2cdb846caedcf90e47d21d4b8"
+      },
+      {
+        "path": "/settings-runtime.js",
+        "sourcePath": "public/settings-runtime.js",
+        "fileName": "shell-assets/settings-runtime.js",
+        "bytes": 86728,
+        "sha256": "f6e05c783414bb9902877bde3a45730beae78b942648640ea24499f7fc3451ec"
+      },
+      {
+        "path": "/modal-runtime.js",
+        "sourcePath": "public/modal-runtime.js",
+        "fileName": "shell-assets/modal-runtime.js",
+        "bytes": 11321,
+        "sha256": "0f5fcb51fe6e779ba3853e2833d023cc9780abbb97b2e3ab53f632cad13b56d5"
+      },
+      {
+        "path": "/navigation-runtime.js",
+        "sourcePath": "public/navigation-runtime.js",
+        "fileName": "shell-assets/navigation-runtime.js",
+        "bytes": 69902,
+        "sha256": "8eb4b5ff1b1a4745b9bc60bb4a5029e89f3f1452ccb20a28a6b95227ca57c6ac"
+      },
+      {
+        "path": "/api-client-runtime.js",
+        "sourcePath": "public/api-client-runtime.js",
+        "fileName": "shell-assets/api-client-runtime.js",
+        "bytes": 45757,
+        "sha256": "9a3c8f177201dd957a1ed205a6ac7d85604320626e5e1c9c9acc338a0df53520"
+      },
+      {
+        "path": "/notification-ui-runtime.js",
+        "sourcePath": "public/notification-ui-runtime.js",
+        "fileName": "shell-assets/notification-ui-runtime.js",
+        "bytes": 49013,
+        "sha256": "a90508e5f07c63fd66742d46a20a46dd2836e8f50658792a1cbcdd2844d6d9f2"
+      },
+      {
+        "path": "/pane-layout-runtime.js",
+        "sourcePath": "public/pane-layout-runtime.js",
+        "fileName": "shell-assets/pane-layout-runtime.js",
+        "bytes": 199761,
+        "sha256": "9376a5abad2e89104a262f15476503fd89317c83a6af4fa82521eaf2e2c204c7"
+      },
+      {
+        "path": "/task-card-runtime.js",
+        "sourcePath": "public/task-card-runtime.js",
+        "fileName": "shell-assets/task-card-runtime.js",
+        "bytes": 61106,
+        "sha256": "898a793ded3009ebeed21a92d1f05419c0e1460e14b309243d4ed00fbfe5e4ca"
+      },
+      {
+        "path": "/conversation-render-runtime.js",
+        "sourcePath": "public/conversation-render-runtime.js",
+        "fileName": "shell-assets/conversation-render-runtime.js",
+        "bytes": 62399,
+        "sha256": "6726936652392fed23668cb4a2ff7100930f53fa4b81bfacf0fb8d7ff2ee8d09"
+      },
+      {
+        "path": "/event-stream-runtime.js",
+        "sourcePath": "public/event-stream-runtime.js",
+        "fileName": "shell-assets/event-stream-runtime.js",
+        "bytes": 58934,
+        "sha256": "fa54062f1aeedf6e4a9a617d3bdf5cad3b90f4d89a352e8b456bb429991ef1a8"
+      },
+      {
+        "path": "/composer-bridge-runtime.js",
+        "sourcePath": "public/composer-bridge-runtime.js",
+        "fileName": "shell-assets/composer-bridge-runtime.js",
+        "bytes": 28207,
+        "sha256": "d185a4ac33929ee77ccb181a68992504377e8551985e1f663eb77cb1be094762"
+      },
+      {
+        "path": "/runtime-wiring-runtime.js",
+        "sourcePath": "public/runtime-wiring-runtime.js",
+        "fileName": "shell-assets/runtime-wiring-runtime.js",
+        "bytes": 8462,
+        "sha256": "de35d56b7e9f9c317d6ca8d30f499e06c662643d1a3f89ec1d894d22cd178ac2"
+      },
+      {
+        "path": "/app-shell-runtime.js",
+        "sourcePath": "public/app-shell-runtime.js",
+        "fileName": "shell-assets/app-shell-runtime.js",
+        "bytes": 41098,
+        "sha256": "1beb88ea0475465bf4da99fc12de6412b4e8aabdb8a760ddce9a2b95e7ef52fb"
+      },
+      {
+        "path": "/app.js",
+        "sourcePath": "public/app.js",
+        "fileName": "shell-assets/app.js",
+        "bytes": 555,
+        "sha256": "64850d84241e2534e3b580024a699ff830530292d177794a8cb15e858001a607"
+      },
+      {
+        "path": "/shell-asset-manifest.json",
+        "sourcePath": "public/shell-asset-manifest.json",
+        "fileName": "shell-assets/shell-asset-manifest.json",
+        "bytes": 10701,
+        "sha256": "33726624400362a2ea7734494497ee5b54e379ed25663e3b62540fcf9a07cd95"
+      },
+      {
+        "path": "/sw.js",
+        "sourcePath": "public/sw.js",
+        "fileName": "shell-assets/sw.js",
+        "bytes": 4620,
+        "sha256": "e1d0f4978d992a41a18bb6b38d2263d727252e716b73f14123fde185d23c8632"
+      }
+    ],
+    "outputFiles": [
+      "assets/vite-deferred-entry-topology-W6SJaXUJ.js",
+      "assets/vite-shell-entry-rafZvbtE.js",
+      "codex-mobile-shell-manifest.json",
+      "shell-assets/api-client-runtime.js",
+      "shell-assets/api-client.js",
+      "shell-assets/app-bootstrap.js",
+      "shell-assets/app-shell-runtime.js",
+      "shell-assets/app-update-runtime.js",
+      "shell-assets/app.js",
+      "shell-assets/build-refresh-policy.js",
+      "shell-assets/client-render-stability-guard.js",
+      "shell-assets/composer-bridge-runtime.js",
+      "shell-assets/composer-runtime.js",
+      "shell-assets/conversation-render-runtime.js",
+      "shell-assets/conversation-scroll.js",
+      "shell-assets/draft-store.js",
+      "shell-assets/event-stream-runtime.js",
+      "shell-assets/frontend-runtime-health.js",
+      "shell-assets/home-ai-diagnostic-reporting.js",
+      "shell-assets/icons/apple-touch-icon.png",
+      "shell-assets/icons/icon-192.png",
+      "shell-assets/icons/icon-512.png",
+      "shell-assets/icons/icon.svg",
+      "shell-assets/image-compressor.js",
+      "shell-assets/index.html",
+      "shell-assets/live-operation-dock-state.js",
+      "shell-assets/manifest.json",
+      "shell-assets/markdown-renderer.js",
+      "shell-assets/media-preview-runtime.js",
+      "shell-assets/modal-runtime.js",
+      "shell-assets/navigation-runtime.js",
+      "shell-assets/notification-ui-runtime.js",
+      "shell-assets/pane-layout-runtime.js",
+      "shell-assets/plugin-embed.js",
+      "shell-assets/plugin-voice-input.js",
+      "shell-assets/runtime-settings.js",
+      "shell-assets/runtime-wiring-runtime.js",
+      "shell-assets/settings-runtime.js",
+      "shell-assets/shell-asset-manifest.js",
+      "shell-assets/shell-asset-manifest.json",
+      "shell-assets/side-chat-runtime.js",
+      "shell-assets/styles.css",
+      "shell-assets/sw.js",
+      "shell-assets/task-card-runtime.js",
+      "shell-assets/thread-detail-actions.js",
+      "shell-assets/thread-detail-dom-patch.js",
+      "shell-assets/thread-detail-merge-state.js",
+      "shell-assets/thread-detail-patch-plan.js",
+      "shell-assets/thread-detail-render-plan.js",
+      "shell-assets/thread-detail-runtime.js",
+      "shell-assets/thread-detail-state.js",
+      "shell-assets/thread-detail-v4-merge-state.js",
+      "shell-assets/thread-diagnostic-events.js",
+      "shell-assets/thread-list-load-policy.js",
+      "shell-assets/thread-list-runtime.js",
+      "shell-assets/thread-list-stable-order.js",
+      "shell-assets/thread-performance-metrics.js",
+      "shell-assets/thread-status-hints.js",
+      "shell-assets/thread-tile-actions.js",
+      "shell-assets/thread-tile-layout.js",
+      "shell-assets/thread-tile-runtime.js",
+      "shell-assets/thread-tile-state.js",
+      "shell-assets/viewport-metrics.js"
+    ],
+    "validation": {
+      "ok": true,
+      "issues": []
+    }
+  }
+}
