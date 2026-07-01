@@ -4917,6 +4917,26 @@ This is still not the default cutover. It proves the Vite-owned startup path
 works under root-path routing, service-worker scope, and default navigation
 shape before `/` itself is changed.
 
+The next root-path full-UX gate keeps that same default-shell boundary but
+raises the evidence level from startup-only to real read-only runtime sampling:
+
+- `scripts/codex-mobile-runtime-self-check-loop.js` still keeps
+  `browser-vite-app-preview-root` lightweight during `--browser-startup-only`
+  deploy listener gates.
+- In non-startup deploy/full runs, the same root job now invokes
+  `scripts/codex-mobile-browser-runtime-self-check.js` with
+  `--vite-app-preview-runtime --vite-app-preview-root`, so it opens
+  `/?codexViteShell=app-preview`, validates the Vite-owned loader plan, and
+  runs the standard thread/list DOM sampling from the root-path Vite host.
+- Composer submit exercise options remain suppressed for this root Vite path;
+  the gate is a pre-cutover read-only comparison against the classic shell, not
+  a production mutation path.
+
+Production `/` still remains classic-script fallback after this slice. The
+cutover invariant is stronger: the exact future root URL surface must pass the
+same read-only browser-runtime UX checks as the opt-in app-preview host before
+default execution can move.
+
 ## Release Rule
 
 Follow the current release order:

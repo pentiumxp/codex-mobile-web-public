@@ -202,7 +202,11 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
         assert.equal(args[args.indexOf("--min-settled-delay-ms") + 1], "1200");
         assert.doesNotMatch(args.join(" "), /--exercise-submit|--submit-thread-id|--submit-message|--submit-sample-delays-ms/);
       }
-      if (isViteAppPreviewRoot) {
+      if (isViteAppPreviewRoot && isViteAppPreviewRuntime) {
+        assert.ok(args.includes("--vite-app-preview-root"));
+        assert.ok(args.includes("--vite-app-preview-runtime"));
+        assert.doesNotMatch(args.join(" "), /--vite-app-preview-only/);
+      } else if (isViteAppPreviewRoot) {
         assert.deepEqual(args, [
           String(args[0]),
           "--server",
@@ -237,6 +241,8 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
             ok: true,
             mode: isVitePreview
               ? "vite-preview"
+              : isViteAppPreviewRoot && isViteAppPreviewRuntime
+                ? "vite-app-preview-root-runtime"
               : isViteAppPreviewRoot
                 ? "vite-app-preview-root"
               : isViteAppPreviewEmbed
