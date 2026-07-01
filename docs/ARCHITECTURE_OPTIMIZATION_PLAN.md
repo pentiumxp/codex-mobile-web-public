@@ -4408,6 +4408,32 @@ production. It turns the future critical/deferred bundle split into a tested
 build contract first, so the later ESM/chunk switch can be made against a
 stable startup boundary.
 
+### 2026-07-02 Vite Shell Artifact Contract Stage 4
+
+The fourth Vite migration step still leaves production on the ordered
+classic-script shell, but makes the Vite build output itself a first-class
+release candidate contract.
+
+Scope:
+
+- `scripts/frontend-shell-asset-graph.mjs` now writes a `viteBuild` section
+  into `dist/frontend-shell/codex-mobile-shell-manifest.json`.
+- The `viteBuild` contract records `productionExecution:
+  "classic-script-fallback"` so build-chain work cannot silently switch runtime
+  semantics.
+- The contract records the Vite shell entry chunk, the deferred topology chunk,
+  copied classic shell assets, output files, and validation issues.
+- `scripts/verify-vite-shell-manifest.mjs` now verifies the Vite build contract
+  against Vite's `.vite/manifest.json`, including the shell entry file,
+  deferred entry file, output files, and manifest output.
+- `test/vite-shell-asset-graph.test.js` covers the contract shape with a fake
+  Rollup bundle so the artifact boundary remains testable without requiring a
+  full build inside unit tests.
+
+This stage gives deploy/readback a stable artifact-level marker
+(`vite-shell-artifact-contract-v1`) before any production request path serves
+or executes Vite-built runtime chunks.
+
 ## Release Rule
 
 Follow the current release order:

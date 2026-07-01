@@ -46,6 +46,48 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   assert.ok(manifest.assets.every((asset) => asset.exists));
 });
 
+test("Vite shell build contract records entry chunks and classic fallback outputs", async () => {
+  const { buildShellAssetManifest, buildViteShellBuildContract } = await loadAssetGraphModule();
+  const root = path.resolve(__dirname, "..");
+  const manifest = buildShellAssetManifest(root);
+  const bundle = {
+    "assets/vite-shell-entry-example.js": {
+      type: "chunk",
+      fileName: "assets/vite-shell-entry-example.js",
+      name: "vite-shell-entry",
+      facadeModuleId: path.join(root, "frontend", "vite-shell-entry.mjs"),
+      isEntry: true,
+      isDynamicEntry: false,
+      imports: [],
+      dynamicImports: ["assets/vite-deferred-entry-topology-example.js"],
+    },
+    "assets/vite-deferred-entry-topology-example.js": {
+      type: "chunk",
+      fileName: "assets/vite-deferred-entry-topology-example.js",
+      name: "vite-deferred-entry-topology",
+      facadeModuleId: path.join(root, "frontend", "vite-deferred-entry-topology.mjs"),
+      isEntry: false,
+      isDynamicEntry: true,
+      imports: ["assets/vite-shell-entry-example.js"],
+      dynamicImports: [],
+    },
+  };
+  const contract = buildViteShellBuildContract(manifest, bundle);
+  assert.equal(contract.validation.ok, true);
+  assert.equal(contract.stage, "vite-shell-artifact-contract-v1");
+  assert.equal(contract.productionExecution, "classic-script-fallback");
+  assert.equal(contract.viteEntry.source, "frontend/vite-shell-entry.mjs");
+  assert.equal(contract.viteEntry.fileName, "assets/vite-shell-entry-example.js");
+  assert.deepEqual(contract.viteEntry.dynamicImports, ["assets/vite-deferred-entry-topology-example.js"]);
+  assert.equal(contract.viteDeferredChunks.length, 1);
+  assert.equal(contract.viteDeferredChunks[0].source, "frontend/vite-deferred-entry-topology.mjs");
+  assert.ok(contract.outputFiles.includes("assets/vite-shell-entry-example.js"));
+  assert.ok(contract.outputFiles.includes("assets/vite-deferred-entry-topology-example.js"));
+  assert.ok(contract.outputFiles.includes("codex-mobile-shell-manifest.json"));
+  assert.ok(contract.classicShellAssets.some((asset) => asset.path === "/app.js" && asset.fileName === "shell-assets/app.js"));
+  assert.deepEqual(contract.classicFallback.entryGroups, manifest.entryGroups);
+});
+
 test("Vite shell asset graph fails closed when generated manifest is stale", async () => {
   const { buildShellAssetManifest } = await loadAssetGraphModule();
   const { writePublicShellManifest } = await import("../scripts/generate-frontend-shell-manifest.mjs");

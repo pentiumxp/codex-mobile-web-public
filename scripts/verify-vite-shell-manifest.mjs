@@ -52,6 +52,38 @@ if (!fs.existsSync(manifestPath)) {
   } else if (!Array.isArray(shellEntry.dynamicImports) || !shellEntry.dynamicImports.length) {
     mismatch.push("viteDeferredEntryChunk");
   }
+  if (!built.viteBuild || !built.viteBuild.validation || !built.viteBuild.validation.ok) {
+    mismatch.push("viteBuildContract");
+  } else {
+    const viteBuild = built.viteBuild;
+    if (viteBuild.productionExecution !== "classic-script-fallback") {
+      mismatch.push("viteBuildProductionExecution");
+    }
+    if (!viteBuild.viteEntry || viteBuild.viteEntry.source !== "frontend/vite-shell-entry.mjs") {
+      mismatch.push("viteBuildEntrySource");
+    }
+    if (shellEntry && viteBuild.viteEntry && viteBuild.viteEntry.fileName !== shellEntry.file) {
+      mismatch.push("viteBuildEntryFile");
+    }
+    const deferredSources = new Set((viteBuild.viteDeferredChunks || []).map((chunk) => chunk.source));
+    if (!deferredSources.has("frontend/vite-deferred-entry-topology.mjs")) {
+      mismatch.push("viteBuildDeferredEntry");
+    }
+    const outputFiles = new Set(viteBuild.outputFiles || []);
+    if (shellEntry && !outputFiles.has(shellEntry.file)) {
+      mismatch.push("viteBuildOutputEntryFile");
+    }
+    for (const dynamicImport of shellEntry && Array.isArray(shellEntry.dynamicImports) ? shellEntry.dynamicImports : []) {
+      const chunk = viteManifest[dynamicImport];
+      if (chunk && !outputFiles.has(chunk.file)) {
+        mismatch.push("viteBuildOutputDeferredFile");
+        break;
+      }
+    }
+    if (!outputFiles.has("codex-mobile-shell-manifest.json")) {
+      mismatch.push("viteBuildOutputManifest");
+    }
+  }
   if (mismatch.length) {
     fail(`Vite shell manifest mismatch: ${mismatch.join(", ")}`);
   } else {
@@ -61,6 +93,7 @@ if (!fs.existsSync(manifestPath)) {
       clientBuildId: built.clientBuildId,
       indexScripts: built.counts.indexScripts,
       emittedAssets: built.counts.emittedAssets,
+      viteBuildStage: built.viteBuild.stage,
     }));
   }
 }

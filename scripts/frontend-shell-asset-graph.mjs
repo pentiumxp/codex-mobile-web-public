@@ -4,6 +4,9 @@ import path from "node:path";
 import { buildPublicShellManifest } from "./generate-frontend-shell-manifest.mjs";
 
 export const SHELL_MANIFEST_SCHEMA_VERSION = 1;
+export const VITE_SHELL_BUILD_CONTRACT_SCHEMA_VERSION = 1;
+export const VITE_SHELL_ENTRY_SOURCE = "frontend/vite-shell-entry.mjs";
+export const VITE_DEFERRED_ENTRY_SOURCE = "frontend/vite-deferred-entry-topology.mjs";
 
 function readText(root, relativePath) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
@@ -278,16 +281,143 @@ function outputPathForAsset(assetPath) {
   return `shell-assets/${String(assetPath || "").replace(/^\/+/, "")}`;
 }
 
+function normalizePath(value) {
+  return String(value || "").replace(/\\/g, "/");
+}
+
+function bundleValues(bundle) {
+  return Object.values(bundle || {});
+}
+
+function sourceForFacadeModule(facadeModuleId, root) {
+  const value = normalizePath(facadeModuleId);
+  if (!value) return "";
+  const rootPath = normalizePath(root || process.cwd());
+  if (value === rootPath || value.startsWith(`${rootPath}/`)) {
+    return normalizePath(path.relative(rootPath, value));
+  }
+  return value;
+}
+
+function chunkRecords(bundle, root = process.cwd()) {
+  return bundleValues(bundle)
+    .filter((item) => item && item.type === "chunk")
+    .map((chunk) => ({
+      fileName: normalizePath(chunk.fileName),
+      name: String(chunk.name || ""),
+      source: sourceForFacadeModule(chunk.facadeModuleId, root),
+      isEntry: Boolean(chunk.isEntry),
+      isDynamicEntry: Boolean(chunk.isDynamicEntry),
+      imports: Array.isArray(chunk.imports) ? chunk.imports.map(normalizePath) : [],
+      dynamicImports: Array.isArray(chunk.dynamicImports) ? chunk.dynamicImports.map(normalizePath) : [],
+    }))
+    .sort((a, b) => a.fileName.localeCompare(b.fileName));
+}
+
+function assetOutputRecords(manifest) {
+  return (manifest.assets || []).map((asset) => ({
+    path: asset.path,
+    sourcePath: asset.sourcePath,
+    fileName: outputPathForAsset(asset.path),
+    bytes: asset.bytes,
+    sha256: asset.sha256,
+  }));
+}
+
+function validateViteShellBuildContract(contract, manifest) {
+  const issues = [];
+  const entry = contract.viteEntry;
+  const deferredChunks = contract.viteDeferredChunks || [];
+  const outputFiles = new Set(contract.outputFiles || []);
+  const classicOutputFiles = new Set((contract.classicShellAssets || []).map((asset) => asset.fileName));
+
+  if (contract.productionExecution !== "classic-script-fallback") {
+    issues.push({ code: "vite_build_contract_not_classic_fallback" });
+  }
+  if (!entry || entry.source !== VITE_SHELL_ENTRY_SOURCE || !entry.fileName) {
+    issues.push({ code: "vite_shell_entry_missing" });
+  }
+  if (!entry || !Array.isArray(entry.dynamicImports) || !entry.dynamicImports.length) {
+    issues.push({ code: "vite_shell_entry_missing_dynamic_import" });
+  }
+  if (!deferredChunks.length) {
+    issues.push({ code: "vite_deferred_chunk_missing" });
+  }
+  if (!deferredChunks.some((chunk) => chunk.source === VITE_DEFERRED_ENTRY_SOURCE || chunk.name === "vite-deferred-entry-topology")) {
+    issues.push({ code: "vite_deferred_entry_topology_missing" });
+  }
+  for (const asset of manifest.assets || []) {
+    const fileName = outputPathForAsset(asset.path);
+    if (!classicOutputFiles.has(fileName)) {
+      issues.push({ code: "classic_shell_output_missing", asset: asset.path });
+    }
+  }
+  for (const requiredFile of ["codex-mobile-shell-manifest.json"]) {
+    if (!outputFiles.has(requiredFile)) issues.push({ code: "vite_output_file_missing", fileName: requiredFile });
+  }
+  for (const fileName of [entry && entry.fileName, ...deferredChunks.map((chunk) => chunk.fileName)].filter(Boolean)) {
+    if (!outputFiles.has(fileName)) issues.push({ code: "vite_output_file_missing", fileName });
+  }
+  return {
+    ok: issues.length === 0,
+    issues,
+  };
+}
+
+export function buildViteShellBuildContract(manifest, bundle = {}, root = process.cwd()) {
+  const chunks = chunkRecords(bundle, root);
+  const viteEntry = chunks.find((chunk) => chunk.source === VITE_SHELL_ENTRY_SOURCE)
+    || chunks.find((chunk) => chunk.isEntry && chunk.name === "vite-shell-entry")
+    || chunks.find((chunk) => chunk.isEntry);
+  const deferredChunks = chunks.filter((chunk) => chunk.source === VITE_DEFERRED_ENTRY_SOURCE
+    || chunk.isDynamicEntry
+    || (viteEntry && viteEntry.dynamicImports.includes(chunk.fileName)));
+  const classicShellAssets = assetOutputRecords(manifest);
+  const outputFiles = [
+    ...chunks.map((chunk) => chunk.fileName),
+    ...classicShellAssets.map((asset) => asset.fileName),
+    "codex-mobile-shell-manifest.json",
+  ];
+  const contract = {
+    schemaVersion: VITE_SHELL_BUILD_CONTRACT_SCHEMA_VERSION,
+    stage: "vite-shell-artifact-contract-v1",
+    productionExecution: "classic-script-fallback",
+    entrySource: VITE_SHELL_ENTRY_SOURCE,
+    deferredEntrySource: VITE_DEFERRED_ENTRY_SOURCE,
+    classicFallback: {
+      indexHtmlAsset: "/index.html",
+      outputRoot: "shell-assets",
+      indexScriptAssets: manifest.indexScriptAssets,
+      entryGroups: manifest.entryGroups,
+    },
+    viteEntry: viteEntry || null,
+    viteDeferredChunks: deferredChunks,
+    classicShellAssets,
+    outputFiles: [...new Set(outputFiles)].sort(),
+  };
+  contract.validation = validateViteShellBuildContract(contract, manifest);
+  return contract;
+}
+
 export function createShellAssetGraphPlugin(options = {}) {
   const root = options.root || process.cwd();
   return {
     name: "codex-mobile-shell-asset-graph",
-    generateBundle() {
+    generateBundle(_outputOptions, bundle) {
       const manifest = buildShellAssetManifest(root);
       if (!manifest.validation.ok) {
         const codes = manifest.validation.issues.map((issue) => issue.code).join(", ");
         throw new Error(`codex_mobile_shell_asset_graph_invalid: ${codes}`);
       }
+      const viteBuild = buildViteShellBuildContract(manifest, bundle, root);
+      if (!viteBuild.validation.ok) {
+        const codes = viteBuild.validation.issues.map((issue) => issue.code).join(", ");
+        throw new Error(`codex_mobile_vite_shell_build_contract_invalid: ${codes}`);
+      }
+      const outputManifest = {
+        ...manifest,
+        viteBuild,
+      };
       for (const asset of manifest.assets) {
         const absolutePath = path.join(root, asset.sourcePath);
         const source = fs.readFileSync(absolutePath);
@@ -300,7 +430,7 @@ export function createShellAssetGraphPlugin(options = {}) {
       this.emitFile({
         type: "asset",
         fileName: "codex-mobile-shell-manifest.json",
-        source: `${JSON.stringify(manifest, null, 2)}\n`,
+        source: `${JSON.stringify(outputManifest, null, 2)}\n`,
       });
     },
   };
