@@ -331,6 +331,52 @@ test("runtime self-check loop can run explicit Vite app-preview default-root gat
   assert.equal(defaultRootCheck.ok, true);
 });
 
+test("runtime self-check loop auto-runs default-root gate when public config reports Vite default shell", async () => {
+  const calls = [];
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: ["private-thread-id"],
+    sampleThreads: 1,
+    browserRounds: 2,
+    browserSampleDelaysMs: "100,900",
+    browserMinSettledDelayMs: 900,
+    skipClientEvents: true,
+    skipApi: true,
+    skipBrowser: false,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    ...fakeProcessPressureDeps(),
+    execFile(_node, args, _options, callback) {
+      calls.push(args.slice());
+      const argText = args.join(" ");
+      const isDefaultRoot = args.includes("--vite-app-preview-default-root");
+      const isBrowserRuntime = !/--vite-preview-only|--vite-app-preview/.test(argText);
+      if (isDefaultRoot) {
+        assert.ok(args.includes("--vite-app-preview-runtime"));
+        assert.doesNotMatch(argText, /--vite-app-preview-root|--vite-app-preview-only/);
+      }
+      callback(null, JSON.stringify({
+        ok: true,
+        mode: isDefaultRoot ? "vite-app-preview-default-root-runtime" : "ok",
+        publicConfig: {
+          clientBuildId: "build",
+          shellCacheName: "shell",
+          defaultShellMode: isBrowserRuntime ? "vite-app-preview" : "classic",
+        },
+        browserReport: { issueCount: 0, blockingIssueCount: 0 },
+      }), "");
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.profile.defaultShellMode, "vite-app-preview");
+  assert.equal(result.profile.viteAppPreviewDefaultRootGate, "auto");
+  assert.equal(calls.filter((args) => args.includes("--vite-app-preview-default-root")).length, 1);
+  const defaultRootCheck = result.checks.find((check) => check.name === "browser-vite-app-preview-default-root");
+  assert.equal(defaultRootCheck.ok, true);
+});
+
 test("runtime self-check browser job can run startup-only without submit exercise", async () => {
   const calls = [];
   const result = await runtimeLoop.runOnce({

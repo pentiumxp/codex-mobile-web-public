@@ -82,6 +82,7 @@ test("media/static runtime composition wires media, generated images, static fil
   assert.equal(calls.find((entry) => entry.type === "generated").options.generatedImageRoot, "/runtime/generated");
   assert.equal(calls.find((entry) => entry.type === "static").options.publicRoot, "/public");
   assert.equal(calls.find((entry) => entry.type === "static").options.defaultShellMode, "vite-app-preview");
+  assert.equal(runtime.publicConfig().defaultShellMode, "vite-app-preview");
 });
 
 test("media/static runtime reads default shell mode from env for static service", () => {
@@ -130,4 +131,50 @@ test("media/static runtime reads default shell mode from env for static service"
   });
 
   assert.equal(staticOptions.defaultShellMode, "app-preview");
+});
+
+test("media/static runtime exposes normalized default shell mode in public config", () => {
+  const runtime = service.createMediaStaticRuntimeService({
+    env: { CODEX_MOBILE_DEFAULT_SHELL: "rollout-next" },
+    path: require("node:path"),
+    runtimeRoot: "/runtime",
+    userHome: "/home",
+    codexHome: "/codex",
+    defaultCodexHome: "/default-codex",
+    publicRoot: "/public",
+    readBody: async () => ({}),
+    readRawBody: async () => Buffer.alloc(0),
+    readGlobalState: () => ({}),
+    visibleWorkspaceRoots: () => [],
+    normalizeFsPath: (value) => String(value || ""),
+    readStateDbThread: () => null,
+    readStartedThread: () => null,
+    rolloutPathForThread: () => "",
+    getUrl: () => new URL("http://127.0.0.1/"),
+    frameAncestorsHeader: () => "'self'",
+    sendJson: () => {},
+    mediaFileServiceFactory: () => ({
+      imageExtensions: new Set(),
+      filePreviewImageContentTypes: new Map(),
+      filePreviewMediaMaxBytes: 1,
+      uploadRoot: "/runtime/uploads",
+      generatedImageRoot: "/runtime/generated",
+      generatedImageContentUrl: () => "",
+      hasDeniedPreviewPathSegment: () => false,
+      mimeFor: () => "text/plain",
+      isPathInside: () => false,
+      serveFilePreviewContent: () => {},
+      publicConfig: () => ({ imageContextMode: "auto" }),
+    }),
+    generatedImageContentServiceFactory: () => ({}),
+    staticFileServiceFactory: () => ({
+      serveStatic: () => {},
+      clearStaticCompressionCache: () => {},
+      staticCompressionCacheStats: () => ({}),
+      staticCompressionEncoding: () => "",
+    }),
+  });
+
+  assert.equal(runtime.publicConfig().imageContextMode, "auto");
+  assert.equal(runtime.publicConfig().defaultShellMode, "classic");
 });

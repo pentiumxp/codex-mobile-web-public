@@ -187,6 +187,13 @@ function publicConfigFromReport(report = {}) {
   return report.publicConfig || report.config || {};
 }
 
+function defaultShellModeFromPublicConfig(config = {}) {
+  const value = String(config && config.defaultShellMode || "").trim().toLowerCase();
+  if (value === "vite-app-preview" || value === "app-preview") return "vite-app-preview";
+  if (value === "classic" || value === "classic-script" || value === "classic-script-fallback") return "classic";
+  return "";
+}
+
 function summarizeCheck(name, result = {}) {
   const report = result.report || {};
   const browserReport = report.browserReport || {};
@@ -231,6 +238,7 @@ async function runOnce(options = {}, deps = {}) {
   const startedAt = new Date().toISOString();
   const checks = [];
   const jobPlan = resolveRuntimeSelfCheckPlan(options);
+  let observedDefaultShellMode = "";
   const root = path.resolve(__dirname, "..");
   const apiJob = runtimeSelfCheckJob(jobPlan, "api-thread");
   if (apiJob && apiJob.enabled) {
@@ -256,6 +264,7 @@ async function runOnce(options = {}, deps = {}) {
     if (!options.browserStartupOnly && options.browserSubmitMessage) browserArgs.push("--submit-message", options.browserSubmitMessage);
     if (!options.browserStartupOnly && options.browserSubmitSampleDelaysMs) browserArgs.push("--submit-sample-delays-ms", options.browserSubmitSampleDelaysMs);
     const result = await runNodeScript(browserScript, browserArgs, deps, browserJob);
+    observedDefaultShellMode = defaultShellModeFromPublicConfig(publicConfigFromReport(result.report || {}));
     checks.push(summarizeCheck("browser-runtime", result));
   }
   const browserVitePreviewJob = runtimeSelfCheckJob(jobPlan, "browser-vite-preview");
@@ -312,7 +321,9 @@ async function runOnce(options = {}, deps = {}) {
     const result = await runNodeScript(browserScript, viteAppPreviewRootArgs, deps, browserViteAppPreviewRootJob);
     checks.push(summarizeCheck("browser-vite-app-preview-root", result));
   }
-  if (options.browserViteAppPreviewDefaultRoot) {
+  const shouldRunViteAppPreviewDefaultRoot = options.browserViteAppPreviewDefaultRoot
+    || observedDefaultShellMode === "vite-app-preview";
+  if (shouldRunViteAppPreviewDefaultRoot) {
     const browserViteAppPreviewDefaultRootJob = runtimeSelfCheckJob(jobPlan, "browser-vite-app-preview-root");
     if (browserViteAppPreviewDefaultRootJob && browserViteAppPreviewDefaultRootJob.enabled) {
       const viteAppPreviewDefaultRootArgs = baseArgs(options);
@@ -377,6 +388,10 @@ async function runOnce(options = {}, deps = {}) {
     profile: {
       browserMode: jobPlan.profile.browserMode,
       scheduler: "runtime-job-scheduler-service",
+      defaultShellMode: observedDefaultShellMode,
+      viteAppPreviewDefaultRootGate: shouldRunViteAppPreviewDefaultRoot
+        ? (options.browserViteAppPreviewDefaultRoot ? "explicit" : "auto")
+        : "off",
     },
     runtimeJobs: jobPlan.jobs,
     processPressure: collectRuntimeProcessPressure({ topLimit: 12 }, deps),

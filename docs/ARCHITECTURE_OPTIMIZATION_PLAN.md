@@ -4971,6 +4971,12 @@ server-startup setting:
   --browser-vite-app-preview-default-root` wires that browser check as an
   explicit extra job. It is intentionally not part of the ordinary deploy
   default set while production launchd still starts in classic mode.
+- `/api/public-config` now reports bounded `defaultShellMode`, and the runtime
+  loop auto-adds the same default-root check when the normal browser-runtime
+  child observes `defaultShellMode=vite-app-preview`. Classic production stays
+  unchanged, but a future restart that intentionally moves plain `/` to Vite
+  will fail the deploy gate if the default-root app-preview contract is not
+  clean.
 
 This keeps current production health gates stable while providing a precise
 cutover verification command for an isolated default-shell server and,

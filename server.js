@@ -1779,7 +1779,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   logClientEvent,
   logThreadDetail,
   logThreadList,
-  mediaFileService,
+  mediaFileService: mediaStaticRuntimeService,
   mergeThreadDisplaySummary,
   mergeThreadSummaryListWithDiagnostics,
   modelOptions: MODEL_OPTIONS,

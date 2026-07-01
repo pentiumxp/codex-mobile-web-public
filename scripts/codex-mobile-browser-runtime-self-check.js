@@ -2186,6 +2186,7 @@ async function run(options = parseArgs(), deps = {}) {
       version: String(config && config.version || "").slice(0, 40),
       clientBuildId: String(config && config.clientBuildId || "").slice(0, 120),
       shellCacheName: String(config && config.shellCacheName || "").slice(0, 120),
+      defaultShellMode: String(config && config.defaultShellMode || "").slice(0, 40),
       authRequired: config && config.authRequired === true,
     },
     selectedThreads: safeThreadRows(ids.map((id) => ({ id })), options.sampleThreads),

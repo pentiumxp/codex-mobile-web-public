@@ -54,7 +54,7 @@ test("core public config route uses injected runtime dependencies", async () => 
       loadedRecentRateLimits = true;
     },
     mediaFileService: {
-      publicConfig: () => ({ uploads: { enabled: true } }),
+      publicConfig: () => ({ uploads: { enabled: true }, defaultShellMode: "vite-app-preview" }),
     },
     modelOptions: ["gpt-test"],
     permissionModeOptions: ["workspace-write"],
@@ -104,6 +104,7 @@ test("core public config route uses injected runtime dependencies", async () => 
   assert.equal(sent.body.buildId, "build-test");
   assert.equal(sent.body.clientBuildId, "client-test");
   assert.equal(sent.body.shellCacheName, "shell-test");
+  assert.equal(sent.body.defaultShellMode, "vite-app-preview");
   assert.equal(sent.body.defaultModel, "gpt-test");
   assert.equal(sent.body.workspaceDelegation.enabled, true);
   assert.equal(sent.body.threadListFallbackPrewarm.pending, false);

@@ -2,7 +2,10 @@
 
 const { createMediaFileService } = require("../../adapters/media-file-service");
 const { createGeneratedImageContentService } = require("../../adapters/generated-image-content-service");
-const { createStaticFileService } = require("../../adapters/static-file-service");
+const {
+  createStaticFileService,
+  normalizeDefaultShellMode,
+} = require("../../adapters/static-file-service");
 
 function createMediaStaticRuntimeService(dependencies = {}) {
   const mediaFactory = dependencies.mediaFileServiceFactory || createMediaFileService;
@@ -12,6 +15,7 @@ function createMediaStaticRuntimeService(dependencies = {}) {
   const staticDefaultShellMode = Object.prototype.hasOwnProperty.call(dependencies, "defaultShellMode")
     ? dependencies.defaultShellMode
     : env.CODEX_MOBILE_DEFAULT_SHELL;
+  const normalizedDefaultShellMode = normalizeDefaultShellMode(staticDefaultShellMode);
 
   const mediaFileService = mediaFactory({
     env,
@@ -62,6 +66,15 @@ function createMediaStaticRuntimeService(dependencies = {}) {
     );
   }
 
+  function publicConfig() {
+    const mediaConfig = typeof mediaFileService.publicConfig === "function"
+      ? mediaFileService.publicConfig()
+      : {};
+    return Object.assign({}, mediaConfig, {
+      defaultShellMode: normalizedDefaultShellMode,
+    });
+  }
+
   return Object.assign({}, mediaFileService, generatedImageContentService, staticFileService, {
     mediaFileService,
     generatedImageContentService,
@@ -72,6 +85,7 @@ function createMediaStaticRuntimeService(dependencies = {}) {
     UPLOAD_ROOT,
     GENERATED_IMAGE_ROOT,
     isCodexMobileUploadFilePath: (filePath) => mediaFileService.isPathInside(UPLOAD_ROOT, filePath),
+    publicConfig,
     serveFilePreviewContent,
   });
 }

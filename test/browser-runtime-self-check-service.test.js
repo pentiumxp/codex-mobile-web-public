@@ -67,6 +67,10 @@ test("browser runtime self-check parses Vite app-preview launch session option",
   assert.equal(options.json, true);
 });
 
+test("browser runtime self-check preserves bounded default shell mode in public config summary", () => {
+  assert.match(scriptSource, /defaultShellMode: String\(config && config\.defaultShellMode \|\| ""\)\.slice\(0, 40\)/);
+});
+
 test("browser runtime self-check analyzes Vite preview module readiness", () => {
   const passing = script.analyzeVitePreviewProbe({
     markerVisible: true,
