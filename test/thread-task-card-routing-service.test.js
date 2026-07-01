@@ -7,7 +7,10 @@ const {
   createThreadTaskCardRoutingService,
   threadTaskCardTargetReferenceEntries,
   threadTaskCardTargetReferences,
-} = require("../adapters/thread-task-card-routing-service");
+} = require("../services/task-cards/thread-task-card-routing-service");
+
+const canonicalRoutingService = require("../services/task-cards/thread-task-card-routing-service");
+const adapterRoutingService = require("../adapters/thread-task-card-routing-service");
 
 function fakeRoutingService(options = {}) {
   const summaries = options.summaries || new Map();
@@ -45,6 +48,11 @@ function fakeRoutingService(options = {}) {
     },
   });
 }
+
+test("task-card routing adapter re-exports the canonical service boundary", () => {
+  assert.equal(adapterRoutingService.createThreadTaskCardRoutingService, canonicalRoutingService.createThreadTaskCardRoutingService);
+  assert.equal(adapterRoutingService.threadTaskCardTargetReferences, canonicalRoutingService.threadTaskCardTargetReferences);
+});
 
 test("target reference extraction gives exact thread and title references priority over workspace fallbacks", () => {
   assert.deepEqual(threadTaskCardTargetReferenceEntries({

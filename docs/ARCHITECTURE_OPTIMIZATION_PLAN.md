@@ -2077,6 +2077,15 @@ public behavior:
   authorization, approval transitions, execution leases, autonomous workflow
   grants, terminal return-card events, and pending-count decoration inputs.
   `adapters/thread-task-card-service.js` is compatibility-only.
+- `services/task-cards/thread-task-card-routing-service.js` and
+  `services/task-cards/thread-task-card-deploy-lane-policy-service.js` now own
+  the task-card routing and deployment-lane policy boundary: exact
+  id/title/workspace target resolution, visible/deliverable filtering,
+  archived/hidden/subagent/sidecar rejection, same-cwd canonical selection,
+  Home AI deploy-lane title/pool matching, routine plugin deployment detection,
+  plugin-id lane routing, fail-closed lane diagnostics, deploy-lane summary
+  normalization, and target hint prioritization. Adapter paths are
+  compatibility-only.
 - `server-routes/thread-message-route-service.js` now owns thread creation,
   new-message/existing-message, resume, auto-recover, and turn interrupt route
   behavior while `server.js` injects runtime settings, parsers, Codex transport,
@@ -2131,10 +2140,12 @@ public behavior:
   `server.js` injects Codex RPC, runtime-setting helpers, classifiers, timeout
   values, and `notifyLocalTurnStarted`.
 
-Local line-count evidence after the latest extraction: `server.js` is 4,188 lines,
+Local line-count evidence after the latest extraction: `server.js` is 4,186 lines,
 `server-routes/thread-task-card-route-service.js` is 1,273 lines,
 `services/task-cards/task-card-runtime-policy-service.js` is 345 lines, and
-`services/task-cards/thread-task-card-service.js` is 1,857 lines, and
+`services/task-cards/thread-task-card-service.js` is 1,857 lines,
+`services/task-cards/thread-task-card-routing-service.js` is 364 lines,
+`services/task-cards/thread-task-card-deploy-lane-policy-service.js` is 412 lines, and
 `server-routes/thread-message-route-service.js` is 363 lines, and
 `thread-list-fallback-source-service.js` is 683 lines, and
 `thread-summary-state-service.js` is 383 lines, and

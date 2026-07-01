@@ -56,7 +56,7 @@ const { createTaskCardRuntimePolicyService } = require("./services/task-cards/ta
 const {
   isHomeAiDeployLaneThread,
   normalizeHomeAiDeployLaneSummary,
-} = require("./adapters/thread-task-card-deploy-lane-policy-service");
+} = require("./services/task-cards/thread-task-card-deploy-lane-policy-service");
 const { createThreadSideChatService } = require("./adapters/thread-side-chat-service");
 const {
   continuationGoalMigrationPlan,

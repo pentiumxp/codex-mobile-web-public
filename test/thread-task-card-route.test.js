@@ -19,7 +19,7 @@ const taskCardRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "ad
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-message-route-service.js"), "utf8");
 const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-summary-state-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"), "utf8");
-const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-routing-service.js"), "utf8");
+const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "thread-task-card-routing-service.js"), "utf8");
 const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-detail-route-service.js"), "utf8");
 const threadDetailRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
 const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-response-preparation-service.js"), "utf8");
@@ -157,6 +157,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(taskCardRouteServiceJs, /function threadTaskCardCanonicalVisibleTargets\(/);
   assert.match(taskCardRouteServiceJs, /function threadTaskCardCanonicalTargetForCwd\(/);
   assert.match(taskCardRouteServiceJs, /createThreadTaskCardRoutingService/);
+  assert.match(taskCardRouteServiceJs, /require\("\.\.\/services\/task-cards\/thread-task-card-routing-service"\)/);
+  assert.doesNotMatch(taskCardRouteServiceJs, /require\("\.\.\/adapters\/thread-task-card-routing-service"\)/);
   assert.match(taskCardRouteServiceJs, /const threadTaskCardRoutingService = createThreadTaskCardRoutingService\(\{/);
   assert.match(functionBody(taskCardRouteServiceJs, "resolveThreadTaskCardTargetReference"), /threadTaskCardRoutingService\.resolveTargetReference\(value, sourceThreadId, options\)/);
   assert.match(routingServiceJs, /function createThreadTaskCardRoutingService\(/);
@@ -169,7 +171,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.doesNotMatch(routingServiceJs, /return raw;/);
   assert.match(functionBody(taskCardRouteServiceJs, "buildThreadTaskCardCreatePayload"), /if \(!targetThreadIds\.length\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "buildThreadTaskCardCreatePayload"), /target_thread_required/);
-  assert.match(serverJs, /thread-task-card-deploy-lane-policy-service/);
+  assert.match(taskCardRouteServiceJs, /require\("\.\.\/services\/task-cards\/thread-task-card-deploy-lane-policy-service"\)/);
+  assert.doesNotMatch(taskCardRouteServiceJs, /require\("\.\.\/adapters\/thread-task-card-deploy-lane-policy-service"\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationTargetHints"), /prioritizeDelegationTargetHints/);
   assert.match(functionBody(serverJs, "normalizeThreadSummaryLiveStatus"), /threadSummaryStateService\.normalizeThreadSummaryLiveStatus/);
   assert.match(functionBody(threadSummaryStateServiceJs, "normalizeThreadSummaryLiveStatus"), /normalizeHomeAiDeployLaneSummary/);

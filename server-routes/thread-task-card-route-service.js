@@ -1,11 +1,11 @@
 "use strict";
 
 const path = require("node:path");
-const { createThreadTaskCardRoutingService } = require("../adapters/thread-task-card-routing-service");
+const { createThreadTaskCardRoutingService } = require("../services/task-cards/thread-task-card-routing-service");
 const {
   planHomeAiDeployLaneRouting,
   prioritizeDelegationTargetHints,
-} = require("../adapters/thread-task-card-deploy-lane-policy-service");
+} = require("../services/task-cards/thread-task-card-deploy-lane-policy-service");
 const {
   threadTaskCardThreadCallIdempotencyKey: canonicalThreadTaskCardThreadCallIdempotencyKey,
 } = require("../services/task-cards/task-card-idempotency-service");

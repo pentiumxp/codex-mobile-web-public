@@ -548,8 +548,9 @@ Implementation path:
 10. Preserve source/target audit metadata after approval injection and
    auto-return creation.
 11. The current implementation uses:
-   - `adapters/thread-task-card-service.js`
-   - `adapters/thread-task-card-routing-service.js`
+   - `services/task-cards/thread-task-card-service.js`
+   - `services/task-cards/thread-task-card-routing-service.js`
+   - `services/task-cards/thread-task-card-deploy-lane-policy-service.js`
    - `POST /api/thread-task-cards`
    - `POST /api/threads/:sourceThreadId/task-cards`
    - `GET /api/thread-task-cards/:id`

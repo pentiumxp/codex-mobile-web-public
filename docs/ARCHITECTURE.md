@@ -731,9 +731,12 @@ tool, or create script. The service stores the bounded request on delivery
 metadata, the injected message exposes it, and the approval path overrides the
 target turn's inherited runtime effort before `thread/resume` / `turn/start`.
 Target parsing, visible-thread filtering, archived/hidden/subagent/sidecar
-rejection, same-cwd canonical selection, and public target metadata shaping are
-owned by `adapters/thread-task-card-routing-service.js`; `server.js` keeps only
-the HTTP/app-server composition wrappers for those rules.
+rejection, same-cwd canonical selection, public target metadata shaping, and
+routine plugin deploy-lane routing are owned by
+`services/task-cards/thread-task-card-routing-service.js` and
+`services/task-cards/thread-task-card-deploy-lane-policy-service.js`; the
+adapter paths are compatibility exports only, and `server.js` keeps only the
+HTTP/app-server composition wrappers for those rules.
 This app-server dynamic-tool path is only for Codex app-server turns. Codex
 Mobile also registers a standard `codex_mobile` MCP server into each active or
 target Codex Home during startup, workspace creation, and profile switching.

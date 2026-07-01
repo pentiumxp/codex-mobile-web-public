@@ -13,7 +13,10 @@ const {
   normalizeHomeAiDeployLaneSummary,
   planHomeAiDeployLaneRouting,
   prioritizeDelegationTargetHints,
-} = require("../adapters/thread-task-card-deploy-lane-policy-service");
+} = require("../services/task-cards/thread-task-card-deploy-lane-policy-service");
+
+const canonicalDeployLanePolicyService = require("../services/task-cards/thread-task-card-deploy-lane-policy-service");
+const adapterDeployLanePolicyService = require("../adapters/thread-task-card-deploy-lane-policy-service");
 
 const homeAiCwd = "/Users/hermes-dev/HermesMobileDev/app";
 const pluginCwd = "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web";
@@ -21,6 +24,11 @@ const pluginCwd = "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web";
 function thread(id, name, cwd, extra = {}) {
   return Object.assign({ id, name, cwd, updatedAt: 1, status: "completed" }, extra);
 }
+
+test("task-card deploy-lane policy adapter re-exports the canonical service boundary", () => {
+  assert.equal(adapterDeployLanePolicyService.planHomeAiDeployLaneRouting, canonicalDeployLanePolicyService.planHomeAiDeployLaneRouting);
+  assert.equal(adapterDeployLanePolicyService.prioritizeDelegationTargetHints, canonicalDeployLanePolicyService.prioritizeDelegationTargetHints);
+});
 
 test("Home AI Deploy lane completed thread is normalized to durable idle lane metadata", () => {
   const raw = thread("deploy-1", HOME_AI_DEPLOY_LANE_TITLE, homeAiCwd, {
