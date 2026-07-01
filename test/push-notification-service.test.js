@@ -426,8 +426,8 @@ test("server wires web push filtering to thread spawn edges", () => {
   assert.match(webPushRuntimeServiceJs, /agent_role/);
   assert.match(webPushRuntimeServiceJs, /value = "unknown"/);
   assert.match(webPushRuntimeServiceJs, /allowMissingThreadId:\s*true/);
-  assert.match(serverJs, /function threadIdFromRolloutPath/);
-  assert.match(serverJs, /function threadIdFromRolloutPath\(value\) \{\s+return requireRuntimeTurnEventPipelineService\(\)\.threadIdFromRolloutPath\(value\);\s+\}/);
+  assert.match(runtimeTurnEventPipelineServiceJs, /function threadIdFromRolloutPath\(value\)/);
+  assert.match(runtimeTurnEventPipelineServiceJs, /threadIdFromRolloutPath,\s*\n/);
   assert.match(runtimeTurnEventPipelineServiceJs, /params && params\.turn && params\.turn\.thread && params\.turn\.thread\.id/);
   assert.match(pkg, /adapters\/sqlite-cli\.js/);
   assert.match(pkg, /adapters\/web-push-runtime-service\.js/);

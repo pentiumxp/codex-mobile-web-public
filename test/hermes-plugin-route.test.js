@@ -7,6 +7,10 @@ const { test } = require("node:test");
 const { createServerHttpRuntimeService } = require("../services/runtime/server-http-runtime-service");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const serverRuntimeConfigServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "runtime", "server-runtime-config-service.js"),
+  "utf8",
+);
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "core-api-route-service.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const staticFileServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "static-file-service.js"), "utf8");
@@ -50,16 +54,16 @@ test("server exposes Hermes plugin manifest, registration, origin, launch, sessi
   assert.match(serverJs, /buildTurnCompletionDetailMessage/);
   assert.match(webPushRuntimeServiceJs, /detailMessage/);
   assert.match(webPushRuntimeServiceJs, /delegateTurnCompletedNotification/);
-  assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL/);
-  assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE/);
   assert.match(coreApiRouteServiceJs, /notificationDelegateConfigured/);
   assert.match(coreApiRouteServiceJs, /isAccessKeyAuthorized\(req\)/);
   assert.match(serverHttpRuntimeServiceJs, /const tokens = requestAuthTokens\(req\);[\s\S]*tokens\.some\(\(token\) => hermesPluginService\.isSessionAuthorized\(token\)\)/);
   assert.match(coreApiRouteServiceJs, /pluginSessionCookieHeader\(req, session\)/);
   assert.match(serverHttpRuntimeServiceJs, /Authorization/);
-  assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_BASE_URL/);
-  assert.match(serverJs, /CODEX_MOBILE_PUBLIC_BASE_URL/);
-  assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_HERMES_PLUGIN_BASE_URL/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_PUBLIC_BASE_URL/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS/);
   assert.match(staticFileServiceJs, /Content-Security-Policy/);
   assert.match(staticFileServiceJs, /frameAncestorsHeader\(\)/);
 });

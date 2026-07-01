@@ -7,6 +7,10 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const serverRuntimeConfigServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "runtime", "server-runtime-config-service.js"),
+  "utf8",
+);
 const serverHttpRuntimeServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "runtime", "server-http-runtime-service.js"),
   "utf8",
@@ -355,8 +359,8 @@ test("thread detail uses full thread/read before bounded turns/list fallback", (
 });
 
 test("thread detail defaults to ten turns and exposes an older cursor when compacted", () => {
-  assert.match(serverJs, /CODEX_MOBILE_THREAD_TURNS \|\| "10"/);
-  assert.match(serverJs, /CODEX_MOBILE_FULL_THREAD_TURNS \|\| "10"/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_TURNS \|\| "10"/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_FULL_THREAD_TURNS \|\| "10"/);
   assert.match(threadDetailCompactionServiceJs, /function olderTurnsCursorBeforeTurn\(turn\)/);
   assert.match(threadDetailCompactionServiceJs, /return JSON\.stringify\(\{ turnId, includeAnchor: false \}\);/);
   assert.match(threadDetailCompactionServiceJs, /out\.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn\(out\.turns\[0\]\);/);
@@ -1181,7 +1185,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(threadSummaryReadModelServiceJs, /function readThreadSummaryFromAppServer\(codexClient, threadId\)/);
   assert.match(threadSummaryReadModelAdapterJs, /services\/thread-list\/thread-summary-read-model-service/);
   assert.match(serverHttpRuntimeServiceJs, /function logThreadList\(event, details = \{\}\)/);
-  assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);
+  assert.match(serverRuntimeConfigServiceJs, /THREAD_LIST_FALLBACK_CACHE_TTL_MS: Math\.max\(0, Number\(env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS \|\| "0"\)\)/);
   assert.match(threadListRuntimeServiceJs, /createThreadListFallbackCacheService/);
   assert.match(baselineServiceJs, /createThreadListFallbackBaselineService/);
   assert.match(cacheServiceJs, /createThreadListFallbackBaselineService/);
@@ -1220,12 +1224,12 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(threadListSummaryServiceJs, /"mobileDetailLoaded"/);
   assert.match(serverJs, /threadListRuntimeService = createThreadListRuntimeService\(\{/);
   assert.match(threadListRuntimeServiceJs, /const threadListFallbackCacheService = createThreadListFallbackCacheService\(\{/);
-  assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_ENABLED = !\/\^\(0\|false\|no\|off\)\$\/i\.test\(process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM \|\| "1"\)/);
-  assert.match(serverJs, /process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS \|\| "0"/);
-  assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_RETRY_MS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_RETRY_MS \|\| "2500"/);
-  assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS \|\| "5"/);
-  assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_LIMIT = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT \|\| "40"/);
-  assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT_RAW = Number\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT \|\| "1000"/);
+  assert.match(serverRuntimeConfigServiceJs, /THREAD_LIST_FALLBACK_PREWARM_ENABLED: !offFlag\(env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM \|\| "1"\)/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS \|\| "0"/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_RETRY_MS \|\| "2500"/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS \|\| "5"/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT \|\| "40"/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT \|\| "1000"/);
   assert.match(threadListRuntimeServiceJs, /summarizePrewarmStatus/);
   assert.match(threadListRuntimeServiceJs, /const threadListFallbackPrewarmService = createThreadListFallbackPrewarmService\(\{[\s\S]*readFallback: readThreadListFallback,[\s\S]*readGlobalState,[\s\S]*shouldRun: \(\) => \(Number\(getActiveThreadDetailRequestCount\(\)\) > 0[\s\S]*active-detail-in-flight[\s\S]*logger: options\.logger,[\s\S]*\}\);/);
   assert.match(threadListRuntimeServiceJs, /function threadListFallbackPrewarmConfig\(\) \{[\s\S]*enabled: prewarmOptions\.enabled,[\s\S]*delayMs: prewarmOptions\.delayMs,[\s\S]*retryDelayMs: prewarmOptions\.retryDelayMs,[\s\S]*maxDeferrals: prewarmOptions\.maxDeferrals,[\s\S]*limit: prewarmOptions\.limit,[\s\S]*sourceSnapshotLimit: prewarmOptions\.sourceSnapshotLimit,[\s\S]*\}/);

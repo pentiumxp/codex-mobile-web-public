@@ -6,6 +6,10 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const serverRuntimeConfigServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "runtime", "server-runtime-config-service.js"),
+  "utf8",
+);
 const packageJson = fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf8");
 const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
 const routeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-side-chat-route-service.js"), "utf8");
@@ -19,7 +23,8 @@ test("server delegates side chat route and orchestration to owner modules", () =
   assert.match(serverJs, /createThreadSideChatService/);
   assert.match(serverJs, /createThreadSideChatOrchestrationService/);
   assert.match(serverJs, /handleThreadSideChatRoute/);
-  assert.match(serverJs, /CODEX_MOBILE_THREAD_SIDE_CHAT_FILE/);
+  assert.match(serverJs, /THREAD_SIDE_CHAT_FILE/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_SIDE_CHAT_FILE/);
   assert.match(serverJs, /const threadSideChatService = createThreadSideChatService/);
   assert.match(serverJs, /const threadSideChatOrchestrationService = createThreadSideChatOrchestrationService/);
   assert.match(apiDispatchRouteServiceJs, /orchestrationService: threadSideChatOrchestrationService/);

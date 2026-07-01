@@ -14,6 +14,10 @@ const {
 } = require("../adapters/thread-goal-service");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const serverRuntimeConfigServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "runtime", "server-runtime-config-service.js"),
+  "utf8",
+);
 const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const threadGoalActionServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-goal-action-service.js"), "utf8");
@@ -185,7 +189,8 @@ test("server enriches thread list and detail responses with thread goals", () =>
   assert.match(serverJs, /createThreadGoalService/);
   assert.match(serverJs, /createThreadGoalActionService/);
   assert.match(serverJs, /normalizeThreadGoalStatus/);
-  assert.match(serverJs, /const GOALS_DB = path\.join\(CODEX_HOME, "goals_1\.sqlite"\)/);
+  assert.match(serverJs, /GOALS_DB/);
+  assert.match(serverRuntimeConfigServiceJs, /GOALS_DB: path\.join\(CODEX_HOME, "goals_1\.sqlite"\)/);
   assert.match(serverJs, /const threadGoalService = createThreadGoalService/);
   assert.match(serverJs, /threadGoalActionService = createThreadGoalActionService/);
   assert.match(serverJs, /goalForThread: \(threadId\) => threadGoalService\.goalForThread\(threadId\)/);

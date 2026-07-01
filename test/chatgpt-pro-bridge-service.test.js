@@ -15,6 +15,7 @@ const {
 
 const root = path.resolve(__dirname, "..");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const serverRuntimeConfigServiceJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-config-service.js"), "utf8");
 const apiDispatchRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "api-dispatch-route-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
@@ -86,8 +87,8 @@ test("server and client wire @ChatGPT Pro without normal message submission", ()
   assert.match(apiDispatchRouteServiceJs, /\/api\/chatgpt-pro\/planner\/status/);
   assert.match(apiDispatchRouteServiceJs, /\/api\/chatgpt-pro\/planner\/artifacts/);
   assert.match(coreApiRouteServiceJs, /\/api\/chatgpt-pro\/mcp/);
-  assert.match(serverJs, /CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE/);
-  assert.match(serverJs, /CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS/);
   assert.match(serverJs, /delegateTaskCard: async \(input = \{\}\) => createThreadTaskCardsFromSourceThread\(input\.sourceThreadId, input\)/);
   assert.match(serverJs, /allowDirectTaskCards: CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS/);
   assert.ok(

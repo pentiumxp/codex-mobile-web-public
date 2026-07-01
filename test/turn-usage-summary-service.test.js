@@ -14,6 +14,10 @@ const {
 } = require("../adapters/turn-usage-summary-service");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const serverRuntimeConfigServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "runtime", "server-runtime-config-service.js"),
+  "utf8",
+);
 const rolloutDetailEnrichmentServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "rollout-detail-enrichment-service.js"),
   "utf8",
@@ -325,12 +329,12 @@ test("thread detail usage read targets returned turns beyond the rollout tail", 
 
 test("thread detail rollout scans stay bounded for very large sessions", () => {
   assert.match(
-    serverJs,
-    /const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math\.max\(MAX_ROLLOUT_CONTEXT_BYTES, Number\(process\.env\.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES \|\| String\(32 \* 1024 \* 1024\)\)\);/,
+    serverRuntimeConfigServiceJs,
+    /MAX_RUNTIME_CONTEXT_SCAN_BYTES: Math\.max\(\s*MAX_ROLLOUT_CONTEXT_BYTES,\s*Number\(env\.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES \|\| String\(32 \* 1024 \* 1024\)\),\s*\)/,
   );
   assert.match(
-    serverJs,
-    /const MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES = Math\.max\(\s*MAX_ROLLOUT_CONTEXT_BYTES,\s*Number\(process\.env\.CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES \|\| String\(32 \* 1024 \* 1024\)\),\s*\);/,
+    serverRuntimeConfigServiceJs,
+    /MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES: Math\.max\(\s*MAX_ROLLOUT_CONTEXT_BYTES,\s*Number\(env\.CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES \|\| String\(32 \* 1024 \* 1024\)\),\s*\)/,
   );
   assert.match(
     serverJs,
