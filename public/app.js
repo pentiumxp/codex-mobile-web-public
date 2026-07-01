@@ -555,7 +555,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v614";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v615";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5922,14 +5922,32 @@ function userMessagesHaveNearbyTimestamps(left, right, windowMs = 10 * 60 * 1000
   return Boolean(leftMs && rightMs && Math.abs(leftMs - rightMs) <= windowMs);
 }
 
-function optimisticEchoCanMatchEarlierDurable(durableItem, optimisticItem) {
+function durableTurnCanReceivePendingEcho(turn) {
+  if (!turn) return false;
+  const status = turn.status;
+  const statusType = status && typeof status === "object"
+    ? String(status.type || status.status || status.state || "")
+    : String(status || "");
+  if (/completed|failed|cancel|error|interrupted/i.test(statusType)) return false;
+  if (/running|active|queued|processing|inprogress|in_progress|in-progress|pending|started/i.test(statusType)) return true;
+  return Boolean(turn.live || turn.mobileLive || turn.mobileActiveLiveTurn || turn.mobilePendingOverlay);
+}
+
+function optimisticEchoCanMatchEarlierDurable(durableItem, optimisticItem, durableTurn = null) {
   if (!durableItem || !optimisticItem) return false;
   if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
   if (isOptimisticUserMessage(durableItem) || !isOptimisticUserMessage(optimisticItem)) return false;
   if (userMessagesShareSubmissionId(durableItem, optimisticItem)) return true;
-  if (!optimisticItem.mobileSendError) return false;
-  return userMessagesLikelySame(durableItem, optimisticItem)
+  const likelySameNearby = userMessagesLikelySame(durableItem, optimisticItem)
     && userMessagesHaveNearbyTimestamps(durableItem, optimisticItem);
+  if (optimisticItem.mobileSendError) return likelySameNearby;
+  const localPendingEcho = Boolean(
+    optimisticItem.mobilePendingSubmission
+    && String(optimisticItem.clientSubmissionId || "").trim()
+    && /^local-user-/.test(String(optimisticItem.id || "")),
+  );
+  if (!localPendingEcho || !durableTurnCanReceivePendingEcho(durableTurn)) return false;
+  return likelySameNearby;
 }
 
 function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
@@ -6033,7 +6051,12 @@ function threadUserMessageEntries(turns) {
     const items = Array.isArray(turn && turn.items) ? turn.items : [];
     for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
       const item = items[itemIndex];
-      if (item && item.type === "userMessage") entries.push({ item, turnIndex, itemIndex });
+      if (item && item.type === "userMessage") entries.push({
+        item,
+        turn,
+        turnIndex,
+        itemIndex,
+      });
     }
   }
   return entries;
@@ -6045,7 +6068,7 @@ function shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserM
     if (!real || !real.item || real.item.id === item.id) return false;
     if (!userMessagesCanShadow(real.item, item)) return false;
     if (real.turnIndex >= turnIndex) return true;
-    if (optimisticEchoCanMatchEarlierDurable(real.item, item)) return true;
+    if (optimisticEchoCanMatchEarlierDurable(real.item, item, real.turn)) return true;
     return userMessageHasVisualAttachment(real.item) && userMessageHasVisualAttachment(item);
   });
 }

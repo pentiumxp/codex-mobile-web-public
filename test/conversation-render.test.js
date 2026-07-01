@@ -665,6 +665,7 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+    "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
@@ -756,6 +757,7 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+    "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
@@ -854,6 +856,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+    "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
@@ -1002,6 +1005,7 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+    "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -1054,6 +1058,7 @@ function evaluatedLiveUserMessageUpsert() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+    "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -1127,6 +1132,7 @@ function evaluatedVisibleItemsForTurn() {
     "userMessagesLikelySame",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+    "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "pruneRecentSubmittedUserMessages",
     "recentSubmittedUserRecordBelongsToThread",
@@ -1298,6 +1304,7 @@ function evaluatedLocalSubmissionInserter() {
     "userMessagesCanShadow",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
+    "durableTurnCanReceivePendingEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -4988,6 +4995,82 @@ test("cross-turn normalization keeps synthetic repeat when matching durable mess
   assert.equal(thread.turns[0].items[0].id, "real-user-1");
   assert.equal(thread.turns[1].items.length, 1);
   assert.equal(thread.turns[1].items[0].id, "mux-user-thread-1-turn-2-submit-2");
+});
+
+test("cross-turn normalization drops successful local pending echo after active durable receipt", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "server-active-turn",
+        status: { type: "active" },
+        items: [
+          {
+            id: "real-user-current",
+            type: "userMessage",
+            startedAtMs: 1782907392000,
+            content: [{ type: "input_text", text: "why did the theater WOL not wake" }],
+          },
+          { id: "assistant-progress", type: "agentMessage", text: "checking" },
+        ],
+      },
+      {
+        id: "local-turn-submit-current",
+        status: { type: "active" },
+        items: [{
+          id: "local-user-submit-current",
+          type: "userMessage",
+          startedAtMs: 1782907392600,
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-current",
+          content: [{ type: "text", text: "why did the theater   WOL not wake" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), [
+    "real-user-current",
+    "assistant-progress",
+  ]);
+  assert.deepEqual(thread.turns[1].items, []);
+});
+
+test("cross-turn normalization keeps nearby repeated send after completed durable turn", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "server-completed-turn",
+        status: { type: "completed" },
+        items: [{
+          id: "real-user-earlier",
+          type: "userMessage",
+          startedAtMs: 1782907392000,
+          content: [{ type: "input_text", text: "repeat prompt" }],
+        }],
+      },
+      {
+        id: "local-turn-submit-repeat",
+        status: { type: "active" },
+        items: [{
+          id: "local-user-submit-repeat",
+          type: "userMessage",
+          startedAtMs: 1782907392500,
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-repeat",
+          content: [{ type: "text", text: "repeat   prompt" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["real-user-earlier"]);
+  assert.deepEqual(thread.turns[1].items.map((item) => item.id), ["local-user-submit-repeat"]);
 });
 
 test("cross-turn normalization drops failed optimistic echo after nearby durable receipt", () => {
