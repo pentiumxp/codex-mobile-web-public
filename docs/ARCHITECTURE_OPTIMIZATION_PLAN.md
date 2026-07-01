@@ -4824,6 +4824,31 @@ future default-Vite cutover from passing while the Hermes embed entry path has
 lost its bootstrap ownership or leaked standalone local-key state into plugin
 mode.
 
+The next app-preview prerequisite extends the same boundary from static embed
+startup into the real Hermes launch/session contract:
+
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-app-preview-only
+  --vite-app-preview-launch-session` creates a short-lived Hermes plugin
+  launch through `/api/v1/hermes/plugin/launch`, rewrites only the host path to
+  `/vite-shell/app-preview.html`, then lets the browser exchange the one-time
+  token through the normal `/api/v1/hermes/plugin/session` frontend path.
+- The probe verifies bounded session invariants only: launch entry path was
+  returned, token/workspace parameters were present, the app-preview path was
+  preserved, launch token query params were scrubbed, `state.pluginLaunchSession`
+  cleared, `state.pluginSessionActive` became true, the active session key is
+  not the browser localStorage access key, plugin startup loading cleared, and
+  the app became visible.
+- `services/runtime/runtime-job-scheduler-service.js` declares
+  `browser-vite-app-preview-session` as a deploy-default real-browser job, and
+  `scripts/codex-mobile-runtime-self-check-loop.js` runs it separately from the
+  static embed startup job so deploy readback can distinguish an embed marker
+  regression from a launch/session exchange regression.
+
+This still leaves production `/` on classic-script fallback. It closes the
+cutover gap where the Vite app-preview host could boot in `?embed=hermes` mode
+but fail the actual one-time launch URL, session-cookie, and URL-scrub path
+that Hermes Mobile uses in production.
+
 ## Release Rule
 
 Follow the current release order:

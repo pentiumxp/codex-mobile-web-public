@@ -90,6 +90,8 @@ function usage() {
     "  --vite-app-preview-only    Check /vite-shell/app-preview.html Vite-owned app startup only.",
     "  --vite-app-preview-runtime Check /vite-shell/app-preview.html with full read-only thread UX sampling.",
     "  --vite-app-preview-embed   Add ?embed=hermes to app-preview checks and verify embed bootstrap invariants.",
+    "  --vite-app-preview-launch-session",
+    "                             Create a short Hermes launch and verify app-preview session exchange.",
     "  --rounds <n>               Thread switch rounds. Default: 3.",
     "  --sample-delays-ms <csv>   Delays after each switch. Default: 350,1200,2800.",
     "  --thread-list-stress-rounds <n> Thread-list open/scroll/click stress rounds. Default: 2.",
@@ -155,6 +157,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     viteAppPreviewOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_ONLY || "")),
     viteAppPreviewRuntime: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_RUNTIME || "")),
     viteAppPreviewEmbed: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_EMBED || "")),
+    viteAppPreviewLaunchSession: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_LAUNCH_SESSION || "")),
     rounds: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_ROUNDS || "3", 3, 20),
     sampleDelaysMs: parseDelayList(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SAMPLE_DELAYS_MS || ""),
     threadListStressRounds: readNonNegativeInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_THREAD_LIST_STRESS_ROUNDS || "2", 2, 20),
@@ -188,6 +191,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--vite-app-preview-only") options.viteAppPreviewOnly = true;
     else if (arg === "--vite-app-preview-runtime") options.viteAppPreviewRuntime = true;
     else if (arg === "--vite-app-preview-embed") options.viteAppPreviewEmbed = true;
+    else if (arg === "--vite-app-preview-launch-session") options.viteAppPreviewLaunchSession = true;
     else if (arg === "--rounds") options.rounds = readPositiveInt(next(), options.rounds, 20);
     else if (arg === "--sample-delays-ms") options.sampleDelaysMs = parseDelayList(next(), options.sampleDelaysMs);
     else if (arg === "--thread-list-stress-rounds") options.threadListStressRounds = readNonNegativeInt(next(), options.threadListStressRounds, 20);
@@ -226,13 +230,19 @@ function requestUrl(options, pathname, params = {}) {
   return url.toString();
 }
 
-async function fetchJson(url, options = {}, key = "") {
+async function fetchJson(url, options = {}, key = "", requestOptions = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs);
   try {
-    const headers = {};
+    const headers = Object.assign({}, requestOptions.headers || {});
     if (key) headers.Authorization = `Bearer ${key}`;
-    const response = await fetch(url, { headers, signal: controller.signal });
+    if (requestOptions.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+    const response = await fetch(url, {
+      method: requestOptions.method || "GET",
+      headers,
+      body: requestOptions.body,
+      signal: controller.signal,
+    });
     const text = await response.text();
     let parsed = {};
     try {
@@ -248,6 +258,47 @@ async function fetchJson(url, options = {}, key = "") {
     return parsed;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function createHermesAppPreviewLaunch(options = {}, key = "") {
+  const evidence = {
+    attempted: true,
+    ok: false,
+    entryPathReceived: false,
+    tokenParamPresent: false,
+    workspaceIdPresent: false,
+    expiresIn: 0,
+    appPreviewPath: "/vite-shell/app-preview.html",
+    errorCode: "",
+  };
+  try {
+    const launch = await fetchJson(requestUrl(options, "/api/v1/hermes/plugin/launch"), options, key, {
+      method: "POST",
+      body: JSON.stringify({ workspace_id: "owner" }),
+    });
+    const entryPath = String(launch && launch.entry_path || "");
+    evidence.entryPathReceived = Boolean(entryPath);
+    evidence.expiresIn = Math.max(0, Math.trunc(Number(launch && launch.expires_in || 0)));
+    const entryUrl = new URL(entryPath || "/", options.server);
+    const launchToken = String(entryUrl.searchParams.get("codexPluginLaunch") || entryUrl.searchParams.get("pluginLaunch") || "").trim();
+    evidence.tokenParamPresent = Boolean(launchToken);
+    evidence.workspaceIdPresent = Boolean(String(entryUrl.searchParams.get("workspaceId") || "").trim());
+    const params = {
+      embed: "hermes",
+      codexPluginLaunch: launchToken,
+      workspaceId: entryUrl.searchParams.get("workspaceId") || "owner",
+      pluginTheme: entryUrl.searchParams.get("pluginTheme") || "",
+      pluginFontSize: entryUrl.searchParams.get("pluginFontSize") || "",
+    };
+    evidence.ok = Boolean(launch && launch.ok !== false && launchToken);
+    return {
+      evidence,
+      url: evidence.ok ? requestUrl(options, "/vite-shell/app-preview.html", params) : "",
+    };
+  } catch (err) {
+    evidence.errorCode = boundedToken(err && err.message, "plugin_launch_create_failed");
+    return { evidence, url: "" };
   }
 }
 
@@ -1159,6 +1210,7 @@ function viteAppPreviewProbeExpression(input = {}) {
   const expectedClientBuildId = String(input.clientBuildId || "");
   const expectedShellCacheName = String(input.shellCacheName || "");
   const expectEmbed = input.expectEmbed === true;
+  const expectPluginSession = input.expectPluginSession === true;
   return `
     (async () => {
       let appPreviewResult = null;
@@ -1170,6 +1222,41 @@ function viteAppPreviewProbeExpression(input = {}) {
       } catch (error) {
         appPreviewResult = { ok: false, errorCode: String(error && error.message || error || "vite_app_preview_failed").slice(0, 120) };
       }
+      const visible = (element) => Boolean(element
+        && element.getBoundingClientRect
+        && element.getBoundingClientRect().height > 0
+        && getComputedStyle(element).display !== "none"
+        && getComputedStyle(element).visibility !== "hidden");
+      if (${expectPluginSession ? "true" : "false"}) {
+        const sessionDeadline = Date.now() + 7000;
+        while (Date.now() < sessionDeadline) {
+          const currentState = window.state || {};
+          const currentUrl = new URL(window.location.href);
+          if (currentState.pluginSessionActive === true
+            && currentState.pluginLaunchSession === false
+            && currentState.key
+            && !currentUrl.searchParams.has("codexPluginLaunch")
+            && !currentUrl.searchParams.has("pluginLaunch")) {
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+        const appDeadline = Date.now() + 9000;
+        while (Date.now() < appDeadline) {
+          const appNode = document.getElementById("app");
+          const currentState = window.state || {};
+          if (currentState.pluginStartupLoading === false && visible(appNode)) break;
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+      } else if (${expectEmbed ? "true" : "false"}) {
+        const embedDeadline = Date.now() + 9000;
+        while (Date.now() < embedDeadline) {
+          const appNode = document.getElementById("app");
+          const currentState = window.state || {};
+          if (currentState.pluginStartupLoading === false && visible(appNode)) break;
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+      }
       await new Promise((resolve) => setTimeout(resolve, 600));
       const app = document.getElementById("app");
       const login = document.getElementById("login");
@@ -1179,6 +1266,7 @@ function viteAppPreviewProbeExpression(input = {}) {
       const locationUrl = new URL(window.location.href);
       const initialPluginEmbed = window.INITIAL_PLUGIN_EMBED || {};
       const state = window.state || {};
+      const localStorageKey = String(localStorage.getItem("codexMobileKey") || "");
       const moduleScripts = Array.from(document.querySelectorAll("script[type='module']"))
         .map((script) => {
           try {
@@ -1201,11 +1289,6 @@ function viteAppPreviewProbeExpression(input = {}) {
       const shellScripts = Array.isArray(shellManifest.indexScriptAssets)
         ? shellManifest.indexScriptAssets
         : (Array.isArray(shellManifest.scriptAssets) ? shellManifest.scriptAssets : []);
-      const visible = (element) => Boolean(element
-        && element.getBoundingClientRect
-        && element.getBoundingClientRect().height > 0
-        && getComputedStyle(element).display !== "none"
-        && getComputedStyle(element).visibility !== "hidden");
       return {
         label: "vite-app-preview",
         probeKind: "vite-app-preview",
@@ -1223,12 +1306,21 @@ function viteAppPreviewProbeExpression(input = {}) {
         loaderFailedCount: Number(appPreviewResult && appPreviewResult.failedCount || status.failed && status.failed.length || 0) || 0,
         loaderErrorCode: String(appPreviewResult && appPreviewResult.errorCode || status.failed && status.failed[0] || "").slice(0, 120),
         embedExpected: ${expectEmbed ? "true" : "false"},
+        pluginSessionExpected: ${expectPluginSession ? "true" : "false"},
         embedQueryPresent: locationUrl.searchParams.get("embed") === "hermes",
         embedHtmlClassPresent: Boolean(html && html.classList && html.classList.contains("embed-hermes")),
         embedPrimaryClassPresent: Boolean(html && html.classList && html.classList.contains("embed-hermes-primary")),
         pluginEmbedApiReady: Boolean(window.CodexPluginEmbed && typeof window.CodexPluginEmbed.detect === "function"),
         initialPluginEmbedEmbedded: Boolean(initialPluginEmbed && initialPluginEmbed.embedded === true),
+        initialPluginLaunchKeyPresent: Boolean(window.INITIAL_PLUGIN_LAUNCH_KEY),
         pluginModeLocalKeySuppressed: Boolean(window.state && !state.key),
+        pluginLaunchUrlScrubbed: !locationUrl.searchParams.has("codexPluginLaunch") && !locationUrl.searchParams.has("pluginLaunch"),
+        pluginLaunchSessionCleared: state.pluginLaunchSession === false,
+        pluginSessionActive: state.pluginSessionActive === true,
+        pluginSessionKeyPresent: Boolean(state.key),
+        pluginSessionKeyDiffersFromLocalStorage: Boolean(state.key && state.key !== localStorageKey),
+        pluginAppPreviewPathPreserved: window.location.pathname === "/vite-shell/app-preview.html",
+        pluginStartupLoadingCleared: state.pluginStartupLoading === false,
         clientBuildPresent: Boolean(window.CLIENT_BUILD_ID),
         clientBuildMatches: ${JSON.stringify(expectedClientBuildId)} ? window.CLIENT_BUILD_ID === ${JSON.stringify(expectedClientBuildId)} : Boolean(window.CLIENT_BUILD_ID),
         shellCacheMatches: ${JSON.stringify(expectedShellCacheName)} ? String(shellManifest.shellCacheName || "") === ${JSON.stringify(expectedShellCacheName)} : Boolean(shellManifest.shellCacheName),
@@ -1270,12 +1362,24 @@ function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}, options = 
   if (sample && sample.clientBuildMatches !== true) append("vite_app_preview_client_build_mismatch");
   if (sample && sample.shellCacheMatches !== true) append("vite_app_preview_shell_cache_mismatch");
   const expectEmbed = options.expectEmbed === true || (sample && sample.embedExpected === true);
+  const expectPluginSession = options.expectPluginSession === true || (sample && sample.pluginSessionExpected === true);
   if (expectEmbed) {
     if (!sample || sample.embedQueryPresent !== true) append("vite_app_preview_embed_query_missing");
     if (!sample || sample.embedHtmlClassPresent !== true) append("vite_app_preview_embed_class_missing");
     if (!sample || sample.pluginEmbedApiReady !== true) append("vite_app_preview_plugin_embed_api_missing");
     if (!sample || sample.initialPluginEmbedEmbedded !== true) append("vite_app_preview_initial_plugin_embed_missing");
-    if (!sample || sample.pluginModeLocalKeySuppressed !== true) append("vite_app_preview_plugin_local_key_present");
+    if (expectPluginSession) {
+      if (!sample || sample.initialPluginLaunchKeyPresent !== true) append("vite_app_preview_plugin_launch_key_missing");
+      if (!sample || sample.pluginLaunchUrlScrubbed !== true) append("vite_app_preview_plugin_launch_url_not_scrubbed");
+      if (!sample || sample.pluginLaunchSessionCleared !== true) append("vite_app_preview_plugin_launch_session_not_cleared");
+      if (!sample || sample.pluginSessionActive !== true) append("vite_app_preview_plugin_session_inactive");
+      if (!sample || sample.pluginSessionKeyPresent !== true) append("vite_app_preview_plugin_session_key_missing");
+      if (!sample || sample.pluginSessionKeyDiffersFromLocalStorage !== true) append("vite_app_preview_plugin_session_uses_local_key");
+      if (!sample || sample.pluginAppPreviewPathPreserved !== true) append("vite_app_preview_plugin_session_path_changed");
+      if (!sample || sample.pluginStartupLoadingCleared !== true) append("vite_app_preview_plugin_startup_loading_stuck");
+    } else if (!sample || sample.pluginModeLocalKeySuppressed !== true) {
+      append("vite_app_preview_plugin_local_key_present");
+    }
   }
   if (sample && sample.appVisible !== true) append("vite_app_preview_app_not_visible");
   if (sample && sample.bootRecoveryVisible === true) append("vite_app_preview_boot_recovery_visible");
@@ -1941,9 +2045,10 @@ function applyStartupGateIssues(report, startupSample = {}, staticShell = {}) {
 
 async function run(options = parseArgs(), deps = {}) {
   const key = deps.key !== undefined ? deps.key : readAccessKey(options);
-  const appPreviewOnly = options.viteAppPreviewOnly === true;
+  const appPreviewLaunchSession = options.viteAppPreviewLaunchSession === true;
+  const appPreviewOnly = options.viteAppPreviewOnly === true || appPreviewLaunchSession;
   const appPreviewRuntime = options.viteAppPreviewRuntime === true && !appPreviewOnly;
-  const appPreviewEmbed = options.viteAppPreviewEmbed === true && (appPreviewOnly || appPreviewRuntime);
+  const appPreviewEmbed = (options.viteAppPreviewEmbed === true || appPreviewLaunchSession) && (appPreviewOnly || appPreviewRuntime);
   const browserOnly = options.startupOnly || options.vitePreviewOnly || appPreviewOnly;
   const submitAllowed = !browserOnly && !appPreviewRuntime && options.exerciseSubmit === true;
   const startedAt = new Date().toISOString();
@@ -1964,7 +2069,7 @@ async function run(options = parseArgs(), deps = {}) {
     ok: false,
     startedAt,
     mode: appPreviewOnly
-      ? (appPreviewEmbed ? "vite-app-preview-embed" : "vite-app-preview")
+      ? (appPreviewLaunchSession ? "vite-app-preview-launch-session" : appPreviewEmbed ? "vite-app-preview-embed" : "vite-app-preview")
       : appPreviewRuntime
         ? (appPreviewEmbed ? "vite-app-preview-embed-runtime" : "vite-app-preview-runtime")
         : options.vitePreviewOnly ? "vite-preview" : options.startupOnly ? "startup-only" : "full",
@@ -1995,6 +2100,7 @@ async function run(options = parseArgs(), deps = {}) {
     browserReport: null,
     vitePreview: null,
     viteAppPreview: null,
+    viteAppPreviewLaunch: null,
     viteAppPreviewReport: null,
     submitExercise: submitAllowed ? {
       attempted: true,
@@ -2014,6 +2120,11 @@ async function run(options = parseArgs(), deps = {}) {
   const consoleEvents = [];
   const exceptions = [];
   const samples = [];
+  let appPreviewLaunch = { evidence: null, url: "" };
+  if (appPreviewLaunchSession) {
+    appPreviewLaunch = await createHermesAppPreviewLaunch(options, key);
+    report.viteAppPreviewLaunch = appPreviewLaunch.evidence;
+  }
   let chrome = null;
   let cdp = null;
   try {
@@ -2071,8 +2182,10 @@ async function run(options = parseArgs(), deps = {}) {
     await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
       source: browserInitScript(key, threadPlan[0] && threadPlan[0].id || ""),
     });
-    const navigateUrl = (appPreviewOnly || appPreviewRuntime)
-      ? requestUrl(options, "/vite-shell/app-preview.html", appPreviewEmbed ? { embed: "hermes" } : {})
+    const navigateUrl = appPreviewLaunchSession && appPreviewLaunch.url
+      ? appPreviewLaunch.url
+      : (appPreviewOnly || appPreviewRuntime)
+        ? requestUrl(options, "/vite-shell/app-preview.html", appPreviewEmbed ? { embed: "hermes" } : {})
       : options.vitePreviewOnly ? requestUrl(options, "/vite-shell/preview.html") : options.server;
     await cdp.send("Page.navigate", { url: navigateUrl });
     await waitForLoad(cdp, options.timeoutMs);
@@ -2090,6 +2203,7 @@ async function run(options = parseArgs(), deps = {}) {
       report.viteAppPreview = await evaluate(cdp, viteAppPreviewProbeExpression({
         ...report.publicConfig,
         expectEmbed: appPreviewEmbed,
+        expectPluginSession: appPreviewLaunchSession,
       }), options.timeoutMs).catch((err) => ({
         label: "vite-app-preview",
         probeKind: "vite-app-preview",
@@ -2250,7 +2364,20 @@ async function run(options = parseArgs(), deps = {}) {
     report.browserReport = analyzeViteAppPreviewProbe(report.viteAppPreview, {
       consoleEvents,
       exceptions,
-    }, { expectEmbed: appPreviewEmbed });
+    }, { expectEmbed: appPreviewEmbed, expectPluginSession: appPreviewLaunchSession });
+    if (appPreviewLaunchSession && (!report.viteAppPreviewLaunch || report.viteAppPreviewLaunch.ok !== true)) {
+      const issues = Array.isArray(report.browserReport.issues) ? report.browserReport.issues : [];
+      issues.push({
+        severity: "H2",
+        code: "vite_app_preview_plugin_launch_create_failed",
+        surface: "browser-runtime",
+        errorCode: report.viteAppPreviewLaunch && report.viteAppPreviewLaunch.errorCode || "",
+      });
+      report.browserReport.issues = issues;
+      report.browserReport.issueCount = issues.length;
+      report.browserReport.blockingIssueCount = issues.filter((item) => item && /^(H1|H2)$/i.test(item.severity || "")).length;
+      report.browserReport.ok = report.browserReport.blockingIssueCount === 0;
+    }
     report.ok = report.browserReport.ok;
     return report;
   }
@@ -2267,7 +2394,7 @@ async function run(options = parseArgs(), deps = {}) {
     report.viteAppPreviewReport = analyzeViteAppPreviewProbe(report.viteAppPreview, {
       consoleEvents,
       exceptions,
-    }, { expectEmbed: appPreviewEmbed });
+    }, { expectEmbed: appPreviewEmbed, expectPluginSession: appPreviewLaunchSession });
     if (!report.viteAppPreviewReport.ok) {
       const issues = Array.isArray(report.browserReport.issues) ? report.browserReport.issues.slice() : [];
       issues.push(...(Array.isArray(report.viteAppPreviewReport.issues) ? report.viteAppPreviewReport.issues : []));
