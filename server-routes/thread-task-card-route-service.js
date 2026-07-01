@@ -691,6 +691,8 @@ function createThreadTaskCardRouteService(dependencies = {}) {
   }
 
   function actorThreadIdFromDynamicToolCall(params = {}, args = {}) {
+    const fromArgs = String(args.threadId || args.thread_id || args.actorThreadId || args.actor_thread_id || "").trim();
+    if (fromArgs) return fromArgs;
     const fromParams = pushThreadId(params);
     if (fromParams) return fromParams;
     const turnId = String((params && (params.turnId || params.turn_id))
@@ -698,7 +700,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       || "").trim();
     const inferred = turnId ? String(threadIdForTurnId(turnId) || "") : "";
     if (inferred) return inferred;
-    return String(args.threadId || args.thread_id || args.actorThreadId || args.actor_thread_id || "").trim();
+    return "";
   }
 
   function dynamicToolErrorPayload(code, message, extra = {}) {

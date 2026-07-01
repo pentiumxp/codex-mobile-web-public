@@ -401,6 +401,56 @@ test("approved task-card visible target summary helper is runtime executable", (
   assert.equal(emptyService.readThreadTaskCardVisibleTargetSummary("thread-movie"), null);
 });
 
+test("return_to_source dynamic tool prefers explicit target thread over app-server params thread", async () => {
+  const calls = [];
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {
+      reply: async (cardId, actorThreadId, body) => {
+        calls.push({ cardId, actorThreadId, body });
+        assert.equal(cardId, "ttc_xcode_to_health");
+        assert.equal(actorThreadId, "health-thread");
+        assert.equal(body.threadId, "health-thread");
+        return {
+          card: { status: "replied" },
+          replyCard: {
+            id: "ttc_return_card",
+            status: "approved",
+            terminal: true,
+            requiresReturn: false,
+            ackPolicy: "none",
+            source: { threadId: "health-thread" },
+            target: { threadId: "xcode-thread" },
+          },
+        };
+      },
+    },
+    stableTextHash,
+    logger: { log() {}, error() {} },
+  });
+
+  const response = await service.dynamicToolServerRequestResponsePayload({
+    id: "request-return",
+    params: {
+      fullName: "codex_mobile.return_to_source",
+      threadId: "xcode-thread",
+      arguments: {
+        taskCardId: "ttc_xcode_to_health",
+        threadId: "health-thread",
+        status: "completed",
+        title: "Health result",
+        body: "Completed in Health.",
+      },
+    },
+  });
+  const payloadText = response.result.contentItems[0].text;
+  const payload = JSON.parse(payloadText);
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.actorThreadId, "health-thread");
+  assert.equal(payload.replyCardId, "ttc_return_card");
+  assert.equal(calls.length, 1);
+});
+
 test("source-thread task-card route uses semantic idempotency for routine plugin deployments", () => {
   const service = createThreadTaskCardRouteService({
     threadTaskCardService: {},
