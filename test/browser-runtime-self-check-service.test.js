@@ -46,6 +46,13 @@ test("browser runtime self-check parses Vite app-preview root-path option", () =
   assert.equal(options.json, true);
 });
 
+test("browser runtime self-check parses Vite app-preview default-root option", () => {
+  const options = script.parseArgs(["--server", "http://127.0.0.1:8787", "--vite-app-preview-only", "--vite-app-preview-default-root", "--json"]);
+  assert.equal(options.viteAppPreviewOnly, true);
+  assert.equal(options.viteAppPreviewDefaultRoot, true);
+  assert.equal(options.json, true);
+});
+
 test("browser runtime self-check parses Vite app-preview Hermes embed option", () => {
   const options = script.parseArgs(["--server", "http://127.0.0.1:8787", "--vite-app-preview-only", "--vite-app-preview-embed", "--json"]);
   assert.equal(options.viteAppPreviewOnly, true);
@@ -208,6 +215,74 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_runtime_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_browser_exception"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_console_error"));
+});
+
+test("browser runtime self-check analyzes Vite app-preview default-root readiness", () => {
+  const passing = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    classicScriptCount: 51,
+    expectedClassicScriptCount: 51,
+    classicScriptOrderMatches: true,
+    loaderPlanPresent: true,
+    loaderPlanOwnerOk: true,
+    loaderPlanHashPresent: true,
+    loaderPlanScriptCount: 51,
+    loaderPlanHashCount: 51,
+    loaderPlanMatchesShellScripts: true,
+    loaderPlanMatchesInjectedScripts: true,
+    loaderPlanLoadedMatches: true,
+    rootPreviewExpected: true,
+    defaultRootPreviewExpected: true,
+    rootPathPreserved: true,
+    rootViteShellParamPresent: false,
+    rootViteShellParamAbsent: true,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] }, { expectRoot: true, expectDefaultRoot: true });
+  assert.equal(passing.ok, true);
+  assert.equal(passing.issueCount, 0);
+
+  const failing = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    classicScriptCount: 51,
+    expectedClassicScriptCount: 51,
+    classicScriptOrderMatches: true,
+    loaderPlanPresent: true,
+    loaderPlanOwnerOk: true,
+    loaderPlanHashPresent: true,
+    loaderPlanScriptCount: 51,
+    loaderPlanHashCount: 51,
+    loaderPlanMatchesShellScripts: true,
+    loaderPlanMatchesInjectedScripts: true,
+    loaderPlanLoadedMatches: true,
+    rootPreviewExpected: true,
+    defaultRootPreviewExpected: true,
+    rootPathPreserved: true,
+    rootViteShellParamPresent: true,
+    rootViteShellParamAbsent: false,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] }, { expectRoot: true, expectDefaultRoot: true });
+  assert.equal(failing.ok, false);
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_default_root_opt_in_present"));
 });
 
 test("browser runtime self-check analyzes Vite app-preview Hermes embed startup readiness", () => {

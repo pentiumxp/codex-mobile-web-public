@@ -90,6 +90,8 @@ function usage() {
     "  --vite-app-preview-only    Check /vite-shell/app-preview.html Vite-owned app startup only.",
     "  --vite-app-preview-runtime Check /vite-shell/app-preview.html with full read-only thread UX sampling.",
     "  --vite-app-preview-root    Serve app-preview through /?codexViteShell=app-preview and verify root-path startup.",
+    "  --vite-app-preview-default-root",
+    "                             Serve app-preview through plain / and verify the default-root startup contract.",
     "  --vite-app-preview-embed   Add ?embed=hermes to app-preview checks and verify embed bootstrap invariants.",
     "  --vite-app-preview-launch-session",
     "                             Create a short Hermes launch and verify app-preview session exchange.",
@@ -158,6 +160,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     viteAppPreviewOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_ONLY || "")),
     viteAppPreviewRuntime: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_RUNTIME || "")),
     viteAppPreviewRoot: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_ROOT || "")),
+    viteAppPreviewDefaultRoot: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_DEFAULT_ROOT || "")),
     viteAppPreviewEmbed: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_EMBED || "")),
     viteAppPreviewLaunchSession: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_LAUNCH_SESSION || "")),
     rounds: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_ROUNDS || "3", 3, 20),
@@ -193,6 +196,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--vite-app-preview-only") options.viteAppPreviewOnly = true;
     else if (arg === "--vite-app-preview-runtime") options.viteAppPreviewRuntime = true;
     else if (arg === "--vite-app-preview-root") options.viteAppPreviewRoot = true;
+    else if (arg === "--vite-app-preview-default-root") options.viteAppPreviewDefaultRoot = true;
     else if (arg === "--vite-app-preview-embed") options.viteAppPreviewEmbed = true;
     else if (arg === "--vite-app-preview-launch-session") options.viteAppPreviewLaunchSession = true;
     else if (arg === "--rounds") options.rounds = readPositiveInt(next(), options.rounds, 20);
@@ -1241,6 +1245,7 @@ function viteAppPreviewProbeExpression(input = {}) {
   const expectEmbed = input.expectEmbed === true;
   const expectPluginSession = input.expectPluginSession === true;
   const expectRoot = input.expectRoot === true;
+  const expectDefaultRoot = input.expectDefaultRoot === true;
   return `
     (async () => {
       let appPreviewResult = null;
@@ -1361,8 +1366,10 @@ function viteAppPreviewProbeExpression(input = {}) {
         embedExpected: ${expectEmbed ? "true" : "false"},
         pluginSessionExpected: ${expectPluginSession ? "true" : "false"},
         rootPreviewExpected: ${expectRoot ? "true" : "false"},
+        defaultRootPreviewExpected: ${expectDefaultRoot ? "true" : "false"},
         rootPathPreserved: window.location.pathname === "/",
         rootViteShellParamPresent: locationUrl.searchParams.get("codexViteShell") === "app-preview",
+        rootViteShellParamAbsent: !locationUrl.searchParams.has("codexViteShell"),
         embedQueryPresent: locationUrl.searchParams.get("embed") === "hermes",
         embedHtmlClassPresent: Boolean(html && html.classList && html.classList.contains("embed-hermes")),
         embedPrimaryClassPresent: Boolean(html && html.classList && html.classList.contains("embed-hermes-primary")),
@@ -1437,9 +1444,14 @@ function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}, options = 
   const expectEmbed = options.expectEmbed === true || (sample && sample.embedExpected === true);
   const expectPluginSession = options.expectPluginSession === true || (sample && sample.pluginSessionExpected === true);
   const expectRoot = options.expectRoot === true || (sample && sample.rootPreviewExpected === true);
+  const expectDefaultRoot = options.expectDefaultRoot === true || (sample && sample.defaultRootPreviewExpected === true);
   if (expectRoot) {
     if (!sample || sample.rootPathPreserved !== true) append("vite_app_preview_root_path_changed");
-    if (!sample || sample.rootViteShellParamPresent !== true) append("vite_app_preview_root_opt_in_missing");
+    if (expectDefaultRoot) {
+      if (!sample || sample.rootViteShellParamAbsent !== true) append("vite_app_preview_default_root_opt_in_present");
+    } else if (!sample || sample.rootViteShellParamPresent !== true) {
+      append("vite_app_preview_root_opt_in_missing");
+    }
   }
   if (expectEmbed) {
     if (!sample || sample.embedQueryPresent !== true) append("vite_app_preview_embed_query_missing");
@@ -2138,7 +2150,9 @@ function applyStartupGateIssues(report, startupSample = {}, staticShell = {}) {
 async function run(options = parseArgs(), deps = {}) {
   const key = deps.key !== undefined ? deps.key : readAccessKey(options);
   const appPreviewLaunchSession = options.viteAppPreviewLaunchSession === true;
-  const appPreviewRoot = options.viteAppPreviewRoot === true && !appPreviewLaunchSession;
+  const appPreviewDefaultRoot = options.viteAppPreviewDefaultRoot === true && !appPreviewLaunchSession;
+  const appPreviewRoot = (options.viteAppPreviewRoot === true || appPreviewDefaultRoot) && !appPreviewLaunchSession;
+  const appPreviewOptInRoot = appPreviewRoot && !appPreviewDefaultRoot;
   const appPreviewOnly = options.viteAppPreviewOnly === true || appPreviewLaunchSession;
   const appPreviewRuntime = options.viteAppPreviewRuntime === true && !appPreviewOnly;
   const appPreviewEmbed = (options.viteAppPreviewEmbed === true || appPreviewLaunchSession) && (appPreviewOnly || appPreviewRuntime);
@@ -2162,9 +2176,9 @@ async function run(options = parseArgs(), deps = {}) {
     ok: false,
     startedAt,
     mode: appPreviewOnly
-      ? (appPreviewLaunchSession ? "vite-app-preview-launch-session" : appPreviewEmbed ? "vite-app-preview-embed" : appPreviewRoot ? "vite-app-preview-root" : "vite-app-preview")
+      ? (appPreviewLaunchSession ? "vite-app-preview-launch-session" : appPreviewEmbed ? "vite-app-preview-embed" : appPreviewDefaultRoot ? "vite-app-preview-default-root" : appPreviewRoot ? "vite-app-preview-root" : "vite-app-preview")
       : appPreviewRuntime
-        ? (appPreviewEmbed ? "vite-app-preview-embed-runtime" : appPreviewRoot ? "vite-app-preview-root-runtime" : "vite-app-preview-runtime")
+        ? (appPreviewEmbed ? "vite-app-preview-embed-runtime" : appPreviewDefaultRoot ? "vite-app-preview-default-root-runtime" : appPreviewRoot ? "vite-app-preview-root-runtime" : "vite-app-preview-runtime")
         : options.vitePreviewOnly ? "vite-preview" : options.startupOnly ? "startup-only" : "full",
     endpoint: endpointKind(options.server),
     browser: { engine: "chrome-cdp", headed: Boolean(options.headed), viewport: options.viewport },
@@ -2276,7 +2290,7 @@ async function run(options = parseArgs(), deps = {}) {
       source: browserInitScript(key, threadPlan[0] && threadPlan[0].id || ""),
     });
     const appPreviewParams = Object.assign(
-      appPreviewRoot ? { codexViteShell: "app-preview" } : {},
+      appPreviewOptInRoot ? { codexViteShell: "app-preview" } : {},
       appPreviewEmbed ? { embed: "hermes" } : {},
     );
     const navigateUrl = appPreviewLaunchSession && appPreviewLaunch.url
@@ -2302,12 +2316,15 @@ async function run(options = parseArgs(), deps = {}) {
         expectEmbed: appPreviewEmbed,
         expectPluginSession: appPreviewLaunchSession,
         expectRoot: appPreviewRoot,
+        expectDefaultRoot: appPreviewDefaultRoot,
       }), options.timeoutMs).catch((err) => ({
         label: "vite-app-preview",
         probeKind: "vite-app-preview",
         markerPresent: false,
         metaPresent: false,
         embedExpected: appPreviewEmbed,
+        rootPreviewExpected: appPreviewRoot,
+        defaultRootPreviewExpected: appPreviewDefaultRoot,
         loaderOk: false,
         errorCode: boundedToken(err && err.message, "vite_app_preview_probe_failed"),
       }));
@@ -2463,7 +2480,12 @@ async function run(options = parseArgs(), deps = {}) {
     report.browserReport = analyzeViteAppPreviewProbe(report.viteAppPreview, {
       consoleEvents,
       exceptions,
-    }, { expectEmbed: appPreviewEmbed, expectPluginSession: appPreviewLaunchSession, expectRoot: appPreviewRoot });
+    }, {
+      expectEmbed: appPreviewEmbed,
+      expectPluginSession: appPreviewLaunchSession,
+      expectRoot: appPreviewRoot,
+      expectDefaultRoot: appPreviewDefaultRoot,
+    });
     if (appPreviewLaunchSession && (!report.viteAppPreviewLaunch || report.viteAppPreviewLaunch.ok !== true)) {
       const issues = Array.isArray(report.browserReport.issues) ? report.browserReport.issues : [];
       issues.push({
@@ -2493,7 +2515,12 @@ async function run(options = parseArgs(), deps = {}) {
     report.viteAppPreviewReport = analyzeViteAppPreviewProbe(report.viteAppPreview, {
       consoleEvents,
       exceptions,
-    }, { expectEmbed: appPreviewEmbed, expectPluginSession: appPreviewLaunchSession, expectRoot: appPreviewRoot });
+    }, {
+      expectEmbed: appPreviewEmbed,
+      expectPluginSession: appPreviewLaunchSession,
+      expectRoot: appPreviewRoot,
+      expectDefaultRoot: appPreviewDefaultRoot,
+    });
     if (!report.viteAppPreviewReport.ok) {
       const issues = Array.isArray(report.browserReport.issues) ? report.browserReport.issues.slice() : [];
       issues.push(...(Array.isArray(report.viteAppPreviewReport.issues) ? report.viteAppPreviewReport.issues : []));

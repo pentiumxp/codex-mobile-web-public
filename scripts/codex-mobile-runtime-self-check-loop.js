@@ -45,6 +45,8 @@ function usage() {
     "  --browser-startup-only Run only listener/static shell/browser startup smoke for browser job.",
     "                         Deploy gates also run Vite preview artifact, app-preview, root app-preview, app-preview embed, and app-preview launch/session smokes as separate browser jobs.",
     "                         Without this flag, the app-preview and root app-preview jobs run full read-only thread UX sampling.",
+    "  --browser-vite-app-preview-default-root",
+    "                         Add an explicit Vite app-preview check for plain / on a server started with CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview.",
     "  --browser-exercise-submit Enable browser Composer submit exercise with a short OK-only prompt.",
     "  --browser-submit-thread-id <id> Optional target thread for submit exercise. Defaults to first selected thread.",
     "  --browser-submit-message <text> Submit exercise message. Default asks for OK only.",
@@ -86,6 +88,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     browserSampleDelaysMs: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SAMPLE_DELAYS_MS || "100,350,1200,2800,6000"),
     browserMinSettledDelayMs: positiveInt(env.CODEX_MOBILE_RUNTIME_BROWSER_MIN_SETTLED_DELAY_MS || "1000", 1000, 10000),
     browserStartupOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_RUNTIME_BROWSER_STARTUP_ONLY || "")),
+    browserViteAppPreviewDefaultRoot: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_RUNTIME_BROWSER_VITE_APP_PREVIEW_DEFAULT_ROOT || "")),
     browserExerciseSubmit: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_RUNTIME_BROWSER_EXERCISE_SUBMIT || "")),
     browserSubmitThreadId: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SUBMIT_THREAD_ID || "").trim(),
     browserSubmitMessage: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SUBMIT_MESSAGE || "").slice(0, 500),
@@ -121,6 +124,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--browser-sample-delays-ms") options.browserSampleDelaysMs = next();
     else if (arg === "--browser-min-settled-delay-ms") options.browserMinSettledDelayMs = positiveInt(next(), options.browserMinSettledDelayMs, 10000);
     else if (arg === "--browser-startup-only") options.browserStartupOnly = true;
+    else if (arg === "--browser-vite-app-preview-default-root") options.browserViteAppPreviewDefaultRoot = true;
     else if (arg === "--browser-exercise-submit") options.browserExerciseSubmit = true;
     else if (arg === "--browser-submit-thread-id") options.browserSubmitThreadId = next();
     else if (arg === "--browser-submit-message") options.browserSubmitMessage = next().slice(0, 500);
@@ -307,6 +311,30 @@ async function runOnce(options = {}, deps = {}) {
     }
     const result = await runNodeScript(browserScript, viteAppPreviewRootArgs, deps, browserViteAppPreviewRootJob);
     checks.push(summarizeCheck("browser-vite-app-preview-root", result));
+  }
+  if (options.browserViteAppPreviewDefaultRoot) {
+    const browserViteAppPreviewDefaultRootJob = runtimeSelfCheckJob(jobPlan, "browser-vite-app-preview-root");
+    if (browserViteAppPreviewDefaultRootJob && browserViteAppPreviewDefaultRootJob.enabled) {
+      const viteAppPreviewDefaultRootArgs = baseArgs(options);
+      if (options.browserStartupOnly) {
+        viteAppPreviewDefaultRootArgs.push("--vite-app-preview-only", "--vite-app-preview-default-root");
+      } else {
+        viteAppPreviewDefaultRootArgs.push(
+          "--sample-threads",
+          String(positiveInt(options.sampleThreads, 3, 20)),
+          "--rounds",
+          String(positiveInt(options.browserRounds, 5, 20)),
+          "--sample-delays-ms",
+          String(options.browserSampleDelaysMs || "100,350,1200,2800,6000"),
+          "--min-settled-delay-ms",
+          String(positiveInt(options.browserMinSettledDelayMs, 1000, 10000)),
+          "--vite-app-preview-runtime",
+          "--vite-app-preview-default-root",
+        );
+      }
+      const result = await runNodeScript(browserScript, viteAppPreviewDefaultRootArgs, deps, browserViteAppPreviewDefaultRootJob);
+      checks.push(summarizeCheck("browser-vite-app-preview-default-root", result));
+    }
   }
   const browserViteAppPreviewEmbedJob = runtimeSelfCheckJob(jobPlan, "browser-vite-app-preview-embed");
   if (browserViteAppPreviewEmbedJob && browserViteAppPreviewEmbedJob.enabled) {

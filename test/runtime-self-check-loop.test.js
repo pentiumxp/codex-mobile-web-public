@@ -55,6 +55,7 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
     "--browser-min-settled-delay-ms",
     "1500",
     "--browser-startup-only",
+    "--browser-vite-app-preview-default-root",
     "--browser-exercise-submit",
     "--browser-submit-thread-id",
     "submit-thread",
@@ -81,6 +82,7 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
   assert.equal(loop.browserSampleDelaysMs, "100,500,1500");
   assert.equal(loop.browserMinSettledDelayMs, 1500);
   assert.equal(loop.browserStartupOnly, true);
+  assert.equal(loop.browserViteAppPreviewDefaultRoot, true);
   assert.equal(loop.browserExerciseSubmit, true);
   assert.equal(loop.browserSubmitThreadId, "submit-thread");
   assert.equal(loop.browserSubmitMessage, "Reply OK only");
@@ -280,6 +282,53 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
   assert.match(line, /"deployPass":true/);
   assert.doesNotMatch(line, /private-thread-id|raw prompt|cookie|token|Authorization/i);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("runtime self-check loop can run explicit Vite app-preview default-root gate", async () => {
+  const calls = [];
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: ["private-thread-id"],
+    sampleThreads: 1,
+    browserRounds: 2,
+    browserSampleDelaysMs: "100,900",
+    browserMinSettledDelayMs: 900,
+    browserViteAppPreviewDefaultRoot: true,
+    skipClientEvents: true,
+    skipApi: true,
+    skipBrowser: false,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    ...fakeProcessPressureDeps(),
+    execFile(_node, args, _options, callback) {
+      calls.push(args.slice());
+      const isDefaultRoot = args.includes("--vite-app-preview-default-root");
+      if (isDefaultRoot) {
+        assert.ok(args.includes("--vite-app-preview-runtime"));
+        assert.doesNotMatch(args.join(" "), /--vite-app-preview-root|--vite-app-preview-only/);
+        assert.ok(args.includes("--sample-threads"));
+        assert.equal(args[args.indexOf("--sample-threads") + 1], "1");
+        assert.ok(args.includes("--rounds"));
+        assert.equal(args[args.indexOf("--rounds") + 1], "2");
+        assert.ok(args.includes("--sample-delays-ms"));
+        assert.equal(args[args.indexOf("--sample-delays-ms") + 1], "100,900");
+        assert.ok(args.includes("--min-settled-delay-ms"));
+        assert.equal(args[args.indexOf("--min-settled-delay-ms") + 1], "900");
+      }
+      callback(null, JSON.stringify({
+        ok: true,
+        mode: isDefaultRoot ? "vite-app-preview-default-root-runtime" : "ok",
+        publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
+        browserReport: { issueCount: 0, blockingIssueCount: 0 },
+      }), "");
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.filter((args) => args.includes("--vite-app-preview-default-root")).length, 1);
+  const defaultRootCheck = result.checks.find((check) => check.name === "browser-vite-app-preview-default-root");
+  assert.equal(defaultRootCheck.ok, true);
 });
 
 test("runtime self-check browser job can run startup-only without submit exercise", async () => {

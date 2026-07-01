@@ -4957,6 +4957,25 @@ Production `/` still remains classic until the server is intentionally started
 with the Vite app-preview default-shell mode and the same app-preview/root
 browser gates pass after deployment.
 
+The next default-root gate slice adds the browser proof needed for that future
+server-startup setting:
+
+- `scripts/codex-mobile-browser-runtime-self-check.js
+  --vite-app-preview-default-root` opens plain `/`, validates the Vite-owned
+  app-preview loader/startup contract, and fails closed if the root path still
+  depends on or carries the `codexViteShell=app-preview` opt-in query.
+- The same flag can be combined with `--vite-app-preview-runtime` to run the
+  full read-only thread/list UX sampling against default `/` after a server is
+  started with `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview`.
+- `scripts/codex-mobile-runtime-self-check-loop.js
+  --browser-vite-app-preview-default-root` wires that browser check as an
+  explicit extra job. It is intentionally not part of the ordinary deploy
+  default set while production launchd still starts in classic mode.
+
+This keeps current production health gates stable while providing a precise
+cutover verification command for an isolated default-shell server and,
+eventually, for the production restart that intentionally enables Vite on `/`.
+
 ## Release Rule
 
 Follow the current release order:
