@@ -4102,7 +4102,7 @@ tests, static shell/cache guards, `npm run --silent check`,
 
 The next frontend-thinning slice moves the Composer/input runtime out of
 `public/app.js` while preserving the static shell contract as
-`codex-mobile-shell-v613`.
+`codex-mobile-shell-v614`.
 
 Scope:
 

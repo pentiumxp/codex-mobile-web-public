@@ -61,11 +61,24 @@ test("composer runtime owns composer behavior while app.js keeps glue wrappers",
   assert.match(composerRuntimeJs, /module\.exports = api/);
 });
 
-test("composer runtime is part of the v613 static shell", () => {
+test("composer runtime is created after its constant dependencies", () => {
+  const runtimeCreateIndex = appJs.indexOf("const composerRuntime = composerRuntimeApi.createComposerRuntime({");
+  assert.notEqual(runtimeCreateIndex, -1);
+  for (const name of [
+    "MESSAGE_INPUT_MIN_HEIGHT_PX",
+    "MESSAGE_INPUT_MAX_HEIGHT_PX",
+  ]) {
+    const declarationIndex = appJs.indexOf(`const ${name}`);
+    assert.notEqual(declarationIndex, -1, `missing ${name}`);
+    assert.ok(declarationIndex < runtimeCreateIndex, `${name} must be declared before composer runtime creation`);
+  }
+});
+
+test("composer runtime is part of the v614 static shell", () => {
   assert.match(indexHtml, /<script src="\/composer-runtime\.js"><\/script>/);
   assert.match(swJs, /"\/composer-runtime\.js"/);
   assert.match(appJs, /"\/composer-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"composer-runtime\.js"/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v613"/);
-  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v613"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v614"/);
+  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v614"/);
 });
