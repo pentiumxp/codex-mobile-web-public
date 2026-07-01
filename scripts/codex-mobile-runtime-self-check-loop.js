@@ -44,6 +44,7 @@ function usage() {
     "  --browser-min-settled-delay-ms <n> Browser downgrade H2 threshold. Default: 1000.",
     "  --browser-startup-only Run only listener/static shell/browser startup smoke for browser job.",
     "                         Deploy gates also run Vite preview artifact and app-preview startup smokes as separate browser jobs.",
+    "                         Without this flag, the app-preview job runs full read-only thread UX sampling.",
     "  --browser-exercise-submit Enable browser Composer submit exercise with a short OK-only prompt.",
     "  --browser-submit-thread-id <id> Optional target thread for submit exercise. Defaults to first selected thread.",
     "  --browser-submit-message <text> Submit exercise message. Default asks for OK only.",
@@ -266,12 +267,22 @@ async function runOnce(options = {}, deps = {}) {
   }
   const browserViteAppPreviewJob = runtimeSelfCheckJob(jobPlan, "browser-vite-app-preview");
   if (browserViteAppPreviewJob && browserViteAppPreviewJob.enabled) {
-    const viteAppPreviewArgs = [
-      "--server",
-      options.server || DEFAULT_SERVER,
-      "--json",
-      "--vite-app-preview-only",
-    ];
+    const viteAppPreviewArgs = baseArgs(options);
+    if (options.browserStartupOnly) {
+      viteAppPreviewArgs.push("--vite-app-preview-only");
+    } else {
+      viteAppPreviewArgs.push(
+        "--sample-threads",
+        String(positiveInt(options.sampleThreads, 3, 20)),
+        "--rounds",
+        String(positiveInt(options.browserRounds, 5, 20)),
+        "--sample-delays-ms",
+        String(options.browserSampleDelaysMs || "100,350,1200,2800,6000"),
+        "--min-settled-delay-ms",
+        String(positiveInt(options.browserMinSettledDelayMs, 1000, 10000)),
+        "--vite-app-preview-runtime",
+      );
+    }
     const result = await runNodeScript(browserScript, viteAppPreviewArgs, deps, browserViteAppPreviewJob);
     checks.push(summarizeCheck("browser-vite-app-preview", result));
   }

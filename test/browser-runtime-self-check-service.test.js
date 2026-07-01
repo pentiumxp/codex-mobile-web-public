@@ -33,6 +33,12 @@ test("browser runtime self-check parses Vite app-preview-only smoke option", () 
   assert.equal(options.json, true);
 });
 
+test("browser runtime self-check parses Vite app-preview full runtime option", () => {
+  const options = script.parseArgs(["--server", "http://127.0.0.1:8787", "--vite-app-preview-runtime", "--json"]);
+  assert.equal(options.viteAppPreviewRuntime, true);
+  assert.equal(options.json, true);
+});
+
 test("browser runtime self-check analyzes Vite preview module readiness", () => {
   const passing = script.analyzeVitePreviewProbe({
     markerVisible: true,
@@ -173,6 +179,9 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("shellManifestJson.text"));
   assert.ok(scriptSource.includes("/vite-shell/preview.html"));
   assert.ok(scriptSource.includes("/vite-shell/app-preview.html"));
+  assert.ok(scriptSource.includes("--vite-app-preview-runtime"));
+  assert.ok(scriptSource.includes("vite-app-preview-runtime"));
+  assert.ok(scriptSource.includes("viteAppPreviewReport"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_APP_PREVIEW_PROMISE__"));
   assert.ok(scriptSource.includes("vite_app_preview_classic_script_order_mismatch"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__"));

@@ -88,6 +88,7 @@ function usage() {
     "  --startup-only             Check listener/static shell/browser startup only; skip thread sampling.",
     "  --vite-preview-only        Check /vite-shell/preview.html Vite module artifact only.",
     "  --vite-app-preview-only    Check /vite-shell/app-preview.html Vite-owned app startup only.",
+    "  --vite-app-preview-runtime Check /vite-shell/app-preview.html with full read-only thread UX sampling.",
     "  --rounds <n>               Thread switch rounds. Default: 3.",
     "  --sample-delays-ms <csv>   Delays after each switch. Default: 350,1200,2800.",
     "  --thread-list-stress-rounds <n> Thread-list open/scroll/click stress rounds. Default: 2.",
@@ -151,6 +152,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     startupOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_STARTUP_ONLY || "")),
     vitePreviewOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_PREVIEW_ONLY || "")),
     viteAppPreviewOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_ONLY || "")),
+    viteAppPreviewRuntime: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_RUNTIME || "")),
     rounds: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_ROUNDS || "3", 3, 20),
     sampleDelaysMs: parseDelayList(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SAMPLE_DELAYS_MS || ""),
     threadListStressRounds: readNonNegativeInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_THREAD_LIST_STRESS_ROUNDS || "2", 2, 20),
@@ -182,6 +184,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--startup-only") options.startupOnly = true;
     else if (arg === "--vite-preview-only") options.vitePreviewOnly = true;
     else if (arg === "--vite-app-preview-only") options.viteAppPreviewOnly = true;
+    else if (arg === "--vite-app-preview-runtime") options.viteAppPreviewRuntime = true;
     else if (arg === "--rounds") options.rounds = readPositiveInt(next(), options.rounds, 20);
     else if (arg === "--sample-delays-ms") options.sampleDelaysMs = parseDelayList(next(), options.sampleDelaysMs);
     else if (arg === "--thread-list-stress-rounds") options.threadListStressRounds = readNonNegativeInt(next(), options.threadListStressRounds, 20);
@@ -1917,7 +1920,9 @@ function applyStartupGateIssues(report, startupSample = {}, staticShell = {}) {
 async function run(options = parseArgs(), deps = {}) {
   const key = deps.key !== undefined ? deps.key : readAccessKey(options);
   const appPreviewOnly = options.viteAppPreviewOnly === true;
+  const appPreviewRuntime = options.viteAppPreviewRuntime === true && !appPreviewOnly;
   const browserOnly = options.startupOnly || options.vitePreviewOnly || appPreviewOnly;
+  const submitAllowed = !browserOnly && !appPreviewRuntime && options.exerciseSubmit === true;
   const startedAt = new Date().toISOString();
   const config = await fetchJson(requestUrl(options, "/api/public-config"), options, key);
   const staticShell = await readStaticShellReadback(options, config);
@@ -1928,14 +1933,14 @@ async function run(options = parseArgs(), deps = {}) {
   const ids = options.threadIds.length
     ? options.threadIds
     : rows.map(threadId).filter(Boolean).slice(0, options.sampleThreads);
-  if (options.exerciseSubmit && options.submitThreadId && !ids.includes(options.submitThreadId)) {
+  if (submitAllowed && options.submitThreadId && !ids.includes(options.submitThreadId)) {
     ids.unshift(options.submitThreadId);
   }
   const threadPlan = browserOnly ? [] : await loadThreadPlan(options, key, ids);
   const report = {
     ok: false,
     startedAt,
-    mode: appPreviewOnly ? "vite-app-preview" : options.vitePreviewOnly ? "vite-preview" : options.startupOnly ? "startup-only" : "full",
+    mode: appPreviewOnly ? "vite-app-preview" : appPreviewRuntime ? "vite-app-preview-runtime" : options.vitePreviewOnly ? "vite-preview" : options.startupOnly ? "startup-only" : "full",
     endpoint: endpointKind(options.server),
     browser: { engine: "chrome-cdp", headed: Boolean(options.headed), viewport: options.viewport },
     publicConfig: {
@@ -1963,7 +1968,8 @@ async function run(options = parseArgs(), deps = {}) {
     browserReport: null,
     vitePreview: null,
     viteAppPreview: null,
-    submitExercise: (!browserOnly && options.exerciseSubmit) ? {
+    viteAppPreviewReport: null,
+    submitExercise: submitAllowed ? {
       attempted: true,
       ok: false,
       targetThreadHash: "",
@@ -2038,7 +2044,7 @@ async function run(options = parseArgs(), deps = {}) {
     await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
       source: browserInitScript(key, threadPlan[0] && threadPlan[0].id || ""),
     });
-    const navigateUrl = appPreviewOnly
+    const navigateUrl = (appPreviewOnly || appPreviewRuntime)
       ? requestUrl(options, "/vite-shell/app-preview.html")
       : options.vitePreviewOnly ? requestUrl(options, "/vite-shell/preview.html") : options.server;
     await cdp.send("Page.navigate", { url: navigateUrl });
@@ -2053,7 +2059,7 @@ async function run(options = parseArgs(), deps = {}) {
       }));
       samples.push(report.vitePreview);
     }
-    if (appPreviewOnly) {
+    if (appPreviewOnly || appPreviewRuntime) {
       report.viteAppPreview = await evaluate(cdp, viteAppPreviewProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
         label: "vite-app-preview",
         probeKind: "vite-app-preview",
@@ -2062,7 +2068,7 @@ async function run(options = parseArgs(), deps = {}) {
         loaderOk: false,
         errorCode: boundedToken(err && err.message, "vite_app_preview_probe_failed"),
       }));
-      samples.push(report.viteAppPreview);
+      if (appPreviewOnly) samples.push(report.viteAppPreview);
     }
     const startupSample = (options.vitePreviewOnly || appPreviewOnly) ? null : await evaluate(cdp, startupProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
       label: "startup",
@@ -2141,7 +2147,7 @@ async function run(options = parseArgs(), deps = {}) {
       }
     }
 
-    if (!browserOnly && options.exerciseSubmit) {
+    if (submitAllowed) {
       const submitTarget = (options.submitThreadId
         ? threadPlan.find((entry) => entry.id === options.submitThreadId)
         : null) || threadPlan[0];
@@ -2226,7 +2232,21 @@ async function run(options = parseArgs(), deps = {}) {
     minSettledDelayMs: options.minSettledDelayMs,
   });
   applyStartupGateIssues(report, samples.find((sample) => sample && sample.probeKind === "startup") || {}, staticShell);
-  if (!options.startupOnly && options.exerciseSubmit && report.submitExercise && !report.submitExercise.ok) {
+  if (appPreviewRuntime) {
+    report.viteAppPreviewReport = analyzeViteAppPreviewProbe(report.viteAppPreview, {
+      consoleEvents,
+      exceptions,
+    });
+    if (!report.viteAppPreviewReport.ok) {
+      const issues = Array.isArray(report.browserReport.issues) ? report.browserReport.issues.slice() : [];
+      issues.push(...(Array.isArray(report.viteAppPreviewReport.issues) ? report.viteAppPreviewReport.issues : []));
+      report.browserReport.issues = issues;
+      report.browserReport.issueCount = issues.length;
+      report.browserReport.blockingIssueCount = issues.filter((item) => item && /^(H1|H2)$/i.test(item.severity || "")).length;
+      report.browserReport.ok = report.browserReport.blockingIssueCount === 0;
+    }
+  }
+  if (submitAllowed && report.submitExercise && !report.submitExercise.ok) {
     const issues = Array.isArray(report.browserReport.issues) ? report.browserReport.issues : [];
     issues.push({
       severity: "H2",
@@ -2240,7 +2260,7 @@ async function run(options = parseArgs(), deps = {}) {
     report.browserReport.blockingIssueCount = issues.filter((item) => item && /^(H1|H2)$/i.test(item.severity || "")).length;
     report.browserReport.ok = false;
   }
-  report.ok = report.browserReport.ok && (options.startupOnly || !options.exerciseSubmit || Boolean(report.submitExercise && report.submitExercise.ok));
+  report.ok = report.browserReport.ok && (!submitAllowed || Boolean(report.submitExercise && report.submitExercise.ok));
   return report;
 }
 

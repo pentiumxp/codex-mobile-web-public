@@ -4780,6 +4780,27 @@ This still does not make Vite the default production shell. It adds the first
 deploy-gated path where a Vite module entry owns actual app startup, while the
 default `/` path remains the generated classic script shell.
 
+The follow-up Vite app-preview full UX gate extends that opt-in startup proof
+into a read-only runtime proof:
+
+- `scripts/codex-mobile-browser-runtime-self-check.js
+  --vite-app-preview-runtime` opens `/vite-shell/app-preview.html`, validates
+  the same Vite-owned app-preview loader/startup contract, then runs the
+  standard browser-runtime thread/list sampling against the real app DOM.
+- Composer submit exercise flags are intentionally ignored for this mode; the
+  app-preview gate is a pre-cutover read-only comparison path, not a mutation
+  path.
+- `scripts/codex-mobile-runtime-self-check-loop.js` keeps
+  `--browser-startup-only` lightweight for deploy listener startup gates, but
+  non-startup deploy/full runs now execute `browser-vite-app-preview` through
+  the full app-preview runtime mode with the same sampling controls as the
+  classic browser-runtime job.
+
+This still leaves production `/` on classic-script fallback. It raises the
+cutover bar by requiring the Vite-owned app-preview host to pass the same
+user-visible duplicate-message, thread-detail, and thread-list DOM checks as
+the default shell before default execution can move.
+
 ## Release Rule
 
 Follow the current release order:

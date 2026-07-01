@@ -160,8 +160,9 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
       const script = String(args[0] || "");
       const isBrowser = script.includes("browser-runtime");
       const isVitePreview = args.includes("--vite-preview-only");
-      const isViteAppPreview = args.includes("--vite-app-preview-only");
-      if (isBrowser && !isVitePreview && !isViteAppPreview) {
+      const isViteAppPreviewOnly = args.includes("--vite-app-preview-only");
+      const isViteAppPreviewRuntime = args.includes("--vite-app-preview-runtime");
+      if (isBrowser && !isVitePreview && !isViteAppPreviewOnly && !isViteAppPreviewRuntime) {
         assert.ok(args.includes("--rounds"));
         assert.equal(args[args.indexOf("--rounds") + 1], "6");
         assert.ok(args.includes("--sample-delays-ms"));
@@ -185,19 +186,23 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
           "--vite-preview-only",
         ]);
       }
-      if (isViteAppPreview) {
-        assert.deepEqual(args, [
-          String(args[0]),
-          "--server",
-          "http://127.0.0.1:8790",
-          "--json",
-          "--vite-app-preview-only",
-        ]);
+      if (isViteAppPreviewRuntime) {
+        assert.ok(args.includes("--thread-id"));
+        assert.equal(args[args.indexOf("--thread-id") + 1], "private-thread-id");
+        assert.ok(args.includes("--sample-threads"));
+        assert.equal(args[args.indexOf("--sample-threads") + 1], "1");
+        assert.ok(args.includes("--rounds"));
+        assert.equal(args[args.indexOf("--rounds") + 1], "6");
+        assert.ok(args.includes("--sample-delays-ms"));
+        assert.equal(args[args.indexOf("--sample-delays-ms") + 1], "100,350,1200,2800,6000");
+        assert.ok(args.includes("--min-settled-delay-ms"));
+        assert.equal(args[args.indexOf("--min-settled-delay-ms") + 1], "1200");
+        assert.doesNotMatch(args.join(" "), /--exercise-submit|--submit-thread-id|--submit-message|--submit-sample-delays-ms/);
       }
       const payload = isBrowser
         ? {
             ok: true,
-            mode: isVitePreview ? "vite-preview" : isViteAppPreview ? "vite-app-preview" : "full",
+            mode: isVitePreview ? "vite-preview" : isViteAppPreviewOnly ? "vite-app-preview" : isViteAppPreviewRuntime ? "vite-app-preview-runtime" : "full",
             publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
             browserReport: { issueCount: 0, blockingIssueCount: 0 },
           }
