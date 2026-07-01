@@ -10,6 +10,8 @@ const {
   threadTaskCardThreadCallIdempotencyKey: canonicalThreadTaskCardThreadCallIdempotencyKey,
 } = require("../services/task-cards/task-card-idempotency-service");
 
+const TASK_CARD_ROUTE_RESOLVER_VERSION = "task-card-exact-routing-v1";
+
 function defaultError(statusCode, code, message, details = {}) {
   const err = new Error(message || code || "thread_task_card_error");
   err.statusCode = statusCode || 500;
@@ -138,6 +140,10 @@ function createThreadTaskCardRouteService(dependencies = {}) {
           targetThreadTitles: { type: "array", items: { type: "string" }, description: "Exact visible target thread titles." },
           targetWorkspace: { type: "string", description: "Exact target workspace cwd/path when title/id is not known." },
           targetCwd: { type: "string", description: "Exact target workspace cwd/path." },
+          sourceRole: { type: "string", description: "Optional bounded source role label supplied by the source policy owner." },
+          targetRole: { type: "string", description: "Optional target role label. The server resolves it to exactly one visible current thread or fails closed." },
+          targetRoles: { type: "array", items: { type: "string" }, description: "One or more target role labels; each must resolve exactly." },
+          routeKind: { type: "string", description: "Optional bounded route kind such as implementation, deployment, audit, verification, repair, or return." },
           title: { type: "string", description: "Short task-card title." },
           summary: { type: "string", description: "One-line bounded task summary." },
           body: { type: "string", description: "Full Markdown task body for the target thread." },
@@ -510,6 +516,53 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     return title || id;
   }
 
+  function normalizeTaskCardRouteLabel(value, fallback = "") {
+    const text = String(value || fallback || "").trim().toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    return text.slice(0, 80);
+  }
+
+  function targetRoleForPayload(body = {}, targetThreads = []) {
+    const explicit = normalizeTaskCardRouteLabel(body.targetRole || body.target_role);
+    if (explicit) return explicit;
+    const roles = Array.from(new Set((targetThreads || [])
+      .map((thread) => normalizeTaskCardRouteLabel(threadTaskCardRoutingService.targetRole(thread)))
+      .filter(Boolean)));
+    return roles.length === 1 ? roles[0] : "";
+  }
+
+  function routeKindForTaskCardPayload(body = {}, routingPayload = {}) {
+    if (routingPayload && routingPayload.mobileDeployLaneRouting) return "deployment";
+    const explicit = normalizeTaskCardRouteLabel(body.routeKind || body.route_kind);
+    if (explicit) return explicit;
+    if (String(body.cardKind || body.card_kind || "").trim() === "plugin_deployment") return "deployment";
+    return "implementation";
+  }
+
+  function routeResolutionForTaskCardPayload(body = {}, sourceSummary = null, targetThreads = [], routingPayload = {}) {
+    const targetThreadIds = uniqueThreadTaskCardTargetIds(routingPayload.targetThreadIds, routingPayload.targetThreadId);
+    const targetRole = targetRoleForPayload(body, targetThreads);
+    const sourceRole = normalizeTaskCardRouteLabel(body.sourceRole || body.source_role || threadTaskCardRoutingService.targetRole(sourceSummary));
+    const routeKind = routeKindForTaskCardPayload(body, routingPayload);
+    const entries = threadTaskCardRoutingService.targetReferenceEntries(body);
+    const inputReferenceKinds = entries.map((entry) => String(entry && entry.kind || "").trim()).filter(Boolean);
+    return {
+      resolverVersion: TASK_CARD_ROUTE_RESOLVER_VERSION,
+      routeKind,
+      inputReferenceKind: inputReferenceKinds[0] || "",
+      inputReferenceKinds,
+      inputReferenceCount: inputReferenceKinds.length,
+      sourceThreadId: String(routingPayload.sourceThreadId || body.sourceThreadId || "").trim(),
+      targetThreadId: targetThreadIds[0] || "",
+      matchedThreadId: targetThreadIds[0] || "",
+      matchedThreadIds: targetThreadIds,
+      sourceRole,
+      targetRole,
+      code: routingPayload.mobileDeployLaneRouting ? "home_ai_deploy_lane_routed" : "exact_thread_resolved",
+    };
+  }
+
   function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "", options = {}) {
     const sourceId = String(sourceThreadId || body.sourceThreadId || "").trim();
     if (body.sourceThreadId && String(body.sourceThreadId || "").trim() !== sourceId) {
@@ -543,6 +596,11 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       const targetSummary = readThreadSummary(targetThreadId);
       targetWorkspaceIds[targetThreadId] = body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "";
     }
+    const targetThreads = taskCardPayloadTargetThreads(targetThreadIds, readThreadSummary);
+    const routeResolution = routeResolutionForTaskCardPayload(body, sourceSummary, targetThreads, routingPayload);
+    const routeKind = routeResolution.routeKind || routeKindForTaskCardPayload(body, routingPayload);
+    const sourceRole = routeResolution.sourceRole || "";
+    const targetRole = routeResolution.targetRole || "";
     const rawBody = String(body.body || body.bodyMarkdown || body.message || "").trim();
     const cardBody = truncateThreadTaskCardBody(rawBody);
     const reasoningEffort = normalizeThreadTaskCardReasoningEffort(body.reasoningEffort || body.reasoning_effort || body.effort);
@@ -554,8 +612,13 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       sourceTurnId: body.sourceTurnId || body.turnId || "",
       sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
       sourceThreadTitle: taskCardSourceThreadTitle(sourceId, body.sourceThreadTitle, sourceSummary),
+      sourceRole,
       targetThreadIds,
       targetWorkspaceIds,
+      targetRole,
+      routeKind,
+      resolverVersion: TASK_CARD_ROUTE_RESOLVER_VERSION,
+      routeResolution,
       idempotencyKey: threadTaskCardThreadCallIdempotencyKey(sourceId, body, targetThreadIds),
       format: body.format || "markdown",
       title: body.title,
@@ -903,7 +966,22 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "return_body_required" });
         return dynamicToolErrorPayload("return_body_required", "Return-card body is required.");
       }
-      const result = await threadTaskCardService.reply(prepared.taskCardId, prepared.actorThreadId, prepared.body);
+      let result;
+      try {
+        result = await threadTaskCardService.reply(prepared.taskCardId, prepared.actorThreadId, prepared.body);
+      } catch (err) {
+        const code = err && (err.code || err.message) || "return_to_source_failed";
+        logTaskCardReturnDynamicToolCall(request, params, args, {
+          outcome: code,
+          taskCardId: prepared.taskCardId,
+          actorThreadId: prepared.actorThreadId,
+          workflowId: prepared.body && prepared.body.workflowId || "",
+        });
+        return dynamicToolErrorPayload(code, code, {
+          statusCode: err && err.statusCode || 500,
+          details: err && err.details || undefined,
+        });
+      }
       logTaskCardReturnDynamicToolCall(request, params, args, {
         outcome: result && result.returnResolution && result.returnResolution.noOp
           ? result.returnResolution.reason || "noop"
@@ -923,6 +1001,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         workflowRecovered: Boolean(result && result.returnResolution && result.returnResolution.workflowRecovered),
         actorThreadInferred: Boolean(result && result.returnResolution && result.returnResolution.actorThreadInferred),
         expectedTargetThreadId: result && result.returnResolution && result.returnResolution.expectedTargetThreadId || "",
+        resolverVersion: result && result.returnResolution && result.returnResolution.resolverVersion || TASK_CARD_ROUTE_RESOLVER_VERSION,
         originalCardStatus: result && result.card && result.card.status || "",
         replyCardId: result && result.replyCard && result.replyCard.id || "",
         replyCardStatus: result && result.replyCard && result.replyCard.status || "",

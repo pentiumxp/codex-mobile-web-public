@@ -107,6 +107,7 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
     if (req.method === "POST" && req.url === "/api/thread-task-cards/ttc_inbound/reply") {
       const body = JSON.parse(await readBody(req));
       assert.equal(body.threadId, "target-1");
+      assert.equal(body.workflowId, "workflow-1");
       assert.equal(body.title, "Return: completed");
       assert.equal(body.summary, "completed");
       assert.equal(body.body, "done");
@@ -116,6 +117,14 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
       res.end(JSON.stringify({
         ok: true,
         card: { id: "ttc_inbound", status: "replied" },
+        returnResolution: {
+          requestedActorThreadId: "target-1",
+          resolvedActorThreadId: "target-1",
+          expectedTargetThreadId: "target-1",
+          workflowRecovered: true,
+          actorThreadInferred: false,
+          resolverVersion: "task-card-exact-routing-v1",
+        },
         replyCard: {
           id: "ttc_return",
           status: "approved",
@@ -165,11 +174,16 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
   const returned = await returnToSource(context, {
     taskCardId: "ttc_inbound",
     threadId: "target-1",
+    workflowId: "workflow-1",
     status: "completed",
     title: "completed",
     bodyMarkdown: "done",
   });
   assert.equal(returned.status, "replied");
+  assert.equal(returned.workflowRecovered, true);
+  assert.equal(returned.actorThreadInferred, false);
+  assert.equal(returned.expectedTargetThreadId, "target-1");
+  assert.equal(returned.resolverVersion, "task-card-exact-routing-v1");
   assert.equal(returned.replyCard.id, "ttc_return");
   assert.equal(returned.replyCard.status, "approved");
   assert.equal(returned.replyCard.targetThreadId, "source-1");

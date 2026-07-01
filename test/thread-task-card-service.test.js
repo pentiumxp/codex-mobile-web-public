@@ -1632,8 +1632,21 @@ test("return_to_source recovers original card by workflow when visible card id i
     sourceThreadId: "thread-xcode",
     sourceTurnId: "turn-xcode",
     sourceThreadTitle: "Xcode",
+    sourceRole: "xcode_implementation",
     targetWorkspaceId: "health",
     targetThreadId: "thread-health",
+    targetRole: "health_implementation",
+    routeKind: "repair",
+    requestId: "req-xcode-health",
+    routeResolution: {
+      inputReferenceKind: "role",
+      inputReferenceKinds: ["role"],
+      inputReferenceCount: 1,
+      matchedThreadIds: ["thread-health"],
+      sourceRole: "xcode_implementation",
+      targetRole: "health_implementation",
+      code: "exact_thread_resolved",
+    },
     idempotencyKey: "xcode:health:repair",
     format: "markdown",
     title: "Repair Health path",
@@ -1642,6 +1655,17 @@ test("return_to_source recovers original card by workflow when visible card id i
     workflowMode: "autonomous",
     workflowId: "xcode-health-workflow",
   });
+  assert.equal(repairCard.source.role, "xcode_implementation");
+  assert.equal(repairCard.target.role, "health_implementation");
+  assert.equal(repairCard.workflow.originalTaskCardId, repairCard.id);
+  assert.equal(repairCard.workflow.sourceThreadId, "thread-xcode");
+  assert.equal(repairCard.workflow.targetThreadId, "thread-health");
+  assert.equal(repairCard.workflow.expectedActorThreadId, "thread-health");
+  assert.equal(repairCard.workflow.routeKind, "repair");
+  assert.equal(repairCard.workflow.requestId, "req-xcode-health");
+  assert.equal(repairCard.workflow.resolverVersion, "task-card-exact-routing-v1");
+  assert.equal(repairCard.routeResolution.inputReferenceKind, "role");
+  assert.deepEqual(repairCard.routeResolution.matchedThreadIds, ["thread-health"]);
   await service.approveFromSource(repairCard.id, "thread-xcode");
 
   const returned = await service.reply("ttc_stale_visible_card", "thread-health", {
@@ -1672,7 +1696,7 @@ test("return_to_source recovers original card by workflow when visible card id i
   assert.equal(service.listForThread("thread-xcode").filter((card) => card.audit && card.audit.replyToCardId === repairCard.id).length, 1);
 });
 
-test("return_to_source infers target actor by workflow for Home AI Task Intake returns", async () => {
+test("return_to_source rejects wrong actor for Home AI Task Intake workflow returns", async () => {
   const executions = [];
   const returnEvents = [];
   const service = createThreadTaskCardService({
@@ -1691,8 +1715,10 @@ test("return_to_source infers target actor by workflow for Home AI Task Intake r
     sourceThreadId: "home-ai-task-intake",
     sourceTurnId: "turn-home-ai",
     sourceThreadTitle: "Home AI Task Intake",
+    sourceRole: "home_ai_task_intake",
     targetWorkspaceId: "/Users/hermes-dev/HermesMobileDev/app",
     targetThreadId: "home-ai-implementation",
+    targetRole: "home_ai_implementation",
     idempotencyKey: "home-ai:intake:owner-console",
     format: "markdown",
     title: "Repair Owner Console",
@@ -1703,7 +1729,26 @@ test("return_to_source infers target actor by workflow for Home AI Task Intake r
   });
   await service.approveFromSource(card.id, "home-ai-task-intake");
 
-  const returned = await service.reply("ttc_stale_home_ai_visible_card", "home-ai-task-intake", {
+  await assert.rejects(
+    () => service.reply("ttc_stale_home_ai_visible_card", "home-ai-task-intake", {
+      idempotencyKey: "home-ai:intake:return",
+      format: "markdown",
+      title: "Return: Owner Console repaired",
+      status: "completed",
+      summary: "completed",
+      body: "Completed with bounded evidence.",
+      returnToSource: true,
+      workflowId: "home-ai-intake-workflow",
+    }),
+    (err) => err
+      && err.message === "workflow_actor_mismatch"
+      && err.statusCode === 403
+      && err.details
+      && err.details.requestedActorThreadId === "home-ai-task-intake"
+      && err.details.expectedActorThreadIds.includes("home-ai-implementation"),
+  );
+
+  const returned = await service.reply("ttc_stale_home_ai_visible_card", "home-ai-implementation", {
     idempotencyKey: "home-ai:intake:return",
     format: "markdown",
     title: "Return: Owner Console repaired",
@@ -1717,17 +1762,20 @@ test("return_to_source infers target actor by workflow for Home AI Task Intake r
   assert.equal(returned.card.id, card.id);
   assert.equal(returned.card.status, "replied");
   assert.equal(returned.returnResolution.workflowRecovered, true);
-  assert.equal(returned.returnResolution.actorThreadInferred, true);
-  assert.equal(returned.returnResolution.requestedActorThreadId, "home-ai-task-intake");
+  assert.equal(returned.returnResolution.actorThreadInferred, false);
+  assert.equal(returned.returnResolution.requestedActorThreadId, "home-ai-implementation");
   assert.equal(returned.returnResolution.resolvedActorThreadId, "home-ai-implementation");
   assert.equal(returned.returnResolution.expectedTargetThreadId, "home-ai-implementation");
+  assert.equal(returned.returnResolution.resolverVersion, "task-card-exact-routing-v1");
   assert.equal(returned.replyCard.delivery.returnToSource, true);
   assert.equal(returned.replyCard.target.threadId, "home-ai-task-intake");
+  assert.equal(returned.replyCard.source.role, "home_ai_implementation");
+  assert.equal(returned.replyCard.target.role, "home_ai_task_intake");
   assert.equal(returned.replyCard.status, "approved");
   assert.equal(returnEvents.length, 1);
   assert.equal(returnEvents[0].taskCardId, card.id);
 
-  const duplicate = await service.reply("ttc_stale_home_ai_visible_card", "home-ai-task-intake", {
+  const duplicate = await service.reply("ttc_stale_home_ai_visible_card", "home-ai-implementation", {
     idempotencyKey: "home-ai:intake:return",
     format: "markdown",
     title: "Return: Owner Console repaired",

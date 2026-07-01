@@ -25,6 +25,7 @@ const MAX_LEASE_TURN_IDS = 24;
 const STORE_LOCK_TIMEOUT_MS = 10_000;
 const STORE_LOCK_STALE_MS = 30_000;
 const STORE_LOCK_POLL_MS = 25;
+const TASK_CARD_RESOLVER_VERSION = "task-card-exact-routing-v1";
 
 function nowIso(nowFn) {
   const value = typeof nowFn === "function" ? nowFn() : Date.now();
@@ -53,6 +54,20 @@ function boundedMetadataString(value, maxLength) {
   const text = stringValue(value);
   if (!text) return "";
   return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+function normalizedRoleLabel(value) {
+  return boundedMetadataString(
+    stringValue(value).toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, ""),
+    80,
+  );
+}
+
+function normalizedRouteKind(value) {
+  return boundedMetadataString(
+    stringValue(value || "implementation").toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "implementation",
+    80,
+  );
 }
 
 function boundedErrorMessage(value) {
@@ -365,6 +380,40 @@ function normalizeReplyToRef(input = {}) {
   };
 }
 
+function normalizeRouteResolution(value = {}, request = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const inputReferenceKinds = safeArray(source.inputReferenceKinds || source.input_reference_kinds)
+    .map((entry) => boundedMetadataString(entry, 80))
+    .filter(Boolean)
+    .slice(0, MAX_BATCH_TARGETS);
+  const matchedThreadIds = safeArray(source.matchedThreadIds || source.matched_thread_ids)
+    .map((entry) => boundedMetadataString(entry, 220))
+    .filter(Boolean)
+    .slice(0, MAX_BATCH_TARGETS);
+  const out = {
+    resolverVersion: boundedMetadataString(
+      source.resolverVersion || source.resolver_version || request.resolverVersion || request.resolver_version || TASK_CARD_RESOLVER_VERSION,
+      120,
+    ),
+    routeKind: normalizedRouteKind(source.routeKind || source.route_kind || request.routeKind || request.route_kind),
+    inputReferenceKind: boundedMetadataString(source.inputReferenceKind || source.input_reference_kind, 80),
+    inputReferenceKinds,
+    inputReferenceCount: Math.max(0, Math.trunc(Number(source.inputReferenceCount || source.input_reference_count || inputReferenceKinds.length || 0)) || 0),
+    sourceThreadId: boundedMetadataString(source.sourceThreadId || source.source_thread_id || request.sourceThreadId, 220),
+    targetThreadId: boundedMetadataString(source.targetThreadId || source.target_thread_id || request.targetThreadId, 220),
+    matchedThreadId: boundedMetadataString(source.matchedThreadId || source.matched_thread_id || request.targetThreadId, 220),
+    matchedThreadIds,
+    sourceRole: normalizedRoleLabel(source.sourceRole || source.source_role || request.sourceRole || request.source_role),
+    targetRole: normalizedRoleLabel(source.targetRole || source.target_role || request.targetRole || request.target_role),
+    code: boundedMetadataString(source.code || source.ambiguityCode || source.noOpCode || source.no_op_code, 120),
+  };
+  for (const key of Object.keys(out)) {
+    if (out[key] == null || out[key] === "" || out[key] === false) delete out[key];
+    if (Array.isArray(out[key]) && out[key].length === 0) delete out[key];
+  }
+  return out;
+}
+
 function sourceThreadRefForCard(card) {
   const source = card && card.source && typeof card.source === "object" ? card.source : {};
   return {
@@ -592,6 +641,7 @@ function summarizePublicCardThreadRef(ref = {}, includeTurnId = false) {
     workspaceId: boundedMetadataString(ref.workspaceId, 260),
     threadId: boundedMetadataString(ref.threadId, 220),
     title: boundedMetadataString(ref.title, 200),
+    role: boundedMetadataString(ref.role, 80),
   };
   if (includeTurnId) out.turnId = boundedMetadataString(ref.turnId, 220);
   return omitEmptyObject(out);
@@ -618,9 +668,36 @@ function summarizePublicCardWorkflow(workflow = {}) {
   return omitEmptyObject({
     mode: boundedMetadataString(workflow.mode, 40),
     id: boundedMetadataString(workflow.id, 220),
+    originalTaskCardId: boundedMetadataString(workflow.originalTaskCardId, 180),
+    sourceThreadId: boundedMetadataString(workflow.sourceThreadId, 220),
+    targetThreadId: boundedMetadataString(workflow.targetThreadId, 220),
+    expectedActorThreadId: boundedMetadataString(workflow.expectedActorThreadId, 220),
+    sourceRole: boundedMetadataString(workflow.sourceRole, 80),
+    targetRole: boundedMetadataString(workflow.targetRole, 80),
+    routeKind: boundedMetadataString(workflow.routeKind, 80),
+    requestId: boundedMetadataString(workflow.requestId, 220),
+    resolverVersion: boundedMetadataString(workflow.resolverVersion, 120),
     authorized: workflow.authorized === true,
     authorizedAt: boundedMetadataString(workflow.authorizedAt, 80),
     authorizedByThreadId: boundedMetadataString(workflow.authorizedByThreadId, 220),
+  });
+}
+
+function summarizePublicRouteResolution(routeResolution = {}) {
+  if (!routeResolution || typeof routeResolution !== "object") return null;
+  return omitEmptyObject({
+    resolverVersion: boundedMetadataString(routeResolution.resolverVersion, 120),
+    routeKind: boundedMetadataString(routeResolution.routeKind, 80),
+    inputReferenceKind: boundedMetadataString(routeResolution.inputReferenceKind, 80),
+    inputReferenceKinds: safeArray(routeResolution.inputReferenceKinds).map((entry) => boundedMetadataString(entry, 80)).filter(Boolean).slice(0, MAX_BATCH_TARGETS),
+    inputReferenceCount: Math.max(0, Math.trunc(Number(routeResolution.inputReferenceCount || 0)) || 0),
+    sourceThreadId: boundedMetadataString(routeResolution.sourceThreadId, 220),
+    targetThreadId: boundedMetadataString(routeResolution.targetThreadId, 220),
+    matchedThreadId: boundedMetadataString(routeResolution.matchedThreadId, 220),
+    matchedThreadIds: safeArray(routeResolution.matchedThreadIds).map((entry) => boundedMetadataString(entry, 220)).filter(Boolean).slice(0, MAX_BATCH_TARGETS),
+    sourceRole: boundedMetadataString(routeResolution.sourceRole, 80),
+    targetRole: boundedMetadataString(routeResolution.targetRole, 80),
+    code: boundedMetadataString(routeResolution.code, 120),
   });
 }
 
@@ -693,6 +770,7 @@ function summarizePublicCard(card) {
     message: summarizePublicCardMessage(card && card.message),
     delivery: summarizePublicCardDelivery(card && card.delivery),
     workflow: summarizePublicCardWorkflow(card && card.workflow),
+    routeResolution: summarizePublicRouteResolution(card && card.routeResolution),
     audit: summarizePublicCardAudit(card && card.audit),
     executionLease: summarizePublicCardExecutionLease(card && card.executionLease),
     injectionRuntime: omitEmptyObject({
@@ -748,8 +826,14 @@ function normalizeCreateRequest(input = {}) {
     sourceThreadId: boundedString(input.sourceThreadId, "source_thread_id", 220),
     sourceTurnId: boundedString(input.sourceTurnId, "source_turn_id", 220, false),
     sourceThreadTitle: boundedMetadataString(input.sourceThreadTitle, 200),
+    sourceRole: normalizedRoleLabel(input.sourceRole || input.source_role),
     targetWorkspaceId: boundedString(input.targetWorkspaceId, "target_workspace_id", 260),
     targetThreadId: boundedString(input.targetThreadId, "target_thread_id", 220),
+    targetRole: normalizedRoleLabel(input.targetRole || input.target_role),
+    routeKind: normalizedRouteKind(input.routeKind || input.route_kind),
+    requestId: boundedString(input.requestId || input.request_id, "request_id", 220, false),
+    resolverVersion: boundedMetadataString(input.resolverVersion || input.resolver_version || TASK_CARD_RESOLVER_VERSION, 120),
+    routeResolution: normalizeRouteResolution(input.routeResolution || input.route_resolution, input),
     idempotencyKey: boundedString(input.idempotencyKey, "idempotency_key", 220),
     format: normalizedFormat(input.format),
     title: readableCardText(input.title, "title", MAX_TITLE_CHARS),
@@ -842,12 +926,25 @@ function workflowIdForRequest(request) {
   return `twf_${hash}`;
 }
 
-function workflowForRequest(request) {
+function workflowForRequest(request, originalTaskCardId = "", timestamp = "") {
   if (!request || request.workflowMode !== WORKFLOW_MODE_AUTONOMOUS) return null;
   return {
     mode: WORKFLOW_MODE_AUTONOMOUS,
     id: workflowIdForRequest(request),
     authorized: false,
+    originalTaskCardId: boundedMetadataString(originalTaskCardId, 180),
+    sourceThreadId: request.sourceThreadId,
+    sourceWorkspaceId: request.sourceWorkspaceId,
+    sourceRole: request.sourceRole,
+    targetThreadId: request.targetThreadId,
+    targetWorkspaceId: request.targetWorkspaceId,
+    targetRole: request.targetRole,
+    expectedActorThreadId: request.targetThreadId,
+    routeKind: request.routeKind,
+    requestId: request.requestId,
+    resolverVersion: request.resolverVersion || TASK_CARD_RESOLVER_VERSION,
+    createdAt: timestamp,
+    routeResolution: request.routeResolution,
   };
 }
 
@@ -901,6 +998,18 @@ function activateWorkflowForCard(store, card, actorThreadId, timestamp) {
       status: "active",
       threadIds,
       rootCardId: card.id,
+      originalTaskCardId: stringValue(card.workflow.originalTaskCardId) || card.id,
+      sourceThreadId: stringValue(card.workflow.sourceThreadId) || stringValue(card.source && card.source.threadId),
+      sourceWorkspaceId: stringValue(card.workflow.sourceWorkspaceId) || stringValue(card.source && card.source.workspaceId),
+      sourceRole: stringValue(card.workflow.sourceRole) || stringValue(card.source && card.source.role),
+      targetThreadId: stringValue(card.workflow.targetThreadId) || stringValue(card.target && card.target.threadId),
+      targetWorkspaceId: stringValue(card.workflow.targetWorkspaceId) || stringValue(card.target && card.target.workspaceId),
+      targetRole: stringValue(card.workflow.targetRole) || stringValue(card.target && card.target.role),
+      expectedActorThreadId: stringValue(card.workflow.expectedActorThreadId) || stringValue(card.target && card.target.threadId),
+      routeKind: stringValue(card.workflow.routeKind),
+      requestId: stringValue(card.workflow.requestId),
+      resolverVersion: stringValue(card.workflow.resolverVersion) || TASK_CARD_RESOLVER_VERSION,
+      routeResolution: normalizeRouteResolution(card.workflow.routeResolution || card.routeResolution, card.workflow),
       approvedByThreadId: stringValue(actorThreadId),
       approvedAt: timestamp,
       createdAt: timestamp,
@@ -1149,16 +1258,30 @@ function createThreadTaskCardService(options = {}) {
     const existingReplyCardId = stringValue(existingReplyCard && existingReplyCard.id);
     const workflowCards = safeArray(store.cards)
       .filter((card) => stringValue(card && card.workflow && card.workflow.id) === workflow);
-    const actorCandidates = actorThread
-      ? workflowCards.filter((card) => cardIsReturnableByThread(card, actorThread))
-      : [];
-    const candidates = (actorCandidates.length ? actorCandidates : workflowCards.filter((card) => {
+    const workflowReturnCards = workflowCards.filter((card) => {
       if (cardIsReturnableByAnyTarget(card)) return true;
       return existingReplyCardId
-        && stringValue(card && card.target && card.target.threadId)
         && card && card.status === "replied"
         && stringValue(card.replyCardId) === existingReplyCardId;
-    }))
+    });
+    const actorCandidates = actorThread
+      ? workflowReturnCards.filter((card) => stringValue(card && card.target && card.target.threadId) === actorThread)
+      : [];
+    if (workflowReturnCards.length && actorThread && !actorCandidates.length) {
+      const expectedActorThreadIds = Array.from(new Set(workflowReturnCards
+        .map((card) => stringValue(card && card.workflow && card.workflow.expectedActorThreadId)
+          || stringValue(card && card.target && card.target.threadId))
+        .filter(Boolean)))
+        .sort();
+      const err = errorWithStatus("workflow_actor_mismatch", 403);
+      err.details = {
+        workflowId: workflow,
+        requestedActorThreadId: actorThread,
+        expectedActorThreadIds,
+      };
+      throw err;
+    }
+    const candidates = (actorCandidates.length ? actorCandidates : workflowReturnCards)
       .filter((card) => {
         if (cardIsReturnableByAnyTarget(card)) return true;
         return existingReplyCardId
@@ -1179,8 +1302,9 @@ function createThreadTaskCardService(options = {}) {
     const existing = findByIdempotency(store, request.idempotencyKey);
     if (existing) return publicCard(existing, request.sourceThreadId);
     const timestamp = nowIso(options.now);
+    const cardId = idGenerator();
     const card = {
-      id: idGenerator(),
+      id: cardId,
       status: "pending",
       idempotencyKey: request.idempotencyKey,
       createdAt: timestamp,
@@ -1190,11 +1314,14 @@ function createThreadTaskCardService(options = {}) {
         threadId: request.sourceThreadId,
         turnId: request.sourceTurnId || "",
         title: request.sourceThreadTitle || request.sourceThreadId,
+        role: request.sourceRole || "",
       },
       target: {
         workspaceId: request.targetWorkspaceId,
         threadId: request.targetThreadId,
+        role: request.targetRole || "",
       },
+      routeResolution: normalizeRouteResolution(request.routeResolution, request),
       message: {
         format: request.format,
         title: request.title,
@@ -1212,7 +1339,7 @@ function createThreadTaskCardService(options = {}) {
         terminal: false,
         ackPolicy: request.workflowMode === WORKFLOW_MODE_AUTONOMOUS ? "auto_return" : "return_required",
       },
-      workflow: workflowForRequest(request),
+      workflow: workflowForRequest(request, cardId, timestamp),
       audit: {
         createdAt: timestamp,
       },
@@ -1482,7 +1609,6 @@ function createThreadTaskCardService(options = {}) {
       const requestedActorThreadId = stringValue(actorThreadId);
       let resolvedActorThreadId = requestedActorThreadId;
       let workflowRecovered = false;
-      let actorThreadInferred = false;
       const directCard = findById(store, id);
       const card = directCard || (replyRequest.returnToSource === true
         ? findReturnCardByWorkflow(store, replyRequest.workflowId, requestedActorThreadId, existing)
@@ -1502,18 +1628,27 @@ function createThreadTaskCardService(options = {}) {
             resolvedActorThreadId: "",
             workflowRecovered: false,
             actorThreadInferred: false,
+            resolverVersion: TASK_CARD_RESOLVER_VERSION,
           },
         };
       }
       if (card && replyRequest.returnToSource === true) {
-        const expectedTargetThreadId = stringValue(card.target && card.target.threadId);
+        const expectedTargetThreadId = stringValue(card.workflow && card.workflow.expectedActorThreadId)
+          || stringValue(card.target && card.target.threadId);
         const workflowMatches = replyRequest.workflowId
           && stringValue(card.workflow && card.workflow.id) === replyRequest.workflowId;
         if (expectedTargetThreadId
           && requestedActorThreadId !== expectedTargetThreadId
           && workflowMatches) {
-          resolvedActorThreadId = expectedTargetThreadId;
-          actorThreadInferred = true;
+          const err = errorWithStatus("workflow_actor_mismatch", 403);
+          err.details = {
+            workflowId: replyRequest.workflowId,
+            taskCardId: card.id,
+            requestedActorThreadId,
+            expectedActorThreadId: expectedTargetThreadId,
+            resolverVersion: stringValue(card.workflow && card.workflow.resolverVersion) || TASK_CARD_RESOLVER_VERSION,
+          };
+          throw err;
         }
       }
       if (card && card.status === "replied" && existing && stringValue(card.replyCardId) === stringValue(existing.id)) {
@@ -1528,9 +1663,10 @@ function createThreadTaskCardService(options = {}) {
             workflowId: replyRequest.workflowId || stringValue(card.workflow && card.workflow.id),
             requestedActorThreadId,
             resolvedActorThreadId,
-            expectedTargetThreadId: stringValue(card.target && card.target.threadId),
+            expectedTargetThreadId: stringValue(card.workflow && card.workflow.expectedActorThreadId) || stringValue(card.target && card.target.threadId),
             workflowRecovered,
-            actorThreadInferred,
+            actorThreadInferred: false,
+            resolverVersion: stringValue(card.workflow && card.workflow.resolverVersion) || TASK_CARD_RESOLVER_VERSION,
           },
         };
       }
@@ -1547,9 +1683,10 @@ function createThreadTaskCardService(options = {}) {
             workflowId: replyRequest.workflowId || stringValue(card.workflow && card.workflow.id),
             requestedActorThreadId,
             resolvedActorThreadId,
-            expectedTargetThreadId: stringValue(card.target && card.target.threadId),
+            expectedTargetThreadId: stringValue(card.workflow && card.workflow.expectedActorThreadId) || stringValue(card.target && card.target.threadId),
             workflowRecovered,
-            actorThreadInferred,
+            actorThreadInferred: false,
+            resolverVersion: stringValue(card.workflow && card.workflow.resolverVersion) || TASK_CARD_RESOLVER_VERSION,
           },
         };
       }
@@ -1576,10 +1713,7 @@ function createThreadTaskCardService(options = {}) {
       card.audit = Object.assign({}, card.audit || {}, {
         repliedAt: timestamp,
         repliedByThreadId: resolvedActorThreadId,
-      }, actorThreadInferred ? {
-        returnRequestedActorThreadId: requestedActorThreadId,
-        returnActorThreadInferredFromWorkflow: true,
-      } : {});
+      });
       let replyCard = existing;
       if (!replyCard) {
         replyCard = {
@@ -1593,11 +1727,27 @@ function createThreadTaskCardService(options = {}) {
             threadId: replySourceThreadId,
             turnId: "",
             title: replyRequest.sourceThreadTitle || card.target.threadId,
+            role: stringValue(card.target && card.target.role),
           },
           target: {
             workspaceId: replyTarget.workspaceId,
             threadId: replyTargetThreadId,
+            role: stringValue(card.source && card.source.role),
           },
+          routeResolution: normalizeRouteResolution({
+            resolverVersion: stringValue(card.workflow && card.workflow.resolverVersion) || TASK_CARD_RESOLVER_VERSION,
+            routeKind: "return",
+            inputReferenceKind: "workflow",
+            inputReferenceKinds: ["workflow"],
+            inputReferenceCount: 1,
+            sourceThreadId: replySourceThreadId,
+            targetThreadId: replyTargetThreadId,
+            matchedThreadId: replyTargetThreadId,
+            matchedThreadIds: [replyTargetThreadId],
+            sourceRole: stringValue(card.target && card.target.role),
+            targetRole: stringValue(card.source && card.source.role),
+            code: "return_to_source",
+          }),
           message: {
             format: replyRequest.format,
             title: replyRequest.title,
@@ -1620,6 +1770,17 @@ function createThreadTaskCardService(options = {}) {
             mode: WORKFLOW_MODE_AUTONOMOUS,
             id: replyWorkflowId,
             authorized: false,
+            originalTaskCardId: stringValue(card.workflow && card.workflow.originalTaskCardId) || card.id,
+            sourceThreadId: replySourceThreadId,
+            sourceWorkspaceId: replyRequest.sourceWorkspaceId || card.target.workspaceId,
+            sourceRole: stringValue(card.target && card.target.role),
+            targetThreadId: replyTargetThreadId,
+            targetWorkspaceId: replyTarget.workspaceId,
+            targetRole: stringValue(card.source && card.source.role),
+            expectedActorThreadId: replyTargetThreadId,
+            routeKind: "return",
+            requestId: replyRequest.idempotencyKey,
+            resolverVersion: stringValue(card.workflow && card.workflow.resolverVersion) || TASK_CARD_RESOLVER_VERSION,
           } : null,
           audit: {
             createdAt: timestamp,
@@ -1655,9 +1816,10 @@ function createThreadTaskCardService(options = {}) {
           workflowId: replyWorkflowId || stringValue(card.workflow && card.workflow.id),
           requestedActorThreadId,
           resolvedActorThreadId,
-          expectedTargetThreadId: stringValue(card.target && card.target.threadId),
+          expectedTargetThreadId: stringValue(card.workflow && card.workflow.expectedActorThreadId) || stringValue(card.target && card.target.threadId),
           workflowRecovered,
-          actorThreadInferred,
+          actorThreadInferred: false,
+          resolverVersion: stringValue(card.workflow && card.workflow.resolverVersion) || TASK_CARD_RESOLVER_VERSION,
         },
       };
     });

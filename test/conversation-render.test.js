@@ -68,6 +68,15 @@ function serverOrCompactionFunctionBody(name) {
   return functionBodyFrom(serverOrCompactionSourceForFunction(name), name);
 }
 
+async function waitUntil(predicate, timeoutMs = 120) {
+  const startedAt = Date.now();
+  for (;;) {
+    if (predicate()) return;
+    if (Date.now() - startedAt >= timeoutMs) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 function evaluatedServerSupersededLivePruner() {
   const sources = [
     "isSupersededLiveTurn",
@@ -3269,7 +3278,7 @@ test("protected upload image errors are probed before showing failed fallback", 
   assert.deepEqual(toggledClasses, [["image-load-retrying", true]]);
   assert.equal(fetchCalls.length, 1);
 
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await waitUntil(() => imageSrc === "data:image/jpeg;base64,ZmFrZS1qcGVn");
 
   assert.deepEqual(addedClasses, []);
   assert.deepEqual(removedClasses, ["image-load-failed"]);
@@ -3333,7 +3342,7 @@ test("Hermes embedded protected image recovery keeps proxy-safe file urls", asyn
   };
 
   handleConversationImageError({ target: { closest: () => image } });
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await waitUntil(() => /_imgRecover=/.test(imageSrc));
 
   assert.equal(fetchCalls.length, 1);
   assert.match(fetchCalls[0].src, /^\/api\/uploads\/file\?id=2026-06-23%2Fthread-id%2Fhomeai-upload\.jpg/);
@@ -3394,7 +3403,7 @@ test("Hermes proxy embedded protected image recovery stays under plugin proxy", 
   };
 
   handleConversationImageError({ target: { closest: () => image } });
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await waitUntil(() => /_imgRecover=/.test(imageSrc));
 
   assert.equal(fetchCalls.length, 1);
   assert.match(fetchCalls[0].src, /^\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-23%2Fthread-id%2Fhomeai-upload\.jpg/);
@@ -3439,7 +3448,7 @@ test("protected upload image errors fall back to cache-busted src retry without 
   };
 
   handleConversationImageError({ target: { closest: () => image } });
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await waitUntil(() => /_imgRetry=/.test(imageSrc));
 
   assert.match(imageSrc, /_imgRetry=/);
 });
@@ -3688,7 +3697,7 @@ test("protected zero-size upload images are probed by scanner instead of marked 
   assert.deepEqual(addedClasses, []);
   assert.deepEqual(toggledClasses, [["image-load-retrying", true]]);
 
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await waitUntil(() => imageSrc === "data:image/jpeg;base64,c2Nhbm5lZC1qcGVn");
 
   assert.equal(imageSrc, "data:image/jpeg;base64,c2Nhbm5lZC1qcGVn");
   assert.equal(protectedImage.dataset.protectedImageObjectUrl, undefined);

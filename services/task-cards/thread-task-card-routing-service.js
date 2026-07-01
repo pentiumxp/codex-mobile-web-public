@@ -13,6 +13,24 @@ function defaultThreadDisplayTitle(thread) {
   return String(thread.name || thread.title || thread.threadName || thread.thread_name || thread.id || "").trim();
 }
 
+function normalizeRoleText(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function defaultThreadRole(thread, displayTitle = defaultThreadDisplayTitle) {
+  if (!thread || typeof thread !== "object") return "";
+  const explicit = normalizeRoleText(thread.role || thread.threadRole || thread.thread_role || thread.taskCardRole || thread.task_card_role);
+  if (explicit) return explicit;
+  const title = String(displayTitle(thread) || "").trim().toLowerCase();
+  const cwd = String(thread.cwd || thread.workspace || "").trim().toLowerCase();
+  if (/chatgpt\s*pro/.test(title)) return "chatgpt_pro";
+  if (/task\s*intake/.test(title)) return "home_ai_task_intake";
+  if (/deploy\s*lane/.test(title)) return "home_ai_deploy";
+  if (/plugin\s*workspace\s*audit/.test(title)) return "plugin_workspace_audit";
+  if (cwd.endsWith("/plugins/codex-mobile-web") || cwd.endsWith("\\plugins\\codex-mobile-web")) return "codex_mobile_implementation";
+  return "";
+}
+
 function defaultVisibilityFromGlobalState() {
   return {
     workspaceKeys: new Set(),
@@ -31,7 +49,7 @@ function defaultCreateError(statusCode, code, message, details = {}) {
 
 function threadTaskCardTargetReferenceText(value) {
   if (value && typeof value === "object" && !Array.isArray(value)) {
-    return String(value.threadId || value.id || value.cwd || value.workspace || value.title || value.name || value.label || "").trim();
+    return String(value.threadId || value.id || value.role || value.threadRole || value.cwd || value.workspace || value.title || value.name || value.label || "").trim();
   }
   return String(value || "").trim();
 }
@@ -41,6 +59,7 @@ function threadTaskCardTargetReferenceEntry(kind, value) {
   if (!text) return null;
   if (value && typeof value === "object" && !Array.isArray(value)) {
     if (value.threadId || value.id) kind = "threadId";
+    else if (value.role || value.threadRole) kind = "role";
     else if (value.cwd || value.workspace) kind = "workspace";
     else if (value.title || value.name || value.label) kind = "title";
   }
@@ -59,6 +78,8 @@ function threadTaskCardTargetReferenceEntries(body = {}) {
   if (Array.isArray(body.targetThreadRefs)) body.targetThreadRefs.forEach((value) => push("thread", value));
   if (Array.isArray(body.targetThreadTitles)) body.targetThreadTitles.forEach((value) => push("title", value));
   if (body.targetThreadTitle) push("title", body.targetThreadTitle);
+  if (Array.isArray(body.targetRoles)) body.targetRoles.forEach((value) => push("role", value));
+  if (body.targetRole) push("role", body.targetRole);
   if (values.some((entry) => entry && entry.kind !== "workspace")) return values;
   if (Array.isArray(body.targetWorkspaces)) body.targetWorkspaces.forEach((value) => push("workspace", value));
   if (body.targetWorkspace) push("workspace", body.targetWorkspace);
@@ -115,6 +136,9 @@ function createThreadTaskCardRoutingService(deps = {}) {
   const isSubagent = typeof deps.isSubagentThreadSummary === "function" ? deps.isSubagentThreadSummary : () => false;
   const isSidecar = typeof deps.isSideChatSidecarThreadSummary === "function" ? deps.isSideChatSidecarThreadSummary : () => false;
   const createError = typeof deps.createError === "function" ? deps.createError : defaultCreateError;
+  const threadRole = typeof deps.threadTaskCardRole === "function"
+    ? deps.threadTaskCardRole
+    : (thread) => defaultThreadRole(thread, displayTitle);
 
   function targetError(code, message, details = {}, statusCode = 400) {
     return createError(statusCode, code, message || code, details);
@@ -151,6 +175,17 @@ function createThreadTaskCardRoutingService(deps = {}) {
     return matches.sort(compareThreadTaskCardCanonicalTargets);
   }
 
+  function visibleTargetsForRole(role, visibleThreads = []) {
+    const wanted = normalizeRoleText(role);
+    if (!wanted) return [];
+    const matches = [];
+    for (const thread of visibleThreads || []) {
+      if (!thread || normalizeRoleText(threadRole(thread)) !== wanted) continue;
+      matches.push(thread);
+    }
+    return matches.sort(compareThreadTaskCardCanonicalTargets);
+  }
+
   function canonicalTargetForCwd(cwd, visibleThreads = []) {
     const matches = visibleTargetsForCwd(cwd, visibleThreads);
     return matches.length === 1 ? matches[0] : null;
@@ -178,8 +213,46 @@ function createThreadTaskCardRoutingService(deps = {}) {
       threadId: String(thread.id || ""),
       title: displayTitle(thread),
       cwd: String(thread.cwd || ""),
+      role: threadRole(thread),
       updatedAt: threadTaskCardTargetUpdatedAt(thread),
     };
+  }
+
+  function resolveTargetMatch(raw, entry, matches, sourceThreadId, ambiguousCode, ambiguousMessage, options = {}) {
+    if (matches.length === 1) {
+      const onlyMatchId = String(matches[0] && matches[0].id || "").trim();
+      if (onlyMatchId && onlyMatchId === String(sourceThreadId || "").trim()) {
+        throw targetError(
+          "target_thread_self",
+          "Target thread must be different from the source thread.",
+          {
+            sourceThreadId: String(sourceThreadId || ""),
+            reference: raw,
+            referenceKind: entry.kind || "thread",
+            matchedThread: publicTarget(matches[0]),
+          },
+          400,
+        );
+      }
+      return assertTargetDeliverable(matches[0], {
+        reference: raw,
+        referenceKind: entry.kind || "thread",
+      }, options);
+    }
+    if (matches.length > 1) {
+      throw targetError(
+        ambiguousCode,
+        ambiguousMessage,
+        {
+          reference: raw,
+          referenceKind: entry.kind || "thread",
+          matchCount: matches.length,
+          matchedThreads: matches.map((thread) => publicTarget(thread)).filter(Boolean).slice(0, 12),
+        },
+        409,
+      );
+    }
+    return "";
   }
 
   function assertTargetDeliverable(thread, details = {}, options = {}) {
@@ -251,40 +324,30 @@ function createThreadTaskCardRoutingService(deps = {}) {
     }
     const lowered = raw.toLowerCase();
     const rawPath = normalizePath(raw);
-    const cwdMatches = visibleTargetsForCwd(rawPath, visibleThreads, sourceThreadId);
-    if (cwdMatches.length === 1) {
-      const onlyMatchId = String(cwdMatches[0] && cwdMatches[0].id || "").trim();
-      if (onlyMatchId && onlyMatchId === String(sourceThreadId || "").trim()) {
-        throw targetError(
-          "target_thread_self",
-          "Target thread must be different from the source thread.",
-          {
-            sourceThreadId: String(sourceThreadId || ""),
-            reference: raw,
-            referenceKind: entry.kind || "workspace",
-            matchedThread: publicTarget(cwdMatches[0]),
-          },
-          400,
-        );
-      }
-      return assertTargetDeliverable(cwdMatches[0], {
-        reference: raw,
-        referenceKind: entry.kind || "workspace",
-      }, options);
-    }
-    if (cwdMatches.length > 1) {
-      throw targetError(
-        "target_workspace_ambiguous",
-        "Target workspace matched multiple visible threads. Use targetThreadId for exact routing.",
-        {
-          reference: raw,
-          referenceKind: entry.kind || "workspace",
-          matchCount: cwdMatches.length,
-          matchedThreads: cwdMatches.map((thread) => publicTarget(thread)).filter(Boolean).slice(0, 12),
-        },
-        409,
+    if (entry.kind === "role") {
+      const roleMatches = visibleTargetsForRole(raw, visibleThreads);
+      const roleTarget = resolveTargetMatch(
+        raw,
+        entry,
+        roleMatches,
+        sourceThreadId,
+        "target_thread_ambiguous",
+        "Target role matched multiple visible threads. Use targetThreadId for exact routing.",
+        options,
       );
+      if (roleTarget) return roleTarget;
     }
+    const cwdMatches = visibleTargetsForCwd(rawPath, visibleThreads, sourceThreadId);
+    const cwdTarget = resolveTargetMatch(
+      raw,
+      entry.kind === "workspace" ? entry : Object.assign({}, entry, { kind: "workspace" }),
+      cwdMatches,
+      sourceThreadId,
+      "target_workspace_ambiguous",
+      "Target workspace matched multiple visible threads. Use targetThreadId for exact routing.",
+      options,
+    );
+    if (cwdTarget) return cwdTarget;
     const idMatches = [];
     const titleMatches = [];
     for (const thread of visibleThreads) {
@@ -354,6 +417,7 @@ function createThreadTaskCardRoutingService(deps = {}) {
     resolveTargetReference,
     resolvedTargetIds,
     targetError,
+    targetRole: threadRole,
     targetReferenceEntries: threadTaskCardTargetReferenceEntries,
     targetReferenceEntry: threadTaskCardTargetReferenceEntry,
     targetReferenceText: threadTaskCardTargetReferenceText,
@@ -361,13 +425,16 @@ function createThreadTaskCardRoutingService(deps = {}) {
     targetUpdatedAt: threadTaskCardTargetUpdatedAt,
     targetVisibility,
     visibleTargetsForCwd,
+    visibleTargetsForRole,
     visibleTargetThreads,
   };
 }
 
 module.exports = {
   createThreadTaskCardRoutingService,
+  defaultThreadRole,
   isThreadIdLike,
+  normalizeRoleText,
   normalizeFsPath,
   threadTaskCardTargetReferenceEntries,
   threadTaskCardTargetReferenceEntry,

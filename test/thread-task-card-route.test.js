@@ -523,34 +523,23 @@ test("return_to_source dynamic tool prefers explicit target thread over app-serv
   assert.equal(calls.length, 1);
 });
 
-test("return_to_source dynamic tool reports workflow actor recovery evidence", async () => {
+test("return_to_source dynamic tool reports workflow actor mismatch evidence", async () => {
   const service = createThreadTaskCardRouteService({
     threadTaskCardService: {
       reply: async (cardId, actorThreadId, body) => {
         assert.equal(cardId, "ttc_stale_home_ai_card");
         assert.equal(actorThreadId, "home-ai-task-intake");
         assert.equal(body.workflowId, "home-ai-intake-workflow");
-        return {
-          card: { status: "replied" },
-          replyCard: {
-            id: "ttc_return_card",
-            status: "approved",
-            terminal: true,
-            requiresReturn: false,
-            ackPolicy: "none",
-            source: { threadId: "home-ai-implementation" },
-            target: { threadId: "home-ai-task-intake" },
-          },
-          returnResolution: {
-            noOp: false,
-            reason: "",
-            requestedActorThreadId: "home-ai-task-intake",
-            resolvedActorThreadId: "home-ai-implementation",
-            expectedTargetThreadId: "home-ai-implementation",
-            workflowRecovered: true,
-            actorThreadInferred: true,
-          },
+        const err = new Error("workflow_actor_mismatch");
+        err.statusCode = 403;
+        err.details = {
+          workflowId: "home-ai-intake-workflow",
+          taskCardId: "ttc_stale_home_ai_card",
+          requestedActorThreadId: "home-ai-task-intake",
+          expectedActorThreadId: "home-ai-implementation",
+          resolverVersion: "task-card-exact-routing-v1",
         };
+        throw err;
       },
     },
     stableTextHash,
@@ -573,14 +562,13 @@ test("return_to_source dynamic tool reports workflow actor recovery evidence", a
   });
   const payload = JSON.parse(response.result.contentItems[0].text);
 
-  assert.equal(payload.ok, true);
-  assert.equal(payload.actorThreadId, "home-ai-task-intake");
-  assert.equal(payload.requestedActorThreadId, "home-ai-task-intake");
-  assert.equal(payload.resolvedActorThreadId, "home-ai-implementation");
-  assert.equal(payload.expectedTargetThreadId, "home-ai-implementation");
-  assert.equal(payload.workflowRecovered, true);
-  assert.equal(payload.actorThreadInferred, true);
-  assert.equal(payload.returnNoOp, false);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error, "workflow_actor_mismatch");
+  assert.equal(payload.statusCode, 403);
+  assert.equal(payload.details.workflowId, "home-ai-intake-workflow");
+  assert.equal(payload.details.requestedActorThreadId, "home-ai-task-intake");
+  assert.equal(payload.details.expectedActorThreadId, "home-ai-implementation");
+  assert.equal(payload.details.resolverVersion, "task-card-exact-routing-v1");
 });
 
 test("source-thread task-card route uses semantic idempotency for routine plugin deployments", () => {
@@ -619,6 +607,46 @@ test("source-thread task-card route uses semantic idempotency for routine plugin
   const firstOrdinary = service.buildThreadTaskCardCreatePayload(Object.assign({}, ordinaryBody, { requestId: "dynamic-tool-call" }), "source-thread");
   const retryOrdinary = service.buildThreadTaskCardCreatePayload(Object.assign({}, ordinaryBody, { requestId: "fallback-script-retry" }), "source-thread");
   assert.notEqual(firstOrdinary.idempotencyKey, retryOrdinary.idempotencyKey);
+});
+
+test("source-thread task-card route persists exact role routing evidence", () => {
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {},
+    stableTextHash,
+    readThreadListFallback: () => [
+      { id: "source-thread", name: "Home AI Task Intake", cwd: "/Users/hermes-dev/HermesMobileDev/app", role: "home_ai_task_intake" },
+      { id: "implementation-thread", name: "Home AI 06-22", cwd: "/Users/hermes-dev/HermesMobileDev/app", role: "home_ai_implementation" },
+      { id: "audit-thread", name: "Plugin Workspace Audit", cwd: "/Users/hermes-dev/HermesMobileDev/app", role: "plugin_workspace_audit" },
+    ],
+    readStateDbThread: (threadId) => {
+      if (threadId === "source-thread") return { id: "source-thread", title: "Home AI Task Intake", cwd: "/Users/hermes-dev/HermesMobileDev/app", role: "home_ai_task_intake" };
+      if (threadId === "implementation-thread") return { id: "implementation-thread", title: "Home AI 06-22", cwd: "/Users/hermes-dev/HermesMobileDev/app", role: "home_ai_implementation" };
+      if (threadId === "audit-thread") return { id: "audit-thread", title: "Plugin Workspace Audit", cwd: "/Users/hermes-dev/HermesMobileDev/app", role: "plugin_workspace_audit" };
+      return null;
+    },
+    threadDisplayTitle: (thread) => thread && (thread.name || thread.title || thread.preview || thread.id) || "",
+  });
+
+  const payload = service.buildThreadTaskCardCreatePayload({
+    targetRole: "home_ai_implementation",
+    title: "Repair Home AI",
+    body: "Repair and return with bounded evidence.",
+    workflowMode: "autonomous",
+    requestId: "exact-role-call",
+  }, "source-thread");
+
+  assert.deepEqual(payload.targetThreadIds, ["implementation-thread"]);
+  assert.equal(payload.sourceRole, "home_ai_task_intake");
+  assert.equal(payload.targetRole, "home_ai_implementation");
+  assert.equal(payload.routeKind, "implementation");
+  assert.equal(payload.resolverVersion, "task-card-exact-routing-v1");
+  assert.equal(payload.routeResolution.resolverVersion, "task-card-exact-routing-v1");
+  assert.equal(payload.routeResolution.inputReferenceKind, "role");
+  assert.deepEqual(payload.routeResolution.inputReferenceKinds, ["role"]);
+  assert.deepEqual(payload.routeResolution.matchedThreadIds, ["implementation-thread"]);
+  assert.equal(payload.routeResolution.sourceThreadId, "source-thread");
+  assert.equal(payload.routeResolution.targetThreadId, "implementation-thread");
+  assert.equal(payload.routeResolution.code, "exact_thread_resolved");
 });
 
 test("server broadcasts lightweight thread status for background turn notifications", () => {

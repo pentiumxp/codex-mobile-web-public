@@ -728,10 +728,12 @@ approval requests: pending-count decoration, public card actions, and retry
 paths must exclude them even during the short source-direct approval window.
 Concurrent retries for the same terminal return event treat an existing
 `sending` audit status as in-flight and must not emit a second Home AI delivery
-event. When a visible card id or actor thread id is stale but the workflow id
-uniquely identifies the original active card, the service resolves the original
-card and target actor from stored workflow metadata and returns bounded
-`returnResolution` evidence. Already closed or missing duplicate return
+event. When a visible card id is stale but the workflow id uniquely identifies
+the original active card, the service resolves the original card from stored
+workflow metadata only if the caller actor matches the stored
+`expectedActorThreadId` / `targetThreadId`. Wrong actors fail closed with
+`workflow_actor_mismatch` and bounded expected/requested actor metadata instead
+of being rewritten to another thread. Already closed or missing duplicate return
 attempts produce bounded no-op results instead of creating acknowledgement
 loops. A target-thread final answer is not a source-thread return card.
 Deep audit/task-card callers can pass `reasoningEffort` (`low`, `medium`,

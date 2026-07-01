@@ -206,7 +206,10 @@ async function requestJson(context, method, pathname, body = null) {
     throw new Error(`codex_mobile_mcp_http_${response.status}`);
   }
   if (!response.ok || payload.ok === false) {
-    throw new Error(String(payload.error || payload.message || `codex_mobile_mcp_http_${response.status}`));
+    const err = new Error(String(payload.error || payload.message || `codex_mobile_mcp_http_${response.status}`));
+    err.statusCode = response.status;
+    err.details = payload.details && typeof payload.details === "object" ? payload.details : undefined;
+    throw err;
   }
   return payload;
 }
@@ -293,12 +296,14 @@ async function returnToSource(context, args = {}) {
   const title = boundedString(args.title, "title", 120, true);
   const bodyMarkdown = boundedString(args.bodyMarkdown || args.body, "body_markdown", 50_000, true);
   const status = normalizedReturnStatus(args.status);
+  const workflowId = boundedString(args.workflowId || args.workflow_id, "workflow_id", 220, false);
   const seed = boundedString(args.idempotencyKey, "idempotency_key", 180, false)
     || boundedString(args.requestId, "request_id", 180, false)
-    || JSON.stringify({ taskCardId, threadId, status, title, body: bodyMarkdown });
+    || JSON.stringify({ taskCardId, threadId, workflowId, status, title, body: bodyMarkdown });
   const payload = {
     threadId,
     status,
+    workflowId,
     returnToSource: true,
     title: /^Return:/i.test(title) ? title : `Return: ${title}`,
     summary: boundedString(args.summary, "summary", 300, false) || status,
@@ -326,6 +331,7 @@ async function returnToSource(context, args = {}) {
     workflowRecovered: Boolean(result.returnResolution && result.returnResolution.workflowRecovered),
     actorThreadInferred: Boolean(result.returnResolution && result.returnResolution.actorThreadInferred),
     expectedTargetThreadId: String(result.returnResolution && result.returnResolution.expectedTargetThreadId || ""),
+    resolverVersion: String(result.returnResolution && result.returnResolution.resolverVersion || ""),
     replyCard: {
       id: String(replyCard.id || ""),
       status: String(replyCard.status || ""),

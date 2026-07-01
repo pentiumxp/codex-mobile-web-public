@@ -66,6 +66,12 @@ test("target reference extraction gives exact thread and title references priori
   assert.deepEqual(threadTaskCardTargetReferences({
     targetWorkspace: { cwd: "/tmp/shared" },
   }), ["/tmp/shared"]);
+  assert.deepEqual(threadTaskCardTargetReferenceEntries({
+    targetRole: "home_ai_deploy",
+    targetCwd: "/tmp/shared",
+  }), [
+    { kind: "role", text: "home_ai_deploy" },
+  ]);
 });
 
 test("visible target list dedupes and excludes archived, subagent, and sidecar threads", () => {
@@ -123,6 +129,34 @@ test("workspace cwd routing is allowed only for a unique visible deliverable thr
 
   assert.equal(service.resolveTargetReference(cwd, sourceThreadId), targetThreadId);
   assert.equal(service.canonicalTargetForCwd(cwd, service.visibleTargetThreads()).id, targetThreadId);
+});
+
+test("role routing resolves a unique role and fails closed for duplicate role candidates", () => {
+  const cwd = "/tmp/codex-mobile-routing/roles";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const deployThreadId = "10000000-0000-4000-8000-000000000002";
+  const auditThreadId = "10000000-0000-4000-8000-000000000003";
+  const secondAuditThreadId = "10000000-0000-4000-8000-000000000004";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: sourceThreadId, name: "Home AI Task Intake", cwd, updatedAt: 400 },
+      { id: deployThreadId, name: "Home AI Deploy", cwd: "/tmp/home-ai", role: "home_ai_deploy", updatedAt: 300 },
+      { id: auditThreadId, name: "Plugin Workspace Audit", cwd: "/tmp/home-ai", role: "plugin_workspace_audit", updatedAt: 200 },
+      { id: secondAuditThreadId, name: "Plugin Workspace Audit 2", cwd: "/tmp/home-ai", role: "plugin_workspace_audit", updatedAt: 100 },
+    ],
+  });
+
+  assert.equal(service.resolveTargetReference({ kind: "role", text: "home_ai_deploy" }, sourceThreadId), deployThreadId);
+  assert.equal(service.resolvedTargetIds({ targetRole: "home_ai_deploy", targetCwd: cwd }, sourceThreadId)[0], deployThreadId);
+  assert.throws(
+    () => service.resolveTargetReference({ kind: "role", text: "plugin_workspace_audit" }, sourceThreadId),
+    (err) => err
+      && err.code === "target_thread_ambiguous"
+      && err.statusCode === 409
+      && err.details
+      && err.details.matchCount === 2
+      && err.details.matchedThreads.every((thread) => thread.role === "plugin_workspace_audit"),
+  );
 });
 
 test("workspace cwd routing includes the source thread in ambiguity checks", () => {

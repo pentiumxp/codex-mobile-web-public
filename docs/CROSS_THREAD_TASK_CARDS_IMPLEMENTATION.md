@@ -121,18 +121,25 @@ only. Passing `pending:true`, `autoApprove:false`, or `direct:false` also keeps
 the card in the manual-pending flow even when the switch is enabled.
 
 Thread id is the task-card routing identity. Titles and cwd/workspace values are
-hints only. Workspace/cwd targeting is allowed only when exactly one visible,
-deliverable thread owns that cwd; when several visible threads share the same
-cwd, the routing service fails closed with `target_workspace_ambiguous` and
-returns bounded candidate metadata so the caller can retry with an exact
+hints only and must not be used as the final workflow execution key.
+Workspace/cwd targeting is allowed only when exactly one visible, deliverable
+thread owns that cwd; when several visible threads share the same cwd, the
+routing service fails closed with `target_workspace_ambiguous` and returns
+bounded candidate metadata so the caller can retry with an exact
 `targetThreadId`. Exact titles also fail closed when multiple visible threads
-share the same title. Routine plugin deployment cards are corrected after target
-resolution: once the source workspace and card text identify a routine plugin
-deploy, the server retargets the card to the configured live deploy lane for
-that plugin even if the model initially selected an ordinary Home AI thread or
-a same-cwd Codex Mobile implementation/PR thread. Deploy-lane repair,
-target-discovery, and routing-visibility cards remain implementation work and
-are not treated as routine plugin deployments.
+share the same title. Role labels such as `home_ai_task_intake`,
+`home_ai_implementation`, `plugin_workspace_audit`, and `home_ai_deploy` are
+policy hints owned by Home AI; Codex Mobile may resolve a role only when it
+matches exactly one current visible target thread, then persists the selected
+`targetThreadId` and bounded `routeResolution` record on the workflow. Duplicate
+role matches fail closed with `target_thread_ambiguous`. Routine plugin
+deployment cards are corrected after target resolution: once the source
+workspace and card text identify a routine plugin deploy, the server retargets
+the card to the configured live deploy lane for that plugin even if the model
+initially selected an ordinary Home AI thread or a same-cwd Codex Mobile
+implementation/PR thread. Deploy-lane repair, target-discovery, and
+routing-visibility cards remain implementation work and are not treated as
+routine plugin deployments.
 
 Approved cards that execute inside configured Home AI deploy-lane threads run
 with a deploy-lane no-approval runtime override: `approvalPolicy=never` and
@@ -205,11 +212,15 @@ behavior. They are also terminal by default:
 `delivery.ackPolicy="none"`. Terminal return cards do not inject `Return
 required` guidance, do not expose a reply affordance, and cannot be replied to
 through `/reply`; acknowledgements do not require acknowledgements. If the
-visible task-card id or actor thread id is stale but a supplied workflow id
-uniquely identifies the original active card, `threadTaskCardService.reply()`
-recovers the original card, resolves the actor to the stored target thread, and
-returns bounded `returnResolution` fields such as `requestedActorThreadId`,
-`resolvedActorThreadId`, `workflowRecovered`, and `actorThreadInferred`.
+visible task-card id is stale but a supplied workflow id uniquely identifies
+the original active card, `threadTaskCardService.reply()` recovers the original
+card only when the caller actor matches the stored `expectedActorThreadId` /
+`targetThreadId`. Wrong actors fail closed with `workflow_actor_mismatch` and
+bounded expected/requested actor metadata. The service returns bounded
+`returnResolution` fields such as `requestedActorThreadId`,
+`resolvedActorThreadId`, `workflowRecovered`, `expectedTargetThreadId`, and
+`resolverVersion`; actor auto-inference is not a success path for
+workflow-critical returns.
 Already-closed terminal duplicates and missing stale duplicates return bounded
 no-op reasons (`already_closed` or `task_card_not_found`) rather than creating a
 second return card or forcing a workspace-local fallback script. If a
@@ -319,12 +330,14 @@ was already delivered to the current target thread. It requires the original
 inferred from app-server metadata or the recent turn/thread map when possible.
 The server validates the target actor, allows return while the original card is
 `pending` or `approved`, creates the reverse-direction card through
-`threadTaskCardService.reply()`, and keeps retries idempotent. If actor inference
-is missing or stale but a workflow id is present, the service can recover the
-original card and actor from stored workflow metadata. Invalid status values,
-missing card ids, missing actor thread ids without workflow recovery evidence,
-missing title, and missing body return bounded tool errors instead of hanging
-the turn.
+`threadTaskCardService.reply()`, and keeps retries idempotent. If actor
+inference is missing but a workflow id is present, the service can recover the
+original card from stored workflow metadata only after validating the caller
+actor against the stored expected target actor. Stale or wrong actors return
+`workflow_actor_mismatch` instead of being rewritten to another thread. Invalid
+status values, missing card ids, missing actor thread ids without workflow
+recovery evidence, missing title, and missing body return bounded tool errors
+instead of hanging the turn.
 The accepted return statuses are `completed`, `blocked`, `redirected`,
 `rejected`, and `partially_completed`.
 
