@@ -3,6 +3,8 @@ import path from "node:path";
 
 export const SHELL_MANIFEST_SCHEMA_VERSION = 2;
 export const SHELL_CACHE_NAME = "codex-mobile-shell-v623";
+export const SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
+export const SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
 
 const SHELL_ENTRY_GROUP_DEFINITIONS = [
   {
@@ -222,10 +224,16 @@ function buildEntryGroups(scriptAssets) {
   return groups;
 }
 
+export function canonicalShellScriptAssets() {
+  return uniqueValues(SHELL_ENTRY_GROUP_DEFINITIONS.flatMap((definition) => definition.assets));
+}
+
 export function buildPublicShellManifest(root = process.cwd()) {
   const indexHtml = readText(root, "public/index.html");
   const appVersion = packageVersion(root);
-  const scriptAssets = extractExternalScriptSrcs(indexHtml);
+  const hasGeneratedScriptBlock = indexHtml.includes(SHELL_SCRIPT_BLOCK_START)
+    && indexHtml.includes(SHELL_SCRIPT_BLOCK_END);
+  const scriptAssets = hasGeneratedScriptBlock ? canonicalShellScriptAssets() : extractExternalScriptSrcs(indexHtml);
   const entryGroups = buildEntryGroups(scriptAssets);
   const linkAssets = extractLinkHrefs(indexHtml);
   const iconAssets = uniqueValues([
@@ -280,6 +288,29 @@ export function buildPublicShellManifest(root = process.cwd()) {
   };
 }
 
+function renderShellScriptBlock(scriptAssets) {
+  return [
+    SHELL_SCRIPT_BLOCK_START,
+    ...scriptAssets.map((asset) => `  <script src="${asset}"></script>`),
+    SHELL_SCRIPT_BLOCK_END,
+  ].join("\n");
+}
+
+export function generatedIndexHtmlSource(indexHtml, manifest) {
+  const startIndex = indexHtml.indexOf(SHELL_SCRIPT_BLOCK_START);
+  const endIndex = indexHtml.indexOf(SHELL_SCRIPT_BLOCK_END);
+  if (startIndex < 0 || endIndex < 0 || endIndex < startIndex) {
+    throw new Error("shell_script_block_markers_missing");
+  }
+  const blockEndIndex = endIndex + SHELL_SCRIPT_BLOCK_END.length;
+  const generatedBlock = renderShellScriptBlock(manifest.scriptAssets);
+  return [
+    indexHtml.slice(0, startIndex).replace(/\s+$/, ""),
+    generatedBlock,
+    indexHtml.slice(blockEndIndex).replace(/^\s+/, "\n"),
+  ].join("\n");
+}
+
 function manifestJsonSource(manifest) {
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
@@ -298,9 +329,15 @@ function manifestJsSource(manifest) {
 
 export function generatedManifestFiles(root = process.cwd()) {
   const manifest = buildPublicShellManifest(root);
+  const indexHtmlPath = path.join(root, "public", "index.html");
+  const indexHtml = fs.readFileSync(indexHtmlPath, "utf8");
   return {
     manifest,
     files: [
+      {
+        path: indexHtmlPath,
+        source: generatedIndexHtmlSource(indexHtml, manifest),
+      },
       {
         path: path.join(root, "public", "shell-asset-manifest.json"),
         source: manifestJsonSource(manifest),

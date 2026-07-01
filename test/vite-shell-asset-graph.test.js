@@ -88,9 +88,38 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.deepEqual(contract.classicFallback.entryGroups, manifest.entryGroups);
 });
 
+test("frontend shell generator owns the index classic script block", async () => {
+  const {
+    SHELL_SCRIPT_BLOCK_END,
+    SHELL_SCRIPT_BLOCK_START,
+    canonicalShellScriptAssets,
+    generatedIndexHtmlSource,
+  } = await import("../scripts/generate-frontend-shell-manifest.mjs");
+  const scriptAssets = canonicalShellScriptAssets();
+  const source = [
+    "<!doctype html>",
+    "<html>",
+    "<body>",
+    SHELL_SCRIPT_BLOCK_START,
+    "  <script src=\"/stale-manual-script.js\"></script>",
+    SHELL_SCRIPT_BLOCK_END,
+    "<script>window.afterGeneratedBlock = true;</script>",
+    "</body>",
+    "</html>",
+  ].join("\n");
+  const generated = generatedIndexHtmlSource(source, { scriptAssets });
+  assert.ok(generated.includes(SHELL_SCRIPT_BLOCK_START));
+  assert.ok(generated.includes(SHELL_SCRIPT_BLOCK_END));
+  assert.ok(generated.includes('<script src="/shell-asset-manifest.js"></script>'));
+  assert.ok(generated.includes('<script src="/app.js"></script>'));
+  assert.ok(!generated.includes("/stale-manual-script.js"));
+  assert.ok(generated.includes("window.afterGeneratedBlock = true"));
+  assert.deepEqual(scriptAssets.slice(0, 2), ["/shell-asset-manifest.js", "/api-client.js"]);
+  assert.equal(scriptAssets.at(-1), "/app.js");
+});
+
 test("Vite shell asset graph fails closed when generated manifest is stale", async () => {
   const { buildShellAssetManifest } = await loadAssetGraphModule();
-  const { writePublicShellManifest } = await import("../scripts/generate-frontend-shell-manifest.mjs");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-shell-assets-"));
   fs.mkdirSync(path.join(root, "public", "icons"), { recursive: true });
   fs.mkdirSync(path.join(root, "services", "runtime"), { recursive: true });
@@ -121,7 +150,33 @@ test("Vite shell asset graph fails closed when generated manifest is stale", asy
     "  return JSON.parse(require(\"node:fs\").readFileSync(\"shell-asset-manifest.json\", \"utf8\"));",
     "}",
   ].join("\n"));
-  writePublicShellManifest(root);
+  const staleManifest = {
+    schemaVersion: 2,
+    generatedBy: "test-stale-manifest",
+    shellCacheName: "codex-mobile-shell-test",
+    clientBuildId: "0.1.11|codex-mobile-shell-test",
+    scriptAssets: ["/shell-asset-manifest.js", "/a.js"],
+    entryGroups: [{
+      id: "ordered-classic-scripts",
+      phase: "compatibility",
+      startupCritical: true,
+      chunkTarget: "ordered-classic-scripts",
+      assets: ["/shell-asset-manifest.js", "/a.js"],
+    }],
+    linkAssets: ["/styles.css"],
+    iconAssets: [],
+    precacheAssets: ["/", "/index.html", "/styles.css", "/manifest.json", "/shell-asset-manifest.js", "/a.js", "/shell-asset-manifest.json"],
+    pageShellAssets: ["/", "/index.html", "/styles.css", "/manifest.json", "/shell-asset-manifest.js", "/a.js", "/shell-asset-manifest.json", "/sw.js"],
+    hashAssets: ["/index.html", "/styles.css", "/manifest.json", "/shell-asset-manifest.js", "/a.js", "/shell-asset-manifest.json", "/sw.js"],
+  };
+  fs.writeFileSync(path.join(root, "public", "shell-asset-manifest.json"), `${JSON.stringify(staleManifest, null, 2)}\n`);
+  fs.writeFileSync(path.join(root, "public", "shell-asset-manifest.js"), [
+    "\"use strict\";",
+    "(function (root) {",
+    `  root.CODEX_MOBILE_SHELL_MANIFEST = ${JSON.stringify(staleManifest)};`,
+    "}(typeof globalThis !== \"undefined\" ? globalThis : this));",
+    "",
+  ].join("\n"));
   fs.writeFileSync(path.join(root, "public", "index.html"), [
     "<!doctype html>",
     "<link rel=\"stylesheet\" href=\"/styles.css\">",

@@ -4462,6 +4462,23 @@ Scope:
   not change in this stage. The Vite chunks are serveable static artifacts for
   readback and future cutover testing only.
 
+The next generated-shell slice moves the production `index.html` script list
+under the same build-chain owner without changing runtime semantics.
+
+Scope:
+
+- `scripts/generate-frontend-shell-manifest.mjs` owns the canonical classic
+  runtime script order through the entry-group definitions.
+- `public/index.html` contains a bounded `CODEX_MOBILE_SHELL_SCRIPTS` generated
+  block. `generate:frontend-manifest` rewrites only that block and leaves the
+  rest of the page shell intact.
+- `generate:frontend-manifest --check` now fails when the generated index
+  script block, shell manifest JSON, or shell manifest JS drift from the
+  canonical graph.
+- The default production shell remains classic `<script src=...>` execution.
+  This slice removes another hand-maintained asset list before any ESM/default
+  shell cutover.
+
 This stage gives deploy validation a real production artifact path without
 making Vite-built chunks startup-critical.
 

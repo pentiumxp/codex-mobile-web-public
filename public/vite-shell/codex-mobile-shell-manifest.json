@@ -363,16 +363,16 @@
       "role": "static",
       "sourcePath": "public/index.html",
       "exists": true,
-      "bytes": 41626,
-      "sha256": "1dc5f9aac407c2f146ec03a74daa5b3c4461655ef819320a289a5f58a4735b2d"
+      "bytes": 41706,
+      "sha256": "a7ef9411dff12f571bea73f5dc7e00549505fdbf2e8eb80f077f8cc4495a5980"
     },
     {
       "path": "/index.html",
       "role": "static",
       "sourcePath": "public/index.html",
       "exists": true,
-      "bytes": 41626,
-      "sha256": "1dc5f9aac407c2f146ec03a74daa5b3c4461655ef819320a289a5f58a4735b2d"
+      "bytes": 41706,
+      "sha256": "a7ef9411dff12f571bea73f5dc7e00549505fdbf2e8eb80f077f8cc4495a5980"
     },
     {
       "path": "/manifest.json",
@@ -1044,15 +1044,15 @@
         "path": "/",
         "sourcePath": "public/index.html",
         "fileName": "shell-assets/index.html",
-        "bytes": 41626,
-        "sha256": "1dc5f9aac407c2f146ec03a74daa5b3c4461655ef819320a289a5f58a4735b2d"
+        "bytes": 41706,
+        "sha256": "a7ef9411dff12f571bea73f5dc7e00549505fdbf2e8eb80f077f8cc4495a5980"
       },
       {
         "path": "/index.html",
         "sourcePath": "public/index.html",
         "fileName": "shell-assets/index.html",
-        "bytes": 41626,
-        "sha256": "1dc5f9aac407c2f146ec03a74daa5b3c4461655ef819320a289a5f58a4735b2d"
+        "bytes": 41706,
+        "sha256": "a7ef9411dff12f571bea73f5dc7e00549505fdbf2e8eb80f077f8cc4495a5980"
       },
       {
         "path": "/manifest.json",
