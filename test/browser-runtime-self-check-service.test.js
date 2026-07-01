@@ -244,6 +244,96 @@ test("browser runtime self-check catches per-turn DOM/API structure mismatches",
   assert.equal(issue.turnShape.actualAssistantMessageCount, 0);
 });
 
+test("browser runtime self-check keeps one-off dynamic API plan mismatches advisory", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "dynamic-turn-structure",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      dynamicThreadPlan: true,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        completed: true,
+        expectedItemCount: 7,
+        expectedUserMessageCount: 3,
+        expectedAssistantMessageCount: 1,
+        expectedUsageRequired: true,
+        expectedTimestampItemCount: 5,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        itemCount: 3,
+        userMessageCount: 0,
+        taskCardUserMessageCount: 1,
+        assistantMessageCount: 1,
+        usageCount: 1,
+        timestampExpectedItems: 2,
+        timestampMissingItems: 0,
+        userAfterUsageCount: 0,
+      }],
+      turns: 1,
+      items: 3,
+      renderKeys: 3,
+    }],
+  });
+
+  const issue = report.issues.find((entry) => entry.code === "browser_turn_user_message_below_api_expectation");
+  assert.equal(report.ok, true);
+  assert.equal(issue && issue.severity, "H3");
+  assert.equal(issue && issue.dynamicThreadPlan, true);
+  assert.equal(issue && issue.observationCount, 1);
+});
+
+test("browser runtime self-check blocks repeated dynamic API plan mismatches", () => {
+  const sample = {
+    threadHash: "thread-hash",
+    appVisible: true,
+    targetConfirmed: true,
+    contentConfirmed: true,
+    dynamicThreadPlan: true,
+    expectedTurnShapes: [{
+      index: 0,
+      turnHash: "turn-a",
+      completed: true,
+      expectedItemCount: 7,
+      expectedUserMessageCount: 3,
+      expectedAssistantMessageCount: 1,
+      expectedUsageRequired: true,
+      expectedTimestampItemCount: 5,
+    }],
+    domTurnShapes: [{
+      index: 0,
+      turnHash: "turn-a",
+      itemCount: 3,
+      userMessageCount: 0,
+      taskCardUserMessageCount: 1,
+      assistantMessageCount: 1,
+      usageCount: 1,
+      timestampExpectedItems: 2,
+      timestampMissingItems: 0,
+      userAfterUsageCount: 0,
+    }],
+    turns: 1,
+    items: 3,
+    renderKeys: 3,
+  };
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [
+      Object.assign({ label: "dynamic-turn-structure-a" }, sample),
+      Object.assign({ label: "dynamic-turn-structure-b" }, sample),
+    ],
+  });
+
+  const issue = report.issues.find((entry) => entry.code === "browser_turn_user_message_below_api_expectation");
+  assert.equal(report.ok, false);
+  assert.equal(issue && issue.severity, "H2");
+  assert.equal(issue && issue.observationCount, 2);
+});
+
 test("browser runtime self-check counts task-card DOM as visible user input", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{
@@ -726,6 +816,75 @@ test("browser runtime self-check catches latest turn item and message count down
   assert.equal(report.sampleSummary.maxLatestTurnItems, 8);
   assert.equal(report.sampleSummary.maxLatestTurnUserMessages, 2);
   assert.equal(report.sampleSummary.maxLatestTurnAssistantMessages, 4);
+});
+
+test("browser runtime self-check treats active assistant progress consolidation as advisory", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "active-progress-rich",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        latestTurnMatchesTarget: true,
+        latestTurnHash: "latest-turn-hash",
+        latestTurnItemCount: 12,
+        latestTurnUserMessageCount: 1,
+        latestTurnAssistantMessageCount: 9,
+        turns: 4,
+        items: 24,
+        delayMs: 1200,
+        expectedTurnShapes: [{
+          turnHash: "latest-turn-hash",
+          completed: false,
+          expectedItemCount: 12,
+          expectedAssistantMessageCount: 8,
+        }],
+        domTurnShapes: [{
+          turnHash: "latest-turn-hash",
+          itemCount: 11,
+          userMessageCount: 1,
+          assistantMessageCount: 9,
+        }],
+      },
+      {
+        label: "active-progress-consolidated",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        latestTurnMatchesTarget: true,
+        latestTurnHash: "latest-turn-hash",
+        latestTurnItemCount: 11,
+        latestTurnUserMessageCount: 1,
+        latestTurnAssistantMessageCount: 8,
+        turns: 4,
+        items: 23,
+        delayMs: 1600,
+        expectedTurnShapes: [{
+          turnHash: "latest-turn-hash",
+          completed: false,
+          expectedItemCount: 11,
+          expectedAssistantMessageCount: 8,
+        }],
+        domTurnShapes: [{
+          turnHash: "latest-turn-hash",
+          itemCount: 11,
+          userMessageCount: 1,
+          assistantMessageCount: 8,
+        }],
+      },
+    ],
+  });
+
+  const itemIssue = report.issues.find((issue) => issue.code === "browser_latest_turn_item_count_downgraded");
+  const assistantIssue = report.issues.find((issue) => issue.code === "browser_latest_turn_assistant_message_downgraded");
+  assert.equal(report.ok, true);
+  assert.equal(itemIssue && itemIssue.severity, "H3");
+  assert.equal(assistantIssue && assistantIssue.severity, "H3");
+  assert.equal(report.issues.some((issue) => issue.code === "browser_latest_turn_user_message_downgraded"), false);
 });
 
 test("browser runtime self-check does not treat loading previews as latest turn downgrades", () => {

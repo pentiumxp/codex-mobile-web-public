@@ -125,6 +125,50 @@ test("workspace cwd routing is allowed only for a unique visible deliverable thr
   assert.equal(service.canonicalTargetForCwd(cwd, service.visibleTargetThreads()).id, targetThreadId);
 });
 
+test("workspace cwd routing includes the source thread in ambiguity checks", () => {
+  const cwd = "/tmp/codex-mobile-routing/codex-mobile-web";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const chatGptProThreadId = "10000000-0000-4000-8000-000000000002";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: sourceThreadId, name: "codex mobile 06-30", cwd, status: { type: "active" }, updatedAt: 300 },
+      { id: chatGptProThreadId, name: "ChatGPT Pro", cwd, status: "completed", updatedAt: 200 },
+    ],
+  });
+
+  assert.throws(
+    () => service.resolveTargetReference(cwd, sourceThreadId),
+    (err) => err
+      && err.code === "target_workspace_ambiguous"
+      && err.statusCode === 409
+      && err.details
+      && err.details.matchCount === 2
+      && err.details.matchedThreads.some((thread) => thread.threadId === sourceThreadId)
+      && err.details.matchedThreads.some((thread) => thread.threadId === chatGptProThreadId),
+  );
+});
+
+test("workspace cwd routing rejects the source thread when it is the only cwd match", () => {
+  const cwd = "/tmp/codex-mobile-routing/source-only";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: sourceThreadId, name: "codex mobile 06-30", cwd, status: { type: "active" }, updatedAt: 300 },
+    ],
+  });
+
+  assert.throws(
+    () => service.resolveTargetReference(cwd, sourceThreadId),
+    (err) => err
+      && err.code === "target_thread_self"
+      && err.statusCode === 400
+      && err.details
+      && err.details.sourceThreadId === sourceThreadId
+      && err.details.matchedThread
+      && err.details.matchedThread.threadId === sourceThreadId,
+  );
+});
+
 test("ambiguous exact titles fail closed instead of selecting the first visible thread", () => {
   const cwd = "/tmp/codex-mobile-routing/shared";
   const sourceThreadId = "10000000-0000-4000-8000-000000000001";

@@ -238,6 +238,25 @@ function issue(severity, code, sample = {}, details = {}) {
   return item;
 }
 
+function turnShapeIssueKey(code, sample = {}, turnShape = {}) {
+  return [
+    safeLabel(code, "unknown"),
+    sampleThreadHash(sample),
+    safeLabel(turnShape.turnHash, ""),
+    turnShape.completed === true ? "completed" : "active",
+    toNumber(turnShape.expectedUserMessageCount),
+    toNumber(turnShape.expectedTaskCardUserMessageCount),
+    toNumber(turnShape.expectedAssistantMessageCount),
+    turnShape.expectedUsageRequired === true ? "usage" : "no-usage",
+    toNumber(turnShape.expectedTimestampItemCount),
+  ].join("|");
+}
+
+function incrementMapCount(map, key) {
+  if (!key) return;
+  map.set(key, (map.get(key) || 0) + 1);
+}
+
 function analyzeBrowserRuntimeSamples(input = {}) {
   const samples = toArray(input.samples);
   const networkEvents = toArray(input.networkEvents);
@@ -246,6 +265,50 @@ function analyzeBrowserRuntimeSamples(input = {}) {
   const minSettledDelayMs = Math.max(0, Math.trunc(toNumber(input.minSettledDelayMs, 1000)));
   const issues = [];
   const samplesByThread = new Map();
+  const turnShapeMismatchCounts = new Map();
+
+  for (const sample of samples) {
+    if (!sample || typeof sample !== "object" || !sampleIsConfirmed(sample)) continue;
+    for (const turnShape of matchedTurnShapes(sample)) {
+      if (toNumber(turnShape.expectedUserMessageCount) > 0
+        && visibleUserInputCount(turnShape) < toNumber(turnShape.expectedUserMessageCount)) {
+        incrementMapCount(turnShapeMismatchCounts, turnShapeIssueKey("browser_turn_user_message_below_api_expectation", sample, turnShape));
+      }
+      if (toNumber(turnShape.expectedTaskCardUserMessageCount) > 0
+        && toNumber(turnShape.taskCardUserMessageCount) < toNumber(turnShape.expectedTaskCardUserMessageCount)) {
+        incrementMapCount(turnShapeMismatchCounts, turnShapeIssueKey("browser_turn_task_card_below_api_expectation", sample, turnShape));
+      }
+      if (toNumber(turnShape.expectedAssistantMessageCount) > 0
+        && toNumber(turnShape.assistantMessageCount) <= 0) {
+        incrementMapCount(turnShapeMismatchCounts, turnShapeIssueKey("browser_turn_assistant_missing", sample, turnShape));
+      }
+      if (turnShape.expectedUsageRequired === true && toNumber(turnShape.usageCount) <= 0) {
+        incrementMapCount(turnShapeMismatchCounts, turnShapeIssueKey("browser_turn_usage_missing", sample, turnShape));
+      }
+      if (toNumber(turnShape.userAfterUsageCount) > 0) {
+        incrementMapCount(turnShapeMismatchCounts, turnShapeIssueKey("browser_turn_user_message_after_usage", sample, turnShape));
+      }
+      if (toNumber(turnShape.expectedTimestampItemCount) > 0 && toNumber(turnShape.timestampMissingItems) > 0) {
+        incrementMapCount(turnShapeMismatchCounts, turnShapeIssueKey("browser_turn_timestamp_missing", sample, turnShape));
+      }
+    }
+  }
+
+  function turnShapeMismatchSeverity(code, sample, turnShape) {
+    const key = turnShapeIssueKey(code, sample, turnShape);
+    const observationCount = turnShapeMismatchCounts.get(key) || 0;
+    if (sample && sample.dynamicThreadPlan === true && observationCount < 2) return "H3";
+    return "H2";
+  }
+
+  function turnShapeMismatchDetails(code, sample, turnShape) {
+    const key = turnShapeIssueKey(code, sample, turnShape);
+    return {
+      turnShape: safeTurnShape(turnShape),
+      dynamicThreadPlan: sample && sample.dynamicThreadPlan === true ? true : undefined,
+      observationCount: turnShapeMismatchCounts.get(key) || 0,
+    };
+  }
 
   for (const sample of samples) {
     if (!sample || typeof sample !== "object") continue;
@@ -367,37 +430,36 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     for (const turnShape of matchedTurnShapes(sample)) {
       if (toNumber(turnShape.expectedUserMessageCount) > 0
         && visibleUserInputCount(turnShape) < toNumber(turnShape.expectedUserMessageCount)) {
-        issues.push(issue("H2", "browser_turn_user_message_below_api_expectation", sample, {
-          turnShape: safeTurnShape(turnShape),
-        }));
+        const code = "browser_turn_user_message_below_api_expectation";
+        issues.push(issue(turnShapeMismatchSeverity(code, sample, turnShape), code, sample, turnShapeMismatchDetails(code, sample, turnShape)));
       }
       if (toNumber(turnShape.expectedTaskCardUserMessageCount) > 0
         && toNumber(turnShape.taskCardUserMessageCount) < toNumber(turnShape.expectedTaskCardUserMessageCount)) {
-        issues.push(issue("H2", "browser_turn_task_card_below_api_expectation", sample, {
-          turnShape: safeTurnShape(turnShape),
-        }));
+        const code = "browser_turn_task_card_below_api_expectation";
+        issues.push(issue(turnShapeMismatchSeverity(code, sample, turnShape), code, sample, turnShapeMismatchDetails(code, sample, turnShape)));
       }
       if (toNumber(turnShape.expectedAssistantMessageCount) > 0
         && toNumber(turnShape.assistantMessageCount) <= 0) {
-        issues.push(issue("H2", "browser_turn_assistant_missing", sample, {
-          turnShape: safeTurnShape(turnShape),
-        }));
+        const code = "browser_turn_assistant_missing";
+        issues.push(issue(turnShapeMismatchSeverity(code, sample, turnShape), code, sample, turnShapeMismatchDetails(code, sample, turnShape)));
       }
       if (turnShape.expectedUsageRequired === true && toNumber(turnShape.usageCount) <= 0) {
-        issues.push(issue("H2", "browser_turn_usage_missing", sample, {
-          turnShape: safeTurnShape(turnShape),
-        }));
+        const code = "browser_turn_usage_missing";
+        issues.push(issue(turnShapeMismatchSeverity(code, sample, turnShape), code, sample, turnShapeMismatchDetails(code, sample, turnShape)));
       }
       if (toNumber(turnShape.userAfterUsageCount) > 0) {
-        issues.push(issue("H2", "browser_turn_user_message_after_usage", sample, {
-          turnShape: safeTurnShape(turnShape),
-        }));
+        const code = "browser_turn_user_message_after_usage";
+        issues.push(issue(turnShapeMismatchSeverity(code, sample, turnShape), code, sample, turnShapeMismatchDetails(code, sample, turnShape)));
       }
       if (toNumber(turnShape.expectedTimestampItemCount) > 0 && toNumber(turnShape.timestampMissingItems) > 0) {
         const activeProgressive = activeProgressiveTurnShape(turnShape);
-        issues.push(issue(activeProgressive ? "H3" : "H2", "browser_turn_timestamp_missing", sample, {
+        const code = "browser_turn_timestamp_missing";
+        const severity = activeProgressive ? "H3" : turnShapeMismatchSeverity(code, sample, turnShape);
+        issues.push(issue(severity, code, sample, {
           activeProgressive,
           turnShape: safeTurnShape(turnShape),
+          dynamicThreadPlan: sample && sample.dynamicThreadPlan === true ? true : undefined,
+          observationCount: turnShapeMismatchCounts.get(turnShapeIssueKey(code, sample, turnShape)) || 0,
         }));
       }
     }
@@ -552,16 +614,23 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           itemCount: 0,
           userMessageCount: 0,
           assistantMessageCount: 0,
+          activeProgressiveEver: false,
         };
+        const latestShape = matchedLatestTurnShape(sample);
+        const activeProgressive = activeProgressiveTurnShape(latestShape);
+        const progressiveWindow = Boolean(activeProgressive || previous.activeProgressiveEver);
         const currentItems = toNumber(sample.latestTurnItemCount);
         const currentUsers = toNumber(sample.latestTurnUserMessageCount);
         const currentAssistants = toNumber(sample.latestTurnAssistantMessageCount);
         if (previous.itemCount > 0 && currentItems > 0 && currentItems < previous.itemCount) {
-          issues.push(issue("H2", "browser_latest_turn_item_count_downgraded", sample, {
+          const severity = progressiveWindow && currentAssistants > 0 && currentUsers >= previous.userMessageCount ? "H3" : "H2";
+          issues.push(issue(severity, "browser_latest_turn_item_count_downgraded", sample, {
             threadHash,
             latestTurnHash,
             previousLatestTurnItemCount: previous.itemCount,
             currentLatestTurnItemCount: currentItems,
+            activeProgressive: progressiveWindow,
+            turnShape: activeProgressive ? safeTurnShape(latestShape) : undefined,
           }));
         }
         if (previous.userMessageCount > 0 && currentUsers < previous.userMessageCount) {
@@ -573,17 +642,21 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           }));
         }
         if (previous.assistantMessageCount > 0 && currentAssistants < previous.assistantMessageCount) {
-          issues.push(issue("H2", "browser_latest_turn_assistant_message_downgraded", sample, {
+          const severity = progressiveWindow && currentAssistants > 0 ? "H3" : "H2";
+          issues.push(issue(severity, "browser_latest_turn_assistant_message_downgraded", sample, {
             threadHash,
             latestTurnHash,
             previousLatestTurnAssistantMessageCount: previous.assistantMessageCount,
             currentLatestTurnAssistantMessageCount: currentAssistants,
+            activeProgressive: progressiveWindow,
+            turnShape: activeProgressive ? safeTurnShape(latestShape) : undefined,
           }));
         }
         latestTurnWindows.set(latestTurnHash, {
           itemCount: Math.max(previous.itemCount, currentItems),
           userMessageCount: Math.max(previous.userMessageCount, currentUsers),
           assistantMessageCount: Math.max(previous.assistantMessageCount, currentAssistants),
+          activeProgressiveEver: progressiveWindow,
         });
       }
       if (sampleIsConfirmed(sample)

@@ -454,6 +454,7 @@ function snapshotInputForPlanEntry(entry, extra = {}) {
   return Object.assign({
     threadId: entry.id,
     threadHash: entry.threadHash,
+    dynamicThreadPlan: true,
     expectedTurnHashes: entry.expectedTurnHashes,
     expectedLatestTurnHash: entry.expectedLatestTurnHash,
     expectedLatestUsageRequired: entry.expectedLatestUsageRequired,
@@ -895,6 +896,7 @@ function snapshotExpression(input = {}) {
   const expectedLatestUserMessageDuplicateCount = Math.max(0, Number(input.expectedLatestUserMessageDuplicateCount || 0) || 0);
   const expectedLatestTaskCardUserMessageCount = Math.max(0, Number(input.expectedLatestTaskCardUserMessageCount || 0) || 0);
   const expectedTurnShapes = Array.isArray(input.expectedTurnShapes) ? input.expectedTurnShapes.slice(-20) : [];
+  const dynamicThreadPlan = input.dynamicThreadPlan === true;
   const label = String(input.label || "");
   const delayMs = Math.max(0, Number(input.delayMs || 0) || 0);
   const exerciseSubmit = Boolean(input.exerciseSubmit);
@@ -911,6 +913,7 @@ function snapshotExpression(input = {}) {
       const expectedLatestUserMessageDuplicateCount = ${JSON.stringify(expectedLatestUserMessageDuplicateCount)};
       const expectedLatestTaskCardUserMessageCount = ${JSON.stringify(expectedLatestTaskCardUserMessageCount)};
       const expectedTurnShapes = ${JSON.stringify(expectedTurnShapes)};
+      const dynamicThreadPlan = ${JSON.stringify(dynamicThreadPlan)};
       const label = ${JSON.stringify(label)};
       const delayMs = ${JSON.stringify(delayMs)};
       const exerciseSubmit = ${JSON.stringify(exerciseSubmit)};
@@ -1200,6 +1203,7 @@ function snapshotExpression(input = {}) {
         expectedLatestUserMessageCount,
         expectedLatestUserMessageDuplicateCount,
         expectedLatestTaskCardUserMessageCount,
+        dynamicThreadPlan,
         expectedTurnShapes,
         domTurnShapes,
         latestTurnHash,

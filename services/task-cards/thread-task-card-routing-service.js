@@ -143,11 +143,9 @@ function createThreadTaskCardRoutingService(deps = {}) {
   function visibleTargetsForCwd(cwd, visibleThreads = [], sourceThreadId = "") {
     const wanted = normalizePath(cwd || "");
     if (!wanted) return [];
-    const sourceId = String(sourceThreadId || "").trim();
     const matches = [];
     for (const thread of visibleThreads || []) {
       if (!thread || normalizePath(thread.cwd || "") !== wanted) continue;
-      if (sourceId && String(thread.id || "") === sourceId) continue;
       matches.push(thread);
     }
     return matches.sort(compareThreadTaskCardCanonicalTargets);
@@ -254,10 +252,26 @@ function createThreadTaskCardRoutingService(deps = {}) {
     const lowered = raw.toLowerCase();
     const rawPath = normalizePath(raw);
     const cwdMatches = visibleTargetsForCwd(rawPath, visibleThreads, sourceThreadId);
-    if (cwdMatches.length === 1) return assertTargetDeliverable(cwdMatches[0], {
-      reference: raw,
-      referenceKind: entry.kind || "workspace",
-    }, options);
+    if (cwdMatches.length === 1) {
+      const onlyMatchId = String(cwdMatches[0] && cwdMatches[0].id || "").trim();
+      if (onlyMatchId && onlyMatchId === String(sourceThreadId || "").trim()) {
+        throw targetError(
+          "target_thread_self",
+          "Target thread must be different from the source thread.",
+          {
+            sourceThreadId: String(sourceThreadId || ""),
+            reference: raw,
+            referenceKind: entry.kind || "workspace",
+            matchedThread: publicTarget(cwdMatches[0]),
+          },
+          400,
+        );
+      }
+      return assertTargetDeliverable(cwdMatches[0], {
+        reference: raw,
+        referenceKind: entry.kind || "workspace",
+      }, options);
+    }
     if (cwdMatches.length > 1) {
       throw targetError(
         "target_workspace_ambiguous",
