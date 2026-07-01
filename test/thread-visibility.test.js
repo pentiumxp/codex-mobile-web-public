@@ -1114,7 +1114,8 @@ test("rollout discovery visits newest session directories before the candidate c
 
 test("thread list route uses rollout-aware fallback aggregator", () => {
   const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
-  const routeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-route-service.js"), "utf8");
+  const routeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-list-route-service.js"), "utf8");
+  const routeAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-route-service.js"), "utf8");
   const baselineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-baseline-service.js"), "utf8");
   const cacheServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-cache-service.js"), "utf8");
   const prewarmServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-prewarm-service.js"), "utf8");
@@ -1129,6 +1130,8 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const routeIndex = routeServiceJs.indexOf('async function handleThreadListRoute(options = {})');
   assert.ok(routeIndex >= 0, "missing thread list route");
   const routeBody = routeServiceJs.slice(routeIndex);
+  assert.match(routeAdapterJs, /require\("\.\.\/server-routes\/thread-list-route-service"\)/);
+  assert.doesNotMatch(routeAdapterJs, /codex\.request\("thread\/list"/);
 
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
   assert.match(rateLimitRuntimeServiceJs, /function compareRecentRolloutDirents\(left, right\)/);

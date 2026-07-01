@@ -104,7 +104,8 @@ Current acceleration targets:
    source-handoff/bootstrap/lineage/job orchestration and continuation goal
    migration into `adapters/continuation-thread-service.js`. The fourth
    extraction moved the `GET /api/threads` route-level fallback/app-server
-   merge/decorate orchestration into `adapters/thread-list-route-service.js`,
+   merge/decorate orchestration into `server-routes/thread-list-route-service.js`,
+   with `adapters/thread-list-route-service.js` kept as a compatibility export,
    leaving `server.js` to inject request, state, cache, and Codex RPC
    dependencies. The fifth extraction moved Codex app-server/mux client
    lifecycle, transport RPC, rate-limit refresh, server-request approval

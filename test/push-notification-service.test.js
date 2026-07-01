@@ -433,7 +433,7 @@ test("server wires web push filtering to thread spawn edges", () => {
 
 test("server caches app-server thread display summaries before sqlite push title fallback", () => {
   const serverJs = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  const threadListRouteServiceJs = fs.readFileSync(path.join(__dirname, "..", "adapters", "thread-list-route-service.js"), "utf8");
+  const threadListRouteServiceJs = fs.readFileSync(path.join(__dirname, "..", "server-routes", "thread-list-route-service.js"), "utf8");
   const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.join(__dirname, "..", "services", "thread-detail", "thread-detail-response-preparation-service.js"), "utf8");
   const adapterJs = fs.readFileSync(path.join(__dirname, "..", "adapters", "push-notification-service.js"), "utf8");
 

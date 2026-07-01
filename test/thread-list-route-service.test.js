@@ -3,7 +3,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { handleThreadListRoute } = require("../adapters/thread-list-route-service");
+const { handleThreadListRoute } = require("../server-routes/thread-list-route-service");
+const threadListRouteAdapter = require("../adapters/thread-list-route-service");
+
+test("thread-list route adapter re-exports the canonical server route", () => {
+  assert.equal(threadListRouteAdapter.handleThreadListRoute, handleThreadListRoute);
+});
 
 test("thread-list route service ignores unrelated routes", async () => {
   assert.deepEqual(await handleThreadListRoute({
