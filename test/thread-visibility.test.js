@@ -71,7 +71,7 @@ const threadListSummaryServiceJs = fs.readFileSync(
   "utf8",
 );
 const threadListFallbackSourceServiceJs = fs.readFileSync(
-  path.resolve(__dirname, "..", "adapters", "thread-list-fallback-source-service.js"),
+  path.resolve(__dirname, "..", "services", "thread-list", "thread-list-fallback-source-service.js"),
   "utf8",
 );
 process.env.CODEX_MOBILE_SETTINGS_FILE = path.join(os.tmpdir(), `codex-mobile-thread-visibility-settings-${process.pid}.json`);
@@ -1116,9 +1116,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
   const routeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-list-route-service.js"), "utf8");
   const routeAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-route-service.js"), "utf8");
-  const baselineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-baseline-service.js"), "utf8");
-  const cacheServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-cache-service.js"), "utf8");
-  const prewarmServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-prewarm-service.js"), "utf8");
+  const baselineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-fallback-baseline-service.js"), "utf8");
+  const cacheServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-fallback-cache-service.js"), "utf8");
+  const prewarmServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-fallback-prewarm-service.js"), "utf8");
   const appServerFetchPolicyJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-app-server-fetch-policy-service.js"), "utf8");
   const coldPathDiagnosisServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-cold-path-diagnosis-service.js"), "utf8");
   const routeMergeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-route-merge-service.js"), "utf8");

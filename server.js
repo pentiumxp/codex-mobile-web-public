@@ -95,14 +95,14 @@ const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-perf
 const { createThreadDetailReadOrchestrationService } = require("./services/thread-detail/thread-detail-read-orchestration-service");
 const { handleThreadDetailReadRoute } = require("./server-routes/thread-detail-route-service");
 const { createThreadDetailResponsePreparationService } = require("./services/thread-detail/thread-detail-response-preparation-service");
-const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
-const { createThreadListFallbackPersistentCacheStore } = require("./adapters/thread-list-fallback-persistent-cache-store");
-const { createThreadListFallbackSourceService } = require("./adapters/thread-list-fallback-source-service");
-const { createThreadSummaryStateService } = require("./adapters/thread-summary-state-service");
+const { createThreadListFallbackCacheService } = require("./services/thread-list/thread-list-fallback-cache-service");
+const { createThreadListFallbackPersistentCacheStore } = require("./services/thread-list/thread-list-fallback-persistent-cache-store");
+const { createThreadListFallbackSourceService } = require("./services/thread-list/thread-list-fallback-source-service");
+const { createThreadSummaryStateService } = require("./services/thread-list/thread-summary-state-service");
 const {
   createThreadListFallbackPrewarmService,
   summarizePrewarmStatus,
-} = require("./adapters/thread-list-fallback-prewarm-service");
+} = require("./services/thread-list/thread-list-fallback-prewarm-service");
 const {
   mergeThreadListRouteResult,
 } = require("./adapters/thread-list-route-merge-service");

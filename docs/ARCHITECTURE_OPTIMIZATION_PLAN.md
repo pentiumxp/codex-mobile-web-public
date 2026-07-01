@@ -2099,14 +2099,16 @@ public behavior:
   behavior while `server.js` injects runtime settings, parsers, Codex transport,
   and mutation helpers. `adapters/thread-message-route-service.js` is a
   compatibility export only.
-- `adapters/thread-list-fallback-source-service.js` now owns session-index title
+- `services/thread-list/thread-list-fallback-source-service.js` now owns session-index title
   hydration/persistence, rollout-session fallback summary recovery, rollout
   active/completed/stale-context status inference, rollout stat metadata reuse,
-  and projectless session-index fallback rows.
-- `adapters/thread-summary-state-service.js` now owns state DB single-thread
+  and projectless session-index fallback rows. The old adapter path is
+  compatibility-only.
+- `services/thread-list/thread-summary-state-service.js` now owns state DB single-thread
   fallback-row reads, local active overlays, stale/live/rest status
   classification, display-summary merge semantics, state DB runtime metadata
-  merge, and detail-read-to-thread-list fallback-cache synchronization.
+  merge, and detail-read-to-thread-list fallback-cache synchronization. The old
+  adapter path is compatibility-only.
 - `services/thread-detail/thread-detail-response-preparation-service.js` now owns
   turns-list/raw/full/fallback read-result shaping, rollout Usage decoration,
   rollout completion/user-input/active-assistant/final-receipt preparation
@@ -2148,26 +2150,26 @@ public behavior:
   `server.js` injects Codex RPC, runtime-setting helpers, classifiers, timeout
   values, and `notifyLocalTurnStarted`.
 
-Local line-count evidence after the latest extraction: `server.js` is 4,186 lines,
-`server-routes/thread-task-card-route-service.js` is 1,273 lines,
+Local line-count evidence after the latest extraction: `server.js` is 3,990 lines,
+`server-routes/thread-task-card-route-service.js` is 1,275 lines,
 `services/task-cards/task-card-runtime-policy-service.js` is 345 lines, and
 `services/task-cards/thread-task-card-service.js` is 1,857 lines,
 `services/task-cards/thread-task-card-routing-service.js` is 364 lines,
 `services/task-cards/thread-task-card-deploy-lane-policy-service.js` is 412 lines, and
 `server-routes/thread-message-route-service.js` is 363 lines, and
-`thread-list-fallback-source-service.js` is 683 lines, and
-`thread-summary-state-service.js` is 383 lines, and
-`thread-detail-response-preparation-service.js` is 254 lines. The newer
+`services/thread-list/thread-list-fallback-source-service.js` is 683 lines, and
+`services/thread-list/thread-summary-state-service.js` is 400 lines, and
+`services/thread-detail/thread-detail-response-preparation-service.js` is 256 lines. The newer
 low-coupling static/profile-switch/runtime-settings/core-API/auto-recovery
 adapters are 195, 385, 236, 554, and 153 lines respectively; the new app
 maintenance adapter is 709 lines.
 This is a checkpoint, not the target state; `server.js` remains too large. The
 next high-yield backend splits should target remaining thread-detail enrichment
-helpers, thread-list fallback/cache compatibility wrappers, notification/runtime
+helpers, the remaining thread-list composition wrappers, notification/runtime
 side-effect groups, and the residual API dispatcher because core route
-execution, app maintenance state/IO, fallback/source, summary-state, static
-serving, runtime settings, profile preflight, and the main detail
-response-preparation order are now out of the entrypoint.
+execution, app maintenance state/IO, thread-list fallback/source/cache/prewarm,
+summary-state, static serving, runtime settings, profile preflight, and the main
+detail response-preparation order are now out of the entrypoint.
 
 Validation boundary:
 

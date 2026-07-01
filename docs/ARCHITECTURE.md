@@ -379,9 +379,9 @@ counters. Fast successful list loads clear the repeated-failure signature; slow
 loads must not trigger a client-side masking refresh or duplicate-render
 workaround.
 
-`adapters/thread-list-fallback-cache-service.js` owns the fallback cache policy: key construction from visible workspace roots/projectless thread ids, process-lifetime default retention, optional TTL expiry, cache-hit diagnostics, first-run fallback aggregation, and incremental status/title/archive mutation. Final fallback cache entries remain limit-scoped: a narrow cached final list is not treated as a wider final list. The service can, however, reuse a wider same-scope source snapshot for a later wider final-list cache miss, so a prewarmed source snapshot can rebuild `limit=137` first-paint windows without re-reading state DB, rollout tails, or `session_index.jsonl`. Ordinary Workspace first-paint reads can also derive a scoped warm row set from the default visible-thread warm cache and then remember that Workspace cache; this reports `workspace-derived-hit` and only applies when there is no search, cursor, or archived filter. `adapters/thread-list-fallback-prewarm-service.js` passes a bounded `sourceSnapshotLimit` for this purpose and reports it through `threadListFallbackPrewarm.sourceSnapshotLimit` / `lastSourceSnapshotLimit`; this is warm source data for the current process, not persistent authority. State-db, rollout-session, and session-index scanners remain separate providers injected by `server.js`.
+`services/thread-list/thread-list-fallback-cache-service.js` owns the fallback cache policy: key construction from visible workspace roots/projectless thread ids, process-lifetime default retention, optional TTL expiry, cache-hit diagnostics, first-run fallback aggregation, and incremental status/title/archive mutation. Final fallback cache entries remain limit-scoped: a narrow cached final list is not treated as a wider final list. The service can, however, reuse a wider same-scope source snapshot for a later wider final-list cache miss, so a prewarmed source snapshot can rebuild `limit=137` first-paint windows without re-reading state DB, rollout tails, or `session_index.jsonl`. Ordinary Workspace first-paint reads can also derive a scoped warm row set from the default visible-thread warm cache and then remember that Workspace cache; this reports `workspace-derived-hit` and only applies when there is no search, cursor, or archived filter. `services/thread-list/thread-list-fallback-prewarm-service.js` passes a bounded `sourceSnapshotLimit` for this purpose and reports it through `threadListFallbackPrewarm.sourceSnapshotLimit` / `lastSourceSnapshotLimit`; this is warm source data for the current process, not persistent authority. State-db, rollout-session, and session-index scanners remain separate providers injected by `server.js`; the legacy `adapters/thread-list-fallback-*` paths are compatibility exports only.
 
-`adapters/thread-list-fallback-persistent-cache-store.js` persists only bounded
+`services/thread-list/thread-list-fallback-persistent-cache-store.js` persists only bounded
 thread-list summary cache entries under the Codex Mobile runtime root so a
 fresh server process can restore the previous warm fallback cache before the
 first request. This is a startup baseline, not a new authority: app-server
@@ -517,7 +517,7 @@ read suppression does not create shared mutable response state. This is
 process-local duplicate suppression, not a persistent cache or an alternate
 projection authority.
 Startup fallback prewarm feeds the same path: after
-`adapters/thread-list-fallback-prewarm-service.js` builds the process fallback
+`services/thread-list/thread-list-fallback-prewarm-service.js` builds the process fallback
 baseline, server glue can schedule active-window prewarm for active rows from
 that already-read result. The public fallback-prewarm status still exposes only
 counts/timings, not thread titles, message text, or row payloads.

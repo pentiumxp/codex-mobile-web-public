@@ -1349,7 +1349,7 @@ node --test test\thread-visibility.test.js test\mobile-viewport.test.js
 
 If an archived projectless session returns to the thread list after app-server
 omits it from the primary `thread/list`, inspect `archivedSessionThreadIds()` and
-`readSessionIndexFallback()` through `adapters/thread-list-fallback-source-service.js`.
+`readSessionIndexFallback()` through `services/thread-list/thread-list-fallback-source-service.js`.
 If a completed UUID-only fallback row appears and detail cannot open it, inspect
 `readRolloutSessionFallbackThreadFromFile()` in the same provider,
 `mergeThreadSummaryList()`, and `shouldHideThreadListSummary()` before mutating
