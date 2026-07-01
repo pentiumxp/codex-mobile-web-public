@@ -30,6 +30,10 @@ const threadDetailReadOrchestrationAdapterJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-read-orchestration-service.js"),
   "utf8",
 );
+const threadListStateServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-list", "thread-list-state-service.js"),
+  "utf8",
+);
 const threadDetailActiveReadPolicyServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-active-read-policy-service.js"),
   "utf8",
@@ -1202,9 +1206,10 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(functionBody(serverJs, "startServer"), /scheduleThreadListFallbackPrewarm\(\);/);
   assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);
   assert.match(serverJs, /function upsertThreadListFallbackCacheThread\(thread, options = \{\}\)/);
-  assert.match(serverJs, /function threadListRowsFromResult\(result\)/);
-  assert.match(serverJs, /function upsertThreadListFallbackCacheThreads\(resultOrThreads, options = \{\}\)/);
-  assert.match(serverJs, /upsertThreadListFallbackCacheThread\(thread, options\)/);
+  assert.match(threadListStateServiceJs, /function threadListRowsFromResult\(result\)/);
+  assert.match(threadListStateServiceJs, /function upsertThreadListFallbackCacheThreads\(resultOrThreads, options = \{\}\)/);
+  assert.match(threadListStateServiceJs, /upsertThreadListFallbackCacheThread\(thread, options\)/);
+  assert.match(serverJs, /const threadListStateService = createThreadListStateService\(\{/);
   assert.match(serverJs, /function removeThreadFromThreadListFallbackCache\(threadId\)/);
   assert.match(serverJs, /function updateThreadListFallbackCacheStatus\(threadId, status, meta = \{\}\)/);
   assert.match(serverJs, /let activeThreadDetailRequestCount = 0;/);

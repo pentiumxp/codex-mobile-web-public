@@ -1,0 +1,155 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const { test } = require("node:test");
+
+const {
+  createThreadListStateService,
+} = require("../services/thread-list/thread-list-state-service");
+
+function normalizeFsPath(value) {
+  return String(value || "").replace(/\/+$/, "").toLowerCase();
+}
+
+test("thread-list state service attaches goals and task-card counts to list summaries", () => {
+  const service = createThreadListStateService({
+    stripThreadListDetailFields: (thread) => {
+      const summary = Object.assign({}, thread);
+      delete summary.turns;
+      delete summary.threadTaskCards;
+      return summary;
+    },
+    threadTaskCardService: {
+      pendingCountsForThreads: (threadIds) => new Map(threadIds.map((threadId, index) => [
+        String(threadId || ""),
+        {
+          pendingTotal: index + 1,
+          pendingIncoming: index,
+          pendingOutgoing: index + 2,
+        },
+      ])),
+      pendingCountsForThread: () => ({ pendingTotal: 9, pendingIncoming: 4, pendingOutgoing: 5 }),
+    },
+    threadGoalService: {
+      attachGoalsToThreadListResult: (result) => {
+        result.goalAttached = true;
+        return result;
+      },
+    },
+  });
+
+  const result = service.attachThreadListStateToResult({
+    data: [
+      { id: "a", title: "A", turns: [], threadTaskCards: [{}] },
+      { id: "b", title: "B", turns: [] },
+    ],
+  });
+
+  assert.equal(result.goalAttached, true);
+  assert.deepEqual(result.data.map((thread) => thread.pendingTaskCardCount), [1, 2]);
+  assert.deepEqual(result.data.map((thread) => thread.pendingIncomingTaskCardCount), [0, 1]);
+  assert.deepEqual(result.data.map((thread) => thread.pendingOutgoingTaskCardCount), [2, 3]);
+  assert.equal("turns" in result.data[0], false);
+  assert.equal("threadTaskCards" in result.data[0], false);
+});
+
+test("thread-list state service upserts rows from result data and alternate threads arrays", () => {
+  const upserted = [];
+  const service = createThreadListStateService({
+    upsertThreadListFallbackCacheThread: (thread, options) => {
+      upserted.push({ id: thread && thread.id, options });
+      return thread && thread.changed === true;
+    },
+  });
+
+  const result = {
+    data: [{ id: "a", changed: true }],
+    threads: [{ id: "b", changed: false }, { id: "c", changed: true }],
+  };
+
+  assert.equal(service.upsertThreadListFallbackCacheThreads(result, { addIfMissing: true }), 2);
+  assert.deepEqual(upserted.map((entry) => entry.id), ["a", "b", "c"]);
+  assert.deepEqual(upserted.map((entry) => entry.options.addIfMissing), [true, true, true]);
+});
+
+test("thread-list state service hides inactive same-label empty workspace duplicates", async () => {
+  const newMusic = "/Users/hermes-dev/HermesMobileDev/plugins/music";
+  const oldMusic = "/Users/xuxin/Documents/Music";
+  const service = createThreadListStateService({
+    readGlobalState: () => ({
+      "active-workspace-roots": [newMusic],
+    }),
+    visibleWorkspaceRoots: () => new Set([oldMusic, newMusic]),
+    visibilityFromGlobalState: () => ({ hidden: true }),
+    workspaceRegistryService: {
+      list: () => [
+        { cwd: newMusic, label: "Music" },
+        { cwd: oldMusic, label: "Music" },
+      ],
+    },
+    normalizeFsPath,
+    isHiddenThread: (thread) => thread && thread.hidden === true,
+    requestThreadList: async (params, options) => {
+      assert.equal(params.useStateDbOnly, true);
+      assert.equal(options.timeoutMs, 1234);
+      return {
+        data: [
+          { id: "visible", cwd: newMusic },
+          { id: "hidden", cwd: oldMusic, hidden: true },
+        ],
+      };
+    },
+    readRpcTimeoutMs: 1234,
+  });
+
+  const rows = await service.listWorkspaces();
+
+  assert.deepEqual(rows.map((row) => row.cwd), [newMusic]);
+  assert.equal(rows[0].active, true);
+  assert.equal(rows[0].recentThreadCount, 1);
+  assert.equal(rows[0].source, "mobile");
+});
+
+test("thread-list state service keeps inactive duplicate workspace when it owns recent threads", async () => {
+  const newMusic = "/Users/hermes-dev/HermesMobileDev/plugins/music";
+  const oldMusic = "/Users/xuxin/Documents/Music";
+  const service = createThreadListStateService({
+    readGlobalState: () => ({
+      "active-workspace-roots": [newMusic],
+    }),
+    visibleWorkspaceRoots: () => new Set([oldMusic, newMusic]),
+    workspaceRegistryService: {
+      list: () => [
+        { cwd: newMusic, label: "Music" },
+        { cwd: oldMusic, label: "Music" },
+      ],
+    },
+    normalizeFsPath,
+    requestThreadList: async () => ({
+      data: [
+        { id: "new", cwd: newMusic },
+        { id: "old-1", cwd: oldMusic },
+        { id: "old-2", cwd: oldMusic },
+      ],
+    }),
+  });
+
+  const rows = await service.listWorkspaces();
+
+  assert.deepEqual(rows.map((row) => [row.cwd, row.active, row.recentThreadCount]), [
+    [newMusic, true, 1],
+    [oldMusic, false, 2],
+  ]);
+});
+
+test("thread-list state service token workspace snapshot combines visible and registered roots", () => {
+  const service = createThreadListStateService({
+    readGlobalState: () => ({ marker: true }),
+    visibleWorkspaceRoots: () => new Set(["/visible/a", "/visible/b"]),
+    workspaceRegistryService: {
+      list: () => [{ cwd: "/registered/c" }, { cwd: "" }, null],
+    },
+  });
+
+  assert.deepEqual(service.tokenUsageWorkspaceCwds(), ["/visible/a", "/visible/b", "/registered/c"]);
+});

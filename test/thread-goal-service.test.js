@@ -17,6 +17,10 @@ const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "ut
 const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const threadGoalActionServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-goal-action-service.js"), "utf8");
+const threadListStateServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-list", "thread-list-state-service.js"),
+  "utf8",
+);
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -216,11 +220,12 @@ test("server enriches thread list and detail responses with thread goals", () =>
   assert.ok(apiDispatchRouteServiceJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/goal\\/actions$/)"));
   assert.match(serverJs, /function attachThreadGoalToThread\(/);
   assert.match(serverJs, /threadGoalService\.attachGoalToThread\(thread\)/);
-  assert.match(serverJs, /function attachThreadGoalsToThreadListResult\(/);
-  assert.match(serverJs, /threadGoalService\.attachGoalsToThreadListResult\(result\)/);
-  assert.match(serverJs, /function attachThreadListStateToResult\(/);
-  assert.match(serverJs, /attachThreadTaskCardCountsToThreadListResult\(attachThreadGoalsToThreadListResult\(result\)\)/);
-  assert.match(serverJs, /attachThreadListStateToResult\(result\)/);
+  assert.match(threadListStateServiceJs, /function attachThreadGoalsToThreadListResult\(/);
+  assert.match(threadListStateServiceJs, /attachGoalsToThreadListResult\(result\)/);
+  assert.match(threadListStateServiceJs, /function attachThreadListStateToResult\(/);
+  assert.match(threadListStateServiceJs, /attachThreadTaskCardCountsToThreadListResult\(attachThreadGoalsToThreadListResult\(result\)\)/);
+  assert.match(serverJs, /const threadListStateService = createThreadListStateService\(\{/);
+  assert.match(serverJs, /attachThreadListStateToResult,/);
   assert.match(serverJs, /attachThreadGoalToThread\(result\.thread\)/);
 });
 

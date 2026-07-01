@@ -2118,6 +2118,12 @@ public behavior:
   `thread-list-summary-service.js` now own the remaining thread-list request
   policy, merge, request context, coalescing, cold-path diagnosis, and summary
   stripping boundaries. Their old adapter paths are compatibility-only.
+- `services/thread-list/thread-list-state-service.js` now owns thread-list row
+  extraction, batch fallback-cache upsert delegation, thread-goal and
+  pending-task-card list decoration, All Workspaces row input assembly, and
+  token-usage workspace cwd snapshots. `server.js` now injects the task-card,
+  goal, visibility, registry, fallback-cache, and app-server request
+  dependencies instead of keeping those read-model helpers inline.
 - `services/thread-detail/thread-detail-response-preparation-service.js` now owns
   turns-list/raw/full/fallback read-result shaping, rollout Usage decoration,
   rollout completion/user-input/active-assistant/final-receipt preparation

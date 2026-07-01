@@ -106,10 +106,7 @@ const {
 const {
   mergeThreadListRouteResult,
 } = require("./services/thread-list/thread-list-route-merge-service");
-const {
-  buildThreadListWorkspaceRows,
-  mapRegisteredWorkspaces,
-} = require("./services/thread-list/thread-list-workspace-merge-service");
+const { createThreadListStateService } = require("./services/thread-list/thread-list-state-service");
 const {
   createThreadListSummaryMergeService,
 } = require("./services/thread-list/thread-list-summary-merge-service");
@@ -914,6 +911,27 @@ threadGoalActionService = createThreadGoalActionService({
   threadGoalFromRpcResult,
   threadGoalSetParams,
 } = threadGoalActionService);
+const threadListStateService = createThreadListStateService({
+  stripThreadListDetailFields,
+  threadTaskCardService,
+  threadGoalService,
+  upsertThreadListFallbackCacheThread,
+  readGlobalState,
+  visibleWorkspaceRoots,
+  visibilityFromGlobalState,
+  workspaceRegistryService,
+  normalizeFsPath,
+  isHiddenThread,
+  readRpcTimeoutMs: READ_RPC_TIMEOUT_MS,
+  requestThreadList: (params, options) => codex.request("thread/list", params, options),
+});
+const {
+  attachThreadListStateToResult,
+  attachThreadTaskCardCountsToSummary,
+  listWorkspaces,
+  tokenUsageWorkspaceCwds,
+  upsertThreadListFallbackCacheThreads,
+} = threadListStateService;
 const PROCESS_STARTED_AT_MS = Date.now();
 
 let clients = new Map();
@@ -1325,25 +1343,6 @@ function normalizeThreadListResultStatuses(result) {
   if (Array.isArray(out.data)) out.data = out.data.map((thread) => stripThreadListDetailFields(normalizeThreadSummaryLiveStatus(thread)));
   if (Array.isArray(out.threads)) out.threads = out.threads.map((thread) => stripThreadListDetailFields(normalizeThreadSummaryLiveStatus(thread)));
   return stripThreadListResultDetailFields(out);
-}
-
-function threadListRowsFromResult(result) {
-  if (!result || typeof result !== "object") return [];
-  const rows = [];
-  if (Array.isArray(result.data)) rows.push(...result.data);
-  if (Array.isArray(result.threads) && result.threads !== result.data) rows.push(...result.threads);
-  return rows;
-}
-
-function upsertThreadListFallbackCacheThreads(resultOrThreads, options = {}) {
-  const rows = Array.isArray(resultOrThreads)
-    ? resultOrThreads
-    : threadListRowsFromResult(resultOrThreads);
-  let changed = 0;
-  for (const thread of rows) {
-    if (upsertThreadListFallbackCacheThread(thread, options)) changed += 1;
-  }
-  return changed;
 }
 
 function threadListSummaryTimestampMs(thread) {
@@ -3318,36 +3317,6 @@ function attachThreadGoalToThread(thread) {
   return threadGoalService.attachGoalToThread(thread);
 }
 
-function attachThreadTaskCardCountsToSummary(thread, taskCardCounts = null) {
-  if (!thread || typeof thread !== "object" || !thread.id) return thread;
-  const summary = stripThreadListDetailFields(thread);
-  const counts = taskCardCounts || threadTaskCardService.pendingCountsForThread(thread.id);
-  summary.pendingTaskCardCount = counts.pendingTotal;
-  summary.pendingIncomingTaskCardCount = counts.pendingIncoming;
-  summary.pendingOutgoingTaskCardCount = counts.pendingOutgoing;
-  return summary;
-}
-
-function attachThreadGoalsToThreadListResult(result) {
-  return threadGoalService.attachGoalsToThreadListResult(result);
-}
-
-function attachThreadTaskCardCountsToThreadListResult(result) {
-  if (!result || typeof result !== "object") return result;
-  const threads = [];
-  if (Array.isArray(result.data)) threads.push(...result.data);
-  if (Array.isArray(result.threads) && result.threads !== result.data) threads.push(...result.threads);
-  const countsByThreadId = threadTaskCardService.pendingCountsForThreads(threads.map((thread) => thread && thread.id));
-  const attach = (thread) => attachThreadTaskCardCountsToSummary(thread, countsByThreadId.get(String(thread && thread.id || "")));
-  if (Array.isArray(result.data)) result.data = result.data.map(attach);
-  if (Array.isArray(result.threads)) result.threads = result.threads.map(attach);
-  return result;
-}
-
-function attachThreadListStateToResult(result) {
-  return attachThreadTaskCardCountsToThreadListResult(attachThreadGoalsToThreadListResult(result));
-}
-
 function attachThreadTaskCardsToResult(result) {
   if (!result || typeof result !== "object" || !result.thread) return result;
   attachThreadGoalToThread(result.thread);
@@ -3717,44 +3686,6 @@ function threadListTokenUsageTimingFields(diagnostics = {}) {
     tokenUsageDecorateSummaryMs: Number(source.decorateSummaryMs || 0),
     tokenUsageDecorateAttachMs: Number(source.decorateAttachMs || 0),
   };
-}
-
-async function listWorkspaces() {
-  const globalState = readGlobalState();
-  const roots = visibleWorkspaceRoots(globalState);
-  const visibility = visibilityFromGlobalState(globalState);
-  const registered = mapRegisteredWorkspaces(workspaceRegistryService.list(), normalizeFsPath);
-  let recentThreads = [];
-  try {
-    const result = await codex.request("thread/list", {
-      limit: 500,
-      sortKey: "updated_at",
-      sortDirection: "desc",
-      archived: false,
-      useStateDbOnly: true,
-      sourceKinds: [],
-    }, { timeoutMs: READ_RPC_TIMEOUT_MS });
-    recentThreads = (result.data || []).filter((thread) => !isHiddenThread(thread, visibility));
-  } catch (_) {
-    // Workspace list can still be useful from global state while app-server is recovering.
-  }
-  const active = Array.isArray(globalState["active-workspace-roots"])
-    ? globalState["active-workspace-roots"]
-    : [];
-  return buildThreadListWorkspaceRows({
-    roots,
-    registered,
-    recentThreads,
-    activeWorkspaceRoots: active,
-    normalizeFsPath,
-  });
-}
-
-function tokenUsageWorkspaceCwds(globalState = readGlobalState()) {
-  return [
-    ...visibleWorkspaceRoots(globalState),
-    ...workspaceRegistryService.list().map((workspace) => workspace && workspace.cwd).filter(Boolean),
-  ];
 }
 
 const apiDispatchRouteService = createApiDispatchRouteService({
