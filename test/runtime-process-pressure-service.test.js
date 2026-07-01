@@ -10,6 +10,12 @@ test("runtime process pressure classifies production, stale hotfix, app-server, 
     "33840 1 xuxin 14.4 3079088 32:15 Ss /runtime/node server.js",
     "26622 1 xuxin 0.2 631248 03-19:12:27 Ss /runtime/node /prod/codex-mobile-web/codex-app-server-mux.js app-server --analytics-default-enabled",
     "26623 26622 xuxin 50.7 3033504 03-19:12:27 R /Users/xuxin/.local/bin/codex app-server --analytics-default-enabled",
+    "30001 26623 xuxin 0.0 102400 01-02:10:00 S /runtime/node/lib/node_modules/@colbymchenry/codegraph-darwin-arm64/node --liftoff-only codegraph.js serve --mcp",
+    "30002 26623 xuxin 0.0 35088 15:22:34 S /runtime/node scripts/codex-mobile-mcp-server.js --server http://127.0.0.1:8787 --key-file /private/key",
+    "30003 26623 xuxin 0.0 29952 15:22:34 S ./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient mcp",
+    "30004 26623 xuxin 0.0 8432 15:22:34 S /Applications/Codex.app/Contents/Resources/cua_node/bin/node_repl",
+    "30005 26623 xuxin 0.0 1040 01-03:18:19 S dns-sd -B _http._tcp local.",
+    "30006 26623 xuxin 0.0 1200 01-08:16:27 S /bin/zsh -c find /Users -maxdepth 5 -path '*codex-mobile-web*'",
     "78792 26623 xuxin 17.7 1485472 13:58:26 Ss node server.js --key-file /private/key",
     "65827 1 xuxin 0.0 214224 12:20:05 Ss /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/tmp/codex-mobile-browser-self-check-IQufw5",
     "325 1 _mds_stores 6.9 1962848 06-16:04:25 Rs /System/Library/CoreServices/mds_stores",
@@ -47,6 +53,21 @@ test("runtime process pressure classifies production, stale hotfix, app-server, 
   assert.equal(result.activeCodexAppServerCount, 1);
   assert.equal(result.staleAppServerMuxCount, 0);
   assert.equal(result.staleCodexAppServerCount, 0);
+  assert.equal(result.appServerChildProcessCount, 7);
+  assert.ok(result.appServerChildRssMb > 1600);
+  assert.deepEqual(
+    result.appServerChildGroups.map((group) => [group.kind, group.count]),
+    [
+      ["other-child", 1],
+      ["codegraph-mcp", 1],
+      ["codex-mobile-mcp", 1],
+      ["computer-use-mcp", 1],
+      ["node-repl", 1],
+      ["dns-sd", 1],
+      ["shell-command", 1],
+    ],
+  );
+  assert.ok(result.appServerChildGroups.some((group) => group.kind === "dns-sd" && group.maxElapsed === "01-03:18:19"));
   assert.deepEqual(result.activeMuxEndpoint, {
     pid: 26622,
     host: "127.0.0.1",

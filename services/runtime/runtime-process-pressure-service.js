@@ -21,6 +21,17 @@ function rssMbFromKb(value) {
   return Math.round(positiveInt(value, 0) / 1024);
 }
 
+function elapsedSeconds(value = "") {
+  const text = String(value || "").trim();
+  const match = text.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
+  if (!match) return 0;
+  const days = positiveInt(match[1], 0);
+  const hours = positiveInt(match[2], 0);
+  const minutes = positiveInt(match[3], 0);
+  const seconds = positiveInt(match[4], 0);
+  return (((days * 24) + hours) * 60 + minutes) * 60 + seconds;
+}
+
 function redactCommand(command) {
   return String(command || "")
     .replace(/--key-file\s+\S+/gi, "--key-file <redacted>")
@@ -120,6 +131,17 @@ function classifyProcess(process = {}, context = {}) {
   return "other";
 }
 
+function classifyAppServerChildProcess(process = {}) {
+  const command = process.command || "";
+  if (/codex-mobile-mcp-server\.js/.test(command)) return "codex-mobile-mcp";
+  if (/codegraph(?:\.js)?\s+serve\s+--mcp|codegraph-darwin-arm64/.test(command)) return "codegraph-mcp";
+  if (/SkyComputerUseClient.*\bmcp\b/.test(command)) return "computer-use-mcp";
+  if (/node_repl\b/.test(command)) return "node-repl";
+  if (/\bdns-sd\b/.test(command)) return "dns-sd";
+  if (/\/bin\/(?:zsh|bash|sh)\s+-c\b|(?:^|\s)find\s+/.test(command)) return "shell-command";
+  return "other-child";
+}
+
 function boundedProcess(process = {}) {
   return {
     pid: process.pid,
@@ -133,6 +155,54 @@ function boundedProcess(process = {}) {
     cwd: process.cwd || "",
     listeners: Array.isArray(process.listeners) ? process.listeners.slice(0, 4) : [],
     command: process.command,
+  };
+}
+
+function summarizeAppServerChildren(processes = [], options = {}) {
+  const topLimit = Math.max(1, Math.min(50, positiveInt(options.topLimit, DEFAULT_TOP_LIMIT)));
+  const groups = new Map();
+  for (const process of processes) {
+    const kind = process.childKind || classifyAppServerChildProcess(process);
+    if (!groups.has(kind)) {
+      groups.set(kind, {
+        kind,
+        count: 0,
+        cpuPercent: 0,
+        rssMb: 0,
+        maxElapsedSeconds: 0,
+        maxElapsed: "",
+      });
+    }
+    const group = groups.get(kind);
+    group.count += 1;
+    group.cpuPercent += process.cpuPercent || 0;
+    group.rssMb += process.rssMb || 0;
+    const seconds = elapsedSeconds(process.elapsed);
+    if (seconds > group.maxElapsedSeconds) {
+      group.maxElapsedSeconds = seconds;
+      group.maxElapsed = process.elapsed || "";
+    }
+  }
+  const groupRows = Array.from(groups.values())
+    .map((group) => ({
+      kind: group.kind,
+      count: group.count,
+      cpuPercent: Number(group.cpuPercent.toFixed(1)),
+      rssMb: group.rssMb,
+      maxElapsed: group.maxElapsed,
+    }))
+    .sort((a, b) => (b.count - a.count) || (b.rssMb - a.rssMb));
+  const topProcesses = processes
+    .slice()
+    .sort((a, b) => (elapsedSeconds(b.elapsed) - elapsedSeconds(a.elapsed)) || (b.rssMb - a.rssMb))
+    .slice(0, topLimit)
+    .map((process) => boundedProcess(Object.assign({}, process, { kind: process.childKind || classifyAppServerChildProcess(process) })));
+  return {
+    count: processes.length,
+    cpuPercent: Number(processes.reduce((total, process) => total + (process.cpuPercent || 0), 0).toFixed(1)),
+    rssMb: processes.reduce((total, process) => total + (process.rssMb || 0), 0),
+    groups: groupRows,
+    topProcesses,
   };
 }
 
@@ -172,6 +242,8 @@ function summarizeProcessPressure(processes = [], options = {}) {
     }))
     .sort((a, b) => (b.cpuPercent - a.cpuPercent) || (b.rssMb - a.rssMb));
   const codexProcesses = processes.filter((process) => codexKinds.has(process.kind));
+  const appServerChildren = Array.isArray(options.appServerChildren) ? options.appServerChildren : [];
+  const appServerChildSummary = summarizeAppServerChildren(appServerChildren, { topLimit });
   const topProcesses = processes
     .filter((process) => process.kind !== "other")
     .sort((a, b) => (b.cpuPercent - a.cpuPercent) || (b.rssMb - a.rssMb))
@@ -192,6 +264,11 @@ function summarizeProcessPressure(processes = [], options = {}) {
     staleCodexAppServerCount: processes.filter((process) => process.kind === "stale-codex-app-server").length,
     activeAppServerMuxCount: processes.filter((process) => process.kind === "active-app-server-mux").length,
     staleAppServerMuxCount: processes.filter((process) => process.kind === "stale-app-server-mux").length,
+    appServerChildProcessCount: appServerChildSummary.count,
+    appServerChildCpuPercent: appServerChildSummary.cpuPercent,
+    appServerChildRssMb: appServerChildSummary.rssMb,
+    appServerChildGroups: appServerChildSummary.groups,
+    appServerChildTopProcesses: appServerChildSummary.topProcesses,
     groups: groupRows,
     topProcesses,
   };
@@ -214,7 +291,8 @@ function collectRuntimeProcessPressure(options = {}, deps = {}) {
     lsofText = "";
   }
   const listenersByPid = parseLsofListeners(lsofText);
-  const rows = parsePsRows(psText)
+  const allRows = parsePsRows(psText);
+  const rows = allRows
     .filter((process) => /codex-mobile-web|codex app-server|\bnode\s+server\.js\b|codex-mobile-browser-self-check|mds_stores|mdworker_shared/.test(process.command))
     .map((process) => ({
       ...process,
@@ -235,7 +313,16 @@ function collectRuntimeProcessPressure(options = {}, deps = {}) {
     ...process,
     kind: classifyProcess(process, { activeMuxPid: muxEndpoint && muxEndpoint.pid }),
   }));
-  const summary = summarizeProcessPressure(classified, options);
+  const appServerPids = new Set(classified
+    .filter((process) => /codex-app-server$/.test(process.kind))
+    .map((process) => process.pid));
+  const appServerChildren = allRows
+    .filter((process) => appServerPids.has(process.ppid))
+    .map((process) => ({
+      ...process,
+      childKind: classifyAppServerChildProcess(process),
+    }));
+  const summary = summarizeProcessPressure(classified, Object.assign({}, options, { appServerChildren }));
   summary.activeMuxEndpoint = muxEndpoint ? {
     pid: muxEndpoint.pid,
     host: muxEndpoint.host,
@@ -247,7 +334,9 @@ function collectRuntimeProcessPressure(options = {}, deps = {}) {
 
 module.exports = {
   classifyProcess,
+  classifyAppServerChildProcess,
   collectRuntimeProcessPressure,
+  elapsedSeconds,
   parseCwdFromLsofFn,
   parseLsofListeners,
   parsePsRows,
