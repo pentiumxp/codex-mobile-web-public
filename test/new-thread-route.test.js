@@ -17,6 +17,7 @@ const codexAppServerClientServiceJs = fs.readFileSync(
 const serverRuntimeUtilsJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-runtime-utils.js"), "utf8");
 const serverHttpRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-http-runtime-service.js"), "utf8");
 const runtimePermissionPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-permission-policy-service.js"), "utf8");
+const threadRuntimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "thread-runtime-settings-service.js"), "utf8");
 const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "rate-limit-runtime-service.js"), "utf8");
 const runtimeWorkspaceBootstrapServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-workspace-bootstrap-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "thread-event-notification-service.js"), "utf8");
@@ -254,9 +255,9 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
 });
 
 test("server runtime inheritance includes model and reasoning effort", () => {
-  const settingsBody = functionBody(serverJs, "threadRuntimeSettings");
-  assert.match(settingsBody, /lastString\(context\.model, thread && thread\.model, CODEX_CONFIG_DEFAULTS\.model\)/, "runtime settings should inherit model from rollout, state DB, or config");
-  assert.match(settingsBody, /lastString\(context\.effort, context\.reasoning_effort, context\.model_reasoning_effort, thread && thread\.effort, CODEX_CONFIG_DEFAULTS\.reasoningEffort\)/, "runtime settings should inherit reasoning effort from rollout, state DB, or config");
+  const settingsBody = functionBody(threadRuntimeSettingsServiceJs, "threadRuntimeSettings");
+  assert.match(settingsBody, /lastString\(context\.model, thread && thread\.model, codexConfigDefaults\.model\)/, "runtime settings should inherit model from rollout, state DB, or config");
+  assert.match(settingsBody, /lastString\(context\.effort, context\.reasoning_effort, context\.model_reasoning_effort, thread && thread\.effort, codexConfigDefaults\.reasoningEffort\)/, "runtime settings should inherit reasoning effort from rollout, state DB, or config");
   assert.match(settingsBody, /model,\s*reasoningEffort,/, "runtime settings response should expose inherited model and effort");
 
   const startBody = functionBody(taskCardRuntimePolicyServiceJs, "applyStartThreadRuntimeSettings");

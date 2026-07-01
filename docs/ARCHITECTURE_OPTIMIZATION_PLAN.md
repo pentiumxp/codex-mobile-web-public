@@ -3792,6 +3792,29 @@ compatibility adapter parity, route tests that exercise body injection, and
 package syntax checks. This is behavior-preserving and should stay batched with
 the surrounding runtime-boundary work before full deployment.
 
+### 2026-07-01 Thread Runtime Settings Boundary
+
+The next Server runtime split moves inherited thread runtime settings out of
+`server.js` into `services/runtime/thread-runtime-settings-service.js`.
+
+Scope:
+
+- latest rollout `turn_context` scanning and process cache ownership are
+  service-owned;
+- state DB, app-server summary, and config-default fallback order is
+  service-owned;
+- model, reasoning effort, summary, verbosity, sandbox policy, permission
+  profile, and approval policy normalization is service-owned;
+- `runtimeContextCacheKey()` remains exposed by the service for rollout
+  backfill/enrichment callers that need stable cache-key compatibility;
+- `server.js` injects state readers, app-server summary lookup, runtime policy
+  helpers, model option lists, and cache budgets.
+
+Validation should cover the service unit test, source guards for inherited
+model/effort behavior, runtime compatibility adapter parity, thread-detail
+orchestration/prewarm callers, and task-card/message route callers that inherit
+thread runtime settings.
+
 ## Release Rule
 
 Follow the current release order:

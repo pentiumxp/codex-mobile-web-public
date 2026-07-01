@@ -137,6 +137,7 @@ const { createStaticFileService } = require("./adapters/static-file-service");
 const { createServerRuntimeUtils } = require("./services/runtime/server-runtime-utils");
 const { createServerHttpRuntimeService } = require("./services/runtime/server-http-runtime-service");
 const { createRuntimeSettingsService } = require("./services/runtime/runtime-settings-service");
+const { createThreadRuntimeSettingsService } = require("./services/runtime/thread-runtime-settings-service");
 const { createCoreApiRouteService } = require("./server-routes/core-api-route-service");
 const { createAppMaintenanceService } = require("./adapters/app-maintenance-service");
 const { createAppServerRequestPolicyService } = require("./services/runtime/app-server-request-policy-service");
@@ -857,6 +858,31 @@ const {
   workspaceDelegationWriteGuardPermissionProfile,
   workspaceWriteSandboxPolicy,
 } = runtimePermissionPolicyService;
+const threadRuntimeSettingsService = createThreadRuntimeSettingsService({
+  fs,
+  maxRuntimeContextScanBytes: MAX_RUNTIME_CONTEXT_SCAN_BYTES,
+  runtimeContextCacheTtlMs: RUNTIME_CONTEXT_CACHE_TTL_MS,
+  runtimeContextCacheMax: RUNTIME_CONTEXT_CACHE_MAX,
+  modelOptions: MODEL_OPTIONS,
+  reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
+  codexConfigDefaults: CODEX_CONFIG_DEFAULTS,
+  normalizeFsPath,
+  parseJsonLine,
+  lastString,
+  readStateDbThread,
+  readThreadSummaryFromAppServer: (threadId) => readThreadSummaryFromAppServer(codex, threadId),
+  normalizeEnumValue,
+  normalizeSandboxPolicy,
+  normalizePermissionProfile,
+  isFullAccessRuntime,
+  sandboxModeFromPolicy,
+});
+const {
+  readLatestTurnContext,
+  resolveThreadRuntimeSettings,
+  runtimeContextCacheKey,
+  threadRuntimeSettings,
+} = threadRuntimeSettingsService;
 const appServerRequestPolicyService = createAppServerRequestPolicyService({
   compactStructured,
   truncateMiddle,
@@ -893,7 +919,6 @@ const PROCESS_STARTED_AT_MS = Date.now();
 let clients = new Map();
 let clientHeartbeats = new WeakMap();
 const LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS = 10000;
-const latestRuntimeContextByPath = new Map();
 const rolloutEnrichmentIndexService = createRolloutEnrichmentIndexService({
   maxIndexes: RUNTIME_CONTEXT_CACHE_MAX,
 });
@@ -1878,119 +1903,6 @@ function finalizeThreadDetailProjectionResult(result, details = {}) {
   });
 }
 
-function runtimeContextCacheKey(rolloutPath, stat) {
-  return `${normalizeFsPath(rolloutPath)}:${stat.size}:${Math.trunc(Number(stat.mtimeMs || 0))}`;
-}
-
-function rememberRuntimeContext(key, payload) {
-  latestRuntimeContextByPath.set(key, {
-    cachedAt: Date.now(),
-    payload: payload || null,
-  });
-  while (latestRuntimeContextByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
-    const firstKey = latestRuntimeContextByPath.keys().next().value;
-    latestRuntimeContextByPath.delete(firstKey);
-  }
-}
-
-function readLatestTurnContext(thread) {
-  const rolloutPath = thread && (thread.path || thread.rolloutPath || thread.rollout_path);
-  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return null;
-  let fd = null;
-  try {
-    const stat = fs.statSync(rolloutPath);
-    const cacheKey = runtimeContextCacheKey(rolloutPath, stat);
-    const cached = latestRuntimeContextByPath.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
-      return cached.payload;
-    }
-    fd = fs.openSync(rolloutPath, "r");
-    const chunkSize = 1024 * 1024;
-    let position = stat.size;
-    let scanned = 0;
-    let carry = "";
-    while (position > 0 && scanned < MAX_RUNTIME_CONTEXT_SCAN_BYTES) {
-      const length = Math.min(chunkSize, position, MAX_RUNTIME_CONTEXT_SCAN_BYTES - scanned);
-      position -= length;
-      scanned += length;
-      const buffer = Buffer.alloc(length);
-      fs.readSync(fd, buffer, 0, length, position);
-      const text = buffer.toString("utf8") + carry;
-      const lines = text.split(/\r?\n/);
-      carry = lines.shift() || "";
-      for (let index = lines.length - 1; index >= 0; index -= 1) {
-        const line = lines[index];
-        if (!line || !line.includes('"type":"turn_context"')) continue;
-        const entry = parseJsonLine(line);
-        if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
-          rememberRuntimeContext(cacheKey, entry.payload);
-          return entry.payload;
-        }
-      }
-    }
-    if (carry && carry.includes('"type":"turn_context"')) {
-      const entry = parseJsonLine(carry);
-      if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
-        rememberRuntimeContext(cacheKey, entry.payload);
-        return entry.payload;
-      }
-    }
-  } catch (_) {
-    return null;
-  } finally {
-    if (fd !== null) {
-      try {
-        fs.closeSync(fd);
-      } catch (_) {}
-    }
-  }
-  try {
-    const stat = fs.statSync(rolloutPath);
-    rememberRuntimeContext(runtimeContextCacheKey(rolloutPath, stat), null);
-  } catch (_) {}
-  return null;
-}
-
-function threadRuntimeSettings(threadId, fallbackThread = null) {
-  const thread = readStateDbThread(threadId) || fallbackThread;
-  const context = readLatestTurnContext(thread) || {};
-  const model = normalizeEnumValue(
-    lastString(context.model, thread && thread.model, CODEX_CONFIG_DEFAULTS.model),
-    new Set(MODEL_OPTIONS),
-  );
-  const reasoningEffort = normalizeEnumValue(
-    lastString(context.effort, context.reasoning_effort, context.model_reasoning_effort, thread && thread.effort, CODEX_CONFIG_DEFAULTS.reasoningEffort),
-    new Set(REASONING_EFFORT_OPTIONS),
-  );
-  const sandboxPolicy = normalizeSandboxPolicy(context.sandbox_policy || (thread && thread.sandboxPolicy));
-  const permissionProfile = normalizePermissionProfile(context.permission_profile || (thread && thread.permissionProfile));
-  let approvalPolicy = normalizeEnumValue(
-    lastString(context.approval_policy, thread && thread.approvalPolicy),
-    new Set(["untrusted", "on-request", "on-failure", "never"]),
-  );
-  if (isFullAccessRuntime(sandboxPolicy, permissionProfile) && (!approvalPolicy || approvalPolicy === "on-request")) {
-    approvalPolicy = "never";
-  }
-  const reasoningSummary = normalizeEnumValue(
-    lastString(context.summary, context.reasoning_summary, context.model_reasoning_summary, CODEX_CONFIG_DEFAULTS.reasoningSummary),
-    new Set(["auto", "concise", "detailed", "none"]),
-  );
-  const modelVerbosity = normalizeEnumValue(
-    lastString(context.model_verbosity, CODEX_CONFIG_DEFAULTS.modelVerbosity),
-    new Set(["low", "medium", "high"]),
-  );
-  return {
-    model,
-    reasoningEffort,
-    approvalPolicy,
-    sandboxPolicy,
-    sandboxMode: sandboxModeFromPolicy(sandboxPolicy),
-    permissionProfile,
-    reasoningSummary,
-    modelVerbosity,
-  };
-}
-
 async function chatGptProSourceSummary(body = {}) {
   const sourceThreadId = String(body.sourceThreadId || body.threadId || "").trim();
   const cwd = String(body.cwd || "").trim();
@@ -2023,17 +1935,6 @@ async function chatGptProSourceSummary(body = {}) {
   lines.push("- Do not request or expose access keys, browser cookies, raw credentials, or full private logs.");
   lines.push("- Use repository files only when the downstream ChatGPT Pro prompt explicitly needs them and they are not secrets.");
   return lines.join("\n");
-}
-
-async function resolveThreadRuntimeSettings(threadId) {
-  if (readStateDbThread(threadId)) return threadRuntimeSettings(threadId);
-  let fallbackThread = null;
-  try {
-    fallbackThread = await readThreadSummaryFromAppServer(codex, threadId);
-  } catch (_) {
-    fallbackThread = null;
-  }
-  return threadRuntimeSettings(threadId, fallbackThread);
 }
 
 const rateLimitRuntimeService = createRateLimitRuntimeService({
