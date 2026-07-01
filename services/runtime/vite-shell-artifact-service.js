@@ -40,6 +40,36 @@ function compactIssueCodes(issues) {
   return Array.from(new Set((issues || []).map((issue) => issue && issue.code).filter(Boolean)));
 }
 
+function arraysEqual(left, right) {
+  return JSON.stringify(Array.isArray(left) ? left : []) === JSON.stringify(Array.isArray(right) ? right : []);
+}
+
+function canonicalShellTopology(manifest) {
+  const source = manifest && typeof manifest === "object" ? manifest : {};
+  return {
+    indexScriptAssets: Array.isArray(source.indexScriptAssets) ? source.indexScriptAssets : source.scriptAssets,
+    swStaticAssets: Array.isArray(source.swStaticAssets) ? source.swStaticAssets : source.precacheAssets,
+    pageShellAssets: source.pageShellAssets,
+    hashAssets: Array.isArray(source.serverHashAssets) ? source.serverHashAssets : source.hashAssets,
+    entryGroups: source.entryGroups,
+  };
+}
+
+function hasComparableTopology(manifest) {
+  const topology = canonicalShellTopology(manifest);
+  return Array.isArray(topology.indexScriptAssets) && topology.indexScriptAssets.length > 0;
+}
+
+function manifestTopologyMatches(left, right) {
+  if (!left || !right) return false;
+  const leftTopology = canonicalShellTopology(left);
+  const rightTopology = canonicalShellTopology(right);
+  for (const key of ["indexScriptAssets", "swStaticAssets", "pageShellAssets", "hashAssets", "entryGroups"]) {
+    if (!arraysEqual(leftTopology[key], rightTopology[key])) return false;
+  }
+  return true;
+}
+
 function createViteShellArtifactService(dependencies = {}) {
   const appRoot = path.resolve(dependencies.appRoot || process.cwd());
   const publicArtifactRoot = path.resolve(
@@ -154,6 +184,40 @@ function createViteShellArtifactService(dependencies = {}) {
     if (!files.length) {
       issues.push({ code: "vite_shell_artifact_files_missing" });
     }
+    const expectedPublishedFiles = Array.from(new Set([
+      "codex-mobile-shell-manifest.json",
+      readback.entry && readback.entry.fileName,
+      ...(readback.deferredChunks || []).map((chunk) => chunk && chunk.fileName),
+      previewFileName,
+    ].map(normalizeRelativeFileName).filter(Boolean)));
+    const listedPublishedFiles = (readback.publishedFiles || [])
+      .map((file) => normalizeRelativeFileName(file && file.fileName))
+      .filter(Boolean)
+      .sort();
+    if (JSON.stringify(listedPublishedFiles) !== JSON.stringify(expectedPublishedFiles.slice().sort())) {
+      issues.push({ code: "vite_shell_artifact_file_list_mismatch" });
+    }
+    const artifactManifestPath = publicArtifactPath("codex-mobile-shell-manifest.json");
+    const artifactManifest = artifactManifestPath ? safeReadJson(artifactManifestPath) : null;
+    if (!artifactManifest) {
+      issues.push({ code: "vite_shell_artifact_manifest_missing" });
+    } else {
+      if (artifactManifest.shellCacheName !== readback.shellCacheName) {
+        issues.push({ code: "vite_shell_artifact_manifest_cache_mismatch" });
+      }
+      if (artifactManifest.clientBuildId !== readback.clientBuildId) {
+        issues.push({ code: "vite_shell_artifact_manifest_client_build_mismatch" });
+      }
+      if (publicShellManifest.shellCacheName && artifactManifest.shellCacheName !== publicShellManifest.shellCacheName) {
+        issues.push({ code: "vite_shell_artifact_manifest_public_cache_mismatch" });
+      }
+      if (publicShellManifest.clientBuildId && artifactManifest.clientBuildId !== publicShellManifest.clientBuildId) {
+        issues.push({ code: "vite_shell_artifact_manifest_public_client_build_mismatch" });
+      }
+      if (hasComparableTopology(publicShellManifest) && !manifestTopologyMatches(artifactManifest, publicShellManifest)) {
+        issues.push({ code: "vite_shell_artifact_manifest_topology_mismatch" });
+      }
+    }
     const previewPath = publicArtifactPath(previewFileName);
     const previewHtml = previewPath ? safeReadText(previewPath) : "";
     if (!previewHtml) {
@@ -179,6 +243,28 @@ function createViteShellArtifactService(dependencies = {}) {
       artifactRoot: DEFAULT_PUBLIC_ARTIFACT_ROOT,
       shellCacheName: String(readback.shellCacheName || ""),
       clientBuildId: String(readback.clientBuildId || ""),
+      classicShellManifestMatch: Boolean(artifactManifest
+        && (!hasComparableTopology(publicShellManifest) || manifestTopologyMatches(artifactManifest, publicShellManifest))
+        && artifactManifest.shellCacheName === readback.shellCacheName
+        && artifactManifest.clientBuildId === readback.clientBuildId
+        && (!publicShellManifest.shellCacheName || artifactManifest.shellCacheName === publicShellManifest.shellCacheName)
+        && (!publicShellManifest.clientBuildId || artifactManifest.clientBuildId === publicShellManifest.clientBuildId)),
+      artifactManifest: artifactManifest ? {
+        shellCacheName: String(artifactManifest.shellCacheName || ""),
+        clientBuildId: String(artifactManifest.clientBuildId || ""),
+        indexScriptCount: Array.isArray(canonicalShellTopology(artifactManifest).indexScriptAssets)
+          ? canonicalShellTopology(artifactManifest).indexScriptAssets.length
+          : 0,
+        entryGroupCount: Array.isArray(canonicalShellTopology(artifactManifest).entryGroups)
+          ? canonicalShellTopology(artifactManifest).entryGroups.length
+          : 0,
+        pageShellAssetCount: Array.isArray(canonicalShellTopology(artifactManifest).pageShellAssets)
+          ? canonicalShellTopology(artifactManifest).pageShellAssets.length
+          : 0,
+        hashAssetCount: Array.isArray(canonicalShellTopology(artifactManifest).hashAssets)
+          ? canonicalShellTopology(artifactManifest).hashAssets.length
+          : 0,
+      } : null,
       entry: readback.entry || null,
       deferredChunkCount: (readback.deferredChunks || []).length,
       preview: preview ? {

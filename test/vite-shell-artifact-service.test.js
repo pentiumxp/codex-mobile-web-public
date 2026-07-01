@@ -20,6 +20,21 @@ function writeArtifact(root, options = {}) {
   const entry = Buffer.from("export const entry = true;\n");
   const deferred = Buffer.from("export const deferred = true;\n");
   const stage = options.stage || "vite-shell-preview-html-v1";
+  const shellManifest = options.shellManifest || {
+    shellCacheName: "codex-mobile-shell-test",
+    clientBuildId: "0.1.11|codex-mobile-shell-test",
+    indexScriptAssets: ["/shell-asset-manifest.js", "/app.js"],
+    swStaticAssets: ["/", "/index.html", "/shell-asset-manifest.js", "/app.js", "/shell-asset-manifest.json"],
+    pageShellAssets: ["/", "/index.html", "/shell-asset-manifest.js", "/app.js", "/shell-asset-manifest.json", "/sw.js"],
+    hashAssets: ["/index.html", "/shell-asset-manifest.js", "/app.js", "/shell-asset-manifest.json", "/sw.js"],
+    entryGroups: [{
+      id: "app-entry",
+      phase: "startup-critical",
+      startupCritical: true,
+      chunkTarget: "startup-app-shell",
+      assets: ["/app.js"],
+    }],
+  };
   const preview = Buffer.from([
     "<!doctype html>",
     "<main id=\"codex-vite-shell-preview\" data-stage=\"vite-shell-preview-html-v1\"></main>",
@@ -27,8 +42,7 @@ function writeArtifact(root, options = {}) {
     "",
   ].join("\n"));
   const manifest = Buffer.from(JSON.stringify({
-    shellCacheName: "codex-mobile-shell-test",
-    clientBuildId: "0.1.11|codex-mobile-shell-test",
+    ...shellManifest,
     viteBuild: {
       stage: "vite-shell-artifact-contract-v1",
       productionExecution: "classic-script-fallback",
@@ -75,13 +89,11 @@ test("Vite shell artifact adapter re-exports canonical service", () => {
 
 test("Vite shell artifact status validates the guarded public preview files", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-artifact-"));
-  writeArtifact(root);
+  const artifactRoot = writeArtifact(root);
+  const currentManifest = JSON.parse(fs.readFileSync(path.join(artifactRoot, "codex-mobile-shell-manifest.json"), "utf8"));
   const artifactService = service.createViteShellArtifactService({
     appRoot: root,
-    readShellAssetManifest: () => ({
-      shellCacheName: "codex-mobile-shell-test",
-      clientBuildId: "0.1.11|codex-mobile-shell-test",
-    }),
+    readShellAssetManifest: () => currentManifest,
   });
   const status = artifactService.readPublicArtifactStatus();
   assert.equal(status.ok, true);
@@ -95,8 +107,57 @@ test("Vite shell artifact status validates the guarded public preview files", ()
     fileName: "preview.html",
     entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
   });
+  assert.equal(status.classicShellManifestMatch, true);
+  assert.deepEqual(status.artifactManifest, {
+    shellCacheName: "codex-mobile-shell-test",
+    clientBuildId: "0.1.11|codex-mobile-shell-test",
+    indexScriptCount: 2,
+    entryGroupCount: 1,
+    pageShellAssetCount: 6,
+    hashAssetCount: 5,
+  });
   assert.deepEqual(status.issueCodes, []);
   assert.equal(status.publishedFiles.every((file) => file.exists && !path.isAbsolute(file.fileName)), true);
+});
+
+test("Vite shell artifact status fails closed when published manifest drifts from classic shell", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-drift-"));
+  const artifactRoot = writeArtifact(root);
+  const manifestPath = path.join(artifactRoot, "codex-mobile-shell-manifest.json");
+  const readbackPath = path.join(artifactRoot, "vite-shell-readback.json");
+  const currentManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const driftedManifest = {
+    ...currentManifest,
+    indexScriptAssets: ["/shell-asset-manifest.js", "/stale-runtime.js"],
+    entryGroups: [{
+      id: "app-entry",
+      phase: "startup-critical",
+      startupCritical: true,
+      chunkTarget: "startup-app-shell",
+      assets: ["/stale-runtime.js"],
+    }],
+  };
+  fs.writeFileSync(manifestPath, `${JSON.stringify(driftedManifest, null, 2)}\n`);
+  const manifestBuffer = fs.readFileSync(manifestPath);
+  const readback = JSON.parse(fs.readFileSync(readbackPath, "utf8"));
+  readback.publishedFiles = readback.publishedFiles.map((file) => {
+    if (file.fileName !== "codex-mobile-shell-manifest.json") return file;
+    return {
+      ...file,
+      bytes: manifestBuffer.length,
+      sha256: sha256Hex(manifestBuffer),
+    };
+  });
+  fs.writeFileSync(readbackPath, `${JSON.stringify(readback, null, 2)}\n`);
+
+  const status = service.createViteShellArtifactService({
+    appRoot: root,
+    readShellAssetManifest: () => currentManifest,
+  }).readPublicArtifactStatus();
+  assert.equal(status.ok, false);
+  assert.equal(status.classicShellManifestMatch, false);
+  assert.ok(status.issueCodes.includes("vite_shell_artifact_manifest_topology_mismatch"));
+  assert.ok(!status.issueCodes.includes("vite_artifact_file_hash_mismatch"));
 });
 
 test("Vite shell artifact status fails closed for missing or stale artifacts", () => {
@@ -112,6 +173,11 @@ test("Vite shell artifact status fails closed for missing or stale artifacts", (
   const staleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-stale-"));
   writeArtifact(staleRoot, { stage: "old-stage" });
   fs.unlinkSync(path.join(staleRoot, "public", "vite-shell", "assets", "vite-deferred-entry-topology-test.js"));
+  const staleReadbackPath = path.join(staleRoot, "public", "vite-shell", "vite-shell-readback.json");
+  const staleReadback = JSON.parse(fs.readFileSync(staleReadbackPath, "utf8"));
+  staleReadback.publishedFiles = staleReadback.publishedFiles
+    .filter((file) => file.fileName !== "preview.html");
+  fs.writeFileSync(staleReadbackPath, `${JSON.stringify(staleReadback, null, 2)}\n`);
   const staleStatus = service.createViteShellArtifactService({
     appRoot: staleRoot,
     readShellAssetManifest: () => ({
@@ -122,6 +188,7 @@ test("Vite shell artifact status fails closed for missing or stale artifacts", (
   assert.equal(staleStatus.ok, false);
   assert.ok(staleStatus.issueCodes.includes("vite_shell_artifact_stage_mismatch"));
   assert.ok(staleStatus.issueCodes.includes("vite_artifact_file_missing"));
+  assert.ok(staleStatus.issueCodes.includes("vite_shell_artifact_file_list_mismatch"));
 });
 
 test("Vite shell artifact publisher copies only bounded preview artifacts", async () => {

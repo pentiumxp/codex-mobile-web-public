@@ -4482,6 +4482,21 @@ Scope:
 This stage gives deploy validation a real production artifact path without
 making Vite-built chunks startup-critical.
 
+The follow-up artifact-readback guard keeps the preview artifact and default
+classic shell in the same build-chain contract:
+
+- `/api/vite-shell-artifact` now reads the published
+  `public/vite-shell/codex-mobile-shell-manifest.json` and compares its
+  `indexScriptAssets`, service-worker assets, page-shell assets, hash assets,
+  and entry groups with the current `public/shell-asset-manifest.json`.
+- The readback also requires `vite-shell-readback.json` to list exactly the
+  bounded published files required by the preview artifact: built shell
+  manifest, Vite entry chunk, deferred topology chunk, and `preview.html`.
+- Drift fails closed with bounded issue codes such as
+  `vite_shell_artifact_manifest_topology_mismatch` and
+  `vite_shell_artifact_file_list_mismatch`; the production `/` path remains
+  classic-script fallback.
+
 ## Release Rule
 
 Follow the current release order:
