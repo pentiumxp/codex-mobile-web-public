@@ -3641,6 +3641,40 @@ Required validation:
 - repeated list-then-detail timing samples should show reduced caller elapsed
   waits and no new runtime gate H1/H2 blockers.
 
+### 2026-07-01 All Workspaces Duplicate Workspace Read Model
+
+After creating the new Music plugin workspace, All Workspaces still showed the
+old `/Users/xuxin/Documents/Music` row even though the active workspace was now
+`/Users/hermes-dev/HermesMobileDev/plugins/music`. The old row was still in the
+mobile workspace registry and had no recent threads, so the visible workspace
+root merge surfaced a stale empty duplicate without a product reason to keep it
+prominent.
+
+Root cause: `/api/workspaces` built rows inline in `server.js` from visible
+roots, registry entries, active roots, and recent thread counts. The merge had
+no read-model policy for inactive same-label empty duplicates after a workspace
+was recreated or moved.
+
+Scope:
+
+- `services/thread-list/thread-list-workspace-merge-service.js` owns All
+  Workspaces row assembly and duplicate suppression;
+- `server.js` injects visible roots, registry entries, active roots, recent
+  threads, and path normalization into that service;
+- inactive same-label workspaces with `recentThreadCount=0` are hidden only when
+  an active same-label workspace exists;
+- inactive duplicates with recent thread history remain visible, and registry
+  state is not deleted or rewritten.
+
+Required validation:
+
+- focused workspace merge, workspace registry, visibility, and thread-list route
+  tests;
+- local read-model probe against the current registry/global-state should return
+  only the active Music workspace;
+- production `/api/workspaces` readback after private deploy should show the new
+  Music path and omit the inactive empty old Music row.
+
 ## Release Rule
 
 Follow the current release order:

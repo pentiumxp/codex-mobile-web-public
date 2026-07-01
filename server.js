@@ -105,6 +105,10 @@ const {
   mergeThreadListRouteResult,
 } = require("./adapters/thread-list-route-merge-service");
 const {
+  buildThreadListWorkspaceRows,
+  mapRegisteredWorkspaces,
+} = require("./services/thread-list/thread-list-workspace-merge-service");
+const {
   createThreadListSummaryMergeService,
 } = require("./adapters/thread-list-summary-merge-service");
 const {
@@ -4138,7 +4142,7 @@ async function listWorkspaces() {
   const globalState = readGlobalState();
   const roots = visibleWorkspaceRoots(globalState);
   const visibility = visibilityFromGlobalState(globalState);
-  const registered = new Map(workspaceRegistryService.list().map((workspace) => [normalizeFsPath(workspace.cwd), workspace]));
+  const registered = mapRegisteredWorkspaces(workspaceRegistryService.list(), normalizeFsPath);
   let recentThreads = [];
   try {
     const result = await codex.request("thread/list", {
@@ -4156,23 +4160,13 @@ async function listWorkspaces() {
   const active = Array.isArray(globalState["active-workspace-roots"])
     ? globalState["active-workspace-roots"]
     : [];
-  const counts = new Map();
-  for (const thread of recentThreads) {
-    if (!thread.cwd) continue;
-    const key = normalizeFsPath(thread.cwd);
-    counts.set(key, (counts.get(key) || 0) + 1);
-  }
-  return [...roots].map((cwd) => {
-    const key = normalizeFsPath(cwd);
-    const registryEntry = registered.get(key);
-    return {
-      cwd,
-      label: registryEntry && registryEntry.label || path.basename(cwd.replace(/^\\\\\?\\/, "")) || cwd,
-      active: active.includes(cwd),
-      recentThreadCount: counts.get(key) || 0,
-      source: registryEntry ? "mobile" : "codex",
-    };
-  }).sort((a, b) => Number(b.active) - Number(a.active) || a.label.localeCompare(b.label));
+  return buildThreadListWorkspaceRows({
+    roots,
+    registered,
+    recentThreads,
+    activeWorkspaceRoots: active,
+    normalizeFsPath,
+  });
 }
 
 function tokenUsageWorkspaceCwds(globalState = readGlobalState()) {
