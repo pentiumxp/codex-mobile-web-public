@@ -1,0 +1,67 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const { test } = require("node:test");
+
+const service = require("../services/runtime/runtime-process-pressure-service");
+
+test("runtime process pressure classifies production, stale hotfix, app-server, browser, and Spotlight", () => {
+  const psText = [
+    "33840 1 xuxin 14.4 3079088 32:15 Ss /runtime/node server.js",
+    "26622 1 xuxin 0.2 631248 03-19:12:27 Ss /runtime/node /prod/codex-mobile-web/codex-app-server-mux.js app-server --analytics-default-enabled",
+    "26623 26622 xuxin 50.7 3033504 03-19:12:27 R /Users/xuxin/.local/bin/codex app-server --analytics-default-enabled",
+    "78792 26623 xuxin 17.7 1485472 13:58:26 Ss node server.js --key-file /private/key",
+    "65827 1 xuxin 0.0 214224 12:20:05 Ss /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/tmp/codex-mobile-browser-self-check-IQufw5",
+    "325 1 _mds_stores 6.9 1962848 06-16:04:25 Rs /System/Library/CoreServices/mds_stores",
+  ].join("\n");
+  const lsofText = [
+    "COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME",
+    "node    33840 xuxin  20u  IPv4 0x1      0t0  TCP 127.0.0.1:8787 (LISTEN)",
+    "node    78792 xuxin  21u  IPv4 0x2      0t0  TCP 127.0.0.1:8788 (LISTEN)",
+    "node    26622 xuxin  22u  IPv4 0x3      0t0  TCP 127.0.0.1:54498 (LISTEN)",
+  ].join("\n");
+  const cwdByPid = new Map([
+    ["33840", "p33840\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n"],
+    ["78792", "p78792\nfcwd\nn/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web-combined-hotfix\n"],
+    ["26622", "p26622\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n"],
+    ["26623", "p26623\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n"],
+  ]);
+
+  const result = service.collectRuntimeProcessPressure({}, {
+    execFileSync(command, args) {
+      if (command === "ps") return psText;
+      if (command === "lsof" && args.includes("-iTCP")) return lsofText;
+      if (command === "lsof" && args.includes("-p")) return cwdByPid.get(args[args.indexOf("-p") + 1]) || "";
+      return "";
+    },
+    readFileSync() {
+      return JSON.stringify({ pid: 26622, host: "127.0.0.1", port: 54498, protocol: "jsonl-tcp" });
+    },
+  });
+
+  assert.equal(result.productionServerCount, 1);
+  assert.equal(result.staleHotfixServerCount, 1);
+  assert.equal(result.browserSelfCheckProcessCount, 1);
+  assert.equal(result.codexAppServerCount, 1);
+  assert.equal(result.activeAppServerMuxCount, 1);
+  assert.equal(result.activeCodexAppServerCount, 1);
+  assert.equal(result.staleAppServerMuxCount, 0);
+  assert.equal(result.staleCodexAppServerCount, 0);
+  assert.deepEqual(result.activeMuxEndpoint, {
+    pid: 26622,
+    host: "127.0.0.1",
+    port: 54498,
+    protocol: "jsonl-tcp",
+  });
+  assert.ok(result.codexOwnedCpuPercent > 80);
+  assert.ok(result.codexOwnedRssMb > 7000);
+  assert.ok(result.groups.some((group) => group.kind === "spotlight"));
+  assert.doesNotMatch(JSON.stringify(result), /private\/key|Authorization|Bearer/i);
+});
+
+test("runtime process pressure command redaction is bounded", () => {
+  assert.equal(
+    service.redactCommand("node script.js --key-file /Users/me/access_key Authorization: Bearer abc123 access_key=secret"),
+    "node script.js --key-file <redacted> Authorization: Bearer <redacted> access_key=<redacted>",
+  );
+});

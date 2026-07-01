@@ -18,6 +18,9 @@ const {
   runtimeCheckFromClientEventSummary,
   summarizeClientEventLog,
 } = require("../services/runtime/client-event-stall-self-check-service");
+const {
+  collectRuntimeProcessPressure,
+} = require("../services/runtime/runtime-process-pressure-service");
 
 const DEFAULT_SERVER = "http://127.0.0.1:8787";
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000;
@@ -263,6 +266,7 @@ async function runOnce(options = {}, deps = {}) {
       scheduler: "runtime-job-scheduler-service",
     },
     runtimeJobs: jobPlan.jobs,
+    processPressure: collectRuntimeProcessPressure({ topLimit: 12 }, deps),
     checks,
   };
   event.issueCount = checks.reduce((total, check) => total + check.issueCount, 0);
@@ -315,5 +319,6 @@ module.exports = {
   runLoop,
   runOnce,
   summarizeCheck,
+  collectRuntimeProcessPressure,
   usage,
 };

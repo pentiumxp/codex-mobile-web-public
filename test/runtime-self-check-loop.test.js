@@ -8,6 +8,32 @@ const { test } = require("node:test");
 
 const runtimeLoop = require("../scripts/codex-mobile-runtime-self-check-loop");
 
+function fakeProcessPressureDeps() {
+  const psText = [
+    "33840 1 xuxin 1.5 204800 00:10:00 Ss /runtime/node server.js",
+    "26623 26622 xuxin 2.5 409600 00:10:00 S /Users/xuxin/.local/bin/codex app-server --analytics-default-enabled",
+  ].join("\n");
+  const lsofText = [
+    "COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME",
+    "node    33840 xuxin  20u  IPv4 0x1      0t0  TCP 127.0.0.1:8787 (LISTEN)",
+  ].join("\n");
+  return {
+    execFileSync(command, args) {
+      if (command === "ps") return psText;
+      if (command === "lsof" && args.includes("-iTCP")) return lsofText;
+      if (command === "lsof" && args.includes("-p")) {
+        const pid = args[args.indexOf("-p") + 1];
+        if (pid === "33840") return "p33840\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n";
+        if (pid === "26623") return "p26623\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n";
+      }
+      return "";
+    },
+    readFileSync() {
+      return JSON.stringify({ pid: 26622, host: "127.0.0.1", port: 54498, protocol: "jsonl-tcp" });
+    },
+  };
+}
+
 test("runtime self-check loop parses one-shot and periodic options", () => {
   const once = runtimeLoop.parseArgs(["--server", "http://127.0.0.1:8790", "--thread-id", "t1", "--skip-browser"]);
   assert.equal(once.server, "http://127.0.0.1:8790");
@@ -127,6 +153,7 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
     output,
     gateMode: "deploy",
   }, {
+    ...fakeProcessPressureDeps(),
     execFile(_node, args, _options, callback) {
       const script = String(args[0] || "");
       const isBrowser = script.includes("browser-runtime");
@@ -166,6 +193,8 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
   assert.match(line, /"browserMode":"full"/);
   assert.match(line, /"scheduler":"runtime-job-scheduler-service"/);
   assert.match(line, /"runtimeJobs":/);
+  assert.match(line, /"processPressure":/);
+  assert.match(line, /"productionServerCount":1/);
   assert.match(line, /"name":"browser-runtime","enabled":true/);
   assert.match(line, /"gate":/);
   assert.match(line, /"deployPass":true/);
