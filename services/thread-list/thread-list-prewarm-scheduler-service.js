@@ -1,33 +1,14 @@
 "use strict";
 
 const {
-  normalizeRuntimeJobDeclaration,
+  runtimeJobDeclaration,
+  runtimeJobPolicy,
 } = require("../runtime/runtime-job-scheduler-service");
 
-const THREAD_LIST_FALLBACK_PREWARM_JOB = normalizeRuntimeJobDeclaration("thread-list-fallback-prewarm", {
-  timeoutMs: 30000,
-  maxConcurrency: 1,
-  cpuBudgetClass: "medium",
-  realBrowserAllowed: false,
-  userRequestPreemptible: true,
-  periodicAllowed: false,
-  periodicDefaultEnabled: false,
-  deployDefaultEnabled: false,
-});
+const THREAD_LIST_FALLBACK_PREWARM_JOB = runtimeJobDeclaration("thread-list-fallback-prewarm");
 
 function threadListFallbackPrewarmJobPolicy() {
-  return {
-    name: THREAD_LIST_FALLBACK_PREWARM_JOB.name,
-    periodicAllowed: THREAD_LIST_FALLBACK_PREWARM_JOB.periodicAllowed,
-    maxConcurrency: THREAD_LIST_FALLBACK_PREWARM_JOB.maxConcurrency,
-    timeoutMs: THREAD_LIST_FALLBACK_PREWARM_JOB.timeoutMs,
-    timeBudgetMs: THREAD_LIST_FALLBACK_PREWARM_JOB.timeBudgetMs,
-    cpuBudgetClass: THREAD_LIST_FALLBACK_PREWARM_JOB.cpuBudgetClass,
-    realBrowserAllowed: THREAD_LIST_FALLBACK_PREWARM_JOB.realBrowserAllowed,
-    usesBrowser: THREAD_LIST_FALLBACK_PREWARM_JOB.usesBrowser,
-    userRequestPreemptible: THREAD_LIST_FALLBACK_PREWARM_JOB.userRequestPreemptible,
-    preemptibleByForeground: THREAD_LIST_FALLBACK_PREWARM_JOB.preemptibleByForeground,
-  };
+  return Object.assign({ name: THREAD_LIST_FALLBACK_PREWARM_JOB.name }, runtimeJobPolicy(THREAD_LIST_FALLBACK_PREWARM_JOB));
 }
 
 function withThreadListFallbackPrewarmJobPolicy(value = {}) {

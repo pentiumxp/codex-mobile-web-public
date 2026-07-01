@@ -3345,8 +3345,10 @@ kept the first stability boundary too close to the script/adapter layer.
 
 Scope:
 
-- `services/runtime/runtime-job-scheduler-service.js` owns the job declarations
-  for `api-thread`, `browser-runtime`, and `client-events`.
+- `services/runtime/runtime-job-scheduler-service.js` owns the unified job
+  registry for self-check jobs (`api-thread`, `browser-runtime`,
+  `client-events`) and prewarm jobs (`thread-list-fallback-prewarm`,
+  `thread-detail-active-window-prewarm`).
 - Each plan entry declares periodic allowance, max concurrency, time budget,
   CPU budget class, real-browser allowance, and user-request preemption,
   while preserving legacy aliases such as `timeoutMs`, `usesBrowser`, and
@@ -3408,8 +3410,9 @@ behavior.
 
 Scope:
 
-- `services/thread-list/thread-list-prewarm-scheduler-service.js` owns the
-  budget declaration for the `thread-list-fallback-prewarm` job.
+- `services/thread-list/thread-list-prewarm-scheduler-service.js` exposes the
+  runtime-registry budget declaration for the `thread-list-fallback-prewarm`
+  job.
 - Public prewarm status and schedule results expose the same scheduler fields
   used by runtime self-checks: periodic allowance, max concurrency, time
   budget, CPU budget class, real-browser allowance, and user-request
@@ -3437,7 +3440,7 @@ partial-seed semantics, active-overlay proof gates, app-server
 Scope:
 
 - `services/thread-detail/thread-detail-active-window-prewarm-scheduler-service.js`
-  owns the budget declaration for the
+  exposes the runtime-registry budget declaration for the
   `thread-detail-active-window-prewarm` job.
 - Active-window `prewarmNow`, `schedule`, and `status` outputs expose the same
   scheduler fields used by runtime self-checks and thread-list prewarm:

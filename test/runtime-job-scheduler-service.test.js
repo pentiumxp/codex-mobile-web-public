@@ -9,11 +9,13 @@ const adapter = require("../adapters/runtime-job-scheduler-service");
 test("runtime job scheduler adapter remains a compatibility wrapper", () => {
   assert.equal(adapter.resolveRuntimeSelfCheckPlan, service.resolveRuntimeSelfCheckPlan);
   assert.equal(adapter.RUNTIME_SELF_CHECK_JOBS, service.RUNTIME_SELF_CHECK_JOBS);
+  assert.equal(adapter.RUNTIME_PREWARM_JOBS, service.RUNTIME_PREWARM_JOBS);
+  assert.equal(adapter.RUNTIME_JOB_REGISTRY, service.RUNTIME_JOB_REGISTRY);
 });
 
-test("runtime self-check jobs declare production scheduling budgets", () => {
-  for (const name of service.JOB_ORDER) {
-    const job = service.RUNTIME_SELF_CHECK_JOBS[name];
+test("runtime job registry declares production scheduling budgets", () => {
+  for (const name of service.RUNTIME_JOB_ORDER) {
+    const job = service.runtimeJobDeclaration(name);
     assert.equal(job.name, name);
     assert.equal(typeof job.periodicAllowed, "boolean");
     assert.equal(typeof job.maxConcurrency, "number");
@@ -27,6 +29,24 @@ test("runtime self-check jobs declare production scheduling budgets", () => {
     assert.equal(job.usesBrowser, job.realBrowserAllowed);
     assert.equal(typeof job.userRequestPreemptible, "boolean");
     assert.equal(job.preemptibleByForeground, job.userRequestPreemptible);
+  }
+});
+
+test("runtime job registry owns prewarm declarations", () => {
+  assert.deepEqual(service.PREWARM_JOB_ORDER, [
+    "thread-list-fallback-prewarm",
+    "thread-detail-active-window-prewarm",
+  ]);
+  for (const name of service.PREWARM_JOB_ORDER) {
+    const job = service.RUNTIME_PREWARM_JOBS[name];
+    assert.equal(job, service.RUNTIME_JOB_REGISTRY[name]);
+    assert.equal(job, service.runtimeJobDeclaration(name));
+    assert.equal(job.periodicAllowed, false);
+    assert.equal(job.deployDefaultEnabled, false);
+    assert.equal(job.realBrowserAllowed, false);
+    assert.equal(job.userRequestPreemptible, true);
+    assert.equal(job.timeoutMs, 30000);
+    assert.equal(job.cpuBudgetClass, "medium");
   }
 });
 

@@ -70,6 +70,41 @@ const RUNTIME_SELF_CHECK_JOBS = Object.freeze({
 
 const JOB_ORDER = Object.freeze(["api-thread", "browser-runtime", "client-events"]);
 
+const RUNTIME_PREWARM_JOBS = Object.freeze({
+  "thread-list-fallback-prewarm": normalizeRuntimeJobDeclaration("thread-list-fallback-prewarm", {
+    timeoutMs: 30000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "medium",
+    realBrowserAllowed: false,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+  "thread-detail-active-window-prewarm": normalizeRuntimeJobDeclaration("thread-detail-active-window-prewarm", {
+    timeoutMs: 30000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "medium",
+    realBrowserAllowed: false,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+});
+
+const PREWARM_JOB_ORDER = Object.freeze([
+  "thread-list-fallback-prewarm",
+  "thread-detail-active-window-prewarm",
+]);
+
+const RUNTIME_JOB_REGISTRY = Object.freeze({
+  ...RUNTIME_SELF_CHECK_JOBS,
+  ...RUNTIME_PREWARM_JOBS,
+});
+
+const RUNTIME_JOB_ORDER = Object.freeze([...JOB_ORDER, ...PREWARM_JOB_ORDER]);
+
 function normalizeBrowserMode(value, fallback = "") {
   const text = String(value || "").trim().toLowerCase();
   if (BROWSER_MODES.has(text)) return text;
@@ -101,6 +136,14 @@ function runtimeJobPlanFields(spec) {
     preemptibleByForeground: spec.preemptibleByForeground,
     periodicAllowed: spec.periodicAllowed,
   };
+}
+
+function runtimeJobPolicy(spec) {
+  return runtimeJobPlanFields(spec || {});
+}
+
+function runtimeJobDeclaration(name = "") {
+  return RUNTIME_JOB_REGISTRY[String(name || "")] || null;
 }
 
 function disabledJob(spec, reason) {
@@ -173,6 +216,10 @@ function runtimeSelfCheckJob(plan = {}, name = "") {
 module.exports = {
   DEFAULT_JOB_TIMEOUT_MS,
   JOB_ORDER,
+  PREWARM_JOB_ORDER,
+  RUNTIME_JOB_ORDER,
+  RUNTIME_JOB_REGISTRY,
+  RUNTIME_PREWARM_JOBS,
   RUNTIME_SELF_CHECK_JOBS,
   defaultBrowserModeForGate,
   normalizeBrowserMode,
@@ -180,5 +227,7 @@ module.exports = {
   normalizeRuntimeJobDeclaration,
   planRuntimeSelfCheckJob,
   resolveRuntimeSelfCheckPlan,
+  runtimeJobDeclaration,
+  runtimeJobPolicy,
   runtimeSelfCheckJob,
 };
