@@ -1,8 +1,8 @@
 var shell_asset_manifest_default = {
-	schemaVersion: 3,
+	schemaVersion: 4,
 	generatedBy: "generate-frontend-shell-manifest",
-	shellCacheName: "codex-mobile-shell-v624",
-	clientBuildId: "0.1.11|codex-mobile-shell-v624",
+	shellCacheName: "codex-mobile-shell-v625",
+	clientBuildId: "0.1.11|codex-mobile-shell-v625",
 	scriptAssets: [
 		"/shell-asset-manifest.js",
 		"/api-client.js",
@@ -227,6 +227,10 @@ var shell_asset_manifest_default = {
 			"globals": ["CodexThreadListRuntime"]
 		},
 		{
+			"asset": "/client-render-stability-guard.js",
+			"globals": ["CodexClientRenderStabilityGuard"]
+		},
+		{
 			"asset": "/live-operation-dock-state.js",
 			"globals": ["CodexLiveOperationDockState"]
 		},
@@ -341,6 +345,248 @@ var shell_asset_manifest_default = {
 		{
 			"asset": "/app-shell-runtime.js",
 			"globals": ["CodexAppShellRuntime"]
+		}
+	],
+	startupGlobalContracts: [
+		{
+			"name": "CodexApiClient",
+			"asset": "/api-client.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexAppShellRuntime",
+			"asset": "/app-shell-runtime.js",
+			"groupId": "app-entry",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexAppUpdateRuntime",
+			"asset": "/app-update-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexClientRenderStabilityGuard",
+			"asset": "/client-render-stability-guard.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexComposerRuntime",
+			"asset": "/composer-runtime.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexDraftStore",
+			"asset": "/draft-store.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexFrontendRuntimeHealth",
+			"asset": "/frontend-runtime-health.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexHomeAiDiagnosticReporting",
+			"asset": "/home-ai-diagnostic-reporting.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexLiveOperationDockState",
+			"asset": "/live-operation-dock-state.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexMediaPreviewRuntime",
+			"asset": "/media-preview-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexRuntimeWiringRuntime",
+			"asset": "/runtime-wiring-runtime.js",
+			"groupId": "app-entry",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexSideChatRuntime",
+			"asset": "/side-chat-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailActions",
+			"asset": "/thread-detail-actions.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailDomPatch",
+			"asset": "/thread-detail-dom-patch.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailMergeState",
+			"asset": "/thread-detail-merge-state.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailPatchPlan",
+			"asset": "/thread-detail-patch-plan.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailRenderPlan",
+			"asset": "/thread-detail-render-plan.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailRuntime",
+			"asset": "/thread-detail-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailState",
+			"asset": "/thread-detail-state.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailV4MergeState",
+			"asset": "/thread-detail-v4-merge-state.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDiagnosticEvents",
+			"asset": "/thread-diagnostic-events.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadListLoadPolicy",
+			"asset": "/thread-list-load-policy.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadListRuntime",
+			"asset": "/thread-list-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadListStableOrder",
+			"asset": "/thread-list-stable-order.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadPerformanceMetrics",
+			"asset": "/thread-performance-metrics.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadStatusHints",
+			"asset": "/thread-status-hints.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadTileActions",
+			"asset": "/thread-tile-actions.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadTileLayout",
+			"asset": "/thread-tile-layout.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadTileRuntime",
+			"asset": "/thread-tile-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadTileState",
+			"asset": "/thread-tile-state.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
 		}
 	],
 	linkAssets: [
@@ -545,8 +791,9 @@ var shell_asset_manifest_default = {
 	counts: {
 		"scriptAssets": 51,
 		"entryGroups": 6,
-		"classicGlobalExportAssets": 47,
-		"classicGlobalExports": 47,
+		"classicGlobalExportAssets": 48,
+		"classicGlobalExports": 48,
+		"startupGlobalContracts": 30,
 		"linkAssets": 4,
 		"iconAssets": 4,
 		"precacheAssets": 60,
@@ -628,12 +875,12 @@ var codexMobileViteEntryGroupIds = [
 	"app-entry"
 ];
 var codexMobileViteEntryGroupLoaders = {
-	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-BDgWRIlp.js"), []),
-	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-abU4fLQj.js"), []),
-	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-6aN0dMRo.js"), []),
-	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-CbRnJklH.js"), []),
-	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-C3DOjiYF.js"), []),
-	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-BB5Qmh2f.js"), [])
+	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-CIB80LK9.js"), []),
+	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-0EpjufkP.js"), []),
+	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-CetEkez8.js"), []),
+	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-DieReWP_.js"), []),
+	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-Lmxh1jY7.js"), []),
+	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-BoKkKh0s.js"), [])
 };
 function loadCodexMobileViteEntryGroups() {
 	const status = {
@@ -683,6 +930,13 @@ var classicGlobalExports = Array.isArray(shell_asset_manifest_default.classicGlo
 	asset: entry.asset,
 	globals: Array.isArray(entry.globals) ? entry.globals.slice() : []
 })) : [];
+var startupGlobalContracts = Array.isArray(shell_asset_manifest_default.startupGlobalContracts) ? shell_asset_manifest_default.startupGlobalContracts.map((entry) => ({
+	name: entry.name,
+	asset: entry.asset,
+	groupId: entry.groupId,
+	startupCritical: Boolean(entry.startupCritical),
+	source: entry.source
+})) : [];
 var classicGlobalNames = [...new Set(classicGlobalExports.flatMap((entry) => entry.globals))].sort();
 var classicCompatibility = {
 	schemaVersion: shell_asset_manifest_default.schemaVersion,
@@ -690,10 +944,11 @@ var classicCompatibility = {
 	clientBuildId: shell_asset_manifest_default.clientBuildId,
 	assetCount: classicGlobalExports.length,
 	globalCount: classicGlobalNames.length,
-	requiredStartupGlobals: ["CodexRuntimeWiringRuntime", "CodexAppShellRuntime"],
+	requiredStartupGlobals: startupGlobalContracts.map((entry) => entry.name),
+	startupGlobalContracts,
 	classicGlobalExports
 };
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-8QvG-TXi.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-B3vtybp5.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

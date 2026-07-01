@@ -120,10 +120,10 @@ function createRuntimeFixture(overrides = {}) {
 test("media preview runtime is wired into the static shell", () => {
   assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>[\s\S]*<script src="\/media-preview-runtime\.js"><\/script>[\s\S]*<script src="\/app\.js"><\/script>/);
   assert.ok(shellManifest.precacheAssets.includes("/media-preview-runtime.js"));
-  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v624");
+  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v625");
   assert.match(swJs, /shell-asset-manifest\.js/);
   assert.match(appJs, /"\/media-preview-runtime\.js"/);
-  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v624");
+  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v625");
   assert.ok(shellManifest.hashAssets.includes("/media-preview-runtime.js"));
   assert.match(serverRuntimeUtilsJs, /shell-asset-manifest\.json/);
   assert.match(appJs, /(?:const|var) mediaPreviewRuntimeApi = window\.CodexMediaPreviewRuntime/);

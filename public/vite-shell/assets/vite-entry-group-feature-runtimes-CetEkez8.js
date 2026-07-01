@@ -150,6 +150,10 @@ var codexMobileViteEntryGroup = {
 			"globals": ["CodexThreadListRuntime"]
 		},
 		{
+			"asset": "/client-render-stability-guard.js",
+			"globals": ["CodexClientRenderStabilityGuard"]
+		},
+		{
 			"asset": "/live-operation-dock-state.js",
 			"globals": ["CodexLiveOperationDockState"]
 		},
@@ -218,10 +222,156 @@ var codexMobileViteEntryGroup = {
 			"globals": ["CodexMediaPreviewRuntime"]
 		}
 	],
-	"classicGlobalExportAssetCount": 18,
-	"classicGlobalExportCount": 18,
-	"shellCacheName": "codex-mobile-shell-v624",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v624"
+	"classicGlobalExportAssetCount": 19,
+	"classicGlobalExportCount": 19,
+	"startupGlobalContracts": [
+		{
+			"name": "CodexAppUpdateRuntime",
+			"asset": "/app-update-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexClientRenderStabilityGuard",
+			"asset": "/client-render-stability-guard.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexLiveOperationDockState",
+			"asset": "/live-operation-dock-state.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexMediaPreviewRuntime",
+			"asset": "/media-preview-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexSideChatRuntime",
+			"asset": "/side-chat-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailActions",
+			"asset": "/thread-detail-actions.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailDomPatch",
+			"asset": "/thread-detail-dom-patch.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailMergeState",
+			"asset": "/thread-detail-merge-state.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailPatchPlan",
+			"asset": "/thread-detail-patch-plan.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailRenderPlan",
+			"asset": "/thread-detail-render-plan.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailRuntime",
+			"asset": "/thread-detail-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailState",
+			"asset": "/thread-detail-state.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDetailV4MergeState",
+			"asset": "/thread-detail-v4-merge-state.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadListRuntime",
+			"asset": "/thread-list-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadTileActions",
+			"asset": "/thread-tile-actions.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadTileLayout",
+			"asset": "/thread-tile-layout.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadTileRuntime",
+			"asset": "/thread-tile-runtime.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadTileState",
+			"asset": "/thread-tile-state.js",
+			"groupId": "feature-runtimes",
+			"startupCritical": false,
+			"source": "startup-window-guard",
+			"present": true
+		}
+	],
+	"shellCacheName": "codex-mobile-shell-v625",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

@@ -97,6 +97,22 @@ function startupCriticalAssets(manifest) {
   return [...new Set(assets)];
 }
 
+function startupGlobalContracts(viteBuild) {
+  const compatibility = viteBuild && viteBuild.startupCompatibility || {};
+  return (Array.isArray(compatibility.requiredGlobals) ? compatibility.requiredGlobals : [])
+    .map((entry) => ({
+      name: String(entry && entry.name || ""),
+      asset: String(entry && entry.asset || ""),
+      groupId: String(entry && entry.groupId || ""),
+      startupCritical: Boolean(entry && entry.startupCritical),
+      source: String(entry && entry.source || "startup-window-guard"),
+      exportedAsset: String(entry && entry.exportedAsset || ""),
+      bytes: Number.isFinite(Number(entry && entry.bytes)) ? Number(entry.bytes) : 0,
+      sha256: String(entry && entry.sha256 || ""),
+    }))
+    .filter((entry) => entry.name);
+}
+
 function scriptAssetsFromManifest(manifest) {
   if (Array.isArray(manifest && manifest.indexScriptAssets)) return manifest.indexScriptAssets.slice();
   if (Array.isArray(manifest && manifest.scriptAssets)) return manifest.scriptAssets.slice();
@@ -168,6 +184,10 @@ export function buildViteShellPublicReadback(options = {}) {
   if (!(viteBuild.viteDeferredChunks || []).some((chunk) => chunk && chunk.source === "frontend/vite-deferred-entry-topology.mjs")) {
     issues.push({ code: "vite_deferred_entry_topology_missing" });
   }
+  const startupContracts = startupGlobalContracts(viteBuild);
+  if (!startupContracts.length) {
+    issues.push({ code: "vite_startup_global_contract_missing" });
+  }
 
   const files = requiredArtifactFiles(manifest);
   const publishedFiles = [];
@@ -215,6 +235,8 @@ export function buildViteShellPublicReadback(options = {}) {
   })).filter((chunk) => chunk.fileName);
   const startupAssets = startupCriticalAssets(manifest);
   const classicShellScriptBlock = classicShellScriptBlockContract(manifest, viteBuild);
+  const startupGlobalNames = startupContracts.map((entry) => entry.name);
+  const startupGlobalAssets = [...new Set(startupContracts.map((entry) => entry.asset).filter(Boolean))];
   const readbackForPreview = {
     stage: VITE_SHELL_PUBLIC_ARTIFACT_STAGE,
     sourceBuildStage: viteBuild.stage || "",
@@ -230,6 +252,7 @@ export function buildViteShellPublicReadback(options = {}) {
     entryGroupChunks,
     preview,
     startupCriticalAssets: startupAssets,
+    startupGlobalContracts: startupContracts,
     classicShellScriptBlock,
   };
   const previewHtml = renderViteShellPreviewHtml(readbackForPreview);
@@ -257,15 +280,21 @@ export function buildViteShellPublicReadback(options = {}) {
     entryGroupChunks,
     preview,
     startupCriticalAssets: startupAssets,
+    startupGlobalContracts: startupContracts,
     classicShellScriptBlock,
     counts: {
       entryGroups: Array.isArray(manifest.entryGroups) ? manifest.entryGroups.length : 0,
       entryGroupChunks: entryGroupChunks.length,
       startupCriticalAssets: startupAssets.length,
       classicShellScriptBlockScripts: classicShellScriptBlock.scriptCount,
+      startupGlobalContracts: startupContracts.length,
+      startupGlobalContractAssets: startupGlobalAssets.length,
+      startupGlobalContractHashes: startupContracts.filter((entry) => entry.sha256).length,
+      startupGlobalContractBytes: startupContracts.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
       classicAssetHashes: entryGroupChunks.reduce((total, chunk) => (
         total + (Number(chunk && chunk.classicAssetHashCount) || 0)
       ), 0),
+      startupGlobalNames: startupGlobalNames.length,
       classicGlobalExportAssets: Array.isArray(manifest.classicGlobalExports) ? manifest.classicGlobalExports.length : 0,
       classicGlobalExports: Array.isArray(manifest.classicGlobalExports)
         ? manifest.classicGlobalExports.reduce((total, entry) => (
@@ -316,6 +345,7 @@ export function renderViteShellPreviewHtml(readback = {}) {
     `    data-entry-group-import-owner=\"${escapeHtml(readback.entryGroupImportOwner)}\"`,
     `    data-startup-critical-asset-count=\"${escapeHtml((readback.startupCriticalAssets || []).length)}\"`,
     `    data-entry-group-chunk-count=\"${escapeHtml((readback.entryGroupChunks || []).length)}\"`,
+    `    data-startup-global-contract-count=\"${escapeHtml((readback.startupGlobalContracts || []).length)}\"`,
     `    data-classic-shell-script-count=\"${escapeHtml(readback.classicShellScriptBlock && readback.classicShellScriptBlock.scriptCount)}\"`,
     `    data-classic-shell-script-block-sha256=\"${escapeHtml(readback.classicShellScriptBlock && readback.classicShellScriptBlock.sha256)}\"`,
     "  >",

@@ -202,8 +202,90 @@ var codexMobileViteEntryGroup = {
 	],
 	"classicGlobalExportAssetCount": 17,
 	"classicGlobalExportCount": 17,
-	"shellCacheName": "codex-mobile-shell-v624",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v624"
+	"startupGlobalContracts": [
+		{
+			"name": "CodexApiClient",
+			"asset": "/api-client.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexComposerRuntime",
+			"asset": "/composer-runtime.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexDraftStore",
+			"asset": "/draft-store.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexFrontendRuntimeHealth",
+			"asset": "/frontend-runtime-health.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexHomeAiDiagnosticReporting",
+			"asset": "/home-ai-diagnostic-reporting.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadDiagnosticEvents",
+			"asset": "/thread-diagnostic-events.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadListLoadPolicy",
+			"asset": "/thread-list-load-policy.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadListStableOrder",
+			"asset": "/thread-list-stable-order.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadPerformanceMetrics",
+			"asset": "/thread-performance-metrics.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		},
+		{
+			"name": "CodexThreadStatusHints",
+			"asset": "/thread-status-hints.js",
+			"groupId": "foundation",
+			"startupCritical": true,
+			"source": "startup-window-guard",
+			"present": true
+		}
+	],
+	"shellCacheName": "codex-mobile-shell-v625",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

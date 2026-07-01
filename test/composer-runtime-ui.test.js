@@ -85,6 +85,6 @@ test("composer runtime is part of the current static shell", () => {
   assert.ok(shellManifest.hashAssets.includes("/composer-runtime.js"));
   assert.match(swJs, /shell-asset-manifest\.js/);
   assert.match(serverRuntimeUtilsJs, /shell-asset-manifest\.json/);
-  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v624");
-  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v624");
+  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v625");
+  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v625");
 });

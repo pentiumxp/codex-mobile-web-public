@@ -36,6 +36,15 @@ const classicGlobalExports = Array.isArray(shellManifest.classicGlobalExports)
     globals: Array.isArray(entry.globals) ? entry.globals.slice() : [],
   }))
   : [];
+const startupGlobalContracts = Array.isArray(shellManifest.startupGlobalContracts)
+  ? shellManifest.startupGlobalContracts.map((entry) => ({
+    name: entry.name,
+    asset: entry.asset,
+    groupId: entry.groupId,
+    startupCritical: Boolean(entry.startupCritical),
+    source: entry.source,
+  }))
+  : [];
 const classicGlobalNames = [...new Set(classicGlobalExports.flatMap((entry) => entry.globals))].sort();
 const classicCompatibility = {
   schemaVersion: shellManifest.schemaVersion,
@@ -43,10 +52,8 @@ const classicCompatibility = {
   clientBuildId: shellManifest.clientBuildId,
   assetCount: classicGlobalExports.length,
   globalCount: classicGlobalNames.length,
-  requiredStartupGlobals: [
-    "CodexRuntimeWiringRuntime",
-    "CodexAppShellRuntime",
-  ],
+  requiredStartupGlobals: startupGlobalContracts.map((entry) => entry.name),
+  startupGlobalContracts,
   classicGlobalExports,
 };
 const deferredEntryTopologyPromise = import("./vite-deferred-entry-topology.mjs");

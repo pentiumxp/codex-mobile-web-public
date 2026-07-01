@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const SHELL_MANIFEST_SCHEMA_VERSION = 3;
-export const SHELL_CACHE_NAME = "codex-mobile-shell-v624";
+export const SHELL_MANIFEST_SCHEMA_VERSION = 4;
+export const SHELL_CACHE_NAME = "codex-mobile-shell-v625";
 export const SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
 export const SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
 
@@ -189,10 +189,54 @@ function assertAssetsExist(root, assets) {
 
 function extractClassicGlobalExports(source) {
   const names = new Set();
-  const pattern = /(?:root|window|globalThis)\.(Codex[A-Za-z0-9_]+)\s*=/g;
+  const pattern = /(?:root|window|globalThis|globalScope)\.(Codex[A-Za-z0-9_]+)\s*=/g;
   let match;
   while ((match = pattern.exec(String(source || "")))) {
     names.add(match[1]);
+  }
+  return [...names].sort();
+}
+
+function extractStartupWindowGuardGlobals(source) {
+  const names = new Set();
+  const variableGuardPattern = /var\s+([A-Za-z0-9_]+)\s*=\s*window\.(Codex[A-Za-z0-9_]+)\s*;[\s\S]{0,320}?if\s*\(\s*!\s*\1\b/g;
+  let match;
+  while ((match = variableGuardPattern.exec(String(source || "")))) {
+    names.add(match[2]);
+  }
+  const directGuardPattern = /if\s*\(\s*!\s*window\.(Codex[A-Za-z0-9_]+)\b/g;
+  while ((match = directGuardPattern.exec(String(source || "")))) {
+    names.add(match[1]);
+  }
+  const directFactoryPattern = /window\.(Codex[A-Za-z0-9_]+)\.(?:create[A-Za-z0-9_]+)\s*\(/g;
+  while ((match = directFactoryPattern.exec(String(source || "")))) {
+    names.add(match[1]);
+  }
+  return [...names].sort();
+}
+
+function sourceExists(root, relativePath) {
+  try {
+    return fs.existsSync(path.join(root, relativePath));
+  } catch (_) {
+    return false;
+  }
+}
+
+function startupGlobalSourceFiles(root) {
+  return [
+    "public/app-bootstrap.js",
+    "public/runtime-wiring-runtime.js",
+    "public/app.js",
+  ].filter((relativePath) => sourceExists(root, relativePath));
+}
+
+function startupWindowGuardGlobals(root) {
+  const names = new Set();
+  for (const relativePath of startupGlobalSourceFiles(root)) {
+    for (const name of extractStartupWindowGuardGlobals(readText(root, relativePath))) {
+      names.add(name);
+    }
   }
   return [...names].sort();
 }
@@ -257,6 +301,39 @@ function buildEntryGroups(scriptAssets) {
   return groups;
 }
 
+function groupByAsset(entryGroups) {
+  const map = new Map();
+  for (const group of Array.isArray(entryGroups) ? entryGroups : []) {
+    for (const asset of Array.isArray(group && group.assets) ? group.assets : []) {
+      map.set(asset, group);
+    }
+  }
+  return map;
+}
+
+function buildStartupGlobalContracts(root, entryGroups, classicGlobalExports) {
+  const exportsByGlobal = new Map();
+  for (const entry of Array.isArray(classicGlobalExports) ? classicGlobalExports : []) {
+    for (const name of Array.isArray(entry && entry.globals) ? entry.globals : []) {
+      exportsByGlobal.set(name, entry);
+    }
+  }
+  const groupsByAsset = groupByAsset(entryGroups);
+  return startupWindowGuardGlobals(root).map((name) => {
+    const exportEntry = exportsByGlobal.get(name);
+    const asset = exportEntry ? String(exportEntry.asset || "") : "";
+    const group = groupsByAsset.get(asset) || {};
+    return {
+      name,
+      asset,
+      groupId: String(group.id || ""),
+      startupCritical: Boolean(group.startupCritical),
+      source: "startup-window-guard",
+      present: Boolean(exportEntry && asset),
+    };
+  });
+}
+
 export function canonicalShellScriptAssets() {
   return uniqueValues(SHELL_ENTRY_GROUP_DEFINITIONS.flatMap((definition) => definition.assets));
 }
@@ -298,6 +375,13 @@ export function buildPublicShellManifest(root = process.cwd()) {
   ]);
   assertAssetsExist(root, pageShellAssets);
   const classicGlobalExports = buildClassicGlobalExports(root, scriptAssets);
+  const startupGlobalContracts = buildStartupGlobalContracts(root, entryGroups, classicGlobalExports);
+  const missingStartupGlobals = startupGlobalContracts
+    .filter((entry) => !entry.present)
+    .map((entry) => entry.name);
+  if (missingStartupGlobals.length) {
+    throw new Error(`shell_startup_globals_missing:${missingStartupGlobals.join(",")}`);
+  }
   return {
     schemaVersion: SHELL_MANIFEST_SCHEMA_VERSION,
     generatedBy: "generate-frontend-shell-manifest",
@@ -306,6 +390,7 @@ export function buildPublicShellManifest(root = process.cwd()) {
     scriptAssets,
     entryGroups,
     classicGlobalExports,
+    startupGlobalContracts,
     linkAssets,
     iconAssets,
     precacheAssets,
@@ -316,6 +401,7 @@ export function buildPublicShellManifest(root = process.cwd()) {
       entryGroups: entryGroups.length,
       classicGlobalExportAssets: classicGlobalExports.length,
       classicGlobalExports: classicGlobalExports.reduce((total, entry) => total + entry.globals.length, 0),
+      startupGlobalContracts: startupGlobalContracts.length,
       linkAssets: linkAssets.length,
       iconAssets: iconAssets.length,
       precacheAssets: precacheAssets.length,

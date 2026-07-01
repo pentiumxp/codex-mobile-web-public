@@ -41,8 +41,23 @@ var codexMobileViteEntryGroup = {
 	}],
 	"classicGlobalExportAssetCount": 2,
 	"classicGlobalExportCount": 2,
-	"shellCacheName": "codex-mobile-shell-v624",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v624"
+	"startupGlobalContracts": [{
+		"name": "CodexAppShellRuntime",
+		"asset": "/app-shell-runtime.js",
+		"groupId": "app-entry",
+		"startupCritical": true,
+		"source": "startup-window-guard",
+		"present": true
+	}, {
+		"name": "CodexRuntimeWiringRuntime",
+		"asset": "/runtime-wiring-runtime.js",
+		"groupId": "app-entry",
+		"startupCritical": true,
+		"source": "startup-window-guard",
+		"present": true
+	}],
+	"shellCacheName": "codex-mobile-shell-v625",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

@@ -41,6 +41,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     entryGroupImportOwnerOk: true,
     classicShellScriptBlockCount: 51,
     classicShellScriptBlockHashPresent: true,
+    startupGlobalContractMarkerCount: 8,
     entryDynamicImportOwnerOk: true,
     entryDynamicImportDeferredSourceCount: 1,
     entryDynamicImportEntryGroupCountMatches: true,
@@ -52,6 +53,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     entryGroupClassicCoverageOk: true,
     classicCompatibilityReady: true,
     classicCompatibilityStartupGlobalsReady: true,
+    classicCompatibilityStartupGlobalContractReady: true,
     deferredLoaded: true,
   }, { consoleEvents: [], exceptions: [] });
   assert.equal(passing.ok, true);
@@ -70,6 +72,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     entryGroupImportOwnerOk: false,
     classicShellScriptBlockCount: 0,
     classicShellScriptBlockHashPresent: false,
+    startupGlobalContractMarkerCount: 0,
     entryDynamicImportOwnerOk: false,
     entryDynamicImportDeferredSourceCount: 0,
     entryDynamicImportEntryGroupCountMatches: false,
@@ -81,6 +84,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     entryGroupClassicCoverageOk: false,
     classicCompatibilityReady: false,
     classicCompatibilityStartupGlobalsReady: false,
+    classicCompatibilityStartupGlobalContractReady: false,
     deferredLoaded: false,
   }, { consoleEvents: [{ type: "error" }], exceptions: [{ code: "runtime_exception" }] });
   assert.equal(failing.ok, false);
@@ -97,6 +101,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_entry_group_classic_coverage_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_compatibility_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_startup_globals_missing"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_startup_global_contract_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_browser_exception"));
 });
 
@@ -115,8 +120,10 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__"));
   assert.ok(scriptSource.includes("entryGroupImportOwnerOk"));
   assert.ok(scriptSource.includes("classicShellScriptBlockHashPresent"));
+  assert.ok(scriptSource.includes("startupGlobalContractMarkerCount"));
   assert.ok(scriptSource.includes("entryDynamicImportEntryGroupCountMatches"));
   assert.ok(scriptSource.includes("entryGroupClassicCoverageOk"));
+  assert.ok(scriptSource.includes("classicCompatibilityStartupGlobalContractReady"));
   assert.ok(scriptSource.includes("data-codex-vite-startup-asset"));
   assert.ok(scriptSource.includes("data-codex-vite-entry-group-chunk"));
 });

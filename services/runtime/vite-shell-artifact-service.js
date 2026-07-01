@@ -67,6 +67,7 @@ function canonicalShellTopology(manifest) {
     hashAssets: Array.isArray(source.serverHashAssets) ? source.serverHashAssets : source.hashAssets,
     entryGroups: source.entryGroups,
     classicGlobalExports: source.classicGlobalExports,
+    startupGlobalContracts: source.startupGlobalContracts,
   };
 }
 
@@ -79,7 +80,7 @@ function manifestTopologyMatches(left, right) {
   if (!left || !right) return false;
   const leftTopology = canonicalShellTopology(left);
   const rightTopology = canonicalShellTopology(right);
-  for (const key of ["indexScriptAssets", "swStaticAssets", "pageShellAssets", "hashAssets", "entryGroups", "classicGlobalExports"]) {
+  for (const key of ["indexScriptAssets", "swStaticAssets", "pageShellAssets", "hashAssets", "entryGroups", "classicGlobalExports", "startupGlobalContracts"]) {
     if (!arraysEqual(leftTopology[key], rightTopology[key])) return false;
   }
   return true;
@@ -125,6 +126,18 @@ function entryGroupCoverageById(manifest) {
     });
   }
   return coverage;
+}
+
+function startupGlobalContracts(manifest) {
+  return (Array.isArray(manifest && manifest.startupGlobalContracts) ? manifest.startupGlobalContracts : [])
+    .map((entry) => ({
+      name: String(entry && entry.name || ""),
+      asset: String(entry && entry.asset || ""),
+      groupId: String(entry && entry.groupId || ""),
+      startupCritical: Boolean(entry && entry.startupCritical),
+      source: String(entry && entry.source || "startup-window-guard"),
+    }))
+    .filter((entry) => entry.name);
 }
 
 function assetRecordsByPath(manifest) {
@@ -290,6 +303,10 @@ function createViteShellArtifactService(dependencies = {}) {
       issues.push({ code: "vite_shell_artifact_deferred_missing" });
     }
     const readbackEntryGroupChunks = Array.isArray(readback.entryGroupChunks) ? readback.entryGroupChunks : [];
+    const readbackStartupGlobalContracts = startupGlobalContracts(readback);
+    if (!readbackStartupGlobalContracts.length) {
+      issues.push({ code: "vite_shell_startup_global_contract_missing" });
+    }
     const readbackClassicScriptBlock = readback.classicShellScriptBlock
       && typeof readback.classicShellScriptBlock === "object"
       ? readback.classicShellScriptBlock
@@ -408,6 +425,44 @@ function createViteShellArtifactService(dependencies = {}) {
         .filter(Boolean);
       const expectedCoverage = entryGroupCoverageById(artifactManifest);
       const artifactAssetRecords = assetRecordsByPath(artifactManifest);
+      const expectedStartupGlobalContracts = startupGlobalContracts(artifactManifest);
+      if (JSON.stringify(readbackStartupGlobalContracts) !== JSON.stringify(expectedStartupGlobalContracts)) {
+        issues.push({ code: "vite_shell_startup_global_contract_mismatch" });
+      }
+      const artifactClassicGlobalExports = Array.isArray(canonicalShellTopology(artifactManifest).classicGlobalExports)
+        ? canonicalShellTopology(artifactManifest).classicGlobalExports
+        : [];
+      const artifactAssetByGlobal = new Map();
+      for (const entry of artifactClassicGlobalExports) {
+        for (const name of Array.isArray(entry && entry.globals) ? entry.globals : []) {
+          artifactAssetByGlobal.set(String(name || ""), String(entry && entry.asset || ""));
+        }
+      }
+      for (const entry of readbackStartupGlobalContracts) {
+        const expectedAsset = artifactAssetByGlobal.get(entry.name) || "";
+        if (!entry.asset || expectedAsset !== entry.asset) {
+          issues.push({ code: "vite_shell_startup_global_export_mismatch", global: entry.name });
+          break;
+        }
+        const artifactRecord = artifactAssetRecords.get(entry.asset);
+        if (!artifactRecord || !artifactRecord.sha256) {
+          issues.push({ code: "vite_shell_startup_global_asset_hash_missing", global: entry.name });
+          break;
+        }
+        const currentAsset = publicAssetStatus(appRoot, entry.asset);
+        if (!currentAsset.exists) {
+          issues.push({ code: currentAsset.code || "vite_shell_startup_global_asset_missing", global: entry.name });
+          break;
+        }
+        if (currentAsset.sha256 !== artifactRecord.sha256) {
+          issues.push({ code: "vite_shell_startup_global_asset_hash_mismatch", global: entry.name });
+          break;
+        }
+        if (Number(currentAsset.bytes) !== Number(artifactRecord.bytes)) {
+          issues.push({ code: "vite_shell_startup_global_asset_size_mismatch", global: entry.name });
+          break;
+        }
+      }
       for (const groupId of expectedGroupIds) {
         if (!chunkGroupIds.includes(groupId)) {
           issues.push({ code: "vite_shell_artifact_entry_group_chunk_missing", groupId });
@@ -482,6 +537,10 @@ function createViteShellArtifactService(dependencies = {}) {
         && !previewHtml.includes(`data-entry-group-import-owner="${EXPECTED_ENTRY_GROUP_IMPORT_OWNER}"`)) {
         issues.push({ code: "vite_shell_preview_entry_group_import_owner_missing" });
       }
+      if (readbackStartupGlobalContracts.length
+        && !previewHtml.includes(`data-startup-global-contract-count="${readbackStartupGlobalContracts.length}"`)) {
+        issues.push({ code: "vite_shell_preview_startup_global_contract_missing" });
+      }
     }
 
     return {
@@ -535,6 +594,14 @@ function createViteShellArtifactService(dependencies = {}) {
         && (!publicShellManifest.shellCacheName || artifactManifest.shellCacheName === publicShellManifest.shellCacheName)
         && (!publicShellManifest.clientBuildId || artifactManifest.clientBuildId === publicShellManifest.clientBuildId)),
       startupCriticalAssetCount: artifactManifest ? startupCriticalAssetCount(artifactManifest) : 0,
+      startupGlobalContract: {
+        match: Boolean(artifactManifest
+          && readbackStartupGlobalContracts.length > 0
+          && JSON.stringify(readbackStartupGlobalContracts) === JSON.stringify(startupGlobalContracts(artifactManifest))),
+        requiredGlobalCount: readbackStartupGlobalContracts.length,
+        assetCount: new Set(readbackStartupGlobalContracts.map((entry) => entry.asset).filter(Boolean)).size,
+        startupCriticalCount: readbackStartupGlobalContracts.filter((entry) => entry.startupCritical).length,
+      },
       entryGroupChunkCount: readbackEntryGroupChunks.length,
       artifactManifest: artifactManifest ? {
         shellCacheName: String(artifactManifest.shellCacheName || ""),
@@ -555,6 +622,7 @@ function createViteShellArtifactService(dependencies = {}) {
             total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
           ), 0)
           : 0,
+        startupGlobalContractCount: startupGlobalContracts(artifactManifest).length,
         pageShellAssetCount: Array.isArray(canonicalShellTopology(artifactManifest).pageShellAssets)
           ? canonicalShellTopology(artifactManifest).pageShellAssets.length
           : 0,

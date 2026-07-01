@@ -14,8 +14,8 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   const { buildShellAssetManifest } = await loadAssetGraphModule();
   const manifest = buildShellAssetManifest(path.resolve(__dirname, ".."));
   assert.equal(manifest.validation.ok, true);
-  assert.equal(manifest.shellCacheName, "codex-mobile-shell-v624");
-  assert.equal(manifest.clientBuildId, "0.1.11|codex-mobile-shell-v624");
+  assert.equal(manifest.shellCacheName, "codex-mobile-shell-v625");
+  assert.equal(manifest.clientBuildId, "0.1.11|codex-mobile-shell-v625");
   assert.equal(manifest.indexScriptAssets[0], "/shell-asset-manifest.js");
   assert.equal(manifest.indexScriptAssets.at(-1), "/app.js");
   assert.ok(manifest.indexScriptAssets.includes("/app-bootstrap.js"));
@@ -27,7 +27,7 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   assert.ok(manifest.serverHashAssets.includes("/app-shell-runtime.js"));
   assert.ok(manifest.serverHashAssets.includes("/shell-asset-manifest.json"));
   assert.equal(manifest.entryGroups.length, 6);
-  assert.equal(manifest.classicGlobalExports.length, 47);
+  assert.equal(manifest.classicGlobalExports.length, 48);
   assert.deepEqual(
     manifest.classicGlobalExports.find((entry) => entry.asset === "/runtime-wiring-runtime.js").globals,
     ["CodexRuntimeWiringRuntime"]
@@ -35,6 +35,29 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   assert.deepEqual(
     manifest.classicGlobalExports.find((entry) => entry.asset === "/app-shell-runtime.js").globals,
     ["CodexAppShellRuntime"]
+  );
+  assert.equal(manifest.startupGlobalContracts.length, 30);
+  assert.deepEqual(
+    manifest.startupGlobalContracts.find((entry) => entry.name === "CodexRuntimeWiringRuntime"),
+    {
+      name: "CodexRuntimeWiringRuntime",
+      asset: "/runtime-wiring-runtime.js",
+      groupId: "app-entry",
+      startupCritical: true,
+      source: "startup-window-guard",
+      present: true,
+    }
+  );
+  assert.deepEqual(
+    manifest.startupGlobalContracts.find((entry) => entry.name === "CodexThreadDetailRuntime"),
+    {
+      name: "CodexThreadDetailRuntime",
+      asset: "/thread-detail-runtime.js",
+      groupId: "feature-runtimes",
+      startupCritical: false,
+      source: "startup-window-guard",
+      present: true,
+    }
   );
   assert.deepEqual(
     manifest.entryGroups.flatMap((group) => group.assets),
@@ -112,6 +135,29 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.equal(contract.entryDynamicImportGraph.owner, "vite-shell-entry");
   assert.equal(contract.entryDynamicImportGraph.deferredFileCount, 1);
   assert.equal(contract.entryDynamicImportGraph.entryGroupFileCount, manifest.entryGroups.length);
+  assert.equal(contract.startupCompatibility.requiredGlobalCount, 30);
+  assert.equal(contract.startupCompatibility.hashCount, 30);
+  assert.equal(contract.startupCompatibility.assetCount, 30);
+  assert.ok(contract.startupCompatibility.byteCount > 0);
+  assert.deepEqual(
+    contract.startupCompatibility.requiredGlobals.find((entry) => entry.name === "CodexAppShellRuntime"),
+    {
+      name: "CodexAppShellRuntime",
+      asset: "/app-shell-runtime.js",
+      groupId: "app-entry",
+      startupCritical: true,
+      source: "startup-window-guard",
+      present: true,
+      exportedAsset: "/app-shell-runtime.js",
+      hashPresent: true,
+      bytes: contract.startupCompatibility.requiredGlobals.find((entry) => entry.name === "CodexAppShellRuntime").bytes,
+      sha256: contract.startupCompatibility.requiredGlobals.find((entry) => entry.name === "CodexAppShellRuntime").sha256,
+    }
+  );
+  assert.match(
+    contract.startupCompatibility.requiredGlobals.find((entry) => entry.name === "CodexAppShellRuntime").sha256,
+    /^[a-f0-9]{64}$/
+  );
   assert.deepEqual(contract.entryDynamicImportGraph.missingFiles, []);
   assert.deepEqual(contract.entryDynamicImportGraph.extraFiles, []);
   assert.deepEqual(
@@ -136,6 +182,10 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.ok(appEntryChunk.classicAssetRecords.every((entry) => /^[a-f0-9]{64}$/.test(entry.sha256)));
   assert.equal(appEntryChunk.classicGlobalExportAssetCount, 2);
   assert.equal(appEntryChunk.classicGlobalExportCount, 2);
+  assert.deepEqual(
+    appEntryChunk.startupGlobalContracts.map((entry) => entry.name).sort(),
+    ["CodexAppShellRuntime", "CodexRuntimeWiringRuntime"]
+  );
   assert.ok(contract.outputFiles.includes("assets/vite-shell-entry-example.js"));
   assert.ok(contract.outputFiles.includes("assets/vite-deferred-entry-topology-example.js"));
   assert.ok(contract.outputFiles.includes("assets/vite-entry-group-app-entry-example.js"));
@@ -148,6 +198,7 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.match(contract.classicFallback.scriptBlock.sha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(contract.classicFallback.entryGroups, manifest.entryGroups);
   assert.deepEqual(contract.classicFallback.classicGlobalExports, manifest.classicGlobalExports);
+  assert.deepEqual(contract.classicFallback.startupGlobalContracts, manifest.startupGlobalContracts);
 });
 
 test("Vite entry group virtual modules preserve bounded group payloads", async () => {
@@ -175,6 +226,8 @@ test("Vite entry group virtual modules preserve bounded group payloads", async (
   assert.match(source, /"classicGlobalExports"/);
   assert.match(source, /"classicAssetHashCount": 3/);
   assert.match(source, /"classicGlobalExportCount": 2/);
+  assert.match(source, /"startupGlobalContracts"/);
+  assert.match(source, /"CodexRuntimeWiringRuntime"/);
 });
 
 test("frontend shell generator owns the index classic script block", async () => {

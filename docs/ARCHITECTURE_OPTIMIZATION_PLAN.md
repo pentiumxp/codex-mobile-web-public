@@ -4711,6 +4711,43 @@ Production `/` remains classic-script fallback. This slice removes the last
 any later step promotes generated entry-group chunks toward real runtime
 ownership.
 
+The follow-up startup factory compatibility contract slice keeps production
+`/` on classic-script fallback while binding the Vite preview to the actual
+startup-time `window.Codex*` dependencies:
+
+- `scripts/generate-frontend-shell-manifest.mjs` advances the public shell to
+  `codex-mobile-shell-v625` and derives `startupGlobalContracts` from
+  `app-bootstrap.js`, `runtime-wiring-runtime.js`, and `app.js` startup guards
+  and factory calls. The generated contract currently records `30` required
+  startup globals and fails closed if any required global cannot be mapped back
+  to a classic exported asset and shell entry group.
+- Classic global export detection now recognizes `globalScope.Codex*` exports
+  as well as `root/window/globalThis`, so
+  `CodexClientRenderStabilityGuard` is part of the canonical compatibility
+  graph instead of being an untracked startup dependency.
+- `scripts/frontend-shell-asset-graph.mjs` carries the startup contract into the
+  Vite build manifest as `startupCompatibility`, including the owning asset,
+  group id, SHA-256 hash, and byte count for each startup global. The build
+  fails if the global-to-asset mapping, hash evidence, or count drifts.
+- `frontend/vite-shell-entry.mjs` exposes the generated startup-global contract
+  through `__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__`; it no longer has a
+  hand-written two-global startup list.
+- `scripts/publish-vite-shell-artifact.mjs` publishes startup-global contract
+  records and a preview marker count into `public/vite-shell/preview.html` and
+  `vite-shell-readback.json`.
+- `services/runtime/vite-shell-artifact-service.js` validates the readback
+  startup contract against the published artifact manifest and current
+  `public/` files, including classic export ownership, file hashes, and byte
+  sizes.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  now treats startup-global contract mismatch as an H2 preview failure. It
+  checks that preview runtime compatibility metadata, entry-group registry
+  payloads, and preview HTML marker counts agree.
+
+This still does not switch the app to Vite execution. It closes another
+cutover prerequisite: a Vite preview can no longer pass while missing a
+classic startup dependency that the current shell requires before first paint.
+
 ## Release Rule
 
 Follow the current release order:

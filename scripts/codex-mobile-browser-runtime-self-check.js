@@ -891,13 +891,19 @@ function vitePreviewProbeExpression(input = {}) {
       const requiredStartupGlobals = Array.isArray(compatibility.requiredStartupGlobals)
         ? compatibility.requiredStartupGlobals
         : [];
+      const requiredStartupContracts = Array.isArray(compatibility.startupGlobalContracts)
+        ? compatibility.startupGlobalContracts
+        : [];
       const classicGlobalExports = Array.isArray(compatibility.classicGlobalExports)
         ? compatibility.classicGlobalExports
         : [];
       const classicGlobalNames = new Set();
+      const classicAssetByGlobal = {};
       for (const entry of classicGlobalExports) {
         for (const name of Array.isArray(entry && entry.globals) ? entry.globals : []) {
-          classicGlobalNames.add(String(name || ""));
+          const globalName = String(name || "");
+          classicGlobalNames.add(globalName);
+          classicAssetByGlobal[globalName] = String(entry && entry.asset || "");
         }
       }
       let deferredLoaded = false;
@@ -964,6 +970,7 @@ function vitePreviewProbeExpression(input = {}) {
         };
       };
       const registryCoverage = [];
+      const startupGlobalContractCoverage = [];
       let entryGroupClassicCoverageOk = expectedEntryGroupIds.length > 0;
       for (const group of entryGroups) {
         const groupId = String(group && group.id || "");
@@ -989,6 +996,27 @@ function vitePreviewProbeExpression(input = {}) {
           expectedClassicGlobalExportCount: expectedCoverage.classicGlobalExportCount,
         });
       }
+      for (const contract of requiredStartupContracts) {
+        const name = String(contract && contract.name || "");
+        const asset = String(contract && contract.asset || "");
+        const groupId = String(contract && contract.groupId || "");
+        const registryContracts = Array.isArray(entryGroupRegistry[groupId] && entryGroupRegistry[groupId].startupGlobalContracts)
+          ? entryGroupRegistry[groupId].startupGlobalContracts
+          : [];
+        const registryMatch = registryContracts.some((entry) => (
+          String(entry && entry.name || "") === name
+            && String(entry && entry.asset || "") === asset
+            && String(entry && entry.groupId || "") === groupId
+        ));
+        startupGlobalContractCoverage.push({
+          name,
+          asset,
+          groupId,
+          ok: Boolean(name && asset && groupId && classicGlobalNames.has(name)
+            && classicAssetByGlobal[name] === asset
+            && registryMatch),
+        });
+      }
       return {
         label: "vite-preview",
         probeKind: "vite-preview",
@@ -1007,6 +1035,7 @@ function vitePreviewProbeExpression(input = {}) {
         entryGroupImportOwnerOk: entryGroupImportOwner === "vite-shell-entry",
         classicShellScriptBlockCount: marker ? Number(marker.dataset.classicShellScriptCount) || 0 : 0,
         classicShellScriptBlockHashPresent: marker ? Boolean(String(marker.dataset.classicShellScriptBlockSha256 || "")) : false,
+        startupGlobalContractMarkerCount: marker ? Number(marker.dataset.startupGlobalContractCount) || 0 : 0,
         entryDynamicImportOwner: String(entryDynamicImportGraph.owner || ""),
         entryDynamicImportOwnerOk: String(entryDynamicImportGraph.owner || "") === "vite-shell-entry",
         entryDynamicImportExpectedCount: Number(entryDynamicImportGraph.expectedImportCount) || 0,
@@ -1051,6 +1080,12 @@ function vitePreviewProbeExpression(input = {}) {
         classicCompatibilityAssetCount: classicGlobalExports.length,
         classicCompatibilityGlobalCount: classicGlobalNames.size,
         classicCompatibilityStartupGlobalsReady: requiredStartupGlobals.every((name) => classicGlobalNames.has(name)),
+        classicCompatibilityStartupGlobalContractCount: requiredStartupContracts.length,
+        classicCompatibilityStartupGlobalContractAssetCount: new Set(requiredStartupContracts.map((entry) => String(entry && entry.asset || "")).filter(Boolean)).size,
+        classicCompatibilityStartupGlobalContractReady: startupGlobalContractCoverage.length > 0
+          && startupGlobalContractCoverage.every((entry) => entry && entry.ok === true)
+          && (marker ? Number(marker.dataset.startupGlobalContractCount) === startupGlobalContractCoverage.length : false),
+        classicCompatibilityStartupGlobalContractMismatchCount: startupGlobalContractCoverage.filter((entry) => entry && entry.ok !== true).length,
         deferredGroupCount,
         deferredLoaded,
       };
@@ -1094,6 +1129,9 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   if (sample && sample.entryGroupClassicCoverageOk !== true) append("vite_preview_entry_group_classic_coverage_mismatch");
   if (sample && sample.classicCompatibilityReady !== true) append("vite_preview_classic_compatibility_missing");
   if (sample && sample.classicCompatibilityStartupGlobalsReady !== true) append("vite_preview_classic_startup_globals_missing");
+  if (sample && sample.classicCompatibilityStartupGlobalContractReady !== true) {
+    append("vite_preview_classic_startup_global_contract_mismatch");
+  }
   if (sample && sample.deferredLoaded !== true) append("vite_preview_deferred_not_loaded");
   if ((runtimeSignals.exceptions || []).length) append("vite_preview_browser_exception");
   if ((runtimeSignals.consoleEvents || []).some((entry) => entry && entry.type === "error")) {

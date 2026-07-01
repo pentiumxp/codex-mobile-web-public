@@ -48,6 +48,9 @@ if (!fs.existsSync(manifestPath)) {
   if (JSON.stringify(built.classicGlobalExports) !== JSON.stringify(current.classicGlobalExports)) {
     mismatch.push("classicGlobalExports");
   }
+  if (JSON.stringify(built.startupGlobalContracts) !== JSON.stringify(current.startupGlobalContracts)) {
+    mismatch.push("startupGlobalContracts");
+  }
   if (!built.validation || !built.validation.ok) {
     mismatch.push("builtValidation");
   }
@@ -81,6 +84,14 @@ if (!fs.existsSync(manifestPath)) {
     const entryGroupChunks = Array.isArray(viteBuild.viteEntryGroupChunks) ? viteBuild.viteEntryGroupChunks : [];
     if (entryGroupChunks.length !== (current.entryGroups || []).length) {
       mismatch.push("viteBuildEntryGroupChunks");
+    }
+    const startupCompatibility = viteBuild.startupCompatibility && typeof viteBuild.startupCompatibility === "object"
+      ? viteBuild.startupCompatibility
+      : null;
+    if (!startupCompatibility
+      || Number(startupCompatibility.requiredGlobalCount) !== (current.startupGlobalContracts || []).length
+      || Number(startupCompatibility.hashCount) !== Number(startupCompatibility.requiredGlobalCount)) {
+      mismatch.push("viteBuildStartupCompatibility");
     }
     const classicScriptBlock = viteBuild.classicFallback
       && viteBuild.classicFallback.scriptBlock;
@@ -153,6 +164,7 @@ if (!fs.existsSync(manifestPath)) {
       indexScripts: built.counts.indexScripts,
       emittedAssets: built.counts.emittedAssets,
       startupCriticalAssets: built.counts.startupCriticalAssets,
+      startupGlobalContracts: built.counts.startupGlobalContracts,
       classicGlobalExports: built.counts.classicGlobalExports,
       entryGroupChunks: built.viteBuild.viteEntryGroupChunks.length,
       entryDynamicImports: built.viteBuild.entryDynamicImportGraph

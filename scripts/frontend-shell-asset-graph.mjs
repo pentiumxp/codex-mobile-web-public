@@ -152,6 +152,7 @@ export function collectShellAssetGraph(root = process.cwd()) {
     serverHashAssets: Array.isArray(publicManifest.hashAssets) ? publicManifest.hashAssets : [],
     entryGroups: Array.isArray(publicManifest.entryGroups) ? publicManifest.entryGroups : [],
     classicGlobalExports: Array.isArray(publicManifest.classicGlobalExports) ? publicManifest.classicGlobalExports : [],
+    startupGlobalContracts: startupGlobalContracts(publicManifest),
     publicManifest,
     expectedManifest,
     swSource,
@@ -170,6 +171,7 @@ export function validateShellAssetGraph(graph) {
   const expectedClassicGlobalExports = Array.isArray(graph.expectedManifest.classicGlobalExports)
     ? graph.expectedManifest.classicGlobalExports
     : [];
+  const expectedStartupGlobalContracts = startupGlobalContracts(graph.expectedManifest);
   const startupCriticalAssets = new Set(graph.entryGroups
     .filter((group) => group && group.startupCritical)
     .flatMap((group) => Array.isArray(group.assets) ? group.assets : []));
@@ -180,6 +182,12 @@ export function validateShellAssetGraph(graph) {
   if (!graph.classicGlobalExports.length) issues.push({ code: "classic_global_exports_missing" });
   if (JSON.stringify(graph.classicGlobalExports) !== JSON.stringify(expectedClassicGlobalExports)) {
     issues.push({ code: "classic_global_exports_mismatch" });
+  }
+  if (!graph.startupGlobalContracts.length) {
+    issues.push({ code: "startup_global_contracts_missing" });
+  }
+  if (JSON.stringify(graph.startupGlobalContracts) !== JSON.stringify(expectedStartupGlobalContracts)) {
+    issues.push({ code: "startup_global_contracts_mismatch" });
   }
   if (JSON.stringify(entryGroupAssets) !== JSON.stringify(graph.indexScriptAssets)) {
     issues.push({ code: "entry_group_order_mismatch" });
@@ -286,6 +294,7 @@ export function buildShellAssetManifest(root = process.cwd()) {
       classicGlobalExports: graph.classicGlobalExports.reduce((total, entry) => (
         total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
       ), 0),
+      startupGlobalContracts: graph.startupGlobalContracts.length,
       emittedAssets: assetRecords.length,
     },
     indexScriptAssets: graph.indexScriptAssets,
@@ -295,6 +304,7 @@ export function buildShellAssetManifest(root = process.cwd()) {
     serverHashAssets: graph.serverHashAssets,
     entryGroups: graph.entryGroups,
     classicGlobalExports: graph.classicGlobalExports,
+    startupGlobalContracts: graph.startupGlobalContracts,
     assets: assetRecords,
     validation,
   };
@@ -337,6 +347,19 @@ function classicAssetRecordsForAssets(manifest, assets) {
       bytes: Number(entry.bytes) || 0,
       sha256: String(entry.sha256 || ""),
     }));
+}
+
+function startupGlobalContracts(manifest) {
+  return (Array.isArray(manifest && manifest.startupGlobalContracts) ? manifest.startupGlobalContracts : [])
+    .map((entry) => ({
+      name: String(entry && entry.name || ""),
+      asset: String(entry && entry.asset || ""),
+      groupId: String(entry && entry.groupId || ""),
+      startupCritical: Boolean(entry && entry.startupCritical),
+      source: String(entry && entry.source || "startup-window-guard"),
+      present: entry && entry.present !== false,
+    }))
+    .filter((entry) => entry.name);
 }
 
 function viteEntryGroupSourceId(groupId) {
@@ -414,6 +437,41 @@ function classicShellScriptBlockContract(manifest) {
   };
 }
 
+function startupCompatibilityContract(manifest) {
+  const contracts = startupGlobalContracts(manifest);
+  const classicExports = Array.isArray(manifest && manifest.classicGlobalExports)
+    ? manifest.classicGlobalExports
+    : [];
+  const assetRecords = new Map((Array.isArray(manifest && manifest.assets) ? manifest.assets : [])
+    .map((entry) => [String(entry && entry.path || ""), entry]));
+  const exportedAssetByGlobal = new Map();
+  for (const entry of classicExports) {
+    for (const name of Array.isArray(entry && entry.globals) ? entry.globals : []) {
+      exportedAssetByGlobal.set(String(name || ""), String(entry && entry.asset || ""));
+    }
+  }
+  const requiredGlobals = contracts.map((entry) => {
+    const assetRecord = assetRecords.get(entry.asset) || {};
+    return {
+      ...entry,
+      exportedAsset: exportedAssetByGlobal.get(entry.name) || "",
+      hashPresent: Boolean(assetRecord && assetRecord.sha256),
+      bytes: Number(assetRecord && assetRecord.bytes) || 0,
+      sha256: String(assetRecord && assetRecord.sha256 || ""),
+    };
+  });
+  return {
+    schemaVersion: 1,
+    source: "generated-startup-window-guards",
+    requiredGlobals,
+    requiredGlobalNames: requiredGlobals.map((entry) => entry.name),
+    requiredGlobalCount: requiredGlobals.length,
+    assetCount: new Set(requiredGlobals.map((entry) => entry.asset).filter(Boolean)).size,
+    hashCount: requiredGlobals.filter((entry) => entry.hashPresent).length,
+    byteCount: requiredGlobals.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
+  };
+}
+
 function validateViteShellBuildContract(contract, manifest) {
   const issues = [];
   const entry = contract.viteEntry;
@@ -422,6 +480,7 @@ function validateViteShellBuildContract(contract, manifest) {
   const entryDynamicImportGraph = contract.entryDynamicImportGraph || {};
   const classicFallback = contract.classicFallback || {};
   const classicScriptBlock = classicFallback.scriptBlock || null;
+  const startupCompatibility = contract.startupCompatibility || {};
   const expectedClassicScriptBlock = classicShellScriptBlockContract(manifest);
   const outputFiles = new Set(contract.outputFiles || []);
   const classicOutputFiles = new Set((contract.classicShellAssets || []).map((asset) => asset.fileName));
@@ -495,6 +554,19 @@ function validateViteShellBuildContract(contract, manifest) {
       issues.push({ code: "classic_shell_script_block_boundary_mismatch" });
     }
   }
+  if (!Array.isArray(startupCompatibility.requiredGlobals) || !startupCompatibility.requiredGlobals.length) {
+    issues.push({ code: "startup_global_contract_missing" });
+  } else {
+    for (const entry of startupCompatibility.requiredGlobals) {
+      if (!entry || !entry.name || !entry.asset || entry.exportedAsset !== entry.asset || entry.hashPresent !== true) {
+        issues.push({ code: "startup_global_contract_invalid", global: entry && entry.name });
+        break;
+      }
+    }
+    if (Number(startupCompatibility.hashCount) !== Number(startupCompatibility.requiredGlobalCount)) {
+      issues.push({ code: "startup_global_contract_hash_count_mismatch" });
+    }
+  }
   for (const asset of manifest.assets || []) {
     const fileName = outputPathForAsset(asset.path);
     if (!classicOutputFiles.has(fileName)) {
@@ -531,6 +603,8 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
       const assets = Array.isArray(group.assets) ? group.assets.slice() : [];
       const classicGlobalExports = classicGlobalExportsForAssets(manifest, assets);
       const classicAssetRecords = classicAssetRecordsForAssets(manifest, assets);
+      const groupStartupGlobalContracts = startupGlobalContracts(manifest)
+        .filter((entry) => assets.includes(entry.asset));
       return {
         ...chunk,
         groupId,
@@ -547,6 +621,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
         classicGlobalExportCount: classicGlobalExports.reduce((total, entry) => (
           total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
         ), 0),
+        startupGlobalContracts: groupStartupGlobalContracts,
       };
     })
     .sort((a, b) => a.groupId.localeCompare(b.groupId));
@@ -570,6 +645,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
   };
   const classicShellAssets = assetOutputRecords(manifest);
   const classicShellScriptBlock = classicShellScriptBlockContract(manifest);
+  const startupCompatibility = startupCompatibilityContract(manifest);
   const outputFiles = [
     ...chunks.map((chunk) => chunk.fileName),
     ...classicShellAssets.map((asset) => asset.fileName),
@@ -589,8 +665,10 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
       indexScriptAssets: manifest.indexScriptAssets,
       entryGroups: manifest.entryGroups,
       classicGlobalExports: manifest.classicGlobalExports,
+      startupGlobalContracts: manifest.startupGlobalContracts,
       scriptBlock: classicShellScriptBlock,
     },
+    startupCompatibility,
     viteEntry: viteEntry || null,
     viteDeferredChunks: deferredChunks,
     viteEntryGroupChunks: entryGroupChunks,
@@ -720,6 +798,7 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
         classicGlobalExportCount: classicGlobalExports.reduce((total, entry) => (
           total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
         ), 0),
+        startupGlobalContracts: startupGlobalContracts(manifest).filter((entry) => assets.includes(entry.asset)),
         shellCacheName: manifest.shellCacheName,
         clientBuildId: manifest.clientBuildId,
       };
