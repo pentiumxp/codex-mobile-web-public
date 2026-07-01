@@ -17,7 +17,8 @@ const runtimePermissionPolicyServiceJs = fs.readFileSync(path.resolve(__dirname,
 const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "rate-limit-runtime-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
-const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
+const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-message-route-service.js"), "utf8");
+const threadMessageRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
 const threadListFallbackSourceServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-source-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
@@ -65,6 +66,12 @@ test("new-message route creates a thread before starting the first turn", () => 
   const turnStartIndex = routeBody.indexOf('codex.request("turn/start"');
   assert.ok(threadStartIndex > 0, "new-message route must call thread/start");
   assert.ok(turnStartIndex > threadStartIndex, "new-message route must start the first turn after thread/start");
+});
+
+test("thread message route adapter re-exports the canonical server route", () => {
+  assert.match(threadMessageRouteAdapterJs, /require\("\.\.\/server-routes\/thread-message-route-service"\)/);
+  assert.doesNotMatch(threadMessageRouteAdapterJs, /codex\.request\("thread\/start"/);
+  assert.match(threadMessageRouteServiceJs, /function createThreadMessageRouteService/);
 });
 
 test("continuation confirm resolves tile-pane detail sources without current fallback", () => {

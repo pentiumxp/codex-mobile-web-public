@@ -17,7 +17,7 @@ const {
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "core-api-route-service.js"), "utf8");
 const mediaFileServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "media-file-service.js"), "utf8");
-const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
+const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-message-route-service.js"), "utf8");
 
 test("image uploads disable extended-history persistence by default", () => {
   assert.equal(hasImageUploads([{ isImage: false }, { isImage: true }]), true);

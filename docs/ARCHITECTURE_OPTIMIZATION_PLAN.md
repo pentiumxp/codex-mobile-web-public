@@ -113,7 +113,7 @@ Current acceleration targets:
    runtime state, task-card/profile helpers, and logging callbacks. The current
    backend split also moved task-card route execution, message route execution,
    fallback source recovery, summary-state synchronization, and thread-detail
-   response preparation into dedicated adapters. The current route-boundary
+   response preparation into dedicated adapters/routes. The current route-boundary
    phase has started moving HTTP coordinators out of `adapters/` and into
    `server-routes/`; the main authenticated `/api/*` dispatcher is owned by
    `server-routes/api-dispatch-route-service.js`, `/api/threads/:id` detail
@@ -2063,10 +2063,11 @@ public behavior:
   task-card dynamic-tool schemas/response payloads, fallback guidance, visible
   target hints, deploy-lane route integration, source-draft materialization, and
   thread-detail task-card attachment.
-- `adapters/thread-message-route-service.js` now owns thread creation,
+- `server-routes/thread-message-route-service.js` now owns thread creation,
   new-message/existing-message, resume, auto-recover, and turn interrupt route
   behavior while `server.js` injects runtime settings, parsers, Codex transport,
-  and mutation helpers.
+  and mutation helpers. `adapters/thread-message-route-service.js` is a
+  compatibility export only.
 - `adapters/thread-list-fallback-source-service.js` now owns session-index title
   hydration/persistence, rollout-session fallback summary recovery, rollout
   active/completed/stale-context status inference, rollout stat metadata reuse,
@@ -2118,7 +2119,7 @@ public behavior:
 
 Local line-count evidence after the latest extraction: `server.js` is 9,247 lines,
 `thread-task-card-route-service.js` is 1,280 lines, and
-`thread-message-route-service.js` is 363 lines, and
+`server-routes/thread-message-route-service.js` is 363 lines, and
 `thread-list-fallback-source-service.js` is 683 lines, and
 `thread-summary-state-service.js` is 383 lines, and
 `thread-detail-response-preparation-service.js` is 254 lines. The newer
