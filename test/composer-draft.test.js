@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
 const threadTileRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-tile-runtime.js"), "utf8");
 const draftStoreJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "draft-store.js"), "utf8");
@@ -28,6 +29,10 @@ function sourceFunctionBody(source, name) {
 
 function functionBody(name) {
   return sourceFunctionBody(appJs, name);
+}
+
+function composerRuntimeBody(name) {
+  return sourceFunctionBody(composerRuntimeJs, name);
 }
 
 function threadListRuntimeBody(name) {
@@ -98,7 +103,7 @@ test("composer runtime selections persist without typed text", () => {
   assert.match(draftStoreBody, /draft\.permissionMode/);
   assert.match(draftStoreBody, /draft\.fastMode === true/);
 
-  const selectionBody = functionBody("applyRuntimeSelection");
+  const selectionBody = composerRuntimeBody("applyRuntimeSelection");
   assert.match(selectionBody, /if \(kind === "effort"\) state\.composerEffort = selected;/);
   assert.match(selectionBody, /saveCurrentDraftNow\(\)/, "runtime selection should persist even when the composer text is empty");
 
@@ -107,11 +112,11 @@ test("composer runtime selections persist without typed text", () => {
   assert.match(saveBody, /writeCurrentDraftToKey\(key\)/);
   assert.match(functionBody("writeCurrentDraftToKey"), /if \(draftHasContent\(draft\)\)/);
 
-  const sendBody = functionBody("sendMessage");
+  const sendBody = composerRuntimeBody("sendMessage");
   assert.match(sendBody, /setComposerText\(""\);[\s\S]*clearPendingAttachments\(\{ revokePreviewUrls: false \}\);[\s\S]*writeCurrentDraftToKey\(submittedDraftKey\)/, "send success should preserve runtime-only draft while clearing text and attachments");
   assert.doesNotMatch(sendBody, /state\.composerEffort = "";/, "send success should not immediately revert selected effort to the previous thread default");
 
-  const fastBody = functionBody("setCodexFastCommandEnabled");
+  const fastBody = composerRuntimeBody("setCodexFastCommandEnabled");
   assert.match(fastBody, /saveCurrentDraftNow\(\)/, "Fast toggle should use the existing draft save path");
   assert.match(fastBody, /clearLegacyCodexFastModeStorage\(\)/, "Fast toggle should clear the retired global flag");
   assert.doesNotMatch(fastBody, /localStorage\.setItem\(STORAGE_CODEX_FAST_MODE/, "Fast should not write a global browser flag");
@@ -128,7 +133,7 @@ test("composer runtime selections persist without typed text", () => {
   assert.match(restoreBody, /state\.composerEffort = plan\.composerEffort \|\| "";/);
   assert.match(restoreBody, /state\.composerPermissionMode = plan\.composerPermissionMode \|\| "";/);
 
-  const resetBody = functionBody("resetComposerRuntimeSelection");
+  const resetBody = composerRuntimeBody("resetComposerRuntimeSelection");
   assert.match(resetBody, /state\.codexFastMode = false;/, "switching targets should clear Fast until that target draft is restored");
 
   const loadThreadBody = functionBody("loadThread");
@@ -147,19 +152,19 @@ test("draft attachments use IndexedDB and are cleared only after a successful se
   assert.match(appJs, /function loadDraftAttachment\(/);
   assert.match(appJs, /function deleteDraftAttachments\(/);
 
-  const addBody = functionBody("addAttachmentFiles");
+  const addBody = composerRuntimeBody("addAttachmentFiles");
   assert.match(addBody, /saveDraftAttachmentFiles\(draftKey, addedItems\)/);
   assert.match(addBody, /scheduleCurrentDraftSave\(\)/);
 
-  const sendBody = functionBody("sendMessage");
+  const sendBody = composerRuntimeBody("sendMessage");
   assert.match(sendBody, /const submittedDraftKey = currentDraftKey\(\)/);
   assert.match(sendBody, /const threadTaskCardCommand = isThreadTaskCardCommandText\(text\)/);
   assert.match(sendBody, /await sendThreadTaskCardCommand\(text\)/);
-  assert.match(functionBody("sendThreadTaskCardCommand"), /const outboundText = buildThreadTaskCardDraftRequestText\(text, targetThread\)/);
+  assert.match(composerRuntimeBody("sendThreadTaskCardCommand"), /const outboundText = buildThreadTaskCardDraftRequestText\(text, targetThread\)/);
   assert.match(sendBody, /writeCurrentDraftToKey\(submittedDraftKey\)/);
   assert.doesNotMatch(sendBody, /clearDraftForKey\(submittedDraftKey\)/);
 
-  const newSendBody = functionBody("sendNewThreadMessage");
+  const newSendBody = composerRuntimeBody("sendNewThreadMessage");
   assert.match(newSendBody, /const submittedDraftKey = currentDraftKey\(\)/);
   assert.match(newSendBody, /const submittedEffort = newThreadSelectedEffort\(\)/);
   assert.match(newSendBody, /clearDraftForKey\(submittedDraftKey\)/);

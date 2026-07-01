@@ -34,6 +34,7 @@ const threadVisibilityServiceJs = fs.readFileSync(path.resolve(__dirname, "..", 
 const threadListFallbackSourceServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-fallback-source-service.js"), "utf8");
 const threadSummaryReadModelServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-summary-read-model-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 
 function functionBody(source, name) {
@@ -501,10 +502,7 @@ test("existing-message route forwards runtime settings on next turn", () => {
 });
 
 test("existing-thread message send refreshes the sidebar thread list", () => {
-  const start = appJs.indexOf("async function sendMessage(");
-  const end = appJs.indexOf("async function sendNewThreadMessage(", start);
-  assert.ok(start > 0 && end > start, "missing sendMessage body");
-  const body = appJs.slice(start, end);
+  const body = functionBody(composerRuntimeJs, "sendMessage");
 
   assert.match(body, /scheduleComposerTargetRefresh\(targetThreadId, 600, "message-submit"\);[\s\S]*scheduleLivePollIfNeeded\(1200\);[\s\S]*loadThreads\(\{ silent: true \}\)\.catch\(showError\);/);
 });
@@ -514,9 +512,7 @@ test("send auth failures return stable codes and render message receipts", () =>
   assert.match(serverHttpRuntimeServiceJs, /code:\s*"codex_account_auth_invalid"/);
   assert.match(threadMessageRouteServiceJs, /sendJson\(409,\s*codexAccountAuthErrorPayload\(err\)\)/);
 
-  const sendStart = appJs.indexOf("async function sendMessage(");
-  const sendEnd = appJs.indexOf("async function sendNewThreadMessage(", sendStart);
-  const sendBody = appJs.slice(sendStart, sendEnd);
+  const sendBody = functionBody(composerRuntimeJs, "sendMessage");
   assert.match(sendBody, /markSubmittedUserMessageFailed\(targetThreadId,\s*outboundText,\s*submittedAttachments,\s*clientSubmissionId,\s*message\)/);
   assert.match(sendBody, /发送失败，详情见消息回执/);
   assert.match(appJs, /function renderUserMessageBody\(/);

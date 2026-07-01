@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
 function functionSourceFrom(source, name) {
@@ -196,5 +197,5 @@ return {
 
 test("locally created visible messages receive a timestamp immediately", () => {
   assert.match(appJs, /item = \{ id: itemId,\s*type: itemType,\s*startedAtMs: Date\.now\(\) \}/);
-  assert.match(appJs, /startedAtMs: Date\.now\(\),\r?\n\s*content,\r?\n/);
+  assert.match(composerRuntimeJs, /startedAtMs: Date\.now\(\),\r?\n\s*content,\r?\n/);
 });

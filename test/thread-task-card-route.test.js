@@ -47,6 +47,7 @@ const runtimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "
 const taskCardIdempotencyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-idempotency-service.js"), "utf8");
 const taskCardRuntimePolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-runtime-policy-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -794,7 +795,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(functionBody(appJs, "bindCurrentThreadActions"), /threadActionContextFromElement\(button\)/);
   assert.match(appJs, /function isThreadTaskCardCommandText\(/);
   assert.match(appJs, /function sendThreadTaskCardCommand\(/);
-  assert.match(functionBody(appJs, "sendMessage"), /await sendThreadTaskCardCommand\(text\)/);
+  assert.match(functionBody(composerRuntimeJs, "sendMessage"), /await sendThreadTaskCardCommand\(text\)/);
   assert.match(appJs, /const THREAD_TASK_CARD_COMMAND_PREFIX = "#"/);
   assert.match(appJs, /const THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX = "#自由协作"/);
   assert.match(appJs, /const THREAD_TASK_CARD_MENTION_PATTERN = \/\^@\(任务卡片\|Task\\s\*Card\|TaskCard\)/);
@@ -820,22 +821,22 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(indexHtml, /id="composerIntentMenu"/);
   assert.match(indexHtml, /id="composerIntentDialog"/);
   assert.match(indexHtml, /id="composerIntentBodyInput"[\s\S]*maxlength="12000"/);
-  assert.match(appJs, /function composerIntentOptions\(/);
+  assert.match(composerRuntimeJs, /function composerIntentOptions\(/);
   assert.match(appJs, /@任务卡片/);
   assert.match(appJs, /@自由协作/);
-  assert.match(appJs, /function normalizedComposerIntentText\(/);
-  assert.match(functionBody(appJs, "normalizedComposerIntentText"), /\\u200B-\\u200D\\uFEFF/);
-  assert.match(functionBody(appJs, "shouldShowComposerIntentMenu"), /normalizedComposerIntentText\(composerText\(\)\) === "@"/);
+  assert.match(composerRuntimeJs, /function normalizedComposerIntentText\(/);
+  assert.match(functionBody(composerRuntimeJs, "normalizedComposerIntentText"), /\\u200B-\\u200D\\uFEFF/);
+  assert.match(functionBody(composerRuntimeJs, "shouldShowComposerIntentMenu"), /normalizedComposerIntentText\(composerText\(\)\) === "@"/);
   assert.match(appJs, /function queueComposerIntentMenuUpdate\(/);
   assert.match(appJs, /addEventListener\("keyup", queueComposerIntentMenuUpdate\)/);
   assert.match(appJs, /addEventListener\("focus", queueComposerIntentMenuUpdate\)/);
   assert.match(appJs, /addEventListener\("compositionstart", \(\) => \{[\s\S]*state\.composerComposing = true;/);
   assert.match(appJs, /addEventListener\("compositionend", \(event\) => \{[\s\S]*state\.composerComposing = false;/);
   assert.match(appJs, /addEventListener\("compositionend", \(event\) => \{[\s\S]*queueComposerIntentMenuUpdate\(\);/);
-  assert.match(functionBody(appJs, "positionComposerIntentMenu"), /const anchor = \$\("messageInput"\) \|\| \$\("composer"\)/);
-  assert.match(functionBody(appJs, "positionComposerIntentMenu"), /fitComposerPopupToAnchor\(menu, anchor, \{ minWidth: 280, maxWidth: 420 \}\)/);
-  assert.match(functionBody(appJs, "sendMessage"), /const normalizedIntentText = normalizedComposerIntentText\(text\)/);
-  assert.match(functionBody(appJs, "sendMessage"), /if \(normalizedIntentText === "@"\)/);
+  assert.match(functionBody(composerRuntimeJs, "positionComposerIntentMenu"), /const anchor = \$\("messageInput"\) \|\| \$\("composer"\)/);
+  assert.match(functionBody(composerRuntimeJs, "positionComposerIntentMenu"), /fitComposerPopupToAnchor\(menu, anchor, \{ minWidth: 280, maxWidth: 420 \}\)/);
+  assert.match(functionBody(composerRuntimeJs, "sendMessage"), /const normalizedIntentText = normalizedComposerIntentText\(text\)/);
+  assert.match(functionBody(composerRuntimeJs, "sendMessage"), /if \(normalizedIntentText === "@"\)/);
   assert.match(appJs, /function openComposerIntentDialog\(/);
   assert.match(appJs, /function saveComposerIntentDialogDraft\(/);
   assert.ok(indexHtml.indexOf('id="composerIntentMenu"') > indexHtml.indexOf('</form>\n    </main>'), "intent menu should be a page-level overlay, not a composer child");
@@ -906,7 +907,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /\$\{items\}\$\{approvalsHtml\}[\s\S]*\$\{showStatusLine \? [\s\S]*: ""\}[\s\S]*\$\{draftHtml\}\$\{pendingDraftHtml\}/);
   assert.match(functionBody(appJs, "renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
   assert.match(functionBody(appJs, "renderCurrentThread"), /taskCardsHtml/);
-  assert.match(appJs, /Task card draft request/);
+  assert.match(composerRuntimeJs, /Task card draft request/);
   assert.match(indexHtml, /id="workspaceDelegationSettings"/);
   assert.match(stylesCss, /\.workspace-delegation-row/);
   assert.match(appJs, /function renderWorkspaceDelegationSettings\(/);
@@ -915,8 +916,8 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /data-workspace-delegation-toggle/);
   assert.doesNotMatch(appJs, /function shouldPreflightWorkspaceDelegation\(/);
   assert.doesNotMatch(appJs, /function maybeDelegateCrossWorkspaceMessage\(/);
-  assert.doesNotMatch(functionBody(appJs, "sendMessage"), /maybeDelegateCrossWorkspaceMessage/);
-  assert.doesNotMatch(functionBody(appJs, "sendMessage"), /workspaceDelegation/);
+  assert.doesNotMatch(functionBody(composerRuntimeJs, "sendMessage"), /maybeDelegateCrossWorkspaceMessage/);
+  assert.doesNotMatch(functionBody(composerRuntimeJs, "sendMessage"), /workspaceDelegation/);
 });
 
 test("client pane toolbar actions use the owning pane thread", async () => {

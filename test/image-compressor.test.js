@@ -7,21 +7,30 @@ const { test } = require("node:test");
 
 const imageCompressor = require("../public/image-compressor.js");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 
-function functionBody(name) {
-  let start = appJs.indexOf(`function ${name}(`);
-  if (start < 0) start = appJs.indexOf(`async function ${name}(`);
+function sourceFunctionBody(source, name) {
+  let start = source.indexOf(`function ${name}(`);
+  if (start < 0) start = source.indexOf(`async function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
-  const bodyStart = appJs.indexOf(") {", start) + 2;
+  const bodyStart = source.indexOf(") {", start) + 2;
   assert.notEqual(bodyStart, 1, `missing function body ${name}`);
   let depth = 0;
-  for (let index = bodyStart; index < appJs.length; index += 1) {
-    const char = appJs[index];
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
     if (char === "{") depth += 1;
     if (char === "}") depth -= 1;
-    if (depth === 0) return appJs.slice(bodyStart + 1, index);
+    if (depth === 0) return source.slice(bodyStart + 1, index);
   }
   throw new Error(`could not parse function ${name}`);
+}
+
+function functionBody(name) {
+  return sourceFunctionBody(appJs, name);
+}
+
+function composerRuntimeBody(name) {
+  return sourceFunctionBody(composerRuntimeJs, name);
 }
 
 test("image compressor targets large browser-supported image uploads", () => {
@@ -49,9 +58,9 @@ test("image compressor bounds dimensions and keeps only useful compressed blobs"
 
 test("composer compresses attachments before size checks and draft persistence", () => {
   assert.match(appJs, /const imageCompressor = window\.CodexImageCompressor/);
-  assert.match(appJs, /async function prepareAttachmentFile\(file\)/);
-  assert.match(appJs, /await imageCompressor\.compressImageFile\(file\)/);
-  const addBody = functionBody("addAttachmentFiles");
+  assert.match(composerRuntimeJs, /async function prepareAttachmentFile\(file\)/);
+  assert.match(composerRuntimeJs, /await imageCompressor\.compressImageFile\(file\)/);
+  const addBody = composerRuntimeBody("addAttachmentFiles");
   assert.match(addBody, /preparedFiles = await prepareAttachmentFiles\(files\)/);
   assert.match(addBody, /for \(const file of preparedFiles\)/);
   assert.match(addBody, /state\.attachmentProcessingCount \+= 1/);

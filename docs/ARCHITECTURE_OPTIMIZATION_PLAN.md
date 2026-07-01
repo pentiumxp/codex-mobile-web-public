@@ -4098,6 +4098,34 @@ checks for the new runtimes and shell files, focused Thread List/Thread Tile UI
 tests, static shell/cache guards, `npm run --silent check`,
 `npm run --silent check:macos`, and `git diff --check`.
 
+### 2026-07-01 App JS Composer Runtime Boundary
+
+The next frontend-thinning slice moves the Composer/input runtime out of
+`public/app.js` while preserving the static shell contract as
+`codex-mobile-shell-v613`.
+
+Scope:
+
+- `public/composer-runtime.js` owns Composer height/IME behavior, message text
+  accessors, pending attachment add/remove/draft preparation, local optimistic
+  user-message construction, runtime model/effort/permission pickers, account
+  quota popup, unified `@` intent dialog, `/g` goal dialog submit/actions, `#`
+  task-card commands, existing-thread and new-thread send flows, attachment
+  picker button state, submit-button state, and active-turn interruption.
+- `public/app.js` keeps shared state, global event wiring, DOM/network callback
+  implementations, cross-runtime dependency injection, and compatibility
+  wrappers for existing callers.
+- `public/index.html`, `public/sw.js`, `public/app.js` page-shell preload
+  assets, and `services/runtime/server-runtime-utils.js` include the new
+  Composer runtime file so shell hash/cache behavior stays explicit.
+
+Local line-count readback before deployment: `public/app.js` is `22446` lines,
+`public/composer-runtime.js` is `2027` lines, `public/thread-list-runtime.js`
+is `902` lines, and `public/thread-tile-runtime.js` is `1853` lines. Validation
+should cover syntax checks for Composer runtime/static files, focused Composer
+and affected UI tests, static shell/cache guards, `npm run --silent check`,
+`npm run --silent check:macos`, and `git diff --check`.
+
 ## Release Rule
 
 Follow the current release order:

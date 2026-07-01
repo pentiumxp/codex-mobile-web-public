@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const packageJson = fs.readFileSync(path.join(root, "package.json"), "utf8");
@@ -14,7 +15,8 @@ const threadTileRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-ti
 const threadTileVisualFixture = require(path.join(root, "scripts", "codex-mobile-thread-tile-visual-fixture.js"));
 
 function functionBody(source, name) {
-  const start = source.indexOf(`function ${name}(`);
+  let start = source.indexOf(`function ${name}(`);
+  if (start < 0) start = source.indexOf(`async function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
   const bodyStart = source.indexOf(") {", start) + 2;
   assert.notEqual(bodyStart, 1, `missing function body ${name}`);
@@ -622,16 +624,16 @@ test("thread tile composer targets the active pane without replacing the shared 
   assert.match(tileComposerContextBody, /composerTargetPlan\(\)\.tileContext === true/);
   assert.match(functionBody(appJs, "threadTileComposerSurfaceActive"), /conversation\.classList\.contains\("thread-tile-mode"\)/);
 
-  const placeholderBody = functionBody(appJs, "composerPlaceholderText");
+  const placeholderBody = functionBody(composerRuntimeJs, "composerPlaceholderText");
   assert.match(placeholderBody, /const targetThreadId = currentComposerThreadId\(\)/);
   assert.match(placeholderBody, /const targetThread = composerTargetThread\(\)/);
   assert.match(placeholderBody, /threadTileStatePolicy\.composerTargetPlaceholderPlan/);
   assert.match(placeholderBody, /targetTitle: targetThread \? threadDisplayName\(targetThread\) : ""/);
-  assert.match(appJs, /function composerShowsTargetPlaceholder\(\)/);
-  assert.match(functionBody(appJs, "composerShowsTargetPlaceholder"), /threadTileStatePolicy\.composerTargetPlaceholderPlan/);
-  assert.match(functionBody(appJs, "composerShowsTargetPlaceholder"), /showTargetPlaceholder === true/);
+  assert.match(composerRuntimeJs, /function composerShowsTargetPlaceholder\(\)/);
+  assert.match(functionBody(composerRuntimeJs, "composerShowsTargetPlaceholder"), /threadTileStatePolicy\.composerTargetPlaceholderPlan/);
+  assert.match(functionBody(composerRuntimeJs, "composerShowsTargetPlaceholder"), /showTargetPlaceholder === true/);
 
-  const updateControlsBody = functionBody(appJs, "updateComposerControls");
+  const updateControlsBody = functionBody(composerRuntimeJs, "updateComposerControls");
   assert.match(updateControlsBody, /const targetThreadId = currentComposerThreadId\(\)/);
   assert.match(updateControlsBody, /const targetActiveTurnId = composerTargetActiveTurnId\(\)/);
   assert.match(updateControlsBody, /threadTileStatePolicy\.composerActionControlPlan\(\{/);
@@ -641,7 +643,7 @@ test("thread tile composer targets the active pane without replacing the shared 
   assert.match(updateControlsBody, /messageInput\.dataset\.placeholder = composerPlaceholderText\(\);/);
   assert.match(updateControlsBody, /messageInput\.classList\.toggle\("has-target-placeholder", composerShowsTargetPlaceholder\(\)\);/);
 
-  const sendMessageBody = functionBody(appJs, "sendMessage");
+  const sendMessageBody = functionBody(composerRuntimeJs, "sendMessage");
   assert.match(sendMessageBody, /const targetThreadId = currentComposerThreadId\(\)/);
   assert.match(sendMessageBody, /openThreadGoalDialog\(targetThreadId\)/);
   assert.match(sendMessageBody, /interruptActiveTurn\(targetThreadId, targetActiveTurnId\)/);
@@ -649,7 +651,7 @@ test("thread tile composer targets the active pane without replacing the shared 
   assert.match(sendMessageBody, /api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);
   assert.match(sendMessageBody, /scheduleComposerTargetRefresh\(targetThreadId/);
 
-  const taskCardBody = functionBody(appJs, "sendThreadTaskCardCommand");
+  const taskCardBody = functionBody(composerRuntimeJs, "sendThreadTaskCardCommand");
   assert.match(taskCardBody, /const targetThreadId = currentComposerThreadId\(\)/);
   assert.match(taskCardBody, /buildThreadTaskCardDraftRequestText\(text, targetThread\)/);
   assert.match(taskCardBody, /api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);

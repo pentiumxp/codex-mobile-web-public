@@ -8,22 +8,31 @@ const { test } = require("node:test");
 const voiceInput = require("../public/plugin-voice-input");
 
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 
 function functionBody(name) {
-  let start = appJs.indexOf(`function ${name}(`);
-  if (start < 0) start = appJs.indexOf(`async function ${name}(`);
+  return sourceFunctionBody(appJs, name);
+}
+
+function composerRuntimeBody(name) {
+  return sourceFunctionBody(composerRuntimeJs, name);
+}
+
+function sourceFunctionBody(source, name) {
+  let start = source.indexOf(`function ${name}(`);
+  if (start < 0) start = source.indexOf(`async function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
-  const bodyStart = appJs.indexOf(") {", start) + 2;
+  const bodyStart = source.indexOf(") {", start) + 2;
   assert.notEqual(bodyStart, 1, `missing function body ${name}`);
   let depth = 0;
-  for (let index = bodyStart; index < appJs.length; index += 1) {
-    const char = appJs[index];
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
     if (char === "{") depth += 1;
     if (char === "}") depth -= 1;
-    if (depth === 0) return appJs.slice(bodyStart + 1, index);
+    if (depth === 0) return source.slice(bodyStart + 1, index);
   }
   throw new Error(`could not parse function ${name}`);
 }
@@ -103,6 +112,7 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(swJs, /"\/thread-tile-state\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(swJs, /"\/thread-tile-runtime\.js"/);
+  assert.match(swJs, /"\/composer-runtime\.js"/);
   assert.match(appJs, /"\/plugin-voice-input\.js"/);
   assert.match(appJs, /"\/frontend-runtime-health\.js"/);
   assert.match(appJs, /"\/thread-list-load-policy\.js"/);
@@ -125,6 +135,7 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(appJs, /"\/thread-tile-state\.js"/);
   assert.match(appJs, /"\/thread-tile-layout\.js"/);
   assert.match(appJs, /"\/thread-tile-runtime\.js"/);
+  assert.match(appJs, /"\/composer-runtime\.js"/);
   assert.match(functionBody("pluginVoiceInputComposerWritable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
   assert.match(functionBody("pluginVoiceInputActiveTurnHoldAvailable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
   assert.match(functionBody("pluginVoiceInputCanReceiveText"), /if \(pluginVoiceInputComposerWritable\(\)\) return true;/);
@@ -133,10 +144,10 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(functionBody("pluginVoiceInputGestureAvailable"), /if \(pluginVoiceInputActiveTurnHoldAvailable\(\)\) return true;/);
   assert.match(functionBody("handlePluginVoiceInputMessage"), /pluginVoiceInputParentOriginAllowed\(event\)/);
   assert.match(functionBody("handlePluginVoiceInputMessage"), /payload\.pluginId && String\(payload\.pluginId\) !== "codex-mobile"/);
-  assert.match(functionBody("updateComposerControls"), /const voiceGestureAvailable = pluginVoiceInputGestureAvailable\(\)/);
-  assert.match(functionBody("updateComposerControls"), /voiceGestureAvailable,/);
-  assert.match(functionBody("updateComposerControls"), /applyComposerActionControlPlan\(sendButton, composerActionPlan\)/);
-  assert.match(functionBody("applyComposerActionControlPlan"), /plan\.sendButtonDisabled === true/);
+  assert.match(composerRuntimeBody("updateComposerControls"), /const voiceGestureAvailable = pluginVoiceInputGestureAvailable\(\)/);
+  assert.match(composerRuntimeBody("updateComposerControls"), /voiceGestureAvailable,/);
+  assert.match(composerRuntimeBody("updateComposerControls"), /applyComposerActionControlPlan\(sendButton, composerActionPlan\)/);
+  assert.match(composerRuntimeBody("applyComposerActionControlPlan"), /plan\.sendButtonDisabled === true/);
   assert.match(functionBody("pluginVoiceInputCapabilityPayload"), /writable: pluginVoiceInputCanReceiveText\(\)/);
   assert.match(functionBody("pluginVoiceInputCapabilityPayload"), /"provisional_text"/);
   assert.match(functionBody("applyPluginVoiceInputTextMessage"), /const capability = pluginVoiceInputCapabilityPayload\(\)/);
@@ -152,8 +163,8 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(functionBody("applyPluginVoiceInputTextMessage"), /focusMessageInput\(\{ moveCaretToEnd: true, retry: true \}\)/);
   assert.match(functionBody("rejectPluginVoiceInputInsert"), /actionFromMessageType\(payload\.type\)/);
   assert.match(functionBody("restorePluginVoiceInputProvisionalBase"), /session\.voiceSessionId !== voiceSessionId/);
-  assert.match(functionBody("sendMessage"), /commitPluginVoiceInputSessionsAfterSend\(submittedDraftKey, text/);
-  assert.match(functionBody("sendNewThreadMessage"), /commitPluginVoiceInputSessionsAfterSend\(submittedDraftKey, text/);
+  assert.match(composerRuntimeBody("sendMessage"), /commitPluginVoiceInputSessionsAfterSend\(submittedDraftKey, text/);
+  assert.match(composerRuntimeBody("sendNewThreadMessage"), /commitPluginVoiceInputSessionsAfterSend\(submittedDraftKey, text/);
 });
 
 test("send button long press delegates recording to Home AI only after threshold", () => {
@@ -170,8 +181,8 @@ test("send button long press delegates recording to Home AI only after threshold
 });
 
 test("embedded active-turn stop button is not rendered as selectable text", () => {
-  assert.match(functionBody("updateComposerControls"), /hermesEmbedMode: isHermesEmbedMode\(\)/);
-  assert.match(functionBody("applyComposerActionControlPlan"), /setComposerActionButtonLabel\(sendButton, plan\.label \|\| "Send", \{ proxy: plan\.labelProxy === true \}\)/);
+  assert.match(composerRuntimeBody("updateComposerControls"), /hermesEmbedMode: isHermesEmbedMode\(\)/);
+  assert.match(composerRuntimeBody("applyComposerActionControlPlan"), /setComposerActionButtonLabel\(sendButton, plan\.label \|\| "Send", \{ proxy: plan\.labelProxy === true \}\)/);
   assert.match(functionBody("setComposerActionButtonLabel"), /button\.textContent = "";/);
   assert.match(functionBody("setComposerActionButtonLabel"), /button\.dataset\.visualLabel = text;/);
   assert.match(functionBody("setComposerActionButtonLabel"), /button\.classList\.toggle\("plugin-voice-input-label-proxy", useProxy\)/);

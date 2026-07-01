@@ -111,6 +111,7 @@ function createServerRuntimeUtils(dependencies = {}) {
       "api-client.js",
       "runtime-settings.js",
       "draft-store.js",
+      "composer-runtime.js",
       "markdown-renderer.js",
       "viewport-metrics.js",
       "conversation-scroll.js",

@@ -6,8 +6,29 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
+
+function sourceFunctionBody(source, name) {
+  let start = source.indexOf(`function ${name}(`);
+  if (start < 0) start = source.indexOf(`async function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const bodyStart = source.indexOf(") {", start) + 2;
+  assert.notEqual(bodyStart, 1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return source.slice(bodyStart + 1, index);
+  }
+  throw new Error(`could not parse function ${name}`);
+}
+
+function composerRuntimeBody(name) {
+  return sourceFunctionBody(composerRuntimeJs, name);
+}
 
 test("composer exposes Fast bolt, model, reasoning, permission, and quota as compact controls", () => {
   assert.match(indexHtml, /id="composerCommandControl"/);
@@ -31,14 +52,14 @@ test("composer exposes Fast bolt, model, reasoning, permission, and quota as com
   assert.match(appJs, /commandControl\.addEventListener\("touchend", handleFastToggle, \{ passive: false \}\)/);
   assert.match(appJs, /suppressSyntheticFastToggleUntil/);
   assert.match(appJs, /now - lastFastToggleAt < 650/);
-  assert.match(appJs, /showComposerFastHint\(state\.codexFastMode\)/);
-  assert.match(appJs, /Fast tag on for \$\{fastScopeLabel\}/);
+  assert.match(composerRuntimeJs, /showComposerFastHint\(state\.codexFastMode\)/);
+  assert.match(composerRuntimeJs, /Fast tag on for \$\{fastScopeLabel\}/);
   assert.match(stylesCss, /\.composer-fast-toggle/);
   assert.match(stylesCss, /\.composer-fast-icon/);
-  assert.match(appJs, /body\.append\("fastMode", "1"\)/);
+  assert.match(composerRuntimeJs, /body\.append\("fastMode", "1"\)/);
   assert.doesNotMatch(appJs, /\/Fast\\n\\n/);
-  assert.match(appJs, /body\.append\("model", selectedComposerModel\(\)\)/);
-  assert.match(appJs, /body\.append\("effort", selectedComposerEffort\(\)\)/);
+  assert.match(composerRuntimeJs, /body\.append\("model", selectedComposerModel\(\)\)/);
+  assert.match(composerRuntimeJs, /body\.append\("effort", selectedComposerEffort\(\)\)/);
 });
 
 test("permission uses the custom runtime picker instead of native select", () => {
@@ -51,9 +72,9 @@ test("permission uses the custom runtime picker instead of native select", () =>
     indexHtml.indexOf('id="quotaDetailPanel"') > indexHtml.indexOf("</form>"),
     "quota detail panel should be a page-level overlay, not a composer-form child",
   );
-  assert.match(appJs, /body\.append\("permissionMode", selectedComposerPermissionMode\(\)\)/);
+  assert.match(composerRuntimeJs, /body\.append\("permissionMode", selectedComposerPermissionMode\(\)\)/);
   assert.match(appJs, /defaultPermissionMode/);
-  assert.match(appJs, /if \(sandboxType === "dangerfullaccess"\) return "full"/);
+  assert.match(composerRuntimeJs, /if \(sandboxType === "dangerfullaccess"\) return "full"/);
   assert.doesNotMatch(indexHtml, /id="permissionSelect"/);
   assert.doesNotMatch(stylesCss, /\.permission-select-wrap/);
 });
@@ -64,9 +85,9 @@ test("runtime picker has iOS WebView click fallback and bounded diagnostics", ()
   assert.match(appJs, /state\.lastComposerRuntimePointerTarget === button/);
   assert.match(appJs, /Date\.now\(\) - state\.lastComposerRuntimePointerAt < 1500/);
   assert.match(appJs, /state\.lastComposerRuntimePointerTarget = null/);
-  assert.match(appJs, /postClientEvent\("composer_runtime_menu_opened"/);
-  assert.match(appJs, /postClientEvent\("composer_runtime_control_ignored"/);
-  assert.match(appJs, /querySelectorAll\("\[data-runtime-kind\]\[data-runtime-value\]"\)\.length/);
+  assert.match(composerRuntimeJs, /postClientEvent\("composer_runtime_menu_opened"/);
+  assert.match(composerRuntimeJs, /postClientEvent\("composer_runtime_control_ignored"/);
+  assert.match(composerRuntimeJs, /querySelectorAll\("\[data-runtime-kind\]\[data-runtime-value\]"\)\.length/);
 });
 
 test("quota card separates inline summary from detail panel", () => {
@@ -93,11 +114,11 @@ test("composer attachment button uses explicit WebView-safe file picker trigger"
   assert.match(stylesCss, /\.file-input\s*{[\s\S]*inset:\s*0;[\s\S]*pointer-events:\s*auto;/);
   assert.match(stylesCss, /\.file-input:disabled\s*{[\s\S]*pointer-events:\s*none;/);
   assert.match(appJs, /lastAttachmentPickerAt:\s*0/);
-  assert.match(appJs, /function requestAttachmentPickerFromButton\(event\)/);
-  assert.match(appJs, /now - Number\(state\.lastAttachmentPickerAt \|\| 0\) < 650/);
-  assert.match(appJs, /!isAndroidBrowser\(\) && typeof input\.showPicker === "function"/);
-  assert.match(appJs, /input\.click\(\)/);
-  assert.match(appJs, /attachButton\.disabled = disabled/);
+  assert.match(composerRuntimeJs, /function requestAttachmentPickerFromButton\(event\)/);
+  assert.match(composerRuntimeJs, /now - Number\(state\.lastAttachmentPickerAt \|\| 0\) < 650/);
+  assert.match(composerRuntimeJs, /!isAndroidBrowser\(\) && typeof input\.showPicker === "function"/);
+  assert.match(composerRuntimeJs, /input\.click\(\)/);
+  assert.match(composerRuntimeJs, /attachButton\.disabled = disabled/);
   assert.match(appJs, /\$\("attachFiles"\)\.addEventListener\("click", requestAttachmentPickerFromButton\)/);
   assert.doesNotMatch(appJs, /\$\("attachFiles"\)\.addEventListener\("pointerdown", requestAttachmentPickerFromButton\)/);
   assert.doesNotMatch(appJs, /\$\("attachFiles"\)\.addEventListener\("touchend", requestAttachmentPickerFromButton/);
@@ -142,6 +163,7 @@ test("composer control row uses fixed heights", () => {
   assert.match(stylesCss, /\.quota-detail-panel/);
   assert.match(stylesCss, /\.composer-runtime-menu,[\s\S]*\.quota-detail-panel\s*\{[\s\S]*z-index:\s*130;/);
   assert.match(stylesCss, /max-height:\s*min\(var\(--composer-popup-max-height,\s*45vh\),\s*360px\);/);
-  assert.match(appJs, /window\.visualViewport/);
-  assert.match(appJs, /--composer-popup-max-height/);
+  assert.match(composerRuntimeJs, /window\.visualViewport/);
+  assert.match(composerRuntimeJs, /--composer-popup-max-height/);
+  assert.match(composerRuntimeJs, /function handleComposerRuntimeControl\(event, kind, button\)/);
 });

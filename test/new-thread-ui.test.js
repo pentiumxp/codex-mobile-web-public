@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 
@@ -29,14 +30,22 @@ function functionBody(name) {
   return functionBodyFrom(appJs, name);
 }
 
-function functionSource(name) {
-  let start = appJs.indexOf(`function ${name}(`);
-  if (start < 0) start = appJs.indexOf(`async function ${name}(`);
+function composerRuntimeBody(name) {
+  return functionBodyFrom(composerRuntimeJs, name);
+}
+
+function functionSourceFrom(source, name) {
+  let start = source.indexOf(`function ${name}(`);
+  if (start < 0) start = source.indexOf(`async function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
-  const body = functionBody(name);
-  const open = appJs.indexOf(") {", start) + 2;
+  const body = functionBodyFrom(source, name);
+  const open = source.indexOf(") {", start) + 2;
   assert.notEqual(open, 1, `missing function body ${name}`);
-  return `${appJs.slice(start, open + 1)}${body}}`;
+  return `${source.slice(start, open + 1)}${body}}`;
+}
+
+function functionSource(name) {
+  return functionSourceFrom(appJs, name);
 }
 
 function evaluatedAndroidComposerGestureHarness(options = {}) {
@@ -47,7 +56,7 @@ function evaluatedAndroidComposerGestureHarness(options = {}) {
     "messageInputCanEnableForNativeGesture",
     "releaseStaleAndroidMessageInputFocusBeforeNativeTap",
     "prepareMessageInputForNativeGesture",
-  ].map(functionSource).join("\n");
+  ].map((name) => functionSourceFrom(composerRuntimeJs, name)).join("\n");
   return Function("options", `
 let blurCount = 0;
 let focusCount = 0;
@@ -120,7 +129,7 @@ test("new-thread draft renders model, reasoning, and permission controls", () =>
 });
 
 test("new-thread draft can send without selecting a workspace", () => {
-  const body = functionBody("updateComposerControls");
+  const body = composerRuntimeBody("updateComposerControls");
 
   assert.match(body, /hasNewThreadDraft,/);
   assert.match(body, /threadTileStatePolicy\.composerActionControlPlan\(\{/);
@@ -128,7 +137,7 @@ test("new-thread draft can send without selecting a workspace", () => {
 });
 
 test("new-thread message submission includes selected runtime settings", () => {
-  const body = functionBody("sendNewThreadMessage");
+  const body = composerRuntimeBody("sendNewThreadMessage");
 
   assert.match(body, /const submittedModel = newThreadSelectedModel\(\)/);
   assert.match(body, /const submittedEffort = newThreadSelectedEffort\(\)/);
@@ -149,7 +158,7 @@ test("new-thread permission defaults come from config-derived full mode, not opt
 });
 
 test("existing-thread message submission includes selected runtime settings", () => {
-  const body = functionBody("sendMessage");
+  const body = composerRuntimeBody("sendMessage");
 
   assert.match(body, /body\.append\("model",\s*selectedComposerModel\(\)\)/);
   assert.match(body, /body\.append\("effort",\s*selectedComposerEffort\(\)\)/);
@@ -157,50 +166,50 @@ test("existing-thread message submission includes selected runtime settings", ()
 });
 
 test("composer input preserves Android IME composition connection", () => {
-  const setter = functionBody("setMessageInputDisabled");
-  const focusHelper = functionBody("focusMessageInput");
+  const setter = composerRuntimeBody("setMessageInputDisabled");
+  const focusHelper = composerRuntimeBody("focusMessageInput");
 
   assert.match(appJs, /composerComposing: false/);
   assert.match(appJs, /messageInputPointerWasFocused: false/);
   assert.match(appJs, /messageInputKeyboardRecoveryAt: 0/);
-  assert.match(appJs, /function shouldKeepAndroidMessageInputEditable\(disabled, el\)/);
-  assert.match(functionBody("shouldKeepAndroidMessageInputEditable"), /!disabled \|\| !isAndroidBrowser\(\)/);
-  assert.match(functionBody("shouldKeepAndroidMessageInputEditable"), /messageInputCanEnableForNativeGesture\(\)/);
-  assert.match(functionBody("shouldKeepAndroidMessageInputEditable"), /state\.composerComposing \|\| document\.activeElement === el/);
+  assert.match(composerRuntimeJs, /function shouldKeepAndroidMessageInputEditable\(disabled, el\)/);
+  assert.match(composerRuntimeBody("shouldKeepAndroidMessageInputEditable"), /!disabled \|\| !isAndroidBrowser\(\)/);
+  assert.match(composerRuntimeBody("shouldKeepAndroidMessageInputEditable"), /messageInputCanEnableForNativeGesture\(\)/);
+  assert.match(composerRuntimeBody("shouldKeepAndroidMessageInputEditable"), /state\.composerComposing \|\| document\.activeElement === el/);
   assert.match(setter, /const alreadyApplied = currentContentEditable === nextContentEditable/);
   assert.match(setter, /if \(alreadyApplied\) return;/);
   assert.match(setter, /const keepAndroidEditorConnection = shouldKeepAndroidMessageInputEditable\(disabled, el\);/);
   assert.match(setter, /const nextContentEditable = disabled && !keepAndroidEditorConnection \? "false" : "true";/);
   assert.match(setter, /const preserveImeConnection = \(state\.composerComposing \|\| keepAndroidEditorConnection\)/);
   assert.match(setter, /if \(!preserveImeConnection && currentContentEditable !== nextContentEditable\)/);
-  assert.match(appJs, /function placeMessageInputCaretAtEnd\(input\)/);
+  assert.match(composerRuntimeJs, /function placeMessageInputCaretAtEnd\(input\)/);
   assert.match(focusHelper, /setMessageInputDisabled\(false\)/);
   assert.match(focusHelper, /options\.resetActiveFocus[\s\S]*document\.activeElement === input[\s\S]*\(!isAndroidBrowser\(\) \|\| options\.allowAndroidActiveFocusReset\)/);
   assert.match(focusHelper, /input\.focus\(\{ preventScroll: true \}\)/);
   assert.match(focusHelper, /if \(options\.moveCaretToEnd\) placeMessageInputCaretAtEnd\(input\)/);
   assert.match(indexHtml, /id="messageInput"[^>]*inputmode="text"[^>]*enterkeyhint="send"/);
-  assert.match(appJs, /function messageInputKeyboardVisible\(\)/);
-  assert.match(functionBody("shouldRecoverMessageInputKeyboard"), /if \(!isAndroidBrowser\(\) && !isHermesEmbedMode\(\)\) return false;/);
-  assert.doesNotMatch(functionBody("shouldRecoverMessageInputKeyboard"), /if \(isAndroidBrowser\(\)\) return false;/);
-  assert.match(appJs, /function recoverMessageInputKeyboardFromGesture\(\)/);
-  assert.match(functionBody("recoverMessageInputKeyboardFromGesture"), /state\.messageInputPointerWasFocused = false/);
-  assert.doesNotMatch(functionBody("recoverMessageInputKeyboardFromGesture"), /if \(isAndroidBrowser\(\)\) return false;/);
-  assert.match(appJs, /function releaseStaleAndroidMessageInputFocusBeforeNativeTap\(input\)/);
-  assert.match(functionBody("releaseStaleAndroidMessageInputFocusBeforeNativeTap"), /document\.activeElement === input[\s\S]*return false/);
-  assert.match(functionBody("releaseStaleAndroidMessageInputFocusBeforeNativeTap"), /input\.blur\(\)/);
-  assert.match(appJs, /function messageInputCanEnableForNativeGesture\(\)/);
-  assert.match(functionBody("messageInputCanEnableForNativeGesture"), /state\.composerBusy \|\| state\.attachmentProcessingCount > 0/);
-  assert.match(functionBody("messageInputCanEnableForNativeGesture"), /state\.newThreadDraft/);
-  assert.match(functionBody("prepareMessageInputForNativeGesture"), /state\.messageInputPointerWasFocused = document\.activeElement === input/);
-  assert.match(functionBody("prepareMessageInputForNativeGesture"), /if \(!input \|\| !isAndroidBrowser\(\)\) return;/);
-  assert.match(functionBody("prepareMessageInputForNativeGesture"), /messageInputCanEnableForNativeGesture\(\)/);
-  assert.match(functionBody("prepareMessageInputForNativeGesture"), /setMessageInputDisabled\(false\)/);
-  assert.match(functionBody("prepareMessageInputForNativeGesture"), /releaseStaleAndroidMessageInputFocusBeforeNativeTap\(input\)/);
-  assert.doesNotMatch(functionBody("prepareMessageInputForNativeGesture"), /focusMessageInput|preventDefault/);
+  assert.match(composerRuntimeJs, /function messageInputKeyboardVisible\(\)/);
+  assert.match(composerRuntimeBody("shouldRecoverMessageInputKeyboard"), /if \(!isAndroidBrowser\(\) && !isHermesEmbedMode\(\)\) return false;/);
+  assert.doesNotMatch(composerRuntimeBody("shouldRecoverMessageInputKeyboard"), /if \(isAndroidBrowser\(\)\) return false;/);
+  assert.match(composerRuntimeJs, /function recoverMessageInputKeyboardFromGesture\(\)/);
+  assert.match(composerRuntimeBody("recoverMessageInputKeyboardFromGesture"), /state\.messageInputPointerWasFocused = false/);
+  assert.doesNotMatch(composerRuntimeBody("recoverMessageInputKeyboardFromGesture"), /if \(isAndroidBrowser\(\)\) return false;/);
+  assert.match(composerRuntimeJs, /function releaseStaleAndroidMessageInputFocusBeforeNativeTap\(input\)/);
+  assert.match(composerRuntimeBody("releaseStaleAndroidMessageInputFocusBeforeNativeTap"), /document\.activeElement === input[\s\S]*return false/);
+  assert.match(composerRuntimeBody("releaseStaleAndroidMessageInputFocusBeforeNativeTap"), /input\.blur\(\)/);
+  assert.match(composerRuntimeJs, /function messageInputCanEnableForNativeGesture\(\)/);
+  assert.match(composerRuntimeBody("messageInputCanEnableForNativeGesture"), /state\.composerBusy \|\| state\.attachmentProcessingCount > 0/);
+  assert.match(composerRuntimeBody("messageInputCanEnableForNativeGesture"), /state\.newThreadDraft/);
+  assert.match(composerRuntimeBody("prepareMessageInputForNativeGesture"), /state\.messageInputPointerWasFocused = document\.activeElement === input/);
+  assert.match(composerRuntimeBody("prepareMessageInputForNativeGesture"), /if \(!input \|\| !isAndroidBrowser\(\)\) return;/);
+  assert.match(composerRuntimeBody("prepareMessageInputForNativeGesture"), /messageInputCanEnableForNativeGesture\(\)/);
+  assert.match(composerRuntimeBody("prepareMessageInputForNativeGesture"), /setMessageInputDisabled\(false\)/);
+  assert.match(composerRuntimeBody("prepareMessageInputForNativeGesture"), /releaseStaleAndroidMessageInputFocusBeforeNativeTap\(input\)/);
+  assert.doesNotMatch(composerRuntimeBody("prepareMessageInputForNativeGesture"), /focusMessageInput|preventDefault/);
   assert.match(appJs, /addEventListener\("pointerdown", prepareMessageInputForNativeGesture\)/);
   assert.match(appJs, /addEventListener\("pointerup", recoverMessageInputKeyboardFromGesture\)/);
   assert.match(appJs, /addEventListener\("click", recoverMessageInputKeyboardFromGesture\)/);
-  assert.match(functionBody("recoverMessageInputKeyboardFromGesture"), /isAndroidBrowser\(\) \? \{[\s\S]*retry: true[\s\S]*\} : \{[\s\S]*resetActiveFocus: true[\s\S]*allowAndroidActiveFocusReset: true/);
+  assert.match(composerRuntimeBody("recoverMessageInputKeyboardFromGesture"), /isAndroidBrowser\(\) \? \{[\s\S]*retry: true[\s\S]*\} : \{[\s\S]*resetActiveFocus: true[\s\S]*allowAndroidActiveFocusReset: true/);
   assert.match(appJs, /addEventListener\("compositionstart", \(\) => \{[\s\S]*state\.composerComposing = true;/);
   assert.match(appJs, /addEventListener\("compositionend", \(event\) => \{[\s\S]*state\.composerComposing = false;/);
   assert.match(appJs, /if \(state\.composerComposing \|\| event\.isComposing\) return;/);

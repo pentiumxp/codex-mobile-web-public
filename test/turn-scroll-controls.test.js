@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 
@@ -237,7 +238,10 @@ test("successful message submit follows the new turn to the bottom", () => {
   assert.match(appJs, /function scheduleSubmittedMessageBottomFollowScroll\(\)/);
   assert.match(appJs, /scheduleBottomFollowScroll\(shouldFollowSubmittedMessageToBottom\);/);
   assert.match(appJs, /if \(shouldFollow\(\)\) scheduleConversationToBottom\(\);/);
-  assert.match(appJs, /followSubmittedMessageToBottom\(targetThreadId, clientSubmissionId\);[\s\S]*await api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);
+  assert.match(
+    functionSourceFrom(composerRuntimeJs, "sendMessage"),
+    /followSubmittedMessageToBottom\(targetThreadId, clientSubmissionId\);[\s\S]*await api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/,
+  );
   assert.match(appJs, /sustainSubmittedMessageBottomFollow\(turn, itemType, field\);/);
   assert.match(appJs, /clearSubmittedMessageBottomFollow\(\);[\s\S]*const message = normalizeClientErrorMessage/);
   assert.match(appJs, /conversationScroll\.isNearBottom\(\{/);

@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "codex-mobile-shell-v612";
+const CACHE_NAME = "codex-mobile-shell-v613";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -8,6 +8,7 @@ const STATIC_ASSETS = [
   "/api-client.js",
   "/runtime-settings.js",
   "/draft-store.js",
+  "/composer-runtime.js",
   "/markdown-renderer.js",
   "/viewport-metrics.js",
   "/conversation-scroll.js",

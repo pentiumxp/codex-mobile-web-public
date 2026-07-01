@@ -21,6 +21,7 @@ const apiDispatchRouteServiceJs = fs.readFileSync(path.join(root, "server-routes
 const chatGptProRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "chatgpt-pro-route-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
 const packageJson = fs.readFileSync(path.join(root, "package.json"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
@@ -110,13 +111,14 @@ test("server and client wire @ChatGPT Pro without normal message submission", ()
   assert.match(appJs, /function isChatGptProCommandText\(/);
   assert.match(appJs, /async function submitChatGptProRequest\(text, options = \{\}\)/);
   assert.match(appJs, /api\("\/api\/chatgpt-pro\/generate"/);
-  assert.match(appJs, /function composerIntentBareTagKind\(/);
-  assert.match(appJs, /function openComposerIntentDialog\(/);
-  assert.match(appJs, /submitChatGptProRequest\(`\$\{option\.tag\} \$\{body\}`, \{ rethrow: true \}\)/);
+  assert.match(appJs, /function openComposerIntentDialog\(\.\.\.args\) \{\s*return composerRuntime\.openComposerIntentDialog\(\.\.\.args\);/);
+  assert.match(composerRuntimeJs, /function composerIntentBareTagKind\(/);
+  assert.match(composerRuntimeJs, /function openComposerIntentDialog\(/);
+  assert.match(composerRuntimeJs, /submitChatGptProRequest\(`\$\{option\.tag\} \$\{body\}`, \{ rethrow: true \}\)/);
   assert.match(appJs, /@ChatGPT Pro/);
-  const sendStart = appJs.indexOf("async function sendMessage");
-  const sendEnd = appJs.indexOf("async function sendNewThreadMessage", sendStart);
-  const sendBody = appJs.slice(sendStart, sendEnd);
+  const sendStart = composerRuntimeJs.indexOf("async function sendMessage");
+  const sendEnd = composerRuntimeJs.indexOf("async function sendNewThreadMessage", sendStart);
+  const sendBody = composerRuntimeJs.slice(sendStart, sendEnd);
   assert.ok(sendBody.indexOf("isChatGptProCommandText(text)") < sendBody.indexOf("sendNewThreadMessage(text"), "Pro command should intercept before new-thread send");
   assert.ok(sendBody.indexOf("isChatGptProCommandText(text)") < sendBody.indexOf("/api/threads/${encodeURIComponent(targetThreadId)}/messages"), "Pro command should intercept before normal message send");
 });

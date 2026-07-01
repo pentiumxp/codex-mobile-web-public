@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
@@ -32,6 +33,10 @@ function sourceFunctionBody(source, name) {
 
 function functionBody(name) {
   return sourceFunctionBody(appJs, name);
+}
+
+function composerRuntimeFunctionBody(name) {
+  return sourceFunctionBody(composerRuntimeJs, name);
 }
 
 function threadListRuntimeFunctionBody(name) {
@@ -154,10 +159,10 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("Android composer focused native tap preserves IME focus", () => {
-  const prepareBody = functionBody("prepareMessageInputForNativeGesture");
-  const recoverBody = functionBody("recoverMessageInputKeyboardFromGesture");
-  const shouldRecoverBody = functionBody("shouldRecoverMessageInputKeyboard");
-  const releaseBody = functionBody("releaseStaleAndroidMessageInputFocusBeforeNativeTap");
+  const prepareBody = composerRuntimeFunctionBody("prepareMessageInputForNativeGesture");
+  const recoverBody = composerRuntimeFunctionBody("recoverMessageInputKeyboardFromGesture");
+  const shouldRecoverBody = composerRuntimeFunctionBody("shouldRecoverMessageInputKeyboard");
+  const releaseBody = composerRuntimeFunctionBody("releaseStaleAndroidMessageInputFocusBeforeNativeTap");
   assert.match(prepareBody, /if \(!input \|\| !isAndroidBrowser\(\)\) return;/);
   assert.match(prepareBody, /setMessageInputDisabled\(false\)/);
   assert.match(prepareBody, /releaseStaleAndroidMessageInputFocusBeforeNativeTap\(input\)/);
@@ -174,13 +179,13 @@ test("Android composer focused native tap preserves IME focus", () => {
 
 test("composer sizing avoids one-pixel layout churn while typing and streaming", () => {
   assert.match(appJs, /composerHeightPx:\s*0/);
-  assert.match(appJs, /function updateComposerHeightVar\(options = \{\}\)/);
-  assert.match(appJs, /stablePixelChanged\(previousPx, nextPx\)/);
-  assert.match(appJs, /document\.documentElement\.style\.setProperty\("--composer-height", `\$\{nextPx\}px`\)/);
-  assert.match(appJs, /function autoSizeMessageInput\(el, options = \{\}\)/);
-  assert.match(appJs, /nextTextLength < previousTextLength/);
+  assert.match(composerRuntimeJs, /function updateComposerHeightVar\(options = \{\}\)/);
+  assert.match(composerRuntimeJs, /stablePixelChanged\(previousPx, nextPx\)/);
+  assert.match(composerRuntimeJs, /document\.documentElement\.style\.setProperty\("--composer-height", `\$\{nextPx\}px`\)/);
+  assert.match(composerRuntimeJs, /function autoSizeMessageInput\(el, options = \{\}\)/);
+  assert.match(composerRuntimeJs, /nextTextLength < previousTextLength/);
   assert.match(appJs, /autoSizeMessageInput\(event\.target\);/);
-  assert.match(appJs, /updateMessageInputOverflow\(el, nextHeight\)/);
+  assert.match(composerRuntimeJs, /updateMessageInputOverflow\(el, nextHeight\)/);
   assert.match(stylesCss, /\.message-input\s*{[\s\S]*height:\s*44px;[\s\S]*overflow-y:\s*hidden;/);
 });
 
@@ -270,6 +275,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /"\/thread-tile-state\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(swJs, /"\/thread-tile-runtime\.js"/);
+  assert.match(swJs, /"\/composer-runtime\.js"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);

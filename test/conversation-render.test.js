@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-list-runtime.js"), "utf8");
 const threadTileRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-tile-runtime.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
@@ -54,6 +55,10 @@ function functionSourceFrom(source, name) {
 
 function functionBody(name) {
   return functionBodyFrom(appJs, name);
+}
+
+function composerRuntimeBody(name) {
+  return functionBodyFrom(composerRuntimeJs, name);
 }
 
 function threadListRuntimeBody(name) {
@@ -251,12 +256,12 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
 
 function evaluatedLocalUserMessageItem() {
   const sources = [
-    "formatFileSize",
-    "localAttachmentPreviewUrl",
-    "appendLocalAttachmentSummary",
-    "localImageInputPartsForAttachments",
-    "localUserMessageItem",
-  ].map((name) => functionSourceFrom(appJs, name));
+    functionSourceFrom(composerRuntimeJs, "formatFileSize"),
+    functionSourceFrom(appJs, "localAttachmentPreviewUrl"),
+    functionSourceFrom(composerRuntimeJs, "appendLocalAttachmentSummary"),
+    functionSourceFrom(composerRuntimeJs, "localImageInputPartsForAttachments"),
+    functionSourceFrom(composerRuntimeJs, "localUserMessageItem"),
+  ];
   return Function(`${sources.join("\n")}\nreturn localUserMessageItem;`)();
 }
 
@@ -365,11 +370,11 @@ return { operationCommandText, operationCommandSummary, operationSummaryLines };
 
 function evaluatedPendingAttachmentClearHarness() {
   const sources = [
-    "revokeAttachmentPreviewUrls",
-    "scheduleAttachmentPreviewUrlRevoke",
-    "replacePendingAttachments",
-    "clearPendingAttachments",
-  ].map((name) => functionSourceFrom(appJs, name));
+    functionSourceFrom(appJs, "revokeAttachmentPreviewUrls"),
+    functionSourceFrom(appJs, "scheduleAttachmentPreviewUrlRevoke"),
+    functionSourceFrom(appJs, "replacePendingAttachments"),
+    functionSourceFrom(composerRuntimeJs, "clearPendingAttachments"),
+  ];
   const harness = Function(`
 const revoked = [];
 const timers = [];
@@ -1740,24 +1745,24 @@ return {
 
 function evaluatedTurnUsageSummaryRenderer() {
   const sources = [
-    "escapeHtml",
-    "formatFileSize",
-    "formatTokenCount",
-    "formatCompactTokenCount",
-    "displayInputTokensExcludingCached",
-    "tokenUsageSummaryText",
-    "tokenUsageAdditiveDetail",
-    "tokenUsageIncludedDetail",
-    "formatUsagePercent",
-    "clampPercent",
-    "contextRiskLabel",
-    "renderUsageMetric",
-    "renderUsageBarPill",
-    "renderUsageTokenCell",
-    "renderUsageProgress",
-    "renderUsageCompactMetric",
-    "renderTurnUsageSummary",
-  ].map((name) => functionSourceFrom(appJs, name));
+    functionSourceFrom(appJs, "escapeHtml"),
+    functionSourceFrom(composerRuntimeJs, "formatFileSize"),
+    functionSourceFrom(appJs, "formatTokenCount"),
+    functionSourceFrom(appJs, "formatCompactTokenCount"),
+    functionSourceFrom(appJs, "displayInputTokensExcludingCached"),
+    functionSourceFrom(appJs, "tokenUsageSummaryText"),
+    functionSourceFrom(appJs, "tokenUsageAdditiveDetail"),
+    functionSourceFrom(appJs, "tokenUsageIncludedDetail"),
+    functionSourceFrom(appJs, "formatUsagePercent"),
+    functionSourceFrom(appJs, "clampPercent"),
+    functionSourceFrom(appJs, "contextRiskLabel"),
+    functionSourceFrom(appJs, "renderUsageMetric"),
+    functionSourceFrom(appJs, "renderUsageBarPill"),
+    functionSourceFrom(appJs, "renderUsageTokenCell"),
+    functionSourceFrom(appJs, "renderUsageProgress"),
+    functionSourceFrom(appJs, "renderUsageCompactMetric"),
+    functionSourceFrom(appJs, "renderTurnUsageSummary"),
+  ];
   return Function(`${sources.join("\n")}\nreturn renderTurnUsageSummary;`)();
 }
 
@@ -6340,7 +6345,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /recordHomeAiDiagnosticSuccess\(item\.payload \|\| \{\}\);/);
   assert.doesNotMatch(functionBody("loadThread"), /postPerformanceEvent\("thread_detail_first_paint", firstPaintPerformance\);\s*recordThreadDetailResponseDiagnostics\(firstPaintPerformance/);
-  const sendBody = functionBody("sendMessage");
+  const sendBody = composerRuntimeBody("sendMessage");
   assert.match(sendBody, /const targetThreadId = currentComposerThreadId\(\);/);
   assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(targetThreadId\);/);
   assert.match(sendBody, /registerSubmittedUserMessage\(targetThreadId, outboundText, submittedAttachments, clientSubmissionId\);\s*const insertedLocalMessage = insertLocalSubmittedUserMessage/);
@@ -6350,7 +6355,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(sendBody, /if \(!steering && serverTurnId && reconcileSubmittedUserMessageTurn\(targetThreadId, clientSubmissionId, serverTurnId\)\)/);
   assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
 
-  const taskCardSendBody = functionBody("sendThreadTaskCardCommand");
+  const taskCardSendBody = composerRuntimeBody("sendThreadTaskCardCommand");
   assert.match(taskCardSendBody, /const targetThreadId = currentComposerThreadId\(\);/);
   assert.match(taskCardSendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);
   assert.match(taskCardSendBody, /const serverTurnId = startedTurnId\(result\);/);

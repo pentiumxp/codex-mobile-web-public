@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
@@ -250,7 +251,7 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(functionBody(appJs, "preparePublicPrMergePrompt"), /await loadWorkspaces\(\)\.catch/);
   assert.match(appJs, /if \(await openPublicPrReviewThreadIfAvailable\(workspacePath, text\)\) \{[\s\S]*return;[\s\S]*\}/);
   assert.match(appJs, /state\.newThreadTitle = publicPrReviewThreadTitle\(\);[\s\S]*state\.newThreadDraft = true;|state\.newThreadDraft = true;[\s\S]*state\.newThreadTitle = publicPrReviewThreadTitle\(\);/);
-  assert.match(appJs, /body\.append\("title", submittedTitle\);/);
+  assert.match(composerRuntimeJs, /body\.append\("title", submittedTitle\);/);
   assert.match(appJs, /scheduleStartupPublicPrCheck\(\)/);
   assert.match(appJs, /handlePublicPrStatusClick\(\)\.catch\(showError\)/);
   assert.match(functionBody(appJs, "maybePromptPublicPrMerge"), /requestAppConfirmation\(publicPrMergeConfirmationMessage\(status\)/);
