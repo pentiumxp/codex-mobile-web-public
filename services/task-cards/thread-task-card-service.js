@@ -571,10 +571,10 @@ function publicCard(card, threadId) {
   out.requiresReturn = cardRequiresReturn(out);
   out.ackPolicy = cardAckPolicy(out);
   out.threadRole = role;
-  out.canApprove = role === "target" && out.status === "pending";
-  out.canDelete = role === "target" && out.status === "pending";
+  out.canApprove = role === "target" && !out.terminal && out.status === "pending";
+  out.canDelete = role === "target" && !out.terminal && out.status === "pending";
   out.canReply = role === "target" && !out.terminal && (out.status === "pending" || out.status === "approved");
-  out.canRevoke = role === "source" && out.status === "pending";
+  out.canRevoke = role === "source" && !out.terminal && out.status === "pending";
   out.executionLease = publicExecutionLease(out.executionLease);
   return out;
 }
@@ -731,6 +731,7 @@ function countsForThreadFromStore(store, threadId) {
   if (!id) return counts;
   for (const card of safeArray(store && store.cards)) {
     if (!card || card.status !== "pending") continue;
+    if (cardIsTerminal(card)) continue;
     const role = cardForThread(card, id);
     if (!role) continue;
     counts.pendingTotal += 1;
@@ -1096,6 +1097,10 @@ function createThreadTaskCardService(options = {}) {
       if (audit.homeAiDeliveryReturnEventStatus === "sent"
         && stringValue(audit.homeAiDeliveryReturnEventForCardId) === sourceId) {
         return { skipped: true, reason: "already_sent" };
+      }
+      if (audit.homeAiDeliveryReturnEventStatus === "sending"
+        && stringValue(audit.homeAiDeliveryReturnEventForCardId) === sourceId) {
+        return { skipped: true, reason: "already_sending" };
       }
       const event = terminalReturnEventForCards(originalCard, returnCard);
       if (!event) return null;

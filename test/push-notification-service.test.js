@@ -465,6 +465,7 @@ test("completed web push payload carries thread ids for notification click routi
   assert.match(webPushRuntimeServiceJs, /threadId: meta\.threadId \|\| "",/);
   assert.match(swJs, /if \(!data\.threadId && payload\.threadId\) data\.threadId = payload\.threadId;/);
   assert.match(swJs, /url\.searchParams\.set\("thread", threadId\);/);
+  assert.match(swJs, /renotify: false,/);
   assert.match(swJs, /self\.clients\.openWindow\(target\.url\)/);
 });
 

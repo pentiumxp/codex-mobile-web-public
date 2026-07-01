@@ -723,13 +723,17 @@ switch because it closes an already received card; it validates the original
 `Task card id`, the target actor thread, and the return body before calling
 `threadTaskCardService.reply()`. Return cards with `returnToSource:true` are
 source-direct approved into the original source thread and do not require a
-second source-thread approval. When a visible card id or actor thread id is
-stale but the workflow id uniquely identifies the original active card, the
-service resolves the original card and target actor from stored workflow
-metadata and returns bounded `returnResolution` evidence. Already closed or
-missing duplicate return attempts produce bounded no-op results instead of
-creating acknowledgement loops. A target-thread final answer is not a
-source-thread return card.
+second source-thread approval. They are terminal receipts, not target-side
+approval requests: pending-count decoration, public card actions, and retry
+paths must exclude them even during the short source-direct approval window.
+Concurrent retries for the same terminal return event treat an existing
+`sending` audit status as in-flight and must not emit a second Home AI delivery
+event. When a visible card id or actor thread id is stale but the workflow id
+uniquely identifies the original active card, the service resolves the original
+card and target actor from stored workflow metadata and returns bounded
+`returnResolution` evidence. Already closed or missing duplicate return
+attempts produce bounded no-op results instead of creating acknowledgement
+loops. A target-thread final answer is not a source-thread return card.
 Deep audit/task-card callers can pass `reasoningEffort` (`low`, `medium`,
 `high`, or `xhigh`) through the source-thread create route, dynamic tool, MCP
 tool, or create script. The service stores the bounded request on delivery
@@ -1049,6 +1053,9 @@ origin deep-link URL such as `/?thread=<thread-id>`. The service worker click
 handler focuses an existing app shell and posts the target id, or opens the
 deep-link URL directly for cold-start/PWA launch so startup thread selection can
 load the matching thread without relying on a late `postMessage`.
+The service worker uses the server-provided stable notification tag with
+`renotify:false`, so a replayed same-thread completion notification replaces
+the existing visible notification instead of creating another alert.
 
 If the completion payload explicitly says the turn has no final assistant message, Mobile Web must not send a normal "turn ended" Push notification. That shape means the runtime ended the turn without a final reply, so treating it as a normal completed turn is misleading. Thread detail projection should expose this as a bounded `turnDiagnostic` item with code `runtime_completed_without_response`; it must not fabricate an `agentMessage`, and receipt-only compaction must retain the diagnostic so the turn does not appear to silently vanish.
 

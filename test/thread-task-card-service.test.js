@@ -1305,6 +1305,67 @@ test("reply can return an approved implementation card and is idempotent", async
   assert.equal(service.listForThread("thread-home").filter((card) => card.audit && card.audit.replyToCardId === created.id).length, 1);
 });
 
+test("terminal return receipt cards are not exposed as pending approval requests", () => {
+  const storageFile = tempFile("cards.json");
+  const createdAt = "2026-07-01T01:00:00.000Z";
+  fs.writeFileSync(storageFile, JSON.stringify({
+    version: 1,
+    cards: [{
+      id: "ttc_terminal_pending",
+      status: "pending",
+      idempotencyKey: "terminal:pending",
+      createdAt,
+      updatedAt: createdAt,
+      source: {
+        workspaceId: "plugin",
+        threadId: "thread-plugin",
+        turnId: "",
+        title: "Plugin",
+      },
+      target: {
+        workspaceId: "home-ai",
+        threadId: "thread-home",
+      },
+      message: {
+        format: "markdown",
+        title: "Return: completed",
+        summary: "completed",
+        body: "Completed.",
+      },
+      delivery: {
+        injectOnApprove: true,
+        allowReply: false,
+        allowRevoke: false,
+        autoRunAfterFirstApproval: false,
+        autoReturnOnCompletion: false,
+        returnToSource: true,
+        returnStatus: "completed",
+        requiresReturn: false,
+        terminal: true,
+        ackPolicy: "none",
+      },
+      audit: {
+        replyToCardId: "ttc_original",
+        returnToSource: true,
+        terminal: true,
+        ackPolicy: "none",
+      },
+    }],
+  }), "utf8");
+  const service = createThreadTaskCardService({ storageFile });
+
+  assert.deepEqual(service.pendingCountsForThread("thread-home"), {
+    pendingTotal: 0,
+    pendingIncoming: 0,
+    pendingOutgoing: 0,
+  });
+  const [receipt] = service.listForThread("thread-home");
+  assert.equal(receipt.terminal, true);
+  assert.equal(receipt.canApprove, undefined);
+  assert.equal(receipt.canDelete, undefined);
+  assert.equal(receipt.canReply, undefined);
+});
+
 test("reply can recover an accepted card left in approving after a lost final write", async () => {
   const storageFile = tempFile("cards.json");
   const executions = [];
@@ -1735,6 +1796,63 @@ test("terminal return cards report bounded Home AI delivery events for supported
   assert.deepEqual(events.map((event) => event.status), ["blocked", "redirected", "partially_completed", "rejected"]);
   assert.equal(events.every((event) => event.metadata.terminal === true && event.metadata.ackPolicy === "none"), true);
   assert.equal(events.some((event) => Object.hasOwn(event, "body")), false);
+});
+
+test("concurrent return_to_source retry does not send a duplicate terminal return event", async () => {
+  const events = [];
+  let markEventStarted;
+  let releaseEvent;
+  const eventStarted = new Promise((resolve) => { markEventStarted = resolve; });
+  const eventRelease = new Promise((resolve) => { releaseEvent = resolve; });
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: `turn-${card.id}` }),
+    onTerminalReturnCard: async (event) => {
+      events.push(event);
+      markEventStarted();
+      await eventRelease;
+      return { status: 200, eventId: "event-once" };
+    },
+  });
+  const card = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "plugin",
+    targetThreadId: "thread-plugin",
+    idempotencyKey: "return-event:concurrent",
+    format: "markdown",
+    title: "Repair plugin",
+    summary: "Repair and return.",
+    body: "Please repair and return.",
+  });
+
+  const first = service.reply(card.id, "thread-plugin", {
+    idempotencyKey: "return-event:concurrent:reply",
+    format: "markdown",
+    title: "Return: plugin repair",
+    status: "completed",
+    summary: "completed",
+    body: "Completed.",
+    returnToSource: true,
+  });
+  await eventStarted;
+  const retry = await service.reply(card.id, "thread-plugin", {
+    idempotencyKey: "return-event:concurrent:reply",
+    format: "markdown",
+    title: "Return: plugin repair",
+    status: "completed",
+    summary: "completed",
+    body: "Completed.",
+    returnToSource: true,
+  });
+  releaseEvent();
+  const returned = await first;
+
+  assert.equal(retry.replyCard.id, returned.replyCard.id);
+  assert.equal(events.length, 1);
+  assert.equal(service.get(returned.replyCard.id, "thread-home").audit.homeAiDeliveryReturnEventStatus, "sent");
 });
 
 test("Home AI delivery event 404 is recorded without blocking return-card delivery", async () => {

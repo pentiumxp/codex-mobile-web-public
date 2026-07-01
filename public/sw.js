@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "codex-mobile-shell-v610";
+const CACHE_NAME = "codex-mobile-shell-v611";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -132,6 +132,7 @@ self.addEventListener("push", (event) => {
     icon: "/icons/icon-192.png",
     badge: "/icons/icon-192.png",
     tag: payload.tag || "codex-mobile-web",
+    renotify: false,
     data,
   };
   event.waitUntil(self.registration.showNotification(title, options));
