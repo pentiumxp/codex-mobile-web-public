@@ -18,6 +18,7 @@ const serverRuntimeUtilsJs = fs.readFileSync(path.resolve(__dirname, "..", "serv
 const serverHttpRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-http-runtime-service.js"), "utf8");
 const runtimePermissionPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-permission-policy-service.js"), "utf8");
 const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "rate-limit-runtime-service.js"), "utf8");
+const runtimeWorkspaceBootstrapServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-workspace-bootstrap-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-task-card-route-service.js"), "utf8");
 const taskCardRuntimePolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-runtime-policy-service.js"), "utf8");
@@ -543,8 +544,9 @@ test("continuation start can register an existing allowed workspace before visib
     startContinuationBody.indexOf("await ensureWorkspaceVisible(cwd)") < startContinuationBody.indexOf("throw httpStatusError(403"),
     "existing workspace registration must happen before the visibility rejection",
   );
-  assert.match(serverJs, /function ensureWorkspaceVisibleForContinuation\(cwd\)/);
-  assert.match(serverJs, /workspaceRegistryService\.registerExisting\(\{ cwd \}\)/);
+  assert.match(serverJs, /createRuntimeWorkspaceBootstrapService/);
+  assert.match(runtimeWorkspaceBootstrapServiceJs, /function ensureWorkspaceVisibleForContinuation\(cwd\)/);
+  assert.match(runtimeWorkspaceBootstrapServiceJs, /workspaceRegistryService\.registerExisting\(\{ cwd \}\)/);
   assert.match(serverJs, /ensureWorkspaceVisible:\s*ensureWorkspaceVisibleForContinuation/);
 });
 

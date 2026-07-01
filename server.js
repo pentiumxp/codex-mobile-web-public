@@ -76,6 +76,7 @@ const { createCodexProfileSwitchService } = require("./adapters/codex-profile-sw
 const { createPublicConfigRuntimeCache } = require("./adapters/public-config-runtime-cache-service");
 const { ensureCodexMobileMcpServer } = require("./adapters/codex-mobile-mcp-config-service");
 const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
+const { createRuntimeWorkspaceBootstrapService } = require("./services/runtime/runtime-workspace-bootstrap-service");
 const { createThreadDetailProjectionInputService } = require("./adapters/thread-detail-projection-input-service");
 const { createThreadDetailProjectionResultService } = require("./adapters/thread-detail-projection-result-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
@@ -427,83 +428,26 @@ const codexProfileService = createCodexProfileService({
   activeCodexHome: CODEX_HOME,
 });
 const publicConfigRuntimeCache = createPublicConfigRuntimeCache();
-
-function syncRegisteredWorkspaceTrust(codexHome = CODEX_HOME) {
-  try {
-    const result = ensureCodexProjectsTrusted({
-      codexHome,
-      projectPaths: workspaceRegistryService.registeredPaths(),
-    });
-    if (result.changed) {
-      console.log(`[workspace-trust] added ${result.added.length} registered workspace(s) to ${result.configPath}`);
-    }
-    return result;
-  } catch (err) {
-    console.error(`[workspace-trust] failed to sync registered workspaces: ${err.message || err}`);
-    return { changed: false, added: [], error: err.message || String(err) };
-  }
-}
-
-function ensureWorkspaceVisibleForContinuation(cwd) {
-  const registered = workspaceRegistryService.registerExisting({ cwd });
-  syncRegisteredWorkspaceTrust(CODEX_HOME);
-  syncKnownCodexMobileMcpToolsets();
-  return registered;
-}
-
-function syncCodexMobileMcpToolset(codexHome = CODEX_HOME) {
-  try {
-    const result = ensureCodexMobileMcpServer({
-      codexHome,
-      command: process.execPath,
-      scriptPath: path.join(APP_ROOT, "scripts", "codex-mobile-mcp-server.js"),
-      baseUrl: process.env.CODEX_MOBILE_MCP_SERVER_URL || `http://127.0.0.1:${PORT}`,
-      keyFile: AUTH_KEY_FILE,
-    });
-    if (result.changed) {
-      console.log(`[codex-mobile-mcp] registered ${result.serverName} in ${result.configPath}`);
-    }
-    return result;
-  } catch (err) {
-    console.error(`[codex-mobile-mcp] failed to sync toolset: ${err.message || err}`);
-    return { changed: false, added: false, error: err.message || String(err) };
-  }
-}
-
-function syncKnownCodexMobileMcpToolsets(profileOptions = {}) {
-  const homes = new Set([CODEX_HOME]);
-  let profileError = "";
-  try {
-    const profileState = profileOptions.profileState || codexProfileService.profiles(profileOptions);
-    for (const profile of profileState.profiles || []) {
-      const codexHome = String(profile && profile.codexHome || "").trim();
-      if (!codexHome) continue;
-      if (profile.exists || profile.active || codexHome === CODEX_HOME) homes.add(codexHome);
-    }
-  } catch (err) {
-    profileError = err && err.message || String(err);
-    console.error(`[codex-mobile-mcp] failed to enumerate known profiles: ${profileError}`);
-  }
-  const results = [];
-  for (const codexHome of homes) {
-    results.push(syncCodexMobileMcpToolset(codexHome));
-  }
-  return {
-    changed: results.some((item) => item && item.changed),
-    count: results.length,
-    results,
-    profileError,
-  };
-}
-
-function activeProfileRestartOptions(profile = null) {
-  const selected = profile || codexProfileService.profiles().profiles.find((item) => item.active) || null;
-  if (!selected || !selected.id || !selected.codexHome) return {};
-  return {
-    profileId: selected.id,
-    codexHome: selected.codexHome,
-  };
-}
+const runtimeWorkspaceBootstrapService = createRuntimeWorkspaceBootstrapService({
+  appRoot: APP_ROOT,
+  activeCodexHome: CODEX_HOME,
+  authKeyFile: AUTH_KEY_FILE,
+  port: PORT,
+  env: process.env,
+  processExecPath: process.execPath,
+  workspaceRegistryService,
+  codexProfileService,
+  ensureCodexProjectsTrusted,
+  ensureCodexMobileMcpServer,
+  logger: console,
+});
+const {
+  activeProfileRestartOptions,
+  ensureWorkspaceVisibleForContinuation,
+  syncCodexMobileMcpToolset,
+  syncKnownCodexMobileMcpToolsets,
+  syncRegisteredWorkspaceTrust,
+} = runtimeWorkspaceBootstrapService;
 
 const tokenUsageStatsService = createTokenUsageStatsService({
   dbPath: TOKEN_USAGE_STATS_DB,

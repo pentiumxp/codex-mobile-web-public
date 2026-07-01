@@ -12,6 +12,7 @@ const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
 const profileSwitchServiceJs = fs.readFileSync(path.join(root, "adapters", "codex-profile-switch-service.js"), "utf8");
+const runtimeWorkspaceBootstrapServiceJs = fs.readFileSync(path.join(root, "services", "runtime", "runtime-workspace-bootstrap-service.js"), "utf8");
 const restartScript = fs.readFileSync(path.join(root, "restart-codex-mobile-shared-chain.ps1"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const pkg = fs.readFileSync(path.join(root, "package.json"), "utf8");
@@ -50,9 +51,10 @@ test("manual restart route delegates to the shared-chain restart service", () =>
 
 test("profile switch restart passes the selected profile to the shared-chain script", () => {
   const routeSource = coreApiRouteServiceJs;
-  assert.match(serverJs, /function activeProfileRestartOptions\(profile = null\)/);
-  assert.match(serverJs, /profileId:\s*selected\.id/);
-  assert.match(serverJs, /codexHome:\s*selected\.codexHome/);
+  assert.match(serverJs, /createRuntimeWorkspaceBootstrapService/);
+  assert.match(runtimeWorkspaceBootstrapServiceJs, /function activeProfileRestartOptions\(profile = null\)/);
+  assert.match(runtimeWorkspaceBootstrapServiceJs, /profileId:\s*selected\.id/);
+  assert.match(runtimeWorkspaceBootstrapServiceJs, /codexHome:\s*selected\.codexHome/);
   assert.match(routeSource, /const preflight = await preflightCodexProfileSwitch\(targetProfile,\s*\{/);
   assert.match(routeSource, /syncRegisteredWorkspaceTrust\(targetProfile\.codexHome\)/);
   assert.match(routeSource, /syncCodexMobileMcpToolset\(targetProfile\.codexHome\)/);
@@ -92,9 +94,9 @@ test("profile switch restart passes the selected profile to the shared-chain scr
   assert.match(appJs, /正在读取目标账号额度/);
   assert.match(appJs, /timeoutMs:\s*90000/);
   assert.match(stylesCss, /\.codex-profile-main \.codex-profile-progress/);
-  assert.match(serverJs, /function syncCodexMobileMcpToolset\(codexHome = CODEX_HOME\)/);
-  assert.match(serverJs, /function syncKnownCodexMobileMcpToolsets\(profileOptions = \{\}\)/);
-  assert.match(serverJs, /profileOptions\.profileState \|\| codexProfileService\.profiles\(profileOptions\)/);
+  assert.match(runtimeWorkspaceBootstrapServiceJs, /function syncCodexMobileMcpToolset\(codexHome = activeCodexHome\)/);
+  assert.match(runtimeWorkspaceBootstrapServiceJs, /function syncKnownCodexMobileMcpToolsets\(profileOptions = \{\}\)/);
+  assert.match(runtimeWorkspaceBootstrapServiceJs, /profileOptions\.profileState \|\| codexProfileService\.profiles\(profileOptions\)/);
   assert.match(serverJs, /syncKnownCodexMobileMcpToolsets\(\)/);
   assert.match(routeSource, /syncKnownCodexMobileMcpToolsets\(\{ activeQuota, profileState \}\)/);
 });

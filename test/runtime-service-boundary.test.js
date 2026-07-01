@@ -30,6 +30,11 @@ const serviceBoundaries = [
     exports: ["createRuntimeSettingsService"],
   },
   {
+    canonical: require("../services/runtime/runtime-workspace-bootstrap-service"),
+    adapter: require("../adapters/runtime-workspace-bootstrap-service"),
+    exports: ["createRuntimeWorkspaceBootstrapService"],
+  },
+  {
     canonical: require("../services/runtime/app-server-request-policy-service"),
     adapter: require("../adapters/app-server-request-policy-service"),
     exports: ["createAppServerRequestPolicyService"],

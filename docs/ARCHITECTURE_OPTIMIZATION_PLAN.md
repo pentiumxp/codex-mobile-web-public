@@ -3725,6 +3725,28 @@ Required validation:
 - production `/api/workspaces` readback after private deploy should show the new
   Music path and omit the inactive empty old Music row.
 
+### 2026-07-01 Runtime Workspace Bootstrap Boundary
+
+The next Server split slice moves workspace bootstrap/runtime profile sync out
+of `server.js` into `services/runtime/runtime-workspace-bootstrap-service.js`.
+This is a cohesive runtime boundary rather than a line-count-only extraction:
+
+- registered workspace trust sync is service-owned;
+- continuation workspace registration now calls the service before visible-root
+  validation;
+- per-Codex-Home `codex_mobile` MCP registration and known-profile fan-out are
+  service-owned;
+- active-profile restart option shaping for shared-chain restart is
+  service-owned;
+- `server.js` keeps only service construction and dependency injection into
+  core/API routes and continuation startup.
+
+This keeps the ongoing Server target moving toward a thin entrypoint while
+preserving existing route order and runtime behavior. Validation should stay
+focused on the new service, core/profile switch route assertions, continuation
+workspace registration, and compatibility adapter coverage unless this slice is
+batched with a larger deploy.
+
 ## Release Rule
 
 Follow the current release order:
