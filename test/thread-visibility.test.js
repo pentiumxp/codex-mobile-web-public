@@ -34,6 +34,10 @@ const threadListStateServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "thread-list", "thread-list-state-service.js"),
   "utf8",
 );
+const threadListRuntimeServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-list", "thread-list-runtime-service.js"),
+  "utf8",
+);
 const threadDetailActiveReadPolicyServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-active-read-policy-service.js"),
   "utf8",
@@ -1154,7 +1158,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /function readThreadListFallback\(/);
   assert.match(serverHttpRuntimeServiceJs, /function logThreadList\(event, details = \{\}\)/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);
-  assert.match(serverJs, /createThreadListFallbackCacheService/);
+  assert.match(threadListRuntimeServiceJs, /createThreadListFallbackCacheService/);
   assert.match(baselineServiceJs, /createThreadListFallbackBaselineService/);
   assert.match(cacheServiceJs, /createThreadListFallbackBaselineService/);
   assert.match(prewarmServiceJs, /createThreadListFallbackPrewarmService/);
@@ -1190,36 +1194,37 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(threadListSummaryServiceJs, /THREAD_DETAIL_ONLY_SUMMARY_FIELDS/);
   assert.match(threadListSummaryServiceJs, /"turns"/);
   assert.match(threadListSummaryServiceJs, /"mobileDetailLoaded"/);
-  assert.match(serverJs, /const threadListFallbackCacheService = createThreadListFallbackCacheService\(\{\s*ttlMs: THREAD_LIST_FALLBACK_CACHE_TTL_MS,/);
+  assert.match(serverJs, /threadListRuntimeService = createThreadListRuntimeService\(\{/);
+  assert.match(threadListRuntimeServiceJs, /const threadListFallbackCacheService = createThreadListFallbackCacheService\(\{/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_ENABLED = !\/\^\(0\|false\|no\|off\)\$\/i\.test\(process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM \|\| "1"\)/);
   assert.match(serverJs, /process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS \|\| "0"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_RETRY_MS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_RETRY_MS \|\| "2500"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS \|\| "5"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_LIMIT = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT \|\| "40"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT_RAW = Number\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT \|\| "1000"/);
-  assert.match(serverJs, /summarizePrewarmStatus/);
-  assert.match(serverJs, /const threadListFallbackPrewarmService = createThreadListFallbackPrewarmService\(\{[\s\S]*readFallback: readThreadListFallback,[\s\S]*readGlobalState,[\s\S]*shouldRun: \(\) => \(activeThreadDetailRequestCount > 0[\s\S]*active-detail-in-flight[\s\S]*logger: console,[\s\S]*\}\);/);
-  assert.match(serverJs, /function threadListFallbackPrewarmConfig\(\) \{[\s\S]*enabled: THREAD_LIST_FALLBACK_PREWARM_ENABLED,[\s\S]*delayMs: THREAD_LIST_FALLBACK_PREWARM_DELAY_MS,[\s\S]*retryDelayMs: THREAD_LIST_FALLBACK_PREWARM_RETRY_MS,[\s\S]*maxDeferrals: THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS,[\s\S]*limit: THREAD_LIST_FALLBACK_PREWARM_LIMIT,[\s\S]*sourceSnapshotLimit: THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT,[\s\S]*\}/);
-  assert.match(serverJs, /function threadListFallbackPrewarmPublicStatus\(\) \{[\s\S]*summarizePrewarmStatus\([\s\S]*threadListFallbackPrewarmService\.status\(\),[\s\S]*threadListFallbackPrewarmConfig\(\),[\s\S]*\)/);
+  assert.match(threadListRuntimeServiceJs, /summarizePrewarmStatus/);
+  assert.match(threadListRuntimeServiceJs, /const threadListFallbackPrewarmService = createThreadListFallbackPrewarmService\(\{[\s\S]*readFallback: readThreadListFallback,[\s\S]*readGlobalState,[\s\S]*shouldRun: \(\) => \(Number\(getActiveThreadDetailRequestCount\(\)\) > 0[\s\S]*active-detail-in-flight[\s\S]*logger: options\.logger,[\s\S]*\}\);/);
+  assert.match(threadListRuntimeServiceJs, /function threadListFallbackPrewarmConfig\(\) \{[\s\S]*enabled: prewarmOptions\.enabled,[\s\S]*delayMs: prewarmOptions\.delayMs,[\s\S]*retryDelayMs: prewarmOptions\.retryDelayMs,[\s\S]*maxDeferrals: prewarmOptions\.maxDeferrals,[\s\S]*limit: prewarmOptions\.limit,[\s\S]*sourceSnapshotLimit: prewarmOptions\.sourceSnapshotLimit,[\s\S]*\}/);
+  assert.match(threadListRuntimeServiceJs, /function threadListFallbackPrewarmPublicStatus\(\) \{[\s\S]*summarizePrewarmStatus\([\s\S]*threadListFallbackPrewarmService\.status\(\),[\s\S]*threadListFallbackPrewarmConfig\(\),[\s\S]*\)/);
   assert.match(coreApiRouteServiceJs, /threadListFallbackPrewarm:\s*threadListFallbackPrewarmPublicStatus\(\)/);
-  assert.match(serverJs, /function scheduleThreadListFallbackPrewarm\(\) \{[\s\S]*threadListFallbackPrewarmService\.schedule\(threadListFallbackPrewarmConfig\(\)\);[\s\S]*\}/);
+  assert.match(threadListRuntimeServiceJs, /function scheduleThreadListFallbackPrewarm\(\) \{[\s\S]*threadListFallbackPrewarmService\.schedule\(threadListFallbackPrewarmConfig\(\)\);[\s\S]*\}/);
   assert.match(functionBody(serverJs, "startServer"), /scheduleThreadListFallbackPrewarm\(\);/);
-  assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);
-  assert.match(serverJs, /function upsertThreadListFallbackCacheThread\(thread, options = \{\}\)/);
+  assert.match(threadListRuntimeServiceJs, /function clearThreadListFallbackCache\(\)/);
+  assert.match(threadListRuntimeServiceJs, /function upsertThreadListFallbackCacheThread\(thread, upsertOptions = \{\}\)/);
   assert.match(threadListStateServiceJs, /function threadListRowsFromResult\(result\)/);
   assert.match(threadListStateServiceJs, /function upsertThreadListFallbackCacheThreads\(resultOrThreads, options = \{\}\)/);
   assert.match(threadListStateServiceJs, /upsertThreadListFallbackCacheThread\(thread, options\)/);
   assert.match(serverJs, /const threadListStateService = createThreadListStateService\(\{/);
-  assert.match(serverJs, /function removeThreadFromThreadListFallbackCache\(threadId\)/);
-  assert.match(serverJs, /function updateThreadListFallbackCacheStatus\(threadId, status, meta = \{\}\)/);
-  assert.match(serverJs, /let activeThreadDetailRequestCount = 0;/);
-  assert.match(serverJs, /function trackThreadDetailRequestLifecycle\(res\)/);
-  assert.match(serverJs, /function shouldDeferThreadListFallbackForActiveDetail\(\{ deferFallback, cursor, archived, searchTerm, cwd \} = \{\}\)/);
-  assert.match(serverJs, /function threadListFallbackCacheKey\(limit, filters = \{\}\)/);
-  assert.match(serverJs, /function readThreadListFallbackCache\(key\)/);
-  assert.match(serverJs, /function threadListFallbackCacheKey\(limit, filters = \{\}\) \{\s*return threadListFallbackCacheService\.cacheKey\(limit, filters\);\s*\}/);
-  assert.match(functionBody(serverJs, "readThreadListFallbackCache"), /threadListFallbackCacheService\.read\(key\)/);
-  assert.match(serverJs, /function readThreadListCachedFallback\(limit = 80, filters = \{\}\) \{[\s\S]*return threadListFallbackCacheService\.readCachedFallback\(limit, filters\);[\s\S]*\}/);
+  assert.match(threadListRuntimeServiceJs, /function removeThreadFromThreadListFallbackCache\(threadId\)/);
+  assert.match(threadListRuntimeServiceJs, /function updateThreadListFallbackCacheStatus\(threadId, status, meta = \{\}\)/);
+  assert.match(threadListRuntimeServiceJs, /let activeThreadDetailRequestCount = 0;/);
+  assert.match(threadListRuntimeServiceJs, /function trackThreadDetailRequestLifecycle\(res\)/);
+  assert.match(threadListRuntimeServiceJs, /function shouldDeferThreadListFallbackForActiveDetail\(\{ deferFallback, cursor, archived, searchTerm, cwd \} = \{\}\)/);
+  assert.match(threadListRuntimeServiceJs, /function threadListFallbackCacheKey\(limit, filters = \{\}\)/);
+  assert.match(threadListRuntimeServiceJs, /function readThreadListFallbackCache\(key\)/);
+  assert.match(threadListRuntimeServiceJs, /function threadListFallbackCacheKey\(limit, filters = \{\}\) \{\s*return threadListFallbackCacheService\.cacheKey\(limit, filters\);\s*\}/);
+  assert.match(functionBody(threadListRuntimeServiceJs, "readThreadListFallbackCache"), /threadListFallbackCacheService\.read\(key\)/);
+  assert.match(threadListRuntimeServiceJs, /function readThreadListCachedFallback\(limit = 80, filters = \{\}\) \{[\s\S]*return threadListFallbackCacheService\.readCachedFallback\(limit, filters\);[\s\S]*\}/);
   assert.doesNotMatch(cacheServiceJs, /fileFingerprint/);
   assert.match(cacheServiceJs, /ttlMs > 0/);
   assert.match(cacheServiceJs, /diagnostics\.cacheHit = true/);
@@ -1250,21 +1255,21 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /fallbackBaselineSourceCount: Number\(fallbackDiagnostics\.baselineSourceCount \|\| 0\)/);
   assert.match(routeBody, /fallbackBaselineResultCount: Number\(fallbackDiagnostics\.baselineResultCount \|\| 0\)/);
   assert.match(routeBody, /threadListFallbackBaselineWorkTimingFields\(fallbackDiagnostics\)/);
-  assert.match(serverJs, /function threadListFallbackBaselineWorkTimingFields\(diagnostics = \{\}\)/);
-  assert.match(serverJs, /fallbackBaselineFinalFilterInputCount: Number\(diagnostics\.baselineFinalFilterInputCount \|\| 0\)/);
-  assert.match(serverJs, /fallbackBaselineMergeInputCount: Number\(diagnostics\.baselineMergeInputCount \|\| 0\)/);
-  assert.match(serverJs, /fallbackBaselineMergeDuplicateCount: Number\(diagnostics\.baselineMergeDuplicateCount \|\| 0\)/);
+  assert.match(threadListRuntimeServiceJs, /function threadListFallbackBaselineWorkTimingFields\(diagnostics = \{\}\)/);
+  assert.match(threadListRuntimeServiceJs, /fallbackBaselineFinalFilterInputCount: numberField\(diagnostics, "baselineFinalFilterInputCount"\)/);
+  assert.match(threadListRuntimeServiceJs, /fallbackBaselineMergeInputCount: numberField\(diagnostics, "baselineMergeInputCount"\)/);
+  assert.match(threadListRuntimeServiceJs, /fallbackBaselineMergeDuplicateCount: numberField\(diagnostics, "baselineMergeDuplicateCount"\)/);
   assert.match(routeBody, /threadListFallbackSourceDiagnosticTimingFields\(fallbackDiagnostics\)/);
-  assert.match(serverJs, /function threadListFallbackSourceDiagnosticTimingFields\(diagnostics = \{\}\)/);
-  assert.match(serverJs, /fallbackRolloutFileStatCount: Number\(diagnostics\.rolloutFileStatCount \|\| 0\)/);
-  assert.match(serverJs, /fallbackRolloutStatusStatReadCount: Number\(diagnostics\.rolloutStatusStatReadCount \|\| 0\)/);
-  assert.match(serverJs, /fallbackRolloutStatusStatReuseCount: Number\(diagnostics\.rolloutStatusStatReuseCount \|\| 0\)/);
-  assert.match(serverJs, /fallbackRolloutStatusTailBytes: Number\(diagnostics\.rolloutStatusTailBytes \|\| 0\)/);
+  assert.match(threadListRuntimeServiceJs, /function threadListFallbackSourceDiagnosticTimingFields\(diagnostics = \{\}\)/);
+  assert.match(threadListRuntimeServiceJs, /fallbackRolloutFileStatCount: numberField\(diagnostics, "rolloutFileStatCount"\)/);
+  assert.match(threadListRuntimeServiceJs, /fallbackRolloutStatusStatReadCount: numberField\(diagnostics, "rolloutStatusStatReadCount"\)/);
+  assert.match(threadListRuntimeServiceJs, /fallbackRolloutStatusStatReuseCount: numberField\(diagnostics, "rolloutStatusStatReuseCount"\)/);
+  assert.match(threadListRuntimeServiceJs, /fallbackRolloutStatusTailBytes: numberField\(diagnostics, "rolloutStatusTailBytes"\)/);
   assert.match(threadListFallbackSourceServiceJs, /const ROLLOUT_STAT_METADATA = Symbol\("codexMobileRolloutStat"\)/);
   assert.match(threadListFallbackSourceServiceJs, /return attachRolloutStatMetadata\(rowToFallbackThread\(\{/);
   assert.match(threadListFallbackSourceServiceJs, /rolloutStatMetadataForThread\(thread\)/);
-  assert.match(serverJs, /fallbackSessionIndexReadCount: Number\(diagnostics\.sessionIndexReadCount \|\| 0\)/);
-  assert.match(serverJs, /fallbackSessionIndexReuseCount: Number\(diagnostics\.sessionIndexReuseCount \|\| 0\)/);
+  assert.match(threadListRuntimeServiceJs, /fallbackSessionIndexReadCount: numberField\(diagnostics, "sessionIndexReadCount"\)/);
+  assert.match(threadListRuntimeServiceJs, /fallbackSessionIndexReuseCount: numberField\(diagnostics, "sessionIndexReuseCount"\)/);
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
   assert.match(routeBody, /const initialMode = String\(url\.searchParams\.get\("initial"\) \|\| ""\)/);

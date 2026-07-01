@@ -2124,6 +2124,13 @@ public behavior:
   token-usage workspace cwd snapshots. `server.js` now injects the task-card,
   goal, visibility, registry, fallback-cache, and app-server request
   dependencies instead of keeping those read-model helpers inline.
+- `services/thread-list/thread-list-runtime-service.js` now owns the thread-list
+  runtime composition layer: summary-merge service construction, fallback-cache
+  and persistent-cache composition, response coalescer construction,
+  active-detail fallback-defer tracking, startup fallback prewarm
+  scheduling/status, and metadata-only fallback/token-usage timing field
+  shaping. `server.js` keeps narrow compatibility wrappers only for earlier
+  service initialization and route injection.
 - `services/thread-detail/thread-detail-response-preparation-service.js` now owns
   turns-list/raw/full/fallback read-result shaping, rollout Usage decoration,
   rollout completion/user-input/active-assistant/final-receipt preparation

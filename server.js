@@ -95,24 +95,10 @@ const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-perf
 const { createThreadDetailReadOrchestrationService } = require("./services/thread-detail/thread-detail-read-orchestration-service");
 const { handleThreadDetailReadRoute } = require("./server-routes/thread-detail-route-service");
 const { createThreadDetailResponsePreparationService } = require("./services/thread-detail/thread-detail-response-preparation-service");
-const { createThreadListFallbackCacheService } = require("./services/thread-list/thread-list-fallback-cache-service");
-const { createThreadListFallbackPersistentCacheStore } = require("./services/thread-list/thread-list-fallback-persistent-cache-store");
 const { createThreadListFallbackSourceService } = require("./services/thread-list/thread-list-fallback-source-service");
 const { createThreadSummaryStateService } = require("./services/thread-list/thread-summary-state-service");
-const {
-  createThreadListFallbackPrewarmService,
-  summarizePrewarmStatus,
-} = require("./services/thread-list/thread-list-fallback-prewarm-service");
-const {
-  mergeThreadListRouteResult,
-} = require("./services/thread-list/thread-list-route-merge-service");
 const { createThreadListStateService } = require("./services/thread-list/thread-list-state-service");
-const {
-  createThreadListSummaryMergeService,
-} = require("./services/thread-list/thread-list-summary-merge-service");
-const {
-  createThreadListResponseCoalescer,
-} = require("./services/thread-list/thread-list-response-coalescer-service");
+const { createThreadListRuntimeService } = require("./services/thread-list/thread-list-runtime-service");
 const {
   stripThreadListDetailFields,
   stripThreadListResultDetailFields,
@@ -642,6 +628,13 @@ function serveFilePreviewContent(req, res, requestedPath, allowedRoots) {
 let threadDetailProjectionService;
 let threadDetailResponsePreparationService;
 let threadSummaryStateService;
+let threadListRuntimeService;
+
+function requireThreadListRuntimeService() {
+  if (!threadListRuntimeService) throw new Error("thread_list_runtime_service_uninitialized");
+  return threadListRuntimeService;
+}
+
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
   onTerminalReturnCard: async (event) => homeAiAutonomousDeliveryReturnService.send(event, { workspaceId: "owner" }),
@@ -770,7 +763,12 @@ const THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT = Math.max(
     ? THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT_RAW
     : 1000),
 );
-let activeThreadDetailRequestCount = 0;
+
+function clonePlainJson(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
 threadDetailProjectionService = THREAD_DETAIL_PROJECTION_V4_ENABLED
   ? createThreadDetailProjectionV4Service({
     cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
@@ -1300,65 +1298,28 @@ async function staleActiveTurnPreflight(codexClient, threadId, activeTurnId) {
   });
 }
 
-let threadListSummaryMergeService = null;
-
-function getThreadListSummaryMergeService() {
-  if (!threadListSummaryMergeService) {
-    threadListSummaryMergeService = createThreadListSummaryMergeService({
-      archivedSessionThreadIds,
-      mergeThreadWithCachedDisplaySummary,
-      stripThreadListDetailFields,
-      normalizeThreadSummaryLiveStatus,
-      mergeThreadDisplaySummary,
-      threadHasArchiveSignal,
-      isSubagentThreadSummary,
-      hydrateThreadListTitlesFromSessionIndex,
-      shouldHideThreadListSummary,
-      sortThreadListSummaries,
-    });
-  }
-  return threadListSummaryMergeService;
-}
-
 function mergeThreadSummaryListWithDiagnostics(threads) {
-  return getThreadListSummaryMergeService().mergeThreadSummaryListWithDiagnostics(threads);
+  return requireThreadListRuntimeService().mergeThreadSummaryListWithDiagnostics(threads);
 }
 
 function mergeThreadSummaryList(threads) {
-  return getThreadListSummaryMergeService().mergeThreadSummaryList(threads);
+  return requireThreadListRuntimeService().mergeThreadSummaryList(threads);
 }
 
 function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
-  return mergeThreadListRouteResult({
-    result,
-    fallbackThreads,
-    limit,
-    mergeThreadSummaryList,
-  }).result;
+  return requireThreadListRuntimeService().mergeThreadListFallback(result, fallbackThreads, limit);
 }
 
 function normalizeThreadListResultStatuses(result) {
-  if (!result || typeof result !== "object") return result;
-  const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) out.data = out.data.map((thread) => stripThreadListDetailFields(normalizeThreadSummaryLiveStatus(thread)));
-  if (Array.isArray(out.threads)) out.threads = out.threads.map((thread) => stripThreadListDetailFields(normalizeThreadSummaryLiveStatus(thread)));
-  return stripThreadListResultDetailFields(out);
+  return requireThreadListRuntimeService().normalizeThreadListResultStatuses(result);
 }
 
 function threadListSummaryTimestampMs(thread) {
-  if (!thread || typeof thread !== "object") return 0;
-  return Math.max(
-    timestampToMs(thread.updatedAtMs || thread.updated_at_ms),
-    timestampToMs(thread.updatedAt || thread.updated_at),
-    Number(thread.rolloutSizeUpdatedAtMs || 0),
-  );
+  return requireThreadListRuntimeService().threadListSummaryTimestampMs(thread);
 }
 
 function sortThreadListSummaries(threads) {
-  return (Array.isArray(threads) ? threads : [])
-    .map((thread, index) => ({ thread, index, timestampMs: threadListSummaryTimestampMs(thread) }))
-    .sort((a, b) => (b.timestampMs - a.timestampMs) || (a.index - b.index))
-    .map((entry) => entry.thread);
+  return requireThreadListRuntimeService().sortThreadListSummaries(threads);
 }
 
 function isCompletedStatus(status) {
@@ -3508,184 +3469,117 @@ function staleContextOnlyActiveStatus(previousStatus, evidence) {
   return threadListFallbackSourceService.staleContextOnlyActiveStatus(previousStatus, evidence);
 }
 
-const threadListFallbackCacheService = createThreadListFallbackCacheService({
-  ttlMs: THREAD_LIST_FALLBACK_CACHE_TTL_MS,
-  maxEntries: 12,
-  persistentStore: createThreadListFallbackPersistentCacheStore({
-    filePath: THREAD_LIST_FALLBACK_CACHE_FILE,
+threadListRuntimeService = createThreadListRuntimeService({
+  fallbackCache: {
+    ttlMs: THREAD_LIST_FALLBACK_CACHE_TTL_MS,
     maxEntries: 12,
+    filePath: THREAD_LIST_FALLBACK_CACHE_FILE,
     maxThreadsPerEntry: 200,
-    maxAgeMs: THREAD_LIST_FALLBACK_CACHE_PERSIST_MAX_AGE_MS,
-  }),
-  readGlobalState,
-  normalizeFsPath,
-  normalizeThreadId,
-  visibleWorkspaceRoots,
-  visibleProjectlessThreadIds,
-  mergeThreadDisplaySummary,
-  normalizeThreadSummaryLiveStatus,
-  filterFallbackThreads,
-  mergeThreadSummaryList,
-  readStateDbFallback,
-  readRolloutSessionFallback,
-  readSessionIndexFallback,
-});
-const threadListResponseCoalescer = createThreadListResponseCoalescer();
-
-function clearThreadListFallbackCache() {
-  threadListFallbackCacheService.clear();
-}
-
-function removeThreadFromThreadListFallbackCache(threadId) {
-  return threadListFallbackCacheService.removeThread(threadId);
-}
-
-function upsertThreadListFallbackCacheThread(thread, options = {}) {
-  return threadListFallbackCacheService.upsertThread(thread, options);
-}
-
-function updateThreadListFallbackCacheStatus(threadId, status, meta = {}) {
-  return threadListFallbackCacheService.updateStatus(threadId, status, meta);
-}
-
-function applyThreadStatusPayloadToThreadListFallbackCache(payload) {
-  return threadListFallbackCacheService.applyStatusPayload(payload);
-}
-
-function trackThreadDetailRequestLifecycle(res) {
-  activeThreadDetailRequestCount += 1;
-  let released = false;
-  const release = () => {
-    if (released) return;
-    released = true;
-    activeThreadDetailRequestCount = Math.max(0, activeThreadDetailRequestCount - 1);
-  };
-  if (res && typeof res.once === "function") {
-    res.once("finish", release);
-    res.once("close", release);
-  }
-  return release;
-}
-
-function shouldDeferThreadListFallbackForActiveDetail({ deferFallback, cursor, archived, searchTerm, cwd } = {}) {
-  if (deferFallback) return true;
-  if (cursor || archived || searchTerm || cwd) return false;
-  return activeThreadDetailRequestCount > 0;
-}
-
-function clonePlainJson(value) {
-  if (value === undefined) return undefined;
-  return JSON.parse(JSON.stringify(value));
-}
-
-function threadListFallbackCacheKey(limit, filters = {}) {
-  return threadListFallbackCacheService.cacheKey(limit, filters);
-}
-
-function rememberThreadListFallbackCache(key, threads, timings = {}, options = {}) {
-  threadListFallbackCacheService.remember(key, threads, timings, options);
-}
-
-function readThreadListFallbackCache(key) {
-  return threadListFallbackCacheService.read(key);
-}
-
-function readThreadListCachedFallback(limit = 80, filters = {}) {
-  return threadListFallbackCacheService.readCachedFallback(limit, filters);
-}
-
-function readThreadListFallback(limit = 80, filters = {}) {
-  return threadListFallbackCacheService.readFallback(limit, filters);
-}
-
-const threadListFallbackPrewarmService = createThreadListFallbackPrewarmService({
-  readFallback: readThreadListFallback,
-  readGlobalState,
-  shouldRun: () => (activeThreadDetailRequestCount > 0
-    ? { run: false, reason: "active-detail-in-flight" }
-    : { run: true }),
-  onResult: ({ threads }) => scheduleActiveWindowPrewarmFromThreadListResult({
-    data: threads,
-  }, "thread-list-prewarm:completed"),
-  logger: console,
-});
-
-function threadListFallbackPrewarmConfig() {
-  return {
+    persistMaxAgeMs: THREAD_LIST_FALLBACK_CACHE_PERSIST_MAX_AGE_MS,
+  },
+  prewarm: {
     enabled: THREAD_LIST_FALLBACK_PREWARM_ENABLED,
     delayMs: THREAD_LIST_FALLBACK_PREWARM_DELAY_MS,
     retryDelayMs: THREAD_LIST_FALLBACK_PREWARM_RETRY_MS,
     maxDeferrals: THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS,
     limit: THREAD_LIST_FALLBACK_PREWARM_LIMIT,
     sourceSnapshotLimit: THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT,
-  };
+  },
+  archivedSessionThreadIds,
+  filterFallbackThreads,
+  hydrateThreadListTitlesFromSessionIndex,
+  isSubagentThreadSummary,
+  mergeThreadDisplaySummary,
+  mergeThreadWithCachedDisplaySummary,
+  normalizeFsPath,
+  normalizeThreadId,
+  normalizeThreadSummaryLiveStatus,
+  readGlobalState,
+  readRolloutSessionFallback,
+  readSessionIndexFallback,
+  readStateDbFallback,
+  scheduleActiveWindowPrewarmFromThreadListResult,
+  shouldHideThreadListSummary,
+  stripThreadListDetailFields,
+  stripThreadListResultDetailFields,
+  threadHasArchiveSignal,
+  timestampToMs,
+  visibleProjectlessThreadIds,
+  visibleWorkspaceRoots,
+  logger: console,
+});
+const { threadListResponseCoalescer } = threadListRuntimeService;
+
+function clearThreadListFallbackCache() {
+  return requireThreadListRuntimeService().clearThreadListFallbackCache();
+}
+
+function removeThreadFromThreadListFallbackCache(threadId) {
+  return requireThreadListRuntimeService().removeThreadFromThreadListFallbackCache(threadId);
+}
+
+function upsertThreadListFallbackCacheThread(thread, options = {}) {
+  return requireThreadListRuntimeService().upsertThreadListFallbackCacheThread(thread, options);
+}
+
+function updateThreadListFallbackCacheStatus(threadId, status, meta = {}) {
+  return requireThreadListRuntimeService().updateThreadListFallbackCacheStatus(threadId, status, meta);
+}
+
+function applyThreadStatusPayloadToThreadListFallbackCache(payload) {
+  return requireThreadListRuntimeService().applyThreadStatusPayloadToThreadListFallbackCache(payload);
+}
+
+function trackThreadDetailRequestLifecycle(res) {
+  return requireThreadListRuntimeService().trackThreadDetailRequestLifecycle(res);
+}
+
+function shouldDeferThreadListFallbackForActiveDetail({ deferFallback, cursor, archived, searchTerm, cwd } = {}) {
+  return requireThreadListRuntimeService().shouldDeferThreadListFallbackForActiveDetail({ deferFallback, cursor, archived, searchTerm, cwd });
+}
+
+function threadListFallbackCacheKey(limit, filters = {}) {
+  return requireThreadListRuntimeService().threadListFallbackCacheKey(limit, filters);
+}
+
+function rememberThreadListFallbackCache(key, threads, timings = {}, options = {}) {
+  return requireThreadListRuntimeService().rememberThreadListFallbackCache(key, threads, timings, options);
+}
+
+function readThreadListFallbackCache(key) {
+  return requireThreadListRuntimeService().readThreadListFallbackCache(key);
+}
+
+function readThreadListCachedFallback(limit = 80, filters = {}) {
+  return requireThreadListRuntimeService().readThreadListCachedFallback(limit, filters);
+}
+
+function readThreadListFallback(limit = 80, filters = {}) {
+  return requireThreadListRuntimeService().readThreadListFallback(limit, filters);
+}
+
+function threadListFallbackPrewarmConfig() {
+  return requireThreadListRuntimeService().threadListFallbackPrewarmConfig();
 }
 
 function threadListFallbackPrewarmPublicStatus() {
-  return summarizePrewarmStatus(
-    threadListFallbackPrewarmService.status(),
-    threadListFallbackPrewarmConfig(),
-  );
+  return requireThreadListRuntimeService().threadListFallbackPrewarmPublicStatus();
 }
 
 function scheduleThreadListFallbackPrewarm() {
-  return threadListFallbackPrewarmService.schedule(threadListFallbackPrewarmConfig());
+  return requireThreadListRuntimeService().scheduleThreadListFallbackPrewarm();
 }
 
 function threadListFallbackSourceDiagnosticTimingFields(diagnostics = {}) {
-  return {
-    fallbackRolloutDirectoryReadCount: Number(diagnostics.rolloutDirectoryReadCount || 0),
-    fallbackRolloutFileStatCount: Number(diagnostics.rolloutFileStatCount || 0),
-    fallbackRolloutFileCollectedCount: Number(diagnostics.rolloutFileCollectedCount || 0),
-    fallbackRolloutFileSortedCount: Number(diagnostics.rolloutFileSortedCount || 0),
-    fallbackRolloutCandidateFileCount: Number(diagnostics.rolloutCandidateFileCount || 0),
-    fallbackRolloutCandidateScannedCount: Number(diagnostics.rolloutCandidateScannedCount || 0),
-    fallbackRolloutHeadReadCount: Number(diagnostics.rolloutHeadReadCount || 0),
-    fallbackRolloutHeadBytes: Number(diagnostics.rolloutHeadBytes || 0),
-    fallbackRolloutSummaryReadCount: Number(diagnostics.rolloutSummaryReadCount || 0),
-    fallbackRolloutStatusAttachCount: Number(diagnostics.rolloutStatusAttachCount || 0),
-    fallbackRolloutStatusStatReadCount: Number(diagnostics.rolloutStatusStatReadCount || 0),
-    fallbackRolloutStatusStatReuseCount: Number(diagnostics.rolloutStatusStatReuseCount || 0),
-    fallbackRolloutStatusTailReadCount: Number(diagnostics.rolloutStatusTailReadCount || 0),
-    fallbackRolloutStatusTailBytes: Number(diagnostics.rolloutStatusTailBytes || 0),
-    fallbackSessionIndexReadCount: Number(diagnostics.sessionIndexReadCount || 0),
-    fallbackSessionIndexReuseCount: Number(diagnostics.sessionIndexReuseCount || 0),
-    fallbackSessionIndexLineCount: Number(diagnostics.sessionIndexLineCount || 0),
-    fallbackSessionIndexEntryCount: Number(diagnostics.sessionIndexEntryCount || 0),
-  };
+  return requireThreadListRuntimeService().threadListFallbackSourceDiagnosticTimingFields(diagnostics);
 }
 
 function threadListFallbackBaselineWorkTimingFields(diagnostics = {}) {
-  return {
-    fallbackBaselineFinalFilterPassCount: Number(diagnostics.baselineFinalFilterPassCount || 0),
-    fallbackBaselineFinalFilterInputCount: Number(diagnostics.baselineFinalFilterInputCount || 0),
-    fallbackBaselineFinalFilterOutputCount: Number(diagnostics.baselineFinalFilterOutputCount || 0),
-    fallbackBaselineMergeInputCount: Number(diagnostics.baselineMergeInputCount || 0),
-    fallbackBaselineMergeOutputCount: Number(diagnostics.baselineMergeOutputCount || 0),
-    fallbackBaselineMergeDuplicateCount: Number(diagnostics.baselineMergeDuplicateCount || 0),
-    fallbackBaselineLimitDropCount: Number(diagnostics.baselineLimitDropCount || 0),
-  };
+  return requireThreadListRuntimeService().threadListFallbackBaselineWorkTimingFields(diagnostics);
 }
 
 function threadListTokenUsageTimingFields(diagnostics = {}) {
-  const source = diagnostics && typeof diagnostics === "object" ? diagnostics : {};
-  return {
-    tokenUsageAllowExpiredCache: source.allowExpiredCache === true,
-    tokenUsageCacheHitCount: Number(source.cacheHitCount || 0),
-    tokenUsageFreshCacheHitCount: Number(source.freshCacheHitCount || 0),
-    tokenUsageStaleCacheHitCount: Number(source.staleCacheHitCount || 0),
-    tokenUsageCacheMissCount: Number(source.cacheMissCount || 0),
-    tokenUsageExpiredMissCount: Number(source.expiredMissCount || 0),
-    tokenUsageQueryCount: Number(source.queryCount || 0),
-    tokenUsageMaxCacheAgeMs: Number(source.maxCacheAgeMs || 0),
-    tokenUsageCacheCloneMs: Number(source.cacheCloneMs || 0),
-    tokenUsageWorkspaceCwdCount: Number(source.workspaceCwdCount || 0),
-    tokenUsageWorkspaceSnapshotBuildMs: Number(source.workspaceSnapshotBuildMs || 0),
-    tokenUsageWorkspaceSnapshotCacheHitCount: Number(source.workspaceSnapshotCacheHitCount || 0),
-    tokenUsageWorkspaceSnapshotCacheMissCount: Number(source.workspaceSnapshotCacheMissCount || 0),
-    tokenUsageDecorateSummaryMs: Number(source.decorateSummaryMs || 0),
-    tokenUsageDecorateAttachMs: Number(source.decorateAttachMs || 0),
-  };
+  return requireThreadListRuntimeService().threadListTokenUsageTimingFields(diagnostics);
 }
 
 const apiDispatchRouteService = createApiDispatchRouteService({

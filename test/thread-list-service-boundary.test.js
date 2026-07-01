@@ -10,6 +10,10 @@ const threadListRouteServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "server-routes", "thread-list-route-service.js"),
   "utf8",
 );
+const threadListRuntimeServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-list", "thread-list-runtime-service.js"),
+  "utf8",
+);
 const packageJson = fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf8");
 
 const serviceBoundaries = [
@@ -122,6 +126,13 @@ const serviceBoundaries = [
     servicePath: "services/thread-list/thread-list-state-service.js",
     adapterPath: "adapters/thread-list-state-service.js",
   },
+  {
+    canonical: require("../services/thread-list/thread-list-runtime-service"),
+    adapter: require("../adapters/thread-list-runtime-service"),
+    exports: ["createThreadListRuntimeService"],
+    servicePath: "services/thread-list/thread-list-runtime-service.js",
+    adapterPath: "adapters/thread-list-runtime-service.js",
+  },
 ];
 
 test("thread-list compatibility adapters re-export canonical service boundaries", () => {
@@ -133,16 +144,23 @@ test("thread-list compatibility adapters re-export canonical service boundaries"
 });
 
 test("thread-list server composition imports canonical service paths", () => {
-  assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-fallback-cache-service"\)/);
-  assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-fallback-persistent-cache-store"\)/);
   assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-fallback-source-service"\)/);
   assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-summary-state-service"\)/);
-  assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-fallback-prewarm-service"\)/);
-  assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-route-merge-service"\)/);
-  assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-summary-merge-service"\)/);
-  assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-response-coalescer-service"\)/);
   assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-summary-service"\)/);
   assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-state-service"\)/);
+  assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-runtime-service"\)/);
+  assert.match(threadListRuntimeServiceJs, /require\("\.\/thread-list-fallback-cache-service"\)/);
+  assert.match(threadListRuntimeServiceJs, /require\("\.\/thread-list-fallback-persistent-cache-store"\)/);
+  assert.match(threadListRuntimeServiceJs, /require\("\.\/thread-list-fallback-prewarm-service"\)/);
+  assert.match(threadListRuntimeServiceJs, /require\("\.\/thread-list-route-merge-service"\)/);
+  assert.match(threadListRuntimeServiceJs, /require\("\.\/thread-list-summary-merge-service"\)/);
+  assert.match(threadListRuntimeServiceJs, /require\("\.\/thread-list-response-coalescer-service"\)/);
+  assert.doesNotMatch(serverJs, /require\("\.\/services\/thread-list\/thread-list-fallback-cache-service"\)/);
+  assert.doesNotMatch(serverJs, /require\("\.\/services\/thread-list\/thread-list-fallback-persistent-cache-store"\)/);
+  assert.doesNotMatch(serverJs, /require\("\.\/services\/thread-list\/thread-list-fallback-prewarm-service"\)/);
+  assert.doesNotMatch(serverJs, /require\("\.\/services\/thread-list\/thread-list-route-merge-service"\)/);
+  assert.doesNotMatch(serverJs, /require\("\.\/services\/thread-list\/thread-list-summary-merge-service"\)/);
+  assert.doesNotMatch(serverJs, /require\("\.\/services\/thread-list\/thread-list-response-coalescer-service"\)/);
   assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-list-fallback-cache-service"\)/);
   assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-list-fallback-persistent-cache-store"\)/);
   assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-list-fallback-source-service"\)/);
