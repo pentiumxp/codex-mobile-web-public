@@ -95,11 +95,10 @@ const { createThreadDetailReadOrchestrationService } = require("./services/threa
 const { handleThreadDetailReadRoute } = require("./server-routes/thread-detail-route-service");
 const { createThreadDetailResponsePreparationService } = require("./services/thread-detail/thread-detail-response-preparation-service");
 const { createThreadDetailActiveTurnEvidenceService } = require("./services/thread-detail/thread-detail-active-turn-evidence-service");
-const { createThreadListFallbackSourceService } = require("./services/thread-list/thread-list-fallback-source-service");
 const { createThreadSummaryStateService } = require("./services/thread-list/thread-summary-state-service");
 const { createThreadSummaryReadModelService } = require("./services/thread-list/thread-summary-read-model-service");
 const { createThreadListStateService } = require("./services/thread-list/thread-list-state-service");
-const { createThreadListRuntimeService } = require("./services/thread-list/thread-list-runtime-service");
+const { createThreadListServerBoundaryService } = require("./services/thread-list/thread-list-server-boundary-service");
 const {
   stripThreadListDetailFields,
   stripThreadListResultDetailFields,
@@ -722,11 +721,15 @@ function serveFilePreviewContent(req, res, requestedPath, allowedRoots) {
 let threadDetailProjectionService;
 let threadDetailResponsePreparationService;
 let threadSummaryStateService;
-let threadListRuntimeService;
+let threadListServerBoundaryService;
 
-function requireThreadListRuntimeService() {
-  if (!threadListRuntimeService) throw new Error("thread_list_runtime_service_uninitialized");
-  return threadListRuntimeService;
+function requireThreadListServerBoundaryService() {
+  if (!threadListServerBoundaryService) throw new Error("thread_list_server_boundary_service_uninitialized");
+  return threadListServerBoundaryService;
+}
+
+function callThreadListServerBoundary(method, args) {
+  return requireThreadListServerBoundaryService()[method](...args);
 }
 
 const threadTaskCardService = createThreadTaskCardService({
@@ -1287,29 +1290,12 @@ const {
   publicContinuationJob,
   startThreadFromRequestBody,
 } = continuationThreadService;
-function mergeThreadSummaryListWithDiagnostics(threads) {
-  return requireThreadListRuntimeService().mergeThreadSummaryListWithDiagnostics(threads);
-}
-
-function mergeThreadSummaryList(threads) {
-  return requireThreadListRuntimeService().mergeThreadSummaryList(threads);
-}
-
-function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
-  return requireThreadListRuntimeService().mergeThreadListFallback(result, fallbackThreads, limit);
-}
-
-function normalizeThreadListResultStatuses(result) {
-  return requireThreadListRuntimeService().normalizeThreadListResultStatuses(result);
-}
-
-function threadListSummaryTimestampMs(thread) {
-  return requireThreadListRuntimeService().threadListSummaryTimestampMs(thread);
-}
-
-function sortThreadListSummaries(threads) {
-  return requireThreadListRuntimeService().sortThreadListSummaries(threads);
-}
+function mergeThreadSummaryListWithDiagnostics(...args) { return callThreadListServerBoundary("mergeThreadSummaryListWithDiagnostics", args); }
+function mergeThreadSummaryList(...args) { return callThreadListServerBoundary("mergeThreadSummaryList", args); }
+function mergeThreadListFallback(...args) { return callThreadListServerBoundary("mergeThreadListFallback", args); }
+function normalizeThreadListResultStatuses(...args) { return callThreadListServerBoundary("normalizeThreadListResultStatuses", args); }
+function threadListSummaryTimestampMs(...args) { return callThreadListServerBoundary("threadListSummaryTimestampMs", args); }
+function sortThreadListSummaries(...args) { return callThreadListServerBoundary("sortThreadListSummaries", args); }
 
 function turnListFromResult(result) {
   if (Array.isArray(result)) return result;
@@ -2504,7 +2490,7 @@ function fallbackThreadReadResultForOrchestrator({ threadId, summary, runtimeSet
   return threadDetailResponsePreparationService.fallbackThreadReadResultForOrchestrator({ threadId, summary, runtimeSettings, warning, mode });
 }
 
-const threadListFallbackSourceService = createThreadListFallbackSourceService({
+threadListServerBoundaryService = createThreadListServerBoundaryService({
   codexHome: CODEX_HOME,
   sessionsDir: SESSIONS_DIR,
   rolloutActiveStatusWindowMs: ROLLOUT_ACTIVE_STATUS_WINDOW_MS,
@@ -2530,77 +2516,6 @@ const threadListFallbackSourceService = createThreadListFallbackSourceService({
   visibleProjectlessThreadIds,
   upsertThreadListFallbackCacheThread,
   applySessionIndexTitleToThread,
-});
-
-function attachRolloutFallbackStatus(thread, options = {}) {
-  return threadListFallbackSourceService.attachRolloutFallbackStatus(thread, options);
-}
-
-function fallbackDisplayText(value, maxLength = 500) {
-  return threadListFallbackSourceService.fallbackDisplayText(value, maxLength);
-}
-
-function hydrateThreadTitleFromSessionIndex(thread, indexEntries = readSessionIndexEntries()) {
-  return threadListFallbackSourceService.hydrateThreadTitleFromSessionIndex(thread, indexEntries);
-}
-
-function inferRolloutFallbackStatus(rolloutPath, stat = null, nowMs = Date.now(), options = {}) {
-  return threadListFallbackSourceService.inferRolloutFallbackStatus(rolloutPath, stat, nowMs, options);
-}
-
-function isRolloutTerminalEntry(entry) {
-  return threadListFallbackSourceService.isRolloutTerminalEntry(entry);
-}
-
-function normalizeStaleContextOnlyActiveThread(thread, options = {}) {
-  return threadListFallbackSourceService.normalizeStaleContextOnlyActiveThread(thread, options);
-}
-
-function persistThreadTitleToSessionIndex(threadId, threadName, updatedAt = new Date()) {
-  return threadListFallbackSourceService.persistThreadTitleToSessionIndex(threadId, threadName, updatedAt);
-}
-
-function readRolloutHead(rolloutPath, maxBytes = 128 * 1024, options = {}) {
-  return threadListFallbackSourceService.readRolloutHead(rolloutPath, maxBytes, options);
-}
-
-function readRolloutSessionFallback(limit = 80, filters = {}) {
-  return threadListFallbackSourceService.readRolloutSessionFallback(limit, filters);
-}
-
-function readRolloutSessionFallbackThread(threadId) {
-  return threadListFallbackSourceService.readRolloutSessionFallbackThread(threadId);
-}
-
-function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}, options = {}) {
-  return threadListFallbackSourceService.readRolloutSessionFallbackThreadFromFile(file, indexEntry, options);
-}
-
-function readSessionIndexEntries(maxLines = 2000, options = {}) {
-  return threadListFallbackSourceService.readSessionIndexEntries(maxLines, options);
-}
-
-function readSessionIndexEntriesForFallback(maxLines = 2000, options = {}) {
-  return threadListFallbackSourceService.readSessionIndexEntriesForFallback(maxLines, options);
-}
-
-function readSessionIndexFallback(limit = 80, filters = {}) {
-  return threadListFallbackSourceService.readSessionIndexFallback(limit, filters);
-}
-
-function rolloutLatestTurnEvidence(rolloutPath, stat = null, options = {}) {
-  return threadListFallbackSourceService.rolloutLatestTurnEvidence(rolloutPath, stat, options);
-}
-
-function staleContextOnlyActiveEvidenceForRollout(rolloutPath, options = {}) {
-  return threadListFallbackSourceService.staleContextOnlyActiveEvidenceForRollout(rolloutPath, options);
-}
-
-function staleContextOnlyActiveStatus(previousStatus, evidence) {
-  return threadListFallbackSourceService.staleContextOnlyActiveStatus(previousStatus, evidence);
-}
-
-threadListRuntimeService = createThreadListRuntimeService({
   fallbackCache: {
     ttlMs: THREAD_LIST_FALLBACK_CACHE_TTL_MS,
     maxEntries: 12,
@@ -2639,79 +2554,43 @@ threadListRuntimeService = createThreadListRuntimeService({
   visibleWorkspaceRoots,
   logger: console,
 });
-const { threadListResponseCoalescer } = threadListRuntimeService;
+const { threadListResponseCoalescer } = threadListServerBoundaryService;
 
-function clearThreadListFallbackCache() {
-  return requireThreadListRuntimeService().clearThreadListFallbackCache();
-}
-
-function removeThreadFromThreadListFallbackCache(threadId) {
-  return requireThreadListRuntimeService().removeThreadFromThreadListFallbackCache(threadId);
-}
-
-function upsertThreadListFallbackCacheThread(thread, options = {}) {
-  return requireThreadListRuntimeService().upsertThreadListFallbackCacheThread(thread, options);
-}
-
-function updateThreadListFallbackCacheStatus(threadId, status, meta = {}) {
-  return requireThreadListRuntimeService().updateThreadListFallbackCacheStatus(threadId, status, meta);
-}
-
-function applyThreadStatusPayloadToThreadListFallbackCache(payload) {
-  return requireThreadListRuntimeService().applyThreadStatusPayloadToThreadListFallbackCache(payload);
-}
-
-function trackThreadDetailRequestLifecycle(res) {
-  return requireThreadListRuntimeService().trackThreadDetailRequestLifecycle(res);
-}
-
-function shouldDeferThreadListFallbackForActiveDetail({ deferFallback, cursor, archived, searchTerm, cwd } = {}) {
-  return requireThreadListRuntimeService().shouldDeferThreadListFallbackForActiveDetail({ deferFallback, cursor, archived, searchTerm, cwd });
-}
-
-function threadListFallbackCacheKey(limit, filters = {}) {
-  return requireThreadListRuntimeService().threadListFallbackCacheKey(limit, filters);
-}
-
-function rememberThreadListFallbackCache(key, threads, timings = {}, options = {}) {
-  return requireThreadListRuntimeService().rememberThreadListFallbackCache(key, threads, timings, options);
-}
-
-function readThreadListFallbackCache(key) {
-  return requireThreadListRuntimeService().readThreadListFallbackCache(key);
-}
-
-function readThreadListCachedFallback(limit = 80, filters = {}) {
-  return requireThreadListRuntimeService().readThreadListCachedFallback(limit, filters);
-}
-
-function readThreadListFallback(limit = 80, filters = {}) {
-  return requireThreadListRuntimeService().readThreadListFallback(limit, filters);
-}
-
-function threadListFallbackPrewarmConfig() {
-  return requireThreadListRuntimeService().threadListFallbackPrewarmConfig();
-}
-
-function threadListFallbackPrewarmPublicStatus() {
-  return requireThreadListRuntimeService().threadListFallbackPrewarmPublicStatus();
-}
-
-function scheduleThreadListFallbackPrewarm() {
-  return requireThreadListRuntimeService().scheduleThreadListFallbackPrewarm();
-}
-
-function threadListFallbackSourceDiagnosticTimingFields(diagnostics = {}) {
-  return requireThreadListRuntimeService().threadListFallbackSourceDiagnosticTimingFields(diagnostics);
-}
-
-function threadListFallbackBaselineWorkTimingFields(diagnostics = {}) {
-  return requireThreadListRuntimeService().threadListFallbackBaselineWorkTimingFields(diagnostics);
-}
-
-function threadListTokenUsageTimingFields(diagnostics = {}) {
-  return requireThreadListRuntimeService().threadListTokenUsageTimingFields(diagnostics);
-}
+function attachRolloutFallbackStatus(...args) { return callThreadListServerBoundary("attachRolloutFallbackStatus", args); }
+function fallbackDisplayText(...args) { return callThreadListServerBoundary("fallbackDisplayText", args); }
+function hydrateThreadTitleFromSessionIndex(thread, indexEntries = readSessionIndexEntries()) { return callThreadListServerBoundary("hydrateThreadTitleFromSessionIndex", [thread, indexEntries]); }
+function inferRolloutFallbackStatus(...args) { return callThreadListServerBoundary("inferRolloutFallbackStatus", args); }
+function isRolloutTerminalEntry(...args) { return callThreadListServerBoundary("isRolloutTerminalEntry", args); }
+function normalizeStaleContextOnlyActiveThread(...args) { return callThreadListServerBoundary("normalizeStaleContextOnlyActiveThread", args); }
+function persistThreadTitleToSessionIndex(...args) { return callThreadListServerBoundary("persistThreadTitleToSessionIndex", args); }
+function readRolloutHead(...args) { return callThreadListServerBoundary("readRolloutHead", args); }
+function readRolloutSessionFallback(...args) { return callThreadListServerBoundary("readRolloutSessionFallback", args); }
+function readRolloutSessionFallbackThread(...args) { return callThreadListServerBoundary("readRolloutSessionFallbackThread", args); }
+function readRolloutSessionFallbackThreadFromFile(...args) { return callThreadListServerBoundary("readRolloutSessionFallbackThreadFromFile", args); }
+function readSessionIndexEntries(...args) { return callThreadListServerBoundary("readSessionIndexEntries", args); }
+function readSessionIndexEntriesForFallback(...args) { return callThreadListServerBoundary("readSessionIndexEntriesForFallback", args); }
+function readSessionIndexFallback(...args) { return callThreadListServerBoundary("readSessionIndexFallback", args); }
+function rolloutLatestTurnEvidence(...args) { return callThreadListServerBoundary("rolloutLatestTurnEvidence", args); }
+function staleContextOnlyActiveEvidenceForRollout(...args) { return callThreadListServerBoundary("staleContextOnlyActiveEvidenceForRollout", args); }
+function staleContextOnlyActiveStatus(...args) { return callThreadListServerBoundary("staleContextOnlyActiveStatus", args); }
+function clearThreadListFallbackCache(...args) { return callThreadListServerBoundary("clearThreadListFallbackCache", args); }
+function removeThreadFromThreadListFallbackCache(...args) { return callThreadListServerBoundary("removeThreadFromThreadListFallbackCache", args); }
+function upsertThreadListFallbackCacheThread(...args) { return callThreadListServerBoundary("upsertThreadListFallbackCacheThread", args); }
+function updateThreadListFallbackCacheStatus(...args) { return callThreadListServerBoundary("updateThreadListFallbackCacheStatus", args); }
+function applyThreadStatusPayloadToThreadListFallbackCache(...args) { return callThreadListServerBoundary("applyThreadStatusPayloadToThreadListFallbackCache", args); }
+function trackThreadDetailRequestLifecycle(...args) { return callThreadListServerBoundary("trackThreadDetailRequestLifecycle", args); }
+function shouldDeferThreadListFallbackForActiveDetail(...args) { return callThreadListServerBoundary("shouldDeferThreadListFallbackForActiveDetail", args); }
+function threadListFallbackCacheKey(...args) { return callThreadListServerBoundary("threadListFallbackCacheKey", args); }
+function rememberThreadListFallbackCache(...args) { return callThreadListServerBoundary("rememberThreadListFallbackCache", args); }
+function readThreadListFallbackCache(...args) { return callThreadListServerBoundary("readThreadListFallbackCache", args); }
+function readThreadListCachedFallback(...args) { return callThreadListServerBoundary("readThreadListCachedFallback", args); }
+function readThreadListFallback(...args) { return callThreadListServerBoundary("readThreadListFallback", args); }
+function threadListFallbackPrewarmConfig(...args) { return callThreadListServerBoundary("threadListFallbackPrewarmConfig", args); }
+function threadListFallbackPrewarmPublicStatus(...args) { return callThreadListServerBoundary("threadListFallbackPrewarmPublicStatus", args); }
+function scheduleThreadListFallbackPrewarm(...args) { return callThreadListServerBoundary("scheduleThreadListFallbackPrewarm", args); }
+function threadListFallbackSourceDiagnosticTimingFields(...args) { return callThreadListServerBoundary("threadListFallbackSourceDiagnosticTimingFields", args); }
+function threadListFallbackBaselineWorkTimingFields(...args) { return callThreadListServerBoundary("threadListFallbackBaselineWorkTimingFields", args); }
+function threadListTokenUsageTimingFields(...args) { return callThreadListServerBoundary("threadListTokenUsageTimingFields", args); }
 
 const apiDispatchRouteService = createApiDispatchRouteService({
   READ_RPC_TIMEOUT_MS,

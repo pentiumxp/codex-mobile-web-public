@@ -1157,6 +1157,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const summaryMergeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-summary-merge-service.js"), "utf8");
   const requestContextServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-request-context-service.js"), "utf8");
   const responseCoalescerServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-response-coalescer-service.js"), "utf8");
+  const serverBoundaryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-server-boundary-service.js"), "utf8");
   const visibilityServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-visibility-service.js"), "utf8");
   const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "rate-limit-runtime-service.js"), "utf8");
   const routeIndex = routeServiceJs.indexOf('async function handleThreadListRoute(options = {})');
@@ -1222,7 +1223,10 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(threadListSummaryServiceJs, /THREAD_DETAIL_ONLY_SUMMARY_FIELDS/);
   assert.match(threadListSummaryServiceJs, /"turns"/);
   assert.match(threadListSummaryServiceJs, /"mobileDetailLoaded"/);
-  assert.match(serverJs, /threadListRuntimeService = createThreadListRuntimeService\(\{/);
+  assert.match(serverJs, /threadListServerBoundaryService = createThreadListServerBoundaryService\(\{/);
+  assert.match(serverBoundaryServiceJs, /const runtimeService = createThreadListRuntimeService\(\{/);
+  assert.match(serverBoundaryServiceJs, /readRolloutSessionFallback: \(\.\.\.args\) => fallbackSourceService\.readRolloutSessionFallback\(\.\.\.args\)/);
+  assert.match(serverBoundaryServiceJs, /readSessionIndexFallback: \(\.\.\.args\) => fallbackSourceService\.readSessionIndexFallback\(\.\.\.args\)/);
   assert.match(threadListRuntimeServiceJs, /const threadListFallbackCacheService = createThreadListFallbackCacheService\(\{/);
   assert.match(serverRuntimeConfigServiceJs, /THREAD_LIST_FALLBACK_PREWARM_ENABLED: !offFlag\(env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM \|\| "1"\)/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS \|\| "0"/);
