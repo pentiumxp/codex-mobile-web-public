@@ -7,17 +7,17 @@ const os = require("node:os");
 const path = require("node:path");
 const {
   classifyRuntimeSelfCheckGate,
-} = require("../adapters/runtime-self-check-gate-service");
+} = require("../services/runtime/runtime-self-check-gate-service");
 const {
   defaultBrowserModeForGate,
   normalizeBrowserMode,
   resolveRuntimeSelfCheckPlan,
   runtimeSelfCheckJob,
-} = require("../adapters/runtime-job-scheduler-service");
+} = require("../services/runtime/runtime-job-scheduler-service");
 const {
   runtimeCheckFromClientEventSummary,
   summarizeClientEventLog,
-} = require("../adapters/client-event-stall-self-check-service");
+} = require("../services/runtime/client-event-stall-self-check-service");
 
 const DEFAULT_SERVER = "http://127.0.0.1:8787";
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000;

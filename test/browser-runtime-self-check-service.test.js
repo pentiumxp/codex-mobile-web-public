@@ -5,9 +5,15 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
-const service = require(path.join(__dirname, "..", "adapters", "browser-runtime-self-check-service.js"));
+const service = require(path.join(__dirname, "..", "services", "runtime", "browser-runtime-self-check-service.js"));
+const adapter = require(path.join(__dirname, "..", "adapters", "browser-runtime-self-check-service.js"));
 const script = require(path.join(__dirname, "..", "scripts", "codex-mobile-browser-runtime-self-check.js"));
 const scriptSource = fs.readFileSync(path.join(__dirname, "..", "scripts", "codex-mobile-browser-runtime-self-check.js"), "utf8");
+
+test("browser runtime self-check adapter re-exports canonical runtime service", () => {
+  assert.equal(adapter.analyzeBrowserRuntimeSamples, service.analyzeBrowserRuntimeSamples);
+  assert.equal(adapter.safeThreadRows, service.safeThreadRows);
+});
 
 test("browser runtime self-check catches sparse DOM after confirmed nonempty target content", () => {
   const report = service.analyzeBrowserRuntimeSamples({

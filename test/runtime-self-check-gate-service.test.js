@@ -3,11 +3,18 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
+const service = require("../services/runtime/runtime-self-check-gate-service");
+const adapter = require("../adapters/runtime-self-check-gate-service");
 const {
   classifyRuntimeSelfCheckGate,
   isSlowPathIssue,
   normalizeIssue,
-} = require("../adapters/runtime-self-check-gate-service");
+} = service;
+
+test("runtime self-check gate adapter re-exports canonical runtime service", () => {
+  assert.equal(adapter.classifyRuntimeSelfCheckGate, service.classifyRuntimeSelfCheckGate);
+  assert.equal(adapter.normalizeIssue, service.normalizeIssue);
+});
 
 test("runtime self-check gate treats slow success diagnostics as observe-only", () => {
   const gate = classifyRuntimeSelfCheckGate({

@@ -12,7 +12,7 @@ const {
   analyzeBrowserRuntimeSamples,
   safeThreadRows,
   stableTextHash,
-} = require("../adapters/browser-runtime-self-check-service");
+} = require("../services/runtime/browser-runtime-self-check-service");
 
 const DEFAULT_SERVER = "http://127.0.0.1:8787";
 const DEFAULT_CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";

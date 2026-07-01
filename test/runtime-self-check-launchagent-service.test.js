@@ -3,11 +3,17 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
-const service = require("../adapters/runtime-self-check-launchagent-service");
+const service = require("../services/runtime/runtime-self-check-launchagent-service");
+const adapter = require("../adapters/runtime-self-check-launchagent-service");
 const readback = require("../scripts/codex-mobile-runtime-self-check-launchagent-readback");
 
 const SCRIPT_PATH = "/prod/scripts/codex-mobile-runtime-self-check-loop.js";
 const OUTPUT_PATH = "/home/logs/runtime-self-check.jsonl";
+
+test("runtime self-check launchagent adapter re-exports canonical runtime service", () => {
+  assert.equal(adapter.summarizeLaunchAgentPlist, service.summarizeLaunchAgentPlist);
+  assert.equal(adapter.classifyRuntimeSelfCheckLaunchAgent, service.classifyRuntimeSelfCheckLaunchAgent);
+});
 
 function healthyPlist() {
   return service.summarizeLaunchAgentPlist({

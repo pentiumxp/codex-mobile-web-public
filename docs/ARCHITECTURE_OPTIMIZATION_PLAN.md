@@ -3244,7 +3244,7 @@ still block deploys and remain reportable.
 
 Scope:
 
-- `adapters/runtime-self-check-gate-service.js` owns the deterministic policy:
+- `services/runtime/runtime-self-check-gate-service.js` owns the deterministic policy:
   H1/H2 user-visible runtime regressions and self-check execution failures are
   deploy-blocking/reportable; slow-success thread-session timing findings are
   observe-only; lower severity nonblocking findings are advisory.
@@ -3277,7 +3277,7 @@ bounded readback.
 
 Scope:
 
-- `adapters/runtime-self-check-launchagent-service.js` owns pure readback
+- `services/runtime/runtime-self-check-launchagent-service.js` owns pure readback
   policy for plist shape, launchctl state, latest JSONL gate event, freshness,
   and health classification.
 - `scripts/codex-mobile-runtime-self-check-launchagent-readback.js` reads the
@@ -3321,6 +3321,43 @@ Required validation:
 - Runtime self-check loop tests because production readback consumes
   `runtimeJobs` metadata.
 - Full local checks before central private deploy.
+
+### 2026-07-01 Runtime Self-Check Service Boundary
+
+This module completes the next production-stability boundary after scheduler
+declarations by moving runtime self-check analysis and gate ownership into
+`services/runtime/`. It is behavior-preserving: scripts keep the same CLI
+contract, output shape, privacy boundary, and compatibility adapter paths.
+
+Root cause addressed: diagnostic analyzers, deployment gates, LaunchAgent
+readback, and live client-event stall classification still looked like adapter
+owned behavior even after runtime job budgeting moved into `services/runtime/`.
+That kept the production-stability boundary split across two ownership layers
+and made it easier for future work to add diagnostic policy back into adapter
+glue.
+
+Scope:
+
+- `services/runtime/browser-runtime-self-check-service.js` owns browser DOM /
+  route / console / interaction sample classification for browser self-checks.
+- `services/runtime/client-event-stall-self-check-service.js` owns bounded
+  live client-event stall log parsing and issue classification.
+- `services/runtime/runtime-self-check-gate-service.js` owns deploy/periodic
+  gate classification from child-check results.
+- `services/runtime/runtime-self-check-launchagent-service.js` owns macOS
+  periodic LaunchAgent readback policy.
+- Matching `adapters/*self-check*` paths are compatibility exports only.
+- Runtime self-check scripts import the canonical service paths directly while
+  tests prove adapter exports still point at the same functions.
+
+Required validation:
+
+- Focused runtime self-check service, loop, LaunchAgent, browser-runtime, and
+  client-event tests.
+- Full local checks before central private deploy.
+- Private deployment and production readback proving script imports, adapter
+  compatibility exports, public config, status/thread probes, and deploy-mode
+  self-check still pass.
 
 ### 2026-07-01 Thread-List Prewarm Scheduler Boundary
 
@@ -3555,7 +3592,7 @@ Scope:
   detail replaces the preview.
 - `public/app.js` uses that preview for thread-open first paint when
   `planThreadOpenCacheReuse()` returns `shouldUseActivePreview`.
-- `adapters/browser-runtime-self-check-service.js` treats nonempty loading
+- `services/runtime/browser-runtime-self-check-service.js` treats nonempty loading
   previews as transitional for latest-turn downgrade and pending-message
   disappearance checks, while still blocking empty/sparse settled samples and
   real completed/resting downgrades.

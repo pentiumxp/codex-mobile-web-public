@@ -6,12 +6,19 @@ const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
 
+const service = require("../services/runtime/client-event-stall-self-check-service");
+const adapter = require("../adapters/client-event-stall-self-check-service");
 const {
   parseClientEventLine,
   runtimeCheckFromClientEventSummary,
   summarizeClientEventLog,
   summarizeClientEventText,
-} = require("../adapters/client-event-stall-self-check-service");
+} = service;
+
+test("client-event stall adapter re-exports canonical runtime service", () => {
+  assert.equal(adapter.parseClientEventLine, service.parseClientEventLine);
+  assert.equal(adapter.summarizeClientEventText, service.summarizeClientEventText);
+});
 
 test("client-event stall self-check parses bounded client-event lines", () => {
   const line = '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:00.000Z","threadId":"private-thread","path":"/private/path","details":{"maxRafDelayMs":3200,"maxScrollApplyMs":8,"maxLongTaskMs":0,"threadListCount":22},"userAgent":"private UA"}';

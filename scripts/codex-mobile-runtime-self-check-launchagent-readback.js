@@ -15,7 +15,7 @@ const {
   parseLatestRuntimeSelfCheckEvent,
   summarizeLatestEvent,
   summarizeLaunchAgentPlist,
-} = require("../adapters/runtime-self-check-launchagent-service");
+} = require("../services/runtime/runtime-self-check-launchagent-service");
 
 function usage() {
   return [
