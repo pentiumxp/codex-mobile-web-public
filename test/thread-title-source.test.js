@@ -7,6 +7,10 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const summaryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-summary-service.js"), "utf8");
+const threadDetailRuntimeServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-runtime-service.js"),
+  "utf8",
+);
 const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-summary-state-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 
@@ -28,9 +32,9 @@ function functionSource(source, name) {
 
 test("thread detail refreshes display title from app-server summary", () => {
   assert.match(serverJs, /function mergeThreadDisplaySummary\(base, display, options = \{\}\)/);
-  assert.match(serverJs, /createThreadDetailSummaryService\(\{\s*readStateDbThread,\s*readStartedThread,\s*readRolloutSessionFallbackThread,\s*readDisplaySummaryThread: \(threadId\) => threadDisplaySummaryCache\.read\(threadId\),\s*readThreadSummaryFromAppServer,\s*mergeThreadDisplaySummary,/);
-  assert.match(serverJs, /appServerRefreshTtlMs: THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS,/);
-  assert.match(serverJs, /skipAppServerRefreshWhenDisplayCachePresent: true,/);
+  assert.match(threadDetailRuntimeServiceJs, /createThreadDetailSummaryService\(\{\s*readStateDbThread: dependencies\.readStateDbThread,\s*readStartedThread: dependencies\.readStartedThread,\s*readRolloutSessionFallbackThread: dependencies\.readRolloutSessionFallbackThread,\s*readDisplaySummaryThread: \(threadId\) => threadDisplaySummaryCache\.read\(threadId\),\s*readThreadSummaryFromAppServer: dependencies\.readThreadSummaryFromAppServer,\s*mergeThreadDisplaySummary: dependencies\.mergeThreadDisplaySummary,/);
+  assert.match(threadDetailRuntimeServiceJs, /appServerRefreshTtlMs: config\.threadDetailSummaryAppServerRefreshTtlMs,/);
+  assert.match(threadDetailRuntimeServiceJs, /skipAppServerRefreshWhenDisplayCachePresent: true,/);
   assert.match(summaryServiceJs, /summary = mergeThreadDisplaySummary\(summary, appServerSummary\);/);
   assert.match(summaryServiceJs, /source = `\$\{source\}\+app-server`;/);
   assert.match(summaryServiceJs, /const merged = mergeThreadDisplaySummary\(summary, displaySummary\);/);

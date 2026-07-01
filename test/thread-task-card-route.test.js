@@ -30,6 +30,10 @@ const serverRuntimeConfigServiceJs = fs.readFileSync(path.resolve(__dirname, "..
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "thread-task-card-routing-service.js"), "utf8");
 const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-detail-route-service.js"), "utf8");
 const threadDetailRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
+const threadDetailRuntimeServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-runtime-service.js"),
+  "utf8",
+);
 const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-response-preparation-service.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const runtimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-settings-service.js"), "utf8");
@@ -636,7 +640,7 @@ test("server broadcasts active status immediately for local turn starts", () => 
   assert.match(functionBody(serverJs, "applyLocalActiveThreadStatusToSummary"), /threadSummaryStateService\.applyLocalActiveThreadStatusToSummary/);
   assert.match(threadEventNotificationServiceJs, /function updateLocalActiveThreadStatusFromNotification\(/);
   assert.match(functionBody(threadEventNotificationServiceJs, "broadcast"), /updateLocalActiveThreadStatusFromNotification\(payload\)/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /threadDetailResponsePreparationService\.prepareThreadDetailResponseResult/);
+  assert.match(functionBody(threadDetailRuntimeServiceJs, "prepareThreadDetailResponseResult"), /requireResponsePreparationService\(\)\.prepareThreadDetailResponseResult/);
   assert.match(functionBody(threadDetailResponsePreparationServiceJs, "prepareThreadDetailResponseResult"), /applyLocalActiveThreadStatusToResult/);
   assert.match(functionBody(threadListRuntimeServiceJs, "normalizeThreadListResultStatuses"), /normalizeThreadSummaryLiveStatus/);
 
@@ -676,7 +680,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(functionBody(taskCardRouteServiceJs, "prepareThreadTaskCardsToResult"), /attachPendingServerRequestsToResult/);
   assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "prepareThreadTaskCardsToResult"), /prepareThreadTaskCardsToResult\(result\)/);
   const prepareDetailBody = functionBody(threadDetailResponsePreparationServiceJs, "prepareThreadDetailResponseResult");
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /threadDetailResponsePreparationService\.prepareThreadDetailResponseResult/);
+  assert.match(functionBody(threadDetailRuntimeServiceJs, "prepareThreadDetailResponseResult"), /requireResponsePreparationService\(\)\.prepareThreadDetailResponseResult/);
   assert.match(prepareDetailBody, /const completionBackfilled = backfillMissingRolloutCompletionTurnsForDetailResult\(result, details\);/);
   assert.match(prepareDetailBody, /const usageDecorated = attachRolloutUsageSummariesToDetailResult\(completionBackfilled\);/);
   assert.match(prepareDetailBody, /const inputAnchored = appendRolloutUserInputAnchorsToDetailResult\(usageDecorated\);/);
@@ -686,11 +690,11 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(prepareDetailBody, /finalizeThreadDetailProjectionResult/);
   assert.match(prepareDetailBody, /const budgetOptions = Object\.assign\(\{\}, responseBudgetOptions\(\) \|\| \{\}, \{/);
   assert.doesNotMatch(prepareDetailBody, /THREAD_DETAIL_|MAX_LIVE_OPERATION_ITEMS/);
-  assert.match(functionBody(serverJs, "turnsListThreadReadResult"), /threadDetailResponsePreparationService\.turnsListThreadReadResult/);
+  assert.match(functionBody(threadDetailRuntimeServiceJs, "turnsListThreadReadResult"), /requireResponsePreparationService\(\)\.turnsListThreadReadResult/);
   assert.match(functionBody(threadDetailResponsePreparationServiceJs, "turnsListThreadReadResult"), /return prepareThreadDetailResponseResult\(result/);
   assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts,\s+maybeAutoReplyThreadTaskCard,/);
   assert.match(codexAppServerClientServiceJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
-  assert.match(serverJs, /prepareResponse: prepareThreadDetailResponseResult/);
+  assert.match(threadDetailRuntimeServiceJs, /prepareResponse: prepareThreadDetailResponseResult/);
   assert.match(apiDispatchRouteServiceJs, /threadDetailReadOrchestrationService\.readThreadDetail/);
   assert.match(apiDispatchRouteServiceJs, /handleThreadDetailReadRoute\(\{/);
   assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailModeFromUrl\(url\) === "recent"/);

@@ -30,6 +30,10 @@ const threadDetailReadOrchestrationServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-read-orchestration-service.js"),
   "utf8",
 );
+const threadDetailRuntimeServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-runtime-service.js"),
+  "utf8",
+);
 const threadDetailReadOrchestrationAdapterJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-read-orchestration-service.js"),
   "utf8",
@@ -351,10 +355,10 @@ test("thread detail uses full thread/read before bounded turns/list fallback", (
   const turnsListIndex = threadDetailReadOrchestrationServiceJs.indexOf("await turnsListThreadReadResult(", threadReadIndex);
   assert.ok(threadReadIndex > 0, "thread detail orchestration should call full thread/read");
   assert.ok(turnsListIndex > threadReadIndex, "bounded turns/list should stay a fallback after thread/read");
-  assert.match(serverJs, /threadDetailResponsePreparationService\.readFullThreadDetailForOrchestrator\(\{ threadId, summary, runtimeSettings \}\)/);
+  assert.match(threadDetailRuntimeServiceJs, /requireResponsePreparationService\(\)\.readFullThreadDetailForOrchestrator\(input\)/);
   assert.match(threadDetailResponsePreparationServiceJs, /result\.thread\.mobileReadMode = "thread-read";/);
-  assert.match(serverJs, /compactActiveOverlayTurn: \(turn, details = \{\}\) => compactTurn\(turn, \{/);
-  assert.match(serverJs, /maxOperationItems: MAX_LIVE_OPERATION_ITEMS/);
+  assert.match(threadDetailRuntimeServiceJs, /compactActiveOverlayTurn: \(turn, details = \{\}\) => compactTurn\(turn, \{/);
+  assert.match(threadDetailRuntimeServiceJs, /maxOperationItems: config\.maxLiveOperationItems/);
   assert.match(threadDetailReadOrchestrationServiceJs, /compactOverlayTurn: compactActiveOverlayTurn/);
 });
 
@@ -369,18 +373,19 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(threadDetailReadOrchestrationServiceJs, /planActiveThreadDetailReadPolicy\(\{ summary, preferRecentTurns \}\)/);
   assert.match(threadDetailReadOrchestrationServiceJs, /if \(activeReadPolicy\.shouldUseInitialTurnsList\) \{/);
   assert.match(threadDetailReadOrchestrationServiceJs, /"turns-list-initial"/);
-  assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-read-orchestration-service"\)/);
+  assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-runtime-service"\)/);
+  assert.match(threadDetailRuntimeServiceJs, /require\("\.\/thread-detail-read-orchestration-service"\)/);
   assert.match(serverJs, /require\("\.\/server-routes\/api-dispatch-route-service"\)/);
   assert.match(apiDispatchRouteAdapterJs, /require\("\.\.\/server-routes\/api-dispatch-route-service"\)/);
   assert.match(serverJs, /require\("\.\/server-routes\/thread-detail-route-service"\)/);
   assert.match(threadDetailReadOrchestrationAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-read-orchestration-service"\)/);
   assert.match(threadDetailRouteAdapterJs, /require\("\.\.\/server-routes\/thread-detail-route-service"\)/);
-  assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-bounded-read-policy-service"\)/);
-  assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-turns-list-read-coalescer-service"\)/);
+  assert.match(threadDetailRuntimeServiceJs, /require\("\.\/thread-detail-bounded-read-policy-service"\)/);
+  assert.match(threadDetailRuntimeServiceJs, /require\("\.\/thread-detail-turns-list-read-coalescer-service"\)/);
   assert.match(threadDetailReadOrchestrationServiceJs, /require\("\.\/thread-detail-active-read-policy-service"\)/);
   assert.match(threadDetailActiveReadPolicyServiceJs, /function planActiveThreadDetailReadPolicy/);
   assert.match(threadDetailActiveReadPolicyAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-active-read-policy-service"\)/);
-  assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-active-turn-evidence-service"\)/);
+  assert.match(threadDetailRuntimeServiceJs, /require\("\.\/thread-detail-active-turn-evidence-service"\)/);
   assert.match(threadDetailActiveTurnEvidenceServiceJs, /function createThreadDetailActiveTurnEvidenceService/);
   assert.match(threadDetailActiveTurnEvidenceServiceJs, /function reconcileThreadActiveTurnWithRolloutEvidence/);
   assert.match(threadDetailActiveTurnEvidenceAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-active-turn-evidence-service"\)/);

@@ -26,6 +26,10 @@ const threadDetailResponsePreparationServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-response-preparation-service.js"),
   "utf8",
 );
+const threadDetailRuntimeServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-runtime-service.js"),
+  "utf8",
+);
 const threadDetailCompactionServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-compaction-service.js"),
   "utf8",
@@ -310,21 +314,21 @@ test("parses rollout jsonl token counts and ignores malformed lines", () => {
 
 test("thread detail usage read targets returned turns beyond the rollout tail", () => {
   assert.match(rolloutDetailEnrichmentServiceJs, /function readRolloutRuntimeScanText\(rolloutPath\)/);
-  assert.match(serverJs, /createRolloutEnrichmentIndexService/);
+  assert.match(threadDetailRuntimeServiceJs, /createRolloutEnrichmentIndexService/);
   assert.match(rolloutDetailEnrichmentServiceJs, /function readRolloutEnrichmentEntries\(rolloutPath\)/);
   assert.match(rolloutDetailEnrichmentServiceJs, /function missingUsageTurnIds\(payload, turnIds\)/);
   assert.match(rolloutDetailEnrichmentServiceJs, /targetCached && Date\.now\(\) - targetCached\.cachedAt <= runtimeContextCacheTtlMs\s*&& missingUsageTurnIds\(targetCached\.payload, targetTurnIds\)\.length === 0/);
   assert.match(rolloutDetailEnrichmentServiceJs, /if \(missingUsageTurnIds\(payload, targetTurnIds\)\.length > 0\) \{\s*payload = collectTurnUsageSummariesFromEntries\(readRolloutEnrichmentEntries\(rolloutPath\)\);/);
   assert.match(threadDetailResponsePreparationServiceJs, /const targetTurnIds = thread\.turns\s*\.map\(\(turn\) => turn && \(turn\.id \|\| turn\.turnId \|\| turn\.turn_id\)\)\s*\.filter\(Boolean\);/);
-  assert.match(serverJs, /createThreadDetailProjectionResultService/);
-  assert.match(serverJs, /const threadDetailProjectionResultService = createThreadDetailProjectionResultService\(\{\s*maxTurns: MAX_FULL_THREAD_TURNS,\s*compactThreadReadResult,\s*decorateThreadReadResult: attachRolloutUsageSummariesToDetailResult,\s*mergeThreadDisplaySummary,/);
-  assert.match(serverJs, /decorateThreadReadResult: attachRolloutUsageSummariesToDetailResult/);
-  assert.match(serverJs, /function attachRolloutUsageSummariesToDetailResult\(result\) \{/);
-  assert.match(serverJs, /threadDetailResponsePreparationService\.attachRolloutUsageSummariesToDetailResult\(result\)/);
+  assert.match(threadDetailRuntimeServiceJs, /createThreadDetailProjectionResultService/);
+  assert.match(threadDetailRuntimeServiceJs, /const threadDetailProjectionResultService = createThreadDetailProjectionResultService\(\{\s*maxTurns: config\.maxFullThreadTurns,\s*compactThreadReadResult,\s*decorateThreadReadResult: attachRolloutUsageSummariesToDetailResult,\s*mergeThreadDisplaySummary:/);
+  assert.match(threadDetailRuntimeServiceJs, /decorateThreadReadResult: attachRolloutUsageSummariesToDetailResult/);
+  assert.match(threadDetailRuntimeServiceJs, /function attachRolloutUsageSummariesToDetailResult\(result\) \{/);
+  assert.match(threadDetailRuntimeServiceJs, /requireResponsePreparationService\(\)\.attachRolloutUsageSummariesToDetailResult\(result\)/);
   assert.match(threadDetailResponsePreparationServiceJs, /function attachRolloutUsageSummariesToDetailResult\(result\) \{/);
   assert.match(threadDetailResponsePreparationServiceJs, /readRolloutTurnUsageSummaries\(rolloutPath, \{ targetTurnIds \}\)/);
-  assert.match(serverJs, /function prepareProjectedThreadReadResult\(cached, summary, runtimeSettings, options = \{\}\) \{/);
-  assert.match(serverJs, /return threadDetailProjectionResultService\.prepareProjectedThreadReadResult\(cached, summary, runtimeSettings, options\);/);
+  assert.match(threadDetailRuntimeServiceJs, /function prepareProjectedThreadReadResult\(cached, summary, runtimeSettings, options = \{\}\) \{/);
+  assert.match(threadDetailRuntimeServiceJs, /return threadDetailProjectionResultService\.prepareProjectedThreadReadResult\(cached, summary, runtimeSettings, options\);/);
 });
 
 test("thread detail rollout scans stay bounded for very large sessions", () => {
@@ -337,8 +341,8 @@ test("thread detail rollout scans stay bounded for very large sessions", () => {
     /MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES: Math\.max\(\s*MAX_ROLLOUT_CONTEXT_BYTES,\s*Number\(env\.CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES \|\| String\(32 \* 1024 \* 1024\)\),\s*\)/,
   );
   assert.match(
-    serverJs,
-    /const rolloutEnrichmentIndexService = createRolloutEnrichmentIndexService\(\{\s*maxIndexes: RUNTIME_CONTEXT_CACHE_MAX,\s*\}\);/,
+    threadDetailRuntimeServiceJs,
+    /const rolloutEnrichmentIndexService = createRolloutEnrichmentIndexService\(\{\s*maxIndexes: config\.runtimeContextCacheMax,\s*\}\);/,
   );
   assert.match(
     rolloutDetailEnrichmentServiceJs,

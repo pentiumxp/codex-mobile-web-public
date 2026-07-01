@@ -65,6 +65,11 @@ const serviceBoundaries = [
     exports: ["createThreadDetailActiveTurnEvidenceService"],
   },
   {
+    canonical: require("../services/thread-detail/thread-detail-runtime-service"),
+    adapter: require("../adapters/thread-detail-runtime-service"),
+    exports: ["createThreadDetailRuntimeService"],
+  },
+  {
     canonical: require("../services/thread-list/thread-summary-read-model-service"),
     adapter: require("../adapters/thread-summary-read-model-service"),
     exports: ["createThreadSummaryReadModelService"],

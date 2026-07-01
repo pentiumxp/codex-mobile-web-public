@@ -26,12 +26,6 @@ const {
 const {
   dedupeUserMessageEchoesInThread,
 } = require("./adapters/thread-user-message-echo-normalizer-service");
-const {
-  attachTurnUsageSummaries,
-  collectTurnUsageSummariesFromEntries,
-  collectTurnUsageSummariesFromRolloutText,
-} = require("./adapters/turn-usage-summary-service");
-const { createRolloutEnrichmentIndexService } = require("./adapters/rollout-enrichment-index-service");
 const { createTokenUsageStatsService } = require("./adapters/token-usage-stats-service");
 const {
   buildTurnCompletionDetailMessage,
@@ -76,25 +70,8 @@ const { createPublicConfigRuntimeCache } = require("./adapters/public-config-run
 const { ensureCodexMobileMcpServer } = require("./adapters/codex-mobile-mcp-config-service");
 const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
 const { createRuntimeWorkspaceBootstrapService } = require("./services/runtime/runtime-workspace-bootstrap-service");
-const { createThreadDetailProjectionInputService } = require("./adapters/thread-detail-projection-input-service");
-const { createThreadDetailProjectionResultService } = require("./adapters/thread-detail-projection-result-service");
-const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
-const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
-const { compactThreadDetailResponseResult } = require("./services/thread-detail/thread-detail-response-budget-service");
-const {
-  appendLatestCompletedUserInputAnchors,
-  collectRolloutUserInputAnchors,
-} = require("./adapters/thread-detail-user-input-anchor-service");
-const { createThreadDetailSummaryService } = require("./adapters/thread-detail-summary-service");
-const { createThreadDetailBoundedReadPolicyService } = require("./services/thread-detail/thread-detail-bounded-read-policy-service");
-const { createThreadDetailActiveOverlayProviderService } = require("./services/thread-detail/thread-detail-active-overlay-provider-service");
-const { createThreadDetailActiveWindowPrewarmService } = require("./services/thread-detail/thread-detail-active-window-prewarm-service");
-const { createThreadDetailTurnsListReadCoalescer } = require("./services/thread-detail/thread-detail-turns-list-read-coalescer-service");
-const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-performance-service");
-const { createThreadDetailReadOrchestrationService } = require("./services/thread-detail/thread-detail-read-orchestration-service");
 const { handleThreadDetailReadRoute } = require("./server-routes/thread-detail-route-service");
-const { createThreadDetailResponsePreparationService } = require("./services/thread-detail/thread-detail-response-preparation-service");
-const { createThreadDetailActiveTurnEvidenceService } = require("./services/thread-detail/thread-detail-active-turn-evidence-service");
+const { createThreadDetailRuntimeService } = require("./services/thread-detail/thread-detail-runtime-service");
 const { createThreadSummaryStateService } = require("./services/thread-list/thread-summary-state-service");
 const { createThreadSummaryReadModelService } = require("./services/thread-list/thread-summary-read-model-service");
 const { createThreadListStateService } = require("./services/thread-list/thread-list-state-service");
@@ -103,7 +80,6 @@ const {
   stripThreadListDetailFields,
   stripThreadListResultDetailFields,
 } = require("./services/thread-list/thread-list-summary-service");
-const { createThreadDetailCompactionService } = require("./adapters/thread-detail-compaction-service");
 const { createThreadEventNotificationService } = require("./services/runtime/thread-event-notification-service");
 const { createRuntimeTurnEventPipelineService } = require("./services/runtime/runtime-turn-event-pipeline-service");
 const { createServerEventRuntimeBoundaryService } = require("./services/runtime/server-event-runtime-boundary-service");
@@ -132,8 +108,6 @@ const { createThreadRolloutRuntimeService } = require("./services/runtime/thread
 const { createCoreApiRouteService } = require("./server-routes/core-api-route-service");
 const { createAppMaintenanceService } = require("./adapters/app-maintenance-service");
 const { createAppServerRequestPolicyService } = require("./services/runtime/app-server-request-policy-service");
-const { createRolloutDetailEnrichmentService } = require("./adapters/rollout-detail-enrichment-service");
-const { createThreadDetailRolloutBackfillService } = require("./adapters/thread-detail-rollout-backfill-service");
 const { createApiDispatchRouteService } = require("./server-routes/api-dispatch-route-service");
 const {
   createAutoTurnRecoveryService,
@@ -718,7 +692,6 @@ function serveFilePreviewContent(req, res, requestedPath, allowedRoots) {
   return mediaFileService.serveFilePreviewContent(req, res, requestedPath, allowedRoots, (status, body) => sendJson(res, status, body));
 }
 
-let threadDetailProjectionService;
 let threadDetailResponsePreparationService;
 let threadSummaryStateService;
 let threadListServerBoundaryService;
@@ -783,17 +756,6 @@ function clonePlainJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-threadDetailProjectionService = THREAD_DETAIL_PROJECTION_V4_ENABLED
-  ? createThreadDetailProjectionV4Service({
-    cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
-    policyVersion: "state-relevant-receipt-v4",
-    maxTurns: MAX_FULL_THREAD_TURNS,
-  })
-  : createThreadDetailProjectionService({
-    cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
-    policyVersion: THREAD_DETAIL_PROJECTION_POLICY_VERSION,
-    maxTurns: MAX_FULL_THREAD_TURNS,
-  });
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
 const runtimePermissionPolicyService = createRuntimePermissionPolicyService({
   path,
@@ -896,231 +858,6 @@ const PROCESS_STARTED_AT_MS = Date.now();
 let clients = new Map();
 let clientHeartbeats = new WeakMap();
 const LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS = 10000;
-const rolloutEnrichmentIndexService = createRolloutEnrichmentIndexService({
-  maxIndexes: RUNTIME_CONTEXT_CACHE_MAX,
-});
-let appendRolloutToolOutputImagesToThread;
-let insertProjectedItemByTimestamp;
-let itemTimestampCandidateId;
-let itemTimestampMatchText;
-let readRolloutEnrichmentEntries;
-let readRolloutEnrichmentText;
-let readRolloutItemTimestampCandidates;
-let readRolloutRuntimeScanText;
-let readRolloutTail;
-let readRolloutToolOutputImageItems;
-let readRolloutTurnUsageSummaries;
-let rolloutEntryTurnId;
-let rolloutTimestampFields;
-let timestampTextsMatch;
-let visibleItemId;
-let appendMissingRolloutCompletionTurnsToThread;
-let appendRolloutActiveAssistantItemsToDetailResult;
-let appendRolloutEmptyCompletionDiagnosticsToThread;
-let appendRolloutFinalReceiptsToThread;
-let appendRolloutUserInputAnchorsToDetailResult;
-let backfillMissingRolloutCompletionTurnsForDetailResult;
-let dedupeSyntheticActiveAssistantMessagesInThread;
-let enrichThreadItemTimestampsFromRollout;
-let finalizeActiveAssistantProjectionDetailResult;
-let inferTurnItemDisplayTimestamps;
-let itemDisplayTimestampMs;
-let orderTurnItemsByDisplayTimestamp;
-let turnCompletionUsageSummary;
-const threadDetailActiveTurnEvidenceService = createThreadDetailActiveTurnEvidenceService({
-  fs,
-  statusText,
-  timestampToMs,
-  rolloutActiveStatusWindowMs: ROLLOUT_ACTIVE_STATUS_WINDOW_MS,
-  rolloutPathForThread,
-  readStateDbThread,
-  rolloutLatestTurnEvidence,
-  isThreadListLiveStatus,
-  isThreadListRestStatus,
-  isEndedTurn: (...args) => isEndedTurn(...args),
-  isUserQuestionItem: (...args) => isUserQuestionItem(...args),
-  userMessageHasVisualAttachment: (...args) => userMessageHasVisualAttachment(...args),
-  isTurnUsageSummaryItem: (...args) => isTurnUsageSummaryItem(...args),
-  isOperationalItem: (...args) => isOperationalItem(...args),
-  isAssistantReceiptItem: (...args) => isAssistantReceiptItem(...args),
-  isVisualReceiptItem: (...args) => isVisualReceiptItem(...args),
-  isTurnDiagnosticItem: (...args) => isTurnDiagnosticItem(...args),
-  isContextCompactionType: (...args) => isContextCompactionType(...args),
-});
-const {
-  isCompletedStatus,
-  isLiveTurn,
-  normalizeSupersededLiveTurns,
-  pruneSupersededLiveShellTurns,
-  reconcileThreadActiveTurnWithRolloutEvidence,
-  rolloutEvidenceHasRuntimeActivity,
-  rolloutEvidenceIsRecent,
-  turnIdentifier,
-  turnStartedAtMs,
-} = threadDetailActiveTurnEvidenceService;
-const threadDetailCompactionService = createThreadDetailCompactionService({
-  fs,
-  path,
-  operationalItemTypes: OPERATIONAL_ITEM_TYPES,
-  maxTextChars: MAX_TEXT_CHARS,
-  maxCommandOutputChars: MAX_COMMAND_OUTPUT_CHARS,
-  maxCommandOutputCharsPerTurn: MAX_COMMAND_OUTPUT_CHARS_PER_TURN,
-  maxLiveOperationItems: MAX_LIVE_OPERATION_ITEMS,
-  maxThreadTurns: MAX_THREAD_TURNS,
-  pendingSteerEchoStore,
-  statusText,
-  isCompletedStatus,
-  isLiveTurn,
-  truncateMiddle,
-  truncateTail,
-  compactStringArray,
-  compactStructured,
-  attachGeneratedImageContent,
-  isCodexMobileUploadFilePath,
-  normalizeFsPath,
-  imageViewSourcePath,
-  parseJsonLine,
-  rolloutPathForThread,
-  rolloutStatsForPath,
-  reconcileThreadActiveTurnWithRolloutEvidence,
-  normalizeSupersededLiveTurns,
-  pruneSupersededLiveShellTurns,
-  workspaceContextStatsForCwd,
-  dedupeUserMessageEchoesInThread,
-  normalizeStaleContextOnlyActiveThread,
-  annotateThreadRolloutStats,
-  readRolloutTail: (...args) => readRolloutTail(...args),
-  readRolloutToolOutputImageItems: (...args) => readRolloutToolOutputImageItems(...args),
-  readRolloutTurnUsageSummaries: (...args) => readRolloutTurnUsageSummaries(...args),
-  rolloutEntryTurnId: (...args) => rolloutEntryTurnId(...args),
-  rolloutTimestampFields: (...args) => rolloutTimestampFields(...args),
-  appendRolloutToolOutputImagesToThread: (...args) => appendRolloutToolOutputImagesToThread(...args),
-  appendMissingRolloutCompletionTurnsToThread: (...args) => appendMissingRolloutCompletionTurnsToThread(...args),
-  appendRolloutFinalReceiptsToThread: (...args) => appendRolloutFinalReceiptsToThread(...args),
-  appendRolloutEmptyCompletionDiagnosticsToThread: (...args) => appendRolloutEmptyCompletionDiagnosticsToThread(...args),
-  enrichThreadItemTimestampsFromRollout: (...args) => enrichThreadItemTimestampsFromRollout(...args),
-  inferTurnItemDisplayTimestamps: (...args) => inferTurnItemDisplayTimestamps(...args),
-  orderTurnItemsByDisplayTimestamp: (...args) => orderTurnItemsByDisplayTimestamp(...args),
-  attachTurnUsageSummaries,
-});
-const {
-  compactItem,
-  compactThread,
-  compactThreadReadResult,
-  compactTurn,
-  compactTurnsListResult,
-  isAssistantReceiptItem,
-  isContextCompactionType,
-  isEndedTurn,
-  isOperationalItem,
-  isTurnDiagnosticItem,
-  isTurnUsageSummaryItem,
-  isUserQuestionItem,
-  isVisualReceiptItem,
-  isWebSearchLikeItem,
-  olderTurnsCursorBeforeTurn,
-  userMessageHasVisualAttachment,
-} = threadDetailCompactionService;
-const rolloutDetailEnrichmentService = createRolloutDetailEnrichmentService({
-  fs,
-  path,
-  crypto,
-  rolloutEnrichmentIndexService,
-  normalizeFsPath,
-  timestampToMs,
-  isContextCompactionType,
-  isWebSearchLikeItem,
-  isOperationalItem,
-  collectTurnUsageSummariesFromEntries,
-  collectTurnUsageSummariesFromRolloutText,
-  attachGeneratedImageContent,
-  isPathInside,
-  uploadRoot: UPLOAD_ROOT,
-  maxRolloutContextBytes: MAX_ROLLOUT_CONTEXT_BYTES,
-  maxRuntimeContextScanBytes: MAX_RUNTIME_CONTEXT_SCAN_BYTES,
-  maxRolloutEnrichmentContextBytes: MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES,
-  runtimeContextCacheTtlMs: RUNTIME_CONTEXT_CACHE_TTL_MS,
-  runtimeContextCacheMax: RUNTIME_CONTEXT_CACHE_MAX,
-});
-({
-  appendRolloutToolOutputImagesToThread,
-  insertProjectedItemByTimestamp,
-  itemTimestampCandidateId,
-  itemTimestampMatchText,
-  readRolloutEnrichmentEntries,
-  readRolloutEnrichmentText,
-  readRolloutItemTimestampCandidates,
-  readRolloutRuntimeScanText,
-  readRolloutTail,
-  readRolloutToolOutputImageItems,
-  readRolloutTurnUsageSummaries,
-  rolloutEntryTurnId,
-  rolloutTimestampFields,
-  timestampTextsMatch,
-  visibleItemId,
-} = rolloutDetailEnrichmentService);
-const threadDetailRolloutBackfillService = createThreadDetailRolloutBackfillService({
-  fs,
-  runtimeContextCacheTtlMs: RUNTIME_CONTEXT_CACHE_TTL_MS,
-  runtimeContextCacheMax: RUNTIME_CONTEXT_CACHE_MAX,
-  threadDetailCompletedProgressMessages: THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES,
-  threadDetailProgressiveActiveUserTextChars: THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS,
-  maxThreadTurns: MAX_THREAD_TURNS,
-  normalizeFsPath,
-  statusText,
-  timestampToMs,
-  stableTextHash,
-  finalReceiptTextFromParams,
-  readRolloutEnrichmentEntries,
-  rolloutEntryTurnId,
-  rolloutTimestampFields,
-  rolloutPathForThread,
-  readRolloutTurnUsageSummaries,
-  readRolloutItemTimestampCandidates,
-  rolloutStatsForPath,
-  readStateDbThread,
-  readStartedThread,
-  clonePlainJson,
-  cloneThreadForUsageDecoration,
-  collectRolloutUserInputAnchors,
-  appendLatestCompletedUserInputAnchors,
-  compactThread,
-  sortTurnsChronologically,
-  insertProjectedItemByTimestamp,
-  visibleItemId,
-  itemTimestampCandidateId,
-  itemTimestampMatchText,
-  timestampTextsMatch,
-  isAssistantReceiptItem,
-  isTurnDiagnosticItem,
-  isCompletedStatus,
-  isLiveTurn,
-  isThreadListRestStatus,
-  isThreadListLiveStatus,
-  turnIdentifier,
-  turnSortTimestampMs,
-  turnStartedAtMs,
-  redactInlineImageDataUrls,
-  isContextCompactionType,
-  isWebSearchLikeItem,
-  isOperationalItem,
-  createThreadCompletionDiagnosticService,
-});
-({
-  appendMissingRolloutCompletionTurnsToThread,
-  appendRolloutActiveAssistantItemsToDetailResult,
-  appendRolloutEmptyCompletionDiagnosticsToThread,
-  appendRolloutFinalReceiptsToThread,
-  appendRolloutUserInputAnchorsToDetailResult,
-  backfillMissingRolloutCompletionTurnsForDetailResult,
-  dedupeSyntheticActiveAssistantMessagesInThread,
-  enrichThreadItemTimestampsFromRollout,
-  finalizeActiveAssistantProjectionDetailResult,
-  inferTurnItemDisplayTimestamps,
-  itemDisplayTimestampMs,
-  orderTurnItemsByDisplayTimestamp,
-  turnCompletionUsageSummary,
-} = threadDetailRolloutBackfillService);
 const latestThreadIdByTurnId = new Map();
 const recentStartedThreads = new Map();
 const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
@@ -1130,6 +867,156 @@ const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
   decorateSummary: annotateThreadRolloutStats,
   mergeSummary: mergeThreadDisplaySummary,
 });
+const threadDetailRuntimeService = createThreadDetailRuntimeService({
+  fs,
+  path,
+  crypto,
+  config: {
+    threadDetailProjectionV4Enabled: THREAD_DETAIL_PROJECTION_V4_ENABLED,
+    threadDetailProjectionCacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
+    threadDetailProjectionPolicyVersion: THREAD_DETAIL_PROJECTION_POLICY_VERSION,
+    threadDetailRawAllEnabled: THREAD_DETAIL_RAW_ALL_ENABLED,
+    threadDetailTurnsListFirstBytes: THREAD_DETAIL_TURNS_LIST_FIRST_BYTES,
+    threadDetailCompletedProgressMessages: THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES,
+    threadDetailProgressiveActiveUserTextChars: THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS,
+    threadDetailSummaryAppServerRefreshTtlMs: THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS,
+    maxTextChars: MAX_TEXT_CHARS,
+    maxCommandOutputChars: MAX_COMMAND_OUTPUT_CHARS,
+    maxCommandOutputCharsPerTurn: MAX_COMMAND_OUTPUT_CHARS_PER_TURN,
+    maxLiveOperationItems: MAX_LIVE_OPERATION_ITEMS,
+    maxThreadTurns: MAX_THREAD_TURNS,
+    maxFullThreadTurns: MAX_FULL_THREAD_TURNS,
+    operationalItemTypes: OPERATIONAL_ITEM_TYPES,
+    maxRolloutContextBytes: MAX_ROLLOUT_CONTEXT_BYTES,
+    maxRuntimeContextScanBytes: MAX_RUNTIME_CONTEXT_SCAN_BYTES,
+    maxRolloutEnrichmentContextBytes: MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES,
+    runtimeContextCacheTtlMs: RUNTIME_CONTEXT_CACHE_TTL_MS,
+    runtimeContextCacheMax: RUNTIME_CONTEXT_CACHE_MAX,
+    rolloutActiveStatusWindowMs: ROLLOUT_ACTIVE_STATUS_WINDOW_MS,
+    readRpcTimeoutMs: READ_RPC_TIMEOUT_MS,
+    threadDetailRpcTimeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
+  },
+  threadDisplaySummaryCache,
+  pendingSteerEchoStore,
+  statusText,
+  truncateMiddle,
+  truncateTail,
+  compactStringArray,
+  compactStructured,
+  attachGeneratedImageContent,
+  isCodexMobileUploadFilePath,
+  normalizeFsPath,
+  imageViewSourcePath,
+  parseJsonLine,
+  timestampToMs,
+  rolloutPathForThread,
+  rolloutStatsForPath,
+  workspaceContextStatsForCwd,
+  dedupeUserMessageEchoesInThread,
+  normalizeStaleContextOnlyActiveThread,
+  annotateThreadRolloutStats,
+  readStateDbThread,
+  readStartedThread: (...args) => readStartedThread(...args),
+  rolloutLatestTurnEvidence,
+  isThreadListLiveStatus,
+  isThreadListRestStatus,
+  isHiddenThread,
+  threadRuntimeSettings,
+  visibilityFromGlobalState,
+  readGlobalState: (...args) => readGlobalState(...args),
+  readRolloutSessionFallbackThread,
+  readThreadSummaryFromAppServer,
+  mergeThreadDisplaySummary,
+  applySessionIndexTitleToThread,
+  readSessionIndexEntries,
+  mergeThreadRuntimeFromStateDb,
+  normalizeThreadSummaryLiveStatus,
+  publicRuntimeSettings,
+  applyLocalActiveThreadStatusToSummary,
+  isPathInside,
+  uploadRoot: UPLOAD_ROOT,
+  stableTextHash,
+  finalReceiptTextFromParams,
+  clonePlainJson,
+  redactInlineImageDataUrls,
+  logThreadDetail,
+  isUnmaterializedThreadError,
+});
+const {
+  appendMissingRolloutCompletionTurnsToThread,
+  appendRolloutActiveAssistantItemsToDetailResult,
+  appendRolloutEmptyCompletionDiagnosticsToThread,
+  appendRolloutFinalReceiptsToThread,
+  appendRolloutToolOutputImagesToThread,
+  attachRolloutUsageSummariesToDetailResult,
+  appendRolloutUserInputAnchorsToDetailResult,
+  backfillMissingRolloutCompletionTurnsForDetailResult,
+  cloneThreadForUsageDecoration,
+  compactItem,
+  compactThread,
+  compactThreadReadResult,
+  compactTurn,
+  compactTurnsListResult,
+  dedupeSyntheticActiveAssistantMessagesInThread,
+  enrichThreadItemTimestampsFromRollout,
+  fallbackThreadReadResult,
+  fallbackThreadReadResultForOrchestrator,
+  finalizeActiveAssistantProjectionDetailResult,
+  finalizeThreadDetailProjectionResult,
+  hasTurnUsageSummaryPayload,
+  inferTurnItemDisplayTimestamps,
+  isAssistantReceiptItem,
+  isCompletedStatus,
+  isContextCompactionType,
+  isEndedTurn,
+  isLiveTurn,
+  isOperationalItem,
+  isReadTimeoutError,
+  isTurnDiagnosticItem,
+  isTurnUsageSummaryItem,
+  isUserQuestionItem,
+  isVisualReceiptItem,
+  isWebSearchLikeItem,
+  itemDisplayTimestampMs,
+  itemTimestampCandidateId,
+  itemTimestampMatchText,
+  normalizeSupersededLiveTurns,
+  orderTurnItemsByDisplayTimestamp,
+  olderTurnsCursorBeforeTurn,
+  parseThreadTurnsCursor,
+  prepareProjectedThreadReadResult,
+  prepareThreadDetailResponseResult,
+  pruneSupersededLiveShellTurns,
+  readFullThreadDetailForOrchestrator,
+  readRawThreadDetailForOrchestrator,
+  readRolloutEnrichmentEntries,
+  readRolloutEnrichmentText,
+  readRolloutItemTimestampCandidates,
+  readRolloutRuntimeScanText,
+  readRolloutTail,
+  readRolloutToolOutputImageItems,
+  readRolloutTurnUsageSummaries,
+  reconcileThreadActiveTurnWithRolloutEvidence,
+  rolloutEntryTurnId,
+  rolloutEvidenceHasRuntimeActivity,
+  rolloutEvidenceIsRecent,
+  rolloutTimestampFields,
+  scheduleRecentWindowProjectionRefresh,
+  sortTurnsChronologically,
+  threadDetailActiveWindowPrewarmService,
+  threadDetailProjectionInput,
+  threadDetailProjectionService,
+  threadDetailReadOrchestrationService,
+  threadFromTurnsList,
+  threadRolloutSizeBytes,
+  timestampTextsMatch,
+  turnCompletionUsageSummary,
+  turnIdentifier,
+  turnSortTimestampMs,
+  turnStartedAtMs,
+  userMessageHasVisualAttachment,
+  visibleItemId,
+} = threadDetailRuntimeService;
 const threadSummaryReadModelService = createThreadSummaryReadModelService({
   fs,
   path,
@@ -1327,198 +1214,6 @@ function incrementBoundedDiagnosticCounter(diagnostics, key, amount = 1) {
   if (!Number.isFinite(delta) || delta <= 0) return;
   const next = (Number.isFinite(current) && current > 0 ? current : 0) + delta;
   diagnostics[key] = Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(next));
-}
-
-const threadDetailProjectionInputService = createThreadDetailProjectionInputService({
-  maxTurns: MAX_FULL_THREAD_TURNS,
-  rolloutStatsForPath,
-  statusText,
-  timestampToMs,
-});
-const threadDetailProjectionResultService = createThreadDetailProjectionResultService({
-  maxTurns: MAX_FULL_THREAD_TURNS,
-  compactThreadReadResult,
-  decorateThreadReadResult: attachRolloutUsageSummariesToDetailResult,
-  mergeThreadDisplaySummary,
-  applySessionIndexTitleToThread,
-  readSessionIndexEntries,
-  mergeThreadRuntimeFromStateDb,
-  normalizeThreadSummaryLiveStatus,
-  publicRuntimeSettings,
-});
-const threadDetailSummaryService = createThreadDetailSummaryService({
-  readStateDbThread,
-  readStartedThread,
-  readRolloutSessionFallbackThread,
-  readDisplaySummaryThread: (threadId) => threadDisplaySummaryCache.read(threadId),
-  readThreadSummaryFromAppServer,
-  mergeThreadDisplaySummary,
-  applyLocalActiveThreadStatusToSummary,
-  threadRolloutSizeBytes,
-  appServerRefreshTtlMs: THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS,
-  skipAppServerRefreshWhenDisplayCachePresent: true,
-});
-const threadDetailBoundedReadPolicyService = createThreadDetailBoundedReadPolicyService({
-  thresholdBytes: THREAD_DETAIL_TURNS_LIST_FIRST_BYTES,
-  threadRolloutSizeBytes,
-});
-const threadDetailActiveOverlayProviderService = createThreadDetailActiveOverlayProviderService({
-  projectionService: threadDetailProjectionService,
-});
-const threadDetailTurnsListReadCoalescer = createThreadDetailTurnsListReadCoalescer();
-const threadDetailActiveWindowPrewarmService = createThreadDetailActiveWindowPrewarmService({
-  resolveSummary: (requestCodex, threadId, options) => threadDetailSummaryService.resolveSummary(requestCodex, threadId, options),
-  threadRuntimeSettings,
-  projectionInput: threadDetailProjectionInput,
-  activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, optionsForProjection = {}) => {
-    const lookedUp = typeof threadDetailProjectionService.lookup === "function"
-      ? threadDetailProjectionService.lookup(input, Object.assign({}, optionsForProjection, { skipNormalizeResult: true }))
-      : { cached: threadDetailProjectionService.get(input, optionsForProjection), missReason: "" };
-    const cached = lookedUp && lookedUp.cached || null;
-    return {
-      result: cached && cached.result || null,
-      missReason: lookedUp && lookedUp.missReason || "",
-    };
-  },
-  resolveActiveWindowOverlay: (input) => threadDetailActiveOverlayProviderService.resolveActiveWindowOverlay(input),
-  turnsListThreadReadResult: (input) => threadDetailTurnsListReadCoalescer.read(input, ({
-    threadId,
-    summary,
-    runtimeSettings,
-    warning,
-    mode,
-    threadLog,
-    responseBudgetEvidence,
-  }) => turnsListThreadReadResult(
-    threadId,
-    summary,
-    runtimeSettings,
-    warning,
-    mode,
-    threadLog,
-    responseBudgetEvidence,
-  )),
-  seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
-  log: (event, details) => logThreadDetail(event, details),
-});
-const threadDetailReadOrchestrationService = createThreadDetailReadOrchestrationService({
-  attachDiagnostics: attachThreadDetailDiagnostics,
-  resolveSummary: (requestCodex, threadId, options) => threadDetailSummaryService.resolveSummary(requestCodex, threadId, options),
-  resolveVisibility: () => visibilityFromGlobalState(readGlobalState()),
-  threadRuntimeSettings,
-  isHiddenThread,
-  rawAllEnabled: () => THREAD_DETAIL_RAW_ALL_ENABLED,
-  readRawThread: readRawThreadDetailForOrchestrator,
-  projectionInput: threadDetailProjectionInput,
-  projectedThreadLookup: (input, summary, runtimeSettings, optionsForProjection = {}) => {
-    const lookedUp = typeof threadDetailProjectionService.lookup === "function"
-      ? threadDetailProjectionService.lookup(input, optionsForProjection)
-      : { cached: threadDetailProjectionService.get(input, optionsForProjection), missReason: "" };
-    return {
-      result: prepareProjectedThreadReadResult(
-        lookedUp && lookedUp.cached,
-        summary,
-        runtimeSettings,
-        optionsForProjection,
-      ),
-      missReason: lookedUp && lookedUp.missReason || "",
-    };
-  },
-  activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, optionsForProjection = {}) => {
-    const lookedUp = typeof threadDetailProjectionService.lookup === "function"
-      ? threadDetailProjectionService.lookup(input, Object.assign({}, optionsForProjection, { skipNormalizeResult: true }))
-      : { cached: threadDetailProjectionService.get(input, optionsForProjection), missReason: "" };
-    const cached = lookedUp && lookedUp.cached || null;
-    let result = cached && cached.result || null;
-    if (result && result.thread) {
-      const projectionVersion = String(cached.version || result.thread.mobileProjectionVersion || "");
-      const thread = Object.assign({}, result.thread);
-      thread.mobileReadMode = cached.partial
-        ? (projectionVersion === "v4" ? "projection-v4-partial" : "projection-partial")
-        : cached.dynamic
-          ? (projectionVersion === "v4" ? "projection-v4-dynamic" : "projection-dynamic")
-          : (projectionVersion === "v4" ? "projection-v4-cache" : "projection-cache");
-      thread.mobileProjection = Object.assign({}, thread.mobileProjection || {}, {
-        source: cached.partial ? "partial" : cached.dynamic ? "dynamic" : "cache",
-        version: projectionVersion || result.thread.mobileProjectionVersion || "",
-        partial: cached.partial === true,
-        partialKind: cached.partialKind || "",
-        cachedAtMs: cached.cachedAtMs || null,
-        updatedAtMs: cached.updatedAtMs || cached.cachedAtMs || null,
-        ageMs: cached.updatedAtMs ? Math.max(0, Date.now() - cached.updatedAtMs) : null,
-      });
-      if (cached.stalePartial === true) {
-        thread.mobileProjection.stalePartial = true;
-        thread.mobileProjection.staleReason = cached.staleReason || "";
-      }
-      result = Object.assign({}, result, { thread });
-    }
-    return {
-      result,
-      missReason: lookedUp && lookedUp.missReason || "",
-      stalePartial: cached && cached.stalePartial === true,
-      staleReason: cached && cached.staleReason || "",
-    };
-  },
-  projectedThreadResult: (input, summary, runtimeSettings, optionsForProjection = {}) => prepareProjectedThreadReadResult(
-    threadDetailProjectionService.get(input, optionsForProjection),
-    summary,
-    runtimeSettings,
-    optionsForProjection,
-  ),
-  resolveActiveWindowOverlay: (input) => threadDetailActiveOverlayProviderService.resolveActiveWindowOverlay(input),
-  rememberThreadSummary: (thread) => threadDisplaySummaryCache.remember(thread),
-  turnsListThreadReadResult: (input) => threadDetailTurnsListReadCoalescer.read(input, ({
-    threadId,
-    summary,
-    runtimeSettings,
-    warning,
-    mode,
-    threadLog,
-  }) => turnsListThreadReadResult(
-    threadId,
-    summary,
-    runtimeSettings,
-    warning,
-    mode,
-    threadLog,
-  )),
-  readFullThread: readFullThreadDetailForOrchestrator,
-  seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
-  scheduleProjectionRefresh: (input = {}) => scheduleRecentWindowProjectionRefresh(input),
-  preferBoundedReadBeforeFullRead: (input) => threadDetailBoundedReadPolicyService.preferBoundedReadBeforeFullRead(input),
-  prepareResponse: prepareThreadDetailResponseResult,
-  compactActiveOverlayTurn: (turn, details = {}) => compactTurn(turn, {
-    allowOperations: true,
-    maxOperationItems: MAX_LIVE_OPERATION_ITEMS,
-    threadId: details.threadId || "",
-  }),
-  fallbackThreadReadResult: fallbackThreadReadResultForOrchestrator,
-  isReadTimeoutError,
-  isUnmaterializedThreadError,
-  threadRolloutSizeBytes,
-  readTimeoutMs: READ_RPC_TIMEOUT_MS,
-  threadDetailRpcTimeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
-  maxThreadTurns: MAX_THREAD_TURNS,
-  maxFullThreadTurns: MAX_FULL_THREAD_TURNS,
-});
-
-function threadDetailProjectionInput(threadId, summary) {
-  return threadDetailProjectionInputService.projectionInput(threadId, summary);
-}
-
-function prepareProjectedThreadReadResult(cached, summary, runtimeSettings, options = {}) {
-  return threadDetailProjectionResultService.prepareProjectedThreadReadResult(cached, summary, runtimeSettings, options);
-}
-
-function finalizeThreadDetailProjectionResult(result, details = {}) {
-  if (THREAD_DETAIL_RAW_ALL_ENABLED) return result;
-  if (!result || !result.thread || !threadDetailProjectionService
-    || typeof threadDetailProjectionService.normalizeResult !== "function") return result;
-  return threadDetailProjectionService.normalizeResult(result, {
-    threadId: result.thread.id || details.threadId || "",
-    source: details.source || result.thread.mobileReadMode || "thread-detail",
-  });
 }
 
 async function chatGptProSourceSummary(body = {}) {
@@ -1879,12 +1574,8 @@ const codex = createCodexAppServerClient({
   codexProfileService,
   liveQuotaSnapshotForProfiles,
 });
-threadDetailResponsePreparationService = createThreadDetailResponsePreparationService({
+threadDetailResponsePreparationService = threadDetailRuntimeService.createResponsePreparationService({
   codex,
-  maxThreadTurns: MAX_THREAD_TURNS,
-  maxFullThreadTurns: MAX_FULL_THREAD_TURNS,
-  readRpcTimeoutMs: READ_RPC_TIMEOUT_MS,
-  threadDetailRpcTimeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
   responseBudgetOptions: () => ({
     completedOperationItems: THREAD_DETAIL_COMPLETED_OPERATION_ITEMS,
     activeOperationItems: MAX_LIVE_OPERATION_ITEMS,
@@ -1908,32 +1599,8 @@ threadDetailResponsePreparationService = createThreadDetailResponsePreparationSe
     progressiveCompletedTextChars: THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS,
     progressiveCompletedUserTextChars: THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS,
   }),
-  compactThreadReadResult,
-  compactThreadDetailResponseResult,
-  compactTurn,
-  enrichThreadItemTimestampsFromRollout,
-  sortTurnsChronologically,
-  isLiveTurn,
-  normalizeThreadSummaryLiveStatus,
-  annotateThreadRolloutStats,
-  publicRuntimeSettings,
-  rolloutPathForThread,
-  rolloutStatsForPath,
-  readRolloutTurnUsageSummaries,
-  attachTurnUsageSummaries,
-  workspaceContextStatsForCwd,
-  backfillMissingRolloutCompletionTurnsForDetailResult,
-  appendRolloutUserInputAnchorsToDetailResult,
-  appendRolloutActiveAssistantItemsToDetailResult,
-  finalizeActiveAssistantProjectionDetailResult,
   applyLocalActiveThreadStatusToResult,
   prepareThreadTaskCardsToResult,
-  finalizeThreadDetailProjectionResult,
-  applySessionIndexTitleToThread,
-  readSessionIndexEntries,
-  threadDisplaySummaryCache,
-  mergeThreadRuntimeFromStateDb,
-  appendRolloutFinalReceiptsToThread,
   attachPendingServerRequestsToResult,
   attachThreadTaskCardsToResult,
 });
@@ -2328,82 +1995,6 @@ function syncThreadDetailReadResultToThreadListFallbackCache(payload = {}) {
   return threadSummaryStateService.syncThreadDetailReadResultToThreadListFallbackCache(payload);
 }
 
-function sortTurnsChronologically(turns) {
-  return (turns || []).slice().sort((a, b) => {
-    const left = turnSortTimestampMs(a);
-    const right = turnSortTimestampMs(b);
-    if (Number.isFinite(left) && Number.isFinite(right) && left !== right) return left - right;
-    if (Number.isFinite(left) && !Number.isFinite(right) && isRolloutFallbackTurnId(b)) return 1;
-    if (!Number.isFinite(left) && Number.isFinite(right) && isRolloutFallbackTurnId(a)) return -1;
-    return String((a && a.id) || "").localeCompare(String((b && b.id) || ""));
-  });
-}
-
-function isRolloutFallbackTurnId(turn) {
-  return /^rollout-\d+$/i.test(String(turn && (turn.id || turn.turnId) || ""));
-}
-
-function turnSortTimestampMs(turn) {
-  for (const key of [
-    "startedAtMs",
-    "startedAt",
-    "started_at_ms",
-    "started_at",
-    "createdAtMs",
-    "createdAt",
-    "created_at_ms",
-    "created_at",
-    "completedAtMs",
-    "completedAt",
-    "completed_at_ms",
-    "completed_at",
-    "updatedAtMs",
-    "updatedAt",
-    "updated_at_ms",
-    "updated_at",
-  ]) {
-    const timestamp = timestampToMs(turn && turn[key]);
-    if (timestamp) return timestamp;
-  }
-  const itemTimestamps = ((turn && turn.items) || [])
-    .map(itemDisplayTimestampMs)
-    .filter(Boolean);
-  if (itemTimestamps.length) return Math.min(...itemTimestamps);
-  return isLiveTurn(turn) ? Number.MAX_SAFE_INTEGER : NaN;
-}
-
-function threadFromTurnsList(threadId, summary, turnsResult) {
-  return threadDetailResponsePreparationService.threadFromTurnsList(threadId, summary, turnsResult);
-}
-
-function parseThreadTurnsCursor(value) {
-  if (value === null || value === undefined || value === "") return null;
-  if (typeof value === "object") return JSON.stringify(value);
-  const text = String(value || "").trim();
-  if (!text) return null;
-  if (/^"/.test(text)) {
-    try {
-      const parsed = JSON.parse(text);
-      return typeof parsed === "string" ? parsed : JSON.stringify(parsed);
-    } catch (_) {
-      return text;
-    }
-  }
-  return text;
-}
-
-function isReadTimeoutError(err) {
-  return Boolean(err && (err.code === "RPC_TIMEOUT" || /timed out|connection is not open|connection closed/i.test(err.message || "")));
-}
-
-function threadRolloutSizeBytes(thread) {
-  return threadDetailResponsePreparationService.threadRolloutSizeBytes(thread);
-}
-
-function fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "summary-fallback") {
-  return threadDetailResponsePreparationService.fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, mode);
-}
-
 function attachThreadTaskCardsToThread(thread) {
   if (!thread || typeof thread !== "object" || !thread.id) return thread;
   thread.threadTaskCards = threadTaskCardService.listForThread(thread.id);
@@ -2456,38 +2047,6 @@ function stableTextHash(value) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(36);
-}
-
-function hasTurnUsageSummaryPayload(summaries) {
-  return threadDetailResponsePreparationService.hasTurnUsageSummaryPayload(summaries);
-}
-
-function cloneThreadForUsageDecoration(thread) {
-  return threadDetailResponsePreparationService.cloneThreadForUsageDecoration(thread);
-}
-
-function attachRolloutUsageSummariesToDetailResult(result) {
-  return threadDetailResponsePreparationService.attachRolloutUsageSummariesToDetailResult(result);
-}
-
-async function prepareThreadDetailResponseResult(result, details = {}) {
-  return threadDetailResponsePreparationService.prepareThreadDetailResponseResult(result, details);
-}
-
-async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null, responseBudgetEvidence = "") {
-  return threadDetailResponsePreparationService.turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode, threadLog, responseBudgetEvidence);
-}
-
-async function readRawThreadDetailForOrchestrator({ threadId, summary, runtimeSettings }) {
-  return threadDetailResponsePreparationService.readRawThreadDetailForOrchestrator({ threadId, summary, runtimeSettings });
-}
-
-async function readFullThreadDetailForOrchestrator({ threadId, summary, runtimeSettings }) {
-  return threadDetailResponsePreparationService.readFullThreadDetailForOrchestrator({ threadId, summary, runtimeSettings });
-}
-
-function fallbackThreadReadResultForOrchestrator({ threadId, summary, runtimeSettings, warning, mode }) {
-  return threadDetailResponsePreparationService.fallbackThreadReadResultForOrchestrator({ threadId, summary, runtimeSettings, warning, mode });
 }
 
 threadListServerBoundaryService = createThreadListServerBoundaryService({
