@@ -10,6 +10,7 @@ test("runtime job scheduler adapter remains a compatibility wrapper", () => {
   assert.equal(adapter.resolveRuntimeSelfCheckPlan, service.resolveRuntimeSelfCheckPlan);
   assert.equal(adapter.RUNTIME_SELF_CHECK_JOBS, service.RUNTIME_SELF_CHECK_JOBS);
   assert.equal(adapter.RUNTIME_PREWARM_JOBS, service.RUNTIME_PREWARM_JOBS);
+  assert.equal(adapter.RUNTIME_DIAGNOSTIC_JOBS, service.RUNTIME_DIAGNOSTIC_JOBS);
   assert.equal(adapter.RUNTIME_JOB_REGISTRY, service.RUNTIME_JOB_REGISTRY);
 });
 
@@ -47,6 +48,44 @@ test("runtime job registry owns prewarm declarations", () => {
     assert.equal(job.userRequestPreemptible, true);
     assert.equal(job.timeoutMs, 30000);
     assert.equal(job.cpuBudgetClass, "medium");
+  }
+});
+
+test("runtime job registry owns manual diagnostic declarations", () => {
+  assert.deepEqual(service.DIAGNOSTIC_JOB_ORDER, [
+    "phase-b-readback-smoke",
+    "thread-self-check",
+    "projection-replay-visual-smoke",
+    "media-render-visual-smoke",
+    "image-order-visual-smoke",
+    "pwa-shell-refresh-smoke",
+    "empty-detail-cache-smoke",
+  ]);
+
+  for (const name of service.DIAGNOSTIC_JOB_ORDER) {
+    const job = service.RUNTIME_DIAGNOSTIC_JOBS[name];
+    assert.equal(job, service.RUNTIME_JOB_REGISTRY[name]);
+    assert.equal(job, service.runtimeJobDeclaration(name));
+    assert.equal(job.periodicAllowed, false);
+    assert.equal(job.periodicDefaultEnabled, false);
+    assert.equal(job.deployDefaultEnabled, false);
+    assert.equal(job.maxConcurrency, 1);
+    assert.equal(job.userRequestPreemptible, true);
+    assert.ok(job.timeBudgetMs >= 60000);
+  }
+
+  assert.equal(service.RUNTIME_DIAGNOSTIC_JOBS["phase-b-readback-smoke"].realBrowserAllowed, false);
+  assert.equal(service.RUNTIME_DIAGNOSTIC_JOBS["thread-self-check"].realBrowserAllowed, false);
+  for (const name of [
+    "projection-replay-visual-smoke",
+    "media-render-visual-smoke",
+    "image-order-visual-smoke",
+    "pwa-shell-refresh-smoke",
+    "empty-detail-cache-smoke",
+  ]) {
+    assert.equal(service.RUNTIME_DIAGNOSTIC_JOBS[name].realBrowserAllowed, true);
+    assert.equal(service.RUNTIME_DIAGNOSTIC_JOBS[name].cpuBudgetClass, "high");
+    assert.equal(service.RUNTIME_DIAGNOSTIC_JOBS[name].timeoutMs, 120000);
   }
 });
 

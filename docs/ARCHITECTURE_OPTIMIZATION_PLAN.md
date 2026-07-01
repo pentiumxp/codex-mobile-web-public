@@ -3348,11 +3348,15 @@ Scope:
 - `services/runtime/runtime-job-scheduler-service.js` owns the unified job
   registry for self-check jobs (`api-thread`, `browser-runtime`,
   `client-events`) and prewarm jobs (`thread-list-fallback-prewarm`,
-  `thread-detail-active-window-prewarm`).
+  `thread-detail-active-window-prewarm`), plus manual diagnostic jobs such as
+  Phase-B readback and visual smoke checks.
 - Each plan entry declares periodic allowance, max concurrency, time budget,
   CPU budget class, real-browser allowance, and user-request preemption,
   while preserving legacy aliases such as `timeoutMs`, `usesBrowser`, and
   `preemptibleByForeground` for existing scripts.
+- Manual diagnostic declarations are non-periodic and not deploy-default jobs;
+  visual smoke declarations are the only manual diagnostics that allow real
+  browser work.
 - `adapters/runtime-job-scheduler-service.js` is a compatibility export only.
 
 Required validation:

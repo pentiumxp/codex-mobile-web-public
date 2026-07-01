@@ -98,12 +98,96 @@ const PREWARM_JOB_ORDER = Object.freeze([
   "thread-detail-active-window-prewarm",
 ]);
 
+const RUNTIME_DIAGNOSTIC_JOBS = Object.freeze({
+  "phase-b-readback-smoke": normalizeRuntimeJobDeclaration("phase-b-readback-smoke", {
+    timeoutMs: 60000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "medium",
+    realBrowserAllowed: false,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+  "thread-self-check": normalizeRuntimeJobDeclaration("thread-self-check", {
+    timeoutMs: 120000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "medium",
+    realBrowserAllowed: false,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+  "projection-replay-visual-smoke": normalizeRuntimeJobDeclaration("projection-replay-visual-smoke", {
+    timeoutMs: 120000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "high",
+    realBrowserAllowed: true,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+  "media-render-visual-smoke": normalizeRuntimeJobDeclaration("media-render-visual-smoke", {
+    timeoutMs: 120000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "high",
+    realBrowserAllowed: true,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+  "image-order-visual-smoke": normalizeRuntimeJobDeclaration("image-order-visual-smoke", {
+    timeoutMs: 120000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "high",
+    realBrowserAllowed: true,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+  "pwa-shell-refresh-smoke": normalizeRuntimeJobDeclaration("pwa-shell-refresh-smoke", {
+    timeoutMs: 120000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "high",
+    realBrowserAllowed: true,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+  "empty-detail-cache-smoke": normalizeRuntimeJobDeclaration("empty-detail-cache-smoke", {
+    timeoutMs: 120000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "high",
+    realBrowserAllowed: true,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+});
+
+const DIAGNOSTIC_JOB_ORDER = Object.freeze([
+  "phase-b-readback-smoke",
+  "thread-self-check",
+  "projection-replay-visual-smoke",
+  "media-render-visual-smoke",
+  "image-order-visual-smoke",
+  "pwa-shell-refresh-smoke",
+  "empty-detail-cache-smoke",
+]);
+
 const RUNTIME_JOB_REGISTRY = Object.freeze({
   ...RUNTIME_SELF_CHECK_JOBS,
   ...RUNTIME_PREWARM_JOBS,
+  ...RUNTIME_DIAGNOSTIC_JOBS,
 });
 
-const RUNTIME_JOB_ORDER = Object.freeze([...JOB_ORDER, ...PREWARM_JOB_ORDER]);
+const RUNTIME_JOB_ORDER = Object.freeze([...JOB_ORDER, ...PREWARM_JOB_ORDER, ...DIAGNOSTIC_JOB_ORDER]);
 
 function normalizeBrowserMode(value, fallback = "") {
   const text = String(value || "").trim().toLowerCase();
@@ -215,8 +299,10 @@ function runtimeSelfCheckJob(plan = {}, name = "") {
 
 module.exports = {
   DEFAULT_JOB_TIMEOUT_MS,
+  DIAGNOSTIC_JOB_ORDER,
   JOB_ORDER,
   PREWARM_JOB_ORDER,
+  RUNTIME_DIAGNOSTIC_JOBS,
   RUNTIME_JOB_ORDER,
   RUNTIME_JOB_REGISTRY,
   RUNTIME_PREWARM_JOBS,
