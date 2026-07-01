@@ -105,6 +105,7 @@ const {
 } = require("./services/thread-list/thread-list-summary-service");
 const { createThreadDetailCompactionService } = require("./adapters/thread-detail-compaction-service");
 const { createThreadEventNotificationService } = require("./services/runtime/thread-event-notification-service");
+const { createRuntimeTurnEventPipelineService } = require("./services/runtime/runtime-turn-event-pipeline-service");
 const { createRateLimitRuntimeService } = require("./services/runtime/rate-limit-runtime-service");
 const { createThreadVisibilityService } = require("./adapters/thread-visibility-service");
 const { createThreadCompletionDiagnosticService } = require("./adapters/thread-completion-diagnostic-service");
@@ -453,6 +454,7 @@ let setThreadGoalRpc = null;
 let threadGoalFromRpcResult = null;
 let threadGoalSetParams = null;
 let threadEventNotificationService;
+let runtimeTurnEventPipelineService;
 const threadSideChatService = createThreadSideChatService({
   storageFile: THREAD_SIDE_CHAT_FILE,
   scopeId: THREAD_SIDE_CHAT_SCOPE_ID,
@@ -2138,6 +2140,29 @@ const webPushRuntimeService = createWebPushRuntimeService({
   shortIdentifier,
   logger: console,
 });
+runtimeTurnEventPipelineService = createRuntimeTurnEventPipelineService({
+  latestThreadIdByTurnId,
+  runtimeContextCacheMax: RUNTIME_CONTEXT_CACHE_MAX,
+  processStartedAtMs: PROCESS_STARTED_AT_MS,
+  timestampToMs,
+  getCodex: () => codex,
+  threadDisplaySummaryCache,
+  readStateDbThread,
+  readStartedThread,
+  turnCompletionUsageSummary,
+  tokenUsageStatsService,
+  tokenUsageWorkspaceCwds,
+  threadTaskCardService,
+  finalReceiptTextFromParams,
+  threadSideChatOrchestrationService,
+  webPushRuntimeService,
+  threadFromTurnsList,
+  materializeThreadTaskCardDraftsForThread,
+  threadTaskCardDraftTurnLookback: THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK,
+  threadDetailRpcTimeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
+  shortIdentifier,
+  logger: console,
+});
 
 function truncateToolDescriptionText(value, maxChars = 220) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
@@ -2226,14 +2251,17 @@ function classifyWebPushThreadId(threadId) {
   return webPushRuntimeService.classifyThreadId(threadId);
 }
 
+function requireRuntimeTurnEventPipelineService() {
+  if (!runtimeTurnEventPipelineService) throw new Error("runtime_turn_event_pipeline_service_unavailable");
+  return runtimeTurnEventPipelineService;
+}
+
 function pushTurnId(params) {
-  return String((params && params.turn && params.turn.id) || (params && params.turnId) || "");
+  return requireRuntimeTurnEventPipelineService().pushTurnId(params);
 }
 
 function threadIdFromRolloutPath(value) {
-  const text = String(value || "");
-  const match = /rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl/i.exec(text);
-  return match ? match[1] : "";
+  return requireRuntimeTurnEventPipelineService().threadIdFromRolloutPath(value);
 }
 
 function timestampToMs(value) {
@@ -2250,15 +2278,11 @@ function timestampToMs(value) {
 }
 
 function turnTimestampMs(params, field) {
-  return timestampToMs((params && params.turn && params.turn[field]) || (params && params[field]));
+  return requireRuntimeTurnEventPipelineService().turnTimestampMs(params, field);
 }
 
 function isOldPushTurnEvent(params, fields) {
-  for (const field of fields) {
-    const timestamp = turnTimestampMs(params, field);
-    if (timestamp) return timestamp < PROCESS_STARTED_AT_MS - 120000;
-  }
-  return false;
+  return requireRuntimeTurnEventPipelineService().isOldPushTurnEvent(params, fields);
 }
 
 function compactOneLine(value, maxChars = 80) {
@@ -2274,142 +2298,39 @@ function shortIdentifier(value) {
 }
 
 function pushThreadId(params) {
-  return String((params && params.threadId)
-    || (params && params.conversationId)
-    || (params && params.sessionId)
-    || (params && params.thread_id)
-    || (params && params.conversation_id)
-    || (params && params.session_id)
-    || (params && params.thread && params.thread.id)
-    || (params && params.thread && params.thread.threadId)
-    || (params && params.thread && params.thread.conversationId)
-    || (params && params.thread && params.thread.sessionId)
-    || (params && params.thread && params.thread.thread_id)
-    || (params && params.thread && params.thread.conversation_id)
-    || (params && params.thread && params.thread.session_id)
-    || (params && params.turn && params.turn.threadId)
-    || (params && params.turn && params.turn.conversationId)
-    || (params && params.turn && params.turn.sessionId)
-    || (params && params.turn && params.turn.thread_id)
-    || (params && params.turn && params.turn.conversation_id)
-    || (params && params.turn && params.turn.session_id)
-    || (params && params.turn && params.turn.thread && params.turn.thread.id)
-    || (params && params.turn && params.turn.thread && params.turn.thread.threadId)
-    || (params && params.turn && params.turn.thread && params.turn.thread.conversationId)
-    || (params && params.turn && params.turn.thread && params.turn.thread.sessionId)
-    || (params && params.turn && params.turn.thread && params.turn.thread.thread_id)
-    || (params && params.turn && params.turn.thread && params.turn.thread.conversation_id)
-    || (params && params.turn && params.turn.thread && params.turn.thread.session_id)
-    || threadIdFromRolloutPath(params && params.rolloutPath)
-    || threadIdFromRolloutPath(params && params.rollout_path)
-    || threadIdFromRolloutPath(params && params.thread && params.thread.rolloutPath)
-    || threadIdFromRolloutPath(params && params.thread && params.thread.rollout_path)
-    || threadIdFromRolloutPath(params && params.turn && params.turn.rolloutPath)
-    || threadIdFromRolloutPath(params && params.turn && params.turn.rollout_path)
-    || "");
+  return requireRuntimeTurnEventPipelineService().pushThreadId(params);
 }
 
 function rememberThreadIdForTurnId(threadId, turnId) {
-  const tid = String(turnId || "").trim();
-  const sid = String(threadId || "").trim();
-  if (!tid || !sid) return;
-  latestThreadIdByTurnId.set(tid, sid);
-  while (latestThreadIdByTurnId.size > RUNTIME_CONTEXT_CACHE_MAX) {
-    const firstKey = latestThreadIdByTurnId.keys().next().value;
-    latestThreadIdByTurnId.delete(firstKey);
-  }
+  return requireRuntimeTurnEventPipelineService().rememberThreadIdForTurnId(threadId, turnId);
 }
 
 function rememberThreadIdForTurnParams(method, params) {
-  if (!params || typeof params !== "object") return;
-  if (method !== "turn/started" && method !== "turn/completed" && method !== "item/started" && method !== "item/completed") return;
-  const turnId = pushTurnId(params)
-    || String(params.turn_id || params.itemTurnId || params.item_turn_id || params.item && (params.item.turnId || params.item.turn_id) || "").trim();
-  const threadId = pushThreadId(params)
-    || String(params.itemThreadId || params.item_thread_id || params.item && (params.item.threadId || params.item.thread_id) || "").trim();
-  rememberThreadIdForTurnId(threadId, turnId);
+  return requireRuntimeTurnEventPipelineService().rememberThreadIdForTurnParams(method, params);
 }
 
 function pushThreadSummary(threadId) {
-  const id = String(threadId || "");
-  return id ? (threadDisplaySummaryCache.read(id) || readStateDbThread(id) || readStartedThread(id) || null) : null;
+  return requireRuntimeTurnEventPipelineService().pushThreadSummary(threadId);
 }
 
 function maybeRecordTurnTokenUsage(method, params) {
-  if (method !== "turn/completed") return;
-  const turnId = pushTurnId(params);
-  if (!turnId || isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
-  const threadId = pushThreadId(params);
-  if (!threadId) return;
-  const usageSummary = turnCompletionUsageSummary(threadId, turnId);
-  if (!usageSummary) return;
-  const threadSummary = pushThreadSummary(threadId) || readStateDbThread(threadId) || null;
-  const result = tokenUsageStatsService.recordTurnUsage({
-    threadId,
-    turnId,
-    cwd: threadSummary && threadSummary.cwd || "",
-    workspaceCwds: tokenUsageWorkspaceCwds(),
-    completedAtMs: turnTimestampMs(params, "completedAt") || turnTimestampMs(params, "updatedAt") || Date.now(),
-    model: threadSummary && threadSummary.model || usageSummary.model || "",
-    usageSummary,
-    source: "turn_completed",
-  });
-  if (result && !result.ok && !result.skipped) {
-    const err = result.error;
-    console.error(`[token usage] record failed: ${err && err.message ? err.message : String(err)}`);
-  }
+  return requireRuntimeTurnEventPipelineService().maybeRecordTurnTokenUsage(method, params);
 }
 
 function maybeAutoReplyThreadTaskCard(method, params) {
-  if (method !== "turn/completed") return;
-  const turnId = pushTurnId(params);
-  if (!turnId || isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
-  const threadId = pushThreadId(params);
-  if (!threadId) return;
-  const completedAtMs = turnTimestampMs(params, "completedAt") || turnTimestampMs(params, "updatedAt") || Date.now();
-  const completed = {
-    threadId,
-    turnId,
-    completedAt: new Date(completedAtMs).toISOString(),
-    finalReceiptText: finalReceiptTextFromParams(params),
-  };
-  threadTaskCardService.maybeAutoReplyCompletedTurn(completed).catch((err) => {
-    console.error(`[thread task card] auto-return failed: ${err.message || String(err)}`);
-  });
-  threadTaskCardService.maybeResumeInterruptedTaskCard(completed).catch((err) => {
-    console.error(`[thread task card] interruption resume failed: ${err.message || String(err)}`);
-  });
+  return requireRuntimeTurnEventPipelineService().maybeAutoReplyThreadTaskCard(method, params);
 }
 
 function maybeApplyQueuedThreadSideChat(method, params) {
-  threadSideChatOrchestrationService.maybeApplyQueuedThreadSideChat(method, params);
+  return requireRuntimeTurnEventPipelineService().maybeApplyQueuedThreadSideChat(method, params);
 }
 
 function maybeMaterializeThreadTaskCardDrafts(method, params) {
-  if (method !== "turn/completed") return;
-  const turnId = pushTurnId(params);
-  if (!turnId || isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
-  const threadId = pushThreadId(params);
-  if (!threadId) return;
-  const timer = setTimeout(async () => {
-    try {
-      const summary = pushThreadSummary(threadId) || readStateDbThread(threadId) || readStartedThread(threadId) || { id: threadId };
-      const turnsResult = await codex.request("thread/turns/list", {
-        threadId,
-        limit: THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK,
-        sortDirection: "desc",
-      }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
-      const thread = threadFromTurnsList(threadId, summary, turnsResult);
-      await materializeThreadTaskCardDraftsForThread(thread);
-    } catch (err) {
-      console.error(`[thread task card] server completion materialization failed thread=${shortIdentifier(threadId)} turn=${shortIdentifier(turnId)}: ${err.message || String(err)}`);
-    }
-  }, 0);
-  if (timer && typeof timer.unref === "function") timer.unref();
+  return requireRuntimeTurnEventPipelineService().maybeMaterializeThreadTaskCardDrafts(method, params);
 }
 
 function maybeSendTurnCompletedPush(method, params) {
-  return webPushRuntimeService.maybeSendTurnCompletedPush(method, params);
+  return requireRuntimeTurnEventPipelineService().maybeSendTurnCompletedPush(method, params);
 }
 
 function getFreePort() {

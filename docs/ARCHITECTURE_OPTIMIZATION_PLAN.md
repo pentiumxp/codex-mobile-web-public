@@ -2131,6 +2131,14 @@ public behavior:
   scheduling/status, and metadata-only fallback/token-usage timing field
   shaping. `server.js` keeps narrow compatibility wrappers only for earlier
   service initialization and route injection.
+- `services/runtime/runtime-turn-event-pipeline-service.js` now owns the
+  app-server turn-event pipeline: thread/turn id extraction, rollout-path
+  thread id recovery, bounded turn-to-thread memory, old-event filtering,
+  completed-turn token usage recording, task-card auto-return/interruption
+  resume hooks, queued side-chat apply notification, server-side task-card draft
+  materialization, and Web Push completed-turn delegation. `server.js` keeps
+  compatibility wrappers while injecting Codex transport, state readers,
+  task-card, side-chat, token-usage, and Web Push dependencies.
 - `services/thread-detail/thread-detail-response-preparation-service.js` now owns
   turns-list/raw/full/fallback read-result shaping, rollout Usage decoration,
   rollout completion/user-input/active-assistant/final-receipt preparation

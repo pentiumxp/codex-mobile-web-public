@@ -410,6 +410,7 @@ test("web push runtime sends a completed-turn notification once after observed s
 
 test("server wires web push filtering to thread spawn edges", () => {
   const serverJs = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const runtimeTurnEventPipelineServiceJs = fs.readFileSync(path.join(__dirname, "..", "services", "runtime", "runtime-turn-event-pipeline-service.js"), "utf8");
   const pkg = fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8");
 
   assert.match(serverJs, /shouldTrackTurnForWebPush/);
@@ -426,7 +427,8 @@ test("server wires web push filtering to thread spawn edges", () => {
   assert.match(webPushRuntimeServiceJs, /value = "unknown"/);
   assert.match(webPushRuntimeServiceJs, /allowMissingThreadId:\s*true/);
   assert.match(serverJs, /function threadIdFromRolloutPath/);
-  assert.match(serverJs, /params && params\.turn && params\.turn\.thread && params\.turn\.thread\.id/);
+  assert.match(serverJs, /function threadIdFromRolloutPath\(value\) \{\s+return requireRuntimeTurnEventPipelineService\(\)\.threadIdFromRolloutPath\(value\);\s+\}/);
+  assert.match(runtimeTurnEventPipelineServiceJs, /params && params\.turn && params\.turn\.thread && params\.turn\.thread\.id/);
   assert.match(pkg, /adapters\/sqlite-cli\.js/);
   assert.match(pkg, /adapters\/web-push-runtime-service\.js/);
 });

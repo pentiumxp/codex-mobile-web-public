@@ -24,6 +24,7 @@ const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, ".."
 const threadListStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-state-service.js"), "utf8");
 const threadListRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-runtime-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "thread-event-notification-service.js"), "utf8");
+const runtimeTurnEventPipelineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-turn-event-pipeline-service.js"), "utf8");
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "thread-task-card-routing-service.js"), "utf8");
 const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-detail-route-service.js"), "utf8");
 const threadDetailRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
@@ -309,9 +310,11 @@ test("thread task card routes preserve service status codes", () => {
   assert.match(routeBlock, /threadTaskCardService\.reply/);
   assert.match(routeBlock, /threadTaskCardService\.pauseExecution/);
   assert.match(routeBlock, /threadTaskCardService\.cancelExecution/);
+  assert.match(serverJs, /createRuntimeTurnEventPipelineService/);
   assert.match(serverJs, /function maybeAutoReplyThreadTaskCard\(/);
-  assert.match(serverJs, /threadTaskCardService\.maybeAutoReplyCompletedTurn/);
-  assert.match(serverJs, /threadTaskCardService\.maybeResumeInterruptedTaskCard/);
+  assert.match(functionBody(serverJs, "maybeAutoReplyThreadTaskCard"), /requireRuntimeTurnEventPipelineService\(\)\.maybeAutoReplyThreadTaskCard/);
+  assert.match(runtimeTurnEventPipelineServiceJs, /threadTaskCardService\.maybeAutoReplyCompletedTurn/);
+  assert.match(runtimeTurnEventPipelineServiceJs, /threadTaskCardService\.maybeResumeInterruptedTaskCard/);
   assert.match(serverJs, /maybeAutoReplyThreadTaskCard,\s+maybeApplyQueuedThreadSideChat,/);
   assert.match(codexAppServerClientServiceJs, /maybeAutoReplyThreadTaskCard\(msg\.method, msg\.params \|\| null\)/);
   const statusPreservingErrors = routeBlock.match(/sendJson\(err\.statusCode \|\| 500, \{ ok: false, error: err\.message \|\| String\(err\) \}\);/g) || [];
@@ -542,11 +545,13 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(taskCardRouteServiceJs, /function parseThreadTaskCardDraftText\(/);
   assert.match(taskCardRouteServiceJs, /function truncateThreadTaskCardBody\(/);
   assert.match(taskCardRouteServiceJs, /function materializeThreadTaskCardDraftsForThread\(/);
+  assert.match(serverJs, /createRuntimeTurnEventPipelineService/);
   assert.match(serverJs, /function maybeMaterializeThreadTaskCardDrafts\(/);
+  assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /requireRuntimeTurnEventPipelineService\(\)\.maybeMaterializeThreadTaskCardDrafts/);
   assert.match(taskCardRouteServiceJs, /function prepareThreadTaskCardsToResult\(/);
-  assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /method !== "turn\/completed"/);
-  assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /codex\.request\("thread\/turns\/list"/);
-  assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /await materializeThreadTaskCardDraftsForThread\(thread\)/);
+  assert.match(functionBody(runtimeTurnEventPipelineServiceJs, "maybeMaterializeThreadTaskCardDrafts"), /method !== "turn\/completed"/);
+  assert.match(functionBody(runtimeTurnEventPipelineServiceJs, "maybeMaterializeThreadTaskCardDrafts"), /codex\.request\("thread\/turns\/list"/);
+  assert.match(functionBody(runtimeTurnEventPipelineServiceJs, "maybeMaterializeThreadTaskCardDrafts"), /await options\.materializeThreadTaskCardDraftsForThread\(thread\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "materializeThreadTaskCardDraftsForThread"), /const itemText = threadTaskCardItemText\(item\);/);
   assert.match(functionBody(taskCardRouteServiceJs, "materializeThreadTaskCardDraftsForThread"), /if \(!itemText\.includes\(threadTaskCardDraftTag\)\) continue;/);
   assert.match(functionBody(taskCardRouteServiceJs, "materializeThreadTaskCardDraftsForThread"), /const draft = parseThreadTaskCardDraftText\(itemText\);/);
