@@ -17,6 +17,7 @@ const runtimePermissionPolicyServiceJs = fs.readFileSync(path.resolve(__dirname,
 const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "rate-limit-runtime-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-task-card-route-service.js"), "utf8");
+const taskCardRuntimePolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-runtime-policy-service.js"), "utf8");
 const taskCardRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-message-route-service.js"), "utf8");
 const threadMessageRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
@@ -254,57 +255,57 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(settingsBody, /lastString\(context\.effort, context\.reasoning_effort, context\.model_reasoning_effort, thread && thread\.effort, CODEX_CONFIG_DEFAULTS\.reasoningEffort\)/, "runtime settings should inherit reasoning effort from rollout, state DB, or config");
   assert.match(settingsBody, /model,\s*reasoningEffort,/, "runtime settings response should expose inherited model and effort");
 
-  const startBody = functionBody(serverJs, "applyStartThreadRuntimeSettings");
+  const startBody = functionBody(taskCardRuntimePolicyServiceJs, "applyStartThreadRuntimeSettings");
   assert.match(startBody, /attachWorkspaceDelegationRuntimeGuidance\(params\)/, "thread/start should receive workspace delegation dynamic tools and script fallback guidance when enabled");
   assert.match(startBody, /if \(settings\.model\) params\.model = settings\.model;/, "thread/start should inherit model");
   assert.match(startBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: false \}\)/, "thread/start should enforce workspace delegation write guard");
 
-  const turnBody = functionBody(serverJs, "applyTurnRuntimeSettings");
+  const turnBody = functionBody(taskCardRuntimePolicyServiceJs, "applyTurnRuntimeSettings");
   assert.match(turnBody, /attachWorkspaceDelegationRuntimeGuidance\(params\)/, "turn/start should receive workspace delegation dynamic tools and script fallback guidance when enabled");
   assert.match(turnBody, /if \(settings\.model\) params\.model = settings\.model;/, "turn/start should inherit model");
   assert.match(turnBody, /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/, "turn/start should inherit reasoning effort");
   assert.match(turnBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: true \}\)/, "turn/start should enforce workspace delegation write guard");
 
-  const resumeBody = functionBody(serverJs, "applyResumeRuntimeSettings");
+  const resumeBody = functionBody(taskCardRuntimePolicyServiceJs, "applyResumeRuntimeSettings");
   assert.match(resumeBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: false \}\)/, "thread/resume should enforce workspace delegation write guard");
 
-  const guardBody = functionBody(serverJs, "applyWorkspaceDelegationRuntimeGuard");
+  const guardBody = functionBody(taskCardRuntimePolicyServiceJs, "applyWorkspaceDelegationRuntimeGuard");
   assert.match(guardBody, /workspaceDelegationPublicSettings\(\)\.enabled/, "write guard should only run when workspace delegation is enabled");
-  assert.match(guardBody, /WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED/, "write guard should have an emergency server-side disable gate");
+  assert.match(guardBody, /options\.workspaceDelegationWriteGuardDisabled/, "write guard should have an emergency server-side disable gate");
   assert.match(guardBody, /runtimeCwdForParams\(params\)/, "write guard should resolve cwd from params or thread id");
   assert.match(guardBody, /workspaceDelegationGuardExemptCwd\(cwd\)/, "write guard should preserve trusted maintenance/deploy permissions");
   assert.ok(
-    guardBody.indexOf("workspaceDelegationGuardExemptCwd(cwd)") < guardBody.indexOf("applyWorkspaceDelegationFullAccessCompatRuntime(params, options)"),
+    guardBody.indexOf("workspaceDelegationGuardExemptCwd(cwd)") < guardBody.indexOf("applyWorkspaceDelegationFullAccessCompatRuntime(params, applyOptions)"),
     "maintenance/deploy exemptions must run before runtime compatibility overrides",
   );
-  assert.match(guardBody, /WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY/, "old full-access approval-proxy mode should require explicit operator opt-in");
-  assert.match(guardBody, /WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "explicit hard sandbox env should override approval-proxy-only compatibility");
+  assert.match(guardBody, /options\.workspaceDelegationApprovalProxyOnly/, "old full-access approval-proxy mode should require explicit operator opt-in");
+  assert.match(guardBody, /options\.workspaceDelegationEnforceSandboxGuard/, "explicit hard sandbox env should override approval-proxy-only compatibility");
   assert.match(guardBody, /params\.approvalPolicy = "on-request"/, "default guard should keep approval events available for current .git auto-allow and foreign-source denials");
   assert.match(guardBody, /params\.sandboxPolicy = workspaceDelegationWriteGuardSandboxPolicy\(cwd, settings && settings\.sandboxPolicy\)/, "turn/start should receive a real workspace-write sandbox policy by default");
   assert.match(guardBody, /workspaceDelegationWriteGuardPermissionProfile\(cwd, settings && settings\.sandboxPolicy\)/, "opt-in hard guard should still use a bounded managed permission profile");
   assert.match(guardBody, /delete params\.sandboxPolicy/, "guard should be able to clear stale workspace-write sandbox policy");
   assert.match(guardBody, /params\.sandbox = "workspace-write"/, "thread/start and thread/resume should still support workspace-write sandbox mode");
 
-  const compatBody = functionBody(serverJs, "applyWorkspaceDelegationFullAccessCompatRuntime");
+  const compatBody = functionBody(taskCardRuntimePolicyServiceJs, "applyWorkspaceDelegationFullAccessCompatRuntime");
   assert.match(compatBody, /params\.approvalPolicy = "on-request"/, "compat runtime should keep app-server approval events available for dynamic source-write decisions");
   assert.match(compatBody, /params\.sandboxPolicy = \{ type: "dangerFullAccess" \}/, "turn/start compatibility should override inherited workspace-write sandbox policy");
   assert.match(compatBody, /params\.sandbox = "danger-full-access"/, "thread/start and thread/resume compatibility should restore full access sandbox mode");
   assert.match(compatBody, /delete params\.permissionProfile/, "compat runtime should clear stale managed profiles that made .git read-only");
 
-  const guardSandboxPolicyBody = functionBody(serverJs, "workspaceDelegationWriteGuardSandboxPolicy");
+  const guardSandboxPolicyBody = functionBody(taskCardRuntimePolicyServiceJs, "workspaceDelegationWriteGuardSandboxPolicy");
   assert.match(guardSandboxPolicyBody, /path\.join\(root, "\.git"\)/, "guard sandbox policy should include current .git as an explicit writable root");
   assert.match(guardSandboxPolicyBody, /policy\.writableRoots = writableRoots/, "guard sandbox policy should publish expanded writable roots to app-server");
 
   assert.match(codexAppServerClientServiceJs, /handleServerRequest\(msg\)[\s\S]*answerWorkspaceSourceWriteGuardRequest\(request\)/, "app-server approval requests should pass through the dynamic source-write guard");
-  const approvalGuardBody = functionBody(serverJs, "workspaceSourceWriteGuardDecisionForRequest");
-  assert.match(approvalGuardBody, /ACTIONABLE_APPROVAL_METHODS\.has\(request\.method\)/, "dynamic guard should only auto-answer app-server approval requests");
+  const approvalGuardBody = functionBody(taskCardRuntimePolicyServiceJs, "workspaceSourceWriteGuardDecisionForRequest");
+  assert.match(approvalGuardBody, /actionableApprovalMethods\.has\(request\.method\)/, "dynamic guard should only auto-answer app-server approval requests");
   assert.match(approvalGuardBody, /workspaceSourceWriteGuardThreadCwdForRequest\(request\)/, "approval guard should base exemptions on the source thread cwd, not the command cwd");
   assert.match(approvalGuardBody, /const cwd = sourceCwd \|\| workspaceSourceWriteGuardCwdForRequest\(request\)/, "approval guard should fall back to request cwd only when thread cwd is unavailable");
   assert.match(approvalGuardBody, /workspaceSourceWriteGuardService\.classify\(request\)/, "dynamic guard should delegate source-write policy to the adapter service");
 
-  const sourceCwdBody = functionBody(serverJs, "workspaceSourceWriteGuardThreadCwdForRequest");
+  const sourceCwdBody = functionBody(taskCardRuntimePolicyServiceJs, "workspaceSourceWriteGuardThreadCwdForRequest");
   assert.doesNotMatch(sourceCwdBody, /params\.cwd/, "source-thread cwd resolution must not treat command cwd as the source workspace");
-  const requestCwdBody = functionBody(serverJs, "workspaceSourceWriteGuardCwdForRequest");
+  const requestCwdBody = functionBody(taskCardRuntimePolicyServiceJs, "workspaceSourceWriteGuardCwdForRequest");
   assert.ok(
     requestCwdBody.indexOf("workspaceSourceWriteGuardThreadCwdForRequest(request)") < requestCwdBody.indexOf("params.cwd"),
     "request cwd fallback should only run after source-thread cwd lookup",
@@ -343,23 +344,24 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(fallbackBody, /--source-thread/, "fallback script command should include the source-thread argument");
   assert.match(fallbackBody, /--body-file/, "fallback script command should support long Markdown bodies");
 
-  const exemptBody = functionBody(serverJs, "workspaceDelegationGuardExemptCwd");
+  const exemptBody = functionBody(taskCardRuntimePolicyServiceJs, "workspaceDelegationGuardExemptCwd");
   assert.match(exemptBody, /workspaceDelegationGuardExemptCwds\(\)/, "exemption should honor explicit cwd allowlist");
   assert.match(exemptBody, /isCodexMobileMaintenanceCwd\(cwd\)/, "exemption should preserve Codex Mobile self-maintenance permissions");
   assert.match(exemptBody, /isHomeAiControlPlaneCwd\(cwd\)/, "exemption should preserve Home AI central deploy/control-plane permissions");
 
-  const selfBody = functionBody(serverJs, "isCodexMobileMaintenanceCwd");
+  const selfBody = functionBody(taskCardRuntimePolicyServiceJs, "isCodexMobileMaintenanceCwd");
   assert.match(selfBody, /workspaceDelegationGuardPackageName\(cwd\) === "codex-mobile-web"/, "self-maintenance should be limited to the Codex Mobile package");
   assert.match(selfBody, /workspaceDelegationGuardHasFile\(cwd, "server\.js"\)/, "self-maintenance should require the server entrypoint");
 
-  const platformBody = functionBody(serverJs, "isHomeAiControlPlaneCwd");
+  const platformBody = functionBody(taskCardRuntimePolicyServiceJs, "isHomeAiControlPlaneCwd");
   assert.match(platformBody, /scripts", "ai-ops-control-plane\.js"/, "platform exemption should require the central intake script");
   assert.match(platformBody, /scripts", "deploy-macos-production\.js"/, "platform exemption should require the central deploy script");
   assert.match(platformBody, /docs", "PLATFORM_CONTRACTS", "plugin-workspace-platform-contract\.md"/, "platform exemption should require central platform contracts");
 
-  const cwdBody = functionBody(serverJs, "runtimeCwdForParams");
+  const cwdBody = functionBody(taskCardRuntimePolicyServiceJs, "runtimeCwdForParams");
   assert.match(cwdBody, /params && params\.cwd/, "cwd resolver should prefer explicit cwd");
-  assert.match(cwdBody, /readStateDbThread\(threadId\)[\s\S]*readStartedThread\(threadId\)[\s\S]*readRolloutSessionFallbackThread\(threadId\)/, "cwd resolver should fall back through thread summaries");
+  assert.match(cwdBody, /threadForRuntimeThreadId\(threadId\)/, "cwd resolver should delegate thread summary fallback");
+  assert.match(functionBody(taskCardRuntimePolicyServiceJs, "threadForRuntimeThreadId"), /readStateDbThread\(id\)[\s\S]*readStartedThread\(id\)[\s\S]*readRolloutSessionFallbackThread\(id\)/, "thread summary fallback should preserve source order");
 });
 
 test("continuation paths apply inherited model and effort", () => {

@@ -2065,6 +2065,12 @@ public behavior:
   target hints, deploy-lane route integration, source-draft materialization, and
   thread-detail task-card attachment. `adapters/thread-task-card-route-service.js`
   is a compatibility export only.
+- `services/task-cards/task-card-runtime-policy-service.js` now owns task-card
+  runtime model/effort/guidance inheritance, source-thread/runtime cwd
+  resolution, workspace-delegation sandbox and source-write approval guards,
+  guard-exemption classification, full-access compatibility mode, source-write
+  guard log payloads, and Codex Fast service-tier selection. `server.js` injects
+  state readers, visible workspace roots, and runtime permission helpers.
 - `server-routes/thread-message-route-service.js` now owns thread creation,
   new-message/existing-message, resume, auto-recover, and turn interrupt route
   behavior while `server.js` injects runtime settings, parsers, Codex transport,
@@ -2119,8 +2125,9 @@ public behavior:
   `server.js` injects Codex RPC, runtime-setting helpers, classifiers, timeout
   values, and `notifyLocalTurnStarted`.
 
-Local line-count evidence after the latest extraction: `server.js` is 9,247 lines,
-`server-routes/thread-task-card-route-service.js` is 1,273 lines, and
+Local line-count evidence after the latest extraction: `server.js` is 4,188 lines,
+`server-routes/thread-task-card-route-service.js` is 1,273 lines,
+`services/task-cards/task-card-runtime-policy-service.js` is 345 lines, and
 `server-routes/thread-message-route-service.js` is 363 lines, and
 `thread-list-fallback-source-service.js` is 683 lines, and
 `thread-summary-state-service.js` is 383 lines, and
@@ -2142,6 +2149,9 @@ Validation boundary:
 - focused route/protocol/task-card tests covering route delegation, dynamic
   tools, deploy-lane policy wiring, new-thread/message behavior, and app-server
   protocol integration;
+- focused task-card runtime-policy tests covering inherited model/effort/guidance,
+  source-thread cwd precedence, workspace-delegation sandbox/source-write guard
+  behavior, guard exemptions, and full-access compatibility mode;
 - focused thread-list visibility/fallback tests covering session-index reuse,
   rollout status inference, local active overlay interaction, and fallback cache
   source diagnostics;

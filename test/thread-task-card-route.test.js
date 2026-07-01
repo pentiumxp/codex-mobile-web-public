@@ -26,6 +26,7 @@ const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.resolve(__
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const runtimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "runtime-settings-service.js"), "utf8");
 const taskCardIdempotencyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-idempotency-service.js"), "utf8");
+const taskCardRuntimePolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-runtime-policy-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -222,8 +223,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /first-class fallback path/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /multi_agent_v1\.spawn_agent/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /must not be used as a substitute/);
-  assert.match(functionBody(serverJs, "applyStartThreadRuntimeSettings"), /attachWorkspaceDelegationRuntimeGuidance\(params\)/);
-  assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /attachWorkspaceDelegationRuntimeGuidance\(params\)/);
+  assert.match(functionBody(taskCardRuntimePolicyServiceJs, "applyStartThreadRuntimeSettings"), /attachWorkspaceDelegationRuntimeGuidance\(params\)/);
+  assert.match(functionBody(taskCardRuntimePolicyServiceJs, "applyTurnRuntimeSettings"), /attachWorkspaceDelegationRuntimeGuidance\(params\)/);
   assert.match(functionBody(codexAppServerClientServiceJs, "sendRpc"), /const serializedPayload = JSON\.stringify\(payload\)/);
   assert.match(functionBody(codexAppServerClientServiceJs, "sendRpc"), /logWorkspaceDelegationRpc\(method, params\);[\s\S]*this\.ws\.send\(serializedPayload\)/);
   assert.match(functionBody(codexAppServerClientServiceJs, "handleServerRequest"), /msg\.method === "item\/tool\/call"[\s\S]*answerDynamicToolServerRequest\(request\)/);
@@ -330,8 +331,8 @@ test("approved task cards inherit target thread model and effort", () => {
   assert.match(setupBlock, /source: "thread-task-card-approval"/);
   assert.match(serverJs, /const webPushRuntimeService = createWebPushRuntimeService/);
   assert.match(webPushRuntimeServiceJs, /function maybeSendTurnCompletedPush\(method, params\)/);
-  assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
-  assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.model\) params\.model = settings\.model;/);
+  assert.match(functionBody(taskCardRuntimePolicyServiceJs, "applyTurnRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
+  assert.match(functionBody(taskCardRuntimePolicyServiceJs, "applyTurnRuntimeSettings"), /if \(settings\.model\) params\.model = settings\.model;/);
 });
 
 test("approved task-card deploy lane runtime uses visible target metadata when stored summary is sparse", () => {
