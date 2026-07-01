@@ -3976,6 +3976,27 @@ factory wiring, top-level dispatch behavior, error/client-error handling, source
 guard movement from `server.js` to the composition service, package syntax
 checks, and `git diff --check`.
 
+### 2026-07-01 Task-Card Runtime Composition Boundary
+
+The next task-card server split moves task-card runtime composition out of
+`server.js` into `services/task-cards/thread-task-card-runtime-service.js`.
+
+Scope:
+
+- constructs `services/task-cards/home-ai-autonomous-delivery-return-service.js`;
+- constructs `services/task-cards/task-card-runtime-policy-service.js`;
+- constructs `services/task-cards/thread-task-card-service.js`;
+- constructs `server-routes/thread-task-card-route-service.js`;
+- owns approved-card runtime injection wiring and terminal return-card event
+  forwarding into the Home AI delivery-loop client.
+
+The canonical store, runtime-policy, route, routing, and deploy-lane services
+remain the behavioral authorities. The new runtime composition service only
+owns their server-side wiring and delayed cross-service references. Validation
+should cover adapter parity, Home AI return-event wiring, approved-card runtime
+inheritance/deploy-lane no-approval behavior, existing route/service focused
+tests, package syntax checks, and `git diff --check`.
+
 ## Release Rule
 
 Follow the current release order:

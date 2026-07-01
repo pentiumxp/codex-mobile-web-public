@@ -1,0 +1,170 @@
+"use strict";
+
+const { createHomeAiAutonomousDeliveryReturnService } = require("./home-ai-autonomous-delivery-return-service");
+const { createTaskCardRuntimePolicyService } = require("./task-card-runtime-policy-service");
+const { createThreadTaskCardService } = require("./thread-task-card-service");
+const {
+  isHomeAiDeployLaneThread,
+} = require("./thread-task-card-deploy-lane-policy-service");
+const { createThreadTaskCardRouteService } = require("../../server-routes/thread-task-card-route-service");
+
+function createThreadTaskCardRuntimeService(dependencies = {}) {
+  const homeAiAutonomousDeliveryReturnServiceFactory = dependencies.homeAiAutonomousDeliveryReturnServiceFactory
+    || createHomeAiAutonomousDeliveryReturnService;
+  const taskCardRuntimePolicyServiceFactory = dependencies.taskCardRuntimePolicyServiceFactory
+    || createTaskCardRuntimePolicyService;
+  const threadTaskCardServiceFactory = dependencies.threadTaskCardServiceFactory
+    || createThreadTaskCardService;
+  const threadTaskCardRouteServiceFactory = dependencies.threadTaskCardRouteServiceFactory
+    || createThreadTaskCardRouteService;
+
+  const homeAiAutonomousDeliveryReturnService = homeAiAutonomousDeliveryReturnServiceFactory({
+    baseUrl: dependencies.hermesPluginNotificationBaseUrl,
+    webKey: dependencies.hermesPluginNotificationKey,
+    webKeyFile: dependencies.hermesPluginNotificationKeyFile,
+    registrationForWorkspace: dependencies.registrationForWorkspace,
+  });
+
+  let attachWorkspaceDelegationRuntimeGuidance = () => null;
+  let readThreadTaskCardExecutionTargetSummary = () => null;
+
+  const taskCardRuntimePolicyService = taskCardRuntimePolicyServiceFactory({
+    fs: dependencies.fs,
+    path: dependencies.path,
+    platform: dependencies.platform,
+    actionableApprovalMethods: dependencies.actionableApprovalMethods,
+    latestThreadIdByTurnId: dependencies.latestThreadIdByTurnId,
+    recentStartedThreads: dependencies.recentStartedThreads,
+    normalizeFsPath: dependencies.normalizeFsPath,
+    workspaceDelegationPublicSettings: dependencies.workspaceDelegationPublicSettings,
+    workspaceWriteSandboxPolicy: dependencies.workspaceWriteSandboxPolicy,
+    normalizeSandboxPolicyType: dependencies.normalizeSandboxPolicyType,
+    workspaceDelegationWriteGuardPermissionProfile: dependencies.workspaceDelegationWriteGuardPermissionProfile,
+    attachWorkspaceDelegationRuntimeGuidance: (...args) => attachWorkspaceDelegationRuntimeGuidance(...args),
+    readStateDbThread: dependencies.readStateDbThread,
+    readStartedThread: dependencies.readStartedThread,
+    readRolloutSessionFallbackThread: dependencies.readRolloutSessionFallbackThread,
+    visibleWorkspaceRoots: dependencies.visibleWorkspaceRoots,
+    readGlobalState: dependencies.readGlobalState,
+    readThreadListFallback: dependencies.readThreadListFallback,
+    pushThreadId: dependencies.pushThreadId,
+    shortIdentifier: dependencies.shortIdentifier,
+    compactOneLine: dependencies.compactOneLine,
+    workspaceDelegationGuardExemptCwds: dependencies.workspaceDelegationGuardExemptCwds,
+    workspaceDelegationGuardSelfExemptionDisabled: dependencies.workspaceDelegationGuardSelfExemptionDisabled,
+    workspaceDelegationGuardPlatformExemptionDisabled: dependencies.workspaceDelegationGuardPlatformExemptionDisabled,
+    workspaceDelegationWriteGuardDisabled: dependencies.workspaceDelegationWriteGuardDisabled,
+    workspaceDelegationApprovalProxyOnly: dependencies.workspaceDelegationApprovalProxyOnly,
+    workspaceDelegationEnforceSandboxGuard: dependencies.workspaceDelegationEnforceSandboxGuard,
+  });
+  const {
+    applyCodexFastServiceTier,
+    applyResumeRuntimeSettings,
+    applyStartThreadRuntimeSettings,
+    applyTurnRuntimeSettings,
+    requestedCodexFastMode,
+    workspaceSourceWriteGuardDecisionForRequest,
+    workspaceSourceWriteGuardLogPayload,
+  } = taskCardRuntimePolicyService;
+
+  const threadTaskCardService = threadTaskCardServiceFactory({
+    storageFile: dependencies.threadTaskCardFile,
+    returnThreadTaskCardScriptPath: dependencies.returnThreadTaskCardScriptPath,
+    onTerminalReturnCard: async (event) => homeAiAutonomousDeliveryReturnService.send(event, { workspaceId: "owner" }),
+    executeApprovedCard: async (card, message) => {
+      const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
+      const inheritedRuntimeSettings = await dependencies.resolveThreadRuntimeSettings(card.target.threadId);
+      const targetThread = readThreadTaskCardExecutionTargetSummary(card);
+      const targetIsDeployLane = isHomeAiDeployLaneThread(targetThread);
+      const baseRuntimeSettings = targetIsDeployLane
+        ? dependencies.applyPermissionModeOverride(inheritedRuntimeSettings, "full", targetThread && targetThread.cwd || null)
+        : inheritedRuntimeSettings;
+      const runtimeSettings = requestedReasoningEffort
+        ? Object.assign({}, baseRuntimeSettings, { reasoningEffort: requestedReasoningEffort })
+        : baseRuntimeSettings;
+      try {
+        await dependencies.codex.request("thread/resume", applyResumeRuntimeSettings({
+          threadId: card.target.threadId,
+          cwd: null,
+          persistExtendedHistory: true,
+        }, runtimeSettings), { timeoutMs: dependencies.mutationRpcTimeoutMs, retry: false });
+      } catch (err) {
+        if (!/already|loaded|active/i.test(err.message || "")) throw err;
+      }
+      const turnParams = applyTurnRuntimeSettings({
+        threadId: card.target.threadId,
+        input: [{ type: "text", text: message.text }],
+      }, runtimeSettings);
+      const result = await dependencies.codex.request("turn/start", turnParams, {
+        timeoutMs: dependencies.mutationRpcTimeoutMs,
+        retry: false,
+      });
+      const turnId = dependencies.notifyLocalTurnStarted(card.target.threadId, result, {
+        source: "thread-task-card-approval",
+      });
+      return {
+        threadId: String(card.target.threadId || ""),
+        turnId,
+        result,
+        runtime: {
+          reasoningEffort: runtimeSettings.reasoningEffort || "",
+          requestedReasoningEffort,
+          approvalPolicy: runtimeSettings.approvalPolicy || "",
+          sandboxPolicyType: runtimeSettings.sandboxPolicy && runtimeSettings.sandboxPolicy.type || "",
+          deployLaneNoApproval: targetIsDeployLane,
+        },
+      };
+    },
+  });
+
+  const threadTaskCardRouteService = threadTaskCardRouteServiceFactory({
+    appRoot: dependencies.appRoot,
+    threadTaskCardService,
+    threadTaskCardDraftTag: dependencies.threadTaskCardDraftTag,
+    threadTaskCardBodyMaxChars: dependencies.threadTaskCardBodyMaxChars,
+    workspaceDelegationToolNamespace: dependencies.workspaceDelegationToolNamespace,
+    workspaceDelegationToolName: dependencies.workspaceDelegationToolName,
+    taskCardReturnToolName: dependencies.taskCardReturnToolName,
+    reasoningEffortOptions: dependencies.reasoningEffortOptions,
+    readRuntimeSettings: dependencies.readRuntimeSettings,
+    workspaceDelegationPublicSettings: dependencies.workspaceDelegationPublicSettings,
+    readStateDbThread: dependencies.readStateDbThread,
+    readStartedThread: dependencies.readStartedThread,
+    readRolloutSessionFallbackThread: dependencies.readRolloutSessionFallbackThread,
+    hydrateThreadTitleFromSessionIndex: dependencies.hydrateThreadTitleFromSessionIndex,
+    readThreadListFallback: dependencies.readThreadListFallback,
+    visibilityFromGlobalState: dependencies.visibilityFromGlobalState,
+    threadHasArchiveSignal: dependencies.threadHasArchiveSignal,
+    isHiddenThread: dependencies.isHiddenThread,
+    isSubagentThreadSummary: dependencies.isSubagentThreadSummary,
+    isSideChatSidecarThreadSummary: dependencies.isSideChatSidecarThreadSummary,
+    normalizeFsPath: dependencies.normalizeFsPath,
+    threadDisplayTitle: dependencies.threadDisplayTitle,
+    isRecoverableThreadListTitle: dependencies.isRecoverableThreadListTitle,
+    stableTextHash: dependencies.stableTextHash,
+    truncateSingleLine: dependencies.truncateSingleLine,
+    truncateToolDescriptionText: dependencies.truncateToolDescriptionText,
+    shortIdentifier: dependencies.shortIdentifier,
+    pushThreadId: dependencies.pushThreadId,
+    threadIdForTurnId: dependencies.threadIdForTurnId,
+    attachThreadTaskCardsToResult: dependencies.attachThreadTaskCardsToResult,
+    attachPendingServerRequestsToResult: dependencies.attachPendingServerRequestsToResult,
+    httpStatusError: dependencies.httpStatusError,
+    createTargetError: dependencies.createTargetError,
+    logger: dependencies.logger,
+  });
+
+  attachWorkspaceDelegationRuntimeGuidance = threadTaskCardRouteService.attachWorkspaceDelegationRuntimeGuidance;
+  readThreadTaskCardExecutionTargetSummary = threadTaskCardRouteService.readThreadTaskCardExecutionTargetSummary;
+
+  return Object.assign({
+    homeAiAutonomousDeliveryReturnService,
+    taskCardRuntimePolicyService,
+    threadTaskCardRouteService,
+    threadTaskCardService,
+  }, taskCardRuntimePolicyService, threadTaskCardRouteService);
+}
+
+module.exports = {
+  createThreadTaskCardRuntimeService,
+};

@@ -14,7 +14,6 @@ const {
 const { createWebPushRuntimeService } = require("./adapters/web-push-runtime-service");
 const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
 const { createHermesNotificationDelegateService } = require("./adapters/hermes-notification-delegate-service");
-const { createHomeAiAutonomousDeliveryReturnService } = require("./services/task-cards/home-ai-autonomous-delivery-return-service");
 const { runSqliteJson } = require("./adapters/sqlite-cli");
 const { compactWorkspaceContext } = require("./adapters/continuation-handoff-compaction-service");
 const { createContinuationThreadService } = require("./adapters/continuation-thread-service");
@@ -43,13 +42,10 @@ const {
   normalizeThreadId,
 } = require("./adapters/mobile-archive-index-service");
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
-const { createThreadTaskCardService } = require("./services/task-cards/thread-task-card-service");
-const { createThreadTaskCardRouteService } = require("./server-routes/thread-task-card-route-service");
-const { createTaskCardRuntimePolicyService } = require("./services/task-cards/task-card-runtime-policy-service");
 const {
-  isHomeAiDeployLaneThread,
   normalizeHomeAiDeployLaneSummary,
 } = require("./services/task-cards/thread-task-card-deploy-lane-policy-service");
+const { createThreadTaskCardRuntimeService } = require("./services/task-cards/thread-task-card-runtime-service");
 const { createThreadSideChatService } = require("./adapters/thread-side-chat-service");
 const {
   continuationGoalMigrationPlan,
@@ -386,12 +382,6 @@ const hermesNotificationDelegateService = createHermesNotificationDelegateServic
   webKeyFile: HERMES_PLUGIN_NOTIFICATION_KEY_FILE,
   registrationForWorkspace: (workspaceId) => hermesPluginService.registration({ workspaceId }),
 });
-const homeAiAutonomousDeliveryReturnService = createHomeAiAutonomousDeliveryReturnService({
-  baseUrl: HERMES_PLUGIN_NOTIFICATION_BASE_URL,
-  webKey: HERMES_PLUGIN_NOTIFICATION_KEY,
-  webKeyFile: HERMES_PLUGIN_NOTIFICATION_KEY_FILE,
-  registrationForWorkspace: (workspaceId) => hermesPluginService.registration({ workspaceId }),
-});
 const sharedChainRestartService = createSharedChainRestartService({
   workspacePath: APP_ROOT,
   userProfilePath: USER_HOME,
@@ -458,6 +448,11 @@ const serverEventRuntimeBoundaryService = createServerEventRuntimeBoundaryServic
   getThreadEventNotificationService: () => threadEventNotificationService,
   getRuntimeTurnEventPipelineService: () => runtimeTurnEventPipelineService,
 });
+const PROCESS_STARTED_AT_MS = Date.now();
+let clients = new Map();
+let clientHeartbeats = new WeakMap();
+const latestThreadIdByTurnId = new Map();
+const recentStartedThreads = new Map();
 const {
   broadcast,
   broadcastThreadStatusChanged,
@@ -705,52 +700,6 @@ function callThreadListServerBoundary(method, args) {
   return requireThreadListServerBoundaryService()[method](...args);
 }
 
-const threadTaskCardService = createThreadTaskCardService({
-  storageFile: THREAD_TASK_CARD_FILE,
-  returnThreadTaskCardScriptPath: path.join(APP_ROOT, "scripts", "return-thread-task-card.js"),
-  onTerminalReturnCard: async (event) => homeAiAutonomousDeliveryReturnService.send(event, { workspaceId: "owner" }),
-  executeApprovedCard: async (card, message) => {
-    const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
-    const inheritedRuntimeSettings = await resolveThreadRuntimeSettings(card.target.threadId);
-    const targetThread = readThreadTaskCardExecutionTargetSummary(card);
-    const targetIsDeployLane = isHomeAiDeployLaneThread(targetThread);
-    const baseRuntimeSettings = targetIsDeployLane
-      ? applyPermissionModeOverride(inheritedRuntimeSettings, "full", targetThread && targetThread.cwd || null)
-      : inheritedRuntimeSettings;
-    const runtimeSettings = requestedReasoningEffort
-      ? Object.assign({}, baseRuntimeSettings, { reasoningEffort: requestedReasoningEffort })
-      : baseRuntimeSettings;
-    try {
-      await codex.request("thread/resume", applyResumeRuntimeSettings({
-        threadId: card.target.threadId,
-        cwd: null,
-        persistExtendedHistory: true,
-      }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    } catch (err) {
-      if (!/already|loaded|active/i.test(err.message || "")) throw err;
-    }
-    const turnParams = applyTurnRuntimeSettings({
-      threadId: card.target.threadId,
-      input: [{ type: "text", text: message.text }],
-    }, runtimeSettings);
-    const result = await codex.request("turn/start", turnParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    const turnId = notifyLocalTurnStarted(card.target.threadId, result, {
-      source: "thread-task-card-approval",
-    });
-    return {
-      threadId: String(card.target.threadId || ""),
-      turnId,
-      result,
-      runtime: {
-        reasoningEffort: runtimeSettings.reasoningEffort || "",
-        requestedReasoningEffort,
-        approvalPolicy: runtimeSettings.approvalPolicy || "",
-        sandboxPolicyType: runtimeSettings.sandboxPolicy && runtimeSettings.sandboxPolicy.type || "",
-        deployLaneNoApproval: targetIsDeployLane,
-      },
-    };
-  },
-});
 function clonePlainJson(value) {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
@@ -815,6 +764,130 @@ const {
   publicServerRequest,
   serverRequestResponsePayload,
 } = appServerRequestPolicyService;
+const threadTaskCardRuntimeService = createThreadTaskCardRuntimeService({
+  fs,
+  path,
+  platform: process.platform,
+  appRoot: APP_ROOT,
+  hermesPluginNotificationBaseUrl: HERMES_PLUGIN_NOTIFICATION_BASE_URL,
+  hermesPluginNotificationKey: HERMES_PLUGIN_NOTIFICATION_KEY,
+  hermesPluginNotificationKeyFile: HERMES_PLUGIN_NOTIFICATION_KEY_FILE,
+  registrationForWorkspace: (workspaceId) => hermesPluginService.registration({ workspaceId }),
+  threadTaskCardFile: THREAD_TASK_CARD_FILE,
+  returnThreadTaskCardScriptPath: path.join(APP_ROOT, "scripts", "return-thread-task-card.js"),
+  threadTaskCardDraftTag: THREAD_TASK_CARD_DRAFT_TAG,
+  threadTaskCardBodyMaxChars: THREAD_TASK_CARD_BODY_MAX_CHARS,
+  workspaceDelegationToolNamespace: WORKSPACE_DELEGATION_TOOL_NAMESPACE,
+  workspaceDelegationToolName: WORKSPACE_DELEGATION_TOOL_NAME,
+  taskCardReturnToolName: TASK_CARD_RETURN_TOOL_NAME,
+  reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
+  actionableApprovalMethods: ACTIONABLE_APPROVAL_METHODS,
+  latestThreadIdByTurnId,
+  recentStartedThreads,
+  normalizeFsPath,
+  workspaceDelegationPublicSettings: (...args) => workspaceDelegationPublicSettings(...args),
+  workspaceWriteSandboxPolicy,
+  normalizeSandboxPolicyType,
+  workspaceDelegationWriteGuardPermissionProfile,
+  readStateDbThread: (...args) => readStateDbThread(...args),
+  readStartedThread: (...args) => readStartedThread(...args),
+  readRolloutSessionFallbackThread: (...args) => readRolloutSessionFallbackThread(...args),
+  visibleWorkspaceRoots,
+  readGlobalState: (...args) => readGlobalState(...args),
+  readThreadListFallback: (...args) => readThreadListFallback(...args),
+  pushThreadId,
+  shortIdentifier,
+  compactOneLine,
+  workspaceDelegationGuardExemptCwds: WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS,
+  workspaceDelegationGuardSelfExemptionDisabled: WORKSPACE_DELEGATION_GUARD_SELF_EXEMPTION_DISABLED,
+  workspaceDelegationGuardPlatformExemptionDisabled: WORKSPACE_DELEGATION_GUARD_PLATFORM_EXEMPTION_DISABLED,
+  workspaceDelegationWriteGuardDisabled: WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED,
+  workspaceDelegationApprovalProxyOnly: WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY,
+  workspaceDelegationEnforceSandboxGuard: WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD,
+  codex: { request: (...args) => codex.request(...args) },
+  resolveThreadRuntimeSettings,
+  applyPermissionModeOverride,
+  mutationRpcTimeoutMs: MUTATION_RPC_TIMEOUT_MS,
+  notifyLocalTurnStarted,
+  readRuntimeSettings: (...args) => readRuntimeSettings(...args),
+  hydrateThreadTitleFromSessionIndex,
+  visibilityFromGlobalState,
+  threadHasArchiveSignal,
+  isHiddenThread,
+  isSubagentThreadSummary,
+  isSideChatSidecarThreadSummary,
+  threadDisplayTitle: (...args) => threadDisplayTitle(...args),
+  isRecoverableThreadListTitle,
+  stableTextHash: (...args) => stableTextHash(...args),
+  truncateSingleLine: (...args) => truncateSingleLine(...args),
+  truncateToolDescriptionText: (...args) => truncateSingleLine(...args),
+  threadIdForTurnId: (turnId) => latestThreadIdByTurnId.get(turnId),
+  attachThreadTaskCardsToResult: (...args) => attachThreadTaskCardsToResult(...args),
+  attachPendingServerRequestsToResult: (...args) => attachPendingServerRequestsToResult(...args),
+  httpStatusError,
+  createTargetError: (statusCode, code, message, details = {}) => httpStatusErrorWithDetails(statusCode, code, message || code, details),
+  logger: console,
+});
+const {
+  applyCodexFastServiceTier,
+  applyResumeRuntimeSettings,
+  applyStartThreadRuntimeSettings,
+  applyTurnRuntimeSettings,
+  requestedCodexFastMode,
+  workspaceSourceWriteGuardDecisionForRequest,
+  workspaceSourceWriteGuardLogPayload,
+  threadTaskCardRouteService,
+  threadTaskCardService,
+  workspaceDelegationTargetHints,
+  workspaceDelegationDynamicToolSpec,
+  taskCardReturnDynamicToolSpec,
+  taskCardRuntimeDynamicTools,
+  workspaceDelegationDynamicTools,
+  attachTaskCardRuntimeDynamicTools,
+  workspaceDelegationScriptFallbackInstruction,
+  taskCardReturnScriptFallbackInstruction,
+  attachWorkspaceDelegationRuntimeGuidance,
+  normalizeThreadTaskCardWorkflowMode,
+  normalizeThreadTaskCardReasoningEffort,
+  uniqueThreadTaskCardTargetIds,
+  threadTaskCardTargetReferenceText,
+  threadTaskCardTargetReferenceEntry,
+  threadTaskCardTargetReferenceEntries,
+  threadTaskCardTargetReferences,
+  isThreadIdLike,
+  logWorkspaceDelegationRpc,
+  threadTaskCardTargetUpdatedAt,
+  publicThreadTaskCardTarget,
+  threadTaskCardTargetError,
+  threadTaskCardTargetVisibility,
+  threadTaskCardVisibleTargetThreads,
+  threadTaskCardCanonicalTargetForCwd,
+  threadTaskCardCanonicalTargetForThread,
+  threadTaskCardCanonicalVisibleTargets,
+  readThreadTaskCardTargetSummary,
+  readThreadTaskCardVisibleTargetSummary,
+  readThreadTaskCardExecutionTargetSummary,
+  applyHomeAiDeployLaneRoutingPolicy,
+  assertThreadTaskCardTargetDeliverable,
+  resolveThreadTaskCardTargetReference,
+  resolvedThreadTaskCardTargetIds,
+  threadTaskCardThreadCallIdempotencyKey,
+  buildThreadTaskCardCreatePayload,
+  createThreadTaskCardsFromSourceThread,
+  parseDynamicToolArguments,
+  dynamicToolTextResponse,
+  dynamicToolJsonResponse,
+  dynamicToolErrorPayload,
+  dynamicToolServerRequestResponsePayload,
+  parseThreadTaskCardDraftText,
+  threadTaskCardDraftIdempotencyKey,
+  threadTaskCardItemText,
+  summarizeTaskCardText,
+  truncateThreadTaskCardBody,
+  taskCardSourceThreadTitle,
+  materializeThreadTaskCardDraftsForThread,
+  prepareThreadTaskCardsToResult,
+} = threadTaskCardRuntimeService;
 threadGoalActionService = createThreadGoalActionService({
   codexRequest: (...args) => codex.request(...args),
   goalForThread: (threadId) => threadGoalService.goalForThread(threadId),
@@ -892,13 +965,7 @@ const {
   statusTurnId,
   syncThreadDetailReadResultToThreadListFallbackCache,
 } = threadDetailStateBridgeService;
-const PROCESS_STARTED_AT_MS = Date.now();
-
-let clients = new Map();
-let clientHeartbeats = new WeakMap();
 const LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS = 10000;
-const latestThreadIdByTurnId = new Map();
-const recentStartedThreads = new Map();
 const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
   ttlMs: THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS,
   maxEntries: THREAD_DISPLAY_SUMMARY_CACHE_MAX,
@@ -1115,44 +1182,6 @@ threadSummaryStateService = createThreadSummaryStateService({
   stripThreadListDetailFields,
   upsertThreadListFallbackCacheThread,
 });
-const taskCardRuntimePolicyService = createTaskCardRuntimePolicyService({
-  fs,
-  path,
-  platform: process.platform,
-  actionableApprovalMethods: ACTIONABLE_APPROVAL_METHODS,
-  latestThreadIdByTurnId,
-  recentStartedThreads,
-  normalizeFsPath,
-  workspaceDelegationPublicSettings: () => workspaceDelegationPublicSettings(),
-  workspaceWriteSandboxPolicy,
-  normalizeSandboxPolicyType,
-  workspaceDelegationWriteGuardPermissionProfile,
-  attachWorkspaceDelegationRuntimeGuidance: (...args) => attachWorkspaceDelegationRuntimeGuidance(...args),
-  readStateDbThread,
-  readStartedThread: (...args) => readStartedThread(...args),
-  readRolloutSessionFallbackThread,
-  visibleWorkspaceRoots,
-  readGlobalState: (...args) => readGlobalState(...args),
-  readThreadListFallback,
-  pushThreadId,
-  shortIdentifier,
-  compactOneLine,
-  workspaceDelegationGuardExemptCwds: WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS,
-  workspaceDelegationGuardSelfExemptionDisabled: WORKSPACE_DELEGATION_GUARD_SELF_EXEMPTION_DISABLED,
-  workspaceDelegationGuardPlatformExemptionDisabled: WORKSPACE_DELEGATION_GUARD_PLATFORM_EXEMPTION_DISABLED,
-  workspaceDelegationWriteGuardDisabled: WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED,
-  workspaceDelegationApprovalProxyOnly: WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY,
-  workspaceDelegationEnforceSandboxGuard: WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD,
-});
-const {
-  applyCodexFastServiceTier,
-  applyResumeRuntimeSettings,
-  applyStartThreadRuntimeSettings,
-  applyTurnRuntimeSettings,
-  requestedCodexFastMode,
-  workspaceSourceWriteGuardDecisionForRequest,
-  workspaceSourceWriteGuardLogPayload,
-} = taskCardRuntimePolicyService;
 const continuationThreadService = createContinuationThreadService({
   env: process.env,
   compactWorkspaceContext,
@@ -1359,94 +1388,6 @@ const {
   writeRuntimeSettings,
   workspaceDelegationPublicSettings,
 } = runtimeSettingsService;
-
-const threadTaskCardRouteService = createThreadTaskCardRouteService({
-  appRoot: APP_ROOT,
-  threadTaskCardService,
-  threadTaskCardDraftTag: THREAD_TASK_CARD_DRAFT_TAG,
-  threadTaskCardBodyMaxChars: THREAD_TASK_CARD_BODY_MAX_CHARS,
-  workspaceDelegationToolNamespace: WORKSPACE_DELEGATION_TOOL_NAMESPACE,
-  workspaceDelegationToolName: WORKSPACE_DELEGATION_TOOL_NAME,
-  taskCardReturnToolName: TASK_CARD_RETURN_TOOL_NAME,
-  reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
-  readRuntimeSettings,
-  workspaceDelegationPublicSettings,
-  readStateDbThread,
-  readStartedThread,
-  readRolloutSessionFallbackThread,
-  hydrateThreadTitleFromSessionIndex,
-  readThreadListFallback,
-  visibilityFromGlobalState,
-  threadHasArchiveSignal,
-  isHiddenThread,
-  isSubagentThreadSummary,
-  isSideChatSidecarThreadSummary,
-  normalizeFsPath,
-  threadDisplayTitle,
-  isRecoverableThreadListTitle,
-  stableTextHash,
-  truncateSingleLine,
-  truncateToolDescriptionText: truncateSingleLine,
-  shortIdentifier,
-  pushThreadId,
-  threadIdForTurnId: (turnId) => latestThreadIdByTurnId.get(turnId),
-  attachThreadTaskCardsToResult,
-  attachPendingServerRequestsToResult,
-  httpStatusError,
-  createTargetError: (statusCode, code, message, details = {}) => httpStatusErrorWithDetails(statusCode, code, message || code, details),
-  logger: console,
-});
-const {
-  workspaceDelegationTargetHints,
-  workspaceDelegationDynamicToolSpec,
-  taskCardReturnDynamicToolSpec,
-  taskCardRuntimeDynamicTools,
-  workspaceDelegationDynamicTools,
-  attachTaskCardRuntimeDynamicTools,
-  workspaceDelegationScriptFallbackInstruction,
-  taskCardReturnScriptFallbackInstruction,
-  attachWorkspaceDelegationRuntimeGuidance,
-  normalizeThreadTaskCardWorkflowMode,
-  normalizeThreadTaskCardReasoningEffort,
-  uniqueThreadTaskCardTargetIds,
-  threadTaskCardTargetReferenceText,
-  threadTaskCardTargetReferenceEntry,
-  threadTaskCardTargetReferenceEntries,
-  threadTaskCardTargetReferences,
-  isThreadIdLike,
-  logWorkspaceDelegationRpc,
-  threadTaskCardTargetUpdatedAt,
-  publicThreadTaskCardTarget,
-  threadTaskCardTargetError,
-  threadTaskCardTargetVisibility,
-  threadTaskCardVisibleTargetThreads,
-  threadTaskCardCanonicalTargetForCwd,
-  threadTaskCardCanonicalTargetForThread,
-  threadTaskCardCanonicalVisibleTargets,
-  readThreadTaskCardTargetSummary,
-  readThreadTaskCardVisibleTargetSummary,
-  readThreadTaskCardExecutionTargetSummary,
-  applyHomeAiDeployLaneRoutingPolicy,
-  assertThreadTaskCardTargetDeliverable,
-  resolveThreadTaskCardTargetReference,
-  resolvedThreadTaskCardTargetIds,
-  threadTaskCardThreadCallIdempotencyKey,
-  buildThreadTaskCardCreatePayload,
-  createThreadTaskCardsFromSourceThread,
-  parseDynamicToolArguments,
-  dynamicToolTextResponse,
-  dynamicToolJsonResponse,
-  dynamicToolErrorPayload,
-  dynamicToolServerRequestResponsePayload,
-  parseThreadTaskCardDraftText,
-  threadTaskCardDraftIdempotencyKey,
-  threadTaskCardItemText,
-  summarizeTaskCardText,
-  truncateThreadTaskCardBody,
-  taskCardSourceThreadTitle,
-  materializeThreadTaskCardDraftsForThread,
-  prepareThreadTaskCardsToResult,
-} = threadTaskCardRouteService;
 const webPushRuntimeService = createWebPushRuntimeService({
   fs,
   readJsonFile,

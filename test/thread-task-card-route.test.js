@@ -18,6 +18,7 @@ const codexAppServerClientServiceJs = fs.readFileSync(
   "utf8",
 );
 const appServerRequestPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "app-server-request-policy-service.js"), "utf8");
+const taskCardRuntimeCompositionServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "thread-task-card-runtime-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-task-card-route-service.js"), "utf8");
 const taskCardRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-message-route-service.js"), "utf8");
@@ -91,16 +92,16 @@ function functionSource(source, name) {
 }
 
 test("server exposes thread task card routes and enriches thread detail responses", () => {
-  assert.match(serverJs, /createThreadTaskCardService/);
-  assert.match(serverJs, /require\("\.\/services\/task-cards\/thread-task-card-service"\)/);
+  assert.match(serverJs, /createThreadTaskCardRuntimeService/);
+  assert.match(serverJs, /require\("\.\/services\/task-cards\/thread-task-card-runtime-service"\)/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /require\("\.\/thread-task-card-service"\)/);
   assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-task-card-service"\)/);
-  assert.match(serverJs, /createHomeAiAutonomousDeliveryReturnService/);
-  assert.match(serverJs, /const homeAiAutonomousDeliveryReturnService = createHomeAiAutonomousDeliveryReturnService/);
-  assert.match(serverJs, /onTerminalReturnCard: async \(event\) => homeAiAutonomousDeliveryReturnService\.send\(event, \{ workspaceId: "owner" \}\)/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /createHomeAiAutonomousDeliveryReturnService/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /onTerminalReturnCard: async \(event\) => homeAiAutonomousDeliveryReturnService\.send\(event, \{ workspaceId: "owner" \}\)/);
   assert.doesNotMatch(serverJs, /createThreadTaskCardIntentService/);
   assert.match(serverJs, /THREAD_TASK_CARD_FILE/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_TASK_CARD_FILE/);
-  assert.match(serverJs, /createThreadTaskCardRouteService/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /createThreadTaskCardRouteService/);
   assert.match(apiDispatchRouteServiceJs, /threadTaskCardRouteService\.handleRoute/);
   assert.match(taskCardRouteServiceJs, /"\/api\/thread-task-cards"/);
   assert.doesNotMatch(taskCardRouteServiceJs, /"\/api\/thread-task-cards\/parse"/);
@@ -339,16 +340,13 @@ test("thread task card routes preserve service status codes", () => {
 });
 
 test("approved task cards inherit target thread model and effort", () => {
-  const setupBlock = serverJs.slice(
-    serverJs.indexOf("const threadTaskCardService = createThreadTaskCardService"),
-    serverJs.indexOf("threadTaskCardRouteService = createThreadTaskCardRouteService"),
-  );
+  const setupBlock = taskCardRuntimeCompositionServiceJs;
   assert.match(setupBlock, /const requestedReasoningEffort = String\(card && card\.delivery && card\.delivery\.reasoningEffort/);
-  assert.match(setupBlock, /const inheritedRuntimeSettings = await resolveThreadRuntimeSettings\(card\.target\.threadId\);/);
+  assert.match(setupBlock, /const inheritedRuntimeSettings = await dependencies\.resolveThreadRuntimeSettings\(card\.target\.threadId\);/);
   assert.match(setupBlock, /const targetThread = readThreadTaskCardExecutionTargetSummary\(card\);/);
   assert.match(setupBlock, /const targetIsDeployLane = isHomeAiDeployLaneThread\(targetThread\);/);
   assert.match(setupBlock, /const baseRuntimeSettings = targetIsDeployLane/);
-  assert.match(setupBlock, /applyPermissionModeOverride\(inheritedRuntimeSettings, "full", targetThread && targetThread\.cwd \|\| null\)/);
+  assert.match(setupBlock, /dependencies\.applyPermissionModeOverride\(inheritedRuntimeSettings, "full", targetThread && targetThread\.cwd \|\| null\)/);
   assert.match(setupBlock, /Object\.assign\(\{\}, baseRuntimeSettings, \{ reasoningEffort: requestedReasoningEffort \}\)/);
   assert.match(setupBlock, /thread\/resume", applyResumeRuntimeSettings\(/);
   assert.match(setupBlock, /const turnParams = applyTurnRuntimeSettings\(/);
@@ -652,7 +650,7 @@ test("server broadcasts active status immediately for local turn starts", () => 
   assert.match(functionBody(threadDetailResponsePreparationServiceJs, "prepareThreadDetailResponseResult"), /applyLocalActiveThreadStatusToResult/);
   assert.match(functionBody(threadListRuntimeServiceJs, "normalizeThreadListResultStatuses"), /normalizeThreadSummaryLiveStatus/);
 
-  assert.match(serverJs, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{[\s\S]*source: "thread-task-card-approval"/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{[\s\S]*source: "thread-task-card-approval"/);
   assert.match(threadMessageRouteServiceJs, /notifyLocalTurnStarted\(threadId, turnResult, \{ source: "message-submit" \}\)/);
   assert.match(threadMessageRouteServiceJs, /notifyLocalTurnStarted\(threadId, turnResult, \{ source: "new-thread-message" \}\)/);
   assert.match(autoTurnRecoveryServiceJs, /notifyLocalTurnStarted\(id, result, \{ source: "auto-turn-recovery" \}\)/);
