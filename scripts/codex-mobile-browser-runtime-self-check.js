@@ -85,6 +85,7 @@ function usage() {
     "  --thread-id <id>           Thread id to open. Repeatable.",
     "  --sample-threads <n>       Thread-list rows to sample when no id is passed. Default: 3.",
     "  --list-limit <n>           Thread-list limit. Default: 10.",
+    "  --startup-only             Check listener/static shell/browser startup only; skip thread sampling.",
     "  --rounds <n>               Thread switch rounds. Default: 3.",
     "  --sample-delays-ms <csv>   Delays after each switch. Default: 350,1200,2800.",
     "  --thread-list-stress-rounds <n> Thread-list open/scroll/click stress rounds. Default: 2.",
@@ -145,6 +146,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     threadIds: [],
     sampleThreads: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SAMPLE_THREADS || "3", 3, 20),
     listLimit: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_LIST_LIMIT || "10", 10, 100),
+    startupOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_STARTUP_ONLY || "")),
     rounds: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_ROUNDS || "3", 3, 20),
     sampleDelaysMs: parseDelayList(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SAMPLE_DELAYS_MS || ""),
     threadListStressRounds: readNonNegativeInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_THREAD_LIST_STRESS_ROUNDS || "2", 2, 20),
@@ -173,6 +175,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--thread-id") options.threadIds.push(next());
     else if (arg === "--sample-threads") options.sampleThreads = readPositiveInt(next(), options.sampleThreads, 20);
     else if (arg === "--list-limit") options.listLimit = readPositiveInt(next(), options.listLimit, 100);
+    else if (arg === "--startup-only") options.startupOnly = true;
     else if (arg === "--rounds") options.rounds = readPositiveInt(next(), options.rounds, 20);
     else if (arg === "--sample-delays-ms") options.sampleDelaysMs = parseDelayList(next(), options.sampleDelaysMs);
     else if (arg === "--thread-list-stress-rounds") options.threadListStressRounds = readNonNegativeInt(next(), options.threadListStressRounds, 20);
@@ -234,6 +237,70 @@ async function fetchJson(url, options = {}, key = "") {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchText(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const text = await response.text();
+    return {
+      ok: response.ok,
+      status: Math.max(0, Math.trunc(Number(response.status || 0))),
+      text,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readStaticShellReadback(options = {}, config = {}) {
+  const assets = [];
+  const readAsset = async (pathname) => {
+    try {
+      const result = await fetchText(requestUrl(options, pathname), options);
+      assets.push({
+        path: pathname,
+        status: result.status,
+        bytes: Buffer.byteLength(String(result.text || ""), "utf8"),
+      });
+      return result;
+    } catch (err) {
+      assets.push({
+        path: pathname,
+        status: 0,
+        bytes: 0,
+        errorCode: boundedToken(err && err.message, "asset_fetch_failed"),
+      });
+      return { ok: false, status: 0, text: "" };
+    }
+  };
+  const app = await readAsset("/app.js");
+  const sw = await readAsset("/sw.js");
+  const runtimeAssets = await Promise.all([
+    readAsset("/composer-runtime.js"),
+    readAsset("/thread-list-runtime.js"),
+    readAsset("/thread-tile-runtime.js"),
+  ]);
+  const clientBuildId = String(config && config.clientBuildId || "").trim();
+  const shellCacheName = String(config && config.shellCacheName || "").trim();
+  const clientBuildMatches = clientBuildId
+    ? String(app.text || "").includes(`CLIENT_BUILD_ID = ${JSON.stringify(clientBuildId)}`)
+    : false;
+  const shellCacheMatches = shellCacheName
+    ? String(sw.text || "").includes(`CACHE_NAME = ${JSON.stringify(shellCacheName)}`)
+    : false;
+  const assetStatusOk = assets.every((asset) => asset.status >= 200 && asset.status < 300);
+  const runtimeAssetCount = runtimeAssets.filter((asset) => asset && asset.ok).length;
+  return {
+    ok: assetStatusOk && clientBuildMatches && shellCacheMatches && runtimeAssetCount === 3,
+    assetStatusOk,
+    clientBuildMatches,
+    shellCacheMatches,
+    runtimeAssetCount,
+    assets,
+  };
 }
 
 function shortHash(value) {
@@ -719,6 +786,45 @@ function browserInitScript(key, initialThreadId = "") {
           observer.observe({ entryTypes: ["longtask"] });
         }
       } catch (_) {}
+    })();
+  `;
+}
+
+function startupProbeExpression(input = {}) {
+  const expectedClientBuildId = String(input.clientBuildId || "").slice(0, 120);
+  return `
+    (() => {
+      const visible = (node) => {
+        if (!node || typeof node.getBoundingClientRect !== "function") return false;
+        const style = typeof getComputedStyle === "function" ? getComputedStyle(node) : {};
+        const rect = node.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.height > 0 && rect.width > 0;
+      };
+      let clientBuildId = "";
+      try {
+        clientBuildId = typeof CLIENT_BUILD_ID === "string" ? CLIENT_BUILD_ID : "";
+      } catch (_) {}
+      const app = document.getElementById("app");
+      const login = document.getElementById("loginPanel");
+      const bootRecovery = document.getElementById("bootRecovery");
+      return {
+        label: "startup",
+        probeKind: "startup",
+        appVisible: visible(app),
+        loginVisible: visible(login),
+        bootRecoveryVisible: visible(bootRecovery),
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 0,
+        items: 0,
+        renderKeys: 0,
+        clientBuildPresent: Boolean(clientBuildId),
+        clientBuildMatches: ${JSON.stringify(expectedClientBuildId)} ? clientBuildId === ${JSON.stringify(expectedClientBuildId)} : Boolean(clientBuildId),
+        composerRuntimeReady: Boolean(window.CodexComposerRuntime && typeof window.CodexComposerRuntime.createComposerRuntime === "function"),
+        threadListRuntimeReady: Boolean(window.CodexThreadListRuntime && typeof window.CodexThreadListRuntime.createThreadListRuntime === "function"),
+        threadTileRuntimeReady: Boolean(window.CodexThreadTileRuntime && typeof window.CodexThreadTileRuntime.createThreadTileRuntime === "function"),
+        loadThreadReady: typeof window.loadThread === "function",
+      };
     })();
   `;
 }
@@ -1291,11 +1397,66 @@ function submitComposerExpression(message) {
   `;
 }
 
+function appendBrowserIssue(report, item) {
+  if (!report || !report.browserReport || !item) return;
+  const issues = Array.isArray(report.browserReport.issues) ? report.browserReport.issues : [];
+  issues.push(item);
+  report.browserReport.issues = issues;
+  report.browserReport.issueCount = issues.length;
+  report.browserReport.blockingIssueCount = issues.filter((issueItem) => issueItem && /^(H1|H2)$/i.test(issueItem.severity || "")).length;
+  report.browserReport.ok = report.browserReport.blockingIssueCount === 0;
+}
+
+function applyStartupGateIssues(report, startupSample = {}, staticShell = {}) {
+  if (staticShell && staticShell.ok === false) {
+    appendBrowserIssue(report, {
+      severity: "H2",
+      code: "browser_static_shell_readback_failed",
+      surface: "browser-runtime",
+      assetStatusOk: staticShell.assetStatusOk === true,
+      clientBuildMatches: staticShell.clientBuildMatches === true,
+      shellCacheMatches: staticShell.shellCacheMatches === true,
+      runtimeAssetCount: Math.max(0, Math.trunc(Number(staticShell.runtimeAssetCount || 0))),
+    });
+  }
+  if (startupSample && startupSample.clientBuildMatches === false) {
+    appendBrowserIssue(report, {
+      severity: "H2",
+      code: "browser_startup_client_build_mismatch",
+      surface: "browser-runtime",
+    });
+  }
+  const runtimeReady = startupSample
+    && startupSample.composerRuntimeReady === true
+    && startupSample.threadListRuntimeReady === true
+    && startupSample.threadTileRuntimeReady === true;
+  if (startupSample && runtimeReady === false) {
+    appendBrowserIssue(report, {
+      severity: "H2",
+      code: "browser_startup_runtime_missing",
+      surface: "browser-runtime",
+      composerRuntimeReady: startupSample.composerRuntimeReady === true,
+      threadListRuntimeReady: startupSample.threadListRuntimeReady === true,
+      threadTileRuntimeReady: startupSample.threadTileRuntimeReady === true,
+    });
+  }
+  if (startupSample && startupSample.bootRecoveryVisible === true) {
+    appendBrowserIssue(report, {
+      severity: "H2",
+      code: "browser_startup_boot_recovery_visible",
+      surface: "browser-runtime",
+    });
+  }
+}
+
 async function run(options = parseArgs(), deps = {}) {
   const key = deps.key !== undefined ? deps.key : readAccessKey(options);
   const startedAt = new Date().toISOString();
   const config = await fetchJson(requestUrl(options, "/api/public-config"), options, key);
-  const list = await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
+  const staticShell = await readStaticShellReadback(options, config);
+  const list = options.startupOnly
+    ? { data: [] }
+    : await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
   const rows = threadRows(list);
   const ids = options.threadIds.length
     ? options.threadIds
@@ -1303,10 +1464,11 @@ async function run(options = parseArgs(), deps = {}) {
   if (options.exerciseSubmit && options.submitThreadId && !ids.includes(options.submitThreadId)) {
     ids.unshift(options.submitThreadId);
   }
-  const threadPlan = await loadThreadPlan(options, key, ids);
+  const threadPlan = options.startupOnly ? [] : await loadThreadPlan(options, key, ids);
   const report = {
     ok: false,
     startedAt,
+    mode: options.startupOnly ? "startup-only" : "full",
     endpoint: endpointKind(options.server),
     browser: { engine: "chrome-cdp", headed: Boolean(options.headed), viewport: options.viewport },
     publicConfig: {
@@ -1317,6 +1479,7 @@ async function run(options = parseArgs(), deps = {}) {
     },
     selectedThreads: safeThreadRows(ids.map((id) => ({ id })), options.sampleThreads),
     listedThreads: safeThreadRows(rows, Math.min(options.listLimit, 8)),
+    staticShell,
     threadPlan: threadPlan.map((entry) => ({
       threadHash: entry.threadHash,
       expectedTurnHashCount: entry.expectedTurnHashCount,
@@ -1331,7 +1494,7 @@ async function run(options = parseArgs(), deps = {}) {
       expectedLatestTimestampItemCount: entry.expectedLatestTimestampItemCount,
     })),
     browserReport: null,
-    submitExercise: options.exerciseSubmit ? {
+    submitExercise: (!options.startupOnly && options.exerciseSubmit) ? {
       attempted: true,
       ok: false,
       targetThreadHash: "",
@@ -1339,7 +1502,7 @@ async function run(options = parseArgs(), deps = {}) {
       code: "not_run",
     } : null,
   };
-  if (!threadPlan.length) {
+  if (!options.startupOnly && !threadPlan.length) {
     report.browserReport = analyzeBrowserRuntimeSamples({ samples: [] });
     report.error = "no_threads_selected";
     return report;
@@ -1404,64 +1567,89 @@ async function run(options = parseArgs(), deps = {}) {
       mobile: options.viewport.width <= 600,
     });
     await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
-      source: browserInitScript(key, threadPlan[0].id),
+      source: browserInitScript(key, threadPlan[0] && threadPlan[0].id || ""),
     });
     await cdp.send("Page.navigate", { url: options.server });
     await waitForLoad(cdp, options.timeoutMs);
     await sleep(900);
-    samples.push(await evaluate(cdp, threadListInteractionProbeExpression("thread-list-initial"), options.timeoutMs).catch((err) => ({
-      label: "thread-list-initial",
-      probeKind: "thread-list-interaction",
+    const startupSample = await evaluate(cdp, startupProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
+      label: "startup",
+      probeKind: "startup",
       appVisible: false,
       targetConfirmed: true,
       contentConfirmed: true,
-      errorCode: boundedToken(err && err.message, "thread_list_probe_failed"),
-    })));
-    if (options.threadListStressRounds > 0) {
-      samples.push(await evaluate(cdp, threadListStressProbeExpression("thread-list-stress", options.threadListStressRounds), options.timeoutMs).catch((err) => ({
-        label: "thread-list-stress",
-        probeKind: "thread-list-interaction",
-        stressProbe: true,
-        appVisible: false,
-        targetConfirmed: true,
-        contentConfirmed: true,
-        errorCode: boundedToken(err && err.message, "thread_list_stress_probe_failed"),
-      })));
+      turns: 0,
+      items: 0,
+      renderKeys: 0,
+      errorCode: boundedToken(err && err.message, "startup_probe_failed"),
+    }));
+    samples.push(startupSample);
+    if (options.startupOnly) {
+      report.startup = {
+        appVisible: startupSample.appVisible === true,
+        loginVisible: startupSample.loginVisible === true,
+        clientBuildMatches: startupSample.clientBuildMatches === true,
+        runtimeReady: startupSample.composerRuntimeReady === true
+          && startupSample.threadListRuntimeReady === true
+          && startupSample.threadTileRuntimeReady === true,
+        loadThreadReady: startupSample.loadThreadReady === true,
+      };
     }
-
-    for (let round = 0; round < options.rounds; round += 1) {
-      for (const entry of threadPlan) {
-        await evaluate(cdp, openThreadExpression(entry.id), options.timeoutMs).catch(() => null);
-        let snapshotPlan = await refreshThreadPlanEntry(options, key, entry);
-        for (const delayMs of options.sampleDelaysMs) {
-          await sleep(delayMs);
-          if (delayMs >= options.minSettledDelayMs) {
-            snapshotPlan = await refreshThreadPlanEntry(options, key, snapshotPlan);
-          }
-          const sample = await evaluate(cdp, snapshotExpression(snapshotInputForPlanEntry(snapshotPlan, {
-            label: `round-${round + 1}-delay-${delayMs}`,
-            delayMs,
-          })), options.timeoutMs).catch((err) => ({
-            label: `round-${round + 1}-delay-${delayMs}`,
-            threadHash: entry.threadHash,
-            delayMs,
-            appVisible: false,
-            errorCode: boundedToken(err && err.message, "snapshot_failed"),
-          }));
-          samples.push(sample);
-        }
-      }
-      samples.push(await evaluate(cdp, threadListInteractionProbeExpression(`thread-list-round-${round + 1}`), options.timeoutMs).catch((err) => ({
-        label: `thread-list-round-${round + 1}`,
+    if (!options.startupOnly) {
+      samples.push(await evaluate(cdp, threadListInteractionProbeExpression("thread-list-initial"), options.timeoutMs).catch((err) => ({
+        label: "thread-list-initial",
         probeKind: "thread-list-interaction",
         appVisible: false,
         targetConfirmed: true,
         contentConfirmed: true,
         errorCode: boundedToken(err && err.message, "thread_list_probe_failed"),
       })));
+      if (options.threadListStressRounds > 0) {
+        samples.push(await evaluate(cdp, threadListStressProbeExpression("thread-list-stress", options.threadListStressRounds), options.timeoutMs).catch((err) => ({
+          label: "thread-list-stress",
+          probeKind: "thread-list-interaction",
+          stressProbe: true,
+          appVisible: false,
+          targetConfirmed: true,
+          contentConfirmed: true,
+          errorCode: boundedToken(err && err.message, "thread_list_stress_probe_failed"),
+        })));
+      }
+
+      for (let round = 0; round < options.rounds; round += 1) {
+        for (const entry of threadPlan) {
+          await evaluate(cdp, openThreadExpression(entry.id), options.timeoutMs).catch(() => null);
+          let snapshotPlan = await refreshThreadPlanEntry(options, key, entry);
+          for (const delayMs of options.sampleDelaysMs) {
+            await sleep(delayMs);
+            if (delayMs >= options.minSettledDelayMs) {
+              snapshotPlan = await refreshThreadPlanEntry(options, key, snapshotPlan);
+            }
+            const sample = await evaluate(cdp, snapshotExpression(snapshotInputForPlanEntry(snapshotPlan, {
+              label: `round-${round + 1}-delay-${delayMs}`,
+              delayMs,
+            })), options.timeoutMs).catch((err) => ({
+              label: `round-${round + 1}-delay-${delayMs}`,
+              threadHash: entry.threadHash,
+              delayMs,
+              appVisible: false,
+              errorCode: boundedToken(err && err.message, "snapshot_failed"),
+            }));
+            samples.push(sample);
+          }
+        }
+        samples.push(await evaluate(cdp, threadListInteractionProbeExpression(`thread-list-round-${round + 1}`), options.timeoutMs).catch((err) => ({
+          label: `thread-list-round-${round + 1}`,
+          probeKind: "thread-list-interaction",
+          appVisible: false,
+          targetConfirmed: true,
+          contentConfirmed: true,
+          errorCode: boundedToken(err && err.message, "thread_list_probe_failed"),
+        })));
+      }
     }
 
-    if (options.exerciseSubmit) {
+    if (!options.startupOnly && options.exerciseSubmit) {
       const submitTarget = (options.submitThreadId
         ? threadPlan.find((entry) => entry.id === options.submitThreadId)
         : null) || threadPlan[0];
@@ -1528,7 +1716,8 @@ async function run(options = parseArgs(), deps = {}) {
     exceptions,
     minSettledDelayMs: options.minSettledDelayMs,
   });
-  if (options.exerciseSubmit && report.submitExercise && !report.submitExercise.ok) {
+  applyStartupGateIssues(report, samples.find((sample) => sample && sample.probeKind === "startup") || {}, staticShell);
+  if (!options.startupOnly && options.exerciseSubmit && report.submitExercise && !report.submitExercise.ok) {
     const issues = Array.isArray(report.browserReport.issues) ? report.browserReport.issues : [];
     issues.push({
       severity: "H2",
@@ -1542,7 +1731,7 @@ async function run(options = parseArgs(), deps = {}) {
     report.browserReport.blockingIssueCount = issues.filter((item) => item && /^(H1|H2)$/i.test(item.severity || "")).length;
     report.browserReport.ok = false;
   }
-  report.ok = report.browserReport.ok && (!options.exerciseSubmit || Boolean(report.submitExercise && report.submitExercise.ok));
+  report.ok = report.browserReport.ok && (options.startupOnly || !options.exerciseSubmit || Boolean(report.submitExercise && report.submitExercise.ok));
   return report;
 }
 
@@ -1569,11 +1758,13 @@ module.exports = {
   parseArgs,
   parseDelayList,
   parseViewport,
+  readStaticShellReadback,
   routeKind,
   run,
   safeConsoleText,
   snapshotInputForPlanEntry,
   snapshotExpression,
+  startupProbeExpression,
   submitComposerExpression,
   threadListInteractionProbeExpression,
   threadListStressProbeExpression,

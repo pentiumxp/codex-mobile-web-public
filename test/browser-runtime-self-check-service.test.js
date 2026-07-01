@@ -15,6 +15,33 @@ test("browser runtime self-check adapter re-exports canonical runtime service", 
   assert.equal(adapter.safeThreadRows, service.safeThreadRows);
 });
 
+test("browser runtime self-check parses startup-only listener smoke option", () => {
+  const options = script.parseArgs(["--server", "http://127.0.0.1:8787", "--startup-only", "--json"]);
+  assert.equal(options.startupOnly, true);
+  assert.equal(options.json, true);
+});
+
+test("browser runtime self-check treats startup exceptions as blocking", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "startup",
+      probeKind: "startup",
+      appVisible: false,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      turns: 0,
+      items: 0,
+      renderKeys: 0,
+    }],
+    exceptions: [{ code: "ReferenceError" }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_app_not_visible" && issue.severity === "H2"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_runtime_exception" && issue.severity === "H2"));
+});
+
 test("browser runtime self-check catches sparse DOM after confirmed nonempty target content", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,

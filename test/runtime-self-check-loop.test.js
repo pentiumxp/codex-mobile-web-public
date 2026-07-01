@@ -54,6 +54,7 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
     "100,500,1500",
     "--browser-min-settled-delay-ms",
     "1500",
+    "--browser-startup-only",
     "--browser-exercise-submit",
     "--browser-submit-thread-id",
     "submit-thread",
@@ -79,6 +80,7 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
   assert.equal(loop.browserRounds, 7);
   assert.equal(loop.browserSampleDelaysMs, "100,500,1500");
   assert.equal(loop.browserMinSettledDelayMs, 1500);
+  assert.equal(loop.browserStartupOnly, true);
   assert.equal(loop.browserExerciseSubmit, true);
   assert.equal(loop.browserSubmitThreadId, "submit-thread");
   assert.equal(loop.browserSubmitMessage, "Reply OK only");
@@ -200,6 +202,45 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
   assert.match(line, /"deployPass":true/);
   assert.doesNotMatch(line, /private-thread-id|raw prompt|cookie|token|Authorization/i);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("runtime self-check browser job can run startup-only without submit exercise", async () => {
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: [],
+    sampleThreads: 1,
+    browserRounds: 6,
+    browserSampleDelaysMs: "100,350,1200",
+    browserMinSettledDelayMs: 1200,
+    browserStartupOnly: true,
+    browserExerciseSubmit: true,
+    browserSubmitThreadId: "private-submit-thread-id",
+    browserSubmitMessage: "Reply OK only",
+    browserSubmitSampleDelaysMs: "100,900,1600",
+    skipClientEvents: true,
+    skipApi: true,
+    skipBrowser: false,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    ...fakeProcessPressureDeps(),
+    execFile(_node, args, _options, callback) {
+      const script = String(args[0] || "");
+      assert.match(script, /browser-runtime/);
+      assert.ok(args.includes("--startup-only"));
+      assert.doesNotMatch(args.join(" "), /--exercise-submit|--submit-thread-id|--submit-message/);
+      callback(null, JSON.stringify({
+        ok: true,
+        mode: "startup-only",
+        publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
+        browserReport: { issueCount: 0, blockingIssueCount: 0 },
+      }), "");
+    },
+  });
+
+  assert.equal(result.ok, true);
+  const browserCheck = result.checks.find((check) => check.name === "browser-runtime");
+  assert.equal(browserCheck.ok, true);
 });
 
 test("runtime self-check gate lets slow-path observations remain nonblocking", async () => {

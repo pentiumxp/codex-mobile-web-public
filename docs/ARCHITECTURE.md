@@ -1149,6 +1149,17 @@ comparable app-shell identity (`clientBuildId` / `shellCacheName`) should ask
 the user or Hermes host to refresh. Server-only fixes do not need a shell bump,
 but open clients may need a normal detail refresh.
 
+After production deploys that move static-client or large architecture
+boundaries, `scripts/codex-mobile-browser-runtime-self-check.js --startup-only`
+is the lightweight listener startup gate. It verifies the launched listener
+through `/api/public-config`, reads `/app.js`, `/sw.js`, and split runtime
+assets, then opens the real shell in an isolated Chrome profile. The gate must
+fail on browser startup exceptions, invisible app shell, visible login panel
+after key injection, static shell build/cache mismatch, or missing split-runtime
+factories. This startup-only gate is read-only and does not sample thread detail
+or submit Composer messages; full browser sampling remains available for deeper
+DOM/projection checks.
+
 ### Public PR Prompt
 
 The public PR check is prompt-only. `server.js` checks the configured public GitHub repository for open pull requests through the unauthenticated public API, caches the result briefly, and exposes it through authenticated `/api/public-pull-requests/status`. The browser can prompt whether to prepare a merge/publish review task, but it must not merge, sync, commit, or push the public repository without an explicit user request. Accepted prompts target a visible review workspace: use `/api/public-config.workspacePath` when it is visible to Codex Desktop, otherwise use a visible workspace with the same basename so Mac production deployments under `/Users/hermes-host/.../plugins/codex-mobile-web` can route review tasks to the real source checkout under `/Users/hermes-dev/.../plugins/codex-mobile-web`. The browser first reuses a visible same-workspace thread titled `Codex Mobile Public PR`. If no such thread exists, the new-thread draft carries that title and `/api/threads/new-message` persists it through app-server rename plus the Mobile session-index fallback after creation.
