@@ -6,6 +6,8 @@ const zlib = require("node:zlib");
 
 const DEFAULT_STATIC_COMPRESSION_MIN_BYTES = 1024;
 const DEFAULT_STATIC_COMPRESSION_CACHE_MAX_BYTES = 16 * 1024 * 1024;
+const DEFAULT_SHELL_MODE_CLASSIC = "classic";
+const DEFAULT_SHELL_MODE_VITE_APP_PREVIEW = "vite-app-preview";
 const STATIC_COMPRESSIBLE_EXTENSIONS = new Set([
   ".css",
   ".html",
@@ -31,6 +33,22 @@ function defaultRequestUrl(req) {
   return new URL(req.url, `http://${req.headers.host || "localhost"}`);
 }
 
+function normalizeDefaultShellMode(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return DEFAULT_SHELL_MODE_CLASSIC;
+  if (
+    normalized === DEFAULT_SHELL_MODE_CLASSIC
+    || normalized === "classic-script"
+    || normalized === "classic-script-fallback"
+  ) {
+    return DEFAULT_SHELL_MODE_CLASSIC;
+  }
+  if (normalized === DEFAULT_SHELL_MODE_VITE_APP_PREVIEW || normalized === "app-preview") {
+    return DEFAULT_SHELL_MODE_VITE_APP_PREVIEW;
+  }
+  return DEFAULT_SHELL_MODE_CLASSIC;
+}
+
 function createStaticFileService(options = {}) {
   const publicRoot = path.resolve(options.publicRoot || path.join(process.cwd(), "public"));
   const mimeFor = typeof options.mimeFor === "function"
@@ -40,6 +58,7 @@ function createStaticFileService(options = {}) {
   const frameAncestorsHeader = typeof options.frameAncestorsHeader === "function"
     ? options.frameAncestorsHeader
     : () => "'self'";
+  const defaultShellMode = normalizeDefaultShellMode(options.defaultShellMode);
   const compressionMinBytes = Number.isFinite(Number(options.compressionMinBytes))
     ? Math.max(0, Number(options.compressionMinBytes))
     : DEFAULT_STATIC_COMPRESSION_MIN_BYTES;
@@ -130,6 +149,7 @@ function createStaticFileService(options = {}) {
     if (url.pathname === "/") {
       const requestedShell = String(url.searchParams.get("codexViteShell") || "").trim().toLowerCase();
       if (requestedShell === "app-preview") return "/vite-shell/app-preview.html";
+      if (defaultShellMode === DEFAULT_SHELL_MODE_VITE_APP_PREVIEW) return "/vite-shell/app-preview.html";
       return "/index.html";
     }
     return url.pathname;
@@ -199,6 +219,9 @@ function createStaticFileService(options = {}) {
 }
 
 module.exports = {
+  DEFAULT_SHELL_MODE_CLASSIC,
+  DEFAULT_SHELL_MODE_VITE_APP_PREVIEW,
   acceptsEncoding,
   createStaticFileService,
+  normalizeDefaultShellMode,
 };

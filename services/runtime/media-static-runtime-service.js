@@ -8,9 +8,13 @@ function createMediaStaticRuntimeService(dependencies = {}) {
   const mediaFactory = dependencies.mediaFileServiceFactory || createMediaFileService;
   const generatedImageFactory = dependencies.generatedImageContentServiceFactory || createGeneratedImageContentService;
   const staticFactory = dependencies.staticFileServiceFactory || createStaticFileService;
+  const env = dependencies.env || process.env;
+  const staticDefaultShellMode = Object.prototype.hasOwnProperty.call(dependencies, "defaultShellMode")
+    ? dependencies.defaultShellMode
+    : env.CODEX_MOBILE_DEFAULT_SHELL;
 
   const mediaFileService = mediaFactory({
-    env: dependencies.env || process.env,
+    env,
     runtimeRoot: dependencies.runtimeRoot,
     userHome: dependencies.userHome,
     codexHome: dependencies.codexHome,
@@ -45,6 +49,7 @@ function createMediaStaticRuntimeService(dependencies = {}) {
     mimeFor: mediaFileService.mimeFor,
     getUrl: dependencies.getUrl,
     frameAncestorsHeader: dependencies.frameAncestorsHeader,
+    defaultShellMode: staticDefaultShellMode,
   });
 
   function serveFilePreviewContent(req, res, requestedPath, allowedRoots) {

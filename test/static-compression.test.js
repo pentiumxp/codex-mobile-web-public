@@ -14,12 +14,18 @@ const {
   staticCompressionCacheStats,
   staticCompressionEncoding,
 } = require("../server");
+const {
+  DEFAULT_SHELL_MODE_CLASSIC,
+  DEFAULT_SHELL_MODE_VITE_APP_PREVIEW,
+  createStaticFileService,
+  normalizeDefaultShellMode,
+} = require("../adapters/static-file-service");
 
 const brotliDecompress = promisify(zlib.brotliDecompress);
 const gunzip = promisify(zlib.gunzip);
 const root = path.resolve(__dirname, "..");
 
-function requestStatic(pathname, acceptEncoding = "") {
+function requestStaticFrom(serve, pathname, acceptEncoding = "") {
   return new Promise((resolve) => {
     const chunks = [];
     const req = {
@@ -45,8 +51,12 @@ function requestStatic(pathname, acceptEncoding = "") {
         });
       },
     };
-    serveStatic(req, res);
+    serve(req, res);
   });
+}
+
+function requestStatic(pathname, acceptEncoding = "") {
+  return requestStaticFrom(serveStatic, pathname, acceptEncoding);
 }
 
 test("static assets prefer brotli compression for large text resources", async () => {
@@ -106,6 +116,40 @@ test("static root keeps classic shell unless Vite app-preview is explicitly requ
   assert.match(appPreviewText, /data-codex-vite-app-preview="true"/);
   assert.match(appPreviewText, /id="codex-vite-app-preview-loader-plan"/);
   assert.doesNotMatch(appPreviewText, /CODEX_MOBILE_SHELL_SCRIPTS:BEGIN/);
+});
+
+test("default shell mode is fail-closed unless app-preview is explicit", () => {
+  assert.equal(normalizeDefaultShellMode(""), DEFAULT_SHELL_MODE_CLASSIC);
+  assert.equal(normalizeDefaultShellMode("classic-script-fallback"), DEFAULT_SHELL_MODE_CLASSIC);
+  assert.equal(normalizeDefaultShellMode("unexpected"), DEFAULT_SHELL_MODE_CLASSIC);
+  assert.equal(normalizeDefaultShellMode("app-preview"), DEFAULT_SHELL_MODE_VITE_APP_PREVIEW);
+  assert.equal(normalizeDefaultShellMode("vite-app-preview"), DEFAULT_SHELL_MODE_VITE_APP_PREVIEW);
+});
+
+test("static root can be switched to Vite app-preview with explicit default shell mode", async () => {
+  const appPreviewStatic = createStaticFileService({
+    publicRoot: path.join(root, "public"),
+    mimeFor,
+    defaultShellMode: "vite-app-preview",
+  });
+  const invalidStatic = createStaticFileService({
+    publicRoot: path.join(root, "public"),
+    mimeFor,
+    defaultShellMode: "rollout-next",
+  });
+  const appPreview = await requestStaticFrom(appPreviewStatic.serveStatic, "/");
+  const invalidFallback = await requestStaticFrom(invalidStatic.serveStatic, "/");
+  const appPreviewText = appPreview.body.toString("utf8");
+  const invalidFallbackText = invalidFallback.body.toString("utf8");
+
+  assert.equal(appPreview.statusCode, 200);
+  assert.match(appPreviewText, /data-codex-vite-app-preview="true"/);
+  assert.match(appPreviewText, /id="codex-vite-app-preview-loader-plan"/);
+  assert.doesNotMatch(appPreviewText, /CODEX_MOBILE_SHELL_SCRIPTS:BEGIN/);
+
+  assert.equal(invalidFallback.statusCode, 200);
+  assert.match(invalidFallbackText, /CODEX_MOBILE_SHELL_SCRIPTS:BEGIN/);
+  assert.doesNotMatch(invalidFallbackText, /data-codex-vite-app-preview="true"/);
 });
 
 test("static compression ignores q=0 encodings and serves svg as text", () => {

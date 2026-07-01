@@ -4937,6 +4937,26 @@ cutover invariant is stronger: the exact future root URL surface must pass the
 same read-only browser-runtime UX checks as the opt-in app-preview host before
 default execution can move.
 
+The next cutover-control slice adds the explicit default-shell switch contract
+without changing production defaults:
+
+- `adapters/static-file-service.js` now normalizes a server-provided default
+  shell mode. Missing, classic, classic-script, classic-script-fallback, and
+  unknown values all serve `public/index.html`; only `app-preview` or
+  `vite-app-preview` route plain `/` to `public/vite-shell/app-preview.html`.
+- `services/runtime/media-static-runtime-service.js` wires
+  `CODEX_MOBILE_DEFAULT_SHELL` into that static-file boundary, so the eventual
+  cutover is controlled at server startup rather than by scattered route
+  checks.
+- The explicit `/?codexViteShell=app-preview` rehearsal route remains
+  available and takes precedence over the default mode. This preserves the
+  current root-path comparison path while making the future default `/`
+  behavior deterministic and fail-closed.
+
+Production `/` still remains classic until the server is intentionally started
+with the Vite app-preview default-shell mode and the same app-preview/root
+browser gates pass after deployment.
+
 ## Release Rule
 
 Follow the current release order:
