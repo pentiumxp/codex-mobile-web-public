@@ -139,6 +139,18 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.equal(contract.startupCompatibility.hashCount, 30);
   assert.equal(contract.startupCompatibility.assetCount, 30);
   assert.ok(contract.startupCompatibility.byteCount > 0);
+  assert.equal(contract.appPreviewClassicLoaderPlan.owner, "vite-shell-entry");
+  assert.equal(contract.appPreviewClassicLoaderPlan.scriptCount, manifest.indexScriptAssets.length);
+  assert.equal(contract.appPreviewClassicLoaderPlan.hashCount, manifest.indexScriptAssets.length);
+  assert.equal(contract.appPreviewClassicLoaderPlan.firstScript, "/shell-asset-manifest.js");
+  assert.equal(contract.appPreviewClassicLoaderPlan.lastScript, "/app.js");
+  assert.match(contract.appPreviewClassicLoaderPlan.sha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(
+    contract.appPreviewClassicLoaderPlan.scripts.map((entry) => entry.path),
+    manifest.indexScriptAssets
+  );
+  assert.ok(contract.appPreviewClassicLoaderPlan.scripts.every((entry) => entry.groupId && entry.bytes > 0));
+  assert.ok(contract.appPreviewClassicLoaderPlan.scripts.every((entry) => /^[a-f0-9]{64}$/.test(entry.sha256)));
   assert.deepEqual(
     contract.startupCompatibility.requiredGlobals.find((entry) => entry.name === "CodexAppShellRuntime"),
     {

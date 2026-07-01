@@ -4869,6 +4869,35 @@ Production `/` still stays on classic-script fallback after this slice. The
 evidence target is narrower: prove the refresh/recovery path remains present
 while Vite owns more of the build and artifact graph.
 
+The next app-preview prerequisite binds the Vite-owned loader to an explicit
+classic script plan before any default shell cutover:
+
+- `scripts/frontend-shell-asset-graph.mjs` now records
+  `appPreviewClassicLoaderPlan` in the Vite build contract. The plan is the
+  ordered 51-script classic shell list with per-script index, group id,
+  startup-critical flag, source path, byte count, and SHA-256 hash.
+- `scripts/publish-vite-shell-artifact.mjs` publishes the same plan into
+  `vite-shell-readback.json` and embeds it as bounded JSON in
+  `/vite-shell/app-preview.html`. The app-preview host still contains only the
+  one Vite module entry; it does not restore the generated classic script
+  block.
+- `frontend/vite-shell-entry.mjs` requires that loader plan on app-preview
+  startup and injects classic scripts from the plan, not from an implicit
+  recomputation. The plan must be owned by `vite-shell-entry`, have complete
+  hashes, and match the shell manifest order before the real app is loaded.
+- `services/runtime/vite-shell-artifact-service.js` fails closed if the
+  readback plan drifts from the built Vite manifest, the generated classic
+  script block, or the actual current `public/` script hashes/byte sizes.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-app-preview-only`
+  now verifies the plan marker, owner, hash presence, script/hash counts,
+  shell-order match, injected-script match, and loaded-script match before
+  accepting app-preview startup.
+
+Production `/` remains the generated classic-script fallback. This slice
+removes an ambiguity in the cutover path: app-preview can no longer pass merely
+because 51 scripts eventually appeared; it must prove the scripts came from the
+same ordered, hashed loader plan that the Vite artifact readback validates.
+
 ## Release Rule
 
 Follow the current release order:

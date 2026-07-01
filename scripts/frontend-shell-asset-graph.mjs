@@ -472,6 +472,55 @@ function startupCompatibilityContract(manifest) {
   };
 }
 
+function appPreviewClassicLoaderPlanContract(manifest) {
+  const scriptAssets = Array.isArray(manifest && manifest.indexScriptAssets)
+    ? manifest.indexScriptAssets
+    : [];
+  const assetRecords = new Map((Array.isArray(manifest && manifest.assets) ? manifest.assets : [])
+    .map((entry) => [String(entry && entry.path || ""), entry]));
+  const groupByAsset = new Map();
+  for (const group of Array.isArray(manifest && manifest.entryGroups) ? manifest.entryGroups : []) {
+    for (const asset of Array.isArray(group && group.assets) ? group.assets : []) {
+      groupByAsset.set(String(asset || ""), {
+        groupId: String(group && group.id || ""),
+        phase: String(group && group.phase || ""),
+        startupCritical: Boolean(group && group.startupCritical),
+        chunkTarget: String(group && group.chunkTarget || ""),
+      });
+    }
+  }
+  const scripts = scriptAssets.map((assetPath, index) => {
+    const assetRecord = assetRecords.get(assetPath) || {};
+    const group = groupByAsset.get(assetPath) || {};
+    return {
+      index,
+      path: assetPath,
+      groupId: String(group.groupId || ""),
+      phase: String(group.phase || ""),
+      startupCritical: Boolean(group.startupCritical),
+      chunkTarget: String(group.chunkTarget || ""),
+      sourcePath: String(assetRecord.sourcePath || ""),
+      bytes: Number(assetRecord.bytes) || 0,
+      sha256: String(assetRecord.sha256 || ""),
+    };
+  });
+  const contract = {
+    schemaVersion: 1,
+    source: "generated-vite-app-preview-classic-loader-plan",
+    owner: "vite-shell-entry",
+    scriptCount: scripts.length,
+    firstScript: scripts[0] ? scripts[0].path : "",
+    lastScript: scripts.length ? scripts[scripts.length - 1].path : "",
+    hashCount: scripts.filter((entry) => entry.sha256).length,
+    byteCount: scripts.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
+    scripts,
+  };
+  return {
+    ...contract,
+    sha256: sha256Hex(Buffer.from(JSON.stringify(contract), "utf8")),
+  };
+}
+
 function validateViteShellBuildContract(contract, manifest) {
   const issues = [];
   const entry = contract.viteEntry;
@@ -481,7 +530,9 @@ function validateViteShellBuildContract(contract, manifest) {
   const classicFallback = contract.classicFallback || {};
   const classicScriptBlock = classicFallback.scriptBlock || null;
   const startupCompatibility = contract.startupCompatibility || {};
+  const appPreviewClassicLoaderPlan = contract.appPreviewClassicLoaderPlan || null;
   const expectedClassicScriptBlock = classicShellScriptBlockContract(manifest);
+  const expectedAppPreviewClassicLoaderPlan = appPreviewClassicLoaderPlanContract(manifest);
   const outputFiles = new Set(contract.outputFiles || []);
   const classicOutputFiles = new Set((contract.classicShellAssets || []).map((asset) => asset.fileName));
   const requiredGroupIds = (Array.isArray(manifest.entryGroups) ? manifest.entryGroups : [])
@@ -567,6 +618,34 @@ function validateViteShellBuildContract(contract, manifest) {
       issues.push({ code: "startup_global_contract_hash_count_mismatch" });
     }
   }
+  if (!appPreviewClassicLoaderPlan) {
+    issues.push({ code: "vite_app_preview_classic_loader_plan_missing" });
+  } else {
+    const planScripts = Array.isArray(appPreviewClassicLoaderPlan.scripts)
+      ? appPreviewClassicLoaderPlan.scripts
+      : [];
+    if (appPreviewClassicLoaderPlan.owner !== "vite-shell-entry") {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_owner_mismatch" });
+    }
+    if (appPreviewClassicLoaderPlan.sha256 !== expectedAppPreviewClassicLoaderPlan.sha256) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_hash_mismatch" });
+    }
+    if (Number(appPreviewClassicLoaderPlan.scriptCount) !== expectedAppPreviewClassicLoaderPlan.scriptCount
+      || Number(appPreviewClassicLoaderPlan.hashCount) !== expectedAppPreviewClassicLoaderPlan.hashCount
+      || Number(appPreviewClassicLoaderPlan.hashCount) !== Number(appPreviewClassicLoaderPlan.scriptCount)) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_count_mismatch" });
+    }
+    if (String(appPreviewClassicLoaderPlan.firstScript || "") !== expectedAppPreviewClassicLoaderPlan.firstScript
+      || String(appPreviewClassicLoaderPlan.lastScript || "") !== expectedAppPreviewClassicLoaderPlan.lastScript) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_boundary_mismatch" });
+    }
+    if (JSON.stringify(planScripts.map((entry) => entry && entry.path)) !== JSON.stringify(manifest.indexScriptAssets || [])) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_order_mismatch" });
+    }
+    if (planScripts.some((entry) => !entry || !entry.groupId || !entry.sha256 || !Number(entry.bytes))) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_record_missing" });
+    }
+  }
   for (const asset of manifest.assets || []) {
     const fileName = outputPathForAsset(asset.path);
     if (!classicOutputFiles.has(fileName)) {
@@ -646,6 +725,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
   const classicShellAssets = assetOutputRecords(manifest);
   const classicShellScriptBlock = classicShellScriptBlockContract(manifest);
   const startupCompatibility = startupCompatibilityContract(manifest);
+  const appPreviewClassicLoaderPlan = appPreviewClassicLoaderPlanContract(manifest);
   const outputFiles = [
     ...chunks.map((chunk) => chunk.fileName),
     ...classicShellAssets.map((asset) => asset.fileName),
@@ -669,6 +749,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
       scriptBlock: classicShellScriptBlock,
     },
     startupCompatibility,
+    appPreviewClassicLoaderPlan,
     viteEntry: viteEntry || null,
     viteDeferredChunks: deferredChunks,
     viteEntryGroupChunks: entryGroupChunks,

@@ -142,6 +142,36 @@ function startupGlobalContracts(manifest) {
     .filter((entry) => entry.name);
 }
 
+function appPreviewClassicLoaderPlan(source) {
+  const plan = source && source.appPreviewClassicLoaderPlan;
+  if (!plan || typeof plan !== "object") return null;
+  const scripts = (Array.isArray(plan.scripts) ? plan.scripts : [])
+    .map((entry) => ({
+      index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
+      path: String(entry && entry.path || ""),
+      groupId: String(entry && entry.groupId || ""),
+      phase: String(entry && entry.phase || ""),
+      startupCritical: Boolean(entry && entry.startupCritical),
+      chunkTarget: String(entry && entry.chunkTarget || ""),
+      sourcePath: String(entry && entry.sourcePath || ""),
+      bytes: Number.isFinite(Number(entry && entry.bytes)) ? Number(entry.bytes) : 0,
+      sha256: String(entry && entry.sha256 || ""),
+    }))
+    .filter((entry) => entry.path);
+  return {
+    schemaVersion: Number(plan.schemaVersion) || 1,
+    source: String(plan.source || ""),
+    owner: String(plan.owner || ""),
+    scriptCount: Number.isFinite(Number(plan.scriptCount)) ? Number(plan.scriptCount) : scripts.length,
+    firstScript: String(plan.firstScript || ""),
+    lastScript: String(plan.lastScript || ""),
+    hashCount: Number.isFinite(Number(plan.hashCount)) ? Number(plan.hashCount) : scripts.filter((entry) => entry.sha256).length,
+    byteCount: Number.isFinite(Number(plan.byteCount)) ? Number(plan.byteCount) : scripts.reduce((total, entry) => total + entry.bytes, 0),
+    sha256: String(plan.sha256 || ""),
+    scripts,
+  };
+}
+
 function assetRecordsByPath(manifest) {
   const records = new Map();
   for (const entry of Array.isArray(manifest && manifest.assets) ? manifest.assets : []) {
@@ -315,6 +345,7 @@ function createViteShellArtifactService(dependencies = {}) {
       && typeof readback.classicShellScriptBlock === "object"
       ? readback.classicShellScriptBlock
       : null;
+    const readbackAppPreviewClassicLoaderPlan = appPreviewClassicLoaderPlan(readback);
     const actualClassicScriptBlock = readClassicShellScriptBlock(appRoot);
     if (!readbackClassicScriptBlock) {
       issues.push({ code: "vite_shell_classic_script_block_missing" });
@@ -341,6 +372,22 @@ function createViteShellArtifactService(dependencies = {}) {
       && Array.isArray(publicIndexScripts)
       && !arraysEqual(actualClassicScriptBlock.scriptAssets, publicIndexScripts)) {
       issues.push({ code: "vite_shell_classic_script_block_manifest_mismatch" });
+    }
+    if (!readbackAppPreviewClassicLoaderPlan || !readbackAppPreviewClassicLoaderPlan.scripts.length) {
+      issues.push({ code: "vite_shell_app_preview_classic_loader_plan_missing" });
+    } else {
+      const loaderPlanPaths = readbackAppPreviewClassicLoaderPlan.scripts.map((entry) => entry.path);
+      if (readbackAppPreviewClassicLoaderPlan.owner !== EXPECTED_ENTRY_GROUP_IMPORT_OWNER) {
+        issues.push({ code: "vite_shell_app_preview_classic_loader_plan_owner_mismatch" });
+      }
+      if (actualClassicScriptBlock.exists && !arraysEqual(loaderPlanPaths, actualClassicScriptBlock.scriptAssets)) {
+        issues.push({ code: "vite_shell_app_preview_classic_loader_plan_order_mismatch" });
+      }
+      if (Number(readbackAppPreviewClassicLoaderPlan.scriptCount) !== loaderPlanPaths.length
+        || Number(readbackAppPreviewClassicLoaderPlan.hashCount) !== loaderPlanPaths.length
+        || !readbackAppPreviewClassicLoaderPlan.sha256) {
+        issues.push({ code: "vite_shell_app_preview_classic_loader_plan_count_mismatch" });
+      }
     }
     const entryGroupImportOwner = String(readback.entryGroupImportOwner || "");
     if (readbackEntryGroupChunks.length && entryGroupImportOwner !== EXPECTED_ENTRY_GROUP_IMPORT_OWNER) {
@@ -438,6 +485,39 @@ function createViteShellArtifactService(dependencies = {}) {
       const expectedCoverage = entryGroupCoverageById(artifactManifest);
       const artifactAssetRecords = assetRecordsByPath(artifactManifest);
       const expectedStartupGlobalContracts = startupGlobalContracts(artifactManifest);
+      const artifactAppPreviewClassicLoaderPlan = appPreviewClassicLoaderPlan(artifactManifest.viteBuild || {});
+      if (!artifactAppPreviewClassicLoaderPlan || !artifactAppPreviewClassicLoaderPlan.scripts.length) {
+        issues.push({ code: "vite_shell_artifact_app_preview_classic_loader_plan_missing" });
+      } else if (JSON.stringify(readbackAppPreviewClassicLoaderPlan) !== JSON.stringify(artifactAppPreviewClassicLoaderPlan)) {
+        issues.push({ code: "vite_shell_app_preview_classic_loader_plan_manifest_mismatch" });
+      }
+      if (readbackAppPreviewClassicLoaderPlan) {
+        for (const record of readbackAppPreviewClassicLoaderPlan.scripts) {
+          const assetPath = String(record && record.path || "");
+          const artifactRecord = artifactAssetRecords.get(assetPath);
+          if (!artifactRecord || artifactRecord.sha256 !== String(record && record.sha256 || "")) {
+            issues.push({ code: "vite_shell_app_preview_classic_loader_plan_hash_mismatch", asset: assetPath });
+            break;
+          }
+          if (Number(artifactRecord.bytes) !== Number(record && record.bytes)) {
+            issues.push({ code: "vite_shell_app_preview_classic_loader_plan_size_mismatch", asset: assetPath });
+            break;
+          }
+          const currentAsset = publicAssetStatus(appRoot, assetPath);
+          if (!currentAsset.exists) {
+            issues.push({ code: currentAsset.code || "vite_shell_app_preview_classic_loader_plan_asset_missing", asset: assetPath });
+            break;
+          }
+          if (currentAsset.sha256 !== String(record && record.sha256 || "")) {
+            issues.push({ code: "vite_shell_app_preview_classic_loader_plan_file_hash_mismatch", asset: assetPath });
+            break;
+          }
+          if (Number(currentAsset.bytes) !== Number(record && record.bytes)) {
+            issues.push({ code: "vite_shell_app_preview_classic_loader_plan_file_size_mismatch", asset: assetPath });
+            break;
+          }
+        }
+      }
       if (JSON.stringify(readbackStartupGlobalContracts) !== JSON.stringify(expectedStartupGlobalContracts)) {
         issues.push({ code: "vite_shell_startup_global_contract_mismatch" });
       }
@@ -568,6 +648,10 @@ function createViteShellArtifactService(dependencies = {}) {
       if (!appPreviewHtml.includes(VITE_APP_PREVIEW_SCRIPT_BLOCK_START)) {
         issues.push({ code: "vite_shell_app_preview_script_block_missing" });
       }
+      if (!appPreviewHtml.includes("id=\"codex-vite-app-preview-loader-plan\"")
+        || !appPreviewHtml.includes("data-codex-vite-app-preview-loader-plan=\"true\"")) {
+        issues.push({ code: "vite_shell_app_preview_classic_loader_plan_script_missing" });
+      }
       if (!appPreviewHtml.includes("type=\"module\"") || !expectedEntryScript || !appPreviewHtml.includes(`src="${expectedEntryScript}"`)) {
         issues.push({ code: "vite_shell_app_preview_module_entry_missing" });
       }
@@ -635,6 +719,39 @@ function createViteShellArtifactService(dependencies = {}) {
         requiredGlobalCount: readbackStartupGlobalContracts.length,
         assetCount: new Set(readbackStartupGlobalContracts.map((entry) => entry.asset).filter(Boolean)).size,
         startupCriticalCount: readbackStartupGlobalContracts.filter((entry) => entry.startupCritical).length,
+      },
+      appPreviewClassicLoaderPlan: readbackAppPreviewClassicLoaderPlan ? {
+        match: Boolean(actualClassicScriptBlock.exists
+          && readbackAppPreviewClassicLoaderPlan.owner === EXPECTED_ENTRY_GROUP_IMPORT_OWNER
+          && arraysEqual(
+            readbackAppPreviewClassicLoaderPlan.scripts.map((entry) => entry.path),
+            actualClassicScriptBlock.scriptAssets
+          )
+          && Number(readbackAppPreviewClassicLoaderPlan.scriptCount) === actualClassicScriptBlock.scriptCount
+          && Number(readbackAppPreviewClassicLoaderPlan.hashCount) === actualClassicScriptBlock.scriptCount
+          && Boolean(readbackAppPreviewClassicLoaderPlan.sha256)
+          && readbackAppPreviewClassicLoaderPlan.scripts.every((entry) => {
+            const currentAsset = publicAssetStatus(appRoot, entry.path);
+            return currentAsset.exists
+              && currentAsset.sha256 === entry.sha256
+              && Number(currentAsset.bytes) === Number(entry.bytes);
+          })),
+        owner: readbackAppPreviewClassicLoaderPlan.owner,
+        scriptCount: readbackAppPreviewClassicLoaderPlan.scriptCount,
+        hashCount: readbackAppPreviewClassicLoaderPlan.hashCount,
+        byteCount: readbackAppPreviewClassicLoaderPlan.byteCount,
+        firstScript: readbackAppPreviewClassicLoaderPlan.firstScript,
+        lastScript: readbackAppPreviewClassicLoaderPlan.lastScript,
+        sha256: readbackAppPreviewClassicLoaderPlan.sha256,
+      } : {
+        match: false,
+        owner: "",
+        scriptCount: 0,
+        hashCount: 0,
+        byteCount: 0,
+        firstScript: "",
+        lastScript: "",
+        sha256: "",
       },
       entryGroupChunkCount: readbackEntryGroupChunks.length,
       artifactManifest: artifactManifest ? {

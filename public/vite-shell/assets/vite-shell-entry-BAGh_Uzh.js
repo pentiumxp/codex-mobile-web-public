@@ -948,8 +948,38 @@ var classicCompatibility = {
 	startupGlobalContracts,
 	classicGlobalExports
 };
-function classicScriptAssets() {
+function shellManifestScriptAssets() {
 	return entryGroups.flatMap((group) => Array.isArray(group.assets) ? group.assets : []).filter((asset) => String(asset || "").startsWith("/"));
+}
+function readAppPreviewClassicLoaderPlan() {
+	if (globalThis.document == null) return null;
+	const node = globalThis.document.getElementById("codex-vite-app-preview-loader-plan");
+	if (!node) return null;
+	try {
+		const plan = JSON.parse(node.textContent || "{}");
+		const scripts = (Array.isArray(plan.scripts) ? plan.scripts : []).map((entry) => ({
+			index: Number(entry && entry.index) || 0,
+			path: String(entry && entry.path || ""),
+			groupId: String(entry && entry.groupId || ""),
+			startupCritical: Boolean(entry && entry.startupCritical),
+			bytes: Number(entry && entry.bytes) || 0,
+			sha256: String(entry && entry.sha256 || "")
+		})).filter((entry) => entry.path.startsWith("/"));
+		return {
+			schemaVersion: Number(plan.schemaVersion) || 1,
+			source: String(plan.source || ""),
+			owner: String(plan.owner || ""),
+			scriptCount: Number(plan.scriptCount) || scripts.length,
+			firstScript: String(plan.firstScript || ""),
+			lastScript: String(plan.lastScript || ""),
+			hashCount: Number(plan.hashCount) || scripts.filter((entry) => entry.sha256).length,
+			byteCount: Number(plan.byteCount) || scripts.reduce((total, entry) => total + entry.bytes, 0),
+			sha256: String(plan.sha256 || ""),
+			scripts
+		};
+	} catch (_) {
+		return null;
+	}
 }
 function isAppPreviewPage() {
 	if (globalThis.document == null) return false;
@@ -974,11 +1004,20 @@ function loadClassicScript(assetPath) {
 	});
 }
 async function startCodexMobileViteAppPreview() {
-	const assets = classicScriptAssets();
+	const loaderPlan = readAppPreviewClassicLoaderPlan();
+	const manifestAssets = shellManifestScriptAssets();
+	const assets = loaderPlan && Array.isArray(loaderPlan.scripts) ? loaderPlan.scripts.map((entry) => entry.path) : [];
 	const status = {
 		ok: false,
 		mode: "vite-app-preview",
 		owner: "vite-shell-entry",
+		loaderPlanPresent: Boolean(loaderPlan),
+		loaderPlanOwner: loaderPlan ? loaderPlan.owner : "",
+		loaderPlanSource: loaderPlan ? loaderPlan.source : "",
+		loaderPlanScriptCount: loaderPlan ? loaderPlan.scriptCount : 0,
+		loaderPlanHashCount: loaderPlan ? loaderPlan.hashCount : 0,
+		loaderPlanSha256: loaderPlan ? loaderPlan.sha256 : "",
+		loaderPlanMatchesShellManifest: Boolean(loaderPlan) && JSON.stringify(assets) === JSON.stringify(manifestAssets),
 		scriptCount: assets.length,
 		loaded: [],
 		failed: [],
@@ -986,7 +1025,10 @@ async function startCodexMobileViteAppPreview() {
 		completedAt: 0
 	};
 	globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW__ = status;
+	globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_LOADER_PLAN__ = loaderPlan;
 	try {
+		if (!loaderPlan) throw new Error("codex_mobile_vite_app_preview_loader_plan_missing");
+		if (loaderPlan.owner !== "vite-shell-entry" || !loaderPlan.sha256 || Number(loaderPlan.scriptCount) !== manifestAssets.length || Number(loaderPlan.hashCount) !== manifestAssets.length || JSON.stringify(assets) !== JSON.stringify(manifestAssets)) throw new Error("codex_mobile_vite_app_preview_loader_plan_invalid");
 		for (const asset of assets) {
 			await loadClassicScript(asset);
 			status.loaded.push(asset);
@@ -1003,12 +1045,17 @@ async function startCodexMobileViteAppPreview() {
 		ok: status.ok,
 		mode: status.mode,
 		owner: status.owner,
+		loaderPlanPresent: status.loaderPlanPresent,
+		loaderPlanScriptCount: status.loaderPlanScriptCount,
+		loaderPlanHashCount: status.loaderPlanHashCount,
+		loaderPlanSha256: status.loaderPlanSha256,
+		loaderPlanMatchesShellManifest: status.loaderPlanMatchesShellManifest,
 		scriptCount: status.scriptCount,
 		loadedCount: status.loaded.length,
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-D94pPqgm.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-CFYNtiwn.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

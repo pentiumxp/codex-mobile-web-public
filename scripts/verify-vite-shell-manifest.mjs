@@ -104,6 +104,24 @@ if (!fs.existsSync(manifestPath)) {
     } else if (Number(classicScriptBlock.scriptCount) !== (current.indexScriptAssets || []).length) {
       mismatch.push("viteBuildClassicScriptBlockCount");
     }
+    const appPreviewClassicLoaderPlan = viteBuild.appPreviewClassicLoaderPlan
+      && typeof viteBuild.appPreviewClassicLoaderPlan === "object"
+      ? viteBuild.appPreviewClassicLoaderPlan
+      : null;
+    const appPreviewClassicLoaderScripts = appPreviewClassicLoaderPlan
+      && Array.isArray(appPreviewClassicLoaderPlan.scripts)
+      ? appPreviewClassicLoaderPlan.scripts
+      : [];
+    if (!appPreviewClassicLoaderPlan || appPreviewClassicLoaderPlan.owner !== "vite-shell-entry") {
+      mismatch.push("viteBuildAppPreviewClassicLoaderPlan");
+    } else if (Number(appPreviewClassicLoaderPlan.scriptCount) !== (current.indexScriptAssets || []).length
+      || Number(appPreviewClassicLoaderPlan.hashCount) !== (current.indexScriptAssets || []).length
+      || !appPreviewClassicLoaderPlan.sha256) {
+      mismatch.push("viteBuildAppPreviewClassicLoaderPlanCount");
+    } else if (JSON.stringify(appPreviewClassicLoaderScripts.map((entry) => entry && entry.path))
+      !== JSON.stringify(current.indexScriptAssets || [])) {
+      mismatch.push("viteBuildAppPreviewClassicLoaderPlanOrder");
+    }
     const entryDynamicImportGraph = viteBuild.entryDynamicImportGraph && typeof viteBuild.entryDynamicImportGraph === "object"
       ? viteBuild.entryDynamicImportGraph
       : null;
@@ -173,6 +191,9 @@ if (!fs.existsSync(manifestPath)) {
       classicShellScriptBlockScripts: built.viteBuild.classicFallback
         && built.viteBuild.classicFallback.scriptBlock
         ? built.viteBuild.classicFallback.scriptBlock.scriptCount
+        : 0,
+      appPreviewClassicLoaderScripts: built.viteBuild.appPreviewClassicLoaderPlan
+        ? built.viteBuild.appPreviewClassicLoaderPlan.scriptCount
         : 0,
       viteBuildStage: built.viteBuild.stage,
     }));

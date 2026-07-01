@@ -1315,6 +1315,19 @@ function viteAppPreviewProbeExpression(input = {}) {
       const shellScripts = Array.isArray(shellManifest.indexScriptAssets)
         ? shellManifest.indexScriptAssets
         : (Array.isArray(shellManifest.scriptAssets) ? shellManifest.scriptAssets : []);
+      const loaderPlanNode = document.getElementById("codex-vite-app-preview-loader-plan");
+      let loaderPlan = null;
+      try {
+        loaderPlan = loaderPlanNode ? JSON.parse(loaderPlanNode.textContent || "{}") : null;
+      } catch (_) {
+        loaderPlan = null;
+      }
+      const loaderPlanScripts = loaderPlan && Array.isArray(loaderPlan.scripts)
+        ? loaderPlan.scripts.map((entry) => String(entry && entry.path || "")).filter(Boolean)
+        : [];
+      const statusLoaded = Array.isArray(status.loaded)
+        ? status.loaded.map((entry) => String(entry || "")).filter(Boolean)
+        : [];
       return {
         label: "vite-app-preview",
         probeKind: "vite-app-preview",
@@ -1326,6 +1339,16 @@ function viteAppPreviewProbeExpression(input = {}) {
         classicScriptCount: classicScripts.length,
         expectedClassicScriptCount: shellScripts.length,
         classicScriptOrderMatches: JSON.stringify(classicScripts) === JSON.stringify(shellScripts),
+        loaderPlanPresent: Boolean(loaderPlanNode && loaderPlan),
+        loaderPlanOwner: String(loaderPlan && loaderPlan.owner || ""),
+        loaderPlanOwnerOk: String(loaderPlan && loaderPlan.owner || "") === "vite-shell-entry",
+        loaderPlanScriptCount: Number(loaderPlan && loaderPlan.scriptCount || 0) || 0,
+        loaderPlanHashCount: Number(loaderPlan && loaderPlan.hashCount || 0) || 0,
+        loaderPlanHashPresent: Boolean(loaderPlan && loaderPlan.sha256),
+        loaderPlanMatchesShellScripts: JSON.stringify(loaderPlanScripts) === JSON.stringify(shellScripts),
+        loaderPlanMatchesInjectedScripts: JSON.stringify(loaderPlanScripts) === JSON.stringify(classicScripts),
+        loaderPlanLoadedMatches: statusLoaded.length > 0
+          && JSON.stringify(statusLoaded) === JSON.stringify(loaderPlanScripts),
         loaderOk: Boolean(appPreviewResult && appPreviewResult.ok),
         loaderTimedOut: Boolean(appPreviewResult && appPreviewResult.timeout),
         loaderLoadedCount: Number(appPreviewResult && appPreviewResult.loadedCount || status.loaded && status.loaded.length || 0) || 0,
@@ -1373,13 +1396,30 @@ function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}, options = 
   };
   if (!sample || sample.markerPresent !== true || sample.metaPresent !== true) append("vite_app_preview_marker_missing");
   if (sample && sample.moduleScriptMatchesPreview !== true) append("vite_app_preview_module_entry_missing");
+  if (sample && (sample.loaderPlanPresent !== true
+    || sample.loaderPlanOwnerOk !== true
+    || sample.loaderPlanHashPresent !== true)) {
+    append("vite_app_preview_classic_loader_plan_missing", "H2", {
+      owner: sample.loaderPlanOwner || "",
+    });
+  }
+  if (sample && (Number(sample.loaderPlanScriptCount) !== Number(sample.expectedClassicScriptCount)
+    || Number(sample.loaderPlanHashCount) !== Number(sample.expectedClassicScriptCount)
+    || sample.loaderPlanMatchesShellScripts !== true)) {
+    append("vite_app_preview_classic_loader_plan_mismatch", "H2", {
+      loaderPlanScriptCount: Number(sample.loaderPlanScriptCount) || 0,
+      expectedClassicScriptCount: Number(sample.expectedClassicScriptCount) || 0,
+    });
+  }
   if (sample && sample.loaderOk !== true) append("vite_app_preview_loader_failed", "H2", {
     errorCode: sample.loaderErrorCode || "",
     timedOut: sample.loaderTimedOut === true,
   });
   if (sample && (Number(sample.classicScriptCount) < 1
     || Number(sample.classicScriptCount) !== Number(sample.expectedClassicScriptCount)
-    || sample.classicScriptOrderMatches !== true)) {
+    || sample.classicScriptOrderMatches !== true
+    || sample.loaderPlanMatchesInjectedScripts !== true
+    || sample.loaderPlanLoadedMatches !== true)) {
     append("vite_app_preview_classic_script_order_mismatch", "H2", {
       classicScriptCount: Number(sample.classicScriptCount) || 0,
       expectedClassicScriptCount: Number(sample.expectedClassicScriptCount) || 0,

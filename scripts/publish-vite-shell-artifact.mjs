@@ -167,6 +167,42 @@ function classicShellScriptBlockContract(manifest, viteBuild) {
   };
 }
 
+function normalizeAppPreviewClassicLoaderPlan(plan) {
+  if (!plan || typeof plan !== "object") return null;
+  const scripts = (Array.isArray(plan.scripts) ? plan.scripts : [])
+    .map((entry) => ({
+      index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
+      path: String(entry && entry.path || ""),
+      groupId: String(entry && entry.groupId || ""),
+      phase: String(entry && entry.phase || ""),
+      startupCritical: Boolean(entry && entry.startupCritical),
+      chunkTarget: String(entry && entry.chunkTarget || ""),
+      sourcePath: String(entry && entry.sourcePath || ""),
+      bytes: Number.isFinite(Number(entry && entry.bytes)) ? Number(entry.bytes) : 0,
+      sha256: String(entry && entry.sha256 || ""),
+    }))
+    .filter((entry) => entry.path);
+  return {
+    schemaVersion: Number(plan.schemaVersion) || 1,
+    source: String(plan.source || "generated-vite-app-preview-classic-loader-plan"),
+    owner: String(plan.owner || ""),
+    scriptCount: Number.isFinite(Number(plan.scriptCount)) ? Number(plan.scriptCount) : scripts.length,
+    firstScript: String(plan.firstScript || ""),
+    lastScript: String(plan.lastScript || ""),
+    hashCount: Number.isFinite(Number(plan.hashCount)) ? Number(plan.hashCount) : scripts.filter((entry) => entry.sha256).length,
+    byteCount: Number.isFinite(Number(plan.byteCount)) ? Number(plan.byteCount) : scripts.reduce((total, entry) => total + entry.bytes, 0),
+    sha256: String(plan.sha256 || ""),
+    scripts,
+  };
+}
+
+function jsonScriptBody(value) {
+  return JSON.stringify(value || {}, null, 2)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
+}
+
 export function buildViteShellPublicReadback(options = {}) {
   const root = path.resolve(options.root || process.cwd());
   const buildRoot = path.resolve(options.buildRoot || path.join(root, "dist", "frontend-shell"));
@@ -243,6 +279,26 @@ export function buildViteShellPublicReadback(options = {}) {
   })).filter((chunk) => chunk.fileName);
   const startupAssets = startupCriticalAssets(manifest);
   const classicShellScriptBlock = classicShellScriptBlockContract(manifest, viteBuild);
+  const appPreviewClassicLoaderPlan = normalizeAppPreviewClassicLoaderPlan(viteBuild.appPreviewClassicLoaderPlan);
+  if (!appPreviewClassicLoaderPlan || !appPreviewClassicLoaderPlan.scripts.length) {
+    issues.push({ code: "vite_app_preview_classic_loader_plan_missing" });
+  } else {
+    const scriptAssets = scriptAssetsFromManifest(manifest);
+    const loaderPaths = appPreviewClassicLoaderPlan.scripts.map((entry) => entry.path);
+    if (appPreviewClassicLoaderPlan.owner !== "vite-shell-entry") {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_owner_mismatch" });
+    }
+    if (JSON.stringify(loaderPaths) !== JSON.stringify(scriptAssets)) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_order_mismatch" });
+    }
+    if (Number(appPreviewClassicLoaderPlan.scriptCount) !== scriptAssets.length
+      || Number(appPreviewClassicLoaderPlan.hashCount) !== scriptAssets.length) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_count_mismatch" });
+    }
+    if (!appPreviewClassicLoaderPlan.sha256) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_hash_missing" });
+    }
+  }
   const startupGlobalNames = startupContracts.map((entry) => entry.name);
   const startupGlobalAssets = [...new Set(startupContracts.map((entry) => entry.asset).filter(Boolean))];
   const readbackForPreview = {
@@ -262,6 +318,7 @@ export function buildViteShellPublicReadback(options = {}) {
     startupCriticalAssets: startupAssets,
     startupGlobalContracts: startupContracts,
     classicShellScriptBlock,
+    appPreviewClassicLoaderPlan,
   };
   const previewHtml = renderViteShellPreviewHtml(readbackForPreview);
   const previewRecord = bufferRecord(VITE_SHELL_PUBLIC_PREVIEW_FILE, previewHtml);
@@ -294,11 +351,15 @@ export function buildViteShellPublicReadback(options = {}) {
     startupCriticalAssets: startupAssets,
     startupGlobalContracts: startupContracts,
     classicShellScriptBlock,
+    appPreviewClassicLoaderPlan,
     counts: {
       entryGroups: Array.isArray(manifest.entryGroups) ? manifest.entryGroups.length : 0,
       entryGroupChunks: entryGroupChunks.length,
       startupCriticalAssets: startupAssets.length,
       classicShellScriptBlockScripts: classicShellScriptBlock.scriptCount,
+      appPreviewClassicLoaderScripts: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.scriptCount : 0,
+      appPreviewClassicLoaderHashes: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.hashCount : 0,
+      appPreviewClassicLoaderBytes: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.byteCount : 0,
       startupGlobalContracts: startupContracts.length,
       startupGlobalContractAssets: startupGlobalAssets.length,
       startupGlobalContractHashes: startupContracts.filter((entry) => entry.sha256).length,
@@ -360,6 +421,8 @@ export function renderViteShellPreviewHtml(readback = {}) {
     `    data-startup-global-contract-count=\"${escapeHtml((readback.startupGlobalContracts || []).length)}\"`,
     `    data-classic-shell-script-count=\"${escapeHtml(readback.classicShellScriptBlock && readback.classicShellScriptBlock.scriptCount)}\"`,
     `    data-classic-shell-script-block-sha256=\"${escapeHtml(readback.classicShellScriptBlock && readback.classicShellScriptBlock.sha256)}\"`,
+    `    data-app-preview-classic-loader-count=\"${escapeHtml(readback.appPreviewClassicLoaderPlan && readback.appPreviewClassicLoaderPlan.scriptCount)}\"`,
+    `    data-app-preview-classic-loader-sha256=\"${escapeHtml(readback.appPreviewClassicLoaderPlan && readback.appPreviewClassicLoaderPlan.sha256)}\"`,
     "  >",
     "    <h1>Codex Mobile Vite Shell Preview</h1>",
     "  </main>",
@@ -391,6 +454,9 @@ export function renderViteShellAppPreviewHtml(readback = {}, root = process.cwd(
   );
   const moduleBlock = [
     VITE_APP_PREVIEW_SCRIPT_BLOCK_START,
+    "  <script id=\"codex-vite-app-preview-loader-plan\" type=\"application/json\" data-codex-vite-app-preview-loader-plan=\"true\">",
+    jsonScriptBody(readback.appPreviewClassicLoaderPlan),
+    "  </script>",
     `  <script type="module" src="${escapeHtml(entryScript)}" data-codex-vite-app-preview-entry="true"></script>`,
     VITE_APP_PREVIEW_SCRIPT_BLOCK_END,
   ].join("\n");
