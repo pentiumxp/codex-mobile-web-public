@@ -4316,6 +4316,35 @@ Validation completed locally:
 - Local full browser-runtime UX sample against the active Codex Mobile thread:
   `ok=true`, `issueCount=0`, `blockingIssueCount=0`
 
+### 2026-07-02 Vite Frontend Asset-Graph Stage 1
+
+The first Vite migration step adds a build-time asset graph without changing
+the production runtime loading contract. Production still loads the existing
+ordered `<script>` files and `window.Codex...Runtime.create...Runtime`
+factories directly; Vite now provides a verifiable manifest and emitted shell
+asset set for the next migration step.
+
+Scope:
+
+- Added `vite.config.mjs` with `dist/frontend-shell` output and the
+  `codex-mobile-shell-asset-graph` plugin.
+- Added `frontend/vite-shell-entry.js` as the minimal Vite entry marker.
+- Added `scripts/frontend-shell-asset-graph.mjs` to read and compare
+  `public/index.html`, `public/sw.js`, `public/app-bootstrap.js`, and
+  `services/runtime/server-runtime-utils.js`.
+- Added `scripts/verify-vite-shell-manifest.mjs` so `npm run build:frontend`
+  runs Vite and then verifies the generated shell manifest against current
+  source.
+- Added focused tests proving the current ordered shell graph is valid and
+  that a missing service-worker script fails closed.
+- Fixed a real hash-coverage drift found by the new graph:
+  `thread-status-hints.js` was loaded by `index.html` and cached by `sw.js`,
+  but was not included in `server-runtime-utils.js` build-id hashing.
+
+This is intentionally not the full ESM migration. The next Vite step should
+make service-worker and server build-id ownership read from the generated
+manifest instead of maintaining parallel hand-written lists.
+
 ## Release Rule
 
 Follow the current release order:

@@ -122,6 +122,7 @@ function createServerRuntimeUtils(dependencies = {}) {
       "thread-diagnostic-events.js",
       "frontend-runtime-health.js",
       "build-refresh-policy.js",
+      "thread-status-hints.js",
       "thread-performance-metrics.js",
       "thread-list-load-policy.js",
       "thread-list-stable-order.js",

@@ -170,6 +170,15 @@ Current extraction note: `server.js` still exports compatibility wrappers for se
 
 Add new service modules when logic has independent inputs/outputs, state rules, route policies, or tests. Keep route handlers thin and make service behavior directly testable.
 
+## Frontend Build Files
+
+| File | Responsibility |
+| --- | --- |
+| `vite.config.mjs` | Stage-1 Vite build configuration for the Codex Mobile frontend shell. It does not replace the production `<script>` runtime order yet; it runs the shell asset graph plugin and writes `dist/frontend-shell/` build output plus a bounded `codex-mobile-shell-manifest.json` for parity checks. |
+| `frontend/vite-shell-entry.js` | Minimal Vite entry marker for the stage-1 asset-graph build. It keeps the existing `window.Codex...Runtime` factory compatibility contract intact while Vite validates and emits the current shell assets. |
+| `scripts/frontend-shell-asset-graph.mjs` | Vite shell asset graph owner. It reads `public/index.html`, `public/sw.js`, `public/app-bootstrap.js`, and `services/runtime/server-runtime-utils.js`, verifies script membership/order/build-cache consistency, emits copied shell assets for the Vite build output, and writes the manifest used by `build:frontend`. |
+| `scripts/verify-vite-shell-manifest.mjs` | Post-build verifier for `dist/frontend-shell/codex-mobile-shell-manifest.json`. It rebuilds the current source asset graph and fails closed when the generated manifest, service-worker asset list, page-shell asset list, or server build-hash list drift. |
+
 ## Public Frontend Files
 
 | File | Responsibility |
