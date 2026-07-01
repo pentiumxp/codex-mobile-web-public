@@ -52,6 +52,7 @@ function canonicalShellTopology(manifest) {
     pageShellAssets: source.pageShellAssets,
     hashAssets: Array.isArray(source.serverHashAssets) ? source.serverHashAssets : source.hashAssets,
     entryGroups: source.entryGroups,
+    classicGlobalExports: source.classicGlobalExports,
   };
 }
 
@@ -64,7 +65,7 @@ function manifestTopologyMatches(left, right) {
   if (!left || !right) return false;
   const leftTopology = canonicalShellTopology(left);
   const rightTopology = canonicalShellTopology(right);
-  for (const key of ["indexScriptAssets", "swStaticAssets", "pageShellAssets", "hashAssets", "entryGroups"]) {
+  for (const key of ["indexScriptAssets", "swStaticAssets", "pageShellAssets", "hashAssets", "entryGroups", "classicGlobalExports"]) {
     if (!arraysEqual(leftTopology[key], rightTopology[key])) return false;
   }
   return true;
@@ -257,6 +258,14 @@ function createViteShellArtifactService(dependencies = {}) {
           : 0,
         entryGroupCount: Array.isArray(canonicalShellTopology(artifactManifest).entryGroups)
           ? canonicalShellTopology(artifactManifest).entryGroups.length
+          : 0,
+        classicGlobalExportAssetCount: Array.isArray(canonicalShellTopology(artifactManifest).classicGlobalExports)
+          ? canonicalShellTopology(artifactManifest).classicGlobalExports.length
+          : 0,
+        classicGlobalExportCount: Array.isArray(canonicalShellTopology(artifactManifest).classicGlobalExports)
+          ? canonicalShellTopology(artifactManifest).classicGlobalExports.reduce((total, entry) => (
+            total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
+          ), 0)
           : 0,
         pageShellAssetCount: Array.isArray(canonicalShellTopology(artifactManifest).pageShellAssets)
           ? canonicalShellTopology(artifactManifest).pageShellAssets.length

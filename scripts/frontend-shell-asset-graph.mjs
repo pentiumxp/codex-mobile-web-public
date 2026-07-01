@@ -144,6 +144,7 @@ export function collectShellAssetGraph(root = process.cwd()) {
     pageShellAssets: Array.isArray(publicManifest.pageShellAssets) ? publicManifest.pageShellAssets : [],
     serverHashAssets: Array.isArray(publicManifest.hashAssets) ? publicManifest.hashAssets : [],
     entryGroups: Array.isArray(publicManifest.entryGroups) ? publicManifest.entryGroups : [],
+    classicGlobalExports: Array.isArray(publicManifest.classicGlobalExports) ? publicManifest.classicGlobalExports : [],
     publicManifest,
     expectedManifest,
     swSource,
@@ -159,6 +160,9 @@ export function validateShellAssetGraph(graph) {
   const pageShellSet = new Set(graph.pageShellAssets);
   const serverHashSet = new Set(graph.serverHashAssets);
   const entryGroupAssets = graph.entryGroups.flatMap((group) => Array.isArray(group.assets) ? group.assets : []);
+  const expectedClassicGlobalExports = Array.isArray(graph.expectedManifest.classicGlobalExports)
+    ? graph.expectedManifest.classicGlobalExports
+    : [];
   const startupCriticalAssets = new Set(graph.entryGroups
     .filter((group) => group && group.startupCritical)
     .flatMap((group) => Array.isArray(group.assets) ? group.assets : []));
@@ -166,6 +170,10 @@ export function validateShellAssetGraph(graph) {
 
   if (!generatedManifestMatches) issues.push({ code: "public_shell_manifest_out_of_date" });
   if (!graph.entryGroups.length) issues.push({ code: "missing_entry_groups" });
+  if (!graph.classicGlobalExports.length) issues.push({ code: "classic_global_exports_missing" });
+  if (JSON.stringify(graph.classicGlobalExports) !== JSON.stringify(expectedClassicGlobalExports)) {
+    issues.push({ code: "classic_global_exports_mismatch" });
+  }
   if (JSON.stringify(entryGroupAssets) !== JSON.stringify(graph.indexScriptAssets)) {
     issues.push({ code: "entry_group_order_mismatch" });
   }
@@ -263,6 +271,10 @@ export function buildShellAssetManifest(root = process.cwd()) {
       swStaticAssets: graph.swStaticAssets.length,
       pageShellAssets: graph.pageShellAssets.length,
       serverHashAssets: graph.serverHashAssets.length,
+      classicGlobalExportAssets: graph.classicGlobalExports.length,
+      classicGlobalExports: graph.classicGlobalExports.reduce((total, entry) => (
+        total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
+      ), 0),
       emittedAssets: assetRecords.length,
     },
     indexScriptAssets: graph.indexScriptAssets,
@@ -271,6 +283,7 @@ export function buildShellAssetManifest(root = process.cwd()) {
     pageShellAssets: graph.pageShellAssets,
     serverHashAssets: graph.serverHashAssets,
     entryGroups: graph.entryGroups,
+    classicGlobalExports: graph.classicGlobalExports,
     assets: assetRecords,
     validation,
   };
@@ -389,6 +402,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
       outputRoot: "shell-assets",
       indexScriptAssets: manifest.indexScriptAssets,
       entryGroups: manifest.entryGroups,
+      classicGlobalExports: manifest.classicGlobalExports,
     },
     viteEntry: viteEntry || null,
     viteDeferredChunks: deferredChunks,

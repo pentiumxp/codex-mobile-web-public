@@ -853,6 +853,19 @@ function vitePreviewProbeExpression(input = {}) {
         })
         .filter(Boolean);
       const topology = window.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ || {};
+      const compatibility = window.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ || {};
+      const requiredStartupGlobals = Array.isArray(compatibility.requiredStartupGlobals)
+        ? compatibility.requiredStartupGlobals
+        : [];
+      const classicGlobalExports = Array.isArray(compatibility.classicGlobalExports)
+        ? compatibility.classicGlobalExports
+        : [];
+      const classicGlobalNames = new Set();
+      for (const entry of classicGlobalExports) {
+        for (const name of Array.isArray(entry && entry.globals) ? entry.globals : []) {
+          classicGlobalNames.add(String(name || ""));
+        }
+      }
       let deferredLoaded = false;
       let deferredGroupCount = 0;
       try {
@@ -882,6 +895,10 @@ function vitePreviewProbeExpression(input = {}) {
         moduleEntryLoaded: window.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ === "entry-topology-v1",
         entryTopologyReady: Array.isArray(topology.startupGroups) && Array.isArray(topology.deferredGroups),
         startupGroupCount: Array.isArray(topology.startupGroups) ? topology.startupGroups.length : 0,
+        classicCompatibilityReady: Array.isArray(compatibility.classicGlobalExports) && classicGlobalExports.length > 0,
+        classicCompatibilityAssetCount: classicGlobalExports.length,
+        classicCompatibilityGlobalCount: classicGlobalNames.size,
+        classicCompatibilityStartupGlobalsReady: requiredStartupGlobals.every((name) => classicGlobalNames.has(name)),
         deferredGroupCount,
         deferredLoaded,
       };
@@ -907,6 +924,8 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   if (sample && sample.moduleScriptMatchesPreview !== true) append("vite_preview_module_entry_missing");
   if (sample && sample.moduleEntryLoaded !== true) append("vite_preview_module_entry_not_loaded");
   if (sample && sample.entryTopologyReady !== true) append("vite_preview_entry_topology_missing");
+  if (sample && sample.classicCompatibilityReady !== true) append("vite_preview_classic_compatibility_missing");
+  if (sample && sample.classicCompatibilityStartupGlobalsReady !== true) append("vite_preview_classic_startup_globals_missing");
   if (sample && sample.deferredLoaded !== true) append("vite_preview_deferred_not_loaded");
   if ((runtimeSignals.exceptions || []).length) append("vite_preview_browser_exception");
   if ((runtimeSignals.consoleEvents || []).some((entry) => entry && entry.type === "error")) {

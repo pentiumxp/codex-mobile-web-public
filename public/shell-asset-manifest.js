@@ -2,10 +2,10 @@
 
 (function (root) {
   var manifest = {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "generatedBy": "generate-frontend-shell-manifest",
-    "shellCacheName": "codex-mobile-shell-v623",
-    "clientBuildId": "0.1.11|codex-mobile-shell-v623",
+    "shellCacheName": "codex-mobile-shell-v624",
+    "clientBuildId": "0.1.11|codex-mobile-shell-v624",
     "scriptAssets": [
       "/shell-asset-manifest.js",
       "/api-client.js",
@@ -157,6 +157,290 @@
           "/runtime-wiring-runtime.js",
           "/app-shell-runtime.js",
           "/app.js"
+        ]
+      }
+    ],
+    "classicGlobalExports": [
+      {
+        "asset": "/api-client.js",
+        "globals": [
+          "CodexApiClient"
+        ]
+      },
+      {
+        "asset": "/runtime-settings.js",
+        "globals": [
+          "CodexRuntimeSettings"
+        ]
+      },
+      {
+        "asset": "/draft-store.js",
+        "globals": [
+          "CodexDraftStore"
+        ]
+      },
+      {
+        "asset": "/composer-runtime.js",
+        "globals": [
+          "CodexComposerRuntime"
+        ]
+      },
+      {
+        "asset": "/markdown-renderer.js",
+        "globals": [
+          "CodexMarkdownRenderer"
+        ]
+      },
+      {
+        "asset": "/viewport-metrics.js",
+        "globals": [
+          "CodexViewportMetrics"
+        ]
+      },
+      {
+        "asset": "/conversation-scroll.js",
+        "globals": [
+          "CodexConversationScroll"
+        ]
+      },
+      {
+        "asset": "/image-compressor.js",
+        "globals": [
+          "CodexImageCompressor"
+        ]
+      },
+      {
+        "asset": "/plugin-embed.js",
+        "globals": [
+          "CodexPluginEmbed"
+        ]
+      },
+      {
+        "asset": "/plugin-voice-input.js",
+        "globals": [
+          "CodexPluginVoiceInput"
+        ]
+      },
+      {
+        "asset": "/home-ai-diagnostic-reporting.js",
+        "globals": [
+          "CodexHomeAiDiagnosticReporting"
+        ]
+      },
+      {
+        "asset": "/thread-diagnostic-events.js",
+        "globals": [
+          "CodexThreadDiagnosticEvents"
+        ]
+      },
+      {
+        "asset": "/frontend-runtime-health.js",
+        "globals": [
+          "CodexFrontendRuntimeHealth"
+        ]
+      },
+      {
+        "asset": "/thread-status-hints.js",
+        "globals": [
+          "CodexThreadStatusHints"
+        ]
+      },
+      {
+        "asset": "/thread-performance-metrics.js",
+        "globals": [
+          "CodexThreadPerformanceMetrics"
+        ]
+      },
+      {
+        "asset": "/thread-list-load-policy.js",
+        "globals": [
+          "CodexThreadListLoadPolicy"
+        ]
+      },
+      {
+        "asset": "/thread-list-stable-order.js",
+        "globals": [
+          "CodexThreadListStableOrder"
+        ]
+      },
+      {
+        "asset": "/thread-list-runtime.js",
+        "globals": [
+          "CodexThreadListRuntime"
+        ]
+      },
+      {
+        "asset": "/live-operation-dock-state.js",
+        "globals": [
+          "CodexLiveOperationDockState"
+        ]
+      },
+      {
+        "asset": "/thread-detail-state.js",
+        "globals": [
+          "CodexThreadDetailState"
+        ]
+      },
+      {
+        "asset": "/thread-detail-render-plan.js",
+        "globals": [
+          "CodexThreadDetailRenderPlan"
+        ]
+      },
+      {
+        "asset": "/thread-detail-merge-state.js",
+        "globals": [
+          "CodexThreadDetailMergeState"
+        ]
+      },
+      {
+        "asset": "/thread-detail-v4-merge-state.js",
+        "globals": [
+          "CodexThreadDetailV4MergeState"
+        ]
+      },
+      {
+        "asset": "/thread-detail-runtime.js",
+        "globals": [
+          "CodexThreadDetailRuntime"
+        ]
+      },
+      {
+        "asset": "/thread-detail-patch-plan.js",
+        "globals": [
+          "CodexThreadDetailPatchPlan"
+        ]
+      },
+      {
+        "asset": "/thread-detail-dom-patch.js",
+        "globals": [
+          "CodexThreadDetailDomPatch"
+        ]
+      },
+      {
+        "asset": "/thread-detail-actions.js",
+        "globals": [
+          "CodexThreadDetailActions"
+        ]
+      },
+      {
+        "asset": "/thread-tile-actions.js",
+        "globals": [
+          "CodexThreadTileActions"
+        ]
+      },
+      {
+        "asset": "/thread-tile-state.js",
+        "globals": [
+          "CodexThreadTileState"
+        ]
+      },
+      {
+        "asset": "/thread-tile-layout.js",
+        "globals": [
+          "CodexThreadTileLayout"
+        ]
+      },
+      {
+        "asset": "/thread-tile-runtime.js",
+        "globals": [
+          "CodexThreadTileRuntime"
+        ]
+      },
+      {
+        "asset": "/build-refresh-policy.js",
+        "globals": [
+          "CodexBuildRefreshPolicy"
+        ]
+      },
+      {
+        "asset": "/app-update-runtime.js",
+        "globals": [
+          "CodexAppUpdateRuntime"
+        ]
+      },
+      {
+        "asset": "/side-chat-runtime.js",
+        "globals": [
+          "CodexSideChatRuntime"
+        ]
+      },
+      {
+        "asset": "/media-preview-runtime.js",
+        "globals": [
+          "CodexMediaPreviewRuntime"
+        ]
+      },
+      {
+        "asset": "/settings-runtime.js",
+        "globals": [
+          "CodexSettingsRuntime"
+        ]
+      },
+      {
+        "asset": "/modal-runtime.js",
+        "globals": [
+          "CodexModalRuntime"
+        ]
+      },
+      {
+        "asset": "/navigation-runtime.js",
+        "globals": [
+          "CodexNavigationRuntime"
+        ]
+      },
+      {
+        "asset": "/api-client-runtime.js",
+        "globals": [
+          "CodexApiClientRuntime"
+        ]
+      },
+      {
+        "asset": "/notification-ui-runtime.js",
+        "globals": [
+          "CodexNotificationUiRuntime"
+        ]
+      },
+      {
+        "asset": "/pane-layout-runtime.js",
+        "globals": [
+          "CodexPaneLayoutRuntime"
+        ]
+      },
+      {
+        "asset": "/task-card-runtime.js",
+        "globals": [
+          "CodexTaskCardRuntime"
+        ]
+      },
+      {
+        "asset": "/conversation-render-runtime.js",
+        "globals": [
+          "CodexConversationRenderRuntime"
+        ]
+      },
+      {
+        "asset": "/event-stream-runtime.js",
+        "globals": [
+          "CodexEventStreamRuntime"
+        ]
+      },
+      {
+        "asset": "/composer-bridge-runtime.js",
+        "globals": [
+          "CodexComposerBridgeRuntime"
+        ]
+      },
+      {
+        "asset": "/runtime-wiring-runtime.js",
+        "globals": [
+          "CodexRuntimeWiringRuntime"
+        ]
+      },
+      {
+        "asset": "/app-shell-runtime.js",
+        "globals": [
+          "CodexAppShellRuntime"
         ]
       }
     ],
@@ -362,6 +646,8 @@
     "counts": {
       "scriptAssets": 51,
       "entryGroups": 6,
+      "classicGlobalExportAssets": 47,
+      "classicGlobalExports": 47,
       "linkAssets": 4,
       "iconAssets": 4,
       "precacheAssets": 60,

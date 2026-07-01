@@ -265,8 +265,8 @@ test("visual harness can replay empty cached detail openings without exposing th
 });
 
 test("public app shell cache advances with static frontend changes", () => {
-  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v623");
-  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v623");
+  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v624");
+  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v624");
   assert.match(swJs, /shell-asset-manifest\.js/);
   assert.ok(shellManifest.precacheAssets.includes("/home-ai-diagnostic-reporting.js"));
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);

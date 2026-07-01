@@ -34,6 +34,10 @@ function writeArtifact(root, options = {}) {
       chunkTarget: "startup-app-shell",
       assets: ["/app.js"],
     }],
+    classicGlobalExports: [{
+      asset: "/app.js",
+      globals: ["CodexAppShellRuntime"],
+    }],
   };
   const preview = Buffer.from([
     "<!doctype html>",
@@ -113,6 +117,8 @@ test("Vite shell artifact status validates the guarded public preview files", ()
     clientBuildId: "0.1.11|codex-mobile-shell-test",
     indexScriptCount: 2,
     entryGroupCount: 1,
+    classicGlobalExportAssetCount: 1,
+    classicGlobalExportCount: 1,
     pageShellAssetCount: 6,
     hashAssetCount: 5,
   });

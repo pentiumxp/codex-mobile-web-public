@@ -39,6 +39,9 @@ if (!fs.existsSync(manifestPath)) {
   if (JSON.stringify(built.entryGroups) !== JSON.stringify(current.entryGroups)) {
     mismatch.push("entryGroups");
   }
+  if (JSON.stringify(built.classicGlobalExports) !== JSON.stringify(current.classicGlobalExports)) {
+    mismatch.push("classicGlobalExports");
+  }
   if (!built.validation || !built.validation.ok) {
     mismatch.push("builtValidation");
   }
@@ -93,6 +96,7 @@ if (!fs.existsSync(manifestPath)) {
       clientBuildId: built.clientBuildId,
       indexScripts: built.counts.indexScripts,
       emittedAssets: built.counts.emittedAssets,
+      classicGlobalExports: built.counts.classicGlobalExports,
       viteBuildStage: built.viteBuild.stage,
     }));
   }

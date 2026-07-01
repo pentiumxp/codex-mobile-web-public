@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const SHELL_MANIFEST_SCHEMA_VERSION = 2;
-export const SHELL_CACHE_NAME = "codex-mobile-shell-v623";
+export const SHELL_MANIFEST_SCHEMA_VERSION = 3;
+export const SHELL_CACHE_NAME = "codex-mobile-shell-v624";
 export const SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
 export const SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
 
@@ -187,6 +187,39 @@ function assertAssetsExist(root, assets) {
   }
 }
 
+function extractClassicGlobalExports(source) {
+  const names = new Set();
+  const pattern = /(?:root|window|globalThis)\.(Codex[A-Za-z0-9_]+)\s*=/g;
+  let match;
+  while ((match = pattern.exec(String(source || "")))) {
+    names.add(match[1]);
+  }
+  return [...names].sort();
+}
+
+function classicGlobalExportsForAsset(root, assetPath) {
+  const normalized = String(assetPath || "").replace(/^\/+/, "");
+  if (!normalized || !normalized.endsWith(".js")) return null;
+  let source = "";
+  try {
+    source = readText(root, path.join("public", normalized));
+  } catch (_) {
+    source = "";
+  }
+  const globals = extractClassicGlobalExports(source);
+  if (!globals.length) return null;
+  return {
+    asset: assetPath,
+    globals,
+  };
+}
+
+function buildClassicGlobalExports(root, scriptAssets) {
+  return scriptAssets
+    .map((asset) => classicGlobalExportsForAsset(root, asset))
+    .filter(Boolean);
+}
+
 function buildEntryGroups(scriptAssets) {
   const scripts = uniqueValues(scriptAssets);
   const knownAssets = new Set(SHELL_ENTRY_GROUP_DEFINITIONS.flatMap((definition) => definition.assets));
@@ -264,6 +297,7 @@ export function buildPublicShellManifest(root = process.cwd()) {
     "/sw.js",
   ]);
   assertAssetsExist(root, pageShellAssets);
+  const classicGlobalExports = buildClassicGlobalExports(root, scriptAssets);
   return {
     schemaVersion: SHELL_MANIFEST_SCHEMA_VERSION,
     generatedBy: "generate-frontend-shell-manifest",
@@ -271,6 +305,7 @@ export function buildPublicShellManifest(root = process.cwd()) {
     clientBuildId: `${appVersion}|${SHELL_CACHE_NAME}`,
     scriptAssets,
     entryGroups,
+    classicGlobalExports,
     linkAssets,
     iconAssets,
     precacheAssets,
@@ -279,6 +314,8 @@ export function buildPublicShellManifest(root = process.cwd()) {
     counts: {
       scriptAssets: scriptAssets.length,
       entryGroups: entryGroups.length,
+      classicGlobalExportAssets: classicGlobalExports.length,
+      classicGlobalExports: classicGlobalExports.reduce((total, entry) => total + entry.globals.length, 0),
       linkAssets: linkAssets.length,
       iconAssets: iconAssets.length,
       precacheAssets: precacheAssets.length,

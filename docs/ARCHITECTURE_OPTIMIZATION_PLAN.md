@@ -4503,6 +4503,30 @@ classic shell in the same build-chain contract:
   blocks deployment through the normal runtime gate rather than relying on a
   manual post-deploy probe.
 
+The next compatibility-manifest slice advances the static shell contract to
+`codex-mobile-shell-v624` / `0.1.11|codex-mobile-shell-v624` and adds a
+generated classic global-export contract:
+
+- `scripts/generate-frontend-shell-manifest.mjs` derives
+  `classicGlobalExports` from the actual ordered classic script sources by
+  finding `Codex*` globals assigned to `root`, `window`, or `globalThis`.
+- `scripts/frontend-shell-asset-graph.mjs` and
+  `scripts/verify-vite-shell-manifest.mjs` fail closed when the generated
+  global-export contract drifts from the current shell graph.
+- `frontend/vite-shell-entry.mjs` exposes
+  `__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__` in the preview module path so
+  the Vite artifact proves it still knows the classic runtime surface it must
+  preserve before any future ESM cutover.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  now treats missing compatibility metadata or missing startup globals
+  (`CodexRuntimeWiringRuntime`, `CodexAppShellRuntime`) as H2 deploy-gate
+  failures.
+- `/api/vite-shell-artifact` compares `classicGlobalExports` in addition to
+  script, service-worker, page-shell, hash, and entry-group topology.
+
+This still does not switch production `/` to Vite execution. It makes the
+classic-script compatibility surface explicit and testable first.
+
 ## Release Rule
 
 Follow the current release order:

@@ -38,6 +38,8 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     moduleScriptMatchesPreview: true,
     moduleEntryLoaded: true,
     entryTopologyReady: true,
+    classicCompatibilityReady: true,
+    classicCompatibilityStartupGlobalsReady: true,
     deferredLoaded: true,
   }, { consoleEvents: [], exceptions: [] });
   assert.equal(passing.ok, true);
@@ -53,11 +55,15 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     moduleScriptMatchesPreview: false,
     moduleEntryLoaded: false,
     entryTopologyReady: false,
+    classicCompatibilityReady: false,
+    classicCompatibilityStartupGlobalsReady: false,
     deferredLoaded: false,
   }, { consoleEvents: [{ type: "error" }], exceptions: [{ code: "runtime_exception" }] });
   assert.equal(failing.ok, false);
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_stage_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_module_entry_missing"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_compatibility_missing"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_startup_globals_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_browser_exception"));
 });
 
@@ -69,6 +75,7 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("shellManifestJson.text"));
   assert.ok(scriptSource.includes("/vite-shell/preview.html"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__"));
+  assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__"));
 });
 
 test("browser runtime self-check treats startup exceptions as blocking", () => {

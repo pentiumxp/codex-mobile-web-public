@@ -14,8 +14,8 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   const { buildShellAssetManifest } = await loadAssetGraphModule();
   const manifest = buildShellAssetManifest(path.resolve(__dirname, ".."));
   assert.equal(manifest.validation.ok, true);
-  assert.equal(manifest.shellCacheName, "codex-mobile-shell-v623");
-  assert.equal(manifest.clientBuildId, "0.1.11|codex-mobile-shell-v623");
+  assert.equal(manifest.shellCacheName, "codex-mobile-shell-v624");
+  assert.equal(manifest.clientBuildId, "0.1.11|codex-mobile-shell-v624");
   assert.equal(manifest.indexScriptAssets[0], "/shell-asset-manifest.js");
   assert.equal(manifest.indexScriptAssets.at(-1), "/app.js");
   assert.ok(manifest.indexScriptAssets.includes("/app-bootstrap.js"));
@@ -27,6 +27,15 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   assert.ok(manifest.serverHashAssets.includes("/app-shell-runtime.js"));
   assert.ok(manifest.serverHashAssets.includes("/shell-asset-manifest.json"));
   assert.equal(manifest.entryGroups.length, 6);
+  assert.equal(manifest.classicGlobalExports.length, 47);
+  assert.deepEqual(
+    manifest.classicGlobalExports.find((entry) => entry.asset === "/runtime-wiring-runtime.js").globals,
+    ["CodexRuntimeWiringRuntime"]
+  );
+  assert.deepEqual(
+    manifest.classicGlobalExports.find((entry) => entry.asset === "/app-shell-runtime.js").globals,
+    ["CodexAppShellRuntime"]
+  );
   assert.deepEqual(
     manifest.entryGroups.flatMap((group) => group.assets),
     manifest.indexScriptAssets
@@ -86,6 +95,7 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.ok(contract.outputFiles.includes("codex-mobile-shell-manifest.json"));
   assert.ok(contract.classicShellAssets.some((asset) => asset.path === "/app.js" && asset.fileName === "shell-assets/app.js"));
   assert.deepEqual(contract.classicFallback.entryGroups, manifest.entryGroups);
+  assert.deepEqual(contract.classicFallback.classicGlobalExports, manifest.classicGlobalExports);
 });
 
 test("frontend shell generator owns the index classic script block", async () => {

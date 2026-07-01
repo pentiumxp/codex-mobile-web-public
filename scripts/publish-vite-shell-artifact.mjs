@@ -151,6 +151,12 @@ export function buildViteShellPublicReadback(options = {}) {
     preview,
     counts: {
       entryGroups: Array.isArray(manifest.entryGroups) ? manifest.entryGroups.length : 0,
+      classicGlobalExportAssets: Array.isArray(manifest.classicGlobalExports) ? manifest.classicGlobalExports.length : 0,
+      classicGlobalExports: Array.isArray(manifest.classicGlobalExports)
+        ? manifest.classicGlobalExports.reduce((total, entry) => (
+          total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
+        ), 0)
+        : 0,
       publishedFiles: publishedFiles.length,
     },
     publishedFiles,
