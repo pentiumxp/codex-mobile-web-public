@@ -21,6 +21,8 @@ const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "se
 const taskCardRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-message-route-service.js"), "utf8");
 const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-summary-state-service.js"), "utf8");
+const threadListStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-state-service.js"), "utf8");
+const threadListRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-runtime-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "thread-event-notification-service.js"), "utf8");
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "thread-task-card-routing-service.js"), "utf8");
 const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-detail-route-service.js"), "utf8");
@@ -98,7 +100,7 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(serverJs, /function attachThreadTaskCardsToThread\(/);
   assert.match(serverJs, /thread\.threadTaskCards = threadTaskCardService\.listForThread\(thread\.id\)/);
   assert.match(serverJs, /thread\.pendingIncomingTaskCardCount = taskCardCounts\.pendingIncoming/);
-  assert.match(serverJs, /function attachThreadTaskCardCountsToThreadListResult\(/);
+  assert.match(threadListStateServiceJs, /function attachThreadTaskCardCountsToThreadListResult\(/);
   assert.match(serverJs, /attachThreadTaskCardsToResult\(result\)/);
   assert.match(taskCardRouteServiceJs, /await threadTaskCardService\.approve/);
   assert.match(taskCardRouteServiceJs, /await threadTaskCardService\.reply/);
@@ -239,6 +241,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /createThreadTaskCardsFromSourceThread\(body\.sourceThreadId, body\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /threadTaskCardService\.reply\(prepared\.taskCardId, prepared\.actorThreadId, prepared\.body\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /taskCardReturnToolFullName/);
+  assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnDynamicToolBody"), /workflowId/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /replyCardTerminal: Boolean/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /replyCardRequiresReturn: Boolean/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /replyCardAckPolicy:/);
@@ -436,6 +439,7 @@ test("return_to_source dynamic tool prefers explicit target thread over app-serv
       arguments: {
         taskCardId: "ttc_xcode_to_health",
         threadId: "health-thread",
+        workflowId: "health-return-workflow",
         status: "completed",
         title: "Health result",
         body: "Completed in Health.",
@@ -448,6 +452,7 @@ test("return_to_source dynamic tool prefers explicit target thread over app-serv
   assert.equal(payload.ok, true);
   assert.equal(payload.actorThreadId, "health-thread");
   assert.equal(payload.replyCardId, "ttc_return_card");
+  assert.equal(calls[0].body.workflowId, "health-return-workflow");
   assert.equal(calls.length, 1);
 });
 
@@ -519,7 +524,7 @@ test("server broadcasts active status immediately for local turn starts", () => 
   assert.match(functionBody(threadEventNotificationServiceJs, "broadcast"), /updateLocalActiveThreadStatusFromNotification\(payload\)/);
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /threadDetailResponsePreparationService\.prepareThreadDetailResponseResult/);
   assert.match(functionBody(threadDetailResponsePreparationServiceJs, "prepareThreadDetailResponseResult"), /applyLocalActiveThreadStatusToResult/);
-  assert.match(functionBody(serverJs, "normalizeThreadListResultStatuses"), /normalizeThreadSummaryLiveStatus/);
+  assert.match(functionBody(threadListRuntimeServiceJs, "normalizeThreadListResultStatuses"), /normalizeThreadSummaryLiveStatus/);
 
   assert.match(serverJs, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{[\s\S]*source: "thread-task-card-approval"/);
   assert.match(threadMessageRouteServiceJs, /notifyLocalTurnStarted\(threadId, turnResult, \{ source: "message-submit" \}\)/);

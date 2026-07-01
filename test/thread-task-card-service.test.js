@@ -1557,6 +1557,60 @@ test("explicit returnToSource replies are terminal and cannot start acknowledgem
   assert.equal(returnEvents.length, 1);
 });
 
+test("return_to_source recovers original card by workflow when visible card id is stale", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => {
+      executions.push(card);
+      return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+  });
+  const repairCard = await service.create({
+    sourceWorkspaceId: "xcode",
+    sourceThreadId: "thread-xcode",
+    sourceTurnId: "turn-xcode",
+    sourceThreadTitle: "Xcode",
+    targetWorkspaceId: "health",
+    targetThreadId: "thread-health",
+    idempotencyKey: "xcode:health:repair",
+    format: "markdown",
+    title: "Repair Health path",
+    summary: "Repair and return.",
+    body: "Please repair and return.",
+    workflowMode: "autonomous",
+    workflowId: "xcode-health-workflow",
+  });
+  await service.approveFromSource(repairCard.id, "thread-xcode");
+
+  const returned = await service.reply("ttc_stale_visible_card", "thread-health", {
+    idempotencyKey: "xcode:health:return",
+    format: "markdown",
+    title: "Health repair completed",
+    summary: "completed",
+    body: "Completed and validated.",
+    returnToSource: true,
+    workflowId: "xcode-health-workflow",
+  });
+
+  assert.equal(returned.card.id, repairCard.id);
+  assert.equal(returned.card.status, "replied");
+  assert.equal(returned.replyCard.delivery.returnToSource, true);
+  assert.equal(returned.replyCard.target.threadId, "thread-xcode");
+
+  const duplicate = await service.reply("ttc_stale_visible_card", "thread-health", {
+    idempotencyKey: "xcode:health:return",
+    format: "markdown",
+    title: "Health repair completed",
+    summary: "completed",
+    body: "Completed and validated.",
+    returnToSource: true,
+    workflowId: "xcode-health-workflow",
+  });
+  assert.equal(duplicate.replyCard.id, returned.replyCard.id);
+  assert.equal(service.listForThread("thread-xcode").filter((card) => card.audit && card.audit.replyToCardId === repairCard.id).length, 1);
+});
+
 test("terminal return cards report bounded Home AI delivery events for supported statuses", async () => {
   const events = [];
   const service = createThreadTaskCardService({

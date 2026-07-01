@@ -197,6 +197,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
           bodyMarkdown: { type: "string", description: "Alias for body." },
           requestId: { type: "string", description: "Optional stable idempotency seed for this return." },
           idempotencyKey: { type: "string", description: "Explicit return-card idempotency key." },
+          workflowId: { type: "string", description: "Optional active workflow id used to recover the original task card when the visible card id is stale." },
         },
         required: ["taskCardId", "title", "body"],
       },
@@ -747,6 +748,10 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     const rawBody = String(args.body || args.bodyMarkdown || args.message || "").trim();
     const status = normalizedTaskCardReturnStatus(args.status);
     const title = String(args.title || "").trim();
+    const workflowId = String(args.workflowId || args.workflow_id
+      || params.workflowId || params.workflow_id
+      || params.workflow && (params.workflow.id || params.workflow.workflowId || params.workflow.workflow_id)
+      || "").trim();
     return {
       taskCardId,
       actorThreadId,
@@ -758,6 +763,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         summary: String(args.summary || "").trim() || status,
         body: truncateThreadTaskCardBody(rawBody),
         format: args.format || "markdown",
+        workflowId,
         idempotencyKey: taskCardReturnIdempotencyKey(taskCardId, actorThreadId, args),
       },
     };

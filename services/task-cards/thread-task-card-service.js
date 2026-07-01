@@ -1012,6 +1012,14 @@ function transitionAllowed(card, action, actorThreadId) {
   throw errorWithStatus(`unknown_action:${action}`);
 }
 
+function cardIsReturnableByThread(card, actorThreadId) {
+  const actorThread = stringValue(actorThreadId);
+  if (!card || !actorThread) return false;
+  if (stringValue(card.target && card.target.threadId) !== actorThread) return false;
+  if (cardIsTerminal(card)) return false;
+  return card.status === "pending" || card.status === "approved" || card.status === "approving";
+}
+
 function createThreadTaskCardService(options = {}) {
   const storageFile = boundedString(options.storageFile, "storage_file", 1024);
   const recentLimit = Math.max(1, Number(options.recentLimit || DEFAULT_RECENT_LIMIT));
@@ -1119,6 +1127,29 @@ function createThreadTaskCardService(options = {}) {
 
   function findById(store, id) {
     return safeArray(store.cards).find((entry) => stringValue(entry.id) === stringValue(id)) || null;
+  }
+
+  function findReturnCardByWorkflow(store, workflowId, actorThreadId, existingReplyCard = null) {
+    const workflow = stringValue(workflowId);
+    const actorThread = stringValue(actorThreadId);
+    if (!workflow || !actorThread) return null;
+    const existingReplyCardId = stringValue(existingReplyCard && existingReplyCard.id);
+    const candidates = safeArray(store.cards)
+      .filter((card) => stringValue(card && card.workflow && card.workflow.id) === workflow)
+      .filter((card) => {
+        if (cardIsReturnableByThread(card, actorThread)) return true;
+        return existingReplyCardId
+          && stringValue(card && card.target && card.target.threadId) === actorThread
+          && card && card.status === "replied"
+          && stringValue(card.replyCardId) === existingReplyCardId;
+      })
+      .sort((left, right) => {
+        const leftTime = Date.parse(left.updatedAt || left.createdAt || "") || 0;
+        const rightTime = Date.parse(right.updatedAt || right.createdAt || "") || 0;
+        return rightTime - leftTime || stringValue(left.id).localeCompare(stringValue(right.id));
+      });
+    if (candidates.length > 1) throw errorWithStatus("task_card_workflow_return_ambiguous", 409);
+    return candidates[0] || null;
   }
 
   function createCardFromRequest(request, store) {
@@ -1425,8 +1456,10 @@ function createThreadTaskCardService(options = {}) {
     const id = stringValue(cardId);
     const replyRequest = normalizeReplyRequest(payload);
     const result = await withStore(async (store) => {
-      const card = safeArray(store.cards).find((entry) => stringValue(entry.id) === id);
       const existing = findByIdempotency(store, replyRequest.idempotencyKey);
+      const card = findById(store, id) || (replyRequest.returnToSource === true
+        ? findReturnCardByWorkflow(store, replyRequest.workflowId, actorThreadId, existing)
+        : null);
       if (card && card.status === "replied" && existing && stringValue(card.replyCardId) === stringValue(existing.id)) {
         markReturnToSourceMetadata(existing, replyRequest);
         return {
