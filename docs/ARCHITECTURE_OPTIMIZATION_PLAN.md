@@ -2166,6 +2166,13 @@ public behavior:
   helpers, thread-display public settings normalization, and workspace
   delegation settings snapshots/toggles while `server.js` injects the runtime
   file path and dynamic-tool constants. The old adapter path is compatibility-only.
+- `services/runtime/server-runtime-config-service.js` now owns pure
+  env/default/path/limit resolution for runtime roots, Codex Home, mux/app-server
+  flags, auth/runtime file paths, plugin notification settings, workspace
+  delegation flags, thread-detail/list budgets, model/effort/permission options,
+  RPC/cache budgets, and retry method declarations. `server.js` now consumes one
+  resolved config object before constructing services instead of carrying these
+  parsing rules inline.
 - `server-routes/core-api-route-service.js` now owns the public and core authorized
   API route groups for public config/login, Codex Profile list/switch/progress,
   Hermes plugin manifest/session/registration/launch/notifications, runtime
@@ -2190,7 +2197,7 @@ public behavior:
   `server.js` injects Codex RPC, runtime-setting helpers, classifiers, timeout
   values, and `notifyLocalTurnStarted`.
 
-Local line-count evidence after the latest extraction: `server.js` is 3,405 lines,
+Local line-count evidence after the latest extraction: `server.js` is 3,288 lines,
 `server-routes/thread-task-card-route-service.js` is 1,275 lines,
 `services/task-cards/task-card-runtime-policy-service.js` is 345 lines, and
 `services/task-cards/thread-task-card-service.js` is 1,857 lines,
@@ -2204,9 +2211,9 @@ the remaining canonical `services/thread-list/` policy/merge/context/coalescer/
 diagnosis/summary services are 257, 212, 183, 86, 147, 165, and 47 lines, and
 `services/thread-detail/thread-detail-response-preparation-service.js` is 256 lines, and
 `services/thread-detail/thread-detail-active-turn-evidence-service.js` is 293 lines. The newer
-low-coupling static/profile-switch/runtime-settings/core-API/auto-recovery
-adapters are 195, 385, 236, 554, and 153 lines respectively; the new app
-maintenance adapter is 709 lines.
+low-coupling static/profile-switch/runtime-settings/runtime-config/core-API/auto-recovery
+adapters/services are 195, 385, 236, 386, 554, and 153 lines respectively; the
+new app maintenance adapter is 709 lines.
 This is a checkpoint, not the target state; `server.js` remains too large. The
 next high-yield backend splits should target remaining thread-detail enrichment
 helpers, the remaining thread-list composition wrappers, residual notification/
