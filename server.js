@@ -108,6 +108,7 @@ const {
 const { createThreadDetailCompactionService } = require("./adapters/thread-detail-compaction-service");
 const { createThreadEventNotificationService } = require("./services/runtime/thread-event-notification-service");
 const { createRuntimeTurnEventPipelineService } = require("./services/runtime/runtime-turn-event-pipeline-service");
+const { createServerEventRuntimeBoundaryService } = require("./services/runtime/server-event-runtime-boundary-service");
 const { createRateLimitRuntimeService } = require("./services/runtime/rate-limit-runtime-service");
 const { createThreadVisibilityService } = require("./adapters/thread-visibility-service");
 const { createThreadCompletionDiagnosticService } = require("./adapters/thread-completion-diagnostic-service");
@@ -477,6 +478,38 @@ let threadGoalFromRpcResult = null;
 let threadGoalSetParams = null;
 let threadEventNotificationService;
 let runtimeTurnEventPipelineService;
+const serverEventRuntimeBoundaryService = createServerEventRuntimeBoundaryService({
+  getThreadEventNotificationService: () => threadEventNotificationService,
+  getRuntimeTurnEventPipelineService: () => runtimeTurnEventPipelineService,
+});
+const {
+  broadcast,
+  broadcastThreadStatusChanged,
+  compactNotification,
+  isOldPushTurnEvent,
+  maybeApplyQueuedThreadSideChat,
+  maybeAutoReplyThreadTaskCard,
+  maybeMaterializeThreadTaskCardDrafts,
+  maybeRecordTurnTokenUsage,
+  maybeSendTurnCompletedPush,
+  notificationThreadId,
+  notifyLocalTurnStarted,
+  pushThreadId,
+  pushThreadSummary,
+  pushTurnId,
+  rememberThreadIdForTurnId,
+  rememberThreadIdForTurnParams,
+  removeEventClient,
+  scheduleActiveWindowPrewarm,
+  scheduleActiveWindowPrewarmFromNotification,
+  scheduleActiveWindowPrewarmFromThreadListResult,
+  shouldSendEventToClient,
+  threadIdFromRolloutPath,
+  threadStatusChangedPayload,
+  threadStatusChangedPayloadFromTurnNotification,
+  turnTimestampMs,
+  updateLocalActiveThreadStatusFromNotification,
+} = serverEventRuntimeBoundaryService;
 let agentInstructionFilesForCwd;
 let isRecoverableThreadTitleUpdateError;
 let pruneStartedThreadCache;
@@ -1587,58 +1620,6 @@ threadEventNotificationService = createThreadEventNotificationService({
   logger: console,
 });
 
-function compactNotification(payload) {
-  return threadEventNotificationService.compactNotification(payload);
-}
-
-function broadcast(payload) {
-  return threadEventNotificationService.broadcast(payload);
-}
-
-function notificationThreadId(payload) {
-  return threadEventNotificationService.notificationThreadId(payload);
-}
-
-function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "", options = {}) {
-  return threadEventNotificationService.scheduleActiveWindowPrewarm(threadId, summary, reason, options);
-}
-
-function scheduleActiveWindowPrewarmFromNotification(payload) {
-  return threadEventNotificationService.scheduleActiveWindowPrewarmFromNotification(payload);
-}
-
-function scheduleActiveWindowPrewarmFromThreadListResult(result, reason = "") {
-  return threadEventNotificationService.scheduleActiveWindowPrewarmFromThreadListResult(result, reason);
-}
-
-function threadStatusChangedPayload(threadId, status, meta = {}) {
-  return threadEventNotificationService.threadStatusChangedPayload(threadId, status, meta);
-}
-
-function broadcastThreadStatusChanged(threadId, status, meta = {}) {
-  return threadEventNotificationService.broadcastThreadStatusChanged(threadId, status, meta);
-}
-
-function notifyLocalTurnStarted(threadId, result, meta = {}) {
-  return threadEventNotificationService.notifyLocalTurnStarted(threadId, result, meta);
-}
-
-function threadStatusChangedPayloadFromTurnNotification(payload) {
-  return threadEventNotificationService.threadStatusChangedPayloadFromTurnNotification(payload);
-}
-
-function updateLocalActiveThreadStatusFromNotification(payload) {
-  return threadEventNotificationService.updateLocalActiveThreadStatusFromNotification(payload);
-}
-
-function shouldSendEventToClient(payload, client = {}) {
-  return threadEventNotificationService.shouldSendEventToClient(payload, client);
-}
-
-function removeEventClient(res) {
-  return threadEventNotificationService.removeEventClient(res);
-}
-
 const runtimeSettingsService = createRuntimeSettingsService({
   runtimeSettingsFile: RUNTIME_SETTINGS_FILE,
   timestampToMs,
@@ -1887,19 +1868,6 @@ function classifyWebPushThreadId(threadId) {
   return webPushRuntimeService.classifyThreadId(threadId);
 }
 
-function requireRuntimeTurnEventPipelineService() {
-  if (!runtimeTurnEventPipelineService) throw new Error("runtime_turn_event_pipeline_service_unavailable");
-  return runtimeTurnEventPipelineService;
-}
-
-function pushTurnId(params) {
-  return requireRuntimeTurnEventPipelineService().pushTurnId(params);
-}
-
-function threadIdFromRolloutPath(value) {
-  return requireRuntimeTurnEventPipelineService().threadIdFromRolloutPath(value);
-}
-
 function timestampToMs(value) {
   if (value == null || value === "") return 0;
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -1913,14 +1881,6 @@ function timestampToMs(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function turnTimestampMs(params, field) {
-  return requireRuntimeTurnEventPipelineService().turnTimestampMs(params, field);
-}
-
-function isOldPushTurnEvent(params, fields) {
-  return requireRuntimeTurnEventPipelineService().isOldPushTurnEvent(params, fields);
-}
-
 function compactOneLine(value, maxChars = 80) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (text.length <= maxChars) return text;
@@ -1931,42 +1891,6 @@ function shortIdentifier(value) {
   const text = String(value || "").trim();
   if (text.length <= 16) return text;
   return `${text.slice(0, 8)}...${text.slice(-4)}`;
-}
-
-function pushThreadId(params) {
-  return requireRuntimeTurnEventPipelineService().pushThreadId(params);
-}
-
-function rememberThreadIdForTurnId(threadId, turnId) {
-  return requireRuntimeTurnEventPipelineService().rememberThreadIdForTurnId(threadId, turnId);
-}
-
-function rememberThreadIdForTurnParams(method, params) {
-  return requireRuntimeTurnEventPipelineService().rememberThreadIdForTurnParams(method, params);
-}
-
-function pushThreadSummary(threadId) {
-  return requireRuntimeTurnEventPipelineService().pushThreadSummary(threadId);
-}
-
-function maybeRecordTurnTokenUsage(method, params) {
-  return requireRuntimeTurnEventPipelineService().maybeRecordTurnTokenUsage(method, params);
-}
-
-function maybeAutoReplyThreadTaskCard(method, params) {
-  return requireRuntimeTurnEventPipelineService().maybeAutoReplyThreadTaskCard(method, params);
-}
-
-function maybeApplyQueuedThreadSideChat(method, params) {
-  return requireRuntimeTurnEventPipelineService().maybeApplyQueuedThreadSideChat(method, params);
-}
-
-function maybeMaterializeThreadTaskCardDrafts(method, params) {
-  return requireRuntimeTurnEventPipelineService().maybeMaterializeThreadTaskCardDrafts(method, params);
-}
-
-function maybeSendTurnCompletedPush(method, params) {
-  return requireRuntimeTurnEventPipelineService().maybeSendTurnCompletedPush(method, params);
 }
 
 function getFreePort() {

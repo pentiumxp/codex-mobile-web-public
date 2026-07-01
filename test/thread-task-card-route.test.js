@@ -25,6 +25,8 @@ const threadListStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "
 const threadListRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-runtime-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "thread-event-notification-service.js"), "utf8");
 const runtimeTurnEventPipelineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-turn-event-pipeline-service.js"), "utf8");
+const serverEventRuntimeBoundaryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-event-runtime-boundary-service.js"), "utf8");
+const serverRuntimeConfigServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-runtime-config-service.js"), "utf8");
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "thread-task-card-routing-service.js"), "utf8");
 const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-detail-route-service.js"), "utf8");
 const threadDetailRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
@@ -87,7 +89,8 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(serverJs, /const homeAiAutonomousDeliveryReturnService = createHomeAiAutonomousDeliveryReturnService/);
   assert.match(serverJs, /onTerminalReturnCard: async \(event\) => homeAiAutonomousDeliveryReturnService\.send\(event, \{ workspaceId: "owner" \}\)/);
   assert.doesNotMatch(serverJs, /createThreadTaskCardIntentService/);
-  assert.match(serverJs, /CODEX_MOBILE_THREAD_TASK_CARD_FILE/);
+  assert.match(serverJs, /THREAD_TASK_CARD_FILE/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_TASK_CARD_FILE/);
   assert.match(serverJs, /createThreadTaskCardRouteService/);
   assert.match(apiDispatchRouteServiceJs, /threadTaskCardRouteService\.handleRoute/);
   assert.match(taskCardRouteServiceJs, /"\/api\/thread-task-cards"/);
@@ -130,13 +133,13 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.doesNotMatch(serverJs, /function runWorkspaceDelegationFromSourceThread\(/);
   assert.doesNotMatch(serverJs, /analyzeWorkspaceDelegation\(/);
   assert.doesNotMatch(serverJs, /buildWorkspaceDelegationTaskCardPayload\(/);
-  assert.match(serverJs, /const RUNTIME_SETTINGS_FILE =/);
-  assert.match(serverJs, /const WORKSPACE_DELEGATION_ENV_DEFAULT =/);
-  assert.match(serverJs, /const WORKSPACE_DELEGATION_TOOL_NAMESPACE = "codex_mobile"/);
-  assert.match(serverJs, /const WORKSPACE_DELEGATION_TOOL_NAME = "delegate_to_thread"/);
-  assert.match(serverJs, /const TASK_CARD_RETURN_TOOL_NAME = "return_to_source"/);
-  assert.match(serverJs, /CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION/);
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED/);
+  assert.match(serverJs, /RUNTIME_SETTINGS_FILE/);
+  assert.match(serverJs, /WORKSPACE_DELEGATION_ENV_DEFAULT/);
+  assert.match(serverRuntimeConfigServiceJs, /WORKSPACE_DELEGATION_TOOL_NAMESPACE: "codex_mobile"/);
+  assert.match(serverRuntimeConfigServiceJs, /WORKSPACE_DELEGATION_TOOL_NAME: "delegate_to_thread"/);
+  assert.match(serverRuntimeConfigServiceJs, /TASK_CARD_RETURN_TOOL_NAME: "return_to_source"/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED/);
   assert.match(runtimeSettingsServiceJs, /function workspaceDelegationPublicSettings\(/);
   assert.match(taskCardRouteServiceJs, /function workspaceDelegationDynamicToolSpec\(/);
   assert.match(taskCardRouteServiceJs, /function taskCardReturnDynamicToolSpec\(/);
@@ -311,8 +314,9 @@ test("thread task card routes preserve service status codes", () => {
   assert.match(routeBlock, /threadTaskCardService\.pauseExecution/);
   assert.match(routeBlock, /threadTaskCardService\.cancelExecution/);
   assert.match(serverJs, /createRuntimeTurnEventPipelineService/);
-  assert.match(serverJs, /function maybeAutoReplyThreadTaskCard\(/);
-  assert.match(functionBody(serverJs, "maybeAutoReplyThreadTaskCard"), /requireRuntimeTurnEventPipelineService\(\)\.maybeAutoReplyThreadTaskCard/);
+  assert.match(serverJs, /createServerEventRuntimeBoundaryService/);
+  assert.match(serverEventRuntimeBoundaryServiceJs, /"maybeAutoReplyThreadTaskCard"/);
+  assert.doesNotMatch(serverJs, /function maybeAutoReplyThreadTaskCard\(/);
   assert.match(runtimeTurnEventPipelineServiceJs, /threadTaskCardService\.maybeAutoReplyCompletedTurn/);
   assert.match(runtimeTurnEventPipelineServiceJs, /threadTaskCardService\.maybeResumeInterruptedTaskCard/);
   assert.match(serverJs, /maybeAutoReplyThreadTaskCard,\s+maybeApplyQueuedThreadSideChat,/);
@@ -599,15 +603,15 @@ test("server broadcasts active status immediately for local turn starts", () => 
 });
 
 test("server materializes structured task-card drafts from thread detail", () => {
-  assert.match(serverJs, /const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft"/);
-  assert.match(serverJs, /const THREAD_TASK_CARD_BODY_MAX_CHARS = 8_000/);
-  assert.match(serverJs, /const THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK = 4/);
+  assert.match(serverRuntimeConfigServiceJs, /THREAD_TASK_CARD_DRAFT_TAG: "codex-mobile-thread-task-card-draft"/);
+  assert.match(serverRuntimeConfigServiceJs, /THREAD_TASK_CARD_BODY_MAX_CHARS: 8_000/);
+  assert.match(serverRuntimeConfigServiceJs, /THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK: 4/);
   assert.match(taskCardRouteServiceJs, /function parseThreadTaskCardDraftText\(/);
   assert.match(taskCardRouteServiceJs, /function truncateThreadTaskCardBody\(/);
   assert.match(taskCardRouteServiceJs, /function materializeThreadTaskCardDraftsForThread\(/);
   assert.match(serverJs, /createRuntimeTurnEventPipelineService/);
-  assert.match(serverJs, /function maybeMaterializeThreadTaskCardDrafts\(/);
-  assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /requireRuntimeTurnEventPipelineService\(\)\.maybeMaterializeThreadTaskCardDrafts/);
+  assert.match(serverEventRuntimeBoundaryServiceJs, /"maybeMaterializeThreadTaskCardDrafts"/);
+  assert.doesNotMatch(serverJs, /function maybeMaterializeThreadTaskCardDrafts\(/);
   assert.match(taskCardRouteServiceJs, /function prepareThreadTaskCardsToResult\(/);
   assert.match(functionBody(runtimeTurnEventPipelineServiceJs, "maybeMaterializeThreadTaskCardDrafts"), /method !== "turn\/completed"/);
   assert.match(functionBody(runtimeTurnEventPipelineServiceJs, "maybeMaterializeThreadTaskCardDrafts"), /codex\.request\("thread\/turns\/list"/);

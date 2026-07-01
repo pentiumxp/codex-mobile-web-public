@@ -45,6 +45,11 @@ const serviceBoundaries = [
     exports: ["createThreadEventNotificationService"],
   },
   {
+    canonical: require("../services/runtime/server-event-runtime-boundary-service"),
+    adapter: require("../adapters/server-event-runtime-boundary-service"),
+    exports: ["createServerEventRuntimeBoundaryService"],
+  },
+  {
     canonical: require("../services/runtime/thread-runtime-settings-service"),
     adapter: require("../adapters/thread-runtime-settings-service"),
     exports: ["createThreadRuntimeSettingsService"],

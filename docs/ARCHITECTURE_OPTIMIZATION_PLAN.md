@@ -2141,9 +2141,14 @@ public behavior:
   thread id recovery, bounded turn-to-thread memory, old-event filtering,
   completed-turn token usage recording, task-card auto-return/interruption
   resume hooks, queued side-chat apply notification, server-side task-card draft
-  materialization, and Web Push completed-turn delegation. `server.js` keeps
-  compatibility wrappers while injecting Codex transport, state readers,
-  task-card, side-chat, token-usage, and Web Push dependencies.
+  materialization, and Web Push completed-turn delegation. `server.js` injects
+  Codex transport, state readers, task-card, side-chat, token-usage, and Web
+  Push dependencies.
+- `services/runtime/server-event-runtime-boundary-service.js` now owns the
+  late-bound lazy delegation facade for thread event notification and turn-event
+  pipeline functions that earlier route/service constructors need before the
+  backing services are fully wired. `server.js` consumes that facade instead of
+  carrying duplicated one-line compatibility wrappers.
 - `services/thread-detail/thread-detail-response-preparation-service.js` now owns
   turns-list/raw/full/fallback read-result shaping, rollout Usage decoration,
   rollout completion/user-input/active-assistant/final-receipt preparation
@@ -3819,6 +3824,10 @@ Scope:
   injection and route/event wiring;
 - `adapters/thread-event-notification-service.js` remains a compatibility
   export only.
+- A follow-up server event facade moved the remaining lazy compatibility
+  wrappers for thread notifications and turn-event pipeline calls into
+  `services/runtime/server-event-runtime-boundary-service.js`, preserving
+  late-bound initialization while shrinking `server.js` composition glue.
 
 Validation should cover canonical/adapter syntax, runtime compatibility
 adapter parity, thread-list/message/task-card route source guards, and existing
