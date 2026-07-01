@@ -723,7 +723,12 @@ switch because it closes an already received card; it validates the original
 `Task card id`, the target actor thread, and the return body before calling
 `threadTaskCardService.reply()`. Return cards with `returnToSource:true` are
 source-direct approved into the original source thread and do not require a
-second source-thread approval. A target-thread final answer is not a
+second source-thread approval. When a visible card id or actor thread id is
+stale but the workflow id uniquely identifies the original active card, the
+service resolves the original card and target actor from stored workflow
+metadata and returns bounded `returnResolution` evidence. Already closed or
+missing duplicate return attempts produce bounded no-op results instead of
+creating acknowledgement loops. A target-thread final answer is not a
 source-thread return card.
 Deep audit/task-card callers can pass `reasoningEffort` (`low`, `medium`,
 `high`, or `xhigh`) through the source-thread create route, dynamic tool, MCP

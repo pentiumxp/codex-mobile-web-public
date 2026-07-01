@@ -545,7 +545,7 @@ function markLeaseCompleted(card, timestamp, fields = {}) {
   });
 }
 
-function taskCardExecutionContinuationText(card, completed = {}) {
+function taskCardExecutionContinuationText(card, completed = {}, returnScriptPath = "scripts/return-thread-task-card.js") {
   const turnId = boundedMetadataString(completed && completed.turnId, 120);
   const lines = [
     "[Codex Mobile task-card continuation]",
@@ -556,7 +556,7 @@ function taskCardExecutionContinuationText(card, completed = {}) {
     turnId ? `Interrupted ordinary turn completed: ${turnId}` : "",
     "",
     "An active non-terminal task card for this thread is still open. The previous turn appears to have answered an ordinary user interruption; that interruption does not pause, cancel, or complete the task card.",
-    "Continue the original task-card work from the earlier injected task-card message in this thread. Do not request acknowledgement for terminal receipts, and close the original task card only through codex_mobile.return_to_source or scripts/return-thread-task-card.js when the work is completed, blocked, redirected, or partially completed.",
+    `Continue the original task-card work from the earlier injected task-card message in this thread. Do not request acknowledgement for terminal receipts, and close the original task card only through codex_mobile.return_to_source or ${returnScriptPath} when the work is completed, blocked, redirected, or partially completed.`,
     "",
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
     card.message && card.message.summary ? `Summary: ${card.message.summary}` : "",
@@ -913,7 +913,7 @@ function activateWorkflowForCard(store, card, actorThreadId, timestamp) {
   return workflow;
 }
 
-function injectedMessageText(card) {
+function injectedMessageText(card, returnScriptPath = "scripts/return-thread-task-card.js") {
   const autonomous = isAutonomousWorkflow(card.workflow);
   const terminal = cardIsTerminal(card);
   const requiresReturn = cardRequiresReturn(card);
@@ -941,7 +941,7 @@ function injectedMessageText(card) {
     autonomous ? `Workflow id: ${card.workflow.id}` : "",
     autoReturnOnCompletion ? "Auto-return: when this injected turn completes, Codex Mobile Web will send a return task card back to the source thread in this workflow." : "",
     terminal ? "Return policy: terminal receipt; do not send an acknowledgement return unless this card explicitly creates new work." : "",
-    !terminal && !autoReturnOnCompletion && requiresReturn ? `Return required: local final text in this target thread is not a source-thread return card. When this work is completed, blocked, or redirected, return a task card to the source with taskCardId ${card.id} through codex_mobile.return_to_source or scripts/return-thread-task-card.js.` : "",
+    !terminal && !autoReturnOnCompletion && requiresReturn ? `Return required: local final text in this target thread is not a source-thread return card. When this work is completed, blocked, or redirected, return a task card to the source with taskCardId ${card.id} through codex_mobile.return_to_source or ${returnScriptPath}.` : "",
     "",
     stringValue(card.message && card.message.body),
   ].filter((line, index, all) => line !== "" || (index > 0 && all[index - 1] !== ""));
@@ -1020,9 +1020,17 @@ function cardIsReturnableByThread(card, actorThreadId) {
   return card.status === "pending" || card.status === "approved" || card.status === "approving";
 }
 
+function cardIsReturnableByAnyTarget(card) {
+  if (!card || !stringValue(card.target && card.target.threadId)) return false;
+  if (cardIsTerminal(card)) return false;
+  return card.status === "pending" || card.status === "approved" || card.status === "approving";
+}
+
 function createThreadTaskCardService(options = {}) {
   const storageFile = boundedString(options.storageFile, "storage_file", 1024);
   const recentLimit = Math.max(1, Number(options.recentLimit || DEFAULT_RECENT_LIMIT));
+  const returnThreadTaskCardScriptPath = stringValue(options.returnThreadTaskCardScriptPath)
+    || "scripts/return-thread-task-card.js";
   const executeApprovedCard = typeof options.executeApprovedCard === "function"
     ? options.executeApprovedCard
     : async () => ({});
@@ -1132,14 +1140,23 @@ function createThreadTaskCardService(options = {}) {
   function findReturnCardByWorkflow(store, workflowId, actorThreadId, existingReplyCard = null) {
     const workflow = stringValue(workflowId);
     const actorThread = stringValue(actorThreadId);
-    if (!workflow || !actorThread) return null;
+    if (!workflow) return null;
     const existingReplyCardId = stringValue(existingReplyCard && existingReplyCard.id);
-    const candidates = safeArray(store.cards)
-      .filter((card) => stringValue(card && card.workflow && card.workflow.id) === workflow)
+    const workflowCards = safeArray(store.cards)
+      .filter((card) => stringValue(card && card.workflow && card.workflow.id) === workflow);
+    const actorCandidates = actorThread
+      ? workflowCards.filter((card) => cardIsReturnableByThread(card, actorThread))
+      : [];
+    const candidates = (actorCandidates.length ? actorCandidates : workflowCards.filter((card) => {
+      if (cardIsReturnableByAnyTarget(card)) return true;
+      return existingReplyCardId
+        && stringValue(card && card.target && card.target.threadId)
+        && card && card.status === "replied"
+        && stringValue(card.replyCardId) === existingReplyCardId;
+    }))
       .filter((card) => {
-        if (cardIsReturnableByThread(card, actorThread)) return true;
+        if (cardIsReturnableByAnyTarget(card)) return true;
         return existingReplyCardId
-          && stringValue(card && card.target && card.target.threadId) === actorThread
           && card && card.status === "replied"
           && stringValue(card.replyCardId) === existingReplyCardId;
       })
@@ -1283,7 +1300,7 @@ function createThreadTaskCardService(options = {}) {
     let execution;
     try {
       execution = await executeApprovedCard(clone(preparedCard), {
-        text: injectedMessageText(preparedCard),
+        text: injectedMessageText(preparedCard, returnThreadTaskCardScriptPath),
       });
     } catch (err) {
       await withStore(async (store) => {
@@ -1457,17 +1474,81 @@ function createThreadTaskCardService(options = {}) {
     const replyRequest = normalizeReplyRequest(payload);
     const result = await withStore(async (store) => {
       const existing = findByIdempotency(store, replyRequest.idempotencyKey);
-      const card = findById(store, id) || (replyRequest.returnToSource === true
-        ? findReturnCardByWorkflow(store, replyRequest.workflowId, actorThreadId, existing)
+      const requestedActorThreadId = stringValue(actorThreadId);
+      let resolvedActorThreadId = requestedActorThreadId;
+      let workflowRecovered = false;
+      let actorThreadInferred = false;
+      const directCard = findById(store, id);
+      const card = directCard || (replyRequest.returnToSource === true
+        ? findReturnCardByWorkflow(store, replyRequest.workflowId, requestedActorThreadId, existing)
         : null);
+      if (!directCard && card) workflowRecovered = true;
+      if (!card && replyRequest.returnToSource === true) {
+        return {
+          noOp: true,
+          card: null,
+          replyCard: null,
+          returnResolution: {
+            noOp: true,
+            reason: "task_card_not_found",
+            taskCardId: id,
+            workflowId: replyRequest.workflowId || "",
+            requestedActorThreadId,
+            resolvedActorThreadId: "",
+            workflowRecovered: false,
+            actorThreadInferred: false,
+          },
+        };
+      }
+      if (card && replyRequest.returnToSource === true) {
+        const expectedTargetThreadId = stringValue(card.target && card.target.threadId);
+        const workflowMatches = replyRequest.workflowId
+          && stringValue(card.workflow && card.workflow.id) === replyRequest.workflowId;
+        if (expectedTargetThreadId
+          && requestedActorThreadId !== expectedTargetThreadId
+          && workflowMatches) {
+          resolvedActorThreadId = expectedTargetThreadId;
+          actorThreadInferred = true;
+        }
+      }
       if (card && card.status === "replied" && existing && stringValue(card.replyCardId) === stringValue(existing.id)) {
         markReturnToSourceMetadata(existing, replyRequest);
         return {
-          card: publicCard(card, actorThreadId),
+          card: publicCard(card, resolvedActorThreadId),
           replyCard: publicCard(existing, existing.target && existing.target.threadId || ""),
+          returnResolution: {
+            noOp: false,
+            reason: "",
+            taskCardId: card.id,
+            workflowId: replyRequest.workflowId || stringValue(card.workflow && card.workflow.id),
+            requestedActorThreadId,
+            resolvedActorThreadId,
+            expectedTargetThreadId: stringValue(card.target && card.target.threadId),
+            workflowRecovered,
+            actorThreadInferred,
+          },
         };
       }
-      transitionAllowed(card, "reply", actorThreadId);
+      if (card && replyRequest.returnToSource === true && cardIsTerminal(card)) {
+        const replyCard = stringValue(card.replyCardId) ? findById(store, card.replyCardId) : null;
+        return {
+          noOp: true,
+          card: publicCard(card, resolvedActorThreadId),
+          replyCard: replyCard ? publicCard(replyCard, replyCard.target && replyCard.target.threadId || "") : null,
+          returnResolution: {
+            noOp: true,
+            reason: "already_closed",
+            taskCardId: card.id,
+            workflowId: replyRequest.workflowId || stringValue(card.workflow && card.workflow.id),
+            requestedActorThreadId,
+            resolvedActorThreadId,
+            expectedTargetThreadId: stringValue(card.target && card.target.threadId),
+            workflowRecovered,
+            actorThreadInferred,
+          },
+        };
+      }
+      transitionAllowed(card, "reply", resolvedActorThreadId);
       const timestamp = nowIso(options.now);
       const replyWorkflowMode = replyRequest.workflowModeExplicit
         ? replyRequest.workflowMode
@@ -1489,8 +1570,11 @@ function createThreadTaskCardService(options = {}) {
       card.updatedAt = timestamp;
       card.audit = Object.assign({}, card.audit || {}, {
         repliedAt: timestamp,
-        repliedByThreadId: stringValue(actorThreadId),
-      });
+        repliedByThreadId: resolvedActorThreadId,
+      }, actorThreadInferred ? {
+        returnRequestedActorThreadId: requestedActorThreadId,
+        returnActorThreadInferredFromWorkflow: true,
+      } : {});
       let replyCard = existing;
       if (!replyCard) {
         replyCard = {
@@ -1557,17 +1641,32 @@ function createThreadTaskCardService(options = {}) {
         returnStatus: replyRequest.status || "",
       });
       return {
-        card: publicCard(card, actorThreadId),
+        card: publicCard(card, resolvedActorThreadId),
         replyCard: publicCard(replyCard, replyCard.target && replyCard.target.threadId || replyTargetThreadId),
+        returnResolution: {
+          noOp: false,
+          reason: "",
+          taskCardId: card.id,
+          workflowId: replyWorkflowId || stringValue(card.workflow && card.workflow.id),
+          requestedActorThreadId,
+          resolvedActorThreadId,
+          expectedTargetThreadId: stringValue(card.target && card.target.threadId),
+          workflowRecovered,
+          actorThreadInferred,
+        },
       };
     });
+    if (result && result.noOp) return result;
     if (replyRequest.returnToSource === true) {
-      const approved = await executeCardApproval(result.replyCard.id, actorThreadId, {
+      const approved = await executeCardApproval(result.replyCard.id, result.returnResolution && result.returnResolution.resolvedActorThreadId || actorThreadId, {
         sourceDirect: true,
         publicThreadId: result.replyCard && result.replyCard.target && result.replyCard.target.threadId || "",
       });
       if (approved && approved.card) result.replyCard = approved.card;
-      await notifyTerminalReturnCard(id, result.replyCard && result.replyCard.id);
+      await notifyTerminalReturnCard(
+        result.returnResolution && result.returnResolution.taskCardId || id,
+        result.replyCard && result.replyCard.id,
+      );
     } else {
       result.replyCard = await maybeAutoApprovePublicCard(result.replyCard, result.replyCard && result.replyCard.target && result.replyCard.target.threadId);
     }
@@ -1629,7 +1728,7 @@ function createThreadTaskCardService(options = {}) {
     let execution;
     try {
       execution = await executeApprovedCard(clone(prepared.card), {
-        text: taskCardExecutionContinuationText(prepared.card, prepared.completed),
+        text: taskCardExecutionContinuationText(prepared.card, prepared.completed, returnThreadTaskCardScriptPath),
       });
     } catch (err) {
       await withStore(async (store) => {

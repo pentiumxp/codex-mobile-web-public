@@ -459,6 +459,66 @@ test("return_to_source dynamic tool prefers explicit target thread over app-serv
   assert.equal(calls.length, 1);
 });
 
+test("return_to_source dynamic tool reports workflow actor recovery evidence", async () => {
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {
+      reply: async (cardId, actorThreadId, body) => {
+        assert.equal(cardId, "ttc_stale_home_ai_card");
+        assert.equal(actorThreadId, "home-ai-task-intake");
+        assert.equal(body.workflowId, "home-ai-intake-workflow");
+        return {
+          card: { status: "replied" },
+          replyCard: {
+            id: "ttc_return_card",
+            status: "approved",
+            terminal: true,
+            requiresReturn: false,
+            ackPolicy: "none",
+            source: { threadId: "home-ai-implementation" },
+            target: { threadId: "home-ai-task-intake" },
+          },
+          returnResolution: {
+            noOp: false,
+            reason: "",
+            requestedActorThreadId: "home-ai-task-intake",
+            resolvedActorThreadId: "home-ai-implementation",
+            expectedTargetThreadId: "home-ai-implementation",
+            workflowRecovered: true,
+            actorThreadInferred: true,
+          },
+        };
+      },
+    },
+    stableTextHash,
+    logger: { log() {}, error() {} },
+  });
+
+  const response = await service.dynamicToolServerRequestResponsePayload({
+    id: "request-return",
+    params: {
+      fullName: "codex_mobile.return_to_source",
+      threadId: "home-ai-task-intake",
+      workflowId: "home-ai-intake-workflow",
+      arguments: {
+        taskCardId: "ttc_stale_home_ai_card",
+        status: "completed",
+        title: "Owner Console result",
+        body: "Completed in Home AI implementation.",
+      },
+    },
+  });
+  const payload = JSON.parse(response.result.contentItems[0].text);
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.actorThreadId, "home-ai-task-intake");
+  assert.equal(payload.requestedActorThreadId, "home-ai-task-intake");
+  assert.equal(payload.resolvedActorThreadId, "home-ai-implementation");
+  assert.equal(payload.expectedTargetThreadId, "home-ai-implementation");
+  assert.equal(payload.workflowRecovered, true);
+  assert.equal(payload.actorThreadInferred, true);
+  assert.equal(payload.returnNoOp, false);
+});
+
 test("source-thread task-card route uses semantic idempotency for routine plugin deployments", () => {
   const service = createThreadTaskCardRouteService({
     threadTaskCardService: {},

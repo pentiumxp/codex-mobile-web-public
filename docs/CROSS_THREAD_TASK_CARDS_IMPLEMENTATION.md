@@ -204,7 +204,15 @@ behavior. They are also terminal by default:
 `delivery.terminal=true`, `delivery.requiresReturn=false`, and
 `delivery.ackPolicy="none"`. Terminal return cards do not inject `Return
 required` guidance, do not expose a reply affordance, and cannot be replied to
-through `/reply`; acknowledgements do not require acknowledgements. If a
+through `/reply`; acknowledgements do not require acknowledgements. If the
+visible task-card id or actor thread id is stale but a supplied workflow id
+uniquely identifies the original active card, `threadTaskCardService.reply()`
+recovers the original card, resolves the actor to the stored target thread, and
+returns bounded `returnResolution` fields such as `requestedActorThreadId`,
+`resolvedActorThreadId`, `workflowRecovered`, and `actorThreadInferred`.
+Already-closed terminal duplicates and missing stale duplicates return bounded
+no-op reasons (`already_closed` or `task_card_not_found`) rather than creating a
+second return card or forcing a workspace-local fallback script. If a
 previous runtime version already created a pending return card with the same
 `task-card-return:*` idempotency key, retrying through the return path promotes
 that existing card through the same direct return approval flow and stamps the
@@ -311,9 +319,12 @@ was already delivered to the current target thread. It requires the original
 inferred from app-server metadata or the recent turn/thread map when possible.
 The server validates the target actor, allows return while the original card is
 `pending` or `approved`, creates the reverse-direction card through
-`threadTaskCardService.reply()`, and keeps retries idempotent. Invalid status
-values, missing card ids, missing actor thread ids, missing title, and missing
-body return bounded tool errors instead of hanging the turn.
+`threadTaskCardService.reply()`, and keeps retries idempotent. If actor inference
+is missing or stale but a workflow id is present, the service can recover the
+original card and actor from stored workflow metadata. Invalid status values,
+missing card ids, missing actor thread ids without workflow recovery evidence,
+missing title, and missing body return bounded tool errors instead of hanging
+the turn.
 The accepted return statuses are `completed`, `blocked`, `redirected`,
 `rejected`, and `partially_completed`.
 

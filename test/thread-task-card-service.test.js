@@ -1542,17 +1542,17 @@ test("explicit returnToSource replies are terminal and cannot start acknowledgem
   assert.equal(duplicateReturn.replyCard.id, returned.replyCard.id);
   assert.equal(returnEvents.length, 1);
 
-  await assert.rejects(
-    () => service.reply(returned.replyCard.id, "thread-home", {
-      idempotencyKey: "home-ai:ack:should-stop",
-      format: "markdown",
-      title: "Ack: Music repair completed",
-      summary: "acknowledged",
-      body: "Acknowledged.",
-      returnToSource: true,
-    }),
-    /task_card_terminal_no_return_required/,
-  );
+  const terminalDuplicate = await service.reply(returned.replyCard.id, "thread-home", {
+    idempotencyKey: "home-ai:ack:should-stop",
+    format: "markdown",
+    title: "Ack: Music repair completed",
+    summary: "acknowledged",
+    body: "Acknowledged.",
+    returnToSource: true,
+  });
+  assert.equal(terminalDuplicate.returnResolution.noOp, true);
+  assert.equal(terminalDuplicate.returnResolution.reason, "already_closed");
+  assert.equal(terminalDuplicate.replyCard, null);
   assert.equal(executions.length, 2);
   assert.equal(returnEvents.length, 1);
 });
@@ -1609,6 +1609,93 @@ test("return_to_source recovers original card by workflow when visible card id i
   });
   assert.equal(duplicate.replyCard.id, returned.replyCard.id);
   assert.equal(service.listForThread("thread-xcode").filter((card) => card.audit && card.audit.replyToCardId === repairCard.id).length, 1);
+});
+
+test("return_to_source infers target actor by workflow for Home AI Task Intake returns", async () => {
+  const executions = [];
+  const returnEvents = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => {
+      executions.push(card);
+      return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+    onTerminalReturnCard: async (event) => {
+      returnEvents.push(event);
+      return { status: 200, eventId: "return-event-1" };
+    },
+  });
+  const card = await service.create({
+    sourceWorkspaceId: "/Users/hermes-dev/HermesMobileDev/app",
+    sourceThreadId: "home-ai-task-intake",
+    sourceTurnId: "turn-home-ai",
+    sourceThreadTitle: "Home AI Task Intake",
+    targetWorkspaceId: "/Users/hermes-dev/HermesMobileDev/app",
+    targetThreadId: "home-ai-implementation",
+    idempotencyKey: "home-ai:intake:owner-console",
+    format: "markdown",
+    title: "Repair Owner Console",
+    summary: "Repair and return.",
+    body: "Please repair and return.",
+    workflowMode: "autonomous",
+    workflowId: "home-ai-intake-workflow",
+  });
+  await service.approveFromSource(card.id, "home-ai-task-intake");
+
+  const returned = await service.reply("ttc_stale_home_ai_visible_card", "home-ai-task-intake", {
+    idempotencyKey: "home-ai:intake:return",
+    format: "markdown",
+    title: "Return: Owner Console repaired",
+    status: "completed",
+    summary: "completed",
+    body: "Completed with bounded evidence.",
+    returnToSource: true,
+    workflowId: "home-ai-intake-workflow",
+  });
+
+  assert.equal(returned.card.id, card.id);
+  assert.equal(returned.card.status, "replied");
+  assert.equal(returned.returnResolution.workflowRecovered, true);
+  assert.equal(returned.returnResolution.actorThreadInferred, true);
+  assert.equal(returned.returnResolution.requestedActorThreadId, "home-ai-task-intake");
+  assert.equal(returned.returnResolution.resolvedActorThreadId, "home-ai-implementation");
+  assert.equal(returned.returnResolution.expectedTargetThreadId, "home-ai-implementation");
+  assert.equal(returned.replyCard.delivery.returnToSource, true);
+  assert.equal(returned.replyCard.target.threadId, "home-ai-task-intake");
+  assert.equal(returned.replyCard.status, "approved");
+  assert.equal(returnEvents.length, 1);
+  assert.equal(returnEvents[0].taskCardId, card.id);
+
+  const duplicate = await service.reply("ttc_stale_home_ai_visible_card", "home-ai-task-intake", {
+    idempotencyKey: "home-ai:intake:return",
+    format: "markdown",
+    title: "Return: Owner Console repaired",
+    status: "completed",
+    summary: "completed",
+    body: "Completed with bounded evidence.",
+    returnToSource: true,
+    workflowId: "home-ai-intake-workflow",
+  });
+  assert.equal(duplicate.replyCard.id, returned.replyCard.id);
+  assert.equal(returnEvents.length, 1);
+});
+
+test("return_to_source missing stale duplicate card returns bounded no-op", async () => {
+  const service = createThreadTaskCardService({ storageFile: tempFile("cards.json") });
+  const result = await service.reply("ttc_missing_duplicate", "home-ai-task-intake", {
+    idempotencyKey: "home-ai:missing:return",
+    format: "markdown",
+    title: "Return: missing duplicate",
+    status: "completed",
+    summary: "completed",
+    body: "No remaining card was present.",
+    returnToSource: true,
+    workflowId: "missing-workflow",
+  });
+
+  assert.equal(result.returnResolution.noOp, true);
+  assert.equal(result.returnResolution.reason, "task_card_not_found");
+  assert.equal(result.replyCard, null);
 });
 
 test("terminal return cards report bounded Home AI delivery events for supported statuses", async () => {

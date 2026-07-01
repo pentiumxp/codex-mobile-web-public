@@ -318,21 +318,28 @@ async function returnToSource(context, args = {}) {
     ok: result.ok !== false,
     taskCardId,
     threadId,
-      status: String(result.card && result.card.status || ""),
-      replyCard: {
-        id: String(replyCard.id || ""),
-        status: String(replyCard.status || ""),
-        sourceThreadId: String(replyCard.source && replyCard.source.threadId || ""),
-        targetThreadId: String(replyCard.target && replyCard.target.threadId || ""),
-        injectedTurnId: String(replyCard.injectedTurnId || ""),
-        returnToSource: Boolean(replyCard.delivery && replyCard.delivery.returnToSource),
-        returnStatus: String(replyCard.delivery && replyCard.delivery.returnStatus || ""),
-        terminal: Boolean(replyCard.terminal || replyCard.delivery && replyCard.delivery.terminal),
-        requiresReturn: Boolean(replyCard.requiresReturn),
-        ackPolicy: String(replyCard.ackPolicy || replyCard.delivery && replyCard.delivery.ackPolicy || ""),
-      },
-    };
-  }
+    status: String(result.card && result.card.status || ""),
+    requestedActorThreadId: String(result.returnResolution && result.returnResolution.requestedActorThreadId || threadId),
+    resolvedActorThreadId: String(result.returnResolution && result.returnResolution.resolvedActorThreadId || threadId),
+    returnNoOp: Boolean(result.returnResolution && result.returnResolution.noOp),
+    returnNoOpReason: String(result.returnResolution && result.returnResolution.reason || ""),
+    workflowRecovered: Boolean(result.returnResolution && result.returnResolution.workflowRecovered),
+    actorThreadInferred: Boolean(result.returnResolution && result.returnResolution.actorThreadInferred),
+    expectedTargetThreadId: String(result.returnResolution && result.returnResolution.expectedTargetThreadId || ""),
+    replyCard: {
+      id: String(replyCard.id || ""),
+      status: String(replyCard.status || ""),
+      sourceThreadId: String(replyCard.source && replyCard.source.threadId || ""),
+      targetThreadId: String(replyCard.target && replyCard.target.threadId || ""),
+      injectedTurnId: String(replyCard.injectedTurnId || ""),
+      returnToSource: Boolean(replyCard.delivery && replyCard.delivery.returnToSource),
+      returnStatus: String(replyCard.delivery && replyCard.delivery.returnStatus || ""),
+      terminal: Boolean(replyCard.terminal || replyCard.delivery && replyCard.delivery.terminal),
+      requiresReturn: Boolean(replyCard.requiresReturn),
+      ackPolicy: String(replyCard.ackPolicy || replyCard.delivery && replyCard.delivery.ackPolicy || ""),
+    },
+  };
+}
 
 async function handleMessage(context, message = {}) {
   const method = String(message.method || "");

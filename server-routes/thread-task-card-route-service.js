@@ -694,6 +694,8 @@ function createThreadTaskCardRouteService(dependencies = {}) {
   function actorThreadIdFromDynamicToolCall(params = {}, args = {}) {
     const fromArgs = String(args.threadId || args.thread_id || args.actorThreadId || args.actor_thread_id || "").trim();
     if (fromArgs) return fromArgs;
+    const fromDirectParams = String(params.threadId || params.thread_id || params.actorThreadId || params.actor_thread_id || "").trim();
+    if (fromDirectParams) return fromDirectParams;
     const fromParams = pushThreadId(params);
     if (fromParams) return fromParams;
     const turnId = String((params && (params.turnId || params.turn_id))
@@ -808,7 +810,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "task_card_id_required" });
         return dynamicToolErrorPayload("task_card_id_required", "Original task card id is required for return_to_source.");
       }
-      if (!prepared.actorThreadId) {
+      if (!prepared.actorThreadId && !prepared.body.workflowId) {
         logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "actor_thread_id_required" });
         return dynamicToolErrorPayload(
           "actor_thread_id_required",
@@ -830,14 +832,24 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       }
       const result = await threadTaskCardService.reply(prepared.taskCardId, prepared.actorThreadId, prepared.body);
       logTaskCardReturnDynamicToolCall(request, params, args, {
-        outcome: "ok",
+        outcome: result && result.returnResolution && result.returnResolution.noOp
+          ? result.returnResolution.reason || "noop"
+          : "ok",
         replyCardId: result && result.replyCard && result.replyCard.id || "",
+        resolvedActorThreadId: result && result.returnResolution && result.returnResolution.resolvedActorThreadId || "",
       });
       return dynamicToolJsonResponse({
         ok: true,
         tool: taskCardReturnToolFullName,
         taskCardId: prepared.taskCardId,
         actorThreadId: prepared.actorThreadId,
+        requestedActorThreadId: result && result.returnResolution && result.returnResolution.requestedActorThreadId || prepared.actorThreadId,
+        resolvedActorThreadId: result && result.returnResolution && result.returnResolution.resolvedActorThreadId || prepared.actorThreadId,
+        returnNoOp: Boolean(result && result.returnResolution && result.returnResolution.noOp),
+        returnNoOpReason: result && result.returnResolution && result.returnResolution.reason || "",
+        workflowRecovered: Boolean(result && result.returnResolution && result.returnResolution.workflowRecovered),
+        actorThreadInferred: Boolean(result && result.returnResolution && result.returnResolution.actorThreadInferred),
+        expectedTargetThreadId: result && result.returnResolution && result.returnResolution.expectedTargetThreadId || "",
         originalCardStatus: result && result.card && result.card.status || "",
         replyCardId: result && result.replyCard && result.replyCard.id || "",
         replyCardStatus: result && result.replyCard && result.replyCard.status || "",

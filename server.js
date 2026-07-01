@@ -654,6 +654,7 @@ function requireThreadListRuntimeService() {
 
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
+  returnThreadTaskCardScriptPath: path.join(APP_ROOT, "scripts", "return-thread-task-card.js"),
   onTerminalReturnCard: async (event) => homeAiAutonomousDeliveryReturnService.send(event, { workspaceId: "owner" }),
   executeApprovedCard: async (card, message) => {
     const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
