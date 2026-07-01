@@ -8,7 +8,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const serverHttpRuntimeServiceJs = fs.readFileSync(
-  path.resolve(__dirname, "..", "adapters", "server-http-runtime-service.js"),
+  path.resolve(__dirname, "..", "services", "runtime", "server-http-runtime-service.js"),
   "utf8",
 );
 const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
@@ -1126,7 +1126,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const requestContextServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-request-context-service.js"), "utf8");
   const responseCoalescerServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-response-coalescer-service.js"), "utf8");
   const visibilityServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-visibility-service.js"), "utf8");
-  const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "rate-limit-runtime-service.js"), "utf8");
+  const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "rate-limit-runtime-service.js"), "utf8");
   const routeIndex = routeServiceJs.indexOf('async function handleThreadListRoute(options = {})');
   assert.ok(routeIndex >= 0, "missing thread list route");
   const routeBody = routeServiceJs.slice(routeIndex);

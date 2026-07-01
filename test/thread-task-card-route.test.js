@@ -16,7 +16,7 @@ const codexAppServerClientServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "runtime", "codex-app-server-client-service.js"),
   "utf8",
 );
-const appServerRequestPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "app-server-request-policy-service.js"), "utf8");
+const appServerRequestPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "app-server-request-policy-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-task-card-route-service.js"), "utf8");
 const taskCardRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-message-route-service.js"), "utf8");
@@ -27,7 +27,7 @@ const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..",
 const threadDetailRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
 const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-response-preparation-service.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
-const runtimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "runtime-settings-service.js"), "utf8");
+const runtimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-settings-service.js"), "utf8");
 const taskCardIdempotencyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-idempotency-service.js"), "utf8");
 const taskCardRuntimePolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-runtime-policy-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");

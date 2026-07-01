@@ -13,7 +13,7 @@ const mobileWindowlessLauncher = fs.readFileSync(path.join(root, "start-codex-mo
 const muxShim = fs.readFileSync(path.join(root, "codex-app-server-mux-shim.cs"), "utf8");
 const muxJs = fs.readFileSync(path.join(root, "codex-app-server-mux.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
-const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "adapters", "server-runtime-utils.js"), "utf8");
+const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(
   path.join(root, "services", "runtime", "codex-app-server-client-service.js"),
   "utf8",

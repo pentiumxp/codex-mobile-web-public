@@ -2120,10 +2120,10 @@ public behavior:
   and preflight error/warning classification while `server.js` keeps HTTP
   sequencing, active-profile persistence, trust/toolset sync, and restart
   orchestration.
-- `adapters/runtime-settings-service.js` now owns runtime JSON read/write
+- `services/runtime/runtime-settings-service.js` now owns runtime JSON read/write
   helpers, thread-display public settings normalization, and workspace
   delegation settings snapshots/toggles while `server.js` injects the runtime
-  file path and dynamic-tool constants.
+  file path and dynamic-tool constants. The old adapter path is compatibility-only.
 - `server-routes/core-api-route-service.js` now owns the public and core authorized
   API route groups for public config/login, Codex Profile list/switch/progress,
   Hermes plugin manifest/session/registration/launch/notifications, runtime

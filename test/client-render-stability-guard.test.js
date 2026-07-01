@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
-const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "adapters", "server-runtime-utils.js"), "utf8");
+const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
 
 function functionBody(name) {
   let start = appJs.indexOf(`function ${name}(`);

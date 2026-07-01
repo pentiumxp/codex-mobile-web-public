@@ -7,7 +7,7 @@ const { test } = require("node:test");
 const runtimeSettings = require(path.resolve(__dirname, "..", "public", "runtime-settings.js"));
 const {
   createRuntimePermissionPolicyService,
-} = require("../adapters/runtime-permission-policy-service");
+} = require("../services/runtime/runtime-permission-policy-service");
 
 test("runtime settings normalize option lists without duplicates or blanks", () => {
   assert.deepEqual(runtimeSettings.normalizeOptionList(["", "gpt-5.5", " gpt-5.5 ", "gpt-5.4"]), [

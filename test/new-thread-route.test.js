@@ -14,10 +14,10 @@ const codexAppServerClientServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "runtime", "codex-app-server-client-service.js"),
   "utf8",
 );
-const serverRuntimeUtilsJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "server-runtime-utils.js"), "utf8");
-const serverHttpRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "server-http-runtime-service.js"), "utf8");
-const runtimePermissionPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "runtime-permission-policy-service.js"), "utf8");
-const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "rate-limit-runtime-service.js"), "utf8");
+const serverRuntimeUtilsJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-runtime-utils.js"), "utf8");
+const serverHttpRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-http-runtime-service.js"), "utf8");
+const runtimePermissionPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-permission-policy-service.js"), "utf8");
+const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "rate-limit-runtime-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-task-card-route-service.js"), "utf8");
 const taskCardRuntimePolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-runtime-policy-service.js"), "utf8");

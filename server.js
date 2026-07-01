@@ -64,7 +64,7 @@ const {
   normalizeThreadGoalStatus,
 } = require("./adapters/thread-goal-service");
 const { createThreadGoalActionService } = require("./adapters/thread-goal-action-service");
-const { createRuntimePermissionPolicyService } = require("./adapters/runtime-permission-policy-service");
+const { createRuntimePermissionPolicyService } = require("./services/runtime/runtime-permission-policy-service");
 const { createWorkspaceRegistryService } = require("./adapters/workspace-registry-service");
 const {
   createCodexProfileService,
@@ -121,7 +121,7 @@ const {
 } = require("./adapters/thread-list-summary-service");
 const { createThreadDetailCompactionService } = require("./adapters/thread-detail-compaction-service");
 const { createThreadEventNotificationService } = require("./adapters/thread-event-notification-service");
-const { createRateLimitRuntimeService } = require("./adapters/rate-limit-runtime-service");
+const { createRateLimitRuntimeService } = require("./services/runtime/rate-limit-runtime-service");
 const { createThreadVisibilityService } = require("./adapters/thread-visibility-service");
 const { createThreadCompletionDiagnosticService } = require("./adapters/thread-completion-diagnostic-service");
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
@@ -133,12 +133,12 @@ const { createThreadMessageRouteService } = require("./server-routes/thread-mess
 const { handleThreadListRoute } = require("./server-routes/thread-list-route-service");
 const { createCodexAppServerClient } = require("./services/runtime/codex-app-server-client-service");
 const { createStaticFileService } = require("./adapters/static-file-service");
-const { createServerRuntimeUtils } = require("./adapters/server-runtime-utils");
-const { createServerHttpRuntimeService } = require("./adapters/server-http-runtime-service");
-const { createRuntimeSettingsService } = require("./adapters/runtime-settings-service");
+const { createServerRuntimeUtils } = require("./services/runtime/server-runtime-utils");
+const { createServerHttpRuntimeService } = require("./services/runtime/server-http-runtime-service");
+const { createRuntimeSettingsService } = require("./services/runtime/runtime-settings-service");
 const { createCoreApiRouteService } = require("./server-routes/core-api-route-service");
 const { createAppMaintenanceService } = require("./adapters/app-maintenance-service");
-const { createAppServerRequestPolicyService } = require("./adapters/app-server-request-policy-service");
+const { createAppServerRequestPolicyService } = require("./services/runtime/app-server-request-policy-service");
 const { createRolloutDetailEnrichmentService } = require("./adapters/rollout-detail-enrichment-service");
 const { createThreadDetailRolloutBackfillService } = require("./adapters/thread-detail-rollout-backfill-service");
 const { createApiDispatchRouteService } = require("./server-routes/api-dispatch-route-service");
