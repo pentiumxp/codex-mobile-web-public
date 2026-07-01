@@ -12,6 +12,10 @@ const threadDetailCompactionServiceJs = fs.readFileSync(
   path.join(root, "adapters", "thread-detail-compaction-service.js"),
   "utf8",
 );
+const threadDetailActiveTurnEvidenceServiceJs = fs.readFileSync(
+  path.join(root, "services", "thread-detail", "thread-detail-active-turn-evidence-service.js"),
+  "utf8",
+);
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const threadDetailMergeStateJs = fs.readFileSync(path.join(root, "public", "thread-detail-merge-state.js"), "utf8");
 const threadDetailPatchPlan = require(path.join(root, "public", "thread-detail-patch-plan.js"));
@@ -55,7 +59,9 @@ function serverFunctionBody(name) {
 }
 
 function serverOrCompactionSourceForFunction(name) {
-  return serverJs.includes(`function ${name}(`) ? serverJs : threadDetailCompactionServiceJs;
+  if (serverJs.includes(`function ${name}(`)) return serverJs;
+  if (threadDetailCompactionServiceJs.includes(`function ${name}(`)) return threadDetailCompactionServiceJs;
+  return threadDetailActiveTurnEvidenceServiceJs;
 }
 
 function serverOrCompactionFunctionBody(name) {

@@ -46,6 +46,14 @@ const threadDetailActiveReadPolicyAdapterJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-active-read-policy-service.js"),
   "utf8",
 );
+const threadDetailActiveTurnEvidenceServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-active-turn-evidence-service.js"),
+  "utf8",
+);
+const threadDetailActiveTurnEvidenceAdapterJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-active-turn-evidence-service.js"),
+  "utf8",
+);
 const threadDetailBoundedReadPolicyAdapterJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-bounded-read-policy-service.js"),
   "utf8",
@@ -360,6 +368,10 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(threadDetailReadOrchestrationServiceJs, /require\("\.\/thread-detail-active-read-policy-service"\)/);
   assert.match(threadDetailActiveReadPolicyServiceJs, /function planActiveThreadDetailReadPolicy/);
   assert.match(threadDetailActiveReadPolicyAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-active-read-policy-service"\)/);
+  assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-active-turn-evidence-service"\)/);
+  assert.match(threadDetailActiveTurnEvidenceServiceJs, /function createThreadDetailActiveTurnEvidenceService/);
+  assert.match(threadDetailActiveTurnEvidenceServiceJs, /function reconcileThreadActiveTurnWithRolloutEvidence/);
+  assert.match(threadDetailActiveTurnEvidenceAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-active-turn-evidence-service"\)/);
   assert.match(threadDetailBoundedReadPolicyAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-bounded-read-policy-service"\)/);
   assert.match(threadDetailTurnsListReadCoalescerAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-turns-list-read-coalescer-service"\)/);
   assert.match(threadDetailPerformanceServiceJs, /require\("\.\.\/services\/thread-detail\/thread-detail-cold-path-diagnosis-service"\)/);

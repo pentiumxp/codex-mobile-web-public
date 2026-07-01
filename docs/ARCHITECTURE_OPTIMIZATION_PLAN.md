@@ -2144,6 +2144,11 @@ public behavior:
   rollout completion/user-input/active-assistant/final-receipt preparation
   order, task-card/pending-request detail decoration, response-budget compaction
   invocation, and the read-result helpers consumed by detail orchestration.
+- `services/thread-detail/thread-detail-active-turn-evidence-service.js` now owns
+  active turn evidence normalization and reconciliation: live/completed status
+  checks, superseded live shell pruning, rollout active-runtime evidence lookup,
+  materialized active-turn recovery, and empty resting active-shell removal
+  before compaction and response preparation.
 - `adapters/static-file-service.js` now owns public static file serving,
   Brotli/gzip negotiation, compressed-body cache state, and HTML
   frame-ancestor header injection.
@@ -2180,7 +2185,7 @@ public behavior:
   `server.js` injects Codex RPC, runtime-setting helpers, classifiers, timeout
   values, and `notifyLocalTurnStarted`.
 
-Local line-count evidence after the latest extraction: `server.js` is 3,990 lines,
+Local line-count evidence after the latest extraction: `server.js` is 3,532 lines,
 `server-routes/thread-task-card-route-service.js` is 1,275 lines,
 `services/task-cards/task-card-runtime-policy-service.js` is 345 lines, and
 `services/task-cards/thread-task-card-service.js` is 1,857 lines,
@@ -2191,17 +2196,19 @@ Local line-count evidence after the latest extraction: `server.js` is 3,990 line
 `services/thread-list/thread-summary-state-service.js` is 400 lines, and
 the remaining canonical `services/thread-list/` policy/merge/context/coalescer/
 diagnosis/summary services are 257, 212, 183, 86, 147, 165, and 47 lines, and
-`services/thread-detail/thread-detail-response-preparation-service.js` is 256 lines. The newer
+`services/thread-detail/thread-detail-response-preparation-service.js` is 256 lines, and
+`services/thread-detail/thread-detail-active-turn-evidence-service.js` is 293 lines. The newer
 low-coupling static/profile-switch/runtime-settings/core-API/auto-recovery
 adapters are 195, 385, 236, 554, and 153 lines respectively; the new app
 maintenance adapter is 709 lines.
 This is a checkpoint, not the target state; `server.js` remains too large. The
 next high-yield backend splits should target remaining thread-detail enrichment
-helpers, the remaining thread-list composition wrappers, notification/runtime
-side-effect groups, and the residual API dispatcher because core route
-execution, app maintenance state/IO, thread-list fallback/source/cache/prewarm,
-summary-state, static serving, runtime settings, profile preflight, and the main
-detail response-preparation order are now out of the entrypoint.
+helpers, the remaining thread-list composition wrappers, residual notification/
+runtime side-effect groups, and any remaining API dispatcher glue because core
+route execution, app maintenance state/IO, thread-list fallback/source/cache/
+prewarm/summary-state, static serving, runtime settings, profile preflight,
+thread-detail active-turn evidence, and the main detail response-preparation
+order are now out of the entrypoint.
 
 Validation boundary:
 
