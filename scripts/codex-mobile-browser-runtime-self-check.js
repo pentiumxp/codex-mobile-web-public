@@ -89,6 +89,7 @@ function usage() {
     "  --vite-preview-only        Check /vite-shell/preview.html Vite module artifact only.",
     "  --vite-app-preview-only    Check /vite-shell/app-preview.html Vite-owned app startup only.",
     "  --vite-app-preview-runtime Check /vite-shell/app-preview.html with full read-only thread UX sampling.",
+    "  --vite-app-preview-embed   Add ?embed=hermes to app-preview checks and verify embed bootstrap invariants.",
     "  --rounds <n>               Thread switch rounds. Default: 3.",
     "  --sample-delays-ms <csv>   Delays after each switch. Default: 350,1200,2800.",
     "  --thread-list-stress-rounds <n> Thread-list open/scroll/click stress rounds. Default: 2.",
@@ -153,6 +154,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     vitePreviewOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_PREVIEW_ONLY || "")),
     viteAppPreviewOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_ONLY || "")),
     viteAppPreviewRuntime: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_RUNTIME || "")),
+    viteAppPreviewEmbed: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_EMBED || "")),
     rounds: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_ROUNDS || "3", 3, 20),
     sampleDelaysMs: parseDelayList(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SAMPLE_DELAYS_MS || ""),
     threadListStressRounds: readNonNegativeInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_THREAD_LIST_STRESS_ROUNDS || "2", 2, 20),
@@ -185,6 +187,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--vite-preview-only") options.vitePreviewOnly = true;
     else if (arg === "--vite-app-preview-only") options.viteAppPreviewOnly = true;
     else if (arg === "--vite-app-preview-runtime") options.viteAppPreviewRuntime = true;
+    else if (arg === "--vite-app-preview-embed") options.viteAppPreviewEmbed = true;
     else if (arg === "--rounds") options.rounds = readPositiveInt(next(), options.rounds, 20);
     else if (arg === "--sample-delays-ms") options.sampleDelaysMs = parseDelayList(next(), options.sampleDelaysMs);
     else if (arg === "--thread-list-stress-rounds") options.threadListStressRounds = readNonNegativeInt(next(), options.threadListStressRounds, 20);
@@ -1155,6 +1158,7 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
 function viteAppPreviewProbeExpression(input = {}) {
   const expectedClientBuildId = String(input.clientBuildId || "");
   const expectedShellCacheName = String(input.shellCacheName || "");
+  const expectEmbed = input.expectEmbed === true;
   return `
     (async () => {
       let appPreviewResult = null;
@@ -1172,6 +1176,9 @@ function viteAppPreviewProbeExpression(input = {}) {
       const bootRecovery = document.getElementById("bootRecovery");
       const html = document.documentElement;
       const status = window.__CODEX_MOBILE_VITE_APP_PREVIEW__ || {};
+      const locationUrl = new URL(window.location.href);
+      const initialPluginEmbed = window.INITIAL_PLUGIN_EMBED || {};
+      const state = window.state || {};
       const moduleScripts = Array.from(document.querySelectorAll("script[type='module']"))
         .map((script) => {
           try {
@@ -1215,6 +1222,13 @@ function viteAppPreviewProbeExpression(input = {}) {
         loaderLoadedCount: Number(appPreviewResult && appPreviewResult.loadedCount || status.loaded && status.loaded.length || 0) || 0,
         loaderFailedCount: Number(appPreviewResult && appPreviewResult.failedCount || status.failed && status.failed.length || 0) || 0,
         loaderErrorCode: String(appPreviewResult && appPreviewResult.errorCode || status.failed && status.failed[0] || "").slice(0, 120),
+        embedExpected: ${expectEmbed ? "true" : "false"},
+        embedQueryPresent: locationUrl.searchParams.get("embed") === "hermes",
+        embedHtmlClassPresent: Boolean(html && html.classList && html.classList.contains("embed-hermes")),
+        embedPrimaryClassPresent: Boolean(html && html.classList && html.classList.contains("embed-hermes-primary")),
+        pluginEmbedApiReady: Boolean(window.CodexPluginEmbed && typeof window.CodexPluginEmbed.detect === "function"),
+        initialPluginEmbedEmbedded: Boolean(initialPluginEmbed && initialPluginEmbed.embedded === true),
+        pluginModeLocalKeySuppressed: Boolean(window.state && !state.key),
         clientBuildPresent: Boolean(window.CLIENT_BUILD_ID),
         clientBuildMatches: ${JSON.stringify(expectedClientBuildId)} ? window.CLIENT_BUILD_ID === ${JSON.stringify(expectedClientBuildId)} : Boolean(window.CLIENT_BUILD_ID),
         shellCacheMatches: ${JSON.stringify(expectedShellCacheName)} ? String(shellManifest.shellCacheName || "") === ${JSON.stringify(expectedShellCacheName)} : Boolean(shellManifest.shellCacheName),
@@ -1230,7 +1244,7 @@ function viteAppPreviewProbeExpression(input = {}) {
   `;
 }
 
-function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}) {
+function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}, options = {}) {
   const issues = [];
   const append = (code, severity = "H2", extra = {}) => {
     issues.push(Object.assign({
@@ -1255,6 +1269,14 @@ function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}) {
   }
   if (sample && sample.clientBuildMatches !== true) append("vite_app_preview_client_build_mismatch");
   if (sample && sample.shellCacheMatches !== true) append("vite_app_preview_shell_cache_mismatch");
+  const expectEmbed = options.expectEmbed === true || (sample && sample.embedExpected === true);
+  if (expectEmbed) {
+    if (!sample || sample.embedQueryPresent !== true) append("vite_app_preview_embed_query_missing");
+    if (!sample || sample.embedHtmlClassPresent !== true) append("vite_app_preview_embed_class_missing");
+    if (!sample || sample.pluginEmbedApiReady !== true) append("vite_app_preview_plugin_embed_api_missing");
+    if (!sample || sample.initialPluginEmbedEmbedded !== true) append("vite_app_preview_initial_plugin_embed_missing");
+    if (!sample || sample.pluginModeLocalKeySuppressed !== true) append("vite_app_preview_plugin_local_key_present");
+  }
   if (sample && sample.appVisible !== true) append("vite_app_preview_app_not_visible");
   if (sample && sample.bootRecoveryVisible === true) append("vite_app_preview_boot_recovery_visible");
   const runtimeReady = sample
@@ -1921,6 +1943,7 @@ async function run(options = parseArgs(), deps = {}) {
   const key = deps.key !== undefined ? deps.key : readAccessKey(options);
   const appPreviewOnly = options.viteAppPreviewOnly === true;
   const appPreviewRuntime = options.viteAppPreviewRuntime === true && !appPreviewOnly;
+  const appPreviewEmbed = options.viteAppPreviewEmbed === true && (appPreviewOnly || appPreviewRuntime);
   const browserOnly = options.startupOnly || options.vitePreviewOnly || appPreviewOnly;
   const submitAllowed = !browserOnly && !appPreviewRuntime && options.exerciseSubmit === true;
   const startedAt = new Date().toISOString();
@@ -1940,7 +1963,11 @@ async function run(options = parseArgs(), deps = {}) {
   const report = {
     ok: false,
     startedAt,
-    mode: appPreviewOnly ? "vite-app-preview" : appPreviewRuntime ? "vite-app-preview-runtime" : options.vitePreviewOnly ? "vite-preview" : options.startupOnly ? "startup-only" : "full",
+    mode: appPreviewOnly
+      ? (appPreviewEmbed ? "vite-app-preview-embed" : "vite-app-preview")
+      : appPreviewRuntime
+        ? (appPreviewEmbed ? "vite-app-preview-embed-runtime" : "vite-app-preview-runtime")
+        : options.vitePreviewOnly ? "vite-preview" : options.startupOnly ? "startup-only" : "full",
     endpoint: endpointKind(options.server),
     browser: { engine: "chrome-cdp", headed: Boolean(options.headed), viewport: options.viewport },
     publicConfig: {
@@ -2045,7 +2072,7 @@ async function run(options = parseArgs(), deps = {}) {
       source: browserInitScript(key, threadPlan[0] && threadPlan[0].id || ""),
     });
     const navigateUrl = (appPreviewOnly || appPreviewRuntime)
-      ? requestUrl(options, "/vite-shell/app-preview.html")
+      ? requestUrl(options, "/vite-shell/app-preview.html", appPreviewEmbed ? { embed: "hermes" } : {})
       : options.vitePreviewOnly ? requestUrl(options, "/vite-shell/preview.html") : options.server;
     await cdp.send("Page.navigate", { url: navigateUrl });
     await waitForLoad(cdp, options.timeoutMs);
@@ -2060,11 +2087,15 @@ async function run(options = parseArgs(), deps = {}) {
       samples.push(report.vitePreview);
     }
     if (appPreviewOnly || appPreviewRuntime) {
-      report.viteAppPreview = await evaluate(cdp, viteAppPreviewProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
+      report.viteAppPreview = await evaluate(cdp, viteAppPreviewProbeExpression({
+        ...report.publicConfig,
+        expectEmbed: appPreviewEmbed,
+      }), options.timeoutMs).catch((err) => ({
         label: "vite-app-preview",
         probeKind: "vite-app-preview",
         markerPresent: false,
         metaPresent: false,
+        embedExpected: appPreviewEmbed,
         loaderOk: false,
         errorCode: boundedToken(err && err.message, "vite_app_preview_probe_failed"),
       }));
@@ -2219,7 +2250,7 @@ async function run(options = parseArgs(), deps = {}) {
     report.browserReport = analyzeViteAppPreviewProbe(report.viteAppPreview, {
       consoleEvents,
       exceptions,
-    });
+    }, { expectEmbed: appPreviewEmbed });
     report.ok = report.browserReport.ok;
     return report;
   }
@@ -2236,7 +2267,7 @@ async function run(options = parseArgs(), deps = {}) {
     report.viteAppPreviewReport = analyzeViteAppPreviewProbe(report.viteAppPreview, {
       consoleEvents,
       exceptions,
-    });
+    }, { expectEmbed: appPreviewEmbed });
     if (!report.viteAppPreviewReport.ok) {
       const issues = Array.isArray(report.browserReport.issues) ? report.browserReport.issues.slice() : [];
       issues.push(...(Array.isArray(report.viteAppPreviewReport.issues) ? report.viteAppPreviewReport.issues : []));

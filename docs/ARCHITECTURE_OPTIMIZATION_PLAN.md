@@ -4801,6 +4801,29 @@ cutover bar by requiring the Vite-owned app-preview host to pass the same
 user-visible duplicate-message, thread-detail, and thread-list DOM checks as
 the default shell before default execution can move.
 
+The next app-preview prerequisite covers the Hermes embedded-plugin startup
+path, where the shell bootstrap must not accidentally inherit the standalone
+browser access key or miss the plugin embed markers:
+
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-app-preview-only
+  --vite-app-preview-embed` opens
+  `/vite-shell/app-preview.html?embed=hermes`, waits for the same Vite-owned
+  classic-script loader, then verifies the bounded embed contract:
+  `embed-hermes` class present, plugin embed API ready,
+  `INITIAL_PLUGIN_EMBED.embedded === true`, and local key suppression active.
+- `services/runtime/runtime-job-scheduler-service.js` declares
+  `browser-vite-app-preview-embed` as a deploy-default real-browser job with
+  the same skip/browser-mode policy as the existing browser/Vite preview jobs.
+- `scripts/codex-mobile-runtime-self-check-loop.js` runs that embed job as a
+  startup-contract gate in deploy mode, while the ordinary app-preview job
+  continues to own either lightweight startup proof or full read-only UX
+  sampling depending on `--browser-startup-only`.
+
+This still leaves production `/` on classic-script fallback. It prevents a
+future default-Vite cutover from passing while the Hermes embed entry path has
+lost its bootstrap ownership or leaked standalone local-key state into plugin
+mode.
+
 ## Release Rule
 
 Follow the current release order:

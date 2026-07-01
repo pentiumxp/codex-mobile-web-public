@@ -43,7 +43,7 @@ function usage() {
     "  --browser-sample-delays-ms <csv> Browser delays after each switch. Default: 100,350,1200,2800,6000.",
     "  --browser-min-settled-delay-ms <n> Browser downgrade H2 threshold. Default: 1000.",
     "  --browser-startup-only Run only listener/static shell/browser startup smoke for browser job.",
-    "                         Deploy gates also run Vite preview artifact and app-preview startup smokes as separate browser jobs.",
+    "                         Deploy gates also run Vite preview artifact, app-preview, and app-preview embed startup smokes as separate browser jobs.",
     "                         Without this flag, the app-preview job runs full read-only thread UX sampling.",
     "  --browser-exercise-submit Enable browser Composer submit exercise with a short OK-only prompt.",
     "  --browser-submit-thread-id <id> Optional target thread for submit exercise. Defaults to first selected thread.",
@@ -285,6 +285,18 @@ async function runOnce(options = {}, deps = {}) {
     }
     const result = await runNodeScript(browserScript, viteAppPreviewArgs, deps, browserViteAppPreviewJob);
     checks.push(summarizeCheck("browser-vite-app-preview", result));
+  }
+  const browserViteAppPreviewEmbedJob = runtimeSelfCheckJob(jobPlan, "browser-vite-app-preview-embed");
+  if (browserViteAppPreviewEmbedJob && browserViteAppPreviewEmbedJob.enabled) {
+    const viteAppPreviewEmbedArgs = [
+      "--server",
+      options.server || DEFAULT_SERVER,
+      "--json",
+      "--vite-app-preview-only",
+      "--vite-app-preview-embed",
+    ];
+    const result = await runNodeScript(browserScript, viteAppPreviewEmbedArgs, deps, browserViteAppPreviewEmbedJob);
+    checks.push(summarizeCheck("browser-vite-app-preview-embed", result));
   }
   const clientEventsJob = runtimeSelfCheckJob(jobPlan, "client-events");
   if (clientEventsJob && clientEventsJob.enabled) {

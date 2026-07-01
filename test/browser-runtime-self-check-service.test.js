@@ -39,6 +39,13 @@ test("browser runtime self-check parses Vite app-preview full runtime option", (
   assert.equal(options.json, true);
 });
 
+test("browser runtime self-check parses Vite app-preview Hermes embed option", () => {
+  const options = script.parseArgs(["--server", "http://127.0.0.1:8787", "--vite-app-preview-only", "--vite-app-preview-embed", "--json"]);
+  assert.equal(options.viteAppPreviewOnly, true);
+  assert.equal(options.viteAppPreviewEmbed, true);
+  assert.equal(options.json, true);
+});
+
 test("browser runtime self-check analyzes Vite preview module readiness", () => {
   const passing = script.analyzeVitePreviewProbe({
     markerVisible: true,
@@ -171,6 +178,64 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_console_error"));
 });
 
+test("browser runtime self-check analyzes Vite app-preview Hermes embed startup readiness", () => {
+  const passing = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    classicScriptCount: 51,
+    expectedClassicScriptCount: 51,
+    classicScriptOrderMatches: true,
+    embedExpected: true,
+    embedQueryPresent: true,
+    embedHtmlClassPresent: true,
+    pluginEmbedApiReady: true,
+    initialPluginEmbedEmbedded: true,
+    pluginModeLocalKeySuppressed: true,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] }, { expectEmbed: true });
+  assert.equal(passing.ok, true);
+  assert.equal(passing.issueCount, 0);
+
+  const failing = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    classicScriptCount: 51,
+    expectedClassicScriptCount: 51,
+    classicScriptOrderMatches: true,
+    embedExpected: true,
+    embedQueryPresent: false,
+    embedHtmlClassPresent: false,
+    pluginEmbedApiReady: false,
+    initialPluginEmbedEmbedded: false,
+    pluginModeLocalKeySuppressed: false,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] }, { expectEmbed: true });
+  assert.equal(failing.ok, false);
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_embed_query_missing"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_embed_class_missing"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_plugin_embed_api_missing"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_initial_plugin_embed_missing"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_plugin_local_key_present"));
+});
+
 test("browser runtime self-check reads client build from shell manifest assets", () => {
   assert.ok(scriptSource.includes('readAsset("/shell-asset-manifest.js")'));
   assert.ok(scriptSource.includes('readAsset("/shell-asset-manifest.json")'));
@@ -180,6 +245,10 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("/vite-shell/preview.html"));
   assert.ok(scriptSource.includes("/vite-shell/app-preview.html"));
   assert.ok(scriptSource.includes("--vite-app-preview-runtime"));
+  assert.ok(scriptSource.includes("--vite-app-preview-embed"));
+  assert.ok(scriptSource.includes('embed: "hermes"'));
+  assert.ok(scriptSource.includes("embedHtmlClassPresent"));
+  assert.ok(scriptSource.includes("vite_app_preview_initial_plugin_embed_missing"));
   assert.ok(scriptSource.includes("vite-app-preview-runtime"));
   assert.ok(scriptSource.includes("viteAppPreviewReport"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_APP_PREVIEW_PROMISE__"));
