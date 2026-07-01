@@ -129,6 +129,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
     "/app.js",
   ]);
   assert.equal(appEntryChunk.assetCount, 3);
+  assert.equal(appEntryChunk.classicAssetRecords.length, 3);
+  assert.equal(appEntryChunk.classicAssetHashCount, 3);
+  assert.ok(appEntryChunk.classicAssetBytes > 0);
+  assert.ok(appEntryChunk.classicAssetRecords.every((entry) => /^\/.+\.js$/.test(entry.path)));
+  assert.ok(appEntryChunk.classicAssetRecords.every((entry) => /^[a-f0-9]{64}$/.test(entry.sha256)));
   assert.equal(appEntryChunk.classicGlobalExportAssetCount, 2);
   assert.equal(appEntryChunk.classicGlobalExportCount, 2);
   assert.ok(contract.outputFiles.includes("assets/vite-shell-entry-example.js"));
@@ -168,6 +173,7 @@ test("Vite entry group virtual modules preserve bounded group payloads", async (
   assert.match(source, /"id": "app-entry"/);
   assert.match(source, /"\/app\.js"/);
   assert.match(source, /"classicGlobalExports"/);
+  assert.match(source, /"classicAssetHashCount": 3/);
   assert.match(source, /"classicGlobalExportCount": 2/);
 });
 

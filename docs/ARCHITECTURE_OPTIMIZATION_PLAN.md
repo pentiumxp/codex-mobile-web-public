@@ -4686,6 +4686,31 @@ preview artifact to that default shell's exact generated script block, so a
 future Vite cutover cannot silently drift away from the currently executing
 classic runtime order.
 
+The follow-up entry-group classic asset hash contract slice strengthens the
+per-group preview chunks from count coverage to file-level parity:
+
+- `scripts/frontend-shell-asset-graph.mjs` now records bounded
+  `classicAssetRecords` for each generated entry-group chunk: public path,
+  source path, byte count, and SHA-256 hash for every classic script owned by
+  that group.
+- The virtual entry-group modules publish those same hash/byte records in
+  `__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__`, so the browser preview can prove
+  it executed chunk metadata that matches the generated classic shell graph.
+- `scripts/publish-vite-shell-artifact.mjs` carries the records into
+  `public/vite-shell/vite-shell-readback.json` and reports the aggregate
+  `classicAssetHashes` count.
+- `services/runtime/vite-shell-artifact-service.js` compares readback records
+  against the published artifact manifest and the actual `public/` classic
+  script files, failing closed on hash, byte-size, or missing-file drift.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  requires each executed group chunk to report the expected classic asset hash
+  count and nonzero bytes before deploy gates pass.
+
+Production `/` remains classic-script fallback. This slice removes the last
+"same count, different file" ambiguity from the Vite preview contract before
+any later step promotes generated entry-group chunks toward real runtime
+ownership.
+
 ## Release Rule
 
 Follow the current release order:

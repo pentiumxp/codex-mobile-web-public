@@ -192,6 +192,20 @@ export function buildViteShellPublicReadback(options = {}) {
     fileName: normalizeRelativeFileName(chunk && chunk.fileName),
     entryScript: publicArtifactUrl(chunk && chunk.fileName),
     assetCount: Number.isFinite(Number(chunk && chunk.assetCount)) ? Number(chunk.assetCount) : 0,
+    classicAssetRecords: (Array.isArray(chunk && chunk.classicAssetRecords) ? chunk.classicAssetRecords : [])
+      .map((entry) => ({
+        path: String(entry && entry.path || ""),
+        sourcePath: String(entry && entry.sourcePath || ""),
+        bytes: Number.isFinite(Number(entry && entry.bytes)) ? Number(entry.bytes) : 0,
+        sha256: String(entry && entry.sha256 || ""),
+      }))
+      .filter((entry) => entry.path && entry.sha256),
+    classicAssetHashCount: Number.isFinite(Number(chunk && chunk.classicAssetHashCount))
+      ? Number(chunk.classicAssetHashCount)
+      : 0,
+    classicAssetBytes: Number.isFinite(Number(chunk && chunk.classicAssetBytes))
+      ? Number(chunk.classicAssetBytes)
+      : 0,
     classicGlobalExportAssetCount: Number.isFinite(Number(chunk && chunk.classicGlobalExportAssetCount))
       ? Number(chunk.classicGlobalExportAssetCount)
       : 0,
@@ -249,6 +263,9 @@ export function buildViteShellPublicReadback(options = {}) {
       entryGroupChunks: entryGroupChunks.length,
       startupCriticalAssets: startupAssets.length,
       classicShellScriptBlockScripts: classicShellScriptBlock.scriptCount,
+      classicAssetHashes: entryGroupChunks.reduce((total, chunk) => (
+        total + (Number(chunk && chunk.classicAssetHashCount) || 0)
+      ), 0),
       classicGlobalExportAssets: Array.isArray(manifest.classicGlobalExports) ? manifest.classicGlobalExports.length : 0,
       classicGlobalExports: Array.isArray(manifest.classicGlobalExports)
         ? manifest.classicGlobalExports.reduce((total, entry) => (

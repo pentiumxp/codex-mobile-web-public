@@ -12,6 +12,7 @@ const service = require("../services/runtime/vite-shell-artifact-service");
 
 const CLASSIC_SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
 const CLASSIC_SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
+const APP_JS_FIXTURE = Buffer.from("window.CodexAppShellRuntime = { createAppShellRuntime: function () {} };\n");
 
 function sha256Hex(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
@@ -46,6 +47,8 @@ function writeArtifact(root, options = {}) {
   const deferred = Buffer.from("export const deferred = true;\n");
   const entryGroup = Buffer.from("export const group = true;\n");
   const stage = options.stage || "vite-shell-preview-html-v1";
+  fs.mkdirSync(path.join(root, "public"), { recursive: true });
+  fs.writeFileSync(path.join(root, "public", "app.js"), APP_JS_FIXTURE);
   const shellManifest = options.shellManifest || {
     shellCacheName: "codex-mobile-shell-test",
     clientBuildId: "0.1.11|codex-mobile-shell-test",
@@ -63,6 +66,13 @@ function writeArtifact(root, options = {}) {
     classicGlobalExports: [{
       asset: "/app.js",
       globals: ["CodexAppShellRuntime"],
+    }],
+    assets: [{
+      path: "/app.js",
+      sourcePath: "public/app.js",
+      exists: true,
+      bytes: APP_JS_FIXTURE.length,
+      sha256: sha256Hex(APP_JS_FIXTURE),
     }],
   };
   const classicScriptBlock = classicShellScriptBlockContract(shellManifest.indexScriptAssets);
@@ -135,6 +145,14 @@ function writeArtifact(root, options = {}) {
       fileName: "assets/vite-entry-group-app-entry-test.js",
       entryScript: "/vite-shell/assets/vite-entry-group-app-entry-test.js",
       assetCount: 1,
+      classicAssetRecords: [{
+        path: "/app.js",
+        sourcePath: "public/app.js",
+        bytes: APP_JS_FIXTURE.length,
+        sha256: sha256Hex(APP_JS_FIXTURE),
+      }],
+      classicAssetHashCount: 1,
+      classicAssetBytes: APP_JS_FIXTURE.length,
       classicGlobalExportAssetCount: 1,
       classicGlobalExportCount: 1,
     }],
@@ -223,6 +241,8 @@ test("Vite shell artifact status validates the guarded public preview files", ()
     fileName: "assets/vite-entry-group-app-entry-test.js",
     entryScript: "/vite-shell/assets/vite-entry-group-app-entry-test.js",
     assetCount: 1,
+    classicAssetHashCount: 1,
+    classicAssetBytes: APP_JS_FIXTURE.length,
     classicGlobalExportAssetCount: 1,
     classicGlobalExportCount: 1,
   }]);
@@ -342,6 +362,13 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
       asset: "/app.js",
       globals: ["CodexAppShellRuntime"],
     }],
+    assets: [{
+      path: "/app.js",
+      sourcePath: "public/app.js",
+      exists: true,
+      bytes: APP_JS_FIXTURE.length,
+      sha256: sha256Hex(APP_JS_FIXTURE),
+    }],
     viteBuild: {
       stage: "vite-shell-artifact-contract-v1",
       productionExecution: "classic-script-fallback",
@@ -381,6 +408,14 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
         source: "virtual:codex-mobile-shell-entry-group/app-entry",
         fileName: "assets/vite-entry-group-app-entry-test.js",
         assetCount: 1,
+        classicAssetRecords: [{
+          path: "/app.js",
+          sourcePath: "public/app.js",
+          bytes: APP_JS_FIXTURE.length,
+          sha256: sha256Hex(APP_JS_FIXTURE),
+        }],
+        classicAssetHashCount: 1,
+        classicAssetBytes: APP_JS_FIXTURE.length,
         classicGlobalExportAssetCount: 1,
         classicGlobalExportCount: 1,
       }],
@@ -424,6 +459,14 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
     fileName: "assets/vite-entry-group-app-entry-test.js",
     entryScript: "/vite-shell/assets/vite-entry-group-app-entry-test.js",
     assetCount: 1,
+    classicAssetRecords: [{
+      path: "/app.js",
+      sourcePath: "public/app.js",
+      bytes: APP_JS_FIXTURE.length,
+      sha256: sha256Hex(APP_JS_FIXTURE),
+    }],
+    classicAssetHashCount: 1,
+    classicAssetBytes: APP_JS_FIXTURE.length,
     classicGlobalExportAssetCount: 1,
     classicGlobalExportCount: 1,
   }]);
@@ -434,6 +477,7 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.match(readback.classicShellScriptBlock.sha256, /^[a-f0-9]{64}$/);
   assert.equal(readback.counts.startupCriticalAssets, 1);
   assert.equal(readback.counts.classicShellScriptBlockScripts, 1);
+  assert.equal(readback.counts.classicAssetHashes, 1);
   assert.equal(readback.counts.entryGroupChunks, 1);
   assert.equal(readback.counts.publishedFiles, 5);
 });
@@ -524,4 +568,35 @@ test("Vite shell artifact status fails closed when entry group coverage drifts",
   }).readPublicArtifactStatus();
   assert.equal(status.ok, false);
   assert.ok(status.issueCodes.includes("vite_shell_artifact_entry_group_coverage_mismatch"));
+});
+
+test("Vite shell artifact status fails closed when entry group classic asset hash drifts", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-classic-hash-drift-"));
+  const artifactRoot = writeArtifact(root);
+  const readbackPath = path.join(artifactRoot, "vite-shell-readback.json");
+  const readback = JSON.parse(fs.readFileSync(readbackPath, "utf8"));
+  readback.entryGroupChunks[0].classicAssetRecords[0].sha256 = "0".repeat(64);
+  fs.writeFileSync(readbackPath, `${JSON.stringify(readback, null, 2)}\n`);
+
+  const currentManifest = JSON.parse(fs.readFileSync(path.join(artifactRoot, "codex-mobile-shell-manifest.json"), "utf8"));
+  const status = service.createViteShellArtifactService({
+    appRoot: root,
+    readShellAssetManifest: () => currentManifest,
+  }).readPublicArtifactStatus();
+  assert.equal(status.ok, false);
+  assert.ok(status.issueCodes.includes("vite_shell_artifact_entry_group_classic_asset_hash_mismatch"));
+});
+
+test("Vite shell artifact status fails closed when public classic asset file drifts", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-classic-file-drift-"));
+  const artifactRoot = writeArtifact(root);
+  fs.writeFileSync(path.join(root, "public", "app.js"), "window.CodexAppShellRuntime = {};\n");
+
+  const currentManifest = JSON.parse(fs.readFileSync(path.join(artifactRoot, "codex-mobile-shell-manifest.json"), "utf8"));
+  const status = service.createViteShellArtifactService({
+    appRoot: root,
+    readShellAssetManifest: () => currentManifest,
+  }).readPublicArtifactStatus();
+  assert.equal(status.ok, false);
+  assert.ok(status.issueCodes.includes("vite_shell_classic_asset_file_hash_mismatch"));
 });

@@ -628,12 +628,12 @@ var codexMobileViteEntryGroupIds = [
 	"app-entry"
 ];
 var codexMobileViteEntryGroupLoaders = {
-	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-BLqR4h3p.js"), []),
-	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-ByoVPvax.js"), []),
-	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-CwReA8-F.js"), []),
-	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-BpqsbsHa.js"), []),
-	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-B2tZGkPj.js"), []),
-	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-Cy7TRgaR.js"), [])
+	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-BDgWRIlp.js"), []),
+	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-abU4fLQj.js"), []),
+	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-6aN0dMRo.js"), []),
+	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-CbRnJklH.js"), []),
+	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-C3DOjiYF.js"), []),
+	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-BB5Qmh2f.js"), [])
 };
 function loadCodexMobileViteEntryGroups() {
 	const status = {
@@ -693,7 +693,7 @@ var classicCompatibility = {
 	requiredStartupGlobals: ["CodexRuntimeWiringRuntime", "CodexAppShellRuntime"],
 	classicGlobalExports
 };
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-Dt2PZXE7.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-8QvG-TXi.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

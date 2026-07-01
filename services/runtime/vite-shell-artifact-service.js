@@ -127,6 +127,52 @@ function entryGroupCoverageById(manifest) {
   return coverage;
 }
 
+function assetRecordsByPath(manifest) {
+  const records = new Map();
+  for (const entry of Array.isArray(manifest && manifest.assets) ? manifest.assets : []) {
+    const assetPath = String(entry && entry.path || "").trim();
+    if (!assetPath) continue;
+    records.set(assetPath, {
+      path: assetPath,
+      sourcePath: String(entry && entry.sourcePath || ""),
+      bytes: Number.isFinite(Number(entry && entry.bytes)) ? Number(entry.bytes) : 0,
+      sha256: String(entry && entry.sha256 || ""),
+    });
+  }
+  return records;
+}
+
+function publicAssetStatus(appRoot, assetPath) {
+  const text = String(assetPath || "").trim();
+  if (!text || !text.startsWith("/")) {
+    return { path: text, exists: false, code: "classic_asset_path_invalid" };
+  }
+  const relative = text.replace(/^\/+/, "");
+  if (!relative || relative.split("/").includes("..")) {
+    return { path: text, exists: false, code: "classic_asset_path_invalid" };
+  }
+  const target = path.resolve(appRoot, "public", relative);
+  const publicRoot = path.resolve(appRoot, "public");
+  if (target !== publicRoot && !target.startsWith(`${publicRoot}${path.sep}`)) {
+    return { path: text, exists: false, code: "classic_asset_path_invalid" };
+  }
+  try {
+    const stat = fs.statSync(target);
+    if (!stat.isFile()) {
+      return { path: text, exists: false, code: "classic_asset_not_file" };
+    }
+    const buffer = fs.readFileSync(target);
+    return {
+      path: text,
+      exists: true,
+      bytes: buffer.length,
+      sha256: sha256Hex(buffer),
+    };
+  } catch (_) {
+    return { path: text, exists: false, code: "classic_asset_missing" };
+  }
+}
+
 function readClassicShellScriptBlock(appRoot) {
   const indexHtml = safeReadText(path.join(appRoot, "public", "index.html"));
   const startIndex = indexHtml.indexOf(CLASSIC_SHELL_SCRIPT_BLOCK_START);
@@ -361,6 +407,7 @@ function createViteShellArtifactService(dependencies = {}) {
         .map((chunk) => String(chunk && chunk.groupId || "").trim())
         .filter(Boolean);
       const expectedCoverage = entryGroupCoverageById(artifactManifest);
+      const artifactAssetRecords = assetRecordsByPath(artifactManifest);
       for (const groupId of expectedGroupIds) {
         if (!chunkGroupIds.includes(groupId)) {
           issues.push({ code: "vite_shell_artifact_entry_group_chunk_missing", groupId });
@@ -376,6 +423,38 @@ function createViteShellArtifactService(dependencies = {}) {
           issues.push({ code: "vite_shell_artifact_entry_group_coverage_mismatch", groupId });
           break;
         }
+        const chunkAssetRecords = Array.isArray(chunk.classicAssetRecords) ? chunk.classicAssetRecords : [];
+        if (Number(chunk.classicAssetHashCount) !== coverage.assetCount
+          || chunkAssetRecords.length !== coverage.assetCount) {
+          issues.push({ code: "vite_shell_artifact_entry_group_classic_asset_hash_count_mismatch", groupId });
+          break;
+        }
+        for (const record of chunkAssetRecords) {
+          const assetPath = String(record && record.path || "");
+          const artifactRecord = artifactAssetRecords.get(assetPath);
+          if (!artifactRecord || artifactRecord.sha256 !== String(record && record.sha256 || "")) {
+            issues.push({ code: "vite_shell_artifact_entry_group_classic_asset_hash_mismatch", groupId });
+            break;
+          }
+          if (Number(artifactRecord.bytes) !== Number(record && record.bytes)) {
+            issues.push({ code: "vite_shell_artifact_entry_group_classic_asset_size_mismatch", groupId });
+            break;
+          }
+          const currentAsset = publicAssetStatus(appRoot, assetPath);
+          if (!currentAsset.exists) {
+            issues.push({ code: currentAsset.code || "classic_asset_missing", groupId });
+            break;
+          }
+          if (currentAsset.sha256 !== String(record && record.sha256 || "")) {
+            issues.push({ code: "vite_shell_classic_asset_file_hash_mismatch", groupId });
+            break;
+          }
+          if (Number(currentAsset.bytes) !== Number(record && record.bytes)) {
+            issues.push({ code: "vite_shell_classic_asset_file_size_mismatch", groupId });
+            break;
+          }
+        }
+        if (issues.some((issue) => String(issue && issue.code || "").includes("classic_asset"))) break;
       }
     }
     const previewPath = publicArtifactPath(previewFileName);
@@ -493,6 +572,12 @@ function createViteShellArtifactService(dependencies = {}) {
         fileName: normalizeRelativeFileName(chunk && chunk.fileName),
         entryScript: String(chunk && chunk.entryScript || ""),
         assetCount: Number.isFinite(Number(chunk && chunk.assetCount)) ? Number(chunk.assetCount) : 0,
+        classicAssetHashCount: Number.isFinite(Number(chunk && chunk.classicAssetHashCount))
+          ? Number(chunk.classicAssetHashCount)
+          : 0,
+        classicAssetBytes: Number.isFinite(Number(chunk && chunk.classicAssetBytes))
+          ? Number(chunk.classicAssetBytes)
+          : 0,
         classicGlobalExportAssetCount: Number.isFinite(Number(chunk && chunk.classicGlobalExportAssetCount))
           ? Number(chunk.classicGlobalExportAssetCount)
           : 0,

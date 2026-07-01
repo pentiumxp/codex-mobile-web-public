@@ -971,6 +971,8 @@ function vitePreviewProbeExpression(input = {}) {
         const expectedCoverage = coverageForGroup(group);
         const actual = entryGroupRegistry[groupId] || {};
         const groupOk = Number(actual.assetCount) === expectedCoverage.assetCount
+          && Number(actual.classicAssetHashCount) === expectedCoverage.assetCount
+          && Number(actual.classicAssetBytes) > 0
           && Number(actual.classicGlobalExportAssetCount) === expectedCoverage.classicGlobalExportAssetCount
           && Number(actual.classicGlobalExportCount) === expectedCoverage.classicGlobalExportCount;
         if (!groupOk) entryGroupClassicCoverageOk = false;
@@ -979,6 +981,8 @@ function vitePreviewProbeExpression(input = {}) {
           ok: groupOk,
           assetCount: Number(actual.assetCount) || 0,
           expectedAssetCount: expectedCoverage.assetCount,
+          classicAssetHashCount: Number(actual.classicAssetHashCount) || 0,
+          classicAssetBytes: Number(actual.classicAssetBytes) || 0,
           classicGlobalExportAssetCount: Number(actual.classicGlobalExportAssetCount) || 0,
           expectedClassicGlobalExportAssetCount: expectedCoverage.classicGlobalExportAssetCount,
           classicGlobalExportCount: Number(actual.classicGlobalExportCount) || 0,
@@ -1034,6 +1038,12 @@ function vitePreviewProbeExpression(input = {}) {
         entryGroupClassicCoverageOk,
         entryGroupClassicCoverageGroupCount: registryCoverage.length,
         entryGroupClassicCoverageMismatchCount: registryCoverage.filter((entry) => entry && entry.ok !== true).length,
+        entryGroupClassicAssetHashCount: registryCoverage.reduce((total, entry) => (
+          total + (Number(entry && entry.classicAssetHashCount) || 0)
+        ), 0),
+        entryGroupClassicAssetBytes: registryCoverage.reduce((total, entry) => (
+          total + (Number(entry && entry.classicAssetBytes) || 0)
+        ), 0),
         entryGroupClassicCoverageGlobalCount: registryCoverage.reduce((total, entry) => (
           total + (Number(entry && entry.classicGlobalExportCount) || 0)
         ), 0),

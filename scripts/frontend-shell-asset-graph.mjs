@@ -327,6 +327,18 @@ function classicGlobalExportsForAssets(manifest, assets) {
     }));
 }
 
+function classicAssetRecordsForAssets(manifest, assets) {
+  const assetSet = new Set(Array.isArray(assets) ? assets : []);
+  return (Array.isArray(manifest && manifest.assets) ? manifest.assets : [])
+    .filter((entry) => assetSet.has(entry && entry.path))
+    .map((entry) => ({
+      path: entry.path,
+      sourcePath: entry.sourcePath,
+      bytes: Number(entry.bytes) || 0,
+      sha256: String(entry.sha256 || ""),
+    }));
+}
+
 function viteEntryGroupSourceId(groupId) {
   return `${VITE_ENTRY_GROUP_SOURCE_PREFIX}${sanitizeEntryGroupId(groupId)}`;
 }
@@ -444,6 +456,16 @@ function validateViteShellBuildContract(contract, manifest) {
       issues.push({ code: "vite_entry_group_chunk_missing", groupId });
     }
   }
+  for (const chunk of entryGroupChunks) {
+    if (Number(chunk.classicAssetHashCount) !== Number(chunk.assetCount)) {
+      issues.push({ code: "vite_entry_group_classic_asset_hash_count_mismatch", groupId: chunk.groupId });
+      break;
+    }
+    if (!Array.isArray(chunk.classicAssetRecords) || chunk.classicAssetRecords.length !== Number(chunk.assetCount)) {
+      issues.push({ code: "vite_entry_group_classic_asset_records_missing", groupId: chunk.groupId });
+      break;
+    }
+  }
   if (entryDynamicImportGraph.owner !== "vite-shell-entry") {
     issues.push({ code: "vite_entry_dynamic_import_owner_mismatch" });
   }
@@ -508,6 +530,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
         .find((entryGroup) => sanitizeEntryGroupId(entryGroup && entryGroup.id) === groupId) || {};
       const assets = Array.isArray(group.assets) ? group.assets.slice() : [];
       const classicGlobalExports = classicGlobalExportsForAssets(manifest, assets);
+      const classicAssetRecords = classicAssetRecordsForAssets(manifest, assets);
       return {
         ...chunk,
         groupId,
@@ -516,6 +539,9 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
         chunkTarget: String(group.chunkTarget || ""),
         assets,
         assetCount: assets.length,
+        classicAssetRecords,
+        classicAssetHashCount: classicAssetRecords.filter((entry) => entry.sha256).length,
+        classicAssetBytes: classicAssetRecords.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
         classicGlobalExports,
         classicGlobalExportAssetCount: classicGlobalExports.length,
         classicGlobalExportCount: classicGlobalExports.reduce((total, entry) => (
@@ -677,6 +703,8 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
       }
       const assets = Array.isArray(group.assets) ? group.assets.slice() : [];
       const classicGlobalExports = classicGlobalExportsForAssets(manifest, assets);
+      const fullManifest = buildShellAssetManifest(root);
+      const classicAssetRecords = classicAssetRecordsForAssets(fullManifest, assets);
       const payload = {
         id: group.id,
         phase: group.phase,
@@ -684,6 +712,9 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
         chunkTarget: group.chunkTarget,
         assets,
         assetCount: assets.length,
+        classicAssetRecords,
+        classicAssetHashCount: classicAssetRecords.filter((entry) => entry.sha256).length,
+        classicAssetBytes: classicAssetRecords.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
         classicGlobalExports,
         classicGlobalExportAssetCount: classicGlobalExports.length,
         classicGlobalExportCount: classicGlobalExports.reduce((total, entry) => (
