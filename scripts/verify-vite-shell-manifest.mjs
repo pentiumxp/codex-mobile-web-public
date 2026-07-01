@@ -72,6 +72,10 @@ if (!fs.existsSync(manifestPath)) {
     if (!deferredSources.has("frontend/vite-deferred-entry-topology.mjs")) {
       mismatch.push("viteBuildDeferredEntry");
     }
+    const entryGroupChunks = Array.isArray(viteBuild.viteEntryGroupChunks) ? viteBuild.viteEntryGroupChunks : [];
+    if (entryGroupChunks.length !== (current.entryGroups || []).length) {
+      mismatch.push("viteBuildEntryGroupChunks");
+    }
     const outputFiles = new Set(viteBuild.outputFiles || []);
     if (shellEntry && !outputFiles.has(shellEntry.file)) {
       mismatch.push("viteBuildOutputEntryFile");
@@ -80,6 +84,12 @@ if (!fs.existsSync(manifestPath)) {
       const chunk = viteManifest[dynamicImport];
       if (chunk && !outputFiles.has(chunk.file)) {
         mismatch.push("viteBuildOutputDeferredFile");
+        break;
+      }
+    }
+    for (const chunk of entryGroupChunks) {
+      if (!chunk.fileName || !outputFiles.has(chunk.fileName)) {
+        mismatch.push("viteBuildOutputEntryGroupFile");
         break;
       }
     }
@@ -98,6 +108,7 @@ if (!fs.existsSync(manifestPath)) {
       emittedAssets: built.counts.emittedAssets,
       startupCriticalAssets: built.counts.startupCriticalAssets,
       classicGlobalExports: built.counts.classicGlobalExports,
+      entryGroupChunks: built.viteBuild.viteEntryGroupChunks.length,
       viteBuildStage: built.viteBuild.stage,
     }));
   }

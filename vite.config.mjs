@@ -1,5 +1,9 @@
 import { defineConfig } from "vite";
-import { createShellAssetGraphPlugin } from "./scripts/frontend-shell-asset-graph.mjs";
+import {
+  buildViteEntryGroupInputs,
+  createShellAssetGraphPlugin,
+  createShellEntryGroupVirtualModulePlugin,
+} from "./scripts/frontend-shell-asset-graph.mjs";
 
 export default defineConfig({
   clearScreen: false,
@@ -13,10 +17,12 @@ export default defineConfig({
     rollupOptions: {
       input: {
         "vite-shell-entry": "frontend/vite-shell-entry.mjs",
+        ...buildViteEntryGroupInputs(),
       },
     },
   },
   plugins: [
+    createShellEntryGroupVirtualModulePlugin(),
     createShellAssetGraphPlugin(),
   ],
 });

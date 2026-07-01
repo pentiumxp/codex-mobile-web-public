@@ -19,6 +19,7 @@ function writeArtifact(root, options = {}) {
   fs.mkdirSync(path.join(artifactRoot, "assets"), { recursive: true });
   const entry = Buffer.from("export const entry = true;\n");
   const deferred = Buffer.from("export const deferred = true;\n");
+  const entryGroup = Buffer.from("export const group = true;\n");
   const stage = options.stage || "vite-shell-preview-html-v1";
   const shellManifest = options.shellManifest || {
     shellCacheName: "codex-mobile-shell-test",
@@ -41,6 +42,7 @@ function writeArtifact(root, options = {}) {
   };
   const preview = Buffer.from([
     "<!doctype html>",
+    "<link rel=\"modulepreload\" href=\"/vite-shell/assets/vite-entry-group-app-entry-test.js\" data-codex-vite-entry-group-chunk=\"true\">",
     "<main id=\"codex-vite-shell-preview\" data-stage=\"vite-shell-preview-html-v1\"></main>",
     "<script type=\"module\" src=\"/vite-shell/assets/vite-shell-entry-test.js\"></script>",
     "",
@@ -54,6 +56,7 @@ function writeArtifact(root, options = {}) {
   }, null, 2));
   fs.writeFileSync(path.join(artifactRoot, "assets", "vite-shell-entry-test.js"), entry);
   fs.writeFileSync(path.join(artifactRoot, "assets", "vite-deferred-entry-topology-test.js"), deferred);
+  fs.writeFileSync(path.join(artifactRoot, "assets", "vite-entry-group-app-entry-test.js"), entryGroup);
   fs.writeFileSync(path.join(artifactRoot, "codex-mobile-shell-manifest.json"), manifest);
   fs.writeFileSync(path.join(artifactRoot, "preview.html"), preview);
   const readback = {
@@ -71,6 +74,12 @@ function writeArtifact(root, options = {}) {
       source: "frontend/vite-deferred-entry-topology.mjs",
       fileName: "assets/vite-deferred-entry-topology-test.js",
     }],
+    entryGroupChunks: [{
+      groupId: "app-entry",
+      source: "virtual:codex-mobile-shell-entry-group/app-entry",
+      fileName: "assets/vite-entry-group-app-entry-test.js",
+      entryScript: "/vite-shell/assets/vite-entry-group-app-entry-test.js",
+    }],
     preview: {
       fileName: "preview.html",
       entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
@@ -79,6 +88,7 @@ function writeArtifact(root, options = {}) {
       { fileName: "codex-mobile-shell-manifest.json", bytes: manifest.length, sha256: sha256Hex(manifest) },
       { fileName: "assets/vite-shell-entry-test.js", bytes: entry.length, sha256: sha256Hex(entry) },
       { fileName: "assets/vite-deferred-entry-topology-test.js", bytes: deferred.length, sha256: sha256Hex(deferred) },
+      { fileName: "assets/vite-entry-group-app-entry-test.js", bytes: entryGroup.length, sha256: sha256Hex(entryGroup) },
       { fileName: "preview.html", bytes: preview.length, sha256: sha256Hex(preview) },
     ],
     validation: { ok: true, issues: [] },
@@ -106,18 +116,20 @@ test("Vite shell artifact status validates the guarded public preview files", ()
   assert.equal(status.sourceBuildStage, "vite-shell-artifact-contract-v1");
   assert.equal(status.productionExecution, "classic-script-fallback");
   assert.equal(status.artifactRoot, "public/vite-shell");
-  assert.equal(status.publishedFileCount, 4);
+  assert.equal(status.publishedFileCount, 5);
   assert.deepEqual(status.preview, {
     fileName: "preview.html",
     entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
   });
   assert.equal(status.classicShellManifestMatch, true);
+  assert.equal(status.entryGroupChunkCount, 1);
   assert.equal(status.startupCriticalAssetCount, 1);
   assert.deepEqual(status.artifactManifest, {
     shellCacheName: "codex-mobile-shell-test",
     clientBuildId: "0.1.11|codex-mobile-shell-test",
     indexScriptCount: 2,
     entryGroupCount: 1,
+    entryGroupChunkCount: 1,
     startupCriticalAssetCount: 1,
     classicGlobalExportAssetCount: 1,
     classicGlobalExportCount: 1,
@@ -125,6 +137,11 @@ test("Vite shell artifact status validates the guarded public preview files", ()
     hashAssetCount: 5,
   });
   assert.deepEqual(status.issueCodes, []);
+  assert.deepEqual(status.entryGroupChunks, [{
+    groupId: "app-entry",
+    fileName: "assets/vite-entry-group-app-entry-test.js",
+    entryScript: "/vite-shell/assets/vite-entry-group-app-entry-test.js",
+  }]);
   assert.equal(status.publishedFiles.every((file) => file.exists && !path.isAbsolute(file.fileName)), true);
 });
 
@@ -206,6 +223,7 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   fs.mkdirSync(path.join(buildRoot, "assets"), { recursive: true });
   fs.writeFileSync(path.join(buildRoot, "assets", "vite-shell-entry-test.js"), "export const entry = true;\n");
   fs.writeFileSync(path.join(buildRoot, "assets", "vite-deferred-entry-topology-test.js"), "export const deferred = true;\n");
+  fs.writeFileSync(path.join(buildRoot, "assets", "vite-entry-group-app-entry-test.js"), "export const group = true;\n");
   fs.writeFileSync(path.join(buildRoot, "shell-extra.js"), "should not publish\n");
   fs.writeFileSync(path.join(buildRoot, "codex-mobile-shell-manifest.json"), JSON.stringify({
     shellCacheName: "codex-mobile-shell-test",
@@ -227,6 +245,11 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
         source: "frontend/vite-deferred-entry-topology.mjs",
         fileName: "assets/vite-deferred-entry-topology-test.js",
       }],
+      viteEntryGroupChunks: [{
+        groupId: "app-entry",
+        source: "virtual:codex-mobile-shell-entry-group/app-entry",
+        fileName: "assets/vite-entry-group-app-entry-test.js",
+      }],
     },
   }, null, 2));
 
@@ -237,14 +260,24 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "shell-extra.js")), false);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-shell-entry-test.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-deferred-entry-topology-test.js")), true);
+  assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-entry-group-app-entry-test.js")), true);
   const previewHtml = fs.readFileSync(path.join(root, "public", "vite-shell", "preview.html"), "utf8");
   assert.match(previewHtml, /id="codex-vite-shell-preview"/);
   assert.match(previewHtml, /data-startup-critical-asset-count="1"/);
+  assert.match(previewHtml, /data-entry-group-chunk-count="1"/);
   assert.match(previewHtml, /rel="preload" as="script" href="\/app\.js" data-codex-vite-startup-asset="true"/);
+  assert.match(previewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-entry-group-app-entry-test\.js" data-codex-vite-entry-group-chunk="true"/);
   assert.match(previewHtml, /type="module" src="\/vite-shell\/assets\/vite-shell-entry-test\.js"/);
   assert.equal(readback.preview.fileName, "preview.html");
   assert.equal(readback.preview.entryScript, "/vite-shell/assets/vite-shell-entry-test.js");
+  assert.deepEqual(readback.entryGroupChunks, [{
+    groupId: "app-entry",
+    source: "virtual:codex-mobile-shell-entry-group/app-entry",
+    fileName: "assets/vite-entry-group-app-entry-test.js",
+    entryScript: "/vite-shell/assets/vite-entry-group-app-entry-test.js",
+  }]);
   assert.deepEqual(readback.startupCriticalAssets, ["/app.js"]);
   assert.equal(readback.counts.startupCriticalAssets, 1);
-  assert.equal(readback.counts.publishedFiles, 4);
+  assert.equal(readback.counts.entryGroupChunks, 1);
+  assert.equal(readback.counts.publishedFiles, 5);
 });

@@ -7,6 +7,7 @@ export const SHELL_MANIFEST_SCHEMA_VERSION = 1;
 export const VITE_SHELL_BUILD_CONTRACT_SCHEMA_VERSION = 1;
 export const VITE_SHELL_ENTRY_SOURCE = "frontend/vite-shell-entry.mjs";
 export const VITE_DEFERRED_ENTRY_SOURCE = "frontend/vite-deferred-entry-topology.mjs";
+export const VITE_ENTRY_GROUP_SOURCE_PREFIX = "virtual:codex-mobile-shell-entry-group/";
 
 function readText(root, relativePath) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
@@ -302,6 +303,29 @@ function normalizePath(value) {
   return String(value || "").replace(/\\/g, "/");
 }
 
+function sanitizeEntryGroupId(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function viteEntryGroupSourceId(groupId) {
+  return `${VITE_ENTRY_GROUP_SOURCE_PREFIX}${sanitizeEntryGroupId(groupId)}`;
+}
+
+export function buildViteEntryGroupInputs(root = process.cwd()) {
+  const manifest = buildPublicShellManifest(root);
+  const inputs = {};
+  for (const group of Array.isArray(manifest.entryGroups) ? manifest.entryGroups : []) {
+    const groupId = sanitizeEntryGroupId(group && group.id);
+    if (!groupId) continue;
+    inputs[`vite-entry-group-${groupId}`] = viteEntryGroupSourceId(groupId);
+  }
+  return inputs;
+}
+
 function bundleValues(bundle) {
   return Object.values(bundle || {});
 }
@@ -309,6 +333,10 @@ function bundleValues(bundle) {
 function sourceForFacadeModule(facadeModuleId, root) {
   const value = normalizePath(facadeModuleId);
   if (!value) return "";
+  const virtualIndex = value.indexOf(VITE_ENTRY_GROUP_SOURCE_PREFIX);
+  if (virtualIndex >= 0) {
+    return value.slice(virtualIndex);
+  }
   const rootPath = normalizePath(root || process.cwd());
   if (value === rootPath || value.startsWith(`${rootPath}/`)) {
     return normalizePath(path.relative(rootPath, value));
@@ -345,8 +373,13 @@ function validateViteShellBuildContract(contract, manifest) {
   const issues = [];
   const entry = contract.viteEntry;
   const deferredChunks = contract.viteDeferredChunks || [];
+  const entryGroupChunks = contract.viteEntryGroupChunks || [];
   const outputFiles = new Set(contract.outputFiles || []);
   const classicOutputFiles = new Set((contract.classicShellAssets || []).map((asset) => asset.fileName));
+  const requiredGroupIds = (Array.isArray(manifest.entryGroups) ? manifest.entryGroups : [])
+    .map((group) => sanitizeEntryGroupId(group && group.id))
+    .filter(Boolean);
+  const entryChunkIds = new Set(entryGroupChunks.map((chunk) => sanitizeEntryGroupId(chunk.groupId)));
 
   if (contract.productionExecution !== "classic-script-fallback") {
     issues.push({ code: "vite_build_contract_not_classic_fallback" });
@@ -363,6 +396,11 @@ function validateViteShellBuildContract(contract, manifest) {
   if (!deferredChunks.some((chunk) => chunk.source === VITE_DEFERRED_ENTRY_SOURCE || chunk.name === "vite-deferred-entry-topology")) {
     issues.push({ code: "vite_deferred_entry_topology_missing" });
   }
+  for (const groupId of requiredGroupIds) {
+    if (!entryChunkIds.has(groupId)) {
+      issues.push({ code: "vite_entry_group_chunk_missing", groupId });
+    }
+  }
   for (const asset of manifest.assets || []) {
     const fileName = outputPathForAsset(asset.path);
     if (!classicOutputFiles.has(fileName)) {
@@ -373,6 +411,9 @@ function validateViteShellBuildContract(contract, manifest) {
     if (!outputFiles.has(requiredFile)) issues.push({ code: "vite_output_file_missing", fileName: requiredFile });
   }
   for (const fileName of [entry && entry.fileName, ...deferredChunks.map((chunk) => chunk.fileName)].filter(Boolean)) {
+    if (!outputFiles.has(fileName)) issues.push({ code: "vite_output_file_missing", fileName });
+  }
+  for (const fileName of entryGroupChunks.map((chunk) => chunk.fileName).filter(Boolean)) {
     if (!outputFiles.has(fileName)) issues.push({ code: "vite_output_file_missing", fileName });
   }
   return {
@@ -389,6 +430,13 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
   const deferredChunks = chunks.filter((chunk) => chunk.source === VITE_DEFERRED_ENTRY_SOURCE
     || chunk.isDynamicEntry
     || (viteEntry && viteEntry.dynamicImports.includes(chunk.fileName)));
+  const entryGroupChunks = chunks
+    .filter((chunk) => String(chunk.source || "").startsWith(VITE_ENTRY_GROUP_SOURCE_PREFIX))
+    .map((chunk) => ({
+      ...chunk,
+      groupId: sanitizeEntryGroupId(String(chunk.source || "").slice(VITE_ENTRY_GROUP_SOURCE_PREFIX.length)),
+    }))
+    .sort((a, b) => a.groupId.localeCompare(b.groupId));
   const classicShellAssets = assetOutputRecords(manifest);
   const outputFiles = [
     ...chunks.map((chunk) => chunk.fileName),
@@ -410,6 +458,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     },
     viteEntry: viteEntry || null,
     viteDeferredChunks: deferredChunks,
+    viteEntryGroupChunks: entryGroupChunks,
     classicShellAssets,
     outputFiles: [...new Set(outputFiles)].sort(),
   };
@@ -450,6 +499,48 @@ export function createShellAssetGraphPlugin(options = {}) {
         fileName: "codex-mobile-shell-manifest.json",
         source: `${JSON.stringify(outputManifest, null, 2)}\n`,
       });
+    },
+  };
+}
+
+export function createShellEntryGroupVirtualModulePlugin(options = {}) {
+  const root = options.root || process.cwd();
+  return {
+    name: "codex-mobile-shell-entry-group-virtual-modules",
+    resolveId(id) {
+      if (String(id || "").startsWith(VITE_ENTRY_GROUP_SOURCE_PREFIX)) {
+        return `\0${id}`;
+      }
+      return null;
+    },
+    load(id) {
+      const value = String(id || "");
+      const prefix = `\0${VITE_ENTRY_GROUP_SOURCE_PREFIX}`;
+      if (!value.startsWith(prefix)) return null;
+      const groupId = sanitizeEntryGroupId(value.slice(prefix.length));
+      const manifest = buildPublicShellManifest(root);
+      const group = (Array.isArray(manifest.entryGroups) ? manifest.entryGroups : [])
+        .find((entry) => sanitizeEntryGroupId(entry && entry.id) === groupId);
+      if (!group) {
+        throw new Error(`codex_mobile_vite_entry_group_missing:${groupId}`);
+      }
+      const payload = {
+        id: group.id,
+        phase: group.phase,
+        startupCritical: Boolean(group.startupCritical),
+        chunkTarget: group.chunkTarget,
+        assets: Array.isArray(group.assets) ? group.assets.slice() : [],
+        shellCacheName: manifest.shellCacheName,
+        clientBuildId: manifest.clientBuildId,
+      };
+      return [
+        `export const codexMobileViteEntryGroup = ${JSON.stringify(payload, null, 2)};`,
+        "const codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};",
+        "codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;",
+        "globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ = codexMobileViteEntryGroupRegistry;",
+        "export default codexMobileViteEntryGroup;",
+        "",
+      ].join("\n");
     },
   };
 }

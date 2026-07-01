@@ -74,10 +74,12 @@ function requiredArtifactFiles(manifest) {
   const viteBuild = manifest && manifest.viteBuild || {};
   const entryFile = viteBuild.viteEntry && viteBuild.viteEntry.fileName;
   const deferredFiles = (viteBuild.viteDeferredChunks || []).map((chunk) => chunk && chunk.fileName);
+  const entryGroupFiles = (viteBuild.viteEntryGroupChunks || []).map((chunk) => chunk && chunk.fileName);
   return uniqueValues([
     "codex-mobile-shell-manifest.json",
     entryFile,
     ...deferredFiles,
+    ...entryGroupFiles,
   ]);
 }
 
@@ -128,6 +130,12 @@ export function buildViteShellPublicReadback(options = {}) {
     fileName: VITE_SHELL_PUBLIC_PREVIEW_FILE,
     entryScript: viteBuild.viteEntry ? publicArtifactUrl(viteBuild.viteEntry.fileName) : "",
   };
+  const entryGroupChunks = (viteBuild.viteEntryGroupChunks || []).map((chunk) => ({
+    groupId: String(chunk && chunk.groupId || ""),
+    source: String(chunk && chunk.source || ""),
+    fileName: normalizeRelativeFileName(chunk && chunk.fileName),
+    entryScript: publicArtifactUrl(chunk && chunk.fileName),
+  })).filter((chunk) => chunk.fileName);
   const startupAssets = startupCriticalAssets(manifest);
   const readbackForPreview = {
     stage: VITE_SHELL_PUBLIC_ARTIFACT_STAGE,
@@ -139,6 +147,7 @@ export function buildViteShellPublicReadback(options = {}) {
       source: viteBuild.viteEntry.source || "",
       fileName: normalizeRelativeFileName(viteBuild.viteEntry.fileName),
     } : null,
+    entryGroupChunks,
     preview,
     startupCriticalAssets: startupAssets,
   };
@@ -162,10 +171,12 @@ export function buildViteShellPublicReadback(options = {}) {
       source: String(chunk && chunk.source || ""),
       fileName: normalizeRelativeFileName(chunk && chunk.fileName),
     })).filter((chunk) => chunk.fileName),
+    entryGroupChunks,
     preview,
     startupCriticalAssets: startupAssets,
     counts: {
       entryGroups: Array.isArray(manifest.entryGroups) ? manifest.entryGroups.length : 0,
+      entryGroupChunks: entryGroupChunks.length,
       startupCriticalAssets: startupAssets.length,
       classicGlobalExportAssets: Array.isArray(manifest.classicGlobalExports) ? manifest.classicGlobalExports.length : 0,
       classicGlobalExports: Array.isArray(manifest.classicGlobalExports)
@@ -191,6 +202,10 @@ export function renderViteShellPreviewHtml(readback = {}) {
   const startupPreloadTags = (Array.isArray(readback.startupCriticalAssets) ? readback.startupCriticalAssets : [])
     .filter((asset) => String(asset || "").startsWith("/"))
     .map((asset) => `  <link rel=\"preload\" as=\"script\" href=\"${escapeHtml(asset)}\" data-codex-vite-startup-asset=\"true\">`);
+  const entryGroupPreloadTags = (Array.isArray(readback.entryGroupChunks) ? readback.entryGroupChunks : [])
+    .map((chunk) => chunk && chunk.entryScript)
+    .filter((asset) => String(asset || "").startsWith("/"))
+    .map((asset) => `  <link rel=\"modulepreload\" href=\"${escapeHtml(asset)}\" data-codex-vite-entry-group-chunk=\"true\">`);
   return [
     "<!doctype html>",
     "<html lang=\"en\">",
@@ -199,6 +214,7 @@ export function renderViteShellPreviewHtml(readback = {}) {
     "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
     "  <meta name=\"robots\" content=\"noindex,nofollow\">",
     ...startupPreloadTags,
+    ...entryGroupPreloadTags,
     "  <title>Codex Mobile Vite Shell Preview</title>",
     "</head>",
     "<body>",
@@ -210,6 +226,7 @@ export function renderViteShellPreviewHtml(readback = {}) {
     `    data-client-build-id=\"${escapeHtml(readback.clientBuildId)}\"`,
     `    data-shell-cache-name=\"${escapeHtml(readback.shellCacheName)}\"`,
     `    data-startup-critical-asset-count=\"${escapeHtml((readback.startupCriticalAssets || []).length)}\"`,
+    `    data-entry-group-chunk-count=\"${escapeHtml((readback.entryGroupChunks || []).length)}\"`,
     "  >",
     "    <h1>Codex Mobile Vite Shell Preview</h1>",
     "  </main>",
@@ -265,6 +282,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       productionExecution: result.productionExecution,
       shellCacheName: result.shellCacheName,
       clientBuildId: result.clientBuildId,
+      entryGroupChunks: result.counts.entryGroupChunks,
       startupCriticalAssets: result.counts.startupCriticalAssets,
       publishedFiles: result.counts.publishedFiles,
     }));

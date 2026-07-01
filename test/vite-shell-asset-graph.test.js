@@ -56,7 +56,7 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
 });
 
 test("Vite shell build contract records entry chunks and classic fallback outputs", async () => {
-  const { buildShellAssetManifest, buildViteShellBuildContract } = await loadAssetGraphModule();
+  const { VITE_ENTRY_GROUP_SOURCE_PREFIX, buildShellAssetManifest, buildViteShellBuildContract } = await loadAssetGraphModule();
   const root = path.resolve(__dirname, "..");
   const manifest = buildShellAssetManifest(root);
   const bundle = {
@@ -81,6 +81,19 @@ test("Vite shell build contract records entry chunks and classic fallback output
       dynamicImports: [],
     },
   };
+  for (const group of manifest.entryGroups) {
+    const groupId = String(group.id).toLowerCase();
+    bundle[`assets/vite-entry-group-${groupId}-example.js`] = {
+      type: "chunk",
+      fileName: `assets/vite-entry-group-${groupId}-example.js`,
+      name: `vite-entry-group-${groupId}`,
+      facadeModuleId: `\0${VITE_ENTRY_GROUP_SOURCE_PREFIX}${groupId}`,
+      isEntry: true,
+      isDynamicEntry: false,
+      imports: [],
+      dynamicImports: [],
+    };
+  }
   const contract = buildViteShellBuildContract(manifest, bundle);
   assert.equal(contract.validation.ok, true);
   assert.equal(contract.stage, "vite-shell-artifact-contract-v1");
@@ -90,12 +103,34 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.deepEqual(contract.viteEntry.dynamicImports, ["assets/vite-deferred-entry-topology-example.js"]);
   assert.equal(contract.viteDeferredChunks.length, 1);
   assert.equal(contract.viteDeferredChunks[0].source, "frontend/vite-deferred-entry-topology.mjs");
+  assert.equal(contract.viteEntryGroupChunks.length, manifest.entryGroups.length);
+  assert.deepEqual(
+    contract.viteEntryGroupChunks.map((chunk) => chunk.groupId).sort(),
+    manifest.entryGroups.map((group) => group.id).sort()
+  );
   assert.ok(contract.outputFiles.includes("assets/vite-shell-entry-example.js"));
   assert.ok(contract.outputFiles.includes("assets/vite-deferred-entry-topology-example.js"));
+  assert.ok(contract.outputFiles.includes("assets/vite-entry-group-app-entry-example.js"));
   assert.ok(contract.outputFiles.includes("codex-mobile-shell-manifest.json"));
   assert.ok(contract.classicShellAssets.some((asset) => asset.path === "/app.js" && asset.fileName === "shell-assets/app.js"));
   assert.deepEqual(contract.classicFallback.entryGroups, manifest.entryGroups);
   assert.deepEqual(contract.classicFallback.classicGlobalExports, manifest.classicGlobalExports);
+});
+
+test("Vite entry group virtual modules preserve bounded group payloads", async () => {
+  const {
+    VITE_ENTRY_GROUP_SOURCE_PREFIX,
+    createShellEntryGroupVirtualModulePlugin,
+  } = await loadAssetGraphModule();
+  const plugin = createShellEntryGroupVirtualModulePlugin({ root: path.resolve(__dirname, "..") });
+  const resolved = plugin.resolveId(`${VITE_ENTRY_GROUP_SOURCE_PREFIX}app-entry`);
+  assert.equal(resolved, `\0${VITE_ENTRY_GROUP_SOURCE_PREFIX}app-entry`);
+  const source = plugin.load(resolved);
+  assert.match(source, /export const codexMobileViteEntryGroup = /);
+  assert.match(source, /__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__/);
+  assert.match(source, /codexMobileViteEntryGroupRegistry\[codexMobileViteEntryGroup\.id\]/);
+  assert.match(source, /"id": "app-entry"/);
+  assert.match(source, /"\/app\.js"/);
 });
 
 test("frontend shell generator owns the index classic script block", async () => {

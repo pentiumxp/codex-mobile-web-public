@@ -84,6 +84,14 @@ function startupCriticalAssetCount(manifest) {
   return new Set(assets).size;
 }
 
+function entryGroupIds(manifest) {
+  return (Array.isArray(canonicalShellTopology(manifest).entryGroups)
+    ? canonicalShellTopology(manifest).entryGroups
+    : [])
+    .map((group) => String(group && group.id || "").trim())
+    .filter(Boolean);
+}
+
 function createViteShellArtifactService(dependencies = {}) {
   const appRoot = path.resolve(dependencies.appRoot || process.cwd());
   const publicArtifactRoot = path.resolve(
@@ -174,6 +182,7 @@ function createViteShellArtifactService(dependencies = {}) {
     if (!(readback.deferredChunks || []).some((chunk) => chunk && chunk.source === "frontend/vite-deferred-entry-topology.mjs")) {
       issues.push({ code: "vite_shell_artifact_deferred_missing" });
     }
+    const readbackEntryGroupChunks = Array.isArray(readback.entryGroupChunks) ? readback.entryGroupChunks : [];
     const preview = readback.preview && typeof readback.preview === "object" ? readback.preview : null;
     if (!preview || normalizeRelativeFileName(preview.fileName) !== previewFileName) {
       issues.push({ code: "vite_shell_preview_missing" });
@@ -202,6 +211,7 @@ function createViteShellArtifactService(dependencies = {}) {
       "codex-mobile-shell-manifest.json",
       readback.entry && readback.entry.fileName,
       ...(readback.deferredChunks || []).map((chunk) => chunk && chunk.fileName),
+      ...readbackEntryGroupChunks.map((chunk) => chunk && chunk.fileName),
       previewFileName,
     ].map(normalizeRelativeFileName).filter(Boolean)));
     const listedPublishedFiles = (readback.publishedFiles || [])
@@ -231,6 +241,15 @@ function createViteShellArtifactService(dependencies = {}) {
       if (hasComparableTopology(publicShellManifest) && !manifestTopologyMatches(artifactManifest, publicShellManifest)) {
         issues.push({ code: "vite_shell_artifact_manifest_topology_mismatch" });
       }
+      const expectedGroupIds = entryGroupIds(artifactManifest);
+      const chunkGroupIds = readbackEntryGroupChunks
+        .map((chunk) => String(chunk && chunk.groupId || "").trim())
+        .filter(Boolean);
+      for (const groupId of expectedGroupIds) {
+        if (!chunkGroupIds.includes(groupId)) {
+          issues.push({ code: "vite_shell_artifact_entry_group_chunk_missing", groupId });
+        }
+      }
     }
     const previewPath = publicArtifactPath(previewFileName);
     const previewHtml = previewPath ? safeReadText(previewPath) : "";
@@ -245,6 +264,13 @@ function createViteShellArtifactService(dependencies = {}) {
       }
       if (!previewHtml.includes(`data-stage="${EXPECTED_PUBLIC_ARTIFACT_STAGE}"`)) {
         issues.push({ code: "vite_shell_preview_stage_mismatch" });
+      }
+      for (const chunk of readbackEntryGroupChunks) {
+        const entryScript = String(chunk && chunk.entryScript || "");
+        if (entryScript && !previewHtml.includes(`href="${entryScript}"`)) {
+          issues.push({ code: "vite_shell_preview_entry_group_chunk_missing", groupId: chunk && chunk.groupId });
+          break;
+        }
       }
     }
 
@@ -264,6 +290,7 @@ function createViteShellArtifactService(dependencies = {}) {
         && (!publicShellManifest.shellCacheName || artifactManifest.shellCacheName === publicShellManifest.shellCacheName)
         && (!publicShellManifest.clientBuildId || artifactManifest.clientBuildId === publicShellManifest.clientBuildId)),
       startupCriticalAssetCount: artifactManifest ? startupCriticalAssetCount(artifactManifest) : 0,
+      entryGroupChunkCount: readbackEntryGroupChunks.length,
       artifactManifest: artifactManifest ? {
         shellCacheName: String(artifactManifest.shellCacheName || ""),
         clientBuildId: String(artifactManifest.clientBuildId || ""),
@@ -273,6 +300,7 @@ function createViteShellArtifactService(dependencies = {}) {
         entryGroupCount: Array.isArray(canonicalShellTopology(artifactManifest).entryGroups)
           ? canonicalShellTopology(artifactManifest).entryGroups.length
           : 0,
+        entryGroupChunkCount: readbackEntryGroupChunks.length,
         startupCriticalAssetCount: startupCriticalAssetCount(artifactManifest),
         classicGlobalExportAssetCount: Array.isArray(canonicalShellTopology(artifactManifest).classicGlobalExports)
           ? canonicalShellTopology(artifactManifest).classicGlobalExports.length
@@ -291,6 +319,11 @@ function createViteShellArtifactService(dependencies = {}) {
       } : null,
       entry: readback.entry || null,
       deferredChunkCount: (readback.deferredChunks || []).length,
+      entryGroupChunks: readbackEntryGroupChunks.map((chunk) => ({
+        groupId: String(chunk && chunk.groupId || ""),
+        fileName: normalizeRelativeFileName(chunk && chunk.fileName),
+        entryScript: String(chunk && chunk.entryScript || ""),
+      })).filter((chunk) => chunk.fileName),
       preview: preview ? {
         fileName: normalizeRelativeFileName(preview.fileName),
         entryScript: String(preview.entryScript || ""),

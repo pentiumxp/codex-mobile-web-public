@@ -1610,6 +1610,68 @@
         "dynamicImports": []
       }
     ],
+    "viteEntryGroupChunks": [
+      {
+        "fileName": "assets/vite-entry-group-app-entry-BL4UA0EM.js",
+        "name": "vite-entry-group-app-entry",
+        "source": "virtual:codex-mobile-shell-entry-group/app-entry",
+        "isEntry": true,
+        "isDynamicEntry": false,
+        "imports": [],
+        "dynamicImports": [],
+        "groupId": "app-entry"
+      },
+      {
+        "fileName": "assets/vite-entry-group-bootstrap-state-DZJ_Qdkf.js",
+        "name": "vite-entry-group-bootstrap-state",
+        "source": "virtual:codex-mobile-shell-entry-group/bootstrap-state",
+        "isEntry": true,
+        "isDynamicEntry": false,
+        "imports": [],
+        "dynamicImports": [],
+        "groupId": "bootstrap-state"
+      },
+      {
+        "fileName": "assets/vite-entry-group-feature-runtimes-DEz2yu06.js",
+        "name": "vite-entry-group-feature-runtimes",
+        "source": "virtual:codex-mobile-shell-entry-group/feature-runtimes",
+        "isEntry": true,
+        "isDynamicEntry": false,
+        "imports": [],
+        "dynamicImports": [],
+        "groupId": "feature-runtimes"
+      },
+      {
+        "fileName": "assets/vite-entry-group-foundation-BZcCJW9g.js",
+        "name": "vite-entry-group-foundation",
+        "source": "virtual:codex-mobile-shell-entry-group/foundation",
+        "isEntry": true,
+        "isDynamicEntry": false,
+        "imports": [],
+        "dynamicImports": [],
+        "groupId": "foundation"
+      },
+      {
+        "fileName": "assets/vite-entry-group-manifest-bVSy7y6Z.js",
+        "name": "vite-entry-group-manifest",
+        "source": "virtual:codex-mobile-shell-entry-group/manifest",
+        "isEntry": true,
+        "isDynamicEntry": false,
+        "imports": [],
+        "dynamicImports": [],
+        "groupId": "manifest"
+      },
+      {
+        "fileName": "assets/vite-entry-group-shell-services-CQvovHE_.js",
+        "name": "vite-entry-group-shell-services",
+        "source": "virtual:codex-mobile-shell-entry-group/shell-services",
+        "isEntry": true,
+        "isDynamicEntry": false,
+        "imports": [],
+        "dynamicImports": [],
+        "groupId": "shell-services"
+      }
+    ],
     "classicShellAssets": [
       {
         "path": "/",
@@ -2041,6 +2103,12 @@
     ],
     "outputFiles": [
       "assets/vite-deferred-entry-topology-Cm4rgPfx.js",
+      "assets/vite-entry-group-app-entry-BL4UA0EM.js",
+      "assets/vite-entry-group-bootstrap-state-DZJ_Qdkf.js",
+      "assets/vite-entry-group-feature-runtimes-DEz2yu06.js",
+      "assets/vite-entry-group-foundation-BZcCJW9g.js",
+      "assets/vite-entry-group-manifest-bVSy7y6Z.js",
+      "assets/vite-entry-group-shell-services-CQvovHE_.js",
       "assets/vite-shell-entry-IFO198wQ.js",
       "codex-mobile-shell-manifest.json",
       "shell-assets/api-client-runtime.js",

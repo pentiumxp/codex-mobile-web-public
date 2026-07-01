@@ -861,7 +861,20 @@ function vitePreviewProbeExpression(input = {}) {
           }
         })
         .filter(Boolean);
+      const entryGroupPreloads = Array.from(document.querySelectorAll("link[rel='modulepreload'][data-codex-vite-entry-group-chunk]"))
+        .map((link) => {
+          try {
+            return new URL(link.getAttribute("href") || "", window.location.href).pathname;
+          } catch (_) {
+            return "";
+          }
+        })
+        .filter(Boolean);
       const topology = window.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ || {};
+      const entryGroups = [
+        ...(Array.isArray(topology.startupGroups) ? topology.startupGroups : []),
+        ...(Array.isArray(topology.deferredGroups) ? topology.deferredGroups : []),
+      ];
       const startupCriticalAssets = Array.isArray(topology.startupGroups)
         ? topology.startupGroups.flatMap((group) => Array.isArray(group && group.assets) ? group.assets : [])
         : [];
@@ -903,6 +916,17 @@ function vitePreviewProbeExpression(input = {}) {
           startupAssetStatuses.push({ path, status: 0, ok: false });
         }
       }
+      const entryGroupChunkStatuses = [];
+      for (const chunkPath of entryGroupPreloads) {
+        const path = String(chunkPath || "");
+        if (!path || !path.startsWith("/")) continue;
+        try {
+          const response = await fetch(path, { cache: "no-store" });
+          entryGroupChunkStatuses.push({ path, status: response.status, ok: response.ok });
+        } catch (_) {
+          entryGroupChunkStatuses.push({ path, status: 0, ok: false });
+        }
+      }
       return {
         label: "vite-preview",
         probeKind: "vite-preview",
@@ -923,6 +947,11 @@ function vitePreviewProbeExpression(input = {}) {
         startupCriticalPreloadsMatch: JSON.stringify(startupPreloads) === JSON.stringify(startupCriticalAssets),
         startupCriticalAssetStatusOk: startupAssetStatuses.length === startupCriticalAssets.length
           && startupAssetStatuses.every((entry) => entry && entry.ok),
+        entryGroupCount: entryGroups.length,
+        entryGroupChunkPreloadCount: entryGroupPreloads.length,
+        entryGroupChunkPreloadsMatch: entryGroupPreloads.length === entryGroups.length,
+        entryGroupChunkStatusOk: entryGroupChunkStatuses.length === entryGroups.length
+          && entryGroupChunkStatuses.every((entry) => entry && entry.ok),
         classicCompatibilityReady: Array.isArray(compatibility.classicGlobalExports) && classicGlobalExports.length > 0,
         classicCompatibilityAssetCount: classicGlobalExports.length,
         classicCompatibilityGlobalCount: classicGlobalNames.size,
@@ -954,6 +983,8 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   if (sample && sample.entryTopologyReady !== true) append("vite_preview_entry_topology_missing");
   if (sample && sample.startupCriticalPreloadsMatch !== true) append("vite_preview_startup_preload_mismatch");
   if (sample && sample.startupCriticalAssetStatusOk !== true) append("vite_preview_startup_asset_fetch_failed");
+  if (sample && sample.entryGroupChunkPreloadsMatch !== true) append("vite_preview_entry_group_chunk_preload_mismatch");
+  if (sample && sample.entryGroupChunkStatusOk !== true) append("vite_preview_entry_group_chunk_fetch_failed");
   if (sample && sample.classicCompatibilityReady !== true) append("vite_preview_classic_compatibility_missing");
   if (sample && sample.classicCompatibilityStartupGlobalsReady !== true) append("vite_preview_classic_startup_globals_missing");
   if (sample && sample.deferredLoaded !== true) append("vite_preview_deferred_not_loaded");

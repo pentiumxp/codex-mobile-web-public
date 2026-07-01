@@ -4548,6 +4548,32 @@ This advances the split-entry migration without running the app through Vite
 yet: startup-critical assets are now build-owned, published, preloaded, fetched,
 and deploy-gated before they become startup-critical Vite chunks.
 
+The next entry-group chunk slice keeps production `/` on the classic script
+shell while requiring Vite to emit one bounded module chunk per generated shell
+entry group:
+
+- `vite.config.mjs` now adds virtual entry inputs for every
+  `entryGroups[*].id`; the build fails if any generated group lacks a Vite
+  chunk.
+- `scripts/frontend-shell-asset-graph.mjs` owns the virtual entry-group module
+  source and records `viteEntryGroupChunks` in the artifact contract. Each
+  chunk preserves bounded group metadata in
+  `__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__`, so the output is not a
+  tree-shaken empty file.
+- `scripts/publish-vite-shell-artifact.mjs` publishes those group chunks under
+  `public/vite-shell/`, lists them in `vite-shell-readback.json`, and adds
+  explicit `modulepreload` tags to `preview.html`.
+- `/api/vite-shell-artifact` checks that the published readback and preview
+  HTML include all current entry-group chunks and reports
+  `entryGroupChunkCount` as bounded metadata.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  fetches the entry-group modulepreload assets in the browser probe; missing
+  preload coverage or failed fetches are H2 deploy-gate failures.
+
+This is still a guarded asset contract, not an ESM runtime cutover. The
+business runtime still executes through the generated classic shell; Vite now
+has verifiable per-group chunk artifacts for the later module execution switch.
+
 ## Release Rule
 
 Follow the current release order:
