@@ -3,7 +3,17 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
-const { createCodexAppServerClient } = require("../adapters/codex-app-server-client-service");
+const canonicalCodexAppServerClientService = require("../services/runtime/codex-app-server-client-service");
+const adapterCodexAppServerClientService = require("../adapters/codex-app-server-client-service");
+
+const { createCodexAppServerClient } = canonicalCodexAppServerClientService;
+
+test("app-server client adapter re-exports the canonical runtime service boundary", () => {
+  assert.equal(
+    adapterCodexAppServerClientService.createCodexAppServerClient,
+    canonicalCodexAppServerClientService.createCodexAppServerClient,
+  );
+});
 
 test("app-server client refreshes rate limits from the latest live getter", async () => {
   let liveRateLimits = { current: true };

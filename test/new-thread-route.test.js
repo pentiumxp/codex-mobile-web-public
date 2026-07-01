@@ -10,7 +10,10 @@ const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", 
 const autoTurnRecoveryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "auto-turn-recovery-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "core-api-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
-const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
+const codexAppServerClientServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "runtime", "codex-app-server-client-service.js"),
+  "utf8",
+);
 const serverRuntimeUtilsJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "server-runtime-utils.js"), "utf8");
 const serverHttpRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "server-http-runtime-service.js"), "utf8");
 const runtimePermissionPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "runtime-permission-policy-service.js"), "utf8");

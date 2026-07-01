@@ -110,8 +110,9 @@ Current acceleration targets:
    dependencies. The fifth extraction moved Codex app-server/mux client
    lifecycle, transport RPC, rate-limit refresh, server-request approval
    handling, and dynamic tool-call dispatch into
-   `adapters/codex-app-server-client-service.js`, leaving `server.js` to inject
-   runtime state, task-card/profile helpers, and logging callbacks. The current
+   `services/runtime/codex-app-server-client-service.js`, leaving `server.js` to inject
+   runtime state, task-card/profile helpers, and logging callbacks while the
+   old adapter path remains a compatibility export. The current
    backend split also moved task-card route execution, message route execution,
    fallback source recovery, summary-state synchronization, and thread-detail
    response preparation into dedicated adapters/routes. The current route-boundary
