@@ -32,6 +32,7 @@ const threadDetailStateBridgeServiceJs = fs.readFileSync(
 );
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 
 function functionBody(source, name) {
@@ -249,8 +250,8 @@ test("mobile client renders and updates thread goals from app-server notificatio
   assert.match(appJs, /thread\/goal\/updated/);
   assert.match(appJs, /thread\/goal\/cleared/);
   assert.match(functionBody(appJs, "conversationRenderSignature"), /goal: threadGoalSignature\(thread\)/);
-  assert.match(functionBody(appJs, "renderThreads"), /const goal = threadGoalForThread\(thread\)/);
-  assert.match(functionBody(appJs, "renderThreads"), /threadGoalSignature\(thread\)/);
+  assert.match(functionBody(threadListRuntimeJs, "renderThreads"), /const goal = threadGoalForThread\(thread\)/);
+  assert.match(functionBody(threadListRuntimeJs, "renderThreads"), /threadGoalSignature\(thread\)/);
   assert.match(functionBody(appJs, "renderCurrentThread"), /const goalCard = renderThreadGoal\(thread, previousKeys\)/);
   assert.match(appJs, /function dialogPrefillThreadGoal\(/);
   assert.match(functionBody(appJs, "threadGoalBudgetText"), /budget tokens/);
@@ -259,8 +260,8 @@ test("mobile client renders and updates thread goals from app-server notificatio
   assert.match(functionBody(appJs, "applyThreadGoalToThread"), /delete thread\.goal/);
   assert.match(appJs, /function applyThreadGoalToThread\(/);
   assert.match(appJs, /function scheduleThreadGoalDetailRender\(/);
-  assert.match(functionBody(appJs, "updateThreadGoalState"), /state\.threadTileDetails[\s\S]*\.get\(String\(id\)\)/);
-  assert.match(functionBody(appJs, "updateThreadGoalState"), /scheduleThreadGoalDetailRender\(id\)/);
+  assert.match(functionBody(threadListRuntimeJs, "updateThreadGoalState"), /state\.threadTileDetails[\s\S]*\.get\(String\(id\)\)/);
+  assert.match(functionBody(threadListRuntimeJs, "updateThreadGoalState"), /scheduleThreadGoalDetailRender\(id\)/);
   assert.match(functionBody(appJs, "applyNotification"), /method === "thread\/goal\/updated"[\s\S]*updateThreadGoalState\(params\.threadId, params\.goal\)/);
   assert.match(functionBody(appJs, "applyNotification"), /method === "thread\/goal\/cleared"[\s\S]*updateThreadGoalState\(params\.threadId, null\)/);
   assert.match(stylesCss, /\.thread-goal-card/);
@@ -268,13 +269,14 @@ test("mobile client renders and updates thread goals from app-server notificatio
 });
 
 test("mobile client applies thread goal updates to visible tile panes", () => {
+  const threadListRuntimeSourceNames = new Set(["updateThreadGoalState"]);
   const sources = [
     "normalizeThreadGoalStatus",
     "normalizeThreadGoal",
     "applyThreadGoalToThread",
     "scheduleThreadGoalDetailRender",
     "updateThreadGoalState",
-  ].map((name) => functionSource(appJs, name));
+  ].map((name) => functionSource(threadListRuntimeSourceNames.has(name) ? threadListRuntimeJs : appJs, name));
   const harness = Function(`
 const paneListThread = { id: "thread-pane" };
 const paneDetailThread = { id: "thread-pane" };

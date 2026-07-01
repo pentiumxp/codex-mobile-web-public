@@ -4067,6 +4067,37 @@ and late-bound dependency wiring. Validation should cover adapter parity,
 factory wiring, Web Push source guards, runtime-turn-event pipeline focused
 tests, package syntax checks, and `git diff --check`.
 
+### 2026-07-01 App JS Thread List And Tile Runtime Boundary
+
+The first large frontend-thinning slice moves two runtime-sized modules out of
+`public/app.js` while preserving the static shell contract as
+`codex-mobile-shell-v612`.
+
+Scope:
+
+- `public/thread-list-runtime.js` owns Workspace menu rendering, workspace token
+  usage/stats UI, selected-cwd filtering, `/api/threads` request/deferred
+  fallback execution, thread-list performance diagnostics, visible thread list
+  rendering, current-thread selection clearing/restoration, and Primary-shell
+  guard decisions.
+- `public/thread-tile-runtime.js` owns thread-tile layout application,
+  display-settings load/save orchestration, candidate pane id sync, pane slot
+  mutation effects, tile detail load queue/abort/drain execution, pane rendering
+  and local patching, operation dock/bubble rendering, pane scroll/bottom-button
+  behavior, shared Composer target runtime, and tile board render scheduling.
+- `public/app.js` keeps shared state, dependency injection, event wiring, real
+  network/DOM callbacks, and compatibility wrappers for existing callers.
+- `public/index.html`, `public/sw.js`, `public/app.js` page-shell preload
+  assets, and `services/runtime/server-runtime-utils.js` include both new
+  runtime files so shell hash/cache behavior stays explicit.
+
+Local line-count readback before deployment: `public/app.js` is `23754` lines,
+`public/thread-list-runtime.js` is `902` lines, and
+`public/thread-tile-runtime.js` is `1853` lines. Validation should cover syntax
+checks for the new runtimes and shell files, focused Thread List/Thread Tile UI
+tests, static shell/cache guards, `npm run --silent check`,
+`npm run --silent check:macos`, and `git diff --check`.
+
 ## Release Rule
 
 Follow the current release order:

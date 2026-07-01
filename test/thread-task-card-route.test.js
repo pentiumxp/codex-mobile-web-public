@@ -47,6 +47,7 @@ const runtimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "
 const taskCardIdempotencyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-idempotency-service.js"), "utf8");
 const taskCardRuntimePolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-runtime-policy-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const createThreadTaskCardScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "create-thread-task-card.js"), "utf8");
@@ -756,7 +757,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /settleThreadTaskCardForThread\(threadId, id, action === "approve" \? "approved" : action === "delete" \? "deleted" : action === "revoke" \? "revoked" : "replied"/);
   assert.match(appJs, /function threadTaskCardsSignature\(/);
   assert.match(appJs, /taskCards: threadTaskCardsSignature\(thread\)/);
-  assert.match(appJs, /thread-card-task-badge/);
+  assert.match(threadListRuntimeJs, /thread-card-task-badge/);
   assert.match(appJs, /function renderThreadTaskToolbar\(/);
   assert.match(appJs, /data-create-thread-task-card/);
   assert.match(functionBody(appJs, "renderThreadTaskToolbar"), /data-thread-action-thread-id/);

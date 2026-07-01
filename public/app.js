@@ -154,6 +154,10 @@ const threadTileLayoutPolicy = window.CodexThreadTileLayout;
 if (!threadTileLayoutPolicy) {
   throw new Error("CodexThreadTileLayout policy script failed to load");
 }
+const threadTileRuntimeApi = window.CodexThreadTileRuntime;
+if (!threadTileRuntimeApi) {
+  throw new Error("CodexThreadTileRuntime script failed to load");
+}
 const INITIAL_PLUGIN_EMBED = pluginEmbedApi.detect(window.location.href);
 const INITIAL_PLUGIN_LAUNCH_KEY = INITIAL_PLUGIN_EMBED.launchKey || initialPluginLaunchKeyFromUrl();
 
@@ -547,7 +551,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v611";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v612";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -607,6 +611,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-performance-metrics.js",
   "/thread-list-load-policy.js",
   "/thread-list-stable-order.js",
+  "/thread-list-runtime.js",
   "/client-render-stability-guard.js",
   "/live-operation-dock-state.js",
   "/thread-detail-state.js",
@@ -619,6 +624,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-tile-actions.js",
   "/thread-tile-state.js",
   "/thread-tile-layout.js",
+  "/thread-tile-runtime.js",
   "/build-refresh-policy.js",
   "/app.js",
   "/manifest.json",
@@ -4737,135 +4743,126 @@ function codexWorktreeRepoName(value) {
   return parts.length >= 2 ? parts[1] : "";
 }
 
-function threadMatchesWorkspaceCwd(threadCwd, workspaceCwd) {
-  const threadKey = normalizeFsPath(threadCwd);
-  const workspaceKey = normalizeFsPath(workspaceCwd);
-  if (!workspaceKey) return true;
-  if (threadKey === workspaceKey) return true;
-  const repoName = codexWorktreeRepoName(threadCwd);
-  return Boolean(repoName && repoName === basenameForFsPath(workspaceCwd));
-}
+const threadListRuntime = window.CodexThreadListRuntime.createThreadListRuntime({
+  state,
+  $,
+  api,
+  document,
+  window,
+  localStorage,
+  setTimeout,
+  clearTimeout,
+  THREAD_LIST_PAGE_LIMIT,
+  THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS,
+  THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS,
+  THREAD_LIST_SLOW_PATH_MS,
+  STORAGE_THREAD_ID,
+  normalizeFsPath,
+  escapeHtml,
+  shortPath,
+  isMobileViewport,
+  tokenCountValue,
+  formatTokenMillion,
+  displayInputTokensExcludingCached,
+  saveCurrentDraftNow,
+  flushSideChatDraftNow,
+  resetComposerRuntimeSelection,
+  abortCurrentThreadRefresh,
+  clearRecentCompletedReplyAnchor,
+  clearConversationAutoScrollHold,
+  setComposerText,
+  replacePendingAttachments,
+  syncActiveTurnFromThread,
+  connectEvents,
+  threadListLoadPolicy,
+  nowPerfMs,
+  roundedDurationMs,
+  threadListSummaryFromDetailThread,
+  threadListStableOrderPolicy,
+  reconcileThreadStatusHints,
+  renderCurrentThread,
+  threadTileLayout,
+  isThreadTileKeyboardFocusActive,
+  threadTileCandidateIds,
+  threadTileIdsEqual,
+  restoreConnectionState,
+  scheduleVisiblePageRefreshCheck,
+  threadPerformanceMetrics,
+  postPerformanceEvent,
+  diagnosticDurationBucket,
+  recordHomeAiDiagnosticFailure,
+  recordHomeAiDiagnosticSuccess,
+  threadDiagnosticEventsApi,
+  renderThreadLoadError,
+  diagnosticErrorCode,
+  diagnosticErrorStatus,
+  showError,
+  visibleWorkspaceKeys,
+  codexWorktreeRepoName,
+  basenameForFsPath,
+  visibleWorkspaceNames,
+  statusText,
+  scheduleRenderCurrentThread,
+  threadTilePaneIsVisible,
+  scheduleRenderThreadTilePane,
+  updateThreadStatusHints,
+  normalizeThreadGoal,
+  updateThreadGoalDialogState,
+  draftStore,
+  readDraftMap,
+  draftHasContent,
+  restoreDraftForCurrentTarget,
+  updateComposerControls,
+  showHermesPluginPrimaryPage,
+  isHermesEmbedMode,
+  loadThread,
+  isRunningStatus,
+  rolloutSizeText,
+  isRolloutOverThreshold,
+  formatAbsoluteTime,
+  formatTime,
+  statusIconHtml,
+  statusIconInfo,
+  threadGoalForThread,
+  renderThreadGoalBadge,
+  handleThreadCardClick,
+  threadGoalSignature,
+  rolloutSizeBytes,
+});
 
-function threadMatchesVisibleWorkspace(threadCwd) {
-  const cwd = normalizeFsPath(threadCwd);
-  const keys = visibleWorkspaceKeys();
-  if (keys.size <= 0 || !cwd) return true;
-  if (keys.has(cwd)) return true;
-  const repoName = codexWorktreeRepoName(threadCwd);
-  return Boolean(repoName && visibleWorkspaceNames().has(repoName));
+function threadMatchesWorkspaceCwd(...args) {
+  return threadListRuntime.threadMatchesWorkspaceCwd(...args);
 }
-
-function isHiddenThread(thread) {
-  if (!thread) return true;
-  const status = statusText(thread.status).toLowerCase();
-  const location = String(thread.path || thread.rolloutPath || thread.rollout_path || "").toLowerCase();
-  if (thread.archived || thread.archivedAt || thread.archived_at || thread.isArchived) return true;
-  if (thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt) return true;
-  if (/archived|deleted|removed/.test(status)) return true;
-  if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
-  if (/\.jsonl\.(bak|backup|old)(?:\b|[-_.])/.test(location)) return true;
-  const cwd = normalizeFsPath(thread.cwd);
-  if (state.selectedCwd && !threadMatchesWorkspaceCwd(thread.cwd, state.selectedCwd)) return true;
-  if (cwd && !threadMatchesVisibleWorkspace(thread.cwd)) return true;
-  return false;
+function threadMatchesVisibleWorkspace(...args) {
+  return threadListRuntime.threadMatchesVisibleWorkspace(...args);
 }
-
-function visibleThreads(threads = state.threads) {
-  return (threads || []).filter((thread) => !isHiddenThread(thread));
+function isHiddenThread(...args) {
+  return threadListRuntime.isHiddenThread(...args);
 }
-
-function pruneHiddenThreads() {
-  state.threads = visibleThreads();
+function visibleThreads(...args) {
+  return threadListRuntime.visibleThreads(...args);
 }
-
-function applyThreadStatusToThread(thread, status) {
-  if (!thread) return false;
-  thread.status = status;
-  return true;
+function pruneHiddenThreads(...args) {
+  return threadListRuntime.pruneHiddenThreads(...args);
 }
-
-function scheduleThreadStatusDetailRender(threadId = "") {
-  const id = String(threadId || state.currentThreadId || "").trim();
-  if (!id) return false;
-  if (state.currentThread && String(state.currentThread.id || "") === id) {
-    scheduleRenderCurrentThread();
-    return true;
-  }
-  if (state.threadTileMode && threadTilePaneIsVisible(id)) {
-    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
-    return true;
-  }
-  return false;
+function applyThreadStatusToThread(...args) {
+  return threadListRuntime.applyThreadStatusToThread(...args);
 }
-
-function updateThreadListStatus(threadId, status, options = {}) {
-  const id = String(threadId || "");
-  if (!id) return;
-  const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
-  applyThreadStatusToThread(thread, status);
-  applyThreadStatusToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, status);
-  applyThreadStatusToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, status);
-  if (options.render === true) scheduleThreadStatusDetailRender(id);
+function scheduleThreadStatusDetailRender(...args) {
+  return threadListRuntime.scheduleThreadStatusDetailRender(...args);
 }
-
-function localThreadForStatusContext(threadId) {
-  const id = String(threadId || "").trim();
-  if (!id) return null;
-  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
-  return state.threads.find((entry) => String(entry && entry.id || "") === id)
-    || state.threadTileDetails && state.threadTileDetails.get(String(id))
-    || null;
+function updateThreadListStatus(...args) {
+  return threadListRuntime.updateThreadListStatus(...args);
 }
-
-function snapshotThreadStatus(threadId) {
-  const id = String(threadId || "");
-  if (!id) return null;
-  const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
-  const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
-  const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
-  return {
-    id,
-    hadListThread: Boolean(listThread),
-    listStatus: listThread ? listThread.status : undefined,
-    hadCurrentThread: currentMatches,
-    currentStatus: currentMatches ? state.currentThread.status : undefined,
-    hadTileThread: Boolean(tileThread),
-    tileStatus: tileThread ? tileThread.status : undefined,
-  };
+function localThreadForStatusContext(...args) {
+  return threadListRuntime.localThreadForStatusContext(...args);
 }
-
-function restoreThreadStatusSnapshot(snapshot) {
-  if (!snapshot || !snapshot.id) return;
-  const id = String(snapshot.id);
-  const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
-  const currentThread = state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null;
-  const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
-  const restoredStatus = snapshot.hadCurrentThread
-    ? snapshot.currentStatus
-    : snapshot.hadListThread
-      ? snapshot.listStatus
-      : snapshot.tileStatus;
-  const targetThread = localThreadForStatusContext(id) || currentThread || listThread || tileThread;
-  updateThreadStatusHints(id, { type: "active" }, restoredStatus, {
-    thread: targetThread,
-    notify: false,
-  });
-  const listIndex = state.threads.findIndex((entry) => String(entry && entry.id || "") === id);
-  if (snapshot.hadListThread && listIndex >= 0) {
-    applyThreadStatusToThread(state.threads[listIndex], snapshot.listStatus);
-  } else if (!snapshot.hadListThread && listIndex >= 0) {
-    state.threads = state.threads.filter((entry) => String(entry && entry.id || "") !== id);
-  }
-  if (snapshot.hadCurrentThread && state.currentThread && String(state.currentThread.id || "") === id) {
-    state.currentThread.status = snapshot.currentStatus;
-  }
-  if (snapshot.hadTileThread) {
-    applyThreadStatusToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, snapshot.tileStatus);
-  }
-  pruneHiddenThreads();
-  scheduleThreadStatusDetailRender(id);
+function snapshotThreadStatus(...args) {
+  return threadListRuntime.snapshotThreadStatus(...args);
 }
-
+function restoreThreadStatusSnapshot(...args) {
+  return threadListRuntime.restoreThreadStatusSnapshot(...args);
+}
 function markThreadOptimisticallyActive(threadId) {
   const id = String(threadId || "");
   if (!id) return;
@@ -9159,454 +9156,78 @@ function installLaunchQueueHandler() {
   }
 }
 
-async function loadWorkspaces() {
-  const result = await api("/api/workspaces");
-  state.workspaces = result.data || [];
-  const select = $("workspaceSelect");
-  const menu = $("workspaceSelectMenu");
-  if (state.selectedCwd && !state.workspaces.some((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd))) {
-    state.selectedCwd = "";
-  }
-  if (select) {
-    select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
-    select.disabled = !state.workspaces.length && !state.workspaceCreateEnabled;
-    select.setAttribute("title", state.workspaces.length ? "Select Workspace" : "Create Workspace");
-  }
-  if (menu) {
-    menu.innerHTML = workspaceSidebarOptionsHtml();
-  }
-  updateWorkspacePath();
-  if (shouldRenderPrimaryConversationShell()) renderCurrentThread();
+function loadWorkspaces(...args) {
+  return threadListRuntime.loadWorkspaces(...args);
 }
-
-function workspaceSidebarOptionsHtml() {
-  const allSelected = !state.selectedCwd ? " is-selected" : "";
-  const allOption = `<button type="button" class="workspace-select-option${allSelected}" data-workspace-value="">All workspaces</button>`;
-  const workspaceOptions = state.workspaces.length ? state.workspaces.map((ws) => {
-    const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
-    const label = `${ws.label}${count} - ${ws.cwd}`;
-    const selected = normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : "";
-    return `<button type="button" class="workspace-select-option${selected}" data-workspace-value="${escapeHtml(ws.cwd)}">${escapeHtml(label)}</button>`;
-  }).join("") : `<div class="workspace-select-empty">No Workspace yet</div>`;
-  const createRoot = state.workspaceCreateRoot ? `Under ${state.workspaceCreateRoot}` : "Create a local folder";
-  const createOption = state.workspaceCreateEnabled
-    ? `<button type="button" class="workspace-select-option workspace-create-option" data-create-workspace><span class="workspace-create-title">Create Workspace</span><span class="workspace-create-meta">${escapeHtml(createRoot)}</span></button>`
-    : "";
-  return allOption + workspaceOptions + createOption;
+function workspaceSidebarOptionsHtml(...args) {
+  return threadListRuntime.workspaceSidebarOptionsHtml(...args);
 }
-
-function syncSidebarWorkspaceSelect() {
-  const select = $("workspaceSelect");
-  const menu = $("workspaceSelectMenu");
-  if (!select) return;
-  select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
-  if (menu) {
-    menu.innerHTML = workspaceSidebarOptionsHtml();
-  }
+function syncSidebarWorkspaceSelect(...args) {
+  return threadListRuntime.syncSidebarWorkspaceSelect(...args);
 }
-
-function workspaceOptionsHtml() {
-  return `<option value="">All workspaces</option>` + state.workspaces.map((ws) => {
-    const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
-    return `<option value="${escapeHtml(ws.cwd)}">${escapeHtml(`${ws.label}${count} - ${ws.cwd}`)}</option>`;
-  }).join("");
+function workspaceOptionsHtml(...args) {
+  return threadListRuntime.workspaceOptionsHtml(...args);
 }
-
-function newThreadWorkspaceOptionsHtml() {
-  const projectlessSelected = !state.selectedCwd ? " is-selected" : "";
-  const projectlessOption = `<button type="button" class="new-thread-workspace-option${projectlessSelected}" data-new-thread-workspace=""><span>不指定 Workspace</span><span class="new-thread-workspace-option-meta">对齐 Codex App 的项目外聊天</span></button>`;
-  return projectlessOption + state.workspaces.map((ws) => {
-    const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
-    const label = `${ws.label}${count} - ${ws.cwd}`;
-    const selected = normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : "";
-    return `<button type="button" class="new-thread-workspace-option${selected}" data-new-thread-workspace="${escapeHtml(ws.cwd)}">${escapeHtml(label)}</button>`;
-  }).join("");
+function newThreadWorkspaceOptionsHtml(...args) {
+  return threadListRuntime.newThreadWorkspaceOptionsHtml(...args);
 }
-
-function newThreadChoiceOptionsHtml(values, selectedValue, dataName, labeler) {
-  return normalizeOptionList(values).map((value) => {
-    const selected = value === selectedValue ? " is-selected" : "";
-    return `<button type="button" class="new-thread-choice${selected}" data-new-thread-${dataName}="${escapeHtml(value)}">${escapeHtml(labeler(value))}</button>`;
-  }).join("");
+function newThreadChoiceOptionsHtml(...args) {
+  return threadListRuntime.newThreadChoiceOptionsHtml(...args);
 }
-
-function selectedWorkspaceLabel() {
-  if (!state.selectedCwd) return "聊天";
-  const workspace = state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd));
-  return workspace && workspace.label ? workspace.label : shortPath(state.selectedCwd);
+function selectedWorkspaceLabel(...args) {
+  return threadListRuntime.selectedWorkspaceLabel(...args);
 }
-
-function fitWorkspaceMenuToViewport(menu, anchor, options = {}) {
-  if (!menu || !anchor) return;
-  const rect = anchor.getBoundingClientRect();
-  const composer = $("composer");
-  const composerTop = composer ? composer.getBoundingClientRect().top : 0;
-  const viewportBottom = window.innerHeight || document.documentElement.clientHeight || 0;
-  const bottomLimit = options.avoidComposer !== false && composerTop > rect.bottom
-    ? composerTop
-    : viewportBottom;
-  const gap = Number(options.gap || 18);
-  const cap = Number(options.cap || (isMobileViewport() ? 360 : 420));
-  const available = Math.max(120, Math.floor(bottomLimit - rect.bottom - gap));
-  const height = Math.max(120, Math.min(cap, available));
-  menu.style.setProperty("--workspace-menu-max-height", `${height}px`);
+function fitWorkspaceMenuToViewport(...args) {
+  return threadListRuntime.fitWorkspaceMenuToViewport(...args);
 }
-
-function updateWorkspacePath() {
-  const el = $("workspacePath");
-  if (!el) return;
-  el.hidden = !state.selectedCwd;
-  el.textContent = state.selectedCwd || "";
+function updateWorkspacePath(...args) {
+  return threadListRuntime.updateWorkspacePath(...args);
 }
-
-function renderWorkspaceTokenUsage() {
-  const el = $("workspaceTokenUsage");
-  if (!el) return;
-  const usage = state.workspaceTokenUsage;
-  if (!usage || typeof usage !== "object") {
-    el.hidden = true;
-    el.innerHTML = "";
-    return;
-  }
-  const hasAny = tokenCountValue(usage.totalTokens) || tokenCountValue(usage.todayTokens) || tokenCountValue(usage.weekTokens);
-  if (!hasAny) {
-    el.hidden = true;
-    el.innerHTML = "";
-    return;
-  }
-  el.hidden = false;
-  el.innerHTML = `<div class="workspace-token-usage-summary">
-    <span title="当前 Workspace 累计 token">总 ${escapeHtml(formatTokenMillion(usage.totalTokens))}</span>
-    <span title="本周 token">周 ${escapeHtml(formatTokenMillion(usage.weekTokens))}</span>
-    <span title="今日 token">今 ${escapeHtml(formatTokenMillion(usage.todayTokens))}</span>
-    <button type="button" class="workspace-token-usage-toggle" data-workspace-token-usage-toggle>统计</button>
-  </div>`;
-  renderWorkspaceStatsDialog();
+function renderWorkspaceTokenUsage(...args) {
+  return threadListRuntime.renderWorkspaceTokenUsage(...args);
 }
-
-function tokenBreakdownHtml(entry, className = "workspace-token-usage-breakdown") {
-  return `<div class="${escapeHtml(className)}" aria-label="Token usage breakdown">
-    <span title="Uncached input tokens">Uncached ${escapeHtml(formatTokenMillion(displayInputTokensExcludingCached(entry)))}</span>
-    <span title="Cached input tokens">Cached ${escapeHtml(formatTokenMillion(entry && entry.cachedInputTokens))}</span>
-    <span title="Output tokens">Out ${escapeHtml(formatTokenMillion(entry && entry.outputTokens))}</span>
-    <span title="Reasoning output tokens">Reason ${escapeHtml(formatTokenMillion(entry && entry.reasoningOutputTokens))}</span>
-  </div>`;
+function tokenBreakdownHtml(...args) {
+  return threadListRuntime.tokenBreakdownHtml(...args);
 }
-
-function renderWorkspaceStatsDialog() {
-  const dialog = $("workspaceStatsDialog");
-  const content = $("workspaceStatsContent");
-  const subtitle = $("workspaceStatsSubtitle");
-  if (!dialog || !content) return;
-  if (!state.workspaceTokenStatsOpen) {
-    dialog.classList.add("hidden");
-    content.innerHTML = "";
-    return;
-  }
-  const usage = state.workspaceTokenUsage && typeof state.workspaceTokenUsage === "object"
-    ? state.workspaceTokenUsage
-    : {};
-  const daily = Array.isArray(usage.daily) ? usage.daily.slice(0, 31) : [];
-  const workspaces = Array.isArray(usage.workspaces) ? usage.workspaces.slice(0, 50) : [];
-  if (subtitle) {
-    subtitle.textContent = state.selectedCwd ? `当前 Workspace: ${state.selectedCwd}` : "All workspaces";
-  }
-  content.innerHTML = `<section class="workspace-stats-section">
-    <div class="workspace-stats-section-title">总览</div>
-    <div class="workspace-stats-summary-grid">
-      <div><span>总计</span><strong>${escapeHtml(formatTokenMillion(usage.totalTokens))}</strong></div>
-      <div><span>本周</span><strong>${escapeHtml(formatTokenMillion(usage.weekTokens))}</strong></div>
-      <div><span>今日</span><strong>${escapeHtml(formatTokenMillion(usage.todayTokens))}</strong></div>
-    </div>
-    ${tokenBreakdownHtml(usage, "workspace-stats-breakdown")}
-  </section>
-  <section class="workspace-stats-section">
-    <div class="workspace-stats-section-title">按天</div>
-    <div class="workspace-stats-list">
-      ${daily.length ? daily.map((entry) => `<article class="workspace-stats-row">
-        <div class="workspace-stats-row-head">
-          <span>${escapeHtml(entry.date || "")}</span>
-          <strong>${escapeHtml(formatTokenMillion(entry.totalTokens))}</strong>
-        </div>
-        ${tokenBreakdownHtml(entry, "workspace-stats-breakdown")}
-      </article>`).join("") : `<div class="workspace-token-usage-empty">暂无每日明细</div>`}
-    </div>
-  </section>
-  <section class="workspace-stats-section">
-    <div class="workspace-stats-section-title">按项目</div>
-    <div class="workspace-stats-list">
-      ${workspaces.length ? workspaces.map((entry) => `<article class="workspace-stats-row">
-        <div class="workspace-stats-row-head">
-          <span title="${escapeHtml(entry.cwd || "")}">${escapeHtml(shortPath(entry.cwd) || entry.cwd || "")}</span>
-          <strong>${escapeHtml(formatTokenMillion(entry.totalTokens))}</strong>
-        </div>
-        <div class="workspace-stats-row-meta">
-          <span>周 ${escapeHtml(formatTokenMillion(entry.weekTokens))}</span>
-          <span>今 ${escapeHtml(formatTokenMillion(entry.todayTokens))}</span>
-        </div>
-        ${tokenBreakdownHtml(entry, "workspace-stats-breakdown")}
-      </article>`).join("") : `<div class="workspace-token-usage-empty">暂无项目明细</div>`}
-    </div>
-  </section>`;
-  dialog.classList.remove("hidden");
+function renderWorkspaceStatsDialog(...args) {
+  return threadListRuntime.renderWorkspaceStatsDialog(...args);
 }
-
-function openWorkspaceStatsDialog() {
-  state.workspaceTokenStatsOpen = true;
-  renderWorkspaceStatsDialog();
+function openWorkspaceStatsDialog(...args) {
+  return threadListRuntime.openWorkspaceStatsDialog(...args);
 }
-
-function closeWorkspaceStatsDialog() {
-  state.workspaceTokenStatsOpen = false;
-  renderWorkspaceStatsDialog();
+function closeWorkspaceStatsDialog(...args) {
+  return threadListRuntime.closeWorkspaceStatsDialog(...args);
 }
-
-function clearCurrentThreadSelection(options = {}) {
-  if (options.saveDraft !== false) saveCurrentDraftNow();
-  flushSideChatDraftNow().catch(() => {});
-  state.threadLoadSeq += 1;
-  state.sendButtonHint = "";
-  resetComposerRuntimeSelection();
-  state.newThreadTitle = "";
-  if (state.threadLoadController) {
-    state.threadLoadController.abort();
-    state.threadLoadController = null;
-  }
-  abortCurrentThreadRefresh();
-  state.currentThread = null;
-  state.currentThreadId = "";
-  state.activeTurnId = "";
-  clearRecentCompletedReplyAnchor();
-  clearConversationAutoScrollHold();
-  localStorage.removeItem(STORAGE_THREAD_ID);
-  setComposerText("");
-  replacePendingAttachments([], { saveDraft: false });
-  syncActiveTurnFromThread();
-  if (state.events) connectEvents();
+function clearCurrentThreadSelection(...args) {
+  return threadListRuntime.clearCurrentThreadSelection(...args);
 }
-
-function renderThreadListLoading() {
-  const list = $("threadList");
-  if (!list) return;
-  list.innerHTML = `<div class="empty-state">Loading threads...</div>`;
-  state.renderedThreadListSignature = `loading|${state.selectedCwd}|${$("threadSearch").value.trim()}`;
+function renderThreadListLoading(...args) {
+  return threadListRuntime.renderThreadListLoading(...args);
 }
-
-function hasThreadDetailSelectionIntent() {
-  return Boolean(
-    state.currentThread
-    || state.currentThreadId
-    || state.threadLoadController
-    || state.startupThreadOpenPending,
-  );
+function hasThreadDetailSelectionIntent(...args) {
+  return threadListRuntime.hasThreadDetailSelectionIntent(...args);
 }
-
-function shouldRenderPrimaryConversationShell() {
-  return !hasThreadDetailSelectionIntent() && !state.newThreadDraft;
+function shouldRenderPrimaryConversationShell(...args) {
+  return threadListRuntime.shouldRenderPrimaryConversationShell(...args);
 }
-
-function clearThreadListDeferredFallbackTimer() {
-  if (!state.threadListDeferredFallbackTimer) return;
-  clearTimeout(state.threadListDeferredFallbackTimer);
-  state.threadListDeferredFallbackTimer = null;
+function clearThreadListDeferredFallbackTimer(...args) {
+  return threadListRuntime.clearThreadListDeferredFallbackTimer(...args);
 }
-
-function clearThreadListDeferredSilentTimer() {
-  if (!state.threadListDeferredSilentTimer) return;
-  clearTimeout(state.threadListDeferredSilentTimer);
-  state.threadListDeferredSilentTimer = null;
+function clearThreadListDeferredSilentTimer(...args) {
+  return threadListRuntime.clearThreadListDeferredSilentTimer(...args);
 }
-
-function hasThreadDetailRequestInFlight() {
-  return Boolean(
-    state.threadLoadController
-    || state.refreshThreadController
-    || (state.currentThread && state.currentThread.mobileLoading),
-  );
+function hasThreadDetailRequestInFlight(...args) {
+  return threadListRuntime.hasThreadDetailRequestInFlight(...args);
 }
-
-function scheduleThreadListDeferredFallback(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS) {
-  clearThreadListDeferredFallbackTimer();
-  const delay = Math.max(500, Number(delayMs) || THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS);
-  state.threadListDeferredFallbackTimer = setTimeout(() => {
-    state.threadListDeferredFallbackTimer = null;
-    const search = $("threadSearch").value.trim();
-    if (state.selectedCwd || search) return;
-    if (state.threadListLoadController || hasThreadDetailRequestInFlight()) {
-      scheduleThreadListDeferredFallback(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS);
-      return;
-    }
-    loadThreads({ silent: true, deferFallback: false }).catch(showError);
-  }, delay);
+function scheduleThreadListDeferredFallback(...args) {
+  return threadListRuntime.scheduleThreadListDeferredFallback(...args);
 }
-
-function scheduleThreadListDeferredSilentRefresh(delayMs = 700, options = {}) {
-  clearThreadListDeferredSilentTimer();
-  const delay = Math.max(250, Number(delayMs) || 700);
-  state.threadListDeferredSilentTimer = setTimeout(() => {
-    state.threadListDeferredSilentTimer = null;
-    if (document.visibilityState === "hidden") return;
-    if (state.threadListLoadController || hasThreadDetailRequestInFlight()) {
-      scheduleThreadListDeferredSilentRefresh(900, options);
-      return;
-    }
-    loadThreads(Object.assign({}, options, {
-      silent: true,
-      allowDuringDetail: true,
-      allowHidden: false,
-    })).catch(showError);
-  }, delay);
+function scheduleThreadListDeferredSilentRefresh(...args) {
+  return threadListRuntime.scheduleThreadListDeferredSilentRefresh(...args);
 }
-
-async function loadThreads(options = {}) {
-  const silent = options.silent === true;
-  if (silent && state.threadListLoadController) return null;
-  if (options.deferFallback !== true) clearThreadListDeferredFallbackTimer();
-  const params = new URLSearchParams({ limit: String(THREAD_LIST_PAGE_LIMIT), archived: "false" });
-  if (state.selectedCwd) params.set("cwd", state.selectedCwd);
-  const search = $("threadSearch").value.trim();
-  if (search) params.set("search", search);
-  const threadDetailOpening = hasThreadDetailRequestInFlight();
-  const loadPlan = threadListLoadPolicy.planThreadListLoadRequest({
-    deferFallback: options.deferFallback,
-    search,
-    selectedCwd: state.selectedCwd,
-    silent,
-    threadDetailOpening,
-    threadListLoadedAtMs: state.threadListLoadedAtMs,
-    documentHidden: document.visibilityState === "hidden",
-    allowDuringDetail: options.allowDuringDetail === true,
-    allowHidden: options.allowHidden === true,
-  });
-  if (!loadPlan.shouldLoad) {
-    if (loadPlan.skipReason === "detail-in-flight") {
-      scheduleThreadListDeferredSilentRefresh(loadPlan.retryDelayMs, {
-        deferFallback: options.deferFallback,
-      });
-    }
-    return null;
-  }
-  if (loadPlan.params && loadPlan.params.fallback) {
-    params.set("fallback", "defer");
-  }
-  if (loadPlan.params && loadPlan.params.initial) {
-    params.set("initial", "warm-fallback");
-  }
-  clearThreadListDeferredSilentTimer();
-  const loadStartedAt = nowPerfMs();
-  const seq = state.threadListLoadSeq + 1;
-  state.threadListLoadSeq = seq;
-  if (state.threadListLoadController) state.threadListLoadController.abort();
-  const controller = new AbortController();
-  state.threadListLoadController = controller;
-  if (!silent) renderThreadListLoading();
-  try {
-    const apiStartedAt = nowPerfMs();
-    const result = await api(`/api/threads?${params}`, { timeoutMs: 45000, signal: controller.signal });
-    const apiElapsedMs = roundedDurationMs(apiStartedAt);
-    if (seq !== state.threadListLoadSeq) return null;
-    const renderStartedAt = nowPerfMs();
-    const nextThreads = visibleThreads(result.data || [])
-      .map((thread) => threadListSummaryFromDetailThread(thread) || thread);
-    const stableOrderPlan = threadListStableOrderPolicy.planThreadListStableOrder({
-      threads: nextThreads,
-      previousState: state.threadListStableOrder,
-      scopeKey: threadListStableOrderPolicy.threadListOrderScopeKey({ selectedCwd: state.selectedCwd, search }),
-      selectedCwd: state.selectedCwd,
-      search,
-      nowMs: Date.now(),
-    });
-    state.threads = stableOrderPlan.threads;
-    state.threadListStableOrder = stableOrderPlan.state;
-    state.workspaceTokenUsage = result.mobileTokenUsage || null;
-    state.threadListLoadedAtMs = Date.now();
-    reconcileThreadStatusHints(state.threads);
-    renderWorkspaceTokenUsage();
-    renderThreads(result);
-    if (state.currentThread && state.threadTileMode && !isThreadTileKeyboardFocusActive()) {
-      const tileLayout = threadTileLayout();
-      if (tileLayout.enabled) {
-        const nextTileIds = threadTileCandidateIds(tileLayout);
-        if (!threadTileIdsEqual(nextTileIds, state.threadTileActiveIds)) renderCurrentThread({ stickToBottom: true });
-      }
-    }
-    restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
-    scheduleVisiblePageRefreshCheck(500);
-    if (result && (result.mobileDeferredFallback || result.mobileDeferredAppServer) && !state.selectedCwd && !search) {
-      scheduleThreadListDeferredFallback();
-    }
-    if (shouldRenderPrimaryConversationShell()) renderCurrentThread();
-    const listPerformance = threadPerformanceMetrics.threadListEventFields(result);
-    const listPerformanceEvent = {
-      elapsedMs: roundedDurationMs(loadStartedAt),
-      apiElapsedMs,
-      renderElapsedMs: roundedDurationMs(renderStartedAt),
-      serverTimings: listPerformance.serverTimings,
-      performancePhase: listPerformance.performancePhase,
-      count: state.threads.length,
-      silent,
-      hasSearch: Boolean(search),
-      hasWorkspace: Boolean(state.selectedCwd),
-      mobileFallback: Boolean(result.mobileFallback),
-    };
-    postPerformanceEvent("thread_list_rendered", listPerformanceEvent);
-    const listSlowPlan = threadPerformanceMetrics.planThreadListSlowPathDiagnostic(listPerformanceEvent, {
-      action: "thread-list-load",
-      source: silent ? "thread-list-refresh" : "thread-list-load",
-      durationBucket: diagnosticDurationBucket(listPerformanceEvent.elapsedMs),
-      thresholdMs: THREAD_LIST_SLOW_PATH_MS,
-    });
-    if (listSlowPlan.shouldReport) {
-      recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadListSlowPathDiagnosticEvent(listSlowPlan));
-    } else {
-      recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.threadListSlowPathDiagnosticSuccess({
-        action: "thread-list-load",
-        performancePhase: listPerformance.performancePhase,
-      }));
-    }
-    recordHomeAiDiagnosticSuccess({
-      category: "thread_session_load_failed",
-      diagnostic_type: "thread_list_load_failed",
-      error_code: "thread_list_load_failed",
-      context: {
-        surface: "thread-session",
-        action: "thread-list-load",
-      },
-    });
-    return result;
-  } catch (err) {
-    if (seq !== state.threadListLoadSeq || controller.signal.aborted) return null;
-    if (!silent) renderThreadLoadError(err);
-    recordHomeAiDiagnosticFailure({
-      category: "thread_session_load_failed",
-      diagnostic_type: "thread_list_load_failed",
-      severity_hint: "H3",
-      evidence_confidence: 0.7,
-      error_code: diagnosticErrorCode(err, "thread_list_load_failed"),
-      duration_bucket: diagnosticDurationBucket(roundedDurationMs(loadStartedAt)),
-      context: {
-        surface: "thread-session",
-        action: "thread-list-load",
-      },
-      counts: {
-        status_code: diagnosticErrorStatus(err),
-      },
-      breadcrumbs: [{
-        kind: "thread-session",
-        code: "thread-list-load",
-        status: "failed",
-        duration_bucket: diagnosticDurationBucket(roundedDurationMs(loadStartedAt)),
-        fields: {
-          status_code: diagnosticErrorStatus(err),
-        },
-      }],
-    });
-    throw err;
-  } finally {
-    if (state.threadListLoadController === controller) state.threadListLoadController = null;
-  }
+function loadThreads(...args) {
+  return threadListRuntime.loadThreads(...args);
 }
-
 function clearThreadLoadWatchdog() {
   if (!state.threadLoadWatchdogTimer) return;
   clearTimeout(state.threadLoadWatchdogTimer);
@@ -13350,153 +12971,18 @@ function handleThreadAction(event) {
   }
 }
 
-function renderThreads(result = null) {
-  const list = $("threadList");
-  pruneHiddenThreads();
-  if (!state.threads.length) {
-    if (state.renderedThreadListSignature !== "empty") {
-      list.innerHTML = `<div class="empty-state">No threads.</div>`;
-      state.renderedThreadListSignature = "empty";
-    }
-    return;
-  }
-  const warning = result && result.mobileFallback
-    ? `<div class="history-note">Live thread list recovering. Showing cached session index.</div>`
-    : "";
-  const nowMs = Date.now();
-  const html = warning + state.threads.map((thread) => {
-    const title = thread.name || thread.preview || thread.id;
-    const sizeText = rolloutSizeText(thread);
-    const sizeWarn = isRolloutOverThreshold(thread);
-    const updatedTitle = formatAbsoluteTime(thread.updatedAt);
-    const pathText = shortPath(thread.cwd) || "聊天";
-    const isWorkspaceLess = !thread.cwd;
-    const timeText = formatTime(thread.updatedAt, nowMs);
-    const statusIcon = statusIconHtml(thread.status, "thread-status-icon", thread.id);
-    const iconKind = statusIconInfo(thread.status, thread.id)?.kind || "";
-    const active = thread.id === state.currentThreadId ? " active" : "";
-    const emphasis = iconKind ? ` has-status-${iconKind}` : "";
-    const goal = threadGoalForThread(thread);
-    const goalBadge = renderThreadGoalBadge(goal);
-    const pendingIncomingTaskCards = Math.max(0, Number(thread && thread.pendingIncomingTaskCardCount) || 0);
-    const taskCardBadge = pendingIncomingTaskCards
-      ? `<div class="thread-card-task-badge" title="Pending incoming task cards">${escapeHtml(`Task ${pendingIncomingTaskCards}`)}</div>`
-      : "";
-    const sizeBadge = sizeText
-      ? `<div class="thread-card-size${sizeWarn ? " warn" : ""}" title="Rollout file size">${escapeHtml(sizeText)}</div>`
-      : "";
-    return `<div class="thread-card-wrap${sizeWarn ? " rollout-warn" : ""}" data-thread-row="${escapeHtml(thread.id)}">
-      <button class="thread-card${active}${emphasis}${sizeWarn ? " rollout-warn" : ""}" type="button" data-thread="${escapeHtml(thread.id)}">
-        <div class="thread-card-title-row">
-          <div class="thread-card-title">${escapeHtml(title)}</div>
-          <div class="thread-card-title-actions">${statusIcon}</div>
-        </div>
-        <div class="thread-card-meta-row">
-          <div class="thread-card-meta">
-            <span class="thread-card-path${isWorkspaceLess ? " thread-card-path-chat" : ""}">${escapeHtml(pathText)}</span>
-            ${timeText ? `<span class="thread-card-time" title="${escapeHtml(updatedTitle)}">${escapeHtml(timeText)}</span>` : ""}
-          </div>
-          <div class="thread-card-meta-badges">
-            ${goalBadge}
-            ${taskCardBadge}
-            ${sizeBadge}
-          </div>
-        </div>
-      </button>
-    </div>`;
-  }).join("");
-  const signature = JSON.stringify({
-    warning: Boolean(warning),
-    currentThreadId: state.currentThreadId,
-    timeBucket: Math.floor(nowMs / 60000),
-    threads: state.threads.map((thread) => [
-      thread.id,
-      thread.name || thread.preview || thread.id,
-      shortPath(thread.cwd) || "聊天",
-      thread.updatedAt,
-      statusText(thread.status),
-      statusIconInfo(thread.status, thread.id)?.kind || "",
-      threadGoalSignature(thread),
-      state.unreadThreadIds.has(thread.id) ? 1 : 0,
-      Number(thread.pendingIncomingTaskCardCount || 0),
-      rolloutSizeBytes(thread),
-      isRolloutOverThreshold(thread),
-    ]),
-  });
-  if (state.renderedThreadListSignature === signature) return;
-  list.innerHTML = html;
-  state.renderedThreadListSignature = signature;
-  list.querySelectorAll("[data-thread]").forEach((button) => {
-    button.addEventListener("click", handleThreadCardClick);
-  });
+function renderThreads(...args) {
+  return threadListRuntime.renderThreads(...args);
 }
-
-async function restoreThreadSelection() {
-  if (hasThreadDetailSelectionIntent()) return;
-  if (isHermesEmbedMode()) {
-    state.startupThreadOpenPending = false;
-    showHermesPluginPrimaryPage({ source: "restore-empty" });
-    return;
-  }
-  const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
-  if (!state.threads.length && !savedThreadId) {
-    state.startupThreadOpenPending = false;
-    restoreNewThreadDraftSelection();
-    return;
-  }
-  const saved = savedThreadId && state.threads.find((thread) => thread.id === savedThreadId);
-  const active = state.threads.find((thread) => isRunningStatus(thread.status));
-  const target = saved || (savedThreadId ? { id: savedThreadId } : active);
-  if (!target) {
-    state.startupThreadOpenPending = false;
-    restoreNewThreadDraftSelection();
-    return;
-  }
-  try {
-    await loadThread(target.id, { source: "restore" });
-  } catch (err) {
-    state.startupThreadOpenPending = false;
-    if (target.id === savedThreadId) localStorage.removeItem(STORAGE_THREAD_ID);
-    showError(err);
-    renderCurrentThread();
-  }
+function restoreThreadSelection(...args) {
+  return threadListRuntime.restoreThreadSelection(...args);
 }
-
-function restoreNewThreadDraftSelection() {
-  const key = draftStore.getTargetKey();
-  if (!key.startsWith("new:")) return false;
-  const draft = readDraftMap()[key];
-  if (!draftHasContent(draft)) return false;
-  const cwd = String(draft.cwd || "");
-  const workspace = cwd
-    ? state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(cwd))
-    : null;
-  if (!workspace) return false;
-  state.selectedCwd = workspace.cwd || cwd;
-  clearCurrentThreadSelection({ saveDraft: false });
-  state.newThreadDraft = true;
-  restoreDraftForCurrentTarget();
-  syncSidebarWorkspaceSelect();
-  updateWorkspacePath();
-  renderThreads();
-  renderCurrentThread();
-  updateComposerControls();
-  return true;
+function restoreNewThreadDraftSelection(...args) {
+  return threadListRuntime.restoreNewThreadDraftSelection(...args);
 }
-
-async function selectWorkspaceShortcut(cwd) {
-  saveCurrentDraftNow();
-  state.selectedCwd = cwd || "";
-  clearCurrentThreadSelection({ saveDraft: false });
-  const select = $("workspaceSelect");
-  if (select) select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
-  syncSidebarWorkspaceSelect();
-  updateWorkspacePath();
-  updateComposerControls();
-  renderCurrentThread();
-  await loadThreads();
+function selectWorkspaceShortcut(...args) {
+  return threadListRuntime.selectWorkspaceShortcut(...args);
 }
-
 function patchNode(target, source) {
   return threadDetailDomPatchApi.patchNode(target, source);
 }
@@ -13710,1654 +13196,376 @@ function updateCurrentThreadHeader(thread = state.currentThread) {
   if (metaEl) metaEl.textContent = "";
 }
 
-function updateThreadTileGlobalHeader(layout = null, ids = []) {
-  const titleEl = $("threadTitle");
-  const metaEl = $("threadMeta");
-  if (titleEl) titleEl.textContent = "";
-  if (metaEl) metaEl.textContent = "";
+const threadTileRuntime = threadTileRuntimeApi.createThreadTileRuntime({
+  state,
+  $,
+  api,
+  document,
+  window,
+  localStorage,
+  setTimeout,
+  clearTimeout,
+  AbortController,
+  THREAD_TILE_USER_MAX_PANES,
+  THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS,
+  THREAD_TILE_REFRESH_INTERVAL_MS,
+  THREAD_TILE_REFRESH_MIN_INTERVAL_MS,
+  THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS,
+  STORAGE_THREAD_DISPLAY_MODE,
+  STORAGE_LEGACY_THREAD_TILE_MODE,
+  LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+  threadTileActionsApi,
+  threadTileStatePolicy,
+  threadTileLayoutPolicy,
+  threadDetailPatchPlanApi,
+  isKeyboardEditableElement,
+  splitPaneSidebarVisible,
+  isMenuOverlayMode,
+  visibleThreads,
+  isRunningStatus,
+  saveCurrentDraftNow,
+  restoreDraftForCurrentTarget,
+  renderComposerSettings,
+  updateComposerControls,
+  scheduleRenderCurrentThread,
+  renderCurrentThread,
+  showError,
+  threadById,
+  threadDisplayName,
+  shortPath,
+  formatTime,
+  statusIconHtml,
+  threadDetailApiPath,
+  mergeThreadPreservingVisibleItems,
+  mergeThreadIntoThreadList,
+  withRenderContextThread,
+  visibleItemsForTurn,
+  renderVisibleItemPatchHtml,
+  renderTurnVisibleItemBudgetNotice,
+  approvalsForTurn,
+  renderApprovalRequest,
+  approvalTurnId,
+  isApprovalActive,
+  currentLiveOperationEntry,
+  latestLiveTurnForThread,
+  renderMobileOperationStack,
+  visibleItemSignature,
+  threadTitleForDisplay,
+  turnTimerStateHtml,
+  threadTilePaneTimerState,
+  threadHasVisibleConversationTurns,
+  threadReadWarningMessage,
+  visibleTurnsForConversation,
+  renderThreadHistoryNote,
+  renderPendingApprovals,
+  effectiveThreadTileSelectedThreadId,
+  conversationRenderSignature,
+  existingConversationRenderKeys,
+  patchNode,
+  hydrateThreadDetailSurface,
+  clearGlobalLiveOperationDockForThreadTiles,
+  updateConversationHtml,
+  threadTileVisibleShape,
+  threadTileDomTurnCount,
+  conversationDomShape,
+  diagnosticHash,
+  publishPluginNavigationState,
+  escapeHtml,
+});
+
+function updateThreadTileGlobalHeader(...args) {
+  return threadTileRuntime.updateThreadTileGlobalHeader(...args);
+}
+function viewportPixelSize(...args) {
+  return threadTileRuntime.viewportPixelSize(...args);
+}
+function isCoarsePointerViewport(...args) {
+  return threadTileRuntime.isCoarsePointerViewport(...args);
+}
+function isThreadTileKeyboardFocusActive(...args) {
+  return threadTileRuntime.isThreadTileKeyboardFocusActive(...args);
+}
+function threadTileViewportSize(...args) {
+  return threadTileRuntime.threadTileViewportSize(...args);
+}
+function threadTileVerticalChromePx(...args) {
+  return threadTileRuntime.threadTileVerticalChromePx(...args);
+}
+function threadTileLayout(...args) {
+  return threadTileRuntime.threadTileLayout(...args);
+}
+function normalizeThreadTilePaneCount(...args) {
+  return threadTileRuntime.normalizeThreadTilePaneCount(...args);
+}
+function threadTileLayoutCapacity(...args) {
+  return threadTileRuntime.threadTileLayoutCapacity(...args);
 }
-
-function viewportPixelSize(options = {}) {
-  const visualViewport = window.visualViewport;
-  const visualWidth = Math.round((visualViewport && visualViewport.width) || 0);
-  const visualHeight = Math.round((visualViewport && visualViewport.height) || 0);
-  const layoutWidth = Math.round(window.innerWidth || document.documentElement.clientWidth || 0);
-  const layoutHeight = Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
-  if (options.preferLayoutViewport) {
-    return {
-      width: Math.max(layoutWidth, visualWidth),
-      height: Math.max(layoutHeight, visualHeight),
-    };
-  }
-  return {
-    width: Math.round(visualWidth || layoutWidth || 0),
-    height: Math.round(visualHeight || layoutHeight || 0),
-  };
-}
-
-function isCoarsePointerViewport() {
-  return Boolean(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
-}
-
-function isThreadTileKeyboardFocusActive() {
-  return Boolean(state.threadTileMode && isKeyboardEditableElement(document.activeElement));
-}
-
-function threadTileViewportSize() {
-  const layoutViewport = viewportPixelSize({ preferLayoutViewport: true });
-  const plan = threadTileStatePolicy.threadTileViewportBaselinePlan({
-    keyboardActive: isThreadTileKeyboardFocusActive(),
-    layoutViewport,
-    baseline: state.threadTileViewportBaseline,
-  });
-  if (plan.updateBaseline) state.threadTileViewportBaseline = plan.nextBaseline;
-  return plan.viewport;
-}
-
-function threadTileVerticalChromePx() {
-  const plan = threadTileStatePolicy.threadTileVerticalChromePlan({
-    keyboardActive: isThreadTileKeyboardFocusActive(),
-    composerHeightPx: state.composerHeightPx,
-    baselineComposerHeightPx: state.threadTileComposerHeightBaselinePx,
-  });
-  if (plan.updateBaseline) state.threadTileComposerHeightBaselinePx = plan.nextComposerHeightBaselinePx;
-  return plan.verticalChromePx;
-}
-
-function threadTileLayout(options = {}) {
-  const viewport = threadTileViewportSize();
-  const sidebar = $("sidebar");
-  const sidebarSplitVisible = splitPaneSidebarVisible();
-  const menuOverlay = isMenuOverlayMode() || !sidebarSplitVisible;
-  const sidebarWidth = sidebar && sidebarSplitVisible
-    ? Math.round(sidebar.getBoundingClientRect().width || 0)
-    : 0;
-  return threadTileLayoutPolicy.layoutForViewport({
-    enabled: Object.prototype.hasOwnProperty.call(options, "enabled") ? options.enabled === true : state.threadTileMode,
-    viewportWidth: viewport.width,
-    viewportHeight: viewport.height,
-    sidebarWidth,
-    coarsePointer: isCoarsePointerViewport(),
-    menuOverlay,
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-    recommendedMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
-    desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
-    verticalChromePx: threadTileVerticalChromePx(),
-  });
-}
-
-function normalizeThreadTilePaneCount(value, fallback = 0) {
-  return threadTileStatePolicy.normalizePaneCount(value, {
-    fallback,
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  });
+function defaultThreadTileCandidateIds(...args) {
+  return threadTileRuntime.defaultThreadTileCandidateIds(...args);
 }
-
-function threadTileLayoutCapacity(layout = threadTileLayout()) {
-  return threadTileStatePolicy.layoutCapacity(layout, {
-    capacityMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  });
-}
-
-function defaultThreadTileCandidateIds(layout = threadTileLayout(), options = {}) {
-  const maxPanes = Math.max(1, Math.min(
-    THREAD_TILE_USER_MAX_PANES,
-    Math.floor(Number(options.maxPanes || layout && layout.maxPanes || 1)) || 1,
-  ));
-  const threadIds = visibleThreads(state.threads).map((thread) => thread && thread.id).filter(Boolean);
-  return threadTileLayoutPolicy.selectThreadTileIds({
-    currentThreadId: state.currentThreadId,
-    threadIds,
-    maxPanes,
-  });
+function threadTileRunningPaneIds(...args) {
+  return threadTileRuntime.threadTileRunningPaneIds(...args);
 }
-
-function threadTileRunningPaneIds() {
-  const runningIds = [];
-  visibleThreads(state.threads).forEach((thread) => {
-    const id = String(thread && thread.id || "");
-    if (id && isRunningStatus(thread && thread.status)) runningIds.push(id);
-  });
-  if (state.currentThreadId) runningIds.push(String(state.currentThreadId));
-  return threadTileStatePolicy.uniqueIds(runningIds);
-}
-
-function threadTilePaneCountState(layout = threadTileLayout()) {
-  const capacity = threadTileLayoutCapacity(layout);
-  return threadTileStatePolicy.paneCountStatePlan({
-    capacity,
-    candidateIds: defaultThreadTileCandidateIds(layout, { maxPanes: capacity }),
-    maxCandidateIds: defaultThreadTileCandidateIds(layout, { maxPanes: THREAD_TILE_USER_MAX_PANES }),
-    runningIds: threadTileRunningPaneIds(),
-    currentThreadId: state.currentThreadId,
-    explicitPaneCount: state.threadTilePaneCount,
-  }, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  });
+function threadTilePaneCountState(...args) {
+  return threadTileRuntime.threadTilePaneCountState(...args);
 }
-
-function autoThreadTilePaneCount(layout = threadTileLayout()) {
-  return threadTilePaneCountState(layout).autoPaneCount;
+function autoThreadTilePaneCount(...args) {
+  return threadTileRuntime.autoThreadTilePaneCount(...args);
 }
-
-function effectiveThreadTilePaneCount(layout = threadTileLayout()) {
-  return threadTilePaneCountState(layout).effectivePaneCount;
+function effectiveThreadTilePaneCount(...args) {
+  return threadTileRuntime.effectiveThreadTilePaneCount(...args);
 }
-
-function threadTileDisplayLayout(layout = threadTileLayout(), ids = []) {
-  return threadTileStatePolicy.paneDisplayLayoutPlan({
-    layout,
-    ids,
-    effectivePaneCount: effectiveThreadTilePaneCount(layout),
-    splitPairs: threadTilePrunedSplitPairs(ids),
-  }, {
-    capacityMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-    threadTileColumnGroups: threadTileLayoutPolicy.threadTileColumnGroups,
-  }).displayLayout;
+function threadTileDisplayLayout(...args) {
+  return threadTileRuntime.threadTileDisplayLayout(...args);
 }
-
-function normalizeThreadTilePinnedIds(values = []) {
-  return threadTileStatePolicy.normalizePinnedIds(values, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  });
+function normalizeThreadTilePinnedIds(...args) {
+  return threadTileRuntime.normalizeThreadTilePinnedIds(...args);
 }
-
-function normalizeThreadTileSplitPairs(values = [], ids = []) {
-  return threadTileStatePolicy.normalizeSplitPairs(values, ids, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
-  });
+function normalizeThreadTileSplitPairs(...args) {
+  return threadTileRuntime.normalizeThreadTileSplitPairs(...args);
 }
-
-function threadTilePrunedSplitPairs(ids = threadTileCandidateIds()) {
-  return normalizeThreadTileSplitPairs(state.threadTileSplitPairs, ids);
+function threadTilePrunedSplitPairs(...args) {
+  return threadTileRuntime.threadTilePrunedSplitPairs(...args);
 }
-
-function threadTileVisibleIdSet() {
-  const visibleIds = new Set(visibleThreads(state.threads).map((thread) => String(thread && thread.id || "")).filter(Boolean));
-  if (state.currentThreadId) visibleIds.add(String(state.currentThreadId));
-  return visibleIds;
+function threadTileVisibleIdSet(...args) {
+  return threadTileRuntime.threadTileVisibleIdSet(...args);
 }
-
-function threadTileIdsEqual(a = [], b = []) {
-  return threadTileStatePolicy.idsEqual(a, b);
+function threadTileIdsEqual(...args) {
+  return threadTileRuntime.threadTileIdsEqual(...args);
 }
-
-function threadTileCandidateIds(layout = threadTileLayout()) {
-  const maxPanes = effectiveThreadTilePaneCount(layout);
-  const plan = threadTileStatePolicy.candidatePaneIdsPlan({
-    pinnedIds: state.threadTilePinnedIds,
-    defaultIds: defaultThreadTileCandidateIds(layout, { maxPanes }),
-    visibleIds: Array.from(threadTileVisibleIdSet()),
-    currentThreadId: state.currentThreadId,
-    maxPanes,
-  }, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-    selectPinnedThreadTileIds: threadTileLayoutPolicy.selectPinnedThreadTileIds,
-  });
-  return plan.ids;
+function threadTileCandidateIds(...args) {
+  return threadTileRuntime.threadTileCandidateIds(...args);
 }
-
-function threadDisplaySettingsPayload() {
-  return threadTileStatePolicy.displaySettingsPayload({
-    threadTileMode: state.threadTileMode,
-    threadTilePinnedIds: state.threadTilePinnedIds,
-    threadTilePaneCount: state.threadTilePaneCount,
-    threadTileSplitPairs: state.threadTileSplitPairs,
-    threadTileSelectedThreadId: state.threadTileSelectedThreadId,
-  }, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
-  });
+function threadDisplaySettingsPayload(...args) {
+  return threadTileRuntime.threadDisplaySettingsPayload(...args);
 }
-
-function localThreadDisplayMode() {
-  try {
-    return localStorage.getItem(STORAGE_THREAD_DISPLAY_MODE) === "tile"
-      || localStorage.getItem(STORAGE_LEGACY_THREAD_TILE_MODE) === "true"
-      ? "tile"
-      : "single";
-  } catch (_) {
-    return "single";
-  }
+function localThreadDisplayMode(...args) {
+  return threadTileRuntime.localThreadDisplayMode(...args);
 }
-
-function mirrorThreadDisplayModeToLocalStorage() {
-  try {
-    localStorage.removeItem(STORAGE_LEGACY_THREAD_TILE_MODE);
-    if (state.threadTileMode) localStorage.setItem(STORAGE_THREAD_DISPLAY_MODE, "tile");
-    else localStorage.removeItem(STORAGE_THREAD_DISPLAY_MODE);
-  } catch (_) {}
+function mirrorThreadDisplayModeToLocalStorage(...args) {
+  return threadTileRuntime.mirrorThreadDisplayModeToLocalStorage(...args);
 }
-
-function applyThreadDisplaySettings(settings = {}, options = {}) {
-  const normalized = threadTileStatePolicy.normalizeDisplaySettings(settings, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
-  });
-  state.threadTileMode = normalized.threadTileMode;
-  state.threadTilePinnedIds = normalized.paneThreadIds;
-  state.threadTileSplitPairs = normalized.paneSplitPairs;
-  state.threadTilePaneCount = normalized.paneCount;
-  state.threadTileSelectedThreadId = normalized.selectedThreadId;
-  mirrorThreadDisplayModeToLocalStorage();
-  syncThreadTileToggle();
-  if (options.render === true) renderCurrentThread({ stickToBottom: true });
+function applyThreadDisplaySettings(...args) {
+  return threadTileRuntime.applyThreadDisplaySettings(...args);
 }
-
-async function loadThreadDisplaySettings(options = {}) {
-  try {
-    const result = await api("/api/settings/thread-display");
-    const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : {};
-    state.threadDisplaySettingsLoaded = true;
-    const plan = threadTileStatePolicy.displaySettingsLoadPlan({
-      settings,
-      localDisplayMode: localThreadDisplayMode(),
-    });
-    if (plan.action === "apply-display-settings") {
-      applyThreadDisplaySettings(plan.settings || {}, { render: options.render === true });
-    }
-    if (plan.saveAfterApply) {
-      await saveThreadDisplaySettingsNow();
-    }
-  } catch (err) {
-    state.threadDisplaySettingsLoaded = true;
-    const plan = threadTileStatePolicy.displaySettingsLoadPlan({
-      loadFailed: true,
-      localDisplayMode: localThreadDisplayMode(),
-    });
-    if (plan.action === "apply-display-settings") {
-      applyThreadDisplaySettings(plan.settings || {}, { render: options.render === true });
-    }
-    if (plan.rethrow) throw err;
-  }
+function loadThreadDisplaySettings(...args) {
+  return threadTileRuntime.loadThreadDisplaySettings(...args);
 }
-
-async function saveThreadDisplaySettingsNow() {
-  if (state.threadDisplaySettingsSaveTimer) {
-    clearTimeout(state.threadDisplaySettingsSaveTimer);
-    state.threadDisplaySettingsSaveTimer = null;
-  }
-  if (state.threadDisplaySettingsSaveInFlight) return null;
-  state.threadDisplaySettingsSaveInFlight = true;
-  try {
-    const result = await api("/api/settings/thread-display", {
-      method: "POST",
-      body: JSON.stringify(threadDisplaySettingsPayload()),
-    });
-    const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : null;
-    if (settings) applyThreadDisplaySettings(settings, { render: false });
-    return result;
-  } finally {
-    state.threadDisplaySettingsSaveInFlight = false;
-  }
+function saveThreadDisplaySettingsNow(...args) {
+  return threadTileRuntime.saveThreadDisplaySettingsNow(...args);
 }
-
-function scheduleThreadDisplaySettingsSave() {
-  if (!state.threadDisplaySettingsLoaded) return;
-  if (state.threadDisplaySettingsSaveTimer) clearTimeout(state.threadDisplaySettingsSaveTimer);
-  state.threadDisplaySettingsSaveTimer = setTimeout(() => {
-    state.threadDisplaySettingsSaveTimer = null;
-    saveThreadDisplaySettingsNow().catch(showError);
-  }, THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS);
+function scheduleThreadDisplaySettingsSave(...args) {
+  return threadTileRuntime.scheduleThreadDisplaySettingsSave(...args);
 }
-
-function syncThreadTileActivePaneState(activeIds = []) {
-  const plan = threadTileStatePolicy.activePaneSyncPlan({
-    enabled: state.threadTileMode,
-    activeIds,
-    pinnedIds: state.threadTilePinnedIds,
-    visibleIds: Array.from(threadTileVisibleIdSet()),
-    splitPairs: state.threadTileSplitPairs,
-    selectedThreadId: state.threadTileSelectedThreadId,
-    currentThreadId: state.currentThreadId,
-  }, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
-  });
-  state.threadTileActiveIds = plan.activeIds;
-  if (plan.pinnedChanged) {
-    state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
-    state.threadTileSplitPairs = normalizeThreadTileSplitPairs(plan.paneSplitPairs, state.threadTilePinnedIds);
-  }
-  if (plan.selectedChanged) state.threadTileSelectedThreadId = plan.selectedThreadId;
-  if (plan.settingsChanged) scheduleThreadDisplaySettingsSave();
-  return Boolean(plan.changed);
+function syncThreadTileActivePaneState(...args) {
+  return threadTileRuntime.syncThreadTileActivePaneState(...args);
 }
-
-function threadTileSummary(threadId) {
-  return threadById(threadId) || (state.currentThread && String(state.currentThread.id || "") === String(threadId || "") ? state.currentThread : null);
+function threadTileSummary(...args) {
+  return threadTileRuntime.threadTileSummary(...args);
 }
-
-function threadTileDisplayThread(threadId) {
-  const id = String(threadId || "");
-  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
-  return state.threadTileDetails.get(id) || threadTileSummary(id) || { id, name: id, preview: id, turns: [] };
+function threadTileDisplayThread(...args) {
+  return threadTileRuntime.threadTileDisplayThread(...args);
 }
-
-function setThreadTileSelectedThread(threadId, options = {}) {
-  const plan = threadTileStatePolicy.selectPanePlan({
-    enabled: state.threadTileMode,
-    threadId,
-    activeIds: state.threadTileActiveIds,
-    selectedThreadId: state.threadTileSelectedThreadId,
-  });
-  if (plan.action !== "select-pane") return false;
-  return applyThreadTileSelectedPaneEffects(threadTileStatePolicy.selectedPaneEffectsPlan(plan, {
-    render: options.render !== false,
-  }));
+function setThreadTileSelectedThread(...args) {
+  return threadTileRuntime.setThreadTileSelectedThread(...args);
 }
-
-function applyThreadTileSelectedPaneEffects(effect) {
-  if (!effect || effect.action !== "selected-pane-effects") return false;
-  if (effect.saveDraft) saveCurrentDraftNow();
-  state.threadTileSelectedThreadId = effect.selectedThreadId;
-  if (effect.restoreDraft) restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-  if (effect.updateComposer) {
-    renderComposerSettings();
-    updateComposerControls();
-  }
-  if (effect.renderMode === "patch-panes") {
-    let patchedAll = true;
-    (Array.isArray(effect.patchThreadIds) ? effect.patchThreadIds : []).filter(Boolean).forEach((id) => {
-      patchedAll = patchThreadTilePane(id, { preserveScroll: effect.patchPreserveScroll !== false }) && patchedAll;
-    });
-    if (!patchedAll && effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
-  }
-  return true;
+function applyThreadTileSelectedPaneEffects(...args) {
+  return threadTileRuntime.applyThreadTileSelectedPaneEffects(...args);
 }
-
-function threadTileVisibleThreadOptions(currentId = "") {
-  const visible = visibleThreads(state.threads);
-  const runningIds = visible
-    .filter((thread) => thread && isRunningStatus(thread.status))
-    .map((thread) => String(thread.id || ""))
-    .filter(Boolean);
-  return threadTileStatePolicy.switchMenuOptionsPlan({
-    currentId,
-    activeIds: state.threadTileActiveIds,
-    runningIds,
-    visibleIds: visible.map((thread) => String(thread && thread.id || "")).filter(Boolean),
-  });
+function threadTileVisibleThreadOptions(...args) {
+  return threadTileRuntime.threadTileVisibleThreadOptions(...args);
 }
-
-function renderThreadTileSwitchMenu(currentId) {
-  const current = String(currentId || "");
-  const options = threadTileVisibleThreadOptions(current);
-  const layout = threadTileLayout({ enabled: true });
-  const activeIds = threadTileCandidateIds(layout);
-  const count = activeIds.length || effectiveThreadTilePaneCount(layout);
-  const minCount = threadTileMinimumPaneCount(layout);
-  const maxCount = threadTileMaximumPaneCount(layout);
-  const plan = threadTileStatePolicy.switchMenuPlan({
-    currentId: current,
-    switchMenuPaneId: state.threadTileSwitchMenuPaneId,
-    options,
-    activeIds,
-    count,
-    minCount,
-    maxCount,
-  });
-  if (plan.action !== "render-switch-menu") return "";
-  return `<div class="thread-tile-switch-menu" role="listbox" aria-label="切换此窗口线程">
-    <div class="thread-tile-switch-actions">
-      <button class="thread-tile-switch-action" type="button" data-thread-tile-close-pane="${escapeHtml(plan.currentId)}"${plan.canClose ? "" : " disabled"}>关闭窗口</button>
-      <span class="thread-tile-switch-count">${escapeHtml(String(plan.count))}/${escapeHtml(String(plan.maxCount))}</span>
-      <button class="thread-tile-switch-action" type="button" data-thread-tile-pane-count="1"${plan.canAdd ? "" : " disabled"}>新增窗口</button>
-    </div>
-    ${plan.options.map((threadId) => {
-      const thread = threadTileDisplayThread(threadId);
-      const title = threadDisplayName(thread) || threadId;
-      const summary = threadTileSummary(threadId) || thread;
-      const pathText = shortPath((thread && thread.cwd) || (summary && summary.cwd) || "") || "聊天";
-      const timeText = formatTime((thread && thread.updatedAt) || (summary && summary.updatedAt), state.nowMs);
-      const status = statusIconHtml(thread && thread.status, "thread-tile-switch-status", threadId);
-      const selected = threadId === plan.currentId;
-      return `<button class="thread-tile-switch-option${selected ? " selected" : ""}" type="button" role="option" aria-selected="${selected ? "true" : "false"}" data-thread-tile-switch-target="${escapeHtml(threadId)}">
-        <span class="thread-tile-switch-main"><span class="thread-tile-switch-title">${escapeHtml(title)}</span><span class="thread-tile-switch-meta">${escapeHtml([pathText, timeText].filter(Boolean).join(" | "))}</span></span>
-        ${status}
-      </button>`;
-    }).join("")}
-  </div>`;
+function renderThreadTileSwitchMenu(...args) {
+  return threadTileRuntime.renderThreadTileSwitchMenu(...args);
 }
-
-function applyThreadTilePaneSlotEffects(effect, layout = threadTileLayout()) {
-  if (!effect || effect.action !== "pane-slot-effects") return false;
-  const sourcePane = effect.patchSourceThreadId ? threadTilePaneElement(effect.patchSourceThreadId) : null;
-  if (effect.saveDraft) saveCurrentDraftNow();
-  if (Array.isArray(effect.paneThreadIds)) state.threadTilePinnedIds = normalizeThreadTilePinnedIds(effect.paneThreadIds);
-  if (Array.isArray(effect.paneSplitPairs)) {
-    state.threadTileSplitPairs = normalizeThreadTileSplitPairs(effect.paneSplitPairs, state.threadTilePinnedIds);
-  }
-  if (effect.paneCount !== null && effect.paneCount !== undefined) state.threadTilePaneCount = effect.paneCount;
-  if (effect.refreshActiveIds) state.threadTileActiveIds = threadTileCandidateIds(layout);
-  if (effect.selectedThreadId) state.threadTileSelectedThreadId = effect.selectedThreadId;
-  if (effect.selectionPolicy === "pane-selection") {
-    state.threadTileSelectedThreadId = threadTileStatePolicy.paneSelectionPlan({
-      selectedThreadId: state.threadTileSelectedThreadId,
-      ids: threadTileCandidateIds(layout),
-      emptyFallback: effect.selectionEmptyFallback === true,
-    }).selectedThreadId;
-  }
-  state.threadTileSwitchMenuPaneId = effect.switchMenuPaneId || "";
-  (effect.scrollResetIds || []).forEach((id) => state.threadTilePaneScrollHoldById.delete(id));
-  if (effect.scheduleSettingsSave) scheduleThreadDisplaySettingsSave();
-  if (effect.restoreDraft) restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-  if (effect.updateComposer) {
-    renderComposerSettings();
-    updateComposerControls();
-  }
-  if (effect.loadThreadId) loadThreadTileDetail(effect.loadThreadId, { force: true, source: effect.loadSource || "tile-switch" }).catch(showError);
-  if (effect.renderMode === "schedule-full") scheduleRenderCurrentThread();
-  else if (effect.renderMode === "full") renderCurrentThread({ stickToBottom: Boolean(effect.renderStickToBottom) });
-  else if (effect.renderMode === "patch-pane" && effect.patchThreadId) {
-    const patched = patchThreadTilePane(effect.patchThreadId, {
-      paneElement: sourcePane,
-      stickToBottom: Boolean(effect.patchStickToBottom),
-    });
-    if (!patched && effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
-  }
-  return true;
+function applyThreadTilePaneSlotEffects(...args) {
+  return threadTileRuntime.applyThreadTilePaneSlotEffects(...args);
 }
-
-function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
-  const from = String(fromThreadId || "").trim();
-  const to = String(toThreadId || "").trim();
-  if (!from || !to || !state.threadTileMode) return false;
-  const layout = threadTileLayout();
-  const ids = threadTileCandidateIds(layout);
-  const plan = threadTileStatePolicy.replacePaneThreadPlan({
-    enabled: state.threadTileMode,
-    fromThreadId: from,
-    toThreadId: to,
-    ids,
-    pinnedIds: state.threadTilePinnedIds,
-  }, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  });
-  if (plan.action === "skip") return false;
-  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  }), layout);
+function replaceThreadTilePaneThread(...args) {
+  return threadTileRuntime.replaceThreadTilePaneThread(...args);
 }
-
-function moveThreadTilePaneRelative(fromThreadId, toThreadId, placement = "after") {
-  const from = String(fromThreadId || "").trim();
-  const to = String(toThreadId || "").trim();
-  if (!from || !to || from === to || !state.threadTileMode) return false;
-  const layout = threadTileLayout();
-  const ids = threadTileCandidateIds(layout);
-  const plan = threadTileStatePolicy.movePaneRelativePlan({
-    enabled: state.threadTileMode,
-    fromThreadId: from,
-    toThreadId: to,
-    placement,
-    ids,
-    splitPairs: state.threadTileSplitPairs,
-  }, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
-  });
-  if (plan.action !== "move") return false;
-  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  }), layout);
+function moveThreadTilePaneRelative(...args) {
+  return threadTileRuntime.moveThreadTilePaneRelative(...args);
 }
-
-function splitThreadTilePaneWithTarget(fromThreadId, toThreadId, placement = "below") {
-  const from = String(fromThreadId || "").trim();
-  const to = String(toThreadId || "").trim();
-  if (!from || !to || from === to || !state.threadTileMode) return false;
-  const layout = threadTileLayout();
-  const ids = threadTileCandidateIds(layout);
-  const plan = threadTileStatePolicy.splitPaneWithTargetPlan({
-    enabled: state.threadTileMode,
-    fromThreadId: from,
-    toThreadId: to,
-    placement,
-    ids,
-    splitPairs: state.threadTileSplitPairs,
-  }, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
-  });
-  if (plan.action !== "split") return false;
-  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  }), layout);
+function splitThreadTilePaneWithTarget(...args) {
+  return threadTileRuntime.splitThreadTilePaneWithTarget(...args);
 }
-
-function dropThreadTilePane(fromThreadId, toThreadId, event) {
-  const from = String(fromThreadId || "").trim();
-  const to = String(toThreadId || "").trim();
-  const pane = event && event.target && event.target.closest ? event.target.closest("[data-thread-tile-pane]") : null;
-  if (!from || !to || from === to || !pane) return false;
-  const rect = pane.getBoundingClientRect();
-  const plan = threadTileStatePolicy.dropPaneIntent({
-    fromThreadId: from,
-    toThreadId: to,
-    left: rect.left,
-    top: rect.top,
-    width: rect.width,
-    height: rect.height,
-    clientX: event.clientX,
-    clientY: event.clientY,
-  });
-  if (plan.action === "move-relative") return moveThreadTilePaneRelative(from, to, plan.placement);
-  if (plan.action === "split-with-target") return splitThreadTilePaneWithTarget(from, to, plan.placement);
-  return false;
+function dropThreadTilePane(...args) {
+  return threadTileRuntime.dropThreadTilePane(...args);
 }
-
-function replaceLastThreadTilePaneForThreadListOpen(threadId, options = {}) {
-  const id = String(threadId || "").trim();
-  const source = String(options.source || "").trim();
-  if (!id || source !== "thread-list" || !state.threadTileMode) return false;
-  const layout = threadTileLayout({ enabled: true });
-  if (!layout || !layout.enabled) return false;
-  const ids = threadTileCandidateIds(layout);
-  const plan = threadTileStatePolicy.replaceLastPaneForThreadListOpenPlan({
-    enabled: state.threadTileMode,
-    source,
-    threadId: id,
-    ids,
-    pinnedIds: state.threadTilePinnedIds,
-  }, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  });
-  if (plan.action !== "replace-last") return false;
-  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  }), layout);
+function replaceLastThreadTilePaneForThreadListOpen(...args) {
+  return threadTileRuntime.replaceLastThreadTilePaneForThreadListOpen(...args);
 }
-
-function toggleThreadTileSwitchMenu(threadId) {
-  const id = String(threadId || "").trim();
-  if (!id || !state.threadTileMode) return false;
-  setThreadTileSelectedThread(id, { render: false });
-  state.threadTileSwitchMenuPaneId = state.threadTileSwitchMenuPaneId === id ? "" : id;
-  if (!patchThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
-  return true;
+function toggleThreadTileSwitchMenu(...args) {
+  return threadTileRuntime.toggleThreadTileSwitchMenu(...args);
 }
-
-function threadTileHasLiveThread() {
-  if (!state.threadTileMode || !state.threadTileActiveIds.length) return false;
-  return state.threadTileActiveIds.some((id) => {
-    const thread = threadTileDisplayThread(id);
-    return Boolean(latestLiveTurnForThread(thread) || isRunningStatus(thread && thread.status));
-  });
+function threadTileHasLiveThread(...args) {
+  return threadTileRuntime.threadTileHasLiveThread(...args);
 }
-
-function updateThreadTilePaneStatusBadges() {
-  if (!state.threadTileMode) return;
-  document.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
-    const id = pane.getAttribute("data-thread-tile-pane") || "";
-    const container = pane.querySelector("[data-thread-tile-pane-state]");
-    if (!container) return;
-    const html = turnTimerStateHtml(threadTilePaneTimerState(threadTileDisplayThread(id)));
-    if (container.innerHTML !== html) container.innerHTML = html;
-  });
+function updateThreadTilePaneStatusBadges(...args) {
+  return threadTileRuntime.updateThreadTilePaneStatusBadges(...args);
 }
-
-function threadTileError(threadId) {
-  return state.threadTileErrors.get(String(threadId || "")) || "";
+function threadTileError(...args) {
+  return threadTileRuntime.threadTileError(...args);
 }
-
-function threadTilePaneIsVisible(threadId) {
-  const id = String(threadId || "");
-  return Boolean(id && state.threadTileActiveIds.includes(id));
+function threadTilePaneIsVisible(...args) {
+  return threadTileRuntime.threadTilePaneIsVisible(...args);
 }
-
-function setThreadTileConversationMode(active, layout = null) {
-  const conversation = $("conversation");
-  const main = document.querySelector(".main");
-  document.documentElement.classList.toggle("thread-tile-open", Boolean(active));
-  if (main) main.classList.toggle("thread-tile-main", Boolean(active));
-  if (!conversation) return;
-  conversation.classList.toggle("thread-tile-mode", Boolean(active));
-  if (active && layout && layout.columns) conversation.style.setProperty("--thread-tile-columns", String(layout.columns));
-  else {
-    conversation.style.removeProperty("--thread-tile-columns");
-    state.threadTileActiveIds = [];
-    state.threadTileSelectedThreadId = "";
-    state.threadTileSwitchMenuPaneId = "";
-    state.threadTileViewportBaseline = null;
-    state.threadTileComposerHeightBaselinePx = 0;
-    for (const frame of state.threadTilePaneRenderFramesById.values()) {
-      if (window.cancelAnimationFrame) window.cancelAnimationFrame(frame);
-      else clearTimeout(frame);
-    }
-    state.threadTilePaneRenderFramesById.clear();
-    state.threadTilePaneScrollHoldById.clear();
-    clearThreadTileRefreshTimer();
-    if (state.threadTileOperationRefreshTimer) {
-      clearTimeout(state.threadTileOperationRefreshTimer);
-      state.threadTileOperationRefreshTimer = null;
-    }
-  }
-  updateComposerControls();
+function setThreadTileConversationMode(...args) {
+  return threadTileRuntime.setThreadTileConversationMode(...args);
 }
-
-function captureThreadTilePaneScrollState() {
-  const conversation = $("conversation");
-  const states = new Map();
-  if (!conversation) return states;
-  conversation.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
-    const id = pane.getAttribute("data-thread-tile-pane") || "";
-    const body = pane.querySelector(".thread-tile-pane-body");
-    if (!id || !body) return;
-    states.set(id, threadTileStatePolicy.paneScrollMetrics({
-      scrollHeight: body.scrollHeight,
-      clientHeight: body.clientHeight,
-      scrollTop: body.scrollTop,
-      hold: state.threadTilePaneScrollHoldById.get(id) === true,
-    }));
-  });
-  return states;
+function captureThreadTilePaneScrollState(...args) {
+  return threadTileRuntime.captureThreadTilePaneScrollState(...args);
 }
-
-function captureThreadTilePaneElementScrollState(pane) {
-  const id = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "");
-  const body = pane && pane.querySelector(".thread-tile-pane-body");
-  if (!body) return null;
-  return threadTileStatePolicy.paneScrollMetrics({
-    scrollHeight: body.scrollHeight,
-    clientHeight: body.clientHeight,
-    scrollTop: body.scrollTop,
-    hold: id ? state.threadTilePaneScrollHoldById.get(id) === true : false,
-  });
+function captureThreadTilePaneElementScrollState(...args) {
+  return threadTileRuntime.captureThreadTilePaneElementScrollState(...args);
 }
-
-function scrollThreadTilePaneBodyToBottom(body, options = {}) {
-  if (!body) return;
-  const top = Math.max(0, Number(body.scrollHeight || 0));
-  if (options.smooth && typeof body.scrollTo === "function") {
-    body.scrollTo({ top, behavior: "smooth" });
-    setTimeout(() => updateThreadTileBottomButtonForBody(body), 220);
-    return;
-  }
-  body.scrollTop = top;
-  updateThreadTileBottomButtonForBody(body);
+function scrollThreadTilePaneBodyToBottom(...args) {
+  return threadTileRuntime.scrollThreadTilePaneBodyToBottom(...args);
 }
-
-function isThreadTilePaneNearBottom(body) {
-  if (!body) return true;
-  return threadTileStatePolicy.paneScrollMetrics({
-    scrollHeight: body.scrollHeight,
-    clientHeight: body.clientHeight,
-    scrollTop: body.scrollTop,
-  }).nearBottom;
+function isThreadTilePaneNearBottom(...args) {
+  return threadTileRuntime.isThreadTilePaneNearBottom(...args);
 }
-
-function applyThreadTilePaneScrollHoldPlan(id, plan) {
-  const threadId = String(id || "");
-  if (!threadId || !plan || plan.action !== "pane-scroll-hold") return;
-  if (plan.clearHold) state.threadTilePaneScrollHoldById.delete(threadId);
-  else if (plan.rememberHold) state.threadTilePaneScrollHoldById.set(threadId, true);
+function applyThreadTilePaneScrollHoldPlan(...args) {
+  return threadTileRuntime.applyThreadTilePaneScrollHoldPlan(...args);
 }
-
-function rememberThreadTilePaneScrollPosition(body) {
-  const pane = body && body.closest && body.closest("[data-thread-tile-pane]");
-  const id = String(pane && pane.getAttribute("data-thread-tile-pane") || "");
-  if (!id || !body) return;
-  applyThreadTilePaneScrollHoldPlan(id, threadTileStatePolicy.paneScrollHoldPlan({
-    scrollHeight: body.scrollHeight,
-    clientHeight: body.clientHeight,
-    scrollTop: body.scrollTop,
-  }));
+function rememberThreadTilePaneScrollPosition(...args) {
+  return threadTileRuntime.rememberThreadTilePaneScrollPosition(...args);
 }
-
-function updateThreadTileBottomButtonForBody(body) {
-  const pane = body && body.closest && body.closest("[data-thread-tile-pane]");
-  const button = pane && pane.querySelector("[data-thread-tile-bottom]");
-  if (!button || !body) return;
-  const metrics = threadTileStatePolicy.paneScrollMetrics({
-    scrollHeight: body.scrollHeight,
-    clientHeight: body.clientHeight,
-    scrollTop: body.scrollTop,
-  });
-  applyThreadTilePaneScrollHoldPlan(pane.getAttribute("data-thread-tile-pane") || "", threadTileStatePolicy.paneScrollHoldPlan(metrics));
-  const plan = threadTileStatePolicy.paneBottomButtonPlan({ metrics });
-  const shouldShow = Boolean(plan.shouldShow);
-  button.classList.toggle("hidden", !shouldShow);
-  button.setAttribute("aria-hidden", shouldShow ? "false" : "true");
-  button.tabIndex = shouldShow ? 0 : -1;
+function updateThreadTileBottomButtonForBody(...args) {
+  return threadTileRuntime.updateThreadTileBottomButtonForBody(...args);
 }
-
-function updateThreadTileBottomButtons() {
-  const conversation = $("conversation");
-  if (!conversation) return;
-  conversation.querySelectorAll(".thread-tile-pane-body").forEach(updateThreadTileBottomButtonForBody);
+function updateThreadTileBottomButtons(...args) {
+  return threadTileRuntime.updateThreadTileBottomButtons(...args);
 }
-
-function restoreThreadTilePaneScrollState(scrollState = new Map()) {
-  const conversation = $("conversation");
-  if (!conversation) return;
-  conversation.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
-    const id = pane.getAttribute("data-thread-tile-pane") || "";
-    const body = pane.querySelector(".thread-tile-pane-body");
-    if (!id || !body) return;
-    const previous = scrollState.get(id);
-    const plan = threadTileStatePolicy.paneScrollRestorePlan({
-      previous,
-      scrollHeight: body.scrollHeight,
-      clientHeight: body.clientHeight,
-    });
-    if (plan.mode === "restore-distance") {
-      body.scrollTop = plan.top;
-      updateThreadTileBottomButtonForBody(body);
-      return;
-    }
-    scrollThreadTilePaneBodyToBottom(body);
-  });
+function restoreThreadTilePaneScrollState(...args) {
+  return threadTileRuntime.restoreThreadTilePaneScrollState(...args);
 }
-
-function restoreThreadTilePaneElementScrollState(pane, previous, options = {}) {
-  const body = pane && pane.querySelector(".thread-tile-pane-body");
-  if (!body) return;
-  const id = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "");
-  const plan = threadTileStatePolicy.paneScrollRestorePlan({
-    previous,
-    rememberedHold: Boolean(id && state.threadTilePaneScrollHoldById.get(id) === true),
-    stickToBottom: options.stickToBottom === true,
-    scrollHeight: body.scrollHeight,
-    clientHeight: body.clientHeight,
-  });
-  if (plan.mode !== "restore-distance") {
-    scrollThreadTilePaneBodyToBottom(body);
-    return;
-  }
-  body.scrollTop = plan.top;
-  updateThreadTileBottomButtonForBody(body);
+function restoreThreadTilePaneElementScrollState(...args) {
+  return threadTileRuntime.restoreThreadTilePaneElementScrollState(...args);
 }
-
-function scrollThreadTilePaneToBottom(threadId, options = {}) {
-  const id = String(threadId || "");
-  if (!id) return;
-  const pane = Array.from(document.querySelectorAll("[data-thread-tile-pane]"))
-    .find((entry) => String(entry.getAttribute("data-thread-tile-pane") || "") === id);
-  const body = pane && pane.querySelector(".thread-tile-pane-body");
-  scrollThreadTilePaneBodyToBottom(body, options);
+function scrollThreadTilePaneToBottom(...args) {
+  return threadTileRuntime.scrollThreadTilePaneToBottom(...args);
 }
-
-function clearThreadTileRefreshTimer() {
-  clearTimeout(state.threadTileRefreshTimer);
-  state.threadTileRefreshTimer = null;
+function clearThreadTileRefreshTimer(...args) {
+  return threadTileRuntime.clearThreadTileRefreshTimer(...args);
 }
-
-function clearThreadTileDetailLoadQueueTimer() {
-  clearTimeout(state.threadTileDetailLoadQueueTimer);
-  state.threadTileDetailLoadQueueTimer = null;
+function clearThreadTileDetailLoadQueueTimer(...args) {
+  return threadTileRuntime.clearThreadTileDetailLoadQueueTimer(...args);
 }
-
-function scheduleThreadTileDetailLoadQueueDrain(options = {}) {
-  const plan = threadTileStatePolicy.detailLoadQueueDrainPlan({
-    enabled: state.threadTileMode,
-    activeIds: state.threadTileActiveIds,
-    hasTimer: Boolean(state.threadTileDetailLoadQueueTimer),
-    pending: options.pending === true,
-    force: options.force === true,
-    delayMs: options.delayMs,
-  }, {
-    defaultDelayMs: THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS,
-  });
-  if (plan.clearTimer) {
-    clearThreadTileDetailLoadQueueTimer();
-    return false;
-  }
-  if (!plan.schedule) return false;
-  state.threadTileDetailLoadQueueTimer = setTimeout(() => {
-    state.threadTileDetailLoadQueueTimer = null;
-    if (!state.threadTileMode) return;
-    ensureThreadTileDetails(state.threadTileActiveIds);
-  }, plan.delayMs);
-  return true;
+function scheduleThreadTileDetailLoadQueueDrain(...args) {
+  return threadTileRuntime.scheduleThreadTileDetailLoadQueueDrain(...args);
 }
-
-function scheduleThreadTileRefresh(delayMs = THREAD_TILE_REFRESH_INTERVAL_MS) {
-  const plan = threadTileStatePolicy.refreshSchedulePlan({
-    enabled: state.threadTileMode,
-    visibilityState: document.visibilityState,
-    activeIds: state.threadTileActiveIds,
-    hasTimer: Boolean(state.threadTileRefreshTimer),
-    delayMs,
-  }, {
-    defaultDelayMs: THREAD_TILE_REFRESH_INTERVAL_MS,
-    minDelayMs: 500,
-  });
-  if (plan.clearTimer) {
-    clearThreadTileRefreshTimer();
-    return;
-  }
-  if (!plan.schedule) return;
-  state.threadTileRefreshTimer = setTimeout(() => {
-    state.threadTileRefreshTimer = null;
-    if (!state.threadTileMode || document.visibilityState === "hidden") return;
-    refreshThreadTileDetails(state.threadTileActiveIds, { source: "tile-refresh" }).catch(showError);
-    scheduleThreadTileRefresh();
-  }, plan.delayMs);
+function scheduleThreadTileRefresh(...args) {
+  return threadTileRuntime.scheduleThreadTileRefresh(...args);
 }
-
-async function refreshThreadTileDetails(ids = [], options = {}) {
-  const uniqueIds = threadTileStatePolicy.uniqueIds(ids);
-  const visibleIds = uniqueIds.filter((id) => threadTilePaneIsVisible(id));
-  const targetIds = threadTileStatePolicy.refreshTargetIds({
-    enabled: state.threadTileMode,
-    ids: uniqueIds,
-    visibleIds,
-    currentThreadId: state.currentThread && state.currentThread.id,
-  });
-  if (!targetIds.length) return;
-  await Promise.all(targetIds.map((id) => {
-    return loadThreadTileDetail(id, {
-      force: true,
-      background: true,
-      source: options.source || "tile-refresh",
-    });
-  }));
+function refreshThreadTileDetails(...args) {
+  return threadTileRuntime.refreshThreadTileDetails(...args);
 }
-
-function abortThreadTileLoads() {
-  clearThreadTileRefreshTimer();
-  clearThreadTileDetailLoadQueueTimer();
-  state.threadTileActiveIds = [];
-  for (const frame of state.threadTilePaneRenderFramesById.values()) {
-    if (window.cancelAnimationFrame) window.cancelAnimationFrame(frame);
-    else clearTimeout(frame);
-  }
-  state.threadTilePaneRenderFramesById.clear();
-  state.threadTilePaneScrollHoldById.clear();
-  for (const controller of state.threadTileControllers.values()) {
-    try {
-      controller.abort();
-    } catch (_) {}
-  }
-  state.threadTileControllers.clear();
-  state.threadTileLoadingIds.clear();
+function abortThreadTileLoads(...args) {
+  return threadTileRuntime.abortThreadTileLoads(...args);
 }
-
-async function loadThreadTileDetail(threadId, options = {}) {
-  const id = String(threadId || "");
-  const cached = state.threadTileDetails.get(id);
-  const currentThreadId = state.currentThread && String(state.currentThread.id || "");
-  const plan = threadTileStatePolicy.detailLoadPlan({
-    threadId: id,
-    currentThreadId,
-    currentThreadLoaded: Boolean(currentThreadId === id && state.currentThread && !state.currentThread.mobileLoading),
-    controllerActive: state.threadTileControllers.has(id),
-    loadingActive: state.threadTileLoadingIds.has(id),
-    cachedReady: Boolean(cached && !cached.mobileLoading && !cached.mobileLoadError),
-    force: options.force === true,
-    backgroundRequested: options.background === true,
-    lastLoadedAt: Number(state.threadTileLoadedAtById.get(id) || 0),
-    nowMs: Date.now(),
-    minIntervalMs: THREAD_TILE_REFRESH_MIN_INTERVAL_MS,
-  });
-  if (plan.action !== "load") return;
-  const background = plan.background;
-  const controller = new AbortController();
-  applyThreadTileDetailLoadStartEffects(threadTileStatePolicy.detailLoadStartEffectsPlan(plan), controller);
-  try {
-    const result = await api(threadDetailApiPath(id, { mode: "recent" }), {
-      timeoutMs: 20000,
-      signal: controller.signal,
-    });
-    if (controller.signal.aborted) return;
-    if (result && result.thread) {
-      applyThreadTileDetailLoadSuccessEffects(threadTileStatePolicy.detailLoadSuccessEffectsPlan({
-        id,
-        hasThread: true,
-        nowMs: Date.now(),
-      }), result.thread);
-    }
-  } catch (err) {
-    applyThreadTileDetailLoadErrorEffects(threadTileStatePolicy.detailLoadErrorEffectsPlan({
-      id,
-      aborted: controller.signal.aborted,
-      background,
-      errorMessage: err && err.message ? err.message : String(err),
-    }));
-  } finally {
-    applyThreadTileDetailLoadFinallyEffects(threadTileStatePolicy.detailLoadFinallyEffectsPlan({
-      id,
-      controllerMatches: state.threadTileControllers.get(id) === controller,
-      visible: threadTilePaneIsVisible(id),
-    }));
-  }
+function loadThreadTileDetail(...args) {
+  return threadTileRuntime.loadThreadTileDetail(...args);
 }
-
-function applyThreadTileDetailLoadStartEffects(effect, controller) {
-  if (!effect || effect.action !== "detail-load-start-effects") return false;
-  const id = String(effect.id || "");
-  if (!id) return false;
-  if (effect.setController) state.threadTileControllers.set(id, controller);
-  if (effect.markLoading) {
-    state.threadTileLoadingIds.add(id);
-    if (effect.renderPane && !scheduleRenderThreadTilePane(id, { preserveScroll: effect.preserveScroll !== false })) {
-      scheduleRenderCurrentThread();
-    }
-  }
-  if (effect.clearError) state.threadTileErrors.delete(id);
-  return true;
+function applyThreadTileDetailLoadStartEffects(...args) {
+  return threadTileRuntime.applyThreadTileDetailLoadStartEffects(...args);
 }
-
-function applyThreadTileDetailLoadSuccessEffects(effect, thread) {
-  if (!effect || effect.action !== "detail-load-success-effects" || !thread) return false;
-  const id = String(effect.id || "");
-  if (!id) return false;
-  if (effect.setDetail) {
-    const existing = state.threadTileDetails.get(id);
-    state.threadTileDetails.set(id, mergeThreadPreservingVisibleItems(existing, thread));
-  }
-  if (effect.setLoadedAt) state.threadTileLoadedAtById.set(id, Number(effect.loadedAtMs || Date.now()));
-  if (effect.clearError) state.threadTileErrors.delete(id);
-  if (effect.mergeThread) mergeThreadIntoThreadList(thread);
-  return true;
+function applyThreadTileDetailLoadSuccessEffects(...args) {
+  return threadTileRuntime.applyThreadTileDetailLoadSuccessEffects(...args);
 }
-
-function applyThreadTileDetailLoadErrorEffects(effect) {
-  if (!effect || effect.action !== "detail-load-error-effects") return false;
-  const id = String(effect.id || "");
-  if (!id) return false;
-  state.threadTileErrors.set(id, effect.errorMessage || "Thread load failed");
-  return true;
+function applyThreadTileDetailLoadErrorEffects(...args) {
+  return threadTileRuntime.applyThreadTileDetailLoadErrorEffects(...args);
 }
-
-function applyThreadTileDetailLoadFinallyEffects(effect) {
-  if (!effect || effect.action !== "detail-load-finally-effects") return false;
-  const id = String(effect.id || "");
-  if (!id) return false;
-  if (effect.clearController) state.threadTileControllers.delete(id);
-  if (effect.clearLoading) state.threadTileLoadingIds.delete(id);
-  if (effect.renderPane && !scheduleRenderThreadTilePane(id, { preserveScroll: effect.preserveScroll !== false })) {
-    scheduleRenderCurrentThread();
-  }
-  if (effect.scheduleQueueDrain) scheduleThreadTileDetailLoadQueueDrain({ force: true });
-  return true;
+function applyThreadTileDetailLoadFinallyEffects(...args) {
+  return threadTileRuntime.applyThreadTileDetailLoadFinallyEffects(...args);
 }
-
-function applyThreadTileDetailLoadQueuePlan(plan) {
-  if (!plan || plan.action !== "detail-load-queue") return false;
-  for (const id of Array.isArray(plan.abortIds) ? plan.abortIds : []) {
-    const controller = state.threadTileControllers.get(id);
-    if (controller && typeof controller.abort === "function") {
-      try {
-        controller.abort();
-      } catch (_) {}
-    }
-    state.threadTileControllers.delete(id);
-    state.threadTileLoadingIds.delete(id);
-  }
-  for (const id of Array.isArray(plan.loadIds) ? plan.loadIds : []) {
-    loadThreadTileDetail(id).catch(showError);
-  }
-  if (plan.scheduleDrainAfterLoad) {
-    scheduleThreadTileDetailLoadQueueDrain({ pending: true });
-  }
-  return true;
+function applyThreadTileDetailLoadQueuePlan(...args) {
+  return threadTileRuntime.applyThreadTileDetailLoadQueuePlan(...args);
 }
-
-function ensureThreadTileDetails(ids = []) {
-  if (!state.threadTileMode) return;
-  syncThreadTileActivePaneState(ids);
-  const currentThreadId = state.currentThread && String(state.currentThread.id || "");
-  const readyIds = state.threadTileActiveIds.filter((id) => {
-    if (currentThreadId && currentThreadId === id && state.currentThread && !state.currentThread.mobileLoading) return true;
-    const cached = state.threadTileDetails.get(id);
-    return Boolean(cached && !cached.mobileLoading && !cached.mobileLoadError);
-  });
-  const concurrency = threadTileStatePolicy.detailLoadConcurrencyPlan({
-    activeIds: state.threadTileActiveIds,
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  });
-  applyThreadTileDetailLoadQueuePlan(threadTileStatePolicy.detailLoadQueuePlan({
-    enabled: state.threadTileMode,
-    activeIds: state.threadTileActiveIds,
-    controllerIds: Array.from(state.threadTileControllers.keys()),
-    loadingIds: Array.from(state.threadTileLoadingIds),
-    readyIds,
-    maxConcurrentLoads: concurrency.maxConcurrentLoads,
-  }));
-  scheduleThreadTileRefresh();
+function ensureThreadTileDetails(...args) {
+  return threadTileRuntime.ensureThreadTileDetails(...args);
 }
-
-function renderThreadTileTurn(thread, turn, previousKeys = new Set()) {
-  return withRenderContextThread(thread, () => {
-    const threadId = String(thread && thread.id || "");
-    const renderedItems = visibleItemsForTurn(turn, thread).map((entry, index) => {
-      const item = entry && entry.item;
-      const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
-      return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
-    }).filter(Boolean).join("");
-    const budgetNoticeHtml = renderTurnVisibleItemBudgetNotice(turn, previousKeys);
-    const turnApprovals = approvalsForTurn(threadId, turn && turn.id);
-    const approvalsHtml = turnApprovals.length
-      ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}</div>`
-      : "";
-    if (!budgetNoticeHtml.trim() && !renderedItems.trim() && !approvalsHtml.trim()) return "";
-    const turnId = String(turn && (turn.id || turn.startedAt || "turn") || "turn");
-    return `<article class="turn thread-tile-turn" data-thread-tile-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(`tile-turn|${threadId}|${turnId}`)}">
-      ${budgetNoticeHtml}${renderedItems}${approvalsHtml}
-    </article>`;
-  });
+function renderThreadTileTurn(...args) {
+  return threadTileRuntime.renderThreadTileTurn(...args);
 }
-
-function scheduleThreadTileOperationMinimumRefresh(delayMs = LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS) {
-  if (state.threadTileOperationRefreshTimer) clearTimeout(state.threadTileOperationRefreshTimer);
-  state.threadTileOperationRefreshTimer = setTimeout(() => {
-    state.threadTileOperationRefreshTimer = null;
-    const plan = threadTileStatePolicy.operationMinimumRefreshPlan({
-      enabled: state.threadTileMode,
-      activeIds: state.threadTileActiveIds,
-    });
-    if (plan.action === "operation-minimum-refresh") {
-      let patchedAny = false;
-      for (const id of plan.patchThreadIds || []) {
-        patchedAny = scheduleRenderThreadTilePane(id, { preserveScroll: true }) || patchedAny;
-      }
-      if (plan.fullRenderOnPatchMiss && !patchedAny) scheduleRenderCurrentThread();
-    }
-  }, Math.max(0, Number(delayMs) || 0) + 16);
+function scheduleThreadTileOperationMinimumRefresh(...args) {
+  return threadTileRuntime.scheduleThreadTileOperationMinimumRefresh(...args);
 }
-
-function rememberThreadTileOperationBubble(threadId, html = "") {
-  const id = String(threadId || "");
-  const record = threadTileStatePolicy.operationBubbleRecord({
-    threadId: id,
-    html,
-    minVisibleMs: LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
-    nowMs: Date.now(),
-  });
-  if (!record) return;
-  state.threadTileOperationBubblesById.set(id, record);
+function rememberThreadTileOperationBubble(...args) {
+  return threadTileRuntime.rememberThreadTileOperationBubble(...args);
 }
-
-function clearThreadTileOperationBubble(threadId) {
-  const id = String(threadId || "");
-  if (!id) return;
-  state.threadTileOperationBubblesById.delete(id);
+function clearThreadTileOperationBubble(...args) {
+  return threadTileRuntime.clearThreadTileOperationBubble(...args);
 }
-
-function renderThreadTileOperationDock(thread, previousKeys = new Set()) {
-  const id = String(thread && thread.id || "");
-  if (!id) return "";
-  const entry = currentLiveOperationEntry(thread);
-  const mode = threadTileStatePolicy.normalizeOperationMode(state.threadTileOperationModesById.get(id) || "compact");
-  const plan = threadTileStatePolicy.operationDockPlan({
-    threadId: id,
-    mode,
-    entryType: entry && entry.item && entry.item.type,
-    hasOperation: Boolean(entry && entry.item && entry.item.type !== "liveTurnStatus"),
-    hasLiveTurn: Boolean(latestLiveTurnForThread(thread)),
-    remembered: state.threadTileOperationBubblesById.get(id),
-    nowMs: Date.now(),
-  });
-  if (plan.action === "render-remembered-operation") {
-    if (plan.scheduleMinimumRefresh) scheduleThreadTileOperationMinimumRefresh(plan.remainingMs);
-    return plan.html || "";
-  }
-  if (plan.action === "clear-remembered-operation") {
-    if (plan.clearRemembered) state.threadTileOperationBubblesById.delete(id);
-    return "";
-  }
-  if (plan.action !== "render-live-operation" || !entry || !entry.item) {
-    return "";
-  }
-  const html = `<div class="thread-tile-operation-dock" data-thread-tile-operation-dock="${escapeHtml(id)}" data-mode="${escapeHtml(mode)}">
-    <div class="live-operation-dock-inner">
-      ${renderMobileOperationStack(entry.item, entry.turn, previousKeys, entry.sourceIndex, plan.expanded, {
-        toggleAttribute: "data-thread-tile-operation-toggle",
-        toggleValue: id,
-      })}
-    </div>
-  </div>`;
-  rememberThreadTileOperationBubble(id, html);
-  return html;
+function renderThreadTileOperationDock(...args) {
+  return threadTileRuntime.renderThreadTileOperationDock(...args);
 }
-
-function threadTileOperationSignature(threadId) {
-  const id = String(threadId || "");
-  const thread = threadTileDisplayThread(id);
-  const entry = currentLiveOperationEntry(thread);
-  return threadTileStatePolicy.operationSignature({
-    mode: state.threadTileOperationModesById.get(id) || "compact",
-    remembered: state.threadTileOperationBubblesById.get(id),
-    nowMs: Date.now(),
-    entrySignature: entry && entry.item && entry.item.type !== "liveTurnStatus"
-      ? visibleItemSignature(entry.item, entry.turn, thread)
-      : null,
-  });
+function threadTileOperationSignature(...args) {
+  return threadTileRuntime.threadTileOperationSignature(...args);
 }
-
-function applyThreadTileOperationModeTogglePlan(effect) {
-  if (!effect || effect.action !== "operation-mode-toggle-effects") return false;
-  const id = String(effect.id || "");
-  if (!id) return false;
-  state.threadTileOperationModesById.set(id, threadTileStatePolicy.normalizeOperationMode(effect.mode));
-  if (effect.selectPane) setThreadTileSelectedThread(id, { render: effect.selectPaneRender !== false });
-  if (effect.patchThreadId && !patchThreadTilePane(effect.patchThreadId, { preserveScroll: effect.patchPreserveScroll !== false })) {
-    if (effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
-  }
-  return true;
+function applyThreadTileOperationModeTogglePlan(...args) {
+  return threadTileRuntime.applyThreadTileOperationModeTogglePlan(...args);
 }
-
-function threadTileMinimumPaneCount(layout = threadTileLayout()) {
-  return threadTilePaneCountState(layout).minPaneCount;
+function threadTileMinimumPaneCount(...args) {
+  return threadTileRuntime.threadTileMinimumPaneCount(...args);
 }
-
-function threadTileMaximumPaneCount(layout = threadTileLayout()) {
-  return threadTilePaneCountState(layout).maxPaneCount;
+function threadTileMaximumPaneCount(...args) {
+  return threadTileRuntime.threadTileMaximumPaneCount(...args);
 }
-
-function setThreadTilePaneCount(nextCount, options = {}) {
-  if (!state.threadTileMode) return false;
-  const layout = threadTileLayout({ enabled: true });
-  if (!layout || !layout.enabled) return false;
-  const minCount = threadTileMinimumPaneCount(layout);
-  const maxCount = threadTileMaximumPaneCount(layout);
-  const current = effectiveThreadTilePaneCount(layout);
-  const plan = threadTileStatePolicy.paneCountChangePlan({
-    enabled: state.threadTileMode,
-    layoutEnabled: layout.enabled,
-    nextCount,
-    currentCount: current,
-    storedPaneCount: state.threadTilePaneCount,
-    minCount,
-    maxCount,
-  }, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  });
-  if (plan.action !== "set-pane-count") return false;
-  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-    render: options.render !== false,
-  }), layout);
+function setThreadTilePaneCount(...args) {
+  return threadTileRuntime.setThreadTilePaneCount(...args);
 }
-
-function changeThreadTilePaneCount(delta) {
-  const layout = threadTileLayout({ enabled: true });
-  if (!layout || !layout.enabled) return false;
-  const current = effectiveThreadTilePaneCount(layout);
-  return setThreadTilePaneCount(current + (Number(delta) || 0));
+function changeThreadTilePaneCount(...args) {
+  return threadTileRuntime.changeThreadTilePaneCount(...args);
 }
-
-function closeThreadTilePane(threadId) {
-  const id = String(threadId || "").trim();
-  if (!id || !state.threadTileMode) return false;
-  const layout = threadTileLayout({ enabled: true });
-  if (!layout || !layout.enabled) return false;
-  const ids = threadTileCandidateIds(layout);
-  const minCount = threadTileMinimumPaneCount(layout);
-  const plan = threadTileStatePolicy.closePanePlan({
-    enabled: state.threadTileMode,
-    layoutEnabled: layout.enabled,
-    threadId: id,
-    ids,
-    pinnedIds: state.threadTilePinnedIds,
-    defaultIds: defaultThreadTileCandidateIds(layout, { maxPanes: threadTileMaximumPaneCount(layout) }),
-    minCount,
-  }, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  });
-  if (plan.action !== "close-pane") return false;
-  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  }), layout);
+function closeThreadTilePane(...args) {
+  return threadTileRuntime.closeThreadTilePane(...args);
 }
-
-function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
-  const thread = threadTileDisplayThread(threadId);
-  const id = String(threadId || thread && thread.id || "");
-  const title = threadTitleForDisplay(thread) || id;
-  const summary = threadTileSummary(id);
-  const paneStateHtml = turnTimerStateHtml(threadTilePaneTimerState(thread || summary));
-  const error = threadTileError(id);
-  const loading = state.threadTileLoadingIds.has(id) || (thread && thread.mobileLoading && !threadHasVisibleConversationTurns(thread));
-  const readWarning = threadReadWarningMessage(thread);
-  const turns = visibleTurnsForConversation(thread);
-  const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
-  const omitted = Number(thread && thread.mobileOmittedTurnCount || 0) + Math.max(0, ((thread && thread.turns) || []).length - turns.length);
-  const historyNote = renderThreadHistoryNote(thread, omitted, previousKeys);
-  const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
-    const turnId = approvalTurnId(request);
-    if (turnId && visibleTurnIds.has(turnId)) return false;
-    return isApprovalActive(request);
-  });
-  const body = error
-    ? `<div class="thread-tile-empty error">Thread failed: ${escapeHtml(error)}</div>`
-    : loading
-      ? `<div class="thread-tile-empty">Loading thread...</div>`
-      : [
-        historyNote,
-        readWarning ? `<div class="history-note">${escapeHtml(readWarning)}</div>` : "",
-        turns.map((turn) => renderThreadTileTurn(thread, turn, previousKeys)).join("") || `<div class="thread-tile-empty">No visible turns.</div>`,
-        approvalsHtml,
-      ].join("");
-  const active = id && id === effectiveThreadTileSelectedThreadId() ? " active" : "";
-  const operationDock = renderThreadTileOperationDock(thread, previousKeys);
-  const switchMenu = renderThreadTileSwitchMenu(id);
-  return `<section class="thread-tile-pane${active}" data-thread-tile-pane="${escapeHtml(id)}" data-render-key="${escapeHtml(`thread-tile|${id}`)}">
-    <header class="thread-tile-pane-header">
-      <div class="thread-tile-pane-title-wrap">
-        <button class="thread-tile-pane-title-button" type="button" draggable="true" data-thread-tile-drag-handle="${escapeHtml(id)}" data-thread-tile-title="${escapeHtml(id)}" aria-haspopup="listbox" aria-expanded="${state.threadTileSwitchMenuPaneId === id ? "true" : "false"}">
-          <span class="thread-tile-pane-title">${escapeHtml(title)}</span>
-        </button>
-        ${switchMenu}
-      </div>
-      <div class="thread-tile-pane-state-slot" data-thread-tile-pane-state>${paneStateHtml}</div>
-    </header>
-    <div class="thread-tile-pane-body"><div class="thread-tile-pane-content">${body}</div></div>
-    ${operationDock}
-    <button class="thread-tile-bottom-button hidden" type="button" data-thread-tile-bottom="${escapeHtml(id)}" aria-label="跳到此线程底部" title="跳到底部" aria-hidden="true" tabindex="-1">↓</button>
-  </section>`;
+function renderThreadTilePane(...args) {
+  return threadTileRuntime.renderThreadTilePane(...args);
 }
-
-function threadTilePaneElement(threadId) {
-  const id = String(threadId || "");
-  if (!id) return null;
-  return Array.from(document.querySelectorAll("[data-thread-tile-pane]"))
-    .find((entry) => String(entry.getAttribute("data-thread-tile-pane") || "") === id) || null;
+function threadTilePaneElement(...args) {
+  return threadTileRuntime.threadTilePaneElement(...args);
 }
-
-function threadTileRenderSignature(layout, ids) {
-  return threadTileStatePolicy.paneRenderSignaturePlan({
-    layout,
-    ids,
-    desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
-    splitPairs: threadTilePrunedSplitPairs(ids),
-    selectedThreadId: effectiveThreadTileSelectedThreadId(ids),
-    loadingIds: ids.filter((id) => state.threadTileLoadingIds.has(id)),
-    switchMenuPaneId: state.threadTileSwitchMenuPaneId || "",
-    errors: ids.map((id) => [id, threadTileError(id)]),
-    operations: ids.map((id) => [id, threadTileOperationSignature(id)]),
-    threadSignatures: ids.map((id) => conversationRenderSignature(threadTileDisplayThread(id))),
-  }, {
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-  }).signature;
+function threadTileRenderSignature(...args) {
+  return threadTileRuntime.threadTileRenderSignature(...args);
 }
-
-function patchThreadTilePane(threadId, options = {}) {
-  const id = String(threadId || "").trim();
-  let preflight = threadTileStatePolicy.panePatchPreflightPlan({
-    threadId: id,
-    enabled: state.threadTileMode,
-    visible: id ? threadTilePaneIsVisible(id) : false,
-  });
-  if (!preflight.shouldContinue) return false;
-  const conversation = $("conversation");
-  preflight = threadTileStatePolicy.panePatchPreflightPlan({
-    threadId: id,
-    enabled: state.threadTileMode,
-    visible: true,
-    conversationPresent: Boolean(conversation),
-    tileSurface: Boolean(conversation && conversation.classList.contains("thread-tile-mode")),
-  });
-  if (!preflight.shouldContinue) return false;
-  const board = conversation.querySelector("[data-thread-tile-board]");
-  preflight = threadTileStatePolicy.panePatchPreflightPlan({
-    threadId: id,
-    enabled: state.threadTileMode,
-    visible: true,
-    conversationPresent: true,
-    tileSurface: true,
-    boardPresent: Boolean(board),
-  });
-  if (!preflight.shouldContinue) return false;
-  const layout = threadTileLayout();
-  preflight = threadTileStatePolicy.panePatchPreflightPlan({
-    threadId: id,
-    enabled: state.threadTileMode,
-    visible: true,
-    conversationPresent: true,
-    tileSurface: true,
-    boardPresent: true,
-    layoutEnabled: Boolean(layout && layout.enabled),
-  });
-  if (!preflight.shouldContinue) return false;
-  const ids = threadTileCandidateIds(layout);
-  preflight = threadTileStatePolicy.panePatchPreflightPlan({
-    threadId: id,
-    enabled: state.threadTileMode,
-    visible: true,
-    conversationPresent: true,
-    tileSurface: true,
-    boardPresent: true,
-    layoutEnabled: true,
-    ids,
-  });
-  if (!preflight.shouldContinue) return false;
-  const displayLayout = threadTileDisplayLayout(layout, ids);
-  const pane = options.paneElement || threadTilePaneElement(id);
-  preflight = threadTileStatePolicy.panePatchPreflightPlan({
-    threadId: id,
-    enabled: state.threadTileMode,
-    visible: true,
-    conversationPresent: true,
-    tileSurface: true,
-    boardPresent: true,
-    layoutEnabled: true,
-    ids,
-    panePresent: Boolean(pane),
-  });
-  if (!preflight.canPatch) return false;
-  const previousScroll = captureThreadTilePaneElementScrollState(pane);
-  const previousKeys = existingConversationRenderKeys();
-  const template = document.createElement("template");
-  template.innerHTML = renderThreadTilePane(id, displayLayout, previousKeys);
-  const sourcePane = template.content.firstElementChild;
-  let completion = threadTileStatePolicy.panePatchCompletionPlan({
-    threadId: id,
-    sourcePanePresent: Boolean(sourcePane),
-  });
-  if (!completion.returnValue) return false;
-  const patchedPane = patchNode(pane, sourcePane);
-  completion = threadTileStatePolicy.panePatchCompletionPlan({
-    threadId: id,
-    sourcePanePresent: true,
-    patchedPanePresent: Boolean(patchedPane),
-    requestAnimationFrameAvailable: typeof window.requestAnimationFrame === "function",
-  });
-  if (!completion.returnValue) return false;
-  if (completion.hydrate) hydrateThreadDetailSurface(patchedPane, { imageScanDelays: [0, 180] });
-  if (completion.restoreScroll) restoreThreadTilePaneElementScrollState(patchedPane, previousScroll, options);
-  if (completion.updateBottomButton) {
-    const updateBottomButton = () => updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body"));
-    if (completion.updateBottomButtonMode === "animation-frame" && typeof window.requestAnimationFrame === "function") {
-      window.requestAnimationFrame(updateBottomButton);
-    } else {
-      updateBottomButton();
-    }
-  }
-  if (completion.writeRenderSignature) {
-    state.renderedConversationSignature = threadTileRenderSignature(displayLayout, ids);
-  }
-  if (completion.clearPatchShellSignature) {
-    state.renderedConversationPatchShellSignature = "";
-  }
-  if (completion.bindActions) {
-    bindThreadTileActions();
-  } else {
-    return false;
-  }
-  return completion.returnValue;
+function patchThreadTilePane(...args) {
+  return threadTileRuntime.patchThreadTilePane(...args);
 }
-
-function isThreadTileConversationSurface() {
-  const conversation = $("conversation");
-  return Boolean(state.threadTileMode
-    && conversation
-    && conversation.classList
-    && conversation.classList.contains("thread-tile-mode"));
+function isThreadTileConversationSurface(...args) {
+  return threadTileRuntime.isThreadTileConversationSurface(...args);
 }
-
-function threadDetailDomPatchSurface(options = {}) {
-  const id = String(options.threadId || state.currentThreadId || state.currentThread && state.currentThread.id || "").trim();
-  return threadDetailPatchPlanApi.planThreadDetailDomPatchSurface({
-    threadId: id,
-    threadTileMode: state.threadTileMode,
-    threadTileSurface: isThreadTileConversationSurface(),
-    tilePaneVisible: id ? threadTilePaneIsVisible(id) : false,
-    conversationPresent: Boolean($("conversation")),
-  });
+function threadDetailDomPatchSurface(...args) {
+  return threadTileRuntime.threadDetailDomPatchSurface(...args);
 }
-
-function canPatchSingleThreadConversationDom(options = {}) {
-  const plan = threadDetailDomPatchSurface(options);
-  return Boolean(plan && plan.canPatch && plan.surface === "single-thread");
+function canPatchSingleThreadConversationDom(...args) {
+  return threadTileRuntime.canPatchSingleThreadConversationDom(...args);
 }
-
-function patchCurrentThreadTilePaneFromState(options = {}) {
-  const plan = threadDetailDomPatchSurface(options);
-  if (!plan || !plan.canPatch || plan.surface !== "thread-tile-pane") return false;
-  clearGlobalLiveOperationDockForThreadTiles();
-  return patchThreadTilePane(plan.threadId, Object.assign({ preserveScroll: true }, options));
+function patchCurrentThreadTilePaneFromState(...args) {
+  return threadTileRuntime.patchCurrentThreadTilePaneFromState(...args);
 }
-
-function scheduleRenderThreadTilePane(threadId, options = {}) {
-  const id = String(threadId || "").trim();
-  const plan = threadTileStatePolicy.paneRenderFramePlan({
-    threadId: id,
-    enabled: state.threadTileMode,
-    visible: id ? threadTilePaneIsVisible(id) : false,
-    hasFrame: id ? state.threadTilePaneRenderFramesById.has(id) : false,
-  });
-  if (plan.action === "skip" || !plan.returnValue) return false;
-  if (!plan.scheduleFrame) return true;
-  const render = () => {
-    state.threadTilePaneRenderFramesById.delete(id);
-    if (!patchThreadTilePane(id, options) && plan.fullRenderOnPatchMiss) scheduleRenderCurrentThread();
-  };
-  const frame = window.requestAnimationFrame
-    ? window.requestAnimationFrame(render)
-    : setTimeout(render, 33);
-  state.threadTilePaneRenderFramesById.set(id, frame);
-  return true;
+function scheduleRenderThreadTilePane(...args) {
+  return threadTileRuntime.scheduleRenderThreadTilePane(...args);
 }
-
-function renderThreadTileLayout(layout, options = {}) {
-  const ids = threadTileCandidateIds(layout);
-  if (!ids.length) return false;
-  const displayLayout = threadTileDisplayLayout(layout, ids);
-  const scrollState = captureThreadTilePaneScrollState();
-  ensureThreadTileDetails(ids);
-  updateThreadTileGlobalHeader(displayLayout, ids);
-  state.nowMs = Date.now();
-  const previousKeys = existingConversationRenderKeys();
-  const columnGroups = Array.isArray(displayLayout.columnGroups) && displayLayout.columnGroups.length
-    ? displayLayout.columnGroups
-    : ids.map((id) => [id]);
-  const html = `<div class="thread-tile-board" data-thread-tile-board data-render-key="thread-tile-board">
-    ${columnGroups.map((group, index) => `<div class="thread-tile-column" data-thread-tile-column="${escapeHtml(String(index))}" style="--thread-tile-column-rows: ${escapeHtml(String(Math.max(1, group.length)))}">
-      ${group.map((id) => renderThreadTilePane(id, displayLayout, previousKeys)).join("")}
-    </div>`).join("")}
-  </div>`;
-  const signature = threadTileRenderSignature(displayLayout, ids);
-  const visibleShape = threadTileVisibleShape(ids);
-  const expectedVisibleTurnCount = visibleShape.turnCount;
-  const renderedDomTurnCount = threadTileDomTurnCount();
-  const renderedDomShape = conversationDomShape();
-  setThreadTileConversationMode(true, displayLayout);
-  updateConversationHtml(html, signature, {
-    stickToBottom: options.stickToBottom === true,
-    patchShellSignature: "",
-    expectedVisibleTurnCount,
-    renderedDomTurnCount,
-    expectedVisibleItemCount: visibleShape.visibleItemCount,
-    renderedDomItemCount: renderedDomShape.itemCount,
-    duplicateRenderKeyCount: renderedDomShape.duplicateRenderKeyCount,
-    duplicateUserMessageCount: renderedDomShape.duplicateUserMessageCount,
-    expectedDuplicateUserMessageCount: visibleShape.duplicateUserMessageCount,
-    action: "thread-tile-empty-state",
-    routeKind: "thread-tile",
-    threadHash: diagnosticHash(`thread-tile:${ids.join("|")}`),
-    currentTurns: expectedVisibleTurnCount,
-    currentVisibleItems: visibleShape.visibleItemCount,
-    source: "thread-tile-render",
-    checkProjectionConsistency: true,
-  });
-  bindThreadTileActions();
-  restoreThreadTilePaneScrollState(scrollState);
-  if (typeof window.requestAnimationFrame === "function") {
-    window.requestAnimationFrame(() => {
-      restoreThreadTilePaneScrollState(scrollState);
-      updateThreadTileBottomButtons();
-    });
-  }
-  return true;
+function renderThreadTileLayout(...args) {
+  return threadTileRuntime.renderThreadTileLayout(...args);
 }
-
-function bindThreadTileActions() {
-  const conversation = $("conversation");
-  if (!conversation) return;
-  if (conversation.dataset.threadTileActionsBound === "true") return;
-  conversation.dataset.threadTileActionsBound = "true";
-  conversation.addEventListener("pointerdown", (event) => {
-    const plan = threadTileActionsApi.resolveThreadTilePointerAction({
-      target: event.target,
-      root: conversation,
-    });
-    if (plan.action === "select-pane") {
-      setThreadTileSelectedThread(plan.paneId || "");
-      return;
-    }
-    if (plan.stopPropagation) {
-      event.stopPropagation();
-      return;
-    }
-  });
-  conversation.addEventListener("focusin", (event) => {
-    const plan = threadTileActionsApi.resolveThreadTileFocusAction({
-      target: event.target,
-      root: conversation,
-    });
-    if (plan.action === "select-pane") setThreadTileSelectedThread(plan.paneId || "");
-  });
-  conversation.addEventListener("click", (event) => {
-    const plan = threadTileActionsApi.resolveThreadTileClickAction({
-      target: event.target,
-      root: conversation,
-    });
-    if (plan.preventDefault) event.preventDefault();
-    if (plan.stopPropagation) event.stopPropagation();
-    if (plan.action === "toggle-switch-menu") {
-      toggleThreadTileSwitchMenu(plan.paneId || "");
-      return;
-    }
-    if (plan.action === "switch-pane-thread") {
-      replaceThreadTilePaneThread(plan.fromId || "", plan.toId || "");
-      return;
-    }
-    if (plan.action === "change-pane-count") {
-      if (!plan.disabled) changeThreadTilePaneCount(Number(plan.delta || 0));
-      return;
-    }
-    if (plan.action === "close-pane") {
-      if (!plan.disabled) closeThreadTilePane(plan.paneId || "");
-      return;
-    }
-    if (plan.action === "scroll-pane-bottom") {
-      scrollThreadTilePaneToBottom(plan.paneId || "", { smooth: true });
-      return;
-    }
-    if (plan.action === "toggle-operation") {
-      const id = plan.paneId || "";
-      applyThreadTileOperationModeTogglePlan(threadTileStatePolicy.operationModeTogglePlan({
-        enabled: state.threadTileMode,
-        threadId: id,
-        mode: state.threadTileOperationModesById.get(id) || "compact",
-      }));
-    }
-  });
-  conversation.addEventListener("scroll", (event) => {
-    const plan = threadTileActionsApi.resolveThreadTileScrollAction({
-      target: event.target,
-      root: conversation,
-    });
-    if (plan.action === "pane-scroll") updateThreadTileBottomButtonForBody(plan.body);
-  }, { passive: true, capture: true });
-  conversation.addEventListener("dragstart", (event) => {
-    const plan = threadTileActionsApi.resolveThreadTileDragStartAction({
-      target: event.target,
-      root: conversation,
-    });
-    if (plan.action !== "drag-start") return;
-    const id = plan.paneId || "";
-    if (!id) return;
-    state.threadTileDraggingThreadId = id;
-    state.threadTileSwitchMenuPaneId = "";
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", id);
-    }
-    const pane = plan.pane;
-    if (pane) pane.classList.add("dragging");
-  });
-  conversation.addEventListener("dragover", (event) => {
-    const plan = threadTileActionsApi.resolveThreadTileDragOverAction({
-      target: event.target,
-      root: conversation,
-      draggingId: state.threadTileDraggingThreadId || "",
-    });
-    if (plan.action !== "drag-over") return;
-    if (plan.preventDefault) event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    plan.pane.classList.add("drag-over");
-  });
-  conversation.addEventListener("dragleave", (event) => {
-    const plan = threadTileActionsApi.resolveThreadTileDragLeaveAction({
-      target: event.target,
-      root: conversation,
-    });
-    if (plan.action === "drag-leave") plan.pane.classList.remove("drag-over");
-  });
-  conversation.addEventListener("drop", (event) => {
-    const plan = threadTileActionsApi.resolveThreadTileDropAction({
-      target: event.target,
-      root: conversation,
-      draggingId: state.threadTileDraggingThreadId || "",
-      transferId: event.dataTransfer && event.dataTransfer.getData("text/plain") || "",
-    });
-    if (plan.action !== "drop-pane") return;
-    if (plan.preventDefault) event.preventDefault();
-    if (plan.stopPropagation) event.stopPropagation();
-    document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
-    state.threadTileDraggingThreadId = "";
-    dropThreadTilePane(plan.draggingId, plan.targetId, event);
-  });
-  conversation.addEventListener("dragend", () => {
-    state.threadTileDraggingThreadId = "";
-    document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
-  });
+function bindThreadTileActions(...args) {
+  return threadTileRuntime.bindThreadTileActions(...args);
 }
-
-function threadTileLayoutStatusText(layout) {
-  if (!state.threadTileMode) return "当前视口：单线程";
-  if (layout && layout.enabled) {
-    const count = effectiveThreadTilePaneCount(layout);
-    const maxCount = threadTileMaximumPaneCount(layout);
-    return maxCount > 1 ? `当前视口：平铺 ${count}/${maxCount} 窗` : "当前视口：平铺可用";
-  }
-  const reason = String(layout && layout.reason || "");
-  if (reason === "tablet-portrait") return "当前视口：竖屏单线程";
-  if (reason === "insufficient-width" || reason === "narrow") return "当前视口：宽度不足";
-  if (reason === "disabled") return "当前视口：单线程";
-  return "当前视口：暂不可平铺";
+function threadTileLayoutStatusText(...args) {
+  return threadTileRuntime.threadTileLayoutStatusText(...args);
 }
-
-function syncThreadTileToggle() {
-  const layout = threadTileLayout({ enabled: true });
-  document.querySelectorAll("[data-thread-display-choice]").forEach((button) => {
-    const choice = button.getAttribute("data-thread-display-choice") || "single";
-    const isTile = choice === "tile";
-    const isSelected = isTile ? state.threadTileMode : !state.threadTileMode;
-    button.classList.toggle("selected", isSelected);
-    button.setAttribute("aria-pressed", isSelected ? "true" : "false");
-    if (isTile && !layout.enabled && !state.threadTileMode) button.setAttribute("title", "平铺会在 iPad 横屏或宽屏可用时生效");
-    else button.removeAttribute("title");
-  });
-  const status = $("threadDisplaySettingsStatus");
-  if (status) status.textContent = threadTileLayoutStatusText(layout);
+function syncThreadTileToggle(...args) {
+  return threadTileRuntime.syncThreadTileToggle(...args);
 }
-
-function setThreadTileMode(enabled) {
-  state.threadTileMode = enabled === true;
-  mirrorThreadDisplayModeToLocalStorage();
-  if (!state.threadTileMode) {
-    abortThreadTileLoads();
-    state.threadTileSelectedThreadId = "";
-    setThreadTileConversationMode(false);
-  }
-  scheduleThreadDisplaySettingsSave();
-  syncThreadTileToggle();
-  renderCurrentThread({ stickToBottom: true });
+function setThreadTileMode(...args) {
+  return threadTileRuntime.setThreadTileMode(...args);
 }
-
-function handleThreadTileModeChoice(event) {
-  const button = event.target.closest("[data-thread-display-choice]");
-  if (!button) return;
-  event.preventDefault();
-  setThreadTileMode(button.getAttribute("data-thread-display-choice") === "tile");
+function handleThreadTileModeChoice(...args) {
+  return threadTileRuntime.handleThreadTileModeChoice(...args);
 }
 
 function shouldPreservePinnedLiveOperationDock(dock, html = "") {
@@ -21232,21 +19440,9 @@ function scheduleRenderCurrentThread() {
   }
 }
 
-function scheduleRenderThreads() {
-  if (state.threadListRenderFrame || state.threadListRenderScheduled) return;
-  state.threadListRenderScheduled = true;
-  const render = () => {
-    state.threadListRenderFrame = null;
-    state.threadListRenderScheduled = false;
-    renderThreads();
-  };
-  if (window.requestAnimationFrame) {
-    state.threadListRenderFrame = window.requestAnimationFrame(render);
-  } else {
-    state.threadListRenderFrame = setTimeout(render, 33);
-  }
+function scheduleRenderThreads(...args) {
+  return threadListRuntime.scheduleRenderThreads(...args);
 }
-
 function upsertServerRequest(request, fallbackThreadId = "") {
   if (!request || request.id === null || request.id === undefined) return;
   const key = String(request.id);
@@ -21335,21 +19531,9 @@ function scheduleThreadGoalDetailRender(threadId = "") {
   return false;
 }
 
-function updateThreadGoalState(threadId, goal) {
-  const id = String(threadId || goal && goal.threadId || "").trim();
-  if (!id) return;
-  const normalizedGoal = goal ? normalizeThreadGoal(goal, id) : null;
-  const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
-  applyThreadGoalToThread(thread, normalizedGoal);
-  applyThreadGoalToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, normalizedGoal);
-  applyThreadGoalToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, normalizedGoal);
-  scheduleThreadGoalDetailRender(id);
-  if (state.goalDialogThreadId && state.goalDialogThreadId === id) {
-    updateThreadGoalDialogState(normalizedGoal);
-  }
-  scheduleRenderThreads();
+function updateThreadGoalState(...args) {
+  return threadListRuntime.updateThreadGoalState(...args);
 }
-
 function applyNotification(method, params) {
   if (!params) return;
   if (method === "account/rateLimits/updated") {

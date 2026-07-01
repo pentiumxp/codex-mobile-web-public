@@ -68,6 +68,14 @@ test("client render stability guard is part of the static shell", () => {
   assert.match(swJs, /"\/client-render-stability-guard\.js"/);
   assert.match(appJs, /"\/client-render-stability-guard\.js"/);
   assert.match(serverRuntimeUtilsJs, /"client-render-stability-guard\.js"/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v611"/);
-  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v611"/);
+  assert.match(indexHtml, /<script src="\/thread-list-runtime\.js"><\/script>/);
+  assert.match(swJs, /"\/thread-list-runtime\.js"/);
+  assert.match(appJs, /"\/thread-list-runtime\.js"/);
+  assert.match(serverRuntimeUtilsJs, /"thread-list-runtime\.js"/);
+  assert.match(indexHtml, /<script src="\/thread-tile-runtime\.js"><\/script>/);
+  assert.match(swJs, /"\/thread-tile-runtime\.js"/);
+  assert.match(appJs, /"\/thread-tile-runtime\.js"/);
+  assert.match(serverRuntimeUtilsJs, /"thread-tile-runtime\.js"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v612"/);
+  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v612"/);
 });

@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const threadListRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-list-runtime.js"), "utf8");
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
 const serverSupportRuntimeServiceJs = fs.readFileSync(path.join(root, "services", "runtime", "server-support-runtime-service.js"), "utf8");
 const serverRouteCompositionServiceJs = fs.readFileSync(path.join(root, "server-routes", "server-route-composition-service.js"), "utf8");
@@ -81,6 +82,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /"\/thread-performance-metrics\.js"/);
   assert.match(appJs, /"\/thread-list-load-policy\.js"/);
   assert.match(appJs, /"\/thread-list-stable-order\.js"/);
+  assert.match(appJs, /"\/thread-list-runtime\.js"/);
   assert.match(appJs, /"\/client-render-stability-guard\.js"/);
   assert.match(appJs, /"\/live-operation-dock-state\.js"/);
   assert.match(appJs, /"\/thread-detail-state\.js"/);
@@ -93,8 +95,9 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /"\/thread-tile-actions\.js"/);
   assert.match(appJs, /"\/thread-tile-state\.js"/);
   assert.match(appJs, /"\/thread-tile-layout\.js"/);
+  assert.match(appJs, /"\/thread-tile-runtime\.js"/);
   assert.match(appJs, /"\/build-refresh-policy\.js"/);
-  assert.match(indexHtml, /<script src="\/thread-diagnostic-events\.js"><\/script>\s*\n\s*<script src="\/frontend-runtime-health\.js"><\/script>\s*\n\s*<script src="\/thread-status-hints\.js"><\/script>\s*\n\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*\n\s*<script src="\/thread-list-load-policy\.js"><\/script>\s*\n\s*<script src="\/thread-list-stable-order\.js"><\/script>\s*\n\s*<script src="\/client-render-stability-guard\.js"><\/script>\s*\n\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-v4-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-state\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/thread-diagnostic-events\.js"><\/script>\s*\n\s*<script src="\/frontend-runtime-health\.js"><\/script>\s*\n\s*<script src="\/thread-status-hints\.js"><\/script>\s*\n\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*\n\s*<script src="\/thread-list-load-policy\.js"><\/script>\s*\n\s*<script src="\/thread-list-stable-order\.js"><\/script>\s*\n\s*<script src="\/thread-list-runtime\.js"><\/script>\s*\n\s*<script src="\/client-render-stability-guard\.js"><\/script>\s*\n\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-v4-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-state\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/thread-tile-runtime\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
   assert.match(serverRuntimeUtilsJs, /"viewport-metrics\.js"/);
   assert.match(serverRuntimeUtilsJs, /"conversation-scroll\.js"/);
   assert.match(serverRuntimeUtilsJs, /"home-ai-diagnostic-reporting\.js"/);
@@ -103,6 +106,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(serverRuntimeUtilsJs, /"thread-performance-metrics\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-list-load-policy\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-list-stable-order\.js"/);
+  assert.match(serverRuntimeUtilsJs, /"thread-list-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"client-render-stability-guard\.js"/);
   assert.match(serverRuntimeUtilsJs, /"live-operation-dock-state\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-detail-state\.js"/);
@@ -115,6 +119,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(serverRuntimeUtilsJs, /"thread-tile-actions\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-tile-state\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-tile-layout\.js"/);
+  assert.match(serverRuntimeUtilsJs, /"thread-tile-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"build-refresh-policy\.js"/);
   assert.match(indexHtml, /id="hardRefreshButton"/);
   assert.match(appJs, /function checkPageRefreshAvailability\(/);
@@ -166,7 +171,7 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(appJs, /function scheduleVisiblePageRefreshCheck\(delayMs = 0, options = \{\}\)/);
   assert.match(appJs, /state\.events\.onopen = \(\) => \{[\s\S]*scheduleVisiblePageRefreshCheck\(200, \{ force: true \}\)/);
   assert.match(appJs, /payload\.type === "status"[\s\S]*scheduleVisiblePageRefreshCheck\(1200\)/);
-  assert.match(appJs, /renderThreads\(result\);[\s\S]*scheduleVisiblePageRefreshCheck\(500\)/);
+  assert.match(threadListRuntimeJs, /renderThreads\(result\);[\s\S]*scheduleVisiblePageRefreshCheck\(500\)/);
   assert.match(appJs, /Service restarted\. Tap to refresh\./);
   assert.match(appJs, /Connection changed\. Tap to refresh\./);
   assert.match(appJs, /Refreshing and reconnecting\.\.\./);

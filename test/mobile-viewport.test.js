@@ -9,23 +9,37 @@ const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
+const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
+const threadTileRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-tile-runtime.js"), "utf8");
 const threadDetailMergeStateJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-detail-merge-state.js"), "utf8");
 const viewportMetricsJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "viewport-metrics.js"), "utf8");
 const platformPointer = fs.readFileSync(path.resolve(__dirname, "..", "docs", "HOME_AI_PLATFORM_CONTRACT.md"), "utf8");
 
-function functionBody(name) {
-  const start = appJs.indexOf(`function ${name}(`);
+function sourceFunctionBody(source, name) {
+  const start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
-  const bodyStart = appJs.indexOf(") {", start) + 2;
+  const bodyStart = source.indexOf(") {", start) + 2;
   assert.notEqual(bodyStart, 1, `missing function body ${name}`);
   let depth = 0;
-  for (let index = bodyStart; index < appJs.length; index += 1) {
-    const char = appJs[index];
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
     if (char === "{") depth += 1;
     if (char === "}") depth -= 1;
-    if (depth === 0) return appJs.slice(bodyStart + 1, index);
+    if (depth === 0) return source.slice(bodyStart + 1, index);
   }
   throw new Error(`could not parse function ${name}`);
+}
+
+function functionBody(name) {
+  return sourceFunctionBody(appJs, name);
+}
+
+function threadListRuntimeFunctionBody(name) {
+  return sourceFunctionBody(threadListRuntimeJs, name);
+}
+
+function threadTileRuntimeFunctionBody(name) {
+  return sourceFunctionBody(threadTileRuntimeJs, name);
 }
 
 test("client turn ordering follows server started-at-first semantics", () => {
@@ -243,6 +257,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
   assert.match(swJs, /"\/thread-list-load-policy\.js"/);
   assert.match(swJs, /"\/thread-list-stable-order\.js"/);
+  assert.match(swJs, /"\/thread-list-runtime\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
   assert.match(swJs, /"\/thread-detail-state\.js"/);
   assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
@@ -254,6 +269,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /"\/thread-tile-actions\.js"/);
   assert.match(swJs, /"\/thread-tile-state\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
+  assert.match(swJs, /"\/thread-tile-runtime\.js"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -297,14 +313,14 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /function hasStartupThreadOpenIntent\(\)/);
   assert.match(appJs, /postClientEvent\("startup_stage"/);
   assert.match(appJs, /postPerformanceEvent\("shell_loaded"/);
-  assert.match(appJs, /postPerformanceEvent\("thread_list_rendered"/);
-  assert.match(appJs, /const listPerformance = threadPerformanceMetrics\.threadListEventFields\(result\);/);
+  assert.match(threadListRuntimeJs, /postPerformanceEvent\("thread_list_rendered"/);
+  assert.match(threadListRuntimeJs, /const listPerformance = threadPerformanceMetrics\.threadListEventFields\(result\);/);
   assert.match(appJs, /THREAD_LIST_SLOW_PATH_MS = 1500/);
-  assert.match(appJs, /const listSlowPlan = threadPerformanceMetrics\.planThreadListSlowPathDiagnostic\(listPerformanceEvent, \{/);
-  assert.match(appJs, /threadDiagnosticEventsApi\.threadListSlowPathDiagnosticEvent\(listSlowPlan\)/);
-  assert.match(appJs, /threadDiagnosticEventsApi\.threadListSlowPathDiagnosticSuccess\(\{/);
-  assert.match(appJs, /serverTimings: listPerformance\.serverTimings/);
-  assert.match(appJs, /performancePhase: listPerformance\.performancePhase/);
+  assert.match(threadListRuntimeJs, /const listSlowPlan = threadPerformanceMetrics\.planThreadListSlowPathDiagnostic\(listPerformanceEvent, \{/);
+  assert.match(threadListRuntimeJs, /threadDiagnosticEventsApi\.threadListSlowPathDiagnosticEvent\(listSlowPlan\)/);
+  assert.match(threadListRuntimeJs, /threadDiagnosticEventsApi\.threadListSlowPathDiagnosticSuccess\(\{/);
+  assert.match(threadListRuntimeJs, /serverTimings: listPerformance\.serverTimings/);
+  assert.match(threadListRuntimeJs, /performancePhase: listPerformance\.performancePhase/);
   assert.match(functionBody("loadThread"), /const cachedFirstPaintReportingStage = threadDetailRenderPlanApi\.planThreadDetailFirstPaintReportingStage\(\{[\s\S]*detailRenderMode: "cached-current",[\s\S]*cached: true,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);[\s\S]*threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(\s*state\.currentThread,\s*cachedFirstPaintReportingStage\.performanceInput,\s*\);/);
   assert.match(functionBody("loadThread"), /const firstPaintReportingStage = threadDetailRenderPlanApi\.planThreadDetailFirstPaintReportingStage\(\{[\s\S]*detailRenderMode: "first-paint",[\s\S]*cached: false,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);[\s\S]*threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(\s*result\.thread,\s*firstPaintReportingStage\.performanceInput,\s*\);/);
   assert.match(functionBody("loadThread"), /const cachedTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailCachedCurrentTelemetryEffects\(Object\.assign\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*\}, cachedFirstPaintReportingStage\.telemetryInput\)\);/);
@@ -384,15 +400,15 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading && !state\.currentThread\.mobileLoadError\) \{/);
   assert.match(appJs, /return shouldPollCurrentThread\(\) \|\| currentThreadListRowChanged\(\);/);
   assert.match(appJs, /const foregroundRefresh = currentThreadNeedsForegroundRefresh\(\);[\s\S]*mobile_resume_thread_refresh_scheduled[\s\S]*if \(foregroundRefresh\) scheduleCurrentThreadRefresh\(250, "resume"\);[\s\S]*else await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
-  assert.match(appJs, /function hasThreadDetailSelectionIntent\(\) \{[\s\S]*state\.currentThreadId[\s\S]*state\.threadLoadController[\s\S]*state\.startupThreadOpenPending/);
-  assert.match(appJs, /function shouldRenderPrimaryConversationShell\(\) \{[\s\S]*return !hasThreadDetailSelectionIntent\(\) && !state\.newThreadDraft;/);
-  assert.match(functionBody("loadWorkspaces"), /if \(shouldRenderPrimaryConversationShell\(\)\) renderCurrentThread\(\);/);
-  assert.match(functionBody("loadThreads"), /if \(shouldRenderPrimaryConversationShell\(\)\) renderCurrentThread\(\);/);
-  assert.doesNotMatch(functionBody("loadWorkspaces"), /if \(!state\.currentThread\) renderCurrentThread\(\);/);
-  assert.doesNotMatch(functionBody("loadThreads"), /if \(!state\.currentThread\) renderCurrentThread\(\);/);
+  assert.match(threadListRuntimeJs, /function hasThreadDetailSelectionIntent\(\) \{[\s\S]*state\.currentThreadId[\s\S]*state\.threadLoadController[\s\S]*state\.startupThreadOpenPending/);
+  assert.match(threadListRuntimeJs, /function shouldRenderPrimaryConversationShell\(\) \{[\s\S]*return !hasThreadDetailSelectionIntent\(\) && !state\.newThreadDraft;/);
+  assert.match(threadListRuntimeFunctionBody("loadWorkspaces"), /if \(shouldRenderPrimaryConversationShell\(\)\) renderCurrentThread\(\);/);
+  assert.match(threadListRuntimeFunctionBody("loadThreads"), /if \(shouldRenderPrimaryConversationShell\(\)\) renderCurrentThread\(\);/);
+  assert.doesNotMatch(threadListRuntimeFunctionBody("loadWorkspaces"), /if \(!state\.currentThread\) renderCurrentThread\(\);/);
+  assert.doesNotMatch(threadListRuntimeFunctionBody("loadThreads"), /if \(!state\.currentThread\) renderCurrentThread\(\);/);
   assert.match(appJs, /function showHermesPluginPrimaryPage\(options = \{\}\) \{[\s\S]*const force = options\.force === true;[\s\S]*plugin_primary_suppressed_thread_open/);
   assert.match(functionBody("showHermesPluginPrimaryPage"), /state\.threadLoadController[\s\S]*state\.startupThreadOpenPending[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);
-  assert.match(appJs, /async function restoreThreadSelection\(\) \{[\s\S]*if \(hasThreadDetailSelectionIntent\(\)\) return;[\s\S]*showHermesPluginPrimaryPage\(\{ source: "restore-empty" \}\);[\s\S]*return;/);
+  assert.match(threadListRuntimeJs, /async function restoreThreadSelection\(\) \{[\s\S]*if \(hasThreadDetailSelectionIntent\(\)\) return;[\s\S]*showHermesPluginPrimaryPage\(\{ source: "restore-empty" \}\);[\s\S]*return;/);
   assert.match(functionBody("loadThread"), /const loadingShellPostStatePlan = threadDetailRenderPlanApi\.planThreadDetailLoadingShellPostStateEffects\(\{[\s\S]*threadId,[\s\S]*source,[\s\S]*\}\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailPostRenderEffectsPlan\(loadingShellPostStatePlan, \{ thread: state\.currentThread \}\);/);
   assert.doesNotMatch(functionBody("loadThread"), /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*updateComposerControls\(\);/);
@@ -733,7 +749,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("hydrateThreadDetailSurface"), /threadDetailDomPatchApi\.hydrateRenderedSurface/);
   assert.match(functionBody("updateConversationHtml"), /applyConversationHtmlUpdateEffectsPlan\(effectsPlan, \{ root: conversation \}\)/);
   assert.match(functionBody("applyThreadDetailDomUpdateEffect"), /hydrateThreadDetailSurface\(context\.root, item\.hydrateOptions \|\| \{\}\)/);
-  assert.match(functionBody("patchThreadTilePane"), /hydrateThreadDetailSurface\(patchedPane, \{ imageScanDelays: \[0, 180\] \}\)/);
+  assert.match(threadTileRuntimeFunctionBody("patchThreadTilePane"), /hydrateThreadDetailSurface\(patchedPane, \{ imageScanDelays: \[0, 180\] \}\)/);
   assert.match(appJs, /function completeLocalConversationDomUpdate\(root, wasNearBottom, userReadingCurrentTurn, options = \{\}\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionSnapshot\(\{/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletion\(completionSnapshot\)/);
@@ -823,32 +839,32 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(indexHtml, /id="workspaceStatsDialog"/);
   assert.match(appJs, /const threadListLoadPolicy = window\.CodexThreadListLoadPolicy;/);
   assert.match(appJs, /workspaceTokenUsage: null/);
-  assert.match(appJs, /function renderWorkspaceTokenUsage\(\)/);
-  assert.match(appJs, /function renderWorkspaceStatsDialog\(\)/);
-  assert.match(appJs, /data-workspace-token-usage-toggle>统计<\/button>/);
+  assert.match(threadListRuntimeJs, /function renderWorkspaceTokenUsage\(\)/);
+  assert.match(threadListRuntimeJs, /function renderWorkspaceStatsDialog\(\)/);
+  assert.match(threadListRuntimeJs, /data-workspace-token-usage-toggle>统计<\/button>/);
   assert.match(appJs, /function formatTokenMillion\(value\)/);
   assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 200;/);
-  assert.match(appJs, /new URLSearchParams\(\{ limit: String\(THREAD_LIST_PAGE_LIMIT\), archived: "false" \}\)/);
-  assert.match(appJs, /function hasThreadDetailRequestInFlight\(\)/);
-  assert.match(appJs, /state\.threadLoadController[\s\S]*state\.refreshThreadController[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);
-  assert.match(appJs, /const threadDetailOpening = hasThreadDetailRequestInFlight\(\);/);
-  assert.match(appJs, /const loadPlan = threadListLoadPolicy\.planThreadListLoadRequest\(\{/);
-  assert.match(appJs, /threadListLoadedAtMs: state\.threadListLoadedAtMs/);
-  assert.match(appJs, /if \(loadPlan\.params && loadPlan\.params\.fallback\) \{[\s\S]*params\.set\("fallback", "defer"\);[\s\S]*\}/);
-  assert.match(appJs, /if \(loadPlan\.params && loadPlan\.params\.initial\) \{[\s\S]*params\.set\("initial", "warm-fallback"\);[\s\S]*\}/);
-  assert.match(appJs, /params\.set\("initial", "warm-fallback"\)/);
+  assert.match(threadListRuntimeJs, /new URLSearchParams\(\{ limit: String\(THREAD_LIST_PAGE_LIMIT\), archived: "false" \}\)/);
+  assert.match(threadListRuntimeJs, /function hasThreadDetailRequestInFlight\(\)/);
+  assert.match(threadListRuntimeJs, /state\.threadLoadController[\s\S]*state\.refreshThreadController[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);
+  assert.match(threadListRuntimeJs, /const threadDetailOpening = hasThreadDetailRequestInFlight\(\);/);
+  assert.match(threadListRuntimeJs, /const loadPlan = threadListLoadPolicy\.planThreadListLoadRequest\(\{/);
+  assert.match(threadListRuntimeJs, /threadListLoadedAtMs: state\.threadListLoadedAtMs/);
+  assert.match(threadListRuntimeJs, /if \(loadPlan\.params && loadPlan\.params\.fallback\) \{[\s\S]*params\.set\("fallback", "defer"\);[\s\S]*\}/);
+  assert.match(threadListRuntimeJs, /if \(loadPlan\.params && loadPlan\.params\.initial\) \{[\s\S]*params\.set\("initial", "warm-fallback"\);[\s\S]*\}/);
+  assert.match(threadListRuntimeJs, /params\.set\("initial", "warm-fallback"\)/);
   assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;/);
   assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;/);
   assert.match(appJs, /threadListDeferredFallbackTimer: null/);
-  assert.match(appJs, /function scheduleThreadListDeferredFallback\(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS\)/);
-  assert.match(appJs, /if \(state\.threadListLoadController \|\| hasThreadDetailRequestInFlight\(\)\) \{[\s\S]*scheduleThreadListDeferredFallback\(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS\);[\s\S]*return;/);
-  assert.match(appJs, /if \(options\.deferFallback !== true\) clearThreadListDeferredFallbackTimer\(\);/);
-  assert.match(appJs, /result\.mobileDeferredFallback \|\| result\.mobileDeferredAppServer/);
-  assert.match(appJs, /if \(result && \(result\.mobileDeferredFallback \|\| result\.mobileDeferredAppServer\) && !state\.selectedCwd && !search\) \{[\s\S]*scheduleThreadListDeferredFallback\(\);[\s\S]*\}/);
-  assert.match(appJs, /Uncached \$\{escapeHtml\(formatTokenMillion\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
-  assert.match(appJs, /Cached \$\{escapeHtml\(formatTokenMillion\(entry && entry\.cachedInputTokens\)\)\}/);
-  assert.match(appJs, /Out \$\{escapeHtml\(formatTokenMillion\(entry && entry\.outputTokens\)\)\}/);
-  assert.match(appJs, /Reason \$\{escapeHtml\(formatTokenMillion\(entry && entry\.reasoningOutputTokens\)\)\}/);
+  assert.match(threadListRuntimeJs, /function scheduleThreadListDeferredFallback\(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS\)/);
+  assert.match(threadListRuntimeJs, /if \(state\.threadListLoadController \|\| hasThreadDetailRequestInFlight\(\)\) \{[\s\S]*scheduleThreadListDeferredFallback\(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS\);[\s\S]*return;/);
+  assert.match(threadListRuntimeJs, /if \(options\.deferFallback !== true\) clearThreadListDeferredFallbackTimer\(\);/);
+  assert.match(threadListRuntimeJs, /result\.mobileDeferredFallback \|\| result\.mobileDeferredAppServer/);
+  assert.match(threadListRuntimeJs, /if \(result && \(result\.mobileDeferredFallback \|\| result\.mobileDeferredAppServer\) && !state\.selectedCwd && !search\) \{[\s\S]*scheduleThreadListDeferredFallback\(\);[\s\S]*\}/);
+  assert.match(threadListRuntimeJs, /Uncached \$\{escapeHtml\(formatTokenMillion\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
+  assert.match(threadListRuntimeJs, /Cached \$\{escapeHtml\(formatTokenMillion\(entry && entry\.cachedInputTokens\)\)\}/);
+  assert.match(threadListRuntimeJs, /Out \$\{escapeHtml\(formatTokenMillion\(entry && entry\.outputTokens\)\)\}/);
+  assert.match(threadListRuntimeJs, /Reason \$\{escapeHtml\(formatTokenMillion\(entry && entry\.reasoningOutputTokens\)\)\}/);
   assert.match(stylesCss, /\.workspace-token-usage/);
   assert.match(stylesCss, /\.workspace-token-usage-summary span[\s\S]*color:\s*var\(--danger-text\)/);
   assert.match(stylesCss, /\.workspace-stats-dialog/);
@@ -918,9 +934,9 @@ test("workspace creation lives at the bottom of the Workspace menu", () => {
   assert.match(indexHtml, /id="createWorkspaceDialog"/);
   assert.match(indexHtml, /id="createWorkspaceForm"/);
   assert.match(indexHtml, /id="createWorkspaceRootSelect"/);
-  assert.match(appJs, /function workspaceSidebarOptionsHtml\(\)/);
-  assert.match(appJs, /data-create-workspace/);
-  assert.match(appJs, /return allOption \+ workspaceOptions \+ createOption;/);
+  assert.match(threadListRuntimeJs, /function workspaceSidebarOptionsHtml\(\)/);
+  assert.match(threadListRuntimeJs, /data-create-workspace/);
+  assert.match(threadListRuntimeJs, /return allOption \+ workspaceOptions \+ createOption;/);
   assert.match(appJs, /openCreateWorkspaceDialog\(\)/);
   assert.match(appJs, /function populateCreateWorkspaceRootSelect\(\)/);
   assert.match(appJs, /body:\s*JSON\.stringify\(\{\s*name,\s*parent:\s*workspaceCreateSelectedRoot\(\)\s*\}\)/);

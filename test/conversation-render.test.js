@@ -7,6 +7,8 @@ const { test } = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const threadListRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-list-runtime.js"), "utf8");
+const threadTileRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-tile-runtime.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const threadDetailCompactionServiceJs = fs.readFileSync(
   path.join(root, "adapters", "thread-detail-compaction-service.js"),
@@ -52,6 +54,14 @@ function functionSourceFrom(source, name) {
 
 function functionBody(name) {
   return functionBodyFrom(appJs, name);
+}
+
+function threadListRuntimeBody(name) {
+  return functionBodyFrom(threadListRuntimeJs, name);
+}
+
+function threadTileRuntimeBody(name) {
+  return functionBodyFrom(threadTileRuntimeJs, name);
 }
 
 function serverFunctionBody(name) {
@@ -1339,6 +1349,14 @@ return {
 }
 
 function evaluatedThreadStatusPaneContext() {
+  const threadListRuntimeSourceNames = new Set([
+    "applyThreadStatusToThread",
+    "scheduleThreadStatusDetailRender",
+    "updateThreadListStatus",
+    "localThreadForStatusContext",
+    "snapshotThreadStatus",
+    "restoreThreadStatusSnapshot",
+  ]);
   const sources = [
     "applyThreadStatusToThread",
     "scheduleThreadStatusDetailRender",
@@ -1347,7 +1365,7 @@ function evaluatedThreadStatusPaneContext() {
     "snapshotThreadStatus",
     "restoreThreadStatusSnapshot",
     "markThreadOptimisticallyActive",
-  ].map((name) => functionSourceFrom(appJs, name));
+  ].map((name) => functionSourceFrom(threadListRuntimeSourceNames.has(name) ? threadListRuntimeJs : appJs, name));
   return Function(`
 const calls = {
   hinted: [],
@@ -1403,13 +1421,19 @@ return {
 }
 
 function evaluatedThreadStatusNotificationContext() {
+  const threadListRuntimeSourceNames = new Set([
+    "applyThreadStatusToThread",
+    "scheduleThreadStatusDetailRender",
+    "updateThreadListStatus",
+    "localThreadForStatusContext",
+  ]);
   const sources = [
     "applyThreadStatusToThread",
     "scheduleThreadStatusDetailRender",
     "updateThreadListStatus",
     "localThreadForStatusContext",
     "applyNotification",
-  ].map((name) => functionSourceFrom(appJs, name));
+  ].map((name) => functionSourceFrom(threadListRuntimeSourceNames.has(name) ? threadListRuntimeJs : appJs, name));
   return Function(`
 const calls = {
   statusHints: [],
@@ -1654,9 +1678,9 @@ function evaluatedThreadTileApprovalRenderer() {
     "stableTurnKey",
     "visibleItemBudgetForTurn",
     "renderTurnVisibleItemBudgetNotice",
-    "renderThreadTileTurn",
-    "renderThreadTilePane",
   ].map((name) => functionSourceFrom(appJs, name));
+  sources.push(functionSourceFrom(threadTileRuntimeJs, "renderThreadTileTurn"));
+  sources.push(functionSourceFrom(threadTileRuntimeJs, "renderThreadTilePane"));
   return Function(`
 const HIDDEN_SERVER_REQUEST_METHODS = new Set();
 const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
@@ -1759,7 +1783,7 @@ test("context compaction notices update status and collapse repeated turn notice
   assert.match(functionBody("conversationRenderSignature"), /visibleItemBudget: visibleItemBudgetSignature\(turn\)/);
   assert.match(functionBody("conversationRenderSignature"), /visibleItemSignature\(entry\.item, turn, thread\)/);
   assert.match(functionBody("renderTurn"), /const budgetNoticeHtml = renderTurnVisibleItemBudgetNotice\(turn, previousKeys\)/);
-  assert.match(functionBody("renderThreadTileTurn"), /const budgetNoticeHtml = renderTurnVisibleItemBudgetNotice\(turn, previousKeys\)/);
+  assert.match(threadTileRuntimeBody("renderThreadTileTurn"), /const budgetNoticeHtml = renderTurnVisibleItemBudgetNotice\(turn, previousKeys\)/);
 });
 
 test("raw thread read mode limits visible items per turn while preserving user images", () => {
@@ -2607,7 +2631,7 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("loadThread"), /applyThreadDetailPostRenderEffectsPlan\(firstPaintPreRenderPlan, \{ thread: state\.currentThread \}\);/);
   assert.match(functionBody("loadThread"), /const firstPaintDraftRestorePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintDraftRestoreEffects\(\);[\s\S]*applyThreadDetailPostRenderEffectsPlan\(firstPaintDraftRestorePlan, \{ thread: state\.currentThread \}\);/);
   assert.doesNotMatch(functionBody("loadThread"), /localStorage\.setItem\(STORAGE_THREAD_ID, threadId\);\s*\n\s*draftStore\.setTargetKey\(""\);\s*\n\s*followThreadOpenToBottom\(threadId\);/);
-  assert.match(functionBody("loadThreads"), /threadListSummaryFromDetailThread\(thread\) \|\| thread/);
+  assert.match(threadListRuntimeBody("loadThreads"), /threadListSummaryFromDetailThread\(thread\) \|\| thread/);
   assert.match(functionSourceFrom(appJs, "renderCurrentThread"), /let thread = state\.currentThread;/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.planSummaryOnlyCurrentThreadRecovery\(\{/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.planSummaryOnlyCurrentThreadRecoveryEffects\(summaryRecoveryPlan\)/);
@@ -3965,17 +3989,17 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("threadTileVisibleShape"), /duplicateUserMessageSignatureCount/);
   assert.match(functionBody("threadTileVisibleTurnCount"), /threadTileVisibleShape\(ids\)\.turnCount/);
   assert.match(functionBody("threadTileDomTurnCount"), /article\.thread-tile-turn\[data-thread-tile-turn\]/);
-  assert.match(functionBody("renderThreadTileLayout"), /const visibleShape = threadTileVisibleShape\(ids\);/);
-  assert.match(functionBody("renderThreadTileLayout"), /const expectedVisibleTurnCount = visibleShape\.turnCount;/);
-  assert.match(functionBody("renderThreadTileLayout"), /const renderedDomTurnCount = threadTileDomTurnCount\(\);/);
-  assert.match(functionBody("renderThreadTileLayout"), /const renderedDomShape = conversationDomShape\(\);/);
-  assert.match(functionBody("renderThreadTileLayout"), /expectedVisibleItemCount: visibleShape\.visibleItemCount/);
-  assert.match(functionBody("renderThreadTileLayout"), /duplicateUserMessageCount: renderedDomShape\.duplicateUserMessageCount/);
-  assert.match(functionBody("renderThreadTileLayout"), /expectedDuplicateUserMessageCount: visibleShape\.duplicateUserMessageCount/);
-  assert.match(functionBody("renderThreadTileLayout"), /routeKind: "thread-tile"/);
-  assert.match(functionBody("renderThreadTileLayout"), /currentVisibleItems: visibleShape\.visibleItemCount/);
-  assert.match(functionBody("renderThreadTileLayout"), /source: "thread-tile-render"/);
-  assert.match(functionBody("renderThreadTileLayout"), /checkProjectionConsistency: true/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /const visibleShape = threadTileVisibleShape\(ids\);/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /const expectedVisibleTurnCount = visibleShape\.turnCount;/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /const renderedDomTurnCount = threadTileDomTurnCount\(\);/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /const renderedDomShape = conversationDomShape\(\);/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /expectedVisibleItemCount: visibleShape\.visibleItemCount/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /duplicateUserMessageCount: renderedDomShape\.duplicateUserMessageCount/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /expectedDuplicateUserMessageCount: visibleShape\.duplicateUserMessageCount/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /routeKind: "thread-tile"/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /currentVisibleItems: visibleShape\.visibleItemCount/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /source: "thread-tile-render"/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /checkProjectionConsistency: true/);
 });
 
 test("thread detail refresh failure delegates diagnostic payloads to helper", () => {
@@ -4020,13 +4044,13 @@ test("thread detail switch start, cancel, and error events delegate payloads to 
 
 test("thread tile local patch paths refresh the pane instead of writing a single-thread signature", () => {
   assert.match(appJs, /function threadDetailDomPatchSurface\(/);
-  assert.match(functionBody("threadDetailDomPatchSurface"), /threadDetailPatchPlanApi\.planThreadDetailDomPatchSurface\(/);
+  assert.match(threadTileRuntimeBody("threadDetailDomPatchSurface"), /threadDetailPatchPlanApi\.planThreadDetailDomPatchSurface\(/);
   assert.match(appJs, /function canPatchSingleThreadConversationDom\(/);
   assert.match(appJs, /function patchCurrentThreadTilePaneFromState\(/);
-  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /threadDetailDomPatchSurface\(options\)/);
-  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /plan\.surface !== "thread-tile-pane"/);
-  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /clearGlobalLiveOperationDockForThreadTiles\(\)/);
-  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /patchThreadTilePane\(plan\.threadId, Object\.assign\(\{ preserveScroll: true \}, options\)\)/);
+  assert.match(threadTileRuntimeBody("patchCurrentThreadTilePaneFromState"), /threadDetailDomPatchSurface\(options\)/);
+  assert.match(threadTileRuntimeBody("patchCurrentThreadTilePaneFromState"), /plan\.surface !== "thread-tile-pane"/);
+  assert.match(threadTileRuntimeBody("patchCurrentThreadTilePaneFromState"), /clearGlobalLiveOperationDockForThreadTiles\(\)/);
+  assert.match(threadTileRuntimeBody("patchCurrentThreadTilePaneFromState"), /patchThreadTilePane\(plan\.threadId, Object\.assign\(\{ preserveScroll: true \}, options\)\)/);
 
   assert.match(appJs, /function completeLocalConversationDomUpdate\(root, wasNearBottom, userReadingCurrentTurn, options = \{\}\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /hasOption\("tilePanePatched"\)[\s\S]*patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
@@ -6248,14 +6272,14 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(optimisticBody, /updateThreadStatusHints\(id, previousStatus, runningStatus/);
   assert.match(optimisticBody, /updateThreadListStatus\(id, runningStatus, \{ render: true \}\)/);
   assert.match(optimisticBody, /if \(currentMatches\) \{[\s\S]*mergeThreadIntoThreadList\(state\.currentThread\)/);
-  assert.match(functionBody("updateThreadListStatus"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
-  assert.match(functionBody("updateThreadListStatus"), /if \(options\.render === true\) scheduleThreadStatusDetailRender\(id\)/);
-  assert.match(functionBody("scheduleThreadStatusDetailRender"), /threadTilePaneIsVisible\(id\)/);
-  assert.match(functionBody("scheduleThreadStatusDetailRender"), /scheduleRenderThreadTilePane\(id, \{ preserveScroll: true \}\)/);
-  assert.match(functionBody("localThreadForStatusContext"), /state\.currentThread && String\(state\.currentThread\.id \|\| ""\) === id/);
-  assert.match(functionBody("localThreadForStatusContext"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
-  assert.match(functionBody("snapshotThreadStatus"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
-  const restoreBody = functionBody("restoreThreadStatusSnapshot");
+  assert.match(threadListRuntimeBody("updateThreadListStatus"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
+  assert.match(threadListRuntimeBody("updateThreadListStatus"), /if \(options\.render === true\) scheduleThreadStatusDetailRender\(id\)/);
+  assert.match(threadListRuntimeBody("scheduleThreadStatusDetailRender"), /threadTilePaneIsVisible\(id\)/);
+  assert.match(threadListRuntimeBody("scheduleThreadStatusDetailRender"), /scheduleRenderThreadTilePane\(id, \{ preserveScroll: true \}\)/);
+  assert.match(threadListRuntimeBody("localThreadForStatusContext"), /state\.currentThread && String\(state\.currentThread\.id \|\| ""\) === id/);
+  assert.match(threadListRuntimeBody("localThreadForStatusContext"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
+  assert.match(threadListRuntimeBody("snapshotThreadStatus"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
+  const restoreBody = threadListRuntimeBody("restoreThreadStatusSnapshot");
   assert.match(restoreBody, /snapshot\.hadTileThread/);
   assert.match(restoreBody, /updateThreadStatusHints\(id, \{ type: "active" \}, restoredStatus/);
   assert.match(restoreBody, /state\.currentThread\.status = snapshot\.currentStatus/);
