@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const appUpdateRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app-update-runtime.js"), "utf8");
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
@@ -278,6 +279,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(swJs, /"\/thread-tile-runtime\.js"/);
   assert.match(swJs, /"\/composer-runtime\.js"/);
+  assert.match(swJs, /"\/app-update-runtime\.js"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -303,8 +305,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /function flushSideChatDraftNow\(/);
   assert.match(appJs, /threadDetailRenderPlanApi\.planThreadDetailLoadingShellPostStateEffects/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /loadSideChat\(sideChatThreadId, \{ silent: item\.silent !== false \}\)\.catch\(showError\);/);
-  assert.match(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId\) \|\| ""\)\.trim\(\);/);
-  assert.doesNotMatch(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId \|\| config\.version\)/);
+  assert.match(appUpdateRuntimeJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId\) \|\| ""\)\.trim\(\);/);
+  assert.doesNotMatch(appUpdateRuntimeJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId \|\| config\.version\)/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(indexHtml, /id="pluginStartupLoading"/);
   assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);
@@ -320,7 +322,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /const savedThreadId = isHermesEmbedMode\(\) \? "" : \(localStorage\.getItem\(STORAGE_THREAD_ID\) \|\| ""\);/);
   assert.match(appJs, /function hasStartupThreadOpenIntent\(\)/);
   assert.match(appJs, /postClientEvent\("startup_stage"/);
-  assert.match(appJs, /postPerformanceEvent\("shell_loaded"/);
+  assert.match(appUpdateRuntimeJs, /postPerformanceEvent\("shell_loaded"/);
   assert.match(threadListRuntimeJs, /postPerformanceEvent\("thread_list_rendered"/);
   assert.match(threadListRuntimeJs, /const listPerformance = threadPerformanceMetrics\.threadListEventFields\(result\);/);
   assert.match(appJs, /THREAD_LIST_SLOW_PATH_MS = 1500/);
@@ -813,6 +815,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /"\/thread-tile-state\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(swJs, /"\/build-refresh-policy\.js"/);
+  assert.match(swJs, /"\/app-update-runtime\.js"/);
   assert.match(appJs, /"\/viewport-metrics\.js"/);
   assert.match(appJs, /"\/conversation-scroll\.js"/);
   assert.match(appJs, /"\/image-compressor\.js"/);
@@ -833,6 +836,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /"\/thread-tile-actions\.js"/);
   assert.match(appJs, /"\/thread-tile-state\.js"/);
   assert.match(appJs, /"\/thread-tile-layout\.js"/);
+  assert.match(appJs, /"\/app-update-runtime\.js"/);
   assert.match(indexHtml, /src="\/thread-list-load-policy\.js"/);
   assert.match(indexHtml, /src="\/thread-list-stable-order\.js"/);
   assert.match(indexHtml, /src="\/client-render-stability-guard\.js"/);

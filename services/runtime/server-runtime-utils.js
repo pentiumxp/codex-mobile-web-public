@@ -140,6 +140,7 @@ function createServerRuntimeUtils(dependencies = {}) {
       "thread-tile-state.js",
       "thread-tile-layout.js",
       "thread-tile-runtime.js",
+      "app-update-runtime.js",
       "app.js",
       "sw.js",
       "manifest.json",

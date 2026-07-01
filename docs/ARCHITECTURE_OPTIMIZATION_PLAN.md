@@ -4159,6 +4159,38 @@ tests, static shell/cache guards, `npm run --silent check`,
 `npm run --silent check:macos`, `git diff --check`, and the deploy-time
 startup-only listener/browser gate.
 
+### 2026-07-01 App JS App Update Runtime Boundary
+
+The next frontend-thinning slice moves the app update, Public PR, restart, and
+PWA shell-refresh runtime out of `public/app.js` while preserving the static
+shell contract as `codex-mobile-shell-v617`.
+
+Scope:
+
+- `public/app-update-runtime.js` owns version/update panel rendering,
+  app-update status checks, Public release/PR status checks, Public PR
+  review-thread reuse prompts, shared restart confirmation, running-session
+  risk display, boot-ready and shell-loaded reporting, server build/config
+  comparison, PWA shell asset fetch/validation, cache and service-worker reset,
+  hard-refresh handling, reconnect refresh prompts, and periodic page-refresh
+  polling.
+- `public/app.js` keeps shared state, dependency injection, event wiring,
+  feature callbacks, and compatibility wrappers for existing callers.
+- `public/index.html`, `public/sw.js`, `public/app.js` page-shell preload
+  assets, and `services/runtime/server-runtime-utils.js` include the new
+  runtime file so shell hash/cache behavior stays explicit.
+
+Local line-count readback before deployment: `public/app.js` is `21011` lines,
+`public/app-update-runtime.js` is `1204` lines,
+`public/thread-detail-runtime.js` is `1274` lines,
+`public/composer-runtime.js` is `2027` lines,
+`public/thread-list-runtime.js` is `902` lines, and
+`public/thread-tile-runtime.js` is `1853` lines. Validation should cover syntax
+checks for the app-update runtime/static files, focused update/Public PR/restart
+and affected UI tests, static shell/cache guards, `npm run --silent check`,
+`npm run --silent check:macos`, `git diff --check`, and the deploy-time
+startup-only listener/browser gate.
+
 ## Release Rule
 
 Follow the current release order:

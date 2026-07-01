@@ -74,11 +74,11 @@ test("composer runtime is created after its constant dependencies", () => {
   }
 });
 
-test("composer runtime is part of the v616 static shell", () => {
+test("composer runtime is part of the current static shell", () => {
   assert.match(indexHtml, /<script src="\/composer-runtime\.js"><\/script>/);
   assert.match(swJs, /"\/composer-runtime\.js"/);
   assert.match(appJs, /"\/composer-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"composer-runtime\.js"/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v616"/);
-  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v616"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v617"/);
+  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v617"/);
 });
