@@ -15,7 +15,7 @@ const {
 
 const root = path.resolve(__dirname, "..");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
-const apiDispatchRouteServiceJs = fs.readFileSync(path.join(root, "adapters", "api-dispatch-route-service.js"), "utf8");
+const apiDispatchRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "api-dispatch-route-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "adapters", "core-api-route-service.js"), "utf8");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const packageJson = fs.readFileSync(path.join(root, "package.json"), "utf8");

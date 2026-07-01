@@ -137,7 +137,7 @@ const { createAppMaintenanceService } = require("./adapters/app-maintenance-serv
 const { createAppServerRequestPolicyService } = require("./adapters/app-server-request-policy-service");
 const { createRolloutDetailEnrichmentService } = require("./adapters/rollout-detail-enrichment-service");
 const { createThreadDetailRolloutBackfillService } = require("./adapters/thread-detail-rollout-backfill-service");
-const { createApiDispatchRouteService } = require("./adapters/api-dispatch-route-service");
+const { createApiDispatchRouteService } = require("./server-routes/api-dispatch-route-service");
 const {
   createAutoTurnRecoveryService,
   turnStartResultTurnId,

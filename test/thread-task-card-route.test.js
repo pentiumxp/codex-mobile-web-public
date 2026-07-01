@@ -7,7 +7,8 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
-const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
+const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
+const apiDispatchRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
 const autoTurnRecoveryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "auto-turn-recovery-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
@@ -506,6 +507,8 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(apiDispatchRouteServiceJs, /handleThreadDetailReadRoute\(\{/);
   assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailModeFromUrl\(url\) === "recent"/);
   assert.match(threadDetailRouteServiceJs, /sendJson\(status, body\)/);
+  assert.match(serverJs, /require\("\.\/server-routes\/api-dispatch-route-service"\)/);
+  assert.match(apiDispatchRouteAdapterJs, /require\("\.\.\/server-routes\/api-dispatch-route-service"\)/);
   assert.match(serverJs, /require\("\.\/server-routes\/thread-detail-route-service"\)/);
   assert.match(threadDetailRouteAdapterJs, /require\("\.\.\/server-routes\/thread-detail-route-service"\)/);
 });

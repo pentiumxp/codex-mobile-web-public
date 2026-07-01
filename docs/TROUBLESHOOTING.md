@@ -1247,7 +1247,7 @@ Do not infer from rollout file size alone. Separate:
 - If `/api/threads` and thread detail both return HTTP 500 immediately after a
   runtime-boundary split deploy, inspect the bounded server error code before
   assuming app-server or rollout corruption. A `ReferenceError` naming a
-  `server.js` local constant or helper from `adapters/api-dispatch-route-service.js`
+  `server.js` local constant or helper from `server-routes/api-dispatch-route-service.js`
   means the extracted route module leaked a server-local dependency. The route
   service must receive that policy or lifecycle helper through
   `createApiDispatchRouteService()` dependencies; focused coverage should

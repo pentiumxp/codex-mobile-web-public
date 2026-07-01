@@ -4686,6 +4686,9 @@ Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provi
 - 新增 `server-routes/thread-detail-route-service.js`，把 `/api/threads/:id` 的 `mode=recent` 解析、
   bounded `threadLog`、JSON response 和 `complete=false` 语义从 `server.js` 抽到可测试边界。
   这不改变读取策略，只减少 route glue 对后续 active-overlay/server smoke 的阻力。
+- `server-routes/api-dispatch-route-service.js` 现在拥有主 `/api/*` dispatcher；`server.js`
+  直接导入 canonical route 模块，旧 `adapters/api-dispatch-route-service.js` 仅保留兼容
+  re-export。这个切片不改变路由顺序，只把 HTTP route composition 移到 `server-routes/`。
 - `test/thread-detail-active-overlay-integration.test.js` 现在额外覆盖 route-level smoke：
   `/api/threads/:id?mode=recent` 通过 route service 调用真实 read orchestration 时，能返回
   `projection-active-overlay`，并证明没有调用 full `thread/read` 或 `turns-list`。

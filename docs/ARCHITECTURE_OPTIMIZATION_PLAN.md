@@ -114,10 +114,11 @@ Current acceleration targets:
    fallback source recovery, summary-state synchronization, and thread-detail
    response preparation into dedicated adapters. The current route-boundary
    phase has started moving HTTP coordinators out of `adapters/` and into
-   `server-routes/`; `/api/threads/:id` detail routing is owned by
-   `server-routes/thread-detail-route-service.js`, while the old adapter path
-   remains a compatibility export. Future high-yield candidates should follow
-   the same domain boundary: public/profile config routes, GitHub/utility
+   `server-routes/`; the main authenticated `/api/*` dispatcher is owned by
+   `server-routes/api-dispatch-route-service.js`, `/api/threads/:id` detail
+   routing is owned by `server-routes/thread-detail-route-service.js`, and the
+   old adapter paths remain compatibility exports. Future high-yield
+   candidates should follow the same domain boundary: public/profile config routes, GitHub/utility
    routes, remaining thread-detail enrichment helpers, and
    notification/runtime side-effect groups. Avoid moving helper functions only
    to reduce line count; each extraction must reduce a real `server.js`
@@ -142,7 +143,10 @@ Current acceleration targets:
    The route-boundary slice then extracts `/api/threads/:id` detail route
    coordination into a testable service so `mode=recent`, bounded request logs,
    response send, and `complete=false` semantics can be verified without
-   relying on `server.js` source-string assertions. The route-smoke slice now
+   relying on `server.js` source-string assertions. The main API dispatch route
+   then moved to `server-routes/api-dispatch-route-service.js` so `server.js`
+   imports route composition from the canonical route namespace while the old
+   adapter path stays compatibility-only. The route-smoke slice now
    proves that this route boundary can call the real read orchestration and
    return `projection-active-overlay` for a recent active-window read without
    invoking full `thread/read` or `turns-list`.

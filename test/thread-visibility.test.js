@@ -11,7 +11,8 @@ const serverHttpRuntimeServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "server-http-runtime-service.js"),
   "utf8",
 );
-const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
+const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
+const apiDispatchRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
 const threadDetailCompactionServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-compaction-service.js"),
@@ -341,6 +342,8 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(threadDetailReadOrchestrationServiceJs, /if \(activeReadPolicy\.shouldUseInitialTurnsList\) \{/);
   assert.match(threadDetailReadOrchestrationServiceJs, /"turns-list-initial"/);
   assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-read-orchestration-service"\)/);
+  assert.match(serverJs, /require\("\.\/server-routes\/api-dispatch-route-service"\)/);
+  assert.match(apiDispatchRouteAdapterJs, /require\("\.\.\/server-routes\/api-dispatch-route-service"\)/);
   assert.match(serverJs, /require\("\.\/server-routes\/thread-detail-route-service"\)/);
   assert.match(threadDetailReadOrchestrationAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-read-orchestration-service"\)/);
   assert.match(threadDetailRouteAdapterJs, /require\("\.\.\/server-routes\/thread-detail-route-service"\)/);
@@ -1314,6 +1317,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /markTiming\("stateAttachMs", stateAttachStartedAtMs\)/);
   assert.match(routeBody, /attachThreadListStateToResult\(\{\s*data: normalizedFallback,\s*\}\)/);
   assert.match(apiDispatchRouteServiceJs, /const trackThreadDetailRequestLifecycle = dependencies\.trackThreadDetailRequestLifecycle/);
+  assert.match(apiDispatchRouteAdapterJs, /require\("\.\.\/server-routes\/api-dispatch-route-service"\)/);
   assert.match(serverJs, /trackThreadDetailRequestLifecycle,/);
   const threadReadIndex = apiDispatchRouteServiceJs.indexOf('const threadRead = url.pathname.match(/^\\/api\\/threads\\/([^/]+)$/);');
   const threadReadBody = apiDispatchRouteServiceJs.slice(threadReadIndex, apiDispatchRouteServiceJs.indexOf('const threadTurns = url.pathname.match', threadReadIndex));

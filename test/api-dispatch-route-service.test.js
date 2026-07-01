@@ -3,7 +3,15 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
-const { createApiDispatchRouteService } = require("../adapters/api-dispatch-route-service");
+const {
+  createApiDispatchRouteService,
+} = require("../server-routes/api-dispatch-route-service");
+
+test("api dispatch route adapter re-exports server-routes service", () => {
+  const adapter = require("../adapters/api-dispatch-route-service");
+  const canonical = require("../server-routes/api-dispatch-route-service");
+  assert.equal(adapter.createApiDispatchRouteService, canonical.createApiDispatchRouteService);
+});
 
 test("api dispatch thread detail route uses injected lifecycle tracker", async () => {
   let lifecycleTracked = false;

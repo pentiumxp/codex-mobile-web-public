@@ -7,7 +7,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const packageJson = fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf8");
-const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
+const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
 const routeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-side-chat-route-service.js"), "utf8");
 const orchestrationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-side-chat-orchestration-service.js"), "utf8");
 const requirements = fs.readFileSync(path.resolve(__dirname, "..", "docs", "THREAD_SIDE_CHAT_REQUIREMENTS.md"), "utf8");
