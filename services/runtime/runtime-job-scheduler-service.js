@@ -181,13 +181,80 @@ const DIAGNOSTIC_JOB_ORDER = Object.freeze([
   "empty-detail-cache-smoke",
 ]);
 
+const RUNTIME_BACKFILL_JOBS = Object.freeze({
+  "thread-detail-history-auto-backfill": normalizeRuntimeJobDeclaration("thread-detail-history-auto-backfill", {
+    timeoutMs: 60000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "medium",
+    realBrowserAllowed: false,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+  "thread-detail-full-backfill": normalizeRuntimeJobDeclaration("thread-detail-full-backfill", {
+    timeoutMs: 120000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "medium",
+    realBrowserAllowed: false,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+  "thread-usage-backfill-refresh": normalizeRuntimeJobDeclaration("thread-usage-backfill-refresh", {
+    timeoutMs: 30000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "low",
+    realBrowserAllowed: false,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+  "active-overlay-window-backfill": normalizeRuntimeJobDeclaration("active-overlay-window-backfill", {
+    timeoutMs: 60000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "medium",
+    realBrowserAllowed: false,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+  "rollout-completion-backfill": normalizeRuntimeJobDeclaration("rollout-completion-backfill", {
+    timeoutMs: 30000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "low",
+    realBrowserAllowed: false,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
+});
+
+const BACKFILL_JOB_ORDER = Object.freeze([
+  "thread-detail-history-auto-backfill",
+  "thread-detail-full-backfill",
+  "thread-usage-backfill-refresh",
+  "active-overlay-window-backfill",
+  "rollout-completion-backfill",
+]);
+
 const RUNTIME_JOB_REGISTRY = Object.freeze({
   ...RUNTIME_SELF_CHECK_JOBS,
   ...RUNTIME_PREWARM_JOBS,
   ...RUNTIME_DIAGNOSTIC_JOBS,
+  ...RUNTIME_BACKFILL_JOBS,
 });
 
-const RUNTIME_JOB_ORDER = Object.freeze([...JOB_ORDER, ...PREWARM_JOB_ORDER, ...DIAGNOSTIC_JOB_ORDER]);
+const RUNTIME_JOB_ORDER = Object.freeze([
+  ...JOB_ORDER,
+  ...PREWARM_JOB_ORDER,
+  ...DIAGNOSTIC_JOB_ORDER,
+  ...BACKFILL_JOB_ORDER,
+]);
 
 function normalizeBrowserMode(value, fallback = "") {
   const text = String(value || "").trim().toLowerCase();
@@ -298,10 +365,12 @@ function runtimeSelfCheckJob(plan = {}, name = "") {
 }
 
 module.exports = {
+  BACKFILL_JOB_ORDER,
   DEFAULT_JOB_TIMEOUT_MS,
   DIAGNOSTIC_JOB_ORDER,
   JOB_ORDER,
   PREWARM_JOB_ORDER,
+  RUNTIME_BACKFILL_JOBS,
   RUNTIME_DIAGNOSTIC_JOBS,
   RUNTIME_JOB_ORDER,
   RUNTIME_JOB_REGISTRY,

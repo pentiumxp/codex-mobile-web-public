@@ -3349,7 +3349,9 @@ Scope:
   registry for self-check jobs (`api-thread`, `browser-runtime`,
   `client-events`) and prewarm jobs (`thread-list-fallback-prewarm`,
   `thread-detail-active-window-prewarm`), plus manual diagnostic jobs such as
-  Phase-B readback and visual smoke checks.
+  Phase-B readback and visual smoke checks, and backfill jobs such as detail
+  history, full detail, Usage refresh, active overlay window, and rollout
+  completion backfills.
 - Each plan entry declares periodic allowance, max concurrency, time budget,
   CPU budget class, real-browser allowance, and user-request preemption,
   while preserving legacy aliases such as `timeoutMs`, `usesBrowser`, and
@@ -3357,6 +3359,8 @@ Scope:
 - Manual diagnostic declarations are non-periodic and not deploy-default jobs;
   visual smoke declarations are the only manual diagnostics that allow real
   browser work.
+- Backfill declarations are also non-periodic and not deploy-default jobs, and
+  do not allow real browser work.
 - `adapters/runtime-job-scheduler-service.js` is a compatibility export only.
 
 Required validation:

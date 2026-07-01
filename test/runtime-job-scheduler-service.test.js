@@ -11,6 +11,7 @@ test("runtime job scheduler adapter remains a compatibility wrapper", () => {
   assert.equal(adapter.RUNTIME_SELF_CHECK_JOBS, service.RUNTIME_SELF_CHECK_JOBS);
   assert.equal(adapter.RUNTIME_PREWARM_JOBS, service.RUNTIME_PREWARM_JOBS);
   assert.equal(adapter.RUNTIME_DIAGNOSTIC_JOBS, service.RUNTIME_DIAGNOSTIC_JOBS);
+  assert.equal(adapter.RUNTIME_BACKFILL_JOBS, service.RUNTIME_BACKFILL_JOBS);
   assert.equal(adapter.RUNTIME_JOB_REGISTRY, service.RUNTIME_JOB_REGISTRY);
 });
 
@@ -87,6 +88,33 @@ test("runtime job registry owns manual diagnostic declarations", () => {
     assert.equal(service.RUNTIME_DIAGNOSTIC_JOBS[name].cpuBudgetClass, "high");
     assert.equal(service.RUNTIME_DIAGNOSTIC_JOBS[name].timeoutMs, 120000);
   }
+});
+
+test("runtime job registry owns backfill declarations", () => {
+  assert.deepEqual(service.BACKFILL_JOB_ORDER, [
+    "thread-detail-history-auto-backfill",
+    "thread-detail-full-backfill",
+    "thread-usage-backfill-refresh",
+    "active-overlay-window-backfill",
+    "rollout-completion-backfill",
+  ]);
+
+  for (const name of service.BACKFILL_JOB_ORDER) {
+    const job = service.RUNTIME_BACKFILL_JOBS[name];
+    assert.equal(job, service.RUNTIME_JOB_REGISTRY[name]);
+    assert.equal(job, service.runtimeJobDeclaration(name));
+    assert.equal(job.periodicAllowed, false);
+    assert.equal(job.periodicDefaultEnabled, false);
+    assert.equal(job.deployDefaultEnabled, false);
+    assert.equal(job.maxConcurrency, 1);
+    assert.equal(job.realBrowserAllowed, false);
+    assert.equal(job.userRequestPreemptible, true);
+    assert.ok(job.timeBudgetMs >= 30000);
+  }
+
+  assert.equal(service.RUNTIME_BACKFILL_JOBS["thread-usage-backfill-refresh"].cpuBudgetClass, "low");
+  assert.equal(service.RUNTIME_BACKFILL_JOBS["rollout-completion-backfill"].cpuBudgetClass, "low");
+  assert.equal(service.RUNTIME_BACKFILL_JOBS["thread-detail-full-backfill"].timeoutMs, 120000);
 });
 
 test("runtime job scheduler keeps periodic checks lightweight by default", () => {
