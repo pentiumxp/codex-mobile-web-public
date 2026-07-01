@@ -90,6 +90,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /"\/thread-detail-render-plan\.js"/);
   assert.match(appJs, /"\/thread-detail-merge-state\.js"/);
   assert.match(appJs, /"\/thread-detail-v4-merge-state\.js"/);
+  assert.match(appJs, /"\/thread-detail-runtime\.js"/);
   assert.match(appJs, /"\/thread-detail-patch-plan\.js"/);
   assert.match(appJs, /"\/thread-detail-dom-patch\.js"/);
   assert.match(appJs, /"\/thread-detail-actions\.js"/);
@@ -98,7 +99,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /"\/thread-tile-layout\.js"/);
   assert.match(appJs, /"\/thread-tile-runtime\.js"/);
   assert.match(appJs, /"\/build-refresh-policy\.js"/);
-  assert.match(indexHtml, /<script src="\/thread-diagnostic-events\.js"><\/script>\s*\n\s*<script src="\/frontend-runtime-health\.js"><\/script>\s*\n\s*<script src="\/thread-status-hints\.js"><\/script>\s*\n\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*\n\s*<script src="\/thread-list-load-policy\.js"><\/script>\s*\n\s*<script src="\/thread-list-stable-order\.js"><\/script>\s*\n\s*<script src="\/thread-list-runtime\.js"><\/script>\s*\n\s*<script src="\/client-render-stability-guard\.js"><\/script>\s*\n\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-v4-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-state\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/thread-tile-runtime\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/thread-diagnostic-events\.js"><\/script>\s*\n\s*<script src="\/frontend-runtime-health\.js"><\/script>\s*\n\s*<script src="\/thread-status-hints\.js"><\/script>\s*\n\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*\n\s*<script src="\/thread-list-load-policy\.js"><\/script>\s*\n\s*<script src="\/thread-list-stable-order\.js"><\/script>\s*\n\s*<script src="\/thread-list-runtime\.js"><\/script>\s*\n\s*<script src="\/client-render-stability-guard\.js"><\/script>\s*\n\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-v4-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-runtime\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-state\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/thread-tile-runtime\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
   assert.match(serverRuntimeUtilsJs, /"viewport-metrics\.js"/);
   assert.match(serverRuntimeUtilsJs, /"conversation-scroll\.js"/);
   assert.match(serverRuntimeUtilsJs, /"home-ai-diagnostic-reporting\.js"/);
@@ -114,6 +115,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(serverRuntimeUtilsJs, /"thread-detail-render-plan\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-detail-merge-state\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-detail-v4-merge-state\.js"/);
+  assert.match(serverRuntimeUtilsJs, /"thread-detail-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-detail-patch-plan\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-detail-dom-patch\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-detail-actions\.js"/);

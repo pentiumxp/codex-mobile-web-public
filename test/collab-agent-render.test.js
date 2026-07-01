@@ -7,30 +7,44 @@ const { test } = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const threadDetailRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-detail-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
+const threadDetailRuntimeFunctionNames = new Set([
+  "currentLiveOperationEntry",
+  "isSupersededLiveTurn",
+  "liveTurnStatusDockItem",
+  "visibleItemsForTurn",
+]);
+
+function sourceForFunction(name) {
+  return threadDetailRuntimeFunctionNames.has(name) ? threadDetailRuntimeJs : appJs;
+}
+
 function functionBody(name) {
-  const start = appJs.indexOf(`function ${name}(`);
+  const source = sourceForFunction(name);
+  const start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
-  const bodyStart = appJs.indexOf(") {", start) + 2;
+  const bodyStart = source.indexOf(") {", start) + 2;
   assert.notEqual(bodyStart, 1, `missing function body ${name}`);
   let depth = 0;
-  for (let index = bodyStart; index < appJs.length; index += 1) {
-    const char = appJs[index];
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
     if (char === "{") depth += 1;
     if (char === "}") depth -= 1;
-    if (depth === 0) return appJs.slice(bodyStart + 1, index);
+    if (depth === 0) return source.slice(bodyStart + 1, index);
   }
   throw new Error(`could not parse function ${name}`);
 }
 
 function functionSource(name) {
-  const start = appJs.indexOf(`function ${name}(`);
+  const source = sourceForFunction(name);
+  const start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
-  const open = appJs.indexOf(") {", start) + 2;
+  const open = source.indexOf(") {", start) + 2;
   assert.notEqual(open, 1, `missing function body ${name}`);
-  return `${appJs.slice(start, open + 1)}${functionBody(name)}}`;
+  return `${source.slice(start, open + 1)}${functionBody(name)}}`;
 }
 
 function cssRuleBody(selector) {
@@ -53,7 +67,7 @@ test("collab agent tool calls render as compact summary cards", () => {
 });
 
 test("live operation cards dock on wide screens and become a mobile bubble", () => {
-  assert.match(appJs, /function currentLiveOperationEntry\(thread\)/);
+  assert.match(threadDetailRuntimeJs, /function currentLiveOperationEntry\(thread\)/);
   assert.match(functionBody("currentLiveOperationEntry"), /const turn = latestTurnForThread\(thread\);/);
   assert.match(functionBody("currentLiveOperationEntry"), /if \(!turn \|\| !isLiveTurnForThread\(thread, turn\)\) return null;/);
   assert.match(appJs, /function latestTurnForThread\(thread\)/);

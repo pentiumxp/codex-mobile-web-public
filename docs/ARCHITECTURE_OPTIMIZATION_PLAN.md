@@ -4126,6 +4126,39 @@ should cover syntax checks for Composer runtime/static files, focused Composer
 and affected UI tests, static shell/cache guards, `npm run --silent check`,
 `npm run --silent check:macos`, and `git diff --check`.
 
+### 2026-07-01 App JS Thread Detail Runtime Boundary
+
+The next frontend-thinning slice moves the thread-detail visible-item and merge
+runtime out of `public/app.js` while preserving the static shell contract as
+`codex-mobile-shell-v616`.
+
+Scope:
+
+- `public/thread-detail-runtime.js` owns visible-item derivation, live-operation
+  dock item selection, visible-item signatures and budget helpers, input/image
+  signature normalization, item weight/order policy, assistant-receipt checks,
+  submitted-user optimistic echo cleanup, pending local user-message dedupe,
+  thread summary/detail cache-reuse helpers, and thread-detail merge wrapper
+  composition across `public/thread-detail-state.js`,
+  `public/thread-detail-v4-merge-state.js`, and
+  `public/thread-detail-merge-state.js`.
+- `public/app.js` keeps shared state, DOM/network callback implementations,
+  render dependencies, active-turn state accessors, diagnostics, and
+  compatibility wrappers for existing callers.
+- `public/index.html`, `public/sw.js`, `public/app.js` page-shell preload
+  assets, and `services/runtime/server-runtime-utils.js` include the new
+  thread-detail runtime file so shell hash/cache behavior stays explicit.
+
+Local line-count readback before deployment: `public/app.js` is `21802` lines,
+`public/thread-detail-runtime.js` is `1274` lines,
+`public/composer-runtime.js` is `2027` lines,
+`public/thread-list-runtime.js` is `902` lines, and
+`public/thread-tile-runtime.js` is `1853` lines. Validation should cover syntax
+checks for thread-detail runtime/static files, focused conversation/render/UI
+tests, static shell/cache guards, `npm run --silent check`,
+`npm run --silent check:macos`, `git diff --check`, and the deploy-time
+startup-only listener/browser gate.
+
 ## Release Rule
 
 Follow the current release order:

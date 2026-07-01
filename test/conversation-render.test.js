@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-list-runtime.js"), "utf8");
 const threadTileRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-tile-runtime.js"), "utf8");
+const threadDetailRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-detail-runtime.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const threadDetailCompactionServiceJs = fs.readFileSync(
   path.join(root, "adapters", "thread-detail-compaction-service.js"),
@@ -28,7 +29,108 @@ const { createThreadDetailStatePolicy } = require(path.join(root, "public", "thr
 const { createThreadDetailMergePolicy } = require(path.join(root, "public", "thread-detail-merge-state.js"));
 const { createThreadDetailV4MergePolicy } = require(path.join(root, "public", "thread-detail-v4-merge-state.js"));
 
+const threadDetailRuntimeFunctionNames = new Set([
+  "liveTurnHasNonUserProgress",
+  "isVisibleNonUserProgressItem",
+  "liveTurnHasNonUserProgressBefore",
+  "liveTurnHasNonUserProgressAfter",
+  "isUserVisibleTextReplyItem",
+  "liveTurnHasUserVisibleTextReplyAfter",
+  "userMessageHasVisualAttachment",
+  "shouldHideDurableLiveUserMessage",
+  "durableUserMessageMatchesOptimisticEcho",
+  "threadHasDurableUserMessageWithSubmissionId",
+  "threadHasDurableUserMessageMatchingOptimisticEcho",
+  "shouldHideOptimisticUserMessageEcho",
+  "isSupersededLiveTurn",
+  "shouldHideSupersededLiveUserMessage",
+  "isRawThreadReadMode",
+  "shouldPreserveRawThreadVisibleEntry",
+  "itemTextValue",
+  "reasoningItemHasVisibleText",
+  "isLatestCompletedProcessTurn",
+  "limitRawThreadVisibleEntries",
+  "visibleItemsForTurn",
+  "currentLiveOperationEntry",
+  "liveTurnStatusDockItem",
+  "visibleItemSignature",
+  "visibleItemBudgetForTurn",
+  "visibleItemBudgetSignature",
+  "inputContentSignature",
+  "imageSourceSignature",
+  "compactStructuredForSignature",
+  "itemVisibleWeight",
+  "turnVisibleWeight",
+  "isAssistantReceiptLikeItem",
+  "completedIncomingTurnHasAuthoritativeReceipt",
+  "shouldDropLocalOnlyReceiptForIncomingTurn",
+  "shouldPreserveLocalOnlyItem",
+  "isMuxUserMessage",
+  "isOptimisticUserMessage",
+  "userMessageSubmissionIdCandidates",
+  "userMessageHasSubmissionId",
+  "userMessagesShareSubmissionId",
+  "isTurnUsageSummaryItem",
+  "isTurnDiagnosticItem",
+  "dedupeTurnUsageSummaryItems",
+  "normalizeComparableText",
+  "userMessageComparableParts",
+  "userMessagePathOverlap",
+  "comparablePathName",
+  "userMessagePathNameOverlap",
+  "comparablePathNamesLikelySame",
+  "isVisualReceiptItem",
+  "visualReceiptComparableNames",
+  "visualReceiptCallId",
+  "visualReceiptSuppressionKeys",
+  "suppressedVisualReceiptKeySet",
+  "visualReceiptMatchesSuppressionKeys",
+  "userMessageSpecificity",
+  "userMessagesLikelySame",
+  "userMessagesCanShadow",
+  "userMessageTimestampMs",
+  "userMessagesHaveNearbyTimestamps",
+  "durableTurnCanReceivePendingEcho",
+  "optimisticEchoCanMatchEarlierDurable",
+  "hasMatchingIncomingUserMessage",
+  "hasMatchingRealUserMessage",
+  "removeShadowedMuxUserMessages",
+  "userMessageShadowPriority",
+  "mergeLikelySameUserMessage",
+  "dedupeLikelySameUserMessages",
+  "normalizeThreadVisibleUserMessages",
+  "threadUserMessageEntries",
+  "shouldDropOptimisticUserMessageForDurable",
+  "shouldDropOptimisticUserMessageForHigherPriorityEcho",
+  "threadDurableUserMessages",
+  "shouldDropInitialSubmissionEchoTurn",
+  "threadHasInitialSubmissionEcho",
+  "comparableVisibleTextItem",
+  "comparableVisibleText",
+  "visibleTextItemsLikelySame",
+  "visibleTextItemsHaveStableSharedPrefix",
+  "completedReceiptItemsLikelySame",
+  "visibleTextItemsCanShareRenderIdentity",
+  "findUnusedExistingItemIndexForIncoming",
+  "mergeIncomingOrderedItem",
+  "insertLocalOnlyItemByExistingOrder",
+  "mergeItemPreservingVisibleFields",
+  "mergeVisibleTextItemPreservingRenderIdentity",
+  "mergeItemsPreservingLocalVisible",
+  "mergeTurnPreservingVisibleItems",
+  "shouldPreserveLiveTurnLocalVisibleItems",
+  "mergeThreadPreservingVisibleItems",
+  "turnOrderMs",
+  "turnIsSupersededBy"
+]);
+
+function sourceForFunction(source, name) {
+  if (source === appJs && threadDetailRuntimeFunctionNames.has(name)) return threadDetailRuntimeJs;
+  return source;
+}
+
 function functionBodyFrom(source, name) {
+  source = sourceForFunction(source, name);
   const start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
   const bodyStart = source.indexOf(") {", start) + 2;
@@ -44,6 +146,7 @@ function functionBodyFrom(source, name) {
 }
 
 function functionSourceFrom(source, name) {
+  source = sourceForFunction(source, name);
   let start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
   if (source.slice(Math.max(0, start - 6), start) === "async ") start -= 6;
@@ -1845,7 +1948,7 @@ test("visible turn items keep source order after live operations move to the doc
 });
 
 test("live operation dock keeps a status row while active turn is reasoning only", () => {
-  assert.match(appJs, /function liveTurnStatusDockItem\(turn\)/);
+  assert.match(threadDetailRuntimeJs, /function liveTurnStatusDockItem\(turn\)/);
   assert.match(functionBody("currentLiveOperationEntry"), /liveTurnStatusDockItem\(turn\)/);
   assert.match(functionBody("liveTurnStatusDockItem"), /title: "Command"/);
   assert.doesNotMatch(functionBody("liveTurnStatusDockItem"), /liveActivityLabelForTurn/);
@@ -4701,8 +4804,9 @@ return {
 test("item merge delegates visible-field preservation to thread detail state policy", () => {
   const body = functionBody("mergeItemPreservingVisibleFields");
   assert.match(appJs, /const threadDetailStateApi = window\.CodexThreadDetailState/);
-  assert.match(appJs, /threadDetailStateApi\.createThreadDetailStatePolicy\(\{/);
-  assert.match(appJs, /comparableVisibleText,\n\s+visibleTextItemsLikelySame,\n\s+completedReceiptItemsLikelySame,/);
+  assert.match(appJs, /const threadDetailRuntimeApi = window\.CodexThreadDetailRuntime/);
+  assert.match(threadDetailRuntimeJs, /threadDetailStateApi\.createThreadDetailStatePolicy\(\{/);
+  assert.match(threadDetailRuntimeJs, /comparableVisibleText,\n\s+visibleTextItemsLikelySame,\n\s+completedReceiptItemsLikelySame,/);
   assert.match(body, /threadDetailStatePolicy\.mergeItemPreservingVisibleFields\(existingItem, incomingItem\)/);
   assert.match(functionBody("visibleTextItemsCanShareRenderIdentity"), /threadDetailStatePolicy\.visibleTextItemsCanShareRenderIdentity\(existingItem, incomingItem, incomingTurn\)/);
   assert.match(functionBody("mergeVisibleTextItemPreservingRenderIdentity"), /threadDetailStatePolicy\.mergeVisibleTextItemPreservingRenderIdentity\(existingItem, incomingItem, incomingTurn\)/);
@@ -6545,7 +6649,7 @@ test("thread status notifications update visible tile pane through status helper
 });
 
 test("thread merge drops superseded stale active turns", () => {
-  assert.match(appJs, /function turnIsSupersededBy\(/);
+  assert.match(threadDetailRuntimeJs, /function turnIsSupersededBy\(/);
   assert.match(functionBody("turnIsSupersededBy"), /return isTurnComplete\(newerTurn\) && !isTurnComplete\(turn\)/);
   assert.match(functionBody("mergeThreadPreservingVisibleItems"), /threadDetailMergePolicy\.mergeThreadPreservingVisibleItems\(existingThread, incomingThread/);
   assert.match(threadDetailMergeStateJs, /const latestIncoming = merged\.turns\.length \? merged\.turns\[merged\.turns\.length - 1\] : null/);
@@ -6555,8 +6659,8 @@ test("thread merge drops superseded stale active turns", () => {
 test("completed turns can render context and token usage summaries", () => {
   assert.match(threadDetailCompactionServiceJs, /workspaceContextStats:\s*workspaceContextStatsForCwd\(out\.cwd\)/);
   assert.match(appJs, /function renderTurnUsageSummary\(item\)/);
-  assert.match(appJs, /function isTurnUsageSummaryItem\(item\)/);
-  assert.match(appJs, /function dedupeTurnUsageSummaryItems\(items\)/);
+  assert.match(threadDetailRuntimeJs, /function isTurnUsageSummaryItem\(item\)/);
+  assert.match(threadDetailRuntimeJs, /function dedupeTurnUsageSummaryItems\(items\)/);
   assert.match(functionBody("labelForItem"), /turnUsageSummary:\s*"Usage"/);
   assert.match(functionBody("renderItem"), /item\.type === "turnUsageSummary"[\s\S]*renderTurnUsageSummary\(item\)/);
   assert.match(functionBody("renderItemBody"), /item\.type === "turnUsageSummary"[\s\S]*renderTurnUsageSummary\(item\)/);

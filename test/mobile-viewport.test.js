@@ -13,6 +13,7 @@ const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "
 const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
 const threadTileRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-tile-runtime.js"), "utf8");
 const threadDetailMergeStateJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-detail-merge-state.js"), "utf8");
+const threadDetailRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-detail-runtime.js"), "utf8");
 const viewportMetricsJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "viewport-metrics.js"), "utf8");
 const platformPointer = fs.readFileSync(path.resolve(__dirname, "..", "docs", "HOME_AI_PLATFORM_CONTRACT.md"), "utf8");
 
@@ -48,7 +49,7 @@ function threadTileRuntimeFunctionBody(name) {
 }
 
 test("client turn ordering follows server started-at-first semantics", () => {
-  const body = functionBody("turnOrderMs");
+  const body = sourceFunctionBody(threadDetailRuntimeJs, "turnOrderMs");
   const startedAtIndex = body.indexOf("numericTimestampMs(turn.startedAtMs)");
   const completedAtIndex = body.indexOf("numericTimestampMs(turn.completedAtMs)");
   assert.notEqual(startedAtIndex, -1);
@@ -268,6 +269,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
   assert.match(swJs, /"\/thread-detail-merge-state\.js"/);
   assert.match(swJs, /"\/thread-detail-v4-merge-state\.js"/);
+  assert.match(swJs, /"\/thread-detail-runtime\.js"/);
   assert.match(swJs, /"\/thread-detail-patch-plan\.js"/);
   assert.match(swJs, /"\/thread-detail-dom-patch\.js"/);
   assert.match(swJs, /"\/thread-detail-actions\.js"/);
@@ -481,7 +483,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /const MAX_VISIBLE_TURNS = 10/);
   assert.match(appJs, /const MAX_EXPANDED_VISIBLE_TURNS = 200/);
   assert.match(appJs, /const THREAD_HISTORY_TOP_LOAD_PX = 64/);
-  assert.match(appJs, /threadDetailMergePolicy\.mergeThreadPreservingVisibleItems\(existingThread, incomingThread/);
+  assert.match(threadDetailRuntimeJs, /threadDetailMergePolicy\.mergeThreadPreservingVisibleItems\(existingThread, incomingThread/);
   assert.match(threadDetailMergeStateJs, /Boolean\(incomingThread\.mobileOlderTurnsCursor\)/);
   assert.match(threadDetailMergeStateJs, /Number\(incomingThread\.mobileOmittedTurnCount \|\| 0\) > 0/);
   assert.match(threadDetailMergeStateJs, /preservedExpandedTurnCount \+= 1/);
