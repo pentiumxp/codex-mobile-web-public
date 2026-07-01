@@ -1001,6 +1001,8 @@ function vitePreviewProbeExpression(input = {}) {
         entryTopologyReady: Array.isArray(topology.startupGroups) && Array.isArray(topology.deferredGroups),
         entryGroupImportOwner,
         entryGroupImportOwnerOk: entryGroupImportOwner === "vite-shell-entry",
+        classicShellScriptBlockCount: marker ? Number(marker.dataset.classicShellScriptCount) || 0 : 0,
+        classicShellScriptBlockHashPresent: marker ? Boolean(String(marker.dataset.classicShellScriptBlockSha256 || "")) : false,
         entryDynamicImportOwner: String(entryDynamicImportGraph.owner || ""),
         entryDynamicImportOwnerOk: String(entryDynamicImportGraph.owner || "") === "vite-shell-entry",
         entryDynamicImportExpectedCount: Number(entryDynamicImportGraph.expectedImportCount) || 0,
@@ -1065,6 +1067,10 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   if (sample && sample.moduleEntryLoaded !== true) append("vite_preview_module_entry_not_loaded");
   if (sample && sample.entryTopologyReady !== true) append("vite_preview_entry_topology_missing");
   if (sample && sample.entryGroupImportOwnerOk !== true) append("vite_preview_entry_group_import_owner_mismatch");
+  if (sample && (Number(sample.classicShellScriptBlockCount) < 1
+    || sample.classicShellScriptBlockHashPresent !== true)) {
+    append("vite_preview_classic_script_block_contract_missing");
+  }
   if (sample && (sample.entryDynamicImportOwnerOk !== true
     || Number(sample.entryDynamicImportDeferredSourceCount) < 1
     || sample.entryDynamicImportEntryGroupCountMatches !== true)) {

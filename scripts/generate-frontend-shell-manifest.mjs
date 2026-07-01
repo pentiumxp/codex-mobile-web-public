@@ -325,7 +325,7 @@ export function buildPublicShellManifest(root = process.cwd()) {
   };
 }
 
-function renderShellScriptBlock(scriptAssets) {
+export function renderShellScriptBlock(scriptAssets) {
   return [
     SHELL_SCRIPT_BLOCK_START,
     ...scriptAssets.map((asset) => `  <script src="${asset}"></script>`),

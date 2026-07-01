@@ -144,10 +144,21 @@
     "/app-shell-runtime.js",
     "/app.js"
   ],
+  "classicShellScriptBlock": {
+    "schemaVersion": 1,
+    "source": "generated-classic-index-script-block",
+    "startMarker": "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->",
+    "endMarker": "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->",
+    "scriptCount": 51,
+    "firstScript": "/shell-asset-manifest.js",
+    "lastScript": "/app.js",
+    "sha256": "84ff161d798d948e906a25258d97e5854292945ed7f779b583c2b1f31c2ac82d"
+  },
   "counts": {
     "entryGroups": 6,
     "entryGroupChunks": 6,
     "startupCriticalAssets": 22,
+    "classicShellScriptBlockScripts": 51,
     "classicGlobalExportAssets": 47,
     "classicGlobalExports": 47,
     "publishedFiles": 10
@@ -155,8 +166,8 @@
   "publishedFiles": [
     {
       "fileName": "codex-mobile-shell-manifest.json",
-      "bytes": 79693,
-      "sha256": "c0ac24f8d6ae935fe377d2b4ff6264beed4f41fe7bb07ab3a6976fede0358ad2"
+      "bytes": 80139,
+      "sha256": "58355b5965bfac5f23ad97c24fd875a980d19203b1389a4ea68e1ceafbd768f9"
     },
     {
       "fileName": "assets/vite-shell-entry-BiyBhUzN.js",
@@ -200,8 +211,8 @@
     },
     {
       "fileName": "preview.html",
-      "bytes": 3929,
-      "sha256": "c1ce8e5c88d189d6935239c73fd30a36aa6df82e0bd5e5b162f86afc1ce4e60a"
+      "bytes": 4080,
+      "sha256": "9a07f7fc6d33d0dca378c621491516c674340ddea247579fdd732f1ba1336993"
     }
   ],
   "validation": {

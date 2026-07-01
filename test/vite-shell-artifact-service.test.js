@@ -10,8 +10,33 @@ const test = require("node:test");
 const adapter = require("../adapters/vite-shell-artifact-service");
 const service = require("../services/runtime/vite-shell-artifact-service");
 
+const CLASSIC_SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
+const CLASSIC_SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
+
 function sha256Hex(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
+function renderClassicShellScriptBlock(scriptAssets) {
+  return [
+    CLASSIC_SHELL_SCRIPT_BLOCK_START,
+    ...scriptAssets.map((asset) => `  <script src="${asset}"></script>`),
+    CLASSIC_SHELL_SCRIPT_BLOCK_END,
+  ].join("\n");
+}
+
+function classicShellScriptBlockContract(scriptAssets) {
+  const source = renderClassicShellScriptBlock(scriptAssets);
+  return {
+    schemaVersion: 1,
+    source: "generated-classic-index-script-block",
+    startMarker: CLASSIC_SHELL_SCRIPT_BLOCK_START,
+    endMarker: CLASSIC_SHELL_SCRIPT_BLOCK_END,
+    scriptCount: scriptAssets.length,
+    firstScript: scriptAssets[0] || "",
+    lastScript: scriptAssets.length ? scriptAssets[scriptAssets.length - 1] : "",
+    sha256: sha256Hex(Buffer.from(source, "utf8")),
+  };
 }
 
 function writeArtifact(root, options = {}) {
@@ -40,6 +65,16 @@ function writeArtifact(root, options = {}) {
       globals: ["CodexAppShellRuntime"],
     }],
   };
+  const classicScriptBlock = classicShellScriptBlockContract(shellManifest.indexScriptAssets);
+  fs.writeFileSync(path.join(root, "public", "index.html"), [
+    "<!doctype html>",
+    "<html>",
+    "<body>",
+    renderClassicShellScriptBlock(shellManifest.indexScriptAssets),
+    "</body>",
+    "</html>",
+    "",
+  ].join("\n"));
   const preview = Buffer.from([
     "<!doctype html>",
     "<link rel=\"modulepreload\" href=\"/vite-shell/assets/vite-entry-group-app-entry-test.js\" data-codex-vite-entry-group-chunk=\"true\">",
@@ -65,6 +100,7 @@ function writeArtifact(root, options = {}) {
     sourceBuildStage: "vite-shell-artifact-contract-v1",
     productionExecution: "classic-script-fallback",
     entryGroupImportOwner: "vite-shell-entry",
+    classicShellScriptBlock: classicScriptBlock,
     entryDynamicImportGraph: {
       owner: "vite-shell-entry",
       actualFiles: [
@@ -148,6 +184,15 @@ test("Vite shell artifact status validates the guarded public preview files", ()
     entryGroupFileCount: 1,
   });
   assert.equal(status.artifactRoot, "public/vite-shell");
+  assert.deepEqual(status.classicShellScriptBlock, {
+    match: true,
+    scriptCount: 2,
+    firstScript: "/shell-asset-manifest.js",
+    lastScript: "/app.js",
+    sha256: status.classicShellScriptBlock.sha256,
+    readbackSha256: status.classicShellScriptBlock.sha256,
+  });
+  assert.match(status.classicShellScriptBlock.sha256, /^[a-f0-9]{64}$/);
   assert.equal(status.publishedFileCount, 5);
   assert.deepEqual(status.preview, {
     fileName: "preview.html",
@@ -224,6 +269,24 @@ test("Vite shell artifact status fails closed when published manifest drifts fro
   assert.ok(!status.issueCodes.includes("vite_artifact_file_hash_mismatch"));
 });
 
+test("Vite shell artifact status fails closed when default classic script block drifts", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-script-block-drift-"));
+  const artifactRoot = writeArtifact(root);
+  const indexPath = path.join(root, "public", "index.html");
+  fs.writeFileSync(indexPath, fs.readFileSync(indexPath, "utf8").replace("/app.js", "/stale-app.js"));
+
+  const currentManifest = JSON.parse(fs.readFileSync(path.join(artifactRoot, "codex-mobile-shell-manifest.json"), "utf8"));
+  const status = service.createViteShellArtifactService({
+    appRoot: root,
+    readShellAssetManifest: () => currentManifest,
+  }).readPublicArtifactStatus();
+  assert.equal(status.ok, false);
+  assert.equal(status.classicShellScriptBlock.match, false);
+  assert.ok(status.issueCodes.includes("vite_shell_classic_script_block_hash_mismatch"));
+  assert.ok(status.issueCodes.includes("vite_shell_classic_script_block_manifest_mismatch"));
+  assert.ok(!status.issueCodes.includes("vite_artifact_file_hash_mismatch"));
+});
+
 test("Vite shell artifact status fails closed for missing or stale artifacts", () => {
   const missingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-missing-"));
   const missingStatus = service.createViteShellArtifactService({
@@ -267,6 +330,7 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   fs.writeFileSync(path.join(buildRoot, "codex-mobile-shell-manifest.json"), JSON.stringify({
     shellCacheName: "codex-mobile-shell-test",
     clientBuildId: "0.1.11|codex-mobile-shell-test",
+    indexScriptAssets: ["/app.js"],
     entryGroups: [{
       id: "app-entry",
       phase: "startup-critical",
@@ -282,6 +346,9 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
       stage: "vite-shell-artifact-contract-v1",
       productionExecution: "classic-script-fallback",
       entryGroupImportOwner: "vite-shell-entry",
+      classicFallback: {
+        scriptBlock: classicShellScriptBlockContract(["/app.js"]),
+      },
       entryDynamicImportGraph: {
         owner: "vite-shell-entry",
         actualFiles: [
@@ -332,6 +399,8 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.match(previewHtml, /id="codex-vite-shell-preview"/);
   assert.match(previewHtml, /data-startup-critical-asset-count="1"/);
   assert.match(previewHtml, /data-entry-group-chunk-count="1"/);
+  assert.match(previewHtml, /data-classic-shell-script-count="1"/);
+  assert.match(previewHtml, /data-classic-shell-script-block-sha256="[a-f0-9]{64}"/);
   assert.match(previewHtml, /data-entry-group-import-owner="vite-shell-entry"/);
   assert.match(previewHtml, /rel="preload" as="script" href="\/app\.js" data-codex-vite-startup-asset="true"/);
   assert.match(previewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-entry-group-app-entry-test\.js" data-codex-vite-entry-group-chunk="true"/);
@@ -359,7 +428,12 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
     classicGlobalExportCount: 1,
   }]);
   assert.deepEqual(readback.startupCriticalAssets, ["/app.js"]);
+  assert.equal(readback.classicShellScriptBlock.scriptCount, 1);
+  assert.equal(readback.classicShellScriptBlock.firstScript, "/app.js");
+  assert.equal(readback.classicShellScriptBlock.lastScript, "/app.js");
+  assert.match(readback.classicShellScriptBlock.sha256, /^[a-f0-9]{64}$/);
   assert.equal(readback.counts.startupCriticalAssets, 1);
+  assert.equal(readback.counts.classicShellScriptBlockScripts, 1);
   assert.equal(readback.counts.entryGroupChunks, 1);
   assert.equal(readback.counts.publishedFiles, 5);
 });

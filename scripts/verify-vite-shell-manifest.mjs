@@ -1,6 +1,8 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { buildShellAssetManifest } from "./frontend-shell-asset-graph.mjs";
+import { renderShellScriptBlock } from "./generate-frontend-shell-manifest.mjs";
 
 const root = process.cwd();
 const buildRoot = path.join(root, "dist", "frontend-shell");
@@ -14,6 +16,10 @@ function readJson(filePath) {
 function fail(message) {
   console.error(message);
   process.exitCode = 1;
+}
+
+function sha256Hex(buffer) {
+  return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
 if (!fs.existsSync(manifestPath)) {
@@ -75,6 +81,17 @@ if (!fs.existsSync(manifestPath)) {
     const entryGroupChunks = Array.isArray(viteBuild.viteEntryGroupChunks) ? viteBuild.viteEntryGroupChunks : [];
     if (entryGroupChunks.length !== (current.entryGroups || []).length) {
       mismatch.push("viteBuildEntryGroupChunks");
+    }
+    const classicScriptBlock = viteBuild.classicFallback
+      && viteBuild.classicFallback.scriptBlock;
+    const expectedClassicScriptBlockHash = sha256Hex(Buffer.from(
+      renderShellScriptBlock(current.indexScriptAssets || []),
+      "utf8"
+    ));
+    if (!classicScriptBlock || classicScriptBlock.sha256 !== expectedClassicScriptBlockHash) {
+      mismatch.push("viteBuildClassicScriptBlock");
+    } else if (Number(classicScriptBlock.scriptCount) !== (current.indexScriptAssets || []).length) {
+      mismatch.push("viteBuildClassicScriptBlockCount");
     }
     const entryDynamicImportGraph = viteBuild.entryDynamicImportGraph && typeof viteBuild.entryDynamicImportGraph === "object"
       ? viteBuild.entryDynamicImportGraph
@@ -140,6 +157,10 @@ if (!fs.existsSync(manifestPath)) {
       entryGroupChunks: built.viteBuild.viteEntryGroupChunks.length,
       entryDynamicImports: built.viteBuild.entryDynamicImportGraph
         ? built.viteBuild.entryDynamicImportGraph.actualFiles.length
+        : 0,
+      classicShellScriptBlockScripts: built.viteBuild.classicFallback
+        && built.viteBuild.classicFallback.scriptBlock
+        ? built.viteBuild.classicFallback.scriptBlock.scriptCount
         : 0,
       viteBuildStage: built.viteBuild.stage,
     }));

@@ -6,6 +6,8 @@ export const VITE_SHELL_PUBLIC_ARTIFACT_STAGE = "vite-shell-preview-html-v1";
 export const VITE_SHELL_PUBLIC_ARTIFACT_ROOT = "public/vite-shell";
 export const VITE_SHELL_PUBLIC_READBACK_FILE = "vite-shell-readback.json";
 export const VITE_SHELL_PUBLIC_PREVIEW_FILE = "preview.html";
+export const CLASSIC_SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
+export const CLASSIC_SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -95,6 +97,57 @@ function startupCriticalAssets(manifest) {
   return [...new Set(assets)];
 }
 
+function scriptAssetsFromManifest(manifest) {
+  if (Array.isArray(manifest && manifest.indexScriptAssets)) return manifest.indexScriptAssets.slice();
+  if (Array.isArray(manifest && manifest.scriptAssets)) return manifest.scriptAssets.slice();
+  const assets = [];
+  for (const group of Array.isArray(manifest && manifest.entryGroups) ? manifest.entryGroups : []) {
+    for (const asset of Array.isArray(group && group.assets) ? group.assets : []) {
+      const text = String(asset || "").trim();
+      if (text && text.startsWith("/")) assets.push(text);
+    }
+  }
+  return [...new Set(assets)];
+}
+
+function renderClassicShellScriptBlock(scriptAssets) {
+  return [
+    CLASSIC_SHELL_SCRIPT_BLOCK_START,
+    ...scriptAssets.map((asset) => `  <script src="${asset}"></script>`),
+    CLASSIC_SHELL_SCRIPT_BLOCK_END,
+  ].join("\n");
+}
+
+function classicShellScriptBlockContract(manifest, viteBuild) {
+  const fallbackBlock = viteBuild
+    && viteBuild.classicFallback
+    && viteBuild.classicFallback.scriptBlock;
+  if (fallbackBlock && fallbackBlock.sha256) {
+    return {
+      schemaVersion: Number(fallbackBlock.schemaVersion) || 1,
+      source: String(fallbackBlock.source || "generated-classic-index-script-block"),
+      startMarker: String(fallbackBlock.startMarker || CLASSIC_SHELL_SCRIPT_BLOCK_START),
+      endMarker: String(fallbackBlock.endMarker || CLASSIC_SHELL_SCRIPT_BLOCK_END),
+      scriptCount: Number(fallbackBlock.scriptCount) || 0,
+      firstScript: String(fallbackBlock.firstScript || ""),
+      lastScript: String(fallbackBlock.lastScript || ""),
+      sha256: String(fallbackBlock.sha256 || ""),
+    };
+  }
+  const scriptAssets = scriptAssetsFromManifest(manifest);
+  const source = renderClassicShellScriptBlock(scriptAssets);
+  return {
+    schemaVersion: 1,
+    source: "generated-classic-index-script-block",
+    startMarker: CLASSIC_SHELL_SCRIPT_BLOCK_START,
+    endMarker: CLASSIC_SHELL_SCRIPT_BLOCK_END,
+    scriptCount: scriptAssets.length,
+    firstScript: scriptAssets[0] || "",
+    lastScript: scriptAssets.length ? scriptAssets[scriptAssets.length - 1] : "",
+    sha256: sha256Hex(Buffer.from(source, "utf8")),
+  };
+}
+
 export function buildViteShellPublicReadback(options = {}) {
   const root = path.resolve(options.root || process.cwd());
   const buildRoot = path.resolve(options.buildRoot || path.join(root, "dist", "frontend-shell"));
@@ -147,6 +200,7 @@ export function buildViteShellPublicReadback(options = {}) {
       : 0,
   })).filter((chunk) => chunk.fileName);
   const startupAssets = startupCriticalAssets(manifest);
+  const classicShellScriptBlock = classicShellScriptBlockContract(manifest, viteBuild);
   const readbackForPreview = {
     stage: VITE_SHELL_PUBLIC_ARTIFACT_STAGE,
     sourceBuildStage: viteBuild.stage || "",
@@ -162,6 +216,7 @@ export function buildViteShellPublicReadback(options = {}) {
     entryGroupChunks,
     preview,
     startupCriticalAssets: startupAssets,
+    classicShellScriptBlock,
   };
   const previewHtml = renderViteShellPreviewHtml(readbackForPreview);
   const previewRecord = bufferRecord(VITE_SHELL_PUBLIC_PREVIEW_FILE, previewHtml);
@@ -188,10 +243,12 @@ export function buildViteShellPublicReadback(options = {}) {
     entryGroupChunks,
     preview,
     startupCriticalAssets: startupAssets,
+    classicShellScriptBlock,
     counts: {
       entryGroups: Array.isArray(manifest.entryGroups) ? manifest.entryGroups.length : 0,
       entryGroupChunks: entryGroupChunks.length,
       startupCriticalAssets: startupAssets.length,
+      classicShellScriptBlockScripts: classicShellScriptBlock.scriptCount,
       classicGlobalExportAssets: Array.isArray(manifest.classicGlobalExports) ? manifest.classicGlobalExports.length : 0,
       classicGlobalExports: Array.isArray(manifest.classicGlobalExports)
         ? manifest.classicGlobalExports.reduce((total, entry) => (
@@ -242,6 +299,8 @@ export function renderViteShellPreviewHtml(readback = {}) {
     `    data-entry-group-import-owner=\"${escapeHtml(readback.entryGroupImportOwner)}\"`,
     `    data-startup-critical-asset-count=\"${escapeHtml((readback.startupCriticalAssets || []).length)}\"`,
     `    data-entry-group-chunk-count=\"${escapeHtml((readback.entryGroupChunks || []).length)}\"`,
+    `    data-classic-shell-script-count=\"${escapeHtml(readback.classicShellScriptBlock && readback.classicShellScriptBlock.scriptCount)}\"`,
+    `    data-classic-shell-script-block-sha256=\"${escapeHtml(readback.classicShellScriptBlock && readback.classicShellScriptBlock.sha256)}\"`,
     "  >",
     "    <h1>Codex Mobile Vite Shell Preview</h1>",
     "  </main>",

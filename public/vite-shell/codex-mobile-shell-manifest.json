@@ -1610,7 +1610,17 @@
             "CodexAppShellRuntime"
           ]
         }
-      ]
+      ],
+      "scriptBlock": {
+        "schemaVersion": 1,
+        "source": "generated-classic-index-script-block",
+        "startMarker": "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->",
+        "endMarker": "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->",
+        "scriptCount": 51,
+        "firstScript": "/shell-asset-manifest.js",
+        "lastScript": "/app.js",
+        "sha256": "84ff161d798d948e906a25258d97e5854292945ed7f779b583c2b1f31c2ac82d"
+      }
     },
     "viteEntry": {
       "fileName": "assets/vite-shell-entry-BiyBhUzN.js",

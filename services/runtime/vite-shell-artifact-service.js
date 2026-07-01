@@ -10,6 +10,8 @@ const DEFAULT_PREVIEW_FILE = "preview.html";
 const EXPECTED_PUBLIC_ARTIFACT_STAGE = "vite-shell-preview-html-v1";
 const EXPECTED_SOURCE_BUILD_STAGE = "vite-shell-artifact-contract-v1";
 const EXPECTED_ENTRY_GROUP_IMPORT_OWNER = "vite-shell-entry";
+const CLASSIC_SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
+const CLASSIC_SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
 
 function sha256Hex(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
@@ -35,6 +37,17 @@ function safeReadText(filePath) {
   } catch (_) {
     return "";
   }
+}
+
+function extractExternalScriptSrcs(source) {
+  const values = [];
+  const pattern = /<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>\s*<\/script>/gi;
+  let match;
+  while ((match = pattern.exec(String(source || "")))) {
+    const src = String(match[1] || "").trim();
+    if (src && src.startsWith("/")) values.push(src);
+  }
+  return values;
 }
 
 function compactIssueCodes(issues) {
@@ -112,6 +125,32 @@ function entryGroupCoverageById(manifest) {
     });
   }
   return coverage;
+}
+
+function readClassicShellScriptBlock(appRoot) {
+  const indexHtml = safeReadText(path.join(appRoot, "public", "index.html"));
+  const startIndex = indexHtml.indexOf(CLASSIC_SHELL_SCRIPT_BLOCK_START);
+  const endIndex = indexHtml.indexOf(CLASSIC_SHELL_SCRIPT_BLOCK_END);
+  if (startIndex < 0 || endIndex < 0 || endIndex < startIndex) {
+    return {
+      exists: false,
+      scriptAssets: [],
+      scriptCount: 0,
+      firstScript: "",
+      lastScript: "",
+      sha256: "",
+    };
+  }
+  const block = indexHtml.slice(startIndex, endIndex + CLASSIC_SHELL_SCRIPT_BLOCK_END.length);
+  const scriptAssets = extractExternalScriptSrcs(block);
+  return {
+    exists: true,
+    scriptAssets,
+    scriptCount: scriptAssets.length,
+    firstScript: scriptAssets[0] || "",
+    lastScript: scriptAssets.length ? scriptAssets[scriptAssets.length - 1] : "",
+    sha256: sha256Hex(Buffer.from(block, "utf8")),
+  };
 }
 
 function createViteShellArtifactService(dependencies = {}) {
@@ -205,6 +244,37 @@ function createViteShellArtifactService(dependencies = {}) {
       issues.push({ code: "vite_shell_artifact_deferred_missing" });
     }
     const readbackEntryGroupChunks = Array.isArray(readback.entryGroupChunks) ? readback.entryGroupChunks : [];
+    const readbackClassicScriptBlock = readback.classicShellScriptBlock
+      && typeof readback.classicShellScriptBlock === "object"
+      ? readback.classicShellScriptBlock
+      : null;
+    const actualClassicScriptBlock = readClassicShellScriptBlock(appRoot);
+    if (!readbackClassicScriptBlock) {
+      issues.push({ code: "vite_shell_classic_script_block_missing" });
+    } else {
+      if (!actualClassicScriptBlock.exists) {
+        issues.push({ code: "vite_shell_classic_script_block_markers_missing" });
+      }
+      if (actualClassicScriptBlock.exists
+        && String(readbackClassicScriptBlock.sha256 || "") !== actualClassicScriptBlock.sha256) {
+        issues.push({ code: "vite_shell_classic_script_block_hash_mismatch" });
+      }
+      if (actualClassicScriptBlock.exists
+        && Number(readbackClassicScriptBlock.scriptCount) !== actualClassicScriptBlock.scriptCount) {
+        issues.push({ code: "vite_shell_classic_script_block_count_mismatch" });
+      }
+      if (actualClassicScriptBlock.exists
+        && (String(readbackClassicScriptBlock.firstScript || "") !== actualClassicScriptBlock.firstScript
+          || String(readbackClassicScriptBlock.lastScript || "") !== actualClassicScriptBlock.lastScript)) {
+        issues.push({ code: "vite_shell_classic_script_block_boundary_mismatch" });
+      }
+    }
+    const publicIndexScripts = canonicalShellTopology(publicShellManifest).indexScriptAssets;
+    if (actualClassicScriptBlock.exists
+      && Array.isArray(publicIndexScripts)
+      && !arraysEqual(actualClassicScriptBlock.scriptAssets, publicIndexScripts)) {
+      issues.push({ code: "vite_shell_classic_script_block_manifest_mismatch" });
+    }
     const entryGroupImportOwner = String(readback.entryGroupImportOwner || "");
     if (readbackEntryGroupChunks.length && entryGroupImportOwner !== EXPECTED_ENTRY_GROUP_IMPORT_OWNER) {
       issues.push({ code: "vite_shell_entry_group_import_owner_mismatch" });
@@ -366,6 +436,19 @@ function createViteShellArtifactService(dependencies = {}) {
       artifactRoot: DEFAULT_PUBLIC_ARTIFACT_ROOT,
       shellCacheName: String(readback.shellCacheName || ""),
       clientBuildId: String(readback.clientBuildId || ""),
+      classicShellScriptBlock: {
+        match: Boolean(readbackClassicScriptBlock
+          && actualClassicScriptBlock.exists
+          && String(readbackClassicScriptBlock.sha256 || "") === actualClassicScriptBlock.sha256
+          && Number(readbackClassicScriptBlock.scriptCount) === actualClassicScriptBlock.scriptCount
+          && String(readbackClassicScriptBlock.firstScript || "") === actualClassicScriptBlock.firstScript
+          && String(readbackClassicScriptBlock.lastScript || "") === actualClassicScriptBlock.lastScript),
+        scriptCount: actualClassicScriptBlock.scriptCount,
+        firstScript: actualClassicScriptBlock.firstScript,
+        lastScript: actualClassicScriptBlock.lastScript,
+        sha256: actualClassicScriptBlock.sha256,
+        readbackSha256: readbackClassicScriptBlock ? String(readbackClassicScriptBlock.sha256 || "") : "",
+      },
       classicShellManifestMatch: Boolean(artifactManifest
         && (!hasComparableTopology(publicShellManifest) || manifestTopologyMatches(artifactManifest, publicShellManifest))
         && artifactManifest.shellCacheName === readback.shellCacheName

@@ -136,6 +136,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.ok(contract.outputFiles.includes("assets/vite-entry-group-app-entry-example.js"));
   assert.ok(contract.outputFiles.includes("codex-mobile-shell-manifest.json"));
   assert.ok(contract.classicShellAssets.some((asset) => asset.path === "/app.js" && asset.fileName === "shell-assets/app.js"));
+  assert.equal(contract.classicFallback.scriptBlock.source, "generated-classic-index-script-block");
+  assert.equal(contract.classicFallback.scriptBlock.scriptCount, manifest.indexScriptAssets.length);
+  assert.equal(contract.classicFallback.scriptBlock.firstScript, "/shell-asset-manifest.js");
+  assert.equal(contract.classicFallback.scriptBlock.lastScript, "/app.js");
+  assert.match(contract.classicFallback.scriptBlock.sha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(contract.classicFallback.entryGroups, manifest.entryGroups);
   assert.deepEqual(contract.classicFallback.classicGlobalExports, manifest.classicGlobalExports);
 });

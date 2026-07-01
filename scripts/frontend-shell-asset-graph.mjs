@@ -1,7 +1,12 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { buildPublicShellManifest } from "./generate-frontend-shell-manifest.mjs";
+import {
+  SHELL_SCRIPT_BLOCK_END,
+  SHELL_SCRIPT_BLOCK_START,
+  buildPublicShellManifest,
+  renderShellScriptBlock,
+} from "./generate-frontend-shell-manifest.mjs";
 
 export const SHELL_MANIFEST_SCHEMA_VERSION = 1;
 export const VITE_SHELL_BUILD_CONTRACT_SCHEMA_VERSION = 1;
@@ -380,12 +385,32 @@ function assetOutputRecords(manifest) {
   }));
 }
 
+function classicShellScriptBlockContract(manifest) {
+  const scriptAssets = Array.isArray(manifest && manifest.indexScriptAssets)
+    ? manifest.indexScriptAssets
+    : [];
+  const source = renderShellScriptBlock(scriptAssets);
+  return {
+    schemaVersion: 1,
+    source: "generated-classic-index-script-block",
+    startMarker: SHELL_SCRIPT_BLOCK_START,
+    endMarker: SHELL_SCRIPT_BLOCK_END,
+    scriptCount: scriptAssets.length,
+    firstScript: scriptAssets[0] || "",
+    lastScript: scriptAssets.length ? scriptAssets[scriptAssets.length - 1] : "",
+    sha256: sha256Hex(Buffer.from(source, "utf8")),
+  };
+}
+
 function validateViteShellBuildContract(contract, manifest) {
   const issues = [];
   const entry = contract.viteEntry;
   const deferredChunks = contract.viteDeferredChunks || [];
   const entryGroupChunks = contract.viteEntryGroupChunks || [];
   const entryDynamicImportGraph = contract.entryDynamicImportGraph || {};
+  const classicFallback = contract.classicFallback || {};
+  const classicScriptBlock = classicFallback.scriptBlock || null;
+  const expectedClassicScriptBlock = classicShellScriptBlockContract(manifest);
   const outputFiles = new Set(contract.outputFiles || []);
   const classicOutputFiles = new Set((contract.classicShellAssets || []).map((asset) => asset.fileName));
   const requiredGroupIds = (Array.isArray(manifest.entryGroups) ? manifest.entryGroups : [])
@@ -433,6 +458,20 @@ function validateViteShellBuildContract(contract, manifest) {
   }
   if (Number(entryDynamicImportGraph.deferredFileCount) < 1) {
     issues.push({ code: "vite_entry_dynamic_import_deferred_missing" });
+  }
+  if (!classicScriptBlock) {
+    issues.push({ code: "classic_shell_script_block_contract_missing" });
+  } else {
+    if (classicScriptBlock.sha256 !== expectedClassicScriptBlock.sha256) {
+      issues.push({ code: "classic_shell_script_block_hash_mismatch" });
+    }
+    if (Number(classicScriptBlock.scriptCount) !== expectedClassicScriptBlock.scriptCount) {
+      issues.push({ code: "classic_shell_script_block_count_mismatch" });
+    }
+    if (String(classicScriptBlock.firstScript || "") !== expectedClassicScriptBlock.firstScript
+      || String(classicScriptBlock.lastScript || "") !== expectedClassicScriptBlock.lastScript) {
+      issues.push({ code: "classic_shell_script_block_boundary_mismatch" });
+    }
   }
   for (const asset of manifest.assets || []) {
     const fileName = outputPathForAsset(asset.path);
@@ -504,6 +543,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     entryGroupFileCount: entryGroupChunks.length,
   };
   const classicShellAssets = assetOutputRecords(manifest);
+  const classicShellScriptBlock = classicShellScriptBlockContract(manifest);
   const outputFiles = [
     ...chunks.map((chunk) => chunk.fileName),
     ...classicShellAssets.map((asset) => asset.fileName),
@@ -523,6 +563,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
       indexScriptAssets: manifest.indexScriptAssets,
       entryGroups: manifest.entryGroups,
       classicGlobalExports: manifest.classicGlobalExports,
+      scriptBlock: classicShellScriptBlock,
     },
     viteEntry: viteEntry || null,
     viteDeferredChunks: deferredChunks,

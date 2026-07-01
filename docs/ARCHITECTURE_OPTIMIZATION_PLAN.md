@@ -4663,6 +4663,29 @@ now proves that `frontend/vite-shell-entry.mjs` is the sole owner of the
 dynamic import graph before any later cutover makes Vite chunks startup
 critical.
 
+The follow-up classic script-block contract slice makes the remaining default
+shell drift observable:
+
+- `scripts/frontend-shell-asset-graph.mjs` records a bounded
+  `classicFallback.scriptBlock` contract with the generated script-block
+  source marker, script count, first/last script, and SHA-256 hash.
+- `scripts/verify-vite-shell-manifest.mjs` fails closed if the built Vite
+  manifest's script-block contract no longer matches the generated classic
+  script list.
+- `scripts/publish-vite-shell-artifact.mjs` carries that contract into
+  `public/vite-shell/vite-shell-readback.json` and exposes bounded count/hash
+  markers on `public/vite-shell/preview.html`.
+- `services/runtime/vite-shell-artifact-service.js` reads the actual
+  `public/index.html` generated script block and fails closed on marker,
+  count, boundary, hash, or manifest-order drift.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  treats missing preview script-block count/hash markers as a deploy-gate H2.
+
+Production `/` is still the classic script shell. This step binds the Vite
+preview artifact to that default shell's exact generated script block, so a
+future Vite cutover cannot silently drift away from the currently executing
+classic runtime order.
+
 ## Release Rule
 
 Follow the current release order:
