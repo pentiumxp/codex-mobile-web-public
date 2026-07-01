@@ -3997,6 +3997,30 @@ should cover adapter parity, Home AI return-event wiring, approved-card runtime
 inheritance/deploy-lane no-approval behavior, existing route/service focused
 tests, package syntax checks, and `git diff --check`.
 
+### 2026-07-01 ChatGPT Pro Runtime Composition Boundary
+
+The next server-thinning slice moves ChatGPT Pro bridge/planner/MCP composition
+and bounded source-summary generation out of `server.js` into
+`services/runtime/chatgpt-pro-runtime-service.js`.
+
+Scope:
+
+- constructs `adapters/chatgpt-pro-bridge-service.js`;
+- constructs `adapters/chatgpt-pro-planner-service.js`;
+- constructs `adapters/chatgpt-pro-mcp-service.js`;
+- owns dedicated ChatGPT Pro bridge thread start/resume/turn-start runtime
+  wiring and the explicit full-access runtime override for that isolated
+  bridge path;
+- owns bounded source-thread summary text supplied to ChatGPT Pro generate
+  requests.
+
+The canonical bridge, planner, MCP, and route services remain the behavioral
+authorities. The new runtime composition service only owns their server-side
+wiring and late-bound server dependencies. Validation should cover adapter
+parity, source-summary generation, full-access bridge runtime application,
+MCP direct-task-card delegation wiring, existing ChatGPT Pro focused tests,
+package syntax checks, and `git diff --check`.
+
 ## Release Rule
 
 Follow the current release order:

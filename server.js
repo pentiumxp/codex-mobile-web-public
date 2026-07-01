@@ -83,9 +83,7 @@ const { createServerEventRuntimeBoundaryService } = require("./services/runtime/
 const { createRateLimitRuntimeService } = require("./services/runtime/rate-limit-runtime-service");
 const { createThreadVisibilityService } = require("./adapters/thread-visibility-service");
 const { createThreadCompletionDiagnosticService } = require("./adapters/thread-completion-diagnostic-service");
-const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
-const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
-const { createChatGptProMcpService } = require("./adapters/chatgpt-pro-mcp-service");
+const { createChatGptProRuntimeService } = require("./services/runtime/chatgpt-pro-runtime-service");
 const { createThreadSideChatOrchestrationService } = require("./adapters/thread-side-chat-orchestration-service");
 const { handleThreadSideChatRoute } = require("./server-routes/thread-side-chat-route-service");
 const { createThreadMessageRouteService } = require("./server-routes/thread-message-route-service");
@@ -1284,40 +1282,6 @@ function incrementBoundedDiagnosticCounter(diagnostics, key, amount = 1) {
   diagnostics[key] = Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(next));
 }
 
-async function chatGptProSourceSummary(body = {}) {
-  const sourceThreadId = String(body.sourceThreadId || body.threadId || "").trim();
-  const cwd = String(body.cwd || "").trim();
-  const prompt = String(body.prompt || body.text || "").trim();
-  const lines = [
-    "Codex Mobile bounded source context for ChatGPT Pro analysis.",
-    "",
-    `Source thread id: ${sourceThreadId || "(none)"}`,
-    `Workspace: ${cwd || "(projectless)"}`,
-  ];
-  let summary = null;
-  if (sourceThreadId) {
-    summary = readStateDbThread(sourceThreadId) || readStartedThread(sourceThreadId) || readRolloutSessionFallbackThread(sourceThreadId);
-    if (!summary) {
-      summary = await readThreadSummaryFromAppServer(codex, sourceThreadId).catch(() => null);
-    }
-  }
-  if (summary) {
-    lines.push(`Thread title: ${truncateSingleLine(summary.name || summary.title || summary.preview || "", 180) || "(untitled)"}`);
-    lines.push(`Thread status: ${statusText(summary.status) || "unknown"}`);
-    if (summary.model) lines.push(`Model: ${truncateSingleLine(summary.model, 80)}`);
-    if (summary.effort) lines.push(`Reasoning effort: ${truncateSingleLine(summary.effort, 80)}`);
-  }
-  lines.push("");
-  lines.push("Current user request:");
-  lines.push(compactApprovalText(prompt, 4000));
-  lines.push("");
-  lines.push("Safety boundary:");
-  lines.push("- This context is intentionally bounded.");
-  lines.push("- Do not request or expose access keys, browser cookies, raw credentials, or full private logs.");
-  lines.push("- Use repository files only when the downstream ChatGPT Pro prompt explicitly needs them and they are not secrets.");
-  return lines.join("\n");
-}
-
 const rateLimitRuntimeService = createRateLimitRuntimeService({
   archivedSessionsDir: ARCHIVED_SESSIONS_DIR,
   codexHome: CODEX_HOME,
@@ -1667,97 +1631,48 @@ const threadMessageRouteService = createThreadMessageRouteService({
   isStaleActiveTurnError,
   autoRecoverThreadTurn,
 });
-const chatGptProBridgeService = createChatGptProBridgeService({
+const chatGptProRuntimeService = createChatGptProRuntimeService({
   runtimeRoot: RUNTIME_ROOT,
-  stateFile: CHATGPT_PRO_BRIDGE_FILE,
+  bridgeFile: CHATGPT_PRO_BRIDGE_FILE,
   outputDir: CHATGPT_PRO_OUTPUT_DIR,
-  enabled: CHATGPT_PRO_BRIDGE_ENABLED,
-  createThread: async ({ cwd }) => {
-    const runtimeSettings = applyPermissionModeOverride({}, "full", cwd || APP_ROOT);
-    const params = applyStartThreadRuntimeSettings({
-      cwd: cwd || APP_ROOT,
-      modelProvider: null,
-      config: {},
-      developerInstructions: [
-        "This is the dedicated Codex Mobile ChatGPT Pro bridge thread.",
-        "Use Chrome only when the user request explicitly asks for ChatGPT Pro generation.",
-        "Do not modify source files unless a later explicit user request asks for code changes.",
-      ].join("\n"),
-      personality: null,
-      ephemeral: null,
-      dynamicTools: null,
-      mockExperimentalField: null,
-      experimentalRawEvents: false,
-      persistExtendedHistory: false,
-    }, runtimeSettings);
-    const result = await codex.request("thread/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    const threadId = threadIdFromStartResult(result);
-    return { threadId, thread: result && (result.thread || result.data && result.data.thread) || {} };
-  },
-  startTurn: async ({ threadId, cwd, input }) => {
-    const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), "full", cwd || APP_ROOT);
-    try {
-      await codex.request("thread/resume", applyResumeRuntimeSettings({
-        threadId,
-        cwd: cwd || APP_ROOT,
-        persistExtendedHistory: false,
-      }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    } catch (err) {
-      if (!/already|loaded|active/i.test(err.message || "")) throw err;
-    }
-    const result = await codex.request("turn/start", applyTurnRuntimeSettings({
-      threadId,
-      input,
-      cwd: cwd || APP_ROOT,
-    }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    notifyLocalTurnStarted(threadId, result, { source: "chatgpt-pro-bridge" });
-    return result;
-  },
-  updateThreadTitle: tryUpdateThreadTitle,
-  persistThreadTitle: persistThreadTitleToSessionIndex,
-  rememberThread: rememberStartedThread,
-});
-const chatGptProPlannerService = createChatGptProPlannerService({
-  runtimeRoot: RUNTIME_ROOT,
-  storeRoot: CHATGPT_PRO_PLANNER_DIR,
-  version: APP_VERSION,
+  bridgeEnabled: CHATGPT_PRO_BRIDGE_ENABLED,
+  plannerDir: CHATGPT_PRO_PLANNER_DIR,
+  appVersion: APP_VERSION,
+  appRoot: APP_ROOT,
+  mutationRpcTimeoutMs: MUTATION_RPC_TIMEOUT_MS,
+  mcpAllowDirectTaskCards: CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS,
+  mcpToken: CHATGPT_PRO_MCP_TOKEN,
+  mcpTokenFile: CHATGPT_PRO_MCP_TOKEN_FILE,
+  codex,
+  applyPermissionModeOverride,
+  applyStartThreadRuntimeSettings,
+  applyResumeRuntimeSettings,
+  applyTurnRuntimeSettings,
+  resolveThreadRuntimeSettings,
+  threadIdFromStartResult,
+  notifyLocalTurnStarted,
+  tryUpdateThreadTitle,
+  persistThreadTitleToSessionIndex,
+  rememberStartedThread,
   listWorkspaces,
-  workspaceRoots: () => {
-    const roots = visibleWorkspaceRoots(readGlobalState());
-    roots.add(APP_ROOT);
-    for (const workspace of workspaceRegistryService.list()) {
-      if (workspace && workspace.cwd) roots.add(workspace.cwd);
-    }
-    return Array.from(roots);
-  },
-  readThreadContext: async ({ threadId }) => {
-    let summary = readStateDbThread(threadId)
-      || readStartedThread(threadId)
-      || readRolloutSessionFallbackThread(threadId);
-    if (!summary) {
-      summary = await readThreadSummaryFromAppServer(codex, threadId).catch(() => null);
-    }
-    if (!summary) return null;
-    return {
-      id: summary.id || threadId,
-      title: summary.name || summary.title || summary.preview || "",
-      status: statusText(summary.status) || "",
-      cwd: summary.cwd || "",
-      model: summary.model || "",
-      reasoningEffort: summary.effort || summary.reasoningEffort || "",
-      updatedAt: summary.updatedAt || summary.updated_at || summary.updatedAtMs || summary.updated_at_ms || 0,
-      summary: summary.preview || summary.firstUserMessage || "",
-    };
-  },
+  visibleWorkspaceRoots,
+  readGlobalState,
+  workspaceRegistryService,
+  readStateDbThread,
+  readStartedThread,
+  readRolloutSessionFallbackThread,
+  readThreadSummaryFromAppServer: (threadId) => readThreadSummaryFromAppServer(codex, threadId),
+  statusText,
+  compactApprovalText,
+  truncateSingleLine,
+  createThreadTaskCardsFromSourceThread,
 });
-const chatGptProMcpService = createChatGptProMcpService({
-  plannerService: chatGptProPlannerService,
-  delegateTaskCard: async (input = {}) => createThreadTaskCardsFromSourceThread(input.sourceThreadId, input),
-  allowDirectTaskCards: CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS,
-  token: CHATGPT_PRO_MCP_TOKEN,
-  tokenFile: CHATGPT_PRO_MCP_TOKEN_FILE,
-  version: APP_VERSION,
-});
+const {
+  chatGptProBridgeService,
+  chatGptProMcpService,
+  chatGptProPlannerService,
+  chatGptProSourceSummary,
+} = chatGptProRuntimeService;
 const appMaintenanceService = createAppMaintenanceService({
   appRoot: APP_ROOT,
   appVersion: APP_VERSION,

@@ -16,6 +16,7 @@ const {
 const root = path.resolve(__dirname, "..");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const serverRuntimeConfigServiceJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-config-service.js"), "utf8");
+const chatGptProRuntimeServiceJs = fs.readFileSync(path.join(root, "services", "runtime", "chatgpt-pro-runtime-service.js"), "utf8");
 const apiDispatchRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "api-dispatch-route-service.js"), "utf8");
 const chatGptProRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "chatgpt-pro-route-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
@@ -80,9 +81,13 @@ test("server and client wire @ChatGPT Pro without normal message submission", ()
   assert.match(packageJson, /adapters\/chatgpt-pro-bridge-service\.js/);
   assert.match(packageJson, /adapters\/chatgpt-pro-planner-service\.js/);
   assert.match(packageJson, /adapters\/chatgpt-pro-mcp-service\.js/);
-  assert.match(serverJs, /createChatGptProBridgeService/);
-  assert.match(serverJs, /createChatGptProPlannerService/);
-  assert.match(serverJs, /createChatGptProMcpService/);
+  assert.match(packageJson, /services\/runtime\/chatgpt-pro-runtime-service\.js/);
+  assert.match(packageJson, /adapters\/chatgpt-pro-runtime-service\.js/);
+  assert.match(packageJson, /test\/chatgpt-pro-runtime-service\.test\.js/);
+  assert.match(serverJs, /createChatGptProRuntimeService/);
+  assert.match(chatGptProRuntimeServiceJs, /createChatGptProBridgeService/);
+  assert.match(chatGptProRuntimeServiceJs, /createChatGptProPlannerService/);
+  assert.match(chatGptProRuntimeServiceJs, /createChatGptProMcpService/);
   assert.match(chatGptProRouteServiceJs, /\/api\/chatgpt-pro\/status/);
   assert.match(chatGptProRouteServiceJs, /\/api\/chatgpt-pro\/generate/);
   assert.match(chatGptProRouteServiceJs, /\/api\/chatgpt-pro\/planner\/status/);
@@ -90,18 +95,18 @@ test("server and client wire @ChatGPT Pro without normal message submission", ()
   assert.match(coreApiRouteServiceJs, /\/api\/chatgpt-pro\/mcp/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS/);
-  assert.match(serverJs, /delegateTaskCard: async \(input = \{\}\) => createThreadTaskCardsFromSourceThread\(input\.sourceThreadId, input\)/);
-  assert.match(serverJs, /allowDirectTaskCards: CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS/);
+  assert.match(chatGptProRuntimeServiceJs, /delegateTaskCard: async \(input = \{\}\) => dependencies\.createThreadTaskCardsFromSourceThread\(input\.sourceThreadId, input\)/);
+  assert.match(serverJs, /mcpAllowDirectTaskCards: CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS/);
   assert.ok(
     apiDispatchRouteServiceJs.indexOf("coreApiRouteService.handlePublicRoute") < apiDispatchRouteServiceJs.indexOf("if (!isAuthorized(req))")
       && coreApiRouteServiceJs.includes('url.pathname === "/api/chatgpt-pro/mcp"'),
     "MCP connector route should use its own token before normal browser auth",
   );
   assert.match(serverJs, /chatGptProSourceSummary/);
-  assert.match(serverJs, /createThread: async \(\{ cwd \}\) => \{\s*const runtimeSettings = applyPermissionModeOverride\(\{\}, "full", cwd \|\| APP_ROOT\);/);
-  assert.match(serverJs, /startTurn: async \(\{ threadId, cwd, input \}\) => \{\s*const runtimeSettings = applyPermissionModeOverride\(await resolveThreadRuntimeSettings\(threadId\), "full", cwd \|\| APP_ROOT\);/);
-  assert.doesNotMatch(serverJs, /createThread: async \(\{ cwd \}\) => \{\s*const runtimeSettings = applyPermissionModeOverride\(\{\}, "auto", cwd \|\| APP_ROOT\);/);
-  assert.doesNotMatch(serverJs, /startTurn: async \(\{ threadId, cwd, input \}\) => \{\s*const runtimeSettings = applyPermissionModeOverride\(await resolveThreadRuntimeSettings\(threadId\), "auto", cwd \|\| APP_ROOT\);/);
+  assert.match(chatGptProRuntimeServiceJs, /createThread: async \(\{ cwd \}\) => \{\s*const runtimeSettings = dependencies\.applyPermissionModeOverride\(\{\}, "full", cwd \|\| appRoot\);/);
+  assert.match(chatGptProRuntimeServiceJs, /startTurn: async \(\{ threadId, cwd, input \}\) => \{\s*const runtimeSettings = dependencies\.applyPermissionModeOverride\(/);
+  assert.doesNotMatch(chatGptProRuntimeServiceJs, /applyPermissionModeOverride\(\{\}, "auto", cwd \|\| appRoot\);/);
+  assert.doesNotMatch(chatGptProRuntimeServiceJs, /applyPermissionModeOverride\([\s\S]*"auto"[\s\S]*cwd \|\| appRoot/);
   assert.match(appJs, /function isChatGptProCommandText\(/);
   assert.match(appJs, /async function submitChatGptProRequest\(text, options = \{\}\)/);
   assert.match(appJs, /api\("\/api\/chatgpt-pro\/generate"/);
