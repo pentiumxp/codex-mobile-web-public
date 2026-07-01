@@ -392,7 +392,7 @@ payloads, tokens, cookies, and other unsafe fields. Corrupt or unsupported
 cache files are treated as cache misses and must not be surfaced as an empty
 normal list.
 
-`adapters/thread-list-route-merge-service.js` owns the app-server plus fallback
+`services/thread-list/thread-list-route-merge-service.js` owns the app-server plus fallback
 route merge boundary. The normal `/api/threads` route drops fallback rows whose
 thread id is already present in the authoritative app-server result before
 calling the summary merge service. This keeps fallback rows useful for
@@ -403,14 +403,14 @@ remain attributable without private thread content. `server.js` also reuses
 rollout size/stat metadata that was already attached during the visible-thread
 filter pass when later display-summary merge stages run in the same request.
 
-`adapters/thread-list-summary-merge-service.js` owns duplicate summary merge
+`services/thread-list/thread-list-summary-merge-service.js` owns duplicate summary merge
 semantics. It only invokes duplicate display-summary merge when two rows with
 the same thread id are actually present; unique rows proceed directly to
 archive/sub-agent filtering, stripping, sorting, and limiting. This preserves
 duplicate resolution semantics while avoiding a non-duplicate display-merge
 stage that was measurable on warm large-session list reads.
 
-`adapters/thread-list-response-coalescer-service.js` owns in-flight response
+`services/thread-list/thread-list-response-coalescer-service.js` owns in-flight response
 coalescing for identical default full-list `/api/threads` requests. It shares
 one authoritative app-server `thread/list` plus merge/decorate result with
 concurrent follower requests so burst refreshes do not multiply app-server RPC

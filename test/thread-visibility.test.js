@@ -67,7 +67,7 @@ const threadDetailResponsePreparationServiceJs = fs.readFileSync(
   "utf8",
 );
 const threadListSummaryServiceJs = fs.readFileSync(
-  path.resolve(__dirname, "..", "adapters", "thread-list-summary-service.js"),
+  path.resolve(__dirname, "..", "services", "thread-list", "thread-list-summary-service.js"),
   "utf8",
 );
 const threadListFallbackSourceServiceJs = fs.readFileSync(
@@ -1119,12 +1119,12 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const baselineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-fallback-baseline-service.js"), "utf8");
   const cacheServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-fallback-cache-service.js"), "utf8");
   const prewarmServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-fallback-prewarm-service.js"), "utf8");
-  const appServerFetchPolicyJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-app-server-fetch-policy-service.js"), "utf8");
-  const coldPathDiagnosisServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-cold-path-diagnosis-service.js"), "utf8");
-  const routeMergeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-route-merge-service.js"), "utf8");
-  const summaryMergeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-summary-merge-service.js"), "utf8");
-  const requestContextServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-request-context-service.js"), "utf8");
-  const responseCoalescerServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-response-coalescer-service.js"), "utf8");
+  const appServerFetchPolicyJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-app-server-fetch-policy-service.js"), "utf8");
+  const coldPathDiagnosisServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-cold-path-diagnosis-service.js"), "utf8");
+  const routeMergeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-route-merge-service.js"), "utf8");
+  const summaryMergeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-summary-merge-service.js"), "utf8");
+  const requestContextServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-request-context-service.js"), "utf8");
+  const responseCoalescerServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-response-coalescer-service.js"), "utf8");
   const visibilityServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-visibility-service.js"), "utf8");
   const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "rate-limit-runtime-service.js"), "utf8");
   const routeIndex = routeServiceJs.indexOf('async function handleThreadListRoute(options = {})');

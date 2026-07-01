@@ -105,21 +105,21 @@ const {
 } = require("./services/thread-list/thread-list-fallback-prewarm-service");
 const {
   mergeThreadListRouteResult,
-} = require("./adapters/thread-list-route-merge-service");
+} = require("./services/thread-list/thread-list-route-merge-service");
 const {
   buildThreadListWorkspaceRows,
   mapRegisteredWorkspaces,
 } = require("./services/thread-list/thread-list-workspace-merge-service");
 const {
   createThreadListSummaryMergeService,
-} = require("./adapters/thread-list-summary-merge-service");
+} = require("./services/thread-list/thread-list-summary-merge-service");
 const {
   createThreadListResponseCoalescer,
-} = require("./adapters/thread-list-response-coalescer-service");
+} = require("./services/thread-list/thread-list-response-coalescer-service");
 const {
   stripThreadListDetailFields,
   stripThreadListResultDetailFields,
-} = require("./adapters/thread-list-summary-service");
+} = require("./services/thread-list/thread-list-summary-service");
 const { createThreadDetailCompactionService } = require("./adapters/thread-detail-compaction-service");
 const { createThreadEventNotificationService } = require("./services/runtime/thread-event-notification-service");
 const { createRateLimitRuntimeService } = require("./services/runtime/rate-limit-runtime-service");

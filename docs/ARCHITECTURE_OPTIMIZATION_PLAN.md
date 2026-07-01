@@ -994,7 +994,7 @@ turn/item counts, loaded/loading/error flags, read mode, and DOM counts.
 `codex-mobile-shell-v523` closes the next ownership boundary for the same
 visible failure class. `/api/threads` list rows are not detail authorities and
 must never expose `turns: []`, `mobileDetailLoaded`, projection metadata, visible
-item keys, or pending server request bodies. `adapters/thread-list-summary-service.js`
+item keys, or pending server request bodies. `services/thread-list/thread-list-summary-service.js`
 now strips those fields during list merge/status normalization/task-card count
 decoration so fallback/app-server summaries cannot overwrite a loaded detail
 surface with an empty shell. The client also records
@@ -2109,6 +2109,15 @@ public behavior:
   classification, display-summary merge semantics, state DB runtime metadata
   merge, and detail-read-to-thread-list fallback-cache synchronization. The old
   adapter path is compatibility-only.
+- `services/thread-list/thread-list-app-server-fetch-policy-service.js`,
+  `thread-list-route-merge-service.js`,
+  `thread-list-summary-merge-service.js`,
+  `thread-list-request-context-service.js`,
+  `thread-list-response-coalescer-service.js`,
+  `thread-list-cold-path-diagnosis-service.js`, and
+  `thread-list-summary-service.js` now own the remaining thread-list request
+  policy, merge, request context, coalescing, cold-path diagnosis, and summary
+  stripping boundaries. Their old adapter paths are compatibility-only.
 - `services/thread-detail/thread-detail-response-preparation-service.js` now owns
   turns-list/raw/full/fallback read-result shaping, rollout Usage decoration,
   rollout completion/user-input/active-assistant/final-receipt preparation
@@ -2159,6 +2168,8 @@ Local line-count evidence after the latest extraction: `server.js` is 3,990 line
 `server-routes/thread-message-route-service.js` is 363 lines, and
 `services/thread-list/thread-list-fallback-source-service.js` is 683 lines, and
 `services/thread-list/thread-summary-state-service.js` is 400 lines, and
+the remaining canonical `services/thread-list/` policy/merge/context/coalescer/
+diagnosis/summary services are 257, 212, 183, 86, 147, 165, and 47 lines, and
 `services/thread-detail/thread-detail-response-preparation-service.js` is 256 lines. The newer
 low-coupling static/profile-switch/runtime-settings/core-API/auto-recovery
 adapters are 195, 385, 236, 554, and 153 lines respectively; the new app
@@ -2843,7 +2854,7 @@ compatible warm list baseline.
 
 Deployable scope:
 
-- `adapters/thread-list-app-server-fetch-policy-service.js` now owns
+- `services/thread-list/thread-list-app-server-fetch-policy-service.js` now owns
   `planThreadListInitialFallbackAttempt()`, separating explicit
   `initial=warm-fallback`, ordinary default warm-cache early return, and
   ineligible filtered/cursor/archived paths.
@@ -2892,7 +2903,7 @@ Deployable scope:
   first-paint diagnostics can show `mobileInitialSource=fallback-baseline`,
   `mobileDeferredAppServer=true`, and
   `appServerDeferredReason=cold-fallback-initial`.
-- `adapters/thread-list-app-server-fetch-policy-service.js` owns the bounded
+- `services/thread-list/thread-list-app-server-fetch-policy-service.js` owns the bounded
   metadata that separates warm-cache and cold-baseline initial first paint.
 - Existing deferred client refresh behavior in `public/app.js` remains the
   authority follow-up; search, workspace-filtered, archived, cursor, and

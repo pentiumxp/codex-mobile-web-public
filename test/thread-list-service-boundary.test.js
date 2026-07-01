@@ -6,6 +6,10 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const threadListRouteServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "server-routes", "thread-list-route-service.js"),
+  "utf8",
+);
 const packageJson = fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf8");
 
 const serviceBoundaries = [
@@ -56,6 +60,61 @@ const serviceBoundaries = [
     servicePath: "services/thread-list/thread-list-fallback-prewarm-service.js",
     adapterPath: "adapters/thread-list-fallback-prewarm-service.js",
   },
+  {
+    canonical: require("../services/thread-list/thread-list-app-server-fetch-policy-service"),
+    adapter: require("../adapters/thread-list-app-server-fetch-policy-service"),
+    exports: [
+      "planThreadListAppServerFetch",
+      "planThreadListInitialFallbackAttempt",
+      "threadListAppServerFetchTimingFields",
+      "threadListAppServerLatencyTimingFields",
+      "threadListInitialFallbackMetadata",
+    ],
+    servicePath: "services/thread-list/thread-list-app-server-fetch-policy-service.js",
+    adapterPath: "adapters/thread-list-app-server-fetch-policy-service.js",
+  },
+  {
+    canonical: require("../services/thread-list/thread-list-route-merge-service"),
+    adapter: require("../adapters/thread-list-route-merge-service"),
+    exports: ["mergeThreadListRouteResult"],
+    servicePath: "services/thread-list/thread-list-route-merge-service.js",
+    adapterPath: "adapters/thread-list-route-merge-service.js",
+  },
+  {
+    canonical: require("../services/thread-list/thread-list-summary-merge-service"),
+    adapter: require("../adapters/thread-list-summary-merge-service"),
+    exports: ["createThreadListSummaryMergeService"],
+    servicePath: "services/thread-list/thread-list-summary-merge-service.js",
+    adapterPath: "adapters/thread-list-summary-merge-service.js",
+  },
+  {
+    canonical: require("../services/thread-list/thread-list-request-context-service"),
+    adapter: require("../adapters/thread-list-request-context-service"),
+    exports: ["createThreadListRequestContext"],
+    servicePath: "services/thread-list/thread-list-request-context-service.js",
+    adapterPath: "adapters/thread-list-request-context-service.js",
+  },
+  {
+    canonical: require("../services/thread-list/thread-list-response-coalescer-service"),
+    adapter: require("../adapters/thread-list-response-coalescer-service"),
+    exports: ["createThreadListResponseCoalescer"],
+    servicePath: "services/thread-list/thread-list-response-coalescer-service.js",
+    adapterPath: "adapters/thread-list-response-coalescer-service.js",
+  },
+  {
+    canonical: require("../services/thread-list/thread-list-cold-path-diagnosis-service"),
+    adapter: require("../adapters/thread-list-cold-path-diagnosis-service"),
+    exports: ["diagnoseThreadListColdPath"],
+    servicePath: "services/thread-list/thread-list-cold-path-diagnosis-service.js",
+    adapterPath: "adapters/thread-list-cold-path-diagnosis-service.js",
+  },
+  {
+    canonical: require("../services/thread-list/thread-list-summary-service"),
+    adapter: require("../adapters/thread-list-summary-service"),
+    exports: ["stripThreadListDetailFields", "stripThreadListResultDetailFields"],
+    servicePath: "services/thread-list/thread-list-summary-service.js",
+    adapterPath: "adapters/thread-list-summary-service.js",
+  },
 ];
 
 test("thread-list compatibility adapters re-export canonical service boundaries", () => {
@@ -72,11 +131,27 @@ test("thread-list server composition imports canonical service paths", () => {
   assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-fallback-source-service"\)/);
   assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-summary-state-service"\)/);
   assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-fallback-prewarm-service"\)/);
+  assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-route-merge-service"\)/);
+  assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-summary-merge-service"\)/);
+  assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-response-coalescer-service"\)/);
+  assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-summary-service"\)/);
   assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-list-fallback-cache-service"\)/);
   assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-list-fallback-persistent-cache-store"\)/);
   assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-list-fallback-source-service"\)/);
   assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-summary-state-service"\)/);
   assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-list-fallback-prewarm-service"\)/);
+  assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-list-route-merge-service"\)/);
+  assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-list-summary-merge-service"\)/);
+  assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-list-response-coalescer-service"\)/);
+  assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-list-summary-service"\)/);
+  assert.match(threadListRouteServiceJs, /require\("\.\.\/services\/thread-list\/thread-list-app-server-fetch-policy-service"\)/);
+  assert.match(threadListRouteServiceJs, /require\("\.\.\/services\/thread-list\/thread-list-route-merge-service"\)/);
+  assert.match(threadListRouteServiceJs, /require\("\.\.\/services\/thread-list\/thread-list-request-context-service"\)/);
+  assert.match(threadListRouteServiceJs, /require\("\.\.\/services\/thread-list\/thread-list-cold-path-diagnosis-service"\)/);
+  assert.doesNotMatch(threadListRouteServiceJs, /require\("\.\.\/adapters\/thread-list-app-server-fetch-policy-service"\)/);
+  assert.doesNotMatch(threadListRouteServiceJs, /require\("\.\.\/adapters\/thread-list-route-merge-service"\)/);
+  assert.doesNotMatch(threadListRouteServiceJs, /require\("\.\.\/adapters\/thread-list-request-context-service"\)/);
+  assert.doesNotMatch(threadListRouteServiceJs, /require\("\.\.\/adapters\/thread-list-cold-path-diagnosis-service"\)/);
 });
 
 test("thread-list package check covers canonical services and compatibility adapters", () => {

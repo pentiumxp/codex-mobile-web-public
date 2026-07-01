@@ -6,14 +6,14 @@ const {
   threadListInitialFallbackMetadata,
   threadListAppServerLatencyTimingFields,
   threadListAppServerFetchTimingFields,
-} = require("../adapters/thread-list-app-server-fetch-policy-service");
+} = require("../services/thread-list/thread-list-app-server-fetch-policy-service");
 const {
   mergeThreadListRouteResult,
-} = require("../adapters/thread-list-route-merge-service");
+} = require("../services/thread-list/thread-list-route-merge-service");
 const {
   createThreadListRequestContext,
-} = require("../adapters/thread-list-request-context-service");
-const { diagnoseThreadListColdPath } = require("../adapters/thread-list-cold-path-diagnosis-service");
+} = require("../services/thread-list/thread-list-request-context-service");
+const { diagnoseThreadListColdPath } = require("../services/thread-list/thread-list-cold-path-diagnosis-service");
 
 async function handleThreadListRoute(options = {}) {
   const {
