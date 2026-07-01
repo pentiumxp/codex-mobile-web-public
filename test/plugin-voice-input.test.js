@@ -12,6 +12,7 @@ const appJs = readFrontendSources(path.resolve(__dirname, ".."));
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
+const shellManifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "public", "shell-asset-manifest.json"), "utf8"));
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 
 function functionBody(name) {
@@ -144,30 +145,35 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
     "/app-shell-runtime.js",
     "/app.js",
   ]);
-  assert.match(swJs, /"\/plugin-voice-input\.js"/);
-  assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
-  assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
-  assert.match(swJs, /"\/frontend-runtime-health\.js"/);
-  assert.match(swJs, /"\/thread-status-hints\.js"/);
-  assert.match(swJs, /"\/thread-performance-metrics\.js"/);
-  assert.match(swJs, /"\/thread-list-load-policy\.js"/);
-  assert.match(swJs, /"\/thread-list-stable-order\.js"/);
-  assert.match(swJs, /"\/thread-list-runtime\.js"/);
-  assert.match(swJs, /"\/client-render-stability-guard\.js"/);
-  assert.match(swJs, /"\/live-operation-dock-state\.js"/);
-  assert.match(swJs, /"\/thread-detail-state\.js"/);
-  assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
-  assert.match(swJs, /"\/thread-detail-merge-state\.js"/);
-  assert.match(swJs, /"\/thread-detail-v4-merge-state\.js"/);
-  assert.match(swJs, /"\/thread-detail-runtime\.js"/);
-  assert.match(swJs, /"\/thread-detail-patch-plan\.js"/);
-  assert.match(swJs, /"\/thread-detail-dom-patch\.js"/);
-  assert.match(swJs, /"\/thread-detail-actions\.js"/);
-  assert.match(swJs, /"\/thread-tile-actions\.js"/);
-  assert.match(swJs, /"\/thread-tile-state\.js"/);
-  assert.match(swJs, /"\/thread-tile-layout\.js"/);
-  assert.match(swJs, /"\/thread-tile-runtime\.js"/);
-  assert.match(swJs, /"\/composer-runtime\.js"/);
+  assert.match(swJs, /shell-asset-manifest\.js/);
+  for (const asset of [
+    "/plugin-voice-input.js",
+    "/home-ai-diagnostic-reporting.js",
+    "/thread-diagnostic-events.js",
+    "/frontend-runtime-health.js",
+    "/thread-status-hints.js",
+    "/thread-performance-metrics.js",
+    "/thread-list-load-policy.js",
+    "/thread-list-stable-order.js",
+    "/thread-list-runtime.js",
+    "/client-render-stability-guard.js",
+    "/live-operation-dock-state.js",
+    "/thread-detail-state.js",
+    "/thread-detail-render-plan.js",
+    "/thread-detail-merge-state.js",
+    "/thread-detail-v4-merge-state.js",
+    "/thread-detail-runtime.js",
+    "/thread-detail-patch-plan.js",
+    "/thread-detail-dom-patch.js",
+    "/thread-detail-actions.js",
+    "/thread-tile-actions.js",
+    "/thread-tile-state.js",
+    "/thread-tile-layout.js",
+    "/thread-tile-runtime.js",
+    "/composer-runtime.js",
+  ]) {
+    assert.ok(shellManifest.precacheAssets.includes(asset), `manifest missing ${asset}`);
+  }
   assert.match(appJs, /"\/plugin-voice-input\.js"/);
   assert.match(appJs, /"\/frontend-runtime-health\.js"/);
   assert.match(appJs, /"\/thread-list-load-policy\.js"/);

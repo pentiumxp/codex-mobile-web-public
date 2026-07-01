@@ -90,7 +90,30 @@ function createServerRuntimeUtils(dependencies = {}) {
     }
   }
 
+  function readShellAssetManifest() {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(path.join(publicRoot, "shell-asset-manifest.json"), "utf8"));
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function manifestAssetFileName(assetPath) {
+    const value = String(assetPath || "").trim();
+    if (value === "/") return "index.html";
+    return value.replace(/^\/+/, "");
+  }
+
+  function manifestAssetFiles(name, fallback = []) {
+    const manifest = readShellAssetManifest();
+    const values = manifest && Array.isArray(manifest[name]) ? manifest[name] : fallback;
+    return uniqueStrings(values.map((asset) => manifestAssetFileName(asset)).filter(Boolean));
+  }
+
   function readServiceWorkerCacheName() {
+    const manifest = readShellAssetManifest();
+    if (manifest && manifest.shellCacheName) return String(manifest.shellCacheName || "");
     try {
       const source = fs.readFileSync(path.join(publicRoot, "sw.js"), "utf8");
       const match = source.match(/CACHE_NAME\s*=\s*["']([^"']+)["']/);
@@ -105,62 +128,17 @@ function createServerRuntimeUtils(dependencies = {}) {
       ? dependencies.getAppVersion()
       : dependencies.appVersion || readPackageVersion();
     const parts = [`app=${appVersion}`, `sw=${cacheName}`];
-    for (const file of [
+    const hashAssets = manifestAssetFiles("hashAssets", [
       "index.html",
       "styles.css",
-      "api-client.js",
-      "runtime-settings.js",
-      "draft-store.js",
-      "composer-runtime.js",
-      "markdown-renderer.js",
-      "viewport-metrics.js",
-      "conversation-scroll.js",
-      "image-compressor.js",
-      "plugin-embed.js",
-      "plugin-voice-input.js",
-      "home-ai-diagnostic-reporting.js",
-      "thread-diagnostic-events.js",
-      "frontend-runtime-health.js",
-      "build-refresh-policy.js",
-      "thread-status-hints.js",
-      "thread-performance-metrics.js",
-      "thread-list-load-policy.js",
-      "thread-list-stable-order.js",
-      "thread-list-runtime.js",
-      "client-render-stability-guard.js",
-      "live-operation-dock-state.js",
-      "thread-detail-state.js",
-      "thread-detail-render-plan.js",
-      "thread-detail-merge-state.js",
-      "thread-detail-v4-merge-state.js",
-      "thread-detail-runtime.js",
-      "thread-detail-patch-plan.js",
-      "thread-detail-dom-patch.js",
-      "thread-detail-actions.js",
-      "thread-tile-actions.js",
-      "thread-tile-state.js",
-      "thread-tile-layout.js",
-      "thread-tile-runtime.js",
-      "app-update-runtime.js",
-      "side-chat-runtime.js",
-      "media-preview-runtime.js",
+      "shell-asset-manifest.json",
+      "shell-asset-manifest.js",
       "app-bootstrap.js",
-      "settings-runtime.js",
-      "modal-runtime.js",
-      "navigation-runtime.js",
-      "api-client-runtime.js",
-      "notification-ui-runtime.js",
-      "pane-layout-runtime.js",
-      "task-card-runtime.js",
-      "conversation-render-runtime.js",
-      "event-stream-runtime.js",
-      "composer-bridge-runtime.js",
-      "runtime-wiring-runtime.js",
-      "app-shell-runtime.js",
       "app.js",
       "sw.js",
       "manifest.json",
-    ]) {
+    ]);
+    for (const file of hashAssets) {
       try {
         const stat = fs.statSync(path.join(publicRoot, file));
         parts.push(`${file}:${stat.size}:${Math.trunc(stat.mtimeMs)}`);
@@ -299,6 +277,7 @@ function createServerRuntimeUtils(dependencies = {}) {
     optionListFromEnv,
     pathEntriesFromEnvPath,
     readPackageVersion,
+    readShellAssetManifest,
     readServiceWorkerCacheName,
     resolveDefaultCodexExecutable,
     resolveMuxEndpointFile,

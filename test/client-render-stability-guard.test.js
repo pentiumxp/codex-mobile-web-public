@@ -12,6 +12,7 @@ const root = path.resolve(__dirname, "..");
 const appJs = readFrontendSources(root);
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
+const shellManifest = JSON.parse(fs.readFileSync(path.join(root, "public", "shell-asset-manifest.json"), "utf8"));
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
 
 function functionBody(name) {
@@ -66,21 +67,23 @@ test("send-message render path uses stable submitted-turn identity instead of tu
 
 test("client render stability guard is part of the static shell", () => {
   assert.match(indexHtml, /<script src="\/client-render-stability-guard\.js"><\/script>/);
-  assert.match(swJs, /"\/client-render-stability-guard\.js"/);
+  assert.ok(shellManifest.precacheAssets.includes("/client-render-stability-guard.js"));
   assert.match(appJs, /"\/client-render-stability-guard\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"client-render-stability-guard\.js"/);
+  assert.ok(shellManifest.hashAssets.includes("/client-render-stability-guard.js"));
   assert.match(indexHtml, /<script src="\/thread-list-runtime\.js"><\/script>/);
-  assert.match(swJs, /"\/thread-list-runtime\.js"/);
+  assert.ok(shellManifest.precacheAssets.includes("/thread-list-runtime.js"));
   assert.match(appJs, /"\/thread-list-runtime\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-list-runtime\.js"/);
+  assert.ok(shellManifest.hashAssets.includes("/thread-list-runtime.js"));
   assert.match(indexHtml, /<script src="\/thread-tile-runtime\.js"><\/script>/);
-  assert.match(swJs, /"\/thread-tile-runtime\.js"/);
+  assert.ok(shellManifest.precacheAssets.includes("/thread-tile-runtime.js"));
   assert.match(appJs, /"\/thread-tile-runtime\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-tile-runtime\.js"/);
+  assert.ok(shellManifest.hashAssets.includes("/thread-tile-runtime.js"));
   assert.match(indexHtml, /<script src="\/composer-runtime\.js"><\/script>/);
-  assert.match(swJs, /"\/composer-runtime\.js"/);
+  assert.ok(shellManifest.precacheAssets.includes("/composer-runtime.js"));
   assert.match(appJs, /"\/composer-runtime\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"composer-runtime\.js"/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v621"/);
-  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v621"/);
+  assert.ok(shellManifest.hashAssets.includes("/composer-runtime.js"));
+  assert.match(swJs, /shell-asset-manifest\.js/);
+  assert.match(serverRuntimeUtilsJs, /shell-asset-manifest\.json/);
+  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v622");
+  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v622");
 });

@@ -10,6 +10,7 @@ const root = path.resolve(__dirname, "..");
 const appJs = readFrontendSources(root);
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
+const shellManifest = JSON.parse(fs.readFileSync(path.join(root, "public", "shell-asset-manifest.json"), "utf8"));
 const serverRuntimeUtilsJs = fs.readFileSync(
   path.join(root, "services", "runtime", "server-runtime-utils.js"),
   "utf8",
@@ -96,9 +97,11 @@ function createRuntimeFixture() {
 
 test("thread detail runtime is wired into the static shell", () => {
   assert.match(indexHtml, /<script src="\/thread-detail-runtime\.js"><\/script>/);
-  assert.match(swJs, /"\/thread-detail-runtime\.js"/);
+  assert.ok(shellManifest.precacheAssets.includes("/thread-detail-runtime.js"));
   assert.match(appJs, /"\/thread-detail-runtime\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-detail-runtime\.js"/);
+  assert.ok(shellManifest.hashAssets.includes("/thread-detail-runtime.js"));
+  assert.match(swJs, /shell-asset-manifest\.js/);
+  assert.match(serverRuntimeUtilsJs, /shell-asset-manifest\.json/);
   assert.match(appJs, /(?:const|var) threadDetailRuntimeApi = window\.CodexThreadDetailRuntime/);
   assert.match(appJs, /threadDetailRuntimeApi\.createThreadDetailRuntime\(\{/);
   assert.match(appJs, /function initializeThreadDetailRuntimeWiring\(\)/);

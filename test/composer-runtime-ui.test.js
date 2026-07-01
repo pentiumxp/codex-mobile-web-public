@@ -13,6 +13,7 @@ const composerBridgeRuntimeJs = fs.readFileSync(path.join(root, "public", "compo
 const appJs = readFrontendSources(root);
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
+const shellManifest = JSON.parse(fs.readFileSync(path.join(root, "public", "shell-asset-manifest.json"), "utf8"));
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
 
 function sourceFunctionBody(source, name) {
@@ -79,9 +80,11 @@ test("composer runtime is created after its constant dependencies", () => {
 
 test("composer runtime is part of the current static shell", () => {
   assert.match(indexHtml, /<script src="\/composer-runtime\.js"><\/script>/);
-  assert.match(swJs, /"\/composer-runtime\.js"/);
+  assert.ok(shellManifest.precacheAssets.includes("/composer-runtime.js"));
   assert.match(appJs, /"\/composer-runtime\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"composer-runtime\.js"/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v621"/);
-  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v621"/);
+  assert.ok(shellManifest.hashAssets.includes("/composer-runtime.js"));
+  assert.match(swJs, /shell-asset-manifest\.js/);
+  assert.match(serverRuntimeUtilsJs, /shell-asset-manifest\.json/);
+  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v622");
+  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v622");
 });

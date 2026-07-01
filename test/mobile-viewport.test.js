@@ -13,6 +13,7 @@ const appUpdateRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
+const shellManifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "public", "shell-asset-manifest.json"), "utf8"));
 const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
 const threadTileRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-tile-runtime.js"), "utf8");
 const threadDetailMergeStateJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-detail-merge-state.js"), "utf8");
@@ -264,34 +265,38 @@ test("visual harness can replay empty cached detail openings without exposing th
 });
 
 test("public app shell cache advances with static frontend changes", () => {
-  const appBuild = appJs.match(/CLIENT_BUILD_ID = "0\.1\.11\|(codex-mobile-shell-v\d+)"/);
-  assert.ok(appBuild, "missing app client shell build id");
-  assert.match(swJs, new RegExp(`const CACHE_NAME = "${appBuild[1]}"`));
-  assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
+  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v622");
+  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v622");
+  assert.match(swJs, /shell-asset-manifest\.js/);
+  assert.ok(shellManifest.precacheAssets.includes("/home-ai-diagnostic-reporting.js"));
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
-  assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
+  assert.ok(shellManifest.precacheAssets.includes("/thread-diagnostic-events.js"));
   assert.match(appJs, /"\/thread-diagnostic-events\.js"/);
-  assert.match(swJs, /"\/thread-status-hints\.js"/);
-  assert.match(swJs, /"\/thread-performance-metrics\.js"/);
-  assert.match(swJs, /"\/thread-list-load-policy\.js"/);
-  assert.match(swJs, /"\/thread-list-stable-order\.js"/);
-  assert.match(swJs, /"\/thread-list-runtime\.js"/);
-  assert.match(swJs, /"\/live-operation-dock-state\.js"/);
-  assert.match(swJs, /"\/thread-detail-state\.js"/);
-  assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
-  assert.match(swJs, /"\/thread-detail-merge-state\.js"/);
-  assert.match(swJs, /"\/thread-detail-v4-merge-state\.js"/);
-  assert.match(swJs, /"\/thread-detail-runtime\.js"/);
-  assert.match(swJs, /"\/thread-detail-patch-plan\.js"/);
-  assert.match(swJs, /"\/thread-detail-dom-patch\.js"/);
-  assert.match(swJs, /"\/thread-detail-actions\.js"/);
-  assert.match(swJs, /"\/thread-tile-actions\.js"/);
-  assert.match(swJs, /"\/thread-tile-state\.js"/);
-  assert.match(swJs, /"\/thread-tile-layout\.js"/);
-  assert.match(swJs, /"\/thread-tile-runtime\.js"/);
-  assert.match(swJs, /"\/composer-runtime\.js"/);
-  assert.match(swJs, /"\/app-update-runtime\.js"/);
-  assert.match(swJs, /"\/side-chat-runtime\.js"/);
+  for (const asset of [
+    "/thread-status-hints.js",
+    "/thread-performance-metrics.js",
+    "/thread-list-load-policy.js",
+    "/thread-list-stable-order.js",
+    "/thread-list-runtime.js",
+    "/live-operation-dock-state.js",
+    "/thread-detail-state.js",
+    "/thread-detail-render-plan.js",
+    "/thread-detail-merge-state.js",
+    "/thread-detail-v4-merge-state.js",
+    "/thread-detail-runtime.js",
+    "/thread-detail-patch-plan.js",
+    "/thread-detail-dom-patch.js",
+    "/thread-detail-actions.js",
+    "/thread-tile-actions.js",
+    "/thread-tile-state.js",
+    "/thread-tile-layout.js",
+    "/thread-tile-runtime.js",
+    "/composer-runtime.js",
+    "/app-update-runtime.js",
+    "/side-chat-runtime.js",
+  ]) {
+    assert.ok(shellManifest.precacheAssets.includes(asset), `manifest missing ${asset}`);
+  }
   assert.match(appJs, /"\/side-chat-runtime\.js"/);
   assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>[\s\S]*<script src="\/media-preview-runtime\.js"><\/script>[\s\S]*<script src="\/app\.js"><\/script>/);
   assert.match(appJs, /(?:const|var) sideChatRuntimeApi = window\.CodexSideChatRuntime/);
@@ -806,32 +811,37 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.doesNotMatch(functionBody("backfillFullThreadDetail"), /recordThreadDetailResponseDiagnostics\(fullReadyPerformance, \{/);
   assert.match(stylesCss, /\.history-loader\s*{[\s\S]*justify-content:\s*space-between;/);
   assert.match(stylesCss, /\.history-load-button/);
-  assert.match(swJs, /"\/api-client\.js"/);
-  assert.match(swJs, /"\/runtime-settings\.js"/);
-  assert.match(swJs, /"\/draft-store\.js"/);
-  assert.match(swJs, /"\/markdown-renderer\.js"/);
-  assert.match(swJs, /"\/viewport-metrics\.js"/);
-  assert.match(swJs, /"\/conversation-scroll\.js"/);
-  assert.match(swJs, /"\/image-compressor\.js"/);
-  assert.match(swJs, /"\/plugin-embed\.js"/);
-  assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
-  assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
-  assert.match(swJs, /"\/thread-performance-metrics\.js"/);
-  assert.match(swJs, /"\/thread-list-load-policy\.js"/);
-  assert.match(swJs, /"\/thread-list-stable-order\.js"/);
-  assert.match(swJs, /"\/client-render-stability-guard\.js"/);
-  assert.match(swJs, /"\/live-operation-dock-state\.js"/);
-  assert.match(swJs, /"\/thread-detail-state\.js"/);
-  assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
-  assert.match(swJs, /"\/thread-detail-merge-state\.js"/);
-  assert.match(swJs, /"\/thread-detail-patch-plan\.js"/);
-  assert.match(swJs, /"\/thread-detail-dom-patch\.js"/);
-  assert.match(swJs, /"\/thread-detail-actions\.js"/);
-  assert.match(swJs, /"\/thread-tile-actions\.js"/);
-  assert.match(swJs, /"\/thread-tile-state\.js"/);
-  assert.match(swJs, /"\/thread-tile-layout\.js"/);
-  assert.match(swJs, /"\/build-refresh-policy\.js"/);
-  assert.match(swJs, /"\/app-update-runtime\.js"/);
+  assert.match(swJs, /shell-asset-manifest\.js/);
+  for (const asset of [
+    "/api-client.js",
+    "/runtime-settings.js",
+    "/draft-store.js",
+    "/markdown-renderer.js",
+    "/viewport-metrics.js",
+    "/conversation-scroll.js",
+    "/image-compressor.js",
+    "/plugin-embed.js",
+    "/home-ai-diagnostic-reporting.js",
+    "/thread-diagnostic-events.js",
+    "/thread-performance-metrics.js",
+    "/thread-list-load-policy.js",
+    "/thread-list-stable-order.js",
+    "/client-render-stability-guard.js",
+    "/live-operation-dock-state.js",
+    "/thread-detail-state.js",
+    "/thread-detail-render-plan.js",
+    "/thread-detail-merge-state.js",
+    "/thread-detail-patch-plan.js",
+    "/thread-detail-dom-patch.js",
+    "/thread-detail-actions.js",
+    "/thread-tile-actions.js",
+    "/thread-tile-state.js",
+    "/thread-tile-layout.js",
+    "/build-refresh-policy.js",
+    "/app-update-runtime.js",
+  ]) {
+    assert.ok(shellManifest.precacheAssets.includes(asset), `manifest missing ${asset}`);
+  }
   assert.match(appJs, /"\/viewport-metrics\.js"/);
   assert.match(appJs, /"\/conversation-scroll\.js"/);
   assert.match(appJs, /"\/image-compressor\.js"/);

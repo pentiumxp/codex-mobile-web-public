@@ -278,6 +278,8 @@ async function readStaticShellReadback(options = {}, config = {}) {
   };
   const app = await readAsset("/app.js");
   const appBootstrap = await readAsset("/app-bootstrap.js");
+  const shellManifestJs = await readAsset("/shell-asset-manifest.js");
+  const shellManifestJson = await readAsset("/shell-asset-manifest.json");
   const sw = await readAsset("/sw.js");
   const runtimeAssets = await Promise.all([
     readAsset("/composer-runtime.js"),
@@ -287,10 +289,12 @@ async function readStaticShellReadback(options = {}, config = {}) {
   const clientBuildId = String(config && config.clientBuildId || "").trim();
   const shellCacheName = String(config && config.shellCacheName || "").trim();
   const clientBuildMatches = clientBuildId
-    ? String(appBootstrap.text || app.text || "").includes(`CLIENT_BUILD_ID = ${JSON.stringify(clientBuildId)}`)
+    ? String(`${shellManifestJs.text || ""}\n${shellManifestJson.text || ""}\n${appBootstrap.text || ""}\n${app.text || ""}`)
+      .includes(JSON.stringify(clientBuildId))
     : false;
   const shellCacheMatches = shellCacheName
-    ? String(sw.text || "").includes(`CACHE_NAME = ${JSON.stringify(shellCacheName)}`)
+    ? String(`${shellManifestJs.text || ""}\n${shellManifestJson.text || ""}\n${sw.text || ""}`)
+      .includes(JSON.stringify(shellCacheName))
     : false;
   const assetStatusOk = assets.every((asset) => asset.status >= 200 && asset.status < 300);
   const runtimeAssetCount = runtimeAssets.filter((asset) => asset && asset.ok).length;

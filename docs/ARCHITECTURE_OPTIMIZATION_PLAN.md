@@ -4345,6 +4345,38 @@ This is intentionally not the full ESM migration. The next Vite step should
 make service-worker and server build-id ownership read from the generated
 manifest instead of maintaining parallel hand-written lists.
 
+### 2026-07-02 Vite Shell Manifest Ownership
+
+The second Vite migration step makes the frontend shell asset manifest the
+single source for shell cache ownership while preserving the current ordered
+script loading contract.
+
+Scope:
+
+- Added `scripts/generate-frontend-shell-manifest.mjs` to derive
+  `public/shell-asset-manifest.json` and `public/shell-asset-manifest.js` from
+  `public/index.html`, package version, manifest links, and PWA icons.
+- Advanced the static shell contract to `codex-mobile-shell-v622` /
+  `0.1.11|codex-mobile-shell-v622`.
+- `public/index.html` loads `/shell-asset-manifest.js` before other runtime
+  scripts, exposing `CODEX_MOBILE_SHELL_MANIFEST`.
+- `public/sw.js` now reads its cache name and pre-cache asset list from the
+  generated manifest instead of keeping a hand-maintained `STATIC_ASSETS`
+  array.
+- `public/app-bootstrap.js` now reads `CLIENT_BUILD_ID` and
+  `PAGE_SHELL_ASSETS` from the generated manifest instead of keeping a
+  hand-maintained page-shell list.
+- `services/runtime/server-runtime-utils.js` now reads
+  `public/shell-asset-manifest.json` for `shellCacheName` and `hashAssets`
+  before computing `/api/public-config` build metadata.
+- `scripts/frontend-shell-asset-graph.mjs` now validates manifest freshness,
+  script order, and manifest consumer markers rather than parsing three
+  independent asset lists.
+
+This step removes the highest-risk Vite migration drift point: adding a new
+frontend runtime asset no longer requires manually syncing index, service
+worker cache, page refresh preparation, and server build-hash ownership.
+
 ## Release Rule
 
 Follow the current release order:

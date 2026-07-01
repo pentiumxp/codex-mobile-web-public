@@ -1,11 +1,16 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { buildPublicShellManifest } from "./generate-frontend-shell-manifest.mjs";
 
 export const SHELL_MANIFEST_SCHEMA_VERSION = 1;
 
 function readText(root, relativePath) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
+}
+
+function readJson(root, relativePath) {
+  return JSON.parse(readText(root, relativePath));
 }
 
 function uniqueValues(values) {
@@ -122,20 +127,24 @@ export function collectShellAssetGraph(root = process.cwd()) {
   const swSource = readText(root, "public/sw.js");
   const bootstrapSource = readText(root, "public/app-bootstrap.js");
   const serverRuntimeUtilsSource = readText(root, "services/runtime/server-runtime-utils.js");
+  const publicManifest = readJson(root, "public/shell-asset-manifest.json");
+  const expectedManifest = buildPublicShellManifest(root);
   const indexScriptAssets = extractExternalScriptSrcs(indexHtml);
   const indexLinkAssets = extractLinkHrefs(indexHtml);
-  const swStaticAssets = extractArrayDeclarationStrings(swSource, "STATIC_ASSETS");
-  const pageShellAssets = extractArrayDeclarationStrings(bootstrapSource, "PAGE_SHELL_ASSETS");
-  const serverHashAssets = extractServerRuntimeHashAssets(serverRuntimeUtilsSource);
   return {
     root,
-    shellCacheName: extractShellCacheName(swSource),
-    clientBuildId: extractClientBuildId(bootstrapSource),
+    shellCacheName: String(publicManifest.shellCacheName || ""),
+    clientBuildId: String(publicManifest.clientBuildId || ""),
     indexScriptAssets,
     indexLinkAssets,
-    swStaticAssets,
-    pageShellAssets,
-    serverHashAssets,
+    swStaticAssets: Array.isArray(publicManifest.precacheAssets) ? publicManifest.precacheAssets : [],
+    pageShellAssets: Array.isArray(publicManifest.pageShellAssets) ? publicManifest.pageShellAssets : [],
+    serverHashAssets: Array.isArray(publicManifest.hashAssets) ? publicManifest.hashAssets : [],
+    publicManifest,
+    expectedManifest,
+    swSource,
+    bootstrapSource,
+    serverRuntimeUtilsSource,
   };
 }
 
@@ -145,6 +154,24 @@ export function validateShellAssetGraph(graph) {
   const swStaticSet = new Set(graph.swStaticAssets);
   const pageShellSet = new Set(graph.pageShellAssets);
   const serverHashSet = new Set(graph.serverHashAssets);
+  const generatedManifestMatches = JSON.stringify(graph.publicManifest) === JSON.stringify(graph.expectedManifest);
+
+  if (!generatedManifestMatches) issues.push({ code: "public_shell_manifest_out_of_date" });
+  if (!indexScriptSet.has("/shell-asset-manifest.js")) {
+    issues.push({ code: "index_missing_shell_asset_manifest_script" });
+  }
+  if (!String(graph.swSource || "").includes('importScripts("/shell-asset-manifest.js")')) {
+    issues.push({ code: "sw_not_manifest_owned" });
+  }
+  if (/const\s+STATIC_ASSETS\s*=\s*\[/.test(String(graph.swSource || ""))) {
+    issues.push({ code: "sw_static_assets_manual_list" });
+  }
+  if (/PAGE_SHELL_ASSETS\s*=\s*Object\.freeze\(\s*\[/.test(String(graph.bootstrapSource || ""))) {
+    issues.push({ code: "page_shell_assets_manual_list" });
+  }
+  if (!String(graph.serverRuntimeUtilsSource || "").includes("shell-asset-manifest.json")) {
+    issues.push({ code: "server_hash_not_manifest_owned" });
+  }
 
   for (const asset of graph.indexScriptAssets) {
     if (!swStaticSet.has(asset)) issues.push({ code: "sw_missing_index_script", asset });

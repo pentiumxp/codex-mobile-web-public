@@ -1,66 +1,12 @@
 "use strict";
 
-const CACHE_NAME = "codex-mobile-shell-v621";
-const STATIC_ASSETS = [
-  "/",
-  "/index.html",
-  "/styles.css",
-  "/api-client.js",
-  "/runtime-settings.js",
-  "/draft-store.js",
-  "/composer-runtime.js",
-  "/markdown-renderer.js",
-  "/viewport-metrics.js",
-  "/conversation-scroll.js",
-  "/image-compressor.js",
-  "/plugin-embed.js",
-  "/plugin-voice-input.js",
-  "/home-ai-diagnostic-reporting.js",
-  "/thread-diagnostic-events.js",
-  "/frontend-runtime-health.js",
-  "/thread-status-hints.js",
-  "/thread-performance-metrics.js",
-  "/thread-list-load-policy.js",
-  "/thread-list-stable-order.js",
-  "/thread-list-runtime.js",
-  "/client-render-stability-guard.js",
-  "/live-operation-dock-state.js",
-  "/thread-detail-state.js",
-  "/thread-detail-render-plan.js",
-  "/thread-detail-merge-state.js",
-  "/thread-detail-v4-merge-state.js",
-  "/thread-detail-runtime.js",
-  "/thread-detail-patch-plan.js",
-  "/thread-detail-dom-patch.js",
-  "/thread-detail-actions.js",
-  "/thread-tile-actions.js",
-  "/thread-tile-state.js",
-  "/thread-tile-layout.js",
-  "/thread-tile-runtime.js",
-  "/build-refresh-policy.js",
-  "/app-update-runtime.js",
-  "/side-chat-runtime.js",
-  "/media-preview-runtime.js",
-  "/app-bootstrap.js",
-  "/settings-runtime.js",
-  "/modal-runtime.js",
-  "/navigation-runtime.js",
-  "/api-client-runtime.js",
-  "/notification-ui-runtime.js",
-  "/pane-layout-runtime.js",
-  "/task-card-runtime.js",
-  "/conversation-render-runtime.js",
-  "/event-stream-runtime.js",
-  "/composer-bridge-runtime.js",
-  "/runtime-wiring-runtime.js",
-  "/app-shell-runtime.js",
-  "/app.js",
-  "/manifest.json",
-  "/icons/icon.svg",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/icons/apple-touch-icon.png",
-];
+importScripts("/shell-asset-manifest.js");
+
+const SHELL_MANIFEST = self.CODEX_MOBILE_SHELL_MANIFEST || {};
+const CACHE_NAME = String(SHELL_MANIFEST.shellCacheName || "codex-mobile-shell-v622");
+const STATIC_ASSETS = Object.freeze(Array.isArray(SHELL_MANIFEST.precacheAssets)
+  ? SHELL_MANIFEST.precacheAssets.slice()
+  : ["/", "/index.html", "/styles.css", "/shell-asset-manifest.js", "/app-bootstrap.js", "/app.js", "/manifest.json"]);
 
 function shouldBypassCache(url) {
   return url.origin !== self.location.origin

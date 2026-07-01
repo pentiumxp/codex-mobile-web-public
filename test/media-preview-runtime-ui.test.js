@@ -10,6 +10,7 @@ const root = path.resolve(__dirname, "..");
 const appJs = readFrontendSources(root);
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
+const shellManifest = JSON.parse(fs.readFileSync(path.join(root, "public", "shell-asset-manifest.json"), "utf8"));
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
 const mediaPreviewRuntimeJs = fs.readFileSync(path.join(root, "public", "media-preview-runtime.js"), "utf8");
 
@@ -118,11 +119,13 @@ function createRuntimeFixture(overrides = {}) {
 
 test("media preview runtime is wired into the static shell", () => {
   assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>[\s\S]*<script src="\/media-preview-runtime\.js"><\/script>[\s\S]*<script src="\/app\.js"><\/script>/);
-  assert.match(swJs, /"\/media-preview-runtime\.js"/);
-  assert.match(swJs, /codex-mobile-shell-v621/);
+  assert.ok(shellManifest.precacheAssets.includes("/media-preview-runtime.js"));
+  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v622");
+  assert.match(swJs, /shell-asset-manifest\.js/);
   assert.match(appJs, /"\/media-preview-runtime\.js"/);
-  assert.match(appJs, /0\.1\.11\|codex-mobile-shell-v621/);
-  assert.match(serverRuntimeUtilsJs, /"media-preview-runtime\.js"/);
+  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v622");
+  assert.ok(shellManifest.hashAssets.includes("/media-preview-runtime.js"));
+  assert.match(serverRuntimeUtilsJs, /shell-asset-manifest\.json/);
   assert.match(appJs, /(?:const|var) mediaPreviewRuntimeApi = window\.CodexMediaPreviewRuntime/);
   assert.match(appJs, /function requireMediaPreviewRuntime\(\)/);
   assert.match(appJs, /mediaPreviewRuntimeApi\.createMediaPreviewRuntime\(\{/);

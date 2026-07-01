@@ -1,5 +1,15 @@
 "use strict";
 
+function readShellManifest() {
+  const manifest = window.CODEX_MOBILE_SHELL_MANIFEST;
+  return manifest && typeof manifest === "object" ? manifest : {};
+}
+
+function shellManifestList(name, fallback = []) {
+  const value = readShellManifest()[name];
+  return Array.isArray(value) && value.length ? value.slice() : fallback.slice();
+}
+
 function initialPluginLaunchKeyFromUrl() {
   try {
     const params = new URL(window.location.href, window.location.origin).searchParams;
@@ -673,7 +683,7 @@ var THREAD_LIST_PAGE_LIMIT = 200;
 var THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 var THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 var LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-var CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v621";
+var CLIENT_BUILD_ID = String(readShellManifest().clientBuildId || "0.1.11|codex-mobile-shell-v622");
 var CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -713,67 +723,16 @@ var SUBMITTED_PROCESSING_HINT_STALE_MS = threadStatusHintPolicy.DEFAULT_SUBMITTE
 var STATUS_EVENT_FRESHNESS_TOLERANCE_MS = threadStatusHintPolicy.DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS;
 var AUTO_TURN_RECOVERY_COOLDOWN_MS = 120000;
 var GITHUB_LINK_PREVIEW_TIMEOUT_MS = 12000;
-var PAGE_SHELL_ASSETS = Object.freeze([
+var PAGE_SHELL_ASSETS = Object.freeze(shellManifestList("pageShellAssets", [
   "/",
   "/index.html",
   "/styles.css",
-  "/api-client.js",
-  "/runtime-settings.js",
-  "/draft-store.js",
-  "/composer-runtime.js",
-  "/markdown-renderer.js",
-  "/viewport-metrics.js",
-  "/conversation-scroll.js",
-  "/image-compressor.js",
-  "/plugin-embed.js",
-  "/plugin-voice-input.js",
-  "/home-ai-diagnostic-reporting.js",
-  "/thread-diagnostic-events.js",
-  "/frontend-runtime-health.js",
-  "/thread-status-hints.js",
-  "/thread-performance-metrics.js",
-  "/thread-list-load-policy.js",
-  "/thread-list-stable-order.js",
-  "/thread-list-runtime.js",
-  "/client-render-stability-guard.js",
-  "/live-operation-dock-state.js",
-  "/thread-detail-state.js",
-  "/thread-detail-render-plan.js",
-  "/thread-detail-merge-state.js",
-  "/thread-detail-v4-merge-state.js",
-  "/thread-detail-runtime.js",
-  "/thread-detail-patch-plan.js",
-  "/thread-detail-dom-patch.js",
-  "/thread-detail-actions.js",
-  "/thread-tile-actions.js",
-  "/thread-tile-state.js",
-  "/thread-tile-layout.js",
-  "/thread-tile-runtime.js",
-  "/build-refresh-policy.js",
-  "/app-update-runtime.js",
-  "/side-chat-runtime.js",
-  "/media-preview-runtime.js",
+  "/shell-asset-manifest.js",
   "/app-bootstrap.js",
-  "/settings-runtime.js",
-  "/modal-runtime.js",
-  "/navigation-runtime.js",
-  "/api-client-runtime.js",
-  "/notification-ui-runtime.js",
-  "/pane-layout-runtime.js",
-  "/task-card-runtime.js",
-  "/conversation-render-runtime.js",
-  "/event-stream-runtime.js",
-  "/composer-bridge-runtime.js",
-  "/runtime-wiring-runtime.js",
-  "/app-shell-runtime.js",
   "/app.js",
   "/manifest.json",
   "/sw.js",
-  "/icons/icon.svg",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/icons/apple-touch-icon.png",
-]);
+]));
 var composerRuntime = null;
 var threadListRuntime = null;
 var threadTileRuntime = null;

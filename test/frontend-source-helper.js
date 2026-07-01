@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const FRONTEND_SOURCE_FILES = [
+  "shell-asset-manifest.js",
   "api-client.js",
   "runtime-settings.js",
   "draft-store.js",

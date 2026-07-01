@@ -16,6 +16,7 @@ const mediaPreviewRuntimeJs = fs.readFileSync(path.join(root, "public", "media-p
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const shellManifest = JSON.parse(fs.readFileSync(path.join(root, "public", "shell-asset-manifest.json"), "utf8"));
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-list-runtime.js"), "utf8");
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
@@ -63,9 +64,11 @@ test("self-update UI explains supervisor-dependent restart", () => {
 
 test("app update runtime is wired into the static shell", () => {
   assert.match(indexHtml, /<script src="\/app-update-runtime\.js"><\/script>/);
-  assert.match(swJs, /"\/app-update-runtime\.js"/);
+  assert.ok(shellManifest.precacheAssets.includes("/app-update-runtime.js"));
   assert.match(appJs, /"\/app-update-runtime\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"app-update-runtime\.js"/);
+  assert.ok(shellManifest.hashAssets.includes("/app-update-runtime.js"));
+  assert.match(swJs, /shell-asset-manifest\.js/);
+  assert.match(serverRuntimeUtilsJs, /shell-asset-manifest\.json/);
   assert.match(appJs, /(?:const|var) appUpdateRuntimeApi = window\.CodexAppUpdateRuntime/);
   const requireRuntimeBody = functionBody(appJs, "requireAppUpdateRuntime");
   assert.match(requireRuntimeBody, /if \(!appUpdateRuntime\) \{/);
@@ -90,58 +93,17 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(coreApiRouteServiceJs, /clientBuildId:\s*buildConfig\.clientBuildId/);
   assert.match(coreApiRouteServiceJs, /shellCacheName:\s*buildConfig\.shellCacheName/);
   assert.match(indexHtml, /id="pageRefreshPrompt"/);
-  assert.match(appUpdateSource, /(?:const|var) PAGE_SHELL_ASSETS = Object\.freeze\(\[/);
-  assert.match(appUpdateSource, /"\/styles\.css"/);
-  assert.match(appUpdateSource, /"\/api-client\.js"/);
-  assert.match(appUpdateSource, /"\/runtime-settings\.js"/);
-  assert.match(appUpdateSource, /"\/draft-store\.js"/);
-  assert.match(appUpdateSource, /"\/markdown-renderer\.js"/);
-  assert.match(appUpdateSource, /"\/viewport-metrics\.js"/);
-  assert.match(appUpdateSource, /"\/conversation-scroll\.js"/);
-  assert.match(appUpdateSource, /"\/image-compressor\.js"/);
-  assert.match(appUpdateSource, /"\/plugin-embed\.js"/);
-  assert.match(appUpdateSource, /"\/home-ai-diagnostic-reporting\.js"/);
-  assert.match(appUpdateSource, /"\/thread-diagnostic-events\.js"/);
-  assert.match(appUpdateSource, /"\/frontend-runtime-health\.js"/);
-  assert.match(appUpdateSource, /"\/thread-performance-metrics\.js"/);
-  assert.match(appUpdateSource, /"\/thread-list-load-policy\.js"/);
-  assert.match(appUpdateSource, /"\/thread-list-stable-order\.js"/);
-  assert.match(appUpdateSource, /"\/thread-list-runtime\.js"/);
-  assert.match(appUpdateSource, /"\/client-render-stability-guard\.js"/);
-  assert.match(appUpdateSource, /"\/live-operation-dock-state\.js"/);
-  assert.match(appUpdateSource, /"\/thread-detail-state\.js"/);
-  assert.match(appUpdateSource, /"\/thread-detail-render-plan\.js"/);
-  assert.match(appUpdateSource, /"\/thread-detail-merge-state\.js"/);
-  assert.match(appUpdateSource, /"\/thread-detail-v4-merge-state\.js"/);
-  assert.match(appUpdateSource, /"\/thread-detail-runtime\.js"/);
-  assert.match(appUpdateSource, /"\/thread-detail-patch-plan\.js"/);
-  assert.match(appUpdateSource, /"\/thread-detail-dom-patch\.js"/);
-  assert.match(appUpdateSource, /"\/thread-detail-actions\.js"/);
-  assert.match(appUpdateSource, /"\/thread-tile-actions\.js"/);
-  assert.match(appUpdateSource, /"\/thread-tile-state\.js"/);
-  assert.match(appUpdateSource, /"\/thread-tile-layout\.js"/);
-  assert.match(appUpdateSource, /"\/thread-tile-runtime\.js"/);
-  assert.match(appUpdateSource, /"\/build-refresh-policy\.js"/);
-  assert.match(appUpdateSource, /"\/side-chat-runtime\.js"/);
-  assert.match(appUpdateSource, /"\/media-preview-runtime\.js"/);
-  for (const asset of [
-    "/app-bootstrap.js",
-    "/settings-runtime.js",
-    "/modal-runtime.js",
-    "/navigation-runtime.js",
-    "/api-client-runtime.js",
-    "/notification-ui-runtime.js",
-    "/pane-layout-runtime.js",
-    "/task-card-runtime.js",
-    "/conversation-render-runtime.js",
-    "/event-stream-runtime.js",
-    "/composer-bridge-runtime.js",
-    "/runtime-wiring-runtime.js",
-    "/app-shell-runtime.js",
-  ]) {
-    assert.match(appUpdateSource, new RegExp(`"${asset.replace(/\//g, "\\/")}"`));
-  }
+  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v622");
+  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v622");
+  assert.ok(shellManifest.pageShellAssets.includes("/sw.js"));
+  assert.ok(shellManifest.pageShellAssets.includes("/shell-asset-manifest.js"));
+  assert.ok(shellManifest.pageShellAssets.includes("/shell-asset-manifest.json"));
+  assert.ok(shellManifest.pageShellAssets.includes("/app-update-runtime.js"));
+  assert.ok(shellManifest.pageShellAssets.includes("/app-shell-runtime.js"));
+  assert.match(appUpdateSource, /shellManifestList\("pageShellAssets"/);
+  assert.doesNotMatch(appUpdateSource, /PAGE_SHELL_ASSETS\s*=\s*Object\.freeze\(\s*\[/);
   const scriptOrder = [
+    "/shell-asset-manifest.js",
     "/thread-diagnostic-events.js",
     "/frontend-runtime-health.js",
     "/thread-status-hints.js",
@@ -189,32 +151,8 @@ test("page prompts for refresh when server client build changes", () => {
     assert.ok(scriptIndex > previousScriptIndex, `${asset} should load after the prior runtime asset`);
     previousScriptIndex = scriptIndex;
   }
-  assert.match(serverRuntimeUtilsJs, /"viewport-metrics\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"conversation-scroll\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"home-ai-diagnostic-reporting\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-diagnostic-events\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"frontend-runtime-health\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-performance-metrics\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-list-load-policy\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-list-stable-order\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-list-runtime\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"client-render-stability-guard\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"live-operation-dock-state\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-detail-state\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-detail-render-plan\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-detail-merge-state\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-detail-v4-merge-state\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-detail-runtime\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-detail-patch-plan\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-detail-dom-patch\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-detail-actions\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-tile-actions\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-tile-state\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-tile-layout\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"thread-tile-runtime\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"build-refresh-policy\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"side-chat-runtime\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"media-preview-runtime\.js"/);
+  assert.match(serverRuntimeUtilsJs, /shell-asset-manifest\.json/);
+  assert.match(serverRuntimeUtilsJs, /manifestAssetFiles\("hashAssets"/);
   assert.match(indexHtml, /id="hardRefreshButton"/);
   assert.match(appUpdateSource, /function checkPageRefreshAvailability\(/);
   assert.match(appUpdateSource, /function refreshPageForNewBuild\(/);

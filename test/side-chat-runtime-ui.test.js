@@ -10,6 +10,7 @@ const root = path.resolve(__dirname, "..");
 const appJs = readFrontendSources(root);
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
+const shellManifest = JSON.parse(fs.readFileSync(path.join(root, "public", "shell-asset-manifest.json"), "utf8"));
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
 const sideChatRuntimeJs = fs.readFileSync(path.join(root, "public", "side-chat-runtime.js"), "utf8");
 
@@ -69,9 +70,11 @@ function createRuntimeFixture() {
 
 test("side chat runtime is wired into the static shell", () => {
   assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>[\s\S]*<script src="\/app\.js"><\/script>/);
-  assert.match(swJs, /"\/side-chat-runtime\.js"/);
+  assert.ok(shellManifest.precacheAssets.includes("/side-chat-runtime.js"));
   assert.match(appJs, /"\/side-chat-runtime\.js"/);
-  assert.match(serverRuntimeUtilsJs, /"side-chat-runtime\.js"/);
+  assert.ok(shellManifest.hashAssets.includes("/side-chat-runtime.js"));
+  assert.match(swJs, /shell-asset-manifest\.js/);
+  assert.match(serverRuntimeUtilsJs, /shell-asset-manifest\.json/);
   assert.match(appJs, /(?:const|var) sideChatRuntimeApi = window\.CodexSideChatRuntime/);
   assert.match(appJs, /function requireSideChatRuntime\(\)/);
   assert.match(appJs, /sideChatRuntimeApi\.createSideChatRuntime\(\{/);
