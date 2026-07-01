@@ -209,6 +209,25 @@ function createViteShellArtifactService(dependencies = {}) {
     if (readbackEntryGroupChunks.length && entryGroupImportOwner !== EXPECTED_ENTRY_GROUP_IMPORT_OWNER) {
       issues.push({ code: "vite_shell_entry_group_import_owner_mismatch" });
     }
+    const entryDynamicImportGraph = readback.entryDynamicImportGraph && typeof readback.entryDynamicImportGraph === "object"
+      ? readback.entryDynamicImportGraph
+      : null;
+    if (!entryDynamicImportGraph || entryDynamicImportGraph.owner !== EXPECTED_ENTRY_GROUP_IMPORT_OWNER) {
+      issues.push({ code: "vite_shell_entry_dynamic_import_graph_missing" });
+    } else {
+      if ((entryDynamicImportGraph.missingFiles || []).length) {
+        issues.push({ code: "vite_shell_entry_dynamic_import_missing" });
+      }
+      if ((entryDynamicImportGraph.extraFiles || []).length) {
+        issues.push({ code: "vite_shell_entry_dynamic_import_extra" });
+      }
+      if (Number(entryDynamicImportGraph.entryGroupFileCount) !== readbackEntryGroupChunks.length) {
+        issues.push({ code: "vite_shell_entry_dynamic_import_entry_group_count_mismatch" });
+      }
+      if (Number(entryDynamicImportGraph.deferredFileCount) < 1) {
+        issues.push({ code: "vite_shell_entry_dynamic_import_deferred_missing" });
+      }
+    }
     const preview = readback.preview && typeof readback.preview === "object" ? readback.preview : null;
     if (!preview || normalizeRelativeFileName(preview.fileName) !== previewFileName) {
       issues.push({ code: "vite_shell_preview_missing" });
@@ -323,6 +342,27 @@ function createViteShellArtifactService(dependencies = {}) {
       sourceBuildStage: String(readback.sourceBuildStage || ""),
       productionExecution: String(readback.productionExecution || ""),
       entryGroupImportOwner: String(readback.entryGroupImportOwner || ""),
+      entryDynamicImportGraph: entryDynamicImportGraph ? {
+        owner: String(entryDynamicImportGraph.owner || ""),
+        actualFileCount: Array.isArray(entryDynamicImportGraph.actualFiles)
+          ? entryDynamicImportGraph.actualFiles.length
+          : 0,
+        expectedFileCount: Array.isArray(entryDynamicImportGraph.expectedFiles)
+          ? entryDynamicImportGraph.expectedFiles.length
+          : 0,
+        missingFileCount: Array.isArray(entryDynamicImportGraph.missingFiles)
+          ? entryDynamicImportGraph.missingFiles.length
+          : 0,
+        extraFileCount: Array.isArray(entryDynamicImportGraph.extraFiles)
+          ? entryDynamicImportGraph.extraFiles.length
+          : 0,
+        deferredFileCount: Number.isFinite(Number(entryDynamicImportGraph.deferredFileCount))
+          ? Number(entryDynamicImportGraph.deferredFileCount)
+          : 0,
+        entryGroupFileCount: Number.isFinite(Number(entryDynamicImportGraph.entryGroupFileCount))
+          ? Number(entryDynamicImportGraph.entryGroupFileCount)
+          : 0,
+      } : null,
       artifactRoot: DEFAULT_PUBLIC_ARTIFACT_ROOT,
       shellCacheName: String(readback.shellCacheName || ""),
       clientBuildId: String(readback.clientBuildId || ""),

@@ -5,40 +5,41 @@
   "sourceBuildStage": "vite-shell-artifact-contract-v1",
   "productionExecution": "classic-script-fallback",
   "entryGroupImportOwner": "vite-shell-entry",
+  "entryDynamicImportGraph": {
+    "owner": "vite-shell-entry",
+    "actualFiles": [
+      "assets/vite-entry-group-manifest-BLqR4h3p.js",
+      "assets/vite-entry-group-foundation-ByoVPvax.js",
+      "assets/vite-entry-group-feature-runtimes-CwReA8-F.js",
+      "assets/vite-entry-group-bootstrap-state-BpqsbsHa.js",
+      "assets/vite-entry-group-shell-services-B2tZGkPj.js",
+      "assets/vite-entry-group-app-entry-Cy7TRgaR.js",
+      "assets/vite-deferred-entry-topology-Dt2PZXE7.js"
+    ],
+    "expectedFiles": [
+      "assets/vite-deferred-entry-topology-Dt2PZXE7.js",
+      "assets/vite-entry-group-app-entry-Cy7TRgaR.js",
+      "assets/vite-entry-group-bootstrap-state-BpqsbsHa.js",
+      "assets/vite-entry-group-feature-runtimes-CwReA8-F.js",
+      "assets/vite-entry-group-foundation-ByoVPvax.js",
+      "assets/vite-entry-group-manifest-BLqR4h3p.js",
+      "assets/vite-entry-group-shell-services-B2tZGkPj.js"
+    ],
+    "missingFiles": [],
+    "extraFiles": [],
+    "deferredFileCount": 1,
+    "entryGroupFileCount": 6
+  },
   "shellCacheName": "codex-mobile-shell-v624",
   "clientBuildId": "0.1.11|codex-mobile-shell-v624",
   "entry": {
     "source": "frontend/vite-shell-entry.mjs",
-    "fileName": "assets/vite-shell-entry-O8CdcyzF.js"
+    "fileName": "assets/vite-shell-entry-BiyBhUzN.js"
   },
   "deferredChunks": [
     {
       "source": "frontend/vite-deferred-entry-topology.mjs",
-      "fileName": "assets/vite-deferred-entry-topology-q2j0WMf3.js"
-    },
-    {
-      "source": "virtual:codex-mobile-shell-entry-group/app-entry",
-      "fileName": "assets/vite-entry-group-app-entry-Cy7TRgaR.js"
-    },
-    {
-      "source": "virtual:codex-mobile-shell-entry-group/bootstrap-state",
-      "fileName": "assets/vite-entry-group-bootstrap-state-BpqsbsHa.js"
-    },
-    {
-      "source": "virtual:codex-mobile-shell-entry-group/feature-runtimes",
-      "fileName": "assets/vite-entry-group-feature-runtimes-CwReA8-F.js"
-    },
-    {
-      "source": "virtual:codex-mobile-shell-entry-group/foundation",
-      "fileName": "assets/vite-entry-group-foundation-ByoVPvax.js"
-    },
-    {
-      "source": "virtual:codex-mobile-shell-entry-group/manifest",
-      "fileName": "assets/vite-entry-group-manifest-BLqR4h3p.js"
-    },
-    {
-      "source": "virtual:codex-mobile-shell-entry-group/shell-services",
-      "fileName": "assets/vite-entry-group-shell-services-B2tZGkPj.js"
+      "fileName": "assets/vite-deferred-entry-topology-Dt2PZXE7.js"
     }
   ],
   "entryGroupChunks": [
@@ -117,7 +118,7 @@
   ],
   "preview": {
     "fileName": "preview.html",
-    "entryScript": "/vite-shell/assets/vite-shell-entry-O8CdcyzF.js"
+    "entryScript": "/vite-shell/assets/vite-shell-entry-BiyBhUzN.js"
   },
   "startupCriticalAssets": [
     "/shell-asset-manifest.js",
@@ -154,18 +155,18 @@
   "publishedFiles": [
     {
       "fileName": "codex-mobile-shell-manifest.json",
-      "bytes": 80531,
-      "sha256": "2b90a44e044a4eda739955467a6fe9a0f174aa17bee7c4fa358975e13ba3f29a"
+      "bytes": 79693,
+      "sha256": "c0ac24f8d6ae935fe377d2b4ff6264beed4f41fe7bb07ab3a6976fede0358ad2"
     },
     {
-      "fileName": "assets/vite-shell-entry-O8CdcyzF.js",
-      "bytes": 20357,
-      "sha256": "2a9578cdeae1b33f364ec6a40dc0cbff3d3d835506182589b763cff0f32ab2c2"
+      "fileName": "assets/vite-shell-entry-BiyBhUzN.js",
+      "bytes": 20754,
+      "sha256": "08e986f44999239ba9f58308fa250a70d95ff78370a7037d485b96601242822e"
     },
     {
-      "fileName": "assets/vite-deferred-entry-topology-q2j0WMf3.js",
+      "fileName": "assets/vite-deferred-entry-topology-Dt2PZXE7.js",
       "bytes": 748,
-      "sha256": "52709538b65cf9d75c41f142513821ce66e9447b5c15c15d5447cd8d56e94e88"
+      "sha256": "03a027b65d571fbc50f4e65d9a3f0c87ab51564c3c7929eda8d26b20d9a35294"
     },
     {
       "fileName": "assets/vite-entry-group-app-entry-Cy7TRgaR.js",
@@ -200,7 +201,7 @@
     {
       "fileName": "preview.html",
       "bytes": 3929,
-      "sha256": "c511d0e984393720c6df328870e447ee86140ef20f715c6cc72526b5eb48ca2e"
+      "sha256": "c1ce8e5c88d189d6935239c73fd30a36aa6df82e0bd5e5b162f86afc1ce4e60a"
     }
   ],
   "validation": {

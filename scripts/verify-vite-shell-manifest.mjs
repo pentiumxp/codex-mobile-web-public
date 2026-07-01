@@ -76,6 +76,35 @@ if (!fs.existsSync(manifestPath)) {
     if (entryGroupChunks.length !== (current.entryGroups || []).length) {
       mismatch.push("viteBuildEntryGroupChunks");
     }
+    const entryDynamicImportGraph = viteBuild.entryDynamicImportGraph && typeof viteBuild.entryDynamicImportGraph === "object"
+      ? viteBuild.entryDynamicImportGraph
+      : null;
+    if (!entryDynamicImportGraph || entryDynamicImportGraph.owner !== "vite-shell-entry") {
+      mismatch.push("viteBuildEntryDynamicImportGraph");
+    } else {
+      if ((entryDynamicImportGraph.missingFiles || []).length) {
+        mismatch.push("viteBuildEntryDynamicImportMissing");
+      }
+      if ((entryDynamicImportGraph.extraFiles || []).length) {
+        mismatch.push("viteBuildEntryDynamicImportExtra");
+      }
+      if (Number(entryDynamicImportGraph.deferredFileCount) < 1) {
+        mismatch.push("viteBuildEntryDynamicImportDeferred");
+      }
+      if (Number(entryDynamicImportGraph.entryGroupFileCount) !== entryGroupChunks.length) {
+        mismatch.push("viteBuildEntryDynamicImportEntryGroups");
+      }
+      const manifestDynamicImportFiles = [];
+      for (const dynamicImport of shellEntry && Array.isArray(shellEntry.dynamicImports) ? shellEntry.dynamicImports : []) {
+        const chunk = viteManifest[dynamicImport];
+        if (chunk && chunk.file) manifestDynamicImportFiles.push(chunk.file);
+      }
+      const manifestFiles = manifestDynamicImportFiles.slice().sort();
+      const graphFiles = (entryDynamicImportGraph.actualFiles || []).slice().sort();
+      if (JSON.stringify(manifestFiles) !== JSON.stringify(graphFiles)) {
+        mismatch.push("viteBuildEntryDynamicImportFiles");
+      }
+    }
     const outputFiles = new Set(viteBuild.outputFiles || []);
     if (shellEntry && !outputFiles.has(shellEntry.file)) {
       mismatch.push("viteBuildOutputEntryFile");
@@ -109,6 +138,9 @@ if (!fs.existsSync(manifestPath)) {
       startupCriticalAssets: built.counts.startupCriticalAssets,
       classicGlobalExports: built.counts.classicGlobalExports,
       entryGroupChunks: built.viteBuild.viteEntryGroupChunks.length,
+      entryDynamicImports: built.viteBuild.entryDynamicImportGraph
+        ? built.viteBuild.entryDynamicImportGraph.actualFiles.length
+        : 0,
       viteBuildStage: built.viteBuild.stage,
     }));
   }

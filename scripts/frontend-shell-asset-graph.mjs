@@ -385,6 +385,7 @@ function validateViteShellBuildContract(contract, manifest) {
   const entry = contract.viteEntry;
   const deferredChunks = contract.viteDeferredChunks || [];
   const entryGroupChunks = contract.viteEntryGroupChunks || [];
+  const entryDynamicImportGraph = contract.entryDynamicImportGraph || {};
   const outputFiles = new Set(contract.outputFiles || []);
   const classicOutputFiles = new Set((contract.classicShellAssets || []).map((asset) => asset.fileName));
   const requiredGroupIds = (Array.isArray(manifest.entryGroups) ? manifest.entryGroups : [])
@@ -407,6 +408,9 @@ function validateViteShellBuildContract(contract, manifest) {
   if (!deferredChunks.length) {
     issues.push({ code: "vite_deferred_chunk_missing" });
   }
+  if (deferredChunks.some((chunk) => String(chunk && chunk.source || "").startsWith(VITE_ENTRY_GROUP_SOURCE_PREFIX))) {
+    issues.push({ code: "vite_deferred_chunk_contains_entry_group" });
+  }
   if (!deferredChunks.some((chunk) => chunk.source === VITE_DEFERRED_ENTRY_SOURCE || chunk.name === "vite-deferred-entry-topology")) {
     issues.push({ code: "vite_deferred_entry_topology_missing" });
   }
@@ -414,6 +418,21 @@ function validateViteShellBuildContract(contract, manifest) {
     if (!entryChunkIds.has(groupId)) {
       issues.push({ code: "vite_entry_group_chunk_missing", groupId });
     }
+  }
+  if (entryDynamicImportGraph.owner !== "vite-shell-entry") {
+    issues.push({ code: "vite_entry_dynamic_import_owner_mismatch" });
+  }
+  if ((entryDynamicImportGraph.missingFiles || []).length) {
+    issues.push({ code: "vite_entry_dynamic_import_missing" });
+  }
+  if ((entryDynamicImportGraph.extraFiles || []).length) {
+    issues.push({ code: "vite_entry_dynamic_import_extra" });
+  }
+  if (Number(entryDynamicImportGraph.entryGroupFileCount) !== requiredGroupIds.length) {
+    issues.push({ code: "vite_entry_dynamic_import_entry_group_count_mismatch" });
+  }
+  if (Number(entryDynamicImportGraph.deferredFileCount) < 1) {
+    issues.push({ code: "vite_entry_dynamic_import_deferred_missing" });
   }
   for (const asset of manifest.assets || []) {
     const fileName = outputPathForAsset(asset.path);
@@ -441,9 +460,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
   const viteEntry = chunks.find((chunk) => chunk.source === VITE_SHELL_ENTRY_SOURCE)
     || chunks.find((chunk) => chunk.isEntry && chunk.name === "vite-shell-entry")
     || chunks.find((chunk) => chunk.isEntry);
-  const deferredChunks = chunks.filter((chunk) => chunk.source === VITE_DEFERRED_ENTRY_SOURCE
-    || chunk.isDynamicEntry
-    || (viteEntry && viteEntry.dynamicImports.includes(chunk.fileName)));
+  const deferredChunks = chunks.filter((chunk) => chunk.source === VITE_DEFERRED_ENTRY_SOURCE);
   const entryGroupChunks = chunks
     .filter((chunk) => String(chunk.source || "").startsWith(VITE_ENTRY_GROUP_SOURCE_PREFIX))
     .map((chunk) => {
@@ -468,6 +485,24 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
       };
     })
     .sort((a, b) => a.groupId.localeCompare(b.groupId));
+  const expectedEntryDynamicImportFiles = uniqueValues([
+    ...deferredChunks.map((chunk) => chunk.fileName),
+    ...entryGroupChunks.map((chunk) => chunk.fileName),
+  ]);
+  const actualEntryDynamicImportFiles = uniqueValues(viteEntry && Array.isArray(viteEntry.dynamicImports)
+    ? viteEntry.dynamicImports
+    : []);
+  const expectedDynamicImportSet = new Set(expectedEntryDynamicImportFiles);
+  const actualDynamicImportSet = new Set(actualEntryDynamicImportFiles);
+  const entryDynamicImportGraph = {
+    owner: "vite-shell-entry",
+    actualFiles: actualEntryDynamicImportFiles,
+    expectedFiles: expectedEntryDynamicImportFiles,
+    missingFiles: expectedEntryDynamicImportFiles.filter((fileName) => !actualDynamicImportSet.has(fileName)),
+    extraFiles: actualEntryDynamicImportFiles.filter((fileName) => !expectedDynamicImportSet.has(fileName)),
+    deferredFileCount: deferredChunks.length,
+    entryGroupFileCount: entryGroupChunks.length,
+  };
   const classicShellAssets = assetOutputRecords(manifest);
   const outputFiles = [
     ...chunks.map((chunk) => chunk.fileName),
@@ -479,6 +514,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     stage: "vite-shell-artifact-contract-v1",
     productionExecution: "classic-script-fallback",
     entryGroupImportOwner: "vite-shell-entry",
+    entryDynamicImportGraph,
     entrySource: VITE_SHELL_ENTRY_SOURCE,
     deferredEntrySource: VITE_DEFERRED_ENTRY_SOURCE,
     classicFallback: {

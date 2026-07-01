@@ -83,6 +83,7 @@ test("Vite shell build contract records entry chunks and classic fallback output
   };
   for (const group of manifest.entryGroups) {
     const groupId = String(group.id).toLowerCase();
+    bundle["assets/vite-shell-entry-example.js"].dynamicImports.push(`assets/vite-entry-group-${groupId}-example.js`);
     bundle[`assets/vite-entry-group-${groupId}-example.js`] = {
       type: "chunk",
       fileName: `assets/vite-entry-group-${groupId}-example.js`,
@@ -101,10 +102,22 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.equal(contract.entryGroupImportOwner, "vite-shell-entry");
   assert.equal(contract.viteEntry.source, "frontend/vite-shell-entry.mjs");
   assert.equal(contract.viteEntry.fileName, "assets/vite-shell-entry-example.js");
-  assert.deepEqual(contract.viteEntry.dynamicImports, ["assets/vite-deferred-entry-topology-example.js"]);
+  assert.deepEqual(contract.viteEntry.dynamicImports, [
+    "assets/vite-deferred-entry-topology-example.js",
+    ...manifest.entryGroups.map((group) => `assets/vite-entry-group-${String(group.id).toLowerCase()}-example.js`),
+  ]);
   assert.equal(contract.viteDeferredChunks.length, 1);
   assert.equal(contract.viteDeferredChunks[0].source, "frontend/vite-deferred-entry-topology.mjs");
   assert.equal(contract.viteEntryGroupChunks.length, manifest.entryGroups.length);
+  assert.equal(contract.entryDynamicImportGraph.owner, "vite-shell-entry");
+  assert.equal(contract.entryDynamicImportGraph.deferredFileCount, 1);
+  assert.equal(contract.entryDynamicImportGraph.entryGroupFileCount, manifest.entryGroups.length);
+  assert.deepEqual(contract.entryDynamicImportGraph.missingFiles, []);
+  assert.deepEqual(contract.entryDynamicImportGraph.extraFiles, []);
+  assert.deepEqual(
+    contract.entryDynamicImportGraph.actualFiles.slice().sort(),
+    contract.entryDynamicImportGraph.expectedFiles.slice().sort()
+  );
   assert.deepEqual(
     contract.viteEntryGroupChunks.map((chunk) => chunk.groupId).sort(),
     manifest.entryGroups.map((group) => group.id).sort()

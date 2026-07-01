@@ -65,6 +65,21 @@ function writeArtifact(root, options = {}) {
     sourceBuildStage: "vite-shell-artifact-contract-v1",
     productionExecution: "classic-script-fallback",
     entryGroupImportOwner: "vite-shell-entry",
+    entryDynamicImportGraph: {
+      owner: "vite-shell-entry",
+      actualFiles: [
+        "assets/vite-deferred-entry-topology-test.js",
+        "assets/vite-entry-group-app-entry-test.js",
+      ],
+      expectedFiles: [
+        "assets/vite-deferred-entry-topology-test.js",
+        "assets/vite-entry-group-app-entry-test.js",
+      ],
+      missingFiles: [],
+      extraFiles: [],
+      deferredFileCount: 1,
+      entryGroupFileCount: 1,
+    },
     shellCacheName: "codex-mobile-shell-test",
     clientBuildId: "0.1.11|codex-mobile-shell-test",
     entry: {
@@ -123,6 +138,15 @@ test("Vite shell artifact status validates the guarded public preview files", ()
   assert.equal(status.sourceBuildStage, "vite-shell-artifact-contract-v1");
   assert.equal(status.productionExecution, "classic-script-fallback");
   assert.equal(status.entryGroupImportOwner, "vite-shell-entry");
+  assert.deepEqual(status.entryDynamicImportGraph, {
+    owner: "vite-shell-entry",
+    actualFileCount: 2,
+    expectedFileCount: 2,
+    missingFileCount: 0,
+    extraFileCount: 0,
+    deferredFileCount: 1,
+    entryGroupFileCount: 1,
+  });
   assert.equal(status.artifactRoot, "public/vite-shell");
   assert.equal(status.publishedFileCount, 5);
   assert.deepEqual(status.preview, {
@@ -258,6 +282,21 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
       stage: "vite-shell-artifact-contract-v1",
       productionExecution: "classic-script-fallback",
       entryGroupImportOwner: "vite-shell-entry",
+      entryDynamicImportGraph: {
+        owner: "vite-shell-entry",
+        actualFiles: [
+          "assets/vite-deferred-entry-topology-test.js",
+          "assets/vite-entry-group-app-entry-test.js",
+        ],
+        expectedFiles: [
+          "assets/vite-deferred-entry-topology-test.js",
+          "assets/vite-entry-group-app-entry-test.js",
+        ],
+        missingFiles: [],
+        extraFiles: [],
+        deferredFileCount: 1,
+        entryGroupFileCount: 1,
+      },
       validation: { ok: true, issues: [] },
       viteEntry: {
         source: "frontend/vite-shell-entry.mjs",
@@ -300,6 +339,11 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.doesNotMatch(previewHtml, /__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__/);
   assert.match(previewHtml, /type="module" src="\/vite-shell\/assets\/vite-shell-entry-test\.js"/);
   assert.equal(readback.entryGroupImportOwner, "vite-shell-entry");
+  assert.equal(readback.entryDynamicImportGraph.owner, "vite-shell-entry");
+  assert.deepEqual(readback.entryDynamicImportGraph.missingFiles, []);
+  assert.deepEqual(readback.entryDynamicImportGraph.extraFiles, []);
+  assert.equal(readback.entryDynamicImportGraph.deferredFileCount, 1);
+  assert.equal(readback.entryDynamicImportGraph.entryGroupFileCount, 1);
   assert.equal(readback.preview.fileName, "preview.html");
   assert.equal(readback.preview.entryScript, "/vite-shell/assets/vite-shell-entry-test.js");
   assert.deepEqual(readback.entryGroupChunks, [{
@@ -335,6 +379,29 @@ test("Vite shell artifact status fails closed when entry group import owner drif
   }).readPublicArtifactStatus();
   assert.equal(status.ok, false);
   assert.ok(status.issueCodes.includes("vite_shell_entry_group_import_owner_mismatch"));
+  assert.ok(!status.issueCodes.includes("vite_artifact_file_hash_mismatch"));
+});
+
+test("Vite shell artifact status fails closed when entry dynamic import graph drifts", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-dynamic-import-drift-"));
+  const artifactRoot = writeArtifact(root);
+  const readbackPath = path.join(artifactRoot, "vite-shell-readback.json");
+  const readback = JSON.parse(fs.readFileSync(readbackPath, "utf8"));
+  readback.entryDynamicImportGraph = {
+    ...readback.entryDynamicImportGraph,
+    missingFiles: ["assets/vite-entry-group-app-entry-test.js"],
+    entryGroupFileCount: 0,
+  };
+  fs.writeFileSync(readbackPath, `${JSON.stringify(readback, null, 2)}\n`);
+
+  const currentManifest = JSON.parse(fs.readFileSync(path.join(artifactRoot, "codex-mobile-shell-manifest.json"), "utf8"));
+  const status = service.createViteShellArtifactService({
+    appRoot: root,
+    readShellAssetManifest: () => currentManifest,
+  }).readPublicArtifactStatus();
+  assert.equal(status.ok, false);
+  assert.ok(status.issueCodes.includes("vite_shell_entry_dynamic_import_missing"));
+  assert.ok(status.issueCodes.includes("vite_shell_entry_dynamic_import_entry_group_count_mismatch"));
   assert.ok(!status.issueCodes.includes("vite_artifact_file_hash_mismatch"));
 });
 

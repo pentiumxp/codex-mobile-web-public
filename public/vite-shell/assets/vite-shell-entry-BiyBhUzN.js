@@ -693,12 +693,19 @@ var classicCompatibility = {
 	requiredStartupGlobals: ["CodexRuntimeWiringRuntime", "CodexAppShellRuntime"],
 	classicGlobalExports
 };
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-q2j0WMf3.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-Dt2PZXE7.js"), []);
 loadCodexMobileViteEntryGroups();
+var entryDynamicImportGraph = {
+	owner: "vite-shell-entry",
+	deferredSources: ["frontend/vite-deferred-entry-topology.mjs"],
+	entryGroupSources: codexMobileViteEntryGroupIds.map((groupId) => `virtual:codex-mobile-shell-entry-group/${groupId}`),
+	expectedImportCount: 1 + codexMobileViteEntryGroupIds.length
+};
 globalThis.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ = "entry-topology-v1";
 globalThis.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ = entryTopology;
 globalThis.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ = classicCompatibility;
 globalThis.__CODEX_MOBILE_VITE_DEFERRED_ENTRY_TOPOLOGY__ = deferredEntryTopologyPromise;
 globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__ = "vite-shell-entry";
+globalThis.__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__ = entryDynamicImportGraph;
 //#endregion
 export { shell_asset_manifest_default as t };

@@ -4637,6 +4637,32 @@ This keeps the default app on the classic script shell while shifting preview
 execution responsibility from generated HTML into the Vite entry module, which
 is the boundary needed before any later startup/runtime ownership cutover.
 
+The follow-up shell-entry dynamic import graph slice turns that ownership into
+an explicit build/readback/browser contract:
+
+- `scripts/frontend-shell-asset-graph.mjs` now separates the deferred topology
+  chunk from entry-group chunks instead of treating every dynamic entry as
+  deferred. It records `entryDynamicImportGraph` with actual files, expected
+  files, missing/extra files, one deferred chunk, and one chunk per generated
+  entry group.
+- `frontend/vite-shell-entry.mjs` exposes
+  `__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__` so the preview runtime can
+  prove the shell entry owns both the deferred topology import and every
+  generated entry-group import.
+- `scripts/verify-vite-shell-manifest.mjs`,
+  `scripts/publish-vite-shell-artifact.mjs`, and
+  `services/runtime/vite-shell-artifact-service.js` carry the graph through
+  build output, public preview readback, and `/api/vite-shell-artifact`.
+  Missing/extra imports or count drift fail closed before deployment.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  reports `vite_preview_entry_dynamic_import_graph_mismatch` when the browser
+  preview cannot prove the same dynamic import graph.
+
+Production `/` still runs the generated classic script shell. The Vite preview
+now proves that `frontend/vite-shell-entry.mjs` is the sole owner of the
+dynamic import graph before any later cutover makes Vite chunks startup
+critical.
+
 ## Release Rule
 
 Follow the current release order:

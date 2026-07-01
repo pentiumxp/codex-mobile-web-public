@@ -51,12 +51,20 @@ const classicCompatibility = {
 };
 const deferredEntryTopologyPromise = import("./vite-deferred-entry-topology.mjs");
 const entryGroupImportPromise = loadCodexMobileViteEntryGroups();
+const entryDynamicImportGraph = {
+  owner: "vite-shell-entry",
+  deferredSources: ["frontend/vite-deferred-entry-topology.mjs"],
+  entryGroupSources: codexMobileViteEntryGroupIds
+    .map((groupId) => `virtual:codex-mobile-shell-entry-group/${groupId}`),
+  expectedImportCount: 1 + codexMobileViteEntryGroupIds.length,
+};
 
 globalThis.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ = "entry-topology-v1";
 globalThis.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ = entryTopology;
 globalThis.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ = classicCompatibility;
 globalThis.__CODEX_MOBILE_VITE_DEFERRED_ENTRY_TOPOLOGY__ = deferredEntryTopologyPromise;
 globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__ = "vite-shell-entry";
+globalThis.__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__ = entryDynamicImportGraph;
 
 export function codexMobileShellEntryTopology() {
   return entryTopology;
@@ -72,6 +80,14 @@ export function codexMobileClassicCompatibility() {
 
 export function codexMobileEntryGroupImportIds() {
   return codexMobileViteEntryGroupIds.slice();
+}
+
+export function codexMobileEntryDynamicImportGraph() {
+  return {
+    ...entryDynamicImportGraph,
+    deferredSources: entryDynamicImportGraph.deferredSources.slice(),
+    entryGroupSources: entryDynamicImportGraph.entryGroupSources.slice(),
+  };
 }
 
 export function loadCodexMobileEntryGroupChunks() {

@@ -881,6 +881,13 @@ function vitePreviewProbeExpression(input = {}) {
       const compatibility = window.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ || {};
       const entryGroupImportOwner = window.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__
         || (marker ? String(marker.dataset.entryGroupImportOwner || "") : "");
+      const entryDynamicImportGraph = window.__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__ || {};
+      const entryDynamicImportDeferredSources = Array.isArray(entryDynamicImportGraph.deferredSources)
+        ? entryDynamicImportGraph.deferredSources
+        : [];
+      const entryDynamicImportEntryGroupSources = Array.isArray(entryDynamicImportGraph.entryGroupSources)
+        ? entryDynamicImportGraph.entryGroupSources
+        : [];
       const requiredStartupGlobals = Array.isArray(compatibility.requiredStartupGlobals)
         ? compatibility.requiredStartupGlobals
         : [];
@@ -994,6 +1001,12 @@ function vitePreviewProbeExpression(input = {}) {
         entryTopologyReady: Array.isArray(topology.startupGroups) && Array.isArray(topology.deferredGroups),
         entryGroupImportOwner,
         entryGroupImportOwnerOk: entryGroupImportOwner === "vite-shell-entry",
+        entryDynamicImportOwner: String(entryDynamicImportGraph.owner || ""),
+        entryDynamicImportOwnerOk: String(entryDynamicImportGraph.owner || "") === "vite-shell-entry",
+        entryDynamicImportExpectedCount: Number(entryDynamicImportGraph.expectedImportCount) || 0,
+        entryDynamicImportDeferredSourceCount: entryDynamicImportDeferredSources.length,
+        entryDynamicImportEntryGroupSourceCount: entryDynamicImportEntryGroupSources.length,
+        entryDynamicImportEntryGroupCountMatches: entryDynamicImportEntryGroupSources.length === entryGroups.length,
         startupGroupCount: Array.isArray(topology.startupGroups) ? topology.startupGroups.length : 0,
         startupCriticalAssetCount: startupCriticalAssets.length,
         startupCriticalPreloadCount: startupPreloads.length,
@@ -1052,6 +1065,11 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   if (sample && sample.moduleEntryLoaded !== true) append("vite_preview_module_entry_not_loaded");
   if (sample && sample.entryTopologyReady !== true) append("vite_preview_entry_topology_missing");
   if (sample && sample.entryGroupImportOwnerOk !== true) append("vite_preview_entry_group_import_owner_mismatch");
+  if (sample && (sample.entryDynamicImportOwnerOk !== true
+    || Number(sample.entryDynamicImportDeferredSourceCount) < 1
+    || sample.entryDynamicImportEntryGroupCountMatches !== true)) {
+    append("vite_preview_entry_dynamic_import_graph_mismatch");
+  }
   if (sample && sample.startupCriticalPreloadsMatch !== true) append("vite_preview_startup_preload_mismatch");
   if (sample && sample.startupCriticalAssetStatusOk !== true) append("vite_preview_startup_asset_fetch_failed");
   if (sample && sample.entryGroupChunkPreloadsMatch !== true) append("vite_preview_entry_group_chunk_preload_mismatch");

@@ -39,6 +39,9 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     moduleEntryLoaded: true,
     entryTopologyReady: true,
     entryGroupImportOwnerOk: true,
+    entryDynamicImportOwnerOk: true,
+    entryDynamicImportDeferredSourceCount: 1,
+    entryDynamicImportEntryGroupCountMatches: true,
     startupCriticalPreloadsMatch: true,
     startupCriticalAssetStatusOk: true,
     entryGroupChunkPreloadsMatch: true,
@@ -63,6 +66,9 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     moduleEntryLoaded: false,
     entryTopologyReady: false,
     entryGroupImportOwnerOk: false,
+    entryDynamicImportOwnerOk: false,
+    entryDynamicImportDeferredSourceCount: 0,
+    entryDynamicImportEntryGroupCountMatches: false,
     startupCriticalPreloadsMatch: false,
     startupCriticalAssetStatusOk: false,
     entryGroupChunkPreloadsMatch: false,
@@ -77,6 +83,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_stage_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_module_entry_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_entry_group_import_owner_mismatch"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_entry_dynamic_import_graph_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_startup_preload_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_startup_asset_fetch_failed"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_entry_group_chunk_preload_mismatch"));
@@ -98,9 +105,11 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__"));
+  assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__"));
   assert.ok(scriptSource.includes("entryGroupImportOwnerOk"));
+  assert.ok(scriptSource.includes("entryDynamicImportEntryGroupCountMatches"));
   assert.ok(scriptSource.includes("entryGroupClassicCoverageOk"));
   assert.ok(scriptSource.includes("data-codex-vite-startup-asset"));
   assert.ok(scriptSource.includes("data-codex-vite-entry-group-chunk"));

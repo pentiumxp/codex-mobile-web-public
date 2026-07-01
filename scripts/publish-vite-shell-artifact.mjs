@@ -152,6 +152,7 @@ export function buildViteShellPublicReadback(options = {}) {
     sourceBuildStage: viteBuild.stage || "",
     productionExecution: viteBuild.productionExecution || "",
     entryGroupImportOwner: viteBuild.entryGroupImportOwner || "",
+    entryDynamicImportGraph: viteBuild.entryDynamicImportGraph || null,
     shellCacheName: String(manifest.shellCacheName || ""),
     clientBuildId: String(manifest.clientBuildId || ""),
     entry: viteBuild.viteEntry ? {
@@ -173,6 +174,7 @@ export function buildViteShellPublicReadback(options = {}) {
     sourceBuildStage: viteBuild.stage || "",
     productionExecution: viteBuild.productionExecution || "",
     entryGroupImportOwner: viteBuild.entryGroupImportOwner || "",
+    entryDynamicImportGraph: viteBuild.entryDynamicImportGraph || null,
     shellCacheName: String(manifest.shellCacheName || ""),
     clientBuildId: String(manifest.clientBuildId || ""),
     entry: viteBuild.viteEntry ? {
@@ -294,6 +296,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       sourceBuildStage: result.sourceBuildStage,
       productionExecution: result.productionExecution,
       entryGroupImportOwner: result.entryGroupImportOwner,
+      entryDynamicImports: result.entryDynamicImportGraph
+        && Array.isArray(result.entryDynamicImportGraph.actualFiles)
+        ? result.entryDynamicImportGraph.actualFiles.length
+        : 0,
       shellCacheName: result.shellCacheName,
       clientBuildId: result.clientBuildId,
       entryGroupChunks: result.counts.entryGroupChunks,
