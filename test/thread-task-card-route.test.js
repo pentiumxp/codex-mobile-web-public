@@ -14,7 +14,8 @@ const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "ser
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
 const appServerRequestPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "app-server-request-policy-service.js"), "utf8");
-const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
+const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-task-card-route-service.js"), "utf8");
+const taskCardRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-message-route-service.js"), "utf8");
 const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-summary-state-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"), "utf8");
@@ -30,7 +31,8 @@ const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const createThreadTaskCardScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "create-thread-task-card.js"), "utf8");
 const returnThreadTaskCardScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "return-thread-task-card.js"), "utf8");
-const { createThreadTaskCardRouteService } = require("../adapters/thread-task-card-route-service");
+const { createThreadTaskCardRouteService } = require("../server-routes/thread-task-card-route-service");
+const threadTaskCardRouteAdapter = require("../adapters/thread-task-card-route-service");
 
 function stableTextHash(value) {
   return crypto.createHash("sha256").update(String(value || "")).digest("hex").slice(0, 16);
@@ -94,6 +96,12 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(serverJs, /attachThreadTaskCardsToResult\(result\)/);
   assert.match(taskCardRouteServiceJs, /await threadTaskCardService\.approve/);
   assert.match(taskCardRouteServiceJs, /await threadTaskCardService\.reply/);
+});
+
+test("thread task card route adapter re-exports the canonical server route", () => {
+  assert.match(taskCardRouteAdapterJs, /require\("\.\.\/server-routes\/thread-task-card-route-service"\)/);
+  assert.equal(threadTaskCardRouteAdapter.createThreadTaskCardRouteService, createThreadTaskCardRouteService);
+  assert.doesNotMatch(taskCardRouteAdapterJs, /threadTaskCardService\.createMany/);
 });
 
 test("server exposes a thread-callable direct task-card interface", () => {

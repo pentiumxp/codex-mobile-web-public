@@ -16,7 +16,8 @@ const serverHttpRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..",
 const runtimePermissionPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "runtime-permission-policy-service.js"), "utf8");
 const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "rate-limit-runtime-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"), "utf8");
-const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
+const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-task-card-route-service.js"), "utf8");
+const taskCardRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-message-route-service.js"), "utf8");
 const threadMessageRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
 const threadListFallbackSourceServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-source-service.js"), "utf8");
@@ -330,6 +331,7 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION/, "platform-control exemption should be explicitly disableable");
 
   const guidanceBody = functionBody(taskCardRouteServiceJs, "attachWorkspaceDelegationRuntimeGuidance");
+  assert.match(taskCardRouteAdapterJs, /require\("\.\.\/server-routes\/thread-task-card-route-service"\)/, "adapter should remain a compatibility re-export");
   assert.match(guidanceBody, /attachTaskCardRuntimeDynamicTools\(params, settings\)/, "runtime guidance should preserve dynamic tool injection");
   assert.match(guidanceBody, /appendDeveloperInstructions\(/, "runtime guidance should add model-visible fallback instructions");
   assert.match(guidanceBody, /taskCardReturnScriptFallbackInstruction\(params\)/, "runtime guidance should include the local return-card script fallback");

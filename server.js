@@ -51,7 +51,7 @@ const {
 } = require("./adapters/mobile-archive-index-service");
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
-const { createThreadTaskCardRouteService } = require("./adapters/thread-task-card-route-service");
+const { createThreadTaskCardRouteService } = require("./server-routes/thread-task-card-route-service");
 const {
   isHomeAiDeployLaneThread,
   normalizeHomeAiDeployLaneSummary,

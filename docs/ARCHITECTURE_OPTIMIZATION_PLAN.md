@@ -2060,10 +2060,11 @@ ownership groups, fallback/source recovery, summary-state synchronization, and
 thread-detail response preparation out of the entrypoint without changing
 public behavior:
 
-- `adapters/thread-task-card-route-service.js` now owns task-card HTTP routes,
+- `server-routes/thread-task-card-route-service.js` now owns task-card HTTP routes,
   task-card dynamic-tool schemas/response payloads, fallback guidance, visible
   target hints, deploy-lane route integration, source-draft materialization, and
-  thread-detail task-card attachment.
+  thread-detail task-card attachment. `adapters/thread-task-card-route-service.js`
+  is a compatibility export only.
 - `server-routes/thread-message-route-service.js` now owns thread creation,
   new-message/existing-message, resume, auto-recover, and turn interrupt route
   behavior while `server.js` injects runtime settings, parsers, Codex transport,
@@ -2119,7 +2120,7 @@ public behavior:
   values, and `notifyLocalTurnStarted`.
 
 Local line-count evidence after the latest extraction: `server.js` is 9,247 lines,
-`thread-task-card-route-service.js` is 1,280 lines, and
+`server-routes/thread-task-card-route-service.js` is 1,273 lines, and
 `server-routes/thread-message-route-service.js` is 363 lines, and
 `thread-list-fallback-source-service.js` is 683 lines, and
 `thread-summary-state-service.js` is 383 lines, and
