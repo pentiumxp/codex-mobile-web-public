@@ -3905,6 +3905,28 @@ compaction/response-preparation callers, and package syntax checks. This slice
 is behavior-preserving and should remain batched with the surrounding
 runtime/server boundary work before full deployment.
 
+### 2026-07-01 Thread Detail State Bridge Boundary
+
+The next Server split moves the remaining thread-detail projection/read-model
+bridge helpers out of `server.js` into
+`services/thread-detail/thread-detail-state-bridge-service.js`.
+
+Scope:
+
+- local-active summary/result overlay access remains backed by
+  `services/thread-list/thread-summary-state-service.js`, but `server.js` no
+  longer owns the late-bound proxy functions;
+- detail response task-card, goal, and pending app-server request decoration is
+  service-owned;
+- stable hash helpers used by task-card/detail wiring are service-owned;
+- `server.js` keeps only construction and dependency injection for the bridge.
+
+Validation should cover the new state bridge unit test, thread-task-card route
+source guards, thread-detail runtime preparation callers, package syntax
+checks, and `git diff --check`. This is a server-thinning boundary slice and
+should be batched with adjacent Server progress before production deploy unless
+a production symptom requires faster release.
+
 ## Release Rule
 
 Follow the current release order:

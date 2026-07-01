@@ -72,6 +72,7 @@ const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-s
 const { createRuntimeWorkspaceBootstrapService } = require("./services/runtime/runtime-workspace-bootstrap-service");
 const { handleThreadDetailReadRoute } = require("./server-routes/thread-detail-route-service");
 const { createThreadDetailRuntimeService } = require("./services/thread-detail/thread-detail-runtime-service");
+const { createThreadDetailStateBridgeService } = require("./services/thread-detail/thread-detail-state-bridge-service");
 const { createThreadSummaryStateService } = require("./services/thread-list/thread-summary-state-service");
 const { createThreadSummaryReadModelService } = require("./services/thread-list/thread-summary-read-model-service");
 const { createThreadListStateService } = require("./services/thread-list/thread-list-state-service");
@@ -853,6 +854,45 @@ const {
   tokenUsageWorkspaceCwds,
   upsertThreadListFallbackCacheThreads,
 } = threadListStateService;
+const threadDetailStateBridgeService = createThreadDetailStateBridgeService({
+  threadSummaryStateService: () => threadSummaryStateService,
+  threadTaskCardService,
+  threadGoalService,
+  codexClient: () => codex,
+  serverRequestMethods: SERVER_REQUEST_METHODS,
+});
+const {
+  applyLocalActiveThreadStatusToResult,
+  applyLocalActiveThreadStatusToSummary,
+  attachPendingServerRequestsToResult,
+  attachThreadTaskCardsToResult,
+  attachThreadTaskCardsToThread,
+  clearLocalActiveThreadStatus,
+  clearThreadSummaryActiveMarkers,
+  detailReadThreadSummaryForFallbackCache,
+  isThreadListLiveStatus,
+  isThreadListRestStatus,
+  isThreadListUnknownStatus,
+  localActiveSummaryRolloutPath,
+  localActiveSupersedingRolloutEvidence,
+  mergeThreadDisplaySummary,
+  mergeThreadRuntimeFromStateDb,
+  mergeThreadWithCachedDisplaySummary,
+  normalizeThreadSummaryLiveStatus,
+  pendingServerRequestsForThread,
+  pruneLocalActiveThreadStatuses,
+  readLocalActiveThreadStatus,
+  readStateDbThread,
+  rememberLocalActiveThreadStatus,
+  rolloutHasTerminalEntryAtOrAfter,
+  rowToFallbackThread,
+  shouldExposeServerRequestInThread,
+  shouldReplaceThreadDisplayStatus,
+  sqlString,
+  stableTextHash,
+  statusTurnId,
+  syncThreadDetailReadResultToThreadListFallbackCache,
+} = threadDetailStateBridgeService;
 const PROCESS_STARTED_AT_MS = Date.now();
 
 let clients = new Map();
@@ -1897,156 +1937,6 @@ function httpStatusErrorWithDetails(statusCode, code, message, details = {}) {
 
 function isUnmaterializedThreadError(err) {
   return /not materialized yet|includeTurns is unavailable before first user message/i.test(err && err.message || String(err || ""));
-}
-
-function statusTurnId(status) {
-  return threadSummaryStateService.statusTurnId(status);
-}
-
-function rowToFallbackThread(row) {
-  return threadSummaryStateService.rowToFallbackThread(row);
-}
-
-function sqlString(value) {
-  return threadSummaryStateService.sqlString(value);
-}
-
-function pruneLocalActiveThreadStatuses(now = Date.now()) {
-  return threadSummaryStateService.pruneLocalActiveThreadStatuses(now);
-}
-
-function rolloutHasTerminalEntryAtOrAfter(rolloutPath, timestampMs = 0) {
-  return threadSummaryStateService.rolloutHasTerminalEntryAtOrAfter(rolloutPath, timestampMs);
-}
-
-function localActiveSupersedingRolloutEvidence(rolloutPath, entry, nowMs = Date.now()) {
-  return threadSummaryStateService.localActiveSupersedingRolloutEvidence(rolloutPath, entry, nowMs);
-}
-
-function localActiveSummaryRolloutPath(threadId, summary = null) {
-  return threadSummaryStateService.localActiveSummaryRolloutPath(threadId, summary);
-}
-
-function readLocalActiveThreadStatus(threadId, summary = null, nowMs = Date.now()) {
-  return threadSummaryStateService.readLocalActiveThreadStatus(threadId, summary, nowMs);
-}
-
-function rememberLocalActiveThreadStatus(threadId, turnId = "", meta = {}) {
-  return threadSummaryStateService.rememberLocalActiveThreadStatus(threadId, turnId, meta);
-}
-
-function clearLocalActiveThreadStatus(threadId) {
-  return threadSummaryStateService.clearLocalActiveThreadStatus(threadId);
-}
-
-function applyLocalActiveThreadStatusToSummary(thread, options = {}) {
-  return threadSummaryStateService.applyLocalActiveThreadStatusToSummary(thread, options);
-}
-
-function applyLocalActiveThreadStatusToResult(result, options = {}) {
-  return threadSummaryStateService.applyLocalActiveThreadStatusToResult(result, options);
-}
-
-function normalizeThreadSummaryLiveStatus(thread, options = {}) {
-  return threadSummaryStateService.normalizeThreadSummaryLiveStatus(thread, options);
-}
-
-function readStateDbThread(threadId) {
-  return threadSummaryStateService.readStateDbThread(threadId);
-}
-
-function isThreadListLiveStatus(status) {
-  return threadSummaryStateService.isThreadListLiveStatus(status);
-}
-
-function isThreadListRestStatus(status) {
-  return threadSummaryStateService.isThreadListRestStatus(status);
-}
-
-function isThreadListUnknownStatus(status) {
-  return threadSummaryStateService.isThreadListUnknownStatus(status);
-}
-
-function shouldReplaceThreadDisplayStatus(baseStatus, displayStatus, baseUpdatedAtMs, displayUpdatedAtMs) {
-  return threadSummaryStateService.shouldReplaceThreadDisplayStatus(baseStatus, displayStatus, baseUpdatedAtMs, displayUpdatedAtMs);
-}
-
-function clearThreadSummaryActiveMarkers(thread) {
-  return threadSummaryStateService.clearThreadSummaryActiveMarkers(thread);
-}
-
-function mergeThreadWithCachedDisplaySummary(thread, options = {}) {
-  return threadSummaryStateService.mergeThreadWithCachedDisplaySummary(thread, options);
-}
-
-function mergeThreadDisplaySummary(base, display, options = {}) {
-  return threadSummaryStateService.mergeThreadDisplaySummary(base, display, options);
-}
-
-function mergeThreadRuntimeFromStateDb(thread, summary = null) {
-  return threadSummaryStateService.mergeThreadRuntimeFromStateDb(thread, summary);
-}
-
-function detailReadThreadSummaryForFallbackCache(body = {}) {
-  return threadSummaryStateService.detailReadThreadSummaryForFallbackCache(body);
-}
-
-function syncThreadDetailReadResultToThreadListFallbackCache(payload = {}) {
-  return threadSummaryStateService.syncThreadDetailReadResultToThreadListFallbackCache(payload);
-}
-
-function attachThreadTaskCardsToThread(thread) {
-  if (!thread || typeof thread !== "object" || !thread.id) return thread;
-  thread.threadTaskCards = threadTaskCardService.listForThread(thread.id);
-  const taskCardCounts = threadTaskCardService.pendingCountsForThread(thread.id);
-  thread.pendingTaskCardCount = taskCardCounts.pendingTotal;
-  thread.pendingIncomingTaskCardCount = taskCardCounts.pendingIncoming;
-  thread.pendingOutgoingTaskCardCount = taskCardCounts.pendingOutgoing;
-  return thread;
-}
-
-function attachThreadGoalToThread(thread) {
-  return threadGoalService.attachGoalToThread(thread);
-}
-
-function attachThreadTaskCardsToResult(result) {
-  if (!result || typeof result !== "object" || !result.thread) return result;
-  attachThreadGoalToThread(result.thread);
-  attachThreadTaskCardsToThread(result.thread);
-  return result;
-}
-
-function pendingServerRequestsForThread(codexClient, threadId) {
-  const id = String(threadId || "").trim();
-  if (!codexClient || typeof codexClient.pendingServerRequests !== "function") return [];
-  return codexClient.pendingServerRequests()
-    .filter((request) => {
-      if (!request || !shouldExposeServerRequestInThread(request)) return false;
-      const params = request.params || {};
-      const requestThreadId = String(params.threadId || params.conversationId || "").trim();
-      return requestThreadId ? requestThreadId === id : Boolean(id);
-    });
-}
-
-function shouldExposeServerRequestInThread(request) {
-  return Boolean(request && SERVER_REQUEST_METHODS.has(request.method));
-}
-
-function attachPendingServerRequestsToResult(result, codexClient = codex) {
-  if (!result || typeof result !== "object" || !result.thread) return result;
-  const pendingServerRequests = pendingServerRequestsForThread(codexClient, result.thread.id || result.thread.threadId || "");
-  result.thread.pendingServerRequests = pendingServerRequests;
-  return result;
-}
-
-function stableTextHash(value) {
-  const text = String(value || "");
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
 }
 
 threadListServerBoundaryService = createThreadListServerBoundaryService({

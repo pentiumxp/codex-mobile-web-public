@@ -34,6 +34,10 @@ const threadDetailRuntimeServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-runtime-service.js"),
   "utf8",
 );
+const threadDetailStateBridgeServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-state-bridge-service.js"),
+  "utf8",
+);
 const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-response-preparation-service.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const runtimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-settings-service.js"), "utf8");
@@ -105,11 +109,14 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(taskCardRouteServiceJs, /const threadTaskCardReply = url\.pathname\.match\(/);
   assert.match(taskCardRouteServiceJs, /const threadTaskCardExecutionPause = url\.pathname\.match\(/);
   assert.match(taskCardRouteServiceJs, /const threadTaskCardExecutionCancel = url\.pathname\.match\(/);
-  assert.match(serverJs, /function attachThreadTaskCardsToThread\(/);
-  assert.match(serverJs, /thread\.threadTaskCards = threadTaskCardService\.listForThread\(thread\.id\)/);
-  assert.match(serverJs, /thread\.pendingIncomingTaskCardCount = taskCardCounts\.pendingIncoming/);
+  assert.match(serverJs, /createThreadDetailStateBridgeService/);
+  assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-state-bridge-service"\)/);
+  assert.match(threadDetailStateBridgeServiceJs, /function attachThreadTaskCardsToThread\(/);
+  assert.match(threadDetailStateBridgeServiceJs, /thread\.threadTaskCards = typeof threadTaskCardService\.listForThread === "function"/);
+  assert.match(threadDetailStateBridgeServiceJs, /thread\.pendingIncomingTaskCardCount = Number\(counts\.pendingIncoming \|\| 0\)/);
   assert.match(threadListStateServiceJs, /function attachThreadTaskCardCountsToThreadListResult\(/);
-  assert.match(serverJs, /attachThreadTaskCardsToResult\(result\)/);
+  assert.match(functionBody(threadDetailStateBridgeServiceJs, "attachThreadTaskCardsToResult"), /attachThreadTaskCardsToThread\(result\.thread\)/);
+  assert.match(serverJs, /attachThreadTaskCardsToResult,/);
   assert.match(taskCardRouteServiceJs, /await threadTaskCardService\.approve/);
   assert.match(taskCardRouteServiceJs, /await threadTaskCardService\.reply/);
 });
@@ -188,7 +195,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(taskCardRouteServiceJs, /require\("\.\.\/services\/task-cards\/thread-task-card-deploy-lane-policy-service"\)/);
   assert.doesNotMatch(taskCardRouteServiceJs, /require\("\.\.\/adapters\/thread-task-card-deploy-lane-policy-service"\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationTargetHints"), /prioritizeDelegationTargetHints/);
-  assert.match(functionBody(serverJs, "normalizeThreadSummaryLiveStatus"), /threadSummaryStateService\.normalizeThreadSummaryLiveStatus/);
+  assert.match(functionBody(threadDetailStateBridgeServiceJs, "normalizeThreadSummaryLiveStatus"), /callThreadSummaryState\("normalizeThreadSummaryLiveStatus"/);
   assert.match(functionBody(threadSummaryStateServiceJs, "normalizeThreadSummaryLiveStatus"), /normalizeHomeAiDeployLaneSummary/);
   assert.match(functionBody(taskCardRouteServiceJs, "buildThreadTaskCardCreatePayload"), /applyHomeAiDeployLaneRoutingPolicy/);
   assert.match(functionBody(taskCardRouteServiceJs, "applyHomeAiDeployLaneRoutingPolicy"), /planHomeAiDeployLaneRouting/);
@@ -636,8 +643,8 @@ test("server broadcasts active status immediately for local turn starts", () => 
   assert.match(helperBody, /source: String\(meta\.source \|\| "local-turn-start"\)/);
 
   assert.match(threadSummaryStateServiceJs, /const localActiveThreadStatuses = dependencies\.localActiveThreadStatuses instanceof Map/);
-  assert.match(serverJs, /function applyLocalActiveThreadStatusToSummary\(/);
-  assert.match(functionBody(serverJs, "applyLocalActiveThreadStatusToSummary"), /threadSummaryStateService\.applyLocalActiveThreadStatusToSummary/);
+  assert.match(serverJs, /applyLocalActiveThreadStatusToSummary,/);
+  assert.match(functionBody(threadDetailStateBridgeServiceJs, "applyLocalActiveThreadStatusToSummary"), /callThreadSummaryState\("applyLocalActiveThreadStatusToSummary"/);
   assert.match(threadEventNotificationServiceJs, /function updateLocalActiveThreadStatusFromNotification\(/);
   assert.match(functionBody(threadEventNotificationServiceJs, "broadcast"), /updateLocalActiveThreadStatusFromNotification\(payload\)/);
   assert.match(functionBody(threadDetailRuntimeServiceJs, "prepareThreadDetailResponseResult"), /requireResponsePreparationService\(\)\.prepareThreadDetailResponseResult/);
