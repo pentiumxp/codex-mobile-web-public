@@ -121,7 +121,7 @@ const {
   stripThreadListResultDetailFields,
 } = require("./adapters/thread-list-summary-service");
 const { createThreadDetailCompactionService } = require("./adapters/thread-detail-compaction-service");
-const { createThreadEventNotificationService } = require("./adapters/thread-event-notification-service");
+const { createThreadEventNotificationService } = require("./services/runtime/thread-event-notification-service");
 const { createRateLimitRuntimeService } = require("./services/runtime/rate-limit-runtime-service");
 const { createThreadVisibilityService } = require("./adapters/thread-visibility-service");
 const { createThreadCompletionDiagnosticService } = require("./adapters/thread-completion-diagnostic-service");

@@ -19,7 +19,7 @@ const threadDetailCompactionServiceJs = fs.readFileSync(
   "utf8",
 );
 const threadEventNotificationServiceJs = fs.readFileSync(
-  path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"),
+  path.resolve(__dirname, "..", "services", "runtime", "thread-event-notification-service.js"),
   "utf8",
 );
 const threadDetailReadOrchestrationServiceJs = fs.readFileSync(

@@ -3747,6 +3747,31 @@ focused on the new service, core/profile switch route assertions, continuation
 workspace registration, and compatibility adapter coverage unless this slice is
 batched with a larger deploy.
 
+### 2026-07-01 Runtime Thread Event Notification Boundary
+
+The next Server split slice moves thread event notification runtime behavior
+from the compatibility adapter path into
+`services/runtime/thread-event-notification-service.js`.
+
+Scope:
+
+- SSE client filtering, heartbeat cleanup, and compact notification broadcast
+  are service-owned;
+- local active-thread status updates and `thread/status/changed` payload
+  synthesis are service-owned;
+- projection notification fan-out and active-window prewarm scheduling from
+  notifications/thread-list results are service-owned;
+- `server.js` imports the canonical runtime service and keeps only dependency
+  injection and route/event wiring;
+- `adapters/thread-event-notification-service.js` remains a compatibility
+  export only.
+
+Validation should cover canonical/adapter syntax, runtime compatibility
+adapter parity, thread-list/message/task-card route source guards, and existing
+visibility/event route behavior. This is a behavior-preserving ownership move,
+so full `npm test` and deployment should wait until it is batched with enough
+additional Server progress unless a production symptom appears.
+
 ## Release Rule
 
 Follow the current release order:

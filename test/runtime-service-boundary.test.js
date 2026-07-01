@@ -39,6 +39,11 @@ const serviceBoundaries = [
     adapter: require("../adapters/app-server-request-policy-service"),
     exports: ["createAppServerRequestPolicyService"],
   },
+  {
+    canonical: require("../services/runtime/thread-event-notification-service"),
+    adapter: require("../adapters/thread-event-notification-service"),
+    exports: ["createThreadEventNotificationService"],
+  },
 ];
 
 test("runtime compatibility adapters re-export canonical service boundaries", () => {
