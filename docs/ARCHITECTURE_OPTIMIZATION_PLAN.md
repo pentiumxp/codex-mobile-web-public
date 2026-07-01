@@ -4898,6 +4898,25 @@ removes an ambiguity in the cutover path: app-preview can no longer pass merely
 because 51 scripts eventually appeared; it must prove the scripts came from the
 same ordered, hashed loader plan that the Vite artifact readback validates.
 
+The follow-up root-path rehearsal keeps the default shell unchanged while
+testing the exact URL surface that a later default Vite cutover would use:
+
+- `adapters/static-file-service.js` serves `public/vite-shell/app-preview.html`
+  for `/?codexViteShell=app-preview` only. A plain `/` request still serves
+  `public/index.html` and the generated classic script block.
+- `scripts/codex-mobile-browser-runtime-self-check.js
+  --vite-app-preview-only --vite-app-preview-root` opens that opt-in root URL,
+  verifies the same Vite-owned loader plan, and additionally requires the
+  browser path to remain `/` with the explicit opt-in query present.
+- `services/runtime/runtime-job-scheduler-service.js` declares
+  `browser-vite-app-preview-root` as a separate real-browser deploy job, and
+  `scripts/codex-mobile-runtime-self-check-loop.js` runs it independently of
+  the existing app-preview, embed, and launch/session jobs.
+
+This is still not the default cutover. It proves the Vite-owned startup path
+works under root-path routing, service-worker scope, and default navigation
+shape before `/` itself is changed.
+
 ## Release Rule
 
 Follow the current release order:

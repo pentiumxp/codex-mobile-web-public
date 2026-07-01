@@ -92,6 +92,22 @@ test("static compression leaves already-compressed images unencoded", async () =
   assert.ok(response.body.length > 0);
 });
 
+test("static root keeps classic shell unless Vite app-preview is explicitly requested", async () => {
+  const classic = await requestStatic("/");
+  const appPreview = await requestStatic("/?codexViteShell=app-preview");
+  const classicText = classic.body.toString("utf8");
+  const appPreviewText = appPreview.body.toString("utf8");
+
+  assert.equal(classic.statusCode, 200);
+  assert.match(classicText, /CODEX_MOBILE_SHELL_SCRIPTS:BEGIN/);
+  assert.doesNotMatch(classicText, /data-codex-vite-app-preview="true"/);
+
+  assert.equal(appPreview.statusCode, 200);
+  assert.match(appPreviewText, /data-codex-vite-app-preview="true"/);
+  assert.match(appPreviewText, /id="codex-vite-app-preview-loader-plan"/);
+  assert.doesNotMatch(appPreviewText, /CODEX_MOBILE_SHELL_SCRIPTS:BEGIN/);
+});
+
 test("static compression ignores q=0 encodings and serves svg as text", () => {
   const req = { headers: { "accept-encoding": "br;q=0, gzip;q=0" } };
 

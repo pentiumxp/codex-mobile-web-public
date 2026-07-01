@@ -39,6 +39,13 @@ test("browser runtime self-check parses Vite app-preview full runtime option", (
   assert.equal(options.json, true);
 });
 
+test("browser runtime self-check parses Vite app-preview root-path option", () => {
+  const options = script.parseArgs(["--server", "http://127.0.0.1:8787", "--vite-app-preview-only", "--vite-app-preview-root", "--json"]);
+  assert.equal(options.viteAppPreviewOnly, true);
+  assert.equal(options.viteAppPreviewRoot, true);
+  assert.equal(options.json, true);
+});
+
 test("browser runtime self-check parses Vite app-preview Hermes embed option", () => {
   const options = script.parseArgs(["--server", "http://127.0.0.1:8787", "--vite-app-preview-only", "--vite-app-preview-embed", "--json"]);
   assert.equal(options.viteAppPreviewOnly, true);
@@ -148,6 +155,9 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
     loaderPlanMatchesShellScripts: true,
     loaderPlanMatchesInjectedScripts: true,
     loaderPlanLoadedMatches: true,
+    rootPreviewExpected: true,
+    rootPathPreserved: true,
+    rootViteShellParamPresent: true,
     clientBuildMatches: true,
     shellCacheMatches: true,
     appVisible: true,
@@ -156,7 +166,7 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
     threadListRuntimeReady: true,
     threadTileRuntimeReady: true,
     loadThreadReady: true,
-  }, { consoleEvents: [], exceptions: [] });
+  }, { consoleEvents: [], exceptions: [] }, { expectRoot: true });
   assert.equal(passing.ok, true);
   assert.equal(passing.issueCount, 0);
 
@@ -167,6 +177,9 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
     loaderOk: false,
     loaderTimedOut: true,
     loaderErrorCode: "timeout",
+    rootPreviewExpected: true,
+    rootPathPreserved: false,
+    rootViteShellParamPresent: false,
     classicScriptCount: 1,
     expectedClassicScriptCount: 51,
     classicScriptOrderMatches: false,
@@ -178,7 +191,7 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
     threadListRuntimeReady: true,
     threadTileRuntimeReady: false,
     loadThreadReady: false,
-  }, { consoleEvents: [{ type: "error" }], exceptions: [{ code: "runtime_exception" }] });
+  }, { consoleEvents: [{ type: "error" }], exceptions: [{ code: "runtime_exception" }] }, { expectRoot: true });
   assert.equal(failing.ok, false);
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_marker_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_module_entry_missing"));
@@ -188,6 +201,8 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_classic_script_order_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_client_build_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_shell_cache_mismatch"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_root_path_changed"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_root_opt_in_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_app_not_visible"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_boot_recovery_visible"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_runtime_missing"));

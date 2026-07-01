@@ -126,9 +126,18 @@ function createStaticFileService(options = {}) {
     res.end(body);
   }
 
+  function staticPathnameForRequestUrl(url) {
+    if (url.pathname === "/") {
+      const requestedShell = String(url.searchParams.get("codexViteShell") || "").trim().toLowerCase();
+      if (requestedShell === "app-preview") return "/vite-shell/app-preview.html";
+      return "/index.html";
+    }
+    return url.pathname;
+  }
+
   function serveStatic(req, res) {
     const url = getUrl(req);
-    const rel = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
+    const rel = decodeURIComponent(staticPathnameForRequestUrl(url));
     const target = path.normalize(path.join(publicRoot, rel));
     if (!target.startsWith(publicRoot)) {
       res.writeHead(403);

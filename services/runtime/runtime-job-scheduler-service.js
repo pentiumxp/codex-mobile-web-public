@@ -75,6 +75,15 @@ const RUNTIME_SELF_CHECK_JOBS = Object.freeze({
     periodicDefaultEnabled: false,
     deployDefaultEnabled: true,
   }),
+  "browser-vite-app-preview-root": normalizeRuntimeJobDeclaration("browser-vite-app-preview-root", {
+    maxConcurrency: 1,
+    cpuBudgetClass: "high",
+    realBrowserAllowed: true,
+    userRequestPreemptible: true,
+    periodicAllowed: true,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: true,
+  }),
   "browser-vite-app-preview-embed": normalizeRuntimeJobDeclaration("browser-vite-app-preview-embed", {
     maxConcurrency: 1,
     cpuBudgetClass: "high",
@@ -109,6 +118,7 @@ const JOB_ORDER = Object.freeze([
   "browser-runtime",
   "browser-vite-preview",
   "browser-vite-app-preview",
+  "browser-vite-app-preview-root",
   "browser-vite-app-preview-embed",
   "browser-vite-app-preview-session",
   "client-events",
@@ -364,6 +374,7 @@ function skipFlagForJobName(name) {
   if (name === "browser-runtime"
     || name === "browser-vite-preview"
     || name === "browser-vite-app-preview"
+    || name === "browser-vite-app-preview-root"
     || name === "browser-vite-app-preview-embed"
     || name === "browser-vite-app-preview-session") return "skipBrowser";
   if (name === "client-events") return "skipClientEvents";

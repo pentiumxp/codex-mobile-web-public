@@ -137,6 +137,10 @@ test("runtime job scheduler keeps periodic checks lightweight by default", () =>
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview").reason, "browser_mode_off");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview").realBrowserAllowed, true);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview").periodicAllowed, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").enabled, false);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").reason, "browser_mode_off");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").realBrowserAllowed, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").periodicAllowed, true);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-embed").enabled, false);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-embed").reason, "browser_mode_off");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-embed").realBrowserAllowed, true);
@@ -156,6 +160,7 @@ test("runtime job scheduler enables browser checks for deploy gates", () => {
     "browser-runtime",
     "browser-vite-preview",
     "browser-vite-app-preview",
+    "browser-vite-app-preview-root",
     "browser-vite-app-preview-embed",
     "browser-vite-app-preview-session",
     "client-events",
@@ -181,6 +186,13 @@ test("runtime job scheduler enables browser checks for deploy gates", () => {
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview").realBrowserAllowed, true);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview").cpuBudgetClass, "high");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview").userRequestPreemptible, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").timeoutMs, service.DEFAULT_JOB_TIMEOUT_MS);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").timeBudgetMs, service.DEFAULT_JOB_TIMEOUT_MS);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").maxConcurrency, 1);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").usesBrowser, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").realBrowserAllowed, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").cpuBudgetClass, "high");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").userRequestPreemptible, true);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-embed").timeoutMs, service.DEFAULT_JOB_TIMEOUT_MS);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-embed").timeBudgetMs, service.DEFAULT_JOB_TIMEOUT_MS);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-embed").maxConcurrency, 1);
@@ -208,6 +220,7 @@ test("runtime job scheduler allows explicit periodic browser diagnostics", () =>
     "browser-runtime",
     "browser-vite-preview",
     "browser-vite-app-preview",
+    "browser-vite-app-preview-root",
     "browser-vite-app-preview-embed",
     "browser-vite-app-preview-session",
     "client-events",
@@ -227,6 +240,7 @@ test("runtime job scheduler distinguishes skip flags from budget policy", () => 
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview").reason, "skip_flag");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-embed").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-session").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "client-events").reason, "skip_flag");
