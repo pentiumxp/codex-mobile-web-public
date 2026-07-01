@@ -1666,7 +1666,7 @@ const threadTaskCardRouteService = createThreadTaskCardRouteService({
   isRecoverableThreadListTitle,
   stableTextHash,
   truncateSingleLine,
-  truncateToolDescriptionText,
+  truncateToolDescriptionText: truncateSingleLine,
   shortIdentifier,
   pushThreadId,
   threadIdForTurnId: (turnId) => latestThreadIdByTurnId.get(turnId),
@@ -1694,6 +1694,7 @@ const {
   threadTaskCardTargetReferenceEntries,
   threadTaskCardTargetReferences,
   isThreadIdLike,
+  logWorkspaceDelegationRpc,
   threadTaskCardTargetUpdatedAt,
   publicThreadTaskCardTarget,
   threadTaskCardTargetError,
@@ -1783,85 +1784,6 @@ runtimeTurnEventPipelineService = createRuntimeTurnEventPipelineService({
   shortIdentifier,
   logger: console,
 });
-
-function truncateToolDescriptionText(value, maxChars = 220) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  if (!text || text.length <= maxChars) return text;
-  return `${text.slice(0, Math.max(1, maxChars - 3)).trimEnd()}...`;
-}
-
-function workspaceDelegationDynamicToolName(tool) {
-  if (!tool || typeof tool !== "object") return "";
-  const fullName = String(tool.fullName || tool.toolFullName || tool.dynamicTool || "").trim();
-  if (fullName) return fullName;
-  const namespace = String(tool.namespace || tool.toolNamespace || tool.dynamicToolNamespace || "").trim();
-  const name = String(tool.name || tool.toolName || tool.tool || tool.action || "").trim();
-  return namespace && name ? `${namespace}.${name}` : name;
-}
-
-function workspaceDelegationRpcDynamicToolNames(params = {}) {
-  const raw = Array.isArray(params.dynamicTools)
-    ? params.dynamicTools
-    : params.dynamicTools ? [params.dynamicTools] : [];
-  const seen = new Set();
-  const names = [];
-  for (const tool of raw) {
-    const name = workspaceDelegationDynamicToolName(tool);
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    names.push(name);
-  }
-  return names;
-}
-
-function workspaceDelegationRpcDiagnostics(method, params = {}) {
-  const toolNames = workspaceDelegationRpcDynamicToolNames(params);
-  const developerInstructions = String(params.developerInstructions || "");
-  const cwd = String(params.cwd || "").trim();
-  const sandboxPolicy = params.sandboxPolicy && typeof params.sandboxPolicy === "object"
-    ? params.sandboxPolicy
-    : null;
-  const permissionProfile = params.permissionProfile && typeof params.permissionProfile === "object"
-    ? params.permissionProfile
-    : null;
-  return {
-    method: String(method || ""),
-    threadId: truncateToolDescriptionText(params.threadId || params.thread_id || "", 80),
-    cwd: truncateToolDescriptionText(cwd, 220),
-    workspaceDelegationEnabled: workspaceDelegationPublicSettings().enabled,
-    dynamicToolsCount: toolNames.length,
-    dynamicToolNames: toolNames.map((name) => truncateToolDescriptionText(name, 120)),
-    hasWorkspaceDelegationTool: toolNames.includes(WORKSPACE_DELEGATION_TOOL_FULL_NAME),
-    hasFallbackGuidance: developerInstructions.includes("Codex Mobile cross-thread delegation fallback:"),
-    developerInstructionsChars: developerInstructions.length,
-    sandbox: truncateToolDescriptionText(params.sandbox || "", 80),
-    sandboxPolicyType: truncateToolDescriptionText(
-      sandboxPolicy && (sandboxPolicy.type || sandboxPolicy.kind || sandboxPolicy.mode) || "",
-      80,
-    ),
-    approvalPolicy: truncateToolDescriptionText(params.approvalPolicy || params.approval_policy || "", 80),
-    permissionProfileType: truncateToolDescriptionText(
-      permissionProfile && (permissionProfile.type || permissionProfile.kind || permissionProfile.mode) || "",
-      80,
-    ),
-  };
-}
-
-function shouldLogWorkspaceDelegationRpc(method, params = {}) {
-  if (!["thread/start", "turn/start", "thread/resume"].includes(String(method || ""))) return false;
-  if (workspaceDelegationPublicSettings().enabled) return true;
-  if (workspaceDelegationRpcDynamicToolNames(params).length) return true;
-  return String(params.developerInstructions || "").includes("Codex Mobile cross-thread delegation fallback:");
-}
-
-function logWorkspaceDelegationRpc(method, params = {}) {
-  if (!shouldLogWorkspaceDelegationRpc(method, params)) return;
-  try {
-    console.log(`[workspace-delegation-rpc] ${JSON.stringify(workspaceDelegationRpcDiagnostics(method, params))}`);
-  } catch (err) {
-    console.error(`[workspace-delegation-rpc] failed to summarize request: ${err.message || String(err)}`);
-  }
-}
 
 function pushSubscriptionPublicStatus() {
   return webPushRuntimeService.publicStatus();

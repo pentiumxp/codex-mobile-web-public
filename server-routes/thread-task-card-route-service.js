@@ -661,6 +661,79 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     }
   }
 
+  function workspaceDelegationRpcDynamicToolName(tool) {
+    if (!tool || typeof tool !== "object") return "";
+    const fullName = String(tool.fullName || tool.toolFullName || tool.dynamicTool || "").trim();
+    if (fullName) return fullName;
+    const namespace = String(tool.namespace || tool.toolNamespace || tool.dynamicToolNamespace || "").trim();
+    const name = String(tool.name || tool.toolName || tool.tool || tool.action || "").trim();
+    return namespace && name ? `${namespace}.${name}` : name;
+  }
+
+  function workspaceDelegationRpcDynamicToolNames(params = {}) {
+    const raw = Array.isArray(params.dynamicTools)
+      ? params.dynamicTools
+      : params.dynamicTools ? [params.dynamicTools] : [];
+    const seen = new Set();
+    const names = [];
+    for (const tool of raw) {
+      const name = workspaceDelegationRpcDynamicToolName(tool);
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      names.push(name);
+    }
+    return names;
+  }
+
+  function workspaceDelegationRpcDiagnostics(method, params = {}) {
+    const toolNames = workspaceDelegationRpcDynamicToolNames(params);
+    const developerInstructions = String(params.developerInstructions || "");
+    const cwd = String(params.cwd || "").trim();
+    const sandboxPolicy = params.sandboxPolicy && typeof params.sandboxPolicy === "object"
+      ? params.sandboxPolicy
+      : null;
+    const permissionProfile = params.permissionProfile && typeof params.permissionProfile === "object"
+      ? params.permissionProfile
+      : null;
+    return {
+      method: String(method || ""),
+      threadId: truncateToolDescriptionText(params.threadId || params.thread_id || "", 80),
+      cwd: truncateToolDescriptionText(cwd, 220),
+      workspaceDelegationEnabled: workspaceDelegationSettings().enabled,
+      dynamicToolsCount: toolNames.length,
+      dynamicToolNames: toolNames.map((name) => truncateToolDescriptionText(name, 120)),
+      hasWorkspaceDelegationTool: toolNames.includes(workspaceDelegationToolFullName),
+      hasFallbackGuidance: developerInstructions.includes("Codex Mobile cross-thread delegation fallback:"),
+      developerInstructionsChars: developerInstructions.length,
+      sandbox: truncateToolDescriptionText(params.sandbox || "", 80),
+      sandboxPolicyType: truncateToolDescriptionText(
+        sandboxPolicy && (sandboxPolicy.type || sandboxPolicy.kind || sandboxPolicy.mode) || "",
+        80,
+      ),
+      approvalPolicy: truncateToolDescriptionText(params.approvalPolicy || params.approval_policy || "", 80),
+      permissionProfileType: truncateToolDescriptionText(
+        permissionProfile && (permissionProfile.type || permissionProfile.kind || permissionProfile.mode) || "",
+        80,
+      ),
+    };
+  }
+
+  function shouldLogWorkspaceDelegationRpc(method, params = {}) {
+    if (!["thread/start", "turn/start", "thread/resume"].includes(String(method || ""))) return false;
+    if (workspaceDelegationSettings().enabled) return true;
+    if (workspaceDelegationRpcDynamicToolNames(params).length) return true;
+    return String(params.developerInstructions || "").includes("Codex Mobile cross-thread delegation fallback:");
+  }
+
+  function logWorkspaceDelegationRpc(method, params = {}) {
+    if (!shouldLogWorkspaceDelegationRpc(method, params)) return;
+    try {
+      logger.log(`[workspace-delegation-rpc] ${JSON.stringify(workspaceDelegationRpcDiagnostics(method, params))}`);
+    } catch (err) {
+      logger.error(`[workspace-delegation-rpc] failed to summarize request: ${err.message || String(err)}`);
+    }
+  }
+
   function dynamicToolTextResponse(text, options = {}) {
     const success = options && typeof options.success === "boolean" ? options.success : true;
     return {
@@ -1249,6 +1322,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     dynamicToolTextResponse,
     handleRoute,
     isThreadIdLike,
+    logWorkspaceDelegationRpc,
     materializeThreadTaskCardDraftsForThread,
     normalizeThreadTaskCardReasoningEffort,
     normalizeThreadTaskCardWorkflowMode,
@@ -1285,6 +1359,9 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     workspaceDelegationDynamicToolCallDiagnostics,
     workspaceDelegationDynamicToolSpec,
     workspaceDelegationDynamicTools,
+    workspaceDelegationRpcDiagnostics,
+    workspaceDelegationRpcDynamicToolName,
+    workspaceDelegationRpcDynamicToolNames,
     workspaceDelegationScriptFallbackInstruction,
     workspaceDelegationTargetHints,
   };

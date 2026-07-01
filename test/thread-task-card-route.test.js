@@ -149,8 +149,9 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(taskCardRouteServiceJs, /function workspaceDelegationScriptFallbackInstruction\(/);
   assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "workspaceDelegationTargetHints"), /threadTaskCardCanonicalVisibleTargets/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationTargetHints"), /threadTaskCardVisibleTargetThreads\(\)/);
-  assert.match(serverJs, /function workspaceDelegationRpcDiagnostics\(/);
-  assert.match(serverJs, /function logWorkspaceDelegationRpc\(/);
+  assert.doesNotMatch(serverJs, /function workspaceDelegationRpcDiagnostics\(/);
+  assert.match(taskCardRouteServiceJs, /function workspaceDelegationRpcDiagnostics\(/);
+  assert.match(taskCardRouteServiceJs, /function logWorkspaceDelegationRpc\(/);
   assert.match(taskCardRouteServiceJs, /function workspaceDelegationDynamicToolCallDiagnostics\(/);
   assert.match(taskCardRouteServiceJs, /function logWorkspaceDelegationDynamicToolCall\(/);
   assert.match(taskCardRouteServiceJs, /function dynamicToolServerRequestResponsePayload\(/);
@@ -257,11 +258,11 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /outcome: "unsupported_dynamic_tool"/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /outcome: "source_thread_id_required"/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /outcome: "target_thread_required"/);
-  assert.match(functionBody(serverJs, "workspaceDelegationRpcDiagnostics"), /dynamicToolsCount: toolNames\.length/);
-  assert.match(functionBody(serverJs, "workspaceDelegationRpcDiagnostics"), /hasWorkspaceDelegationTool: toolNames\.includes\(WORKSPACE_DELEGATION_TOOL_FULL_NAME\)/);
-  assert.match(functionBody(serverJs, "workspaceDelegationRpcDiagnostics"), /hasFallbackGuidance:/);
-  assert.match(functionBody(serverJs, "workspaceDelegationRpcDiagnostics"), /developerInstructionsChars:/);
-  assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationRpcDiagnostics"), /developerInstructions:\s/);
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationRpcDiagnostics"), /dynamicToolsCount: toolNames\.length/);
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationRpcDiagnostics"), /hasWorkspaceDelegationTool: toolNames\.includes\(workspaceDelegationToolFullName\)/);
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationRpcDiagnostics"), /hasFallbackGuidance:/);
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationRpcDiagnostics"), /developerInstructionsChars:/);
+  assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "workspaceDelegationRpcDiagnostics"), /developerInstructions:\s/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolCallDiagnostics"), /targetRefCount: threadTaskCardTargetReferences\(args\)\.length/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolCallDiagnostics"), /hasBody: Boolean/);
   assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolCallDiagnostics"), /bodyMarkdown:[\s\S]*args\.bodyMarkdown/);
@@ -409,6 +410,52 @@ test("approved task-card visible target summary helper is runtime executable", (
   });
 
   assert.equal(emptyService.readThreadTaskCardVisibleTargetSummary("thread-movie"), null);
+});
+
+test("workspace delegation RPC diagnostics are route-owned and bounded", () => {
+  const lines = [];
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {},
+    workspaceDelegationPublicSettings: () => ({ enabled: true }),
+    logger: {
+      log: (line) => lines.push(line),
+      error: (line) => lines.push(line),
+    },
+  });
+
+  const diagnostics = service.workspaceDelegationRpcDiagnostics("turn/start", {
+    thread_id: "thread-1234567890",
+    cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+    dynamicTools: [
+      { namespace: "codex_mobile", name: "delegate_to_thread" },
+      { fullName: "codex_mobile.delegate_to_thread" },
+      { toolNamespace: "codex_mobile", toolName: "return_to_source" },
+    ],
+    developerInstructions: "Codex Mobile cross-thread delegation fallback:\nprivate body omitted",
+    sandboxPolicy: { type: "dangerFullAccess" },
+    permissionProfile: { type: "disabled" },
+    approval_policy: "never",
+  });
+
+  assert.equal(diagnostics.method, "turn/start");
+  assert.equal(diagnostics.workspaceDelegationEnabled, true);
+  assert.equal(diagnostics.dynamicToolsCount, 2);
+  assert.deepEqual(diagnostics.dynamicToolNames, [
+    "codex_mobile.delegate_to_thread",
+    "codex_mobile.return_to_source",
+  ]);
+  assert.equal(diagnostics.hasWorkspaceDelegationTool, true);
+  assert.equal(diagnostics.hasFallbackGuidance, true);
+  assert.equal(diagnostics.developerInstructions, undefined);
+  assert.equal(diagnostics.sandboxPolicyType, "dangerFullAccess");
+  assert.equal(diagnostics.permissionProfileType, "disabled");
+
+  service.logWorkspaceDelegationRpc("turn/start", {
+    dynamicTools: [{ namespace: "codex_mobile", name: "delegate_to_thread" }],
+  });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^\[workspace-delegation-rpc\] /);
+  assert.doesNotMatch(lines[0], /private body omitted/);
 });
 
 test("return_to_source dynamic tool prefers explicit target thread over app-server params thread", async () => {
