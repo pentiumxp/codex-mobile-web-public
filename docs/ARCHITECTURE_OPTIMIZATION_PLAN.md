@@ -3772,6 +3772,26 @@ visibility/event route behavior. This is a behavior-preserving ownership move,
 so full `npm test` and deployment should wait until it is batched with enough
 additional Server progress unless a production symptom appears.
 
+### 2026-07-01 Server HTTP Runtime Body Parser Boundary
+
+The next thin-entrypoint cleanup moves request body parsing out of `server.js`
+and into `services/runtime/server-http-runtime-service.js`, which already owns
+HTTP helper policy.
+
+Scope:
+
+- bounded raw-body reads are service-owned;
+- bounded JSON body reads, empty-body normalization, invalid JSON errors, and
+  oversized body errors are service-owned;
+- `server.js` injects the JSON body byte limit through a getter and passes the
+  service functions into existing route modules unchanged;
+- route modules keep their existing `readBody`/`readRawBody` injection shape.
+
+Validation should cover the HTTP runtime service unit tests, runtime
+compatibility adapter parity, route tests that exercise body injection, and
+package syntax checks. This is behavior-preserving and should stay batched with
+the surrounding runtime-boundary work before full deployment.
+
 ## Release Rule
 
 Follow the current release order:

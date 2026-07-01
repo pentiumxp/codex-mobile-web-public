@@ -34,6 +34,9 @@ function createServerHttpRuntimeService(dependencies = {}) {
   const getMaxStructuredChars = typeof dependencies.getMaxStructuredChars === "function"
     ? dependencies.getMaxStructuredChars
     : () => dependencies.maxStructuredChars;
+  const getMaxJsonBodyBytes = typeof dependencies.getMaxJsonBodyBytes === "function"
+    ? dependencies.getMaxJsonBodyBytes
+    : () => dependencies.maxJsonBodyBytes;
   const boundedProfilePreflightDetail = typeof dependencies.boundedProfilePreflightDetail === "function"
     ? dependencies.boundedProfilePreflightDetail
     : () => "";
@@ -170,6 +173,52 @@ function createServerHttpRuntimeService(dependencies = {}) {
       "Cache-Control": "no-store",
     }, headers || {}));
     res.end(body);
+  }
+
+  function readRawBody(req, limitBytes) {
+    const maxBytes = Math.max(0, Number(limitBytes || 0));
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      let size = 0;
+      req.on("data", (chunk) => {
+        size += chunk.length;
+        if (size > maxBytes) {
+          reject(new Error("request body too large"));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on("end", () => resolve(Buffer.concat(chunks)));
+      req.on("error", reject);
+    });
+  }
+
+  function readBody(req) {
+    const maxBytes = Math.max(1, Number(valueFromGetter(getMaxJsonBodyBytes, 2_000_000) || 2_000_000));
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      let size = 0;
+      req.on("data", (chunk) => {
+        size += chunk.length;
+        if (size > maxBytes) {
+          reject(new Error("request body too large"));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on("end", () => {
+        const raw = Buffer.concat(chunks).toString("utf8").trim();
+        if (!raw) return resolve({});
+        try {
+          resolve(JSON.parse(raw));
+        } catch (_) {
+          reject(new Error("invalid JSON body"));
+        }
+      });
+      req.on("error", reject);
+    });
   }
 
   function hermesOriginFromRequest(req, url) {
@@ -365,6 +414,8 @@ function createServerHttpRuntimeService(dependencies = {}) {
     isHttpsRequest,
     pluginSessionCookieHeader,
     sendJson,
+    readRawBody,
+    readBody,
     hermesOriginFromRequest,
     requestBaseUrl,
     trimLogFile,

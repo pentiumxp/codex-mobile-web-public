@@ -248,6 +248,7 @@ const serverHttpRuntimeService = createServerHttpRuntimeService({
   getMobileWebLogMaxBytes: () => MOBILE_WEB_LOG_MAX_BYTES,
   getMobileWebLogKeepBytes: () => MOBILE_WEB_LOG_KEEP_BYTES,
   getMaxStructuredChars: () => MAX_STRUCTURED_CHARS,
+  getMaxJsonBodyBytes: () => MAX_JSON_BODY_BYTES,
 });
 const {
   readCodexConfigDefaults,
@@ -264,6 +265,8 @@ const {
   isHttpsRequest,
   pluginSessionCookieHeader,
   sendJson,
+  readRawBody,
+  readBody,
   hermesOriginFromRequest,
   requestBaseUrl,
   trimLogFile,
@@ -2137,50 +2140,6 @@ function shouldSendEventToClient(payload, client = {}) {
 
 function removeEventClient(res) {
   return threadEventNotificationService.removeEventClient(res);
-}
-
-function readRawBody(req, limitBytes) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on("data", (chunk) => {
-      size += chunk.length;
-      if (size > limitBytes) {
-        reject(new Error("request body too large"));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
-}
-
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on("data", (chunk) => {
-      size += chunk.length;
-      if (size > MAX_JSON_BODY_BYTES) {
-        reject(new Error("request body too large"));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on("end", () => {
-      const raw = Buffer.concat(chunks).toString("utf8").trim();
-      if (!raw) return resolve({});
-      try {
-        resolve(JSON.parse(raw));
-      } catch (err) {
-        reject(new Error("invalid JSON body"));
-      }
-    });
-    req.on("error", reject);
-  });
 }
 
 const runtimeSettingsService = createRuntimeSettingsService({
