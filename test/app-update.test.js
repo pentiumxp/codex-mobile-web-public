@@ -64,7 +64,13 @@ test("app update runtime is wired into the static shell", () => {
   assert.match(appJs, /"\/app-update-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"app-update-runtime\.js"/);
   assert.match(appJs, /const appUpdateRuntimeApi = window\.CodexAppUpdateRuntime/);
-  assert.match(appJs, /appUpdateRuntimeApi\.createAppUpdateRuntime\(\{/);
+  const requireRuntimeBody = functionBody(appJs, "requireAppUpdateRuntime");
+  assert.match(requireRuntimeBody, /if \(!appUpdateRuntime\) \{/);
+  assert.match(requireRuntimeBody, /appUpdateRuntimeApi\.createAppUpdateRuntime\(\{/);
+  const earlyConstantsEnd = appJs.indexOf("function hasStartupThreadOpenIntent");
+  const earlyConstantsBlock = appJs.slice(appJs.indexOf("const COMPOSER_INTENT_BODY_MAX_CHARS"), earlyConstantsEnd);
+  assert.doesNotMatch(earlyConstantsBlock, /appUpdateRuntimeApi\.createAppUpdateRuntime\(\{/);
+  assert.ok(appJs.indexOf("function appVersionText") > appJs.indexOf("const $ ="), "app-update wrappers should run after DOM helper initialization");
   assert.match(appUpdateRuntimeJs, /function createAppUpdateRuntime\(deps = \{\}\)/);
   assert.match(appUpdateRuntimeJs, /root\.CodexAppUpdateRuntime/);
 });
