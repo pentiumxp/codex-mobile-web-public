@@ -4,9 +4,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
-const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const appJs = readFrontendSources(root);
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
 const serverRuntimeUtilsJs = fs.readFileSync(
@@ -98,9 +99,9 @@ test("thread detail runtime is wired into the static shell", () => {
   assert.match(swJs, /"\/thread-detail-runtime\.js"/);
   assert.match(appJs, /"\/thread-detail-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"thread-detail-runtime\.js"/);
-  assert.match(appJs, /const threadDetailRuntimeApi = window\.CodexThreadDetailRuntime/);
+  assert.match(appJs, /(?:const|var) threadDetailRuntimeApi = window\.CodexThreadDetailRuntime/);
   assert.match(appJs, /threadDetailRuntimeApi\.createThreadDetailRuntime\(\{/);
-  assert.match(appJs, /function requireThreadDetailRuntime\(\)/);
+  assert.match(appJs, /function initializeThreadDetailRuntimeWiring\(\)/);
 });
 
 test("thread detail runtime exposes merge and echo-normalizer APIs", () => {

@@ -4,11 +4,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
 const composerRuntime = require(path.join(root, "public", "composer-runtime.js"));
 const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
-const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const composerBridgeRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-bridge-runtime.js"), "utf8");
+const appJs = readFrontendSources(root);
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
@@ -30,7 +32,7 @@ function sourceFunctionBody(source, name) {
 }
 
 function appBody(name) {
-  return sourceFunctionBody(appJs, name);
+  return sourceFunctionBody(composerBridgeRuntimeJs, name);
 }
 
 function runtimeBody(name) {
@@ -56,19 +58,20 @@ test("composer runtime owns composer behavior while app.js keeps glue wrappers",
     assert.doesNotMatch(runtimeBody(name), /composerRuntime\./);
   }
 
-  assert.match(appJs, /const composerRuntimeApi = window\.CodexComposerRuntime/);
-  assert.match(appJs, /const composerRuntime = composerRuntimeApi\.createComposerRuntime\(\{/);
+  assert.match(appJs, /(?:const|var) composerRuntimeApi = window\.CodexComposerRuntime/);
+  assert.match(appJs, /composerRuntime = composerRuntimeApi\.createComposerRuntime\(\{/);
   assert.match(composerRuntimeJs, /module\.exports = api/);
 });
 
 test("composer runtime is created after its constant dependencies", () => {
-  const runtimeCreateIndex = appJs.indexOf("const composerRuntime = composerRuntimeApi.createComposerRuntime({");
+  const runtimeCreateIndex = appJs.indexOf("composerRuntime = composerRuntimeApi.createComposerRuntime({");
   assert.notEqual(runtimeCreateIndex, -1);
   for (const name of [
     "MESSAGE_INPUT_MIN_HEIGHT_PX",
     "MESSAGE_INPUT_MAX_HEIGHT_PX",
   ]) {
-    const declarationIndex = appJs.indexOf(`const ${name}`);
+    let declarationIndex = appJs.indexOf(`const ${name}`);
+    if (declarationIndex === -1) declarationIndex = appJs.indexOf(`var ${name}`);
     assert.notEqual(declarationIndex, -1, `missing ${name}`);
     assert.ok(declarationIndex < runtimeCreateIndex, `${name} must be declared before composer runtime creation`);
   }
@@ -79,6 +82,6 @@ test("composer runtime is part of the current static shell", () => {
   assert.match(swJs, /"\/composer-runtime\.js"/);
   assert.match(appJs, /"\/composer-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"composer-runtime\.js"/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v618"/);
-  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v618"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v621"/);
+  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v621"/);
 });

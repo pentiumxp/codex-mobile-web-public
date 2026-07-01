@@ -4,9 +4,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const imageCompressor = require("../public/image-compressor.js");
-const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const appJs = readFrontendSources(path.resolve(__dirname, ".."));
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 
 function sourceFunctionBody(source, name) {
@@ -57,7 +58,7 @@ test("image compressor bounds dimensions and keeps only useful compressed blobs"
 });
 
 test("composer compresses attachments before size checks and draft persistence", () => {
-  assert.match(appJs, /const imageCompressor = window\.CodexImageCompressor/);
+  assert.match(appJs, /(?:const|var) imageCompressor = window\.CodexImageCompressor/);
   assert.match(composerRuntimeJs, /async function prepareAttachmentFile\(file\)/);
   assert.match(composerRuntimeJs, /await imageCompressor\.compressImageFile\(file\)/);
   const addBody = composerRuntimeBody("addAttachmentFiles");

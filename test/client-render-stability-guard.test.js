@@ -4,11 +4,12 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const guard = require("../public/client-render-stability-guard");
 
 const root = path.resolve(__dirname, "..");
-const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const appJs = readFrontendSources(root);
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
@@ -56,7 +57,7 @@ test("client render stability guard falls back to durable turn id for non-submis
 });
 
 test("send-message render path uses stable submitted-turn identity instead of turn id churn", () => {
-  assert.match(appJs, /const clientRenderStabilityGuard = window\.CodexClientRenderStabilityGuard/);
+  assert.match(appJs, /(?:const|var) clientRenderStabilityGuard = window\.CodexClientRenderStabilityGuard/);
   assert.match(functionBody("insertLocalSubmittedUserMessage"), /clientRenderStabilityGuard\.markSubmittedTurn\(turn, submissionId\)/);
   assert.match(functionBody("reconcileSubmittedUserMessageTurn"), /clientRenderStabilityGuard\.transferSubmittedTurnIdentity\(sourceTurn, targetTurn, submissionId\)/);
   assert.match(functionBody("stableTurnKey"), /clientRenderStabilityGuard\.stableTurnIdentity\(turn\)/);
@@ -80,6 +81,6 @@ test("client render stability guard is part of the static shell", () => {
   assert.match(swJs, /"\/composer-runtime\.js"/);
   assert.match(appJs, /"\/composer-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"composer-runtime\.js"/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v620"/);
-  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v620"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v621"/);
+  assert.match(swJs, /CACHE_NAME = "codex-mobile-shell-v621"/);
 });

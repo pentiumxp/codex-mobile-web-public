@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 const { createServerHttpRuntimeService } = require("../services/runtime/server-http-runtime-service");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
@@ -17,7 +18,7 @@ const notificationRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const staticFileServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "static-file-service.js"), "utf8");
 const serverHttpRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-http-runtime-service.js"), "utf8");
-const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const appJs = readFrontendSources(path.resolve(__dirname, ".."));
 const pluginEmbedJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "plugin-embed.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -130,7 +131,7 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(indexHtml, /localStorage\.getItem\("codexMobileFontSize"\)[\s\S]*if \(allowedFontSizes\[value\]\) return value;[\s\S]*var pluginAppearance = readPluginAppearance\(\);/);
   assert.match(appJs, /fontSize: localStorage\.getItem\("codexMobileFontSize"\)[\s\S]*INITIAL_PLUGIN_EMBED\.appearance && INITIAL_PLUGIN_EMBED\.appearance\.fontSize/);
   assert.match(appJs, /function storedFontSizePreference\(\)/);
-  assert.match(appJs, /const storedFontSize = storedFontSizePreference\(\);[\s\S]*if \(appearance\.fontSize && !storedFontSize\)/);
+  assert.match(appJs, /(?:const|var) storedFontSize = storedFontSizePreference\(\);[\s\S]*if \(appearance\.fontSize && !storedFontSize\)/);
   assert.match(appJs, /if \(storedFontSize\) \{[\s\S]*state\.pluginAppearance = Object\.assign\([\s\S]*fontSize: storedFontSize/);
   assert.match(appJs, /if \(isHermesEmbedMode\(\)\) \{[\s\S]*syncPluginAppearanceStateFromPreferences\(\);[\s\S]*scrubPluginLaunchUrl\(\);[\s\S]*publishPluginNavigationState\(\{ force: true \}\);/);
   assert.match(indexHtml, /document\.documentElement\.setAttribute\("data-font-size", initialFontSize\)/);
@@ -193,7 +194,7 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(appJs, /function normalizePluginParentOrigin\(value\) \{\s*const liveParentOrigin = currentPluginParentWindowOrigin\(\);/);
   assert.match(appJs, /function publishPluginNavigationState\(options = \{\}\) \{[\s\S]*const targetOrigin = normalizePluginParentOrigin\(state\.pluginParentOrigin\);[\s\S]*targetOrigin: targetOrigin \|\| "\*"/);
   assert.match(appJs, /function postPluginBackResult\(handled, reason\) \{[\s\S]*const targetOrigin = normalizePluginParentOrigin\(state\.pluginParentOrigin\);[\s\S]*targetOrigin: targetOrigin \|\| "\*"/);
-  assert.match(appJs, /const hermesOrigin = normalizePluginParentOrigin\(result && result\.hermes_origin\)/);
+  assert.match(appJs, /(?:const|var) hermesOrigin = normalizePluginParentOrigin\(result && result\.hermes_origin\)/);
   assert.match(appJs, /state\.pluginParentOrigin = hermesOrigin/);
   assert.match(appJs, /if \(assetsChanged && !serverBuildNeedsRefresh\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;[\s\S]*return;/);
   assert.match(appJs, /if \(serverBuildNeedsRefresh\) \{\s*if \(isHermesEmbedMode\(\)\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed"\);[\s\S]*return;/);

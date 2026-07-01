@@ -4,9 +4,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const renderer = require(path.resolve(__dirname, "..", "public", "markdown-renderer.js"));
-const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const appJs = readFrontendSources(path.resolve(__dirname, ".."));
 const mediaPreviewRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "media-preview-runtime.js"), "utf8");
 const appAndMediaJs = `${mediaPreviewRuntimeJs}\n${appJs}`;
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
@@ -160,7 +161,7 @@ test("mobile app ships a custom Mermaid preview dialog and lazy runtime loader",
   assert.match(indexHtml, /id="mermaidPreviewDialog"/);
   assert.match(indexHtml, /id="mermaidPreviewBody"/);
   assert.match(indexHtml, /id="mermaidPreviewSource"/);
-  assert.match(appJs, /const MERMAID_SCRIPT_URL = "\/vendor\/mermaid\.min\.js"/);
+  assert.match(appJs, /(?:const|var) MERMAID_SCRIPT_URL = "\/vendor\/mermaid\.min\.js"/);
   assert.match(appAndMediaJs, /function ensureMermaidApi\(/);
   assert.match(appAndMediaJs, /function hydrateMermaidDiagrams\(/);
   assert.match(appJs, /function hydrateThreadDetailSurface\(/);

@@ -21,6 +21,11 @@ test("browser runtime self-check parses startup-only listener smoke option", () 
   assert.equal(options.json, true);
 });
 
+test("browser runtime self-check reads client build from app bootstrap shell asset", () => {
+  assert.ok(scriptSource.includes('readAsset("/app-bootstrap.js")'));
+  assert.ok(scriptSource.includes("appBootstrap.text || app.text"));
+});
+
 test("browser runtime self-check treats startup exceptions as blocking", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{

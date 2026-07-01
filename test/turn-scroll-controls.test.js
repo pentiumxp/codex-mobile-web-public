@@ -4,8 +4,9 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
-const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const appJs = readFrontendSources(path.resolve(__dirname, ".."));
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -73,8 +74,8 @@ test("current-turn reply jump shares one floating slot with the bottom jump", ()
   assert.match(appJs, /state\.usageBackfillAttempts >= 6/);
   assert.match(appJs, /state\.postCompletionRefreshTimers\.forEach\(\(timer\) => clearTimeout\(timer\)\);/);
   assert.match(appJs, /clearUsageBackfillRefresh\(\);/);
-  assert.match(appJs, /const previousAnchor = state\.recentCompletedReplyAnchor;/);
-  assert.match(appJs, /const keepActivatedByUserScroll = Boolean\(/);
+  assert.match(appJs, /(?:const|var) previousAnchor = state\.recentCompletedReplyAnchor;/);
+  assert.match(appJs, /(?:const|var) keepActivatedByUserScroll = Boolean\(/);
   assert.match(appJs, /activatedByCompletion: true/);
   assert.match(appJs, /activatedByUserScroll: keepActivatedByUserScroll/);
   assert.match(appJs, /receiptStartLocated: false/);
@@ -92,7 +93,7 @@ test("current-turn reply jump shares one floating slot with the bottom jump", ()
   assert.match(appJs, /return finalReceipts\[finalReceipts\.length - 1\];/);
   assert.match(appJs, /return fallbackItems\[fallbackItems\.length - 1\];/);
   assert.match(appJs, /function scrollConversationToTurnReceiptStart\(turnId\)/);
-  assert.match(appJs, /const target = turnFinalReceiptNode\(\{ turnId \}\);/);
+  assert.match(appJs, /(?:const|var) target = turnFinalReceiptNode\(\{ turnId \}\);/);
   assert.match(appJs, /scrollNodeIntoConversationView\(target\);/);
   assert.match(appJs, /state\.recentCompletedReplyAnchor\.receiptStartLocated = true;/);
   assert.match(appJs, /function pendingCompletedReceiptStartTurnId\(\)/);
@@ -103,7 +104,7 @@ test("current-turn reply jump shares one floating slot with the bottom jump", ()
   assert.match(functionBody("applyNotification"), /if \(!suppressAutomaticRefresh\) schedulePostCompletionThreadRefreshes\(params\.threadId, \[700, 2400\]\);/);
   assert.match(functionBody("applyNotification"), /if \(!suppressAutomaticRefresh\) \{[\s\S]*scheduleUsageBackfillRefresh\(1400\);[\s\S]*scheduleLivePollIfNeeded\(1400\);[\s\S]*\}/);
   assert.match(appJs, /scrollToTurnReceiptStart/);
-  assert.match(appJs, /const explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
+  assert.match(appJs, /(?:const|var) explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
   assert.doesNotMatch(appJs, /return replies\[0\];/);
   assert.match(appJs, /function isNodeStartAboveConversationViewport\(node\)/);
   assert.match(appJs, /return rect\.top < viewport\.top \+ 24;/);
@@ -125,8 +126,8 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(appJs, /conversationUserScrollAwayThreadId: ""/);
   assert.match(appJs, /function rememberConversationScrollIntent\(\)/);
   assert.match(appJs, /clearSubmittedMessageBottomFollow\(\);\s*clearViewportBottomFollow\(\);\s*syncConversationScrollPosition\(\);\s*cancelAutomaticConversationRefreshesIfReading\(\);/);
-  assert.match(appJs, /const CONVERSATION_SCROLL_INTENT_MS = 4000;/);
-  assert.match(appJs, /const AUTOMATIC_CONVERSATION_REFRESH_SOURCES = new Set\(\[/);
+  assert.match(appJs, /(?:const|var) CONVERSATION_SCROLL_INTENT_MS = 4000;/);
+  assert.match(appJs, /(?:const|var) AUTOMATIC_CONVERSATION_REFRESH_SOURCES = new Set\(\[/);
   assert.match(appJs, /function automaticConversationRefreshPlan\(options = \{\}\)/);
   assert.match(functionBody("automaticConversationRefreshPlan"), /conversationScroll\.planAutomaticConversationRefresh\(\{/);
   assert.match(appJs, /function shouldSuppressAutomaticCurrentThreadRefresh\(source, options = \{\}\)/);
@@ -145,7 +146,7 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(functionBody("noteConversationBottomState"), /clearConversationUserScrollAwayState\(\);/);
   assert.match(functionBody("noteConversationBottomState"), /rememberConversationUserScrollAwayState\(\);/);
   assert.match(functionBody("automaticConversationRefreshPlan"), /userReadingAwayFromBottom: !nearBottom && isUserReadingAwayFromConversationBottom\(\{ threadId, nearBottom \}\),/);
-  assert.match(appJs, /const userReadingCurrentTurn = isUserReadingCurrentTurn\(\{ nearBottom \}\);/);
+  assert.match(appJs, /(?:const|var) userReadingCurrentTurn = isUserReadingCurrentTurn\(\{ nearBottom \}\);/);
   assert.match(functionBody("isUserReadingCurrentTurn"), /const planInput = \{ nearBottom \};/);
   assert.match(functionBody("isUserReadingCurrentTurn"), /planInput\.autoScrollHold = shouldHoldAutoScrollForCurrentTurn\(\);/);
   assert.match(functionBody("isUserReadingCurrentTurn"), /planInput\.recentScrollIntent = hasRecentConversationScrollIntent\(\);/);
@@ -161,18 +162,18 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(functionBody("shouldFollowViewportChangeToBottom"), /leaseActive,/);
   assert.match(functionBody("shouldFollowViewportChangeToBottom"), /hasLease: Boolean\(state\.viewportBottomFollow\),/);
   assert.match(functionBody("shouldFollowViewportChangeToBottom"), /if \(plan\.clearLease\) clearViewportBottomFollow\(\);/);
-  assert.match(appJs, /const sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\);/);
-  assert.match(appJs, /const fullRenderScrollPlan = conversationScroll\.planFullRenderScroll\(\{/);
+  assert.match(appJs, /(?:const|var) sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\);/);
+  assert.match(appJs, /(?:const|var) fullRenderScrollPlan = conversationScroll\.planFullRenderScroll\(\{/);
   assert.match(appJs, /submittedMessageFollow: shouldFollowSubmittedMessageToBottom\(\),/);
   assert.match(appJs, /viewportFollow: shouldFollowViewportChangeToBottom\(\),/);
-  assert.match(appJs, /const shouldStickToBottom = Boolean\(fullRenderScrollPlan\.stickToBottom\);/);
+  assert.match(appJs, /(?:const|var) shouldStickToBottom = Boolean\(fullRenderScrollPlan\.stickToBottom\);/);
   assert.doesNotMatch(functionBody("shouldFollowSubmittedMessageToBottom"), /if \(isUserReadingCurrentTurn\(\)\) \{\s*clearSubmittedMessageBottomFollow\(\);\s*return false;\s*\}/);
   assert.doesNotMatch(functionBody("shouldFollowViewportChangeToBottom"), /if \(isUserReadingCurrentTurn\(\)\) \{\s*clearViewportBottomFollow\(\);\s*return false;\s*\}/);
   assert.doesNotMatch(functionBody("shouldFollowSubmittedMessageToBottom"), /if \(!shouldFollow && state\.submittedMessageBottomFollow\) clearSubmittedMessageBottomFollow\(\);/);
   assert.doesNotMatch(functionBody("shouldFollowViewportChangeToBottom"), /if \(!shouldFollow && state\.viewportBottomFollow\) clearViewportBottomFollow\(\);/);
   assert.match(appJs, /function updateConversationAutoScrollHoldFromScroll\(\)/);
   assert.match(appJs, /function turnForConversationAutoScrollHold\(\)/);
-  assert.match(appJs, /const turn = turnForConversationAutoScrollHold\(\);/);
+  assert.match(appJs, /(?:const|var) turn = turnForConversationAutoScrollHold\(\);/);
   assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /const planInput = \{ nearBottom \};/);
   assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /planInput\.recentScrollIntent = hasRecentConversationScrollIntent\(\);/);
   assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /planInput\.hasCurrentTurn = Boolean\(turnForConversationAutoScrollHold\(\)\);/);
@@ -209,7 +210,7 @@ test("orientation and viewport resize preserve bottom position when already near
   assert.match(appJs, /conversationNearBottomThreadId: ""/);
   assert.match(appJs, /function clearConversationNearBottomState\(\)/);
   assert.match(appJs, /function followViewportChangeToBottom\(reason = "viewport"\)/);
-  assert.match(appJs, /const lastNearBottomAtMs = state\.conversationNearBottomThreadId === threadId/);
+  assert.match(appJs, /(?:const|var) lastNearBottomAtMs = state\.conversationNearBottomThreadId === threadId/);
   assert.match(appJs, /conversationScroll\.shouldStartViewportFollow\(\{/);
   assert.match(appJs, /conversationScroll\.createViewportFollow\(threadId/);
   assert.match(appJs, /function scheduleViewportBottomFollowScroll\(\)/);
@@ -223,7 +224,7 @@ test("orientation and viewport resize preserve bottom position when already near
 });
 
 test("successful message submit follows the new turn to the bottom", () => {
-  assert.match(appJs, /const conversationScroll = window\.CodexConversationScroll/);
+  assert.match(appJs, /(?:const|var) conversationScroll = window\.CodexConversationScroll/);
   assert.match(appJs, /function followSubmittedMessageToBottom\(threadId, clientSubmissionId = ""\)/);
   assert.match(appJs, /conversationScroll\.createSubmittedMessageFollow\(threadId/);
   assert.match(appJs, /function sustainSubmittedMessageBottomFollow\(turn, itemType, field\)/);
@@ -231,7 +232,7 @@ test("successful message submit follows the new turn to the bottom", () => {
   assert.match(appJs, /function sustainSubmittedMessageBottomFollowFromThread\(thread\)/);
   assert.match(appJs, /latestLiveTurnForThread\(thread\)/);
   assert.match(appJs, /visibleItemsForTurn\(liveTurn, thread\)[\s\S]*item\.type !== "userMessage"/);
-  assert.match(appJs, /const sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\)/);
+  assert.match(appJs, /(?:const|var) sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\)/);
   assert.match(appJs, /sustainedSubmittedFollow,/);
   assert.match(appJs, /submittedMessageFollow: shouldFollowSubmittedMessageToBottom\(\),/);
   assert.match(appJs, /viewportFollow: shouldFollowViewportChangeToBottom\(\),/);

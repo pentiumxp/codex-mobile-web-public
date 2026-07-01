@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const {
   continuationGoalMigrationPlan,
@@ -31,7 +32,7 @@ const threadDetailStateBridgeServiceJs = fs.readFileSync(
   "utf8",
 );
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
-const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const appJs = readFrontendSources(path.resolve(__dirname, ".."));
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -343,7 +344,7 @@ test("mobile client opens goal dialog from /g and sets goal through app-server r
   assert.match(indexHtml, /id="goalContinueButton"/);
   assert.match(indexHtml, /id="goalPauseButton"/);
   assert.match(indexHtml, /id="goalClearButton"/);
-  assert.match(appJs, /const THREAD_GOAL_COMMAND_PREFIX = "\/g"/);
+  assert.match(appJs, /(?:const|var) THREAD_GOAL_COMMAND_PREFIX = "\/g"/);
   assert.match(appJs, /function isThreadGoalCommandText\(/);
   assert.match(appJs, /function openThreadGoalDialog\(/);
   assert.doesNotMatch(appJs, /function buildThreadGoalRequestMessage\(/);
@@ -398,7 +399,7 @@ test("mobile client opens goal dialog from /g and sets goal through app-server r
   assert.match(stylesCss, /\.goal-panel/);
   assert.match(stylesCss, /\.goal-state-actions/);
   assert.match(stylesCss, /\.goal-action-danger/);
-  assert.match(appJs, /const THREAD_GOAL_MENTION_PATTERN = \/\^@\(目标任务\|目标\|Goal\|Thread\\s\*Goal\|g\)\$/);
+  assert.match(appJs, /(?:const|var) THREAD_GOAL_MENTION_PATTERN = \/\^@\(目标任务\|目标\|Goal\|Thread\\s\*Goal\|g\)\$/);
   assert.match(functionBody(appJs, "isThreadGoalCommandText"), /THREAD_GOAL_MENTION_PATTERN\.test\(text\)/);
   assert.match(composerRuntimeJs, /@目标任务/);
   assert.match(functionBody(composerRuntimeJs, "sendMessage"), /composerIntentBareTagKind\(text\)/);

@@ -4,9 +4,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
-const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const appJs = readFrontendSources(root);
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
@@ -116,13 +117,13 @@ function createRuntimeFixture(overrides = {}) {
 }
 
 test("media preview runtime is wired into the static shell", () => {
-  assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>\s*\n\s*<script src="\/media-preview-runtime\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>[\s\S]*<script src="\/media-preview-runtime\.js"><\/script>[\s\S]*<script src="\/app\.js"><\/script>/);
   assert.match(swJs, /"\/media-preview-runtime\.js"/);
-  assert.match(swJs, /codex-mobile-shell-v619/);
+  assert.match(swJs, /codex-mobile-shell-v621/);
   assert.match(appJs, /"\/media-preview-runtime\.js"/);
-  assert.match(appJs, /0\.1\.11\|codex-mobile-shell-v619/);
+  assert.match(appJs, /0\.1\.11\|codex-mobile-shell-v621/);
   assert.match(serverRuntimeUtilsJs, /"media-preview-runtime\.js"/);
-  assert.match(appJs, /const mediaPreviewRuntimeApi = window\.CodexMediaPreviewRuntime/);
+  assert.match(appJs, /(?:const|var) mediaPreviewRuntimeApi = window\.CodexMediaPreviewRuntime/);
   assert.match(appJs, /function requireMediaPreviewRuntime\(\)/);
   assert.match(appJs, /mediaPreviewRuntimeApi\.createMediaPreviewRuntime\(\{/);
   assert.match(mediaPreviewRuntimeJs, /function createMediaPreviewRuntime\(deps = \{\}\)/);

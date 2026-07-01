@@ -51,17 +51,17 @@ function requestStatic(pathname, acceptEncoding = "") {
 
 test("static assets prefer brotli compression for large text resources", async () => {
   clearStaticCompressionCache();
-  const raw = fs.readFileSync(path.join(root, "public", "app.js"));
-  const response = await requestStatic("/app.js", "br, gzip");
+  const raw = fs.readFileSync(path.join(root, "public", "pane-layout-runtime.js"));
+  const response = await requestStatic("/pane-layout-runtime.js", "br, gzip");
   const statsAfterFirst = staticCompressionCacheStats();
-  const secondResponse = await requestStatic("/app.js", "br, gzip");
+  const secondResponse = await requestStatic("/pane-layout-runtime.js", "br, gzip");
   const statsAfterSecond = staticCompressionCacheStats();
 
   assert.equal(response.statusCode, 200);
   assert.equal(response.headers["Content-Encoding"], "br");
   assert.equal(response.headers.Vary, "Accept-Encoding");
   assert.equal(response.headers["Content-Type"], "text/javascript; charset=utf-8");
-  assert.ok(response.body.length < raw.length, "compressed body should be smaller than raw app.js");
+  assert.ok(response.body.length < raw.length, "compressed body should be smaller than raw runtime asset");
   assert.deepEqual(await brotliDecompress(response.body), raw);
   assert.deepEqual(secondResponse.body, response.body);
   assert.equal(statsAfterFirst.entries, 1);

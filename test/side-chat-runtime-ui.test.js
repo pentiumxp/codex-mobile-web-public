@@ -4,9 +4,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
-const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const appJs = readFrontendSources(root);
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
@@ -67,14 +68,14 @@ function createRuntimeFixture() {
 }
 
 test("side chat runtime is wired into the static shell", () => {
-  assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>\s*\n\s*<script src="\/media-preview-runtime\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>[\s\S]*<script src="\/app\.js"><\/script>/);
   assert.match(swJs, /"\/side-chat-runtime\.js"/);
   assert.match(appJs, /"\/side-chat-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"side-chat-runtime\.js"/);
-  assert.match(appJs, /const sideChatRuntimeApi = window\.CodexSideChatRuntime/);
+  assert.match(appJs, /(?:const|var) sideChatRuntimeApi = window\.CodexSideChatRuntime/);
   assert.match(appJs, /function requireSideChatRuntime\(\)/);
   assert.match(appJs, /sideChatRuntimeApi\.createSideChatRuntime\(\{/);
-  assert.doesNotMatch(appJs.slice(0, appJs.indexOf("const $ =")), /sideChatRuntimeApi\.createSideChatRuntime\(\{/);
+  assert.doesNotMatch(appJs.slice(0, appJs.indexOf("var $ =")), /sideChatRuntimeApi\.createSideChatRuntime\(\{/);
 });
 
 test("side chat runtime exposes panel, draft, queue, and gesture APIs", () => {

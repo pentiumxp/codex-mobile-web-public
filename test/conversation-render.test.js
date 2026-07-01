@@ -4,14 +4,19 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
-const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const appJs = readFrontendSources(root);
 const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-list-runtime.js"), "utf8");
 const threadTileRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-tile-runtime.js"), "utf8");
 const threadDetailRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-detail-runtime.js"), "utf8");
 const mediaPreviewRuntimeJs = fs.readFileSync(path.join(root, "public", "media-preview-runtime.js"), "utf8");
+const apiClientRuntimeJs = fs.readFileSync(path.join(root, "public", "api-client-runtime.js"), "utf8");
+const paneLayoutRuntimeJs = fs.readFileSync(path.join(root, "public", "pane-layout-runtime.js"), "utf8");
+const conversationRenderRuntimeJs = fs.readFileSync(path.join(root, "public", "conversation-render-runtime.js"), "utf8");
+const settingsRuntimeJs = fs.readFileSync(path.join(root, "public", "settings-runtime.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const threadDetailCompactionServiceJs = fs.readFileSync(
   path.join(root, "adapters", "thread-detail-compaction-service.js"),
@@ -131,6 +136,10 @@ const threadDetailRuntimeFunctionNames = new Set([
 function sourceForFunction(source, name) {
   if (source === appJs && threadDetailRuntimeFunctionNames.has(name)) return threadDetailRuntimeJs;
   if (source === appJs && mediaPreviewRuntimeJs.includes(`function ${name}(`)) return mediaPreviewRuntimeJs;
+  if (source === appJs && paneLayoutRuntimeJs.includes(`function ${name}(`)) return paneLayoutRuntimeJs;
+  if (source === appJs && apiClientRuntimeJs.includes(`function ${name}(`)) return apiClientRuntimeJs;
+  if (source === appJs && conversationRenderRuntimeJs.includes(`function ${name}(`)) return conversationRenderRuntimeJs;
+  if (source === appJs && settingsRuntimeJs.includes(`function ${name}(`)) return settingsRuntimeJs;
   return source;
 }
 
@@ -2631,9 +2640,9 @@ test("live detail refresh can patch changed visible items without replacing the 
   assert.match(appJs, /function visibleItemPatchShapePreservesExisting\(/);
   assert.match(appJs, /function planVisibleItemsOnlyFromRefresh\(/);
   assert.match(appJs, /function applyVisibleItemsOnlyRefreshPatch\(/);
-  assert.match(appJs, /const threadDetailPatchPlanApi = window\.CodexThreadDetailPatchPlan/);
-  assert.match(appJs, /const threadDetailDomPatchApi = window\.CodexThreadDetailDomPatch/);
-  assert.match(appJs, /const threadDetailActionsApi = window\.CodexThreadDetailActions/);
+  assert.match(appJs, /(?:const|var) threadDetailPatchPlanApi = window\.CodexThreadDetailPatchPlan/);
+  assert.match(appJs, /(?:const|var) threadDetailDomPatchApi = window\.CodexThreadDetailDomPatch/);
+  assert.match(appJs, /(?:const|var) threadDetailActionsApi = window\.CodexThreadDetailActions/);
   assert.match(functionBody("visibleItemPatchShapePreservesExisting"), /threadDetailPatchPlanApi\.visibleItemPatchShapePreservesExisting\(previousEntries, nextEntries\)/);
   assert.match(functionBody("planVisibleItemsOnlyFromRefresh"), /!isLatestTurn\(nextTurn\)/);
   assert.doesNotMatch(functionBody("planVisibleItemsOnlyFromRefresh"), /!isLiveTurn\(nextTurn\)/);
@@ -2789,7 +2798,7 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /Thread failed:/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /No visible turns\./);
-  assert.match(appJs, /const EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS = 30000;/);
+  assert.match(appJs, /(?:const|var) EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS = 30000;/);
   assert.match(appJs, /function maybeRecoverEmptyDetailWithHistoryEvidence\(/);
   assert.doesNotMatch(appJs, /function threadHasNonemptyHistoryEvidence\(/);
   assert.match(functionBody("maybeRecoverEmptyDetailWithHistoryEvidence"), /threadDetailStateApi\.planEmptyDetailHistoryRecovery\(\{/);
@@ -2805,7 +2814,7 @@ test("loading and thread-list state preserve locally visible live turns", () => 
 test("long agent messages keep a stable render path when a turn completes", () => {
   assert.match(functionBody("renderItemBody"), /if \(item\.type === "agentMessage"\) \{[\s\S]*renderThreadTaskCardDraftMessage\(item\.text \|\| "", item, turn\) \|\| renderMarkdownWithAttachmentSummary\(item\.text \|\| ""\);/);
   assert.doesNotMatch(functionBody("renderItemBody"), /isLiveTurn\(turn\) \? escapeHtml/);
-  assert.match(appJs, /const LONG_RECEIPT_SCROLL_CHARS = 1200;/);
+  assert.match(appJs, /(?:const|var) LONG_RECEIPT_SCROLL_CHARS = 1200;/);
   assert.doesNotMatch(appJs, /function shouldDeferLiveAgentMessage/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /shouldDeferLiveAgentMessage/);
   assert.match(appJs, /function shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options = \{\}\)/);
@@ -3350,7 +3359,7 @@ test("failed conversation images collapse into a neutral fallback", () => {
   assert.match(functionBody("hydrateProtectedAppImage"), /protectedAppImageRecoveredUrl\(response, src\)/);
   assert.match(functionBody("hydrateProtectedAppImage"), /applyProtectedAppImageRecoveredUrl\(image, recovered\)/);
   assert.match(functionBody("hydrateProtectedAppImage"), /protectedImageHydrated = "1"/);
-  assert.match(appJs, /const IMAGE_DIAGNOSTICS_ENABLED = false;/);
+  assert.match(appJs, /(?:const|var) IMAGE_DIAGNOSTICS_ENABLED = false;/);
   assert.match(functionBody("postImageDiagnosticEvent"), /if \(!IMAGE_DIAGNOSTICS_ENABLED\) return false;/);
   assert.match(appJs, /document\.addEventListener\("focusin", \(\) => \{[\s\S]*scheduleVisibleImageFailureScan\(\[0, 80, 240\]\);/);
   assert.match(stylesCss, /\.input-image\.image-load-failed,[\s\S]*\.markdown-image\.image-load-failed,[\s\S]*\.image-view\.image-load-failed/);
@@ -4012,7 +4021,7 @@ test("conversation projection consistency delegates report payloads to diagnosti
   assert.doesNotMatch(body, /threadDiagnosticEventsApi\.turnOrderMismatchDiagnosticEvent/);
   assert.doesNotMatch(body, /diagnostic_type: "render_signature_mismatch"/);
   assert.doesNotMatch(body, /diagnostic_type: "duplicate_render_keys"/);
-  assert.match(appJs, /const threadDiagnosticEventsApi = window\.CodexThreadDiagnosticEvents;/);
+  assert.match(appJs, /(?:const|var) threadDiagnosticEventsApi = window\.CodexThreadDiagnosticEvents;/);
 });
 
 test("conversation turn-order diagnostics delegate empty DOM mismatch planning to helper", () => {
@@ -4027,7 +4036,7 @@ test("conversation turn-order diagnostics delegate empty DOM mismatch planning t
 
 test("primary shell selection conflicts are diagnosed instead of silently clearing thread detail", () => {
   assert.match(appJs, /lastThreadDetailRenderEvidence: null/);
-  assert.match(appJs, /const PRIMARY_SHELL_CONFLICT_EVIDENCE_MS = 30000/);
+  assert.match(appJs, /(?:const|var) PRIMARY_SHELL_CONFLICT_EVIDENCE_MS = 30000/);
   assert.match(functionBody("rememberThreadDetailRenderEvidence"), /visibleConversationShape\(thread\)/);
   assert.match(functionBody("rememberThreadDetailRenderEvidence"), /threadDetailStateApi\.buildThreadDetailRenderEvidence\(\{/);
   assert.match(functionBody("rememberThreadDetailRenderEvidence"), /state\.lastThreadDetailRenderEvidence = evidence/);
@@ -4898,8 +4907,8 @@ return {
 
 test("item merge delegates visible-field preservation to thread detail state policy", () => {
   const body = functionBody("mergeItemPreservingVisibleFields");
-  assert.match(appJs, /const threadDetailStateApi = window\.CodexThreadDetailState/);
-  assert.match(appJs, /const threadDetailRuntimeApi = window\.CodexThreadDetailRuntime/);
+  assert.match(appJs, /(?:const|var) threadDetailStateApi = window\.CodexThreadDetailState/);
+  assert.match(appJs, /(?:const|var) threadDetailRuntimeApi = window\.CodexThreadDetailRuntime/);
   assert.match(threadDetailRuntimeJs, /threadDetailStateApi\.createThreadDetailStatePolicy\(\{/);
   assert.match(threadDetailRuntimeJs, /comparableVisibleText,\n\s+visibleTextItemsLikelySame,\n\s+completedReceiptItemsLikelySame,/);
   assert.match(body, /threadDetailStatePolicy\.mergeItemPreservingVisibleFields\(existingItem, incomingItem\)/);
@@ -6590,7 +6599,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function restoreThreadStatusSnapshot\(/);
   assert.match(appJs, /function markThreadOptimisticallyActive\(/);
   assert.match(appJs, /function mergeThreadIntoThreadList\(/);
-  assert.match(appJs, /const RUNNING_THREAD_HINT_STALE_MS = 20 \* 60 \* 1000;/);
+  assert.match(appJs, /(?:const|var) RUNNING_THREAD_HINT_STALE_MS = 20 \* 60 \* 1000;/);
   assert.match(appJs, /runningThreadHintedAtById: loadNumberMapStorage\("codexMobileRunningThreadHintedAtById", \{\}\)/);
   assert.match(appJs, /threadViewedAtById: loadNumberMapStorage\("codexMobileThreadViewedAtById", \{\}\)/);
   assert.match(appJs, /submittedProcessingThreadHintedAtById: \{\}/);
@@ -6616,8 +6625,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
 
   const listMergeBody = functionBody("mergeThreadIntoThreadList");
   assert.match(listMergeBody, /threadDetailStateApi\.mergeThreadSummaryIntoList\(state\.threads, thread, \{ visibleThreads \}\)/);
-  assert.doesNotMatch(appJs, /function threadListSummaryFromDetailThread\(/);
-  assert.doesNotMatch(appJs, /function threadHasLoadedDetailState\(/);
+  assert.doesNotMatch(settingsRuntimeJs, /function threadListSummaryFromDetailThread\(/);
+  assert.doesNotMatch(settingsRuntimeJs, /function threadHasLoadedDetailState\(/);
   const optimisticBody = functionBody("markThreadOptimisticallyActive");
   assert.match(optimisticBody, /const runningStatus = \{ type: "active" \};/);
   assert.match(optimisticBody, /noteSubmittedProcessingThreadHint\(id\)/);

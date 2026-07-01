@@ -4,17 +4,29 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
-const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const appJs = readFrontendSources(root);
 const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
+const navigationRuntimeJs = fs.readFileSync(path.join(root, "public", "navigation-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const packageJson = fs.readFileSync(path.join(root, "package.json"), "utf8");
 const threadTileRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-tile-runtime.js"), "utf8");
 const threadTileVisualFixture = require(path.join(root, "scripts", "codex-mobile-thread-tile-visual-fixture.js"));
 
+const navigationRuntimeFunctionNames = new Set([
+  "composerTargetPlan",
+  "currentComposerThreadId",
+  "isThreadTileComposerContext",
+  "threadTileComposerSurfaceActive",
+]);
+
 function functionBody(source, name) {
+  if (source === appJs && navigationRuntimeFunctionNames.has(name)) {
+    source = navigationRuntimeJs;
+  }
   let start = source.indexOf(`function ${name}(`);
   if (start < 0) start = source.indexOf(`async function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
@@ -34,9 +46,9 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.doesNotMatch(indexHtml, /id="threadTileToggle"/);
   assert.match(indexHtml, /data-thread-display-choice="single"[\s\S]*data-thread-display-choice="tile"/);
   assert.match(indexHtml, /<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-v4-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-runtime\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-state\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/thread-tile-runtime\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>/);
-  assert.match(appJs, /const threadTileActionsApi = window\.CodexThreadTileActions/);
-  assert.match(appJs, /const threadTileStatePolicy = window\.CodexThreadTileState/);
-  assert.match(appJs, /const threadTileLayoutPolicy = window\.CodexThreadTileLayout/);
+  assert.match(appJs, /(?:const|var) threadTileActionsApi = window\.CodexThreadTileActions/);
+  assert.match(appJs, /(?:const|var) threadTileStatePolicy = window\.CodexThreadTileState/);
+  assert.match(appJs, /(?:const|var) threadTileLayoutPolicy = window\.CodexThreadTileLayout/);
   assert.match(appJs, /threadTileMode: false/);
   assert.match(appJs, /threadDisplaySettingsLoaded: false/);
   assert.match(appJs, /threadDisplaySettingsSaveTimer: null/);

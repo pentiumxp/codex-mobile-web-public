@@ -4,9 +4,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
-const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const appJs = readFrontendSources(root);
 const mediaPreviewRuntimeJs = fs.readFileSync(path.join(root, "public", "media-preview-runtime.js"), "utf8");
 const appAndMediaJs = `${mediaPreviewRuntimeJs}\n${appJs}`;
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
@@ -16,7 +17,7 @@ const appMaintenanceServiceJs = fs.readFileSync(path.join(root, "adapters", "app
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
 test("client hydrates GitHub preview card shells from a server endpoint", () => {
-  assert.match(appJs, /const GITHUB_LINK_PREVIEW_TIMEOUT_MS = 12000;/);
+  assert.match(appJs, /(?:const|var) GITHUB_LINK_PREVIEW_TIMEOUT_MS = 12000;/);
   assert.match(mediaPreviewRuntimeJs, /const githubLinkPreviewCache = deps\.githubLinkPreviewCache \|\| new Map\(\);/);
   assert.match(appAndMediaJs, /function normalizeGithubPreviewUrl\(/);
   assert.match(appAndMediaJs, /function normalizeGitHubLinkPreview\(/);

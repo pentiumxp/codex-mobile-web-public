@@ -4,10 +4,11 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const voiceInput = require("../public/plugin-voice-input");
 
-const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const appJs = readFrontendSources(path.resolve(__dirname, ".."));
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
@@ -35,6 +36,17 @@ function sourceFunctionBody(source, name) {
     if (depth === 0) return source.slice(bodyStart + 1, index);
   }
   throw new Error(`could not parse function ${name}`);
+}
+
+function assertScriptOrder(html, assets) {
+  let lastIndex = -1;
+  for (const asset of assets) {
+    const marker = `<script src="${asset}"></script>`;
+    const index = html.indexOf(marker);
+    assert.notEqual(index, -1, `missing script ${asset}`);
+    assert.ok(index > lastIndex, `script ${asset} should be after previous runtime asset`);
+    lastIndex = index;
+  }
 }
 
 test("voice input helper builds Home AI embedded-plugin protocol messages", () => {
@@ -89,7 +101,49 @@ test("voice input helper builds Home AI embedded-plugin protocol messages", () =
 });
 
 test("voice input bridge is limited to Hermes embed mode and uses plugin scripts", () => {
-  assert.match(indexHtml, /<script src="\/plugin-voice-input\.js"><\/script>\s*<script src="\/home-ai-diagnostic-reporting\.js"><\/script>\s*<script src="\/thread-diagnostic-events\.js"><\/script>\s*<script src="\/frontend-runtime-health\.js"><\/script>\s*<script src="\/thread-status-hints\.js"><\/script>\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*<script src="\/thread-list-load-policy\.js"><\/script>\s*<script src="\/thread-list-stable-order\.js"><\/script>\s*<script src="\/thread-list-runtime\.js"><\/script>\s*<script src="\/client-render-stability-guard\.js"><\/script>\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*<script src="\/thread-detail-state\.js"><\/script>\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*<script src="\/thread-detail-v4-merge-state\.js"><\/script>\s*<script src="\/thread-detail-runtime\.js"><\/script>\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*<script src="\/thread-detail-actions\.js"><\/script>\s*<script src="\/thread-tile-actions\.js"><\/script>\s*<script src="\/thread-tile-state\.js"><\/script>\s*<script src="\/thread-tile-layout\.js"><\/script>\s*<script src="\/thread-tile-runtime\.js"><\/script>\s*<script src="\/build-refresh-policy\.js"><\/script>\s*<script src="\/app-update-runtime\.js"><\/script>\s*<script src="\/side-chat-runtime\.js"><\/script>\s*<script src="\/app\.js"><\/script>/);
+  assertScriptOrder(indexHtml, [
+    "/plugin-voice-input.js",
+    "/home-ai-diagnostic-reporting.js",
+    "/thread-diagnostic-events.js",
+    "/frontend-runtime-health.js",
+    "/thread-status-hints.js",
+    "/thread-performance-metrics.js",
+    "/thread-list-load-policy.js",
+    "/thread-list-stable-order.js",
+    "/thread-list-runtime.js",
+    "/client-render-stability-guard.js",
+    "/live-operation-dock-state.js",
+    "/thread-detail-state.js",
+    "/thread-detail-render-plan.js",
+    "/thread-detail-merge-state.js",
+    "/thread-detail-v4-merge-state.js",
+    "/thread-detail-runtime.js",
+    "/thread-detail-patch-plan.js",
+    "/thread-detail-dom-patch.js",
+    "/thread-detail-actions.js",
+    "/thread-tile-actions.js",
+    "/thread-tile-state.js",
+    "/thread-tile-layout.js",
+    "/thread-tile-runtime.js",
+    "/build-refresh-policy.js",
+    "/app-update-runtime.js",
+    "/side-chat-runtime.js",
+    "/media-preview-runtime.js",
+    "/app-bootstrap.js",
+    "/settings-runtime.js",
+    "/modal-runtime.js",
+    "/navigation-runtime.js",
+    "/api-client-runtime.js",
+    "/notification-ui-runtime.js",
+    "/pane-layout-runtime.js",
+    "/task-card-runtime.js",
+    "/conversation-render-runtime.js",
+    "/event-stream-runtime.js",
+    "/composer-bridge-runtime.js",
+    "/runtime-wiring-runtime.js",
+    "/app-shell-runtime.js",
+    "/app.js",
+  ]);
   assert.match(swJs, /"\/plugin-voice-input\.js"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);

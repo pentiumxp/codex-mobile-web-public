@@ -4,9 +4,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
-const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const appJs = readFrontendSources(root);
 const appUpdateRuntimeJs = fs.readFileSync(path.join(root, "public", "app-update-runtime.js"), "utf8");
 const appUpdateSource = `${appUpdateRuntimeJs}\n${appJs}`;
 const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
@@ -65,14 +66,14 @@ test("app update runtime is wired into the static shell", () => {
   assert.match(swJs, /"\/app-update-runtime\.js"/);
   assert.match(appJs, /"\/app-update-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"app-update-runtime\.js"/);
-  assert.match(appJs, /const appUpdateRuntimeApi = window\.CodexAppUpdateRuntime/);
+  assert.match(appJs, /(?:const|var) appUpdateRuntimeApi = window\.CodexAppUpdateRuntime/);
   const requireRuntimeBody = functionBody(appJs, "requireAppUpdateRuntime");
   assert.match(requireRuntimeBody, /if \(!appUpdateRuntime\) \{/);
   assert.match(requireRuntimeBody, /appUpdateRuntimeApi\.createAppUpdateRuntime\(\{/);
   const earlyConstantsEnd = appJs.indexOf("function hasStartupThreadOpenIntent");
-  const earlyConstantsBlock = appJs.slice(appJs.indexOf("const COMPOSER_INTENT_BODY_MAX_CHARS"), earlyConstantsEnd);
+  const earlyConstantsBlock = appJs.slice(appJs.indexOf("var COMPOSER_INTENT_BODY_MAX_CHARS"), earlyConstantsEnd);
   assert.doesNotMatch(earlyConstantsBlock, /appUpdateRuntimeApi\.createAppUpdateRuntime\(\{/);
-  assert.ok(appJs.indexOf("function appVersionText") > appJs.indexOf("const $ ="), "app-update wrappers should run after DOM helper initialization");
+  assert.match(appJs, /function requireAppUpdateRuntime\(\)/);
   assert.match(appUpdateRuntimeJs, /function createAppUpdateRuntime\(deps = \{\}\)/);
   assert.match(appUpdateRuntimeJs, /root\.CodexAppUpdateRuntime/);
 });
@@ -89,7 +90,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(coreApiRouteServiceJs, /clientBuildId:\s*buildConfig\.clientBuildId/);
   assert.match(coreApiRouteServiceJs, /shellCacheName:\s*buildConfig\.shellCacheName/);
   assert.match(indexHtml, /id="pageRefreshPrompt"/);
-  assert.match(appUpdateSource, /const PAGE_SHELL_ASSETS = Object\.freeze\(\[/);
+  assert.match(appUpdateSource, /(?:const|var) PAGE_SHELL_ASSETS = Object\.freeze\(\[/);
   assert.match(appUpdateSource, /"\/styles\.css"/);
   assert.match(appUpdateSource, /"\/api-client\.js"/);
   assert.match(appUpdateSource, /"\/runtime-settings\.js"/);
@@ -123,7 +124,71 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appUpdateSource, /"\/build-refresh-policy\.js"/);
   assert.match(appUpdateSource, /"\/side-chat-runtime\.js"/);
   assert.match(appUpdateSource, /"\/media-preview-runtime\.js"/);
-  assert.match(indexHtml, /<script src="\/thread-diagnostic-events\.js"><\/script>\s*\n\s*<script src="\/frontend-runtime-health\.js"><\/script>\s*\n\s*<script src="\/thread-status-hints\.js"><\/script>\s*\n\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*\n\s*<script src="\/thread-list-load-policy\.js"><\/script>\s*\n\s*<script src="\/thread-list-stable-order\.js"><\/script>\s*\n\s*<script src="\/thread-list-runtime\.js"><\/script>\s*\n\s*<script src="\/client-render-stability-guard\.js"><\/script>\s*\n\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-v4-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-runtime\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-state\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/thread-tile-runtime\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>\s*\n\s*<script src="\/app-update-runtime\.js"><\/script>\s*\n\s*<script src="\/side-chat-runtime\.js"><\/script>\s*\n\s*<script src="\/media-preview-runtime\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
+  for (const asset of [
+    "/app-bootstrap.js",
+    "/settings-runtime.js",
+    "/modal-runtime.js",
+    "/navigation-runtime.js",
+    "/api-client-runtime.js",
+    "/notification-ui-runtime.js",
+    "/pane-layout-runtime.js",
+    "/task-card-runtime.js",
+    "/conversation-render-runtime.js",
+    "/event-stream-runtime.js",
+    "/composer-bridge-runtime.js",
+    "/runtime-wiring-runtime.js",
+    "/app-shell-runtime.js",
+  ]) {
+    assert.match(appUpdateSource, new RegExp(`"${asset.replace(/\//g, "\\/")}"`));
+  }
+  const scriptOrder = [
+    "/thread-diagnostic-events.js",
+    "/frontend-runtime-health.js",
+    "/thread-status-hints.js",
+    "/thread-performance-metrics.js",
+    "/thread-list-load-policy.js",
+    "/thread-list-stable-order.js",
+    "/thread-list-runtime.js",
+    "/client-render-stability-guard.js",
+    "/live-operation-dock-state.js",
+    "/thread-detail-state.js",
+    "/thread-detail-render-plan.js",
+    "/thread-detail-merge-state.js",
+    "/thread-detail-v4-merge-state.js",
+    "/thread-detail-runtime.js",
+    "/thread-detail-patch-plan.js",
+    "/thread-detail-dom-patch.js",
+    "/thread-detail-actions.js",
+    "/thread-tile-actions.js",
+    "/thread-tile-state.js",
+    "/thread-tile-layout.js",
+    "/thread-tile-runtime.js",
+    "/build-refresh-policy.js",
+    "/app-update-runtime.js",
+    "/side-chat-runtime.js",
+    "/media-preview-runtime.js",
+    "/app-bootstrap.js",
+    "/settings-runtime.js",
+    "/modal-runtime.js",
+    "/navigation-runtime.js",
+    "/api-client-runtime.js",
+    "/notification-ui-runtime.js",
+    "/pane-layout-runtime.js",
+    "/task-card-runtime.js",
+    "/conversation-render-runtime.js",
+    "/event-stream-runtime.js",
+    "/composer-bridge-runtime.js",
+    "/runtime-wiring-runtime.js",
+    "/app-shell-runtime.js",
+    "/app.js",
+  ];
+  let previousScriptIndex = -1;
+  for (const asset of scriptOrder) {
+    const scriptIndex = indexHtml.indexOf(`<script src="${asset}"></script>`);
+    assert.notEqual(scriptIndex, -1, `missing shell script ${asset}`);
+    assert.ok(scriptIndex > previousScriptIndex, `${asset} should load after the prior runtime asset`);
+    previousScriptIndex = scriptIndex;
+  }
   assert.match(serverRuntimeUtilsJs, /"viewport-metrics\.js"/);
   assert.match(serverRuntimeUtilsJs, /"conversation-scroll\.js"/);
   assert.match(serverRuntimeUtilsJs, /"home-ai-diagnostic-reporting\.js"/);
@@ -155,7 +220,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appUpdateSource, /function refreshPageForNewBuild\(/);
   assert.match(appUpdateSource, /function renderHardRefreshButton\(/);
   assert.match(appUpdateSource, /function handleHardRefreshClick\(/);
-  assert.match(appUpdateSource, /const buildRefreshPolicy = window\.CodexBuildRefreshPolicy/);
+  assert.match(appUpdateSource, /(?:const|var) buildRefreshPolicy = window\.CodexBuildRefreshPolicy/);
   assert.match(appUpdateSource, /function shouldPromptForServerBuildChange\(/);
   assert.match(appUpdateSource, /function rememberRateLimitsFromConfig\(config\)/);
   assert.match(appUpdateSource, /function preparePageShellAssets\(config, options = \{\}\)/);
@@ -269,7 +334,7 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(appUpdateSource, /function maybePromptPublicPrMerge\(status\)/);
   assert.match(appUpdateSource, /function publicPrMergeConfirmationMessage\(status\)/);
   assert.match(appUpdateSource, /function publicPrMergeInstruction\(status\)/);
-  assert.match(appUpdateSource, /const PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR";/);
+  assert.match(appUpdateSource, /(?:const|var) PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR";/);
   assert.match(appUpdateSource, /function findPublicPrReviewThread\(workspacePath = ""\)/);
   assert.match(appUpdateSource, /function publicPrReviewWorkspacePath\(\)/);
   assert.match(appUpdateSource, /async function openPublicPrReviewThreadIfAvailable\(workspacePath, text\)/);

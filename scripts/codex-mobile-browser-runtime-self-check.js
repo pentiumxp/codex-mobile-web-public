@@ -277,6 +277,7 @@ async function readStaticShellReadback(options = {}, config = {}) {
     }
   };
   const app = await readAsset("/app.js");
+  const appBootstrap = await readAsset("/app-bootstrap.js");
   const sw = await readAsset("/sw.js");
   const runtimeAssets = await Promise.all([
     readAsset("/composer-runtime.js"),
@@ -286,7 +287,7 @@ async function readStaticShellReadback(options = {}, config = {}) {
   const clientBuildId = String(config && config.clientBuildId || "").trim();
   const shellCacheName = String(config && config.shellCacheName || "").trim();
   const clientBuildMatches = clientBuildId
-    ? String(app.text || "").includes(`CLIENT_BUILD_ID = ${JSON.stringify(clientBuildId)}`)
+    ? String(appBootstrap.text || app.text || "").includes(`CLIENT_BUILD_ID = ${JSON.stringify(clientBuildId)}`)
     : false;
   const shellCacheMatches = shellCacheName
     ? String(sw.text || "").includes(`CACHE_NAME = ${JSON.stringify(shellCacheName)}`)

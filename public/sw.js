@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "codex-mobile-shell-v620";
+const CACHE_NAME = "codex-mobile-shell-v621";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -41,6 +41,19 @@ const STATIC_ASSETS = [
   "/app-update-runtime.js",
   "/side-chat-runtime.js",
   "/media-preview-runtime.js",
+  "/app-bootstrap.js",
+  "/settings-runtime.js",
+  "/modal-runtime.js",
+  "/navigation-runtime.js",
+  "/api-client-runtime.js",
+  "/notification-ui-runtime.js",
+  "/pane-layout-runtime.js",
+  "/task-card-runtime.js",
+  "/conversation-render-runtime.js",
+  "/event-stream-runtime.js",
+  "/composer-bridge-runtime.js",
+  "/runtime-wiring-runtime.js",
+  "/app-shell-runtime.js",
   "/app.js",
   "/manifest.json",
   "/icons/icon.svg",

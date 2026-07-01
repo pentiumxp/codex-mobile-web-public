@@ -4,11 +4,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
-const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const appJs = readFrontendSources(root);
 const threadDetailRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-detail-runtime.js"), "utf8");
 const sideChatRuntimeJs = fs.readFileSync(path.join(root, "public", "side-chat-runtime.js"), "utf8");
+const paneLayoutRuntimeJs = fs.readFileSync(path.join(root, "public", "pane-layout-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
@@ -41,9 +43,14 @@ const sideChatRuntimeFunctionNames = new Set([
   "subagentSwipeAvailable",
   "updateSubagentPanelUi",
 ]);
+const paneLayoutRuntimeFunctionNames = new Set([
+  "patchHtml",
+  "patchNode",
+]);
 
 function sourceForFunction(name) {
   if (sideChatRuntimeFunctionNames.has(name)) return sideChatRuntimeJs;
+  if (paneLayoutRuntimeFunctionNames.has(name)) return paneLayoutRuntimeJs;
   return threadDetailRuntimeFunctionNames.has(name) ? threadDetailRuntimeJs : appJs;
 }
 
@@ -125,8 +132,8 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(appJs, /liveOperationDockMode:\s*"compact"/);
   assert.match(appJs, /liveOperationDockPinned:\s*false/);
   assert.match(appJs, /liveOperationDockPinnedThreadId:\s*""/);
-  assert.match(appJs, /const liveOperationDockPolicy = window\.CodexLiveOperationDockState/);
-  assert.match(appJs, /const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy\.DEFAULT_MIN_VISIBLE_MS;/);
+  assert.match(appJs, /(?:const|var) liveOperationDockPolicy = window\.CodexLiveOperationDockState/);
+  assert.match(appJs, /(?:const|var) LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy\.DEFAULT_MIN_VISIBLE_MS;/);
   assert.match(appJs, /liveOperationDockCompactVisibleUntilMs:\s*0/);
   assert.match(appJs, /liveOperationDockCompactHtml:\s*""/);
   assert.match(appJs, /liveOperationDockCompactThreadId:\s*""/);
@@ -343,8 +350,8 @@ test("current-turn subagent panel opens from a left swipe without a topbar butto
   assert.match(indexHtml, /id="subagentPanel"/);
   assert.doesNotMatch(indexHtml, /id="subagentStatusButton"/);
   assert.match(appJs, /subagentSwipe:\s*null/);
-  assert.match(appJs, /const SUBAGENT_EDGE_SWIPE_PX = 56/);
-  assert.match(appJs, /const SUBAGENT_EDGE_SWIPE_MAX_PX = 88/);
+  assert.match(appJs, /(?:const|var) SUBAGENT_EDGE_SWIPE_PX = 56/);
+  assert.match(appJs, /(?:const|var) SUBAGENT_EDGE_SWIPE_MAX_PX = 88/);
   assert.match(appJs, /function subagentSwipeStartsNearEdge\(/);
   assert.match(appJs, /function currentSubagentItems\(/);
   assert.match(appJs, /function turnSubagentItems\(/);
@@ -430,10 +437,10 @@ test("current-turn subagent panel opens from a left swipe without a topbar butto
 });
 
 test("thread detail DOM patch helper owns keyed child reconciliation", () => {
-  assert.match(appJs, /const threadDetailDomPatchApi = window\.CodexThreadDetailDomPatch/);
+  assert.match(appJs, /(?:const|var) threadDetailDomPatchApi = window\.CodexThreadDetailDomPatch/);
   assert.match(functionBody("patchNode"), /threadDetailDomPatchApi\.patchNode\(target, source\)/);
   assert.match(functionBody("patchHtml"), /threadDetailDomPatchApi\.patchHtml\(\{ target, html, document \}\)/);
-  assert.doesNotMatch(appJs, /function patchChildNodes\(/);
-  assert.doesNotMatch(appJs, /function canPatchNode\(/);
-  assert.doesNotMatch(appJs, /function syncAttributes\(/);
+  assert.doesNotMatch(paneLayoutRuntimeJs, /function patchChildNodes\(/);
+  assert.doesNotMatch(paneLayoutRuntimeJs, /function canPatchNode\(/);
+  assert.doesNotMatch(paneLayoutRuntimeJs, /function syncAttributes\(/);
 });

@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const {
   buildChatGptProPrompt,
@@ -20,7 +21,7 @@ const chatGptProRuntimeServiceJs = fs.readFileSync(path.join(root, "services", "
 const apiDispatchRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "api-dispatch-route-service.js"), "utf8");
 const chatGptProRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "chatgpt-pro-route-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "server-routes", "core-api-route-service.js"), "utf8");
-const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const appJs = readFrontendSources(root);
 const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
 const packageJson = fs.readFileSync(path.join(root, "package.json"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");

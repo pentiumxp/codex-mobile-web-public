@@ -5,6 +5,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const serverRouteCompositionServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "server-route-composition-service.js"), "utf8");
@@ -46,7 +47,7 @@ const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "a
 const runtimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-settings-service.js"), "utf8");
 const taskCardIdempotencyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-idempotency-service.js"), "utf8");
 const taskCardRuntimePolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-runtime-policy-service.js"), "utf8");
-const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const appJs = readFrontendSources(path.resolve(__dirname, ".."));
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
@@ -777,7 +778,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function loadThreadTaskCardBody\(/);
   assert.match(functionBody(appJs, "loadThreadTaskCardBody"), /\/api\/thread-task-cards\/\$\{encodeURIComponent\(id\)\}\?threadId=\$\{encodeURIComponent\(ownerThreadId\)\}/);
   assert.match(appJs, /handleThreadTaskCardDetailsToggle/);
-  assert.match(appJs, /const threadDetailActionsApi = window\.CodexThreadDetailActions/);
+  assert.match(appJs, /(?:const|var) threadDetailActionsApi = window\.CodexThreadDetailActions/);
   assert.match(appJs, /threadDetailActionsApi\.resolveThreadDetailClickAction/);
   assert.match(appJs, /function createThreadTaskCardFromCurrent\(/);
   assert.match(appJs, /function createThreadTaskCardFromThread\(/);
@@ -796,10 +797,10 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function isThreadTaskCardCommandText\(/);
   assert.match(appJs, /function sendThreadTaskCardCommand\(/);
   assert.match(functionBody(composerRuntimeJs, "sendMessage"), /await sendThreadTaskCardCommand\(text\)/);
-  assert.match(appJs, /const THREAD_TASK_CARD_COMMAND_PREFIX = "#"/);
-  assert.match(appJs, /const THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX = "#自由协作"/);
-  assert.match(appJs, /const THREAD_TASK_CARD_MENTION_PATTERN = \/\^@\(任务卡片\|Task\\s\*Card\|TaskCard\)/);
-  assert.match(appJs, /const THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN = \/\^@\(自由协作\|Autonomous\|Auto\\s\*Task\\s\*Card\|AutoTaskCard\)/);
+  assert.match(appJs, /(?:const|var) THREAD_TASK_CARD_COMMAND_PREFIX = "#"/);
+  assert.match(appJs, /(?:const|var) THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX = "#自由协作"/);
+  assert.match(appJs, /(?:const|var) THREAD_TASK_CARD_MENTION_PATTERN = \/\^@\(任务卡片\|Task\\s\*Card\|TaskCard\)/);
+  assert.match(appJs, /(?:const|var) THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN = \/\^@\(自由协作\|Autonomous\|Auto\\s\*Task\\s\*Card\|AutoTaskCard\)/);
   assert.match(functionBody(appJs, "isThreadTaskCardCommandText"), /startsWith\(THREAD_TASK_CARD_COMMAND_PREFIX\)/);
   assert.match(functionBody(appJs, "isThreadTaskCardCommandText"), /THREAD_TASK_CARD_MENTION_PATTERN\.test\(text\)/);
   assert.match(functionBody(appJs, "isThreadTaskCardCommandText"), /THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN\.test\(text\)/);
@@ -846,7 +847,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(stylesCss, /\.composer-intent-menu\s*{[\s\S]*max-height:\s*min\(var\(--composer-popup-max-height/);
   assert.match(stylesCss, /\.composer-intent-option/);
   assert.match(appJs, /function parseThreadTaskCardDraftText\(/);
-  assert.match(appJs, /const THREAD_TASK_CARD_BODY_MAX_CHARS = 8000/);
+  assert.match(appJs, /(?:const|var) THREAD_TASK_CARD_BODY_MAX_CHARS = 8000/);
   assert.match(appJs, /function truncateThreadTaskCardBody\(/);
   assert.match(appJs, /function renderPendingThreadTaskCardDraft\(/);
   assert.match(appJs, /function renderTurnThreadTaskCardDraft\(/);
@@ -862,7 +863,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /matchingThreadTaskCardsForDraft\(draft, turn, contextThread\)/);
   assert.match(functionBody(appJs, "matchingThreadTaskCardsForDraft"), /const contextThread = renderContextThread\(thread\)/);
   assert.match(appJs, /function renderThreadTaskCardExpandable\(/);
-  assert.match(appJs, /const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates"/);
+  assert.match(appJs, /(?:const|var) STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates"/);
   assert.match(appJs, /THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS/);
   assert.match(appJs, /THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS/);
   assert.match(appJs, /activeThreadTaskCardDraftCreations: new Set\(\)/);

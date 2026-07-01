@@ -4257,6 +4257,65 @@ Mermaid/mobile shell tests, static shell/cache guards, `npm run --silent check`,
 `npm run --silent check:macos`, `git diff --check`, and the deploy-time
 startup-only listener/browser gate.
 
+### 2026-07-01 App JS Complete Runtime Shell Boundary
+
+The complete frontend-thinning pass moves the remaining business/render/state
+domains out of `public/app.js` and makes it a pure shell entrypoint while
+preserving the static shell contract as `codex-mobile-shell-v621`.
+
+Scope:
+
+- `public/app.js` is now an 11-line entrypoint that validates runtime wiring,
+  initializes all frontend runtime factories, and starts the app shell with
+  startup recovery.
+- `public/app-bootstrap.js` owns startup-critical globals, persistent state
+  initialization, shell constants, storage bootstrap helpers, `PAGE_SHELL_ASSETS`,
+  and lazy app-update runtime construction.
+- New runtime modules own the former large app domains:
+  `settings-runtime.js`, `modal-runtime.js`, `navigation-runtime.js`,
+  `api-client-runtime.js`, `notification-ui-runtime.js`,
+  `pane-layout-runtime.js`, `task-card-runtime.js`,
+  `conversation-render-runtime.js`, `event-stream-runtime.js`,
+  `composer-bridge-runtime.js`, `runtime-wiring-runtime.js`, and
+  `app-shell-runtime.js`.
+- `public/index.html`, `public/sw.js`, `public/app-bootstrap.js`, and
+  `services/runtime/server-runtime-utils.js` include the full v621 shell asset
+  list so cache/readback/build-id behavior remains explicit.
+- `scripts/codex-mobile-browser-runtime-self-check.js` now reads
+  `/app-bootstrap.js` for the client build marker because `/app.js` is no longer
+  the asset that owns `CLIENT_BUILD_ID`.
+
+Local line-count readback before deployment:
+
+- `public/app.js`: `11`
+- `public/app-bootstrap.js`: `971`
+- `public/app-shell-runtime.js`: `811`
+- `public/settings-runtime.js`: `2234`
+- `public/modal-runtime.js`: `298`
+- `public/navigation-runtime.js`: `1895`
+- `public/api-client-runtime.js`: `1126`
+- `public/notification-ui-runtime.js`: `1247`
+- `public/pane-layout-runtime.js`: `4971`
+- `public/task-card-runtime.js`: `1371`
+- `public/conversation-render-runtime.js`: `1599`
+- `public/event-stream-runtime.js`: `1495`
+- `public/composer-bridge-runtime.js`: `789`
+- `public/runtime-wiring-runtime.js`: `336`
+
+Validation completed locally:
+
+- `node --check public/app.js public/*runtime.js
+  scripts/codex-mobile-browser-runtime-self-check.js
+  test/frontend-source-helper.js`
+- `npm test -- --test-reporter=spec`: `1889` pass
+- `npm run --silent check`
+- `npm run --silent check:macos`
+- `git diff --check -- ':!.agent-context'`
+- Local source listener startup-only browser gate on `127.0.0.1:8897`:
+  `ok=true`, `deployPass=true`, `issueCount=0`, `blockingIssueCount=0`
+- Local full browser-runtime UX sample against the active Codex Mobile thread:
+  `ok=true`, `issueCount=0`, `blockingIssueCount=0`
+
 ## Release Rule
 
 Follow the current release order:

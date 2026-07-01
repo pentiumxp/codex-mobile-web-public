@@ -4,9 +4,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { readFrontendSources } = require("./frontend-source-helper");
 
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
-const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const appJs = readFrontendSources(path.resolve(__dirname, ".."));
 const mediaPreviewRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "media-preview-runtime.js"), "utf8");
 const appUpdateRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app-update-runtime.js"), "utf8");
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
@@ -17,10 +18,18 @@ const threadTileRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "publi
 const threadDetailMergeStateJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-detail-merge-state.js"), "utf8");
 const threadDetailRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-detail-runtime.js"), "utf8");
 const sideChatRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "side-chat-runtime.js"), "utf8");
+const paneLayoutRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "pane-layout-runtime.js"), "utf8");
+const appShellRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app-shell-runtime.js"), "utf8");
+const apiClientRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "api-client-runtime.js"), "utf8");
 const viewportMetricsJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "viewport-metrics.js"), "utf8");
 const platformPointer = fs.readFileSync(path.resolve(__dirname, "..", "docs", "HOME_AI_PLATFORM_CONTRACT.md"), "utf8");
 
 function sourceFunctionBody(source, name) {
+  if (source === appJs) {
+    if (paneLayoutRuntimeJs.includes(`function ${name}(`)) source = paneLayoutRuntimeJs;
+    else if (appShellRuntimeJs.includes(`function ${name}(`)) source = appShellRuntimeJs;
+    else if (apiClientRuntimeJs.includes(`function ${name}(`)) source = apiClientRuntimeJs;
+  }
   const start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
   const bodyStart = source.indexOf(") {", start) + 2;
@@ -97,7 +106,7 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /<script src="\/conversation-scroll\.js"><\/script>/);
   assert.match(indexHtml, /<script src="\/image-compressor\.js"><\/script>/);
   assert.match(indexHtml, /<script src="\/plugin-embed\.js"><\/script>/);
-  assert.match(appJs, /const viewportMetrics = window\.CodexViewportMetrics/);
+  assert.match(appJs, /(?:const|var) viewportMetrics = window\.CodexViewportMetrics/);
   assert.match(appJs, /viewportMetrics\.measureViewport\(\{/);
   assert.match(viewportMetricsJs, /const keyboardShrunk = Boolean\(keyboardInputActive && \(keyboardCandidate \|\| offsetKeyboardShifted \|\| scrollKeyboardShifted \|\| hostKeyboardVisible\)\)/);
   assert.match(viewportMetricsJs, /hostKeyboardBottomInset/);
@@ -284,8 +293,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /"\/app-update-runtime\.js"/);
   assert.match(swJs, /"\/side-chat-runtime\.js"/);
   assert.match(appJs, /"\/side-chat-runtime\.js"/);
-  assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>\s*\n\s*<script src="\/media-preview-runtime\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
-  assert.match(appJs, /const sideChatRuntimeApi = window\.CodexSideChatRuntime/);
+  assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>[\s\S]*<script src="\/media-preview-runtime\.js"><\/script>[\s\S]*<script src="\/app\.js"><\/script>/);
+  assert.match(appJs, /(?:const|var) sideChatRuntimeApi = window\.CodexSideChatRuntime/);
   assert.match(appJs, /function requireSideChatRuntime\(\)/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
@@ -326,7 +335,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(stylesCss, /\.plugin-startup-loading\s*{[\s\S]*position:\s*fixed;[\s\S]*place-items:\s*center;/);
   assert.doesNotMatch(appJs, /thread-card-token-badge/);
   assert.doesNotMatch(stylesCss, /thread-card-token-badge/);
-  assert.match(appJs, /const savedThreadId = isHermesEmbedMode\(\) \? "" : \(localStorage\.getItem\(STORAGE_THREAD_ID\) \|\| ""\);/);
+  assert.match(appJs, /(?:const|var) savedThreadId = isHermesEmbedMode\(\) \? "" : \(localStorage\.getItem\(STORAGE_THREAD_ID\) \|\| ""\);/);
   assert.match(appJs, /function hasStartupThreadOpenIntent\(\)/);
   assert.match(appJs, /postClientEvent\("startup_stage"/);
   assert.match(appUpdateRuntimeJs, /postPerformanceEvent\("shell_loaded"/);
@@ -372,9 +381,9 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /postStartupStage\("public_config_failed"/);
   assert.match(appJs, /requestHermesPluginRefresh\("public_config_failed", \{ force: true \}\)/);
   assert.match(appJs, /state\.startupThreadOpenPending = Boolean\(startupThreadId \|\| savedThreadId \|\| \(startupPluginRouteHint && startupPluginRouteHint\.threadId\)\);/);
-  assert.match(appJs, /const earlyRestorePromise = savedThreadId && !startupThreadId[\s\S]*loadThread\(savedThreadId, \{ source: "restore-startup", suppressLoadFailureDiagnostic: true \}\)/);
-  assert.match(appJs, /const status = await api\("\/api\/status"\)\.catch/);
-  assert.match(appJs, /const workspacesStartedAt = nowPerfMs\(\);\s*\n\s*await loadWorkspaces\(\);/);
+  assert.match(appJs, /(?:const|var) earlyRestorePromise = savedThreadId && !startupThreadId[\s\S]*loadThread\(savedThreadId, \{ source: "restore-startup", suppressLoadFailureDiagnostic: true \}\)/);
+  assert.match(appJs, /(?:const|var) status = await api\("\/api\/status"\)\.catch/);
+  assert.match(appJs, /(?:const|var) workspacesStartedAt = nowPerfMs\(\);\s*\n\s*await loadWorkspaces\(\);/);
   assert.match(appJs, /await loadWorkspaces\(\);[\s\S]*await loadThreads\(\{ silent: startupThreadOpenPending, deferFallback: true \}\);/);
   assert.match(appJs, /postStartupStage\("status_done"/);
   assert.match(appJs, /postStartupStage\("threads_done"/);
@@ -412,11 +421,11 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /STORAGE_RESTART_AUTO_RECOVER_THREADS/);
   assert.match(appJs, /async function maybeAutoRecoverTurnAfterReconnect\(status, reason = "reconnect"\)/);
   assert.match(appJs, /\/auto-recover/);
-  assert.match(appJs, /const recovered = wasUnavailable && status && status\.ready;/);
+  assert.match(appJs, /(?:const|var) recovered = wasUnavailable && status && status\.ready;/);
   assert.match(appJs, /maybeAutoRecoverTurnAfterReconnect\(payload\.status, "app-server-reconnect"\)/);
   assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading && !state\.currentThread\.mobileLoadError\) \{/);
   assert.match(appJs, /return shouldPollCurrentThread\(\) \|\| currentThreadListRowChanged\(\);/);
-  assert.match(appJs, /const foregroundRefresh = currentThreadNeedsForegroundRefresh\(\);[\s\S]*mobile_resume_thread_refresh_scheduled[\s\S]*if \(foregroundRefresh\) scheduleCurrentThreadRefresh\(250, "resume"\);[\s\S]*else await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
+  assert.match(appJs, /(?:const|var) foregroundRefresh = currentThreadNeedsForegroundRefresh\(\);[\s\S]*mobile_resume_thread_refresh_scheduled[\s\S]*if \(foregroundRefresh\) scheduleCurrentThreadRefresh\(250, "resume"\);[\s\S]*else await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
   assert.match(threadListRuntimeJs, /function hasThreadDetailSelectionIntent\(\) \{[\s\S]*state\.currentThreadId[\s\S]*state\.threadLoadController[\s\S]*state\.startupThreadOpenPending/);
   assert.match(threadListRuntimeJs, /function shouldRenderPrimaryConversationShell\(\) \{[\s\S]*return !hasThreadDetailSelectionIntent\(\) && !state\.newThreadDraft;/);
   assert.match(threadListRuntimeFunctionBody("loadWorkspaces"), /if \(shouldRenderPrimaryConversationShell\(\)\) renderCurrentThread\(\);/);
@@ -433,7 +442,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.doesNotMatch(appJs, /function threadOpenRenderOptions/);
   assert.doesNotMatch(appJs, /scrollConversationToTop/);
   assert.doesNotMatch(appJs, /scrollToTop/);
-  assert.match(appJs, /const explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
+  assert.match(appJs, /(?:const|var) explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
   assert.match(functionBody("updateScrollToBottomButton"), /conversationScroll\.planConversationJumpButtons\(\{/);
   assert.match(functionBody("updateScrollToBottomButton"), /hasThread: Boolean\(state\.currentThread\),/);
   assert.match(functionBody("updateScrollToBottomButton"), /nearBottom: isConversationNearBottom\(\),/);
@@ -466,12 +475,12 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("loadThread"), /const draftRestoreStartedAt = nowPerfMs\(\);\s*\n\s*const firstPaintDraftRestorePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintDraftRestoreEffects\(\);\s*\n\s*applyThreadDetailPostRenderEffectsPlan\(firstPaintDraftRestorePlan, \{ thread: state\.currentThread \}\);\s*\n\s*const draftRestoreMs = roundedDurationMs\(draftRestoreStartedAt\);/);
   assert.doesNotMatch(functionBody("loadThread"), /localStorage\.setItem\(STORAGE_THREAD_ID, threadId\);\s*\n\s*draftStore\.setTargetKey\(""\);\s*\n\s*followThreadOpenToBottom\(threadId\);\s*\n\s*if \(state\.events\) connectEvents\(\);/);
   assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*const firstPaintAfterRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintAfterRenderEffects\(\{[\s\S]*seq,[\s\S]*source: "first-paint",[\s\S]*\}\);\s*\n\s*applyThreadDetailPostRenderEffectsPlan\(firstPaintAfterRenderPlan, \{ thread: state\.currentThread \}\);\s*\n\s*const postRenderStartedAt = nowPerfMs\(\);\s*\n\s*const firstPaintPostRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPostRenderEffects\(\{[\s\S]*threadId,[\s\S]*seq,[\s\S]*source,[\s\S]*\}\);\s*\n\s*applyThreadDetailPostRenderEffectsPlan\(firstPaintPostRenderPlan, \{ thread: result\.thread \}\);/);
-  assert.match(appJs, /const postRenderMs = roundedDurationMs\(postRenderStartedAt\);\s*\n\s*const firstPaintPostTimingPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPostTimingEffects\(\);\s*\n\s*applyThreadDetailPostRenderEffectsPlan\(firstPaintPostTimingPlan, \{ thread: result\.thread \}\);\s*\n\s*const renderElapsedMs = roundedDurationMs\(renderStartedAt\);/);
+  assert.match(appJs, /(?:const|var) postRenderMs = roundedDurationMs\(postRenderStartedAt\);\s*\n\s*const firstPaintPostTimingPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPostTimingEffects\(\);\s*\n\s*applyThreadDetailPostRenderEffectsPlan\(firstPaintPostTimingPlan, \{ thread: result\.thread \}\);\s*\n\s*const renderElapsedMs = roundedDurationMs\(renderStartedAt\);/);
   assert.doesNotMatch(functionBody("loadThread"), /maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq, source: "first-paint" \}\);/);
   assert.doesNotMatch(functionBody("loadThread"), /checkConversationProjectionConsistency\("first-paint", \{ renderMode: "first-paint" \}\);/);
-  assert.match(appJs, /const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44/);
-  assert.match(appJs, /const PLUGIN_EMBED_BACK_SWIPE_HORIZONTAL_RATIO = 2\.2/);
-  assert.match(appJs, /const PLUGIN_EMBED_BACK_RECENT_SCROLL_SUPPRESS_MS = 1200/);
+  assert.match(appJs, /(?:const|var) PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44/);
+  assert.match(appJs, /(?:const|var) PLUGIN_EMBED_BACK_SWIPE_HORIZONTAL_RATIO = 2\.2/);
+  assert.match(appJs, /(?:const|var) PLUGIN_EMBED_BACK_RECENT_SCROLL_SUPPRESS_MS = 1200/);
   assert.match(appJs, /function installHermesPluginBackSwipeGuard\(\)/);
   assert.match(appJs, /pluginEmbedApi\.navigationMessage\(state, pluginNavigationUiState\(\)\)/);
   assert.doesNotMatch(appJs, /function pluginEmbedBackSwipeShouldExitHost\(\)/);
@@ -489,16 +498,16 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /handlePluginBack\(\{\s*\n\s*preventDefault\(\) \{\},\s*\n\s*stopPropagation\(\) \{\},\s*\n\s*\}, \{ source: "plugin-back-swipe" \}\);/);
   assert.match(appJs, /source: "plugin-back-swipe"/);
   assert.match(appJs, /installPluginWindowingGuards\(\);\s*\n\s*installHermesPluginBackSwipeGuard\(\);/);
-  assert.match(appJs, /const MAX_VISIBLE_TURNS = 10/);
-  assert.match(appJs, /const MAX_EXPANDED_VISIBLE_TURNS = 200/);
-  assert.match(appJs, /const THREAD_HISTORY_TOP_LOAD_PX = 64/);
+  assert.match(appJs, /(?:const|var) MAX_VISIBLE_TURNS = 10/);
+  assert.match(appJs, /(?:const|var) MAX_EXPANDED_VISIBLE_TURNS = 200/);
+  assert.match(appJs, /(?:const|var) THREAD_HISTORY_TOP_LOAD_PX = 64/);
   assert.match(threadDetailRuntimeJs, /threadDetailMergePolicy\.mergeThreadPreservingVisibleItems\(existingThread, incomingThread/);
   assert.match(threadDetailMergeStateJs, /Boolean\(incomingThread\.mobileOlderTurnsCursor\)/);
   assert.match(threadDetailMergeStateJs, /Number\(incomingThread\.mobileOmittedTurnCount \|\| 0\) > 0/);
   assert.match(threadDetailMergeStateJs, /preservedExpandedTurnCount \+= 1/);
   assert.match(threadDetailMergeStateJs, /merged\.mobileOmittedTurnCount = Math\.max\(0, Number\(merged\.mobileOmittedTurnCount \|\| 0\) - preservedExpandedTurnCount\)/);
   assert.match(appJs, /function loadOlderThreadTurns\(options = \{\}\)/);
-  assert.match(appJs, /const preserveScroll = Boolean\(options\.preserveScroll\)/);
+  assert.match(appJs, /(?:const|var) preserveScroll = Boolean\(options\.preserveScroll\)/);
   assert.match(appJs, /let newlyLoadedTurnCount = 0/);
   assert.match(appJs, /if \(!existingTurn\) newlyLoadedTurnCount \+= 1/);
   assert.match(appJs, /targetThread\.mobileOmittedTurnCount = Math\.max\(0, Number\(targetThread\.mobileOmittedTurnCount \|\| 0\) - newlyLoadedTurnCount\)/);
@@ -541,11 +550,11 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("applyThreadDetailRefreshFailureDiagnosticEffect"), /threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(item\.diagnosticInput \|\| \{\}\)/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /recordHomeAiDiagnosticFailure\(\{[\s\S]*diagnostic_type: "thread_detail_refresh_failed"/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(\{/);
-  assert.match(appJs, /const previousConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
-  assert.match(appJs, /const threadDetailRenderPlanApi = window\.CodexThreadDetailRenderPlan;/);
-  assert.match(appJs, /const previousPatchShellSignature = conversationPatchShellSignature\(previousThread\);/);
-  assert.match(appJs, /const refreshRenderStage = threadDetailRenderPlanApi\.planThreadDetailRefreshRenderStage\(\{[\s\S]*previousConversationSignature,[\s\S]*nextConversationSignature,[\s\S]*renderedConversationSignature: state\.renderedConversationSignature,[\s\S]*previousPatchShellSignature,[\s\S]*renderedPatchShellSignature: state\.renderedConversationPatchShellSignature,[\s\S]*nextVisibleShape,[\s\S]*\}\);/);
-  assert.match(appJs, /const renderPlan = refreshRenderStage\.renderPlan;/);
+  assert.match(appJs, /(?:const|var) previousConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
+  assert.match(appJs, /(?:const|var) threadDetailRenderPlanApi = window\.CodexThreadDetailRenderPlan;/);
+  assert.match(appJs, /(?:const|var) previousPatchShellSignature = conversationPatchShellSignature\(previousThread\);/);
+  assert.match(appJs, /(?:const|var) refreshRenderStage = threadDetailRenderPlanApi\.planThreadDetailRefreshRenderStage\(\{[\s\S]*previousConversationSignature,[\s\S]*nextConversationSignature,[\s\S]*renderedConversationSignature: state\.renderedConversationSignature,[\s\S]*previousPatchShellSignature,[\s\S]*renderedPatchShellSignature: state\.renderedConversationPatchShellSignature,[\s\S]*nextVisibleShape,[\s\S]*\}\);/);
+  assert.match(appJs, /(?:const|var) renderPlan = refreshRenderStage\.renderPlan;/);
   assert.match(functionBody("refreshCurrentThread"), /const shouldRenderDetail = renderPlan\.shouldRenderDetail;/);
   assert.match(functionBody("refreshCurrentThread"), /const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
   assert.match(appJs, /function applyThreadDetailRefreshTimedPostMergeEffectsGroup\(plan, timing, options = \{\}\)/);
@@ -856,13 +865,13 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /self\.clients\.openWindow\(target\.url\)/);
   assert.match(indexHtml, /id="workspaceTokenUsage"/);
   assert.match(indexHtml, /id="workspaceStatsDialog"/);
-  assert.match(appJs, /const threadListLoadPolicy = window\.CodexThreadListLoadPolicy;/);
+  assert.match(appJs, /(?:const|var) threadListLoadPolicy = window\.CodexThreadListLoadPolicy;/);
   assert.match(appJs, /workspaceTokenUsage: null/);
   assert.match(threadListRuntimeJs, /function renderWorkspaceTokenUsage\(\)/);
   assert.match(threadListRuntimeJs, /function renderWorkspaceStatsDialog\(\)/);
   assert.match(threadListRuntimeJs, /data-workspace-token-usage-toggle>统计<\/button>/);
   assert.match(appJs, /function formatTokenMillion\(value\)/);
-  assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 200;/);
+  assert.match(appJs, /(?:const|var) THREAD_LIST_PAGE_LIMIT = 200;/);
   assert.match(threadListRuntimeJs, /new URLSearchParams\(\{ limit: String\(THREAD_LIST_PAGE_LIMIT\), archived: "false" \}\)/);
   assert.match(threadListRuntimeJs, /function hasThreadDetailRequestInFlight\(\)/);
   assert.match(threadListRuntimeJs, /state\.threadLoadController[\s\S]*state\.refreshThreadController[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);
@@ -872,8 +881,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(threadListRuntimeJs, /if \(loadPlan\.params && loadPlan\.params\.fallback\) \{[\s\S]*params\.set\("fallback", "defer"\);[\s\S]*\}/);
   assert.match(threadListRuntimeJs, /if \(loadPlan\.params && loadPlan\.params\.initial\) \{[\s\S]*params\.set\("initial", "warm-fallback"\);[\s\S]*\}/);
   assert.match(threadListRuntimeJs, /params\.set\("initial", "warm-fallback"\)/);
-  assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;/);
-  assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;/);
+  assert.match(appJs, /(?:const|var) THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;/);
+  assert.match(appJs, /(?:const|var) THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;/);
   assert.match(appJs, /threadListDeferredFallbackTimer: null/);
   assert.match(threadListRuntimeJs, /function scheduleThreadListDeferredFallback\(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS\)/);
   assert.match(threadListRuntimeJs, /if \(state\.threadListLoadController \|\| hasThreadDetailRequestInFlight\(\)\) \{[\s\S]*scheduleThreadListDeferredFallback\(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS\);[\s\S]*return;/);
@@ -891,9 +900,9 @@ test("public app shell cache advances with static frontend changes", () => {
 });
 
 test("Android back and edge swipe open the mobile navigation menu", () => {
-  assert.match(appJs, /const ANDROID_SIDEBAR_EDGE_SWIPE_PX = 44/);
-  assert.match(appJs, /const ANDROID_BACK_SIDEBAR_BASE = "base"/);
-  assert.match(appJs, /const ANDROID_BACK_SIDEBAR_TOP = "top"/);
+  assert.match(appJs, /(?:const|var) ANDROID_SIDEBAR_EDGE_SWIPE_PX = 44/);
+  assert.match(appJs, /(?:const|var) ANDROID_BACK_SIDEBAR_BASE = "base"/);
+  assert.match(appJs, /(?:const|var) ANDROID_BACK_SIDEBAR_TOP = "top"/);
   assert.match(appJs, /function sidebarTransformIsNone\(transform\)/);
   assert.match(appJs, /matrix\(1,0,0,1,0,0\)/);
   assert.match(appJs, /matrix3d\(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1\)/);
@@ -901,8 +910,8 @@ test("Android back and edge swipe open the mobile navigation menu", () => {
   assert.match(appJs, /Number\(rect\.width \|\| 0\) < 80 \|\| Number\(rect\.height \|\| 0\) < 80/);
   assert.match(appJs, /style\.position === "fixed"/);
   assert.match(appJs, /return sidebarTransformIsNone\(style\.transform\)/);
-  assert.match(appJs, /const HOST_EMBED_SPLIT_LEFT_MIN_PX = 160/);
-  assert.match(appJs, /const HOST_EMBED_SPLIT_VIEWPORT_MIN_PX = 900/);
+  assert.match(appJs, /(?:const|var) HOST_EMBED_SPLIT_LEFT_MIN_PX = 160/);
+  assert.match(appJs, /(?:const|var) HOST_EMBED_SPLIT_VIEWPORT_MIN_PX = 900/);
   assert.match(appJs, /function hostEmbeddedSplitPaneVisible\(\)/);
   assert.match(appJs, /frameLeft >= HOST_EMBED_SPLIT_LEFT_MIN_PX/);
   assert.match(appJs, /frameWidth < hostWidth - 24/);
@@ -910,7 +919,7 @@ test("Android back and edge swipe open the mobile navigation menu", () => {
   assert.match(appJs, /if \(isHermesEmbedMode\(\)\) return hostEmbeddedSplitPaneVisible\(\)/);
   assert.match(appJs, /function syncThreadDetailLayoutState\(\)/);
   assert.match(appJs, /document\.documentElement\.classList\.toggle\("thread-detail-active", detailActive\)/);
-  assert.match(appJs, /const splitReturn = threadDetailReturnButtonVisible\(\)/);
+  assert.match(appJs, /(?:const|var) splitReturn = threadDetailReturnButtonVisible\(\)/);
   assert.match(appJs, /openMenuButton\.classList\.toggle\("split-return-visible", splitReturn\)/);
   assert.match(appJs, /openMenuButton\.textContent = splitReturn \? "←" : "☰"/);
   assert.match(appJs, /function returnToThreadListFromDetail\(\)/);
@@ -969,6 +978,6 @@ test("push notification control stays hidden when the browser cannot enable it",
   assert.doesNotMatch(appJs, /HTTPS required/);
   assert.doesNotMatch(appJs, /Notifications unavailable/);
   assert.doesNotMatch(appJs, /Notifications unsupported/);
-  assert.match(appJs, /const hideButton = \(\) => \{/);
+  assert.match(appJs, /(?:const|var) hideButton = \(\) => \{/);
   assert.match(appJs, /if \(!window\.isSecureContext\) \{[\s\S]*hideButton\(\);[\s\S]*return;[\s\S]*\}/);
 });
