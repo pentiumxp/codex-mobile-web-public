@@ -879,6 +879,8 @@ function vitePreviewProbeExpression(input = {}) {
         ? topology.startupGroups.flatMap((group) => Array.isArray(group && group.assets) ? group.assets : [])
         : [];
       const compatibility = window.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ || {};
+      const entryGroupImportOwner = window.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__
+        || (marker ? String(marker.dataset.entryGroupImportOwner || "") : "");
       const requiredStartupGlobals = Array.isArray(compatibility.requiredStartupGlobals)
         ? compatibility.requiredStartupGlobals
         : [];
@@ -990,6 +992,8 @@ function vitePreviewProbeExpression(input = {}) {
         moduleScriptMatchesPreview: moduleScripts.some((scriptPath) => /^\\/vite-shell\\/assets\\/vite-shell-entry-/.test(scriptPath)),
         moduleEntryLoaded: window.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ === "entry-topology-v1",
         entryTopologyReady: Array.isArray(topology.startupGroups) && Array.isArray(topology.deferredGroups),
+        entryGroupImportOwner,
+        entryGroupImportOwnerOk: entryGroupImportOwner === "vite-shell-entry",
         startupGroupCount: Array.isArray(topology.startupGroups) ? topology.startupGroups.length : 0,
         startupCriticalAssetCount: startupCriticalAssets.length,
         startupCriticalPreloadCount: startupPreloads.length,
@@ -1047,6 +1051,7 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   if (sample && sample.moduleScriptMatchesPreview !== true) append("vite_preview_module_entry_missing");
   if (sample && sample.moduleEntryLoaded !== true) append("vite_preview_module_entry_not_loaded");
   if (sample && sample.entryTopologyReady !== true) append("vite_preview_entry_topology_missing");
+  if (sample && sample.entryGroupImportOwnerOk !== true) append("vite_preview_entry_group_import_owner_mismatch");
   if (sample && sample.startupCriticalPreloadsMatch !== true) append("vite_preview_startup_preload_mismatch");
   if (sample && sample.startupCriticalAssetStatusOk !== true) append("vite_preview_startup_asset_fetch_failed");
   if (sample && sample.entryGroupChunkPreloadsMatch !== true) append("vite_preview_entry_group_chunk_preload_mismatch");

@@ -38,6 +38,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     moduleScriptMatchesPreview: true,
     moduleEntryLoaded: true,
     entryTopologyReady: true,
+    entryGroupImportOwnerOk: true,
     startupCriticalPreloadsMatch: true,
     startupCriticalAssetStatusOk: true,
     entryGroupChunkPreloadsMatch: true,
@@ -61,6 +62,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     moduleScriptMatchesPreview: false,
     moduleEntryLoaded: false,
     entryTopologyReady: false,
+    entryGroupImportOwnerOk: false,
     startupCriticalPreloadsMatch: false,
     startupCriticalAssetStatusOk: false,
     entryGroupChunkPreloadsMatch: false,
@@ -74,6 +76,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
   assert.equal(failing.ok, false);
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_stage_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_module_entry_missing"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_entry_group_import_owner_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_startup_preload_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_startup_asset_fetch_failed"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_entry_group_chunk_preload_mismatch"));
@@ -94,8 +97,10 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("/vite-shell/preview.html"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__"));
+  assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__"));
+  assert.ok(scriptSource.includes("entryGroupImportOwnerOk"));
   assert.ok(scriptSource.includes("entryGroupClassicCoverageOk"));
   assert.ok(scriptSource.includes("data-codex-vite-startup-asset"));
   assert.ok(scriptSource.includes("data-codex-vite-entry-group-chunk"));

@@ -9,6 +9,7 @@ const DEFAULT_READBACK_FILE = "vite-shell-readback.json";
 const DEFAULT_PREVIEW_FILE = "preview.html";
 const EXPECTED_PUBLIC_ARTIFACT_STAGE = "vite-shell-preview-html-v1";
 const EXPECTED_SOURCE_BUILD_STAGE = "vite-shell-artifact-contract-v1";
+const EXPECTED_ENTRY_GROUP_IMPORT_OWNER = "vite-shell-entry";
 
 function sha256Hex(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
@@ -204,6 +205,10 @@ function createViteShellArtifactService(dependencies = {}) {
       issues.push({ code: "vite_shell_artifact_deferred_missing" });
     }
     const readbackEntryGroupChunks = Array.isArray(readback.entryGroupChunks) ? readback.entryGroupChunks : [];
+    const entryGroupImportOwner = String(readback.entryGroupImportOwner || "");
+    if (readbackEntryGroupChunks.length && entryGroupImportOwner !== EXPECTED_ENTRY_GROUP_IMPORT_OWNER) {
+      issues.push({ code: "vite_shell_entry_group_import_owner_mismatch" });
+    }
     const preview = readback.preview && typeof readback.preview === "object" ? readback.preview : null;
     if (!preview || normalizeRelativeFileName(preview.fileName) !== previewFileName) {
       issues.push({ code: "vite_shell_preview_missing" });
@@ -305,8 +310,9 @@ function createViteShellArtifactService(dependencies = {}) {
           break;
         }
       }
-      if (readbackEntryGroupChunks.length && !previewHtml.includes("data-codex-vite-entry-group-imports=\"true\"")) {
-        issues.push({ code: "vite_shell_preview_entry_group_import_script_missing" });
+      if (readbackEntryGroupChunks.length
+        && !previewHtml.includes(`data-entry-group-import-owner="${EXPECTED_ENTRY_GROUP_IMPORT_OWNER}"`)) {
+        issues.push({ code: "vite_shell_preview_entry_group_import_owner_missing" });
       }
     }
 
@@ -316,6 +322,7 @@ function createViteShellArtifactService(dependencies = {}) {
       stage: String(readback.stage || ""),
       sourceBuildStage: String(readback.sourceBuildStage || ""),
       productionExecution: String(readback.productionExecution || ""),
+      entryGroupImportOwner: String(readback.entryGroupImportOwner || ""),
       artifactRoot: DEFAULT_PUBLIC_ARTIFACT_ROOT,
       shellCacheName: String(readback.shellCacheName || ""),
       clientBuildId: String(readback.clientBuildId || ""),
@@ -373,6 +380,7 @@ function createViteShellArtifactService(dependencies = {}) {
       preview: preview ? {
         fileName: normalizeRelativeFileName(preview.fileName),
         entryScript: String(preview.entryScript || ""),
+        entryGroupImportOwner: String(readback.entryGroupImportOwner || ""),
       } : null,
       publishedFileCount: files.length,
       publishedFiles: files.map((file) => ({
@@ -399,5 +407,6 @@ function createViteShellArtifactService(dependencies = {}) {
 module.exports = {
   EXPECTED_PUBLIC_ARTIFACT_STAGE,
   EXPECTED_SOURCE_BUILD_STAGE,
+  EXPECTED_ENTRY_GROUP_IMPORT_OWNER,
   createViteShellArtifactService,
 };

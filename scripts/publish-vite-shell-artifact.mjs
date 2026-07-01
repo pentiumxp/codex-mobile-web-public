@@ -64,13 +64,6 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-function inlineScriptJson(value) {
-  return JSON.stringify(value)
-    .replace(/</g, "\\u003c")
-    .replace(/>/g, "\\u003e")
-    .replace(/&/g, "\\u0026");
-}
-
 function publicArtifactUrl(fileName) {
   const relativePath = normalizeRelativeFileName(fileName);
   if (!relativePath) return "";
@@ -158,6 +151,7 @@ export function buildViteShellPublicReadback(options = {}) {
     stage: VITE_SHELL_PUBLIC_ARTIFACT_STAGE,
     sourceBuildStage: viteBuild.stage || "",
     productionExecution: viteBuild.productionExecution || "",
+    entryGroupImportOwner: viteBuild.entryGroupImportOwner || "",
     shellCacheName: String(manifest.shellCacheName || ""),
     clientBuildId: String(manifest.clientBuildId || ""),
     entry: viteBuild.viteEntry ? {
@@ -178,6 +172,7 @@ export function buildViteShellPublicReadback(options = {}) {
     stage: VITE_SHELL_PUBLIC_ARTIFACT_STAGE,
     sourceBuildStage: viteBuild.stage || "",
     productionExecution: viteBuild.productionExecution || "",
+    entryGroupImportOwner: viteBuild.entryGroupImportOwner || "",
     shellCacheName: String(manifest.shellCacheName || ""),
     clientBuildId: String(manifest.clientBuildId || ""),
     entry: viteBuild.viteEntry ? {
@@ -223,31 +218,6 @@ export function renderViteShellPreviewHtml(readback = {}) {
     .map((chunk) => chunk && chunk.entryScript)
     .filter((asset) => String(asset || "").startsWith("/"))
     .map((asset) => `  <link rel=\"modulepreload\" href=\"${escapeHtml(asset)}\" data-codex-vite-entry-group-chunk=\"true\">`);
-  const entryGroupChunkScripts = (Array.isArray(readback.entryGroupChunks) ? readback.entryGroupChunks : [])
-    .map((chunk) => chunk && chunk.entryScript)
-    .filter((asset) => String(asset || "").startsWith("/"));
-  const entryGroupImportScript = entryGroupChunkScripts.length ? [
-    "  <script type=\"module\" data-codex-vite-entry-group-imports=\"true\">",
-    `    const codexMobileViteEntryGroupChunkUrls = ${inlineScriptJson(entryGroupChunkScripts)};`,
-    "    const codexMobileViteEntryGroupChunkStatus = { expectedCount: codexMobileViteEntryGroupChunkUrls.length, imported: [], failed: [], ok: false };",
-    "    globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_STATUS__ = codexMobileViteEntryGroupChunkStatus;",
-    "    globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__ = Promise.all(codexMobileViteEntryGroupChunkUrls.map(async (url) => {",
-    "      try {",
-    "        await import(url);",
-    "        codexMobileViteEntryGroupChunkStatus.imported.push(new URL(url, window.location.href).pathname);",
-    "      } catch (_) {",
-    "        codexMobileViteEntryGroupChunkStatus.failed.push(new URL(url, window.location.href).pathname);",
-    "      }",
-    "    })).then(() => {",
-    "      const registry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};",
-    "      codexMobileViteEntryGroupChunkStatus.registryCount = Object.keys(registry).length;",
-    "      codexMobileViteEntryGroupChunkStatus.ok = codexMobileViteEntryGroupChunkStatus.failed.length === 0",
-    "        && codexMobileViteEntryGroupChunkStatus.imported.length === codexMobileViteEntryGroupChunkStatus.expectedCount",
-    "        && codexMobileViteEntryGroupChunkStatus.registryCount === codexMobileViteEntryGroupChunkStatus.expectedCount;",
-    "      return codexMobileViteEntryGroupChunkStatus;",
-    "    });",
-    "  </script>",
-  ] : [];
   return [
     "<!doctype html>",
     "<html lang=\"en\">",
@@ -267,13 +237,13 @@ export function renderViteShellPreviewHtml(readback = {}) {
     `    data-production-execution=\"${escapeHtml(readback.productionExecution)}\"`,
     `    data-client-build-id=\"${escapeHtml(readback.clientBuildId)}\"`,
     `    data-shell-cache-name=\"${escapeHtml(readback.shellCacheName)}\"`,
+    `    data-entry-group-import-owner=\"${escapeHtml(readback.entryGroupImportOwner)}\"`,
     `    data-startup-critical-asset-count=\"${escapeHtml((readback.startupCriticalAssets || []).length)}\"`,
     `    data-entry-group-chunk-count=\"${escapeHtml((readback.entryGroupChunks || []).length)}\"`,
     "  >",
     "    <h1>Codex Mobile Vite Shell Preview</h1>",
     "  </main>",
     `  <script type=\"module\" src=\"${escapeHtml(entryScript)}\"></script>`,
-    ...entryGroupImportScript,
     "</body>",
     "</html>",
     "",
@@ -323,6 +293,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       stage: result.stage,
       sourceBuildStage: result.sourceBuildStage,
       productionExecution: result.productionExecution,
+      entryGroupImportOwner: result.entryGroupImportOwner,
       shellCacheName: result.shellCacheName,
       clientBuildId: result.clientBuildId,
       entryGroupChunks: result.counts.entryGroupChunks,

@@ -618,6 +618,50 @@ var __vitePreload = function preload(baseModule, deps, importerUrl) {
 	});
 };
 //#endregion
+//#region \0virtual:codex-mobile-shell-entry-group-loader
+var codexMobileViteEntryGroupIds = [
+	"manifest",
+	"foundation",
+	"feature-runtimes",
+	"bootstrap-state",
+	"shell-services",
+	"app-entry"
+];
+var codexMobileViteEntryGroupLoaders = {
+	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-BLqR4h3p.js"), []),
+	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-ByoVPvax.js"), []),
+	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-CwReA8-F.js"), []),
+	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-BpqsbsHa.js"), []),
+	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-B2tZGkPj.js"), []),
+	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-Cy7TRgaR.js"), [])
+};
+function loadCodexMobileViteEntryGroups() {
+	const status = {
+		expectedCount: codexMobileViteEntryGroupIds.length,
+		imported: [],
+		failed: [],
+		ok: false
+	};
+	globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_STATUS__ = status;
+	const promise = Promise.all(codexMobileViteEntryGroupIds.map(async (groupId) => {
+		const load = codexMobileViteEntryGroupLoaders[groupId];
+		try {
+			const module = await load();
+			const payload = module && (module.codexMobileViteEntryGroup || module.default) || {};
+			status.imported.push(String(payload.id || groupId));
+		} catch (_) {
+			status.failed.push(groupId);
+		}
+	})).then(() => {
+		const registry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
+		status.registryCount = Object.keys(registry).length;
+		status.ok = status.failed.length === 0 && status.imported.length === status.expectedCount && status.registryCount === status.expectedCount;
+		return status;
+	});
+	globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__ = promise;
+	return promise;
+}
+//#endregion
 //#region frontend/vite-shell-entry.mjs
 function compactEntryGroup(group) {
 	return {
@@ -649,10 +693,12 @@ var classicCompatibility = {
 	requiredStartupGlobals: ["CodexRuntimeWiringRuntime", "CodexAppShellRuntime"],
 	classicGlobalExports
 };
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-Cm4rgPfx.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-q2j0WMf3.js"), []);
+loadCodexMobileViteEntryGroups();
 globalThis.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ = "entry-topology-v1";
 globalThis.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ = entryTopology;
 globalThis.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ = classicCompatibility;
 globalThis.__CODEX_MOBILE_VITE_DEFERRED_ENTRY_TOPOLOGY__ = deferredEntryTopologyPromise;
+globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__ = "vite-shell-entry";
 //#endregion
 export { shell_asset_manifest_default as t };

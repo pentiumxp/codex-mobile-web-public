@@ -8,6 +8,7 @@ export const VITE_SHELL_BUILD_CONTRACT_SCHEMA_VERSION = 1;
 export const VITE_SHELL_ENTRY_SOURCE = "frontend/vite-shell-entry.mjs";
 export const VITE_DEFERRED_ENTRY_SOURCE = "frontend/vite-deferred-entry-topology.mjs";
 export const VITE_ENTRY_GROUP_SOURCE_PREFIX = "virtual:codex-mobile-shell-entry-group/";
+export const VITE_ENTRY_GROUP_LOADER_SOURCE = "virtual:codex-mobile-shell-entry-group-loader";
 
 function readText(root, relativePath) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
@@ -394,6 +395,9 @@ function validateViteShellBuildContract(contract, manifest) {
   if (contract.productionExecution !== "classic-script-fallback") {
     issues.push({ code: "vite_build_contract_not_classic_fallback" });
   }
+  if (contract.entryGroupImportOwner !== "vite-shell-entry") {
+    issues.push({ code: "vite_entry_group_import_owner_mismatch" });
+  }
   if (!entry || entry.source !== VITE_SHELL_ENTRY_SOURCE || !entry.fileName) {
     issues.push({ code: "vite_shell_entry_missing" });
   }
@@ -474,6 +478,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     schemaVersion: VITE_SHELL_BUILD_CONTRACT_SCHEMA_VERSION,
     stage: "vite-shell-artifact-contract-v1",
     productionExecution: "classic-script-fallback",
+    entryGroupImportOwner: "vite-shell-entry",
     entrySource: VITE_SHELL_ENTRY_SOURCE,
     deferredEntrySource: VITE_DEFERRED_ENTRY_SOURCE,
     classicFallback: {
@@ -535,6 +540,9 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
   return {
     name: "codex-mobile-shell-entry-group-virtual-modules",
     resolveId(id) {
+      if (String(id || "") === VITE_ENTRY_GROUP_LOADER_SOURCE) {
+        return `\0${VITE_ENTRY_GROUP_LOADER_SOURCE}`;
+      }
       if (String(id || "").startsWith(VITE_ENTRY_GROUP_SOURCE_PREFIX)) {
         return `\0${id}`;
       }
@@ -542,6 +550,45 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
     },
     load(id) {
       const value = String(id || "");
+      if (value === `\0${VITE_ENTRY_GROUP_LOADER_SOURCE}`) {
+        const manifest = buildPublicShellManifest(root);
+        const groups = (Array.isArray(manifest.entryGroups) ? manifest.entryGroups : [])
+          .map((group) => sanitizeEntryGroupId(group && group.id))
+          .filter(Boolean);
+        const importLines = groups.map((groupId) => (
+          `  ${JSON.stringify(groupId)}: () => import(${JSON.stringify(viteEntryGroupSourceId(groupId))}),`
+        ));
+        return [
+          `export const codexMobileViteEntryGroupIds = ${JSON.stringify(groups, null, 2)};`,
+          "const codexMobileViteEntryGroupLoaders = {",
+          ...importLines,
+          "};",
+          "export function loadCodexMobileViteEntryGroups() {",
+          "  const status = { expectedCount: codexMobileViteEntryGroupIds.length, imported: [], failed: [], ok: false };",
+          "  globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_STATUS__ = status;",
+          "  const promise = Promise.all(codexMobileViteEntryGroupIds.map(async (groupId) => {",
+          "    const load = codexMobileViteEntryGroupLoaders[groupId];",
+          "    try {",
+          "      const module = await load();",
+          "      const payload = module && (module.codexMobileViteEntryGroup || module.default) || {};",
+          "      status.imported.push(String(payload.id || groupId));",
+          "    } catch (_) {",
+          "      status.failed.push(groupId);",
+          "    }",
+          "  })).then(() => {",
+          "    const registry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};",
+          "    status.registryCount = Object.keys(registry).length;",
+          "    status.ok = status.failed.length === 0",
+          "      && status.imported.length === status.expectedCount",
+          "      && status.registryCount === status.expectedCount;",
+          "    return status;",
+          "  });",
+          "  globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__ = promise;",
+          "  return promise;",
+          "}",
+          "",
+        ].join("\n");
+      }
       const prefix = `\0${VITE_ENTRY_GROUP_SOURCE_PREFIX}`;
       if (!value.startsWith(prefix)) return null;
       const groupId = sanitizeEntryGroupId(value.slice(prefix.length));

@@ -26,12 +26,12 @@
   <link rel="preload" as="script" href="/runtime-wiring-runtime.js" data-codex-vite-startup-asset="true">
   <link rel="preload" as="script" href="/app-shell-runtime.js" data-codex-vite-startup-asset="true">
   <link rel="preload" as="script" href="/app.js" data-codex-vite-startup-asset="true">
-  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-app-entry-BOcqpVdR.js" data-codex-vite-entry-group-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-bootstrap-state-C3CWukoL.js" data-codex-vite-entry-group-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-feature-runtimes-DILVo6DJ.js" data-codex-vite-entry-group-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-foundation-Bf-rqRAJ.js" data-codex-vite-entry-group-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-manifest-DC7d26DV.js" data-codex-vite-entry-group-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-shell-services-UHM1XX4C.js" data-codex-vite-entry-group-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-app-entry-Cy7TRgaR.js" data-codex-vite-entry-group-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-bootstrap-state-BpqsbsHa.js" data-codex-vite-entry-group-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-feature-runtimes-CwReA8-F.js" data-codex-vite-entry-group-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-foundation-ByoVPvax.js" data-codex-vite-entry-group-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-manifest-BLqR4h3p.js" data-codex-vite-entry-group-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/vite-entry-group-shell-services-B2tZGkPj.js" data-codex-vite-entry-group-chunk="true">
   <title>Codex Mobile Vite Shell Preview</title>
 </head>
 <body>
@@ -42,31 +42,12 @@
     data-production-execution="classic-script-fallback"
     data-client-build-id="0.1.11|codex-mobile-shell-v624"
     data-shell-cache-name="codex-mobile-shell-v624"
+    data-entry-group-import-owner="vite-shell-entry"
     data-startup-critical-asset-count="22"
     data-entry-group-chunk-count="6"
   >
     <h1>Codex Mobile Vite Shell Preview</h1>
   </main>
-  <script type="module" src="/vite-shell/assets/vite-shell-entry-IFO198wQ.js"></script>
-  <script type="module" data-codex-vite-entry-group-imports="true">
-    const codexMobileViteEntryGroupChunkUrls = ["/vite-shell/assets/vite-entry-group-app-entry-BOcqpVdR.js","/vite-shell/assets/vite-entry-group-bootstrap-state-C3CWukoL.js","/vite-shell/assets/vite-entry-group-feature-runtimes-DILVo6DJ.js","/vite-shell/assets/vite-entry-group-foundation-Bf-rqRAJ.js","/vite-shell/assets/vite-entry-group-manifest-DC7d26DV.js","/vite-shell/assets/vite-entry-group-shell-services-UHM1XX4C.js"];
-    const codexMobileViteEntryGroupChunkStatus = { expectedCount: codexMobileViteEntryGroupChunkUrls.length, imported: [], failed: [], ok: false };
-    globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_STATUS__ = codexMobileViteEntryGroupChunkStatus;
-    globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__ = Promise.all(codexMobileViteEntryGroupChunkUrls.map(async (url) => {
-      try {
-        await import(url);
-        codexMobileViteEntryGroupChunkStatus.imported.push(new URL(url, window.location.href).pathname);
-      } catch (_) {
-        codexMobileViteEntryGroupChunkStatus.failed.push(new URL(url, window.location.href).pathname);
-      }
-    })).then(() => {
-      const registry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
-      codexMobileViteEntryGroupChunkStatus.registryCount = Object.keys(registry).length;
-      codexMobileViteEntryGroupChunkStatus.ok = codexMobileViteEntryGroupChunkStatus.failed.length === 0
-        && codexMobileViteEntryGroupChunkStatus.imported.length === codexMobileViteEntryGroupChunkStatus.expectedCount
-        && codexMobileViteEntryGroupChunkStatus.registryCount === codexMobileViteEntryGroupChunkStatus.expectedCount;
-      return codexMobileViteEntryGroupChunkStatus;
-    });
-  </script>
+  <script type="module" src="/vite-shell/assets/vite-shell-entry-O8CdcyzF.js"></script>
 </body>
 </html>

@@ -4616,6 +4616,27 @@ This still avoids a full ESM business-runtime rewrite. It proves the Vite
 preview chunks carry the same bounded compatibility surface as the classic
 script graph before those chunks can become startup/runtime owners.
 
+The follow-up entry-group loader ownership slice removes the remaining preview
+HTML import ownership:
+
+- `scripts/frontend-shell-asset-graph.mjs` now exposes a generated virtual
+  entry-group loader module. It maps the generated entry-group ids to dynamic
+  imports for their Vite chunks and records bounded import status on
+  `__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_STATUS__`.
+- `frontend/vite-shell-entry.mjs` consumes that loader, starts the import
+  promise, and marks
+  `__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__ = "vite-shell-entry"`.
+- `scripts/publish-vite-shell-artifact.mjs` no longer emits a second inline
+  module script to import entry-group chunks. The guarded preview host only
+  records the expected owner and modulepreload coverage.
+- `services/runtime/vite-shell-artifact-service.js` and
+  `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  fail closed when the readback/DOM/runtime owner is not `vite-shell-entry`.
+
+This keeps the default app on the classic script shell while shifting preview
+execution responsibility from generated HTML into the Vite entry module, which
+is the boundary needed before any later startup/runtime ownership cutover.
+
 ## Release Rule
 
 Follow the current release order:

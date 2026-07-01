@@ -1,4 +1,8 @@
 import shellManifest from "../public/shell-asset-manifest.json";
+import {
+  codexMobileViteEntryGroupIds,
+  loadCodexMobileViteEntryGroups,
+} from "virtual:codex-mobile-shell-entry-group-loader";
 
 // Vite build entrypoint.
 //
@@ -46,11 +50,13 @@ const classicCompatibility = {
   classicGlobalExports,
 };
 const deferredEntryTopologyPromise = import("./vite-deferred-entry-topology.mjs");
+const entryGroupImportPromise = loadCodexMobileViteEntryGroups();
 
 globalThis.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ = "entry-topology-v1";
 globalThis.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ = entryTopology;
 globalThis.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ = classicCompatibility;
 globalThis.__CODEX_MOBILE_VITE_DEFERRED_ENTRY_TOPOLOGY__ = deferredEntryTopologyPromise;
+globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__ = "vite-shell-entry";
 
 export function codexMobileShellEntryTopology() {
   return entryTopology;
@@ -62,4 +68,12 @@ export function loadCodexMobileDeferredEntryTopology() {
 
 export function codexMobileClassicCompatibility() {
   return classicCompatibility;
+}
+
+export function codexMobileEntryGroupImportIds() {
+  return codexMobileViteEntryGroupIds.slice();
+}
+
+export function loadCodexMobileEntryGroupChunks() {
+  return entryGroupImportPromise;
 }
