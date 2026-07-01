@@ -15,12 +15,14 @@ const codexAppServerClientServiceJs = fs.readFileSync(
   "utf8",
 );
 const serverRuntimeUtilsJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-runtime-utils.js"), "utf8");
+const serverRuntimeConfigServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-runtime-config-service.js"), "utf8");
 const serverHttpRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-http-runtime-service.js"), "utf8");
 const runtimePermissionPolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-permission-policy-service.js"), "utf8");
 const threadRuntimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "thread-runtime-settings-service.js"), "utf8");
 const rateLimitRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "rate-limit-runtime-service.js"), "utf8");
 const runtimeWorkspaceBootstrapServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "runtime-workspace-bootstrap-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "thread-event-notification-service.js"), "utf8");
+const threadRolloutRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "thread-rollout-runtime-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-task-card-route-service.js"), "utf8");
 const taskCardRuntimePolicyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-runtime-policy-service.js"), "utf8");
 const taskCardRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
@@ -193,8 +195,8 @@ test("new-message route can persist an explicit initial thread title", () => {
 });
 
 test("server default model falls back to GPT-5.5", () => {
-  assert.match(serverJs, /const MODEL_OPTIONS = optionListFromEnv\("CODEX_MOBILE_MODEL_OPTIONS", \[\s*"gpt-5\.5"/);
-  assert.match(serverJs, /const DEFAULT_MODEL = MODEL_OPTIONS\[0\] \|\| "gpt-5\.5";/);
+  assert.match(serverRuntimeConfigServiceJs, /const MODEL_OPTIONS = optionListFromEnv\("CODEX_MOBILE_MODEL_OPTIONS", \[\s*"gpt-5\.5"/);
+  assert.match(serverRuntimeConfigServiceJs, /const DEFAULT_MODEL = MODEL_OPTIONS\[0\] \|\| "gpt-5\.5";/);
   assert.match(coreApiRouteServiceJs, /defaultModel: codexConfigDefaults\.model \|\| defaultModel/);
   assert.match(coreApiRouteServiceJs, /defaultPermissionMode: defaultPermissionModeFromConfigDefaults\(\)/);
   assert.match(runtimePermissionPolicyServiceJs, /function defaultPermissionModeFromConfigDefaults\(\)[\s\S]*dangerFullAccess[\s\S]*return "full"/);
@@ -203,7 +205,7 @@ test("server default model falls back to GPT-5.5", () => {
 });
 
 test("server resolves the default Codex executable from macOS install paths", () => {
-  assert.match(serverJs, /const CODEX_EXE = resolveDefaultCodexExecutable\(\);/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_EXE:\s*resolveDefaultCodexExecutable\(\)/);
   assert.match(serverRuntimeUtilsJs, /function resolveDefaultCodexExecutable\(/);
   assert.match(serverRuntimeUtilsJs, /CODEX_MOBILE_CODEX_EXE/);
   assert.match(serverRuntimeUtilsJs, /function pathEntriesFromEnvPath\(/);
@@ -244,7 +246,7 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(codexAppServerClientServiceJs, /CODEX_MUX_STANDALONE:\s*"1"[\s\S]*CODEX_MUX_KEEP_ALIVE:\s*"1"[\s\S]*CODEX_MUX_PUBLISH_ENDPOINT:\s*"1"/, "Mobile-owned mux should stay alive after Desktop exits and publish the active profile endpoint");
   assert.match(codexAppServerClientServiceJs, /shared endpoint missing; starting Mobile-owned mux/, "required shared mode should start a Mobile-owned mux when the profile endpoint is absent");
   assert.match(codexAppServerClientServiceJs, /profile mux endpoint unavailable; starting Mobile-owned mux/, "stale profile endpoints should be replaced by a Mobile-owned mux");
-  assert.match(serverJs, /const PERSIST_MOBILE_OWNED_MUX =/, "server should expose a persistent owned mux mode for Listener restarts");
+  assert.match(serverRuntimeConfigServiceJs, /PERSIST_MOBILE_OWNED_MUX:\s*boolFlag\(env\.CODEX_MOBILE_PERSIST_OWNED_MUX\)/, "server should expose a persistent owned mux mode for Listener restarts");
   assert.match(codexAppServerClientServiceJs, /detached:\s*PERSIST_MOBILE_OWNED_MUX/, "persistent owned mux should detach from the Listener process group");
   assert.match(codexAppServerClientServiceJs, /child\.unref\(\)/, "persistent owned mux should not keep the Listener process alive");
   assert.match(codexAppServerClientServiceJs, /persistentOwnedMux:\s*PERSIST_MOBILE_OWNED_MUX/, "status should expose persistent owned mux mode");
@@ -329,13 +331,13 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(normalizeProfileBody, /type: profile\.type \|\| profile\.kind \|\| null/, "runtime inheritance should preserve permission profile type");
   assert.match(normalizeProfileBody, /type: fileSystem\.type \|\| null/, "runtime inheritance should preserve permission profile file-system type");
 
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD/, "server should expose an emergency write-guard disable env");
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD/, "server should expose a positive emergency write-guard disable env");
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY/, "server should expose an emergency opt-in for the old approval-proxy-only mode");
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "server should preserve the explicit hard-sandbox env as an override");
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS/, "server should expose explicit cwd allowlist env");
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION/, "self-maintenance exemption should be explicitly disableable");
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION/, "platform-control exemption should be explicitly disableable");
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD/, "server should expose an emergency write-guard disable env");
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD/, "server should expose a positive emergency write-guard disable env");
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY/, "server should expose an emergency opt-in for the old approval-proxy-only mode");
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "server should preserve the explicit hard-sandbox env as an override");
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS/, "server should expose explicit cwd allowlist env");
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION/, "self-maintenance exemption should be explicitly disableable");
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION/, "platform-control exemption should be explicitly disableable");
 
   const guidanceBody = functionBody(taskCardRouteServiceJs, "attachWorkspaceDelegationRuntimeGuidance");
   assert.match(taskCardRouteAdapterJs, /require\("\.\.\/server-routes\/thread-task-card-route-service"\)/, "adapter should remain a compatibility re-export");
@@ -524,10 +526,10 @@ test("workspace creation route stores mobile-visible workspaces outside Codex gl
   assert.ok(routeIndex > 0, "missing POST /api/workspaces route");
   assert.ok(routeIndex < newMessageIndex, "workspace creation should be available before new-thread submission");
   assert.match(serverJs, /createWorkspaceRegistryService/, "server should use the workspace registry service");
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_REGISTRY_FILE/, "workspace registry storage should be configurable");
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_CREATE_ROOTS/, "workspace creation roots should be configurable");
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT/, "workspace default creation root should be configurable");
-  assert.match(serverJs, /detectDevelopmentWorkspaceRoot\(APP_ROOT\)/, "workspace creation should default to the development root when available");
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_REGISTRY_FILE/, "workspace registry storage should be configurable");
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_CREATE_ROOTS/, "workspace creation roots should be configurable");
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT/, "workspace default creation root should be configurable");
+  assert.match(serverRuntimeConfigServiceJs, /detectDevelopmentWorkspaceRoot\(appRoot\)/, "workspace creation should default to the development root when available");
   assert.match(serverRuntimeUtilsJs, /HERMES_MOBILE_DEV_ROOT/, "workspace default should allow a central Hermes dev root override");
   assert.match(serverRuntimeUtilsJs, /"\/Users\/hermes-dev\/HermesMobileDev"/, "Mac production should fall back to the shared Hermes development root when it exists");
   assert.match(serverRuntimeUtilsJs, /fs\.statSync\(resolved\)\.isDirectory\(\)/, "development root fallback should be existence-checked");
@@ -555,16 +557,21 @@ test("continuation start can register an existing allowed workspace before visib
 test("existing-message route falls back when active turn steering is stale", () => {
   const helperIndex = serverHttpRuntimeServiceJs.indexOf("function isTurnSteerUnsupportedError(");
   const staleHelperIndex = serverHttpRuntimeServiceJs.indexOf("function isStaleActiveTurnError(");
-  const preflightIndex = serverJs.indexOf("async function staleActiveTurnPreflight(");
+  const preflightIndex = threadRolloutRuntimeServiceJs.indexOf("async function staleActiveTurnPreflight(");
   assert.ok(helperIndex > 0, "missing turn/steer unsupported helper");
   assert.ok(staleHelperIndex > helperIndex, "missing stale active-turn helper");
-  assert.ok(preflightIndex > 0, "missing stale active-turn preflight helper");
+  assert.ok(preflightIndex > 0, "missing stale active-turn preflight service helper");
+  assert.match(serverJs, /createThreadRolloutRuntimeService/, "server should delegate rollout runtime and stale preflight ownership");
+  assert.match(serverJs, /staleActiveTurnPreflight,\n} = threadRolloutRuntimeService;/, "server should inject service-owned stale preflight into message routes");
 
   const helperBody = serverHttpRuntimeServiceJs.slice(helperIndex, serverHttpRuntimeServiceJs.indexOf("function isCodexAccountAuthError", helperIndex));
   assert.match(helperBody, /method not found\|unknown method/, "unsupported helper should only match method support errors");
   assert.doesNotMatch(helperBody, /method not found\|unknown method\|not found/, "generic not found must not be treated as unsupported turn/steer");
   assert.match(helperBody, /not found\|not active\|inactive\|completed\|interrupted\|expected turn\|expected active turn id\|no active turn/, "stale helper should catch stale active-turn errors");
-  const preflightBody = serverJs.slice(preflightIndex, serverJs.indexOf("let threadListSummaryMergeService", preflightIndex));
+  const preflightBody = threadRolloutRuntimeServiceJs.slice(
+    preflightIndex,
+    threadRolloutRuntimeServiceJs.indexOf("\n  return {\n    rolloutPathForThread", preflightIndex),
+  );
   assert.match(preflightBody, /detectStaleActiveTurnForSubmission/, "preflight should use service-owned stale-turn detection");
   assert.match(preflightBody, /thread\/turns\/list/, "preflight should inspect latest durable turn state");
   assert.match(preflightBody, /limit:\s*20/, "preflight should inspect enough recent turns to detect superseded active turns");

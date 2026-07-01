@@ -50,6 +50,11 @@ const serviceBoundaries = [
     exports: ["createThreadRuntimeSettingsService"],
   },
   {
+    canonical: require("../services/runtime/thread-rollout-runtime-service"),
+    adapter: require("../adapters/thread-rollout-runtime-service"),
+    exports: ["createThreadRolloutRuntimeService"],
+  },
+  {
     canonical: require("../services/thread-detail/thread-detail-active-turn-evidence-service"),
     adapter: require("../adapters/thread-detail-active-turn-evidence-service"),
     exports: ["createThreadDetailActiveTurnEvidenceService"],

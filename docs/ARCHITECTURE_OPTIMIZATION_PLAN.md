@@ -3869,6 +3869,30 @@ model/effort behavior, runtime compatibility adapter parity, thread-detail
 orchestration/prewarm callers, and task-card/message route callers that inherit
 thread runtime settings.
 
+### 2026-07-01 Thread Rollout Runtime Boundary
+
+The next Server runtime split moves rollout stat helpers and stale active-turn
+message preflight out of `server.js` into
+`services/runtime/thread-rollout-runtime-service.js`.
+
+Scope:
+
+- rollout path aliases, file stat metadata, warning-threshold classification,
+  and summary annotation are service-owned;
+- workspace `.agent-context` / `AGENTS.md` byte-size snapshots are service-owned;
+- existing route/service injections keep the same function names, so
+  thread-list, thread-detail, continuation, media, and message routes do not
+  change behavior;
+- stale active-turn preflight remains the message-submission guard, but the
+  app-server turns-list probe and stale-turn detector input shaping are now
+  covered by a focused runtime service test.
+
+Validation should cover the rollout runtime service unit test, compatibility
+adapter parity, active-turn message route source guard, thread-detail
+compaction/response-preparation callers, and package syntax checks. This slice
+is behavior-preserving and should remain batched with the surrounding
+runtime/server boundary work before full deployment.
+
 ## Release Rule
 
 Follow the current release order:

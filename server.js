@@ -125,6 +125,7 @@ const { createServerRuntimeConfigService } = require("./services/runtime/server-
 const { createServerHttpRuntimeService } = require("./services/runtime/server-http-runtime-service");
 const { createRuntimeSettingsService } = require("./services/runtime/runtime-settings-service");
 const { createThreadRuntimeSettingsService } = require("./services/runtime/thread-runtime-settings-service");
+const { createThreadRolloutRuntimeService } = require("./services/runtime/thread-rollout-runtime-service");
 const { createCoreApiRouteService } = require("./server-routes/core-api-route-service");
 const { createAppMaintenanceService } = require("./adapters/app-maintenance-service");
 const { createAppServerRequestPolicyService } = require("./services/runtime/app-server-request-policy-service");
@@ -489,6 +490,27 @@ let threadDisplayTitle;
 let threadIdFromStartResult;
 let truncateSingleLine;
 let tryUpdateThreadTitle;
+const threadRolloutRuntimeService = createThreadRolloutRuntimeService({
+  fs,
+  path,
+  rolloutWarningBytes: ROLLOUT_WARNING_BYTES,
+  continuationContextFileCompactBytes: CONTINUATION_CONTEXT_FILE_COMPACT_BYTES,
+  continuationContextHandoffPromptBytes: CONTINUATION_CONTEXT_HANDOFF_PROMPT_BYTES,
+  continuationContextPairCompactBytes: CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES,
+  terminalIdleActiveTurnMs: TERMINAL_IDLE_ACTIVE_TURN_MS,
+  staleActiveTurnMs: STALE_ACTIVE_TURN_MS,
+  threadDetailRpcTimeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
+  readStateDbThread: (...args) => readStateDbThread(...args),
+  readStartedThread: (...args) => readStartedThread(...args),
+  detectStaleActiveTurnForSubmission,
+});
+const {
+  rolloutPathForThread,
+  rolloutStatsForPath,
+  workspaceContextStatsForCwd,
+  annotateThreadRolloutStats,
+  staleActiveTurnPreflight,
+} = threadRolloutRuntimeService;
 const threadSideChatService = createThreadSideChatService({
   storageFile: THREAD_SIDE_CHAT_FILE,
   scopeId: THREAD_SIDE_CHAT_SCOPE_ID,
@@ -1229,40 +1251,6 @@ const {
   publicContinuationJob,
   startThreadFromRequestBody,
 } = continuationThreadService;
-async function staleActiveTurnPreflight(codexClient, threadId, activeTurnId) {
-  if (!activeTurnId) return { stale: false, reason: "no-active-turn" };
-  const summary = readStateDbThread(threadId) || readStartedThread(threadId);
-  const rolloutStats = summary ? rolloutStatsForPath(rolloutPathForThread(summary)) : null;
-  if (!rolloutStats) return { stale: false, reason: "no-rollout-stats" };
-  if (Date.now() - rolloutStats.mtimeMs < TERMINAL_IDLE_ACTIVE_TURN_MS) {
-    return { stale: false, reason: "rollout-recent" };
-  }
-  let turnsResult = null;
-  try {
-    turnsResult = await codexClient.request("thread/turns/list", {
-      threadId,
-      limit: 20,
-      sortDirection: "desc",
-    }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
-  } catch (err) {
-    return {
-      stale: false,
-      reason: "turns-list-error",
-      error: err.message || String(err),
-    };
-  }
-  return detectStaleActiveTurnForSubmission({
-    activeTurnId,
-    threadId,
-    turnsResult,
-    rolloutStats,
-    pendingServerRequests: codexClient.pendingServerRequests(),
-    nowMs: Date.now(),
-    staleMs: STALE_ACTIVE_TURN_MS,
-    terminalIdleMs: TERMINAL_IDLE_ACTIVE_TURN_MS,
-  });
-}
-
 function mergeThreadSummaryListWithDiagnostics(threads) {
   return requireThreadListRuntimeService().mergeThreadSummaryListWithDiagnostics(threads);
 }
@@ -1317,85 +1305,6 @@ function incrementBoundedDiagnosticCounter(diagnostics, key, amount = 1) {
   if (!Number.isFinite(delta) || delta <= 0) return;
   const next = (Number.isFinite(current) && current > 0 ? current : 0) + delta;
   diagnostics[key] = Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(next));
-}
-
-function rolloutPathForThread(thread) {
-  return thread && (thread.path || thread.rolloutPath || thread.rollout_path) || "";
-}
-
-function rolloutStatsForPath(rolloutPath) {
-  if (!rolloutPath || typeof rolloutPath !== "string") return null;
-  try {
-    const stat = fs.statSync(rolloutPath);
-    if (!stat.isFile()) return null;
-    return {
-      sizeBytes: stat.size,
-      mtimeMs: Math.trunc(Number(stat.mtimeMs || 0)),
-      warningThresholdBytes: ROLLOUT_WARNING_BYTES,
-      overWarningThreshold: stat.size >= ROLLOUT_WARNING_BYTES,
-    };
-  } catch (_) {
-    return null;
-  }
-}
-
-function fileSizeBytes(filePath) {
-  if (!filePath || typeof filePath !== "string") return 0;
-  try {
-    const stat = fs.statSync(filePath);
-    return stat.isFile() ? stat.size : 0;
-  } catch (_) {
-    return 0;
-  }
-}
-
-function workspaceContextStatsForCwd(cwd) {
-  const root = String(cwd || "").trim();
-  if (!root) {
-    return {
-      projectContextSizeBytes: 0,
-      handoffSizeBytes: 0,
-      agentsSizeBytes: 0,
-      workspaceContextPairSizeBytes: 0,
-      fileThresholdBytes: CONTINUATION_CONTEXT_FILE_COMPACT_BYTES,
-      handoffPromptThresholdBytes: CONTINUATION_CONTEXT_HANDOFF_PROMPT_BYTES,
-      pairThresholdBytes: CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES,
-    };
-  }
-  const projectContextSizeBytes = fileSizeBytes(path.join(root, ".agent-context", "PROJECT_CONTEXT.md"));
-  const handoffSizeBytes = fileSizeBytes(path.join(root, ".agent-context", "HANDOFF.md"));
-  return {
-    projectContextSizeBytes,
-    handoffSizeBytes,
-    agentsSizeBytes: fileSizeBytes(path.join(root, "AGENTS.md")),
-    workspaceContextPairSizeBytes: projectContextSizeBytes + handoffSizeBytes,
-    fileThresholdBytes: CONTINUATION_CONTEXT_FILE_COMPACT_BYTES,
-    handoffPromptThresholdBytes: CONTINUATION_CONTEXT_HANDOFF_PROMPT_BYTES,
-    pairThresholdBytes: CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES,
-  };
-}
-
-function annotateThreadRolloutStats(thread, options = {}) {
-  if (!thread || typeof thread !== "object") return thread;
-  const out = Object.assign({}, thread);
-  out.rolloutWarningThresholdBytes = ROLLOUT_WARNING_BYTES;
-  const hasExistingRolloutStats = Number.isFinite(Number(out.rolloutSizeBytes))
-    && Number.isFinite(Number(out.rolloutSizeUpdatedAtMs));
-  if (options.preferExistingRolloutStats === true && hasExistingRolloutStats) {
-    if (typeof out.rolloutOverWarningThreshold !== "boolean") {
-      out.rolloutOverWarningThreshold = Number(out.rolloutSizeBytes || 0) >= ROLLOUT_WARNING_BYTES;
-    }
-    return out;
-  }
-  const readRolloutStats = typeof options.rolloutStatsForPath === "function"
-    ? options.rolloutStatsForPath
-    : rolloutStatsForPath;
-  const stats = readRolloutStats(rolloutPathForThread(out));
-  if (!stats) return out;
-  out.rolloutSizeBytes = stats.sizeBytes;
-  out.rolloutSizeUpdatedAtMs = stats.mtimeMs;
-  out.rolloutOverWarningThreshold = stats.overWarningThreshold;
-  return out;
 }
 
 const threadDetailProjectionInputService = createThreadDetailProjectionInputService({
