@@ -2,7 +2,109 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const SHELL_MANIFEST_SCHEMA_VERSION = 2;
-export const SHELL_CACHE_NAME = "codex-mobile-shell-v622";
+export const SHELL_CACHE_NAME = "codex-mobile-shell-v623";
+
+const SHELL_ENTRY_GROUP_DEFINITIONS = [
+  {
+    id: "manifest",
+    phase: "startup-manifest",
+    startupCritical: true,
+    chunkTarget: "startup-manifest",
+    assets: [
+      "/shell-asset-manifest.js",
+    ],
+  },
+  {
+    id: "foundation",
+    phase: "startup-prerequisite",
+    startupCritical: true,
+    chunkTarget: "startup-foundation",
+    assets: [
+      "/api-client.js",
+      "/runtime-settings.js",
+      "/draft-store.js",
+      "/composer-runtime.js",
+      "/markdown-renderer.js",
+      "/viewport-metrics.js",
+      "/conversation-scroll.js",
+      "/image-compressor.js",
+      "/plugin-embed.js",
+      "/plugin-voice-input.js",
+      "/home-ai-diagnostic-reporting.js",
+      "/thread-diagnostic-events.js",
+      "/frontend-runtime-health.js",
+      "/thread-status-hints.js",
+      "/thread-performance-metrics.js",
+      "/thread-list-load-policy.js",
+      "/thread-list-stable-order.js",
+    ],
+  },
+  {
+    id: "feature-runtimes",
+    phase: "classic-runtime",
+    startupCritical: false,
+    chunkTarget: "deferred-feature-runtimes",
+    assets: [
+      "/thread-list-runtime.js",
+      "/client-render-stability-guard.js",
+      "/live-operation-dock-state.js",
+      "/thread-detail-state.js",
+      "/thread-detail-render-plan.js",
+      "/thread-detail-merge-state.js",
+      "/thread-detail-v4-merge-state.js",
+      "/thread-detail-runtime.js",
+      "/thread-detail-patch-plan.js",
+      "/thread-detail-dom-patch.js",
+      "/thread-detail-actions.js",
+      "/thread-tile-actions.js",
+      "/thread-tile-state.js",
+      "/thread-tile-layout.js",
+      "/thread-tile-runtime.js",
+      "/build-refresh-policy.js",
+      "/app-update-runtime.js",
+      "/side-chat-runtime.js",
+      "/media-preview-runtime.js",
+    ],
+  },
+  {
+    id: "bootstrap-state",
+    phase: "startup-critical",
+    startupCritical: true,
+    chunkTarget: "startup-bootstrap",
+    assets: [
+      "/app-bootstrap.js",
+    ],
+  },
+  {
+    id: "shell-services",
+    phase: "classic-runtime",
+    startupCritical: false,
+    chunkTarget: "deferred-shell-services",
+    assets: [
+      "/settings-runtime.js",
+      "/modal-runtime.js",
+      "/navigation-runtime.js",
+      "/api-client-runtime.js",
+      "/notification-ui-runtime.js",
+      "/pane-layout-runtime.js",
+      "/task-card-runtime.js",
+      "/conversation-render-runtime.js",
+      "/event-stream-runtime.js",
+      "/composer-bridge-runtime.js",
+    ],
+  },
+  {
+    id: "app-entry",
+    phase: "startup-critical",
+    startupCritical: true,
+    chunkTarget: "startup-app-shell",
+    assets: [
+      "/runtime-wiring-runtime.js",
+      "/app-shell-runtime.js",
+      "/app.js",
+    ],
+  },
+];
 
 function readText(root, relativePath) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
@@ -83,10 +185,48 @@ function assertAssetsExist(root, assets) {
   }
 }
 
+function buildEntryGroups(scriptAssets) {
+  const scripts = uniqueValues(scriptAssets);
+  const knownAssets = new Set(SHELL_ENTRY_GROUP_DEFINITIONS.flatMap((definition) => definition.assets));
+  const hasUnknownAsset = scripts.some((asset) => !knownAssets.has(asset));
+  if (hasUnknownAsset) {
+    return [
+      {
+        id: "ordered-classic-scripts",
+        phase: "compatibility",
+        startupCritical: true,
+        chunkTarget: "ordered-classic-scripts",
+        assets: scripts,
+      },
+    ];
+  }
+  const scriptSet = new Set(scripts);
+  const groups = SHELL_ENTRY_GROUP_DEFINITIONS.map((definition) => {
+    const assets = uniqueValues(definition.assets);
+    const missing = assets.filter((asset) => !scriptSet.has(asset));
+    if (missing.length) {
+      throw new Error(`shell_entry_group_missing_scripts:${definition.id}:${missing.join(",")}`);
+    }
+    return {
+      id: definition.id,
+      phase: definition.phase,
+      startupCritical: Boolean(definition.startupCritical),
+      chunkTarget: definition.chunkTarget,
+      assets,
+    };
+  });
+  const groupedAssets = groups.flatMap((group) => group.assets);
+  if (JSON.stringify(groupedAssets) !== JSON.stringify(scripts)) {
+    throw new Error("shell_entry_group_order_mismatch");
+  }
+  return groups;
+}
+
 export function buildPublicShellManifest(root = process.cwd()) {
   const indexHtml = readText(root, "public/index.html");
   const appVersion = packageVersion(root);
   const scriptAssets = extractExternalScriptSrcs(indexHtml);
+  const entryGroups = buildEntryGroups(scriptAssets);
   const linkAssets = extractLinkHrefs(indexHtml);
   const iconAssets = uniqueValues([
     ...linkAssets.filter((asset) => asset.startsWith("/icons/")),
@@ -122,6 +262,7 @@ export function buildPublicShellManifest(root = process.cwd()) {
     shellCacheName: SHELL_CACHE_NAME,
     clientBuildId: `${appVersion}|${SHELL_CACHE_NAME}`,
     scriptAssets,
+    entryGroups,
     linkAssets,
     iconAssets,
     precacheAssets,
@@ -129,6 +270,7 @@ export function buildPublicShellManifest(root = process.cwd()) {
     hashAssets,
     counts: {
       scriptAssets: scriptAssets.length,
+      entryGroups: entryGroups.length,
       linkAssets: linkAssets.length,
       iconAssets: iconAssets.length,
       precacheAssets: precacheAssets.length,

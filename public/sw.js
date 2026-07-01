@@ -3,7 +3,7 @@
 importScripts("/shell-asset-manifest.js");
 
 const SHELL_MANIFEST = self.CODEX_MOBILE_SHELL_MANIFEST || {};
-const CACHE_NAME = String(SHELL_MANIFEST.shellCacheName || "codex-mobile-shell-v622");
+const CACHE_NAME = String(SHELL_MANIFEST.shellCacheName || "codex-mobile-shell-v623");
 const STATIC_ASSETS = Object.freeze(Array.isArray(SHELL_MANIFEST.precacheAssets)
   ? SHELL_MANIFEST.precacheAssets.slice()
   : ["/", "/index.html", "/styles.css", "/shell-asset-manifest.js", "/app-bootstrap.js", "/app.js", "/manifest.json"]);

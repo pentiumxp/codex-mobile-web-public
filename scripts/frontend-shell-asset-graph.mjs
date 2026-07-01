@@ -140,6 +140,7 @@ export function collectShellAssetGraph(root = process.cwd()) {
     swStaticAssets: Array.isArray(publicManifest.precacheAssets) ? publicManifest.precacheAssets : [],
     pageShellAssets: Array.isArray(publicManifest.pageShellAssets) ? publicManifest.pageShellAssets : [],
     serverHashAssets: Array.isArray(publicManifest.hashAssets) ? publicManifest.hashAssets : [],
+    entryGroups: Array.isArray(publicManifest.entryGroups) ? publicManifest.entryGroups : [],
     publicManifest,
     expectedManifest,
     swSource,
@@ -154,9 +155,20 @@ export function validateShellAssetGraph(graph) {
   const swStaticSet = new Set(graph.swStaticAssets);
   const pageShellSet = new Set(graph.pageShellAssets);
   const serverHashSet = new Set(graph.serverHashAssets);
+  const entryGroupAssets = graph.entryGroups.flatMap((group) => Array.isArray(group.assets) ? group.assets : []);
+  const startupCriticalAssets = new Set(graph.entryGroups
+    .filter((group) => group && group.startupCritical)
+    .flatMap((group) => Array.isArray(group.assets) ? group.assets : []));
   const generatedManifestMatches = JSON.stringify(graph.publicManifest) === JSON.stringify(graph.expectedManifest);
 
   if (!generatedManifestMatches) issues.push({ code: "public_shell_manifest_out_of_date" });
+  if (!graph.entryGroups.length) issues.push({ code: "missing_entry_groups" });
+  if (JSON.stringify(entryGroupAssets) !== JSON.stringify(graph.indexScriptAssets)) {
+    issues.push({ code: "entry_group_order_mismatch" });
+  }
+  for (const asset of ["/app-bootstrap.js", "/runtime-wiring-runtime.js", "/app-shell-runtime.js", "/app.js"]) {
+    if (!startupCriticalAssets.has(asset)) issues.push({ code: "startup_critical_asset_missing", asset });
+  }
   if (!indexScriptSet.has("/shell-asset-manifest.js")) {
     issues.push({ code: "index_missing_shell_asset_manifest_script" });
   }
@@ -255,6 +267,7 @@ export function buildShellAssetManifest(root = process.cwd()) {
     swStaticAssets: graph.swStaticAssets,
     pageShellAssets: graph.pageShellAssets,
     serverHashAssets: graph.serverHashAssets,
+    entryGroups: graph.entryGroups,
     assets: assetRecords,
     validation,
   };

@@ -14,8 +14,8 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   const { buildShellAssetManifest } = await loadAssetGraphModule();
   const manifest = buildShellAssetManifest(path.resolve(__dirname, ".."));
   assert.equal(manifest.validation.ok, true);
-  assert.equal(manifest.shellCacheName, "codex-mobile-shell-v622");
-  assert.equal(manifest.clientBuildId, "0.1.11|codex-mobile-shell-v622");
+  assert.equal(manifest.shellCacheName, "codex-mobile-shell-v623");
+  assert.equal(manifest.clientBuildId, "0.1.11|codex-mobile-shell-v623");
   assert.equal(manifest.indexScriptAssets[0], "/shell-asset-manifest.js");
   assert.equal(manifest.indexScriptAssets.at(-1), "/app.js");
   assert.ok(manifest.indexScriptAssets.includes("/app-bootstrap.js"));
@@ -26,6 +26,22 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   assert.ok(manifest.pageShellAssets.includes("/sw.js"));
   assert.ok(manifest.serverHashAssets.includes("/app-shell-runtime.js"));
   assert.ok(manifest.serverHashAssets.includes("/shell-asset-manifest.json"));
+  assert.equal(manifest.entryGroups.length, 6);
+  assert.deepEqual(
+    manifest.entryGroups.flatMap((group) => group.assets),
+    manifest.indexScriptAssets
+  );
+  const groupsById = new Map(manifest.entryGroups.map((group) => [group.id, group]));
+  assert.deepEqual(groupsById.get("bootstrap-state").assets, ["/app-bootstrap.js"]);
+  assert.deepEqual(groupsById.get("app-entry").assets, [
+    "/runtime-wiring-runtime.js",
+    "/app-shell-runtime.js",
+    "/app.js",
+  ]);
+  assert.equal(groupsById.get("bootstrap-state").startupCritical, true);
+  assert.equal(groupsById.get("app-entry").startupCritical, true);
+  assert.equal(groupsById.get("feature-runtimes").startupCritical, false);
+  assert.equal(groupsById.get("shell-services").startupCritical, false);
   assert.ok(manifest.assets.some((asset) => asset.path === "/" && asset.sourcePath === "public/index.html"));
   assert.ok(manifest.assets.every((asset) => asset.exists));
 });

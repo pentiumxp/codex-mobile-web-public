@@ -12,7 +12,7 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       input: {
-        "vite-shell-entry": "frontend/vite-shell-entry.js",
+        "vite-shell-entry": "frontend/vite-shell-entry.mjs",
       },
     },
   },

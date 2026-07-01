@@ -36,11 +36,21 @@ if (!fs.existsSync(manifestPath)) {
   if (JSON.stringify(built.pageShellAssets) !== JSON.stringify(current.pageShellAssets)) {
     mismatch.push("pageShellAssets");
   }
+  if (JSON.stringify(built.entryGroups) !== JSON.stringify(current.entryGroups)) {
+    mismatch.push("entryGroups");
+  }
   if (!built.validation || !built.validation.ok) {
     mismatch.push("builtValidation");
   }
   if (!current.validation.ok) {
     mismatch.push("currentValidation");
+  }
+  const viteManifest = readJson(viteManifestPath);
+  const shellEntry = viteManifest["frontend/vite-shell-entry.mjs"];
+  if (!shellEntry) {
+    mismatch.push("viteShellEntry");
+  } else if (!Array.isArray(shellEntry.dynamicImports) || !shellEntry.dynamicImports.length) {
+    mismatch.push("viteDeferredEntryChunk");
   }
   if (mismatch.length) {
     fail(`Vite shell manifest mismatch: ${mismatch.join(", ")}`);

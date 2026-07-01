@@ -93,8 +93,8 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(coreApiRouteServiceJs, /clientBuildId:\s*buildConfig\.clientBuildId/);
   assert.match(coreApiRouteServiceJs, /shellCacheName:\s*buildConfig\.shellCacheName/);
   assert.match(indexHtml, /id="pageRefreshPrompt"/);
-  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v622");
-  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v622");
+  assert.equal(shellManifest.shellCacheName, "codex-mobile-shell-v623");
+  assert.equal(shellManifest.clientBuildId, "0.1.11|codex-mobile-shell-v623");
   assert.ok(shellManifest.pageShellAssets.includes("/sw.js"));
   assert.ok(shellManifest.pageShellAssets.includes("/shell-asset-manifest.js"));
   assert.ok(shellManifest.pageShellAssets.includes("/shell-asset-manifest.json"));

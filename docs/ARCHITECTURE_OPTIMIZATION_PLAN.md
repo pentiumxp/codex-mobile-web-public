@@ -4377,6 +4377,37 @@ This step removes the highest-risk Vite migration drift point: adding a new
 frontend runtime asset no longer requires manually syncing index, service
 worker cache, page refresh preparation, and server build-hash ownership.
 
+### 2026-07-02 Vite Entry Topology Stage 3
+
+The third Vite migration step keeps production on the ordered classic-script
+shell, but makes the next startup/deferred bundle boundaries explicit build
+metadata.
+
+Scope:
+
+- Advanced the static shell contract to `codex-mobile-shell-v623` /
+  `0.1.11|codex-mobile-shell-v623`.
+- `scripts/generate-frontend-shell-manifest.mjs` now emits `entryGroups`
+  covering every ordered shell script exactly once.
+- The entry groups separate manifest bootstrap, startup prerequisites, feature
+  runtimes, bootstrap state, shell services, and the app-entry shell
+  (`runtime-wiring-runtime.js`, `app-shell-runtime.js`, `app.js`).
+- Startup-critical groups explicitly include `app-bootstrap.js`,
+  `runtime-wiring-runtime.js`, `app-shell-runtime.js`, and `app.js`.
+- `frontend/vite-shell-entry.mjs` now exposes the entry topology and dynamically
+  imports `frontend/vite-deferred-entry-topology.mjs`, giving Vite a real
+  deferred topology chunk to validate before production switches to bundled
+  runtime chunks.
+- `scripts/frontend-shell-asset-graph.mjs` and
+  `scripts/verify-vite-shell-manifest.mjs` fail closed if the generated entry
+  groups drift from the ordered shell scripts or if the Vite deferred topology
+  chunk disappears.
+
+This stage intentionally does not execute bundled business runtime code in
+production. It turns the future critical/deferred bundle split into a tested
+build contract first, so the later ESM/chunk switch can be made against a
+stable startup boundary.
+
 ## Release Rule
 
 Follow the current release order:

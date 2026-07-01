@@ -4,8 +4,8 @@
   var manifest = {
     "schemaVersion": 2,
     "generatedBy": "generate-frontend-shell-manifest",
-    "shellCacheName": "codex-mobile-shell-v622",
-    "clientBuildId": "0.1.11|codex-mobile-shell-v622",
+    "shellCacheName": "codex-mobile-shell-v623",
+    "clientBuildId": "0.1.11|codex-mobile-shell-v623",
     "scriptAssets": [
       "/shell-asset-manifest.js",
       "/api-client.js",
@@ -58,6 +58,107 @@
       "/runtime-wiring-runtime.js",
       "/app-shell-runtime.js",
       "/app.js"
+    ],
+    "entryGroups": [
+      {
+        "id": "manifest",
+        "phase": "startup-manifest",
+        "startupCritical": true,
+        "chunkTarget": "startup-manifest",
+        "assets": [
+          "/shell-asset-manifest.js"
+        ]
+      },
+      {
+        "id": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "assets": [
+          "/api-client.js",
+          "/runtime-settings.js",
+          "/draft-store.js",
+          "/composer-runtime.js",
+          "/markdown-renderer.js",
+          "/viewport-metrics.js",
+          "/conversation-scroll.js",
+          "/image-compressor.js",
+          "/plugin-embed.js",
+          "/plugin-voice-input.js",
+          "/home-ai-diagnostic-reporting.js",
+          "/thread-diagnostic-events.js",
+          "/frontend-runtime-health.js",
+          "/thread-status-hints.js",
+          "/thread-performance-metrics.js",
+          "/thread-list-load-policy.js",
+          "/thread-list-stable-order.js"
+        ]
+      },
+      {
+        "id": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "assets": [
+          "/thread-list-runtime.js",
+          "/client-render-stability-guard.js",
+          "/live-operation-dock-state.js",
+          "/thread-detail-state.js",
+          "/thread-detail-render-plan.js",
+          "/thread-detail-merge-state.js",
+          "/thread-detail-v4-merge-state.js",
+          "/thread-detail-runtime.js",
+          "/thread-detail-patch-plan.js",
+          "/thread-detail-dom-patch.js",
+          "/thread-detail-actions.js",
+          "/thread-tile-actions.js",
+          "/thread-tile-state.js",
+          "/thread-tile-layout.js",
+          "/thread-tile-runtime.js",
+          "/build-refresh-policy.js",
+          "/app-update-runtime.js",
+          "/side-chat-runtime.js",
+          "/media-preview-runtime.js"
+        ]
+      },
+      {
+        "id": "bootstrap-state",
+        "phase": "startup-critical",
+        "startupCritical": true,
+        "chunkTarget": "startup-bootstrap",
+        "assets": [
+          "/app-bootstrap.js"
+        ]
+      },
+      {
+        "id": "shell-services",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-shell-services",
+        "assets": [
+          "/settings-runtime.js",
+          "/modal-runtime.js",
+          "/navigation-runtime.js",
+          "/api-client-runtime.js",
+          "/notification-ui-runtime.js",
+          "/pane-layout-runtime.js",
+          "/task-card-runtime.js",
+          "/conversation-render-runtime.js",
+          "/event-stream-runtime.js",
+          "/composer-bridge-runtime.js"
+        ]
+      },
+      {
+        "id": "app-entry",
+        "phase": "startup-critical",
+        "startupCritical": true,
+        "chunkTarget": "startup-app-shell",
+        "assets": [
+          "/runtime-wiring-runtime.js",
+          "/app-shell-runtime.js",
+          "/app.js"
+        ]
+      }
     ],
     "linkAssets": [
       "/manifest.json",
@@ -260,6 +361,7 @@
     ],
     "counts": {
       "scriptAssets": 51,
+      "entryGroups": 6,
       "linkAssets": 4,
       "iconAssets": 4,
       "precacheAssets": 60,
