@@ -12,6 +12,10 @@ const threadDetailRuntimeServiceJs = fs.readFileSync(
   "utf8",
 );
 const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-summary-state-service.js"), "utf8");
+const threadDetailStateBridgeServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-state-bridge-service.js"),
+  "utf8",
+);
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 
 function functionSource(source, name) {
@@ -31,7 +35,8 @@ function functionSource(source, name) {
 }
 
 test("thread detail refreshes display title from app-server summary", () => {
-  assert.match(serverJs, /function mergeThreadDisplaySummary\(base, display, options = \{\}\)/);
+  assert.match(threadDetailStateBridgeServiceJs, /function mergeThreadDisplaySummary\(base, display, options = \{\}\)/);
+  assert.match(serverJs, /mergeThreadDisplaySummary,/);
   assert.match(threadDetailRuntimeServiceJs, /createThreadDetailSummaryService\(\{\s*readStateDbThread: dependencies\.readStateDbThread,\s*readStartedThread: dependencies\.readStartedThread,\s*readRolloutSessionFallbackThread: dependencies\.readRolloutSessionFallbackThread,\s*readDisplaySummaryThread: \(threadId\) => threadDisplaySummaryCache\.read\(threadId\),\s*readThreadSummaryFromAppServer: dependencies\.readThreadSummaryFromAppServer,\s*mergeThreadDisplaySummary: dependencies\.mergeThreadDisplaySummary,/);
   assert.match(threadDetailRuntimeServiceJs, /appServerRefreshTtlMs: config\.threadDetailSummaryAppServerRefreshTtlMs,/);
   assert.match(threadDetailRuntimeServiceJs, /skipAppServerRefreshWhenDisplayCachePresent: true,/);
@@ -42,7 +47,7 @@ test("thread detail refreshes display title from app-server summary", () => {
 });
 
 test("thread display summary keeps local runtime fields while accepting display fields", () => {
-  assert.match(functionSource(serverJs, "mergeThreadDisplaySummary"), /threadSummaryStateService\.mergeThreadDisplaySummary/);
+  assert.match(functionSource(threadDetailStateBridgeServiceJs, "mergeThreadDisplaySummary"), /callThreadSummaryState\("mergeThreadDisplaySummary"/);
   const helperStart = threadSummaryStateServiceJs.indexOf("function mergeThreadDisplaySummary(base, display, options = {})");
   assert.notEqual(helperStart, -1, "missing mergeThreadDisplaySummary helper");
   const helperEnd = threadSummaryStateServiceJs.indexOf("function mergeThreadRuntimeFromStateDb", helperStart);

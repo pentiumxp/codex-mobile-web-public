@@ -10,6 +10,7 @@ const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
+const threadManagementRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-management-route-service.js"), "utf8");
 const threadVisibilityServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-visibility-service.js"), "utf8");
 const threadListFallbackSourceServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-list", "thread-list-fallback-source-service.js"), "utf8");
 
@@ -77,7 +78,8 @@ test("archive state merge keeps backup and archived-session filters active", () 
   assert.match(threadVisibilityServiceJs, /mobileArchiveIndexService\.threadIds\(\)/);
   assert.match(threadVisibilityServiceJs, /threadHasArchiveSignal\(thread, archivedIds\)/);
   assert.match(threadVisibilityServiceJs, /isBackupRolloutPath\(row\.rollout_path\)/);
-  assert.ok(apiDispatchRouteServiceJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/archive$/)"));
+  assert.ok(apiDispatchRouteServiceJs.includes("threadManagementRouteService.handleRoute"));
+  assert.ok(threadManagementRouteServiceJs.includes("pathname.match(/^\\/api\\/threads\\/([^/]+)\\/archive$/)"));
 });
 
 test("archive route remembers ids in Mobile local archive index", () => {

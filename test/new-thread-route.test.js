@@ -7,6 +7,8 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
+const threadManagementRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-management-route-service.js"), "utf8");
+const workspaceRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "workspace-route-service.js"), "utf8");
 const autoTurnRecoveryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "auto-turn-recovery-service.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "core-api-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
@@ -453,10 +455,10 @@ test("manual rename falls back to Mobile title index when app-server metadata is
   assert.match(helperBody, /thread metadata unavailable before name update/, "metadata-unavailable rename error should be recognized");
   assert.match(helperBody, /database disk image is malformed/, "malformed state db rename error should be recognized");
 
-  const routeIndex = apiDispatchRouteServiceJs.indexOf('const threadRename = url.pathname.match');
-  const routeEnd = apiDispatchRouteServiceJs.indexOf('const threadRead = url.pathname.match', routeIndex);
+  const routeIndex = threadManagementRouteServiceJs.indexOf('const threadRename = pathname.match');
+  const routeEnd = threadManagementRouteServiceJs.indexOf('const threadTurns = pathname.match', routeIndex);
   assert.ok(routeIndex > 0 && routeEnd > routeIndex, "missing thread rename route");
-  const routeBody = apiDispatchRouteServiceJs.slice(routeIndex, routeEnd);
+  const routeBody = threadManagementRouteServiceJs.slice(routeIndex, routeEnd);
 
   assert.match(routeBody, /persistThreadTitleToSessionIndex\(threadId, name\)/, "manual rename should persist fallback title");
   assert.match(routeBody, /titleUpdated: updated/, "manual rename response should expose app-server update status");
@@ -521,10 +523,10 @@ test("send auth failures return stable codes and render message receipts", () =>
 });
 
 test("workspace creation route stores mobile-visible workspaces outside Codex global state", () => {
-  const routeIndex = apiDispatchRouteServiceJs.indexOf('url.pathname === "/api/workspaces" && req.method === "POST"');
+  const routeIndex = workspaceRouteServiceJs.indexOf('pathname === "/api/workspaces" && method === "POST"');
   const newMessageIndex = apiDispatchRouteServiceJs.indexOf("threadMessageRouteService.handleRoute");
   assert.ok(routeIndex > 0, "missing POST /api/workspaces route");
-  assert.ok(routeIndex < newMessageIndex, "workspace creation should be available before new-thread submission");
+  assert.ok(apiDispatchRouteServiceJs.indexOf("workspaceRouteService.handleRoute") < newMessageIndex, "workspace creation should be available before new-thread submission");
   assert.match(serverJs, /createWorkspaceRegistryService/, "server should use the workspace registry service");
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_REGISTRY_FILE/, "workspace registry storage should be configurable");
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_CREATE_ROOTS/, "workspace creation roots should be configurable");
@@ -534,8 +536,8 @@ test("workspace creation route stores mobile-visible workspaces outside Codex gl
   assert.match(serverRuntimeUtilsJs, /"\/Users\/hermes-dev\/HermesMobileDev"/, "Mac production should fall back to the shared Hermes development root when it exists");
   assert.match(serverRuntimeUtilsJs, /fs\.statSync\(resolved\)\.isDirectory\(\)/, "development root fallback should be existence-checked");
   assert.match(serverJs, /defaultCreateRoot:\s*WORKSPACE_DEFAULT_CREATE_ROOT/, "server should pass the default root to the registry service");
-  assert.match(apiDispatchRouteServiceJs, /requestedCwd[\s\S]*workspaceRegistryService\.registerExisting\(body\)[\s\S]*workspaceRegistryService\.create\(body\)/, "POST route should create simple-name workspaces or register existing cwd paths");
-  assert.match(apiDispatchRouteServiceJs, /syncRegisteredWorkspaceTrust\(CODEX_HOME\)/, "workspace creation should trust the new workspace for the active Codex profile");
+  assert.match(workspaceRouteServiceJs, /requestedCwd[\s\S]*workspaceRegistryService\.registerExisting\(body\)[\s\S]*workspaceRegistryService\.create\(body\)/, "POST route should create simple-name workspaces or register existing cwd paths");
+  assert.match(workspaceRouteServiceJs, /syncRegisteredWorkspaceTrust\(CODEX_HOME\)/, "workspace creation should trust the new workspace for the active Codex profile");
   assert.match(serverJs, /workspaceRegistryService\.list\(\)[\s\S]*roots\.add\(workspace\.cwd\)/, "registered workspaces should become visible to thread routes");
 });
 

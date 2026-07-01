@@ -17,6 +17,10 @@ const serverHttpRuntimeServiceJs = fs.readFileSync(
 );
 const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
 const apiDispatchRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "api-dispatch-route-service.js"), "utf8");
+const threadManagementRouteServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "server-routes", "thread-management-route-service.js"),
+  "utf8",
+);
 const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "core-api-route-service.js"), "utf8");
 const threadDetailCompactionServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-compaction-service.js"),
@@ -393,7 +397,7 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(threadDetailTurnsListReadCoalescerAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-turns-list-read-coalescer-service"\)/);
   assert.match(threadDetailPerformanceServiceJs, /require\("\.\.\/services\/thread-detail\/thread-detail-cold-path-diagnosis-service"\)/);
   assert.match(threadDetailColdPathDiagnosisAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-cold-path-diagnosis-service"\)/);
-  assert.match(apiDispatchRouteServiceJs, /limit: Math\.max\(1, Math\.min\(100, Number\(url\.searchParams\.get\("limit"\) \|\| String\(MAX_THREAD_TURNS\)\)\)\)/);
+  assert.match(threadManagementRouteServiceJs, /limit: Math\.max\(1, Math\.min\(100, Number\(url\.searchParams\.get\("limit"\) \|\| String\(MAX_THREAD_TURNS\)\)\)\)/);
 });
 
 test("fallback thread list keeps migrated Windows cwd rows when no visible workspace matches", () => {

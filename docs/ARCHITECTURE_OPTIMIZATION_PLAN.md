@@ -3927,6 +3927,33 @@ checks, and `git diff --check`. This is a server-thinning boundary slice and
 should be batched with adjacent Server progress before production deploy unless
 a production symptom requires faster release.
 
+### 2026-07-01 API Dispatch Route Group Boundary
+
+The next Server route split moves the remaining inline authenticated API route
+groups out of `server-routes/api-dispatch-route-service.js` into dedicated
+route modules.
+
+Scope:
+
+- workspace list/create/register routes are owned by
+  `server-routes/workspace-route-service.js`;
+- continuation job create/read routes are owned by
+  `server-routes/thread-continuation-route-service.js`;
+- ChatGPT Pro bridge/planner routes are owned by
+  `server-routes/chatgpt-pro-route-service.js`;
+- thread archive, goal, rename, and turns-list routes are owned by
+  `server-routes/thread-management-route-service.js`;
+- SSE `/api/events` setup and heartbeat cleanup is owned by
+  `server-routes/event-stream-route-service.js`;
+- `server-routes/api-dispatch-route-service.js` now keeps route ordering and
+  final 404 behavior only.
+
+Validation should cover direct route-service unit tests, adapter parity checks,
+the API dispatch thread-detail lifecycle test, package syntax checks, and
+`git diff --check`. This slice should remain batched with the preceding thread
+detail state bridge boundary before production deploy unless a production
+symptom requires faster release.
+
 ## Release Rule
 
 Follow the current release order:

@@ -19,10 +19,15 @@ const serverRuntimeConfigServiceJs = fs.readFileSync(
   "utf8",
 );
 const apiDispatchRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "api-dispatch-route-service.js"), "utf8");
+const threadManagementRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-management-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const threadGoalActionServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-goal-action-service.js"), "utf8");
 const threadListStateServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "services", "thread-list", "thread-list-state-service.js"),
+  "utf8",
+);
+const threadDetailStateBridgeServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-state-bridge-service.js"),
   "utf8",
 );
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
@@ -221,17 +226,18 @@ test("server enriches thread list and detail responses with thread goals", () =>
   assert.match(functionBody(continuationThreadServiceJs, "migrateContinuationThreadGoal"), /setThreadGoalRpc\(threadGoalSetParams\(targetId, plan\.objective, plan\.tokenBudget, targetExtra\)\)/);
   assert.match(functionBody(continuationThreadServiceJs, "migrateContinuationThreadGoal"), /plan\.sourceStatus === "active"/);
   assert.match(functionBody(continuationThreadServiceJs, "migrateContinuationThreadGoal"), /status: "blocked"/);
-  assert.ok(apiDispatchRouteServiceJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/goal$/)"));
-  assert.ok(apiDispatchRouteServiceJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/goal\\/actions$/)"));
-  assert.match(serverJs, /function attachThreadGoalToThread\(/);
-  assert.match(serverJs, /threadGoalService\.attachGoalToThread\(thread\)/);
+  assert.ok(apiDispatchRouteServiceJs.includes("threadManagementRouteService.handleRoute"));
+  assert.ok(threadManagementRouteServiceJs.includes("pathname.match(/^\\/api\\/threads\\/([^/]+)\\/goal$/)"));
+  assert.ok(threadManagementRouteServiceJs.includes("pathname.match(/^\\/api\\/threads\\/([^/]+)\\/goal\\/actions$/)"));
+  assert.match(threadDetailStateBridgeServiceJs, /function attachThreadGoalToThread\(/);
+  assert.match(threadDetailStateBridgeServiceJs, /threadGoalService\.attachGoalToThread\(thread\)/);
   assert.match(threadListStateServiceJs, /function attachThreadGoalsToThreadListResult\(/);
   assert.match(threadListStateServiceJs, /attachGoalsToThreadListResult\(result\)/);
   assert.match(threadListStateServiceJs, /function attachThreadListStateToResult\(/);
   assert.match(threadListStateServiceJs, /attachThreadTaskCardCountsToThreadListResult\(attachThreadGoalsToThreadListResult\(result\)\)/);
   assert.match(serverJs, /const threadListStateService = createThreadListStateService\(\{/);
   assert.match(serverJs, /attachThreadListStateToResult,/);
-  assert.match(serverJs, /attachThreadGoalToThread\(result\.thread\)/);
+  assert.match(threadDetailStateBridgeServiceJs, /attachThreadGoalToThread\(result\.thread\)/);
 });
 
 test("mobile client renders and updates thread goals from app-server notifications", () => {

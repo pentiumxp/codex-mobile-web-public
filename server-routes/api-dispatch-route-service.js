@@ -1,5 +1,21 @@
 "use strict";
 
+const {
+  createChatGptProRouteService,
+} = require("./chatgpt-pro-route-service");
+const {
+  createEventStreamRouteService,
+} = require("./event-stream-route-service");
+const {
+  createThreadContinuationRouteService,
+} = require("./thread-continuation-route-service");
+const {
+  createThreadManagementRouteService,
+} = require("./thread-management-route-service");
+const {
+  createWorkspaceRouteService,
+} = require("./workspace-route-service");
+
 function createApiDispatchRouteService(dependencies = {}) {
   const READ_RPC_TIMEOUT_MS = dependencies.READ_RPC_TIMEOUT_MS;
   const MAX_THREAD_TURNS = dependencies.MAX_THREAD_TURNS;
@@ -80,6 +96,52 @@ function createApiDispatchRouteService(dependencies = {}) {
   const visibilityFromGlobalState = dependencies.visibilityFromGlobalState;
   const webPushRuntimeService = dependencies.webPushRuntimeService;
   const workspaceRegistryService = dependencies.workspaceRegistryService;
+  const workspaceRouteService = createWorkspaceRouteService({
+    CODEX_HOME,
+    listWorkspaces,
+    workspaceRegistryService,
+    syncRegisteredWorkspaceTrust,
+    syncKnownCodexMobileMcpToolsets,
+  });
+  const threadContinuationRouteService = createThreadContinuationRouteService({
+    createContinuationJob,
+    getContinuationJob,
+    pruneContinuationJobs,
+    publicContinuationJob,
+  });
+  const chatGptProRouteService = createChatGptProRouteService({
+    chatGptProBridgeService,
+    chatGptProMcpService,
+    chatGptProPlannerService,
+    chatGptProSourceSummary,
+  });
+  const threadManagementRouteService = createThreadManagementRouteService({
+    MAX_THREAD_TURNS,
+    READ_RPC_TIMEOUT_MS,
+    archiveThreadId,
+    codex,
+    compactTurnsListResult,
+    isRecoverableThreadTitleUpdateError,
+    parseThreadTurnsCursor,
+    persistThreadTitleToSessionIndex,
+    readRolloutSessionFallbackThread,
+    readStartedThread,
+    readStateDbThread,
+    rememberStartedThread,
+    runThreadGoalAction,
+    setThreadGoal,
+    tryUpdateThreadTitle,
+    visibilityFromGlobalState,
+  });
+  const eventStreamRouteService = createEventStreamRouteService({
+    clientHeartbeats,
+    clients,
+    codex,
+    getUrl,
+    isAuthorized,
+    removeEventClient,
+    sendJson,
+  });
 
   async function handleApi(req, res) {
     const url = getUrl(req);
@@ -143,104 +205,31 @@ function createApiDispatchRouteService(dependencies = {}) {
     if (threadTaskCardRouteResult.handled) {
       return;
     }
-    if (url.pathname === "/api/workspaces" && req.method === "GET") {
-      sendJson(res, 200, { data: await listWorkspaces() });
+    const workspaceRouteResult = await workspaceRouteService.handleRoute({
+      url,
+      method: req.method,
+      readBody: () => readBody(req),
+      sendJson: (status, body) => sendJson(res, status, body),
+    });
+    if (workspaceRouteResult.handled) {
       return;
     }
-    if (url.pathname === "/api/workspaces" && req.method === "POST") {
-      try {
-        const body = await readBody(req);
-        const requestedCwd = String(body && (body.cwd || body.path || body.workspace) || "").trim();
-        const created = requestedCwd
-          ? workspaceRegistryService.registerExisting(body)
-          : workspaceRegistryService.create(body);
-        syncRegisteredWorkspaceTrust(CODEX_HOME);
-        syncKnownCodexMobileMcpToolsets();
-        sendJson(res, 200, created);
-      } catch (err) {
-        sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-      }
+    const threadContinuationRouteResult = await threadContinuationRouteService.handleRoute({
+      url,
+      method: req.method,
+      readBody: () => readBody(req),
+      sendJson: (status, body) => sendJson(res, status, body),
+    });
+    if (threadContinuationRouteResult.handled) {
       return;
     }
-    if (url.pathname === "/api/thread-continuations" && req.method === "POST") {
-      const body = await readBody(req);
-      const job = createContinuationJob(body);
-      sendJson(res, 202, publicContinuationJob(job));
-      return;
-    }
-    if (url.pathname === "/api/chatgpt-pro/status" && req.method === "GET") {
-      sendJson(res, 200, chatGptProBridgeService.status());
-      return;
-    }
-    if (url.pathname === "/api/chatgpt-pro/planner/status" && req.method === "GET") {
-      sendJson(res, 200, {
-        ok: true,
-        planner: chatGptProPlannerService.status(),
-        mcp: chatGptProMcpService.status(),
-      });
-      return;
-    }
-    if (url.pathname === "/api/chatgpt-pro/planner/artifacts" && req.method === "GET") {
-      try {
-        sendJson(res, 200, chatGptProPlannerService.listPlannerArtifacts({
-          limit: url.searchParams.get("limit") || 20,
-          type: url.searchParams.get("type") || "",
-          threadId: url.searchParams.get("threadId") || url.searchParams.get("thread_id") || "",
-          cwd: url.searchParams.get("cwd") || "",
-        }));
-      } catch (err) {
-        sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-      }
-      return;
-    }
-    if (url.pathname === "/api/chatgpt-pro/planner/artifacts" && req.method === "POST") {
-      try {
-        const body = await readBody(req);
-        sendJson(res, 201, { ok: true, artifact: chatGptProPlannerService.createPlannerArtifact(body) });
-      } catch (err) {
-        sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-      }
-      return;
-    }
-    const chatGptPlannerArtifactMatch = url.pathname.match(/^\/api\/chatgpt-pro\/planner\/artifacts\/([^/]+)$/);
-    if (chatGptPlannerArtifactMatch && req.method === "GET") {
-      try {
-        sendJson(res, 200, chatGptProPlannerService.readPlannerArtifact({
-          id: decodeURIComponent(chatGptPlannerArtifactMatch[1]),
-        }));
-      } catch (err) {
-        sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-      }
-      return;
-    }
-    if (url.pathname === "/api/chatgpt-pro/generate" && req.method === "POST") {
-      try {
-        const body = await readBody(req);
-        const prompt = String(body.prompt || body.text || "").trim();
-        if (!chatGptProBridgeService.isRequestText(prompt)) {
-          sendJson(res, 400, { ok: false, error: "Use @ChatGPT Pro to start a ChatGPT Pro bridge request." });
-          return;
-        }
-        const sourceSummary = await chatGptProSourceSummary(body);
-        sendJson(res, 202, await chatGptProBridgeService.start(Object.assign({}, body, {
-          prompt,
-          sourceSummary,
-        })));
-      } catch (err) {
-        sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-      }
-      return;
-    }
-    const continuationJobMatch = url.pathname.match(/^\/api\/thread-continuations\/([^/]+)$/);
-    if (continuationJobMatch && req.method === "GET") {
-      pruneContinuationJobs();
-      const jobId = decodeURIComponent(continuationJobMatch[1]);
-      const job = getContinuationJob(jobId);
-      if (!job) {
-        sendJson(res, 404, { error: "Continuation job not found" });
-        return;
-      }
-      sendJson(res, 200, publicContinuationJob(job));
+    const chatGptProRouteResult = await chatGptProRouteService.handleRoute({
+      url,
+      method: req.method,
+      readBody: () => readBody(req),
+      sendJson: (status, body) => sendJson(res, status, body),
+    });
+    if (chatGptProRouteResult.handled) {
       return;
     }
     const threadMessageRouteResult = await threadMessageRouteService.handleRoute({
@@ -253,34 +242,13 @@ function createApiDispatchRouteService(dependencies = {}) {
     if (threadMessageRouteResult.handled) {
       return;
     }
-    const threadArchive = url.pathname.match(/^\/api\/threads\/([^/]+)\/archive$/);
-    if (threadArchive && req.method === "POST") {
-      const threadId = decodeURIComponent(threadArchive[1]);
-      const visibility = visibilityFromGlobalState();
-      const result = await archiveThreadId(threadId, visibility);
-      sendJson(res, 200, result || { archived: true });
-      return;
-    }
-    const threadGoal = url.pathname.match(/^\/api\/threads\/([^/]+)\/goal$/);
-    if (threadGoal && req.method === "POST") {
-      try {
-        const threadId = decodeURIComponent(threadGoal[1]);
-        const body = await readBody(req);
-        sendJson(res, 200, await setThreadGoal(threadId, body));
-      } catch (err) {
-        sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-      }
-      return;
-    }
-    const threadGoalAction = url.pathname.match(/^\/api\/threads\/([^/]+)\/goal\/actions$/);
-    if (threadGoalAction && req.method === "POST") {
-      try {
-        const threadId = decodeURIComponent(threadGoalAction[1]);
-        const body = await readBody(req);
-        sendJson(res, 200, await runThreadGoalAction(threadId, body));
-      } catch (err) {
-        sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-      }
+    const threadManagementRouteResult = await threadManagementRouteService.handleRoute({
+      url,
+      method: req.method,
+      readBody: () => readBody(req),
+      sendJson: (status, body) => sendJson(res, status, body),
+    });
+    if (threadManagementRouteResult.handled) {
       return;
     }
     const threadListRouteResult = await handleThreadListRoute({
@@ -320,69 +288,6 @@ function createApiDispatchRouteService(dependencies = {}) {
       readRpcTimeoutMs: READ_RPC_TIMEOUT_MS,
     });
     if (threadListRouteResult.handled) return;
-    const threadRename = url.pathname.match(/^\/api\/threads\/([^/]+)\/name$/);
-    if (threadRename && (req.method === "PATCH" || req.method === "POST")) {
-      const threadId = decodeURIComponent(threadRename[1]);
-      const body = await readBody(req);
-      const name = String(body.name || body.title || "").trim();
-      if (!threadId) {
-        sendJson(res, 400, { error: "Thread id is required" });
-        return;
-      }
-      if (!name) {
-        sendJson(res, 400, { error: "Thread name is required" });
-        return;
-      }
-      if (name.length > 120) {
-        sendJson(res, 400, { error: "Thread name is too long" });
-        return;
-      }
-      try {
-        const updated = await tryUpdateThreadTitle(threadId, name);
-        const titleIndexed = persistThreadTitleToSessionIndex(threadId, name);
-        if (!updated && !titleIndexed) {
-          sendJson(res, 501, { error: "Thread rename is not supported by this app-server" });
-          return;
-        }
-        rememberStartedThread(Object.assign({}, readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || {}, {
-          id: threadId,
-          name,
-          preview: name,
-          status: { type: "notLoaded" },
-        }));
-        sendJson(res, 200, {
-          ok: true,
-          threadId,
-          name,
-          titleUpdated: updated,
-          titleIndexed,
-          warning: updated ? "" : "Thread rename was stored in the Mobile fallback index; app-server rename is unavailable.",
-        });
-      } catch (err) {
-        if (isRecoverableThreadTitleUpdateError(err)) {
-          const titleIndexed = persistThreadTitleToSessionIndex(threadId, name);
-          if (titleIndexed) {
-            rememberStartedThread(Object.assign({}, readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || {}, {
-              id: threadId,
-              name,
-              preview: name,
-              status: { type: "notLoaded" },
-            }));
-            sendJson(res, 200, {
-              ok: true,
-              threadId,
-              name,
-              titleUpdated: false,
-              titleIndexed,
-              warning: "Thread rename was stored in the Mobile fallback index; app-server title update is temporarily unavailable.",
-            });
-            return;
-          }
-        }
-        sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
-      }
-      return;
-    }
     const threadRead = url.pathname.match(/^\/api\/threads\/([^/]+)$/);
     if (threadRead && req.method === "GET") {
       trackThreadDetailRequestLifecycle(res);
@@ -398,59 +303,11 @@ function createApiDispatchRouteService(dependencies = {}) {
       });
       return;
     }
-    const threadTurns = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns$/);
-    if (threadTurns && req.method === "GET") {
-      const threadId = decodeURIComponent(threadTurns[1]);
-      const summary = readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || null;
-      const cursor = parseThreadTurnsCursor(url.searchParams.get("cursor"));
-      const params = {
-        threadId,
-        limit: Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || String(MAX_THREAD_TURNS)))),
-        sortDirection: url.searchParams.get("sortDirection") || "asc",
-      };
-      if (cursor) params.cursor = cursor;
-      sendJson(res, 200, compactTurnsListResult(
-        await codex.request("thread/turns/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false }),
-        { threadId, summary },
-      ));
-      return;
-    }
     sendJson(res, 404, { error: "Not found" });
   }
 
   function handleEvents(req, res) {
-    if (!isAuthorized(req)) {
-      sendJson(res, 401, { error: "Unauthorized" });
-      return;
-    }
-    const url = getUrl(req);
-    const client = {
-      threadId: String(url.searchParams.get("threadId") || ""),
-    };
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      "Connection": "keep-alive",
-      "X-Accel-Buffering": "no",
-    });
-    res.write(`data: ${JSON.stringify({ type: "status", status: codex.status() })}\n\n`);
-    for (const request of codex.pendingServerRequests()) {
-      res.write(`data: ${JSON.stringify({ type: "serverRequest", request })}\n\n`);
-    }
-    clients.set(res, client);
-    const heartbeat = setInterval(() => {
-      try {
-        if (res.destroyed || res.writableEnded || !res.write(": keepalive\n\n")) {
-          removeEventClient(res);
-        }
-      } catch (_) {
-        removeEventClient(res);
-      }
-    }, 25000);
-    clientHeartbeats.set(res, heartbeat);
-    req.on("close", () => {
-      removeEventClient(res);
-    });
+    eventStreamRouteService.handleEvents(req, res);
   }
 
   return {
