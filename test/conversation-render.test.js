@@ -11,6 +11,7 @@ const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-ru
 const threadListRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-list-runtime.js"), "utf8");
 const threadTileRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-tile-runtime.js"), "utf8");
 const threadDetailRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-detail-runtime.js"), "utf8");
+const mediaPreviewRuntimeJs = fs.readFileSync(path.join(root, "public", "media-preview-runtime.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const threadDetailCompactionServiceJs = fs.readFileSync(
   path.join(root, "adapters", "thread-detail-compaction-service.js"),
@@ -126,6 +127,7 @@ const threadDetailRuntimeFunctionNames = new Set([
 
 function sourceForFunction(source, name) {
   if (source === appJs && threadDetailRuntimeFunctionNames.has(name)) return threadDetailRuntimeJs;
+  if (source === appJs && mediaPreviewRuntimeJs.includes(`function ${name}(`)) return mediaPreviewRuntimeJs;
   return source;
 }
 
@@ -2849,7 +2851,7 @@ test("turn diagnostic items render as explicit runtime diagnostics", () => {
 });
 
 test("agent markdown can render uploaded image summaries as thumbnails", () => {
-  assert.match(appJs, /function renderMarkdownWithAttachmentSummary\(value\)/);
+  assert.match(mediaPreviewRuntimeJs, /function renderMarkdownWithAttachmentSummary\(value\)/);
   assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /splitAttachmentSummaryText\(value \|\| ""\)/);
   assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /fencedTableMode: "preview"/);
   assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /renderAttachmentSummary\(split\.attachments\)/);

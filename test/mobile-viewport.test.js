@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const mediaPreviewRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "media-preview-runtime.js"), "utf8");
 const appUpdateRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app-update-runtime.js"), "utf8");
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -283,7 +284,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /"\/app-update-runtime\.js"/);
   assert.match(swJs, /"\/side-chat-runtime\.js"/);
   assert.match(appJs, /"\/side-chat-runtime\.js"/);
-  assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>\s*\n\s*<script src="\/media-preview-runtime\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
   assert.match(appJs, /const sideChatRuntimeApi = window\.CodexSideChatRuntime/);
   assert.match(appJs, /function requireSideChatRuntime\(\)/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
@@ -360,8 +361,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);
   assert.match(appJs, /threadDetailDomPatchApi\.planConversationHtmlPerformanceEvent\(\{/);
   assert.match(appJs, /postPerformanceEvent\(performancePlan\.eventName, performancePlan\.payload, performancePlan\.options\)/);
-  assert.match(appJs, /postPerformanceEvent\("github_cards_hydrate_ms"/);
-  assert.match(appJs, /postPerformanceEvent\("mermaid_hydrate_ms"/);
+  assert.match(mediaPreviewRuntimeJs, /postPerformanceEvent\("github_cards_hydrate_ms"/);
+  assert.match(mediaPreviewRuntimeJs, /postPerformanceEvent\("mermaid_hydrate_ms"/);
   assert.match(appJs, /eventName: "thread_refresh_ms"/);
   assert.match(appJs, /state\.startupThreadOpenPending = hasStartupThreadOpenIntent\(\);[\s\S]*early_opening_rendered/);
   assert.match(appJs, /async function fetchPublicConfigWithRetry\(startedAt\)/);

@@ -142,6 +142,7 @@ function createServerRuntimeUtils(dependencies = {}) {
       "thread-tile-runtime.js",
       "app-update-runtime.js",
       "side-chat-runtime.js",
+      "media-preview-runtime.js",
       "app.js",
       "sw.js",
       "manifest.json",

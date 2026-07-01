@@ -67,7 +67,7 @@ function createRuntimeFixture() {
 }
 
 test("side chat runtime is wired into the static shell", () => {
-  assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/side-chat-runtime\.js"><\/script>\s*\n\s*<script src="\/media-preview-runtime\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
   assert.match(swJs, /"\/side-chat-runtime\.js"/);
   assert.match(appJs, /"\/side-chat-runtime\.js"/);
   assert.match(serverRuntimeUtilsJs, /"side-chat-runtime\.js"/);

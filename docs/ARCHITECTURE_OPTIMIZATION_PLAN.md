@@ -4224,6 +4224,39 @@ UI tests, static shell/cache guards, `npm run --silent check`,
 `npm run --silent check:macos`, `git diff --check`, and the deploy-time
 startup-only listener/browser gate.
 
+### 2026-07-01 App JS Media Preview Runtime Boundary
+
+The next frontend-thinning slice moves media rendering, rich-preview hydration,
+and file/image preview behavior out of `public/app.js` while preserving the
+static shell contract as `codex-mobile-shell-v619`.
+
+Scope:
+
+- `public/media-preview-runtime.js` owns input image and upload-summary
+  rendering, injected task-card user-message collapse, markdown-with-attachment
+  rendering, command-output markdown table previews, GitHub link preview
+  hydration, Mermaid rendering and preview controls, file-preview and
+  image-preview gestures, imageView/generated-image/protected-image rendering,
+  protected image auth recovery, and visible failed-image scanning.
+- `public/app.js` keeps shared state, render-context facts, dependency
+  injection, DOM event wiring, and compatibility wrappers for existing callers.
+- `public/index.html`, `public/sw.js`, `public/app.js` page-shell preload
+  assets, and `services/runtime/server-runtime-utils.js` include the new
+  runtime file so shell hash/cache behavior stays explicit.
+
+Local line-count readback before deployment: `public/app.js` is `18826` lines,
+`public/media-preview-runtime.js` is `2416` lines,
+`public/side-chat-runtime.js` is `1278` lines,
+`public/app-update-runtime.js` is `1204` lines,
+`public/thread-detail-runtime.js` is `1274` lines,
+`public/composer-runtime.js` is `2027` lines,
+`public/thread-list-runtime.js` is `902` lines, and
+`public/thread-tile-runtime.js` is `1853` lines. Validation should cover syntax
+checks for the media-preview runtime/static files, focused media/render/GitHub/
+Mermaid/mobile shell tests, static shell/cache guards, `npm run --silent check`,
+`npm run --silent check:macos`, `git diff --check`, and the deploy-time
+startup-only listener/browser gate.
+
 ## Release Rule
 
 Follow the current release order:

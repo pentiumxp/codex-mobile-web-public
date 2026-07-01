@@ -7,6 +7,8 @@ const { test } = require("node:test");
 
 const renderer = require(path.resolve(__dirname, "..", "public", "markdown-renderer.js"));
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const mediaPreviewRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "media-preview-runtime.js"), "utf8");
+const appAndMediaJs = `${mediaPreviewRuntimeJs}\n${appJs}`;
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const pluginEmbedJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "plugin-embed.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -35,12 +37,12 @@ function functionSourceFrom(source, name) {
 }
 
 function evaluatedMermaidErrorSvgDetector() {
-  const source = functionSourceFrom(appJs, "isMermaidErrorSvgMarkup");
+  const source = functionSourceFrom(mediaPreviewRuntimeJs, "isMermaidErrorSvgMarkup");
   return Function(`${source}\nreturn isMermaidErrorSvgMarkup;`)();
 }
 
 function evaluatedMermaidRenderArtifactIds() {
-  const source = functionSourceFrom(appJs, "mermaidRenderArtifactIds");
+  const source = functionSourceFrom(mediaPreviewRuntimeJs, "mermaidRenderArtifactIds");
   return Function(`${source}\nreturn mermaidRenderArtifactIds;`)();
 }
 
@@ -128,9 +130,9 @@ test("mermaid runtime error SVG is rejected before rendering the bomb icon", () 
 
   assert.equal(isMermaidErrorSvgMarkup(errorSvg), true);
   assert.equal(isMermaidErrorSvgMarkup(validSvg), false);
-  assert.match(appJs, /function isMermaidErrorSvgMarkup\(/);
-  assert.match(appJs, /if \(isMermaidErrorSvgMarkup\(svgMarkup\)\) throw new Error\("Mermaid syntax error"\)/);
-  assert.match(appJs, /svg\.querySelector\("\.error-icon, \.error-text"\)/);
+  assert.match(mediaPreviewRuntimeJs, /function isMermaidErrorSvgMarkup\(/);
+  assert.match(mediaPreviewRuntimeJs, /if \(isMermaidErrorSvgMarkup\(svgMarkup\)\) throw new Error\("Mermaid syntax error"\)/);
+  assert.match(mediaPreviewRuntimeJs, /svg\.querySelector\("\.error-icon, \.error-text"\)/);
 });
 
 test("mermaid render cleans external error artifacts left by failed candidates", () => {
@@ -141,12 +143,12 @@ test("mermaid render cleans external error artifacts left by failed candidates",
     "dcodex-mobile-mermaid-7-0",
     "icodex-mobile-mermaid-7-0",
   ]);
-  assert.match(appJs, /function cleanupMermaidRenderArtifacts\(/);
-  assert.match(appJs, /function cleanupExternalMermaidErrorArtifacts\(/);
-  assert.match(appJs, /querySelectorAll\("svg \.error-icon, svg \.error-text"\)/);
-  assert.match(appJs, /removeNodeIfExternalMermaidArtifact\(document\.getElementById\(id\)\)/);
-  assert.match(appJs, /cleanupMermaidRenderArtifacts\(candidateRenderId\);[\s\S]*cleanupExternalMermaidErrorArtifacts\(\);[\s\S]*renderMermaidSvg/);
-  assert.match(appJs, /catch \(err\) \{[\s\S]*cleanupMermaidRenderArtifacts\(candidateRenderId\);[\s\S]*cleanupExternalMermaidErrorArtifacts\(\);/);
+  assert.match(mediaPreviewRuntimeJs, /function cleanupMermaidRenderArtifacts\(/);
+  assert.match(mediaPreviewRuntimeJs, /function cleanupExternalMermaidErrorArtifacts\(/);
+  assert.match(mediaPreviewRuntimeJs, /querySelectorAll\("svg \.error-icon, svg \.error-text"\)/);
+  assert.match(mediaPreviewRuntimeJs, /removeNodeIfExternalMermaidArtifact\(document\.getElementById\(id\)\)/);
+  assert.match(mediaPreviewRuntimeJs, /cleanupMermaidRenderArtifacts\(candidateRenderId\);[\s\S]*cleanupExternalMermaidErrorArtifacts\(\);[\s\S]*renderMermaidSvg/);
+  assert.match(mediaPreviewRuntimeJs, /catch \(err\) \{[\s\S]*cleanupMermaidRenderArtifacts\(candidateRenderId\);[\s\S]*cleanupExternalMermaidErrorArtifacts\(\);/);
   assert.match(appJs, /document\.addEventListener\("focusin", \(\) => \{[\s\S]*cleanupExternalMermaidErrorArtifacts\(\);/);
 });
 
@@ -159,23 +161,23 @@ test("mobile app ships a custom Mermaid preview dialog and lazy runtime loader",
   assert.match(indexHtml, /id="mermaidPreviewBody"/);
   assert.match(indexHtml, /id="mermaidPreviewSource"/);
   assert.match(appJs, /const MERMAID_SCRIPT_URL = "\/vendor\/mermaid\.min\.js"/);
-  assert.match(appJs, /function ensureMermaidApi\(/);
-  assert.match(appJs, /function hydrateMermaidDiagrams\(/);
+  assert.match(appAndMediaJs, /function ensureMermaidApi\(/);
+  assert.match(appAndMediaJs, /function hydrateMermaidDiagrams\(/);
   assert.match(appJs, /function hydrateThreadDetailSurface\(/);
   assert.match(appJs, /hydrateMermaid:\s*options\.skipRichHydration \? null : hydrateMermaidDiagrams/);
   assert.match(appJs, /threadDetailDomPatchApi\.planConversationHtmlUpdateEffects\(updatePlan\)/);
   assert.match(appJs, /applyConversationHtmlUpdateEffectsPlan\(effectsPlan, \{ root: conversation \}\)/);
   assert.match(appJs, /hydrateThreadDetailSurface\(context\.root, item\.hydrateOptions \|\| \{\}\)/);
-  assert.match(appJs, /hydrateMermaidDiagrams\(\$\("filePreviewBody"\)\)/);
-  assert.match(appJs, /function mermaidRenderCandidates\(/);
-  assert.match(appJs, /function openMermaidPreview\(/);
-  assert.match(appJs, /function closeMermaidPreview\(/);
-  assert.match(appJs, /function handleMermaidAction\(/);
+  assert.match(appAndMediaJs, /hydrateMermaidDiagrams\(\$\("filePreviewBody"\)\)/);
+  assert.match(appAndMediaJs, /function mermaidRenderCandidates\(/);
+  assert.match(appAndMediaJs, /function openMermaidPreview\(/);
+  assert.match(appAndMediaJs, /function closeMermaidPreview\(/);
+  assert.match(appAndMediaJs, /function handleMermaidAction\(/);
   assert.match(appJs, /mermaidPinch: null/);
-  assert.match(appJs, /function mermaidContainerFromViewer\(viewer\)/);
-  assert.match(appJs, /function beginMermaidPinch\(event\)/);
-  assert.match(appJs, /function moveMermaidPinch\(event\)/);
-  assert.match(appJs, /applyMermaidScale\(pinch\.container, pinch\.scale \* \(distance \/ pinch\.distance\), Object\.assign\(\{ viewer: pinch\.scroller \}, anchorOptions\)\)/);
+  assert.match(appAndMediaJs, /function mermaidContainerFromViewer\(viewer\)/);
+  assert.match(appAndMediaJs, /function beginMermaidPinch\(event\)/);
+  assert.match(appAndMediaJs, /function moveMermaidPinch\(event\)/);
+  assert.match(appAndMediaJs, /applyMermaidScale\(pinch\.container, pinch\.scale \* \(distance \/ pinch\.distance\), Object\.assign\(\{ viewer: pinch\.scroller \}, anchorOptions\)\)/);
   assert.match(appJs, /document\.addEventListener\("touchstart", beginMermaidPinch, \{ passive: false, capture: true \}\)/);
   assert.match(appJs, /document\.addEventListener\("touchmove", moveMermaidPinch, \{ passive: false, capture: true \}\)/);
   assert.match(stylesCss, /\.markdown-mermaid-block/);
