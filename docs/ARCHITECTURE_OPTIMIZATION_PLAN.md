@@ -4748,6 +4748,38 @@ This still does not switch the app to Vite execution. It closes another
 cutover prerequisite: a Vite preview can no longer pass while missing a
 classic startup dependency that the current shell requires before first paint.
 
+The follow-up Vite app-preview startup path keeps production `/` on
+classic-script fallback while proving that the Vite shell entry can own an
+opt-in real app startup:
+
+- `scripts/publish-vite-shell-artifact.mjs` now publishes
+  `public/vite-shell/app-preview.html` from the current `public/index.html`
+  shell markup. It removes the generated classic script block from that host
+  and replaces it with one Vite module entry, while marking the page with
+  `data-codex-vite-app-preview="true"` and
+  `meta[name="codex-vite-app-preview"]`.
+- `frontend/vite-shell-entry.mjs` detects that app-preview marker and injects
+  the generated `indexScriptAssets` in canonical order. It records bounded
+  loader state on `__CODEX_MOBILE_VITE_APP_PREVIEW__` and exposes
+  `__CODEX_MOBILE_VITE_APP_PREVIEW_PROMISE__` for browser gates.
+- `services/runtime/vite-shell-artifact-service.js` validates that the
+  published readback includes the app-preview host, that the host uses the
+  expected Vite entry module, that the app-preview marker/meta/script block are
+  present, and that the original classic shell script block is absent.
+- `services/runtime/runtime-job-scheduler-service.js` adds
+  `browser-vite-app-preview` as a deploy-default real-browser job using the
+  same skip/browser-mode policy as the existing Vite preview gate.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-app-preview-only`
+  opens `/vite-shell/app-preview.html`, waits for the Vite-owned loader, checks
+  injected classic script count/order against the shell manifest, verifies
+  client build/cache markers, confirms app visibility, checks startup runtimes,
+  and fails closed with `vite_app_preview_*` issue codes on loader, marker,
+  runtime, boot-recovery, or browser-console/exception regressions.
+
+This still does not make Vite the default production shell. It adds the first
+deploy-gated path where a Vite module entry owns actual app startup, while the
+default `/` path remains the generated classic script shell.
+
 ## Release Rule
 
 Follow the current release order:

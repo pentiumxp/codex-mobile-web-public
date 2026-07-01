@@ -160,7 +160,8 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
       const script = String(args[0] || "");
       const isBrowser = script.includes("browser-runtime");
       const isVitePreview = args.includes("--vite-preview-only");
-      if (isBrowser && !isVitePreview) {
+      const isViteAppPreview = args.includes("--vite-app-preview-only");
+      if (isBrowser && !isVitePreview && !isViteAppPreview) {
         assert.ok(args.includes("--rounds"));
         assert.equal(args[args.indexOf("--rounds") + 1], "6");
         assert.ok(args.includes("--sample-delays-ms"));
@@ -184,10 +185,19 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
           "--vite-preview-only",
         ]);
       }
+      if (isViteAppPreview) {
+        assert.deepEqual(args, [
+          String(args[0]),
+          "--server",
+          "http://127.0.0.1:8790",
+          "--json",
+          "--vite-app-preview-only",
+        ]);
+      }
       const payload = isBrowser
         ? {
             ok: true,
-            mode: isVitePreview ? "vite-preview" : "full",
+            mode: isVitePreview ? "vite-preview" : isViteAppPreview ? "vite-app-preview" : "full",
             publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
             browserReport: { issueCount: 0, blockingIssueCount: 0 },
           }
@@ -210,6 +220,7 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
   assert.match(line, /"productionServerCount":1/);
   assert.match(line, /"name":"browser-runtime","enabled":true/);
   assert.match(line, /"name":"browser-vite-preview","enabled":true/);
+  assert.match(line, /"name":"browser-vite-app-preview","enabled":true/);
   assert.match(line, /"gate":/);
   assert.match(line, /"deployPass":true/);
   assert.doesNotMatch(line, /private-thread-id|raw prompt|cookie|token|Authorization/i);
@@ -242,7 +253,8 @@ test("runtime self-check browser job can run startup-only without submit exercis
       assert.match(script, /browser-runtime/);
       calls.push(args.slice());
       const isVitePreview = args.includes("--vite-preview-only");
-      if (isVitePreview) {
+      const isViteAppPreview = args.includes("--vite-app-preview-only");
+      if (isVitePreview || isViteAppPreview) {
         assert.doesNotMatch(args.join(" "), /--startup-only|--exercise-submit|--submit-thread-id|--submit-message/);
       } else {
         assert.ok(args.includes("--startup-only"));
@@ -250,7 +262,7 @@ test("runtime self-check browser job can run startup-only without submit exercis
       assert.doesNotMatch(args.join(" "), /--exercise-submit|--submit-thread-id|--submit-message/);
       callback(null, JSON.stringify({
         ok: true,
-        mode: isVitePreview ? "vite-preview" : "startup-only",
+        mode: isVitePreview ? "vite-preview" : isViteAppPreview ? "vite-app-preview" : "startup-only",
         publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
         browserReport: { issueCount: 0, blockingIssueCount: 0 },
       }), "");
@@ -258,11 +270,13 @@ test("runtime self-check browser job can run startup-only without submit exercis
   });
 
   assert.equal(result.ok, true);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   const browserCheck = result.checks.find((check) => check.name === "browser-runtime");
   assert.equal(browserCheck.ok, true);
   const vitePreviewCheck = result.checks.find((check) => check.name === "browser-vite-preview");
   assert.equal(vitePreviewCheck.ok, true);
+  const viteAppPreviewCheck = result.checks.find((check) => check.name === "browser-vite-app-preview");
+  assert.equal(viteAppPreviewCheck.ok, true);
 });
 
 test("runtime self-check gate lets slow-path observations remain nonblocking", async () => {
@@ -401,7 +415,7 @@ test("runtime self-check loop keeps empty child output as execution failure", as
   });
 
   assert.equal(result.ok, false);
-  assert.equal(result.gate.executionFailureCount, 2);
+  assert.equal(result.gate.executionFailureCount, 3);
   assert.equal(result.gate.deployPass, false);
   assert.match(result.gate.actionableIssueCodes[0], /^Command_failed:/);
   const browserCheck = result.checks.find((check) => check.name === "browser-runtime");
@@ -428,6 +442,7 @@ test("runtime self-check loop records skipped periodic browser budget", async ()
     ["api-thread", false, "skip_flag"],
     ["browser-runtime", false, "browser_mode_off"],
     ["browser-vite-preview", false, "browser_mode_off"],
+    ["browser-vite-app-preview", false, "browser_mode_off"],
     ["client-events", false, "skip_flag"],
   ]);
 });

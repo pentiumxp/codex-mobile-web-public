@@ -948,7 +948,67 @@ var classicCompatibility = {
 	startupGlobalContracts,
 	classicGlobalExports
 };
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-B3vtybp5.js"), []);
+function classicScriptAssets() {
+	return entryGroups.flatMap((group) => Array.isArray(group.assets) ? group.assets : []).filter((asset) => String(asset || "").startsWith("/"));
+}
+function isAppPreviewPage() {
+	if (globalThis.document == null) return false;
+	const documentElement = globalThis.document.documentElement;
+	if (documentElement && documentElement.dataset && documentElement.dataset.codexViteAppPreview === "true") return true;
+	return Boolean(globalThis.document.querySelector("meta[name='codex-vite-app-preview']"));
+}
+function loadClassicScript(assetPath) {
+	return new Promise((resolve, reject) => {
+		const document = globalThis.document;
+		if (!document || !document.createElement) {
+			reject(/* @__PURE__ */ new Error("codex_mobile_vite_app_preview_document_missing"));
+			return;
+		}
+		const script = document.createElement("script");
+		script.src = assetPath;
+		script.async = false;
+		script.dataset.codexViteAppPreviewClassicScript = "true";
+		script.onload = () => resolve(assetPath);
+		script.onerror = () => reject(/* @__PURE__ */ new Error(`codex_mobile_vite_app_preview_script_failed:${assetPath}`));
+		(document.head || document.documentElement).appendChild(script);
+	});
+}
+async function startCodexMobileViteAppPreview() {
+	const assets = classicScriptAssets();
+	const status = {
+		ok: false,
+		mode: "vite-app-preview",
+		owner: "vite-shell-entry",
+		scriptCount: assets.length,
+		loaded: [],
+		failed: [],
+		startedAt: Date.now(),
+		completedAt: 0
+	};
+	globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW__ = status;
+	try {
+		for (const asset of assets) {
+			await loadClassicScript(asset);
+			status.loaded.push(asset);
+		}
+		status.ok = true;
+	} catch (error) {
+		status.ok = false;
+		status.failed.push(String(error && error.message || error || "script_failed"));
+		throw error;
+	} finally {
+		status.completedAt = Date.now();
+	}
+	return {
+		ok: status.ok,
+		mode: status.mode,
+		owner: status.owner,
+		scriptCount: status.scriptCount,
+		loadedCount: status.loaded.length,
+		failedCount: status.failed.length
+	};
+}
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-D94pPqgm.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
@@ -956,11 +1016,13 @@ var entryDynamicImportGraph = {
 	entryGroupSources: codexMobileViteEntryGroupIds.map((groupId) => `virtual:codex-mobile-shell-entry-group/${groupId}`),
 	expectedImportCount: 1 + codexMobileViteEntryGroupIds.length
 };
+var appPreviewPromise = isAppPreviewPage() ? startCodexMobileViteAppPreview() : Promise.resolve(null);
 globalThis.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ = "entry-topology-v1";
 globalThis.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ = entryTopology;
 globalThis.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ = classicCompatibility;
 globalThis.__CODEX_MOBILE_VITE_DEFERRED_ENTRY_TOPOLOGY__ = deferredEntryTopologyPromise;
 globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__ = "vite-shell-entry";
 globalThis.__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__ = entryDynamicImportGraph;
+globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_PROMISE__ = appPreviewPromise;
 //#endregion
 export { shell_asset_manifest_default as t };

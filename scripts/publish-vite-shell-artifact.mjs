@@ -6,8 +6,11 @@ export const VITE_SHELL_PUBLIC_ARTIFACT_STAGE = "vite-shell-preview-html-v1";
 export const VITE_SHELL_PUBLIC_ARTIFACT_ROOT = "public/vite-shell";
 export const VITE_SHELL_PUBLIC_READBACK_FILE = "vite-shell-readback.json";
 export const VITE_SHELL_PUBLIC_PREVIEW_FILE = "preview.html";
+export const VITE_SHELL_PUBLIC_APP_PREVIEW_FILE = "app-preview.html";
 export const CLASSIC_SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
 export const CLASSIC_SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
+export const VITE_APP_PREVIEW_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_VITE_APP_PREVIEW:BEGIN -->";
+export const VITE_APP_PREVIEW_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_VITE_APP_PREVIEW:END -->";
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -203,6 +206,11 @@ export function buildViteShellPublicReadback(options = {}) {
     fileName: VITE_SHELL_PUBLIC_PREVIEW_FILE,
     entryScript: viteBuild.viteEntry ? publicArtifactUrl(viteBuild.viteEntry.fileName) : "",
   };
+  const appPreview = {
+    fileName: VITE_SHELL_PUBLIC_APP_PREVIEW_FILE,
+    entryScript: preview.entryScript,
+    sourceShell: "public/index.html",
+  };
   const entryGroupChunks = (viteBuild.viteEntryGroupChunks || []).map((chunk) => ({
     groupId: String(chunk && chunk.groupId || ""),
     phase: String(chunk && chunk.phase || ""),
@@ -258,6 +266,9 @@ export function buildViteShellPublicReadback(options = {}) {
   const previewHtml = renderViteShellPreviewHtml(readbackForPreview);
   const previewRecord = bufferRecord(VITE_SHELL_PUBLIC_PREVIEW_FILE, previewHtml);
   if (previewRecord) publishedFiles.push(previewRecord);
+  const appPreviewHtml = renderViteShellAppPreviewHtml(readbackForPreview, root);
+  const appPreviewRecord = bufferRecord(VITE_SHELL_PUBLIC_APP_PREVIEW_FILE, appPreviewHtml);
+  if (appPreviewRecord) publishedFiles.push(appPreviewRecord);
 
   return {
     schemaVersion: 1,
@@ -279,6 +290,7 @@ export function buildViteShellPublicReadback(options = {}) {
     })).filter((chunk) => chunk.fileName),
     entryGroupChunks,
     preview,
+    appPreview,
     startupCriticalAssets: startupAssets,
     startupGlobalContracts: startupContracts,
     classicShellScriptBlock,
@@ -358,6 +370,38 @@ export function renderViteShellPreviewHtml(readback = {}) {
   ].join("\n");
 }
 
+export function renderViteShellAppPreviewHtml(readback = {}, root = process.cwd()) {
+  const entryFileName = normalizeRelativeFileName(readback.entry && readback.entry.fileName);
+  const entryScript = readback.preview && readback.preview.entryScript
+    ? String(readback.preview.entryScript)
+    : publicArtifactUrl(entryFileName);
+  const indexPath = path.join(path.resolve(root), "public", "index.html");
+  let source = fs.readFileSync(indexPath, "utf8");
+  source = source.replace(
+    /<html\b([^>]*)>/i,
+    (match, attrs) => `<html${attrs} data-codex-vite-app-preview="true">`
+  );
+  source = source.replace(
+    /<meta name="robots" content="noindex,nofollow">\n?/,
+    ""
+  );
+  source = source.replace(
+    /<head>/i,
+    `<head>\n  <meta name="robots" content="noindex,nofollow">\n  <meta name="codex-vite-app-preview" content="vite-shell-app-preview-v1">`
+  );
+  const moduleBlock = [
+    VITE_APP_PREVIEW_SCRIPT_BLOCK_START,
+    `  <script type="module" src="${escapeHtml(entryScript)}" data-codex-vite-app-preview-entry="true"></script>`,
+    VITE_APP_PREVIEW_SCRIPT_BLOCK_END,
+  ].join("\n");
+  const start = source.indexOf(CLASSIC_SHELL_SCRIPT_BLOCK_START);
+  const end = source.indexOf(CLASSIC_SHELL_SCRIPT_BLOCK_END);
+  if (start < 0 || end < start) {
+    throw new Error("codex_mobile_vite_app_preview_classic_block_missing");
+  }
+  return `${source.slice(0, start)}${moduleBlock}${source.slice(end + CLASSIC_SHELL_SCRIPT_BLOCK_END.length)}`;
+}
+
 function copyArtifactFile(sourceRoot, targetRoot, fileName) {
   const relativePath = normalizeRelativeFileName(fileName);
   if (!relativePath) throw new Error("invalid_artifact_file_name");
@@ -380,11 +424,16 @@ export function publishViteShellPublicArtifact(options = {}) {
   fs.mkdirSync(publicArtifactRoot, { recursive: true });
   for (const file of readback.publishedFiles) {
     if (file.fileName === VITE_SHELL_PUBLIC_PREVIEW_FILE) continue;
+    if (file.fileName === VITE_SHELL_PUBLIC_APP_PREVIEW_FILE) continue;
     copyArtifactFile(buildRoot, publicArtifactRoot, file.fileName);
   }
   fs.writeFileSync(
     path.join(publicArtifactRoot, VITE_SHELL_PUBLIC_PREVIEW_FILE),
     renderViteShellPreviewHtml(readback)
+  );
+  fs.writeFileSync(
+    path.join(publicArtifactRoot, VITE_SHELL_PUBLIC_APP_PREVIEW_FILE),
+    renderViteShellAppPreviewHtml(readback, root)
   );
   fs.writeFileSync(
     path.join(publicArtifactRoot, VITE_SHELL_PUBLIC_READBACK_FILE),

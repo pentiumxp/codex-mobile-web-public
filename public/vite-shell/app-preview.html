@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="zh-CN" data-codex-vite-app-preview="true">
+<head>
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="codex-vite-app-preview" content="vite-shell-app-preview-v1">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <script>
+    (function () {
+      try {
+        var params = new URL(window.location.href, window.location.origin).searchParams;
+        if (params.get("embed") === "hermes") document.documentElement.classList.add("embed-hermes");
+      } catch (_) {}
+    }());
+  </script>
+  <script>
+    (function () {
+      function preventZoom(event) {
+        if (event && event.cancelable) event.preventDefault();
+      }
+      document.addEventListener("gesturestart", preventZoom, { passive: false });
+      document.addEventListener("gesturechange", preventZoom, { passive: false });
+      document.addEventListener("gestureend", preventZoom, { passive: false });
+      document.addEventListener("dblclick", preventZoom, { passive: false });
+      var lastTouchEndAt = 0;
+      document.addEventListener("touchend", function (event) {
+        var now = Date.now();
+        if (now - lastTouchEndAt < 320 && event && event.cancelable) {
+          event.preventDefault();
+        }
+        lastTouchEndAt = now;
+      }, { passive: false });
+    }());
+  </script>
+  <script>
+    (function () {
+      var allowedThemes = { system: true, dark: true, light: true };
+      var allowedFontSizes = { small: true, default: true, large: true, xlarge: true, xxlarge: true };
+      function readPluginAppearance() {
+        var appearance = {};
+        try {
+          var params = new URL(window.location.href, window.location.origin).searchParams;
+          if (params.get("embed") !== "hermes") return appearance;
+          var theme = String(params.get("pluginTheme") || params.get("theme") || "").trim().toLowerCase();
+          var fontSize = String(params.get("pluginFontSize") || params.get("fontSize") || "").trim().toLowerCase();
+          if (allowedThemes[theme]) appearance.theme = theme;
+          if (allowedFontSizes[fontSize]) appearance.fontSize = fontSize;
+        } catch (_) {}
+        return appearance;
+      }
+      function readTheme() {
+        var pluginAppearance = readPluginAppearance();
+        if (pluginAppearance.theme) return pluginAppearance.theme;
+        try {
+          var value = localStorage.getItem("codexMobileTheme") || "system";
+          return allowedThemes[value] ? value : "system";
+        } catch (_) {
+          return "system";
+        }
+      }
+      function readFontSize() {
+        try {
+          var value = localStorage.getItem("codexMobileFontSize") || "default";
+          if (allowedFontSizes[value]) return value;
+        } catch (_) {
+        }
+        var pluginAppearance = readPluginAppearance();
+        if (pluginAppearance.fontSize) return pluginAppearance.fontSize;
+        return "default";
+      }
+      function effectiveTheme(theme) {
+        if (theme === "dark" || theme === "light") return theme;
+        return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      }
+      function appleStatusBarStyle(theme) {
+        return effectiveTheme(theme) === "light" ? "default" : "black";
+      }
+      function themeColor(theme) {
+        return effectiveTheme(theme) === "light" ? "#f8f6ee" : "#111315";
+      }
+      function writeMeta(name, content) {
+        document.write('<meta name="' + name + '" content="' + content + '">');
+      }
+      function applyTheme(theme) {
+        var safeTheme = allowedThemes[theme] ? theme : "system";
+        document.documentElement.setAttribute("data-theme", safeTheme);
+        var colorMeta = document.querySelector('meta[name="theme-color"]');
+        if (colorMeta) colorMeta.setAttribute("content", themeColor(safeTheme));
+        var statusMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+        if (statusMeta) statusMeta.setAttribute("content", appleStatusBarStyle(safeTheme));
+      }
+      function applyFontSize(fontSize) {
+        var safeFontSize = allowedFontSizes[fontSize] ? fontSize : "default";
+        document.documentElement.setAttribute("data-font-size", safeFontSize);
+      }
+      var initialTheme = readTheme();
+      var initialFontSize = readFontSize();
+      document.documentElement.setAttribute("data-theme", initialTheme);
+      document.documentElement.setAttribute("data-font-size", initialFontSize);
+      writeMeta("theme-color", themeColor(initialTheme));
+      writeMeta("apple-mobile-web-app-status-bar-style", appleStatusBarStyle(initialTheme));
+      window.codexMobileTheme = {
+        read: readTheme,
+        apply: applyTheme,
+        readFontSize: readFontSize,
+        applyFontSize: applyFontSize,
+        readPluginAppearance: readPluginAppearance
+      };
+    }());
+  </script>
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Codex Mobile">
+  <title>Codex Mobile</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <style>
+    #bootRecovery[hidden] { display: none !important; }
+    #bootRecovery {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      box-sizing: border-box;
+      display: grid;
+      place-items: center;
+      padding: max(20px, env(safe-area-inset-top, 0px)) 20px max(24px, env(safe-area-inset-bottom, 0px));
+      color: #e8ecef;
+      background: #111315;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    }
+    #bootRecoveryPanel {
+      width: min(420px, 100%);
+      box-sizing: border-box;
+      padding: 18px;
+      border: 1px solid rgba(232, 236, 239, 0.18);
+      border-radius: 12px;
+      background: #181b1f;
+      box-shadow: 0 18px 52px rgba(0, 0, 0, 0.36);
+    }
+    #bootRecoveryTitle {
+      margin: 0 0 8px;
+      font-size: 18px;
+      line-height: 1.25;
+      font-weight: 650;
+      letter-spacing: 0;
+    }
+    #bootRecoveryText {
+      margin: 0 0 14px;
+      color: rgba(232, 236, 239, 0.76);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    #bootRecoveryActions {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    #bootRecoveryActions button {
+      min-height: 44px;
+      border: 1px solid rgba(232, 236, 239, 0.18);
+      border-radius: 9px;
+      padding: 0 14px;
+      color: #f7f8f8;
+      background: #2a2f35;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 650;
+    }
+    #bootRecoveryActions button.primary {
+      color: #101316;
+      border-color: transparent;
+      background: #f3f5f6;
+    }
+    #bootRecoveryStatus {
+      min-height: 18px;
+      margin-top: 12px;
+      color: rgba(232, 236, 239, 0.62);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    @media (prefers-color-scheme: light) {
+      #bootRecovery {
+        color: #1d2329;
+        background: #f8f6ee;
+      }
+      #bootRecoveryPanel {
+        border-color: rgba(29, 35, 41, 0.12);
+        background: #fffdf6;
+        box-shadow: 0 18px 48px rgba(29, 35, 41, 0.12);
+      }
+      #bootRecoveryText {
+        color: rgba(29, 35, 41, 0.68);
+      }
+      #bootRecoveryActions button {
+        color: #20262c;
+        border-color: rgba(29, 35, 41, 0.13);
+        background: #f1eee4;
+      }
+      #bootRecoveryActions button.primary {
+        color: #f7f8f8;
+        background: #20262c;
+      }
+      #bootRecoveryStatus {
+        color: rgba(29, 35, 41, 0.56);
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/styles.css">
+  <script>
+    (function () {
+      var bootReady = false;
+      var showTimer = 0;
+      var recoveryReason = "";
+      function $(id) { return document.getElementById(id); }
+      function setStatus(text) {
+        var el = $("bootRecoveryStatus");
+        if (el) el.textContent = text || "";
+      }
+      function cacheBustUrl() {
+        var url = new URL(window.location.href, window.location.origin);
+        url.searchParams.set("shellReload", String(Date.now()));
+        return url.href;
+      }
+      function anyMainSurfaceVisible() {
+        return ["app", "login", "pluginStartupLoading"].some(function (id) {
+          var el = $(id);
+          return el && !el.classList.contains("hidden") && !el.hidden;
+        });
+      }
+      function showRecovery(reason) {
+        if (bootReady || anyMainSurfaceVisible()) return;
+        recoveryReason = reason || recoveryReason || "startup-timeout";
+        var recovery = $("bootRecovery");
+        if (!recovery) return;
+        recovery.hidden = false;
+        recovery.setAttribute("data-reason", recoveryReason);
+        setStatus(recoveryReason === "script-error"
+          ? "页面脚本启动失败。可以先清理 PWA 缓存并重新加载。"
+          : "页面启动时间过长。可以先清理 PWA 缓存并重新加载。");
+      }
+      function hideRecovery() {
+        var recovery = $("bootRecovery");
+        if (recovery) recovery.hidden = true;
+      }
+      async function clearShellState() {
+        if ("caches" in window) {
+          var keys = await window.caches.keys();
+          await Promise.all(keys
+            .filter(function (key) { return String(key || "").indexOf("codex-mobile-shell-") === 0; })
+            .map(function (key) { return window.caches.delete(key); }));
+        }
+        if ("serviceWorker" in navigator) {
+          var registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map(function (registration) {
+            return registration.unregister().catch(function () { return false; });
+          }));
+        }
+      }
+      async function recover() {
+        setStatus("正在清理 PWA 缓存并重新加载...");
+        try {
+          await clearShellState();
+        } catch (err) {
+          setStatus("缓存清理未完全成功，仍会尝试重新加载。");
+        }
+        window.location.replace(cacheBustUrl());
+      }
+      function reloadOnly() {
+        setStatus("正在重新加载...");
+        window.location.replace(cacheBustUrl());
+      }
+      function installRecoveryButtons() {
+        var recoverButton = $("bootRecoveryRecover");
+        var reloadButton = $("bootRecoveryReload");
+        if (recoverButton) recoverButton.addEventListener("click", function () {
+          recoverButton.disabled = true;
+          if (reloadButton) reloadButton.disabled = true;
+          recover();
+        });
+        if (reloadButton) reloadButton.addEventListener("click", function () {
+          reloadButton.disabled = true;
+          reloadOnly();
+        });
+      }
+      window.codexMobileBoot = {
+        ready: function () {
+          bootReady = true;
+          if (showTimer) clearTimeout(showTimer);
+          hideRecovery();
+        },
+        fail: function (reason) {
+          showRecovery(reason || "script-error");
+        },
+        recover: recover,
+        reloadOnly: reloadOnly
+      };
+      window.addEventListener("error", function () {
+        window.setTimeout(function () { showRecovery("script-error"); }, 0);
+      }, true);
+      window.addEventListener("unhandledrejection", function () {
+        window.setTimeout(function () { showRecovery("script-error"); }, 0);
+      });
+      document.addEventListener("DOMContentLoaded", function () {
+        installRecoveryButtons();
+        showTimer = window.setTimeout(function () { showRecovery("startup-timeout"); }, 4500);
+      });
+    }());
+  </script>
+</head>
+<body>
+  <div id="bootRecovery" hidden role="alert" aria-live="assertive">
+    <div id="bootRecoveryPanel">
+      <h1 id="bootRecoveryTitle">Codex Mobile 没有正常启动</h1>
+      <p id="bootRecoveryText">这通常是 PWA 缓存或页面脚本启动失败。可以清理本页缓存并重新加载，不会删除 Codex 会话或本地文件。</p>
+      <div id="bootRecoveryActions">
+        <button id="bootRecoveryRecover" class="primary" type="button">清理缓存并重载</button>
+        <button id="bootRecoveryReload" type="button">只重新加载</button>
+      </div>
+      <div id="bootRecoveryStatus"></div>
+    </div>
+  </div>
+
+  <div id="login" class="login hidden">
+    <form id="loginForm" class="login-panel">
+      <div class="brand">Codex</div>
+      <input id="loginKey" type="password" autocomplete="current-password" placeholder="Access key">
+      <button type="submit">Open</button>
+      <div id="loginError" class="error-text"></div>
+    </form>
+  </div>
+
+  <div id="pluginStartupLoading" class="plugin-startup-loading hidden" role="status" aria-live="polite">
+    <div class="plugin-startup-panel">
+      <div class="plugin-startup-spinner" aria-hidden="true"></div>
+      <div class="plugin-startup-title" data-plugin-startup-title>正在加载 Codex...</div>
+      <div class="plugin-startup-subtitle">请稍候</div>
+    </div>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="side-header">
+        <div class="app-title-block">
+          <div class="app-name">Codex</div>
+          <div id="connectionState" class="connection">Starting</div>
+          <div class="version-actions">
+            <button id="appUpdateStatus" class="update-status hidden" type="button" aria-live="polite" title="Check for updates">v0.1.0</button>
+            <button id="publicPrStatus" class="public-pr-status hidden" type="button" aria-live="polite" title="Check public pull requests">Public PR</button>
+            <button id="hardRefreshButton" class="hard-refresh-button" type="button" title="Hard refresh page shell" aria-label="Hard refresh page shell">硬刷新</button>
+            <button id="sharedRestartButton" class="restart-button" type="button" title="Restart Mobile Web" aria-label="Restart Mobile Web">Restart</button>
+          </div>
+        </div>
+        <div class="side-header-actions">
+          <button id="themeSettingsToggle" class="icon-button" type="button" title="设置" aria-label="设置" aria-expanded="false">⚙</button>
+          <button id="closeMenu" class="icon-button mobile-only" type="button" title="Close menu">×</button>
+        </div>
+      </div>
+
+      <div id="themeSettingsPanel" class="theme-settings hidden" aria-label="设置">
+        <div class="settings-section">
+          <div class="theme-settings-title">主题</div>
+          <div class="settings-options" role="group" aria-label="Theme">
+            <button type="button" data-theme-choice="system">跟随系统</button>
+            <button type="button" data-theme-choice="dark">深色</button>
+            <button type="button" data-theme-choice="light">浅色</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="theme-settings-title">字体大小</div>
+          <div class="settings-options font-size-options" role="group" aria-label="字体大小">
+            <button type="button" data-font-size-choice="small">小字</button>
+            <button type="button" data-font-size-choice="default">标准</button>
+            <button type="button" data-font-size-choice="large">大字</button>
+            <button type="button" data-font-size-choice="xlarge">特大</button>
+            <button type="button" data-font-size-choice="xxlarge">超大</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="theme-settings-title">显示</div>
+          <div class="settings-options thread-display-options" role="group" aria-label="线程显示">
+            <button type="button" data-thread-display-choice="single">单线程</button>
+            <button type="button" data-thread-display-choice="tile">平铺</button>
+          </div>
+          <div id="threadDisplaySettingsStatus" class="settings-status" aria-live="polite"></div>
+        </div>
+        <div class="settings-section">
+          <div class="theme-settings-title">Codex Profile</div>
+          <div id="codexProfileSettings" class="codex-profile-settings" aria-live="polite"></div>
+        </div>
+        <div class="settings-section">
+          <div class="theme-settings-title">跨工作区委派</div>
+          <div id="workspaceDelegationSettings" class="workspace-delegation-settings" aria-live="polite"></div>
+        </div>
+        <div class="theme-settings-note">iOS PWA 顶部栏需重开后生效</div>
+      </div>
+
+      <button id="pushNotifications" class="push-button hidden" type="button" disabled>Notifications unavailable</button>
+
+      <label class="field-label" for="workspaceSelect">Workspace</label>
+      <div class="workspace-select-row">
+        <div class="workspace-select-wrap">
+          <button id="workspaceSelect" class="sidebar-workspace-select" type="button" aria-haspopup="listbox" aria-expanded="false">
+            All workspaces
+          </button>
+          <div id="workspaceSelectMenu" class="workspace-select-menu" role="listbox" aria-label="Workspace 列表" hidden></div>
+        </div>
+        <button id="newThreadButton" class="sidebar-new-thread-button" type="button" title="新建对话" aria-label="新建对话">新建对话</button>
+      </div>
+      <div id="workspacePath" class="workspace-path" hidden></div>
+      <div id="workspaceTokenUsage" class="workspace-token-usage" hidden></div>
+
+      <div class="thread-tools">
+        <input id="threadSearch" class="search" type="search" placeholder="Search threads">
+        <button id="refreshThreads" class="icon-button" type="button" title="Refresh">↻</button>
+      </div>
+
+      <div id="threadList" class="thread-list"></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button id="openMenu" class="icon-button mobile-only" type="button" title="Menu">☰</button>
+        <div class="thread-title-wrap">
+          <div id="threadTitle" class="thread-title">Select a thread</div>
+          <div id="threadMeta" class="thread-meta"></div>
+        </div>
+        <div id="turnTimer" class="turn-timer" aria-live="polite" aria-hidden="true">&#26412;&#36718; 00:00:00</div>
+        <button id="interruptTurn" class="icon-button" type="button" title="Interrupt" disabled>■</button>
+      </header>
+
+      <section id="subagentPanel" class="subagent-panel hidden" aria-live="polite"></section>
+
+      <button id="pageRefreshPrompt" class="page-refresh-prompt hidden" type="button" aria-live="polite">
+        页面有新版本，点击刷新
+      </button>
+
+      <section id="conversation" class="conversation">
+        <div class="empty-state">Select a thread from the menu.</div>
+      </section>
+
+      <section id="liveOperationDock" class="live-operation-dock" aria-live="polite" hidden></section>
+
+      <button id="scrollToBottom" class="scroll-bottom-button hidden" type="button" title="回到底部" aria-label="回到底部" aria-hidden="true">&#8595;</button>
+
+      <button id="scrollToTurnReply" class="scroll-bottom-button scroll-turn-reply-button hidden" type="button" title="&#22238;&#21040;&#26412;&#36718;&#24635;&#32467;" aria-label="&#22238;&#21040;&#26412;&#36718;&#24635;&#32467;" aria-hidden="true">&#8593;</button>
+
+      <form id="composer" class="composer">
+        <div class="attachment-picker-cell">
+          <button id="attachFiles" class="icon-button composer-icon file-picker" type="button" title="Attach files" aria-label="Attach files" aria-disabled="true" disabled>
+            <span aria-hidden="true">+</span>
+          </button>
+          <input id="fileInput" class="file-input" type="file" multiple disabled aria-label="Attach files" tabindex="-1">
+        </div>
+        <div class="composer-body">
+          <div class="composer-controls">
+            <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast tag off for this thread" aria-label="Fast tag off for this thread">
+              <svg class="composer-fast-icon" aria-hidden="true" viewBox="0 0 16 16" focusable="false">
+                <path d="M9.1 1.25 3.75 8.2h3.1l-.95 6.55 5.35-6.95H8.15z"></path>
+              </svg>
+            </button>
+            <button id="composerModelControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="composer-chip-label">模型</span>
+              <span class="composer-chip-value">--</span>
+            </button>
+            <button id="composerEffortControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="composer-chip-label">推理强度</span>
+              <span class="composer-chip-value">--</span>
+            </button>
+            <button id="composerPermissionControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="composer-chip-label">权限</span>
+              <span class="composer-chip-value">--</span>
+            </button>
+            <button id="quotaUsage" class="composer-control-card quota-usage unknown" type="button" title="Quota remaining" aria-live="polite">-- | --</button>
+          </div>
+          <div id="attachmentList" class="attachment-list hidden"></div>
+          <div id="messageInput" class="message-input" contenteditable="false" role="textbox" aria-multiline="true" inputmode="text" enterkeyhint="send" data-placeholder="Message Codex"></div>
+        </div>
+        <button id="sendMessage" type="submit" disabled>Send</button>
+      </form>
+    </main>
+  </div>
+
+  <div id="composerRuntimeMenu" class="composer-runtime-menu" role="listbox" hidden></div>
+  <div id="quotaDetailPanel" class="quota-detail-panel" hidden></div>
+  <div id="composerIntentMenu" class="composer-intent-menu" role="listbox" aria-label="Composer @ actions" hidden></div>
+
+  <div id="threadActionSheet" class="thread-action-sheet hidden" role="dialog" aria-labelledby="threadActionTitle">
+    <div class="thread-action-panel">
+      <div id="threadActionTitle" class="thread-action-title">Session</div>
+      <button class="thread-action-item" type="button" data-thread-action="rename">重命名</button>
+      <button class="thread-action-item" type="button" data-thread-action="continue">压缩续接</button>
+      <button class="thread-action-item" type="button" data-thread-action="copy-id">复制 Session ID</button>
+      <button class="thread-action-item thread-action-danger" type="button" data-thread-action="archive">归档</button>
+      <button class="thread-action-cancel" type="button" data-thread-action="cancel">取消</button>
+    </div>
+  </div>
+
+  <div id="renameDialog" class="rename-dialog hidden" role="dialog" aria-labelledby="renameTitle">
+    <form id="renameForm" class="rename-panel">
+      <div id="renameTitle" class="rename-title">重命名会话</div>
+      <input id="renameInput" class="rename-input" type="text" maxlength="120" autocomplete="off">
+      <div class="rename-actions">
+        <button id="renameCancel" class="rename-cancel" type="button">取消</button>
+        <button id="renameSubmit" class="rename-submit" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="createWorkspaceDialog" class="rename-dialog hidden" role="dialog" aria-labelledby="createWorkspaceTitle">
+    <form id="createWorkspaceForm" class="rename-panel">
+      <div id="createWorkspaceTitle" class="rename-title">Create Workspace</div>
+      <div id="createWorkspaceRoot" class="create-workspace-root"></div>
+      <select id="createWorkspaceRootSelect" class="create-workspace-root-select" hidden></select>
+      <input id="createWorkspaceInput" class="rename-input" type="text" maxlength="80" autocomplete="off" placeholder="Folder name">
+      <div id="createWorkspaceError" class="create-workspace-error" role="alert" hidden></div>
+      <div class="rename-actions">
+        <button id="createWorkspaceCancel" class="rename-cancel" type="button">取消</button>
+        <button id="createWorkspaceSubmit" class="rename-submit" type="submit">创建</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="continuationDialog" class="continuation-dialog hidden" role="dialog" aria-labelledby="continuationTitle">
+    <div class="continuation-panel">
+      <div id="continuationTitle" class="continuation-title">压缩续接</div>
+      <div id="continuationSummary" class="continuation-summary">会创建一个同工作区的新线程。</div>
+      <div id="continuationStatus" class="continuation-status hidden" aria-live="polite"></div>
+      <div class="continuation-actions">
+        <button id="continuationCancel" class="continuation-cancel" type="button">取消</button>
+        <button id="continuationConfirm" class="continuation-confirm" type="button">继续</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="workspaceStatsDialog" class="workspace-stats-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="workspaceStatsTitle">
+    <div class="workspace-stats-page">
+      <div class="workspace-stats-head">
+        <div>
+          <div id="workspaceStatsTitle" class="workspace-stats-title">Token 统计</div>
+          <div id="workspaceStatsSubtitle" class="workspace-stats-subtitle"></div>
+        </div>
+        <button id="workspaceStatsClose" class="workspace-stats-close" type="button" aria-label="关闭统计">×</button>
+      </div>
+      <div id="workspaceStatsContent" class="workspace-stats-content"></div>
+    </div>
+  </div>
+
+  <div id="updateDialog" class="update-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="updateDialogTitle">
+    <div class="update-panel">
+      <div class="update-panel-head">
+        <div>
+          <div id="updateDialogTitle" class="update-panel-title">Updates</div>
+          <div id="updateDialogSubtitle" class="update-panel-subtitle">Current checkout and Public release</div>
+        </div>
+        <button id="updateDialogClose" class="update-panel-close" type="button" aria-label="Close updates">x</button>
+      </div>
+      <div id="updatePanelContent" class="update-panel-content"></div>
+    </div>
+  </div>
+
+  <div id="goalDialog" class="goal-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="goalDialogTitle">
+    <form id="goalForm" class="goal-panel">
+      <div class="goal-panel-head">
+        <div>
+          <div id="goalDialogTitle" class="goal-panel-title">Goal</div>
+          <div id="goalDialogSubtitle" class="goal-panel-subtitle"></div>
+        </div>
+        <button id="goalDialogClose" class="goal-panel-close" type="button" aria-label="Close goal dialog">x</button>
+      </div>
+      <label class="goal-field">
+        <span>Objective</span>
+        <textarea id="goalObjectiveInput" rows="4" maxlength="4000" autocomplete="off"></textarea>
+      </label>
+      <label class="goal-field">
+        <span>Token budget</span>
+        <input id="goalTokenBudgetInput" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="Optional">
+      </label>
+      <div id="goalDialogStatus" class="goal-panel-status hidden"></div>
+      <div id="goalStateActions" class="goal-state-actions hidden">
+        <button id="goalContinueButton" class="goal-action goal-action-primary" type="button">Continue</button>
+        <button id="goalPauseButton" class="goal-action" type="button">Pause</button>
+        <button id="goalClearButton" class="goal-action goal-action-danger" type="button">Cancel goal</button>
+      </div>
+      <div class="goal-actions">
+        <button id="goalCancelButton" class="goal-cancel" type="button">Cancel</button>
+        <button id="goalSubmitButton" class="goal-submit" type="submit">Send</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="composerIntentDialog" class="goal-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="composerIntentDialogTitle">
+    <form id="composerIntentForm" class="goal-panel composer-intent-panel">
+      <div class="goal-panel-head">
+        <div>
+          <div id="composerIntentDialogTitle" class="goal-panel-title">Composer action</div>
+          <div id="composerIntentDialogSubtitle" class="goal-panel-subtitle"></div>
+        </div>
+        <button id="composerIntentDialogClose" class="goal-panel-close" type="button" aria-label="Close action dialog">x</button>
+      </div>
+      <label class="goal-field">
+        <span id="composerIntentBodyLabel">Content</span>
+        <textarea id="composerIntentBodyInput" rows="8" maxlength="12000" autocomplete="off"></textarea>
+      </label>
+      <div id="composerIntentDialogStatus" class="goal-panel-status hidden"></div>
+      <div class="goal-actions">
+        <button id="composerIntentCancelButton" class="goal-cancel" type="button">Cancel</button>
+        <button id="composerIntentSaveButton" class="goal-cancel" type="button">Save draft</button>
+        <button id="composerIntentSubmitButton" class="goal-submit" type="submit">Send</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="restartConfirmDialog" class="restart-confirm-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="restartConfirmTitle">
+    <div class="restart-confirm-panel">
+      <div class="restart-confirm-head">
+        <div>
+          <div id="restartConfirmTitle" class="restart-confirm-title">Restart Mobile Web</div>
+          <div id="restartConfirmSubtitle" class="restart-confirm-subtitle">Checking active sessions before restart</div>
+        </div>
+      </div>
+      <div id="restartConfirmContent" class="restart-confirm-content"></div>
+      <div class="restart-confirm-actions">
+        <button id="restartConfirmCancel" class="restart-confirm-cancel" type="button">Cancel</button>
+        <button id="restartConfirmProceed" class="restart-confirm-proceed" type="button">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="profileSwitchConfirmDialog" class="profile-switch-confirm-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="profileSwitchConfirmTitle">
+    <div class="profile-switch-confirm-panel">
+      <div class="profile-switch-confirm-head">
+        <div id="profileSwitchConfirmTitle" class="profile-switch-confirm-title">切换 Codex Profile</div>
+        <div id="profileSwitchConfirmSubtitle" class="profile-switch-confirm-subtitle"></div>
+      </div>
+      <div class="profile-switch-confirm-content">
+        切换会让所有 Codex Mobile workspace 使用目标账号，并触发一次 Mobile Web 重启。
+      </div>
+      <div class="profile-switch-confirm-actions">
+        <button id="profileSwitchConfirmCancel" class="profile-switch-confirm-cancel" type="button">取消</button>
+        <button id="profileSwitchConfirmProceed" class="profile-switch-confirm-proceed" type="button">切换</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="threadArchiveConfirmDialog" class="thread-archive-confirm-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="threadArchiveConfirmTitle">
+    <div class="thread-archive-confirm-panel">
+      <div class="thread-archive-confirm-head">
+        <div id="threadArchiveConfirmTitle" class="thread-archive-confirm-title">归档会话</div>
+        <div id="threadArchiveConfirmSubtitle" class="thread-archive-confirm-subtitle"></div>
+      </div>
+      <div class="thread-archive-confirm-content">
+        归档后这个会话会从 Codex Mobile 列表中隐藏。
+      </div>
+      <div class="thread-archive-confirm-actions">
+        <button id="threadArchiveConfirmCancel" class="thread-archive-confirm-cancel" type="button">取消</button>
+        <button id="threadArchiveConfirmProceed" class="thread-archive-confirm-proceed" type="button">归档</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="appNativeDialog" class="app-native-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="appNativeDialogTitle" aria-describedby="appNativeDialogMessage">
+    <div class="app-native-dialog-panel">
+      <div class="app-native-dialog-head">
+        <div id="appNativeDialogTitle" class="app-native-dialog-title">提示</div>
+      </div>
+      <div class="app-native-dialog-content">
+        <div id="appNativeDialogMessage" class="app-native-dialog-message"></div>
+        <textarea id="appNativeDialogInput" class="app-native-dialog-input hidden" rows="4"></textarea>
+      </div>
+      <div id="appNativeDialogActions" class="app-native-dialog-actions">
+        <button id="appNativeDialogCancel" class="app-native-dialog-cancel" type="button">取消</button>
+        <button id="appNativeDialogProceed" class="app-native-dialog-proceed" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="filePreviewDialog" class="file-preview-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="filePreviewTitle">
+    <div class="file-preview-panel">
+      <div class="file-preview-head">
+        <div class="file-preview-title-wrap">
+          <div id="filePreviewTitle" class="file-preview-title">文件预览</div>
+          <div id="filePreviewPath" class="file-preview-path"></div>
+        </div>
+        <div class="file-preview-actions">
+          <button id="filePreviewCopyPath" class="copy-button file-preview-copy-path" type="button">复制路径</button>
+          <button id="filePreviewClose" class="icon-button" type="button" aria-label="关闭文件预览" title="关闭">×</button>
+        </div>
+      </div>
+      <div id="filePreviewMeta" class="file-preview-meta"></div>
+      <div id="filePreviewBody" class="file-preview-body">正在加载文件...</div>
+    </div>
+  </div>
+
+  <div id="imagePreviewDialog" class="image-preview-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="imagePreviewTitle">
+    <div class="image-preview-panel">
+      <div class="image-preview-head">
+        <div class="image-preview-title-wrap">
+          <div id="imagePreviewTitle" class="image-preview-title">图片预览</div>
+          <div id="imagePreviewMeta" class="image-preview-meta"></div>
+        </div>
+        <div class="image-preview-actions">
+          <button class="image-preview-tool" id="imagePreviewZoomOut" type="button" data-image-preview-action="zoom-out" aria-label="缩小图片" title="缩小">-</button>
+          <button class="image-preview-tool image-preview-tool-reset" id="imagePreviewZoomReset" type="button" data-image-preview-action="reset" aria-label="重置图片缩放" title="重置">100%</button>
+          <button class="image-preview-tool" id="imagePreviewZoomIn" type="button" data-image-preview-action="zoom-in" aria-label="放大图片" title="放大">+</button>
+          <button id="imagePreviewClose" class="icon-button" type="button" aria-label="关闭图片预览" title="关闭">×</button>
+        </div>
+      </div>
+      <div id="imagePreviewStage" class="image-preview-stage">
+        <img id="imagePreviewImage" class="image-preview-image" alt="" draggable="false">
+      </div>
+    </div>
+  </div>
+
+  <div id="mermaidPreviewDialog" class="mermaid-preview-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="mermaidPreviewTitle">
+    <div class="mermaid-preview-panel">
+      <div class="mermaid-preview-head">
+        <div>
+          <div id="mermaidPreviewTitle" class="mermaid-preview-title">Mermaid 图</div>
+          <div class="mermaid-preview-subtitle">适合手机和 iPad 的放大查看</div>
+        </div>
+        <div class="mermaid-preview-actions">
+          <button class="markdown-mermaid-tool" id="mermaidPreviewZoomOut" type="button" data-mermaid-action="zoom-out" aria-label="缩小 Mermaid 图" title="缩小">-</button>
+          <button class="markdown-mermaid-tool markdown-mermaid-tool-reset" id="mermaidPreviewZoomReset" type="button" data-mermaid-action="reset" aria-label="重置 Mermaid 图缩放" title="重置">100%</button>
+          <button class="markdown-mermaid-tool" id="mermaidPreviewZoomIn" type="button" data-mermaid-action="zoom-in" aria-label="放大 Mermaid 图" title="放大">+</button>
+          <button id="mermaidPreviewClose" class="icon-button" type="button" aria-label="关闭 Mermaid 预览" title="关闭">×</button>
+        </div>
+      </div>
+      <div id="mermaidPreviewBody" class="markdown-mermaid-viewer mermaid-preview-viewer" data-mermaid-viewer="preview">
+        <div class="markdown-mermaid-canvas" data-mermaid-canvas>
+          <div class="markdown-mermaid-loading">正在渲染 Mermaid 图...</div>
+        </div>
+      </div>
+      <details class="markdown-mermaid-source-details mermaid-preview-source">
+        <summary>查看 Mermaid 源码</summary>
+        <pre><code id="mermaidPreviewSource"></code></pre>
+      </details>
+    </div>
+  </div>
+<!-- CODEX_MOBILE_VITE_APP_PREVIEW:BEGIN -->
+  <script type="module" src="/vite-shell/assets/vite-shell-entry-DIKHd0tc.js" data-codex-vite-app-preview-entry="true"></script>
+<!-- CODEX_MOBILE_VITE_APP_PREVIEW:END -->
+
+<script>
+    (function () {
+      function ready(fn) {
+        if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn);
+        else fn();
+      }
+      ready(function () {
+        try {
+          var api = window.codexMobileTheme;
+          var toggle = document.getElementById("themeSettingsToggle");
+          var panel = document.getElementById("themeSettingsPanel");
+          if (!api || !toggle || !panel) return;
+          function selectedTheme() {
+            return api.read ? api.read() : "system";
+          }
+          function renderThemeChoice() {
+            var current = selectedTheme();
+            panel.querySelectorAll("[data-theme-choice]").forEach(function (button) {
+              var selected = button.getAttribute("data-theme-choice") === current;
+              button.classList.toggle("selected", selected);
+              button.setAttribute("aria-pressed", selected ? "true" : "false");
+            });
+          }
+          toggle.addEventListener("click", function () {
+            var shouldOpen = panel.classList.contains("hidden");
+            renderThemeChoice();
+            panel.classList.toggle("hidden", !shouldOpen);
+            toggle.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+          });
+          panel.addEventListener("click", function (event) {
+            var button = event.target.closest("[data-theme-choice]");
+            if (!button) return;
+            var value = button.getAttribute("data-theme-choice") || "system";
+            try {
+              localStorage.setItem("codexMobileTheme", value);
+            } catch (_) {}
+            api.apply(value);
+            renderThemeChoice();
+          });
+          if (window.matchMedia) {
+            var media = window.matchMedia("(prefers-color-scheme: light)");
+            var onSystemThemeChange = function () {
+              if (selectedTheme() === "system") api.apply("system");
+            };
+            if (media.addEventListener) media.addEventListener("change", onSystemThemeChange);
+            else if (media.addListener) media.addListener(onSystemThemeChange);
+          }
+          renderThemeChoice();
+        } catch (_) {
+          // Theme settings must never block the main app.
+        }
+      });
+    }());
+  </script>
+</body>
+</html>

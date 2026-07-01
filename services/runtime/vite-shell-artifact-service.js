@@ -7,11 +7,13 @@ const path = require("node:path");
 const DEFAULT_PUBLIC_ARTIFACT_ROOT = "public/vite-shell";
 const DEFAULT_READBACK_FILE = "vite-shell-readback.json";
 const DEFAULT_PREVIEW_FILE = "preview.html";
+const DEFAULT_APP_PREVIEW_FILE = "app-preview.html";
 const EXPECTED_PUBLIC_ARTIFACT_STAGE = "vite-shell-preview-html-v1";
 const EXPECTED_SOURCE_BUILD_STAGE = "vite-shell-artifact-contract-v1";
 const EXPECTED_ENTRY_GROUP_IMPORT_OWNER = "vite-shell-entry";
 const CLASSIC_SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
 const CLASSIC_SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
+const VITE_APP_PREVIEW_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_VITE_APP_PREVIEW:BEGIN -->";
 
 function sha256Hex(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
@@ -224,6 +226,8 @@ function createViteShellArtifactService(dependencies = {}) {
     || DEFAULT_READBACK_FILE;
   const previewFileName = normalizeRelativeFileName(dependencies.previewFileName || DEFAULT_PREVIEW_FILE)
     || DEFAULT_PREVIEW_FILE;
+  const appPreviewFileName = normalizeRelativeFileName(dependencies.appPreviewFileName || DEFAULT_APP_PREVIEW_FILE)
+    || DEFAULT_APP_PREVIEW_FILE;
 
   function publicArtifactUrl(fileName) {
     const relativePath = normalizeRelativeFileName(fileName);
@@ -369,6 +373,13 @@ function createViteShellArtifactService(dependencies = {}) {
     if (!preview || String(preview.entryScript || "") !== expectedEntryScript) {
       issues.push({ code: "vite_shell_preview_entry_mismatch" });
     }
+    const appPreview = readback.appPreview && typeof readback.appPreview === "object" ? readback.appPreview : null;
+    if (!appPreview || normalizeRelativeFileName(appPreview.fileName) !== appPreviewFileName) {
+      issues.push({ code: "vite_shell_app_preview_missing" });
+    }
+    if (!appPreview || String(appPreview.entryScript || "") !== expectedEntryScript) {
+      issues.push({ code: "vite_shell_app_preview_entry_mismatch" });
+    }
 
     const files = [];
     for (const file of readback.publishedFiles || []) {
@@ -391,6 +402,7 @@ function createViteShellArtifactService(dependencies = {}) {
       ...(readback.deferredChunks || []).map((chunk) => chunk && chunk.fileName),
       ...readbackEntryGroupChunks.map((chunk) => chunk && chunk.fileName),
       previewFileName,
+      appPreviewFileName,
     ].map(normalizeRelativeFileName).filter(Boolean)));
     const listedPublishedFiles = (readback.publishedFiles || [])
       .map((file) => normalizeRelativeFileName(file && file.fileName))
@@ -542,6 +554,28 @@ function createViteShellArtifactService(dependencies = {}) {
         issues.push({ code: "vite_shell_preview_startup_global_contract_missing" });
       }
     }
+    const appPreviewPath = publicArtifactPath(appPreviewFileName);
+    const appPreviewHtml = appPreviewPath ? safeReadText(appPreviewPath) : "";
+    if (!appPreviewHtml) {
+      issues.push({ code: "vite_shell_app_preview_file_missing" });
+    } else {
+      if (!appPreviewHtml.includes("data-codex-vite-app-preview=\"true\"")) {
+        issues.push({ code: "vite_shell_app_preview_marker_missing" });
+      }
+      if (!appPreviewHtml.includes("name=\"codex-vite-app-preview\"")) {
+        issues.push({ code: "vite_shell_app_preview_meta_missing" });
+      }
+      if (!appPreviewHtml.includes(VITE_APP_PREVIEW_SCRIPT_BLOCK_START)) {
+        issues.push({ code: "vite_shell_app_preview_script_block_missing" });
+      }
+      if (!appPreviewHtml.includes("type=\"module\"") || !expectedEntryScript || !appPreviewHtml.includes(`src="${expectedEntryScript}"`)) {
+        issues.push({ code: "vite_shell_app_preview_module_entry_missing" });
+      }
+      if (appPreviewHtml.includes(CLASSIC_SHELL_SCRIPT_BLOCK_START)
+        || appPreviewHtml.includes(CLASSIC_SHELL_SCRIPT_BLOCK_END)) {
+        issues.push({ code: "vite_shell_app_preview_classic_block_present" });
+      }
+    }
 
     return {
       ok: issues.length === 0,
@@ -657,6 +691,11 @@ function createViteShellArtifactService(dependencies = {}) {
         fileName: normalizeRelativeFileName(preview.fileName),
         entryScript: String(preview.entryScript || ""),
         entryGroupImportOwner: String(readback.entryGroupImportOwner || ""),
+      } : null,
+      appPreview: appPreview ? {
+        fileName: normalizeRelativeFileName(appPreview.fileName),
+        entryScript: String(appPreview.entryScript || ""),
+        sourceShell: String(appPreview.sourceShell || ""),
       } : null,
       publishedFileCount: files.length,
       publishedFiles: files.map((file) => ({

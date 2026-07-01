@@ -87,6 +87,7 @@ function usage() {
     "  --list-limit <n>           Thread-list limit. Default: 10.",
     "  --startup-only             Check listener/static shell/browser startup only; skip thread sampling.",
     "  --vite-preview-only        Check /vite-shell/preview.html Vite module artifact only.",
+    "  --vite-app-preview-only    Check /vite-shell/app-preview.html Vite-owned app startup only.",
     "  --rounds <n>               Thread switch rounds. Default: 3.",
     "  --sample-delays-ms <csv>   Delays after each switch. Default: 350,1200,2800.",
     "  --thread-list-stress-rounds <n> Thread-list open/scroll/click stress rounds. Default: 2.",
@@ -149,6 +150,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     listLimit: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_LIST_LIMIT || "10", 10, 100),
     startupOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_STARTUP_ONLY || "")),
     vitePreviewOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_PREVIEW_ONLY || "")),
+    viteAppPreviewOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VITE_APP_PREVIEW_ONLY || "")),
     rounds: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_ROUNDS || "3", 3, 20),
     sampleDelaysMs: parseDelayList(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SAMPLE_DELAYS_MS || ""),
     threadListStressRounds: readNonNegativeInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_THREAD_LIST_STRESS_ROUNDS || "2", 2, 20),
@@ -179,6 +181,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--list-limit") options.listLimit = readPositiveInt(next(), options.listLimit, 100);
     else if (arg === "--startup-only") options.startupOnly = true;
     else if (arg === "--vite-preview-only") options.vitePreviewOnly = true;
+    else if (arg === "--vite-app-preview-only") options.viteAppPreviewOnly = true;
     else if (arg === "--rounds") options.rounds = readPositiveInt(next(), options.rounds, 20);
     else if (arg === "--sample-delays-ms") options.sampleDelaysMs = parseDelayList(next(), options.sampleDelaysMs);
     else if (arg === "--thread-list-stress-rounds") options.threadListStressRounds = readNonNegativeInt(next(), options.threadListStressRounds, 20);
@@ -1146,6 +1149,137 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   };
 }
 
+function viteAppPreviewProbeExpression(input = {}) {
+  const expectedClientBuildId = String(input.clientBuildId || "");
+  const expectedShellCacheName = String(input.shellCacheName || "");
+  return `
+    (async () => {
+      let appPreviewResult = null;
+      try {
+        appPreviewResult = await Promise.race([
+          window.__CODEX_MOBILE_VITE_APP_PREVIEW_PROMISE__,
+          new Promise((resolve) => setTimeout(() => resolve({ ok: false, timeout: true }), 6000)),
+        ]);
+      } catch (error) {
+        appPreviewResult = { ok: false, errorCode: String(error && error.message || error || "vite_app_preview_failed").slice(0, 120) };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      const app = document.getElementById("app");
+      const login = document.getElementById("login");
+      const bootRecovery = document.getElementById("bootRecovery");
+      const html = document.documentElement;
+      const status = window.__CODEX_MOBILE_VITE_APP_PREVIEW__ || {};
+      const moduleScripts = Array.from(document.querySelectorAll("script[type='module']"))
+        .map((script) => {
+          try {
+            return new URL(script.getAttribute("src") || "", window.location.href).pathname;
+          } catch (_) {
+            return "";
+          }
+        })
+        .filter(Boolean);
+      const classicScripts = Array.from(document.querySelectorAll("script[data-codex-vite-app-preview-classic-script]"))
+        .map((script) => {
+          try {
+            return new URL(script.getAttribute("src") || "", window.location.href).pathname;
+          } catch (_) {
+            return "";
+          }
+        })
+        .filter(Boolean);
+      const shellManifest = window.CODEX_MOBILE_SHELL_MANIFEST || {};
+      const shellScripts = Array.isArray(shellManifest.indexScriptAssets)
+        ? shellManifest.indexScriptAssets
+        : (Array.isArray(shellManifest.scriptAssets) ? shellManifest.scriptAssets : []);
+      const visible = (element) => Boolean(element
+        && element.getBoundingClientRect
+        && element.getBoundingClientRect().height > 0
+        && getComputedStyle(element).display !== "none"
+        && getComputedStyle(element).visibility !== "hidden");
+      return {
+        label: "vite-app-preview",
+        probeKind: "vite-app-preview",
+        path: window.location.pathname,
+        markerPresent: Boolean(html && html.dataset && html.dataset.codexViteAppPreview === "true"),
+        metaPresent: Boolean(document.querySelector("meta[name='codex-vite-app-preview']")),
+        moduleScriptCount: moduleScripts.length,
+        moduleScriptMatchesPreview: moduleScripts.some((scriptPath) => /^\\/vite-shell\\/assets\\/vite-shell-entry-/.test(scriptPath)),
+        classicScriptCount: classicScripts.length,
+        expectedClassicScriptCount: shellScripts.length,
+        classicScriptOrderMatches: JSON.stringify(classicScripts) === JSON.stringify(shellScripts),
+        loaderOk: Boolean(appPreviewResult && appPreviewResult.ok),
+        loaderTimedOut: Boolean(appPreviewResult && appPreviewResult.timeout),
+        loaderLoadedCount: Number(appPreviewResult && appPreviewResult.loadedCount || status.loaded && status.loaded.length || 0) || 0,
+        loaderFailedCount: Number(appPreviewResult && appPreviewResult.failedCount || status.failed && status.failed.length || 0) || 0,
+        loaderErrorCode: String(appPreviewResult && appPreviewResult.errorCode || status.failed && status.failed[0] || "").slice(0, 120),
+        clientBuildPresent: Boolean(window.CLIENT_BUILD_ID),
+        clientBuildMatches: ${JSON.stringify(expectedClientBuildId)} ? window.CLIENT_BUILD_ID === ${JSON.stringify(expectedClientBuildId)} : Boolean(window.CLIENT_BUILD_ID),
+        shellCacheMatches: ${JSON.stringify(expectedShellCacheName)} ? String(shellManifest.shellCacheName || "") === ${JSON.stringify(expectedShellCacheName)} : Boolean(shellManifest.shellCacheName),
+        appVisible: visible(app),
+        loginVisible: visible(login),
+        bootRecoveryVisible: visible(bootRecovery),
+        composerRuntimeReady: Boolean(window.CodexComposerRuntime && typeof window.CodexComposerRuntime.createComposerRuntime === "function"),
+        threadListRuntimeReady: Boolean(window.CodexThreadListRuntime && typeof window.CodexThreadListRuntime.createThreadListRuntime === "function"),
+        threadTileRuntimeReady: Boolean(window.CodexThreadTileRuntime && typeof window.CodexThreadTileRuntime.createThreadTileRuntime === "function"),
+        loadThreadReady: typeof window.loadThread === "function",
+      };
+    })()
+  `;
+}
+
+function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}) {
+  const issues = [];
+  const append = (code, severity = "H2", extra = {}) => {
+    issues.push(Object.assign({
+      severity,
+      code,
+      surface: "browser-runtime",
+    }, extra));
+  };
+  if (!sample || sample.markerPresent !== true || sample.metaPresent !== true) append("vite_app_preview_marker_missing");
+  if (sample && sample.moduleScriptMatchesPreview !== true) append("vite_app_preview_module_entry_missing");
+  if (sample && sample.loaderOk !== true) append("vite_app_preview_loader_failed", "H2", {
+    errorCode: sample.loaderErrorCode || "",
+    timedOut: sample.loaderTimedOut === true,
+  });
+  if (sample && (Number(sample.classicScriptCount) < 1
+    || Number(sample.classicScriptCount) !== Number(sample.expectedClassicScriptCount)
+    || sample.classicScriptOrderMatches !== true)) {
+    append("vite_app_preview_classic_script_order_mismatch", "H2", {
+      classicScriptCount: Number(sample.classicScriptCount) || 0,
+      expectedClassicScriptCount: Number(sample.expectedClassicScriptCount) || 0,
+    });
+  }
+  if (sample && sample.clientBuildMatches !== true) append("vite_app_preview_client_build_mismatch");
+  if (sample && sample.shellCacheMatches !== true) append("vite_app_preview_shell_cache_mismatch");
+  if (sample && sample.appVisible !== true) append("vite_app_preview_app_not_visible");
+  if (sample && sample.bootRecoveryVisible === true) append("vite_app_preview_boot_recovery_visible");
+  const runtimeReady = sample
+    && sample.composerRuntimeReady === true
+    && sample.threadListRuntimeReady === true
+    && sample.threadTileRuntimeReady === true
+    && sample.loadThreadReady === true;
+  if (sample && runtimeReady !== true) {
+    append("vite_app_preview_runtime_missing", "H2", {
+      composerRuntimeReady: sample.composerRuntimeReady === true,
+      threadListRuntimeReady: sample.threadListRuntimeReady === true,
+      threadTileRuntimeReady: sample.threadTileRuntimeReady === true,
+      loadThreadReady: sample.loadThreadReady === true,
+    });
+  }
+  if ((runtimeSignals.exceptions || []).length) append("vite_app_preview_browser_exception");
+  if ((runtimeSignals.consoleEvents || []).some((entry) => entry && entry.type === "error")) {
+    append("vite_app_preview_console_error");
+  }
+  const blockingIssueCount = issues.filter((issue) => /^(H1|H2)$/i.test(issue.severity || "")).length;
+  return {
+    ok: blockingIssueCount === 0,
+    issueCount: issues.length,
+    blockingIssueCount,
+    issues,
+  };
+}
+
 function threadListInteractionProbeExpression(label = "thread-list-probe") {
   return `
     (async () => {
@@ -1782,10 +1916,12 @@ function applyStartupGateIssues(report, startupSample = {}, staticShell = {}) {
 
 async function run(options = parseArgs(), deps = {}) {
   const key = deps.key !== undefined ? deps.key : readAccessKey(options);
+  const appPreviewOnly = options.viteAppPreviewOnly === true;
+  const browserOnly = options.startupOnly || options.vitePreviewOnly || appPreviewOnly;
   const startedAt = new Date().toISOString();
   const config = await fetchJson(requestUrl(options, "/api/public-config"), options, key);
   const staticShell = await readStaticShellReadback(options, config);
-  const list = (options.startupOnly || options.vitePreviewOnly)
+  const list = browserOnly
     ? { data: [] }
     : await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
   const rows = threadRows(list);
@@ -1795,11 +1931,11 @@ async function run(options = parseArgs(), deps = {}) {
   if (options.exerciseSubmit && options.submitThreadId && !ids.includes(options.submitThreadId)) {
     ids.unshift(options.submitThreadId);
   }
-  const threadPlan = (options.startupOnly || options.vitePreviewOnly) ? [] : await loadThreadPlan(options, key, ids);
+  const threadPlan = browserOnly ? [] : await loadThreadPlan(options, key, ids);
   const report = {
     ok: false,
     startedAt,
-    mode: options.vitePreviewOnly ? "vite-preview" : options.startupOnly ? "startup-only" : "full",
+    mode: appPreviewOnly ? "vite-app-preview" : options.vitePreviewOnly ? "vite-preview" : options.startupOnly ? "startup-only" : "full",
     endpoint: endpointKind(options.server),
     browser: { engine: "chrome-cdp", headed: Boolean(options.headed), viewport: options.viewport },
     publicConfig: {
@@ -1826,7 +1962,8 @@ async function run(options = parseArgs(), deps = {}) {
     })),
     browserReport: null,
     vitePreview: null,
-    submitExercise: (!options.startupOnly && options.exerciseSubmit) ? {
+    viteAppPreview: null,
+    submitExercise: (!browserOnly && options.exerciseSubmit) ? {
       attempted: true,
       ok: false,
       targetThreadHash: "",
@@ -1834,7 +1971,7 @@ async function run(options = parseArgs(), deps = {}) {
       code: "not_run",
     } : null,
   };
-  if (!options.startupOnly && !options.vitePreviewOnly && !threadPlan.length) {
+  if (!browserOnly && !threadPlan.length) {
     report.browserReport = analyzeBrowserRuntimeSamples({ samples: [] });
     report.error = "no_threads_selected";
     return report;
@@ -1901,9 +2038,10 @@ async function run(options = parseArgs(), deps = {}) {
     await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
       source: browserInitScript(key, threadPlan[0] && threadPlan[0].id || ""),
     });
-    await cdp.send("Page.navigate", {
-      url: options.vitePreviewOnly ? requestUrl(options, "/vite-shell/preview.html") : options.server,
-    });
+    const navigateUrl = appPreviewOnly
+      ? requestUrl(options, "/vite-shell/app-preview.html")
+      : options.vitePreviewOnly ? requestUrl(options, "/vite-shell/preview.html") : options.server;
+    await cdp.send("Page.navigate", { url: navigateUrl });
     await waitForLoad(cdp, options.timeoutMs);
     await sleep(900);
     if (options.vitePreviewOnly) {
@@ -1915,7 +2053,18 @@ async function run(options = parseArgs(), deps = {}) {
       }));
       samples.push(report.vitePreview);
     }
-    const startupSample = options.vitePreviewOnly ? null : await evaluate(cdp, startupProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
+    if (appPreviewOnly) {
+      report.viteAppPreview = await evaluate(cdp, viteAppPreviewProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
+        label: "vite-app-preview",
+        probeKind: "vite-app-preview",
+        markerPresent: false,
+        metaPresent: false,
+        loaderOk: false,
+        errorCode: boundedToken(err && err.message, "vite_app_preview_probe_failed"),
+      }));
+      samples.push(report.viteAppPreview);
+    }
+    const startupSample = (options.vitePreviewOnly || appPreviewOnly) ? null : await evaluate(cdp, startupProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
       label: "startup",
       probeKind: "startup",
       appVisible: false,
@@ -1938,7 +2087,7 @@ async function run(options = parseArgs(), deps = {}) {
         loadThreadReady: startupSample.loadThreadReady === true,
       };
     }
-    if (!options.startupOnly && !options.vitePreviewOnly) {
+    if (!browserOnly) {
       samples.push(await evaluate(cdp, threadListInteractionProbeExpression("thread-list-initial"), options.timeoutMs).catch((err) => ({
         label: "thread-list-initial",
         probeKind: "thread-list-interaction",
@@ -1992,7 +2141,7 @@ async function run(options = parseArgs(), deps = {}) {
       }
     }
 
-    if (!options.startupOnly && !options.vitePreviewOnly && options.exerciseSubmit) {
+    if (!browserOnly && options.exerciseSubmit) {
       const submitTarget = (options.submitThreadId
         ? threadPlan.find((entry) => entry.id === options.submitThreadId)
         : null) || threadPlan[0];
@@ -2060,6 +2209,14 @@ async function run(options = parseArgs(), deps = {}) {
     report.ok = report.browserReport.ok;
     return report;
   }
+  if (appPreviewOnly) {
+    report.browserReport = analyzeViteAppPreviewProbe(report.viteAppPreview, {
+      consoleEvents,
+      exceptions,
+    });
+    report.ok = report.browserReport.ok;
+    return report;
+  }
 
   report.browserReport = analyzeBrowserRuntimeSamples({
     samples,
@@ -2106,6 +2263,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  analyzeViteAppPreviewProbe,
   browserStableHash,
   analyzeVitePreviewProbe,
   parseArgs,
@@ -2122,5 +2280,6 @@ module.exports = {
   threadListInteractionProbeExpression,
   threadListStressProbeExpression,
   usage,
+  viteAppPreviewProbeExpression,
   vitePreviewProbeExpression,
 };
