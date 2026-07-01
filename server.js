@@ -5,7 +5,6 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
-const net = require("node:net");
 const {
   completedTurnHasNoFinalAgentMessage,
   createThreadDisplaySummaryCache,
@@ -119,7 +118,11 @@ const { createThreadSideChatOrchestrationService } = require("./adapters/thread-
 const { handleThreadSideChatRoute } = require("./server-routes/thread-side-chat-route-service");
 const { createThreadMessageRouteService } = require("./server-routes/thread-message-route-service");
 const { handleThreadListRoute } = require("./server-routes/thread-list-route-service");
-const { createCodexAppServerClient } = require("./services/runtime/codex-app-server-client-service");
+const {
+  createAppServerEndpointResolver,
+  createCodexAppServerClient,
+  getFreePort,
+} = require("./services/runtime/codex-app-server-client-service");
 const { createStaticFileService } = require("./adapters/static-file-service");
 const { createServerRuntimeUtils } = require("./services/runtime/server-runtime-utils");
 const { createServerRuntimeConfigService } = require("./services/runtime/server-runtime-config-service");
@@ -1893,17 +1896,6 @@ function shortIdentifier(value) {
   return `${text.slice(0, 8)}...${text.slice(-4)}`;
 }
 
-function getFreePort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const port = server.address().port;
-      server.close(() => resolve(port));
-    });
-  });
-}
-
 const codexProfileSwitchService = createCodexProfileSwitchService({
   progressTtlMs: PROFILE_SWITCH_PROGRESS_TTL_MS,
   preflightTimeoutMs: PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS,
@@ -1924,99 +1916,12 @@ const {
   setProfileSwitchProgress,
 } = codexProfileSwitchService;
 
-class JsonLineConnection {
-  constructor(socket) {
-    this.socket = socket;
-    this.readyState = 1;
-    this.onmessage = null;
-    this.onclose = null;
-    this.onerror = null;
-    this.buffer = "";
-
-    socket.setEncoding("utf8");
-    socket.on("data", (chunk) => {
-      this.buffer += chunk;
-      let index;
-      while ((index = this.buffer.indexOf("\n")) >= 0) {
-        const line = this.buffer.slice(0, index).trim();
-        this.buffer = this.buffer.slice(index + 1);
-        if (line && this.onmessage) this.onmessage({ data: line });
-      }
-    });
-    socket.on("error", (err) => {
-      this.readyState = 3;
-      if (this.onerror) this.onerror(err);
-    });
-    socket.on("close", () => {
-      this.readyState = 3;
-      if (this.onclose) this.onclose();
-    });
-  }
-
-  send(data) {
-    if (this.readyState !== 1) throw new Error("jsonl tcp connection is not open");
-    this.socket.write(`${data}\n`);
-  }
-
-  close() {
-    this.readyState = 3;
-    this.socket.end();
-  }
-}
-
-function parseTcpEndpoint(value, source) {
-  if (!value) return null;
-  let host = "127.0.0.1";
-  let portText = value;
-  if (value.includes(":")) {
-    const parts = value.split(":");
-    portText = parts.pop();
-    host = parts.join(":") || host;
-  }
-  const port = Number(portText);
-  if (!Number.isInteger(port) || port <= 0) {
-    throw new Error(`Invalid ${source} tcp endpoint: ${value}`);
-  }
-  return { protocol: "jsonl-tcp", host, port, source, required: true };
-}
-
-function safeJsonByteLength(value) {
-  try {
-    const json = JSON.stringify(value);
-    return Buffer.byteLength(json || "", "utf8");
-  } catch (_) {
-    return 0;
-  }
-}
-
-function resolveExternalEndpoint() {
-  if (EXTERNAL_APP_SERVER_WS) {
-    return { protocol: "ws", url: EXTERNAL_APP_SERVER_WS, source: "CODEX_MOBILE_APP_SERVER_WS", required: true };
-  }
-  if (EXTERNAL_APP_SERVER_TCP) {
-    return parseTcpEndpoint(EXTERNAL_APP_SERVER_TCP, "CODEX_MOBILE_APP_SERVER_TCP");
-  }
-  try {
-    const raw = fs.readFileSync(MUX_ENDPOINT_FILE, "utf8");
-    const endpoint = JSON.parse(raw);
-    if (endpoint && endpoint.protocol === "jsonl-tcp" && endpoint.host && endpoint.port) {
-      return {
-        protocol: "jsonl-tcp",
-        host: endpoint.host,
-        port: Number(endpoint.port),
-        source: MUX_ENDPOINT_FILE,
-        capabilities: endpoint.capabilities || null,
-        required: true,
-      };
-    }
-    if (endpoint && endpoint.protocol === "ws" && endpoint.url) {
-      return { protocol: "ws", url: endpoint.url, source: MUX_ENDPOINT_FILE, required: true };
-    }
-  } catch (_) {
-    return null;
-  }
-  return null;
-}
+const resolveExternalEndpoint = createAppServerEndpointResolver({
+  fs,
+  muxEndpointFile: MUX_ENDPOINT_FILE,
+  externalAppServerWs: EXTERNAL_APP_SERVER_WS,
+  externalAppServerTcp: EXTERNAL_APP_SERVER_TCP,
+});
 
 const codex = createCodexAppServerClient({
   REQUIRE_SHARED_APP_SERVER,
@@ -2037,7 +1942,6 @@ const codex = createCodexAppServerClient({
   LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS,
   SAFE_RETRY_METHODS,
   SERVER_REQUEST_METHODS,
-  JsonLineConnection,
   codexAppServerChildEnv,
   getFreePort,
   assertCommandAvailable,
@@ -2061,7 +1965,6 @@ const codex = createCodexAppServerClient({
   shortIdentifier,
   dynamicToolServerRequestResponsePayload,
   dynamicToolErrorPayload,
-  safeJsonByteLength,
   logWorkspaceDelegationRpc,
   activeRateLimits,
   rateLimitsByModelObject,
