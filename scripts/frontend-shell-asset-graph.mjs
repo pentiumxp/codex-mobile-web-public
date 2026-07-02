@@ -726,6 +726,8 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   },
 ];
 const VITE_APP_PREVIEW_CLASSIC_LOADER_EXCLUDED_MODULE_IDS = new Set([
+  "api-client",
+  "markdown-renderer",
   "build-refresh-policy",
   "runtime-settings",
   "viewport-metrics",

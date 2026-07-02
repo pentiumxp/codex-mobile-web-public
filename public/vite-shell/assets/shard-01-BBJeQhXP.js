@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-BQDUj87-.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-ConUJgmy.js";
 //#region public/build-refresh-policy.js
 var require_build_refresh_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -1095,6 +1095,479 @@ var require_plugin_voice_input = /* @__PURE__ */ __commonJSMin(((exports, module
 			stopRequestMessage,
 			textFromMessage,
 			voiceSessionIdFrom
+		};
+	});
+}));
+//#endregion
+//#region public/api-client.js
+var require_api_client = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexApiClient = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function isFormDataBody(body, FormDataCtor) {
+			return typeof FormDataCtor === "function" && body instanceof FormDataCtor;
+		}
+		function createApiClient(options = {}) {
+			const fetchRef = options.fetch || (typeof fetch === "function" ? fetch : null);
+			const AbortControllerCtor = options.AbortControllerCtor || (typeof AbortController === "function" ? AbortController : null);
+			const FormDataCtor = options.FormDataCtor || (typeof FormData === "function" ? FormData : null);
+			const getKey = typeof options.getKey === "function" ? options.getKey : () => "";
+			const onUnauthorized = typeof options.onUnauthorized === "function" ? options.onUnauthorized : () => {};
+			const onResponseError = typeof options.onResponseError === "function" ? options.onResponseError : () => {};
+			async function request(path, requestOptions = {}) {
+				if (!fetchRef) throw new Error("Fetch is unavailable");
+				if (!AbortControllerCtor) throw new Error("AbortController is unavailable");
+				const headers = Object.assign({}, requestOptions.headers || {});
+				const timeoutMs = requestOptions.timeoutMs || 3e4;
+				const controller = new AbortControllerCtor();
+				let timedOut = false;
+				const timer = setTimeout(() => {
+					timedOut = true;
+					controller.abort();
+				}, timeoutMs);
+				const externalSignal = requestOptions.signal;
+				const abortFromExternal = () => controller.abort();
+				if (externalSignal) if (externalSignal.aborted) controller.abort();
+				else externalSignal.addEventListener("abort", abortFromExternal, { once: true });
+				const fetchOptions = Object.assign({}, requestOptions, {
+					headers,
+					signal: controller.signal
+				});
+				delete fetchOptions.timeoutMs;
+				const key = getKey();
+				if (key) headers["X-Codex-Mobile-Key"] = key;
+				if (requestOptions.body && !isFormDataBody(requestOptions.body, FormDataCtor) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+				try {
+					const res = await fetchRef(path, fetchOptions);
+					if (!res.ok) {
+						let message = `${res.status} ${res.statusText}`;
+						let code = "";
+						let detail = "";
+						let requestId = "";
+						let progress = null;
+						let responseBody = null;
+						try {
+							const body = await res.json();
+							responseBody = body;
+							if (body.error) message = body.error;
+							if (body.code) code = String(body.code);
+							if (body.detail) detail = String(body.detail);
+							if (body.requestId) requestId = String(body.requestId);
+							if (body.progress && typeof body.progress === "object") progress = body.progress;
+						} catch (_) {}
+						onResponseError({
+							status: res.status,
+							message,
+							code,
+							detail,
+							requestId,
+							path
+						});
+						if (res.status === 401) onUnauthorized();
+						const err = new Error(message);
+						err.status = res.status;
+						err.code = code;
+						err.detail = detail;
+						err.requestId = requestId;
+						err.progress = progress;
+						err.responseBody = responseBody;
+						throw err;
+					}
+					if (res.status === 204) return null;
+					return res.json();
+				} catch (err) {
+					if (err && err.name === "AbortError") {
+						if (timedOut) throw new Error(`Request timed out: ${path}`);
+						throw new Error(`Request cancelled: ${path}`);
+					}
+					throw err;
+				} finally {
+					clearTimeout(timer);
+					if (externalSignal) externalSignal.removeEventListener("abort", abortFromExternal);
+				}
+			}
+			return { request };
+		}
+		return {
+			createApiClient,
+			isFormDataBody
+		};
+	});
+}));
+//#endregion
+//#region public/markdown-renderer.js
+var require_markdown_renderer = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexMarkdownRenderer = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function escapeHtml(value) {
+			return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+				"&": "&amp;",
+				"<": "&lt;",
+				">": "&gt;",
+				"\"": "&quot;",
+				"'": "&#39;"
+			})[ch]);
+		}
+		function isMarkdownTableSeparator(line) {
+			const cells = String(line || "").trim().replace(/^\||\|$/g, "").split("|");
+			return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+		}
+		function splitMarkdownTableRow(line) {
+			return String(line || "").trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+		}
+		function isMarkdownBlockStart(line, nextLine = "") {
+			return /^```/.test(line) || /^(#{1,6})\s+\S/.test(line) || /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line) || /^>\s?/.test(line) || /^\s*[-*+]\s+\S/.test(line) || /^\s*\d+[.)]\s+\S/.test(line) || line.includes("|") && isMarkdownTableSeparator(nextLine);
+		}
+		function safeMarkdownUrl(value) {
+			const url = String(value || "").trim();
+			if (/^(https?:|mailto:)/i.test(url)) return url;
+			return "";
+		}
+		function safeMarkdownImageUrl(value) {
+			const url = String(value || "").trim();
+			if (/^https?:/i.test(url)) return url;
+			return safeMarkdownDataImageUrl(url);
+		}
+		function safeMarkdownDataImageUrl(value) {
+			const url = String(value || "").trim();
+			if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(url)) return url.replace(/\s+/g, "");
+			return "";
+		}
+		function stripMarkdownLinkTarget(value) {
+			const target = String(value || "").trim();
+			if (target.startsWith("<") && target.endsWith(">")) return target.slice(1, -1).trim();
+			return target;
+		}
+		function decodeMarkdownLinkTarget(value) {
+			const target = stripMarkdownLinkTarget(value);
+			if (/^file:\/\//i.test(target)) try {
+				return decodeURIComponent(new URL(target).pathname);
+			} catch (_) {
+				return target.replace(/^file:\/\//i, "");
+			}
+			try {
+				return decodeURIComponent(target);
+			} catch (_) {
+				return target;
+			}
+		}
+		function isLocalFileTarget(value) {
+			const target = stripMarkdownLinkTarget(value);
+			return target.startsWith("/") || /^file:\/\//i.test(target) || /^[A-Za-z]:[\\/]/.test(target) || /^\\\\/.test(target);
+		}
+		function autolinkUrlParts(rawUrl) {
+			let href = String(rawUrl || "");
+			let suffix = "";
+			while (/[.,;:!?]$/.test(href)) {
+				suffix = href.slice(-1) + suffix;
+				href = href.slice(0, -1);
+			}
+			while (href.endsWith(")") && href.split("(").length <= href.split(")").length) {
+				suffix = ")" + suffix;
+				href = href.slice(0, -1);
+			}
+			return {
+				href,
+				suffix
+			};
+		}
+		function renderMarkdownLink(rawLabel, rawUrl) {
+			const label = escapeHtml(rawLabel);
+			const target = stripMarkdownLinkTarget(rawUrl);
+			if (isLocalFileTarget(target)) return `<button class="local-file-preview-link" type="button" data-local-file-path="${escapeHtml(decodeMarkdownLinkTarget(target))}" data-local-file-label="${escapeHtml(rawLabel)}" title="预览查看这个文件">${label}</button>`;
+			const safeUrl = safeMarkdownUrl(String(target || "").replaceAll("&amp;", "&"));
+			if (!safeUrl) return null;
+			return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${label}</a>`;
+		}
+		function renderMarkdownImage(rawLabel, rawUrl) {
+			const target = stripMarkdownLinkTarget(rawUrl);
+			const safeUrl = safeMarkdownImageUrl(String(target || "").replaceAll("&amp;", "&"));
+			if (!safeUrl) return null;
+			return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="Image" loading="lazy"></figure>`;
+		}
+		function renderAutolinkUrl(rawUrl) {
+			const parts = autolinkUrlParts(rawUrl);
+			const safeUrl = safeMarkdownUrl((parts.href.startsWith("www.") ? `https://${parts.href}` : parts.href).replaceAll("&amp;", "&"));
+			if (!safeUrl) return rawUrl;
+			return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${parts.href}</a>${parts.suffix}`;
+		}
+		function renderAngleAutolink(rawUrl) {
+			const safeUrl = safeMarkdownUrl(String(rawUrl || "").replaceAll("&amp;", "&"));
+			if (!safeUrl) return null;
+			return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${escapeHtml(rawUrl)}</a>`;
+		}
+		function renderInlineMarkdown(value) {
+			const placeholders = [];
+			const tokenPrefix = "MDTOKEN";
+			let text = String(value || "").replace(/`([^`\n]+)`/g, (_match, code) => {
+				const token = `${tokenPrefix}${placeholders.length}END`;
+				placeholders.push(`<code>${escapeHtml(code)}</code>`);
+				return token;
+			});
+			text = text.replace(/!\[([^\]\n]*)\]\((<[^>\n]+>|[^)\s]+)\)/g, (match, label, url) => {
+				const rendered = renderMarkdownImage(label, url);
+				if (!rendered) return match;
+				const token = `${tokenPrefix}${placeholders.length}END`;
+				placeholders.push(rendered);
+				return token;
+			});
+			text = text.replace(/\[([^\]\n]+)\]\((<[^>\n]+>|[^)\s]+)\)/g, (match, label, url) => {
+				const rendered = renderMarkdownLink(label, url);
+				if (!rendered) return match;
+				const token = `${tokenPrefix}${placeholders.length}END`;
+				placeholders.push(rendered);
+				return token;
+			});
+			text = text.replace(/<((?:https?:\/\/|mailto:)[^<>\s]+)>/gi, (match, url) => {
+				const rendered = renderAngleAutolink(url);
+				if (!rendered) return match;
+				const token = `${tokenPrefix}${placeholders.length}END`;
+				placeholders.push(rendered);
+				return token;
+			});
+			text = escapeHtml(text);
+			text = text.replace(/(^|[\s([{"'“‘:：])((?:https?:\/\/|www\.)[^\s<]+)/gi, (_match, prefix, url) => `${prefix}${renderAutolinkUrl(url)}`);
+			text = text.replace(/\*\*([^*\n][^*\n]*?)\*\*/g, "<strong>$1</strong>").replace(/__([^_\n][^_\n]*?)__/g, "<strong>$1</strong>").replace(/(^|[\s(])\*([^*\n][^*\n]*?)\*/g, "$1<em>$2</em>").replace(/(^|[\s(])_([^_\n][^_\n]*?)_/g, "$1<em>$2</em>");
+			placeholders.forEach((html, index) => {
+				text = text.replaceAll(`${tokenPrefix}${index}END`, html);
+			});
+			return text;
+		}
+		function renderMarkdownTable(lines) {
+			const header = splitMarkdownTableRow(lines[0]);
+			const rows = lines.slice(2).map(splitMarkdownTableRow);
+			return `<div class="markdown-table-wrap"><table>
+    <thead><tr>${header.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((row) => `<tr>${header.map((_cell, index) => `<td>${renderInlineMarkdown(row[index] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
+  </table></div>`;
+		}
+		function orderedListStart(lines, options) {
+			const first = lines.map((line) => /^\s*(\d+)[.)]\s+/.exec(line)).filter(Boolean).map((match) => Number(match[1]) || 1)[0] || 1;
+			if (options && options.orderedListMode === "source") return first;
+			return lines.length <= 1 ? first : 1;
+		}
+		function renderMarkdownList(lines, ordered, options) {
+			const tag = ordered ? "ol" : "ul";
+			const itemPattern = ordered ? /^\s*(\d+)[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
+			const start = ordered ? orderedListStart(lines, options) : 1;
+			const items = lines.map((line) => {
+				const match = itemPattern.exec(line);
+				return `<li>${renderInlineMarkdown(match ? match[ordered ? 2 : 1] : line.trim())}</li>`;
+			});
+			return `<${tag}${ordered && start > 1 ? ` start="${start}"` : ""}>${items.join("")}</${tag}>`;
+		}
+		function codeBlockTableLines(codeText) {
+			const lines = String(codeText || "").replace(/\r\n?/g, "\n").split("\n");
+			for (let index = 0; index < lines.length - 1; index += 1) {
+				if (!lines[index].includes("|") || !isMarkdownTableSeparator(lines[index + 1])) continue;
+				const tableLines = [lines[index], lines[index + 1]];
+				index += 2;
+				while (index < lines.length && lines[index].trim() && lines[index].includes("|")) {
+					tableLines.push(lines[index]);
+					index += 1;
+				}
+				return tableLines.length >= 3 ? tableLines : [];
+			}
+			return [];
+		}
+		function renderCodeBlock(codeText, lang, options) {
+			const langLabel = `<span class="markdown-code-lang">${escapeHtml(lang || "代码")}</span>`;
+			let copyButton = "";
+			if (options && typeof options.rememberCopyText === "function" && typeof options.copyButtonHtml === "function") copyButton = options.copyButtonHtml(options.rememberCopyText(codeText), options.copyLabel || "复制", "markdown-copy-button");
+			const normalizedLang = String(lang || "").trim().toLowerCase();
+			const tableLines = Boolean(options && options.fencedTableMode === "preview") && (!normalizedLang || normalizedLang === "text" || normalizedLang === "txt" || normalizedLang === "plain" || normalizedLang === "plaintext") ? codeBlockTableLines(codeText) : [];
+			if (tableLines.length) return `<div class="markdown-code-table-preview">${renderMarkdownTable(tableLines)}</div>
+      <details class="markdown-code-table-source-details">
+        <summary>查看源码表格</summary>
+        <div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>
+      </details>`;
+			return `<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`;
+		}
+		function escapeMermaidQuotedLabel(value) {
+			return String(value || "").trim().replace(/"/g, "&quot;");
+		}
+		function mermaidGeneratedSubgraphId(index) {
+			return `codex_mobile_subgraph_${index + 1}`;
+		}
+		function normalizeMermaidSubgraphLine(line, index) {
+			const match = /^(\s*)subgraph\s+(.+?)\s*$/i.exec(String(line || ""));
+			if (!match) return line;
+			const indent = match[1] || "";
+			const body = String(match[2] || "").trim();
+			if (!body || /^end$/i.test(body)) return line;
+			const bracketMatch = /^([A-Za-z][\w-]*)\s*\[(.*)\]$/.exec(body);
+			if (bracketMatch) {
+				const label = String(bracketMatch[2] || "").trim();
+				if (!label || /^".*"$/.test(label)) return line;
+				return `${indent}subgraph ${bracketMatch[1]}["${escapeMermaidQuotedLabel(label)}"]`;
+			}
+			const idTitleMatch = /^([A-Za-z][\w-]*)\s+(.+)$/.exec(body);
+			if (idTitleMatch) {
+				const title = String(idTitleMatch[2] || "").trim();
+				if (!title || /^".*"$/.test(title)) return line;
+				return `${indent}subgraph ${idTitleMatch[1]}["${escapeMermaidQuotedLabel(title)}"]`;
+			}
+			if (/^[A-Za-z][\w-]*$/.test(body) || /^".*"$/.test(body)) return line;
+			return `${indent}subgraph ${mermaidGeneratedSubgraphId(index)}["${escapeMermaidQuotedLabel(body)}"]`;
+		}
+		function normalizeMermaidDetachedSoftBreakLabels(source) {
+			return String(source || "").replace(/(^|[\s;])([A-Za-z][\w-]*)\[([^\]\n]+)\]<br\/>\(([^()\n]+)\)/gm, (match, prefix, nodeId, label, continuation) => {
+				return `${prefix}${nodeId}["${escapeMermaidQuotedLabel(`${String(label || "").trim()}<br/>(${String(continuation || "").trim()})`)}"]`;
+			});
+		}
+		function normalizeMermaidSourceForRender(value) {
+			const withSoftBreaks = String(value || "").replace(/\\n/g, "<br/>");
+			const firstLine = withSoftBreaks.split(/\r?\n/, 1)[0].trim();
+			if (!/^(?:flowchart|graph)\b/i.test(firstLine)) return withSoftBreaks;
+			return normalizeMermaidDetachedSoftBreakLabels(withSoftBreaks.split(/\r?\n/).map((line, index) => normalizeMermaidSubgraphLine(line, index)).join("\n")).replace(/(^|[\s;])([A-Za-z][\w-]*)\[([^\]\n]*)\]/gm, (match, prefix, nodeId, label) => {
+				const trimmed = String(label || "").trim();
+				if (!trimmed || /^".*"$/.test(trimmed)) return match;
+				if (!/[()（）]|<br\/>/.test(trimmed)) return match;
+				return `${prefix}${nodeId}["${trimmed.replace(/"/g, "&quot;")}"]`;
+			}).replace(/\|([^|\n]*[()]+[^|\n]*)\|/g, (match, label) => {
+				return `|${String(label || "").replace(/\(/g, "（").replace(/\)/g, "）")}|`;
+			});
+		}
+		function renderMermaidBlock(codeText) {
+			return `<div class="markdown-mermaid-block" data-mermaid-block="true">
+      <div class="markdown-mermaid-head">
+        <span class="markdown-mermaid-label">Mermaid</span>
+        <div class="markdown-mermaid-toolbar">
+          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="zoom-out" aria-label="缩小 Mermaid 图" title="缩小">-</button>
+          <button class="markdown-mermaid-tool markdown-mermaid-tool-reset" type="button" data-mermaid-action="reset" aria-label="重置 Mermaid 图缩放" title="重置">100%</button>
+          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="zoom-in" aria-label="放大 Mermaid 图" title="放大">+</button>
+          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="expand" aria-label="放大查看 Mermaid 图" title="放大查看">展开</button>
+        </div>
+      </div>
+      <div class="markdown-mermaid-viewer" data-mermaid-viewer="inline">
+        <div class="markdown-mermaid-canvas" data-mermaid-canvas>
+          <div class="markdown-mermaid-loading">正在渲染 Mermaid 图...</div>
+        </div>
+      </div>
+      <details class="markdown-mermaid-source-details">
+        <summary>查看 Mermaid 源码</summary>
+        <pre><code class="language-mermaid">${escapeHtml(codeText)}</code></pre>
+      </details>
+      <pre class="markdown-mermaid-source" hidden>${escapeHtml(codeText)}</pre>
+    </div>`;
+		}
+		function renderBareDataImage(value) {
+			const safeUrl = safeMarkdownDataImageUrl(value);
+			if (!safeUrl) return "";
+			return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="Image" loading="lazy"></figure>`;
+		}
+		function renderMarkdown(value, options = {}) {
+			const source = String(value || "");
+			if (!source.trim()) return "";
+			const lines = source.replace(/\r\n?/g, "\n").split("\n");
+			const blocks = [];
+			let i = 0;
+			while (i < lines.length) {
+				const line = lines[i];
+				if (!line.trim()) {
+					i += 1;
+					continue;
+				}
+				const bareDataImage = renderBareDataImage(line.trim());
+				if (bareDataImage) {
+					blocks.push(bareDataImage);
+					i += 1;
+					continue;
+				}
+				const fence = /^```([A-Za-z0-9_.+-]*)\s*$/.exec(line);
+				if (fence) {
+					const lang = fence[1] || "";
+					const code = [];
+					i += 1;
+					while (i < lines.length && !/^```\s*$/.test(lines[i])) {
+						code.push(lines[i]);
+						i += 1;
+					}
+					if (i < lines.length) i += 1;
+					const codeText = code.join("\n");
+					blocks.push(/^mermaid$/i.test(lang) ? renderMermaidBlock(codeText) : renderCodeBlock(codeText, lang, options));
+					continue;
+				}
+				const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+				if (heading) {
+					const level = Math.min(6, heading[1].length + 1);
+					blocks.push(`<h${level}>${renderInlineMarkdown(heading[2].trim())}</h${level}>`);
+					i += 1;
+					continue;
+				}
+				if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+					blocks.push("<hr>");
+					i += 1;
+					continue;
+				}
+				if (/^>\s?/.test(line)) {
+					const quote = [];
+					while (i < lines.length && /^>\s?/.test(lines[i])) {
+						quote.push(lines[i].replace(/^>\s?/, ""));
+						i += 1;
+					}
+					blocks.push(`<blockquote>${renderMarkdown(quote.join("\n"), options)}</blockquote>`);
+					continue;
+				}
+				if (line.includes("|") && isMarkdownTableSeparator(lines[i + 1])) {
+					const tableLines = [line, lines[i + 1]];
+					i += 2;
+					while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
+						tableLines.push(lines[i]);
+						i += 1;
+					}
+					blocks.push(renderMarkdownTable(tableLines));
+					continue;
+				}
+				if (/^\s*[-*+]\s+\S/.test(line)) {
+					const list = [];
+					while (i < lines.length && /^\s*[-*+]\s+\S/.test(lines[i])) {
+						list.push(lines[i]);
+						i += 1;
+					}
+					blocks.push(renderMarkdownList(list, false, options));
+					continue;
+				}
+				if (/^\s*\d+[.)]\s+\S/.test(line)) {
+					const list = [];
+					while (i < lines.length && /^\s*\d+[.)]\s+\S/.test(lines[i])) {
+						list.push(lines[i]);
+						i += 1;
+					}
+					blocks.push(renderMarkdownList(list, true, options));
+					continue;
+				}
+				const paragraph = [line.trim()];
+				i += 1;
+				while (i < lines.length && lines[i].trim() && !isMarkdownBlockStart(lines[i], lines[i + 1] || "")) {
+					paragraph.push(lines[i].trim());
+					i += 1;
+				}
+				blocks.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br>")}</p>`);
+			}
+			return `<div class="markdown-body">${blocks.join("")}</div>`;
+		}
+		return {
+			escapeHtml,
+			safeMarkdownUrl,
+			autolinkUrlParts,
+			renderMarkdownLink,
+			renderMarkdownImage,
+			renderAutolinkUrl,
+			renderInlineMarkdown,
+			safeMarkdownImageUrl,
+			normalizeMermaidSourceForRender,
+			isMarkdownTableSeparator,
+			splitMarkdownTableRow,
+			isMarkdownBlockStart,
+			renderMarkdownTable,
+			renderMarkdownList,
+			renderMarkdown
 		};
 	});
 }));
@@ -4596,207 +5069,6 @@ var require_thread_detail_v4_merge_state = /* @__PURE__ */ __commonJSMin(((expor
 	});
 }));
 //#endregion
-//#region public/client-render-stability-guard.js
-var require_client_render_stability_guard = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function initClientRenderStabilityGuard(globalScope) {
-		function stringValue(value) {
-			return String(value || "").trim();
-		}
-		function shortHash(value) {
-			const text = stringValue(value);
-			let hash = 2166136261;
-			for (let index = 0; index < text.length; index += 1) {
-				hash ^= text.charCodeAt(index);
-				hash = Math.imul(hash, 16777619);
-			}
-			return (hash >>> 0).toString(36);
-		}
-		function submittedUserItemClientSubmissionId(item) {
-			if (!item || item.type !== "userMessage") return "";
-			return stringValue(item.clientSubmissionId);
-		}
-		function firstSubmittedUserMessageClientSubmissionId(turn) {
-			const items = Array.isArray(turn && turn.items) ? turn.items : [];
-			for (const item of items) {
-				const submissionId = submittedUserItemClientSubmissionId(item);
-				if (submissionId) return submissionId;
-			}
-			return "";
-		}
-		function localSubmissionRenderKey(clientSubmissionId) {
-			const submissionId = stringValue(clientSubmissionId);
-			return submissionId ? `submitted:${shortHash(submissionId)}` : "";
-		}
-		function submittedTurnRenderKey(turn) {
-			const explicit = stringValue(turn && turn.mobileLocalSubmissionRenderKey);
-			if (explicit) return explicit;
-			return localSubmissionRenderKey(firstSubmittedUserMessageClientSubmissionId(turn));
-		}
-		function stableTurnIdentity(turn) {
-			return submittedTurnRenderKey(turn) || stringValue(turn && (turn.id || turn.startedAt)) || "turn";
-		}
-		function markSubmittedTurn(turn, clientSubmissionId) {
-			if (!turn || typeof turn !== "object") return "";
-			const key = localSubmissionRenderKey(clientSubmissionId);
-			if (key) turn.mobileLocalSubmissionRenderKey = key;
-			return key;
-		}
-		function transferSubmittedTurnIdentity(sourceTurn, targetTurn, clientSubmissionId) {
-			if (!targetTurn || typeof targetTurn !== "object") return "";
-			const key = submittedTurnRenderKey(sourceTurn) || submittedTurnRenderKey(targetTurn) || localSubmissionRenderKey(clientSubmissionId);
-			if (key) targetTurn.mobileLocalSubmissionRenderKey = key;
-			return key;
-		}
-		const api = {
-			firstSubmittedUserMessageClientSubmissionId,
-			localSubmissionRenderKey,
-			markSubmittedTurn,
-			shortHash,
-			stableTurnIdentity,
-			submittedTurnRenderKey,
-			transferSubmittedTurnIdentity
-		};
-		if (typeof module !== "undefined" && module.exports) module.exports = api;
-		globalScope.CodexClientRenderStabilityGuard = api;
-	})(typeof globalThis !== "undefined" ? globalThis : window);
-}));
-//#endregion
-//#region public/live-operation-dock-state.js
-var require_live_operation_dock_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexLiveOperationDockState = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_MIN_VISIBLE_MS = 500;
-		function normalizeMode(mode) {
-			return String(mode || "") === "expanded" ? "expanded" : "compact";
-		}
-		function text(value) {
-			return String(value || "");
-		}
-		function isCompletedStatusText(value) {
-			return /completed|failed|cancel|error|interrupted/i.test(text(value));
-		}
-		function nowValue(value) {
-			const parsed = Number(value);
-			return Number.isFinite(parsed) ? parsed : Date.now();
-		}
-		function containsBubble(html) {
-			return text(html).includes("mobile-operation-bubble");
-		}
-		function containsSheet(html) {
-			return text(html).includes("mobile-operation-sheet");
-		}
-		function rememberCompactBubble(input = {}) {
-			const nowMs = nowValue(input.nowMs);
-			const minVisibleMs = Math.max(0, Number(input.minVisibleMs || DEFAULT_MIN_VISIBLE_MS));
-			const existingUntilMs = Number(input.existingVisibleUntilMs || 0);
-			const html = text(input.html);
-			const threadId = text(input.threadId);
-			return {
-				visibleUntilMs: Math.max(existingUntilMs, nowMs + minVisibleMs),
-				html,
-				threadId,
-				recallHtml: html,
-				recallThreadId: threadId,
-				recallAtMs: nowMs
-			};
-		}
-		function compactBubblePreservation(input = {}) {
-			if (containsBubble(input.nextHtml)) return { preserve: false };
-			if (input.liveTurnActive === false) return { preserve: false };
-			const remainingMs = Number(input.visibleUntilMs || 0) - nowValue(input.nowMs);
-			if (remainingMs <= 0) return { preserve: false };
-			const savedThreadId = text(input.savedThreadId);
-			if (!savedThreadId || savedThreadId !== text(input.currentThreadId)) return { preserve: false };
-			const savedHtml = text(input.savedHtml);
-			const dockHasBubble = Boolean(input.dockHasBubble);
-			if (!dockHasBubble && !containsBubble(savedHtml)) return { preserve: false };
-			return {
-				preserve: true,
-				remainingMs,
-				patchSavedHtml: Boolean(savedHtml && !dockHasBubble),
-				savedHtml
-			};
-		}
-		function shouldPreservePinned(input = {}) {
-			return Boolean(input.pinned && normalizeMode(input.mode) === "expanded" && text(input.pinnedThreadId) === text(input.currentThreadId) && input.dockHasSheet && input.liveTurnActive !== false && !containsBubble(input.nextHtml));
-		}
-		function shouldShowRecall(input = {}) {
-			const recallThreadId = text(input.recallThreadId);
-			return Boolean(input.isMobile && input.hasCurrentThread && !input.newThreadDraft && input.liveTurnActive !== false && recallThreadId && recallThreadId === text(input.currentThreadId) && containsSheet(input.recallHtml));
-		}
-		function operationCardContentPlan(input = {}) {
-			const status = text(input.status || (input.completed ? "completed" : "running")).trim();
-			const type = text(input.type || input.itemType || "item").trim() || "item";
-			const title = text(input.title || type).trim() || type;
-			const detail = text(input.detail).replace(/\s+/g, " ").trim();
-			const durationText = text(input.durationText).trim();
-			const extraClass = text(input.extraClass).trim();
-			const completed = Boolean(input.completed || isCompletedStatusText(status));
-			return {
-				itemId: text(input.itemId).trim(),
-				type,
-				status,
-				title,
-				detail,
-				detailEmpty: !detail,
-				statusVisible: Boolean(status),
-				durationVisible: Boolean(durationText),
-				durationText,
-				durationTitle: durationText ? `Elapsed ${durationText}` : "",
-				durationAttrs: text(input.durationAttrs).trim(),
-				classTokens: [
-					"item",
-					"live-operation",
-					extraClass,
-					completed ? "completed" : "",
-					type
-				].filter(Boolean)
-			};
-		}
-		function htmlEscaper(input = {}) {
-			return typeof input.escapeHtml === "function" ? input.escapeHtml : (value) => text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-		}
-		function durationAttributeHtml(value, escape) {
-			const attrs = [];
-			const input = text(value);
-			const attrPattern = /\b(data-(?:started|completed|duration)-ms)="([^"]*)"/g;
-			let match;
-			while (match = attrPattern.exec(input)) attrs.push(`${match[1]}="${escape(match[2])}"`);
-			return attrs.join(" ");
-		}
-		function operationCardHtml(input = {}) {
-			const escape = htmlEscaper(input);
-			const plan = input.plan || operationCardContentPlan(input);
-			const renderKey = text(input.renderKey || input.key).trim();
-			const durationAttrs = durationAttributeHtml(plan.durationAttrs, escape);
-			const duration = plan.durationVisible ? `<time class="operation-duration" ${durationAttrs} title="${escape(plan.durationTitle)}">${escape(plan.durationText)}</time>` : "";
-			const classes = (Array.isArray(plan.classTokens) ? plan.classTokens : []).map(escape).join(" ");
-			const detailValue = plan.detail ? escape(plan.detail) : "&nbsp;";
-			const body = `<div class="operation-detail-line${plan.detailEmpty ? " empty" : ""}"><span class="operation-detail">${detailValue}</span></div>`;
-			const statusHtml = plan.statusVisible ? `<span class="operation-status">${escape(plan.status)}</span>` : "";
-			return `<section class="${classes}" data-item="${escape(plan.itemId)}" data-render-key="${escape(renderKey)}">
-    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escape(plan.title)}</span>${statusHtml}</span>${duration}</div>
-    ${body}
-  </section>`;
-		}
-		return {
-			DEFAULT_MIN_VISIBLE_MS,
-			compactBubblePreservation,
-			containsBubble,
-			containsSheet,
-			normalizeMode,
-			operationCardContentPlan,
-			operationCardHtml,
-			rememberCompactBubble,
-			shouldPreservePinned,
-			shouldShowRecall
-		};
-	});
-}));
-//#endregion
 //#region \0virtual:codex-mobile-esm-compatibility/shard/shard-01
 var import_build_refresh_policy = /* @__PURE__ */ __toESM(require_build_refresh_policy());
 var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings());
@@ -4805,6 +5077,8 @@ var import_conversation_scroll = /* @__PURE__ */ __toESM(require_conversation_sc
 var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
 var import_image_compressor = /* @__PURE__ */ __toESM(require_image_compressor());
 var import_plugin_voice_input = /* @__PURE__ */ __toESM(require_plugin_voice_input());
+var import_api_client = /* @__PURE__ */ __toESM(require_api_client());
+var import_markdown_renderer = /* @__PURE__ */ __toESM(require_markdown_renderer());
 var import_plugin_embed = /* @__PURE__ */ __toESM(require_plugin_embed());
 var import_frontend_runtime_health = /* @__PURE__ */ __toESM(require_frontend_runtime_health());
 var import_home_ai_diagnostic_reporting = /* @__PURE__ */ __toESM(require_home_ai_diagnostic_reporting());
@@ -4818,8 +5092,6 @@ var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_det
 var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
 var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
 var import_thread_detail_v4_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_v4_merge_state());
-var import_client_render_stability_guard = /* @__PURE__ */ __toESM(require_client_render_stability_guard());
-var import_live_operation_dock_state = /* @__PURE__ */ __toESM(require_live_operation_dock_state());
 var moduleDefinitions = [
 	{
 		"id": "build-refresh-policy",
@@ -4942,6 +5214,33 @@ var moduleDefinitions = [
 		"assetPath": "/plugin-voice-input.js",
 		"classicLoaderExcluded": true,
 		"bytes": 8247
+	},
+	{
+		"id": "api-client",
+		"source": "public/api-client.js",
+		"globalName": "CodexApiClient",
+		"expectedFunctions": ["createApiClient", "isFormDataBody"],
+		"assetPath": "/api-client.js",
+		"classicLoaderExcluded": true,
+		"bytes": 4099
+	},
+	{
+		"id": "markdown-renderer",
+		"source": "public/markdown-renderer.js",
+		"globalName": "CodexMarkdownRenderer",
+		"expectedFunctions": [
+			"escapeHtml",
+			"safeMarkdownUrl",
+			"renderInlineMarkdown",
+			"renderMarkdown",
+			"renderMarkdownList",
+			"renderMarkdownTable",
+			"splitMarkdownTableRow",
+			"isMarkdownTableSeparator"
+		],
+		"assetPath": "/markdown-renderer.js",
+		"classicLoaderExcluded": true,
+		"bytes": 18044
 	},
 	{
 		"id": "plugin-embed",
@@ -5122,36 +5421,6 @@ var moduleDefinitions = [
 		"assetPath": "/thread-detail-v4-merge-state.js",
 		"classicLoaderExcluded": true,
 		"bytes": 12071
-	},
-	{
-		"id": "client-render-stability-guard",
-		"source": "public/client-render-stability-guard.js",
-		"globalName": "CodexClientRenderStabilityGuard",
-		"expectedFunctions": [
-			"firstSubmittedUserMessageClientSubmissionId",
-			"localSubmissionRenderKey",
-			"markSubmittedTurn",
-			"shortHash",
-			"stableTurnIdentity",
-			"submittedTurnRenderKey",
-			"transferSubmittedTurnIdentity"
-		],
-		"assetPath": "/client-render-stability-guard.js",
-		"classicLoaderExcluded": true,
-		"bytes": 2528
-	},
-	{
-		"id": "live-operation-dock-state",
-		"source": "public/live-operation-dock-state.js",
-		"globalName": "CodexLiveOperationDockState",
-		"expectedFunctions": [
-			"compactBubblePreservation",
-			"operationCardContentPlan",
-			"shouldShowRecall"
-		],
-		"assetPath": "/live-operation-dock-state.js",
-		"classicLoaderExcluded": true,
-		"bytes": 6190
 	}
 ];
 var moduleApis = {
@@ -5162,6 +5431,8 @@ var moduleApis = {
 	"draft-store": import_draft_store.default,
 	"image-compressor": import_image_compressor.default,
 	"plugin-voice-input": import_plugin_voice_input.default,
+	"api-client": import_api_client.default,
+	"markdown-renderer": import_markdown_renderer.default,
 	"plugin-embed": import_plugin_embed.default,
 	"frontend-runtime-health": import_frontend_runtime_health.default,
 	"home-ai-diagnostic-reporting": import_home_ai_diagnostic_reporting.default,
@@ -5174,9 +5445,7 @@ var moduleApis = {
 	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
 	"thread-detail-actions": import_thread_detail_actions.default,
 	"thread-detail-merge-state": import_thread_detail_merge_state.default,
-	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default,
-	"client-render-stability-guard": import_client_render_stability_guard.default,
-	"live-operation-dock-state": import_live_operation_dock_state.default
+	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");

@@ -164,6 +164,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     "draft-store",
     "image-compressor",
     "plugin-voice-input",
+    "api-client",
+    "markdown-renderer",
     "plugin-embed",
     "frontend-runtime-health",
     "home-ai-diagnostic-reporting",
@@ -197,6 +199,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     assert.equal(shardResolved, `\0${shard.source}`);
     return plugin.load(shardResolved);
   }).join("\n");
+  assert.match(shardSources, /public\/api-client\.js/);
+  assert.match(shardSources, /public\/markdown-renderer\.js/);
   assert.match(shardSources, /public\/build-refresh-policy\.js/);
   assert.match(shardSources, /public\/runtime-settings\.js/);
   assert.match(shardSources, /public\/viewport-metrics\.js/);
@@ -219,6 +223,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/thread-detail-v4-merge-state\.js/);
   assert.match(shardSources, /public\/client-render-stability-guard\.js/);
   assert.match(shardSources, /public\/live-operation-dock-state\.js/);
+  assert.match(shardSources, /createApiClient/);
+  assert.match(shardSources, /renderMarkdownTable/);
   assert.match(shardSources, /planThreadListLoadRequest/);
   assert.match(shardSources, /planBottomFollowScrollSchedule/);
   assert.match(shardSources, /compressedImageName/);
