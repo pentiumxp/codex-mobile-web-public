@@ -4121,16 +4121,18 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /threadDetailDomPatchApi\.planConversationHtmlPerformanceEvent\(\{/);
   assert.match(updateBody, /updatePlan,/);
   assert.match(updateBody, /applicationPlan,/);
-  assert.match(functionBody("visibleConversationShape"), /const visibleItems = visibleItemsForTurn\(turn, thread\);/);
+  assert.match(functionBody("visibleConversationShape"), /const turns = visibleRenderableTurnsForConversation\(thread\);/);
+  assert.match(functionBody("turnRendersConversationArticle"), /visibleItemsForTurn\(turn, thread\)\.length > 0/);
+  assert.match(functionBody("turnRendersConversationArticle"), /visibleItemBudgetSignature\(turn\)/);
   assert.match(functionBody("visibleConversationShape"), /visibleItemCount \+= visibleItems\.length/);
-  assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
+  assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: renderVisibleShape\.visibleTurnCount/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleItemCount: renderVisibleShape\.visibleItemCount/);
   assert.match(functionBody("renderCurrentThread"), /duplicateRenderKeyCount: renderDomShape\.duplicateRenderKeyCount/);
   assert.match(functionBody("renderCurrentThread"), /duplicateUserMessageCount: renderDomShape\.duplicateUserMessageCount/);
   assert.match(functionBody("renderCurrentThread"), /expectedDuplicateUserMessageCount: renderVisibleShape\.duplicateUserMessageCount/);
   assert.match(functionBody("renderCurrentThread"), /checkProjectionConsistency: true/);
   assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*shellUpdatePlan\.html,\s*shellUpdatePlan\.conversationSignature,\s*Object\.assign\(\{\}, shellUpdatePlan\.options, \{ userReadingCurrentTurn \}\),\s*\)/);
-  assert.match(functionBody("visibleRenderableTurnIds"), /visibleItemsForTurn\(turn, thread\)\.length/);
+  assert.match(functionBody("visibleRenderableTurnIds"), /visibleRenderableTurnsForConversation\(thread\)\.map/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
   assert.match(functionBody("threadTileVisibleShape"), /const visibleItems = visibleItemsForTurn\(turn, thread\);/);
   assert.match(functionBody("threadTileVisibleShape"), /const itemCount = visibleItems\.length;/);
@@ -4578,6 +4580,8 @@ test("thread tile visible shape uses pane thread context for visible item filter
     "duplicateUserMessageSignatureCount",
     "visibleUserMessageDuplicateSignature",
     "visibleItemsForTurn",
+    "turnRendersConversationArticle",
+    "visibleRenderableTurnsForConversation",
     "visibleRenderableTurnIds",
     "threadTileVisibleShape",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -4652,6 +4656,8 @@ test("visible conversation shape uses explicit thread context for visible item f
     "duplicateUserMessageSignatureCount",
     "visibleUserMessageDuplicateSignature",
     "visibleItemsForTurn",
+    "turnRendersConversationArticle",
+    "visibleRenderableTurnsForConversation",
     "visibleConversationShape",
   ].map((name) => functionSourceFrom(appJs, name));
   const result = Function(`
@@ -4700,11 +4706,88 @@ return visibleConversationShape(targetThread);
   assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 1, duplicateUserMessageCount: 0 });
 });
 
+test("visible conversation shape counts only turns that render conversation articles", () => {
+  const sources = [
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
+    "turnRendersConversationArticle",
+    "visibleRenderableTurnsForConversation",
+    "visibleConversationShape",
+    "visibleRenderableTurnIds",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+  const state = { currentThreadId: "target-thread" };
+  function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+  function visibleItemsForTurn(turn) { return Array.isArray(turn && turn.entries) ? turn.entries : []; }
+  function clientSubmissionDiagnosticHash() { return ""; }
+  function userMessageComparableParts(item) { return { text: String(item && item.text || ""), paths: [] }; }
+  function itemTextValue(value) { return String(value || ""); }
+  function userMessageTimestampMs() { return 0; }
+  function turnStartedAtMs() { return 0; }
+  function stableTextHash(value) { return "text-" + String(value || ""); }
+${sources.join("\n")}
+const thread = {
+  id: "target-thread",
+  turns: [
+    { id: "empty-turn", entries: [] },
+    { id: "visible-turn", entries: [{ item: { id: "assistant-1", type: "agentMessage", text: "ok" } }] },
+  ],
+};
+return {
+  shape: visibleConversationShape(thread),
+  ids: visibleRenderableTurnIds(thread),
+};
+`)();
+
+  assert.deepEqual(result.shape, { visibleTurnCount: 1, visibleItemCount: 1, duplicateUserMessageCount: 0 });
+  assert.deepEqual(result.ids, ["visible-turn"]);
+});
+
+test("visible conversation shape counts budget-only turns that render an article", () => {
+  const sources = [
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
+    "turnRendersConversationArticle",
+    "visibleRenderableTurnsForConversation",
+    "visibleConversationShape",
+    "visibleRenderableTurnIds",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+  const state = { currentThreadId: "target-thread" };
+  function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+  function visibleItemsForTurn(turn) { return Array.isArray(turn && turn.entries) ? turn.entries : []; }
+  function visibleItemBudgetSignature(turn) { return turn && turn.budget ? { omitted: 2 } : null; }
+  function clientSubmissionDiagnosticHash() { return ""; }
+  function userMessageComparableParts(item) { return { text: String(item && item.text || ""), paths: [] }; }
+  function itemTextValue(value) { return String(value || ""); }
+  function userMessageTimestampMs() { return 0; }
+  function turnStartedAtMs() { return 0; }
+  function stableTextHash(value) { return "text-" + String(value || ""); }
+${sources.join("\n")}
+const thread = {
+  id: "target-thread",
+  turns: [
+    { id: "budget-turn", budget: true, entries: [] },
+    { id: "empty-turn", entries: [] },
+  ],
+};
+return {
+  shape: visibleConversationShape(thread),
+  ids: visibleRenderableTurnIds(thread),
+};
+`)();
+
+  assert.deepEqual(result.shape, { visibleTurnCount: 1, visibleItemCount: 0, duplicateUserMessageCount: 0 });
+  assert.deepEqual(result.ids, ["budget-turn"]);
+});
+
 test("visible conversation shape counts duplicate user entries by entry item", () => {
   const sources = [
     "duplicateUserMessageSignatureCount",
     "visibleUserMessageDuplicateSignature",
     "visibleUserMessageEventDuplicateSignature",
+    "turnRendersConversationArticle",
+    "visibleRenderableTurnsForConversation",
     "visibleConversationShape",
   ].map((name) => functionSourceFrom(appJs, name));
   const result = Function(`
@@ -4737,6 +4820,8 @@ test("visible conversation shape counts cross-turn same-event user duplicates", 
     "duplicateUserMessageSignatureCount",
     "visibleUserMessageDuplicateSignature",
     "visibleUserMessageEventDuplicateSignature",
+    "turnRendersConversationArticle",
+    "visibleRenderableTurnsForConversation",
     "visibleConversationShape",
   ].map((name) => functionSourceFrom(appJs, name));
   const result = Function(`
@@ -4771,6 +4856,8 @@ test("visible conversation shape keeps repeated user text at different times", (
     "duplicateUserMessageSignatureCount",
     "visibleUserMessageDuplicateSignature",
     "visibleUserMessageEventDuplicateSignature",
+    "turnRendersConversationArticle",
+    "visibleRenderableTurnsForConversation",
     "visibleConversationShape",
   ].map((name) => functionSourceFrom(appJs, name));
   const result = Function(`

@@ -879,7 +879,7 @@ var codexMobileViteEntryGroupLoaders = {
 	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-0EpjufkP.js"), []),
 	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-CetEkez8.js"), []),
 	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-DieReWP_.js"), []),
-	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-Lmxh1jY7.js"), []),
+	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-DYaB49xe.js"), []),
 	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-BoKkKh0s.js"), [])
 };
 function loadCodexMobileViteEntryGroups() {
@@ -1055,7 +1055,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-CFYNtiwn.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-CaCAmvsc.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

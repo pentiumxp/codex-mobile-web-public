@@ -4747,7 +4747,7 @@ function renderCurrentThread(options = {}) {
     conversationSignature: conversationRenderSignature(thread),
     patchShellSignature: conversationPatchShellSignature(thread),
     stickToBottom: shouldStickToBottom,
-    expectedVisibleTurnCount: turns.length,
+    expectedVisibleTurnCount: renderVisibleShape.visibleTurnCount,
     expectedVisibleItemCount: renderVisibleShape.visibleItemCount,
     renderedDomTurnCount: conversationDomTurnIds().length,
     renderedDomItemCount: renderDomShape.itemCount,

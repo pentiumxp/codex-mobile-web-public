@@ -567,8 +567,34 @@ function visibleUserMessageEventDuplicateSignature(turn, item) {
   return visibleUserMessageDuplicateSignature(turn, item);
 }
 
+function turnRendersConversationArticle(turn, thread) {
+  if (!turn || !turn.id) return false;
+  if (visibleItemsForTurn(turn, thread).length > 0) return true;
+  if (typeof visibleItemBudgetSignature === "function" && visibleItemBudgetSignature(turn)) return true;
+  const threadId = typeof renderContextThreadId === "function"
+    ? renderContextThreadId(thread)
+    : String((thread && thread.id) || state.currentThreadId || "");
+  if (typeof approvalsForTurn === "function" && approvalsForTurn(threadId, turn.id).length > 0) return true;
+  const hasDraftResponse = typeof turnHasThreadTaskCardDraftResponse === "function"
+    && turnHasThreadTaskCardDraftResponse(turn);
+  if (hasDraftResponse) return true;
+  return Boolean(
+    typeof turnHasThreadTaskCardRequest === "function"
+    && typeof isLatestTurn === "function"
+    && typeof isLiveTurn === "function"
+    && isLatestTurn(turn, thread)
+    && isLiveTurn(turn, thread)
+    && turnHasThreadTaskCardRequest(turn)
+  );
+}
+
+function visibleRenderableTurnsForConversation(thread) {
+  return visibleTurnsForConversation(thread)
+    .filter((turn) => turnRendersConversationArticle(turn, thread));
+}
+
 function visibleConversationShape(thread) {
-  const turns = visibleTurnsForConversation(thread);
+  const turns = visibleRenderableTurnsForConversation(thread);
   let visibleItemCount = 0;
   const userMessages = [];
   for (const turn of turns) {
@@ -815,9 +841,7 @@ function checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan = {}, metr
 }
 
 function visibleRenderableTurnIds(thread) {
-  return visibleTurnsForConversation(thread)
-    .filter((turn) => turn && turn.id && visibleItemsForTurn(turn, thread).length > 0)
-    .map((turn) => String(turn.id));
+  return visibleRenderableTurnsForConversation(thread).map((turn) => String(turn.id));
 }
 
 function conversationDomTurnIds(conversation = $("conversation")) {
