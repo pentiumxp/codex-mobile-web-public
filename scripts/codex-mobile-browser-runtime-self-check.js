@@ -1657,6 +1657,17 @@ function viteAppPreviewProbeExpression(input = {}) {
       const statusLoaded = Array.isArray(status.loaded)
         ? status.loaded.map((entry) => String(entry || "")).filter(Boolean)
         : [];
+      const statusFailed = Array.isArray(status.failed)
+        ? status.failed.map((entry) => String(entry || "")).filter(Boolean)
+        : [];
+      const loaderStatusCompleted = Number(status.completedAt || 0) > 0;
+      const loaderStatusOk = status.ok === true
+        && loaderStatusCompleted
+        && statusFailed.length === 0
+        && loaderPlanScripts.length > 0
+        && JSON.stringify(statusLoaded) === JSON.stringify(loaderPlanScripts);
+      const loaderPromiseOk = Boolean(appPreviewResult && appPreviewResult.ok);
+      const loaderPromiseTimedOut = Boolean(appPreviewResult && appPreviewResult.timeout);
       return {
         label: "vite-app-preview",
         probeKind: "vite-app-preview",
@@ -1693,8 +1704,12 @@ function viteAppPreviewProbeExpression(input = {}) {
         esmCompatibilityReadyCount: Number(esmCompatibility.readyCount) || esmCompatibilityModules.filter((entry) => entry && entry.ready === true).length,
         esmCompatibilityExpectedCount: expectedEsmCompatibilityIds.length,
         esmCompatibilityGlobalsPublished,
-        loaderOk: Boolean(appPreviewResult && appPreviewResult.ok),
-        loaderTimedOut: Boolean(appPreviewResult && appPreviewResult.timeout),
+        loaderOk: loaderPromiseOk || loaderStatusOk,
+        loaderTimedOut: loaderPromiseTimedOut && !loaderStatusOk,
+        loaderPromiseOk,
+        loaderPromiseTimedOut,
+        loaderStatusOk,
+        loaderStatusCompleted,
         loaderLoadedCount: Number(appPreviewResult && appPreviewResult.loadedCount || status.loaded && status.loaded.length || 0) || 0,
         loaderFailedCount: Number(appPreviewResult && appPreviewResult.failedCount || status.failed && status.failed.length || 0) || 0,
         loaderErrorCode: String(appPreviewResult && appPreviewResult.errorCode || status.failed && status.failed[0] || "").slice(0, 120),

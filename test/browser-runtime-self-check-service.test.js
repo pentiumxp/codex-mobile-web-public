@@ -679,6 +679,53 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
   assert.equal(passing.ok, true);
   assert.equal(passing.issueCount, 0);
 
+  const lateLoaderCompletion = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    loaderTimedOut: false,
+    loaderPromiseTimedOut: true,
+    loaderStatusOk: true,
+    loaderStatusCompleted: true,
+    classicScriptCount: 51,
+    expectedClassicScriptCount: 51,
+    classicScriptOrderMatches: true,
+    loaderPlanPresent: true,
+    loaderPlanOwnerOk: true,
+    loaderPlanHashPresent: true,
+    loaderPlanScriptCount: 51,
+    loaderPlanHashCount: 51,
+    loaderPlanMatchesShellScripts: true,
+    loaderPlanMatchesInjectedScripts: true,
+    loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
+    embedExpected: true,
+    pluginSessionExpected: true,
+    embedQueryPresent: true,
+    embedHtmlClassPresent: true,
+    pluginEmbedApiReady: true,
+    initialPluginEmbedEmbedded: true,
+    initialPluginLaunchKeyPresent: true,
+    pluginLaunchUrlScrubbed: true,
+    pluginLaunchSessionCleared: true,
+    pluginSessionActive: true,
+    pluginSessionKeyPresent: true,
+    pluginSessionKeyDiffersFromLocalStorage: true,
+    pluginAppPreviewPathPreserved: true,
+    pluginStartupLoadingCleared: true,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] }, { expectEmbed: true, expectPluginSession: true });
+  assert.equal(lateLoaderCompletion.ok, true);
+  assert.equal(lateLoaderCompletion.issueCount, 0);
+
   const failing = script.analyzeViteAppPreviewProbe({
     markerPresent: false,
     metaPresent: false,
@@ -981,6 +1028,8 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("vite-app-preview-runtime"));
   assert.ok(scriptSource.includes("viteAppPreviewReport"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_APP_PREVIEW_PROMISE__"));
+  assert.ok(scriptSource.includes("loaderStatusOk"));
+  assert.ok(scriptSource.includes("loaderPromiseTimedOut"));
   assert.ok(scriptSource.includes("vite_app_preview_classic_script_order_mismatch"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__"));
