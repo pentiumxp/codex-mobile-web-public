@@ -10,6 +10,10 @@ async function loadAssetGraphModule() {
   return import("../scripts/frontend-shell-asset-graph.mjs");
 }
 
+async function loadShellManifestGenerator() {
+  return import("../scripts/generate-frontend-shell-manifest.mjs");
+}
+
 test("Vite shell asset graph covers the current ordered frontend shell", async () => {
   const { buildShellAssetManifest } = await loadAssetGraphModule();
   const manifest = buildShellAssetManifest(path.resolve(__dirname, ".."));
@@ -76,6 +80,32 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   assert.equal(groupsById.get("shell-services").startupCritical, false);
   assert.ok(manifest.assets.some((asset) => asset.path === "/" && asset.sourcePath === "public/index.html"));
   assert.ok(manifest.assets.every((asset) => asset.exists));
+});
+
+test("classic shell cache name changes when static shell asset contents change", async () => {
+  const { buildPublicShellManifest } = await loadShellManifestGenerator();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-shell-cache-hash-"));
+  fs.mkdirSync(path.join(root, "public"), { recursive: true });
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ version: "0.1.11" }));
+  fs.writeFileSync(path.join(root, "public", "manifest.json"), JSON.stringify({ icons: [] }));
+  fs.writeFileSync(path.join(root, "public", "styles.css"), ".app{}\n");
+  fs.writeFileSync(path.join(root, "public", "index.html"), [
+    "<!doctype html>",
+    "<link rel=\"stylesheet\" href=\"/styles.css\">",
+    "<script src=\"/shell-asset-manifest.js\"></script>",
+    "<script src=\"/a.js\"></script>",
+  ].join("\n"));
+  fs.writeFileSync(path.join(root, "public", "sw.js"), "importScripts(\"/shell-asset-manifest.js\");\n");
+  fs.writeFileSync(path.join(root, "public", "a.js"), "\"use strict\";\nwindow.A = 1;\n");
+
+  const first = buildPublicShellManifest(root);
+  fs.writeFileSync(path.join(root, "public", "a.js"), "\"use strict\";\nwindow.A = 2;\n");
+  const second = buildPublicShellManifest(root);
+
+  assert.match(first.shellCacheName, /^codex-mobile-shell-v625-[a-f0-9]{12}$/);
+  assert.match(second.shellCacheName, /^codex-mobile-shell-v625-[a-f0-9]{12}$/);
+  assert.notEqual(second.shellCacheName, first.shellCacheName);
+  assert.notEqual(second.clientBuildId, first.clientBuildId);
 });
 
 test("Vite shell entry imports the asset-graph ESM compatibility module", async () => {
