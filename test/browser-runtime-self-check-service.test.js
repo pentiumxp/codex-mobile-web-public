@@ -12,14 +12,16 @@ const scriptSource = fs.readFileSync(path.join(__dirname, "..", "scripts", "code
 const viteEsmCompatibilityReady = {
   esmCompatibilityReady: true,
   esmCompatibilityOwner: "vite-shell-entry",
-  esmCompatibilityModuleCount: 1,
-  esmCompatibilityReadyCount: 1,
+  esmCompatibilityModuleCount: 2,
+  esmCompatibilityReadyCount: 2,
+  esmCompatibilityExpectedCount: 2,
 };
 const viteEsmCompatibilityMissing = {
   esmCompatibilityReady: false,
   esmCompatibilityOwner: "",
   esmCompatibilityModuleCount: 0,
   esmCompatibilityReadyCount: 0,
+  esmCompatibilityExpectedCount: 2,
 };
 
 test("browser runtime self-check adapter re-exports canonical runtime service", () => {
@@ -529,6 +531,9 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__"));
+  assert.ok(scriptSource.includes("build-refresh-policy"));
+  assert.ok(scriptSource.includes("thread-list-load-policy"));
+  assert.ok(scriptSource.includes("esmCompatibilityExpectedCount"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__"));

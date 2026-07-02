@@ -824,8 +824,8 @@ var shell_asset_manifest_default = {
 	}
 };
 //#endregion
-//#region \0vite/preload-helper.js
-var import_build_refresh_policy = /* @__PURE__ */ __toESM((/* @__PURE__ */ __commonJSMin(((exports, module) => {
+//#region public/build-refresh-policy.js
+var require_build_refresh_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
 		const api = factory();
 		if (typeof module === "object" && module.exports) module.exports = api;
@@ -862,7 +862,135 @@ var import_build_refresh_policy = /* @__PURE__ */ __toESM((/* @__PURE__ */ __com
 			shouldPromptForServerBuildChange
 		};
 	});
-})))(), 1);
+}));
+//#endregion
+//#region public/thread-list-load-policy.js
+var require_thread_list_load_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadListLoadPolicy = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function bool(value) {
+			return value === true;
+		}
+		function text(value) {
+			return String(value || "").trim();
+		}
+		function planThreadListLoadRequest(input = {}) {
+			const silent = bool(input.silent);
+			const selectedCwd = text(input.selectedCwd);
+			const search = text(input.search);
+			const threadDetailOpening = bool(input.threadDetailOpening);
+			const documentHidden = bool(input.documentHidden);
+			const allowDuringDetail = bool(input.allowDuringDetail);
+			const allowHidden = bool(input.allowHidden);
+			const hasLoadedList = Number(input.threadListLoadedAtMs || 0) > 0;
+			const deferFallback = input.deferFallback;
+			const suppressHiddenSilent = silent && documentHidden && !allowHidden;
+			const suppressDetailSilent = silent && threadDetailOpening && !allowDuringDetail;
+			const allowWarmFallbackInitial = deferFallback !== false && !selectedCwd && !search;
+			const shouldDeferFallback = deferFallback === true || silent && deferFallback !== false && threadDetailOpening && !selectedCwd && !search;
+			const shouldUseWarmFallbackInitial = allowWarmFallbackInitial && (shouldDeferFallback || !hasLoadedList);
+			return {
+				action: "thread-list-load-request",
+				selectedCwd,
+				search,
+				silent,
+				threadDetailOpening,
+				documentHidden,
+				shouldLoad: !suppressHiddenSilent && !suppressDetailSilent,
+				skipReason: suppressHiddenSilent ? "hidden-silent" : suppressDetailSilent ? "detail-in-flight" : "",
+				retryDelayMs: suppressDetailSilent ? 700 : 0,
+				shouldDeferFallback,
+				shouldUseWarmFallbackInitial,
+				params: {
+					fallback: shouldDeferFallback ? "defer" : "",
+					initial: shouldUseWarmFallbackInitial ? "warm-fallback" : ""
+				}
+			};
+		}
+		return { planThreadListLoadRequest };
+	});
+}));
+//#endregion
+//#region \0virtual:codex-mobile-esm-compatibility
+var import_build_refresh_policy = /* @__PURE__ */ __toESM(require_build_refresh_policy());
+var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
+var moduleDefinitions = [{
+	"id": "build-refresh-policy",
+	"source": "public/build-refresh-policy.js",
+	"globalName": "CodexBuildRefreshPolicy",
+	"expectedFunctions": [
+		"shellSequenceFromBuildId",
+		"classifyServerBuildChange",
+		"shouldPromptForServerBuildChange"
+	]
+}, {
+	"id": "thread-list-load-policy",
+	"source": "public/thread-list-load-policy.js",
+	"globalName": "CodexThreadListLoadPolicy",
+	"expectedFunctions": ["planThreadListLoadRequest"]
+}];
+var moduleApis = {
+	"build-refresh-policy": import_build_refresh_policy.default,
+	"thread-list-load-policy": import_thread_list_load_policy.default
+};
+function functionReady(api, name) {
+	return Boolean(api && typeof api[name] === "function");
+}
+function sampleModule(id, api) {
+	if (id === "build-refresh-policy") {
+		const classification = functionReady(api, "classifyServerBuildChange") ? api.classifyServerBuildChange("0.1.11|codex-mobile-shell-v626", "0.1.11|codex-mobile-shell-v625") : "";
+		const prompt = functionReady(api, "shouldPromptForServerBuildChange") ? api.shouldPromptForServerBuildChange("0.1.11|codex-mobile-shell-v626", "0.1.11|codex-mobile-shell-v625") : false;
+		return {
+			ok: classification === "server-newer" && prompt === true,
+			classification,
+			prompt
+		};
+	}
+	if (id === "thread-list-load-policy") {
+		const plan = functionReady(api, "planThreadListLoadRequest") ? api.planThreadListLoadRequest({
+			silent: true,
+			threadDetailOpening: true,
+			deferFallback: true
+		}) : {};
+		return {
+			ok: plan && plan.action === "thread-list-load-request" && plan.shouldLoad === false && plan.skipReason === "detail-in-flight" && plan.retryDelayMs === 700,
+			action: String(plan && plan.action || ""),
+			shouldLoad: Boolean(plan && plan.shouldLoad),
+			skipReason: String(plan && plan.skipReason || ""),
+			retryDelayMs: Number(plan && plan.retryDelayMs) || 0
+		};
+	}
+	return { ok: false };
+}
+function codexMobileViteEsmCompatibility() {
+	const modules = moduleDefinitions.map((definition) => {
+		const api = moduleApis[definition.id] && typeof moduleApis[definition.id] === "object" ? moduleApis[definition.id] : {};
+		const expectedFunctions = Array.isArray(definition.expectedFunctions) ? definition.expectedFunctions : [];
+		const exportedFunctions = expectedFunctions.filter((name) => functionReady(api, name));
+		const sample = sampleModule(definition.id, api);
+		return {
+			id: definition.id,
+			source: definition.source,
+			globalName: definition.globalName,
+			expectedFunctions: expectedFunctions.slice(),
+			exportedFunctions,
+			sample,
+			ready: exportedFunctions.length === expectedFunctions.length && sample.ok === true
+		};
+	});
+	return {
+		schemaVersion: 1,
+		owner: "vite-shell-entry",
+		moduleCount: modules.length,
+		readyCount: modules.filter((entry) => entry.ready === true).length,
+		modules
+	};
+}
+//#endregion
+//#region \0vite/preload-helper.js
 var scriptRel = "modulepreload";
 var assetsURL = function(dep) {
 	return "/" + dep;
@@ -1008,36 +1136,7 @@ var classicCompatibility = {
 	startupGlobalContracts,
 	classicGlobalExports
 };
-function functionReady(api, name) {
-	return Boolean(api && typeof api[name] === "function");
-}
-function buildEsmCompatibilityProof() {
-	const api = import_build_refresh_policy.default && typeof import_build_refresh_policy.default === "object" ? import_build_refresh_policy.default : {};
-	const exportedFunctions = [
-		"shellSequenceFromBuildId",
-		"classifyServerBuildChange",
-		"shouldPromptForServerBuildChange"
-	].filter((name) => functionReady(api, name));
-	const sampleClassification = functionReady(api, "classifyServerBuildChange") ? api.classifyServerBuildChange("0.1.11|codex-mobile-shell-v626", shell_asset_manifest_default.clientBuildId) : "";
-	const samplePrompt = functionReady(api, "shouldPromptForServerBuildChange") ? api.shouldPromptForServerBuildChange("0.1.11|codex-mobile-shell-v626", shell_asset_manifest_default.clientBuildId) : false;
-	const moduleRecord = {
-		id: "build-refresh-policy",
-		source: "public/build-refresh-policy.js",
-		globalName: "CodexBuildRefreshPolicy",
-		exportedFunctions,
-		sampleClassification,
-		samplePrompt,
-		ready: exportedFunctions.length === 3 && sampleClassification === "server-newer" && samplePrompt === true
-	};
-	return {
-		schemaVersion: 1,
-		owner: "vite-shell-entry",
-		moduleCount: 1,
-		readyCount: moduleRecord.ready ? 1 : 0,
-		modules: [moduleRecord]
-	};
-}
-var esmCompatibility = buildEsmCompatibilityProof();
+var esmCompatibility = codexMobileViteEsmCompatibility();
 function shellManifestScriptAssets() {
 	return entryGroups.flatMap((group) => Array.isArray(group.assets) ? group.assets : []).filter((asset) => String(asset || "").startsWith("/"));
 }
@@ -1145,7 +1244,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-kUrezUBp.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-BL4C1yox.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

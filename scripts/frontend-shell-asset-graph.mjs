@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   SHELL_SCRIPT_BLOCK_END,
   SHELL_SCRIPT_BLOCK_START,
@@ -14,6 +15,27 @@ export const VITE_SHELL_ENTRY_SOURCE = "frontend/vite-shell-entry.mjs";
 export const VITE_DEFERRED_ENTRY_SOURCE = "frontend/vite-deferred-entry-topology.mjs";
 export const VITE_ENTRY_GROUP_SOURCE_PREFIX = "virtual:codex-mobile-shell-entry-group/";
 export const VITE_ENTRY_GROUP_LOADER_SOURCE = "virtual:codex-mobile-shell-entry-group-loader";
+export const VITE_ESM_COMPATIBILITY_SOURCE = "virtual:codex-mobile-esm-compatibility";
+export const VITE_ESM_COMPATIBILITY_MODULES = [
+  {
+    id: "build-refresh-policy",
+    source: "public/build-refresh-policy.js",
+    globalName: "CodexBuildRefreshPolicy",
+    expectedFunctions: [
+      "shellSequenceFromBuildId",
+      "classifyServerBuildChange",
+      "shouldPromptForServerBuildChange",
+    ],
+  },
+  {
+    id: "thread-list-load-policy",
+    source: "public/thread-list-load-policy.js",
+    globalName: "CodexThreadListLoadPolicy",
+    expectedFunctions: [
+      "planThreadListLoadRequest",
+    ],
+  },
+];
 
 function readText(root, relativePath) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
@@ -313,6 +335,99 @@ export function buildShellAssetManifest(root = process.cwd()) {
 function outputPathForAsset(assetPath) {
   if (assetPath === "/") return "shell-assets/index.html";
   return `shell-assets/${String(assetPath || "").replace(/^\/+/, "")}`;
+}
+
+function esmCompatibilityImportName(id) {
+  return `module_${String(id || "").replace(/[^a-zA-Z0-9]+/g, "_")}`;
+}
+
+function esmCompatibilityModuleSource(root, moduleRecord) {
+  const sourcePath = String(moduleRecord && moduleRecord.source || "");
+  return pathToFileURL(path.join(root, sourcePath)).href;
+}
+
+function createEsmCompatibilityVirtualModuleSource(root) {
+  const importLines = VITE_ESM_COMPATIBILITY_MODULES.map((moduleRecord) => (
+    `import ${esmCompatibilityImportName(moduleRecord.id)} from ${JSON.stringify(esmCompatibilityModuleSource(root, moduleRecord))};`
+  ));
+  const apiEntries = VITE_ESM_COMPATIBILITY_MODULES.map((moduleRecord) => (
+    `  ${JSON.stringify(moduleRecord.id)}: ${esmCompatibilityImportName(moduleRecord.id)},`
+  ));
+  return [
+    ...importLines,
+    "",
+    `const moduleDefinitions = ${JSON.stringify(VITE_ESM_COMPATIBILITY_MODULES, null, 2)};`,
+    "const moduleApis = {",
+    ...apiEntries,
+    "};",
+    "",
+    "function functionReady(api, name) {",
+    "  return Boolean(api && typeof api[name] === \"function\");",
+    "}",
+    "",
+    "function sampleModule(id, api) {",
+    "  if (id === \"build-refresh-policy\") {",
+    "    const classification = functionReady(api, \"classifyServerBuildChange\")",
+    "      ? api.classifyServerBuildChange(\"0.1.11|codex-mobile-shell-v626\", \"0.1.11|codex-mobile-shell-v625\")",
+    "      : \"\";",
+    "    const prompt = functionReady(api, \"shouldPromptForServerBuildChange\")",
+    "      ? api.shouldPromptForServerBuildChange(\"0.1.11|codex-mobile-shell-v626\", \"0.1.11|codex-mobile-shell-v625\")",
+    "      : false;",
+    "    return {",
+    "      ok: classification === \"server-newer\" && prompt === true,",
+    "      classification,",
+    "      prompt,",
+    "    };",
+    "  }",
+    "  if (id === \"thread-list-load-policy\") {",
+    "    const plan = functionReady(api, \"planThreadListLoadRequest\")",
+    "      ? api.planThreadListLoadRequest({ silent: true, threadDetailOpening: true, deferFallback: true })",
+    "      : {};",
+    "    return {",
+    "      ok: plan && plan.action === \"thread-list-load-request\"",
+    "        && plan.shouldLoad === false",
+    "        && plan.skipReason === \"detail-in-flight\"",
+    "        && plan.retryDelayMs === 700,",
+    "      action: String(plan && plan.action || \"\"),",
+    "      shouldLoad: Boolean(plan && plan.shouldLoad),",
+    "      skipReason: String(plan && plan.skipReason || \"\"),",
+    "      retryDelayMs: Number(plan && plan.retryDelayMs) || 0,",
+    "    };",
+    "  }",
+    "  return { ok: false };",
+    "}",
+    "",
+    "export function codexMobileViteEsmCompatibility() {",
+    "  const modules = moduleDefinitions.map((definition) => {",
+    "    const api = moduleApis[definition.id] && typeof moduleApis[definition.id] === \"object\"",
+    "      ? moduleApis[definition.id]",
+    "      : {};",
+    "    const expectedFunctions = Array.isArray(definition.expectedFunctions) ? definition.expectedFunctions : [];",
+    "    const exportedFunctions = expectedFunctions.filter((name) => functionReady(api, name));",
+    "    const sample = sampleModule(definition.id, api);",
+    "    return {",
+    "      id: definition.id,",
+    "      source: definition.source,",
+    "      globalName: definition.globalName,",
+    "      expectedFunctions: expectedFunctions.slice(),",
+    "      exportedFunctions,",
+    "      sample,",
+    "      ready: exportedFunctions.length === expectedFunctions.length && sample.ok === true,",
+    "    };",
+    "  });",
+    "  return {",
+    "    schemaVersion: 1,",
+    "    owner: \"vite-shell-entry\",",
+    "    moduleCount: modules.length,",
+    "    readyCount: modules.filter((entry) => entry.ready === true).length,",
+    "    modules,",
+    "  };",
+    "}",
+    "",
+    "export const codexMobileViteEsmCompatibilityModules = moduleDefinitions;",
+    "export default codexMobileViteEsmCompatibility;",
+    "",
+  ].join("\n");
 }
 
 function normalizePath(value) {
@@ -802,6 +917,9 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
   return {
     name: "codex-mobile-shell-entry-group-virtual-modules",
     resolveId(id) {
+      if (String(id || "") === VITE_ESM_COMPATIBILITY_SOURCE) {
+        return `\0${VITE_ESM_COMPATIBILITY_SOURCE}`;
+      }
       if (String(id || "") === VITE_ENTRY_GROUP_LOADER_SOURCE) {
         return `\0${VITE_ENTRY_GROUP_LOADER_SOURCE}`;
       }
@@ -812,6 +930,9 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
     },
     load(id) {
       const value = String(id || "");
+      if (value === `\0${VITE_ESM_COMPATIBILITY_SOURCE}`) {
+        return createEsmCompatibilityVirtualModuleSource(root);
+      }
       if (value === `\0${VITE_ENTRY_GROUP_LOADER_SOURCE}`) {
         const manifest = buildPublicShellManifest(root);
         const groups = (Array.isArray(manifest.entryGroups) ? manifest.entryGroups : [])

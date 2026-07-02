@@ -5005,6 +5005,20 @@ cutover invariant moves forward one step: Vite preview/app-preview must prove
 at least one real runtime policy import before default shell ownership can
 move from the generated classic script block to the module entry.
 
+The follow-up ESM compatibility slice moves that proof into the Vite asset
+graph instead of hard-coding a single import in the shell entry:
+
+- `scripts/frontend-shell-asset-graph.mjs` owns
+  `virtual:codex-mobile-esm-compatibility` and the bounded list of pure runtime
+  policy modules that the Vite entry must be able to import.
+- `frontend/vite-shell-entry.mjs` imports only that virtual compatibility
+  module, keeping ESM readiness tied to the build graph boundary rather than
+  to ad hoc entrypoint source checks.
+- The current compatibility set covers `public/build-refresh-policy.js` and
+  `public/thread-list-load-policy.js`. Browser Vite preview/app-preview gates
+  require both module ids to report ready before default shell ownership can
+  move forward.
+
 ## Release Rule
 
 Follow the current release order:

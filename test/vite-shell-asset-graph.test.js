@@ -78,13 +78,32 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   assert.ok(manifest.assets.every((asset) => asset.exists));
 });
 
-test("Vite shell entry imports the build refresh policy as an ESM compatibility proof", () => {
+test("Vite shell entry imports the asset-graph ESM compatibility module", async () => {
+  const {
+    VITE_ESM_COMPATIBILITY_MODULES,
+    VITE_ESM_COMPATIBILITY_SOURCE,
+    createShellEntryGroupVirtualModulePlugin,
+  } = await loadAssetGraphModule();
   const root = path.resolve(__dirname, "..");
   const source = fs.readFileSync(path.join(root, "frontend", "vite-shell-entry.mjs"), "utf8");
-  assert.match(source, /import buildRefreshPolicy from "\.\.\/public\/build-refresh-policy\.js"/);
+  assert.match(source, /virtual:codex-mobile-esm-compatibility/);
+  assert.doesNotMatch(source, /\.\.\/public\/build-refresh-policy\.js/);
   assert.match(source, /__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__/);
   assert.match(source, /codexMobileEsmCompatibility/);
-  assert.match(source, /build-refresh-policy/);
+  assert.deepEqual(
+    VITE_ESM_COMPATIBILITY_MODULES.map((entry) => entry.id),
+    ["build-refresh-policy", "thread-list-load-policy"]
+  );
+  const plugin = createShellEntryGroupVirtualModulePlugin({ root });
+  const resolved = plugin.resolveId(VITE_ESM_COMPATIBILITY_SOURCE);
+  assert.equal(resolved, `\0${VITE_ESM_COMPATIBILITY_SOURCE}`);
+  const virtualSource = plugin.load(resolved);
+  assert.match(virtualSource, /codexMobileViteEsmCompatibility/);
+  assert.match(virtualSource, /public\/build-refresh-policy\.js/);
+  assert.match(virtualSource, /public\/thread-list-load-policy\.js/);
+  assert.match(virtualSource, /planThreadListLoadRequest/);
+  assert.match(virtualSource, /detail-in-flight/);
+  assert.match(virtualSource, /server-newer/);
 });
 
 test("Vite shell build contract records entry chunks and classic fallback outputs", async () => {

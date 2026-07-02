@@ -1,5 +1,5 @@
 import shellManifest from "../public/shell-asset-manifest.json";
-import buildRefreshPolicy from "../public/build-refresh-policy.js";
+import { codexMobileViteEsmCompatibility } from "virtual:codex-mobile-esm-compatibility";
 import {
   codexMobileViteEntryGroupIds,
   loadCodexMobileViteEntryGroups,
@@ -57,47 +57,7 @@ const classicCompatibility = {
   startupGlobalContracts,
   classicGlobalExports,
 };
-
-function functionReady(api, name) {
-  return Boolean(api && typeof api[name] === "function");
-}
-
-function buildEsmCompatibilityProof() {
-  const api = buildRefreshPolicy && typeof buildRefreshPolicy === "object"
-    ? buildRefreshPolicy
-    : {};
-  const exportedFunctions = [
-    "shellSequenceFromBuildId",
-    "classifyServerBuildChange",
-    "shouldPromptForServerBuildChange",
-  ].filter((name) => functionReady(api, name));
-  const sampleClassification = functionReady(api, "classifyServerBuildChange")
-    ? api.classifyServerBuildChange("0.1.11|codex-mobile-shell-v626", shellManifest.clientBuildId)
-    : "";
-  const samplePrompt = functionReady(api, "shouldPromptForServerBuildChange")
-    ? api.shouldPromptForServerBuildChange("0.1.11|codex-mobile-shell-v626", shellManifest.clientBuildId)
-    : false;
-  const moduleRecord = {
-    id: "build-refresh-policy",
-    source: "public/build-refresh-policy.js",
-    globalName: "CodexBuildRefreshPolicy",
-    exportedFunctions,
-    sampleClassification,
-    samplePrompt,
-    ready: exportedFunctions.length === 3
-      && sampleClassification === "server-newer"
-      && samplePrompt === true,
-  };
-  return {
-    schemaVersion: 1,
-    owner: "vite-shell-entry",
-    moduleCount: 1,
-    readyCount: moduleRecord.ready ? 1 : 0,
-    modules: [moduleRecord],
-  };
-}
-
-const esmCompatibility = buildEsmCompatibilityProof();
+const esmCompatibility = codexMobileViteEsmCompatibility();
 
 function shellManifestScriptAssets() {
   return entryGroups.flatMap((group) => Array.isArray(group.assets) ? group.assets : [])
