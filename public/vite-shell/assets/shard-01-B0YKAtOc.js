@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-ConUJgmy.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-Z8acuQFy.js";
 //#region public/build-refresh-policy.js
 var require_build_refresh_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -4088,6 +4088,295 @@ var require_thread_tile_actions = /* @__PURE__ */ __commonJSMin(((exports, modul
 	});
 }));
 //#endregion
+//#region public/modal-runtime.js
+var require_modal_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	function renderAppNativeDialog() {
+		const dialog = $("appNativeDialog");
+		const title = $("appNativeDialogTitle");
+		const message = $("appNativeDialogMessage");
+		const input = $("appNativeDialogInput");
+		const actions = $("appNativeDialogActions");
+		const cancel = $("appNativeDialogCancel");
+		const proceed = $("appNativeDialogProceed");
+		if (!dialog || !title || !message || !input || !actions || !cancel || !proceed) return;
+		const open = Boolean(state.appNativeDialogOpen);
+		const promptMode = state.appNativeDialogMode === "prompt";
+		const alertMode = state.appNativeDialogMode === "alert";
+		dialog.classList.toggle("hidden", !open);
+		title.textContent = state.appNativeDialogTitle || "提示";
+		message.textContent = state.appNativeDialogMessage || "";
+		input.classList.toggle("hidden", !open || !promptMode);
+		input.value = promptMode ? state.appNativeDialogValue || "" : "";
+		input.placeholder = promptMode ? state.appNativeDialogPlaceholder || "" : "";
+		input.rows = Math.max(2, Math.min(10, Number(state.appNativeDialogRows) || 4));
+		cancel.hidden = alertMode;
+		actions.classList.toggle("single", alertMode);
+		cancel.textContent = state.appNativeDialogCancelLabel || "取消";
+		proceed.textContent = state.appNativeDialogConfirmLabel || (alertMode ? "知道了" : "确定");
+		if (open) window.setTimeout(() => {
+			const focusTarget = promptMode ? input : proceed;
+			if (focusTarget && typeof focusTarget.focus === "function") try {
+				focusTarget.focus({ preventScroll: true });
+			} catch (_) {
+				focusTarget.focus();
+			}
+		}, 0);
+	}
+	function closeAppNativeDialog(confirmed = false) {
+		const resolve = state.appNativeDialogResolve;
+		const mode = state.appNativeDialogMode;
+		const input = $("appNativeDialogInput");
+		const value = input ? input.value : state.appNativeDialogValue;
+		state.appNativeDialogOpen = false;
+		state.appNativeDialogMode = "alert";
+		state.appNativeDialogTitle = "提示";
+		state.appNativeDialogMessage = "";
+		state.appNativeDialogValue = "";
+		state.appNativeDialogPlaceholder = "";
+		state.appNativeDialogConfirmLabel = "确定";
+		state.appNativeDialogCancelLabel = "取消";
+		state.appNativeDialogRows = 4;
+		state.appNativeDialogResolve = null;
+		renderAppNativeDialog();
+		if (!resolve) return;
+		if (mode === "prompt") {
+			resolve(confirmed ? value : null);
+			return;
+		}
+		if (mode === "confirm") {
+			resolve(Boolean(confirmed));
+			return;
+		}
+		resolve(void 0);
+	}
+	function requestAppNativeDialog(options = {}) {
+		if (state.appNativeDialogResolve) closeAppNativeDialog(false);
+		const mode = [
+			"alert",
+			"confirm",
+			"prompt"
+		].includes(options.mode) ? options.mode : "alert";
+		state.appNativeDialogOpen = true;
+		state.appNativeDialogMode = mode;
+		state.appNativeDialogTitle = String(options.title || "提示");
+		state.appNativeDialogMessage = String(options.message || "");
+		state.appNativeDialogValue = String(options.value || "");
+		state.appNativeDialogPlaceholder = String(options.placeholder || "");
+		state.appNativeDialogConfirmLabel = String(options.confirmLabel || (mode === "alert" ? "知道了" : "确定"));
+		state.appNativeDialogCancelLabel = String(options.cancelLabel || "取消");
+		state.appNativeDialogRows = Math.max(2, Math.min(10, Number(options.rows) || 4));
+		renderAppNativeDialog();
+		return new Promise((resolve) => {
+			state.appNativeDialogResolve = resolve;
+		});
+	}
+	function requestAppAlert(message, options = {}) {
+		return requestAppNativeDialog(Object.assign({}, options, {
+			mode: "alert",
+			message,
+			title: options.title || "提示",
+			confirmLabel: options.confirmLabel || "知道了"
+		}));
+	}
+	function requestAppConfirmation(message, options = {}) {
+		return requestAppNativeDialog(Object.assign({}, options, {
+			mode: "confirm",
+			message,
+			title: options.title || "确认操作"
+		}));
+	}
+	function requestAppTextInput(message, value = "", options = {}) {
+		return requestAppNativeDialog(Object.assign({}, options, {
+			mode: "prompt",
+			message,
+			value,
+			title: options.title || "输入内容"
+		}));
+	}
+	function handleAppNativeDialogKeydown(event) {
+		if (!state.appNativeDialogOpen) return;
+		if (event.key === "Escape") {
+			event.preventDefault();
+			closeAppNativeDialog(false);
+			return;
+		}
+		if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+			event.preventDefault();
+			closeAppNativeDialog(true);
+		}
+	}
+	function renderCodexProfileSwitchDialog() {
+		const dialog = $("profileSwitchConfirmDialog");
+		const subtitle = $("profileSwitchConfirmSubtitle");
+		if (!dialog || !subtitle) return;
+		dialog.classList.toggle("hidden", !state.profileSwitchConfirmOpen);
+		subtitle.textContent = state.profileSwitchConfirmOpen ? `目标账号：${state.profileSwitchConfirmLabel || state.profileSwitchConfirmTargetId || "--"}` : "";
+	}
+	function closeCodexProfileSwitchDialog(confirmed = false) {
+		const resolve = state.profileSwitchConfirmResolve;
+		state.profileSwitchConfirmOpen = false;
+		state.profileSwitchConfirmTargetId = "";
+		state.profileSwitchConfirmLabel = "";
+		state.profileSwitchConfirmResolve = null;
+		renderCodexProfileSwitchDialog();
+		if (resolve) resolve(Boolean(confirmed));
+	}
+	function requestCodexProfileSwitchConfirmation(profileId, label) {
+		if (state.profileSwitchConfirmResolve) closeCodexProfileSwitchDialog(false);
+		state.profileSwitchConfirmOpen = true;
+		state.profileSwitchConfirmTargetId = String(profileId || "");
+		state.profileSwitchConfirmLabel = String(label || profileId || "");
+		renderCodexProfileSwitchDialog();
+		return new Promise((resolve) => {
+			state.profileSwitchConfirmResolve = resolve;
+		});
+	}
+	function codexProfileSwitchStageLabel(stageId, fallback = "") {
+		const id = String(stageId || "");
+		const stage = CODEX_PROFILE_SWITCH_STAGES.find((item) => item.id === id);
+		return stage ? stage.label : String(fallback || id || "");
+	}
+	function formatCodexProfileSwitchProgress(progress = {}) {
+		const input = progress && typeof progress === "object" ? progress : {};
+		const fallback = codexProfileSwitchStageLabel(input.stage, "正在切换 Profile");
+		const message = String(input.message || fallback || "").trim();
+		const stepIndex = Number(input.stepIndex || 0);
+		const stepCount = Number(input.stepCount || 0);
+		if (message && stepIndex > 0 && stepCount > 0) return `${stepIndex}/${stepCount} ${message}`;
+		return message || "正在切换 Profile...";
+	}
+	function setCodexProfileSwitchStage(progress) {
+		const text = typeof progress === "string" ? progress : formatCodexProfileSwitchProgress(progress);
+		state.codexProfileSwitchStage = text;
+		const connection = $("connectionState");
+		if (connection) connection.textContent = text;
+		renderCodexProfileSettings();
+	}
+	function clearCodexProfileSwitchStageTimers() {
+		for (const timer of state.codexProfileSwitchStageTimers || []) window.clearTimeout(timer);
+		state.codexProfileSwitchStageTimers = [];
+	}
+	function stopCodexProfileSwitchProgressPolling() {
+		clearCodexProfileSwitchStageTimers();
+		if (state.codexProfileSwitchProgressTimer) {
+			window.clearTimeout(state.codexProfileSwitchProgressTimer);
+			state.codexProfileSwitchProgressTimer = null;
+		}
+	}
+	function startCodexProfileSwitchProgressPolling(requestId) {
+		const id = String(requestId || "").trim();
+		stopCodexProfileSwitchProgressPolling();
+		if (!id) return;
+		const poll = async () => {
+			if (!state.codexProfileSwitchBusy || state.codexProfileSwitchRequestId !== id) return;
+			try {
+				const result = await api(`/api/codex-profiles/switch-progress?requestId=${encodeURIComponent(id)}`, { timeoutMs: 5e3 });
+				if (result && result.progress) {
+					setCodexProfileSwitchStage(result.progress);
+					const status = String(result.progress.status || "");
+					if (status === "failed" || status === "restarting" || status === "complete") return;
+				}
+			} catch (_) {}
+			if (state.codexProfileSwitchBusy && state.codexProfileSwitchRequestId === id) state.codexProfileSwitchProgressTimer = window.setTimeout(poll, 700);
+		};
+		state.codexProfileSwitchProgressTimer = window.setTimeout(poll, 250);
+	}
+	async function performCodexProfileSwitch(profileId) {
+		const requestId = createSubmissionId();
+		let switchAccepted = false;
+		state.codexProfileSwitchBusy = true;
+		state.codexProfileSwitchTargetId = profileId;
+		state.codexProfileSwitchRequestId = requestId;
+		clearStoredRateLimits();
+		setCodexProfileSwitchStage({
+			stage: "profile_lookup",
+			message: "正在读取目标 Profile...",
+			stepIndex: 1,
+			stepCount: 10
+		});
+		startCodexProfileSwitchProgressPolling(requestId);
+		try {
+			const result = await api("/api/codex-profiles/active", {
+				method: "POST",
+				body: JSON.stringify({
+					profileId,
+					requestId
+				}),
+				timeoutMs: 9e4
+			});
+			stopCodexProfileSwitchProgressPolling();
+			setCodexProfileSwitchStage(result && result.progress ? result.progress : {
+				stage: "waiting_for_restart",
+				message: "切换已写入，正在等待服务恢复...",
+				stepIndex: 10,
+				stepCount: 10
+			});
+			state.codexProfileRestarting = true;
+			switchAccepted = true;
+			showReconnectRefreshPrompt("restart");
+		} catch (err) {
+			stopCodexProfileSwitchProgressPolling();
+			let showedProgress = false;
+			try {
+				const progressResult = await api(`/api/codex-profiles/switch-progress?requestId=${encodeURIComponent(requestId)}`, { timeoutMs: 5e3 });
+				if (progressResult && progressResult.progress) {
+					setCodexProfileSwitchStage(progressResult.progress);
+					showedProgress = true;
+				}
+			} catch (_) {}
+			if (err && err.progress) {
+				setCodexProfileSwitchStage(err.progress);
+				showedProgress = true;
+			}
+			if (!showedProgress) setCodexProfileSwitchStage(`切换失败：${err.message || "Codex profile switch failed"}`);
+			const connection = $("connectionState");
+			if (connection) connection.textContent = state.codexProfileSwitchStage || err.message || "Codex profile switch failed";
+			showError(err);
+		} finally {
+			state.codexProfileSwitchBusy = false;
+			if (!state.codexProfileRestarting && switchAccepted) {
+				state.codexProfileSwitchTargetId = "";
+				state.codexProfileSwitchStage = "";
+				state.codexProfileSwitchRequestId = "";
+			}
+			renderCodexProfileSettings();
+		}
+	}
+	function createModalRuntime() {
+		return {
+			requestAppNativeDialog: typeof requestAppNativeDialog === "function" ? requestAppNativeDialog : null,
+			requestAppAlert: typeof requestAppAlert === "function" ? requestAppAlert : null,
+			requestAppConfirmation: typeof requestAppConfirmation === "function" ? requestAppConfirmation : null,
+			requestAppTextInput: typeof requestAppTextInput === "function" ? requestAppTextInput : null,
+			requestCodexProfileSwitchConfirmation: typeof requestCodexProfileSwitchConfirmation === "function" ? requestCodexProfileSwitchConfirmation : null
+		};
+	}
+	(function exposeCodexModalRuntime(root) {
+		const modalRuntimeApi = { createModalRuntime };
+		if (typeof module === "object" && module.exports) module.exports = modalRuntimeApi;
+		Object.assign(root, {
+			renderAppNativeDialog,
+			closeAppNativeDialog,
+			requestAppNativeDialog,
+			requestAppAlert,
+			requestAppConfirmation,
+			requestAppTextInput,
+			handleAppNativeDialogKeydown,
+			renderCodexProfileSwitchDialog,
+			closeCodexProfileSwitchDialog,
+			requestCodexProfileSwitchConfirmation,
+			codexProfileSwitchStageLabel,
+			formatCodexProfileSwitchProgress,
+			setCodexProfileSwitchStage,
+			clearCodexProfileSwitchStageTimers,
+			stopCodexProfileSwitchProgressPolling,
+			startCodexProfileSwitchProgressPolling,
+			performCodexProfileSwitch
+		});
+		root.CodexModalRuntime = modalRuntimeApi;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
 //#region public/thread-list-load-policy.js
 var require_thread_list_load_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -4905,170 +5194,6 @@ var require_thread_detail_merge_state = /* @__PURE__ */ __commonJSMin(((exports,
 	});
 }));
 //#endregion
-//#region public/thread-detail-v4-merge-state.js
-var require_thread_detail_v4_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDetailV4MergeState = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function defaultNormalizeThread(thread) {
-			return thread;
-		}
-		function defaultTurnVisibleWeight(turn) {
-			return Array.isArray(turn && turn.items) ? turn.items.length : 0;
-		}
-		function defaultSortTurns(turns) {
-			return Array.isArray(turns) ? turns.slice() : [];
-		}
-		function statusText(status) {
-			if (!status) return "";
-			if (typeof status === "object" && status.type) return String(status.type || "");
-			return String(status || "");
-		}
-		function createThreadDetailV4MergePolicy(options = {}) {
-			const normalizeThreadVisibleUserMessages = typeof options.normalizeThreadVisibleUserMessages === "function" ? options.normalizeThreadVisibleUserMessages : defaultNormalizeThread;
-			const turnVisibleWeight = typeof options.turnVisibleWeight === "function" ? options.turnVisibleWeight : defaultTurnVisibleWeight;
-			const isOptimisticUserMessage = typeof options.isOptimisticUserMessage === "function" ? options.isOptimisticUserMessage : () => false;
-			const isRecentlySubmittedUserMessage = typeof options.isRecentlySubmittedUserMessage === "function" ? options.isRecentlySubmittedUserMessage : () => false;
-			const isReasoningItem = typeof options.isReasoningItem === "function" ? options.isReasoningItem : () => false;
-			const userMessageHasSubmissionId = typeof options.userMessageHasSubmissionId === "function" ? options.userMessageHasSubmissionId : (item, submissionId) => Boolean(item && submissionId && String(item.clientSubmissionId || "") === String(submissionId || ""));
-			const userMessagesCanShadow = typeof options.userMessagesCanShadow === "function" ? options.userMessagesCanShadow : () => false;
-			const isTurnComplete = typeof options.isTurnComplete === "function" ? options.isTurnComplete : (turn) => /completed|failed|cancel|error|interrupted/i.test(statusText(turn && turn.status));
-			const isRunningStatus = typeof options.isRunningStatus === "function" ? options.isRunningStatus : (status) => /active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/i.test(statusText(status));
-			const isIncompleteInterruptedTurn = typeof options.isIncompleteInterruptedTurn === "function" ? options.isIncompleteInterruptedTurn : () => false;
-			const turnHasActiveLiveItems = typeof options.turnHasActiveLiveItems === "function" ? options.turnHasActiveLiveItems : () => false;
-			const turnOrderMs = typeof options.turnOrderMs === "function" ? options.turnOrderMs : () => 0;
-			const mergeTurnPreservingVisibleItems = typeof options.mergeTurnPreservingVisibleItems === "function" ? options.mergeTurnPreservingVisibleItems : (existingTurn, incomingTurn) => incomingTurn || existingTurn;
-			const sortTurnsForDisplay = typeof options.sortTurnsForDisplay === "function" ? options.sortTurnsForDisplay : defaultSortTurns;
-			const maxVisibleTurnsForThread = typeof options.maxVisibleTurnsForThread === "function" ? options.maxVisibleTurnsForThread : () => 10;
-			function isV4ProjectionThread(thread) {
-				return Boolean(thread && (thread.mobileProjectionVersion === "v4" || thread.mobileProjection && thread.mobileProjection.version === "v4"));
-			}
-			function shouldPreserveV4PendingOverlayItem(item) {
-				return Boolean(item && item.type === "userMessage" && isOptimisticUserMessage(item) && (isRecentlySubmittedUserMessage(item) || item.mobileSendError));
-			}
-			function v4ThreadHasPendingMatch(thread, pendingItem) {
-				if (!pendingItem || pendingItem.type !== "userMessage") return false;
-				const submissionId = String(pendingItem.clientSubmissionId || "").trim();
-				for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
-					if (!item || item.type !== "userMessage") continue;
-					if (submissionId && userMessageHasSubmissionId(item, submissionId)) return true;
-					if (!isOptimisticUserMessage(item) && userMessagesCanShadow(item, pendingItem)) return true;
-				}
-				return false;
-			}
-			function appendV4PendingOverlayItem(turn, item) {
-				if (!turn || !item) return;
-				turn.items = Array.isArray(turn.items) ? turn.items : [];
-				const submissionId = String(item.clientSubmissionId || "").trim();
-				if (!turn.items.some((existing) => existing && (submissionId && userMessageHasSubmissionId(existing, submissionId) || existing.id === item.id || userMessagesCanShadow(existing, item)))) turn.items.push(item);
-			}
-			function copyTurnWithOnlyItems(turn, items) {
-				return Object.assign({}, turn || {}, { items: (items || []).slice() });
-			}
-			function applyV4PendingOverlay(existingThread, mergedThread) {
-				if (!existingThread || !mergedThread || !Array.isArray(existingThread.turns)) return mergedThread;
-				mergedThread.turns = Array.isArray(mergedThread.turns) ? mergedThread.turns : [];
-				const turnsById = new Map(mergedThread.turns.map((turn) => [String(turn && turn.id || ""), turn]));
-				for (const existingTurn of existingThread.turns) {
-					const pendingItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : []).filter((item) => shouldPreserveV4PendingOverlayItem(item) && !v4ThreadHasPendingMatch(mergedThread, item));
-					if (!pendingItems.length) continue;
-					const targetTurn = turnsById.get(String(existingTurn.id || ""));
-					if (targetTurn) {
-						pendingItems.forEach((item) => appendV4PendingOverlayItem(targetTurn, item));
-						continue;
-					}
-					const overlayTurn = copyTurnWithOnlyItems(existingTurn, pendingItems);
-					overlayTurn.mobilePendingOverlay = true;
-					mergedThread.turns.push(overlayTurn);
-					if (overlayTurn.id) turnsById.set(String(overlayTurn.id), overlayTurn);
-				}
-				return mergedThread;
-			}
-			function v4ProjectionRevisionValue(thread) {
-				const direct = Number(thread && thread.mobileProjectionRevision);
-				if (Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
-				const nested = Number(thread && thread.mobileProjection && thread.mobileProjection.revision);
-				return Number.isFinite(nested) && nested > 0 ? Math.trunc(nested) : 0;
-			}
-			function isV4ProjectionRefreshRegressive(existingThread, incomingThread) {
-				const existingRevision = v4ProjectionRevisionValue(existingThread);
-				const incomingRevision = v4ProjectionRevisionValue(incomingThread);
-				return Boolean(existingRevision && incomingRevision && incomingRevision < existingRevision);
-			}
-			function isActiveLikeProjectionTurn(turn) {
-				return Boolean(turn && !isTurnComplete(turn) && (isRunningStatus(turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn)));
-			}
-			function incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns) {
-				const existingOrder = turnOrderMs(existingTurn);
-				if (!existingOrder) return false;
-				return (incomingTurns || []).some((incomingTurn) => {
-					if (!incomingTurn || String(incomingTurn.id || "") === String(existingTurn && existingTurn.id || "")) return false;
-					const incomingOrder = turnOrderMs(incomingTurn);
-					return Boolean(incomingOrder && incomingOrder > existingOrder);
-				});
-			}
-			function existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns) {
-				const visibleItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : []).filter((item) => item && turnVisibleWeight({ items: [item] }) > 0 && !isReasoningItem(item));
-				return Boolean(visibleItems.length && visibleItems.every((item) => shouldPreserveV4PendingOverlayItem(item) && v4ThreadHasPendingMatch({ turns: incomingTurns || [] }, item)));
-			}
-			function shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, incomingTurns) {
-				if (!existingTurn || turnVisibleWeight(existingTurn) <= 0) return false;
-				const id = String(existingTurn.id || "");
-				if (id && (incomingTurns || []).some((turn) => String(turn && turn.id || "") === id)) return false;
-				if (existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns)) return false;
-				const activeLike = isActiveLikeProjectionTurn(existingTurn);
-				const regressiveRefresh = isV4ProjectionRefreshRegressive(existingThread, incomingThread);
-				if (!activeLike && !regressiveRefresh) return false;
-				return !incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns);
-			}
-			function mergeV4ProjectionThread(existingThread, incomingThread) {
-				if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeThreadVisibleUserMessages(incomingThread);
-				const merged = Object.assign({}, existingThread, incomingThread);
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
-				if (Array.isArray(incomingThread.turns)) {
-					const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
-					const incomingTurns = incomingThread.turns.slice();
-					const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-					const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-					if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
-						merged.turns = existingTurns;
-						return normalizeThreadVisibleUserMessages(merged);
-					}
-					const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
-					merged.turns = incomingTurns.map((incomingTurn) => {
-						const existingTurn = existingById.get(String(incomingTurn && incomingTurn.id || ""));
-						return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
-					});
-					for (const existingTurn of existingTurns) if (shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, merged.turns)) merged.turns.push(existingTurn);
-					applyV4PendingOverlay(existingThread, merged);
-					merged.turns = sortTurnsForDisplay(merged.turns).slice(-maxVisibleTurnsForThread(merged));
-				}
-				if (isV4ProjectionRefreshRegressive(existingThread, incomingThread)) {
-					const existingRevision = v4ProjectionRevisionValue(existingThread);
-					if (existingRevision) {
-						merged.mobileProjectionRevision = existingRevision;
-						if (merged.mobileProjection && typeof merged.mobileProjection === "object") merged.mobileProjection = Object.assign({}, merged.mobileProjection, { revision: existingRevision });
-					}
-				}
-				return normalizeThreadVisibleUserMessages(merged);
-			}
-			return {
-				applyV4PendingOverlay,
-				isV4ProjectionRefreshRegressive,
-				isV4ProjectionThread,
-				mergeV4ProjectionThread,
-				shouldPreserveExistingV4ProjectionTurn,
-				v4ProjectionRevisionValue
-			};
-		}
-		return { createThreadDetailV4MergePolicy };
-	});
-}));
-//#endregion
 //#region \0virtual:codex-mobile-esm-compatibility/shard/shard-01
 var import_build_refresh_policy = /* @__PURE__ */ __toESM(require_build_refresh_policy());
 var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings());
@@ -5085,13 +5210,13 @@ var import_home_ai_diagnostic_reporting = /* @__PURE__ */ __toESM(require_home_a
 var import_thread_diagnostic_events = /* @__PURE__ */ __toESM(require_thread_diagnostic_events());
 var import_thread_tile_layout = /* @__PURE__ */ __toESM(require_thread_tile_layout());
 var import_thread_tile_actions = /* @__PURE__ */ __toESM(require_thread_tile_actions());
+var import_modal_runtime = /* @__PURE__ */ __toESM(require_modal_runtime());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
 var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
 var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
 var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_detail_patch_plan());
 var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
 var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
-var import_thread_detail_v4_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_v4_merge_state());
 var moduleDefinitions = [
 	{
 		"id": "build-refresh-policy",
@@ -5346,6 +5471,15 @@ var moduleDefinitions = [
 		"bytes": 7380
 	},
 	{
+		"id": "modal-runtime",
+		"source": "public/modal-runtime.js",
+		"globalName": "CodexModalRuntime",
+		"expectedFunctions": ["createModalRuntime"],
+		"assetPath": "/modal-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 12049
+	},
+	{
 		"id": "thread-list-load-policy",
 		"source": "public/thread-list-load-policy.js",
 		"globalName": "CodexThreadListLoadPolicy",
@@ -5412,15 +5546,6 @@ var moduleDefinitions = [
 		"assetPath": "/thread-detail-merge-state.js",
 		"classicLoaderExcluded": true,
 		"bytes": 8461
-	},
-	{
-		"id": "thread-detail-v4-merge-state",
-		"source": "public/thread-detail-v4-merge-state.js",
-		"globalName": "CodexThreadDetailV4MergeState",
-		"expectedFunctions": ["createThreadDetailV4MergePolicy"],
-		"assetPath": "/thread-detail-v4-merge-state.js",
-		"classicLoaderExcluded": true,
-		"bytes": 12071
 	}
 ];
 var moduleApis = {
@@ -5439,13 +5564,13 @@ var moduleApis = {
 	"thread-diagnostic-events": import_thread_diagnostic_events.default,
 	"thread-tile-layout": import_thread_tile_layout.default,
 	"thread-tile-actions": import_thread_tile_actions.default,
+	"modal-runtime": import_modal_runtime.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
 	"thread-list-stable-order": import_thread_list_stable_order.default,
 	"thread-status-hints": import_thread_status_hints.default,
 	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
 	"thread-detail-actions": import_thread_detail_actions.default,
-	"thread-detail-merge-state": import_thread_detail_merge_state.default,
-	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default
+	"thread-detail-merge-state": import_thread_detail_merge_state.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");

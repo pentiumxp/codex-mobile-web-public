@@ -1,4 +1,168 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-ConUJgmy.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-Z8acuQFy.js";
+//#region public/thread-detail-v4-merge-state.js
+var require_thread_detail_v4_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDetailV4MergeState = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function defaultNormalizeThread(thread) {
+			return thread;
+		}
+		function defaultTurnVisibleWeight(turn) {
+			return Array.isArray(turn && turn.items) ? turn.items.length : 0;
+		}
+		function defaultSortTurns(turns) {
+			return Array.isArray(turns) ? turns.slice() : [];
+		}
+		function statusText(status) {
+			if (!status) return "";
+			if (typeof status === "object" && status.type) return String(status.type || "");
+			return String(status || "");
+		}
+		function createThreadDetailV4MergePolicy(options = {}) {
+			const normalizeThreadVisibleUserMessages = typeof options.normalizeThreadVisibleUserMessages === "function" ? options.normalizeThreadVisibleUserMessages : defaultNormalizeThread;
+			const turnVisibleWeight = typeof options.turnVisibleWeight === "function" ? options.turnVisibleWeight : defaultTurnVisibleWeight;
+			const isOptimisticUserMessage = typeof options.isOptimisticUserMessage === "function" ? options.isOptimisticUserMessage : () => false;
+			const isRecentlySubmittedUserMessage = typeof options.isRecentlySubmittedUserMessage === "function" ? options.isRecentlySubmittedUserMessage : () => false;
+			const isReasoningItem = typeof options.isReasoningItem === "function" ? options.isReasoningItem : () => false;
+			const userMessageHasSubmissionId = typeof options.userMessageHasSubmissionId === "function" ? options.userMessageHasSubmissionId : (item, submissionId) => Boolean(item && submissionId && String(item.clientSubmissionId || "") === String(submissionId || ""));
+			const userMessagesCanShadow = typeof options.userMessagesCanShadow === "function" ? options.userMessagesCanShadow : () => false;
+			const isTurnComplete = typeof options.isTurnComplete === "function" ? options.isTurnComplete : (turn) => /completed|failed|cancel|error|interrupted/i.test(statusText(turn && turn.status));
+			const isRunningStatus = typeof options.isRunningStatus === "function" ? options.isRunningStatus : (status) => /active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/i.test(statusText(status));
+			const isIncompleteInterruptedTurn = typeof options.isIncompleteInterruptedTurn === "function" ? options.isIncompleteInterruptedTurn : () => false;
+			const turnHasActiveLiveItems = typeof options.turnHasActiveLiveItems === "function" ? options.turnHasActiveLiveItems : () => false;
+			const turnOrderMs = typeof options.turnOrderMs === "function" ? options.turnOrderMs : () => 0;
+			const mergeTurnPreservingVisibleItems = typeof options.mergeTurnPreservingVisibleItems === "function" ? options.mergeTurnPreservingVisibleItems : (existingTurn, incomingTurn) => incomingTurn || existingTurn;
+			const sortTurnsForDisplay = typeof options.sortTurnsForDisplay === "function" ? options.sortTurnsForDisplay : defaultSortTurns;
+			const maxVisibleTurnsForThread = typeof options.maxVisibleTurnsForThread === "function" ? options.maxVisibleTurnsForThread : () => 10;
+			function isV4ProjectionThread(thread) {
+				return Boolean(thread && (thread.mobileProjectionVersion === "v4" || thread.mobileProjection && thread.mobileProjection.version === "v4"));
+			}
+			function shouldPreserveV4PendingOverlayItem(item) {
+				return Boolean(item && item.type === "userMessage" && isOptimisticUserMessage(item) && (isRecentlySubmittedUserMessage(item) || item.mobileSendError));
+			}
+			function v4ThreadHasPendingMatch(thread, pendingItem) {
+				if (!pendingItem || pendingItem.type !== "userMessage") return false;
+				const submissionId = String(pendingItem.clientSubmissionId || "").trim();
+				for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
+					if (!item || item.type !== "userMessage") continue;
+					if (submissionId && userMessageHasSubmissionId(item, submissionId)) return true;
+					if (!isOptimisticUserMessage(item) && userMessagesCanShadow(item, pendingItem)) return true;
+				}
+				return false;
+			}
+			function appendV4PendingOverlayItem(turn, item) {
+				if (!turn || !item) return;
+				turn.items = Array.isArray(turn.items) ? turn.items : [];
+				const submissionId = String(item.clientSubmissionId || "").trim();
+				if (!turn.items.some((existing) => existing && (submissionId && userMessageHasSubmissionId(existing, submissionId) || existing.id === item.id || userMessagesCanShadow(existing, item)))) turn.items.push(item);
+			}
+			function copyTurnWithOnlyItems(turn, items) {
+				return Object.assign({}, turn || {}, { items: (items || []).slice() });
+			}
+			function applyV4PendingOverlay(existingThread, mergedThread) {
+				if (!existingThread || !mergedThread || !Array.isArray(existingThread.turns)) return mergedThread;
+				mergedThread.turns = Array.isArray(mergedThread.turns) ? mergedThread.turns : [];
+				const turnsById = new Map(mergedThread.turns.map((turn) => [String(turn && turn.id || ""), turn]));
+				for (const existingTurn of existingThread.turns) {
+					const pendingItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : []).filter((item) => shouldPreserveV4PendingOverlayItem(item) && !v4ThreadHasPendingMatch(mergedThread, item));
+					if (!pendingItems.length) continue;
+					const targetTurn = turnsById.get(String(existingTurn.id || ""));
+					if (targetTurn) {
+						pendingItems.forEach((item) => appendV4PendingOverlayItem(targetTurn, item));
+						continue;
+					}
+					const overlayTurn = copyTurnWithOnlyItems(existingTurn, pendingItems);
+					overlayTurn.mobilePendingOverlay = true;
+					mergedThread.turns.push(overlayTurn);
+					if (overlayTurn.id) turnsById.set(String(overlayTurn.id), overlayTurn);
+				}
+				return mergedThread;
+			}
+			function v4ProjectionRevisionValue(thread) {
+				const direct = Number(thread && thread.mobileProjectionRevision);
+				if (Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
+				const nested = Number(thread && thread.mobileProjection && thread.mobileProjection.revision);
+				return Number.isFinite(nested) && nested > 0 ? Math.trunc(nested) : 0;
+			}
+			function isV4ProjectionRefreshRegressive(existingThread, incomingThread) {
+				const existingRevision = v4ProjectionRevisionValue(existingThread);
+				const incomingRevision = v4ProjectionRevisionValue(incomingThread);
+				return Boolean(existingRevision && incomingRevision && incomingRevision < existingRevision);
+			}
+			function isActiveLikeProjectionTurn(turn) {
+				return Boolean(turn && !isTurnComplete(turn) && (isRunningStatus(turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn)));
+			}
+			function incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns) {
+				const existingOrder = turnOrderMs(existingTurn);
+				if (!existingOrder) return false;
+				return (incomingTurns || []).some((incomingTurn) => {
+					if (!incomingTurn || String(incomingTurn.id || "") === String(existingTurn && existingTurn.id || "")) return false;
+					const incomingOrder = turnOrderMs(incomingTurn);
+					return Boolean(incomingOrder && incomingOrder > existingOrder);
+				});
+			}
+			function existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns) {
+				const visibleItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : []).filter((item) => item && turnVisibleWeight({ items: [item] }) > 0 && !isReasoningItem(item));
+				return Boolean(visibleItems.length && visibleItems.every((item) => shouldPreserveV4PendingOverlayItem(item) && v4ThreadHasPendingMatch({ turns: incomingTurns || [] }, item)));
+			}
+			function shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, incomingTurns) {
+				if (!existingTurn || turnVisibleWeight(existingTurn) <= 0) return false;
+				const id = String(existingTurn.id || "");
+				if (id && (incomingTurns || []).some((turn) => String(turn && turn.id || "") === id)) return false;
+				if (existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns)) return false;
+				const activeLike = isActiveLikeProjectionTurn(existingTurn);
+				const regressiveRefresh = isV4ProjectionRefreshRegressive(existingThread, incomingThread);
+				if (!activeLike && !regressiveRefresh) return false;
+				return !incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns);
+			}
+			function mergeV4ProjectionThread(existingThread, incomingThread) {
+				if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeThreadVisibleUserMessages(incomingThread);
+				const merged = Object.assign({}, existingThread, incomingThread);
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
+				if (Array.isArray(incomingThread.turns)) {
+					const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
+					const incomingTurns = incomingThread.turns.slice();
+					const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+					const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+					if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
+						merged.turns = existingTurns;
+						return normalizeThreadVisibleUserMessages(merged);
+					}
+					const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
+					merged.turns = incomingTurns.map((incomingTurn) => {
+						const existingTurn = existingById.get(String(incomingTurn && incomingTurn.id || ""));
+						return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
+					});
+					for (const existingTurn of existingTurns) if (shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, merged.turns)) merged.turns.push(existingTurn);
+					applyV4PendingOverlay(existingThread, merged);
+					merged.turns = sortTurnsForDisplay(merged.turns).slice(-maxVisibleTurnsForThread(merged));
+				}
+				if (isV4ProjectionRefreshRegressive(existingThread, incomingThread)) {
+					const existingRevision = v4ProjectionRevisionValue(existingThread);
+					if (existingRevision) {
+						merged.mobileProjectionRevision = existingRevision;
+						if (merged.mobileProjection && typeof merged.mobileProjection === "object") merged.mobileProjection = Object.assign({}, merged.mobileProjection, { revision: existingRevision });
+					}
+				}
+				return normalizeThreadVisibleUserMessages(merged);
+			}
+			return {
+				applyV4PendingOverlay,
+				isV4ProjectionRefreshRegressive,
+				isV4ProjectionThread,
+				mergeV4ProjectionThread,
+				shouldPreserveExistingV4ProjectionTurn,
+				v4ProjectionRevisionValue
+			};
+		}
+		return { createThreadDetailV4MergePolicy };
+	});
+}));
+//#endregion
 //#region public/client-render-stability-guard.js
 var require_client_render_stability_guard = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function initClientRenderStabilityGuard(globalScope) {
@@ -201,38 +365,52 @@ var require_live_operation_dock_state = /* @__PURE__ */ __commonJSMin(((exports,
 }));
 //#endregion
 //#region \0virtual:codex-mobile-esm-compatibility/shard/shard-02
+var import_thread_detail_v4_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_v4_merge_state());
 var import_client_render_stability_guard = /* @__PURE__ */ __toESM(require_client_render_stability_guard());
 var import_live_operation_dock_state = /* @__PURE__ */ __toESM(require_live_operation_dock_state());
-var moduleDefinitions = [{
-	"id": "client-render-stability-guard",
-	"source": "public/client-render-stability-guard.js",
-	"globalName": "CodexClientRenderStabilityGuard",
-	"expectedFunctions": [
-		"firstSubmittedUserMessageClientSubmissionId",
-		"localSubmissionRenderKey",
-		"markSubmittedTurn",
-		"shortHash",
-		"stableTurnIdentity",
-		"submittedTurnRenderKey",
-		"transferSubmittedTurnIdentity"
-	],
-	"assetPath": "/client-render-stability-guard.js",
-	"classicLoaderExcluded": true,
-	"bytes": 2528
-}, {
-	"id": "live-operation-dock-state",
-	"source": "public/live-operation-dock-state.js",
-	"globalName": "CodexLiveOperationDockState",
-	"expectedFunctions": [
-		"compactBubblePreservation",
-		"operationCardContentPlan",
-		"shouldShowRecall"
-	],
-	"assetPath": "/live-operation-dock-state.js",
-	"classicLoaderExcluded": true,
-	"bytes": 6190
-}];
+var moduleDefinitions = [
+	{
+		"id": "thread-detail-v4-merge-state",
+		"source": "public/thread-detail-v4-merge-state.js",
+		"globalName": "CodexThreadDetailV4MergeState",
+		"expectedFunctions": ["createThreadDetailV4MergePolicy"],
+		"assetPath": "/thread-detail-v4-merge-state.js",
+		"classicLoaderExcluded": true,
+		"bytes": 12071
+	},
+	{
+		"id": "client-render-stability-guard",
+		"source": "public/client-render-stability-guard.js",
+		"globalName": "CodexClientRenderStabilityGuard",
+		"expectedFunctions": [
+			"firstSubmittedUserMessageClientSubmissionId",
+			"localSubmissionRenderKey",
+			"markSubmittedTurn",
+			"shortHash",
+			"stableTurnIdentity",
+			"submittedTurnRenderKey",
+			"transferSubmittedTurnIdentity"
+		],
+		"assetPath": "/client-render-stability-guard.js",
+		"classicLoaderExcluded": true,
+		"bytes": 2528
+	},
+	{
+		"id": "live-operation-dock-state",
+		"source": "public/live-operation-dock-state.js",
+		"globalName": "CodexLiveOperationDockState",
+		"expectedFunctions": [
+			"compactBubblePreservation",
+			"operationCardContentPlan",
+			"shouldShowRecall"
+		],
+		"assetPath": "/live-operation-dock-state.js",
+		"classicLoaderExcluded": true,
+		"bytes": 6190
+	}
+];
 var moduleApis = {
+	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default,
 	"client-render-stability-guard": import_client_render_stability_guard.default,
 	"live-operation-dock-state": import_live_operation_dock_state.default
 };
