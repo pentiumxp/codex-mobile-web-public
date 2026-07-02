@@ -24,13 +24,8 @@ const VITE_APP_PREVIEW_OWNED_CLASSIC_SCRIPTS = [
     ownerId: "shell-manifest",
     globalName: "CODEX_MOBILE_SHELL_MANIFEST",
   },
-  {
-    path: "/app-bootstrap.js",
-    ownerId: "app-bootstrap",
-    globalName: "CodexAppBootstrap",
-  },
 ];
-export const VITE_ESM_COMPATIBILITY_MODULES = [
+const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "build-refresh-policy",
     source: "public/build-refresh-policy.js",
@@ -730,6 +725,23 @@ export const VITE_ESM_COMPATIBILITY_MODULES = [
     ],
   },
 ];
+const VITE_APP_PREVIEW_CLASSIC_LOADER_EXCLUDED_MODULE_IDS = new Set([
+  "build-refresh-policy",
+  "runtime-settings",
+  "viewport-metrics",
+  "draft-store",
+  "thread-tile-layout",
+  "thread-tile-actions",
+  "thread-list-load-policy",
+  "thread-list-stable-order",
+  "thread-status-hints",
+  "thread-detail-patch-plan",
+  "thread-detail-merge-state",
+  "client-render-stability-guard",
+  "live-operation-dock-state",
+]);
+export const VITE_ESM_COMPATIBILITY_MODULES = VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES
+  .filter((moduleRecord) => VITE_APP_PREVIEW_CLASSIC_LOADER_EXCLUDED_MODULE_IDS.has(moduleRecord.id));
 
 function readText(root, relativePath) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
@@ -1048,11 +1060,12 @@ function publicAssetPathFromSourcePath(sourcePath) {
 }
 
 function esmCompatibilityModuleDefinitions() {
-  return VITE_ESM_COMPATIBILITY_MODULES.map((moduleRecord) => ({
-    ...moduleRecord,
-    assetPath: publicAssetPathFromSourcePath(moduleRecord.source),
-    classicLoaderExcluded: true,
-  }));
+  return VITE_ESM_COMPATIBILITY_MODULES
+    .map((moduleRecord) => ({
+      ...moduleRecord,
+      assetPath: publicAssetPathFromSourcePath(moduleRecord.source),
+      classicLoaderExcluded: true,
+    }));
 }
 
 function sourceBytes(root, sourcePath) {
@@ -3751,8 +3764,9 @@ function validateViteShellBuildContract(contract, manifest) {
     issues.push({ code: "vite_esm_compatibility_contract_missing" });
   } else {
     const modules = Array.isArray(esmCompatibility.modules) ? esmCompatibility.modules : [];
-    const expectedIds = VITE_ESM_COMPATIBILITY_MODULES.map((entry) => entry.id);
-    const expectedFunctionCount = VITE_ESM_COMPATIBILITY_MODULES.reduce((total, entry) => (
+    const expectedModules = esmCompatibilityModuleDefinitions();
+    const expectedIds = expectedModules.map((entry) => entry.id);
+    const expectedFunctionCount = expectedModules.reduce((total, entry) => (
       total + (Array.isArray(entry && entry.expectedFunctions) ? entry.expectedFunctions.length : 0)
     ), 0);
     if (esmCompatibility.owner !== "vite-shell-entry"
@@ -3767,8 +3781,8 @@ function validateViteShellBuildContract(contract, manifest) {
     if (JSON.stringify(modules.map((entry) => entry && entry.id)) !== JSON.stringify(expectedIds)) {
       issues.push({ code: "vite_esm_compatibility_order_mismatch" });
     }
-    for (let index = 0; index < VITE_ESM_COMPATIBILITY_MODULES.length; index += 1) {
-      const expected = VITE_ESM_COMPATIBILITY_MODULES[index];
+    for (let index = 0; index < expectedModules.length; index += 1) {
+      const expected = expectedModules[index];
       const actual = modules[index] || {};
       if (actual.source !== expected.source
         || actual.assetPath !== publicAssetPathFromSourcePath(expected.source)

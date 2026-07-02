@@ -2116,6 +2116,21 @@ function openThreadExpression(threadId) {
       const id = ${JSON.stringify(threadId)};
       try { localStorage.setItem("codexMobileCurrentThreadId", id); } catch (_) {}
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const confirmedOpen = () => {
+        try {
+          const sourceState = typeof state !== "undefined" ? state : window.state;
+          if (sourceState && String(sourceState.currentThreadId || "") === id) return true;
+        } catch (_) {}
+        const activeButton = document.querySelector("[data-thread].active");
+        return Boolean(activeButton && String(activeButton.getAttribute("data-thread") || "") === id);
+      };
+      const waitForConfirmedOpen = async () => {
+        for (let index = 0; index < 12; index += 1) {
+          if (confirmedOpen()) return true;
+          await wait(100);
+        }
+        return false;
+      };
       const clickCard = () => {
         const button = Array.from(document.querySelectorAll("[data-thread]"))
           .find((entry) => String(entry.getAttribute("data-thread") || "") === id);
@@ -2125,14 +2140,18 @@ function openThreadExpression(threadId) {
         }
         return false;
       };
-      if (clickCard()) return { ok: true, method: "thread-card" };
+      if (clickCard() && await waitForConfirmedOpen()) return { ok: true, method: "thread-card" };
       if (typeof window.loadThread === "function") {
-        window.loadThread(id, { source: "browser-runtime-self-check" }).catch(() => {});
-        return { ok: true, method: "loadThread" };
+        try {
+          await window.loadThread(id, { source: "browser-runtime-self-check" });
+          return { ok: true, method: "loadThread" };
+        } catch (_) {
+          return { ok: false, method: "loadThread-failed" };
+        }
       }
       for (let index = 0; index < 20; index += 1) {
         await wait(100);
-        if (clickCard()) return { ok: true, method: "thread-card-delayed" };
+        if (clickCard() && await waitForConfirmedOpen()) return { ok: true, method: "thread-card-delayed" };
       }
       return { ok: false, method: "unavailable" };
     })();

@@ -14,14 +14,14 @@
       "assets/vite-entry-group-bootstrap-state-D4-i-u9X.js",
       "assets/vite-entry-group-shell-services-Bq2mQkjs.js",
       "assets/vite-entry-group-app-entry-MyJcyURZ.js",
-      "assets/_virtual_codex-mobile-esm-compatibility-BElwXV4K.js",
-      "assets/app-bootstrap-C3nJPEun.js",
-      "assets/vite-deferred-entry-topology-CQp0wr3X.js"
+      "assets/_virtual_codex-mobile-esm-compatibility-BS8Vs18K.js",
+      "assets/app-bootstrap-BanrgMb7.js",
+      "assets/vite-deferred-entry-topology-Bu16zVIK.js"
     ],
     "expectedFiles": [
-      "assets/_virtual_codex-mobile-esm-compatibility-BElwXV4K.js",
-      "assets/app-bootstrap-C3nJPEun.js",
-      "assets/vite-deferred-entry-topology-CQp0wr3X.js",
+      "assets/_virtual_codex-mobile-esm-compatibility-BS8Vs18K.js",
+      "assets/app-bootstrap-BanrgMb7.js",
+      "assets/vite-deferred-entry-topology-Bu16zVIK.js",
       "assets/vite-entry-group-app-entry-MyJcyURZ.js",
       "assets/vite-entry-group-bootstrap-state-D4-i-u9X.js",
       "assets/vite-entry-group-feature-runtimes-DPuMRGnX.js",
@@ -40,72 +40,32 @@
   "clientBuildId": "0.1.11|codex-mobile-shell-v625-b68d6999e293",
   "entry": {
     "source": "frontend/vite-shell-entry.mjs",
-    "fileName": "assets/vite-shell-entry-B8IOcWAX.js"
+    "fileName": "assets/vite-shell-entry-DstTkCIg.js"
   },
   "deferredChunks": [
     {
       "source": "frontend/vite-deferred-entry-topology.mjs",
-      "fileName": "assets/vite-deferred-entry-topology-CQp0wr3X.js"
+      "fileName": "assets/vite-deferred-entry-topology-Bu16zVIK.js"
     }
   ],
   "esmCompatibilityChunks": [
     {
       "source": "virtual:codex-mobile-esm-compatibility",
-      "fileName": "assets/_virtual_codex-mobile-esm-compatibility-BElwXV4K.js",
-      "entryScript": "/vite-shell/assets/_virtual_codex-mobile-esm-compatibility-BElwXV4K.js"
+      "fileName": "assets/_virtual_codex-mobile-esm-compatibility-BS8Vs18K.js",
+      "entryScript": "/vite-shell/assets/_virtual_codex-mobile-esm-compatibility-BS8Vs18K.js"
     },
     {
       "source": "virtual:codex-mobile-esm-compatibility/shard/shard-01",
-      "fileName": "assets/shard-01-D4IxMGgf.js",
-      "entryScript": "/vite-shell/assets/shard-01-D4IxMGgf.js"
-    },
-    {
-      "source": "virtual:codex-mobile-esm-compatibility/shard/shard-02",
-      "fileName": "assets/shard-02-BG-nylfv.js",
-      "entryScript": "/vite-shell/assets/shard-02-BG-nylfv.js"
-    },
-    {
-      "source": "virtual:codex-mobile-esm-compatibility/shard/shard-03",
-      "fileName": "assets/shard-03-LlfYHoJo.js",
-      "entryScript": "/vite-shell/assets/shard-03-LlfYHoJo.js"
-    },
-    {
-      "source": "virtual:codex-mobile-esm-compatibility/shard/shard-04",
-      "fileName": "assets/shard-04-jd137qnO.js",
-      "entryScript": "/vite-shell/assets/shard-04-jd137qnO.js"
-    },
-    {
-      "source": "virtual:codex-mobile-esm-compatibility/shard/shard-05",
-      "fileName": "assets/shard-05-DDG11BFj.js",
-      "entryScript": "/vite-shell/assets/shard-05-DDG11BFj.js"
-    },
-    {
-      "source": "virtual:codex-mobile-esm-compatibility/shard/shard-06",
-      "fileName": "assets/shard-06-Bnn9sn8z.js",
-      "entryScript": "/vite-shell/assets/shard-06-Bnn9sn8z.js"
-    },
-    {
-      "source": "virtual:codex-mobile-esm-compatibility/shard/shard-07",
-      "fileName": "assets/shard-07-CyZGiVJ0.js",
-      "entryScript": "/vite-shell/assets/shard-07-CyZGiVJ0.js"
-    },
-    {
-      "source": "virtual:codex-mobile-esm-compatibility/shard/shard-08",
-      "fileName": "assets/shard-08-DupnSmeS.js",
-      "entryScript": "/vite-shell/assets/shard-08-DupnSmeS.js"
-    },
-    {
-      "source": "virtual:codex-mobile-esm-compatibility/shard/shard-09",
-      "fileName": "assets/shard-09-QNP-BRsM.js",
-      "entryScript": "/vite-shell/assets/shard-09-QNP-BRsM.js"
+      "fileName": "assets/shard-01-hii1Cv6I.js",
+      "entryScript": "/vite-shell/assets/shard-01-hii1Cv6I.js"
     }
   ],
   "sharedChunks": [],
   "viteOwnedAppBootstrapChunks": [
     {
       "source": "public/app-bootstrap.js",
-      "fileName": "assets/app-bootstrap-C3nJPEun.js",
-      "entryScript": "/vite-shell/assets/app-bootstrap-C3nJPEun.js"
+      "fileName": "assets/app-bootstrap-BanrgMb7.js",
+      "entryScript": "/vite-shell/assets/app-bootstrap-BanrgMb7.js"
     }
   ],
   "entryGroupChunks": [
@@ -514,11 +474,11 @@
   ],
   "preview": {
     "fileName": "preview.html",
-    "entryScript": "/vite-shell/assets/vite-shell-entry-B8IOcWAX.js"
+    "entryScript": "/vite-shell/assets/vite-shell-entry-DstTkCIg.js"
   },
   "appPreview": {
     "fileName": "app-preview.html",
-    "entryScript": "/vite-shell/assets/vite-shell-entry-B8IOcWAX.js",
+    "entryScript": "/vite-shell/assets/vite-shell-entry-DstTkCIg.js",
     "sourceShell": "public/index.html"
   },
   "startupCriticalAssets": [
@@ -2632,32 +2592,18 @@
     "source": "generated-vite-app-preview-classic-loader-plan",
     "owner": "vite-shell-entry",
     "sourceScriptCount": 51,
-    "scriptCount": 0,
-    "firstScript": "",
-    "lastScript": "",
-    "hashCount": 0,
-    "byteCount": 0,
-    "excludedEsmScriptCount": 49,
-    "excludedEsmHashCount": 49,
-    "excludedEsmByteCount": 1713649,
-    "excludedViteOwnedScriptCount": 2,
-    "excludedViteOwnedHashCount": 2,
-    "excludedViteOwnedByteCount": 124713,
+    "scriptCount": 37,
+    "firstScript": "/api-client.js",
+    "lastScript": "/app.js",
+    "hashCount": 37,
+    "byteCount": 1687888,
+    "excludedEsmScriptCount": 13,
+    "excludedEsmHashCount": 13,
+    "excludedEsmByteCount": 74780,
+    "excludedViteOwnedScriptCount": 1,
+    "excludedViteOwnedHashCount": 1,
+    "excludedViteOwnedByteCount": 75694,
     "excludedEsmScripts": [
-      {
-        "index": 1,
-        "sourceIndex": 1,
-        "path": "/api-client.js",
-        "groupId": "foundation",
-        "phase": "startup-prerequisite",
-        "startupCritical": true,
-        "chunkTarget": "startup-foundation",
-        "sourcePath": "public/api-client.js",
-        "bytes": 4099,
-        "sha256": "e3e020230f50860a532fdf5778ccda6cd99eeb2195db26b9cf2984bffb133c69",
-        "esmModuleId": "api-client",
-        "globalName": "CodexApiClient"
-      },
       {
         "index": 2,
         "sourceIndex": 2,
@@ -2687,34 +2633,6 @@
         "globalName": "CodexDraftStore"
       },
       {
-        "index": 4,
-        "sourceIndex": 4,
-        "path": "/composer-runtime.js",
-        "groupId": "foundation",
-        "phase": "startup-prerequisite",
-        "startupCritical": true,
-        "chunkTarget": "startup-foundation",
-        "sourcePath": "public/composer-runtime.js",
-        "bytes": 78244,
-        "sha256": "75be1a6476ab4fd3b8ee503866a9b2d5dbd68d9fc1a08a14b89b9b92e2443cc6",
-        "esmModuleId": "composer-runtime",
-        "globalName": "CodexComposerRuntime"
-      },
-      {
-        "index": 5,
-        "sourceIndex": 5,
-        "path": "/markdown-renderer.js",
-        "groupId": "foundation",
-        "phase": "startup-prerequisite",
-        "startupCritical": true,
-        "chunkTarget": "startup-foundation",
-        "sourcePath": "public/markdown-renderer.js",
-        "bytes": 18044,
-        "sha256": "88493cc61907a2ed381bf899d32399b2e81eb98b89a1b959e44274e5020f853a",
-        "esmModuleId": "markdown-renderer",
-        "globalName": "CodexMarkdownRenderer"
-      },
-      {
         "index": 6,
         "sourceIndex": 6,
         "path": "/viewport-metrics.js",
@@ -2729,104 +2647,6 @@
         "globalName": "CodexViewportMetrics"
       },
       {
-        "index": 7,
-        "sourceIndex": 7,
-        "path": "/conversation-scroll.js",
-        "groupId": "foundation",
-        "phase": "startup-prerequisite",
-        "startupCritical": true,
-        "chunkTarget": "startup-foundation",
-        "sourcePath": "public/conversation-scroll.js",
-        "bytes": 11683,
-        "sha256": "8b471196aca6422ccf50c6865ff496bead83c3c9957958a8ca478950be82ca63",
-        "esmModuleId": "conversation-scroll",
-        "globalName": "CodexConversationScroll"
-      },
-      {
-        "index": 8,
-        "sourceIndex": 8,
-        "path": "/image-compressor.js",
-        "groupId": "foundation",
-        "phase": "startup-prerequisite",
-        "startupCritical": true,
-        "chunkTarget": "startup-foundation",
-        "sourcePath": "public/image-compressor.js",
-        "bytes": 5261,
-        "sha256": "7757d62af34099da30c740ed08217ca1085af8b24617dceabd262b655d2099c1",
-        "esmModuleId": "image-compressor",
-        "globalName": "CodexImageCompressor"
-      },
-      {
-        "index": 9,
-        "sourceIndex": 9,
-        "path": "/plugin-embed.js",
-        "groupId": "foundation",
-        "phase": "startup-prerequisite",
-        "startupCritical": true,
-        "chunkTarget": "startup-foundation",
-        "sourcePath": "public/plugin-embed.js",
-        "bytes": 14761,
-        "sha256": "e54efe28042795850dad5160d0eb1ac71f6bf7f82899f006e7a32880ec6e2e42",
-        "esmModuleId": "plugin-embed",
-        "globalName": "CodexPluginEmbed"
-      },
-      {
-        "index": 10,
-        "sourceIndex": 10,
-        "path": "/plugin-voice-input.js",
-        "groupId": "foundation",
-        "phase": "startup-prerequisite",
-        "startupCritical": true,
-        "chunkTarget": "startup-foundation",
-        "sourcePath": "public/plugin-voice-input.js",
-        "bytes": 8247,
-        "sha256": "925ca0a4a681130929b434437f16dfa7535a357ba5b55d7eeb2b6402092838c9",
-        "esmModuleId": "plugin-voice-input",
-        "globalName": "CodexPluginVoiceInput"
-      },
-      {
-        "index": 11,
-        "sourceIndex": 11,
-        "path": "/home-ai-diagnostic-reporting.js",
-        "groupId": "foundation",
-        "phase": "startup-prerequisite",
-        "startupCritical": true,
-        "chunkTarget": "startup-foundation",
-        "sourcePath": "public/home-ai-diagnostic-reporting.js",
-        "bytes": 14358,
-        "sha256": "dd33c244a80fe43ab7c3b2dbd3a7a57b0727c2a83b9523e658f9ff024d2b96f8",
-        "esmModuleId": "home-ai-diagnostic-reporting",
-        "globalName": "CodexHomeAiDiagnosticReporting"
-      },
-      {
-        "index": 12,
-        "sourceIndex": 12,
-        "path": "/thread-diagnostic-events.js",
-        "groupId": "foundation",
-        "phase": "startup-prerequisite",
-        "startupCritical": true,
-        "chunkTarget": "startup-foundation",
-        "sourcePath": "public/thread-diagnostic-events.js",
-        "bytes": 46238,
-        "sha256": "df3b95d98ccf950cd2d1869218664e12d9b032805c937d78c5a5a1899f603db3",
-        "esmModuleId": "thread-diagnostic-events",
-        "globalName": "CodexThreadDiagnosticEvents"
-      },
-      {
-        "index": 13,
-        "sourceIndex": 13,
-        "path": "/frontend-runtime-health.js",
-        "groupId": "foundation",
-        "phase": "startup-prerequisite",
-        "startupCritical": true,
-        "chunkTarget": "startup-foundation",
-        "sourcePath": "public/frontend-runtime-health.js",
-        "bytes": 17014,
-        "sha256": "af420bac5334489a831113b1fe266b173eb87693cc3d4bf075211fde7622b1f0",
-        "esmModuleId": "frontend-runtime-health",
-        "globalName": "CodexFrontendRuntimeHealth"
-      },
-      {
         "index": 14,
         "sourceIndex": 14,
         "path": "/thread-status-hints.js",
@@ -2839,20 +2659,6 @@
         "sha256": "4a0a8b01297b8cbfbbccfe0f347470683d0dada4ed778c4999dcaaad9147e0a3",
         "esmModuleId": "thread-status-hints",
         "globalName": "CodexThreadStatusHints"
-      },
-      {
-        "index": 15,
-        "sourceIndex": 15,
-        "path": "/thread-performance-metrics.js",
-        "groupId": "foundation",
-        "phase": "startup-prerequisite",
-        "startupCritical": true,
-        "chunkTarget": "startup-foundation",
-        "sourcePath": "public/thread-performance-metrics.js",
-        "bytes": 28700,
-        "sha256": "286fd9dafb042b384bfec8eb86b3ef3322ea3f5d18a6cd171b7672cfd658cb55",
-        "esmModuleId": "thread-performance-metrics",
-        "globalName": "CodexThreadPerformanceMetrics"
       },
       {
         "index": 16,
@@ -2883,20 +2689,6 @@
         "globalName": "CodexThreadListStableOrder"
       },
       {
-        "index": 18,
-        "sourceIndex": 18,
-        "path": "/thread-list-runtime.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-list-runtime.js",
-        "bytes": 37167,
-        "sha256": "980ff4da476026886354b3a9b6d4854c08292fe7bfbe3d5943aa4b1cdc5bc58b",
-        "esmModuleId": "thread-list-runtime",
-        "globalName": "CodexThreadListRuntime"
-      },
-      {
         "index": 19,
         "sourceIndex": 19,
         "path": "/client-render-stability-guard.js",
@@ -2925,34 +2717,6 @@
         "globalName": "CodexLiveOperationDockState"
       },
       {
-        "index": 21,
-        "sourceIndex": 21,
-        "path": "/thread-detail-state.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-detail-state.js",
-        "bytes": 30743,
-        "sha256": "7425555f500eee52b4ad073b9e3835c3d59660a9533c416cdb16995af1f39312",
-        "esmModuleId": "thread-detail-state",
-        "globalName": "CodexThreadDetailState"
-      },
-      {
-        "index": 22,
-        "sourceIndex": 22,
-        "path": "/thread-detail-render-plan.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-detail-render-plan.js",
-        "bytes": 74010,
-        "sha256": "4bf2cb63c21951102eae1822e7f00a3e7e589ef1c0990a34ea5765e6151a4038",
-        "esmModuleId": "thread-detail-render-plan",
-        "globalName": "CodexThreadDetailRenderPlan"
-      },
-      {
         "index": 23,
         "sourceIndex": 23,
         "path": "/thread-detail-merge-state.js",
@@ -2965,34 +2729,6 @@
         "sha256": "09054295cef49d76fddf260235b4dd243876e9530c2418bd435db9476ed960b7",
         "esmModuleId": "thread-detail-merge-state",
         "globalName": "CodexThreadDetailMergeState"
-      },
-      {
-        "index": 24,
-        "sourceIndex": 24,
-        "path": "/thread-detail-v4-merge-state.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-detail-v4-merge-state.js",
-        "bytes": 12071,
-        "sha256": "b7123a22dbbb066ea3e84e1cc083255fd909dc2fe9e8d66939d49d3367d7727b",
-        "esmModuleId": "thread-detail-v4-merge-state",
-        "globalName": "CodexThreadDetailV4MergeState"
-      },
-      {
-        "index": 25,
-        "sourceIndex": 25,
-        "path": "/thread-detail-runtime.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-detail-runtime.js",
-        "bytes": 57528,
-        "sha256": "c85f81bfb420af89a50b0580ab51adadfae37832270e8b5db18a9de2046b7db9",
-        "esmModuleId": "thread-detail-runtime",
-        "globalName": "CodexThreadDetailRuntime"
       },
       {
         "index": 26,
@@ -3009,34 +2745,6 @@
         "globalName": "CodexThreadDetailPatchPlan"
       },
       {
-        "index": 27,
-        "sourceIndex": 27,
-        "path": "/thread-detail-dom-patch.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-detail-dom-patch.js",
-        "bytes": 49597,
-        "sha256": "05ec3638f47ee25740161fb908c47e7d182d3bf340d954984e29faa61de02118",
-        "esmModuleId": "thread-detail-dom-patch",
-        "globalName": "CodexThreadDetailDomPatch"
-      },
-      {
-        "index": 28,
-        "sourceIndex": 28,
-        "path": "/thread-detail-actions.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-detail-actions.js",
-        "bytes": 5362,
-        "sha256": "f6c17f87950e2931e4471fa6884b8abedf486d1ee6176181c6395a062f017819",
-        "esmModuleId": "thread-detail-actions",
-        "globalName": "CodexThreadDetailActions"
-      },
-      {
         "index": 29,
         "sourceIndex": 29,
         "path": "/thread-tile-actions.js",
@@ -3049,20 +2757,6 @@
         "sha256": "ee9cc825f59c90216a9585efe1a15ef7c18630a0797a27c3da5bdef2e13d786c",
         "esmModuleId": "thread-tile-actions",
         "globalName": "CodexThreadTileActions"
-      },
-      {
-        "index": 30,
-        "sourceIndex": 30,
-        "path": "/thread-tile-state.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-tile-state.js",
-        "bytes": 71980,
-        "sha256": "2977e432183e659be290af4a2b031d3fea856a25adf08e0954243f79e5290c37",
-        "esmModuleId": "thread-tile-state",
-        "globalName": "CodexThreadTileState"
       },
       {
         "index": 31,
@@ -3079,20 +2773,6 @@
         "globalName": "CodexThreadTileLayout"
       },
       {
-        "index": 32,
-        "sourceIndex": 32,
-        "path": "/thread-tile-runtime.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-tile-runtime.js",
-        "bytes": 74569,
-        "sha256": "0fa2d9a20e62ebb7eeb3682547864c857a0821fdcd0fb97aea9beb9d37bc3725",
-        "esmModuleId": "thread-tile-runtime",
-        "globalName": "CodexThreadTileRuntime"
-      },
-      {
         "index": 33,
         "sourceIndex": 33,
         "path": "/build-refresh-policy.js",
@@ -3105,230 +2785,6 @@
         "sha256": "b103ff2e801a446f92693c6b3a3830af6ab24afdc46fad901ff1ea2e7a88d2ef",
         "esmModuleId": "build-refresh-policy",
         "globalName": "CodexBuildRefreshPolicy"
-      },
-      {
-        "index": 34,
-        "sourceIndex": 34,
-        "path": "/app-update-runtime.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/app-update-runtime.js",
-        "bytes": 51619,
-        "sha256": "2a295459dc28570680dd5757a81e3874f607b9e3cfedd665d9c3d22c5ff7784d",
-        "esmModuleId": "app-update-runtime",
-        "globalName": "CodexAppUpdateRuntime"
-      },
-      {
-        "index": 35,
-        "sourceIndex": 35,
-        "path": "/side-chat-runtime.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/side-chat-runtime.js",
-        "bytes": 51946,
-        "sha256": "f8c3d723929f11bcfe1a6d7ce7c6a2aa2697b863cd5c0bf413c557bd758b0d49",
-        "esmModuleId": "side-chat-runtime",
-        "globalName": "CodexSideChatRuntime"
-      },
-      {
-        "index": 36,
-        "sourceIndex": 36,
-        "path": "/media-preview-runtime.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/media-preview-runtime.js",
-        "bytes": 95096,
-        "sha256": "fd665173935ba29c77db757fa8a3734f95d46e740fd8e9b81ba265fd5d2e44a8",
-        "esmModuleId": "media-preview-runtime",
-        "globalName": "CodexMediaPreviewRuntime"
-      },
-      {
-        "index": 38,
-        "sourceIndex": 38,
-        "path": "/settings-runtime.js",
-        "groupId": "shell-services",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-shell-services",
-        "sourcePath": "public/settings-runtime.js",
-        "bytes": 94397,
-        "sha256": "0cb82d2ead732f61e8b92969796ffdb8b3c1c422d4a76748e54f9f4a34d5c285",
-        "esmModuleId": "settings-runtime",
-        "globalName": "CodexSettingsRuntime"
-      },
-      {
-        "index": 39,
-        "sourceIndex": 39,
-        "path": "/modal-runtime.js",
-        "groupId": "shell-services",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-shell-services",
-        "sourcePath": "public/modal-runtime.js",
-        "bytes": 12049,
-        "sha256": "dcdc154b5ebc18c6d57b6edb3a2e66bd178194db47afea43f971f52498ea8496",
-        "esmModuleId": "modal-runtime",
-        "globalName": "CodexModalRuntime"
-      },
-      {
-        "index": 40,
-        "sourceIndex": 40,
-        "path": "/navigation-runtime.js",
-        "groupId": "shell-services",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-shell-services",
-        "sourcePath": "public/navigation-runtime.js",
-        "bytes": 78334,
-        "sha256": "eb2e2ce9bc4565a0ad56c6ed74bcfb4093c3533a902c393b70480d9a2b60eb65",
-        "esmModuleId": "navigation-runtime",
-        "globalName": "CodexNavigationRuntime"
-      },
-      {
-        "index": 41,
-        "sourceIndex": 41,
-        "path": "/api-client-runtime.js",
-        "groupId": "shell-services",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-shell-services",
-        "sourcePath": "public/api-client-runtime.js",
-        "bytes": 49014,
-        "sha256": "eb9a644aa1bc1094cee410da228736251a89ab15ab051293ae1b0741070d9358",
-        "esmModuleId": "api-client-runtime",
-        "globalName": "CodexApiClientRuntime"
-      },
-      {
-        "index": 42,
-        "sourceIndex": 42,
-        "path": "/notification-ui-runtime.js",
-        "groupId": "shell-services",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-shell-services",
-        "sourcePath": "public/notification-ui-runtime.js",
-        "bytes": 55054,
-        "sha256": "c91ac0b12cad54d190249e1d74640f6f543f2dea67f3e78c0862aa60fe462a16",
-        "esmModuleId": "notification-ui-runtime",
-        "globalName": "CodexNotificationUiRuntime"
-      },
-      {
-        "index": 43,
-        "sourceIndex": 43,
-        "path": "/pane-layout-runtime.js",
-        "groupId": "shell-services",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-shell-services",
-        "sourcePath": "public/pane-layout-runtime.js",
-        "bytes": 210739,
-        "sha256": "66c6f95693a1a3623e3beff8bfb118840de97ab8408fceb6ef7f6b30cf038d69",
-        "esmModuleId": "pane-layout-runtime",
-        "globalName": "CodexPaneLayoutRuntime"
-      },
-      {
-        "index": 44,
-        "sourceIndex": 44,
-        "path": "/task-card-runtime.js",
-        "groupId": "shell-services",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-shell-services",
-        "sourcePath": "public/task-card-runtime.js",
-        "bytes": 64113,
-        "sha256": "b831e411cf6efb6ded34d41d138c6d5e6483a000d7833d388a81d0de84e8c32d",
-        "esmModuleId": "task-card-runtime",
-        "globalName": "CodexTaskCardRuntime"
-      },
-      {
-        "index": 45,
-        "sourceIndex": 45,
-        "path": "/conversation-render-runtime.js",
-        "groupId": "shell-services",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-shell-services",
-        "sourcePath": "public/conversation-render-runtime.js",
-        "bytes": 69696,
-        "sha256": "8932a7a8a781c6ebbc53aeb81ae44526c215bfc0f215f2e1896e0937c7e66855",
-        "esmModuleId": "conversation-render-runtime",
-        "globalName": "CodexConversationRenderRuntime"
-      },
-      {
-        "index": 46,
-        "sourceIndex": 46,
-        "path": "/event-stream-runtime.js",
-        "groupId": "shell-services",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-shell-services",
-        "sourcePath": "public/event-stream-runtime.js",
-        "bytes": 62586,
-        "sha256": "31c810fdc764d137e9c1e8c12b5687c5f2a5daea9a2d3eb5267a827573add8c2",
-        "esmModuleId": "event-stream-runtime",
-        "globalName": "CodexEventStreamRuntime"
-      },
-      {
-        "index": 47,
-        "sourceIndex": 47,
-        "path": "/composer-bridge-runtime.js",
-        "groupId": "shell-services",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-shell-services",
-        "sourcePath": "public/composer-bridge-runtime.js",
-        "bytes": 32086,
-        "sha256": "457e61d3f27603c7958527d6b945b69652f03ac478d90bdf3e5311cfd19e81ab",
-        "esmModuleId": "composer-bridge-runtime",
-        "globalName": "CodexComposerBridgeRuntime"
-      },
-      {
-        "index": 48,
-        "sourceIndex": 48,
-        "path": "/runtime-wiring-runtime.js",
-        "groupId": "app-entry",
-        "phase": "startup-critical",
-        "startupCritical": true,
-        "chunkTarget": "startup-app-shell",
-        "sourcePath": "public/runtime-wiring-runtime.js",
-        "bytes": 8628,
-        "sha256": "d8af2dd662125c4ba83294d4268f1d32b1fe92b6eb8df5bceb15629bac9341bf",
-        "esmModuleId": "runtime-wiring-runtime",
-        "globalName": "CodexRuntimeWiringRuntime"
-      },
-      {
-        "index": 49,
-        "sourceIndex": 49,
-        "path": "/app-shell-runtime.js",
-        "groupId": "app-entry",
-        "phase": "startup-critical",
-        "startupCritical": true,
-        "chunkTarget": "startup-app-shell",
-        "sourcePath": "public/app-shell-runtime.js",
-        "bytes": 42357,
-        "sha256": "402d9da5898c23d456c0f742a5d1ae3b14e5f843d55132b0d68d6bbe83cc0ce7",
-        "esmModuleId": "app-shell-runtime",
-        "globalName": "CodexAppShellRuntime"
-      },
-      {
-        "index": 50,
-        "sourceIndex": 50,
-        "path": "/app.js",
-        "groupId": "app-entry",
-        "phase": "startup-critical",
-        "startupCritical": true,
-        "chunkTarget": "startup-app-shell",
-        "sourcePath": "public/app.js",
-        "bytes": 1479,
-        "sha256": "87cc1d060a52300818f5e0ae69cf724ee2a5f44e6adb689d4d9b9884aa59bc20",
-        "esmModuleId": "app-entry",
-        "globalName": "CodexMobileAppEntry"
       }
     ],
     "excludedViteOwnedScripts": [
@@ -3345,9 +2801,288 @@
         "sha256": "eda542ec03d88a95a1e02d2ac7934c377cac338018a94c57f86c0a606482144c",
         "ownerId": "shell-manifest",
         "globalName": "CODEX_MOBILE_SHELL_MANIFEST"
+      }
+    ],
+    "sha256": "d8683579646e1cdc76e1281ad6522e6a3442d09b58b6fbdacce13c940b63b96e",
+    "scripts": [
+      {
+        "index": 0,
+        "sourceIndex": 1,
+        "path": "/api-client.js",
+        "groupId": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "sourcePath": "public/api-client.js",
+        "bytes": 4099,
+        "sha256": "e3e020230f50860a532fdf5778ccda6cd99eeb2195db26b9cf2984bffb133c69"
       },
       {
-        "index": 37,
+        "index": 1,
+        "sourceIndex": 4,
+        "path": "/composer-runtime.js",
+        "groupId": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "sourcePath": "public/composer-runtime.js",
+        "bytes": 78244,
+        "sha256": "75be1a6476ab4fd3b8ee503866a9b2d5dbd68d9fc1a08a14b89b9b92e2443cc6"
+      },
+      {
+        "index": 2,
+        "sourceIndex": 5,
+        "path": "/markdown-renderer.js",
+        "groupId": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "sourcePath": "public/markdown-renderer.js",
+        "bytes": 18044,
+        "sha256": "88493cc61907a2ed381bf899d32399b2e81eb98b89a1b959e44274e5020f853a"
+      },
+      {
+        "index": 3,
+        "sourceIndex": 7,
+        "path": "/conversation-scroll.js",
+        "groupId": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "sourcePath": "public/conversation-scroll.js",
+        "bytes": 11683,
+        "sha256": "8b471196aca6422ccf50c6865ff496bead83c3c9957958a8ca478950be82ca63"
+      },
+      {
+        "index": 4,
+        "sourceIndex": 8,
+        "path": "/image-compressor.js",
+        "groupId": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "sourcePath": "public/image-compressor.js",
+        "bytes": 5261,
+        "sha256": "7757d62af34099da30c740ed08217ca1085af8b24617dceabd262b655d2099c1"
+      },
+      {
+        "index": 5,
+        "sourceIndex": 9,
+        "path": "/plugin-embed.js",
+        "groupId": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "sourcePath": "public/plugin-embed.js",
+        "bytes": 14761,
+        "sha256": "e54efe28042795850dad5160d0eb1ac71f6bf7f82899f006e7a32880ec6e2e42"
+      },
+      {
+        "index": 6,
+        "sourceIndex": 10,
+        "path": "/plugin-voice-input.js",
+        "groupId": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "sourcePath": "public/plugin-voice-input.js",
+        "bytes": 8247,
+        "sha256": "925ca0a4a681130929b434437f16dfa7535a357ba5b55d7eeb2b6402092838c9"
+      },
+      {
+        "index": 7,
+        "sourceIndex": 11,
+        "path": "/home-ai-diagnostic-reporting.js",
+        "groupId": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "sourcePath": "public/home-ai-diagnostic-reporting.js",
+        "bytes": 14358,
+        "sha256": "dd33c244a80fe43ab7c3b2dbd3a7a57b0727c2a83b9523e658f9ff024d2b96f8"
+      },
+      {
+        "index": 8,
+        "sourceIndex": 12,
+        "path": "/thread-diagnostic-events.js",
+        "groupId": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "sourcePath": "public/thread-diagnostic-events.js",
+        "bytes": 46238,
+        "sha256": "df3b95d98ccf950cd2d1869218664e12d9b032805c937d78c5a5a1899f603db3"
+      },
+      {
+        "index": 9,
+        "sourceIndex": 13,
+        "path": "/frontend-runtime-health.js",
+        "groupId": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "sourcePath": "public/frontend-runtime-health.js",
+        "bytes": 17014,
+        "sha256": "af420bac5334489a831113b1fe266b173eb87693cc3d4bf075211fde7622b1f0"
+      },
+      {
+        "index": 10,
+        "sourceIndex": 15,
+        "path": "/thread-performance-metrics.js",
+        "groupId": "foundation",
+        "phase": "startup-prerequisite",
+        "startupCritical": true,
+        "chunkTarget": "startup-foundation",
+        "sourcePath": "public/thread-performance-metrics.js",
+        "bytes": 28700,
+        "sha256": "286fd9dafb042b384bfec8eb86b3ef3322ea3f5d18a6cd171b7672cfd658cb55"
+      },
+      {
+        "index": 11,
+        "sourceIndex": 18,
+        "path": "/thread-list-runtime.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-list-runtime.js",
+        "bytes": 37167,
+        "sha256": "980ff4da476026886354b3a9b6d4854c08292fe7bfbe3d5943aa4b1cdc5bc58b"
+      },
+      {
+        "index": 12,
+        "sourceIndex": 21,
+        "path": "/thread-detail-state.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-detail-state.js",
+        "bytes": 30743,
+        "sha256": "7425555f500eee52b4ad073b9e3835c3d59660a9533c416cdb16995af1f39312"
+      },
+      {
+        "index": 13,
+        "sourceIndex": 22,
+        "path": "/thread-detail-render-plan.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-detail-render-plan.js",
+        "bytes": 74010,
+        "sha256": "4bf2cb63c21951102eae1822e7f00a3e7e589ef1c0990a34ea5765e6151a4038"
+      },
+      {
+        "index": 14,
+        "sourceIndex": 24,
+        "path": "/thread-detail-v4-merge-state.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-detail-v4-merge-state.js",
+        "bytes": 12071,
+        "sha256": "b7123a22dbbb066ea3e84e1cc083255fd909dc2fe9e8d66939d49d3367d7727b"
+      },
+      {
+        "index": 15,
+        "sourceIndex": 25,
+        "path": "/thread-detail-runtime.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-detail-runtime.js",
+        "bytes": 57528,
+        "sha256": "c85f81bfb420af89a50b0580ab51adadfae37832270e8b5db18a9de2046b7db9"
+      },
+      {
+        "index": 16,
+        "sourceIndex": 27,
+        "path": "/thread-detail-dom-patch.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-detail-dom-patch.js",
+        "bytes": 49597,
+        "sha256": "05ec3638f47ee25740161fb908c47e7d182d3bf340d954984e29faa61de02118"
+      },
+      {
+        "index": 17,
+        "sourceIndex": 28,
+        "path": "/thread-detail-actions.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-detail-actions.js",
+        "bytes": 5362,
+        "sha256": "f6c17f87950e2931e4471fa6884b8abedf486d1ee6176181c6395a062f017819"
+      },
+      {
+        "index": 18,
+        "sourceIndex": 30,
+        "path": "/thread-tile-state.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-tile-state.js",
+        "bytes": 71980,
+        "sha256": "2977e432183e659be290af4a2b031d3fea856a25adf08e0954243f79e5290c37"
+      },
+      {
+        "index": 19,
+        "sourceIndex": 32,
+        "path": "/thread-tile-runtime.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-tile-runtime.js",
+        "bytes": 74569,
+        "sha256": "0fa2d9a20e62ebb7eeb3682547864c857a0821fdcd0fb97aea9beb9d37bc3725"
+      },
+      {
+        "index": 20,
+        "sourceIndex": 34,
+        "path": "/app-update-runtime.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/app-update-runtime.js",
+        "bytes": 51619,
+        "sha256": "2a295459dc28570680dd5757a81e3874f607b9e3cfedd665d9c3d22c5ff7784d"
+      },
+      {
+        "index": 21,
+        "sourceIndex": 35,
+        "path": "/side-chat-runtime.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/side-chat-runtime.js",
+        "bytes": 51946,
+        "sha256": "f8c3d723929f11bcfe1a6d7ce7c6a2aa2697b863cd5c0bf413c557bd758b0d49"
+      },
+      {
+        "index": 22,
+        "sourceIndex": 36,
+        "path": "/media-preview-runtime.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/media-preview-runtime.js",
+        "bytes": 95096,
+        "sha256": "fd665173935ba29c77db757fa8a3734f95d46e740fd8e9b81ba265fd5d2e44a8"
+      },
+      {
+        "index": 23,
         "sourceIndex": 37,
         "path": "/app-bootstrap.js",
         "groupId": "bootstrap-state",
@@ -3356,13 +3091,165 @@
         "chunkTarget": "startup-bootstrap",
         "sourcePath": "public/app-bootstrap.js",
         "bytes": 49019,
-        "sha256": "f504b0801b963a03c3b7435924ccc2a6fcd08d4830e10fb4cf9b859341a25840",
-        "ownerId": "app-bootstrap",
-        "globalName": "CodexAppBootstrap"
+        "sha256": "f504b0801b963a03c3b7435924ccc2a6fcd08d4830e10fb4cf9b859341a25840"
+      },
+      {
+        "index": 24,
+        "sourceIndex": 38,
+        "path": "/settings-runtime.js",
+        "groupId": "shell-services",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-shell-services",
+        "sourcePath": "public/settings-runtime.js",
+        "bytes": 94397,
+        "sha256": "0cb82d2ead732f61e8b92969796ffdb8b3c1c422d4a76748e54f9f4a34d5c285"
+      },
+      {
+        "index": 25,
+        "sourceIndex": 39,
+        "path": "/modal-runtime.js",
+        "groupId": "shell-services",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-shell-services",
+        "sourcePath": "public/modal-runtime.js",
+        "bytes": 12049,
+        "sha256": "dcdc154b5ebc18c6d57b6edb3a2e66bd178194db47afea43f971f52498ea8496"
+      },
+      {
+        "index": 26,
+        "sourceIndex": 40,
+        "path": "/navigation-runtime.js",
+        "groupId": "shell-services",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-shell-services",
+        "sourcePath": "public/navigation-runtime.js",
+        "bytes": 78334,
+        "sha256": "eb2e2ce9bc4565a0ad56c6ed74bcfb4093c3533a902c393b70480d9a2b60eb65"
+      },
+      {
+        "index": 27,
+        "sourceIndex": 41,
+        "path": "/api-client-runtime.js",
+        "groupId": "shell-services",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-shell-services",
+        "sourcePath": "public/api-client-runtime.js",
+        "bytes": 49014,
+        "sha256": "eb9a644aa1bc1094cee410da228736251a89ab15ab051293ae1b0741070d9358"
+      },
+      {
+        "index": 28,
+        "sourceIndex": 42,
+        "path": "/notification-ui-runtime.js",
+        "groupId": "shell-services",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-shell-services",
+        "sourcePath": "public/notification-ui-runtime.js",
+        "bytes": 55054,
+        "sha256": "c91ac0b12cad54d190249e1d74640f6f543f2dea67f3e78c0862aa60fe462a16"
+      },
+      {
+        "index": 29,
+        "sourceIndex": 43,
+        "path": "/pane-layout-runtime.js",
+        "groupId": "shell-services",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-shell-services",
+        "sourcePath": "public/pane-layout-runtime.js",
+        "bytes": 210739,
+        "sha256": "66c6f95693a1a3623e3beff8bfb118840de97ab8408fceb6ef7f6b30cf038d69"
+      },
+      {
+        "index": 30,
+        "sourceIndex": 44,
+        "path": "/task-card-runtime.js",
+        "groupId": "shell-services",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-shell-services",
+        "sourcePath": "public/task-card-runtime.js",
+        "bytes": 64113,
+        "sha256": "b831e411cf6efb6ded34d41d138c6d5e6483a000d7833d388a81d0de84e8c32d"
+      },
+      {
+        "index": 31,
+        "sourceIndex": 45,
+        "path": "/conversation-render-runtime.js",
+        "groupId": "shell-services",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-shell-services",
+        "sourcePath": "public/conversation-render-runtime.js",
+        "bytes": 69696,
+        "sha256": "8932a7a8a781c6ebbc53aeb81ae44526c215bfc0f215f2e1896e0937c7e66855"
+      },
+      {
+        "index": 32,
+        "sourceIndex": 46,
+        "path": "/event-stream-runtime.js",
+        "groupId": "shell-services",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-shell-services",
+        "sourcePath": "public/event-stream-runtime.js",
+        "bytes": 62586,
+        "sha256": "31c810fdc764d137e9c1e8c12b5687c5f2a5daea9a2d3eb5267a827573add8c2"
+      },
+      {
+        "index": 33,
+        "sourceIndex": 47,
+        "path": "/composer-bridge-runtime.js",
+        "groupId": "shell-services",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-shell-services",
+        "sourcePath": "public/composer-bridge-runtime.js",
+        "bytes": 32086,
+        "sha256": "457e61d3f27603c7958527d6b945b69652f03ac478d90bdf3e5311cfd19e81ab"
+      },
+      {
+        "index": 34,
+        "sourceIndex": 48,
+        "path": "/runtime-wiring-runtime.js",
+        "groupId": "app-entry",
+        "phase": "startup-critical",
+        "startupCritical": true,
+        "chunkTarget": "startup-app-shell",
+        "sourcePath": "public/runtime-wiring-runtime.js",
+        "bytes": 8628,
+        "sha256": "d8af2dd662125c4ba83294d4268f1d32b1fe92b6eb8df5bceb15629bac9341bf"
+      },
+      {
+        "index": 35,
+        "sourceIndex": 49,
+        "path": "/app-shell-runtime.js",
+        "groupId": "app-entry",
+        "phase": "startup-critical",
+        "startupCritical": true,
+        "chunkTarget": "startup-app-shell",
+        "sourcePath": "public/app-shell-runtime.js",
+        "bytes": 42357,
+        "sha256": "402d9da5898c23d456c0f742a5d1ae3b14e5f843d55132b0d68d6bbe83cc0ce7"
+      },
+      {
+        "index": 36,
+        "sourceIndex": 50,
+        "path": "/app.js",
+        "groupId": "app-entry",
+        "phase": "startup-critical",
+        "startupCritical": true,
+        "chunkTarget": "startup-app-shell",
+        "sourcePath": "public/app.js",
+        "bytes": 1479,
+        "sha256": "87cc1d060a52300818f5e0ae69cf724ee2a5f44e6adb689d4d9b9884aa59bc20"
       }
-    ],
-    "sha256": "b766530884d1e3dff1e16c04a3d777ac3c9dd48b90c1f1c67e50d71ab38bf4ed",
-    "scripts": []
+    ]
   },
   "esmCompatibility": {
     "schemaVersion": 1,
@@ -3370,143 +3257,35 @@
     "owner": "vite-shell-entry",
     "virtualModuleSource": "virtual:codex-mobile-esm-compatibility",
     "virtualShardSourcePrefix": "virtual:codex-mobile-esm-compatibility/shard/",
-    "shardCount": 9,
+    "shardCount": 1,
     "shards": [
       {
         "id": "shard-01",
         "index": 0,
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-01",
-        "moduleCount": 10,
+        "moduleCount": 13,
         "moduleIds": [
           "build-refresh-policy",
           "runtime-settings",
           "viewport-metrics",
-          "conversation-scroll",
-          "thread-performance-metrics",
-          "thread-detail-state",
-          "thread-detail-render-plan",
-          "thread-detail-dom-patch",
           "draft-store",
-          "image-compressor"
-        ],
-        "byteCount": 218081
-      },
-      {
-        "id": "shard-02",
-        "index": 1,
-        "source": "virtual:codex-mobile-esm-compatibility/shard/shard-02",
-        "moduleCount": 10,
-        "moduleIds": [
-          "plugin-voice-input",
-          "api-client",
-          "markdown-renderer",
-          "plugin-embed",
-          "frontend-runtime-health",
-          "home-ai-diagnostic-reporting",
-          "thread-diagnostic-events",
           "thread-tile-layout",
           "thread-tile-actions",
-          "thread-tile-state"
-        ],
-        "byteCount": 210575
-      },
-      {
-        "id": "shard-03",
-        "index": 2,
-        "source": "virtual:codex-mobile-esm-compatibility/shard/shard-03",
-        "moduleCount": 3,
-        "moduleIds": [
-          "thread-tile-runtime",
-          "app-update-runtime",
-          "settings-runtime"
-        ],
-        "byteCount": 220585
-      },
-      {
-        "id": "shard-04",
-        "index": 3,
-        "source": "virtual:codex-mobile-esm-compatibility/shard/shard-04",
-        "moduleCount": 4,
-        "moduleIds": [
-          "modal-runtime",
-          "navigation-runtime",
-          "runtime-wiring-runtime",
-          "app-shell-runtime"
-        ],
-        "byteCount": 141368
-      },
-      {
-        "id": "shard-05",
-        "index": 4,
-        "source": "virtual:codex-mobile-esm-compatibility/shard/shard-05",
-        "moduleCount": 2,
-        "moduleIds": [
-          "pane-layout-runtime",
-          "app-entry"
-        ],
-        "byteCount": 212218
-      },
-      {
-        "id": "shard-06",
-        "index": 5,
-        "source": "virtual:codex-mobile-esm-compatibility/shard/shard-06",
-        "moduleCount": 3,
-        "moduleIds": [
-          "thread-list-runtime",
-          "side-chat-runtime",
-          "media-preview-runtime"
-        ],
-        "byteCount": 184209
-      },
-      {
-        "id": "shard-07",
-        "index": 6,
-        "source": "virtual:codex-mobile-esm-compatibility/shard/shard-07",
-        "moduleCount": 10,
-        "moduleIds": [
-          "composer-runtime",
-          "composer-bridge-runtime",
-          "api-client-runtime",
           "thread-list-load-policy",
           "thread-list-stable-order",
           "thread-status-hints",
           "thread-detail-patch-plan",
-          "thread-detail-actions",
           "thread-detail-merge-state",
-          "thread-detail-v4-merge-state"
-        ],
-        "byteCount": 208918
-      },
-      {
-        "id": "shard-08",
-        "index": 7,
-        "source": "virtual:codex-mobile-esm-compatibility/shard/shard-08",
-        "moduleCount": 3,
-        "moduleIds": [
-          "thread-detail-runtime",
-          "task-card-runtime",
-          "notification-ui-runtime"
-        ],
-        "byteCount": 176695
-      },
-      {
-        "id": "shard-09",
-        "index": 8,
-        "source": "virtual:codex-mobile-esm-compatibility/shard/shard-09",
-        "moduleCount": 4,
-        "moduleIds": [
-          "conversation-render-runtime",
-          "event-stream-runtime",
           "client-render-stability-guard",
           "live-operation-dock-state"
         ],
-        "byteCount": 141000
+        "byteCount": 74780
       }
     ],
-    "moduleCount": 49,
-    "expectedFunctionCount": 355,
-    "hashCount": 49,
-    "byteCount": 1713649,
+    "moduleCount": 13,
+    "expectedFunctionCount": 57,
+    "hashCount": 13,
+    "byteCount": 74780,
     "modules": [
       {
         "index": 0,
@@ -3569,232 +3348,6 @@
       },
       {
         "index": 3,
-        "id": "conversation-scroll",
-        "source": "public/conversation-scroll.js",
-        "assetPath": "/conversation-scroll.js",
-        "globalName": "CodexConversationScroll",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createSubmittedMessageFollow",
-          "extendSubmittedMessageFollow",
-          "createViewportFollow",
-          "isNearBottom",
-          "planBottomFollowLeaseEvaluation",
-          "planBottomFollowScrollSchedule",
-          "planConversationAutoScrollHoldFromScroll",
-          "planAutomaticConversationRefresh",
-          "planConversationJumpButtons",
-          "planFullRenderScroll",
-          "planLocalPatchScrollCompletion",
-          "planReadingViewportPreservation",
-          "planUserReadingCurrentTurn",
-          "shouldFollowViewport",
-          "shouldFollowSubmittedMessage",
-          "shouldStartViewportFollow"
-        ],
-        "expectedFunctionCount": 16,
-        "bytes": 11683,
-        "sha256": "8b471196aca6422ccf50c6865ff496bead83c3c9957958a8ca478950be82ca63",
-        "hashPresent": true
-      },
-      {
-        "index": 4,
-        "id": "thread-performance-metrics",
-        "source": "public/thread-performance-metrics.js",
-        "assetPath": "/thread-performance-metrics.js",
-        "globalName": "CodexThreadPerformanceMetrics",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "boundedTiming",
-          "classifyThreadDetailPhase",
-          "classifyThreadListPhase",
-          "rolloutSizeBytes",
-          "statusText",
-          "threadDetailClientTimings",
-          "threadDetailEventFields",
-          "threadDetailEventFieldsWithClient",
-          "threadDetailFirstPaintEventFields",
-          "threadDetailFullReadyEventFields",
-          "threadDetailRefreshEventFields",
-          "threadDetailShape",
-          "threadDetailTimings",
-          "planThreadDetailResponseContractDiagnostic",
-          "planThreadDetailSlowPathDiagnostic",
-          "planThreadListSlowPathDiagnostic",
-          "threadDetailProjectionContractFields",
-          "threadOmittedTurnCount",
-          "threadTurnCount",
-          "threadListEventFields",
-          "threadListTimings"
-        ],
-        "expectedFunctionCount": 21,
-        "bytes": 28700,
-        "sha256": "286fd9dafb042b384bfec8eb86b3ef3322ea3f5d18a6cd171b7672cfd658cb55",
-        "hashPresent": true
-      },
-      {
-        "index": 5,
-        "id": "thread-detail-state",
-        "source": "public/thread-detail-state.js",
-        "assetPath": "/thread-detail-state.js",
-        "globalName": "CodexThreadDetailState",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "buildThreadDetailRenderEvidence",
-          "activeDetailLoadingPreviewThread",
-          "createThreadDetailStatePolicy",
-          "emptyDetailHistoryEvidenceForThread",
-          "hasNonemptyThreadDetailRenderEvidence",
-          "mergeThreadSummaryIntoList",
-          "planEmptyDetailHistoryRecovery",
-          "planThreadOpenLoadingShell",
-          "planThreadOpenCacheReuse",
-          "planSummaryOnlyCurrentThreadRecovery",
-          "planSummaryOnlyCurrentThreadRecoveryEffects",
-          "recentThreadDetailRenderEvidence",
-          "rolloutSizeBytesFromThread",
-          "sameThreadDetailRenderEvidence",
-          "threadHasLoadedDetailState",
-          "threadHasReusableLoadedDetailState",
-          "threadHasVisualBaselineLoadedDetailState",
-          "threadIsSummaryOnlyCurrentThread",
-          "threadListSummaryFromDetailThread"
-        ],
-        "expectedFunctionCount": 19,
-        "bytes": 30743,
-        "sha256": "7425555f500eee52b4ad073b9e3835c3d59660a9533c416cdb16995af1f39312",
-        "hashPresent": true
-      },
-      {
-        "index": 6,
-        "id": "thread-detail-render-plan",
-        "source": "public/thread-detail-render-plan.js",
-        "assetPath": "/thread-detail-render-plan.js",
-        "globalName": "CodexThreadDetailRenderPlan",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "emptyThreadDetailRefreshPatchAttempt",
-          "finalizeThreadDetailRenderPlan",
-          "normalizeSignature",
-          "planThreadDetailCachedCurrentTelemetryEffects",
-          "planThreadDetailCachedCurrentPostRenderEffects",
-          "planThreadDetailFirstPaintAfterRenderEffects",
-          "planThreadDetailFirstPaintDraftRestoreEffects",
-          "planThreadDetailFirstPaintPerformanceInput",
-          "planThreadDetailFirstPaintReportingStage",
-          "planThreadDetailFirstPaintPostTimingEffects",
-          "planThreadDetailFirstPaintPreRenderEffects",
-          "planThreadDetailFirstPaintResponseEffects",
-          "planThreadDetailFullBackfillResponseEffects",
-          "planThreadDetailFullBackfillPerformanceInput",
-          "planThreadDetailFullBackfillReportingStage",
-          "planThreadDetailLoadErrorEffects",
-          "planThreadDetailLoadingShellPostStateEffects",
-          "planThreadDetailFullBackfillPostRenderEffects",
-          "planThreadDetailFullBackfillTelemetryEffects",
-          "planThreadDetailFirstPaintPostRenderEffects",
-          "planThreadDetailFirstPaintTelemetryEffects",
-          "planThreadDetailSwitchCancelledClientEvent",
-          "planThreadDetailSwitchStartClientEvent",
-          "planThreadDetailSwitchErrorClientEvent",
-          "planThreadDetailRefreshCompletionEffects",
-          "planThreadDetailRefreshConsistencyCheck",
-          "planThreadDetailRefreshConsistencyCheckEffects",
-          "planThreadDetailRefreshResponseEffects",
-          "planThreadDetailRefreshPatchAttemptEffects",
-          "planThreadDetailRefreshPatchAttemptResult",
-          "planThreadDetailRefreshPatchAttemptResultStage",
-          "planThreadDetailRefreshPatchAttemptResultEvidenceStage",
-          "planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage",
-          "planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage",
-          "planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects",
-          "planThreadDetailRefreshPatchRejectedDiagnostic",
-          "planThreadDetailRefreshPatchRejectedDiagnosticEffects",
-          "planThreadDetailRefreshOutcomeExecution",
-          "planThreadDetailRefreshOutcomeExecutionStage",
-          "planThreadDetailRefreshExecutionEffects",
-          "planThreadDetailRefreshPerformanceInput",
-          "planThreadDetailRefreshReportingStage",
-          "planThreadDetailRefreshReportingEffectsStage",
-          "planThreadDetailRefreshTelemetryEffects",
-          "planThreadDetailRefreshFailureDiagnosticEffects",
-          "planThreadDetailRefreshRequest",
-          "planThreadDetailRefreshPatchSurface",
-          "planThreadDetailRefreshPatchSurfaceProbeEffects",
-          "planThreadDetailRefreshPatchSurfaceProbeStage",
-          "planThreadDetailRefreshPatchSurfaceExecutionStage",
-          "planThreadDetailRefreshPatchSurfaceResultStage",
-          "planThreadDetailRefreshPostMergeEffects",
-          "planThreadDetailRefreshPostMergeTimingFields",
-          "planThreadDetailFirstPaintPostMergeTimingEffects",
-          "planThreadDetailRefreshPatchExecutionStage",
-          "planSingleThreadEarlyShellExecution",
-          "planSingleThreadFullRenderShell",
-          "planSingleThreadShellConversationUpdate",
-          "planSingleThreadShellPostUpdateEffects",
-          "planThreadDetailHistoryAutoBackfill",
-          "planThreadDetailHistoryAutoBackfillEffects",
-          "planThreadDetailRefreshPatchExecution",
-          "planThreadDetailRefreshRenderInput",
-          "planThreadDetailRefreshRender",
-          "planThreadDetailRefreshRenderStage",
-          "reduceThreadDetailRefreshPatchAttempt",
-          "threadDetailRefreshPatchAttemptEffectContext"
-        ],
-        "expectedFunctionCount": 67,
-        "bytes": 74010,
-        "sha256": "4bf2cb63c21951102eae1822e7f00a3e7e589ef1c0990a34ea5765e6151a4038",
-        "hashPresent": true
-      },
-      {
-        "index": 7,
-        "id": "thread-detail-dom-patch",
-        "source": "public/thread-detail-dom-patch.js",
-        "assetPath": "/thread-detail-dom-patch.js",
-        "globalName": "CodexThreadDetailDomPatch",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "applyLiveTextItemDomPatch",
-          "applyThreadDetailPatchTransaction",
-          "applyThreadTurnRefreshDomPatch",
-          "applyVisibleItemRefreshDomPatch",
-          "canPatchNode",
-          "createElementFromHtml",
-          "createTurnArticleElement",
-          "findElementByRenderKey",
-          "findTurnArticleElement",
-          "hydrateRenderedSurface",
-          "insertTurnArticleElement",
-          "insertVisibleItemElement",
-          "normalizeOperation",
-          "normalizeTurnOperation",
-          "patchChildNodes",
-          "patchHtml",
-          "patchNode",
-          "planConversationHtmlUpdate",
-          "planConversationHtmlUpdateEffects",
-          "planConversationHtmlUpdateApplication",
-          "planConversationPostApplyDomConsistency",
-          "planConversationDomAuthorityInvalidation",
-          "planConversationHtmlPatchFallbackClientEvent",
-          "planConversationHtmlPerformanceEvent",
-          "planLocalConversationDomUpdateCompletionSnapshot",
-          "planLocalConversationDomUpdateCompletion",
-          "planLocalConversationDomUpdateCompletionEffects",
-          "planThreadDetailRefreshLocalPatchTransactionEffects",
-          "renderKeyForNode",
-          "resolveTurnInsertAnchor",
-          "syncAttributes",
-          "threadDetailPatchResult",
-          "visibleTurnOrderMismatch"
-        ],
-        "expectedFunctionCount": 33,
-        "bytes": 49597,
-        "sha256": "05ec3638f47ee25740161fb908c47e7d182d3bf340d954984e29faa61de02118",
-        "hashPresent": true
-      },
-      {
-        "index": 8,
         "id": "draft-store",
         "source": "public/draft-store.js",
         "assetPath": "/draft-store.js",
@@ -3814,171 +3367,7 @@
         "hashPresent": true
       },
       {
-        "index": 9,
-        "id": "image-compressor",
-        "source": "public/image-compressor.js",
-        "assetPath": "/image-compressor.js",
-        "globalName": "CodexImageCompressor",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "compressedImageName",
-          "compressImageFile",
-          "isCompressibleImageFile",
-          "shouldUseCompressedBlob",
-          "targetDimensions"
-        ],
-        "expectedFunctionCount": 5,
-        "bytes": 5261,
-        "sha256": "7757d62af34099da30c740ed08217ca1085af8b24617dceabd262b655d2099c1",
-        "hashPresent": true
-      },
-      {
-        "index": 10,
-        "id": "plugin-voice-input",
-        "source": "public/plugin-voice-input.js",
-        "assetPath": "/plugin-voice-input.js",
-        "globalName": "CodexPluginVoiceInput",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "actionFromMessageType",
-          "capabilityStateMessage",
-          "errorMessage",
-          "insertResultMessage",
-          "isVoiceInputMessage",
-          "normalizeAction",
-          "startRequestMessage",
-          "textFromMessage"
-        ],
-        "expectedFunctionCount": 8,
-        "bytes": 8247,
-        "sha256": "925ca0a4a681130929b434437f16dfa7535a357ba5b55d7eeb2b6402092838c9",
-        "hashPresent": true
-      },
-      {
-        "index": 11,
-        "id": "api-client",
-        "source": "public/api-client.js",
-        "assetPath": "/api-client.js",
-        "globalName": "CodexApiClient",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createApiClient",
-          "isFormDataBody"
-        ],
-        "expectedFunctionCount": 2,
-        "bytes": 4099,
-        "sha256": "e3e020230f50860a532fdf5778ccda6cd99eeb2195db26b9cf2984bffb133c69",
-        "hashPresent": true
-      },
-      {
-        "index": 12,
-        "id": "markdown-renderer",
-        "source": "public/markdown-renderer.js",
-        "assetPath": "/markdown-renderer.js",
-        "globalName": "CodexMarkdownRenderer",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "escapeHtml",
-          "safeMarkdownUrl",
-          "renderInlineMarkdown",
-          "renderMarkdown",
-          "renderMarkdownList",
-          "renderMarkdownTable",
-          "splitMarkdownTableRow",
-          "isMarkdownTableSeparator"
-        ],
-        "expectedFunctionCount": 8,
-        "bytes": 18044,
-        "sha256": "88493cc61907a2ed381bf899d32399b2e81eb98b89a1b959e44274e5020f853a",
-        "hashPresent": true
-      },
-      {
-        "index": 13,
-        "id": "plugin-embed",
-        "source": "public/plugin-embed.js",
-        "assetPath": "/plugin-embed.js",
-        "globalName": "CodexPluginEmbed",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "detect",
-          "navigationMessage",
-          "routeHintOpenPlan",
-          "routeHintTargetSelectors",
-          "scrubRouteHintPath",
-          "externalLinkMessage",
-          "refreshRequiredMessage"
-        ],
-        "expectedFunctionCount": 7,
-        "bytes": 14761,
-        "sha256": "e54efe28042795850dad5160d0eb1ac71f6bf7f82899f006e7a32880ec6e2e42",
-        "hashPresent": true
-      },
-      {
-        "index": 14,
-        "id": "frontend-runtime-health",
-        "source": "public/frontend-runtime-health.js",
-        "assetPath": "/frontend-runtime-health.js",
-        "globalName": "CodexFrontendRuntimeHealth",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "compactToken",
-          "createMonitor",
-          "submittedMessageDomProbeEffects",
-          "threadListInteractionStallEffects",
-          "renderChurnEvent",
-          "domDropEvent",
-          "runtimeSuccess"
-        ],
-        "expectedFunctionCount": 7,
-        "bytes": 17014,
-        "sha256": "af420bac5334489a831113b1fe266b173eb87693cc3d4bf075211fde7622b1f0",
-        "hashPresent": true
-      },
-      {
-        "index": 15,
-        "id": "home-ai-diagnostic-reporting",
-        "source": "public/home-ai-diagnostic-reporting.js",
-        "assetPath": "/home-ai-diagnostic-reporting.js",
-        "globalName": "CodexHomeAiDiagnosticReporting",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "boundedToken",
-          "createDiagnosticReporter",
-          "durationBucket",
-          "hashIdentifier",
-          "postReportToHomeAi",
-          "sanitizeInput",
-          "stableTextHash"
-        ],
-        "expectedFunctionCount": 7,
-        "bytes": 14358,
-        "sha256": "dd33c244a80fe43ab7c3b2dbd3a7a57b0727c2a83b9523e658f9ff024d2b96f8",
-        "hashPresent": true
-      },
-      {
-        "index": 16,
-        "id": "thread-diagnostic-events",
-        "source": "public/thread-diagnostic-events.js",
-        "assetPath": "/thread-diagnostic-events.js",
-        "globalName": "CodexThreadDiagnosticEvents",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "boundedCount",
-          "compactToken",
-          "conversationProjectionDiagnosticSnapshot",
-          "conversationProjectionConsistencyEffects",
-          "projectionDiagnosticSnapshot",
-          "renderSignatureMismatchDiagnosticEvent",
-          "threadDetailResponseDiagnosticEffects",
-          "turnOrderDiagnosticSnapshot"
-        ],
-        "expectedFunctionCount": 8,
-        "bytes": 46238,
-        "sha256": "df3b95d98ccf950cd2d1869218664e12d9b032805c937d78c5a5a1899f603db3",
-        "hashPresent": true
-      },
-      {
-        "index": 17,
+        "index": 4,
         "id": "thread-tile-layout",
         "source": "public/thread-tile-layout.js",
         "assetPath": "/thread-tile-layout.js",
@@ -3997,7 +3386,7 @@
         "hashPresent": true
       },
       {
-        "index": 18,
+        "index": 5,
         "id": "thread-tile-actions",
         "source": "public/thread-tile-actions.js",
         "assetPath": "/thread-tile-actions.js",
@@ -4020,310 +3409,7 @@
         "hashPresent": true
       },
       {
-        "index": 19,
-        "id": "thread-tile-state",
-        "source": "public/thread-tile-state.js",
-        "assetPath": "/thread-tile-state.js",
-        "globalName": "CodexThreadTileState",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "activePaneSyncPlan",
-          "candidatePaneIdsPlan",
-          "closePanePlan",
-          "composerActionControlPlan",
-          "composerDraftRuntimeSelectionPlan",
-          "composerTargetPlaceholderPlan",
-          "composerTargetPlan",
-          "displaySettingsPayload",
-          "displaySettingsLoadPlan",
-          "dropPaneIntent",
-          "effectiveSelectedThreadId",
-          "idsEqual",
-          "layoutCapacity",
-          "normalizeDisplaySettings",
-          "normalizeOperationMode",
-          "normalizePaneCount",
-          "normalizePinnedIds",
-          "normalizeSplitPairs",
-          "operationModeTogglePlan",
-          "operationBubbleRecord",
-          "operationBubbleSnapshot",
-          "operationDockPlan",
-          "operationMinimumRefreshPlan",
-          "operationSignature",
-          "paneBottomButtonPlan",
-          "paneCountChangePlan",
-          "paneCountStatePlan",
-          "paneDisplayLayoutPlan",
-          "panePatchCompletionPlan",
-          "panePatchPreflightPlan",
-          "paneRenderFramePlan",
-          "paneRenderSignaturePlan",
-          "paneSelectionPlan",
-          "paneSlotMutationEffectsPlan",
-          "paneScrollHoldPlan",
-          "paneScrollMetrics",
-          "paneScrollRestorePlan",
-          "prependSplitPair",
-          "detailLoadPlan",
-          "detailLoadErrorEffectsPlan",
-          "detailLoadFinallyEffectsPlan",
-          "detailLoadConcurrencyPlan",
-          "detailLoadQueueDrainPlan",
-          "detailLoadQueuePlan",
-          "detailLoadStartEffectsPlan",
-          "detailLoadSuccessEffectsPlan",
-          "refreshDelayMs",
-          "refreshSchedulePlan",
-          "refreshTargetIds",
-          "replaceLastPaneForThreadListOpenPlan",
-          "replacePaneThreadPlan",
-          "removeSplitPairsForIds",
-          "movePaneRelativePlan",
-          "selectPanePlan",
-          "selectedPaneEffectsPlan",
-          "splitPaneWithTargetPlan",
-          "switchMenuOptionsPlan",
-          "switchMenuPlan",
-          "syncPinnedIdsFromActiveIds",
-          "threadTileVerticalChromePlan",
-          "threadTileViewportBaselinePlan",
-          "toggleOperationMode",
-          "uniqueIds"
-        ],
-        "expectedFunctionCount": 63,
-        "bytes": 71980,
-        "sha256": "2977e432183e659be290af4a2b031d3fea856a25adf08e0954243f79e5290c37",
-        "hashPresent": true
-      },
-      {
-        "index": 20,
-        "id": "thread-tile-runtime",
-        "source": "public/thread-tile-runtime.js",
-        "assetPath": "/thread-tile-runtime.js",
-        "globalName": "CodexThreadTileRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createThreadTileRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 74569,
-        "sha256": "0fa2d9a20e62ebb7eeb3682547864c857a0821fdcd0fb97aea9beb9d37bc3725",
-        "hashPresent": true
-      },
-      {
-        "index": 21,
-        "id": "app-update-runtime",
-        "source": "public/app-update-runtime.js",
-        "assetPath": "/app-update-runtime.js",
-        "globalName": "CodexAppUpdateRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createAppUpdateRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 51619,
-        "sha256": "2a295459dc28570680dd5757a81e3874f607b9e3cfedd665d9c3d22c5ff7784d",
-        "hashPresent": true
-      },
-      {
-        "index": 22,
-        "id": "settings-runtime",
-        "source": "public/settings-runtime.js",
-        "assetPath": "/settings-runtime.js",
-        "globalName": "CodexSettingsRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createSettingsRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 94397,
-        "sha256": "0cb82d2ead732f61e8b92969796ffdb8b3c1c422d4a76748e54f9f4a34d5c285",
-        "hashPresent": true
-      },
-      {
-        "index": 23,
-        "id": "modal-runtime",
-        "source": "public/modal-runtime.js",
-        "assetPath": "/modal-runtime.js",
-        "globalName": "CodexModalRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createModalRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 12049,
-        "sha256": "dcdc154b5ebc18c6d57b6edb3a2e66bd178194db47afea43f971f52498ea8496",
-        "hashPresent": true
-      },
-      {
-        "index": 24,
-        "id": "navigation-runtime",
-        "source": "public/navigation-runtime.js",
-        "assetPath": "/navigation-runtime.js",
-        "globalName": "CodexNavigationRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createNavigationRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 78334,
-        "sha256": "eb2e2ce9bc4565a0ad56c6ed74bcfb4093c3533a902c393b70480d9a2b60eb65",
-        "hashPresent": true
-      },
-      {
-        "index": 25,
-        "id": "runtime-wiring-runtime",
-        "source": "public/runtime-wiring-runtime.js",
-        "assetPath": "/runtime-wiring-runtime.js",
-        "globalName": "CodexRuntimeWiringRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createRuntimeWiringRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 8628,
-        "sha256": "d8af2dd662125c4ba83294d4268f1d32b1fe92b6eb8df5bceb15629bac9341bf",
-        "hashPresent": true
-      },
-      {
-        "index": 26,
-        "id": "app-shell-runtime",
-        "source": "public/app-shell-runtime.js",
-        "assetPath": "/app-shell-runtime.js",
-        "globalName": "CodexAppShellRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createAppShellRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 42357,
-        "sha256": "402d9da5898c23d456c0f742a5d1ae3b14e5f843d55132b0d68d6bbe83cc0ce7",
-        "hashPresent": true
-      },
-      {
-        "index": 27,
-        "id": "pane-layout-runtime",
-        "source": "public/pane-layout-runtime.js",
-        "assetPath": "/pane-layout-runtime.js",
-        "globalName": "CodexPaneLayoutRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createPaneLayoutRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 210739,
-        "sha256": "66c6f95693a1a3623e3beff8bfb118840de97ab8408fceb6ef7f6b30cf038d69",
-        "hashPresent": true
-      },
-      {
-        "index": 28,
-        "id": "app-entry",
-        "source": "public/app.js",
-        "assetPath": "/app.js",
-        "globalName": "CodexMobileAppEntry",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createCodexMobileAppEntry",
-          "startCodexMobileApp"
-        ],
-        "expectedFunctionCount": 2,
-        "bytes": 1479,
-        "sha256": "87cc1d060a52300818f5e0ae69cf724ee2a5f44e6adb689d4d9b9884aa59bc20",
-        "hashPresent": true
-      },
-      {
-        "index": 29,
-        "id": "thread-list-runtime",
-        "source": "public/thread-list-runtime.js",
-        "assetPath": "/thread-list-runtime.js",
-        "globalName": "CodexThreadListRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createThreadListRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 37167,
-        "sha256": "980ff4da476026886354b3a9b6d4854c08292fe7bfbe3d5943aa4b1cdc5bc58b",
-        "hashPresent": true
-      },
-      {
-        "index": 30,
-        "id": "side-chat-runtime",
-        "source": "public/side-chat-runtime.js",
-        "assetPath": "/side-chat-runtime.js",
-        "globalName": "CodexSideChatRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createSideChatRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 51946,
-        "sha256": "f8c3d723929f11bcfe1a6d7ce7c6a2aa2697b863cd5c0bf413c557bd758b0d49",
-        "hashPresent": true
-      },
-      {
-        "index": 31,
-        "id": "media-preview-runtime",
-        "source": "public/media-preview-runtime.js",
-        "assetPath": "/media-preview-runtime.js",
-        "globalName": "CodexMediaPreviewRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createMediaPreviewRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 95096,
-        "sha256": "fd665173935ba29c77db757fa8a3734f95d46e740fd8e9b81ba265fd5d2e44a8",
-        "hashPresent": true
-      },
-      {
-        "index": 32,
-        "id": "composer-runtime",
-        "source": "public/composer-runtime.js",
-        "assetPath": "/composer-runtime.js",
-        "globalName": "CodexComposerRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createComposerRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 78244,
-        "sha256": "75be1a6476ab4fd3b8ee503866a9b2d5dbd68d9fc1a08a14b89b9b92e2443cc6",
-        "hashPresent": true
-      },
-      {
-        "index": 33,
-        "id": "composer-bridge-runtime",
-        "source": "public/composer-bridge-runtime.js",
-        "assetPath": "/composer-bridge-runtime.js",
-        "globalName": "CodexComposerBridgeRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createComposerBridgeRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 32086,
-        "sha256": "457e61d3f27603c7958527d6b945b69652f03ac478d90bdf3e5311cfd19e81ab",
-        "hashPresent": true
-      },
-      {
-        "index": 34,
-        "id": "api-client-runtime",
-        "source": "public/api-client-runtime.js",
-        "assetPath": "/api-client-runtime.js",
-        "globalName": "CodexApiClientRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createApiClientRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 49014,
-        "sha256": "eb9a644aa1bc1094cee410da228736251a89ab15ab051293ae1b0741070d9358",
-        "hashPresent": true
-      },
-      {
-        "index": 35,
+        "index": 6,
         "id": "thread-list-load-policy",
         "source": "public/thread-list-load-policy.js",
         "assetPath": "/thread-list-load-policy.js",
@@ -4338,7 +3424,7 @@
         "hashPresent": true
       },
       {
-        "index": 36,
+        "index": 7,
         "id": "thread-list-stable-order",
         "source": "public/thread-list-stable-order.js",
         "assetPath": "/thread-list-stable-order.js",
@@ -4354,7 +3440,7 @@
         "hashPresent": true
       },
       {
-        "index": 37,
+        "index": 8,
         "id": "thread-status-hints",
         "source": "public/thread-status-hints.js",
         "assetPath": "/thread-status-hints.js",
@@ -4371,7 +3457,7 @@
         "hashPresent": true
       },
       {
-        "index": 38,
+        "index": 9,
         "id": "thread-detail-patch-plan",
         "source": "public/thread-detail-patch-plan.js",
         "assetPath": "/thread-detail-patch-plan.js",
@@ -4388,26 +3474,7 @@
         "hashPresent": true
       },
       {
-        "index": 39,
-        "id": "thread-detail-actions",
-        "source": "public/thread-detail-actions.js",
-        "assetPath": "/thread-detail-actions.js",
-        "globalName": "CodexThreadDetailActions",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "closestWithin",
-          "contextThreadIdFromNode",
-          "previewableImageFromTarget",
-          "resolveRichContentClickAction",
-          "resolveThreadDetailClickAction"
-        ],
-        "expectedFunctionCount": 5,
-        "bytes": 5362,
-        "sha256": "f6c17f87950e2931e4471fa6884b8abedf486d1ee6176181c6395a062f017819",
-        "hashPresent": true
-      },
-      {
-        "index": 40,
+        "index": 10,
         "id": "thread-detail-merge-state",
         "source": "public/thread-detail-merge-state.js",
         "assetPath": "/thread-detail-merge-state.js",
@@ -4422,97 +3489,7 @@
         "hashPresent": true
       },
       {
-        "index": 41,
-        "id": "thread-detail-v4-merge-state",
-        "source": "public/thread-detail-v4-merge-state.js",
-        "assetPath": "/thread-detail-v4-merge-state.js",
-        "globalName": "CodexThreadDetailV4MergeState",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createThreadDetailV4MergePolicy"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 12071,
-        "sha256": "b7123a22dbbb066ea3e84e1cc083255fd909dc2fe9e8d66939d49d3367d7727b",
-        "hashPresent": true
-      },
-      {
-        "index": 42,
-        "id": "thread-detail-runtime",
-        "source": "public/thread-detail-runtime.js",
-        "assetPath": "/thread-detail-runtime.js",
-        "globalName": "CodexThreadDetailRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createThreadDetailRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 57528,
-        "sha256": "c85f81bfb420af89a50b0580ab51adadfae37832270e8b5db18a9de2046b7db9",
-        "hashPresent": true
-      },
-      {
-        "index": 43,
-        "id": "task-card-runtime",
-        "source": "public/task-card-runtime.js",
-        "assetPath": "/task-card-runtime.js",
-        "globalName": "CodexTaskCardRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createTaskCardRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 64113,
-        "sha256": "b831e411cf6efb6ded34d41d138c6d5e6483a000d7833d388a81d0de84e8c32d",
-        "hashPresent": true
-      },
-      {
-        "index": 44,
-        "id": "notification-ui-runtime",
-        "source": "public/notification-ui-runtime.js",
-        "assetPath": "/notification-ui-runtime.js",
-        "globalName": "CodexNotificationUiRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createNotificationUiRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 55054,
-        "sha256": "c91ac0b12cad54d190249e1d74640f6f543f2dea67f3e78c0862aa60fe462a16",
-        "hashPresent": true
-      },
-      {
-        "index": 45,
-        "id": "conversation-render-runtime",
-        "source": "public/conversation-render-runtime.js",
-        "assetPath": "/conversation-render-runtime.js",
-        "globalName": "CodexConversationRenderRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createConversationRenderRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 69696,
-        "sha256": "8932a7a8a781c6ebbc53aeb81ae44526c215bfc0f215f2e1896e0937c7e66855",
-        "hashPresent": true
-      },
-      {
-        "index": 46,
-        "id": "event-stream-runtime",
-        "source": "public/event-stream-runtime.js",
-        "assetPath": "/event-stream-runtime.js",
-        "globalName": "CodexEventStreamRuntime",
-        "classicLoaderExcluded": true,
-        "expectedFunctions": [
-          "createEventStreamRuntime"
-        ],
-        "expectedFunctionCount": 1,
-        "bytes": 62586,
-        "sha256": "31c810fdc764d137e9c1e8c12b5687c5f2a5daea9a2d3eb5267a827573add8c2",
-        "hashPresent": true
-      },
-      {
-        "index": 47,
+        "index": 11,
         "id": "client-render-stability-guard",
         "source": "public/client-render-stability-guard.js",
         "assetPath": "/client-render-stability-guard.js",
@@ -4533,7 +3510,7 @@
         "hashPresent": true
       },
       {
-        "index": 48,
+        "index": 12,
         "id": "live-operation-dock-state",
         "source": "public/live-operation-dock-state.js",
         "assetPath": "/live-operation-dock-state.js",
@@ -4553,20 +3530,20 @@
   },
   "counts": {
     "entryGroups": 6,
-    "esmCompatibilityChunks": 10,
+    "esmCompatibilityChunks": 2,
     "sharedChunks": 0,
     "viteOwnedAppBootstrapChunks": 1,
     "entryGroupChunks": 6,
     "startupCriticalAssets": 22,
     "classicShellScriptBlockScripts": 51,
-    "appPreviewClassicLoaderScripts": 0,
-    "appPreviewClassicLoaderHashes": 0,
-    "appPreviewClassicLoaderBytes": 0,
-    "appPreviewClassicLoaderExcludedEsmScripts": 49,
-    "appPreviewClassicLoaderExcludedViteOwnedScripts": 2,
-    "esmCompatibilityModules": 49,
-    "esmCompatibilityHashes": 49,
-    "esmCompatibilityExpectedFunctions": 355,
+    "appPreviewClassicLoaderScripts": 37,
+    "appPreviewClassicLoaderHashes": 37,
+    "appPreviewClassicLoaderBytes": 1687888,
+    "appPreviewClassicLoaderExcludedEsmScripts": 13,
+    "appPreviewClassicLoaderExcludedViteOwnedScripts": 1,
+    "esmCompatibilityModules": 13,
+    "esmCompatibilityHashes": 13,
+    "esmCompatibilityExpectedFunctions": 57,
     "startupGlobalContracts": 207,
     "startupGlobalContractAssets": 31,
     "startupGlobalContractHashes": 207,
@@ -4575,33 +3552,33 @@
     "startupGlobalNames": 207,
     "classicGlobalExportAssets": 50,
     "classicGlobalExports": 227,
-    "publishedFiles": 22
+    "publishedFiles": 14
   },
   "publishedFiles": [
     {
       "fileName": "codex-mobile-shell-manifest.json",
-      "bytes": 455235,
-      "sha256": "610520b9450680fa3eab91b64f0ab80a623104c0513d34e5fb82c7e939d07063"
+      "bytes": 413876,
+      "sha256": "6f2a9010e6b9078f6de862f879dcaf7f03ac8b47c97d18483e2713b48fddd0fa"
     },
     {
-      "fileName": "assets/vite-shell-entry-B8IOcWAX.js",
+      "fileName": "assets/vite-shell-entry-DstTkCIg.js",
       "bytes": 84172,
-      "sha256": "23c46bf01616a65fae91a09ffa39671b05a24c3e4c932b4a00cfa202e107e496"
+      "sha256": "8c1608ba0c150fe8bb19727242edb94020c59d93463acda981f37f64ace13408"
     },
     {
-      "fileName": "assets/_virtual_codex-mobile-esm-compatibility-BElwXV4K.js",
-      "bytes": 6578,
-      "sha256": "261fb91c9873790186e17eb70692be6a57fc22f79533862c0a45a01b62cb7dd5"
+      "fileName": "assets/_virtual_codex-mobile-esm-compatibility-BS8Vs18K.js",
+      "bytes": 3202,
+      "sha256": "4d187c7f9fa0de629ebc5818c150dccd38d40e65f97e11cb1629e776aca87a4c"
     },
     {
-      "fileName": "assets/app-bootstrap-C3nJPEun.js",
+      "fileName": "assets/app-bootstrap-BanrgMb7.js",
       "bytes": 49133,
-      "sha256": "f9a3d0d04029b9acc08558b9234bbe30cc7a384bd0a89f59379295eccd5aaf21"
+      "sha256": "bcf66a8321dcdf7052a85898b0dcfaabfaf30e08081ac302f75a516889dac154"
     },
     {
-      "fileName": "assets/vite-deferred-entry-topology-CQp0wr3X.js",
+      "fileName": "assets/vite-deferred-entry-topology-Bu16zVIK.js",
       "bytes": 748,
-      "sha256": "3c4b1bd1a80254c83c86771b7d81a703b1bb641a97431d12305fe9fad12ec53c"
+      "sha256": "4a5af8efd55f473aa0520351dda1dae7ffe717583a73f9a5207cda64a40935a6"
     },
     {
       "fileName": "assets/vite-entry-group-app-entry-MyJcyURZ.js",
@@ -4634,59 +3611,19 @@
       "sha256": "86d9a591da16cf65217cf98f4718154d84bd668a25097447d940ae00944c0e9b"
     },
     {
-      "fileName": "assets/shard-01-D4IxMGgf.js",
-      "bytes": 304270,
-      "sha256": "67b76f8b457c1742c6fd4da8eca75cb85205dd1d1d5042299bc9d65e37311e50"
-    },
-    {
-      "fileName": "assets/shard-02-BG-nylfv.js",
-      "bytes": 297002,
-      "sha256": "b6058ba430e8224d2754747fe7b1b4a6859ecbefa3cb32c2d1859ea9d76fdda7"
-    },
-    {
-      "fileName": "assets/shard-03-LlfYHoJo.js",
-      "bytes": 308060,
-      "sha256": "6668d5d7cd90de36c8ec2a0e46d82e213744a7198f013c2e9882f4289e87bf7b"
-    },
-    {
-      "fileName": "assets/shard-04-jd137qnO.js",
-      "bytes": 226261,
-      "sha256": "e189c529e3abbc03572cc3fe788a34f08129d1d34b4573d68d3ac257c2c321ec"
-    },
-    {
-      "fileName": "assets/shard-05-DDG11BFj.js",
-      "bytes": 294403,
-      "sha256": "a1f2344327018981d58ef346f08df9893bea66baf195cd20b8a9aaa20f7d3d40"
-    },
-    {
-      "fileName": "assets/shard-06-Bnn9sn8z.js",
-      "bytes": 276648,
-      "sha256": "8b2a4a67b372ba283958f52393beb792b7c8011468af4e920f1025333a9b56e7"
-    },
-    {
-      "fileName": "assets/shard-07-CyZGiVJ0.js",
-      "bytes": 302299,
-      "sha256": "3ab1cc5c8d56932dd11f9326f7185cca600b9d1077253406c72cfbe418973c9e"
-    },
-    {
-      "fileName": "assets/shard-08-DupnSmeS.js",
-      "bytes": 261319,
-      "sha256": "8225b070962e069760e39e0ac5389ad3363cadfe806ce9b09dddc6002c6cf0f1"
-    },
-    {
-      "fileName": "assets/shard-09-QNP-BRsM.js",
-      "bytes": 227821,
-      "sha256": "f284d774ed4da5df8c477a984b1635d50b5aed3f1e1dfe89934803e74c0937f8"
+      "fileName": "assets/shard-01-hii1Cv6I.js",
+      "bytes": 168348,
+      "sha256": "8037b6fbabe807c89246397a63b44abd5ac64cf5cad0a0e1a570225c49b40990"
     },
     {
       "fileName": "preview.html",
-      "bytes": 5612,
-      "sha256": "ee7c4ea41e39931d965844626b12ece3ca12397146209212b38a6313d49afb87"
+      "bytes": 4630,
+      "sha256": "96133f0731f2cb6accc822ad6e22faaa54cf0f1b180bd497cb3c6d0ec5781610"
     },
     {
       "fileName": "app-preview.html",
-      "bytes": 66696,
-      "sha256": "293704d8e75a324f22055a36ac6b39ede28802de3420989e33f744abcbd85a59"
+      "bytes": 62380,
+      "sha256": "38c43ed3eb3122a0add3e7321ec208b94bd93e696a14229865ced3d5ace66e13"
     }
   ],
   "validation": {
