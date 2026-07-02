@@ -18,6 +18,7 @@ function fakeProcessPressureDeps() {
     "node    33840 xuxin  20u  IPv4 0x1      0t0  TCP 127.0.0.1:8787 (LISTEN)",
   ].join("\n");
   return {
+    fetchJson: fakeHermesManifestFetchJson,
     execFileSync(command, args) {
       if (command === "ps") return psText;
       if (command === "lsof" && args.includes("-iTCP")) return lsofText;
@@ -46,6 +47,42 @@ function fakeProcessPressureDeps() {
       return JSON.stringify({ pid: 26622, host: "127.0.0.1", port: 54498, protocol: "jsonl-tcp" });
     },
   };
+}
+
+async function fakeHermesManifestFetchJson(url) {
+  if (String(url || "").endsWith("/api/public-config")) {
+    return {
+      ok: true,
+      status: 200,
+      body: {
+        buildId: "build-test",
+        clientBuildId: "client-test",
+        shellCacheName: "shell-test",
+      },
+    };
+  }
+  if (String(url || "").endsWith("/api/v1/hermes/plugin/manifest")) {
+    return {
+      ok: true,
+      status: 200,
+      body: {
+        buildId: "build-test",
+        clientBuildId: "client-test",
+        shellCacheName: "shell-test",
+        build: { identity: "client-test" },
+        entry: {
+          url: "http://127.0.0.1:8790/?embed=hermes&codexMobileBuild=client-test",
+          required_query: {
+            embed: "hermes",
+            codexMobileBuild: "client-test",
+          },
+        },
+        embedding: { refreshOnVersionChange: true, version: "client-test" },
+        embed: { refreshOnVersionChange: true, version: "client-test" },
+      },
+    };
+  }
+  return { ok: false, status: 404, body: {} };
 }
 
 test("runtime self-check loop parses one-shot and periodic options", () => {
@@ -151,6 +188,103 @@ test("runtime self-check summary keeps only bounded metadata", () => {
     diagnosticCandidates: [],
   });
   assert.doesNotMatch(JSON.stringify(summary), /raw prompt text|cookie|token|Authorization/i);
+});
+
+test("Hermes manifest self-check requires build refresh contract", () => {
+  const goodPublicConfig = {
+    buildId: "build-test",
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-a5a3d596240d",
+    shellCacheName: "codex-mobile-shell-v625-a5a3d596240d",
+  };
+  const goodManifest = {
+    buildId: "build-test",
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-a5a3d596240d",
+    shellCacheName: "codex-mobile-shell-v625-a5a3d596240d",
+    build: {
+      identity: "0.1.11|codex-mobile-shell-v625-a5a3d596240d",
+    },
+    entry: {
+      url: "http://127.0.0.1:8787/?embed=hermes&codexMobileBuild=0.1.11%7Ccodex-mobile-shell-v625-a5a3d596240d",
+      required_query: {
+        embed: "hermes",
+        codexMobileBuild: "0.1.11|codex-mobile-shell-v625-a5a3d596240d",
+      },
+    },
+    embedding: {
+      refreshOnVersionChange: true,
+      version: "0.1.11|codex-mobile-shell-v625-a5a3d596240d",
+    },
+    embed: {
+      refreshOnVersionChange: true,
+      version: "0.1.11|codex-mobile-shell-v625-a5a3d596240d",
+    },
+  };
+
+  const clean = runtimeLoop.runtimeCheckFromHermesManifest(goodPublicConfig, goodManifest);
+  assert.equal(clean.ok, true);
+  assert.equal(clean.issueCount, 0);
+  assert.equal(clean.manifestEntryBuildParam, "0.1.11|codex-mobile-shell-v625-a5a3d596240d");
+  assert.equal(clean.refreshOnVersionChange, true);
+
+  const stale = runtimeLoop.runtimeCheckFromHermesManifest(goodPublicConfig, {
+    version: "0.1.11",
+    entry: {
+      url: "http://127.0.0.1:8787/?embed=hermes",
+      required_query: { embed: "hermes" },
+    },
+  });
+  assert.equal(stale.ok, false);
+  assert.equal(stale.blockingIssueCount > 0, true);
+  assert.ok(stale.issues.some((issue) => issue.code === "hermes_manifest_client_build_mismatch"));
+  assert.ok(stale.issues.some((issue) => issue.code === "hermes_manifest_embedding_refresh_missing"));
+  assert.ok(stale.issues.some((issue) => issue.code === "hermes_manifest_entry_build_param_mismatch"));
+});
+
+test("Hermes manifest self-check fetches public config and manifest", async () => {
+  const calls = [];
+  const check = await runtimeLoop.checkHermesManifestBuildRefresh({
+    server: "http://127.0.0.1:8790",
+  }, {
+    fetchJson: async (url) => {
+      calls.push(url);
+      if (url.endsWith("/api/public-config")) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            buildId: "build-test",
+            clientBuildId: "client-test",
+            shellCacheName: "shell-test",
+          },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        body: {
+          buildId: "build-test",
+          clientBuildId: "client-test",
+          shellCacheName: "shell-test",
+          build: { identity: "client-test" },
+          entry: {
+            url: "http://127.0.0.1:8790/?embed=hermes&codexMobileBuild=client-test",
+            required_query: {
+              embed: "hermes",
+              codexMobileBuild: "client-test",
+            },
+          },
+          embedding: { refreshOnVersionChange: true, version: "client-test" },
+          embed: { refreshOnVersionChange: true, version: "client-test" },
+        },
+      };
+    },
+  });
+
+  assert.equal(check.ok, true);
+  assert.deepEqual(calls, [
+    "http://127.0.0.1:8790/api/public-config",
+    "http://127.0.0.1:8790/api/v1/hermes/plugin/manifest",
+  ]);
 });
 
 test("runtime self-check one-shot writes metadata-only JSONL", async () => {
@@ -762,6 +896,7 @@ test("runtime self-check loop records skipped periodic browser budget", async ()
     ["process-pressure", true, 0, 0],
   ]);
   assert.deepEqual(result.runtimeJobs.map((job) => [job.name, job.enabled, job.reason]), [
+    ["hermes-manifest", false, "skip_flag"],
     ["api-thread", false, "skip_flag"],
     ["browser-runtime", false, "browser_mode_off"],
     ["browser-vite-preview", false, "browser_mode_off"],

@@ -164,6 +164,7 @@ test("runtime job scheduler enables browser checks for deploy gates", () => {
 
   assert.equal(plan.profile.browserMode, "full");
   assert.deepEqual(plan.enabledJobNames, [
+    "hermes-manifest",
     "api-thread",
     "browser-runtime",
     "browser-vite-preview",
@@ -175,6 +176,9 @@ test("runtime job scheduler enables browser checks for deploy gates", () => {
     "client-events",
   ]);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").timeoutMs, service.DEFAULT_JOB_TIMEOUT_MS);
+  assert.equal(service.runtimeSelfCheckJob(plan, "hermes-manifest").timeoutMs, 30000);
+  assert.equal(service.runtimeSelfCheckJob(plan, "hermes-manifest").realBrowserAllowed, false);
+  assert.equal(service.runtimeSelfCheckJob(plan, "hermes-manifest").cpuBudgetClass, "low");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").timeBudgetMs, service.DEFAULT_JOB_TIMEOUT_MS);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").maxConcurrency, 1);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").usesBrowser, true);
@@ -279,7 +283,7 @@ test("runtime job scheduler distinguishes skip flags from budget policy", () => 
     skipClientEvents: true,
   });
 
-  assert.deepEqual(plan.enabledJobNames, ["api-thread"]);
+  assert.deepEqual(plan.enabledJobNames, ["hermes-manifest", "api-thread"]);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview").reason, "skip_flag");

@@ -25,6 +25,7 @@ const {
 const DEFAULT_SERVER = "http://127.0.0.1:8787";
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000;
 const CHILD_SELF_CHECK_TIMEOUT_MS = 300000;
+const HTTP_FETCH_TIMEOUT_MS = 15000;
 
 function usage() {
   return [
@@ -161,6 +162,189 @@ function boundedErrorCode(value) {
     .slice(0, 80) || "self_check_failed";
 }
 
+function serverUrlForPath(server, pathname) {
+  const base = new URL(String(server || DEFAULT_SERVER));
+  base.pathname = pathname;
+  base.search = "";
+  base.hash = "";
+  return base.toString();
+}
+
+async function fetchRuntimeJson(url, deps = {}) {
+  if (typeof deps.fetchJson === "function") return deps.fetchJson(url);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HTTP_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    let body = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch (_) {
+      body = null;
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      body,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function checkIssue(code, extra = {}) {
+  return {
+    severity: "H2",
+    category: "runtime_self_check",
+    diagnostic_type: code,
+    code,
+    ...extra,
+  };
+}
+
+function queryParamFromUrl(url, key) {
+  try {
+    const parsed = new URL(String(url || ""), DEFAULT_SERVER);
+    return parsed.searchParams.get(key) || "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function boolRefreshFlag(value) {
+  return Boolean(
+    value && (
+      value.refreshOnVersionChange
+      || value.refresh_on_version_change
+    )
+  );
+}
+
+function buildIdentityFromPublicConfig(publicConfig = {}) {
+  const buildId = String(publicConfig.buildId || "").trim();
+  const clientBuildId = String(publicConfig.clientBuildId || "").trim();
+  const shellCacheName = String(publicConfig.shellCacheName || "").trim();
+  return {
+    buildId,
+    clientBuildId,
+    shellCacheName,
+    identity: clientBuildId || shellCacheName || buildId,
+  };
+}
+
+function runtimeCheckFromHermesManifest(publicConfig = {}, manifest = {}) {
+  const identity = buildIdentityFromPublicConfig(publicConfig);
+  const manifestBuild = manifest && typeof manifest.build === "object" ? manifest.build : {};
+  const entry = manifest && typeof manifest.entry === "object" ? manifest.entry : {};
+  const requiredQuery = entry && typeof entry.required_query === "object" ? entry.required_query : {};
+  const embedding = manifest && typeof manifest.embedding === "object" ? manifest.embedding : {};
+  const embed = manifest && typeof manifest.embed === "object" ? manifest.embed : {};
+  const entryBuildParam = queryParamFromUrl(entry.url, "codexMobileBuild");
+  const issues = [];
+  if (!identity.buildId) issues.push(checkIssue("hermes_manifest_public_build_id_missing"));
+  if (!identity.clientBuildId) issues.push(checkIssue("hermes_manifest_public_client_build_missing"));
+  if (!identity.shellCacheName) issues.push(checkIssue("hermes_manifest_public_shell_cache_missing"));
+  if (!identity.identity) issues.push(checkIssue("hermes_manifest_public_build_identity_missing"));
+  if (identity.buildId && String(manifest.buildId || "") !== identity.buildId) {
+    issues.push(checkIssue("hermes_manifest_build_id_mismatch"));
+  }
+  if (identity.clientBuildId && String(manifest.clientBuildId || "") !== identity.clientBuildId) {
+    issues.push(checkIssue("hermes_manifest_client_build_mismatch"));
+  }
+  if (identity.shellCacheName && String(manifest.shellCacheName || "") !== identity.shellCacheName) {
+    issues.push(checkIssue("hermes_manifest_shell_cache_mismatch"));
+  }
+  if (identity.identity && String(manifestBuild.identity || "") !== identity.identity) {
+    issues.push(checkIssue("hermes_manifest_build_identity_mismatch"));
+  }
+  if (!boolRefreshFlag(embedding)) issues.push(checkIssue("hermes_manifest_embedding_refresh_missing"));
+  if (!boolRefreshFlag(embed)) issues.push(checkIssue("hermes_manifest_embed_refresh_missing"));
+  if (identity.identity && String(embedding.version || "") !== identity.identity) {
+    issues.push(checkIssue("hermes_manifest_embedding_version_mismatch"));
+  }
+  if (identity.identity && String(embed.version || "") !== identity.identity) {
+    issues.push(checkIssue("hermes_manifest_embed_version_mismatch"));
+  }
+  if (identity.identity && entryBuildParam !== identity.identity) {
+    issues.push(checkIssue("hermes_manifest_entry_build_param_mismatch"));
+  }
+  if (identity.identity && String(requiredQuery.codexMobileBuild || "") !== identity.identity) {
+    issues.push(checkIssue("hermes_manifest_required_query_build_mismatch"));
+  }
+  return {
+    name: "hermes-manifest",
+    ok: issues.length === 0,
+    issueCount: issues.length,
+    blockingIssueCount: issues.length,
+    diagnosticCandidateCount: 0,
+    clientBuildId: identity.clientBuildId.slice(0, 120),
+    shellCacheName: identity.shellCacheName.slice(0, 120),
+    errorCode: "",
+    issues,
+    diagnosticCandidates: [],
+    buildId: identity.buildId.slice(0, 120),
+    manifestBuildId: String(manifest.buildId || "").slice(0, 120),
+    manifestEntryBuildParam: entryBuildParam.slice(0, 120),
+    refreshOnVersionChange: boolRefreshFlag(embedding) && boolRefreshFlag(embed),
+  };
+}
+
+async function checkHermesManifestBuildRefresh(options = {}, deps = {}) {
+  const publicConfigUrl = serverUrlForPath(options.server || DEFAULT_SERVER, "/api/public-config");
+  const manifestUrl = serverUrlForPath(options.server || DEFAULT_SERVER, "/api/v1/hermes/plugin/manifest");
+  let publicConfigResult = null;
+  let manifestResult = null;
+  try {
+    publicConfigResult = await fetchRuntimeJson(publicConfigUrl, deps);
+  } catch (error) {
+    publicConfigResult = {
+      ok: false,
+      status: 0,
+      body: {},
+      errorCode: boundedErrorCode(error && error.message),
+    };
+  }
+  try {
+    manifestResult = await fetchRuntimeJson(manifestUrl, deps);
+  } catch (error) {
+    manifestResult = {
+      ok: false,
+      status: 0,
+      body: {},
+      errorCode: boundedErrorCode(error && error.message),
+    };
+  }
+  const publicConfig = publicConfigResult && publicConfigResult.body && typeof publicConfigResult.body === "object"
+    ? publicConfigResult.body
+    : {};
+  const manifest = manifestResult && manifestResult.body && typeof manifestResult.body === "object"
+    ? manifestResult.body
+    : {};
+  const check = runtimeCheckFromHermesManifest(publicConfig, manifest);
+  const transportIssues = [];
+  if (!publicConfigResult || !publicConfigResult.ok) {
+    transportIssues.push(checkIssue("hermes_manifest_public_config_unavailable", {
+      status: Number(publicConfigResult && publicConfigResult.status || 0) || 0,
+    }));
+  }
+  if (!manifestResult || !manifestResult.ok) {
+    transportIssues.push(checkIssue("hermes_manifest_unavailable", {
+      status: Number(manifestResult && manifestResult.status || 0) || 0,
+    }));
+  }
+  if (transportIssues.length) {
+    check.issues = transportIssues.concat(check.issues);
+    check.issueCount = check.issues.length;
+    check.blockingIssueCount = check.issues.length;
+    check.ok = false;
+  }
+  return check;
+}
+
 function runNodeScript(scriptPath, args = [], deps = {}, job = {}) {
   const runner = deps.execFile || childProcess.execFile;
   const timeout = positiveInt(job.timeoutMs, CHILD_SELF_CHECK_TIMEOUT_MS);
@@ -268,6 +452,10 @@ async function runOnce(options = {}, deps = {}) {
   let jobPlan = resolveRuntimeSelfCheckPlan(planOptions);
   let observedDefaultShellMode = "";
   const root = path.resolve(__dirname, "..");
+  const hermesManifestJob = runtimeSelfCheckJob(jobPlan, "hermes-manifest");
+  if (hermesManifestJob && hermesManifestJob.enabled) {
+    checks.push(await checkHermesManifestBuildRefresh(options, deps));
+  }
   const apiJob = runtimeSelfCheckJob(jobPlan, "api-thread");
   if (apiJob && apiJob.enabled) {
     const result = await runNodeScript(path.join(root, "scripts", "codex-mobile-thread-self-check.js"), baseArgs(options), deps, apiJob);
@@ -503,6 +691,8 @@ module.exports = {
   parseArgs,
   runLoop,
   runOnce,
+  checkHermesManifestBuildRefresh,
+  runtimeCheckFromHermesManifest,
   summarizeCheck,
   collectRuntimeProcessPressure,
   usage,

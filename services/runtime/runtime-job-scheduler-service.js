@@ -39,6 +39,16 @@ function normalizeRuntimeJobDeclaration(name, declaration = {}) {
 }
 
 const RUNTIME_SELF_CHECK_JOBS = Object.freeze({
+  "hermes-manifest": normalizeRuntimeJobDeclaration("hermes-manifest", {
+    timeoutMs: 30000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "low",
+    realBrowserAllowed: false,
+    userRequestPreemptible: true,
+    periodicAllowed: true,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: true,
+  }),
   "api-thread": normalizeRuntimeJobDeclaration("api-thread", {
     maxConcurrency: 1,
     cpuBudgetClass: "medium",
@@ -132,6 +142,7 @@ const RUNTIME_SELF_CHECK_JOBS = Object.freeze({
 });
 
 const JOB_ORDER = Object.freeze([
+  "hermes-manifest",
   "api-thread",
   "browser-runtime",
   "browser-vite-preview",
@@ -390,7 +401,7 @@ function enabledJob(spec) {
 }
 
 function skipFlagForJobName(name) {
-  if (name === "api-thread") return "skipApi";
+  if (name === "hermes-manifest" || name === "api-thread") return "skipApi";
   if (name === "browser-runtime"
     || name === "browser-vite-preview"
     || name === "browser-vite-app-preview"
