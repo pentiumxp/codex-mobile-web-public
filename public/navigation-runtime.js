@@ -1374,7 +1374,8 @@ function rolloutWarningSignature(thread) {
 }
 
 function visibleTurnsForConversation(thread) {
-  return ((thread && thread.turns) || []).slice(-maxVisibleTurnsForThread(thread));
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  return sortTurnsForDisplay(turns).slice(-maxVisibleTurnsForThread(thread));
 }
 
 function threadHasVisibleConversationTurns(thread) {

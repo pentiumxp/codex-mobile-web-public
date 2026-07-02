@@ -52,6 +52,15 @@
       : () => false;
     const maxExpandedVisibleTurns = Math.max(1, Number(options.maxExpandedVisibleTurns || 200) || 200);
 
+    function normalizeMergedThread(thread, limit = 0) {
+      const normalized = normalizeThreadVisibleUserMessages(thread);
+      if (normalized && Array.isArray(normalized.turns)) {
+        const sorted = sortTurnsForDisplay(normalized.turns);
+        normalized.turns = limit > 0 ? sorted.slice(-limit) : sorted;
+      }
+      return normalized;
+    }
+
     function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
       return shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight);
     }
@@ -77,7 +86,7 @@
     function mergeThreadPreservingVisibleItems(existingThread, incomingThread, runtime = {}) {
       if (isV4ProjectionThread(incomingThread)) return mergeV4ProjectionThread(existingThread, incomingThread);
       if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) {
-        return normalizeThreadVisibleUserMessages(incomingThread);
+        return normalizeMergedThread(incomingThread);
       }
       const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
       const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
@@ -87,18 +96,19 @@
       if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
       if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
       if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
-      if (!incomingTurns) return normalizeThreadVisibleUserMessages(merged);
+      if (!incomingTurns) return normalizeMergedThread(merged);
       const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
       const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
       if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
         merged.turns = existingTurns;
-        return normalizeThreadVisibleUserMessages(merged);
+        return normalizeMergedThread(merged);
       }
 
       merged.turns = incomingTurns.map((incomingTurn) => {
         const existingTurn = existingById.get(incomingTurn && incomingTurn.id);
         return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
       });
+      merged.turns = sortTurnsForDisplay(merged.turns);
 
       const incomingIds = new Set(merged.turns.map((turn) => turn && turn.id).filter(Boolean));
       const latestIncoming = merged.turns.length ? merged.turns[merged.turns.length - 1] : null;
@@ -124,12 +134,11 @@
 
       if (preserveExpandedHistory) {
         merged.mobileHistoryExpanded = true;
-        merged.turns = sortTurnsForDisplay(merged.turns).slice(-maxExpandedVisibleTurns);
         if (preservedExpandedTurnCount > 0) {
           merged.mobileOmittedTurnCount = Math.max(0, Number(merged.mobileOmittedTurnCount || 0) - preservedExpandedTurnCount);
         }
       }
-      const normalized = normalizeThreadVisibleUserMessages(merged);
+      const normalized = normalizeMergedThread(merged, preserveExpandedHistory ? maxExpandedVisibleTurns : 0);
       if (!threadHasInitialSubmissionEcho(normalized, initialSubmissionId)) delete normalized.mobileInitialSubmissionId;
       return normalized;
     }

@@ -758,6 +758,57 @@ function turnDisplaySortPhase(turn) {
   return 0;
 }
 
+function turnDisplaySortTimestampMs(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const numberValue = Number(value);
+  if (Number.isFinite(numberValue) && numberValue > 0) {
+    return numberValue > 1_000_000_000_000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1000);
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function turnDisplayItemTimestampMs(item) {
+  if (!item || typeof item !== "object") return 0;
+  const fields = [
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "updatedAtMs",
+    "updatedAt",
+    "updated_at_ms",
+    "updated_at",
+    "timestampMs",
+    "timestamp",
+    "mobileDisplayTimestampMs",
+    "mobileDisplayTimestamp",
+    "completedAtMs",
+    "completedAt",
+    "completed_at_ms",
+    "completed_at",
+  ];
+  for (const field of fields) {
+    const timestamp = turnDisplaySortTimestampMs(item[field]);
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
+function turnDisplayItemTimestampRange(turn) {
+  const timestamps = (Array.isArray(turn && turn.items) ? turn.items : [])
+    .map(turnDisplayItemTimestampMs)
+    .filter((timestamp) => timestamp > 0);
+  return {
+    first: timestamps.length ? Math.min(...timestamps) : 0,
+    last: timestamps.length ? Math.max(...timestamps) : 0,
+  };
+}
+
 function sortTurnsForDisplay(turns) {
   return (turns || []).slice().sort((leftTurn, rightTurn) => {
     const leftPhase = turnDisplaySortPhase(leftTurn);
@@ -766,6 +817,10 @@ function sortTurnsForDisplay(turns) {
     const left = turnOrderMs(leftTurn);
     const right = turnOrderMs(rightTurn);
     if (left !== right) return left - right;
+    const leftRange = turnDisplayItemTimestampRange(leftTurn);
+    const rightRange = turnDisplayItemTimestampRange(rightTurn);
+    if (leftRange.first !== rightRange.first) return leftRange.first - rightRange.first;
+    if (leftRange.last !== rightRange.last) return leftRange.last - rightRange.last;
     return String(leftTurn && leftTurn.id || "").localeCompare(String(rightTurn && rightTurn.id || ""));
   });
 }

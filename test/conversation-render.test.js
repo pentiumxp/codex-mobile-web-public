@@ -4134,6 +4134,8 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /updatePlan,/);
   assert.match(updateBody, /applicationPlan,/);
   assert.match(functionBody("visibleConversationShape"), /const turns = visibleRenderableTurnsForConversation\(thread\);/);
+  assert.match(functionBody("visibleTurnsForConversation"), /const turns = Array\.isArray\(thread && thread\.turns\) \? thread\.turns : \[\];/);
+  assert.match(functionBody("visibleTurnsForConversation"), /return sortTurnsForDisplay\(turns\)\.slice\(-maxVisibleTurnsForThread\(thread\)\);/);
   assert.match(functionBody("turnRendersConversationArticle"), /visibleItemsForTurn\(turn, thread\)\.length > 0/);
   assert.match(functionBody("turnRendersConversationArticle"), /visibleItemBudgetSignature\(turn\)/);
   assert.match(functionBody("visibleConversationShape"), /visibleItemCount \+= visibleItems\.length/);

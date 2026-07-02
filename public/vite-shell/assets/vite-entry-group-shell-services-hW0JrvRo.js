@@ -33,8 +33,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/navigation-runtime.js",
 			"sourcePath": "public/navigation-runtime.js",
-			"bytes": 70427,
-			"sha256": "32a8aacd98b3302fbed0d732cc8e658e188270bcb7e3e75d7e22338a510f5e79"
+			"bytes": 70496,
+			"sha256": "c8d0e167a2d1e3964afb226cd1711d70b9d06bed24b2c15f6a915174a44136fe"
 		},
 		{
 			"path": "/api-client-runtime.js",
@@ -45,8 +45,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/notification-ui-runtime.js",
 			"sourcePath": "public/notification-ui-runtime.js",
-			"bytes": 49341,
-			"sha256": "bce46db50c727401153287dfdecb0e3785eddb2601087de13a93b8f2c7d8f9eb"
+			"bytes": 51084,
+			"sha256": "1a98f564697670fcb82deded16ad02a328bb912648e0400e5a30d75f1f22bf00"
 		},
 		{
 			"path": "/pane-layout-runtime.js",
@@ -80,7 +80,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 10,
-	"classicAssetBytes": 676622,
+	"classicAssetBytes": 678434,
 	"classicGlobalExports": [
 		{
 			"asset": "/settings-runtime.js",

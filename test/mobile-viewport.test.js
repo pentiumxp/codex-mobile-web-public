@@ -78,6 +78,11 @@ test("client turn ordering keeps active turns stable and completed turns complet
   assert.match(sortBody, /const leftPhase = turnDisplaySortPhase\(leftTurn\);/);
   assert.match(sortBody, /if \(leftPhase !== rightPhase\) return leftPhase - rightPhase;/);
   assert.ok(sortBody.indexOf("leftPhase") < sortBody.indexOf("turnOrderMs(leftTurn)"), "turn state phase must sort before timestamp fallback");
+  assert.match(functionBody("turnDisplayItemTimestampRange"), /Array\.isArray\(turn && turn\.items\) \? turn\.items : \[\]/);
+  assert.match(functionBody("turnDisplayItemTimestampMs"), /"mobileDisplayTimestampMs"[\s\S]*"completedAtMs"/);
+  assert.match(sortBody, /const leftRange = turnDisplayItemTimestampRange\(leftTurn\);/);
+  assert.match(sortBody, /if \(leftRange\.first !== rightRange\.first\) return leftRange\.first - rightRange\.first;/);
+  assert.match(sortBody, /if \(leftRange\.last !== rightRange\.last\) return leftRange\.last - rightRange\.last;/);
 
   const consistencyBody = functionBody("checkConversationProjectionConsistency");
   assert.match(consistencyBody, /const orderSnapshot = conversationTurnOrderDiagnosticSnapshot\(source, extra\);/);

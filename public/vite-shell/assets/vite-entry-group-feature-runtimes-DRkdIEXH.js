@@ -60,8 +60,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/thread-detail-merge-state.js",
 			"sourcePath": "public/thread-detail-merge-state.js",
-			"bytes": 7718,
-			"sha256": "718514720b1b6a0ad9fd05c1d2f1797e3ba325d1aa233188e1514b9b5a07d82c"
+			"bytes": 8043,
+			"sha256": "1e2365597b9e947fcfb418b9e80a517e740ddb611770cc3626c5d0f806fb54ff"
 		},
 		{
 			"path": "/thread-detail-v4-merge-state.js",
@@ -143,7 +143,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 19,
-	"classicAssetBytes": 651491,
+	"classicAssetBytes": 651816,
 	"classicGlobalExports": [
 		{
 			"asset": "/thread-list-runtime.js",

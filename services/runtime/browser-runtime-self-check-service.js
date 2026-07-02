@@ -154,7 +154,7 @@ function safeTurnShape(value = {}) {
     firstTimestampMs: Math.max(0, Math.trunc(toNumber(row.firstTimestampMs || row.expectedFirstTimestampMs))),
     lastTimestampMs: Math.max(0, Math.trunc(toNumber(row.lastTimestampMs || row.expectedLastTimestampMs))),
     expectedItemCount: toNumber(row.expectedItemCount),
-    actualItemCount: toNumber(row.itemCount),
+    actualItemCount: Math.max(toNumber(row.itemCount), toNumber(row.actualItemCount)),
     expectedUserMessageCount: toNumber(row.expectedUserMessageCount),
     actualUserMessageCount: toNumber(row.userMessageCount),
     actualVisibleUserInputCount: visibleUserInputCount(row),
@@ -170,10 +170,30 @@ function safeTurnShape(value = {}) {
   };
 }
 
+function hasOwn(value = {}, key = "") {
+  return Boolean(value && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function turnTimestampComparable(value = {}) {
+  const row = value && typeof value === "object" ? value : {};
+  if (hasOwn(row, "itemCount") && toNumber(row.itemCount) <= 0) return false;
+  return Math.max(
+    toNumber(row.itemCount),
+    toNumber(row.actualItemCount),
+    toNumber(row.expectedItemCount),
+    toNumber(row.timestampExpectedItems),
+    toNumber(row.expectedTimestampItemCount),
+  ) > 0;
+}
+
 function turnTimestampOrderIssue(rows = []) {
   const normalized = toArray(rows)
+    .filter(turnTimestampComparable)
     .map((row) => safeTurnShape(row))
-    .filter((row) => row.turnHash && row.firstTimestampMs > 0 && row.lastTimestampMs > 0);
+    .filter((row) => row.turnHash
+      && Math.max(toNumber(row.actualItemCount), toNumber(row.expectedItemCount)) > 0
+      && row.firstTimestampMs > 0
+      && row.lastTimestampMs > 0);
   for (let index = 1; index < normalized.length; index += 1) {
     const previous = normalized[index - 1];
     const current = normalized[index];
@@ -946,6 +966,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
   const blockingIssueCount = issues.filter((item) => item && /^(H1|H2)$/i.test(item.severity || "")).length;
   return {
     ok: blockingIssueCount === 0,
+    analysisContractVersion: "renderable-turn-v2",
     issueCount: issues.length,
     blockingIssueCount,
     issues,

@@ -358,6 +358,104 @@ test("browser runtime self-check catches DOM turn timestamp order regressions", 
   assert.ok(result.issues.some((issue) => issue.code === "browser_dom_turn_timestamp_order_mismatch"));
 });
 
+test("browser runtime self-check ignores empty DOM turn shells for timestamp ordering", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "settled",
+      threadHash: "thread-a",
+      delayMs: 1500,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      turns: 3,
+      items: 4,
+      expectedTurnHashCount: 1,
+      latestTurnMatchesTarget: true,
+      latestTurnAtDomBottom: true,
+      domTurnShapes: [
+        { index: 0, turnHash: "empty-newer", itemCount: 0, firstTimestampMs: 30000, lastTimestampMs: 30000 },
+        { index: 1, turnHash: "empty-older", itemCount: 0, firstTimestampMs: 10000, lastTimestampMs: 10000 },
+        { index: 2, turnHash: "visible-bottom", itemCount: 4, firstTimestampMs: 40000, lastTimestampMs: 42000 },
+      ],
+    }],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.issues.some((issue) => issue.code === "browser_dom_turn_timestamp_order_mismatch"), false);
+});
+
+test("browser runtime self-check ignores already-normalized empty DOM turn shapes for timestamp ordering", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "settled",
+      threadHash: "thread-a",
+      delayMs: 1500,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      turns: 3,
+      items: 4,
+      expectedTurnHashCount: 1,
+      latestTurnMatchesTarget: true,
+      latestTurnAtDomBottom: true,
+      domTurnShapes: [
+        { index: 0, turnHash: "empty-newer", actualItemCount: 0, expectedItemCount: 0, firstTimestampMs: 30000, lastTimestampMs: 30000 },
+        { index: 1, turnHash: "empty-older", actualItemCount: 0, expectedItemCount: 0, firstTimestampMs: 10000, lastTimestampMs: 10000 },
+        { index: 2, turnHash: "visible-bottom", itemCount: 4, firstTimestampMs: 40000, lastTimestampMs: 42000 },
+      ],
+    }],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.issues.some((issue) => issue.code === "browser_dom_turn_timestamp_order_mismatch"), false);
+});
+
+test("browser runtime self-check expected plan follows renderable turn boundary", () => {
+  const detail = {
+    thread: {
+      id: "thread-a",
+      status: { type: "active" },
+      turns: [
+        {
+          id: "operation-only",
+          status: { type: "completed" },
+          items: [{ id: "op-1", type: "commandExecution", status: "completed", startedAtMs: 1000 }],
+        },
+        {
+          id: "reasoning-only",
+          status: { type: "completed" },
+          items: [{ id: "reasoning-1", type: "reasoning", text: "hidden", startedAtMs: 2000 }],
+        },
+        {
+          id: "visible-receipt",
+          status: { type: "completed" },
+          items: [{ id: "message-1", type: "agentMessage", text: "ok", createdAtMs: 3000 }],
+        },
+        {
+          id: "live-operation-only",
+          status: { type: "active" },
+          items: [{ id: "op-2", type: "mcpToolCall", status: "running", startedAtMs: 4000 }],
+        },
+      ],
+    },
+  };
+
+  assert.deepEqual(script.visibleTurnIds(detail), ["visible-receipt"]);
+  assert.deepEqual(script.turnShapeExpectation(detail).map((entry) => ({
+    turnHash: entry.turnHash,
+    expectedItemCount: entry.expectedItemCount,
+    expectedAssistantMessageCount: entry.expectedAssistantMessageCount,
+    expectedTimestampItemCount: entry.expectedTimestampItemCount,
+  })), [{
+    turnHash: script.browserStableHash("visible-receipt"),
+    expectedItemCount: 1,
+    expectedAssistantMessageCount: 1,
+    expectedTimestampItemCount: 1,
+  }]);
+});
+
 test("browser runtime self-check analyzes Vite preview module readiness", () => {
   const passing = script.analyzeVitePreviewProbe({
     markerVisible: true,
@@ -2360,6 +2458,19 @@ test("browser runtime self-check script exposes thread-list stress probe", () =>
   assert.match(expression, /openMenu/);
   assert.match(expression, /data-thread/);
   assert.match(expression, /threadListMaxRafDelayMs/);
+});
+
+test("browser runtime self-check isolates stress probe before detail sampling", () => {
+  const body = script.run.toString();
+  const stressIndex = body.indexOf('threadListStressProbeExpression("thread-list-stress"');
+  const settleIndex = body.indexOf("await sleep(Math.min(1500, Math.max(900, options.minSettledDelayMs)))", stressIndex);
+  const samplingIndex = body.indexOf("for (let round = 0; round < options.rounds; round += 1)", stressIndex);
+
+  assert.notEqual(stressIndex, -1);
+  assert.notEqual(settleIndex, -1);
+  assert.notEqual(samplingIndex, -1);
+  assert.ok(stressIndex < settleIndex);
+  assert.ok(settleIndex < samplingIndex);
 });
 
 test("browser runtime self-check exposes explicit composer submit exercise", () => {

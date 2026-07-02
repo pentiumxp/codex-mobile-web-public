@@ -444,10 +444,161 @@ function selectThreadIdsForSampling(rows = [], sampleThreads = 3) {
   ]).slice(0, limit);
 }
 
-function visibleTurnIds(detail = {}) {
+function detailThread(detail = {}) {
   const thread = detail && (detail.thread || detail.data || detail);
+  return thread && typeof thread === "object" ? thread : {};
+}
+
+function expectedMaxVisibleTurnsForThread(thread = {}) {
+  if ((thread.mobileRawThreadRead || String(thread.mobileReadMode || "") === "thread-read-raw") && !thread.mobileHistoryExpanded) {
+    return 4;
+  }
+  return thread.mobileHistoryExpanded ? 200 : 10;
+}
+
+function visibleTurnsForExpectation(thread = {}) {
   const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
-  return turns.map((turn) => String(turn && turn.id || "")).filter(Boolean);
+  return turns.slice(-expectedMaxVisibleTurnsForThread(thread));
+}
+
+function expectedItemType(item = {}) {
+  return String(item && item.type || "").trim();
+}
+
+function expectedIsReasoningItem(item = {}) {
+  return expectedItemType(item) === "reasoning";
+}
+
+function expectedIsWebSearchLikeItem(item = {}) {
+  if (!item) return false;
+  return /web[_-]?search|websearch|search_query|image_query/i.test([
+    item.type,
+    item.tool,
+    item.name,
+    item.namespace,
+    item.server,
+  ].filter(Boolean).join(" "));
+}
+
+function expectedIsOperationalItem(item = {}) {
+  return /^(commandExecution|fileChange|dynamicToolCall|mcpToolCall|collabAgentToolCall)$/i.test(expectedItemType(item))
+    || expectedIsWebSearchLikeItem(item);
+}
+
+function expectedIsTurnUsageSummaryItem(item = {}) {
+  return expectedItemType(item) === "turnUsageSummary";
+}
+
+function expectedUserMessageHasVisualAttachment(item = {}) {
+  const parts = Array.isArray(item && item.content) ? item.content : [];
+  return parts.some((part) => {
+    const type = String(part && part.type || "").toLowerCase();
+    return /image|file|attachment/.test(type) || Boolean(part && (part.image_url || part.image || part.path || part.url));
+  });
+}
+
+function expectedIsSupersededLiveTurn(turn = {}) {
+  return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive)));
+}
+
+function expectedVisibleItemsForTurn(turn = {}, thread = {}) {
+  const visible = [];
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  items.forEach((item, index) => {
+    if (!item) return;
+    if (expectedIsReasoningItem(item)) return;
+    if (expectedIsSupersededLiveTurn(turn)
+      && expectedItemType(item) === "userMessage"
+      && !expectedUserMessageHasVisualAttachment(item)) return;
+    if (expectedIsOperationalItem(item)) return;
+    visible.push({ item, sourceIndex: index });
+  });
+  if (expectedIsSupersededLiveTurn(turn)
+    && visible.length
+    && visible.every((entry) => expectedIsTurnUsageSummaryItem(entry && entry.item))) {
+    return [];
+  }
+  if ((thread.mobileRawThreadRead || String(thread.mobileReadMode || "") === "thread-read-raw")
+    && Array.isArray(visible)
+    && visible.length > 20) {
+    return visible.slice(-20);
+  }
+  return visible;
+}
+
+function expectedVisibleItemBudgetForTurn(turn = {}) {
+  const budget = turn && turn.mobileVisibleItemBudget && typeof turn.mobileVisibleItemBudget === "object"
+    ? turn.mobileVisibleItemBudget
+    : {};
+  const omitted = Math.max(0, Math.trunc(Number(turn && (turn.mobileOmittedVisibleItemCount || budget.omitted) || 0)));
+  return omitted > 0 ? { omitted } : null;
+}
+
+function expectedTurnHasThreadTaskCardRequest(turn = {}) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some((item) => {
+    if (!item || item.type !== "userMessage") return false;
+    const parts = Array.isArray(item.content) ? item.content : [];
+    return parts.some((part) => /<thread_task_card_request>|Task card id:|Source workspace:/i.test(inputTextValue(part)));
+  });
+}
+
+function expectedTurnHasThreadTaskCardDraftResponse(turn = {}) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some((item) => item
+    && /^(agentMessage|plan)$/i.test(String(item.type || ""))
+    && String(item.text || "").includes("<thread_task_card_draft>"));
+}
+
+function expectedTurnComplete(turn = {}) {
+  return Boolean(turn && (turn.completedAt || turn.durationMs || completedStatus(turn.status)));
+}
+
+function expectedRunningStatus(value) {
+  const text = statusText(value).toLowerCase();
+  return /(running|active|queued|processing|inprogress|in_progress|in-progress)/.test(text)
+    && !/(completed|failed|cancel|error|interrupted)/.test(text);
+}
+
+function latestExpectedDisplayTurn(thread = {}) {
+  const turns = visibleTurnsForExpectation(thread);
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn && Array.isArray(turn.items) && turn.items.some(Boolean)) return turn;
+  }
+  return turns.length ? turns[turns.length - 1] : null;
+}
+
+function expectedIsLatestTurn(turn = {}, thread = {}) {
+  return Boolean(turn && latestExpectedDisplayTurn(thread) === turn);
+}
+
+function expectedIsLiveTurn(turn = {}, thread = {}) {
+  if (!turn || expectedTurnComplete(turn)) return false;
+  return expectedRunningStatus(turn.status)
+    || (expectedIsLatestTurn(turn, thread) && expectedRunningStatus(thread.status));
+}
+
+function expectedTurnRendersConversationArticle(turn = {}, thread = {}) {
+  if (!turn || !turn.id) return false;
+  if (expectedVisibleItemsForTurn(turn, thread).length > 0) return true;
+  if (expectedVisibleItemBudgetForTurn(turn)) return true;
+  return Boolean(
+    expectedIsLatestTurn(turn, thread)
+    && expectedIsLiveTurn(turn, thread)
+    && expectedTurnHasThreadTaskCardRequest(turn)
+    && !expectedTurnHasThreadTaskCardDraftResponse(turn)
+  );
+}
+
+function renderableTurnsForExpectation(thread = {}) {
+  return visibleTurnsForExpectation(thread)
+    .filter((turn) => expectedTurnRendersConversationArticle(turn, thread));
+}
+
+function visibleTurnIds(detail = {}) {
+  const thread = detailThread(detail);
+  return renderableTurnsForExpectation(thread).map((turn) => String(turn && turn.id || "")).filter(Boolean);
 }
 
 function statusText(value) {
@@ -538,10 +689,11 @@ function duplicateLatestUserMessageEventCount(userItems = []) {
 }
 
 function latestTurnExpectation(detail = {}) {
-  const thread = detail && (detail.thread || detail.data || detail);
-  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
-  const latest = turns.length ? turns[turns.length - 1] : null;
-  const items = Array.isArray(latest && latest.items) ? latest.items : [];
+  const thread = detailThread(detail);
+  const renderableTurns = renderableTurnsForExpectation(thread);
+  const latest = renderableTurns.length ? renderableTurns[renderableTurns.length - 1] : null;
+  const visibleEntries = expectedVisibleItemsForTurn(latest, thread);
+  const items = visibleEntries.map((entry) => entry && entry.item).filter(Boolean);
   const userItems = items.filter((item) => item && /^userMessage$/i.test(String(item.type || "")));
   const injectedTaskCardUserItems = userItems.filter(isInjectedThreadTaskCardItem);
   const ordinaryUserItems = userItems.filter((item) => !isInjectedThreadTaskCardItem(item));
@@ -561,10 +713,10 @@ function latestTurnExpectation(detail = {}) {
 }
 
 function turnShapeExpectation(detail = {}) {
-  const thread = detail && (detail.thread || detail.data || detail);
-  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  const thread = detailThread(detail);
+  const turns = renderableTurnsForExpectation(thread);
   return turns.slice(-20).map((turn, index) => {
-    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    const items = expectedVisibleItemsForTurn(turn, thread).map((entry) => entry && entry.item).filter(Boolean);
     const userItems = items.filter((item) => item && /^userMessage$/i.test(String(item.type || "")));
     const injectedTaskCardUserItems = userItems.filter(isInjectedThreadTaskCardItem);
     const itemTypes = items.map((item) => String(item && item.type || "unknown").trim() || "unknown");
@@ -2559,6 +2711,7 @@ async function run(options = parseArgs(), deps = {}) {
           contentConfirmed: true,
           errorCode: boundedToken(err && err.message, "thread_list_stress_probe_failed"),
         })));
+        await sleep(Math.min(1500, Math.max(900, options.minSettledDelayMs)));
       }
 
       for (let round = 0; round < options.rounds; round += 1) {
@@ -2765,6 +2918,7 @@ module.exports = {
   run,
   safeConsoleText,
   selectThreadIdsForSampling,
+  turnShapeExpectation,
   snapshotInputForPlanEntry,
   snapshotExpression,
   startupProbeExpression,
@@ -2772,6 +2926,7 @@ module.exports = {
   threadListInteractionProbeExpression,
   threadListStressProbeExpression,
   usage,
+  visibleTurnIds,
   viteAppPreviewProbeExpression,
   vitePreviewProbeExpression,
 };
