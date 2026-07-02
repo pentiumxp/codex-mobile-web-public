@@ -1,6 +1,7 @@
 "use strict";
 
 const SUMMARY_TURN_STALENESS_GRACE_MS = 2000;
+const ACTIVE_STATUS_SUMMARY_CACHE_GRACE_MS = 30_000;
 
 function timestampToMs(value) {
   if (value === null || value === undefined || value === "") return 0;
@@ -53,6 +54,44 @@ function latestProjectedTurnActivityAtMs(thread) {
   return turns.reduce((max, turn) => Math.max(max, turnActivityAtMs(turn)), 0);
 }
 
+function statusText(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && value.type) return String(value.type || "");
+  return String(value || "");
+}
+
+function isActiveLikeStatus(value) {
+  return /^(active|running|started|pending|queued|processing|inprogress|in_progress|in-progress)$/i
+    .test(statusText(value).trim());
+}
+
+function latestProjectedTurn(thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  return turns.length ? turns[turns.length - 1] : null;
+}
+
+function latestProjectedTurnIsActiveLike(thread) {
+  const turn = latestProjectedTurn(thread);
+  return Boolean(turn && isActiveLikeStatus(turn.status || turn.mobileStatus));
+}
+
+function summaryLocalActiveTurnId(summary) {
+  return String(summary && (
+    summary.activeTurnId
+    || summary.active_turn_id
+    || summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.turnId
+    || summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.turn_id
+  ) || "").trim();
+}
+
+function summaryIsStatusOnlyActive(summary) {
+  return !summaryLocalActiveTurnId(summary)
+    && (isActiveLikeStatus(summary && summary.status)
+      || isActiveLikeStatus(summary && summary.mobileStatus)
+      || isActiveLikeStatus(summary && summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.status));
+}
+
 function createThreadDetailProjectionResultService(options = {}) {
   const maxTurns = Math.max(1, Number(options.maxTurns || 1));
   const compactThreadReadResult = typeof options.compactThreadReadResult === "function"
@@ -94,15 +133,6 @@ function createThreadDetailProjectionResultService(options = {}) {
       : (v4 ? "projection-v4-cache" : "projection-cache");
   }
 
-  function summaryLocalActiveTurnId(summary) {
-    return String(summary && (
-      summary.activeTurnId
-      || summary.active_turn_id
-      || summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.turnId
-      || summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.turn_id
-    ) || "").trim();
-  }
-
   function projectedThreadHasTurn(thread, turnId) {
     const id = String(turnId || "").trim();
     if (!id || !thread || !Array.isArray(thread.turns)) return !id;
@@ -119,8 +149,15 @@ function createThreadDetailProjectionResultService(options = {}) {
     const updatedAtMs = summaryUpdatedAtMs(summary);
     if (!updatedAtMs) return true;
     const latestTurnAtMs = latestProjectedTurnActivityAtMs(cached && cached.result && cached.result.thread);
-    if (!latestTurnAtMs) return false;
-    return updatedAtMs <= latestTurnAtMs + SUMMARY_TURN_STALENESS_GRACE_MS;
+    if (latestTurnAtMs && updatedAtMs <= latestTurnAtMs + SUMMARY_TURN_STALENESS_GRACE_MS) return true;
+    const cacheUpdatedAtMs = timestampToMs(cached && (cached.updatedAtMs || cached.cachedAtMs));
+    if (summaryIsStatusOnlyActive(summary)
+      && latestProjectedTurnIsActiveLike(cached && cached.result && cached.result.thread)
+      && cacheUpdatedAtMs
+      && updatedAtMs <= cacheUpdatedAtMs + ACTIVE_STATUS_SUMMARY_CACHE_GRACE_MS) {
+      return true;
+    }
+    return false;
   }
 
   function isResponseReadyV4Projection(cached, result) {

@@ -42,12 +42,13 @@ function planActiveThreadDetailReadPolicy(input = {}) {
   const preferRecentTurns = input.preferRecentTurns === true;
   const activeFullReadReason = activeFullThreadReadReason(input.summary);
   const activeFullReadRequired = Boolean(activeFullReadReason);
+  const requiresFullThreadRead = activeReasonRequiresFullThreadRead(activeFullReadReason);
   return {
     activeFullReadRequired,
     activeFullReadReason,
-    allowPartialProjection: preferRecentTurns && !activeFullReadRequired,
+    allowPartialProjection: preferRecentTurns && !requiresFullThreadRead,
     shouldUseInitialTurnsList: preferRecentTurns && !activeFullReadRequired,
-    initialTurnsListSkipReason: preferRecentTurns && activeFullReadRequired
+    initialTurnsListSkipReason: preferRecentTurns && requiresFullThreadRead
       ? "active-thread-requires-full-read"
       : "",
   };

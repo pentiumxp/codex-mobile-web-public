@@ -75,9 +75,9 @@ test("active detail read policy recognizes bounded active status sources", () =>
   });
   assert.equal(policy.activeFullReadRequired, true);
   assert.equal(policy.activeFullReadReason, "status-active");
-  assert.equal(policy.allowPartialProjection, false);
+  assert.equal(policy.allowPartialProjection, true);
   assert.equal(policy.shouldUseInitialTurnsList, false);
-  assert.equal(policy.initialTurnsListSkipReason, "active-thread-requires-full-read");
+  assert.equal(policy.initialTurnsListSkipReason, "");
 });
 
 test("active detail read policy only allows partial projection in recent mode", () => {

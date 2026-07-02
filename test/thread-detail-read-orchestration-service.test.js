@@ -2469,6 +2469,159 @@ test("status-only active summary can use bounded turns/list before full thread/r
   assert.equal(timings.projectionSeedSource, "turns-list-large");
 });
 
+test("status-only active summary can reuse non-partial projection hits", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "running" },
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadResult: () => {
+      calls.push("projection-hit");
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [{ id: "turn-from-projection" }],
+          mobileReadMode: "projection-v4-cache",
+          mobileProjection: {
+            source: "cache",
+            version: "v4",
+            partial: false,
+          },
+        },
+      };
+    },
+    preferBoundedReadBeforeFullRead: () => ({
+      prefer: true,
+      rolloutSizeBytes: 12_000_000,
+      thresholdBytes: 8_000_000,
+      source: "summary",
+      reason: "large-rollout",
+    }),
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: false,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-v4-cache");
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-from-projection"]);
+  assert.equal(calls.includes("turns-list:turns-list-large"), false);
+  assert.equal(calls.includes("thread-read"), false);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "projection-hit");
+  assert.equal(timings.activeFullReadRequired, true);
+  assert.equal(timings.activeFullReadReason, "status-active");
+  assert.equal(timings.projectionState, "hit");
+  assert.equal(timings.projectionSource, "cache");
+  assert.equal(timings.projectionSeedStatus, "");
+});
+
+test("status-only active recent summary can reuse partial projection hits", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "running" },
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadResult: () => {
+      calls.push("projection-partial-hit");
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [{ id: "turn-from-partial" }],
+          mobileReadMode: "projection-v4-partial",
+          mobileProjection: {
+            source: "partial",
+            version: "v4",
+            partial: true,
+            partialKind: "turns-list-window",
+          },
+        },
+      };
+    },
+    preferBoundedReadBeforeFullRead: () => ({
+      prefer: true,
+      rolloutSizeBytes: 12_000_000,
+      thresholdBytes: 8_000_000,
+      source: "summary",
+      reason: "large-rollout",
+    }),
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-v4-partial");
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-from-partial"]);
+  assert.equal(calls.includes("turns-list:turns-list-large"), false);
+  assert.equal(calls.includes("thread-read"), false);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "projection-partial-hit");
+  assert.equal(timings.activeFullReadRequired, true);
+  assert.equal(timings.activeFullReadReason, "status-active");
+  assert.equal(timings.projectionState, "hit");
+  assert.equal(timings.projectionSource, "partial");
+});
+
+test("status-only active summary does not close with partial projection hits", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "running" },
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadResult: () => {
+      calls.push("projection-partial-hit");
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [{ id: "turn-from-partial" }],
+          mobileReadMode: "projection-v4-partial",
+          mobileProjection: {
+            source: "partial",
+            version: "v4",
+            partial: true,
+          },
+        },
+      };
+    },
+    preferBoundedReadBeforeFullRead: () => ({
+      prefer: true,
+      rolloutSizeBytes: 12_000_000,
+      thresholdBytes: 8_000_000,
+      source: "summary",
+      reason: "large-rollout",
+    }),
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: false,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "turns-list-large");
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-from-list"]);
+  assert.equal(calls.includes("turns-list:turns-list-large"), true);
+  assert.equal(calls.includes("thread-read"), false);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "bounded-large-turns-list");
+  assert.equal(timings.projectionState, "hit");
+  assert.equal(timings.largeReadReason, "large-rollout");
+});
+
 test("small summary read still uses full thread/read when projection input is unavailable", async () => {
   const { service, calls } = createHarness({
     projectionInput: () => {

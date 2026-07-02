@@ -1,6 +1,7 @@
 "use strict";
 
 const {
+  activeReasonRequiresFullThreadRead,
   applyActiveThreadPolicyToBoundedReadDecision,
   planActiveThreadDetailReadPolicy,
 } = require("./thread-detail-active-read-policy-service");
@@ -194,8 +195,13 @@ function promoteActiveReadPolicy(policy, reason) {
 
 function activeFullReadCanCloseWithOverlay(policy) {
   if (!policy || policy.activeFullReadRequired !== true) return false;
-  const reason = nonEmptyText(policy.activeFullReadReason);
-  return reason === "active-turn-id" || reason === "projection-live-active-turn";
+  return activeReasonRequiresFullThreadRead(policy.activeFullReadReason);
+}
+
+function activePolicyRequiresFullThreadRead(policy) {
+  return Boolean(policy
+    && policy.activeFullReadRequired === true
+    && activeReasonRequiresFullThreadRead(policy.activeFullReadReason));
 }
 
 function applyActivePolicyContext(context, policy) {
@@ -719,7 +725,8 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         omittedTurns: projectedThread.mobileOmittedTurnCount || 0,
       });
       const projectedActiveTurnId = activeTurnIdFromThread(projectedThread);
-      if (projectedActiveTurnId && projectionThreadIsPartial(projectedThread) && !activeReadPolicy.activeFullReadRequired) {
+      const projectedThreadIsPartial = projectionThreadIsPartial(projectedThread);
+      if (projectedActiveTurnId && projectedThreadIsPartial && !activeReadPolicy.activeFullReadRequired) {
         activeReadPolicy = promoteActiveReadPolicy(activeReadPolicy, "projection-window-active-turn");
         applyActivePolicyContext(context, activeReadPolicy);
         threadLog("projection_active_turn_detected", {
@@ -727,7 +734,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           source: "projection-window",
         });
       }
-      if (!activeReadPolicy.activeFullReadRequired) {
+      const canReturnProjectedThread = !activePolicyRequiresFullThreadRead(activeReadPolicy)
+        && (!projectedThreadIsPartial || activeReadPolicy.allowPartialProjection === true);
+      if (canReturnProjectedThread) {
         if (stalePartialHit && scheduleProjectionRefresh) {
           try {
             scheduleProjectionRefresh({

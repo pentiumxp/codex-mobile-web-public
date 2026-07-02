@@ -86,18 +86,20 @@ function createActiveOverlayHarness(options = {}) {
   });
 
   const projectionInput = projectionInputService.projectionInput("thread-1", summary);
-  projectionService.seed(projectionInput, {
-    thread: {
-      id: "thread-1",
-      turns: [{
-        id: "turn-window",
-        items: [{ id: "agent-window", type: "agentMessage", text: "older visible receipt" }],
-      }],
-    },
-  }, {
-    partial: true,
-    partialKind: "recent-window",
-  });
+  if (options.seedProjection !== false) {
+    projectionService.seed(projectionInput, {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-window",
+          items: [{ id: "agent-window", type: "agentMessage", text: "older visible receipt" }],
+        }],
+      },
+    }, {
+      partial: true,
+      partialKind: "recent-window",
+    });
+  }
   projectionService.applyNotification("turn/started", {
     threadId: "thread-1",
     turn: { id: "turn-live", status: { type: "active" }, items: [] },
@@ -277,8 +279,31 @@ test("read orchestration compacts active overlay tool payload before returning d
   assert.equal(serialized.includes("raw result"), false);
 });
 
-test("read orchestration uses bounded read for status-active summary without activeTurnId", async () => {
+test("read orchestration reuses warm projection for status-active summary without activeTurnId", async () => {
   const { calls, service } = createActiveOverlayHarness({ summary: { activeTurnId: "" } });
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-v4-partial");
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("turns-list"), false);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "projection-partial-hit");
+  assert.equal(timings.activeFullReadRequired, true);
+  assert.equal(timings.activeFullReadReason, "status-active");
+  assert.equal(timings.projectionState, "hit");
+});
+
+test("read orchestration uses bounded read for status-active summary without warm projection", async () => {
+  const { calls, service } = createActiveOverlayHarness({
+    summary: { activeTurnId: "" },
+    seedProjection: false,
+  });
   const response = await service.readThreadDetail({
     codex: { transportKind: "mux", ready: true },
     threadId: "thread-1",
