@@ -160,6 +160,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     "build-refresh-policy",
     "runtime-settings",
     "viewport-metrics",
+    "conversation-scroll",
     "draft-store",
     "thread-tile-layout",
     "thread-tile-actions",
@@ -191,6 +192,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/build-refresh-policy\.js/);
   assert.match(shardSources, /public\/runtime-settings\.js/);
   assert.match(shardSources, /public\/viewport-metrics\.js/);
+  assert.match(shardSources, /public\/conversation-scroll\.js/);
   assert.match(shardSources, /public\/draft-store\.js/);
   assert.match(shardSources, /public\/thread-tile-layout\.js/);
   assert.match(shardSources, /public\/thread-tile-actions\.js/);
@@ -202,6 +204,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/client-render-stability-guard\.js/);
   assert.match(shardSources, /public\/live-operation-dock-state\.js/);
   assert.match(shardSources, /planThreadListLoadRequest/);
+  assert.match(shardSources, /planBottomFollowScrollSchedule/);
   assert.match(shardSources, /stablePixelChanged/);
   assert.match(shardSources, /planThreadDetailRefreshRequest/);
   assert.match(shardSources, /visibleTurnOrderMismatch/);

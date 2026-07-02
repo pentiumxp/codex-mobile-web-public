@@ -4898,6 +4898,16 @@ removes an ambiguity in the cutover path: app-preview can no longer pass merely
 because 51 scripts eventually appeared; it must prove the scripts came from the
 same ordered, hashed loader plan that the Vite artifact readback validates.
 
+Current correction: the app-preview loader must not be driven to zero classic
+scripts until the remaining large runtimes have explicit module contracts. A
+dev-only zero-loader experiment showed that superficially ready Vite startup
+can still break thread detail because classic runtimes share script-global
+lexical state that Vite modules isolate into module scope. The valid migration
+path is therefore incremental: exclude only proven independent ESM-owned
+modules from the app-preview loader, keep `/app-bootstrap.js` and other
+not-yet-migrated shared-state runtimes in original classic order, and require
+real thread-detail browser gates before considering any default-root cutover.
+
 The follow-up root-path rehearsal keeps the default shell unchanged while
 testing the exact URL surface that a later default Vite cutover would use:
 

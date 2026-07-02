@@ -729,6 +729,7 @@ const VITE_APP_PREVIEW_CLASSIC_LOADER_EXCLUDED_MODULE_IDS = new Set([
   "build-refresh-policy",
   "runtime-settings",
   "viewport-metrics",
+  "conversation-scroll",
   "draft-store",
   "thread-tile-layout",
   "thread-tile-actions",

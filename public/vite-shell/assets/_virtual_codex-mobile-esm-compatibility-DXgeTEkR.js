@@ -1,15 +1,16 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-hii1Cv6I.js","assets/vite-shell-entry-DstTkCIg.js"])))=>i.map(i=>d[i]);
-import { t as __vitePreload } from "./vite-shell-entry-DstTkCIg.js";
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-D2ds4xq7.js","assets/vite-shell-entry-eixIxpJc.js"])))=>i.map(i=>d[i]);
+import { t as __vitePreload } from "./vite-shell-entry-eixIxpJc.js";
 //#region \0virtual:codex-mobile-esm-compatibility
 var codexMobileViteEsmCompatibilityShardSources = [{
 	"id": "shard-01",
 	"index": 0,
 	"source": "virtual:codex-mobile-esm-compatibility/shard/shard-01",
-	"moduleCount": 13,
+	"moduleCount": 14,
 	"moduleIds": [
 		"build-refresh-policy",
 		"runtime-settings",
 		"viewport-metrics",
+		"conversation-scroll",
 		"draft-store",
 		"thread-tile-layout",
 		"thread-tile-actions",
@@ -21,9 +22,9 @@ var codexMobileViteEsmCompatibilityShardSources = [{
 		"client-render-stability-guard",
 		"live-operation-dock-state"
 	],
-	"byteCount": 74780
+	"byteCount": 86463
 }];
-var shardLoaders = { "shard-01": () => __vitePreload(() => import("./shard-01-hii1Cv6I.js"), __vite__mapDeps([0,1])) };
+var shardLoaders = { "shard-01": () => __vitePreload(() => import("./shard-01-D2ds4xq7.js"), __vite__mapDeps([0,1])) };
 var compatibilityPromise = null;
 async function loadCompatibilityShard(descriptor) {
 	const load = shardLoaders[descriptor.id];
