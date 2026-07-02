@@ -1,4 +1,4 @@
-import { r as __commonJSMin } from "./vite-shell-entry-BCWyNKmA.js";
+import { r as __commonJSMin } from "./vite-shell-entry-DRYq5NNy.js";
 //#region public/app-bootstrap.js
 var require_app_bootstrap = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function readShellManifest() {

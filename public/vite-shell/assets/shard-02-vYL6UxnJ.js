@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-BCWyNKmA.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-DRYq5NNy.js";
 //#region public/plugin-voice-input.js
 var require_plugin_voice_input = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {

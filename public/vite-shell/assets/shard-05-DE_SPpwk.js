@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-BCWyNKmA.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-DRYq5NNy.js";
 //#endregion
 //#region \0virtual:codex-mobile-esm-compatibility/shard/shard-05
 var import_pane_layout_runtime = /* @__PURE__ */ __toESM((/* @__PURE__ */ __commonJSMin(((exports, module) => {

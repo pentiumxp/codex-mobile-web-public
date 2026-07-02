@@ -752,6 +752,7 @@ const VITE_APP_PREVIEW_CLASSIC_LOADER_EXCLUDED_MODULE_IDS = new Set([
   "modal-runtime",
   "navigation-runtime",
   "runtime-wiring-runtime",
+  "app-shell-runtime",
   "pane-layout-runtime",
   "thread-list-runtime",
   "side-chat-runtime",
