@@ -2329,6 +2329,149 @@ var require_thread_detail_patch_plan = /* @__PURE__ */ __commonJSMin(((exports, 
 	});
 }));
 //#endregion
+//#region public/thread-detail-actions.js
+var require_thread_detail_actions = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDetailActions = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function withinRoot(root, node) {
+			if (!root || !node || typeof root.contains !== "function") return true;
+			return root.contains(node);
+		}
+		function closestWithin(target, selector, root = null) {
+			if (!target || typeof target.closest !== "function") return null;
+			const node = target.closest(selector);
+			if (!node || !withinRoot(root, node)) return null;
+			return node;
+		}
+		function action(type, target, fields = {}) {
+			return Object.assign({
+				action: String(type || "none"),
+				target: target || null,
+				preventDefault: false,
+				stopPropagation: false
+			}, fields);
+		}
+		function dataValue(node, key) {
+			return String(node && node.dataset && node.dataset[key] || "");
+		}
+		function contextThreadIdFromNode(node, explicitDatasetKey = "") {
+			if (!node) return "";
+			const explicit = explicitDatasetKey ? dataValue(node, explicitDatasetKey) : "";
+			if (explicit) return explicit;
+			if (typeof node.closest !== "function") return "";
+			return dataValue(node.closest("[data-thread-tile-pane]"), "threadTilePane");
+		}
+		function previewableImageFromTarget(target, root = null) {
+			const image = closestWithin(target, ".input-image img, .image-view img, .markdown-image img, .file-preview-image, .attachment-thumb", root);
+			if (!image) return null;
+			if (image.closest && image.closest(".github-link-card")) return null;
+			return image;
+		}
+		function resolveRichContentClickAction(input = {}) {
+			const target = input.target || null;
+			const root = input.root || null;
+			let node = closestWithin(target, "[data-copy-key]", root);
+			if (node) return action("copy", node, {
+				button: node,
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-local-file-path]", root);
+			if (node) return action("local-file-preview", node, {
+				link: node,
+				threadId: contextThreadIdFromNode(node, "localFileThreadId"),
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-mermaid-action]", root);
+			if (node) return action("mermaid", node, {
+				button: node,
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-github-link-preview-expand]", root);
+			if (node) return action("github-preview-toggle", node, {
+				button: node,
+				preventDefault: true,
+				stopPropagation: true
+			});
+			return action("none", null, { reason: "no-match" });
+		}
+		function resolveThreadDetailClickAction(input = {}) {
+			const target = input.target || null;
+			const root = input.root || null;
+			const rich = resolveRichContentClickAction({
+				target,
+				root
+			});
+			if (rich.action !== "none") return rich;
+			let node = closestWithin(target, "[data-approval-action]", root);
+			if (node) return action("approval-answer", node, {
+				button: node,
+				approvalId: dataValue(node, "approvalId"),
+				approvalAction: dataValue(node, "approvalAction"),
+				threadId: dataValue(node, "approvalThreadId")
+			});
+			node = closestWithin(target, "[data-task-card-action]", root);
+			if (node) {
+				const taskCardAction = dataValue(node, "taskCardAction");
+				const cardId = dataValue(node, "taskCardId");
+				const threadId = dataValue(node, "taskCardThreadId");
+				if (taskCardAction === "reply") return action("task-card-reply", node, {
+					button: node,
+					cardId,
+					taskCardAction,
+					threadId
+				});
+				if (taskCardAction === "approve" || taskCardAction === "delete" || taskCardAction === "revoke") return action("task-card-mutate", node, {
+					button: node,
+					cardId,
+					taskCardAction,
+					threadId
+				});
+				return action("task-card-unknown", node, {
+					button: node,
+					cardId,
+					taskCardAction,
+					threadId
+				});
+			}
+			node = closestWithin(target, "[data-task-card-draft-action]", root);
+			if (node) return action("task-card-draft", node, {
+				button: node,
+				draftAction: dataValue(node, "taskCardDraftAction"),
+				draftKey: dataValue(node, "taskCardDraftKey"),
+				threadId: dataValue(node, "taskCardDraftThreadId")
+			});
+			node = closestWithin(target, "[data-server-response-text]", root);
+			if (node) return action("server-response", node, {
+				option: node,
+				requestId: dataValue(node, "serverRequestId"),
+				threadId: dataValue(node, "serverRequestThreadId"),
+				responseText: dataValue(node, "serverResponseText"),
+				questionId: dataValue(node, "serverQuestionId") || "answer"
+			});
+			node = closestWithin(target, "[data-server-request-decline]", root);
+			if (node) return action("server-request-decline", node, {
+				button: node,
+				requestId: dataValue(node, "serverRequestId"),
+				threadId: dataValue(node, "serverRequestThreadId")
+			});
+			return action("none", null, { reason: "no-match" });
+		}
+		return {
+			closestWithin,
+			previewableImageFromTarget,
+			resolveRichContentClickAction,
+			resolveThreadDetailClickAction,
+			contextThreadIdFromNode
+		};
+	});
+}));
+//#endregion
 //#region public/thread-detail-merge-state.js
 var require_thread_detail_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -2655,6 +2798,7 @@ var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list
 var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
 var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
 var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_detail_patch_plan());
+var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
 var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
 var import_client_render_stability_guard = /* @__PURE__ */ __toESM(require_client_render_stability_guard());
 var import_live_operation_dock_state = /* @__PURE__ */ __toESM(require_live_operation_dock_state());
@@ -2805,6 +2949,20 @@ var moduleDefinitions = [
 		"classicLoaderExcluded": true
 	},
 	{
+		"id": "thread-detail-actions",
+		"source": "public/thread-detail-actions.js",
+		"globalName": "CodexThreadDetailActions",
+		"expectedFunctions": [
+			"closestWithin",
+			"contextThreadIdFromNode",
+			"previewableImageFromTarget",
+			"resolveRichContentClickAction",
+			"resolveThreadDetailClickAction"
+		],
+		"assetPath": "/thread-detail-actions.js",
+		"classicLoaderExcluded": true
+	},
+	{
 		"id": "thread-detail-merge-state",
 		"source": "public/thread-detail-merge-state.js",
 		"globalName": "CodexThreadDetailMergeState",
@@ -2853,6 +3011,7 @@ var moduleApis = {
 	"thread-list-stable-order": import_thread_list_stable_order.default,
 	"thread-status-hints": import_thread_status_hints.default,
 	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
+	"thread-detail-actions": import_thread_detail_actions.default,
 	"thread-detail-merge-state": import_thread_detail_merge_state.default,
 	"client-render-stability-guard": import_client_render_stability_guard.default,
 	"live-operation-dock-state": import_live_operation_dock_state.default
@@ -3295,6 +3454,45 @@ function sampleModule(id, api) {
 			turnOperationType: String(turnOperations[0] && turnOperations[0].type || "")
 		};
 	}
+	if (id === "thread-detail-actions") {
+		const node = (dataset) => ({
+			dataset,
+			closest(selector) {
+				if (selector === "[data-thread-tile-pane]") return { dataset: { threadTilePane: "thread-pane" } };
+				return null;
+			}
+		});
+		const copyNode = node({ copyKey: "copy-1" });
+		const approvalNode = node({
+			approvalId: "ap-1",
+			approvalThreadId: "thread-ap",
+			approvalAction: "allow_once"
+		});
+		const responseNode = node({
+			serverRequestId: "req-1",
+			serverRequestThreadId: "thread-req",
+			serverResponseText: "yes",
+			serverQuestionId: "answer"
+		});
+		const rich = functionReady(api, "resolveRichContentClickAction") ? api.resolveRichContentClickAction({ target: { closest(selector) {
+			return selector === "[data-copy-key]" ? copyNode : null;
+		} } }) : {};
+		const approval = functionReady(api, "resolveThreadDetailClickAction") ? api.resolveThreadDetailClickAction({ target: { closest(selector) {
+			return selector === "[data-approval-action]" ? approvalNode : null;
+		} } }) : {};
+		const response = functionReady(api, "resolveThreadDetailClickAction") ? api.resolveThreadDetailClickAction({ target: { closest(selector) {
+			return selector === "[data-server-response-text]" ? responseNode : null;
+		} } }) : {};
+		const contextThreadId = functionReady(api, "contextThreadIdFromNode") ? api.contextThreadIdFromNode(copyNode) : "";
+		return {
+			ok: rich.action === "copy" && rich.preventDefault === true && rich.stopPropagation === true && approval.action === "approval-answer" && approval.approvalAction === "allow_once" && approval.threadId === "thread-ap" && response.action === "server-response" && response.responseText === "yes" && contextThreadId === "thread-pane",
+			richAction: String(rich.action || ""),
+			approvalAction: String(approval.action || ""),
+			approvalValue: String(approval.approvalAction || ""),
+			responseAction: String(response.action || ""),
+			contextThreadId
+		};
+	}
 	if (id === "thread-detail-merge-state") {
 		const policy = functionReady(api, "createThreadDetailMergePolicy") ? api.createThreadDetailMergePolicy({
 			sortTurnsForDisplay: (turns) => Array.isArray(turns) ? turns.slice().sort((left, right) => String(left && left.id || "").localeCompare(String(right && right.id || ""))) : [],
@@ -3711,7 +3909,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-Dj2zAKwY.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-eN7n-Vn0.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
