@@ -63,8 +63,8 @@ var codexMobileViteEntryGroup = {
 		"source": "startup-window-guard",
 		"present": true
 	}],
-	"shellCacheName": "codex-mobile-shell-v625-d827091ce767",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-d827091ce767"
+	"shellCacheName": "codex-mobile-shell-v625-2466e0a03fb0",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-2466e0a03fb0"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

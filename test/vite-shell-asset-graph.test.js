@@ -159,6 +159,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
       "navigation-runtime",
       "runtime-wiring-runtime",
       "app-shell-runtime",
+      "pane-layout-runtime",
       "app-entry",
       "thread-list-runtime",
       "side-chat-runtime",
@@ -225,6 +226,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/navigation-runtime\.js/);
   assert.match(shardSources, /public\/runtime-wiring-runtime\.js/);
   assert.match(shardSources, /public\/app-shell-runtime\.js/);
+  assert.match(shardSources, /public\/pane-layout-runtime\.js/);
   assert.match(shardSources, /public\/app\.js/);
   assert.match(shardSources, /createCodexMobileAppEntry/);
   assert.match(shardSources, /startCodexMobileApp/);
@@ -426,8 +428,9 @@ test("Vite shell build contract records entry chunks and classic fallback output
     manifest.indexScriptAssets.length
   );
   assert.equal(contract.appPreviewClassicLoaderPlan.hashCount, contract.appPreviewClassicLoaderPlan.scriptCount);
+  assert.equal(contract.appPreviewClassicLoaderPlan.scriptCount, 1);
   assert.equal(contract.appPreviewClassicLoaderPlan.firstScript, "/app-bootstrap.js");
-  assert.equal(contract.appPreviewClassicLoaderPlan.lastScript, "/pane-layout-runtime.js");
+  assert.equal(contract.appPreviewClassicLoaderPlan.lastScript, "/app-bootstrap.js");
   assert.match(contract.appPreviewClassicLoaderPlan.sha256, /^[a-f0-9]{64}$/);
   const loaderPlanCoveredScripts = new Set([
     ...contract.appPreviewClassicLoaderPlan.scripts.map((entry) => entry.path),

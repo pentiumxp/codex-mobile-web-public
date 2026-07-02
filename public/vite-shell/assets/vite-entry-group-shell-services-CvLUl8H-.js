@@ -51,8 +51,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/pane-layout-runtime.js",
 			"sourcePath": "public/pane-layout-runtime.js",
-			"bytes": 201214,
-			"sha256": "e28d8a898be301095103f442fc360011b293b346562aa6615ff824905b37679a"
+			"bytes": 210739,
+			"sha256": "66c6f95693a1a3623e3beff8bfb118840de97ab8408fceb6ef7f6b30cf038d69"
 		},
 		{
 			"path": "/task-card-runtime.js",
@@ -80,7 +80,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 10,
-	"classicAssetBytes": 718543,
+	"classicAssetBytes": 728068,
 	"classicGlobalExports": [
 		{
 			"asset": "/settings-runtime.js",
@@ -126,8 +126,8 @@ var codexMobileViteEntryGroup = {
 	"classicGlobalExportAssetCount": 10,
 	"classicGlobalExportCount": 10,
 	"startupGlobalContracts": [],
-	"shellCacheName": "codex-mobile-shell-v625-d827091ce767",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-d827091ce767"
+	"shellCacheName": "codex-mobile-shell-v625-2466e0a03fb0",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-2466e0a03fb0"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

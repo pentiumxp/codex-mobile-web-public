@@ -4620,7 +4620,7 @@ var require_thread_detail_v4_merge_state = /* @__PURE__ */ __commonJSMin(((expor
 	});
 }));
 //#endregion
-//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-06
+//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-07
 var import_composer_runtime = /* @__PURE__ */ __toESM(require_composer_runtime());
 var import_composer_bridge_runtime = /* @__PURE__ */ __toESM(require_composer_bridge_runtime());
 var import_api_client_runtime = /* @__PURE__ */ __toESM(require_api_client_runtime());
@@ -5773,6 +5773,28 @@ function sampleModule(id, api) {
 			startType: typeof (runtime && runtime.start),
 			recoveryType: typeof (runtime && runtime.startCodexMobileAppWithRecovery),
 			globalType: typeof globalThis.CodexAppShellRuntime
+		};
+	}
+	if (id === "pane-layout-runtime") {
+		const runtime = functionReady(api, "createPaneLayoutRuntime") ? api.createPaneLayoutRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.renderCurrentThread === "function" && typeof runtime.updateConversationHtml === "function" && typeof runtime.patchCurrentThreadDetailFromRefresh === "function" && typeof runtime.syncThreadTileToggle === "function" && typeof runtime.setThreadTileMode === "function" && typeof runtime.renderHome === "function" && typeof runtime.loadThread === "function" && typeof runtime.loadThreads === "function" && typeof runtime.enterNewThreadDraft === "function" && typeof runtime.handleThreadCardClick === "function" && typeof runtime.showHermesPluginPrimaryPage === "function" && typeof runtime.returnToThreadListFromDetail === "function" && typeof globalThis.loadThread === "function" && typeof globalThis.loadThreads === "function" && typeof globalThis.renderCurrentThread === "function",
+			factoryType: typeof api.createPaneLayoutRuntime,
+			renderType: typeof (runtime && runtime.renderCurrentThread),
+			updateHtmlType: typeof (runtime && runtime.updateConversationHtml),
+			patchType: typeof (runtime && runtime.patchCurrentThreadDetailFromRefresh),
+			tileToggleType: typeof (runtime && runtime.syncThreadTileToggle),
+			tileModeType: typeof (runtime && runtime.setThreadTileMode),
+			homeType: typeof (runtime && runtime.renderHome),
+			loadThreadType: typeof (runtime && runtime.loadThread),
+			loadThreadsType: typeof (runtime && runtime.loadThreads),
+			newThreadType: typeof (runtime && runtime.enterNewThreadDraft),
+			cardClickType: typeof (runtime && runtime.handleThreadCardClick),
+			pluginPrimaryType: typeof (runtime && runtime.showHermesPluginPrimaryPage),
+			returnType: typeof (runtime && runtime.returnToThreadListFromDetail),
+			globalLoadThreadType: typeof globalThis.loadThread,
+			globalLoadThreadsType: typeof globalThis.loadThreads,
+			globalRenderType: typeof globalThis.renderCurrentThread
 		};
 	}
 	if (id === "thread-list-runtime") {
