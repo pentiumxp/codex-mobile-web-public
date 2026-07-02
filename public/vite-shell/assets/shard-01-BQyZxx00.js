@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-BEtgdOLS.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-BQDUj87-.js";
 //#region public/build-refresh-policy.js
 var require_build_refresh_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -4176,6 +4176,149 @@ var require_thread_detail_patch_plan = /* @__PURE__ */ __commonJSMin(((exports, 
 	});
 }));
 //#endregion
+//#region public/thread-detail-actions.js
+var require_thread_detail_actions = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDetailActions = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function withinRoot(root, node) {
+			if (!root || !node || typeof root.contains !== "function") return true;
+			return root.contains(node);
+		}
+		function closestWithin(target, selector, root = null) {
+			if (!target || typeof target.closest !== "function") return null;
+			const node = target.closest(selector);
+			if (!node || !withinRoot(root, node)) return null;
+			return node;
+		}
+		function action(type, target, fields = {}) {
+			return Object.assign({
+				action: String(type || "none"),
+				target: target || null,
+				preventDefault: false,
+				stopPropagation: false
+			}, fields);
+		}
+		function dataValue(node, key) {
+			return String(node && node.dataset && node.dataset[key] || "");
+		}
+		function contextThreadIdFromNode(node, explicitDatasetKey = "") {
+			if (!node) return "";
+			const explicit = explicitDatasetKey ? dataValue(node, explicitDatasetKey) : "";
+			if (explicit) return explicit;
+			if (typeof node.closest !== "function") return "";
+			return dataValue(node.closest("[data-thread-tile-pane]"), "threadTilePane");
+		}
+		function previewableImageFromTarget(target, root = null) {
+			const image = closestWithin(target, ".input-image img, .image-view img, .markdown-image img, .file-preview-image, .attachment-thumb", root);
+			if (!image) return null;
+			if (image.closest && image.closest(".github-link-card")) return null;
+			return image;
+		}
+		function resolveRichContentClickAction(input = {}) {
+			const target = input.target || null;
+			const root = input.root || null;
+			let node = closestWithin(target, "[data-copy-key]", root);
+			if (node) return action("copy", node, {
+				button: node,
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-local-file-path]", root);
+			if (node) return action("local-file-preview", node, {
+				link: node,
+				threadId: contextThreadIdFromNode(node, "localFileThreadId"),
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-mermaid-action]", root);
+			if (node) return action("mermaid", node, {
+				button: node,
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-github-link-preview-expand]", root);
+			if (node) return action("github-preview-toggle", node, {
+				button: node,
+				preventDefault: true,
+				stopPropagation: true
+			});
+			return action("none", null, { reason: "no-match" });
+		}
+		function resolveThreadDetailClickAction(input = {}) {
+			const target = input.target || null;
+			const root = input.root || null;
+			const rich = resolveRichContentClickAction({
+				target,
+				root
+			});
+			if (rich.action !== "none") return rich;
+			let node = closestWithin(target, "[data-approval-action]", root);
+			if (node) return action("approval-answer", node, {
+				button: node,
+				approvalId: dataValue(node, "approvalId"),
+				approvalAction: dataValue(node, "approvalAction"),
+				threadId: dataValue(node, "approvalThreadId")
+			});
+			node = closestWithin(target, "[data-task-card-action]", root);
+			if (node) {
+				const taskCardAction = dataValue(node, "taskCardAction");
+				const cardId = dataValue(node, "taskCardId");
+				const threadId = dataValue(node, "taskCardThreadId");
+				if (taskCardAction === "reply") return action("task-card-reply", node, {
+					button: node,
+					cardId,
+					taskCardAction,
+					threadId
+				});
+				if (taskCardAction === "approve" || taskCardAction === "delete" || taskCardAction === "revoke") return action("task-card-mutate", node, {
+					button: node,
+					cardId,
+					taskCardAction,
+					threadId
+				});
+				return action("task-card-unknown", node, {
+					button: node,
+					cardId,
+					taskCardAction,
+					threadId
+				});
+			}
+			node = closestWithin(target, "[data-task-card-draft-action]", root);
+			if (node) return action("task-card-draft", node, {
+				button: node,
+				draftAction: dataValue(node, "taskCardDraftAction"),
+				draftKey: dataValue(node, "taskCardDraftKey"),
+				threadId: dataValue(node, "taskCardDraftThreadId")
+			});
+			node = closestWithin(target, "[data-server-response-text]", root);
+			if (node) return action("server-response", node, {
+				option: node,
+				requestId: dataValue(node, "serverRequestId"),
+				threadId: dataValue(node, "serverRequestThreadId"),
+				responseText: dataValue(node, "serverResponseText"),
+				questionId: dataValue(node, "serverQuestionId") || "answer"
+			});
+			node = closestWithin(target, "[data-server-request-decline]", root);
+			if (node) return action("server-request-decline", node, {
+				button: node,
+				requestId: dataValue(node, "serverRequestId"),
+				threadId: dataValue(node, "serverRequestThreadId")
+			});
+			return action("none", null, { reason: "no-match" });
+		}
+		return {
+			closestWithin,
+			previewableImageFromTarget,
+			resolveRichContentClickAction,
+			resolveThreadDetailClickAction,
+			contextThreadIdFromNode
+		};
+	});
+}));
+//#endregion
 //#region public/thread-detail-merge-state.js
 var require_thread_detail_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -4286,6 +4429,170 @@ var require_thread_detail_merge_state = /* @__PURE__ */ __commonJSMin(((exports,
 			};
 		}
 		return { createThreadDetailMergePolicy };
+	});
+}));
+//#endregion
+//#region public/thread-detail-v4-merge-state.js
+var require_thread_detail_v4_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDetailV4MergeState = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function defaultNormalizeThread(thread) {
+			return thread;
+		}
+		function defaultTurnVisibleWeight(turn) {
+			return Array.isArray(turn && turn.items) ? turn.items.length : 0;
+		}
+		function defaultSortTurns(turns) {
+			return Array.isArray(turns) ? turns.slice() : [];
+		}
+		function statusText(status) {
+			if (!status) return "";
+			if (typeof status === "object" && status.type) return String(status.type || "");
+			return String(status || "");
+		}
+		function createThreadDetailV4MergePolicy(options = {}) {
+			const normalizeThreadVisibleUserMessages = typeof options.normalizeThreadVisibleUserMessages === "function" ? options.normalizeThreadVisibleUserMessages : defaultNormalizeThread;
+			const turnVisibleWeight = typeof options.turnVisibleWeight === "function" ? options.turnVisibleWeight : defaultTurnVisibleWeight;
+			const isOptimisticUserMessage = typeof options.isOptimisticUserMessage === "function" ? options.isOptimisticUserMessage : () => false;
+			const isRecentlySubmittedUserMessage = typeof options.isRecentlySubmittedUserMessage === "function" ? options.isRecentlySubmittedUserMessage : () => false;
+			const isReasoningItem = typeof options.isReasoningItem === "function" ? options.isReasoningItem : () => false;
+			const userMessageHasSubmissionId = typeof options.userMessageHasSubmissionId === "function" ? options.userMessageHasSubmissionId : (item, submissionId) => Boolean(item && submissionId && String(item.clientSubmissionId || "") === String(submissionId || ""));
+			const userMessagesCanShadow = typeof options.userMessagesCanShadow === "function" ? options.userMessagesCanShadow : () => false;
+			const isTurnComplete = typeof options.isTurnComplete === "function" ? options.isTurnComplete : (turn) => /completed|failed|cancel|error|interrupted/i.test(statusText(turn && turn.status));
+			const isRunningStatus = typeof options.isRunningStatus === "function" ? options.isRunningStatus : (status) => /active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/i.test(statusText(status));
+			const isIncompleteInterruptedTurn = typeof options.isIncompleteInterruptedTurn === "function" ? options.isIncompleteInterruptedTurn : () => false;
+			const turnHasActiveLiveItems = typeof options.turnHasActiveLiveItems === "function" ? options.turnHasActiveLiveItems : () => false;
+			const turnOrderMs = typeof options.turnOrderMs === "function" ? options.turnOrderMs : () => 0;
+			const mergeTurnPreservingVisibleItems = typeof options.mergeTurnPreservingVisibleItems === "function" ? options.mergeTurnPreservingVisibleItems : (existingTurn, incomingTurn) => incomingTurn || existingTurn;
+			const sortTurnsForDisplay = typeof options.sortTurnsForDisplay === "function" ? options.sortTurnsForDisplay : defaultSortTurns;
+			const maxVisibleTurnsForThread = typeof options.maxVisibleTurnsForThread === "function" ? options.maxVisibleTurnsForThread : () => 10;
+			function isV4ProjectionThread(thread) {
+				return Boolean(thread && (thread.mobileProjectionVersion === "v4" || thread.mobileProjection && thread.mobileProjection.version === "v4"));
+			}
+			function shouldPreserveV4PendingOverlayItem(item) {
+				return Boolean(item && item.type === "userMessage" && isOptimisticUserMessage(item) && (isRecentlySubmittedUserMessage(item) || item.mobileSendError));
+			}
+			function v4ThreadHasPendingMatch(thread, pendingItem) {
+				if (!pendingItem || pendingItem.type !== "userMessage") return false;
+				const submissionId = String(pendingItem.clientSubmissionId || "").trim();
+				for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
+					if (!item || item.type !== "userMessage") continue;
+					if (submissionId && userMessageHasSubmissionId(item, submissionId)) return true;
+					if (!isOptimisticUserMessage(item) && userMessagesCanShadow(item, pendingItem)) return true;
+				}
+				return false;
+			}
+			function appendV4PendingOverlayItem(turn, item) {
+				if (!turn || !item) return;
+				turn.items = Array.isArray(turn.items) ? turn.items : [];
+				const submissionId = String(item.clientSubmissionId || "").trim();
+				if (!turn.items.some((existing) => existing && (submissionId && userMessageHasSubmissionId(existing, submissionId) || existing.id === item.id || userMessagesCanShadow(existing, item)))) turn.items.push(item);
+			}
+			function copyTurnWithOnlyItems(turn, items) {
+				return Object.assign({}, turn || {}, { items: (items || []).slice() });
+			}
+			function applyV4PendingOverlay(existingThread, mergedThread) {
+				if (!existingThread || !mergedThread || !Array.isArray(existingThread.turns)) return mergedThread;
+				mergedThread.turns = Array.isArray(mergedThread.turns) ? mergedThread.turns : [];
+				const turnsById = new Map(mergedThread.turns.map((turn) => [String(turn && turn.id || ""), turn]));
+				for (const existingTurn of existingThread.turns) {
+					const pendingItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : []).filter((item) => shouldPreserveV4PendingOverlayItem(item) && !v4ThreadHasPendingMatch(mergedThread, item));
+					if (!pendingItems.length) continue;
+					const targetTurn = turnsById.get(String(existingTurn.id || ""));
+					if (targetTurn) {
+						pendingItems.forEach((item) => appendV4PendingOverlayItem(targetTurn, item));
+						continue;
+					}
+					const overlayTurn = copyTurnWithOnlyItems(existingTurn, pendingItems);
+					overlayTurn.mobilePendingOverlay = true;
+					mergedThread.turns.push(overlayTurn);
+					if (overlayTurn.id) turnsById.set(String(overlayTurn.id), overlayTurn);
+				}
+				return mergedThread;
+			}
+			function v4ProjectionRevisionValue(thread) {
+				const direct = Number(thread && thread.mobileProjectionRevision);
+				if (Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
+				const nested = Number(thread && thread.mobileProjection && thread.mobileProjection.revision);
+				return Number.isFinite(nested) && nested > 0 ? Math.trunc(nested) : 0;
+			}
+			function isV4ProjectionRefreshRegressive(existingThread, incomingThread) {
+				const existingRevision = v4ProjectionRevisionValue(existingThread);
+				const incomingRevision = v4ProjectionRevisionValue(incomingThread);
+				return Boolean(existingRevision && incomingRevision && incomingRevision < existingRevision);
+			}
+			function isActiveLikeProjectionTurn(turn) {
+				return Boolean(turn && !isTurnComplete(turn) && (isRunningStatus(turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn)));
+			}
+			function incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns) {
+				const existingOrder = turnOrderMs(existingTurn);
+				if (!existingOrder) return false;
+				return (incomingTurns || []).some((incomingTurn) => {
+					if (!incomingTurn || String(incomingTurn.id || "") === String(existingTurn && existingTurn.id || "")) return false;
+					const incomingOrder = turnOrderMs(incomingTurn);
+					return Boolean(incomingOrder && incomingOrder > existingOrder);
+				});
+			}
+			function existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns) {
+				const visibleItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : []).filter((item) => item && turnVisibleWeight({ items: [item] }) > 0 && !isReasoningItem(item));
+				return Boolean(visibleItems.length && visibleItems.every((item) => shouldPreserveV4PendingOverlayItem(item) && v4ThreadHasPendingMatch({ turns: incomingTurns || [] }, item)));
+			}
+			function shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, incomingTurns) {
+				if (!existingTurn || turnVisibleWeight(existingTurn) <= 0) return false;
+				const id = String(existingTurn.id || "");
+				if (id && (incomingTurns || []).some((turn) => String(turn && turn.id || "") === id)) return false;
+				if (existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns)) return false;
+				const activeLike = isActiveLikeProjectionTurn(existingTurn);
+				const regressiveRefresh = isV4ProjectionRefreshRegressive(existingThread, incomingThread);
+				if (!activeLike && !regressiveRefresh) return false;
+				return !incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns);
+			}
+			function mergeV4ProjectionThread(existingThread, incomingThread) {
+				if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeThreadVisibleUserMessages(incomingThread);
+				const merged = Object.assign({}, existingThread, incomingThread);
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
+				if (Array.isArray(incomingThread.turns)) {
+					const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
+					const incomingTurns = incomingThread.turns.slice();
+					const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+					const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+					if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
+						merged.turns = existingTurns;
+						return normalizeThreadVisibleUserMessages(merged);
+					}
+					const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
+					merged.turns = incomingTurns.map((incomingTurn) => {
+						const existingTurn = existingById.get(String(incomingTurn && incomingTurn.id || ""));
+						return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
+					});
+					for (const existingTurn of existingTurns) if (shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, merged.turns)) merged.turns.push(existingTurn);
+					applyV4PendingOverlay(existingThread, merged);
+					merged.turns = sortTurnsForDisplay(merged.turns).slice(-maxVisibleTurnsForThread(merged));
+				}
+				if (isV4ProjectionRefreshRegressive(existingThread, incomingThread)) {
+					const existingRevision = v4ProjectionRevisionValue(existingThread);
+					if (existingRevision) {
+						merged.mobileProjectionRevision = existingRevision;
+						if (merged.mobileProjection && typeof merged.mobileProjection === "object") merged.mobileProjection = Object.assign({}, merged.mobileProjection, { revision: existingRevision });
+					}
+				}
+				return normalizeThreadVisibleUserMessages(merged);
+			}
+			return {
+				applyV4PendingOverlay,
+				isV4ProjectionRefreshRegressive,
+				isV4ProjectionThread,
+				mergeV4ProjectionThread,
+				shouldPreserveExistingV4ProjectionTurn,
+				v4ProjectionRevisionValue
+			};
+		}
+		return { createThreadDetailV4MergePolicy };
 	});
 }));
 //#endregion
@@ -4508,7 +4815,9 @@ var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list
 var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
 var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
 var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_detail_patch_plan());
+var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
 var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
+var import_thread_detail_v4_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_v4_merge_state());
 var import_client_render_stability_guard = /* @__PURE__ */ __toESM(require_client_render_stability_guard());
 var import_live_operation_dock_state = /* @__PURE__ */ __toESM(require_live_operation_dock_state());
 var moduleDefinitions = [
@@ -4782,6 +5091,21 @@ var moduleDefinitions = [
 		"bytes": 8310
 	},
 	{
+		"id": "thread-detail-actions",
+		"source": "public/thread-detail-actions.js",
+		"globalName": "CodexThreadDetailActions",
+		"expectedFunctions": [
+			"closestWithin",
+			"contextThreadIdFromNode",
+			"previewableImageFromTarget",
+			"resolveRichContentClickAction",
+			"resolveThreadDetailClickAction"
+		],
+		"assetPath": "/thread-detail-actions.js",
+		"classicLoaderExcluded": true,
+		"bytes": 5362
+	},
+	{
 		"id": "thread-detail-merge-state",
 		"source": "public/thread-detail-merge-state.js",
 		"globalName": "CodexThreadDetailMergeState",
@@ -4789,6 +5113,15 @@ var moduleDefinitions = [
 		"assetPath": "/thread-detail-merge-state.js",
 		"classicLoaderExcluded": true,
 		"bytes": 8461
+	},
+	{
+		"id": "thread-detail-v4-merge-state",
+		"source": "public/thread-detail-v4-merge-state.js",
+		"globalName": "CodexThreadDetailV4MergeState",
+		"expectedFunctions": ["createThreadDetailV4MergePolicy"],
+		"assetPath": "/thread-detail-v4-merge-state.js",
+		"classicLoaderExcluded": true,
+		"bytes": 12071
 	},
 	{
 		"id": "client-render-stability-guard",
@@ -4839,7 +5172,9 @@ var moduleApis = {
 	"thread-list-stable-order": import_thread_list_stable_order.default,
 	"thread-status-hints": import_thread_status_hints.default,
 	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
+	"thread-detail-actions": import_thread_detail_actions.default,
 	"thread-detail-merge-state": import_thread_detail_merge_state.default,
+	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default,
 	"client-render-stability-guard": import_client_render_stability_guard.default,
 	"live-operation-dock-state": import_live_operation_dock_state.default
 };

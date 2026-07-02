@@ -743,7 +743,9 @@ const VITE_APP_PREVIEW_CLASSIC_LOADER_EXCLUDED_MODULE_IDS = new Set([
   "thread-list-stable-order",
   "thread-status-hints",
   "thread-detail-patch-plan",
+  "thread-detail-actions",
   "thread-detail-merge-state",
+  "thread-detail-v4-merge-state",
   "client-render-stability-guard",
   "live-operation-dock-state",
 ]);

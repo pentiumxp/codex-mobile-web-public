@@ -174,7 +174,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     "thread-list-stable-order",
     "thread-status-hints",
     "thread-detail-patch-plan",
+    "thread-detail-actions",
     "thread-detail-merge-state",
+    "thread-detail-v4-merge-state",
     "client-render-stability-guard",
     "live-operation-dock-state",
   ];
@@ -212,7 +214,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/thread-list-stable-order\.js/);
   assert.match(shardSources, /public\/thread-status-hints\.js/);
   assert.match(shardSources, /public\/thread-detail-patch-plan\.js/);
+  assert.match(shardSources, /public\/thread-detail-actions\.js/);
   assert.match(shardSources, /public\/thread-detail-merge-state\.js/);
+  assert.match(shardSources, /public\/thread-detail-v4-merge-state\.js/);
   assert.match(shardSources, /public\/client-render-stability-guard\.js/);
   assert.match(shardSources, /public\/live-operation-dock-state\.js/);
   assert.match(shardSources, /planThreadListLoadRequest/);
@@ -233,7 +237,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /planThreadListStableOrder/);
   assert.match(shardSources, /shouldMarkThreadUnread/);
   assert.match(shardSources, /planVisibleItemRefreshPatch/);
+  assert.match(shardSources, /resolveThreadDetailClickAction/);
   assert.match(shardSources, /createThreadDetailMergePolicy/);
+  assert.match(shardSources, /createThreadDetailV4MergePolicy/);
   assert.match(shardSources, /renderLiveOperationDock/);
   assert.match(shardSources, /operationCardContentPlan/);
 });
