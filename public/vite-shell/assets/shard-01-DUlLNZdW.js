@@ -6522,6 +6522,27 @@ function sampleModule(id, api) {
 			globalDraftQueueType: typeof globalThis.queueThreadTaskCardDraftCreation
 		};
 	}
+	if (id === "api-client-runtime") {
+		const runtime = functionReady(api, "createApiClientRuntime") ? api.createApiClientRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.api === "function" && typeof runtime.postClientEvent === "function" && typeof runtime.postPerformanceEvent === "function" && typeof runtime.recordHomeAiDiagnosticFailure === "function" && typeof runtime.recordHomeAiDiagnosticSuccess === "function" && typeof runtime.scheduleSubmittedMessageDomProbe === "function" && typeof runtime.checkConversationProjectionConsistency === "function" && typeof runtime.handlePushButtonClick === "function" && typeof globalThis.api === "function" && typeof globalThis.postClientEvent === "function" && typeof globalThis.diagnosticThreadHash === "function" && typeof globalThis.recordHomeAiDiagnosticFailure === "function" && typeof globalThis.scheduleSubmittedMessageDomProbe === "function" && typeof globalThis.checkConversationProjectionConsistency === "function" && typeof globalThis.handlePushButtonClick === "function",
+			factoryType: typeof api.createApiClientRuntime,
+			apiType: typeof (runtime && runtime.api),
+			clientEventType: typeof (runtime && runtime.postClientEvent),
+			performanceType: typeof (runtime && runtime.postPerformanceEvent),
+			diagnosticFailureType: typeof (runtime && runtime.recordHomeAiDiagnosticFailure),
+			diagnosticSuccessType: typeof (runtime && runtime.recordHomeAiDiagnosticSuccess),
+			submittedProbeType: typeof (runtime && runtime.scheduleSubmittedMessageDomProbe),
+			projectionCheckType: typeof (runtime && runtime.checkConversationProjectionConsistency),
+			pushType: typeof (runtime && runtime.handlePushButtonClick),
+			globalApiType: typeof globalThis.api,
+			globalClientEventType: typeof globalThis.postClientEvent,
+			globalThreadHashType: typeof globalThis.diagnosticThreadHash,
+			globalSubmittedProbeType: typeof globalThis.scheduleSubmittedMessageDomProbe,
+			globalProjectionCheckType: typeof globalThis.checkConversationProjectionConsistency,
+			globalPushType: typeof globalThis.handlePushButtonClick
+		};
+	}
 	if (id === "thread-list-load-policy") {
 		const plan = functionReady(api, "planThreadListLoadRequest") ? api.planThreadListLoadRequest({
 			silent: true,

@@ -1,5 +1,6 @@
 "use strict";
 
+(function attachApiClientRuntime(root) {
 async function api(path, options = {}) {
   return apiClient.request(path, options);
 }
@@ -1133,18 +1134,93 @@ async function handlePushButtonClick() {
   }
 }
 
+const legacyGlobals = {
+  api,
+  postClientEvent,
+  nowPerfMs,
+  roundedDurationMs,
+  postPerformanceEvent,
+  diagnosticHash,
+  diagnosticThreadHash,
+  diagnosticTurnHash,
+  diagnosticTaskHash,
+  diagnosticItemHash,
+  clientSubmissionDiagnosticHash,
+  clientSubmissionDataAttr,
+  diagnosticRouteKind,
+  diagnosticErrorStatus,
+  diagnosticErrorCode,
+  diagnosticDurationBucket,
+  currentHomeAiDiagnosticContext,
+  postHomeAiDiagnosticReport,
+  recordHomeAiDiagnosticFailure,
+  recordHomeAiDiagnosticSuccess,
+  applyFrontendRuntimeHealthEffect,
+  applyFrontendRuntimeHealthEffectsPlan,
+  threadListRuntimeMetrics,
+  recordThreadListRuntimeStall,
+  sampleThreadListInputDelay,
+  startThreadListRuntimeHeartbeat,
+  startThreadListRuntimeLongTaskObserver,
+  startThreadListRuntimeStallMonitoring,
+  conversationHasClientSubmissionHash,
+  frontendHealthThreadForSubmission,
+  probeSubmittedMessageDom,
+  scheduleSubmittedMessageDomProbe,
+  applyThreadDetailResponseDiagnosticEffect,
+  applyThreadDetailResponseDiagnosticEffectsPlan,
+  recordThreadDetailResponseDiagnostics,
+  conversationDomShape,
+  duplicateUserMessageSignatureCount,
+  domUserMessageDuplicateSignature,
+  domUserMessageEventDuplicateSignature,
+  visibleUserMessageDuplicateSignature,
+  visibleUserMessageEventDuplicateSignature,
+  turnRendersConversationArticle,
+  visibleRenderableTurnsForConversation,
+  visibleConversationShape,
+  rememberThreadDetailRenderEvidence,
+  clearThreadDetailRenderEvidence,
+  recentThreadDetailRenderEvidence,
+  primaryShellSelectionConflictInput,
+  recordPrimaryShellSelectionConflict,
+  recordPrimaryShellSelectionHealthy,
+  emptyVisibleDetailMismatchInput,
+  recordEmptyVisibleDetailMismatch,
+  recordEmptyVisibleDetailHealthy,
+  maybeRecoverEmptyDetailWithHistoryEvidence,
+  emptyCachedDetailReuseInput,
+  recordEmptyCachedDetailReuseBlocked,
+  recordEmptyCachedDetailReuseHealthy,
+  checkEmptyVisibleDetailMismatchAfterRender,
+  visibleRenderableTurnIds,
+  conversationDomTurnIds,
+  threadTileVisibleShape,
+  threadTileVisibleTurnCount,
+  threadTileDomTurnCount,
+  conversationTurnOrderDiagnosticSnapshot,
+  conversationProjectionDiagnosticSnapshot,
+  applyConversationProjectionConsistencyEffect,
+  applyConversationProjectionConsistencyEffectsPlan,
+  checkConversationProjectionConsistency,
+  startUiWatchdog,
+  updatePushButton,
+  registerPushServiceWorker,
+  syncExistingPushSubscription,
+  initializePushControls,
+  enablePushNotifications,
+  sendTestPushNotification,
+  handlePushButtonClick,
+};
 
-(function exposeCodexApiClientRuntime(root) {
-  root.CodexApiClientRuntime = root.CodexApiClientRuntime || {
-    createApiClientRuntime: function createApiClientRuntime() {
-      return {
-      api: typeof api === "function" ? api : null,
-      postClientEvent: typeof postClientEvent === "function" ? postClientEvent : null,
-      postPerformanceEvent: typeof postPerformanceEvent === "function" ? postPerformanceEvent : null,
-      recordHomeAiDiagnosticFailure: typeof recordHomeAiDiagnosticFailure === "function" ? recordHomeAiDiagnosticFailure : null,
-      recordHomeAiDiagnosticSuccess: typeof recordHomeAiDiagnosticSuccess === "function" ? recordHomeAiDiagnosticSuccess : null,
-      handlePushButtonClick: typeof handlePushButtonClick === "function" ? handlePushButtonClick : null,
-      };
-    },
-  };
-})(window);
+function createApiClientRuntime() {
+  return Object.assign({}, legacyGlobals);
+}
+
+const apiClientRuntimeApi = { createApiClientRuntime };
+if (typeof module === "object" && module.exports) module.exports = apiClientRuntimeApi;
+for (const [name, value] of Object.entries(legacyGlobals)) {
+  if (typeof value === "function") root[name] = value;
+}
+root.CodexApiClientRuntime = apiClientRuntimeApi;
+})(typeof globalThis !== "undefined" ? globalThis : window);
