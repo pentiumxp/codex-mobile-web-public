@@ -189,6 +189,18 @@ function appPreviewClassicLoaderPlan(source) {
 function esmCompatibilityContract(source) {
   const contract = source && source.esmCompatibility;
   if (!contract || typeof contract !== "object") return null;
+  const shards = (Array.isArray(contract.shards) ? contract.shards : [])
+    .map((entry) => ({
+      id: String(entry && entry.id || ""),
+      index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
+      source: String(entry && entry.source || ""),
+      moduleCount: Number.isFinite(Number(entry && entry.moduleCount)) ? Number(entry.moduleCount) : 0,
+      moduleIds: Array.isArray(entry && entry.moduleIds)
+        ? entry.moduleIds.map((id) => String(id || "")).filter(Boolean)
+        : [],
+      byteCount: Number.isFinite(Number(entry && entry.byteCount)) ? Number(entry.byteCount) : 0,
+    }))
+    .filter((entry) => entry.id && entry.source);
   const modules = (Array.isArray(contract.modules) ? contract.modules : [])
     .map((entry) => ({
       index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
@@ -213,6 +225,9 @@ function esmCompatibilityContract(source) {
     source: String(contract.source || ""),
     owner: String(contract.owner || ""),
     virtualModuleSource: String(contract.virtualModuleSource || ""),
+    virtualShardSourcePrefix: String(contract.virtualShardSourcePrefix || ""),
+    shardCount: Number.isFinite(Number(contract.shardCount)) ? Number(contract.shardCount) : shards.length,
+    shards,
     moduleCount: Number.isFinite(Number(contract.moduleCount)) ? Number(contract.moduleCount) : modules.length,
     expectedFunctionCount: Number.isFinite(Number(contract.expectedFunctionCount))
       ? Number(contract.expectedFunctionCount)
@@ -492,6 +507,17 @@ function createViteShellArtifactService(dependencies = {}) {
       ))) {
         issues.push({ code: "vite_shell_esm_compatibility_module_record_missing" });
       }
+      const shardSources = Array.isArray(readbackEsmCompatibility.shards)
+        ? readbackEsmCompatibility.shards.map((entry) => String(entry && entry.source || "")).filter(Boolean)
+        : [];
+      const chunkSources = (Array.isArray(readback.esmCompatibilityChunks) ? readback.esmCompatibilityChunks : [])
+        .map((entry) => String(entry && entry.source || ""))
+        .filter((source) => source.includes("/shard/"));
+      if (Number(readbackEsmCompatibility.shardCount) !== shardSources.length
+        || !shardSources.length
+        || JSON.stringify(shardSources.slice().sort()) !== JSON.stringify(chunkSources.slice().sort())) {
+        issues.push({ code: "vite_shell_esm_compatibility_shard_chunk_mismatch" });
+      }
     }
     const entryDynamicImportGraph = readback.entryDynamicImportGraph && typeof readback.entryDynamicImportGraph === "object"
       ? readback.entryDynamicImportGraph
@@ -546,8 +572,10 @@ function createViteShellArtifactService(dependencies = {}) {
     const expectedPublishedFiles = Array.from(new Set([
       "codex-mobile-shell-manifest.json",
       readback.entry && readback.entry.fileName,
+      ...(readback.esmCompatibilityChunks || []).map((chunk) => chunk && chunk.fileName),
       ...(readback.deferredChunks || []).map((chunk) => chunk && chunk.fileName),
       ...readbackEntryGroupChunks.map((chunk) => chunk && chunk.fileName),
+      ...(readback.sharedChunks || []).map((chunk) => chunk && chunk.fileName),
       previewFileName,
       appPreviewFileName,
     ].map(normalizeRelativeFileName).filter(Boolean)));
@@ -839,6 +867,9 @@ function createViteShellArtifactService(dependencies = {}) {
         extraFileCount: Array.isArray(entryDynamicImportGraph.extraFiles)
           ? entryDynamicImportGraph.extraFiles.length
           : 0,
+        esmCompatibilityFileCount: Number.isFinite(Number(entryDynamicImportGraph.esmCompatibilityFileCount))
+          ? Number(entryDynamicImportGraph.esmCompatibilityFileCount)
+          : 0,
         deferredFileCount: Number.isFinite(Number(entryDynamicImportGraph.deferredFileCount))
           ? Number(entryDynamicImportGraph.deferredFileCount)
           : 0,
@@ -932,6 +963,7 @@ function createViteShellArtifactService(dependencies = {}) {
           })),
         owner: readbackEsmCompatibility.owner,
         moduleCount: readbackEsmCompatibility.moduleCount,
+        shardCount: readbackEsmCompatibility.shardCount,
         expectedFunctionCount: readbackEsmCompatibility.expectedFunctionCount,
         hashCount: readbackEsmCompatibility.hashCount,
         byteCount: readbackEsmCompatibility.byteCount,
@@ -940,6 +972,7 @@ function createViteShellArtifactService(dependencies = {}) {
         match: false,
         owner: "",
         moduleCount: 0,
+        shardCount: 0,
         expectedFunctionCount: 0,
         hashCount: 0,
         byteCount: 0,
@@ -980,6 +1013,7 @@ function createViteShellArtifactService(dependencies = {}) {
       } : null,
       entry: readback.entry || null,
       deferredChunkCount: (readback.deferredChunks || []).length,
+      sharedChunkCount: (readback.sharedChunks || []).length,
       entryGroupChunks: readbackEntryGroupChunks.map((chunk) => ({
         groupId: String(chunk && chunk.groupId || ""),
         phase: String(chunk && chunk.phase || ""),

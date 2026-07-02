@@ -111,7 +111,9 @@ test("classic shell cache name changes when static shell asset contents change",
 test("Vite shell entry imports the asset-graph ESM compatibility module", async () => {
   const {
     VITE_ESM_COMPATIBILITY_MODULES,
+    VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX,
     VITE_ESM_COMPATIBILITY_SOURCE,
+    buildViteEsmCompatibilityShards,
     createShellEntryGroupVirtualModulePlugin,
   } = await loadAssetGraphModule();
   const root = path.resolve(__dirname, "..");
@@ -169,68 +171,79 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.equal(resolved, `\0${VITE_ESM_COMPATIBILITY_SOURCE}`);
   const virtualSource = plugin.load(resolved);
   assert.match(virtualSource, /codexMobileViteEsmCompatibility/);
-  assert.match(virtualSource, /public\/build-refresh-policy\.js/);
-  assert.match(virtualSource, /public\/runtime-settings\.js/);
-  assert.match(virtualSource, /public\/viewport-metrics\.js/);
-  assert.match(virtualSource, /public\/conversation-scroll\.js/);
-  assert.match(virtualSource, /public\/thread-performance-metrics\.js/);
-  assert.match(virtualSource, /public\/thread-detail-state\.js/);
-  assert.match(virtualSource, /public\/thread-detail-render-plan\.js/);
-  assert.match(virtualSource, /public\/thread-detail-dom-patch\.js/);
-  assert.match(virtualSource, /public\/draft-store\.js/);
-  assert.match(virtualSource, /public\/image-compressor\.js/);
-  assert.match(virtualSource, /public\/plugin-voice-input\.js/);
-  assert.match(virtualSource, /public\/thread-tile-layout\.js/);
-  assert.match(virtualSource, /public\/thread-tile-actions\.js/);
-  assert.match(virtualSource, /public\/thread-tile-runtime\.js/);
-  assert.match(virtualSource, /public\/thread-list-runtime\.js/);
-  assert.match(virtualSource, /public\/side-chat-runtime\.js/);
-  assert.match(virtualSource, /public\/thread-tile-state\.js/);
-  assert.match(virtualSource, /public\/app-update-runtime\.js/);
-  assert.match(virtualSource, /public\/modal-runtime\.js/);
-  assert.match(virtualSource, /public\/runtime-wiring-runtime\.js/);
-  assert.match(virtualSource, /public\/app-shell-runtime\.js/);
-  assert.match(virtualSource, /public\/thread-list-load-policy\.js/);
-  assert.match(virtualSource, /public\/thread-list-stable-order\.js/);
-  assert.match(virtualSource, /public\/thread-status-hints\.js/);
-  assert.match(virtualSource, /public\/thread-detail-patch-plan\.js/);
-  assert.match(virtualSource, /public\/thread-detail-actions\.js/);
-  assert.match(virtualSource, /public\/thread-detail-merge-state\.js/);
-  assert.match(virtualSource, /public\/thread-detail-v4-merge-state\.js/);
-  assert.match(virtualSource, /public\/client-render-stability-guard\.js/);
-  assert.match(virtualSource, /public\/live-operation-dock-state\.js/);
-  assert.match(virtualSource, /planThreadListLoadRequest/);
-  assert.match(virtualSource, /selectedNewThreadPermission/);
-  assert.match(virtualSource, /stablePixelChanged/);
-  assert.match(virtualSource, /planBottomFollowScrollSchedule/);
-  assert.match(virtualSource, /threadDetailShape/);
-  assert.match(virtualSource, /threadHasReusableLoadedDetailState/);
-  assert.match(virtualSource, /planThreadDetailRefreshRequest/);
-  assert.match(virtualSource, /visibleTurnOrderMismatch/);
-  assert.match(virtualSource, /createDraftStore/);
-  assert.match(virtualSource, /folder_screen\.webp/);
-  assert.match(virtualSource, /voice_input\.start_request/);
-  assert.match(virtualSource, /threadTileColumnGroups/);
-  assert.match(virtualSource, /resolveThreadTileDropAction/);
-  assert.match(virtualSource, /candidatePaneIdsPlan/);
-  assert.match(virtualSource, /createThreadTileRuntime/);
-  assert.match(virtualSource, /threadTileLayoutStatusText/);
-  assert.match(virtualSource, /clientBuildVersionText/);
-  assert.match(virtualSource, /requestCodexProfileSwitchConfirmation/);
-  assert.match(virtualSource, /handleAppNativeDialogKeydown/);
-  assert.match(virtualSource, /createRuntimeWiringRuntime/);
-  assert.match(virtualSource, /startCodexMobileAppWithRecovery/);
-  assert.match(virtualSource, /detail-in-flight/);
-  assert.match(virtualSource, /renderSideChatPanel/);
-  assert.match(virtualSource, /approval-answer/);
-  assert.match(virtualSource, /server-newer/);
-  assert.match(virtualSource, /planThreadListStableOrder/);
-  assert.match(virtualSource, /shouldMarkThreadUnread/);
-  assert.match(virtualSource, /planVisibleItemRefreshPatch/);
-  assert.match(virtualSource, /createThreadDetailMergePolicy/);
-  assert.match(virtualSource, /mergeV4ProjectionThread/);
-  assert.match(virtualSource, /stableTurnIdentity/);
-  assert.match(virtualSource, /operationCardContentPlan/);
+  assert.match(virtualSource, /codexMobileViteEsmCompatibilityShardSources/);
+  assert.match(virtualSource, new RegExp(VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(virtualSource, /public\/build-refresh-policy\.js/);
+  const shards = buildViteEsmCompatibilityShards(root);
+  assert.ok(shards.length > 1);
+  assert.equal(shards.reduce((total, shard) => total + shard.moduleCount, 0), VITE_ESM_COMPATIBILITY_MODULES.length);
+  const shardSources = shards.map((shard) => {
+    const shardResolved = plugin.resolveId(shard.source);
+    assert.equal(shardResolved, `\0${shard.source}`);
+    return plugin.load(shardResolved);
+  }).join("\n");
+  assert.match(shardSources, /public\/build-refresh-policy\.js/);
+  assert.match(shardSources, /public\/runtime-settings\.js/);
+  assert.match(shardSources, /public\/viewport-metrics\.js/);
+  assert.match(shardSources, /public\/conversation-scroll\.js/);
+  assert.match(shardSources, /public\/thread-performance-metrics\.js/);
+  assert.match(shardSources, /public\/thread-detail-state\.js/);
+  assert.match(shardSources, /public\/thread-detail-render-plan\.js/);
+  assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
+  assert.match(shardSources, /public\/draft-store\.js/);
+  assert.match(shardSources, /public\/image-compressor\.js/);
+  assert.match(shardSources, /public\/plugin-voice-input\.js/);
+  assert.match(shardSources, /public\/thread-tile-layout\.js/);
+  assert.match(shardSources, /public\/thread-tile-actions\.js/);
+  assert.match(shardSources, /public\/thread-tile-runtime\.js/);
+  assert.match(shardSources, /public\/thread-list-runtime\.js/);
+  assert.match(shardSources, /public\/side-chat-runtime\.js/);
+  assert.match(shardSources, /public\/thread-tile-state\.js/);
+  assert.match(shardSources, /public\/app-update-runtime\.js/);
+  assert.match(shardSources, /public\/modal-runtime\.js/);
+  assert.match(shardSources, /public\/runtime-wiring-runtime\.js/);
+  assert.match(shardSources, /public\/app-shell-runtime\.js/);
+  assert.match(shardSources, /public\/thread-list-load-policy\.js/);
+  assert.match(shardSources, /public\/thread-list-stable-order\.js/);
+  assert.match(shardSources, /public\/thread-status-hints\.js/);
+  assert.match(shardSources, /public\/thread-detail-patch-plan\.js/);
+  assert.match(shardSources, /public\/thread-detail-actions\.js/);
+  assert.match(shardSources, /public\/thread-detail-merge-state\.js/);
+  assert.match(shardSources, /public\/thread-detail-v4-merge-state\.js/);
+  assert.match(shardSources, /public\/client-render-stability-guard\.js/);
+  assert.match(shardSources, /public\/live-operation-dock-state\.js/);
+  assert.match(shardSources, /planThreadListLoadRequest/);
+  assert.match(shardSources, /selectedNewThreadPermission/);
+  assert.match(shardSources, /stablePixelChanged/);
+  assert.match(shardSources, /planBottomFollowScrollSchedule/);
+  assert.match(shardSources, /threadDetailShape/);
+  assert.match(shardSources, /threadHasReusableLoadedDetailState/);
+  assert.match(shardSources, /planThreadDetailRefreshRequest/);
+  assert.match(shardSources, /visibleTurnOrderMismatch/);
+  assert.match(shardSources, /createDraftStore/);
+  assert.match(shardSources, /folder_screen\.webp/);
+  assert.match(shardSources, /voice_input\.start_request/);
+  assert.match(shardSources, /threadTileColumnGroups/);
+  assert.match(shardSources, /resolveThreadTileDropAction/);
+  assert.match(shardSources, /candidatePaneIdsPlan/);
+  assert.match(shardSources, /createThreadTileRuntime/);
+  assert.match(shardSources, /threadTileLayoutStatusText/);
+  assert.match(shardSources, /clientBuildVersionText/);
+  assert.match(shardSources, /requestCodexProfileSwitchConfirmation/);
+  assert.match(shardSources, /handleAppNativeDialogKeydown/);
+  assert.match(shardSources, /createRuntimeWiringRuntime/);
+  assert.match(shardSources, /startCodexMobileAppWithRecovery/);
+  assert.match(shardSources, /detail-in-flight/);
+  assert.match(shardSources, /renderSideChatPanel/);
+  assert.match(shardSources, /approval-answer/);
+  assert.match(shardSources, /server-newer/);
+  assert.match(shardSources, /planThreadListStableOrder/);
+  assert.match(shardSources, /shouldMarkThreadUnread/);
+  assert.match(shardSources, /planVisibleItemRefreshPatch/);
+  assert.match(shardSources, /createThreadDetailMergePolicy/);
+  assert.match(shardSources, /mergeV4ProjectionThread/);
+  assert.match(shardSources, /stableTurnIdentity/);
+  assert.match(shardSources, /operationCardContentPlan/);
 });
 
 test("Vite shell build contract records entry chunks and classic fallback outputs", async () => {
@@ -238,11 +251,14 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ENTRY_GROUP_SOURCE_PREFIX,
     VITE_ESM_COMPATIBILITY_MODULES,
     VITE_ESM_COMPATIBILITY_SOURCE,
+    buildViteEsmCompatibilityShards,
     buildShellAssetManifest,
     buildViteShellBuildContract,
   } = await loadAssetGraphModule();
   const root = path.resolve(__dirname, "..");
   const manifest = buildShellAssetManifest(root);
+  const compatibilityShards = buildViteEsmCompatibilityShards(root);
+  assert.ok(compatibilityShards.length > 1);
   const bundle = {
     "assets/vite-shell-entry-example.js": {
       type: "chunk",
@@ -265,7 +281,7 @@ test("Vite shell build contract records entry chunks and classic fallback output
       isEntry: false,
       isDynamicEntry: true,
       imports: ["assets/vite-shell-entry-example.js"],
-      dynamicImports: [],
+      dynamicImports: compatibilityShards.map((shard) => `assets/vite-esm-compatibility-${shard.id}-example.js`),
     },
     "assets/vite-deferred-entry-topology-example.js": {
       type: "chunk",
@@ -277,6 +293,28 @@ test("Vite shell build contract records entry chunks and classic fallback output
       imports: ["assets/vite-shell-entry-example.js"],
       dynamicImports: [],
     },
+  };
+  for (const shard of compatibilityShards) {
+    bundle[`assets/vite-esm-compatibility-${shard.id}-example.js`] = {
+      type: "chunk",
+      fileName: `assets/vite-esm-compatibility-${shard.id}-example.js`,
+      name: `codex-mobile-esm-compatibility-${shard.id}`,
+      facadeModuleId: `\0${shard.source}`,
+      isEntry: false,
+      isDynamicEntry: true,
+      imports: ["assets/vite-esm-compatibility-example.js", "assets/vite-shared-runtime-example.js"],
+      dynamicImports: [],
+    };
+  }
+  bundle["assets/vite-shared-runtime-example.js"] = {
+    type: "chunk",
+    fileName: "assets/vite-shared-runtime-example.js",
+    name: "vite-shared-runtime",
+    facadeModuleId: "",
+    isEntry: false,
+    isDynamicEntry: false,
+    imports: [],
+    dynamicImports: [],
   };
   for (const group of manifest.entryGroups) {
     const groupId = String(group.id).toLowerCase();
@@ -304,11 +342,20 @@ test("Vite shell build contract records entry chunks and classic fallback output
     "assets/vite-deferred-entry-topology-example.js",
     ...manifest.entryGroups.map((group) => `assets/vite-entry-group-${String(group.id).toLowerCase()}-example.js`),
   ]);
-  assert.equal(contract.viteEsmCompatibilityChunks.length, 1);
-  assert.equal(contract.viteEsmCompatibilityChunks[0].source, VITE_ESM_COMPATIBILITY_SOURCE);
+  assert.equal(contract.viteEsmCompatibilityChunks.length, compatibilityShards.length + 1);
+  assert.ok(contract.viteEsmCompatibilityChunks.some((chunk) => chunk.source === VITE_ESM_COMPATIBILITY_SOURCE));
+  assert.deepEqual(
+    contract.viteEsmCompatibilityChunks
+      .map((chunk) => chunk.source)
+      .filter((source) => source.includes("/shard/"))
+      .sort(),
+    compatibilityShards.map((shard) => shard.source).sort()
+  );
   assert.equal(contract.viteDeferredChunks.length, 1);
   assert.equal(contract.viteDeferredChunks[0].source, "frontend/vite-deferred-entry-topology.mjs");
   assert.equal(contract.viteEntryGroupChunks.length, manifest.entryGroups.length);
+  assert.equal(contract.viteSharedChunks.length, 1);
+  assert.equal(contract.viteSharedChunks[0].fileName, "assets/vite-shared-runtime-example.js");
   assert.equal(contract.entryDynamicImportGraph.owner, "vite-shell-entry");
   assert.equal(contract.entryDynamicImportGraph.esmCompatibilityFileCount, 1);
   assert.equal(contract.entryDynamicImportGraph.deferredFileCount, 1);
@@ -350,6 +397,15 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.ok(contract.appPreviewClassicLoaderPlan.excludedEsmScripts.every((entry) => entry.globalName && /^[a-f0-9]{64}$/.test(entry.sha256)));
   assert.equal(contract.esmCompatibility.owner, "vite-shell-entry");
   assert.equal(contract.esmCompatibility.virtualModuleSource, VITE_ESM_COMPATIBILITY_SOURCE);
+  assert.equal(contract.esmCompatibility.shardCount, compatibilityShards.length);
+  assert.deepEqual(
+    contract.esmCompatibility.shards.map((shard) => shard.source).sort(),
+    compatibilityShards.map((shard) => shard.source).sort()
+  );
+  assert.equal(
+    contract.esmCompatibility.shards.reduce((total, shard) => total + shard.moduleCount, 0),
+    VITE_ESM_COMPATIBILITY_MODULES.length
+  );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
@@ -415,6 +471,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
     ["CodexAppShellRuntime", "CodexRuntimeWiringRuntime"]
   );
   assert.ok(contract.outputFiles.includes("assets/vite-shell-entry-example.js"));
+  assert.ok(contract.outputFiles.includes("assets/vite-esm-compatibility-example.js"));
+  for (const shard of compatibilityShards) {
+    assert.ok(contract.outputFiles.includes(`assets/vite-esm-compatibility-${shard.id}-example.js`));
+  }
+  assert.ok(contract.outputFiles.includes("assets/vite-shared-runtime-example.js"));
   assert.ok(contract.outputFiles.includes("assets/vite-deferred-entry-topology-example.js"));
   assert.ok(contract.outputFiles.includes("assets/vite-entry-group-app-entry-example.js"));
   assert.ok(contract.outputFiles.includes("codex-mobile-shell-manifest.json"));

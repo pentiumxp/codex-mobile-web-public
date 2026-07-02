@@ -81,12 +81,14 @@ function requiredArtifactFiles(manifest) {
   const esmCompatibilityFiles = (viteBuild.viteEsmCompatibilityChunks || []).map((chunk) => chunk && chunk.fileName);
   const deferredFiles = (viteBuild.viteDeferredChunks || []).map((chunk) => chunk && chunk.fileName);
   const entryGroupFiles = (viteBuild.viteEntryGroupChunks || []).map((chunk) => chunk && chunk.fileName);
+  const sharedFiles = (viteBuild.viteSharedChunks || []).map((chunk) => chunk && chunk.fileName);
   return uniqueValues([
     "codex-mobile-shell-manifest.json",
     entryFile,
     ...esmCompatibilityFiles,
     ...deferredFiles,
     ...entryGroupFiles,
+    ...sharedFiles,
   ]);
 }
 
@@ -214,6 +216,18 @@ function normalizeAppPreviewClassicLoaderPlan(plan) {
 
 function normalizeEsmCompatibilityContract(contract) {
   if (!contract || typeof contract !== "object") return null;
+  const shards = (Array.isArray(contract.shards) ? contract.shards : [])
+    .map((entry) => ({
+      id: String(entry && entry.id || ""),
+      index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
+      source: String(entry && entry.source || ""),
+      moduleCount: Number.isFinite(Number(entry && entry.moduleCount)) ? Number(entry.moduleCount) : 0,
+      moduleIds: Array.isArray(entry && entry.moduleIds)
+        ? entry.moduleIds.map((id) => String(id || "")).filter(Boolean)
+        : [],
+      byteCount: Number.isFinite(Number(entry && entry.byteCount)) ? Number(entry.byteCount) : 0,
+    }))
+    .filter((entry) => entry.id && entry.source);
   const modules = (Array.isArray(contract.modules) ? contract.modules : [])
     .map((entry) => ({
       index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
@@ -238,6 +252,9 @@ function normalizeEsmCompatibilityContract(contract) {
     source: String(contract.source || "generated-vite-esm-compatibility-contract"),
     owner: String(contract.owner || ""),
     virtualModuleSource: String(contract.virtualModuleSource || ""),
+    virtualShardSourcePrefix: String(contract.virtualShardSourcePrefix || ""),
+    shardCount: Number.isFinite(Number(contract.shardCount)) ? Number(contract.shardCount) : shards.length,
+    shards,
     moduleCount: Number.isFinite(Number(contract.moduleCount)) ? Number(contract.moduleCount) : modules.length,
     expectedFunctionCount: Number.isFinite(Number(contract.expectedFunctionCount))
       ? Number(contract.expectedFunctionCount)
@@ -338,6 +355,12 @@ export function buildViteShellPublicReadback(options = {}) {
     fileName: normalizeRelativeFileName(chunk && chunk.fileName),
     entryScript: publicArtifactUrl(chunk && chunk.fileName),
   })).filter((chunk) => chunk.fileName);
+  const sharedChunks = (viteBuild.viteSharedChunks || []).map((chunk) => ({
+    name: String(chunk && chunk.name || ""),
+    source: String(chunk && chunk.source || ""),
+    fileName: normalizeRelativeFileName(chunk && chunk.fileName),
+    entryScript: publicArtifactUrl(chunk && chunk.fileName),
+  })).filter((chunk) => chunk.fileName);
   const startupAssets = startupCriticalAssets(manifest);
   const classicShellScriptBlock = classicShellScriptBlockContract(manifest, viteBuild);
   const appPreviewClassicLoaderPlan = normalizeAppPreviewClassicLoaderPlan(viteBuild.appPreviewClassicLoaderPlan);
@@ -411,6 +434,7 @@ export function buildViteShellPublicReadback(options = {}) {
       fileName: normalizeRelativeFileName(viteBuild.viteEntry.fileName),
     } : null,
     esmCompatibilityChunks,
+    sharedChunks,
     entryGroupChunks,
     preview,
     startupCriticalAssets: startupAssets,
@@ -445,6 +469,7 @@ export function buildViteShellPublicReadback(options = {}) {
       fileName: normalizeRelativeFileName(chunk && chunk.fileName),
     })).filter((chunk) => chunk.fileName),
     esmCompatibilityChunks,
+    sharedChunks,
     entryGroupChunks,
     preview,
     appPreview,
@@ -456,6 +481,7 @@ export function buildViteShellPublicReadback(options = {}) {
     counts: {
       entryGroups: Array.isArray(manifest.entryGroups) ? manifest.entryGroups.length : 0,
       esmCompatibilityChunks: esmCompatibilityChunks.length,
+      sharedChunks: sharedChunks.length,
       entryGroupChunks: entryGroupChunks.length,
       startupCriticalAssets: startupAssets.length,
       classicShellScriptBlockScripts: classicShellScriptBlock.scriptCount,
@@ -505,6 +531,10 @@ export function renderViteShellPreviewHtml(readback = {}) {
     .map((chunk) => chunk && chunk.entryScript)
     .filter((asset) => String(asset || "").startsWith("/"))
     .map((asset) => `  <link rel=\"modulepreload\" href=\"${escapeHtml(asset)}\" data-codex-vite-esm-compatibility-chunk=\"true\">`);
+  const sharedPreloadTags = (Array.isArray(readback.sharedChunks) ? readback.sharedChunks : [])
+    .map((chunk) => chunk && chunk.entryScript)
+    .filter((asset) => String(asset || "").startsWith("/"))
+    .map((asset) => `  <link rel=\"modulepreload\" href=\"${escapeHtml(asset)}\" data-codex-vite-shared-chunk=\"true\">`);
   return [
     "<!doctype html>",
     "<html lang=\"en\">",
@@ -513,6 +543,7 @@ export function renderViteShellPreviewHtml(readback = {}) {
     "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
     "  <meta name=\"robots\" content=\"noindex,nofollow\">",
     ...startupPreloadTags,
+    ...sharedPreloadTags,
     ...esmCompatibilityPreloadTags,
     ...entryGroupPreloadTags,
     "  <title>Codex Mobile Vite Shell Preview</title>",
@@ -565,6 +596,10 @@ export function renderViteShellAppPreviewHtml(readback = {}, root = process.cwd(
   );
   const moduleBlock = [
     VITE_APP_PREVIEW_SCRIPT_BLOCK_START,
+    ...(Array.isArray(readback.sharedChunks) ? readback.sharedChunks : [])
+      .map((chunk) => chunk && chunk.entryScript)
+      .filter((asset) => String(asset || "").startsWith("/"))
+      .map((asset) => `  <link rel="modulepreload" href="${escapeHtml(asset)}" data-codex-vite-shared-chunk="true">`),
     ...(Array.isArray(readback.esmCompatibilityChunks) ? readback.esmCompatibilityChunks : [])
       .map((chunk) => chunk && chunk.entryScript)
       .filter((asset) => String(asset || "").startsWith("/"))

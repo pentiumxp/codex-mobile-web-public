@@ -169,6 +169,18 @@ if (!fs.existsSync(manifestPath)) {
       mismatch.push("viteBuildEsmCompatibilityOrder");
     } else if (esmCompatibilityModules.some((entry) => !entry || !entry.source || !entry.sha256 || !Number(entry.bytes))) {
       mismatch.push("viteBuildEsmCompatibilityHash");
+    } else {
+      const shardSources = Array.isArray(esmCompatibility.shards)
+        ? esmCompatibility.shards.map((entry) => String(entry && entry.source || "")).filter(Boolean)
+        : [];
+      const shardChunkSources = (viteBuild.viteEsmCompatibilityChunks || [])
+        .map((entry) => String(entry && entry.source || ""))
+        .filter((source) => source.includes("/shard/"));
+      if (Number(esmCompatibility.shardCount) !== shardSources.length
+        || !shardSources.length
+        || JSON.stringify(shardSources.slice().sort()) !== JSON.stringify(shardChunkSources.slice().sort())) {
+        mismatch.push("viteBuildEsmCompatibilityShards");
+      }
     }
     const entryDynamicImportGraph = viteBuild.entryDynamicImportGraph && typeof viteBuild.entryDynamicImportGraph === "object"
       ? viteBuild.entryDynamicImportGraph
@@ -213,9 +225,21 @@ if (!fs.existsSync(manifestPath)) {
         break;
       }
     }
+    for (const chunk of viteBuild.viteEsmCompatibilityChunks || []) {
+      if (!chunk.fileName || !outputFiles.has(chunk.fileName)) {
+        mismatch.push("viteBuildOutputEsmCompatibilityFile");
+        break;
+      }
+    }
     for (const chunk of entryGroupChunks) {
       if (!chunk.fileName || !outputFiles.has(chunk.fileName)) {
         mismatch.push("viteBuildOutputEntryGroupFile");
+        break;
+      }
+    }
+    for (const chunk of viteBuild.viteSharedChunks || []) {
+      if (!chunk.fileName || !outputFiles.has(chunk.fileName)) {
+        mismatch.push("viteBuildOutputSharedFile");
         break;
       }
     }
@@ -251,6 +275,15 @@ if (!fs.existsSync(manifestPath)) {
         : 0,
       esmCompatibilityModules: built.viteBuild.esmCompatibility
         ? built.viteBuild.esmCompatibility.moduleCount
+        : 0,
+      esmCompatibilityChunks: Array.isArray(built.viteBuild.viteEsmCompatibilityChunks)
+        ? built.viteBuild.viteEsmCompatibilityChunks.length
+        : 0,
+      sharedChunks: Array.isArray(built.viteBuild.viteSharedChunks)
+        ? built.viteBuild.viteSharedChunks.length
+        : 0,
+      esmCompatibilityShards: built.viteBuild.esmCompatibility
+        ? built.viteBuild.esmCompatibility.shardCount
         : 0,
       viteBuildStage: built.viteBuild.stage,
     }));

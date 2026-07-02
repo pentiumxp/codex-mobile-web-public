@@ -67,14 +67,14 @@ const pendingEsmCompatibility = {
 let esmCompatibility = pendingEsmCompatibility;
 
 const esmCompatibilityImportPromise = import("virtual:codex-mobile-esm-compatibility")
-  .then((module) => {
+  .then(async (module) => {
     const createCompatibility = module && typeof module.codexMobileViteEsmCompatibility === "function"
       ? module.codexMobileViteEsmCompatibility
       : null;
     if (!createCompatibility) {
       throw new Error("codex_mobile_vite_esm_compatibility_factory_missing");
     }
-    esmCompatibility = createCompatibility();
+    esmCompatibility = await createCompatibility();
     globalThis.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__ = esmCompatibility;
     return esmCompatibility;
   })

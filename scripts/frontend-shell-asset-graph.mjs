@@ -16,6 +16,8 @@ export const VITE_DEFERRED_ENTRY_SOURCE = "frontend/vite-deferred-entry-topology
 export const VITE_ENTRY_GROUP_SOURCE_PREFIX = "virtual:codex-mobile-shell-entry-group/";
 export const VITE_ENTRY_GROUP_LOADER_SOURCE = "virtual:codex-mobile-shell-entry-group-loader";
 export const VITE_ESM_COMPATIBILITY_SOURCE = "virtual:codex-mobile-esm-compatibility";
+export const VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX = `${VITE_ESM_COMPATIBILITY_SOURCE}/shard/`;
+const VITE_ESM_COMPATIBILITY_SHARD_TARGET_BYTES = 220 * 1024;
 export const VITE_ESM_COMPATIBILITY_MODULES = [
   {
     id: "build-refresh-policy",
@@ -936,8 +938,63 @@ function esmCompatibilityModuleDefinitions() {
   }));
 }
 
-function createEsmCompatibilityVirtualModuleSource(root) {
-  const moduleDefinitions = esmCompatibilityModuleDefinitions();
+function sourceBytes(root, sourcePath) {
+  try {
+    return fs.statSync(path.join(root, String(sourcePath || ""))).size;
+  } catch (_) {
+    return 0;
+  }
+}
+
+function esmCompatibilityShardId(index) {
+  return `shard-${String(index + 1).padStart(2, "0")}`;
+}
+
+export function buildViteEsmCompatibilityShards(root = process.cwd()) {
+  const moduleDefinitions = esmCompatibilityModuleDefinitions().map((moduleRecord) => ({
+    ...moduleRecord,
+    bytes: sourceBytes(root, moduleRecord.source),
+  }));
+  const shards = [];
+  let current = [];
+  let byteCount = 0;
+  for (const moduleRecord of moduleDefinitions) {
+    const moduleBytes = Number(moduleRecord.bytes) || 0;
+    if (current.length && byteCount + moduleBytes > VITE_ESM_COMPATIBILITY_SHARD_TARGET_BYTES) {
+      const index = shards.length;
+      const id = esmCompatibilityShardId(index);
+      shards.push({
+        id,
+        index,
+        source: `${VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX}${id}`,
+        moduleDefinitions: current,
+        moduleCount: current.length,
+        moduleIds: current.map((entry) => entry.id),
+        byteCount,
+      });
+      current = [];
+      byteCount = 0;
+    }
+    current.push(moduleRecord);
+    byteCount += moduleBytes;
+  }
+  if (current.length) {
+    const index = shards.length;
+    const id = esmCompatibilityShardId(index);
+    shards.push({
+      id,
+      index,
+      source: `${VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX}${id}`,
+      moduleDefinitions: current,
+      moduleCount: current.length,
+      moduleIds: current.map((entry) => entry.id),
+      byteCount,
+    });
+  }
+  return shards;
+}
+
+function createEsmCompatibilityShardVirtualModuleSource(root, moduleDefinitions) {
   const importLines = moduleDefinitions.map((moduleRecord) => (
     `import ${esmCompatibilityImportName(moduleRecord.id)} from ${JSON.stringify(esmCompatibilityModuleSource(root, moduleRecord))};`
   ));
@@ -2441,6 +2498,83 @@ function createEsmCompatibilityVirtualModuleSource(root) {
   ].join("\n");
 }
 
+function createEsmCompatibilityVirtualModuleSource(root) {
+  const shards = buildViteEsmCompatibilityShards(root);
+  const shardDescriptors = shards.map((shard) => ({
+    id: shard.id,
+    index: shard.index,
+    source: shard.source,
+    moduleCount: shard.moduleCount,
+    moduleIds: shard.moduleIds,
+    byteCount: shard.byteCount,
+  }));
+  const loaderEntries = shardDescriptors.map((shard) => (
+    `  ${JSON.stringify(shard.id)}: () => import(${JSON.stringify(shard.source)}),`
+  ));
+  return [
+    `export const codexMobileViteEsmCompatibilityShardSources = ${JSON.stringify(shardDescriptors, null, 2)};`,
+    "const shardLoaders = {",
+    ...loaderEntries,
+    "};",
+    "let compatibilityPromise = null;",
+    "",
+    "async function loadCompatibilityShard(descriptor) {",
+    "  const load = shardLoaders[descriptor.id];",
+    "  if (typeof load !== \"function\") {",
+    "    throw new Error(`codex_mobile_vite_esm_compatibility_shard_loader_missing:${descriptor.id}`);",
+    "  }",
+    "  const module = await load();",
+    "  const createCompatibility = module && typeof module.codexMobileViteEsmCompatibility === \"function\"",
+    "    ? module.codexMobileViteEsmCompatibility",
+    "    : module && typeof module.default === \"function\" ? module.default : null;",
+    "  if (!createCompatibility) {",
+    "    throw new Error(`codex_mobile_vite_esm_compatibility_shard_factory_missing:${descriptor.id}`);",
+    "  }",
+    "  const payload = await createCompatibility();",
+    "  return { descriptor, payload: payload && typeof payload === \"object\" ? payload : {} };",
+    "}",
+    "",
+    "export async function codexMobileViteEsmCompatibility() {",
+    "  if (!compatibilityPromise) {",
+    "    compatibilityPromise = Promise.all(codexMobileViteEsmCompatibilityShardSources.map(loadCompatibilityShard))",
+    "      .then((records) => {",
+    "        const orderedRecords = records.slice().sort((left, right) => left.descriptor.index - right.descriptor.index);",
+    "        const modules = orderedRecords.flatMap((record) => (",
+    "          Array.isArray(record.payload.modules) ? record.payload.modules : []",
+    "        ));",
+    "        const shardSummaries = orderedRecords.map((record) => ({",
+    "          id: record.descriptor.id,",
+    "          index: record.descriptor.index,",
+    "          source: record.descriptor.source,",
+    "          moduleCount: Number(record.payload.moduleCount) || 0,",
+    "          readyCount: Number(record.payload.readyCount) || 0,",
+    "          moduleIds: Array.isArray(record.descriptor.moduleIds) ? record.descriptor.moduleIds.slice() : [],",
+    "          byteCount: Number(record.descriptor.byteCount) || 0,",
+    "        }));",
+    "        const compatibility = {",
+    "          schemaVersion: 1,",
+    "          owner: \"vite-shell-entry\",",
+    "          loading: false,",
+    "          shardCount: shardSummaries.length,",
+    "          shards: shardSummaries,",
+    "          moduleCount: modules.length,",
+    "          readyCount: modules.filter((entry) => entry && entry.ready === true).length,",
+    "          modules,",
+    "        };",
+    "        if (typeof globalThis !== \"undefined\") {",
+    "          globalThis.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY_SHARDS__ = shardSummaries;",
+    "        }",
+    "        return compatibility;",
+    "      });",
+    "  }",
+    "  return compatibilityPromise;",
+    "}",
+    "",
+    "export default codexMobileViteEsmCompatibility;",
+    "",
+  ].join("\n");
+}
+
 function normalizePath(value) {
   return String(value || "").replace(/\\/g, "/");
 }
@@ -2511,7 +2645,7 @@ function sourceForFacadeModule(facadeModuleId, root) {
   const value = normalizePath(facadeModuleId);
   if (!value) return "";
   if (value.includes(VITE_ESM_COMPATIBILITY_SOURCE)) {
-    return VITE_ESM_COMPATIBILITY_SOURCE;
+    return value.slice(value.indexOf(VITE_ESM_COMPATIBILITY_SOURCE));
   }
   const virtualIndex = value.indexOf(VITE_ENTRY_GROUP_SOURCE_PREFIX);
   if (virtualIndex >= 0) {
@@ -2537,6 +2671,28 @@ function chunkRecords(bundle, root = process.cwd()) {
       dynamicImports: Array.isArray(chunk.dynamicImports) ? chunk.dynamicImports.map(normalizePath) : [],
     }))
     .sort((a, b) => a.fileName.localeCompare(b.fileName));
+}
+
+function importedChunkClosure(chunks, seedChunks) {
+  const byFileName = new Map((chunks || []).map((chunk) => [chunk.fileName, chunk]));
+  const seedFileNames = new Set((seedChunks || []).map((chunk) => chunk && chunk.fileName).filter(Boolean));
+  const visited = new Set();
+  const result = [];
+  const pending = (seedChunks || [])
+    .flatMap((chunk) => Array.isArray(chunk && chunk.imports) ? chunk.imports : [])
+    .filter(Boolean);
+  while (pending.length) {
+    const fileName = pending.shift();
+    if (!fileName || visited.has(fileName) || seedFileNames.has(fileName)) continue;
+    visited.add(fileName);
+    const chunk = byFileName.get(fileName);
+    if (!chunk) continue;
+    result.push(chunk);
+    for (const importedFile of Array.isArray(chunk.imports) ? chunk.imports : []) {
+      if (importedFile && !visited.has(importedFile)) pending.push(importedFile);
+    }
+  }
+  return result.sort((a, b) => a.fileName.localeCompare(b.fileName));
 }
 
 function assetOutputRecords(manifest) {
@@ -2674,6 +2830,14 @@ function appPreviewClassicLoaderPlanContract(manifest) {
 }
 
 function esmCompatibilityContract(root = process.cwd()) {
+  const shards = buildViteEsmCompatibilityShards(root).map((shard) => ({
+    id: shard.id,
+    index: shard.index,
+    source: shard.source,
+    moduleCount: shard.moduleCount,
+    moduleIds: shard.moduleIds,
+    byteCount: shard.byteCount,
+  }));
   const modules = esmCompatibilityModuleDefinitions().map((moduleRecord, index) => {
     const sourcePath = String(moduleRecord && moduleRecord.source || "");
     let bytes = 0;
@@ -2707,6 +2871,9 @@ function esmCompatibilityContract(root = process.cwd()) {
     source: "generated-vite-esm-compatibility-contract",
     owner: "vite-shell-entry",
     virtualModuleSource: VITE_ESM_COMPATIBILITY_SOURCE,
+    virtualShardSourcePrefix: VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX,
+    shardCount: shards.length,
+    shards,
     moduleCount: modules.length,
     expectedFunctionCount: modules.reduce((total, entry) => total + entry.expectedFunctionCount, 0),
     hashCount: modules.filter((entry) => entry.hashPresent).length,
@@ -2720,6 +2887,7 @@ function validateViteShellBuildContract(contract, manifest) {
   const entry = contract.viteEntry;
   const deferredChunks = contract.viteDeferredChunks || [];
   const entryGroupChunks = contract.viteEntryGroupChunks || [];
+  const esmCompatibilityChunks = contract.viteEsmCompatibilityChunks || [];
   const entryDynamicImportGraph = contract.entryDynamicImportGraph || {};
   const classicFallback = contract.classicFallback || {};
   const classicScriptBlock = classicFallback.scriptBlock || null;
@@ -2755,6 +2923,9 @@ function validateViteShellBuildContract(contract, manifest) {
   }
   if (!deferredChunks.some((chunk) => chunk.source === VITE_DEFERRED_ENTRY_SOURCE || chunk.name === "vite-deferred-entry-topology")) {
     issues.push({ code: "vite_deferred_entry_topology_missing" });
+  }
+  if (!esmCompatibilityChunks.some((chunk) => chunk.source === VITE_ESM_COMPATIBILITY_SOURCE)) {
+    issues.push({ code: "vite_esm_compatibility_entry_chunk_missing" });
   }
   for (const groupId of requiredGroupIds) {
     if (!entryChunkIds.has(groupId)) {
@@ -2900,6 +3071,17 @@ function validateViteShellBuildContract(contract, manifest) {
     if (Number(esmCompatibility.hashCount) !== expectedIds.length) {
       issues.push({ code: "vite_esm_compatibility_hash_count_mismatch" });
     }
+    const shardSources = Array.isArray(esmCompatibility.shards)
+      ? esmCompatibility.shards.map((entry) => String(entry && entry.source || "")).filter(Boolean)
+      : [];
+    const shardChunkSources = esmCompatibilityChunks
+      .map((chunk) => String(chunk && chunk.source || ""))
+      .filter((source) => source.startsWith(VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX));
+    if (Number(esmCompatibility.shardCount) !== shardSources.length
+      || !shardSources.length
+      || JSON.stringify(shardChunkSources.slice().sort()) !== JSON.stringify(shardSources.slice().sort())) {
+      issues.push({ code: "vite_esm_compatibility_shard_chunk_mismatch" });
+    }
   }
   for (const asset of manifest.assets || []) {
     const fileName = outputPathForAsset(asset.path);
@@ -2913,7 +3095,13 @@ function validateViteShellBuildContract(contract, manifest) {
   for (const fileName of [entry && entry.fileName, ...deferredChunks.map((chunk) => chunk.fileName)].filter(Boolean)) {
     if (!outputFiles.has(fileName)) issues.push({ code: "vite_output_file_missing", fileName });
   }
+  for (const fileName of (contract.viteEsmCompatibilityChunks || []).map((chunk) => chunk && chunk.fileName).filter(Boolean)) {
+    if (!outputFiles.has(fileName)) issues.push({ code: "vite_output_file_missing", fileName });
+  }
   for (const fileName of entryGroupChunks.map((chunk) => chunk.fileName).filter(Boolean)) {
+    if (!outputFiles.has(fileName)) issues.push({ code: "vite_output_file_missing", fileName });
+  }
+  for (const fileName of (contract.viteSharedChunks || []).map((chunk) => chunk && chunk.fileName).filter(Boolean)) {
     if (!outputFiles.has(fileName)) issues.push({ code: "vite_output_file_missing", fileName });
   }
   return {
@@ -2928,7 +3116,11 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     || chunks.find((chunk) => chunk.isEntry && chunk.name === "vite-shell-entry")
     || chunks.find((chunk) => chunk.isEntry);
   const deferredChunks = chunks.filter((chunk) => chunk.source === VITE_DEFERRED_ENTRY_SOURCE);
-  const esmCompatibilityChunks = chunks.filter((chunk) => chunk.source === VITE_ESM_COMPATIBILITY_SOURCE);
+  const esmCompatibilityEntryChunks = chunks.filter((chunk) => chunk.source === VITE_ESM_COMPATIBILITY_SOURCE);
+  const esmCompatibilityChunks = chunks.filter((chunk) => (
+    chunk.source === VITE_ESM_COMPATIBILITY_SOURCE
+      || String(chunk.source || "").startsWith(VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX)
+  ));
   const entryGroupChunks = chunks
     .filter((chunk) => String(chunk.source || "").startsWith(VITE_ENTRY_GROUP_SOURCE_PREFIX))
     .map((chunk) => {
@@ -2960,8 +3152,14 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
       };
     })
     .sort((a, b) => a.groupId.localeCompare(b.groupId));
+  const viteSharedChunks = importedChunkClosure(chunks, [
+    viteEntry,
+    ...esmCompatibilityChunks,
+    ...deferredChunks,
+    ...entryGroupChunks,
+  ].filter(Boolean));
   const expectedEntryDynamicImportFiles = uniqueValues([
-    ...esmCompatibilityChunks.map((chunk) => chunk.fileName),
+    ...esmCompatibilityEntryChunks.map((chunk) => chunk.fileName),
     ...deferredChunks.map((chunk) => chunk.fileName),
     ...entryGroupChunks.map((chunk) => chunk.fileName),
   ]);
@@ -2976,7 +3174,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     expectedFiles: expectedEntryDynamicImportFiles,
     missingFiles: expectedEntryDynamicImportFiles.filter((fileName) => !actualDynamicImportSet.has(fileName)),
     extraFiles: actualEntryDynamicImportFiles.filter((fileName) => !expectedDynamicImportSet.has(fileName)),
-    esmCompatibilityFileCount: esmCompatibilityChunks.length,
+    esmCompatibilityFileCount: esmCompatibilityEntryChunks.length,
     deferredFileCount: deferredChunks.length,
     entryGroupFileCount: entryGroupChunks.length,
   };
@@ -3014,6 +3212,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     viteEsmCompatibilityChunks: esmCompatibilityChunks,
     viteDeferredChunks: deferredChunks,
     viteEntryGroupChunks: entryGroupChunks,
+    viteSharedChunks,
     classicShellAssets,
     outputFiles: [...new Set(outputFiles)].sort(),
   };
@@ -3066,6 +3265,9 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
       if (String(id || "") === VITE_ESM_COMPATIBILITY_SOURCE) {
         return `\0${VITE_ESM_COMPATIBILITY_SOURCE}`;
       }
+      if (String(id || "").startsWith(VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX)) {
+        return `\0${id}`;
+      }
       if (String(id || "") === VITE_ENTRY_GROUP_LOADER_SOURCE) {
         return `\0${VITE_ENTRY_GROUP_LOADER_SOURCE}`;
       }
@@ -3078,6 +3280,16 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
       const value = String(id || "");
       if (value === `\0${VITE_ESM_COMPATIBILITY_SOURCE}`) {
         return createEsmCompatibilityVirtualModuleSource(root);
+      }
+      const esmShardPrefix = `\0${VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX}`;
+      if (value.startsWith(esmShardPrefix)) {
+        const source = value.slice(1);
+        const shard = buildViteEsmCompatibilityShards(root)
+          .find((entry) => entry.source === source);
+        if (!shard) {
+          throw new Error(`codex_mobile_vite_esm_compatibility_shard_missing:${source}`);
+        }
+        return createEsmCompatibilityShardVirtualModuleSource(root, shard.moduleDefinitions);
       }
       if (value === `\0${VITE_ENTRY_GROUP_LOADER_SOURCE}`) {
         const manifest = buildPublicShellManifest(root);
