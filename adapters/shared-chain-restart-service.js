@@ -163,6 +163,7 @@ function safeRestartEnvAssignments(env = {}, extras = {}) {
     "CODEX_MOBILE_RUNTIME_DIR",
     "CODEX_MOBILE_HOST",
     "CODEX_MOBILE_PORT",
+    "CODEX_MOBILE_DEFAULT_SHELL",
     "CODEX_MOBILE_CODEX_EXE",
     "CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER",
     "CODEX_MOBILE_DISABLE_UPDATE_CHECK",
@@ -218,6 +219,11 @@ function buildRestartMacShellCommand(options = {}) {
       || (options.env && options.env.CODEX_MOBILE_MUX_ENDPOINT_FILE)
       || "",
   ).trim();
+  const targetDefaultShell = String(
+    options.defaultShellMode
+      || (options.env && options.env.CODEX_MOBILE_DEFAULT_SHELL)
+      || "",
+  ).trim();
   const serviceLabel = safeLaunchdServiceLabel(
     options.serviceLabel
       || (options.env && (options.env.CODEX_MOBILE_LAUNCHD_LABEL || options.env.XPC_SERVICE_NAME)),
@@ -238,6 +244,7 @@ function buildRestartMacShellCommand(options = {}) {
     `target_profile_id=${shQuote(targetProfileId)}`,
     `target_codex_home=${shQuote(targetCodexHome)}`,
     `target_mux_endpoint_file=${shQuote(targetMuxEndpointFile)}`,
+    `target_default_shell=${shQuote(targetDefaultShell)}`,
     `launchctl_path=${shQuote(launchctlPath)}`,
     `node_bin=${shQuote(nodePath)}`,
     "sudo_password_file=\"${HOMEAI_MAC_SUDO_PASSWORD_FILE:-}\"",
@@ -289,6 +296,9 @@ function buildRestartMacShellCommand(options = {}) {
     "  plist_set_env_value \"$plist_path\" CODEX_HOME \"$target_codex_home\"",
     "  if [[ -n \"$target_mux_endpoint_file\" ]]; then",
     "    plist_set_env_value \"$plist_path\" CODEX_MOBILE_MUX_ENDPOINT_FILE \"$target_mux_endpoint_file\"",
+    "  fi",
+    "  if [[ -n \"$target_default_shell\" ]]; then",
+    "    plist_set_env_value \"$plist_path\" CODEX_MOBILE_DEFAULT_SHELL \"$target_default_shell\"",
     "  fi",
     "  run_restart_sudo /usr/bin/plutil -lint \"$plist_path\" >/dev/null",
     "}",

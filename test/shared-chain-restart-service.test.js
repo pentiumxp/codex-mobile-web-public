@@ -243,6 +243,7 @@ test("macOS restart command restarts the existing LaunchDaemon when available", 
       CODEX_MOBILE_CODEX_EXE: "/Users/xuefusong/.local/bin/codex",
       CODEX_MOBILE_AUTH_KEY: "should-not-leak",
       CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER: "1",
+      CODEX_MOBILE_DEFAULT_SHELL: "vite-app-preview",
     },
   });
 
@@ -252,6 +253,7 @@ test("macOS restart command restarts the existing LaunchDaemon when available", 
   assert.match(command, /service_domain="system\/\$service_label"/);
   assert.match(command, /target_codex_home='\/Users\/xuefusong\/\.codex'/);
   assert.match(command, /target_mux_endpoint_file='\/Users\/xuefusong\/\.codex\/app-server-mux\/endpoint\.json'/);
+  assert.match(command, /target_default_shell='vite-app-preview'/);
   assert.match(command, /selected_mux_endpoint_pids/);
   assert.match(command, /endpoint\.childPid/);
   assert.match(command, /endpoint\.pid/);
@@ -264,6 +266,7 @@ test("macOS restart command restarts the existing LaunchDaemon when available", 
   assert.match(command, /PlistBuddy -c "Set :EnvironmentVariables:\$\{key\} \$\{value\}"/);
   assert.match(command, /plist_set_env_value "\$plist_path" CODEX_HOME "\$target_codex_home"/);
   assert.match(command, /plist_set_env_value "\$plist_path" CODEX_MOBILE_MUX_ENDPOINT_FILE "\$target_mux_endpoint_file"/);
+  assert.match(command, /plist_set_env_value "\$plist_path" CODEX_MOBILE_DEFAULT_SHELL "\$target_default_shell"/);
   assert.match(command, /repair_system_launchdaemon_stdio >/);
   assert.match(command, /std\(out\|err\) path = /);
   assert.match(command, /\/usr\/bin\/touch "\$log_path"/);
@@ -339,6 +342,7 @@ test("macOS restart command falls back to a one-shot nohup listener without a La
     env: {
       CODEX_MOBILE_CODEX_EXE: "/Users/xuefusong/.local/bin/codex",
       CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER: "1",
+      CODEX_MOBILE_DEFAULT_SHELL: "vite-app-preview",
     },
   });
 
@@ -346,6 +350,7 @@ test("macOS restart command falls back to a one-shot nohup listener without a La
   assert.match(command, /lsof -tiTCP:8789/);
   assert.match(command, /\/bin\/kill "\$pid"/);
   assert.match(command, /nohup \/usr\/bin\/env/);
+  assert.match(command, /CODEX_MOBILE_DEFAULT_SHELL='vite-app-preview'/);
   assert.match(command, /CODEX_MOBILE_LAUNCHD_LABEL_PREFIX='com\.xuefusong\.codex-mobile-web\.test'/);
   assert.match(command, /\/usr\/local\/bin\/node/);
   assert.match(command, /server\.js/);
