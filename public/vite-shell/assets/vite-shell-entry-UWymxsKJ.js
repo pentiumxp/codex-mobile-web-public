@@ -1538,6 +1538,71 @@ var require_thread_detail_merge_state = /* @__PURE__ */ __commonJSMin(((exports,
 	});
 }));
 //#endregion
+//#region public/client-render-stability-guard.js
+var require_client_render_stability_guard = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function initClientRenderStabilityGuard(globalScope) {
+		function stringValue(value) {
+			return String(value || "").trim();
+		}
+		function shortHash(value) {
+			const text = stringValue(value);
+			let hash = 2166136261;
+			for (let index = 0; index < text.length; index += 1) {
+				hash ^= text.charCodeAt(index);
+				hash = Math.imul(hash, 16777619);
+			}
+			return (hash >>> 0).toString(36);
+		}
+		function submittedUserItemClientSubmissionId(item) {
+			if (!item || item.type !== "userMessage") return "";
+			return stringValue(item.clientSubmissionId);
+		}
+		function firstSubmittedUserMessageClientSubmissionId(turn) {
+			const items = Array.isArray(turn && turn.items) ? turn.items : [];
+			for (const item of items) {
+				const submissionId = submittedUserItemClientSubmissionId(item);
+				if (submissionId) return submissionId;
+			}
+			return "";
+		}
+		function localSubmissionRenderKey(clientSubmissionId) {
+			const submissionId = stringValue(clientSubmissionId);
+			return submissionId ? `submitted:${shortHash(submissionId)}` : "";
+		}
+		function submittedTurnRenderKey(turn) {
+			const explicit = stringValue(turn && turn.mobileLocalSubmissionRenderKey);
+			if (explicit) return explicit;
+			return localSubmissionRenderKey(firstSubmittedUserMessageClientSubmissionId(turn));
+		}
+		function stableTurnIdentity(turn) {
+			return submittedTurnRenderKey(turn) || stringValue(turn && (turn.id || turn.startedAt)) || "turn";
+		}
+		function markSubmittedTurn(turn, clientSubmissionId) {
+			if (!turn || typeof turn !== "object") return "";
+			const key = localSubmissionRenderKey(clientSubmissionId);
+			if (key) turn.mobileLocalSubmissionRenderKey = key;
+			return key;
+		}
+		function transferSubmittedTurnIdentity(sourceTurn, targetTurn, clientSubmissionId) {
+			if (!targetTurn || typeof targetTurn !== "object") return "";
+			const key = submittedTurnRenderKey(sourceTurn) || submittedTurnRenderKey(targetTurn) || localSubmissionRenderKey(clientSubmissionId);
+			if (key) targetTurn.mobileLocalSubmissionRenderKey = key;
+			return key;
+		}
+		const api = {
+			firstSubmittedUserMessageClientSubmissionId,
+			localSubmissionRenderKey,
+			markSubmittedTurn,
+			shortHash,
+			stableTurnIdentity,
+			submittedTurnRenderKey,
+			transferSubmittedTurnIdentity
+		};
+		if (typeof module !== "undefined" && module.exports) module.exports = api;
+		globalScope.CodexClientRenderStabilityGuard = api;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
 //#region public/live-operation-dock-state.js
 var require_live_operation_dock_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -1681,6 +1746,7 @@ var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_lis
 var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
 var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_detail_patch_plan());
 var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
+var import_client_render_stability_guard = /* @__PURE__ */ __toESM(require_client_render_stability_guard());
 var import_live_operation_dock_state = /* @__PURE__ */ __toESM(require_live_operation_dock_state());
 var moduleDefinitions = [
 	{
@@ -1744,6 +1810,22 @@ var moduleDefinitions = [
 		"classicLoaderExcluded": true
 	},
 	{
+		"id": "client-render-stability-guard",
+		"source": "public/client-render-stability-guard.js",
+		"globalName": "CodexClientRenderStabilityGuard",
+		"expectedFunctions": [
+			"firstSubmittedUserMessageClientSubmissionId",
+			"localSubmissionRenderKey",
+			"markSubmittedTurn",
+			"shortHash",
+			"stableTurnIdentity",
+			"submittedTurnRenderKey",
+			"transferSubmittedTurnIdentity"
+		],
+		"assetPath": "/client-render-stability-guard.js",
+		"classicLoaderExcluded": true
+	},
+	{
 		"id": "live-operation-dock-state",
 		"source": "public/live-operation-dock-state.js",
 		"globalName": "CodexLiveOperationDockState",
@@ -1763,6 +1845,7 @@ var moduleApis = {
 	"thread-status-hints": import_thread_status_hints.default,
 	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
 	"thread-detail-merge-state": import_thread_detail_merge_state.default,
+	"client-render-stability-guard": import_client_render_stability_guard.default,
 	"live-operation-dock-state": import_live_operation_dock_state.default
 };
 function functionReady(api, name) {
@@ -1921,6 +2004,34 @@ function sampleModule(id, api) {
 			ok: turns.map((turn) => String(turn && turn.id || "")).join(",") === "a,b" && Array.isArray(preserved && preserved.items) && preserved.items.length === 1 && preserved.items[0].text === "full receipt",
 			turnOrder: turns.map((turn) => String(turn && turn.id || "")),
 			preservedItemCount: Array.isArray(preserved && preserved.items) ? preserved.items.length : 0
+		};
+	}
+	if (id === "client-render-stability-guard") {
+		const sourceTurn = {
+			id: "local-turn-secret",
+			items: [{
+				type: "userMessage",
+				clientSubmissionId: "submission-secret",
+				mobilePendingSubmission: true
+			}]
+		};
+		const targetTurn = {
+			id: "server-turn-a",
+			items: [{
+				type: "userMessage",
+				clientSubmissionId: "submission-secret"
+			}]
+		};
+		const sourceKey = functionReady(api, "markSubmittedTurn") ? api.markSubmittedTurn(sourceTurn, "submission-secret") : "";
+		const transferredKey = functionReady(api, "transferSubmittedTurnIdentity") ? api.transferSubmittedTurnIdentity(sourceTurn, targetTurn, "submission-secret") : "";
+		const sourceIdentity = functionReady(api, "stableTurnIdentity") ? api.stableTurnIdentity(sourceTurn) : "";
+		const targetIdentity = functionReady(api, "stableTurnIdentity") ? api.stableTurnIdentity(targetTurn) : "";
+		return {
+			ok: Boolean(sourceKey) && sourceKey === transferredKey && sourceIdentity === sourceKey && targetIdentity === sourceKey && !String(sourceKey).includes("submission-secret"),
+			sourceKey: String(sourceKey || ""),
+			transferredKey: String(transferredKey || ""),
+			sourceIdentity: String(sourceIdentity || ""),
+			targetIdentity: String(targetIdentity || "")
 		};
 	}
 	if (id === "live-operation-dock-state") {
@@ -2275,7 +2386,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-BZHHVA0b.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-D9qE0dO0.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

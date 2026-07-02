@@ -1239,6 +1239,7 @@ function vitePreviewProbeExpression(input = {}) {
         "thread-status-hints",
         "thread-detail-patch-plan",
         "thread-detail-merge-state",
+        "client-render-stability-guard",
         "live-operation-dock-state",
       ];
       const readyEsmCompatibilityIds = new Set(esmCompatibilityModules
@@ -1595,6 +1596,7 @@ function viteAppPreviewProbeExpression(input = {}) {
         "thread-status-hints",
         "thread-detail-patch-plan",
         "thread-detail-merge-state",
+        "client-render-stability-guard",
         "live-operation-dock-state",
       ];
       const readyEsmCompatibilityIds = new Set(esmCompatibilityModules
