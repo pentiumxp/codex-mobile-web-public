@@ -1270,6 +1270,191 @@ var require_draft_store = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	});
 }));
 //#endregion
+//#region public/thread-tile-layout.js
+var require_thread_tile_layout = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadTileLayout = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const DEFAULT_MIN_DESKTOP_PANE_WIDTH = 420;
+		const DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH = 300;
+		const DEFAULT_MIN_TABLET_PANE_WIDTH = 260;
+		const DEFAULT_MIN_LANDSCAPE_VIEWPORT_WIDTH = 760;
+		const DEFAULT_MIN_PANE_HEIGHT = 360;
+		const DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT = 480;
+		const DEFAULT_MAX_PANES = 6;
+		const DEFAULT_USER_MAX_PANES = 12;
+		function positiveNumber(value, fallback = 0) {
+			const parsed = Number(value);
+			return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+		}
+		function clampInteger(value, min, max) {
+			const parsed = Math.floor(positiveNumber(value, min));
+			return Math.max(min, Math.min(max, parsed));
+		}
+		function viewportOrientation(width, height) {
+			return positiveNumber(width) >= positiveNumber(height) ? "landscape" : "portrait";
+		}
+		function layoutForViewport(input = {}) {
+			const enabled = input.enabled === true;
+			const viewportWidth = positiveNumber(input.viewportWidth);
+			const viewportHeight = positiveNumber(input.viewportHeight);
+			const sidebarWidth = Math.max(0, Number(input.sidebarWidth || 0) || 0);
+			const coarsePointer = input.coarsePointer === true;
+			const orientation = String(input.orientation || viewportOrientation(viewportWidth, viewportHeight));
+			const minLandscapeViewportWidth = positiveNumber(input.minLandscapeViewportWidth, DEFAULT_MIN_LANDSCAPE_VIEWPORT_WIDTH);
+			const minLandscapeViewportHeight = positiveNumber(input.minLandscapeViewportHeight, DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT);
+			const landscapeTile = orientation === "landscape" && viewportWidth >= minLandscapeViewportWidth && viewportHeight >= minLandscapeViewportHeight;
+			const menuOverlay = input.menuOverlay === true;
+			const tabletLandscape = landscapeTile && (coarsePointer || menuOverlay);
+			const maxPanes = clampInteger(input.maxPanes || DEFAULT_MAX_PANES, 1, DEFAULT_USER_MAX_PANES);
+			const recommendedMaxPanes = clampInteger(input.recommendedMaxPanes || DEFAULT_MAX_PANES, 1, maxPanes);
+			const desiredPaneCount = Math.max(0, Math.min(maxPanes, Math.floor(Number(input.desiredPaneCount || 0)) || 0));
+			if (!enabled || viewportWidth <= 0 || viewportHeight <= 0) return {
+				enabled: false,
+				reason: "disabled",
+				columns: 1,
+				rows: 1,
+				maxPanes: 1,
+				recommendedMaxPanes: 1
+			};
+			if (coarsePointer && orientation !== "landscape") return {
+				enabled: false,
+				reason: "tablet-portrait",
+				columns: 1,
+				rows: 1,
+				maxPanes: 1,
+				recommendedMaxPanes: 1
+			};
+			if (menuOverlay && !tabletLandscape) return {
+				enabled: false,
+				reason: "narrow",
+				columns: 1,
+				rows: 1,
+				maxPanes: 1,
+				recommendedMaxPanes: 1
+			};
+			const availableWidth = Math.max(0, viewportWidth - (menuOverlay ? 0 : sidebarWidth));
+			const availableHeight = Math.max(0, viewportHeight - Math.max(0, Number(input.verticalChromePx || 0) || 0));
+			const manualTargetWidth = desiredPaneCount > 0 && availableWidth > 0 ? Math.floor(availableWidth / desiredPaneCount) : 0;
+			const defaultMinPaneWidth = tabletLandscape ? DEFAULT_MIN_TABLET_PANE_WIDTH : desiredPaneCount > 0 ? Math.min(DEFAULT_MIN_DESKTOP_PANE_WIDTH, Math.max(DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH, manualTargetWidth)) : DEFAULT_MIN_DESKTOP_PANE_WIDTH;
+			const minPaneWidth = positiveNumber(input.minPaneWidth, defaultMinPaneWidth);
+			const minPaneHeight = positiveNumber(input.minPaneHeight, DEFAULT_MIN_PANE_HEIGHT);
+			const rawColumns = Math.floor(availableWidth / minPaneWidth);
+			const rawRows = Math.floor(availableHeight / minPaneHeight);
+			const minimumColumns = tabletLandscape ? 2 : 2;
+			const columns = Math.max(minimumColumns, Math.min(tabletLandscape ? Math.min(4, maxPanes) : maxPanes, rawColumns || 0));
+			if (columns < minimumColumns || availableWidth < minPaneWidth * minimumColumns * .86) return {
+				enabled: false,
+				reason: "insufficient-width",
+				columns: 1,
+				rows: 1,
+				maxPanes: 1,
+				recommendedMaxPanes: 1,
+				availableWidth,
+				availableHeight
+			};
+			const rows = Math.max(1, Math.min(tabletLandscape ? 1 : 2, rawRows || 1));
+			return {
+				enabled: true,
+				reason: tabletLandscape ? "tablet-landscape" : "wide",
+				columns,
+				rows,
+				maxPanes: Math.max(1, Math.min(maxPanes, columns * rows)),
+				recommendedMaxPanes: Math.max(1, Math.min(recommendedMaxPanes, columns * rows)),
+				availableWidth,
+				availableHeight,
+				minPaneWidth,
+				minPaneHeight
+			};
+		}
+		function uniqueThreadIds(values = []) {
+			const seen = /* @__PURE__ */ new Set();
+			const ids = [];
+			for (const value of values || []) {
+				const id = String(value || "").trim();
+				if (!id || seen.has(id)) continue;
+				seen.add(id);
+				ids.push(id);
+			}
+			return ids;
+		}
+		function selectThreadTileIds(input = {}) {
+			const maxPanes = clampInteger(input.maxPanes || 1, 1, 12);
+			return uniqueThreadIds([
+				input.currentThreadId,
+				...Array.isArray(input.pinnedThreadIds) ? input.pinnedThreadIds : [],
+				...Array.isArray(input.threadIds) ? input.threadIds : []
+			]).slice(0, maxPanes);
+		}
+		function selectPinnedThreadTileIds(input = {}) {
+			const maxPanes = clampInteger(input.maxPanes || 1, 1, 12);
+			const currentThreadId = String(input.currentThreadId || "").trim();
+			const ids = uniqueThreadIds([...Array.isArray(input.pinnedThreadIds) ? input.pinnedThreadIds : [], ...Array.isArray(input.threadIds) ? input.threadIds : []]).slice(0, maxPanes);
+			if (!currentThreadId || ids.includes(currentThreadId)) return ids;
+			if (ids.length >= maxPanes) ids[Math.max(0, maxPanes - 1)] = currentThreadId;
+			else ids.push(currentThreadId);
+			return uniqueThreadIds(ids).slice(0, maxPanes);
+		}
+		function normalizeSplitPairs(values = [], ids = []) {
+			const idSet = new Set(uniqueThreadIds(ids));
+			const used = /* @__PURE__ */ new Set();
+			const pairs = [];
+			for (const value of Array.isArray(values) ? values : []) {
+				const anchorId = String(Array.isArray(value) ? value[0] : value && (value.anchorId || value.topId || value.primaryId) || "").trim();
+				const childId = String(Array.isArray(value) ? value[1] : value && (value.childId || value.bottomId || value.secondaryId) || "").trim();
+				if (!anchorId || !childId || anchorId === childId) continue;
+				if (idSet.size && (!idSet.has(anchorId) || !idSet.has(childId))) continue;
+				if (used.has(anchorId) || used.has(childId)) continue;
+				used.add(anchorId);
+				used.add(childId);
+				pairs.push({
+					anchorId,
+					childId
+				});
+			}
+			return pairs;
+		}
+		function threadTileColumnGroups(input = {}) {
+			const ids = uniqueThreadIds(input.ids || input.threadIds || []);
+			const columns = clampInteger(input.columns || 1, 1, DEFAULT_USER_MAX_PANES);
+			if (!ids.length) return [];
+			const pairs = normalizeSplitPairs(input.splitPairs || input.paneSplitPairs || [], ids);
+			const pairByAnchor = new Map(pairs.map((pair) => [pair.anchorId, pair.childId]));
+			const childIds = new Set(pairs.map((pair) => pair.childId));
+			const atomicGroups = [];
+			for (const id of ids) {
+				if (childIds.has(id)) continue;
+				const childId = pairByAnchor.get(id);
+				atomicGroups.push(childId ? [id, childId] : [id]);
+			}
+			const targetColumns = Math.max(1, Math.min(columns, atomicGroups.length));
+			const groups = atomicGroups.slice(0, targetColumns).map((group) => group.slice());
+			atomicGroups.slice(targetColumns).forEach((group, index) => {
+				const targetIndex = Math.max(0, targetColumns - 1 - index % targetColumns);
+				groups[targetIndex].push(...group);
+			});
+			return groups.filter((group) => group.length);
+		}
+		return {
+			DEFAULT_MAX_PANES,
+			DEFAULT_USER_MAX_PANES,
+			DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH,
+			DEFAULT_MIN_DESKTOP_PANE_WIDTH,
+			DEFAULT_MIN_LANDSCAPE_VIEWPORT_WIDTH,
+			DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT,
+			DEFAULT_MIN_PANE_HEIGHT,
+			DEFAULT_MIN_TABLET_PANE_WIDTH,
+			layoutForViewport,
+			normalizeSplitPairs,
+			selectPinnedThreadTileIds,
+			selectThreadTileIds,
+			threadTileColumnGroups
+		};
+	});
+}));
+//#endregion
 //#region public/thread-list-load-policy.js
 var require_thread_list_load_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -2150,6 +2335,7 @@ var import_build_refresh_policy = /* @__PURE__ */ __toESM(require_build_refresh_
 var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings());
 var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics());
 var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
+var import_thread_tile_layout = /* @__PURE__ */ __toESM(require_thread_tile_layout());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
 var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
 var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
@@ -2215,6 +2401,20 @@ var moduleDefinitions = [
 			"createDraftStore"
 		],
 		"assetPath": "/draft-store.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "thread-tile-layout",
+		"source": "public/thread-tile-layout.js",
+		"globalName": "CodexThreadTileLayout",
+		"expectedFunctions": [
+			"layoutForViewport",
+			"normalizeSplitPairs",
+			"selectPinnedThreadTileIds",
+			"selectThreadTileIds",
+			"threadTileColumnGroups"
+		],
+		"assetPath": "/thread-tile-layout.js",
 		"classicLoaderExcluded": true
 	},
 	{
@@ -2299,6 +2499,7 @@ var moduleApis = {
 	"runtime-settings": import_runtime_settings.default,
 	"viewport-metrics": import_viewport_metrics.default,
 	"draft-store": import_draft_store.default,
+	"thread-tile-layout": import_thread_tile_layout.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
 	"thread-list-stable-order": import_thread_list_stable_order.default,
 	"thread-status-hints": import_thread_status_hints.default,
@@ -2458,6 +2659,77 @@ function sampleModule(id, api) {
 			hasContent,
 			attachmentKey,
 			normalizedPath
+		};
+	}
+	if (id === "thread-tile-layout") {
+		const layout = functionReady(api, "layoutForViewport") ? api.layoutForViewport({
+			enabled: true,
+			viewportWidth: 1500,
+			viewportHeight: 900,
+			sidebarWidth: 0,
+			coarsePointer: true,
+			orientation: "landscape",
+			menuOverlay: true
+		}) : null;
+		const ids = functionReady(api, "selectThreadTileIds") ? api.selectThreadTileIds({
+			currentThreadId: "thread-2",
+			pinnedThreadIds: ["thread-3", "thread-2"],
+			threadIds: [
+				"thread-1",
+				"thread-3",
+				"thread-4"
+			],
+			maxPanes: 3
+		}) : [];
+		const pinnedIds = functionReady(api, "selectPinnedThreadTileIds") ? api.selectPinnedThreadTileIds({
+			currentThreadId: "thread-current",
+			pinnedThreadIds: [
+				"thread-1",
+				"thread-2",
+				"thread-3"
+			],
+			threadIds: ["thread-current", "thread-4"],
+			maxPanes: 3
+		}) : [];
+		const pairs = functionReady(api, "normalizeSplitPairs") ? api.normalizeSplitPairs([{
+			anchorId: "b",
+			childId: "e"
+		}, {
+			anchorId: "b",
+			childId: "c"
+		}], [
+			"a",
+			"b",
+			"c",
+			"d",
+			"e"
+		]) : [];
+		const groups = functionReady(api, "threadTileColumnGroups") ? api.threadTileColumnGroups({
+			ids: [
+				"a",
+				"b",
+				"c",
+				"d",
+				"e"
+			],
+			columns: 4,
+			splitPairs: [{
+				anchorId: "b",
+				childId: "e"
+			}]
+		}) : [];
+		return {
+			ok: !!layout && layout.enabled === true && layout.columns === 4 && ids.join(",") === "thread-2,thread-3,thread-1" && pinnedIds.join(",") === "thread-1,thread-2,thread-current" && pairs.length === 1 && pairs[0].anchorId === "b" && pairs[0].childId === "e" && JSON.stringify(groups) === JSON.stringify([
+				["a"],
+				["b", "e"],
+				["c"],
+				["d"]
+			]),
+			layout,
+			ids,
+			pinnedIds,
+			pairs,
+			groups
 		};
 	}
 	if (id === "thread-list-load-policy") {
@@ -2979,7 +3251,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-ULtIOTXk.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DjUpQyuv.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
