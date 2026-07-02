@@ -1602,6 +1602,881 @@ var require_plugin_voice_input = /* @__PURE__ */ __commonJSMin(((exports, module
 	});
 }));
 //#endregion
+//#region public/api-client.js
+var require_api_client = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexApiClient = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function isFormDataBody(body, FormDataCtor) {
+			return typeof FormDataCtor === "function" && body instanceof FormDataCtor;
+		}
+		function createApiClient(options = {}) {
+			const fetchRef = options.fetch || (typeof fetch === "function" ? fetch : null);
+			const AbortControllerCtor = options.AbortControllerCtor || (typeof AbortController === "function" ? AbortController : null);
+			const FormDataCtor = options.FormDataCtor || (typeof FormData === "function" ? FormData : null);
+			const getKey = typeof options.getKey === "function" ? options.getKey : () => "";
+			const onUnauthorized = typeof options.onUnauthorized === "function" ? options.onUnauthorized : () => {};
+			const onResponseError = typeof options.onResponseError === "function" ? options.onResponseError : () => {};
+			async function request(path, requestOptions = {}) {
+				if (!fetchRef) throw new Error("Fetch is unavailable");
+				if (!AbortControllerCtor) throw new Error("AbortController is unavailable");
+				const headers = Object.assign({}, requestOptions.headers || {});
+				const timeoutMs = requestOptions.timeoutMs || 3e4;
+				const controller = new AbortControllerCtor();
+				let timedOut = false;
+				const timer = setTimeout(() => {
+					timedOut = true;
+					controller.abort();
+				}, timeoutMs);
+				const externalSignal = requestOptions.signal;
+				const abortFromExternal = () => controller.abort();
+				if (externalSignal) if (externalSignal.aborted) controller.abort();
+				else externalSignal.addEventListener("abort", abortFromExternal, { once: true });
+				const fetchOptions = Object.assign({}, requestOptions, {
+					headers,
+					signal: controller.signal
+				});
+				delete fetchOptions.timeoutMs;
+				const key = getKey();
+				if (key) headers["X-Codex-Mobile-Key"] = key;
+				if (requestOptions.body && !isFormDataBody(requestOptions.body, FormDataCtor) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+				try {
+					const res = await fetchRef(path, fetchOptions);
+					if (!res.ok) {
+						let message = `${res.status} ${res.statusText}`;
+						let code = "";
+						let detail = "";
+						let requestId = "";
+						let progress = null;
+						let responseBody = null;
+						try {
+							const body = await res.json();
+							responseBody = body;
+							if (body.error) message = body.error;
+							if (body.code) code = String(body.code);
+							if (body.detail) detail = String(body.detail);
+							if (body.requestId) requestId = String(body.requestId);
+							if (body.progress && typeof body.progress === "object") progress = body.progress;
+						} catch (_) {}
+						onResponseError({
+							status: res.status,
+							message,
+							code,
+							detail,
+							requestId,
+							path
+						});
+						if (res.status === 401) onUnauthorized();
+						const err = new Error(message);
+						err.status = res.status;
+						err.code = code;
+						err.detail = detail;
+						err.requestId = requestId;
+						err.progress = progress;
+						err.responseBody = responseBody;
+						throw err;
+					}
+					if (res.status === 204) return null;
+					return res.json();
+				} catch (err) {
+					if (err && err.name === "AbortError") {
+						if (timedOut) throw new Error(`Request timed out: ${path}`);
+						throw new Error(`Request cancelled: ${path}`);
+					}
+					throw err;
+				} finally {
+					clearTimeout(timer);
+					if (externalSignal) externalSignal.removeEventListener("abort", abortFromExternal);
+				}
+			}
+			return { request };
+		}
+		return {
+			createApiClient,
+			isFormDataBody
+		};
+	});
+}));
+//#endregion
+//#region public/markdown-renderer.js
+var require_markdown_renderer = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexMarkdownRenderer = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function escapeHtml(value) {
+			return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+				"&": "&amp;",
+				"<": "&lt;",
+				">": "&gt;",
+				"\"": "&quot;",
+				"'": "&#39;"
+			})[ch]);
+		}
+		function isMarkdownTableSeparator(line) {
+			const cells = String(line || "").trim().replace(/^\||\|$/g, "").split("|");
+			return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+		}
+		function splitMarkdownTableRow(line) {
+			return String(line || "").trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+		}
+		function isMarkdownBlockStart(line, nextLine = "") {
+			return /^```/.test(line) || /^(#{1,6})\s+\S/.test(line) || /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line) || /^>\s?/.test(line) || /^\s*[-*+]\s+\S/.test(line) || /^\s*\d+[.)]\s+\S/.test(line) || line.includes("|") && isMarkdownTableSeparator(nextLine);
+		}
+		function safeMarkdownUrl(value) {
+			const url = String(value || "").trim();
+			if (/^(https?:|mailto:)/i.test(url)) return url;
+			return "";
+		}
+		function safeMarkdownImageUrl(value) {
+			const url = String(value || "").trim();
+			if (/^https?:/i.test(url)) return url;
+			return safeMarkdownDataImageUrl(url);
+		}
+		function safeMarkdownDataImageUrl(value) {
+			const url = String(value || "").trim();
+			if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(url)) return url.replace(/\s+/g, "");
+			return "";
+		}
+		function stripMarkdownLinkTarget(value) {
+			const target = String(value || "").trim();
+			if (target.startsWith("<") && target.endsWith(">")) return target.slice(1, -1).trim();
+			return target;
+		}
+		function decodeMarkdownLinkTarget(value) {
+			const target = stripMarkdownLinkTarget(value);
+			if (/^file:\/\//i.test(target)) try {
+				return decodeURIComponent(new URL(target).pathname);
+			} catch (_) {
+				return target.replace(/^file:\/\//i, "");
+			}
+			try {
+				return decodeURIComponent(target);
+			} catch (_) {
+				return target;
+			}
+		}
+		function isLocalFileTarget(value) {
+			const target = stripMarkdownLinkTarget(value);
+			return target.startsWith("/") || /^file:\/\//i.test(target) || /^[A-Za-z]:[\\/]/.test(target) || /^\\\\/.test(target);
+		}
+		function autolinkUrlParts(rawUrl) {
+			let href = String(rawUrl || "");
+			let suffix = "";
+			while (/[.,;:!?]$/.test(href)) {
+				suffix = href.slice(-1) + suffix;
+				href = href.slice(0, -1);
+			}
+			while (href.endsWith(")") && href.split("(").length <= href.split(")").length) {
+				suffix = ")" + suffix;
+				href = href.slice(0, -1);
+			}
+			return {
+				href,
+				suffix
+			};
+		}
+		function renderMarkdownLink(rawLabel, rawUrl) {
+			const label = escapeHtml(rawLabel);
+			const target = stripMarkdownLinkTarget(rawUrl);
+			if (isLocalFileTarget(target)) return `<button class="local-file-preview-link" type="button" data-local-file-path="${escapeHtml(decodeMarkdownLinkTarget(target))}" data-local-file-label="${escapeHtml(rawLabel)}" title="预览查看这个文件">${label}</button>`;
+			const safeUrl = safeMarkdownUrl(String(target || "").replaceAll("&amp;", "&"));
+			if (!safeUrl) return null;
+			return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${label}</a>`;
+		}
+		function renderMarkdownImage(rawLabel, rawUrl) {
+			const target = stripMarkdownLinkTarget(rawUrl);
+			const safeUrl = safeMarkdownImageUrl(String(target || "").replaceAll("&amp;", "&"));
+			if (!safeUrl) return null;
+			return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="Image" loading="lazy"></figure>`;
+		}
+		function renderAutolinkUrl(rawUrl) {
+			const parts = autolinkUrlParts(rawUrl);
+			const safeUrl = safeMarkdownUrl((parts.href.startsWith("www.") ? `https://${parts.href}` : parts.href).replaceAll("&amp;", "&"));
+			if (!safeUrl) return rawUrl;
+			return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${parts.href}</a>${parts.suffix}`;
+		}
+		function renderAngleAutolink(rawUrl) {
+			const safeUrl = safeMarkdownUrl(String(rawUrl || "").replaceAll("&amp;", "&"));
+			if (!safeUrl) return null;
+			return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${escapeHtml(rawUrl)}</a>`;
+		}
+		function renderInlineMarkdown(value) {
+			const placeholders = [];
+			const tokenPrefix = "MDTOKEN";
+			let text = String(value || "").replace(/`([^`\n]+)`/g, (_match, code) => {
+				const token = `${tokenPrefix}${placeholders.length}END`;
+				placeholders.push(`<code>${escapeHtml(code)}</code>`);
+				return token;
+			});
+			text = text.replace(/!\[([^\]\n]*)\]\((<[^>\n]+>|[^)\s]+)\)/g, (match, label, url) => {
+				const rendered = renderMarkdownImage(label, url);
+				if (!rendered) return match;
+				const token = `${tokenPrefix}${placeholders.length}END`;
+				placeholders.push(rendered);
+				return token;
+			});
+			text = text.replace(/\[([^\]\n]+)\]\((<[^>\n]+>|[^)\s]+)\)/g, (match, label, url) => {
+				const rendered = renderMarkdownLink(label, url);
+				if (!rendered) return match;
+				const token = `${tokenPrefix}${placeholders.length}END`;
+				placeholders.push(rendered);
+				return token;
+			});
+			text = text.replace(/<((?:https?:\/\/|mailto:)[^<>\s]+)>/gi, (match, url) => {
+				const rendered = renderAngleAutolink(url);
+				if (!rendered) return match;
+				const token = `${tokenPrefix}${placeholders.length}END`;
+				placeholders.push(rendered);
+				return token;
+			});
+			text = escapeHtml(text);
+			text = text.replace(/(^|[\s([{"'“‘:：])((?:https?:\/\/|www\.)[^\s<]+)/gi, (_match, prefix, url) => `${prefix}${renderAutolinkUrl(url)}`);
+			text = text.replace(/\*\*([^*\n][^*\n]*?)\*\*/g, "<strong>$1</strong>").replace(/__([^_\n][^_\n]*?)__/g, "<strong>$1</strong>").replace(/(^|[\s(])\*([^*\n][^*\n]*?)\*/g, "$1<em>$2</em>").replace(/(^|[\s(])_([^_\n][^_\n]*?)_/g, "$1<em>$2</em>");
+			placeholders.forEach((html, index) => {
+				text = text.replaceAll(`${tokenPrefix}${index}END`, html);
+			});
+			return text;
+		}
+		function renderMarkdownTable(lines) {
+			const header = splitMarkdownTableRow(lines[0]);
+			const rows = lines.slice(2).map(splitMarkdownTableRow);
+			return `<div class="markdown-table-wrap"><table>
+    <thead><tr>${header.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((row) => `<tr>${header.map((_cell, index) => `<td>${renderInlineMarkdown(row[index] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
+  </table></div>`;
+		}
+		function orderedListStart(lines, options) {
+			const first = lines.map((line) => /^\s*(\d+)[.)]\s+/.exec(line)).filter(Boolean).map((match) => Number(match[1]) || 1)[0] || 1;
+			if (options && options.orderedListMode === "source") return first;
+			return lines.length <= 1 ? first : 1;
+		}
+		function renderMarkdownList(lines, ordered, options) {
+			const tag = ordered ? "ol" : "ul";
+			const itemPattern = ordered ? /^\s*(\d+)[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
+			const start = ordered ? orderedListStart(lines, options) : 1;
+			const items = lines.map((line) => {
+				const match = itemPattern.exec(line);
+				return `<li>${renderInlineMarkdown(match ? match[ordered ? 2 : 1] : line.trim())}</li>`;
+			});
+			return `<${tag}${ordered && start > 1 ? ` start="${start}"` : ""}>${items.join("")}</${tag}>`;
+		}
+		function codeBlockTableLines(codeText) {
+			const lines = String(codeText || "").replace(/\r\n?/g, "\n").split("\n");
+			for (let index = 0; index < lines.length - 1; index += 1) {
+				if (!lines[index].includes("|") || !isMarkdownTableSeparator(lines[index + 1])) continue;
+				const tableLines = [lines[index], lines[index + 1]];
+				index += 2;
+				while (index < lines.length && lines[index].trim() && lines[index].includes("|")) {
+					tableLines.push(lines[index]);
+					index += 1;
+				}
+				return tableLines.length >= 3 ? tableLines : [];
+			}
+			return [];
+		}
+		function renderCodeBlock(codeText, lang, options) {
+			const langLabel = `<span class="markdown-code-lang">${escapeHtml(lang || "代码")}</span>`;
+			let copyButton = "";
+			if (options && typeof options.rememberCopyText === "function" && typeof options.copyButtonHtml === "function") copyButton = options.copyButtonHtml(options.rememberCopyText(codeText), options.copyLabel || "复制", "markdown-copy-button");
+			const normalizedLang = String(lang || "").trim().toLowerCase();
+			const tableLines = Boolean(options && options.fencedTableMode === "preview") && (!normalizedLang || normalizedLang === "text" || normalizedLang === "txt" || normalizedLang === "plain" || normalizedLang === "plaintext") ? codeBlockTableLines(codeText) : [];
+			if (tableLines.length) return `<div class="markdown-code-table-preview">${renderMarkdownTable(tableLines)}</div>
+      <details class="markdown-code-table-source-details">
+        <summary>查看源码表格</summary>
+        <div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>
+      </details>`;
+			return `<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`;
+		}
+		function escapeMermaidQuotedLabel(value) {
+			return String(value || "").trim().replace(/"/g, "&quot;");
+		}
+		function mermaidGeneratedSubgraphId(index) {
+			return `codex_mobile_subgraph_${index + 1}`;
+		}
+		function normalizeMermaidSubgraphLine(line, index) {
+			const match = /^(\s*)subgraph\s+(.+?)\s*$/i.exec(String(line || ""));
+			if (!match) return line;
+			const indent = match[1] || "";
+			const body = String(match[2] || "").trim();
+			if (!body || /^end$/i.test(body)) return line;
+			const bracketMatch = /^([A-Za-z][\w-]*)\s*\[(.*)\]$/.exec(body);
+			if (bracketMatch) {
+				const label = String(bracketMatch[2] || "").trim();
+				if (!label || /^".*"$/.test(label)) return line;
+				return `${indent}subgraph ${bracketMatch[1]}["${escapeMermaidQuotedLabel(label)}"]`;
+			}
+			const idTitleMatch = /^([A-Za-z][\w-]*)\s+(.+)$/.exec(body);
+			if (idTitleMatch) {
+				const title = String(idTitleMatch[2] || "").trim();
+				if (!title || /^".*"$/.test(title)) return line;
+				return `${indent}subgraph ${idTitleMatch[1]}["${escapeMermaidQuotedLabel(title)}"]`;
+			}
+			if (/^[A-Za-z][\w-]*$/.test(body) || /^".*"$/.test(body)) return line;
+			return `${indent}subgraph ${mermaidGeneratedSubgraphId(index)}["${escapeMermaidQuotedLabel(body)}"]`;
+		}
+		function normalizeMermaidDetachedSoftBreakLabels(source) {
+			return String(source || "").replace(/(^|[\s;])([A-Za-z][\w-]*)\[([^\]\n]+)\]<br\/>\(([^()\n]+)\)/gm, (match, prefix, nodeId, label, continuation) => {
+				return `${prefix}${nodeId}["${escapeMermaidQuotedLabel(`${String(label || "").trim()}<br/>(${String(continuation || "").trim()})`)}"]`;
+			});
+		}
+		function normalizeMermaidSourceForRender(value) {
+			const withSoftBreaks = String(value || "").replace(/\\n/g, "<br/>");
+			const firstLine = withSoftBreaks.split(/\r?\n/, 1)[0].trim();
+			if (!/^(?:flowchart|graph)\b/i.test(firstLine)) return withSoftBreaks;
+			return normalizeMermaidDetachedSoftBreakLabels(withSoftBreaks.split(/\r?\n/).map((line, index) => normalizeMermaidSubgraphLine(line, index)).join("\n")).replace(/(^|[\s;])([A-Za-z][\w-]*)\[([^\]\n]*)\]/gm, (match, prefix, nodeId, label) => {
+				const trimmed = String(label || "").trim();
+				if (!trimmed || /^".*"$/.test(trimmed)) return match;
+				if (!/[()（）]|<br\/>/.test(trimmed)) return match;
+				return `${prefix}${nodeId}["${trimmed.replace(/"/g, "&quot;")}"]`;
+			}).replace(/\|([^|\n]*[()]+[^|\n]*)\|/g, (match, label) => {
+				return `|${String(label || "").replace(/\(/g, "（").replace(/\)/g, "）")}|`;
+			});
+		}
+		function renderMermaidBlock(codeText) {
+			return `<div class="markdown-mermaid-block" data-mermaid-block="true">
+      <div class="markdown-mermaid-head">
+        <span class="markdown-mermaid-label">Mermaid</span>
+        <div class="markdown-mermaid-toolbar">
+          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="zoom-out" aria-label="缩小 Mermaid 图" title="缩小">-</button>
+          <button class="markdown-mermaid-tool markdown-mermaid-tool-reset" type="button" data-mermaid-action="reset" aria-label="重置 Mermaid 图缩放" title="重置">100%</button>
+          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="zoom-in" aria-label="放大 Mermaid 图" title="放大">+</button>
+          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="expand" aria-label="放大查看 Mermaid 图" title="放大查看">展开</button>
+        </div>
+      </div>
+      <div class="markdown-mermaid-viewer" data-mermaid-viewer="inline">
+        <div class="markdown-mermaid-canvas" data-mermaid-canvas>
+          <div class="markdown-mermaid-loading">正在渲染 Mermaid 图...</div>
+        </div>
+      </div>
+      <details class="markdown-mermaid-source-details">
+        <summary>查看 Mermaid 源码</summary>
+        <pre><code class="language-mermaid">${escapeHtml(codeText)}</code></pre>
+      </details>
+      <pre class="markdown-mermaid-source" hidden>${escapeHtml(codeText)}</pre>
+    </div>`;
+		}
+		function renderBareDataImage(value) {
+			const safeUrl = safeMarkdownDataImageUrl(value);
+			if (!safeUrl) return "";
+			return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="Image" loading="lazy"></figure>`;
+		}
+		function renderMarkdown(value, options = {}) {
+			const source = String(value || "");
+			if (!source.trim()) return "";
+			const lines = source.replace(/\r\n?/g, "\n").split("\n");
+			const blocks = [];
+			let i = 0;
+			while (i < lines.length) {
+				const line = lines[i];
+				if (!line.trim()) {
+					i += 1;
+					continue;
+				}
+				const bareDataImage = renderBareDataImage(line.trim());
+				if (bareDataImage) {
+					blocks.push(bareDataImage);
+					i += 1;
+					continue;
+				}
+				const fence = /^```([A-Za-z0-9_.+-]*)\s*$/.exec(line);
+				if (fence) {
+					const lang = fence[1] || "";
+					const code = [];
+					i += 1;
+					while (i < lines.length && !/^```\s*$/.test(lines[i])) {
+						code.push(lines[i]);
+						i += 1;
+					}
+					if (i < lines.length) i += 1;
+					const codeText = code.join("\n");
+					blocks.push(/^mermaid$/i.test(lang) ? renderMermaidBlock(codeText) : renderCodeBlock(codeText, lang, options));
+					continue;
+				}
+				const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+				if (heading) {
+					const level = Math.min(6, heading[1].length + 1);
+					blocks.push(`<h${level}>${renderInlineMarkdown(heading[2].trim())}</h${level}>`);
+					i += 1;
+					continue;
+				}
+				if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+					blocks.push("<hr>");
+					i += 1;
+					continue;
+				}
+				if (/^>\s?/.test(line)) {
+					const quote = [];
+					while (i < lines.length && /^>\s?/.test(lines[i])) {
+						quote.push(lines[i].replace(/^>\s?/, ""));
+						i += 1;
+					}
+					blocks.push(`<blockquote>${renderMarkdown(quote.join("\n"), options)}</blockquote>`);
+					continue;
+				}
+				if (line.includes("|") && isMarkdownTableSeparator(lines[i + 1])) {
+					const tableLines = [line, lines[i + 1]];
+					i += 2;
+					while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
+						tableLines.push(lines[i]);
+						i += 1;
+					}
+					blocks.push(renderMarkdownTable(tableLines));
+					continue;
+				}
+				if (/^\s*[-*+]\s+\S/.test(line)) {
+					const list = [];
+					while (i < lines.length && /^\s*[-*+]\s+\S/.test(lines[i])) {
+						list.push(lines[i]);
+						i += 1;
+					}
+					blocks.push(renderMarkdownList(list, false, options));
+					continue;
+				}
+				if (/^\s*\d+[.)]\s+\S/.test(line)) {
+					const list = [];
+					while (i < lines.length && /^\s*\d+[.)]\s+\S/.test(lines[i])) {
+						list.push(lines[i]);
+						i += 1;
+					}
+					blocks.push(renderMarkdownList(list, true, options));
+					continue;
+				}
+				const paragraph = [line.trim()];
+				i += 1;
+				while (i < lines.length && lines[i].trim() && !isMarkdownBlockStart(lines[i], lines[i + 1] || "")) {
+					paragraph.push(lines[i].trim());
+					i += 1;
+				}
+				blocks.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br>")}</p>`);
+			}
+			return `<div class="markdown-body">${blocks.join("")}</div>`;
+		}
+		return {
+			escapeHtml,
+			safeMarkdownUrl,
+			autolinkUrlParts,
+			renderMarkdownLink,
+			renderMarkdownImage,
+			renderAutolinkUrl,
+			renderInlineMarkdown,
+			safeMarkdownImageUrl,
+			normalizeMermaidSourceForRender,
+			isMarkdownTableSeparator,
+			splitMarkdownTableRow,
+			isMarkdownBlockStart,
+			renderMarkdownTable,
+			renderMarkdownList,
+			renderMarkdown
+		};
+	});
+}));
+//#endregion
+//#region public/plugin-embed.js
+var require_plugin_embed = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory(root || {});
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexPluginEmbed = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function(root) {
+		const NAVIGATION_TYPE = "codex-mobile.plugin.navigation";
+		const BACK_RESULT_TYPE = "codex-mobile.plugin.back_result";
+		const REFRESH_REQUIRED_TYPE = "codex-mobile.plugin.refresh_required";
+		const EXTERNAL_LINK_TYPE = "codex-mobile.plugin.external_link";
+		const BACK_TYPE = "hermes.plugin.back";
+		const THEME_VALUES = /* @__PURE__ */ new Set([
+			"system",
+			"dark",
+			"light"
+		]);
+		const FONT_SIZE_VALUES = /* @__PURE__ */ new Set([
+			"small",
+			"default",
+			"large",
+			"xlarge",
+			"xxlarge"
+		]);
+		function stringValue(value) {
+			return String(value || "").trim();
+		}
+		function boundedString(value, maxLength) {
+			const text = stringValue(value);
+			return text ? text.slice(0, Math.max(0, Number(maxLength) || 0)) : "";
+		}
+		function normalizedEnum(value, allowedValues) {
+			const text = stringValue(value).toLowerCase();
+			return allowedValues.has(text) ? text : "";
+		}
+		function urlFrom(value) {
+			try {
+				const location = root.location || {};
+				return new URL(value || location.href || "/", location.origin || "http://127.0.0.1");
+			} catch (_) {
+				return null;
+			}
+		}
+		function detect(value) {
+			const url = urlFrom(value);
+			const params = url ? url.searchParams : new URLSearchParams();
+			const routeHint = normalizeRouteHint({
+				pluginId: boundedString(params.get("pluginId"), 80),
+				route: boundedString(params.get("pluginRoute"), 80),
+				itemId: boundedString(params.get("pluginItemId"), 160),
+				threadId: boundedString(params.get("pluginThreadId"), 160),
+				taskId: boundedString(params.get("pluginTaskId"), 160)
+			}) || {
+				pluginId: "",
+				route: "",
+				itemId: "",
+				threadId: "",
+				taskId: ""
+			};
+			const appearance = {};
+			const theme = normalizedEnum(params.get("pluginTheme") || params.get("theme"), THEME_VALUES);
+			const fontSize = normalizedEnum(params.get("pluginFontSize") || params.get("fontSize"), FONT_SIZE_VALUES);
+			if (theme) appearance.theme = theme;
+			if (fontSize) appearance.fontSize = fontSize;
+			return {
+				embedded: params.get("embed") === "hermes",
+				launchKey: stringValue(params.get("codexPluginLaunch") || params.get("pluginLaunch")),
+				workspaceId: stringValue(params.get("workspaceId") || params.get("workspace_id")),
+				routeHint,
+				appearance
+			};
+		}
+		function normalizeRouteHint(value) {
+			if (!value || typeof value !== "object") return null;
+			const pluginId = boundedString(value.pluginId, 80);
+			const route = boundedString(value.route, 80);
+			const itemId = boundedString(value.itemId, 160);
+			const threadId = boundedString(value.threadId, 160);
+			const taskId = boundedString(value.taskId, 160);
+			if (!(pluginId || route || itemId || threadId || taskId)) return null;
+			return {
+				pluginId,
+				route,
+				itemId,
+				threadId,
+				taskId
+			};
+		}
+		function routeHintFromUrl(value) {
+			return normalizeRouteHint(detect(value).routeHint);
+		}
+		function routeHintTargetId(hint) {
+			const normalized = normalizeRouteHint(hint);
+			return normalized ? stringValue(normalized.taskId || normalized.itemId) : "";
+		}
+		function routeHintOpenPlan(hint) {
+			const normalized = normalizeRouteHint(hint);
+			if (!normalized || normalized.pluginId !== "codex-mobile") return { action: "ignore" };
+			const threadId = stringValue(normalized.threadId);
+			const targetId = routeHintTargetId(normalized);
+			if (!threadId && !targetId) return {
+				action: "primary",
+				diagnostic: normalized.route && normalized.route !== "root" ? {
+					message: "Notification target is unavailable",
+					error: true
+				} : null
+			};
+			if (!threadId) return {
+				action: "primary",
+				diagnostic: {
+					message: "Notification thread is unavailable",
+					error: true
+				}
+			};
+			return {
+				action: "openThread",
+				hint: normalized,
+				threadId,
+				targetId,
+				pendingHint: targetId ? normalized : null,
+				statusMessage: targetId ? "Opening notification target" : "Opening notification thread"
+			};
+		}
+		function routeHintFocusPlan(hint, state = {}) {
+			const normalized = normalizeRouteHint(hint);
+			if (!normalized) return { action: "ignore" };
+			const currentThreadId = stringValue(state.currentThreadId);
+			if (!currentThreadId || normalized.threadId !== currentThreadId) return { action: "wait" };
+			if (!routeHintTargetId(normalized)) return { action: "clear" };
+			if (state.targetFound === true) return {
+				action: "focused",
+				diagnostic: {
+					message: "Opened notification target",
+					error: false
+				}
+			};
+			return {
+				action: "primary",
+				diagnostic: {
+					message: "Notification target is no longer available",
+					error: true
+				}
+			};
+		}
+		function routeHintTargetSelectors(hint, options = {}) {
+			const targetId = routeHintTargetId(hint);
+			if (!targetId) return [];
+			const escaped = (typeof options.escapeSelector === "function" ? options.escapeSelector : (value) => stringValue(value).replace(/["\\]/g, "\\$&"))(targetId);
+			return [
+				`[data-approval-card="${escaped}"]`,
+				`[data-task-card="${escaped}"]`,
+				`[data-turn="${escaped}"]`,
+				`[data-item="${escaped}"]`
+			];
+		}
+		function findRouteHintTargetNode(rootNode, hint, options = {}) {
+			if (!rootNode || typeof rootNode.querySelector !== "function") return null;
+			for (const selector of routeHintTargetSelectors(hint, options)) {
+				const node = rootNode.querySelector(selector);
+				if (node) return node;
+			}
+			return null;
+		}
+		function scrubRouteHintPath(value, options = {}) {
+			const url = urlFrom(value);
+			if (!url) return "";
+			url.search = "";
+			url.searchParams.set("embed", "hermes");
+			const workspaceId = boundedString(options.workspaceId, 120);
+			if (workspaceId) url.searchParams.set("workspaceId", workspaceId);
+			const appearance = appearanceFromState(options.appearance || {});
+			if (appearance.theme) url.searchParams.set("pluginTheme", appearance.theme);
+			if (appearance.fontSize) url.searchParams.set("pluginFontSize", appearance.fontSize);
+			return `${url.pathname || "/"}?${url.searchParams.toString()}${url.hash || ""}`;
+		}
+		function parentOriginFromReferrer(referrer) {
+			try {
+				return referrer ? new URL(referrer).origin : "";
+			} catch (_) {
+				return "";
+			}
+		}
+		function routeFromState(state = {}, ui = {}) {
+			if (ui.imagePreviewOpen) return {
+				kind: "modal",
+				modal: "imagePreview",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (ui.mermaidPreviewOpen) return {
+				kind: "modal",
+				modal: "mermaidPreview",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (ui.filePreviewOpen) return {
+				kind: "modal",
+				modal: "filePreview",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (state.renameThreadId) return {
+				kind: "modal",
+				modal: "renameThread",
+				threadId: stringValue(state.renameThreadId)
+			};
+			if (state.threadActionMenuId) return {
+				kind: "modal",
+				modal: "threadActions",
+				threadId: stringValue(state.threadActionMenuId)
+			};
+			if (state.subagentPanelOpen) return {
+				kind: "panel",
+				panel: "subagent",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (ui.primaryPage) return {
+				kind: "root",
+				workspace: stringValue(state.selectedCwd),
+				settingsOpen: Boolean(ui.settingsOpen)
+			};
+			if (ui.settingsOpen) return {
+				kind: "panel",
+				panel: "settings",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (ui.sidebarOpen) return {
+				kind: "drawer",
+				drawer: "threadList",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (state.newThreadDraft) return {
+				kind: "new_thread",
+				workspace: stringValue(state.selectedCwd)
+			};
+			if (state.currentThreadId) return {
+				kind: "thread",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (state.selectedCwd) return {
+				kind: "workspace",
+				workspace: stringValue(state.selectedCwd)
+			};
+			return { kind: "root" };
+		}
+		function canGoBack(state = {}, ui = {}) {
+			if (ui.primaryPage) return false;
+			return Boolean(ui.imagePreviewOpen || ui.mermaidPreviewOpen || ui.filePreviewOpen || ui.createWorkspaceOpen || ui.updatePanelOpen || ui.settingsOpen || ui.sidebarOpen || state.renameThreadId || state.threadActionMenuId || state.subagentPanelOpen || state.newThreadDraft || state.currentThreadId);
+		}
+		function appearanceFromState(state = {}) {
+			const source = state.pluginAppearance && typeof state.pluginAppearance === "object" ? state.pluginAppearance : {};
+			const appearance = {};
+			const theme = normalizedEnum(source.theme || state.theme, THEME_VALUES);
+			const fontSize = normalizedEnum(state.fontSize || source.fontSize || source.pluginFontSize, FONT_SIZE_VALUES);
+			if (theme) appearance.theme = theme;
+			if (fontSize) appearance.fontSize = fontSize;
+			return appearance;
+		}
+		function navigationMessage(state = {}, ui = {}) {
+			const message = {
+				type: NAVIGATION_TYPE,
+				version: 1,
+				canGoBack: canGoBack(state, ui),
+				route: routeFromState(state, ui)
+			};
+			const appearance = appearanceFromState(state);
+			if (Object.keys(appearance).length > 0) message.appearance = appearance;
+			return message;
+		}
+		function postNavigation(parentWindow, state = {}, options = {}) {
+			if (!parentWindow || parentWindow === root) return null;
+			const message = navigationMessage(state, options.ui || {});
+			parentWindow.postMessage(message, options.targetOrigin || "*");
+			return message;
+		}
+		function backResultMessage(state = {}, options = {}) {
+			const message = {
+				type: BACK_RESULT_TYPE,
+				version: 1,
+				handled: Boolean(options.handled),
+				route: routeFromState(state, options.ui || {})
+			};
+			const reason = stringValue(options.reason);
+			if (reason) message.reason = reason;
+			return message;
+		}
+		function postBackResult(parentWindow, state = {}, options = {}) {
+			if (!parentWindow || parentWindow === root) return null;
+			const message = backResultMessage(state, options);
+			parentWindow.postMessage(message, options.targetOrigin || "*");
+			return message;
+		}
+		function refreshRequiredRoute(route = {}) {
+			const next = {};
+			const name = boundedString(route.name || route.kind || "", 48);
+			const threadId = boundedString(route.threadId || "", 160);
+			const itemId = boundedString(route.itemId || "", 160);
+			const pluginRoute = boundedString(route.pluginRoute || route.route || "", 80);
+			const pluginThreadId = boundedString(route.pluginThreadId || threadId || "", 160);
+			const pluginTaskId = boundedString(route.pluginTaskId || route.taskId || "", 160);
+			const pluginItemId = boundedString(route.pluginItemId || itemId || "", 160);
+			if (name) next.name = name;
+			if (threadId) next.threadId = threadId;
+			if (itemId) next.itemId = itemId;
+			if (pluginRoute) next.pluginRoute = pluginRoute;
+			if (pluginThreadId) next.pluginThreadId = pluginThreadId;
+			if (pluginTaskId) next.pluginTaskId = pluginTaskId;
+			if (pluginItemId) next.pluginItemId = pluginItemId;
+			return next;
+		}
+		function refreshRequiredMessage(input = {}) {
+			const message = {
+				type: REFRESH_REQUIRED_TYPE,
+				version: 1,
+				reason: boundedString(input.reason || "refresh_required", 80) || "refresh_required"
+			};
+			const route = refreshRequiredRoute(input.route || {});
+			if (Object.keys(route).length > 0) message.route = route;
+			const appearance = appearanceFromState(input.appearance || {});
+			if (Object.keys(appearance).length > 0) message.appearance = appearance;
+			return message;
+		}
+		function postRefreshRequired(parentWindow, input = {}, options = {}) {
+			if (!parentWindow || parentWindow === root) return null;
+			const message = refreshRequiredMessage(input);
+			parentWindow.postMessage(message, options.targetOrigin || "*");
+			return message;
+		}
+		function externalBrowserUrl(value, origin) {
+			const text = stringValue(value);
+			if (!text) return "";
+			if (!/^(https?:|mailto:)/i.test(text)) return "";
+			try {
+				const baseOrigin = origin || root.location && root.location.origin || "http://127.0.0.1";
+				const url = new URL(text, baseOrigin);
+				if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:") return url.toString();
+			} catch (_) {}
+			return "";
+		}
+		function externalLinkMessage(input = {}) {
+			const href = externalBrowserUrl(input.href || input.url || "", input.origin || "");
+			if (!href) return null;
+			return {
+				type: EXTERNAL_LINK_TYPE,
+				version: 1,
+				href: boundedString(href, 2e3),
+				source: boundedString(input.source || "receipt-link", 80) || "receipt-link"
+			};
+		}
+		function postExternalLink(parentWindow, input = {}, options = {}) {
+			if (!parentWindow || parentWindow === root) return null;
+			const message = externalLinkMessage(input);
+			if (!message) return null;
+			parentWindow.postMessage(message, options.targetOrigin || "*");
+			return message;
+		}
+		function isBackMessage(event) {
+			const data = event && event.data;
+			return Boolean(data && data.type === BACK_TYPE && data.version === 1);
+		}
+		function isInternalUrl(value, origin) {
+			const text = stringValue(value);
+			if (text.startsWith("/") && !text.startsWith("//")) return true;
+			try {
+				const baseOrigin = origin || root.location && root.location.origin || "";
+				const url = new URL(text, baseOrigin || "http://127.0.0.1");
+				return !baseOrigin || url.origin === baseOrigin;
+			} catch (_) {
+				return false;
+			}
+		}
+		return {
+			BACK_TYPE,
+			BACK_RESULT_TYPE,
+			EXTERNAL_LINK_TYPE,
+			REFRESH_REQUIRED_TYPE,
+			NAVIGATION_TYPE,
+			appearanceFromState,
+			backResultMessage,
+			canGoBack,
+			detect,
+			externalBrowserUrl,
+			externalLinkMessage,
+			findRouteHintTargetNode,
+			isBackMessage,
+			isInternalUrl,
+			navigationMessage,
+			normalizeRouteHint,
+			parentOriginFromReferrer,
+			postBackResult,
+			postExternalLink,
+			postRefreshRequired,
+			postNavigation,
+			refreshRequiredMessage,
+			routeHintFocusPlan,
+			routeHintFromUrl,
+			routeHintOpenPlan,
+			routeHintTargetId,
+			routeHintTargetSelectors,
+			routeFromState,
+			scrubRouteHintPath
+		};
+	});
+}));
+//#endregion
 //#region public/frontend-runtime-health.js
 var require_frontend_runtime_health = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -4741,6 +5616,9 @@ var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics()
 var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
 var import_image_compressor = /* @__PURE__ */ __toESM(require_image_compressor());
 var import_plugin_voice_input = /* @__PURE__ */ __toESM(require_plugin_voice_input());
+var import_api_client = /* @__PURE__ */ __toESM(require_api_client());
+var import_markdown_renderer = /* @__PURE__ */ __toESM(require_markdown_renderer());
+var import_plugin_embed = /* @__PURE__ */ __toESM(require_plugin_embed());
 var import_frontend_runtime_health = /* @__PURE__ */ __toESM(require_frontend_runtime_health());
 var import_home_ai_diagnostic_reporting = /* @__PURE__ */ __toESM(require_home_ai_diagnostic_reporting());
 var import_thread_diagnostic_events = /* @__PURE__ */ __toESM(require_thread_diagnostic_events());
@@ -4843,6 +5721,47 @@ var moduleDefinitions = [
 			"textFromMessage"
 		],
 		"assetPath": "/plugin-voice-input.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "api-client",
+		"source": "public/api-client.js",
+		"globalName": "CodexApiClient",
+		"expectedFunctions": ["createApiClient", "isFormDataBody"],
+		"assetPath": "/api-client.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "markdown-renderer",
+		"source": "public/markdown-renderer.js",
+		"globalName": "CodexMarkdownRenderer",
+		"expectedFunctions": [
+			"escapeHtml",
+			"safeMarkdownUrl",
+			"renderInlineMarkdown",
+			"renderMarkdown",
+			"renderMarkdownList",
+			"renderMarkdownTable",
+			"splitMarkdownTableRow",
+			"isMarkdownTableSeparator"
+		],
+		"assetPath": "/markdown-renderer.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "plugin-embed",
+		"source": "public/plugin-embed.js",
+		"globalName": "CodexPluginEmbed",
+		"expectedFunctions": [
+			"detect",
+			"navigationMessage",
+			"routeHintOpenPlan",
+			"routeHintTargetSelectors",
+			"scrubRouteHintPath",
+			"externalLinkMessage",
+			"refreshRequiredMessage"
+		],
+		"assetPath": "/plugin-embed.js",
 		"classicLoaderExcluded": true
 	},
 	{
@@ -5024,6 +5943,9 @@ var moduleApis = {
 	"draft-store": import_draft_store.default,
 	"image-compressor": import_image_compressor.default,
 	"plugin-voice-input": import_plugin_voice_input.default,
+	"api-client": import_api_client.default,
+	"markdown-renderer": import_markdown_renderer.default,
+	"plugin-embed": import_plugin_embed.default,
 	"frontend-runtime-health": import_frontend_runtime_health.default,
 	"home-ai-diagnostic-reporting": import_home_ai_diagnostic_reporting.default,
 	"thread-diagnostic-events": import_thread_diagnostic_events.default,
@@ -5258,6 +6180,88 @@ function sampleModule(id, api) {
 			actionFromType,
 			text,
 			voiceMessage
+		};
+	}
+	if (id === "api-client") {
+		function FakeFormData() {}
+		const formData = new FakeFormData();
+		const isFormData = functionReady(api, "isFormDataBody") ? api.isFormDataBody(formData, FakeFormData) : false;
+		const jsonBody = functionReady(api, "isFormDataBody") ? api.isFormDataBody({ ok: true }, FakeFormData) : true;
+		const client = functionReady(api, "createApiClient") ? api.createApiClient({
+			fetch: () => Promise.resolve({
+				ok: true,
+				status: 204
+			}),
+			AbortControllerCtor: AbortController,
+			FormDataCtor: FakeFormData,
+			getKey: () => ""
+		}) : null;
+		return {
+			ok: isFormData === true && jsonBody === false && client && typeof client.request === "function",
+			isFormData,
+			jsonBody,
+			requestReady: Boolean(client && typeof client.request === "function")
+		};
+	}
+	if (id === "markdown-renderer") {
+		const escaped = functionReady(api, "escapeHtml") ? api.escapeHtml("<tag>&\"") : "";
+		const safeUrl = functionReady(api, "safeMarkdownUrl") ? api.safeMarkdownUrl("https://example.com") : "";
+		const unsafeUrl = functionReady(api, "safeMarkdownUrl") ? api.safeMarkdownUrl("javascript:alert(1)") : "unsafe";
+		const inline = functionReady(api, "renderInlineMarkdown") ? api.renderInlineMarkdown("**bold** <https://example.com>, `code`") : "";
+		const block = functionReady(api, "renderMarkdown") ? api.renderMarkdown("# Title\n\n- item\n- **bold**") : "";
+		const tableSeparator = functionReady(api, "isMarkdownTableSeparator") ? api.isMarkdownTableSeparator("|---|:---:|") : false;
+		const row = functionReady(api, "splitMarkdownTableRow") ? api.splitMarkdownTableRow("| A | B |") : [];
+		const list = functionReady(api, "renderMarkdownList") ? api.renderMarkdownList(["1. one", "2. two"], true) : "";
+		const table = functionReady(api, "renderMarkdownTable") ? api.renderMarkdownTable([
+			"A | B",
+			"---|---",
+			"1 | 2"
+		]) : "";
+		return {
+			ok: escaped === "&lt;tag&gt;&amp;&quot;" && safeUrl === "https://example.com" && unsafeUrl === "" && inline.includes("<strong>bold</strong>") && inline.includes("<code>code</code>") && block.includes("<h2>Title</h2>") && tableSeparator === true && Array.isArray(row) && row.join(",") === "A,B" && list.includes("<ol>") && table.includes("<table>"),
+			escaped,
+			safeUrl,
+			unsafeUrl,
+			row,
+			inlineHasStrong: inline.includes("<strong>bold</strong>"),
+			blockHasHeading: block.includes("<h2>Title</h2>"),
+			listHasOl: list.includes("<ol>"),
+			tableHasTable: table.includes("<table>")
+		};
+	}
+	if (id === "plugin-embed") {
+		const detected = functionReady(api, "detect") ? api.detect("http://127.0.0.1/?embed=hermes&pluginId=codex-mobile&pluginRoute=thread&pluginThreadId=t1&pluginTheme=dark&pluginFontSize=large") : {};
+		const navigation = functionReady(api, "navigationMessage") ? api.navigationMessage({ currentThreadId: "t1" }, {}) : {};
+		const openPlan = functionReady(api, "routeHintOpenPlan") ? api.routeHintOpenPlan({
+			pluginId: "codex-mobile",
+			threadId: "t1",
+			itemId: "i1"
+		}) : {};
+		const selectors = functionReady(api, "routeHintTargetSelectors") ? api.routeHintTargetSelectors({ itemId: "i1" }) : [];
+		const scrubbed = functionReady(api, "scrubRouteHintPath") ? api.scrubRouteHintPath("http://127.0.0.1/thread?pluginId=codex-mobile&pluginThreadId=t1", {
+			workspaceId: "ws1",
+			appearance: { theme: "dark" }
+		}) : "";
+		const external = functionReady(api, "externalLinkMessage") ? api.externalLinkMessage({ href: "https://example.com/a" }) : {};
+		const refresh = functionReady(api, "refreshRequiredMessage") ? api.refreshRequiredMessage({
+			reason: "version_changed",
+			route: {
+				kind: "thread",
+				threadId: "t1"
+			},
+			appearance: { theme: "light" }
+		}) : {};
+		return {
+			ok: detected.embedded === true && detected.routeHint && detected.routeHint.threadId === "t1" && detected.appearance && detected.appearance.theme === "dark" && navigation.type === "codex-mobile.plugin.navigation" && navigation.canGoBack === true && openPlan.action === "openThread" && Array.isArray(selectors) && selectors[0] === "[data-approval-card=\"i1\"]" && scrubbed === "/thread?embed=hermes&workspaceId=ws1&pluginTheme=dark" && external.type === "codex-mobile.plugin.external_link" && refresh.type === "codex-mobile.plugin.refresh_required",
+			embedded: Boolean(detected.embedded),
+			routeThreadId: String(detected.routeHint && detected.routeHint.threadId || ""),
+			navigationType: String(navigation.type || ""),
+			canGoBack: Boolean(navigation.canGoBack),
+			openAction: String(openPlan.action || ""),
+			firstSelector: String(selectors[0] || ""),
+			scrubbed,
+			externalType: String(external.type || ""),
+			refreshType: String(refresh.type || "")
 		};
 	}
 	if (id === "frontend-runtime-health") {
@@ -6109,7 +7113,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-CC3eOZuU.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-C9GSb-4D.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
