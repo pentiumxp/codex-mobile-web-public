@@ -162,6 +162,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     "viewport-metrics",
     "conversation-scroll",
     "draft-store",
+    "image-compressor",
+    "plugin-voice-input",
+    "plugin-embed",
     "frontend-runtime-health",
     "home-ai-diagnostic-reporting",
     "thread-diagnostic-events",
@@ -196,6 +199,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/runtime-settings\.js/);
   assert.match(shardSources, /public\/viewport-metrics\.js/);
   assert.match(shardSources, /public\/conversation-scroll\.js/);
+  assert.match(shardSources, /public\/image-compressor\.js/);
+  assert.match(shardSources, /public\/plugin-voice-input\.js/);
+  assert.match(shardSources, /public\/plugin-embed\.js/);
   assert.match(shardSources, /public\/frontend-runtime-health\.js/);
   assert.match(shardSources, /public\/home-ai-diagnostic-reporting\.js/);
   assert.match(shardSources, /public\/thread-diagnostic-events\.js/);
@@ -211,6 +217,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/live-operation-dock-state\.js/);
   assert.match(shardSources, /planThreadListLoadRequest/);
   assert.match(shardSources, /planBottomFollowScrollSchedule/);
+  assert.match(shardSources, /compressedImageName/);
+  assert.match(shardSources, /capabilityStateMessage/);
+  assert.match(shardSources, /routeHintOpenPlan/);
   assert.match(shardSources, /threadListInteractionStallEffects/);
   assert.match(shardSources, /createDiagnosticReporter/);
   assert.match(shardSources, /threadDetailResponseDiagnosticEffects/);

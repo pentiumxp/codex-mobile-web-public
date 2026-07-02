@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-D8dyY47-.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-BEtgdOLS.js";
 //#region public/build-refresh-policy.js
 var require_build_refresh_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -763,6 +763,740 @@ var require_draft_store = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			normalizeAttachmentMeta,
 			attachmentStorageKey,
 			createDraftStore
+		};
+	});
+}));
+//#endregion
+//#region public/image-compressor.js
+var require_image_compressor = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function initImageCompressor(root, factory) {
+		if (typeof module === "object" && module.exports) {
+			module.exports = factory({});
+			return;
+		}
+		root.CodexImageCompressor = factory(root);
+	})(typeof globalThis !== "undefined" ? globalThis : window, function imageCompressorFactory(root) {
+		const DEFAULT_OPTIONS = Object.freeze({
+			maxEdge: 1280,
+			quality: .72,
+			minBytes: 256 * 1024,
+			minSavingsRatio: .92,
+			outputType: "image/jpeg"
+		});
+		const COMPRESSIBLE_TYPES = /* @__PURE__ */ new Set([
+			"image/jpeg",
+			"image/jpg",
+			"image/png",
+			"image/webp"
+		]);
+		function imageType(file) {
+			return String(file && file.type || "").toLowerCase();
+		}
+		function isCompressibleImageFile(file, options = {}) {
+			const settings = Object.assign({}, DEFAULT_OPTIONS, options || {});
+			return Boolean(file && Number(file.size || 0) >= settings.minBytes && COMPRESSIBLE_TYPES.has(imageType(file)));
+		}
+		function targetDimensions(width, height, maxEdge = DEFAULT_OPTIONS.maxEdge) {
+			const sourceWidth = Math.max(1, Number(width || 0));
+			const sourceHeight = Math.max(1, Number(height || 0));
+			const edge = Math.max(1, Number(maxEdge || DEFAULT_OPTIONS.maxEdge));
+			const scale = Math.min(1, edge / Math.max(sourceWidth, sourceHeight));
+			return {
+				width: Math.max(1, Math.round(sourceWidth * scale)),
+				height: Math.max(1, Math.round(sourceHeight * scale)),
+				scaled: scale < 1
+			};
+		}
+		function compressedImageName(name, outputType = DEFAULT_OPTIONS.outputType) {
+			const fallback = "image";
+			return `${String(name || fallback).replace(/[\\/]+/g, "_").replace(/\.[^.]*$/, "").trim() || fallback}.${outputType === "image/webp" ? "webp" : "jpg"}`;
+		}
+		function shouldUseCompressedBlob(originalFile, blob, options = {}) {
+			const settings = Object.assign({}, DEFAULT_OPTIONS, options || {});
+			if (!blob || !Number.isFinite(blob.size) || blob.size <= 0) return false;
+			const originalSize = Number(originalFile && originalFile.size || 0);
+			if (!originalSize) return true;
+			return blob.size < Math.max(1, Math.floor(originalSize * settings.minSavingsRatio));
+		}
+		function loadImageElement(file, deps) {
+			const documentRef = deps.document;
+			const urlApi = deps.URL;
+			if (!documentRef || !urlApi || typeof documentRef.createElement !== "function") return Promise.reject(/* @__PURE__ */ new Error("image compression is unavailable"));
+			return new Promise((resolve, reject) => {
+				const url = urlApi.createObjectURL(file);
+				const image = documentRef.createElement("img");
+				let settled = false;
+				const cleanup = () => {
+					try {
+						urlApi.revokeObjectURL(url);
+					} catch (_) {}
+				};
+				image.onload = () => {
+					if (settled) return;
+					settled = true;
+					resolve({
+						width: image.naturalWidth || image.width,
+						height: image.naturalHeight || image.height,
+						source: image,
+						close: cleanup
+					});
+				};
+				image.onerror = () => {
+					if (settled) return;
+					settled = true;
+					cleanup();
+					reject(/* @__PURE__ */ new Error("image decode failed"));
+				};
+				image.src = url;
+			});
+		}
+		function canvasToBlob(canvas, outputType, quality) {
+			return new Promise((resolve) => {
+				if (!canvas || typeof canvas.toBlob !== "function") {
+					resolve(null);
+					return;
+				}
+				canvas.toBlob((blob) => resolve(blob), outputType, quality);
+			});
+		}
+		async function compressImageFile(file, options = {}) {
+			const settings = Object.assign({}, DEFAULT_OPTIONS, options || {});
+			if (!isCompressibleImageFile(file, settings)) return file;
+			const deps = {
+				document: settings.document || root.document,
+				URL: settings.URL || root.URL,
+				File: settings.File || root.File
+			};
+			let image = null;
+			try {
+				image = await loadImageElement(file, deps);
+				const dims = targetDimensions(image.width, image.height, settings.maxEdge);
+				const canvas = deps.document.createElement("canvas");
+				canvas.width = dims.width;
+				canvas.height = dims.height;
+				const ctx = canvas.getContext("2d", { alpha: false });
+				if (!ctx) return file;
+				ctx.fillStyle = "#ffffff";
+				ctx.fillRect(0, 0, dims.width, dims.height);
+				ctx.drawImage(image.source, 0, 0, dims.width, dims.height);
+				const blob = await canvasToBlob(canvas, settings.outputType, settings.quality);
+				if (!shouldUseCompressedBlob(file, blob, settings)) return file;
+				const name = compressedImageName(file.name, settings.outputType);
+				if (typeof deps.File === "function") return new deps.File([blob], name, {
+					type: blob.type || settings.outputType,
+					lastModified: Number(file.lastModified || Date.now())
+				});
+				blob.name = name;
+				blob.lastModified = Number(file.lastModified || Date.now());
+				return blob;
+			} finally {
+				if (image && typeof image.close === "function") image.close();
+			}
+		}
+		return {
+			DEFAULT_OPTIONS,
+			compressedImageName,
+			compressImageFile,
+			isCompressibleImageFile,
+			shouldUseCompressedBlob,
+			targetDimensions
+		};
+	});
+}));
+//#endregion
+//#region public/plugin-voice-input.js
+var require_plugin_voice_input = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory(root || {});
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexPluginVoiceInput = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function(root) {
+		const PLUGIN_ID = "codex-mobile";
+		const VERSION = 1;
+		const MAX_TEXT_CHARS = 12e3;
+		const TYPES = Object.freeze({
+			CAPABILITY_QUERY: "voice_input.capability_query",
+			CAPABILITY_STATE: "voice_input.capability_state",
+			INSERT_TEXT: "voice_input.insert_text",
+			APPEND_TEXT: "voice_input.append_text",
+			REPLACE_DRAFT: "voice_input.replace_draft",
+			PROVISIONAL_TEXT: "voice_input.provisional_text",
+			SUBMIT: "voice_input.submit",
+			START_REQUEST: "voice_input.start_request",
+			STOP_REQUEST: "voice_input.stop_request",
+			CANCEL_REQUEST: "voice_input.cancel_request",
+			INSERT_RESULT: "voice_input.insert_result",
+			COMMIT_RESULT: "voice_input.commit_result",
+			ERROR: "voice_input.error"
+		});
+		const ACTION_TYPES = Object.freeze({
+			insert_text: TYPES.INSERT_TEXT,
+			append_text: TYPES.APPEND_TEXT,
+			replace_draft: TYPES.REPLACE_DRAFT,
+			provisional_text: TYPES.PROVISIONAL_TEXT,
+			submit: TYPES.SUBMIT
+		});
+		const ACTIONS_BY_TYPE = Object.freeze(Object.fromEntries(Object.entries(ACTION_TYPES).map(([action, type]) => [type, action])));
+		function stringValue(value) {
+			return String(value || "").trim();
+		}
+		function boundedString(value, maxLength) {
+			const text = stringValue(value);
+			const limit = Math.max(0, Number(maxLength) || 0);
+			return text ? text.slice(0, limit) : "";
+		}
+		function boundedText(value, maxLength = MAX_TEXT_CHARS) {
+			const text = String(value || "").replace(/\u00a0/g, " ");
+			const limit = Math.max(1, Number(maxLength) || MAX_TEXT_CHARS);
+			return text.slice(0, limit);
+		}
+		function normalizeAction(action) {
+			const value = stringValue(action).toLowerCase();
+			if (value === "append") return "append_text";
+			if (value === "insert") return "insert_text";
+			if (value === "replace") return "replace_draft";
+			if (value === "provisional") return "provisional_text";
+			return ACTION_TYPES[value] ? value : "";
+		}
+		function normalizeActions(actions) {
+			const normalized = (Array.isArray(actions) ? actions : actions && typeof actions === "object" ? Object.keys(actions).filter((key) => actions[key]) : []).map(normalizeAction).filter(Boolean);
+			return [...new Set(normalized)];
+		}
+		function requestIdFrom(payload = {}) {
+			return boundedString(payload.requestId || payload.request_id, 160);
+		}
+		function voiceSessionIdFrom(payload = {}) {
+			return boundedString(payload.voiceSessionId || payload.voice_session_id, 160);
+		}
+		function pluginIdFrom(payload = {}) {
+			return boundedString(payload.pluginId || payload.plugin_id || PLUGIN_ID, 80) || PLUGIN_ID;
+		}
+		function baseMessage(type, input = {}) {
+			const message = {
+				type,
+				version: VERSION,
+				pluginId: pluginIdFrom(input)
+			};
+			const requestId = requestIdFrom(input);
+			const voiceSessionId = voiceSessionIdFrom(input);
+			if (requestId) message.requestId = requestId;
+			if (voiceSessionId) message.voiceSessionId = voiceSessionId;
+			return message;
+		}
+		function capabilityStateMessage(input = {}) {
+			const actions = normalizeActions(input.actions).filter((action) => action !== "submit");
+			const composerId = boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer";
+			const threadId = boundedString(input.threadId || input.thread_id, 160);
+			const draftId = boundedString(input.draftId || input.draft_id, 220);
+			const maxChars = Math.max(1, Math.min(Number(input.maxChars || input.max_chars || MAX_TEXT_CHARS) || MAX_TEXT_CHARS, MAX_TEXT_CHARS));
+			const message = Object.assign(baseMessage(TYPES.CAPABILITY_STATE, input), {
+				writable: Boolean(input.writable || input.composerWritable),
+				composerId,
+				threadId,
+				draftId,
+				maxChars,
+				actions: actions.length ? actions : ["append_text", "replace_draft"]
+			});
+			message.composer = {
+				writable: message.writable,
+				composerId,
+				threadId,
+				draftId,
+				maxChars
+			};
+			return message;
+		}
+		function startRequestMessage(input = {}) {
+			const capability = capabilityStateMessage(input.capability || input);
+			return Object.assign(baseMessage(TYPES.START_REQUEST, input), {
+				composerId: capability.composerId,
+				threadId: capability.threadId,
+				draftId: capability.draftId,
+				writable: capability.writable,
+				maxChars: capability.maxChars,
+				actions: capability.actions,
+				capability
+			});
+		}
+		function stopRequestMessage(input = {}) {
+			return Object.assign(baseMessage(TYPES.STOP_REQUEST, input), {
+				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
+				threadId: boundedString(input.threadId || input.thread_id, 160)
+			});
+		}
+		function cancelRequestMessage(input = {}) {
+			return Object.assign(baseMessage(TYPES.CANCEL_REQUEST, input), {
+				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
+				threadId: boundedString(input.threadId || input.thread_id, 160)
+			});
+		}
+		function insertResultMessage(input = {}) {
+			return Object.assign(baseMessage(TYPES.INSERT_RESULT, input), {
+				ok: input.ok !== false,
+				action: boundedString(input.action || input.insertAction || input.insert_action, 40),
+				code: input.ok === false ? boundedString(input.code || input.errorCode || input.error_code, 80) : "",
+				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
+				draftId: boundedString(input.draftId || input.draft_id, 220),
+				error: input.ok === false ? boundedString(input.error || input.message, 240) : ""
+			});
+		}
+		function commitResultMessage(input = {}) {
+			return Object.assign(baseMessage(TYPES.COMMIT_RESULT, input), {
+				ok: input.ok !== false,
+				action: boundedString(input.action || "submitted", 40) || "submitted",
+				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
+				threadId: boundedString(input.threadId || input.thread_id, 160),
+				messageId: boundedString(input.messageId || input.message_id, 180),
+				finalText: boundedText(input.finalText || input.final_text || input.text, input.maxChars || MAX_TEXT_CHARS).trim()
+			});
+		}
+		function errorMessage(input = {}) {
+			return Object.assign(baseMessage(TYPES.ERROR, input), {
+				code: boundedString(input.code || "plugin_voice_input_error", 80) || "plugin_voice_input_error",
+				error: boundedString(input.error || input.message || "Plugin voice input error", 240),
+				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer"
+			});
+		}
+		function isVoiceInputMessage(value) {
+			return Boolean(value && typeof value === "object" && stringValue(value.type).startsWith("voice_input."));
+		}
+		function actionFromMessageType(type) {
+			return ACTIONS_BY_TYPE[stringValue(type)] || "";
+		}
+		function textFromMessage(payload = {}, maxChars = MAX_TEXT_CHARS) {
+			return boundedText(payload.text || payload.finalText || payload.final_text, maxChars).trim();
+		}
+		function postToParent(parentWindow, message, targetOrigin) {
+			if (!parentWindow || parentWindow === root || !message) return false;
+			parentWindow.postMessage(message, targetOrigin || "*");
+			return true;
+		}
+		return {
+			ACTION_TYPES,
+			MAX_TEXT_CHARS,
+			PLUGIN_ID,
+			TYPES,
+			VERSION,
+			actionFromMessageType,
+			boundedString,
+			boundedText,
+			cancelRequestMessage,
+			capabilityStateMessage,
+			commitResultMessage,
+			errorMessage,
+			insertResultMessage,
+			isVoiceInputMessage,
+			normalizeAction,
+			normalizeActions,
+			pluginIdFrom,
+			postToParent,
+			requestIdFrom,
+			startRequestMessage,
+			stopRequestMessage,
+			textFromMessage,
+			voiceSessionIdFrom
+		};
+	});
+}));
+//#endregion
+//#region public/plugin-embed.js
+var require_plugin_embed = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory(root || {});
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexPluginEmbed = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function(root) {
+		const NAVIGATION_TYPE = "codex-mobile.plugin.navigation";
+		const BACK_RESULT_TYPE = "codex-mobile.plugin.back_result";
+		const REFRESH_REQUIRED_TYPE = "codex-mobile.plugin.refresh_required";
+		const EXTERNAL_LINK_TYPE = "codex-mobile.plugin.external_link";
+		const BACK_TYPE = "hermes.plugin.back";
+		const THEME_VALUES = /* @__PURE__ */ new Set([
+			"system",
+			"dark",
+			"light"
+		]);
+		const FONT_SIZE_VALUES = /* @__PURE__ */ new Set([
+			"small",
+			"default",
+			"large",
+			"xlarge",
+			"xxlarge"
+		]);
+		function stringValue(value) {
+			return String(value || "").trim();
+		}
+		function boundedString(value, maxLength) {
+			const text = stringValue(value);
+			return text ? text.slice(0, Math.max(0, Number(maxLength) || 0)) : "";
+		}
+		function normalizedEnum(value, allowedValues) {
+			const text = stringValue(value).toLowerCase();
+			return allowedValues.has(text) ? text : "";
+		}
+		function urlFrom(value) {
+			try {
+				const location = root.location || {};
+				return new URL(value || location.href || "/", location.origin || "http://127.0.0.1");
+			} catch (_) {
+				return null;
+			}
+		}
+		function detect(value) {
+			const url = urlFrom(value);
+			const params = url ? url.searchParams : new URLSearchParams();
+			const routeHint = normalizeRouteHint({
+				pluginId: boundedString(params.get("pluginId"), 80),
+				route: boundedString(params.get("pluginRoute"), 80),
+				itemId: boundedString(params.get("pluginItemId"), 160),
+				threadId: boundedString(params.get("pluginThreadId"), 160),
+				taskId: boundedString(params.get("pluginTaskId"), 160)
+			}) || {
+				pluginId: "",
+				route: "",
+				itemId: "",
+				threadId: "",
+				taskId: ""
+			};
+			const appearance = {};
+			const theme = normalizedEnum(params.get("pluginTheme") || params.get("theme"), THEME_VALUES);
+			const fontSize = normalizedEnum(params.get("pluginFontSize") || params.get("fontSize"), FONT_SIZE_VALUES);
+			if (theme) appearance.theme = theme;
+			if (fontSize) appearance.fontSize = fontSize;
+			return {
+				embedded: params.get("embed") === "hermes",
+				launchKey: stringValue(params.get("codexPluginLaunch") || params.get("pluginLaunch")),
+				workspaceId: stringValue(params.get("workspaceId") || params.get("workspace_id")),
+				routeHint,
+				appearance
+			};
+		}
+		function normalizeRouteHint(value) {
+			if (!value || typeof value !== "object") return null;
+			const pluginId = boundedString(value.pluginId, 80);
+			const route = boundedString(value.route, 80);
+			const itemId = boundedString(value.itemId, 160);
+			const threadId = boundedString(value.threadId, 160);
+			const taskId = boundedString(value.taskId, 160);
+			if (!(pluginId || route || itemId || threadId || taskId)) return null;
+			return {
+				pluginId,
+				route,
+				itemId,
+				threadId,
+				taskId
+			};
+		}
+		function routeHintFromUrl(value) {
+			return normalizeRouteHint(detect(value).routeHint);
+		}
+		function routeHintTargetId(hint) {
+			const normalized = normalizeRouteHint(hint);
+			return normalized ? stringValue(normalized.taskId || normalized.itemId) : "";
+		}
+		function routeHintOpenPlan(hint) {
+			const normalized = normalizeRouteHint(hint);
+			if (!normalized || normalized.pluginId !== "codex-mobile") return { action: "ignore" };
+			const threadId = stringValue(normalized.threadId);
+			const targetId = routeHintTargetId(normalized);
+			if (!threadId && !targetId) return {
+				action: "primary",
+				diagnostic: normalized.route && normalized.route !== "root" ? {
+					message: "Notification target is unavailable",
+					error: true
+				} : null
+			};
+			if (!threadId) return {
+				action: "primary",
+				diagnostic: {
+					message: "Notification thread is unavailable",
+					error: true
+				}
+			};
+			return {
+				action: "openThread",
+				hint: normalized,
+				threadId,
+				targetId,
+				pendingHint: targetId ? normalized : null,
+				statusMessage: targetId ? "Opening notification target" : "Opening notification thread"
+			};
+		}
+		function routeHintFocusPlan(hint, state = {}) {
+			const normalized = normalizeRouteHint(hint);
+			if (!normalized) return { action: "ignore" };
+			const currentThreadId = stringValue(state.currentThreadId);
+			if (!currentThreadId || normalized.threadId !== currentThreadId) return { action: "wait" };
+			if (!routeHintTargetId(normalized)) return { action: "clear" };
+			if (state.targetFound === true) return {
+				action: "focused",
+				diagnostic: {
+					message: "Opened notification target",
+					error: false
+				}
+			};
+			return {
+				action: "primary",
+				diagnostic: {
+					message: "Notification target is no longer available",
+					error: true
+				}
+			};
+		}
+		function routeHintTargetSelectors(hint, options = {}) {
+			const targetId = routeHintTargetId(hint);
+			if (!targetId) return [];
+			const escaped = (typeof options.escapeSelector === "function" ? options.escapeSelector : (value) => stringValue(value).replace(/["\\]/g, "\\$&"))(targetId);
+			return [
+				`[data-approval-card="${escaped}"]`,
+				`[data-task-card="${escaped}"]`,
+				`[data-turn="${escaped}"]`,
+				`[data-item="${escaped}"]`
+			];
+		}
+		function findRouteHintTargetNode(rootNode, hint, options = {}) {
+			if (!rootNode || typeof rootNode.querySelector !== "function") return null;
+			for (const selector of routeHintTargetSelectors(hint, options)) {
+				const node = rootNode.querySelector(selector);
+				if (node) return node;
+			}
+			return null;
+		}
+		function scrubRouteHintPath(value, options = {}) {
+			const url = urlFrom(value);
+			if (!url) return "";
+			url.search = "";
+			url.searchParams.set("embed", "hermes");
+			const workspaceId = boundedString(options.workspaceId, 120);
+			if (workspaceId) url.searchParams.set("workspaceId", workspaceId);
+			const appearance = appearanceFromState(options.appearance || {});
+			if (appearance.theme) url.searchParams.set("pluginTheme", appearance.theme);
+			if (appearance.fontSize) url.searchParams.set("pluginFontSize", appearance.fontSize);
+			return `${url.pathname || "/"}?${url.searchParams.toString()}${url.hash || ""}`;
+		}
+		function parentOriginFromReferrer(referrer) {
+			try {
+				return referrer ? new URL(referrer).origin : "";
+			} catch (_) {
+				return "";
+			}
+		}
+		function routeFromState(state = {}, ui = {}) {
+			if (ui.imagePreviewOpen) return {
+				kind: "modal",
+				modal: "imagePreview",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (ui.mermaidPreviewOpen) return {
+				kind: "modal",
+				modal: "mermaidPreview",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (ui.filePreviewOpen) return {
+				kind: "modal",
+				modal: "filePreview",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (state.renameThreadId) return {
+				kind: "modal",
+				modal: "renameThread",
+				threadId: stringValue(state.renameThreadId)
+			};
+			if (state.threadActionMenuId) return {
+				kind: "modal",
+				modal: "threadActions",
+				threadId: stringValue(state.threadActionMenuId)
+			};
+			if (state.subagentPanelOpen) return {
+				kind: "panel",
+				panel: "subagent",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (ui.primaryPage) return {
+				kind: "root",
+				workspace: stringValue(state.selectedCwd),
+				settingsOpen: Boolean(ui.settingsOpen)
+			};
+			if (ui.settingsOpen) return {
+				kind: "panel",
+				panel: "settings",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (ui.sidebarOpen) return {
+				kind: "drawer",
+				drawer: "threadList",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (state.newThreadDraft) return {
+				kind: "new_thread",
+				workspace: stringValue(state.selectedCwd)
+			};
+			if (state.currentThreadId) return {
+				kind: "thread",
+				threadId: stringValue(state.currentThreadId)
+			};
+			if (state.selectedCwd) return {
+				kind: "workspace",
+				workspace: stringValue(state.selectedCwd)
+			};
+			return { kind: "root" };
+		}
+		function canGoBack(state = {}, ui = {}) {
+			if (ui.primaryPage) return false;
+			return Boolean(ui.imagePreviewOpen || ui.mermaidPreviewOpen || ui.filePreviewOpen || ui.createWorkspaceOpen || ui.updatePanelOpen || ui.settingsOpen || ui.sidebarOpen || state.renameThreadId || state.threadActionMenuId || state.subagentPanelOpen || state.newThreadDraft || state.currentThreadId);
+		}
+		function appearanceFromState(state = {}) {
+			const source = state.pluginAppearance && typeof state.pluginAppearance === "object" ? state.pluginAppearance : {};
+			const appearance = {};
+			const theme = normalizedEnum(source.theme || state.theme, THEME_VALUES);
+			const fontSize = normalizedEnum(state.fontSize || source.fontSize || source.pluginFontSize, FONT_SIZE_VALUES);
+			if (theme) appearance.theme = theme;
+			if (fontSize) appearance.fontSize = fontSize;
+			return appearance;
+		}
+		function navigationMessage(state = {}, ui = {}) {
+			const message = {
+				type: NAVIGATION_TYPE,
+				version: 1,
+				canGoBack: canGoBack(state, ui),
+				route: routeFromState(state, ui)
+			};
+			const appearance = appearanceFromState(state);
+			if (Object.keys(appearance).length > 0) message.appearance = appearance;
+			return message;
+		}
+		function postNavigation(parentWindow, state = {}, options = {}) {
+			if (!parentWindow || parentWindow === root) return null;
+			const message = navigationMessage(state, options.ui || {});
+			parentWindow.postMessage(message, options.targetOrigin || "*");
+			return message;
+		}
+		function backResultMessage(state = {}, options = {}) {
+			const message = {
+				type: BACK_RESULT_TYPE,
+				version: 1,
+				handled: Boolean(options.handled),
+				route: routeFromState(state, options.ui || {})
+			};
+			const reason = stringValue(options.reason);
+			if (reason) message.reason = reason;
+			return message;
+		}
+		function postBackResult(parentWindow, state = {}, options = {}) {
+			if (!parentWindow || parentWindow === root) return null;
+			const message = backResultMessage(state, options);
+			parentWindow.postMessage(message, options.targetOrigin || "*");
+			return message;
+		}
+		function refreshRequiredRoute(route = {}) {
+			const next = {};
+			const name = boundedString(route.name || route.kind || "", 48);
+			const threadId = boundedString(route.threadId || "", 160);
+			const itemId = boundedString(route.itemId || "", 160);
+			const pluginRoute = boundedString(route.pluginRoute || route.route || "", 80);
+			const pluginThreadId = boundedString(route.pluginThreadId || threadId || "", 160);
+			const pluginTaskId = boundedString(route.pluginTaskId || route.taskId || "", 160);
+			const pluginItemId = boundedString(route.pluginItemId || itemId || "", 160);
+			if (name) next.name = name;
+			if (threadId) next.threadId = threadId;
+			if (itemId) next.itemId = itemId;
+			if (pluginRoute) next.pluginRoute = pluginRoute;
+			if (pluginThreadId) next.pluginThreadId = pluginThreadId;
+			if (pluginTaskId) next.pluginTaskId = pluginTaskId;
+			if (pluginItemId) next.pluginItemId = pluginItemId;
+			return next;
+		}
+		function refreshRequiredMessage(input = {}) {
+			const message = {
+				type: REFRESH_REQUIRED_TYPE,
+				version: 1,
+				reason: boundedString(input.reason || "refresh_required", 80) || "refresh_required"
+			};
+			const route = refreshRequiredRoute(input.route || {});
+			if (Object.keys(route).length > 0) message.route = route;
+			const appearance = appearanceFromState(input.appearance || {});
+			if (Object.keys(appearance).length > 0) message.appearance = appearance;
+			return message;
+		}
+		function postRefreshRequired(parentWindow, input = {}, options = {}) {
+			if (!parentWindow || parentWindow === root) return null;
+			const message = refreshRequiredMessage(input);
+			parentWindow.postMessage(message, options.targetOrigin || "*");
+			return message;
+		}
+		function externalBrowserUrl(value, origin) {
+			const text = stringValue(value);
+			if (!text) return "";
+			if (!/^(https?:|mailto:)/i.test(text)) return "";
+			try {
+				const baseOrigin = origin || root.location && root.location.origin || "http://127.0.0.1";
+				const url = new URL(text, baseOrigin);
+				if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:") return url.toString();
+			} catch (_) {}
+			return "";
+		}
+		function externalLinkMessage(input = {}) {
+			const href = externalBrowserUrl(input.href || input.url || "", input.origin || "");
+			if (!href) return null;
+			return {
+				type: EXTERNAL_LINK_TYPE,
+				version: 1,
+				href: boundedString(href, 2e3),
+				source: boundedString(input.source || "receipt-link", 80) || "receipt-link"
+			};
+		}
+		function postExternalLink(parentWindow, input = {}, options = {}) {
+			if (!parentWindow || parentWindow === root) return null;
+			const message = externalLinkMessage(input);
+			if (!message) return null;
+			parentWindow.postMessage(message, options.targetOrigin || "*");
+			return message;
+		}
+		function isBackMessage(event) {
+			const data = event && event.data;
+			return Boolean(data && data.type === BACK_TYPE && data.version === 1);
+		}
+		function isInternalUrl(value, origin) {
+			const text = stringValue(value);
+			if (text.startsWith("/") && !text.startsWith("//")) return true;
+			try {
+				const baseOrigin = origin || root.location && root.location.origin || "";
+				const url = new URL(text, baseOrigin || "http://127.0.0.1");
+				return !baseOrigin || url.origin === baseOrigin;
+			} catch (_) {
+				return false;
+			}
+		}
+		return {
+			BACK_TYPE,
+			BACK_RESULT_TYPE,
+			EXTERNAL_LINK_TYPE,
+			REFRESH_REQUIRED_TYPE,
+			NAVIGATION_TYPE,
+			appearanceFromState,
+			backResultMessage,
+			canGoBack,
+			detect,
+			externalBrowserUrl,
+			externalLinkMessage,
+			findRouteHintTargetNode,
+			isBackMessage,
+			isInternalUrl,
+			navigationMessage,
+			normalizeRouteHint,
+			parentOriginFromReferrer,
+			postBackResult,
+			postExternalLink,
+			postRefreshRequired,
+			postNavigation,
+			refreshRequiredMessage,
+			routeHintFocusPlan,
+			routeHintFromUrl,
+			routeHintOpenPlan,
+			routeHintTargetId,
+			routeHintTargetSelectors,
+			routeFromState,
+			scrubRouteHintPath
 		};
 	});
 }));
@@ -3762,6 +4496,9 @@ var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings()
 var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics());
 var import_conversation_scroll = /* @__PURE__ */ __toESM(require_conversation_scroll());
 var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
+var import_image_compressor = /* @__PURE__ */ __toESM(require_image_compressor());
+var import_plugin_voice_input = /* @__PURE__ */ __toESM(require_plugin_voice_input());
+var import_plugin_embed = /* @__PURE__ */ __toESM(require_plugin_embed());
 var import_frontend_runtime_health = /* @__PURE__ */ __toESM(require_frontend_runtime_health());
 var import_home_ai_diagnostic_reporting = /* @__PURE__ */ __toESM(require_home_ai_diagnostic_reporting());
 var import_thread_diagnostic_events = /* @__PURE__ */ __toESM(require_thread_diagnostic_events());
@@ -3863,6 +4600,56 @@ var moduleDefinitions = [
 		"assetPath": "/draft-store.js",
 		"classicLoaderExcluded": true,
 		"bytes": 9065
+	},
+	{
+		"id": "image-compressor",
+		"source": "public/image-compressor.js",
+		"globalName": "CodexImageCompressor",
+		"expectedFunctions": [
+			"compressedImageName",
+			"compressImageFile",
+			"isCompressibleImageFile",
+			"shouldUseCompressedBlob",
+			"targetDimensions"
+		],
+		"assetPath": "/image-compressor.js",
+		"classicLoaderExcluded": true,
+		"bytes": 5261
+	},
+	{
+		"id": "plugin-voice-input",
+		"source": "public/plugin-voice-input.js",
+		"globalName": "CodexPluginVoiceInput",
+		"expectedFunctions": [
+			"actionFromMessageType",
+			"capabilityStateMessage",
+			"errorMessage",
+			"insertResultMessage",
+			"isVoiceInputMessage",
+			"normalizeAction",
+			"startRequestMessage",
+			"textFromMessage"
+		],
+		"assetPath": "/plugin-voice-input.js",
+		"classicLoaderExcluded": true,
+		"bytes": 8247
+	},
+	{
+		"id": "plugin-embed",
+		"source": "public/plugin-embed.js",
+		"globalName": "CodexPluginEmbed",
+		"expectedFunctions": [
+			"detect",
+			"navigationMessage",
+			"routeHintOpenPlan",
+			"routeHintTargetSelectors",
+			"scrubRouteHintPath",
+			"externalLinkMessage",
+			"refreshRequiredMessage"
+		],
+		"assetPath": "/plugin-embed.js",
+		"classicLoaderExcluded": true,
+		"bytes": 14761
 	},
 	{
 		"id": "frontend-runtime-health",
@@ -4040,6 +4827,9 @@ var moduleApis = {
 	"viewport-metrics": import_viewport_metrics.default,
 	"conversation-scroll": import_conversation_scroll.default,
 	"draft-store": import_draft_store.default,
+	"image-compressor": import_image_compressor.default,
+	"plugin-voice-input": import_plugin_voice_input.default,
+	"plugin-embed": import_plugin_embed.default,
 	"frontend-runtime-health": import_frontend_runtime_health.default,
 	"home-ai-diagnostic-reporting": import_home_ai_diagnostic_reporting.default,
 	"thread-diagnostic-events": import_thread_diagnostic_events.default,
