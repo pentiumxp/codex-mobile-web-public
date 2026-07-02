@@ -489,6 +489,49 @@ function expectedIsTurnUsageSummaryItem(item = {}) {
   return expectedItemType(item) === "turnUsageSummary";
 }
 
+function expectedIsContextCompactionType(type) {
+  return /context.*compaction|context.*compression|context_compaction|context_compression/i.test(String(type || ""));
+}
+
+function expectedIsContextCompactionItem(item = {}) {
+  return Boolean(item && (expectedIsContextCompactionType(item.type)
+    || item.mobileNotice === "Context compaction complete"
+    || item.mobileNotice === "Context compaction pending"
+    || item.mobileCompactionStatus));
+}
+
+function expectedContextCompactionStatusKind(value) {
+  const text = statusText(value).toLowerCase();
+  if (!text) return "";
+  if (/completed|failed|cancel|error|interrupted/.test(text)) return "complete";
+  if (/running|active|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(text)) return "pending";
+  return "";
+}
+
+function expectedCanShowPendingContextCompaction(turn = {}, thread = {}) {
+  return !turn || (expectedIsLatestTurn(turn, thread) && expectedIsLiveTurn(turn, thread));
+}
+
+function expectedContextCompactionState(item = {}, turn = {}, thread = {}) {
+  if (!item) return "";
+  const itemKind = expectedContextCompactionStatusKind(item.status);
+  const mobileKind = expectedContextCompactionStatusKind(item.mobileCompactionStatus);
+  if (itemKind === "complete" || mobileKind === "complete" || item.mobileNotice === "Context compaction complete") {
+    return "complete";
+  }
+  if (itemKind === "pending" || mobileKind === "pending" || item.mobileNotice === "Context compaction pending") {
+    return expectedCanShowPendingContextCompaction(turn, thread) ? "pending" : "";
+  }
+  return "";
+}
+
+function expectedContextCompactionNotice(item = {}, turn = {}, thread = {}) {
+  const stateText = expectedContextCompactionState(item, turn, thread);
+  if (stateText === "pending") return "Context compaction pending";
+  if (stateText === "complete") return "Context compaction complete";
+  return "";
+}
+
 function expectedUserMessageHasVisualAttachment(item = {}) {
   const parts = Array.isArray(item && item.content) ? item.content : [];
   return parts.some((part) => {
@@ -503,6 +546,7 @@ function expectedIsSupersededLiveTurn(turn = {}) {
 
 function expectedVisibleItemsForTurn(turn = {}, thread = {}) {
   const visible = [];
+  const contextEntryByKey = new Map();
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
   items.forEach((item, index) => {
     if (!item) return;
@@ -510,20 +554,31 @@ function expectedVisibleItemsForTurn(turn = {}, thread = {}) {
     if (expectedIsSupersededLiveTurn(turn)
       && expectedItemType(item) === "userMessage"
       && !expectedUserMessageHasVisualAttachment(item)) return;
+    if (expectedIsContextCompactionItem(item)) {
+      const notice = expectedContextCompactionNotice(item, turn, thread);
+      if (!notice) return;
+      const groupKey = "context-compaction";
+      const existing = contextEntryByKey.get(groupKey);
+      if (existing) visible[existing.visibleIndex] = null;
+      contextEntryByKey.set(groupKey, { visibleIndex: visible.length });
+      visible.push({ item, sourceIndex: index });
+      return;
+    }
     if (expectedIsOperationalItem(item)) return;
     visible.push({ item, sourceIndex: index });
   });
+  const filteredVisible = visible.filter(Boolean);
   if (expectedIsSupersededLiveTurn(turn)
-    && visible.length
-    && visible.every((entry) => expectedIsTurnUsageSummaryItem(entry && entry.item))) {
+    && filteredVisible.length
+    && filteredVisible.every((entry) => expectedIsTurnUsageSummaryItem(entry && entry.item))) {
     return [];
   }
   if ((thread.mobileRawThreadRead || String(thread.mobileReadMode || "") === "thread-read-raw")
-    && Array.isArray(visible)
-    && visible.length > 20) {
-    return visible.slice(-20);
+    && Array.isArray(filteredVisible)
+    && filteredVisible.length > 20) {
+    return filteredVisible.slice(-20);
   }
-  return visible;
+  return filteredVisible;
 }
 
 function expectedVisibleItemBudgetForTurn(turn = {}) {
@@ -800,6 +855,7 @@ function snapshotInputForPlanEntry(entry, extra = {}) {
     expectedTurnHashes: entry.expectedTurnHashes,
     expectedLatestTurnHash: entry.expectedLatestTurnHash,
     expectedLatestUsageRequired: entry.expectedLatestUsageRequired,
+    expectedLatestItemCount: entry.expectedLatestItemCount,
     expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
     expectedLatestUserMessageDuplicateCount: entry.expectedLatestUserMessageDuplicateCount,
     expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
@@ -1963,6 +2019,7 @@ function snapshotExpression(input = {}) {
   const expectedTurnHashes = Array.isArray(input.expectedTurnHashes) ? input.expectedTurnHashes : [];
   const expectedLatestTurnHash = String(input.expectedLatestTurnHash || "");
   const expectedLatestUsageRequired = Boolean(input.expectedLatestUsageRequired);
+  const expectedLatestItemCount = Math.max(0, Number(input.expectedLatestItemCount || 0) || 0);
   const expectedLatestUserMessageCount = Math.max(0, Number(input.expectedLatestUserMessageCount || 0) || 0);
   const expectedLatestUserMessageDuplicateCount = Math.max(0, Number(input.expectedLatestUserMessageDuplicateCount || 0) || 0);
   const expectedLatestTaskCardUserMessageCount = Math.max(0, Number(input.expectedLatestTaskCardUserMessageCount || 0) || 0);
@@ -1980,6 +2037,7 @@ function snapshotExpression(input = {}) {
       const expectedTurnHashes = new Set(${JSON.stringify(expectedTurnHashes)});
       const expectedLatestTurnHash = ${JSON.stringify(expectedLatestTurnHash)};
       const expectedLatestUsageRequired = ${JSON.stringify(expectedLatestUsageRequired)};
+      const expectedLatestItemCount = ${JSON.stringify(expectedLatestItemCount)};
       const expectedLatestUserMessageCount = ${JSON.stringify(expectedLatestUserMessageCount)};
       const expectedLatestUserMessageDuplicateCount = ${JSON.stringify(expectedLatestUserMessageDuplicateCount)};
       const expectedLatestTaskCardUserMessageCount = ${JSON.stringify(expectedLatestTaskCardUserMessageCount)};
@@ -2324,6 +2382,7 @@ function snapshotExpression(input = {}) {
         turnTimerSettled: Boolean(turnTimer && turnTimer.classList && turnTimer.classList.contains("settled")),
         turnTimerDetailKind,
         expectedLatestUsageRequired,
+        expectedLatestItemCount,
         expectedLatestUserMessageCount,
         expectedLatestUserMessageDuplicateCount,
         expectedLatestTaskCardUserMessageCount,

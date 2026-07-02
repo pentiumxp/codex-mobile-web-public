@@ -59,6 +59,7 @@ function summarizeSamples(samples = []) {
   const imageFailureCounts = normalized.map((sample) => toNumber(sample.imageFailureCount));
   const imageFigureCounts = normalized.map((sample) => toNumber(sample.imageFigureCount));
   const timestampMissingCounts = normalized.map((sample) => toNumber(sample.latestTimestampMissingItems));
+  const expectedLatestItemCounts = normalized.map((sample) => toNumber(sample.expectedLatestItemCount));
   const latestTurnItemCounts = normalized.map((sample) => toNumber(sample.latestTurnItemCount));
   const latestTurnUserMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnUserMessageCount));
   const latestTurnTaskCardItemCounts = normalized.map((sample) => toNumber(sample.latestTurnTaskCardItemCount));
@@ -95,6 +96,7 @@ function summarizeSamples(samples = []) {
     maxImageFailures: normalized.length ? Math.max(...imageFailureCounts) : 0,
     maxImageFigures: normalized.length ? Math.max(...imageFigureCounts) : 0,
     maxLatestTimestampMissingItems: normalized.length ? Math.max(...timestampMissingCounts) : 0,
+    maxExpectedLatestItems: normalized.length ? Math.max(...expectedLatestItemCounts) : 0,
     maxLatestTurnItems: normalized.length ? Math.max(...latestTurnItemCounts) : 0,
     maxLatestTurnUserMessages: normalized.length ? Math.max(...latestTurnUserMessageCounts) : 0,
     maxLatestTurnTaskCardItems: normalized.length ? Math.max(...latestTurnTaskCardItemCounts) : 0,
@@ -279,6 +281,7 @@ function latestTurnShapeForIssue(sample = {}) {
   return matchedLatestTurnShape(sample) || {
     turnHash: safeLabel(sample.latestTurnHash, ""),
     completed: false,
+    expectedItemCount: toNumber(sample.expectedLatestItemCount),
     expectedUserMessageCount: toNumber(sample.expectedLatestUserMessageCount),
     expectedTaskCardUserMessageCount: toNumber(sample.expectedLatestTaskCardUserMessageCount),
     expectedAssistantMessageCount: toNumber(sample.expectedLatestAssistantMessageCount),
@@ -304,6 +307,7 @@ function turnShapeIssueKey(code, sample = {}, turnShape = {}) {
     sampleThreadHash(sample),
     safeLabel(turnShape.turnHash, ""),
     turnShape.completed === true ? "completed" : "active",
+    toNumber(turnShape.expectedItemCount),
     toNumber(turnShape.expectedUserMessageCount),
     toNumber(turnShape.expectedTaskCardUserMessageCount),
     toNumber(turnShape.expectedAssistantMessageCount),
@@ -351,6 +355,14 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       if (toNumber(turnShape.expectedTimestampItemCount) > 0 && toNumber(turnShape.timestampMissingItems) > 0) {
         incrementMapCount(turnShapeMismatchCounts, turnShapeIssueKey("browser_turn_timestamp_missing", sample, turnShape));
       }
+    }
+    if (sample.latestTurnMatchesTarget
+      && toNumber(sample.expectedLatestItemCount) > 0
+      && toNumber(sample.latestTurnItemCount) < toNumber(sample.expectedLatestItemCount)) {
+      incrementMapCount(
+        turnShapeMismatchCounts,
+        turnShapeIssueKey("browser_latest_turn_item_below_api_expectation", sample, latestTurnShapeForIssue(sample)),
+      );
     }
     if (sample.latestTurnMatchesTarget
       && toNumber(sample.expectedLatestUserMessageCount) > 0
@@ -621,6 +633,17 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           observationCount: turnShapeMismatchCounts.get(turnShapeIssueKey(code, sample, turnShape)) || 0,
         }));
       }
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.expectedLatestItemCount) > 0
+      && toNumber(sample.latestTurnItemCount) < toNumber(sample.expectedLatestItemCount)) {
+      const code = "browser_latest_turn_item_below_api_expectation";
+      const latestShape = latestTurnShapeForIssue(sample);
+      issues.push(issue(latestTurnMismatchSeverity(code, sample, latestShape), code, sample, latestTurnMismatchDetails(code, sample, latestShape, {
+        expectedLatestItemCount: toNumber(sample.expectedLatestItemCount),
+        latestTurnItemCount: toNumber(sample.latestTurnItemCount),
+      })));
     }
     if (sampleIsConfirmed(sample)
       && sample.latestTurnMatchesTarget

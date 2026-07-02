@@ -205,7 +205,7 @@ test("mergeThreadPreservingVisibleItems repairs retained detail order when empty
   assert.deepEqual(merged.turns.map((turn) => turn.id), ["older", "newer"]);
 });
 
-test("mergeThreadPreservingVisibleItems retains active local turn missing from incoming", () => {
+test("mergeThreadPreservingVisibleItems drops active local turn missing from authoritative incoming", () => {
   const policy = createPolicy();
   const merged = policy.mergeThreadPreservingVisibleItems(
     {
@@ -219,7 +219,24 @@ test("mergeThreadPreservingVisibleItems retains active local turn missing from i
     { activeTurnId: "active" }
   );
 
-  assert.deepEqual(merged.turns.map((turn) => turn.id), ["incoming", "active"]);
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["incoming"]);
+});
+
+test("mergeThreadPreservingVisibleItems retains active local turn for weak empty incoming", () => {
+  const policy = createPolicy();
+  const merged = policy.mergeThreadPreservingVisibleItems(
+    {
+      id: "thread-1",
+      turns: [
+        { id: "active", status: "running", items: [{ id: "local" }] },
+        { id: "old", status: "completed", items: [{ id: "old" }] },
+      ],
+    },
+    { id: "thread-1", turns: [] },
+    { activeTurnId: "active" }
+  );
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["old", "active"]);
 });
 
 test("mergeThreadPreservingVisibleItems refuses empty incoming detail over stronger visible detail", () => {

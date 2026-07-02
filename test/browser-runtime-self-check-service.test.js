@@ -457,6 +457,55 @@ test("browser runtime self-check expected plan follows renderable turn boundary"
   }]);
 });
 
+test("browser runtime self-check expected plan follows context compaction notice visibility", () => {
+  const unmarkedDetail = {
+    thread: {
+      id: "thread-context-unmarked",
+      status: { type: "active" },
+      turns: [{
+        id: "unmarked-context",
+        status: { type: "active" },
+        items: [
+          { id: "ctx-ignored", type: "contextCompaction" },
+          { id: "message-1", type: "agentMessage", text: "still visible", createdAtMs: 1000 },
+        ],
+      }],
+    },
+  };
+  const pendingDetail = {
+    thread: {
+      id: "thread-context-pending",
+      status: { type: "active" },
+      turns: [{
+        id: "pending-context",
+        status: { type: "active" },
+        items: [
+          { id: "ctx-pending", type: "contextCompaction", status: { type: "pending" } },
+          { id: "message-2", type: "agentMessage", text: "visible", createdAtMs: 2000 },
+        ],
+      }],
+    },
+  };
+  const completeDetail = {
+    thread: {
+      id: "thread-context-complete",
+      status: { type: "idle" },
+      turns: [{
+        id: "complete-context",
+        status: { type: "completed" },
+        items: [
+          { id: "ctx-complete", type: "contextCompaction", mobileNotice: "Context compaction complete" },
+          { id: "message-3", type: "agentMessage", text: "visible", createdAtMs: 3000 },
+        ],
+      }],
+    },
+  };
+
+  assert.equal(script.turnShapeExpectation(unmarkedDetail)[0].expectedItemCount, 1);
+  assert.equal(script.turnShapeExpectation(pendingDetail)[0].expectedItemCount, 2);
+  assert.equal(script.turnShapeExpectation(completeDetail)[0].expectedItemCount, 2);
+});
+
 test("browser runtime self-check analyzes Vite preview module readiness", () => {
   const passing = script.analyzeVitePreviewProbe({
     markerVisible: true,
@@ -2080,6 +2129,31 @@ test("browser runtime self-check catches latest turn user messages below API exp
   assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_user_message_below_api_expectation"));
 });
 
+test("browser runtime self-check catches latest turn items below API expectation", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "api-dom-latest-item-gap",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      expectedLatestItemCount: 12,
+      latestTurnItemCount: 11,
+      turns: 3,
+      items: 20,
+      renderKeys: 20,
+    }],
+  });
+
+  const issue = report.issues.find((entry) => entry.code === "browser_latest_turn_item_below_api_expectation");
+  assert.equal(report.ok, false);
+  assert.equal(issue && issue.severity, "H2");
+  assert.equal(issue && issue.expectedLatestItemCount, 12);
+  assert.equal(issue && issue.latestTurnItemCount, 11);
+  assert.equal(report.sampleSummary.maxExpectedLatestItems, 12);
+});
+
 test("browser runtime self-check counts latest task-card DOM as visible user input", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{
@@ -2173,6 +2247,50 @@ test("browser runtime self-check blocks repeated dynamic latest user gaps", () =
   assert.equal(report.ok, false);
   assert.equal(issue && issue.severity, "H2");
   assert.equal(issue && issue.observationCount, 2);
+});
+
+test("browser runtime self-check blocks repeated dynamic latest item gaps", () => {
+  const sample = {
+    threadHash: "thread-hash",
+    appVisible: true,
+    targetConfirmed: true,
+    contentConfirmed: true,
+    dynamicThreadPlan: true,
+    latestTurnMatchesTarget: true,
+    latestTurnHash: "latest-turn-hash",
+    expectedLatestItemCount: 12,
+    latestTurnItemCount: 11,
+    turns: 10,
+    items: 40,
+    renderKeys: 40,
+    expectedTurnShapes: [{
+      turnHash: "latest-turn-hash",
+      completed: false,
+      expectedItemCount: 12,
+    }],
+    domTurnShapes: [{
+      turnHash: "latest-turn-hash",
+      itemCount: 11,
+    }],
+  };
+  const oneOff = service.analyzeBrowserRuntimeSamples({
+    samples: [Object.assign({ label: "dynamic-latest-item-gap-a" }, sample)],
+  });
+  const repeated = service.analyzeBrowserRuntimeSamples({
+    samples: [
+      Object.assign({ label: "dynamic-latest-item-gap-a" }, sample),
+      Object.assign({ label: "dynamic-latest-item-gap-b" }, sample),
+    ],
+  });
+
+  const advisory = oneOff.issues.find((entry) => entry.code === "browser_latest_turn_item_below_api_expectation");
+  const blocking = repeated.issues.find((entry) => entry.code === "browser_latest_turn_item_below_api_expectation");
+  assert.equal(oneOff.ok, true);
+  assert.equal(advisory && advisory.severity, "H3");
+  assert.equal(advisory && advisory.observationCount, 1);
+  assert.equal(repeated.ok, false);
+  assert.equal(blocking && blocking.severity, "H2");
+  assert.equal(blocking && blocking.observationCount, 2);
 });
 
 test("browser runtime self-check catches latest turn task card below API expectation", () => {
@@ -2602,6 +2720,7 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
     threadHash: "thread-hash",
     expectedTurnHashes: ["expected-hash"],
     expectedLatestTurnHash: "expected-hash",
+    expectedLatestItemCount: 12,
     label: "sample",
     delayMs: 1200,
   });
@@ -2611,6 +2730,7 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /renderRoot = conversation \|\| document/);
   assert.match(expression, /contentConfirmed/);
   assert.match(expression, /expectedLatestUsageRequired/);
+  assert.match(expression, /expectedLatestItemCount/);
   assert.match(expression, /expectedLatestUserMessageCount/);
   assert.match(expression, /expectedLatestTaskCardUserMessageCount/);
   assert.match(expression, /expectedTurnShapes/);

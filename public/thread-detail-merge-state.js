@@ -44,6 +44,9 @@
     const isTurnComplete = typeof options.isTurnComplete === "function"
       ? options.isTurnComplete
       : () => false;
+    const shouldPreserveMissingExistingTurn = typeof options.shouldPreserveMissingExistingTurn === "function"
+      ? options.shouldPreserveMissingExistingTurn
+      : () => false;
     const sortTurnsForDisplay = typeof options.sortTurnsForDisplay === "function"
       ? options.sortTurnsForDisplay
       : defaultSortTurns;
@@ -99,6 +102,7 @@
       if (!incomingTurns) return normalizeMergedThread(merged);
       const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
       const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+      const incomingHasAuthoritativeVisibleWindow = incomingTurns.length > 0 && incomingVisibleWeight > 0;
       if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
         merged.turns = existingTurns;
         return normalizeMergedThread(merged);
@@ -126,6 +130,7 @@
           preservedExpandedTurnCount += 1;
           continue;
         }
+        if (incomingHasAuthoritativeVisibleWindow && !shouldPreserveMissingExistingTurn(existingTurn, merged, runtime)) continue;
         if (turnIsSupersededBy(existingTurn, latestIncoming)) continue;
         if (String(existingTurn.id || "") === activeTurnId || (!isTurnComplete(existingTurn) && turnVisibleWeight(existingTurn) > 0)) {
           merged.turns.push(existingTurn);

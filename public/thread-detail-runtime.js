@@ -967,6 +967,14 @@ function createThreadDetailRuntime(deps = {}) {
     });
   }
 
+  function shouldPreserveMissingExistingTurn(existingTurn) {
+    if (!existingTurn || isTurnComplete(existingTurn)) return false;
+    const visibleItems = (Array.isArray(existingTurn.items) ? existingTurn.items : [])
+      .filter((item) => item && itemVisibleWeight(item) > 0 && !isReasoningItem(item));
+    return Boolean(visibleItems.length
+      && visibleItems.every((item) => item.type === "userMessage" && isOptimisticUserMessage(item)));
+  }
+
   function comparableVisibleTextItem(item) {
     return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
   }
@@ -1228,6 +1236,7 @@ function createThreadDetailRuntime(deps = {}) {
     ),
     mergeItemsPreservingLocalVisible,
     shouldDropInitialSubmissionEchoTurn,
+    shouldPreserveMissingExistingTurn,
     turnIsSupersededBy,
     isTurnComplete,
     sortTurnsForDisplay,
