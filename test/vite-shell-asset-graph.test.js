@@ -128,6 +128,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
       "thread-list-stable-order",
       "thread-status-hints",
       "thread-detail-patch-plan",
+      "thread-detail-merge-state",
       "live-operation-dock-state",
     ]
   );
@@ -141,6 +142,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(virtualSource, /public\/thread-list-stable-order\.js/);
   assert.match(virtualSource, /public\/thread-status-hints\.js/);
   assert.match(virtualSource, /public\/thread-detail-patch-plan\.js/);
+  assert.match(virtualSource, /public\/thread-detail-merge-state\.js/);
   assert.match(virtualSource, /public\/live-operation-dock-state\.js/);
   assert.match(virtualSource, /planThreadListLoadRequest/);
   assert.match(virtualSource, /detail-in-flight/);
@@ -148,6 +150,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(virtualSource, /planThreadListStableOrder/);
   assert.match(virtualSource, /shouldMarkThreadUnread/);
   assert.match(virtualSource, /planVisibleItemRefreshPatch/);
+  assert.match(virtualSource, /createThreadDetailMergePolicy/);
   assert.match(virtualSource, /operationCardContentPlan/);
 });
 
@@ -253,7 +256,10 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.equal(contract.esmCompatibility.virtualModuleSource, VITE_ESM_COMPATIBILITY_SOURCE);
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.expectedFunctionCount, 15);
+  assert.equal(
+    contract.esmCompatibility.expectedFunctionCount,
+    VITE_ESM_COMPATIBILITY_MODULES.reduce((total, entry) => total + entry.expectedFunctions.length, 0)
+  );
   assert.deepEqual(
     contract.esmCompatibility.modules.map((entry) => entry.id),
     VITE_ESM_COMPATIBILITY_MODULES.map((entry) => entry.id)

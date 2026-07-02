@@ -12,16 +12,16 @@ const scriptSource = fs.readFileSync(path.join(__dirname, "..", "scripts", "code
 const viteEsmCompatibilityReady = {
   esmCompatibilityReady: true,
   esmCompatibilityOwner: "vite-shell-entry",
-  esmCompatibilityModuleCount: 6,
-  esmCompatibilityReadyCount: 6,
-  esmCompatibilityExpectedCount: 6,
+  esmCompatibilityModuleCount: 7,
+  esmCompatibilityReadyCount: 7,
+  esmCompatibilityExpectedCount: 7,
 };
 const viteEsmCompatibilityMissing = {
   esmCompatibilityReady: false,
   esmCompatibilityOwner: "",
   esmCompatibilityModuleCount: 0,
   esmCompatibilityReadyCount: 0,
-  esmCompatibilityExpectedCount: 6,
+  esmCompatibilityExpectedCount: 7,
 };
 
 test("browser runtime self-check adapter re-exports canonical runtime service", () => {

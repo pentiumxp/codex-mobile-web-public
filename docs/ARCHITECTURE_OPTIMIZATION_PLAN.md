@@ -5085,6 +5085,25 @@ app-preview classic loader path. It does not change the canonical classic
 fallback script block; it narrows the remaining classic loader surface while
 keeping the same public API globals for downstream runtime modules.
 
+The next ESM compatibility slice extends the same asset-graph-owned proof to
+thread-detail merge ownership without changing the production default shell:
+
+- The Vite asset graph now imports `public/thread-detail-merge-state.js`,
+  samples `createThreadDetailMergePolicy()`, and verifies deterministic
+  turn-order plus local-visible-item preservation behavior.
+- The Vite entry publishes the imported API back to the existing
+  `window.CodexThreadDetailMergeState` global before app-preview startup, so
+  downstream classic runtimes keep the same public boundary.
+- The app-preview classic loader excludes seven ESM-owned scripts and injects
+  the remaining `44` classic scripts only after the Vite entry proves those
+  globals are ready.
+- Browser Vite preview and app-preview probes now require all seven ESM
+  compatibility modules to report ready and published.
+
+This still avoids a full thread-detail runtime rewrite. It moves one more pure
+policy boundary into the Vite build graph while preserving classic-script
+fallback on `/`.
+
 The next default-root rehearsal gate closes the remaining pre-cutover evidence
 gap without changing production launchd defaults:
 
