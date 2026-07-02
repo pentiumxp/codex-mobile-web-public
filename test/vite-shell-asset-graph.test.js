@@ -178,6 +178,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     "thread-tile-actions",
     "modal-runtime",
     "runtime-wiring-runtime",
+    "thread-list-runtime",
     "composer-bridge-runtime",
     "api-client-runtime",
     "thread-list-load-policy",
@@ -187,6 +188,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     "thread-detail-actions",
     "thread-detail-merge-state",
     "thread-detail-v4-merge-state",
+    "thread-detail-runtime",
     "client-render-stability-guard",
     "live-operation-dock-state",
   ];
@@ -228,6 +230,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/thread-tile-actions\.js/);
   assert.match(shardSources, /public\/modal-runtime\.js/);
   assert.match(shardSources, /public\/runtime-wiring-runtime\.js/);
+  assert.match(shardSources, /public\/thread-list-runtime\.js/);
   assert.match(shardSources, /public\/composer-bridge-runtime\.js/);
   assert.match(shardSources, /public\/api-client-runtime\.js/);
   assert.match(shardSources, /public\/thread-list-load-policy\.js/);
@@ -237,6 +240,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/thread-detail-actions\.js/);
   assert.match(shardSources, /public\/thread-detail-merge-state\.js/);
   assert.match(shardSources, /public\/thread-detail-v4-merge-state\.js/);
+  assert.match(shardSources, /public\/thread-detail-runtime\.js/);
   assert.match(shardSources, /public\/client-render-stability-guard\.js/);
   assert.match(shardSources, /public\/live-operation-dock-state\.js/);
   assert.match(shardSources, /createApiClient/);
@@ -261,6 +265,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /resolveThreadTileDropAction/);
   assert.match(shardSources, /createModalRuntime/);
   assert.match(shardSources, /createRuntimeWiringRuntime/);
+  assert.match(shardSources, /createThreadListRuntime/);
   assert.match(shardSources, /createComposerBridgeRuntime/);
   assert.match(shardSources, /createApiClientRuntime/);
   assert.match(shardSources, /server-newer/);
@@ -270,6 +275,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /resolveThreadDetailClickAction/);
   assert.match(shardSources, /createThreadDetailMergePolicy/);
   assert.match(shardSources, /createThreadDetailV4MergePolicy/);
+  assert.match(shardSources, /createThreadDetailRuntime/);
   assert.match(shardSources, /renderLiveOperationDock/);
   assert.match(shardSources, /operationCardContentPlan/);
 });

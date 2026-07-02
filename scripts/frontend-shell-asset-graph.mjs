@@ -747,6 +747,7 @@ const VITE_APP_PREVIEW_CLASSIC_LOADER_EXCLUDED_MODULE_IDS = new Set([
   "thread-tile-actions",
   "modal-runtime",
   "runtime-wiring-runtime",
+  "thread-list-runtime",
   "composer-bridge-runtime",
   "api-client-runtime",
   "thread-list-load-policy",
@@ -756,6 +757,7 @@ const VITE_APP_PREVIEW_CLASSIC_LOADER_EXCLUDED_MODULE_IDS = new Set([
   "thread-detail-actions",
   "thread-detail-merge-state",
   "thread-detail-v4-merge-state",
+  "thread-detail-runtime",
   "client-render-stability-guard",
   "live-operation-dock-state",
 ]);
