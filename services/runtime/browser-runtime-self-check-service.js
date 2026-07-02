@@ -1046,6 +1046,17 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         emptyState: Boolean(final.emptyState),
       }));
     }
+    if (!seenNonEmpty && initialSparseIssueSample) {
+      issues.push(issue("H2", "browser_dom_never_loaded_target_content", initialSparseIssueSample, {
+        threadHash,
+        expectedTurnHashCount: toNumber(initialSparseIssueSample.expectedTurnHashCount),
+        expectedTurnMatchCount: toNumber(initialSparseIssueSample.expectedTurnMatchCount),
+        domTurnCount: toNumber(initialSparseIssueSample.turns),
+        domItemCount: toNumber(initialSparseIssueSample.items),
+        loadingNote: Boolean(initialSparseIssueSample.loadingNote),
+        emptyState: Boolean(initialSparseIssueSample.emptyState),
+      }));
+    }
   }
 
   if (exceptions.length) {

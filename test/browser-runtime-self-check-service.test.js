@@ -277,6 +277,42 @@ test("browser runtime self-check blocks settled initial sparse target before lat
   assert.ok(result.issues.some((issue) => issue.code === "browser_dom_initial_sparse_before_nonempty"));
 });
 
+test("browser runtime self-check blocks target content that never loads", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "initial-settled",
+        threadHash: "thread-a",
+        delayMs: 1400,
+        appVisible: true,
+        loginVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: false,
+        turns: 0,
+        items: 0,
+        expectedTurnHashCount: 8,
+        expectedTurnMatchCount: 0,
+      },
+      {
+        label: "final-settled",
+        threadHash: "thread-a",
+        delayMs: 6000,
+        appVisible: true,
+        loginVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: false,
+        turns: 0,
+        items: 0,
+        expectedTurnHashCount: 8,
+        expectedTurnMatchCount: 0,
+      },
+    ],
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "browser_dom_never_loaded_target_content"));
+});
+
 test("browser runtime self-check blocks settled stale DOM before target content appears", () => {
   const result = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,
