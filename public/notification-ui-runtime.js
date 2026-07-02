@@ -1303,18 +1303,103 @@ function handleServiceWorkerMessage(event) {
   openExternalThreadSelection(threadId).catch(showError);
 }
 
+function createNotificationUiRuntime() {
+  return {
+    handlePluginVoiceInputMessage: typeof handlePluginVoiceInputMessage === "function" ? handlePluginVoiceInputMessage : null,
+    requestHermesPluginRefresh: typeof requestHermesPluginRefresh === "function" ? requestHermesPluginRefresh : null,
+    showPluginEmbedRecovering: typeof showPluginEmbedRecovering === "function" ? showPluginEmbedRecovering : null,
+    showLogin: typeof showLogin === "function" ? showLogin : null,
+    showApp: typeof showApp === "function" ? showApp : null,
+    bootstrap: typeof bootstrap === "function" ? bootstrap : null,
+  };
+}
 
 (function exposeCodexNotificationUiRuntime(root) {
-  root.CodexNotificationUiRuntime = root.CodexNotificationUiRuntime || {
-    createNotificationUiRuntime: function createNotificationUiRuntime() {
-      return {
-      handlePluginVoiceInputMessage: typeof handlePluginVoiceInputMessage === "function" ? handlePluginVoiceInputMessage : null,
-      requestHermesPluginRefresh: typeof requestHermesPluginRefresh === "function" ? requestHermesPluginRefresh : null,
-      showPluginEmbedRecovering: typeof showPluginEmbedRecovering === "function" ? showPluginEmbedRecovering : null,
-      showLogin: typeof showLogin === "function" ? showLogin : null,
-      showApp: typeof showApp === "function" ? showApp : null,
-      bootstrap: typeof bootstrap === "function" ? bootstrap : null,
-      };
-    },
+  const notificationUiRuntimeApi = { createNotificationUiRuntime };
+  const legacyGlobals = {
+    applyPendingPluginRouteHintFocus,
+    applyPluginLaunchTarget,
+    applyPluginVoiceInputProvisionalText,
+    applyPluginVoiceInputTextMessage,
+    applyUrlPluginRouteHint,
+    applyUrlThreadSelection,
+    bootstrap,
+    boundedPluginRefreshValue,
+    boundedViewportNumber,
+    clearPluginRefreshPendingNotice,
+    clearPluginVoiceInputPress,
+    clearPluginVoiceInputProvisionalSession,
+    clearThreadUrl,
+    commitPluginVoiceInputSessionsAfterSend,
+    currentHermesRefreshRoute,
+    currentPluginParentWindowOrigin,
+    currentPluginVoiceInputDraftKey,
+    exchangePluginLaunchSession,
+    findPluginRouteTargetNode,
+    focusPluginRouteTargetNode,
+    handleHermesPluginViewportMessage,
+    handlePluginVoiceInputMessage,
+    handlePluginVoiceInputSendClick,
+    handlePluginVoiceInputSendPointerCancel,
+    handlePluginVoiceInputSendPointerDown,
+    handlePluginVoiceInputSendPointerUp,
+    handleServiceWorkerMessage,
+    hidePluginStartupLoading,
+    isHermesEmbedMode,
+    login,
+    maxVisibleTurnsForThread,
+    normalizeHermesPluginViewportMessage,
+    normalizeHermesPluginViewportRect,
+    normalizePluginParentOrigin,
+    normalizePluginRouteHint,
+    openExternalThreadSelection,
+    openHermesPluginRouteHint,
+    persistPluginVoiceInputDraft,
+    pluginRefreshPendingMessage,
+    pluginRefreshReasonForApiError,
+    pluginRootPath,
+    pluginRouteHintFromUrl,
+    pluginRouteHintTargetId,
+    pluginStartupLoadingText,
+    pluginVoiceInputActiveTurnHoldAvailable,
+    pluginVoiceInputAppendText,
+    pluginVoiceInputCanReceiveText,
+    pluginVoiceInputCapabilityPayload,
+    pluginVoiceInputComposerId,
+    pluginVoiceInputComposerWritable,
+    pluginVoiceInputEnsureComposerWritableForDraft,
+    pluginVoiceInputGestureAvailable,
+    pluginVoiceInputParentOriginAllowed,
+    pluginVoiceInputSafeDraftId,
+    pluginVoiceInputSessionIdFromPayload,
+    postPluginVoiceInputMessage,
+    publishPluginVoiceInputCapability,
+    rejectPluginVoiceInputInsert,
+    rememberPluginVoiceInputSession,
+    renderPluginRefreshPendingNotice,
+    requestHermesPluginRefresh,
+    restorePluginVoiceInputProvisionalBase,
+    scrubPluginLaunchUrl,
+    setComposerActionButtonLabel,
+    setPluginRouteDiagnostic,
+    showApp,
+    showLogin,
+    showPluginEmbedAuthError,
+    showPluginEmbedRecovering,
+    showPluginStartupLoading,
+    sortTurnsForDisplay,
+    takePluginVoiceInputSessionsForDraft,
+    threadIdFromUrlValue,
+    threadTurnsCursorSignature,
+    turnDisplayActivityMs,
+    turnDisplayItemTimestampMs,
+    turnDisplayItemTimestampRange,
+    turnDisplaySortPhase,
+    turnDisplaySortTimestampMs,
   };
-})(window);
+  if (typeof module === "object" && module.exports) {
+    module.exports = notificationUiRuntimeApi;
+  }
+  Object.assign(root, legacyGlobals);
+  root.CodexNotificationUiRuntime = notificationUiRuntimeApi;
+})(typeof globalThis !== "undefined" ? globalThis : window);

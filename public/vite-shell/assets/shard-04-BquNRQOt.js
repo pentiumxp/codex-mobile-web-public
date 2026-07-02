@@ -4901,6 +4901,19 @@ function sampleModule(id, api) {
 			globalRenderType: typeof globalThis.renderThreadTaskCards
 		};
 	}
+	if (id === "notification-ui-runtime") {
+		const runtime = functionReady(api, "createNotificationUiRuntime") ? api.createNotificationUiRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.showApp === "function" && typeof runtime.showLogin === "function" && typeof runtime.bootstrap === "function" && typeof runtime.requestHermesPluginRefresh === "function" && typeof runtime.handlePluginVoiceInputMessage === "function" && typeof globalThis.CodexNotificationUiRuntime === "object" && typeof globalThis.CodexNotificationUiRuntime.createNotificationUiRuntime === "function" && typeof globalThis.showApp === "function" && typeof globalThis.showLogin === "function" && typeof globalThis.bootstrap === "function" && typeof globalThis.sortTurnsForDisplay === "function",
+			factoryType: typeof api.createNotificationUiRuntime,
+			showAppType: typeof (runtime && runtime.showApp),
+			showLoginType: typeof (runtime && runtime.showLogin),
+			bootstrapType: typeof (runtime && runtime.bootstrap),
+			refreshType: typeof (runtime && runtime.requestHermesPluginRefresh),
+			globalBootstrapType: typeof globalThis.bootstrap,
+			globalSortType: typeof globalThis.sortTurnsForDisplay
+		};
+	}
 	if (id === "client-render-stability-guard") {
 		const sourceTurn = {
 			id: "local-turn-secret",
