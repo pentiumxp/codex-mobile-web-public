@@ -1,3186 +1,1583 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CXGq3ZiM.js";
-//#region public/plugin-voice-input.js
-var require_plugin_voice_input = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory(root || {});
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexPluginVoiceInput = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function(root) {
-		const PLUGIN_ID = "codex-mobile";
-		const VERSION = 1;
-		const MAX_TEXT_CHARS = 12e3;
-		const TYPES = Object.freeze({
-			CAPABILITY_QUERY: "voice_input.capability_query",
-			CAPABILITY_STATE: "voice_input.capability_state",
-			INSERT_TEXT: "voice_input.insert_text",
-			APPEND_TEXT: "voice_input.append_text",
-			REPLACE_DRAFT: "voice_input.replace_draft",
-			PROVISIONAL_TEXT: "voice_input.provisional_text",
-			SUBMIT: "voice_input.submit",
-			START_REQUEST: "voice_input.start_request",
-			STOP_REQUEST: "voice_input.stop_request",
-			CANCEL_REQUEST: "voice_input.cancel_request",
-			INSERT_RESULT: "voice_input.insert_result",
-			COMMIT_RESULT: "voice_input.commit_result",
-			ERROR: "voice_input.error"
-		});
-		const ACTION_TYPES = Object.freeze({
-			insert_text: TYPES.INSERT_TEXT,
-			append_text: TYPES.APPEND_TEXT,
-			replace_draft: TYPES.REPLACE_DRAFT,
-			provisional_text: TYPES.PROVISIONAL_TEXT,
-			submit: TYPES.SUBMIT
-		});
-		const ACTIONS_BY_TYPE = Object.freeze(Object.fromEntries(Object.entries(ACTION_TYPES).map(([action, type]) => [type, action])));
-		function stringValue(value) {
-			return String(value || "").trim();
-		}
-		function boundedString(value, maxLength) {
-			const text = stringValue(value);
-			const limit = Math.max(0, Number(maxLength) || 0);
-			return text ? text.slice(0, limit) : "";
-		}
-		function boundedText(value, maxLength = MAX_TEXT_CHARS) {
-			const text = String(value || "").replace(/\u00a0/g, " ");
-			const limit = Math.max(1, Number(maxLength) || MAX_TEXT_CHARS);
-			return text.slice(0, limit);
-		}
-		function normalizeAction(action) {
-			const value = stringValue(action).toLowerCase();
-			if (value === "append") return "append_text";
-			if (value === "insert") return "insert_text";
-			if (value === "replace") return "replace_draft";
-			if (value === "provisional") return "provisional_text";
-			return ACTION_TYPES[value] ? value : "";
-		}
-		function normalizeActions(actions) {
-			const normalized = (Array.isArray(actions) ? actions : actions && typeof actions === "object" ? Object.keys(actions).filter((key) => actions[key]) : []).map(normalizeAction).filter(Boolean);
-			return [...new Set(normalized)];
-		}
-		function requestIdFrom(payload = {}) {
-			return boundedString(payload.requestId || payload.request_id, 160);
-		}
-		function voiceSessionIdFrom(payload = {}) {
-			return boundedString(payload.voiceSessionId || payload.voice_session_id, 160);
-		}
-		function pluginIdFrom(payload = {}) {
-			return boundedString(payload.pluginId || payload.plugin_id || PLUGIN_ID, 80) || PLUGIN_ID;
-		}
-		function baseMessage(type, input = {}) {
-			const message = {
-				type,
-				version: VERSION,
-				pluginId: pluginIdFrom(input)
-			};
-			const requestId = requestIdFrom(input);
-			const voiceSessionId = voiceSessionIdFrom(input);
-			if (requestId) message.requestId = requestId;
-			if (voiceSessionId) message.voiceSessionId = voiceSessionId;
-			return message;
-		}
-		function capabilityStateMessage(input = {}) {
-			const actions = normalizeActions(input.actions).filter((action) => action !== "submit");
-			const composerId = boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer";
-			const threadId = boundedString(input.threadId || input.thread_id, 160);
-			const draftId = boundedString(input.draftId || input.draft_id, 220);
-			const maxChars = Math.max(1, Math.min(Number(input.maxChars || input.max_chars || MAX_TEXT_CHARS) || MAX_TEXT_CHARS, MAX_TEXT_CHARS));
-			const message = Object.assign(baseMessage(TYPES.CAPABILITY_STATE, input), {
-				writable: Boolean(input.writable || input.composerWritable),
-				composerId,
-				threadId,
-				draftId,
-				maxChars,
-				actions: actions.length ? actions : ["append_text", "replace_draft"]
-			});
-			message.composer = {
-				writable: message.writable,
-				composerId,
-				threadId,
-				draftId,
-				maxChars
-			};
-			return message;
-		}
-		function startRequestMessage(input = {}) {
-			const capability = capabilityStateMessage(input.capability || input);
-			return Object.assign(baseMessage(TYPES.START_REQUEST, input), {
-				composerId: capability.composerId,
-				threadId: capability.threadId,
-				draftId: capability.draftId,
-				writable: capability.writable,
-				maxChars: capability.maxChars,
-				actions: capability.actions,
-				capability
-			});
-		}
-		function stopRequestMessage(input = {}) {
-			return Object.assign(baseMessage(TYPES.STOP_REQUEST, input), {
-				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
-				threadId: boundedString(input.threadId || input.thread_id, 160)
-			});
-		}
-		function cancelRequestMessage(input = {}) {
-			return Object.assign(baseMessage(TYPES.CANCEL_REQUEST, input), {
-				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
-				threadId: boundedString(input.threadId || input.thread_id, 160)
-			});
-		}
-		function insertResultMessage(input = {}) {
-			return Object.assign(baseMessage(TYPES.INSERT_RESULT, input), {
-				ok: input.ok !== false,
-				action: boundedString(input.action || input.insertAction || input.insert_action, 40),
-				code: input.ok === false ? boundedString(input.code || input.errorCode || input.error_code, 80) : "",
-				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
-				draftId: boundedString(input.draftId || input.draft_id, 220),
-				error: input.ok === false ? boundedString(input.error || input.message, 240) : ""
-			});
-		}
-		function commitResultMessage(input = {}) {
-			return Object.assign(baseMessage(TYPES.COMMIT_RESULT, input), {
-				ok: input.ok !== false,
-				action: boundedString(input.action || "submitted", 40) || "submitted",
-				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
-				threadId: boundedString(input.threadId || input.thread_id, 160),
-				messageId: boundedString(input.messageId || input.message_id, 180),
-				finalText: boundedText(input.finalText || input.final_text || input.text, input.maxChars || MAX_TEXT_CHARS).trim()
-			});
-		}
-		function errorMessage(input = {}) {
-			return Object.assign(baseMessage(TYPES.ERROR, input), {
-				code: boundedString(input.code || "plugin_voice_input_error", 80) || "plugin_voice_input_error",
-				error: boundedString(input.error || input.message || "Plugin voice input error", 240),
-				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer"
-			});
-		}
-		function isVoiceInputMessage(value) {
-			return Boolean(value && typeof value === "object" && stringValue(value.type).startsWith("voice_input."));
-		}
-		function actionFromMessageType(type) {
-			return ACTIONS_BY_TYPE[stringValue(type)] || "";
-		}
-		function textFromMessage(payload = {}, maxChars = MAX_TEXT_CHARS) {
-			return boundedText(payload.text || payload.finalText || payload.final_text, maxChars).trim();
-		}
-		function postToParent(parentWindow, message, targetOrigin) {
-			if (!parentWindow || parentWindow === root || !message) return false;
-			parentWindow.postMessage(message, targetOrigin || "*");
-			return true;
-		}
-		return {
-			ACTION_TYPES,
-			MAX_TEXT_CHARS,
-			PLUGIN_ID,
-			TYPES,
-			VERSION,
-			actionFromMessageType,
-			boundedString,
-			boundedText,
-			cancelRequestMessage,
-			capabilityStateMessage,
-			commitResultMessage,
-			errorMessage,
-			insertResultMessage,
-			isVoiceInputMessage,
-			normalizeAction,
-			normalizeActions,
-			pluginIdFrom,
-			postToParent,
-			requestIdFrom,
-			startRequestMessage,
-			stopRequestMessage,
-			textFromMessage,
-			voiceSessionIdFrom
-		};
-	});
-}));
-//#endregion
-//#region public/api-client.js
-var require_api_client = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexApiClient = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function isFormDataBody(body, FormDataCtor) {
-			return typeof FormDataCtor === "function" && body instanceof FormDataCtor;
-		}
-		function createApiClient(options = {}) {
-			const fetchRef = options.fetch || (typeof fetch === "function" ? fetch : null);
-			const AbortControllerCtor = options.AbortControllerCtor || (typeof AbortController === "function" ? AbortController : null);
-			const FormDataCtor = options.FormDataCtor || (typeof FormData === "function" ? FormData : null);
-			const getKey = typeof options.getKey === "function" ? options.getKey : () => "";
-			const onUnauthorized = typeof options.onUnauthorized === "function" ? options.onUnauthorized : () => {};
-			const onResponseError = typeof options.onResponseError === "function" ? options.onResponseError : () => {};
-			async function request(path, requestOptions = {}) {
-				if (!fetchRef) throw new Error("Fetch is unavailable");
-				if (!AbortControllerCtor) throw new Error("AbortController is unavailable");
-				const headers = Object.assign({}, requestOptions.headers || {});
-				const timeoutMs = requestOptions.timeoutMs || 3e4;
-				const controller = new AbortControllerCtor();
-				let timedOut = false;
-				const timer = setTimeout(() => {
-					timedOut = true;
-					controller.abort();
-				}, timeoutMs);
-				const externalSignal = requestOptions.signal;
-				const abortFromExternal = () => controller.abort();
-				if (externalSignal) if (externalSignal.aborted) controller.abort();
-				else externalSignal.addEventListener("abort", abortFromExternal, { once: true });
-				const fetchOptions = Object.assign({}, requestOptions, {
-					headers,
-					signal: controller.signal
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CVPJRGZ_.js";
+//#region public/thread-tile-runtime.js
+var require_thread_tile_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachThreadTileRuntime(root) {
+		function createThreadTileRuntime(deps = {}) {
+			const { state, $, api, document, window, localStorage, setTimeout, clearTimeout, AbortController, THREAD_TILE_USER_MAX_PANES, THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS, THREAD_TILE_REFRESH_INTERVAL_MS, THREAD_TILE_REFRESH_MIN_INTERVAL_MS, THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS, STORAGE_THREAD_DISPLAY_MODE, STORAGE_LEGACY_THREAD_TILE_MODE, LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS, threadTileActionsApi, threadTileStatePolicy, threadTileLayoutPolicy, threadDetailPatchPlanApi, isKeyboardEditableElement, splitPaneSidebarVisible, isMenuOverlayMode, visibleThreads, isRunningStatus, saveCurrentDraftNow, restoreDraftForCurrentTarget, renderComposerSettings, updateComposerControls, scheduleRenderCurrentThread, renderCurrentThread, showError, threadById, threadDisplayName, shortPath, formatTime, statusIconHtml, threadDetailApiPath, mergeThreadPreservingVisibleItems, mergeThreadIntoThreadList, withRenderContextThread, visibleItemsForTurn, renderVisibleItemPatchHtml, renderTurnVisibleItemBudgetNotice, approvalsForTurn, renderApprovalRequest, approvalTurnId, isApprovalActive, currentLiveOperationEntry, latestLiveTurnForThread, renderMobileOperationStack, visibleItemSignature, threadTitleForDisplay, turnTimerStateHtml, threadTilePaneTimerState, threadHasVisibleConversationTurns, threadReadWarningMessage, visibleTurnsForConversation, renderThreadHistoryNote, renderPendingApprovals, effectiveThreadTileSelectedThreadId, conversationRenderSignature, existingConversationRenderKeys, patchNode, hydrateThreadDetailSurface, clearGlobalLiveOperationDockForThreadTiles, updateConversationHtml, threadTileVisibleShape, threadTileDomTurnCount, conversationDomShape, diagnosticHash, publishPluginNavigationState, escapeHtml } = Object.assign({
+				document: root.document || {},
+				window: root.window || root,
+				localStorage: root.localStorage || {
+					getItem: () => null,
+					setItem: () => {},
+					removeItem: () => {}
+				},
+				setTimeout: typeof root.setTimeout === "function" ? root.setTimeout.bind(root) : () => 0,
+				clearTimeout: typeof root.clearTimeout === "function" ? root.clearTimeout.bind(root) : () => {},
+				AbortController: root.AbortController
+			}, deps);
+			function updateThreadTileGlobalHeader(layout = null, ids = []) {
+				const titleEl = $("threadTitle");
+				const metaEl = $("threadMeta");
+				if (titleEl) titleEl.textContent = "";
+				if (metaEl) metaEl.textContent = "";
+			}
+			function viewportPixelSize(options = {}) {
+				const visualViewport = window.visualViewport;
+				const visualWidth = Math.round(visualViewport && visualViewport.width || 0);
+				const visualHeight = Math.round(visualViewport && visualViewport.height || 0);
+				const layoutWidth = Math.round(window.innerWidth || document.documentElement.clientWidth || 0);
+				const layoutHeight = Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
+				if (options.preferLayoutViewport) return {
+					width: Math.max(layoutWidth, visualWidth),
+					height: Math.max(layoutHeight, visualHeight)
+				};
+				return {
+					width: Math.round(visualWidth || layoutWidth || 0),
+					height: Math.round(visualHeight || layoutHeight || 0)
+				};
+			}
+			function isCoarsePointerViewport() {
+				return Boolean(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+			}
+			function isThreadTileKeyboardFocusActive() {
+				return Boolean(state.threadTileMode && isKeyboardEditableElement(document.activeElement));
+			}
+			function threadTileViewportSize() {
+				const layoutViewport = viewportPixelSize({ preferLayoutViewport: true });
+				const plan = threadTileStatePolicy.threadTileViewportBaselinePlan({
+					keyboardActive: isThreadTileKeyboardFocusActive(),
+					layoutViewport,
+					baseline: state.threadTileViewportBaseline
 				});
-				delete fetchOptions.timeoutMs;
-				const key = getKey();
-				if (key) headers["X-Codex-Mobile-Key"] = key;
-				if (requestOptions.body && !isFormDataBody(requestOptions.body, FormDataCtor) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+				if (plan.updateBaseline) state.threadTileViewportBaseline = plan.nextBaseline;
+				return plan.viewport;
+			}
+			function threadTileVerticalChromePx() {
+				const plan = threadTileStatePolicy.threadTileVerticalChromePlan({
+					keyboardActive: isThreadTileKeyboardFocusActive(),
+					composerHeightPx: state.composerHeightPx,
+					baselineComposerHeightPx: state.threadTileComposerHeightBaselinePx
+				});
+				if (plan.updateBaseline) state.threadTileComposerHeightBaselinePx = plan.nextComposerHeightBaselinePx;
+				return plan.verticalChromePx;
+			}
+			function threadTileLayout(options = {}) {
+				const viewport = threadTileViewportSize();
+				const sidebar = $("sidebar");
+				const sidebarSplitVisible = splitPaneSidebarVisible();
+				const menuOverlay = isMenuOverlayMode() || !sidebarSplitVisible;
+				const sidebarWidth = sidebar && sidebarSplitVisible ? Math.round(sidebar.getBoundingClientRect().width || 0) : 0;
+				return threadTileLayoutPolicy.layoutForViewport({
+					enabled: Object.prototype.hasOwnProperty.call(options, "enabled") ? options.enabled === true : state.threadTileMode,
+					viewportWidth: viewport.width,
+					viewportHeight: viewport.height,
+					sidebarWidth,
+					coarsePointer: isCoarsePointerViewport(),
+					menuOverlay,
+					maxPanes: THREAD_TILE_USER_MAX_PANES,
+					recommendedMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+					desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
+					verticalChromePx: threadTileVerticalChromePx()
+				});
+			}
+			function normalizeThreadTilePaneCount(value, fallback = 0) {
+				return threadTileStatePolicy.normalizePaneCount(value, {
+					fallback,
+					maxPanes: THREAD_TILE_USER_MAX_PANES
+				});
+			}
+			function threadTileLayoutCapacity(layout = threadTileLayout()) {
+				return threadTileStatePolicy.layoutCapacity(layout, {
+					capacityMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+					maxPanes: THREAD_TILE_USER_MAX_PANES
+				});
+			}
+			function defaultThreadTileCandidateIds(layout = threadTileLayout(), options = {}) {
+				const maxPanes = Math.max(1, Math.min(THREAD_TILE_USER_MAX_PANES, Math.floor(Number(options.maxPanes || layout && layout.maxPanes || 1)) || 1));
+				const threadIds = visibleThreads(state.threads).map((thread) => thread && thread.id).filter(Boolean);
+				return threadTileLayoutPolicy.selectThreadTileIds({
+					currentThreadId: state.currentThreadId,
+					threadIds,
+					maxPanes
+				});
+			}
+			function threadTileRunningPaneIds() {
+				const runningIds = [];
+				visibleThreads(state.threads).forEach((thread) => {
+					const id = String(thread && thread.id || "");
+					if (id && isRunningStatus(thread && thread.status)) runningIds.push(id);
+				});
+				if (state.currentThreadId) runningIds.push(String(state.currentThreadId));
+				return threadTileStatePolicy.uniqueIds(runningIds);
+			}
+			function threadTilePaneCountState(layout = threadTileLayout()) {
+				const capacity = threadTileLayoutCapacity(layout);
+				return threadTileStatePolicy.paneCountStatePlan({
+					capacity,
+					candidateIds: defaultThreadTileCandidateIds(layout, { maxPanes: capacity }),
+					maxCandidateIds: defaultThreadTileCandidateIds(layout, { maxPanes: THREAD_TILE_USER_MAX_PANES }),
+					runningIds: threadTileRunningPaneIds(),
+					currentThreadId: state.currentThreadId,
+					explicitPaneCount: state.threadTilePaneCount
+				}, { maxPanes: THREAD_TILE_USER_MAX_PANES });
+			}
+			function autoThreadTilePaneCount(layout = threadTileLayout()) {
+				return threadTilePaneCountState(layout).autoPaneCount;
+			}
+			function effectiveThreadTilePaneCount(layout = threadTileLayout()) {
+				return threadTilePaneCountState(layout).effectivePaneCount;
+			}
+			function threadTileDisplayLayout(layout = threadTileLayout(), ids = []) {
+				return threadTileStatePolicy.paneDisplayLayoutPlan({
+					layout,
+					ids,
+					effectivePaneCount: effectiveThreadTilePaneCount(layout),
+					splitPairs: threadTilePrunedSplitPairs(ids)
+				}, {
+					capacityMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+					maxPanes: THREAD_TILE_USER_MAX_PANES,
+					threadTileColumnGroups: threadTileLayoutPolicy.threadTileColumnGroups
+				}).displayLayout;
+			}
+			function normalizeThreadTilePinnedIds(values = []) {
+				return threadTileStatePolicy.normalizePinnedIds(values, { maxPanes: THREAD_TILE_USER_MAX_PANES });
+			}
+			function normalizeThreadTileSplitPairs(values = [], ids = []) {
+				return threadTileStatePolicy.normalizeSplitPairs(values, ids, {
+					maxPanes: THREAD_TILE_USER_MAX_PANES,
+					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
+				});
+			}
+			function threadTilePrunedSplitPairs(ids = threadTileCandidateIds()) {
+				return normalizeThreadTileSplitPairs(state.threadTileSplitPairs, ids);
+			}
+			function threadTileVisibleIdSet() {
+				const visibleIds = new Set(visibleThreads(state.threads).map((thread) => String(thread && thread.id || "")).filter(Boolean));
+				if (state.currentThreadId) visibleIds.add(String(state.currentThreadId));
+				return visibleIds;
+			}
+			function threadTileIdsEqual(a = [], b = []) {
+				return threadTileStatePolicy.idsEqual(a, b);
+			}
+			function threadTileCandidateIds(layout = threadTileLayout()) {
+				const maxPanes = effectiveThreadTilePaneCount(layout);
+				return threadTileStatePolicy.candidatePaneIdsPlan({
+					pinnedIds: state.threadTilePinnedIds,
+					defaultIds: defaultThreadTileCandidateIds(layout, { maxPanes }),
+					visibleIds: Array.from(threadTileVisibleIdSet()),
+					currentThreadId: state.currentThreadId,
+					maxPanes
+				}, {
+					maxPanes: THREAD_TILE_USER_MAX_PANES,
+					selectPinnedThreadTileIds: threadTileLayoutPolicy.selectPinnedThreadTileIds
+				}).ids;
+			}
+			function threadDisplaySettingsPayload() {
+				return threadTileStatePolicy.displaySettingsPayload({
+					threadTileMode: state.threadTileMode,
+					threadTilePinnedIds: state.threadTilePinnedIds,
+					threadTilePaneCount: state.threadTilePaneCount,
+					threadTileSplitPairs: state.threadTileSplitPairs,
+					threadTileSelectedThreadId: state.threadTileSelectedThreadId
+				}, {
+					maxPanes: THREAD_TILE_USER_MAX_PANES,
+					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
+				});
+			}
+			function localThreadDisplayMode() {
 				try {
-					const res = await fetchRef(path, fetchOptions);
-					if (!res.ok) {
-						let message = `${res.status} ${res.statusText}`;
-						let code = "";
-						let detail = "";
-						let requestId = "";
-						let progress = null;
-						let responseBody = null;
-						try {
-							const body = await res.json();
-							responseBody = body;
-							if (body.error) message = body.error;
-							if (body.code) code = String(body.code);
-							if (body.detail) detail = String(body.detail);
-							if (body.requestId) requestId = String(body.requestId);
-							if (body.progress && typeof body.progress === "object") progress = body.progress;
-						} catch (_) {}
-						onResponseError({
-							status: res.status,
-							message,
-							code,
-							detail,
-							requestId,
-							path
-						});
-						if (res.status === 401) onUnauthorized();
-						const err = new Error(message);
-						err.status = res.status;
-						err.code = code;
-						err.detail = detail;
-						err.requestId = requestId;
-						err.progress = progress;
-						err.responseBody = responseBody;
-						throw err;
-					}
-					if (res.status === 204) return null;
-					return res.json();
+					return localStorage.getItem(STORAGE_THREAD_DISPLAY_MODE) === "tile" || localStorage.getItem(STORAGE_LEGACY_THREAD_TILE_MODE) === "true" ? "tile" : "single";
+				} catch (_) {
+					return "single";
+				}
+			}
+			function mirrorThreadDisplayModeToLocalStorage() {
+				try {
+					localStorage.removeItem(STORAGE_LEGACY_THREAD_TILE_MODE);
+					if (state.threadTileMode) localStorage.setItem(STORAGE_THREAD_DISPLAY_MODE, "tile");
+					else localStorage.removeItem(STORAGE_THREAD_DISPLAY_MODE);
+				} catch (_) {}
+			}
+			function applyThreadDisplaySettings(settings = {}, options = {}) {
+				const normalized = threadTileStatePolicy.normalizeDisplaySettings(settings, {
+					maxPanes: THREAD_TILE_USER_MAX_PANES,
+					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
+				});
+				state.threadTileMode = normalized.threadTileMode;
+				state.threadTilePinnedIds = normalized.paneThreadIds;
+				state.threadTileSplitPairs = normalized.paneSplitPairs;
+				state.threadTilePaneCount = normalized.paneCount;
+				state.threadTileSelectedThreadId = normalized.selectedThreadId;
+				mirrorThreadDisplayModeToLocalStorage();
+				syncThreadTileToggle();
+				if (options.render === true) renderCurrentThread({ stickToBottom: true });
+			}
+			async function loadThreadDisplaySettings(options = {}) {
+				try {
+					const result = await api("/api/settings/thread-display");
+					const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : {};
+					state.threadDisplaySettingsLoaded = true;
+					const plan = threadTileStatePolicy.displaySettingsLoadPlan({
+						settings,
+						localDisplayMode: localThreadDisplayMode()
+					});
+					if (plan.action === "apply-display-settings") applyThreadDisplaySettings(plan.settings || {}, { render: options.render === true });
+					if (plan.saveAfterApply) await saveThreadDisplaySettingsNow();
 				} catch (err) {
-					if (err && err.name === "AbortError") {
-						if (timedOut) throw new Error(`Request timed out: ${path}`);
-						throw new Error(`Request cancelled: ${path}`);
-					}
-					throw err;
+					state.threadDisplaySettingsLoaded = true;
+					const plan = threadTileStatePolicy.displaySettingsLoadPlan({
+						loadFailed: true,
+						localDisplayMode: localThreadDisplayMode()
+					});
+					if (plan.action === "apply-display-settings") applyThreadDisplaySettings(plan.settings || {}, { render: options.render === true });
+					if (plan.rethrow) throw err;
+				}
+			}
+			async function saveThreadDisplaySettingsNow() {
+				if (state.threadDisplaySettingsSaveTimer) {
+					clearTimeout(state.threadDisplaySettingsSaveTimer);
+					state.threadDisplaySettingsSaveTimer = null;
+				}
+				if (state.threadDisplaySettingsSaveInFlight) return null;
+				state.threadDisplaySettingsSaveInFlight = true;
+				try {
+					const result = await api("/api/settings/thread-display", {
+						method: "POST",
+						body: JSON.stringify(threadDisplaySettingsPayload())
+					});
+					const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : null;
+					if (settings) applyThreadDisplaySettings(settings, { render: false });
+					return result;
 				} finally {
-					clearTimeout(timer);
-					if (externalSignal) externalSignal.removeEventListener("abort", abortFromExternal);
+					state.threadDisplaySettingsSaveInFlight = false;
 				}
 			}
-			return { request };
-		}
-		return {
-			createApiClient,
-			isFormDataBody
-		};
-	});
-}));
-//#endregion
-//#region public/markdown-renderer.js
-var require_markdown_renderer = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexMarkdownRenderer = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function escapeHtml(value) {
-			return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
-				"&": "&amp;",
-				"<": "&lt;",
-				">": "&gt;",
-				"\"": "&quot;",
-				"'": "&#39;"
-			})[ch]);
-		}
-		function isMarkdownTableSeparator(line) {
-			const cells = String(line || "").trim().replace(/^\||\|$/g, "").split("|");
-			return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
-		}
-		function splitMarkdownTableRow(line) {
-			return String(line || "").trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
-		}
-		function isMarkdownBlockStart(line, nextLine = "") {
-			return /^```/.test(line) || /^(#{1,6})\s+\S/.test(line) || /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line) || /^>\s?/.test(line) || /^\s*[-*+]\s+\S/.test(line) || /^\s*\d+[.)]\s+\S/.test(line) || line.includes("|") && isMarkdownTableSeparator(nextLine);
-		}
-		function safeMarkdownUrl(value) {
-			const url = String(value || "").trim();
-			if (/^(https?:|mailto:)/i.test(url)) return url;
-			return "";
-		}
-		function safeMarkdownImageUrl(value) {
-			const url = String(value || "").trim();
-			if (/^https?:/i.test(url)) return url;
-			return safeMarkdownDataImageUrl(url);
-		}
-		function safeMarkdownDataImageUrl(value) {
-			const url = String(value || "").trim();
-			if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(url)) return url.replace(/\s+/g, "");
-			return "";
-		}
-		function stripMarkdownLinkTarget(value) {
-			const target = String(value || "").trim();
-			if (target.startsWith("<") && target.endsWith(">")) return target.slice(1, -1).trim();
-			return target;
-		}
-		function decodeMarkdownLinkTarget(value) {
-			const target = stripMarkdownLinkTarget(value);
-			if (/^file:\/\//i.test(target)) try {
-				return decodeURIComponent(new URL(target).pathname);
-			} catch (_) {
-				return target.replace(/^file:\/\//i, "");
+			function scheduleThreadDisplaySettingsSave() {
+				if (!state.threadDisplaySettingsLoaded) return;
+				if (state.threadDisplaySettingsSaveTimer) clearTimeout(state.threadDisplaySettingsSaveTimer);
+				state.threadDisplaySettingsSaveTimer = setTimeout(() => {
+					state.threadDisplaySettingsSaveTimer = null;
+					saveThreadDisplaySettingsNow().catch(showError);
+				}, THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS);
 			}
-			try {
-				return decodeURIComponent(target);
-			} catch (_) {
-				return target;
+			function syncThreadTileActivePaneState(activeIds = []) {
+				const plan = threadTileStatePolicy.activePaneSyncPlan({
+					enabled: state.threadTileMode,
+					activeIds,
+					pinnedIds: state.threadTilePinnedIds,
+					visibleIds: Array.from(threadTileVisibleIdSet()),
+					splitPairs: state.threadTileSplitPairs,
+					selectedThreadId: state.threadTileSelectedThreadId,
+					currentThreadId: state.currentThreadId
+				}, {
+					maxPanes: THREAD_TILE_USER_MAX_PANES,
+					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
+				});
+				state.threadTileActiveIds = plan.activeIds;
+				if (plan.pinnedChanged) {
+					state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
+					state.threadTileSplitPairs = normalizeThreadTileSplitPairs(plan.paneSplitPairs, state.threadTilePinnedIds);
+				}
+				if (plan.selectedChanged) state.threadTileSelectedThreadId = plan.selectedThreadId;
+				if (plan.settingsChanged) scheduleThreadDisplaySettingsSave();
+				return Boolean(plan.changed);
 			}
-		}
-		function isLocalFileTarget(value) {
-			const target = stripMarkdownLinkTarget(value);
-			return target.startsWith("/") || /^file:\/\//i.test(target) || /^[A-Za-z]:[\\/]/.test(target) || /^\\\\/.test(target);
-		}
-		function autolinkUrlParts(rawUrl) {
-			let href = String(rawUrl || "");
-			let suffix = "";
-			while (/[.,;:!?]$/.test(href)) {
-				suffix = href.slice(-1) + suffix;
-				href = href.slice(0, -1);
+			function threadTileSummary(threadId) {
+				return threadById(threadId) || (state.currentThread && String(state.currentThread.id || "") === String(threadId || "") ? state.currentThread : null);
 			}
-			while (href.endsWith(")") && href.split("(").length <= href.split(")").length) {
-				suffix = ")" + suffix;
-				href = href.slice(0, -1);
+			function threadTileDisplayThread(threadId) {
+				const id = String(threadId || "");
+				if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+				return state.threadTileDetails.get(id) || threadTileSummary(id) || {
+					id,
+					name: id,
+					preview: id,
+					turns: []
+				};
 			}
-			return {
-				href,
-				suffix
-			};
-		}
-		function renderMarkdownLink(rawLabel, rawUrl) {
-			const label = escapeHtml(rawLabel);
-			const target = stripMarkdownLinkTarget(rawUrl);
-			if (isLocalFileTarget(target)) return `<button class="local-file-preview-link" type="button" data-local-file-path="${escapeHtml(decodeMarkdownLinkTarget(target))}" data-local-file-label="${escapeHtml(rawLabel)}" title="预览查看这个文件">${label}</button>`;
-			const safeUrl = safeMarkdownUrl(String(target || "").replaceAll("&amp;", "&"));
-			if (!safeUrl) return null;
-			return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${label}</a>`;
-		}
-		function renderMarkdownImage(rawLabel, rawUrl) {
-			const target = stripMarkdownLinkTarget(rawUrl);
-			const safeUrl = safeMarkdownImageUrl(String(target || "").replaceAll("&amp;", "&"));
-			if (!safeUrl) return null;
-			return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="Image" loading="lazy"></figure>`;
-		}
-		function renderAutolinkUrl(rawUrl) {
-			const parts = autolinkUrlParts(rawUrl);
-			const safeUrl = safeMarkdownUrl((parts.href.startsWith("www.") ? `https://${parts.href}` : parts.href).replaceAll("&amp;", "&"));
-			if (!safeUrl) return rawUrl;
-			return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${parts.href}</a>${parts.suffix}`;
-		}
-		function renderAngleAutolink(rawUrl) {
-			const safeUrl = safeMarkdownUrl(String(rawUrl || "").replaceAll("&amp;", "&"));
-			if (!safeUrl) return null;
-			return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${escapeHtml(rawUrl)}</a>`;
-		}
-		function renderInlineMarkdown(value) {
-			const placeholders = [];
-			const tokenPrefix = "MDTOKEN";
-			let text = String(value || "").replace(/`([^`\n]+)`/g, (_match, code) => {
-				const token = `${tokenPrefix}${placeholders.length}END`;
-				placeholders.push(`<code>${escapeHtml(code)}</code>`);
-				return token;
-			});
-			text = text.replace(/!\[([^\]\n]*)\]\((<[^>\n]+>|[^)\s]+)\)/g, (match, label, url) => {
-				const rendered = renderMarkdownImage(label, url);
-				if (!rendered) return match;
-				const token = `${tokenPrefix}${placeholders.length}END`;
-				placeholders.push(rendered);
-				return token;
-			});
-			text = text.replace(/\[([^\]\n]+)\]\((<[^>\n]+>|[^)\s]+)\)/g, (match, label, url) => {
-				const rendered = renderMarkdownLink(label, url);
-				if (!rendered) return match;
-				const token = `${tokenPrefix}${placeholders.length}END`;
-				placeholders.push(rendered);
-				return token;
-			});
-			text = text.replace(/<((?:https?:\/\/|mailto:)[^<>\s]+)>/gi, (match, url) => {
-				const rendered = renderAngleAutolink(url);
-				if (!rendered) return match;
-				const token = `${tokenPrefix}${placeholders.length}END`;
-				placeholders.push(rendered);
-				return token;
-			});
-			text = escapeHtml(text);
-			text = text.replace(/(^|[\s([{"'“‘:：])((?:https?:\/\/|www\.)[^\s<]+)/gi, (_match, prefix, url) => `${prefix}${renderAutolinkUrl(url)}`);
-			text = text.replace(/\*\*([^*\n][^*\n]*?)\*\*/g, "<strong>$1</strong>").replace(/__([^_\n][^_\n]*?)__/g, "<strong>$1</strong>").replace(/(^|[\s(])\*([^*\n][^*\n]*?)\*/g, "$1<em>$2</em>").replace(/(^|[\s(])_([^_\n][^_\n]*?)_/g, "$1<em>$2</em>");
-			placeholders.forEach((html, index) => {
-				text = text.replaceAll(`${tokenPrefix}${index}END`, html);
-			});
-			return text;
-		}
-		function renderMarkdownTable(lines) {
-			const header = splitMarkdownTableRow(lines[0]);
-			const rows = lines.slice(2).map(splitMarkdownTableRow);
-			return `<div class="markdown-table-wrap"><table>
-    <thead><tr>${header.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead>
-    <tbody>${rows.map((row) => `<tr>${header.map((_cell, index) => `<td>${renderInlineMarkdown(row[index] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
-  </table></div>`;
-		}
-		function orderedListStart(lines, options) {
-			const first = lines.map((line) => /^\s*(\d+)[.)]\s+/.exec(line)).filter(Boolean).map((match) => Number(match[1]) || 1)[0] || 1;
-			if (options && options.orderedListMode === "source") return first;
-			return lines.length <= 1 ? first : 1;
-		}
-		function renderMarkdownList(lines, ordered, options) {
-			const tag = ordered ? "ol" : "ul";
-			const itemPattern = ordered ? /^\s*(\d+)[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
-			const start = ordered ? orderedListStart(lines, options) : 1;
-			const items = lines.map((line) => {
-				const match = itemPattern.exec(line);
-				return `<li>${renderInlineMarkdown(match ? match[ordered ? 2 : 1] : line.trim())}</li>`;
-			});
-			return `<${tag}${ordered && start > 1 ? ` start="${start}"` : ""}>${items.join("")}</${tag}>`;
-		}
-		function codeBlockTableLines(codeText) {
-			const lines = String(codeText || "").replace(/\r\n?/g, "\n").split("\n");
-			for (let index = 0; index < lines.length - 1; index += 1) {
-				if (!lines[index].includes("|") || !isMarkdownTableSeparator(lines[index + 1])) continue;
-				const tableLines = [lines[index], lines[index + 1]];
-				index += 2;
-				while (index < lines.length && lines[index].trim() && lines[index].includes("|")) {
-					tableLines.push(lines[index]);
-					index += 1;
-				}
-				return tableLines.length >= 3 ? tableLines : [];
+			function setThreadTileSelectedThread(threadId, options = {}) {
+				const plan = threadTileStatePolicy.selectPanePlan({
+					enabled: state.threadTileMode,
+					threadId,
+					activeIds: state.threadTileActiveIds,
+					selectedThreadId: state.threadTileSelectedThreadId
+				});
+				if (plan.action !== "select-pane") return false;
+				return applyThreadTileSelectedPaneEffects(threadTileStatePolicy.selectedPaneEffectsPlan(plan, { render: options.render !== false }));
 			}
-			return [];
-		}
-		function renderCodeBlock(codeText, lang, options) {
-			const langLabel = `<span class="markdown-code-lang">${escapeHtml(lang || "代码")}</span>`;
-			let copyButton = "";
-			if (options && typeof options.rememberCopyText === "function" && typeof options.copyButtonHtml === "function") copyButton = options.copyButtonHtml(options.rememberCopyText(codeText), options.copyLabel || "复制", "markdown-copy-button");
-			const normalizedLang = String(lang || "").trim().toLowerCase();
-			const tableLines = Boolean(options && options.fencedTableMode === "preview") && (!normalizedLang || normalizedLang === "text" || normalizedLang === "txt" || normalizedLang === "plain" || normalizedLang === "plaintext") ? codeBlockTableLines(codeText) : [];
-			if (tableLines.length) return `<div class="markdown-code-table-preview">${renderMarkdownTable(tableLines)}</div>
-      <details class="markdown-code-table-source-details">
-        <summary>查看源码表格</summary>
-        <div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>
-      </details>`;
-			return `<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`;
-		}
-		function escapeMermaidQuotedLabel(value) {
-			return String(value || "").trim().replace(/"/g, "&quot;");
-		}
-		function mermaidGeneratedSubgraphId(index) {
-			return `codex_mobile_subgraph_${index + 1}`;
-		}
-		function normalizeMermaidSubgraphLine(line, index) {
-			const match = /^(\s*)subgraph\s+(.+?)\s*$/i.exec(String(line || ""));
-			if (!match) return line;
-			const indent = match[1] || "";
-			const body = String(match[2] || "").trim();
-			if (!body || /^end$/i.test(body)) return line;
-			const bracketMatch = /^([A-Za-z][\w-]*)\s*\[(.*)\]$/.exec(body);
-			if (bracketMatch) {
-				const label = String(bracketMatch[2] || "").trim();
-				if (!label || /^".*"$/.test(label)) return line;
-				return `${indent}subgraph ${bracketMatch[1]}["${escapeMermaidQuotedLabel(label)}"]`;
+			function applyThreadTileSelectedPaneEffects(effect) {
+				if (!effect || effect.action !== "selected-pane-effects") return false;
+				if (effect.saveDraft) saveCurrentDraftNow();
+				state.threadTileSelectedThreadId = effect.selectedThreadId;
+				if (effect.restoreDraft) restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+				if (effect.updateComposer) {
+					renderComposerSettings();
+					updateComposerControls();
+				}
+				if (effect.renderMode === "patch-panes") {
+					let patchedAll = true;
+					(Array.isArray(effect.patchThreadIds) ? effect.patchThreadIds : []).filter(Boolean).forEach((id) => {
+						patchedAll = patchThreadTilePane(id, { preserveScroll: effect.patchPreserveScroll !== false }) && patchedAll;
+					});
+					if (!patchedAll && effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
+				}
+				return true;
 			}
-			const idTitleMatch = /^([A-Za-z][\w-]*)\s+(.+)$/.exec(body);
-			if (idTitleMatch) {
-				const title = String(idTitleMatch[2] || "").trim();
-				if (!title || /^".*"$/.test(title)) return line;
-				return `${indent}subgraph ${idTitleMatch[1]}["${escapeMermaidQuotedLabel(title)}"]`;
+			function threadTileVisibleThreadOptions(currentId = "") {
+				const visible = visibleThreads(state.threads);
+				const runningIds = visible.filter((thread) => thread && isRunningStatus(thread.status)).map((thread) => String(thread.id || "")).filter(Boolean);
+				return threadTileStatePolicy.switchMenuOptionsPlan({
+					currentId,
+					activeIds: state.threadTileActiveIds,
+					runningIds,
+					visibleIds: visible.map((thread) => String(thread && thread.id || "")).filter(Boolean)
+				});
 			}
-			if (/^[A-Za-z][\w-]*$/.test(body) || /^".*"$/.test(body)) return line;
-			return `${indent}subgraph ${mermaidGeneratedSubgraphId(index)}["${escapeMermaidQuotedLabel(body)}"]`;
-		}
-		function normalizeMermaidDetachedSoftBreakLabels(source) {
-			return String(source || "").replace(/(^|[\s;])([A-Za-z][\w-]*)\[([^\]\n]+)\]<br\/>\(([^()\n]+)\)/gm, (match, prefix, nodeId, label, continuation) => {
-				return `${prefix}${nodeId}["${escapeMermaidQuotedLabel(`${String(label || "").trim()}<br/>(${String(continuation || "").trim()})`)}"]`;
-			});
-		}
-		function normalizeMermaidSourceForRender(value) {
-			const withSoftBreaks = String(value || "").replace(/\\n/g, "<br/>");
-			const firstLine = withSoftBreaks.split(/\r?\n/, 1)[0].trim();
-			if (!/^(?:flowchart|graph)\b/i.test(firstLine)) return withSoftBreaks;
-			return normalizeMermaidDetachedSoftBreakLabels(withSoftBreaks.split(/\r?\n/).map((line, index) => normalizeMermaidSubgraphLine(line, index)).join("\n")).replace(/(^|[\s;])([A-Za-z][\w-]*)\[([^\]\n]*)\]/gm, (match, prefix, nodeId, label) => {
-				const trimmed = String(label || "").trim();
-				if (!trimmed || /^".*"$/.test(trimmed)) return match;
-				if (!/[()（）]|<br\/>/.test(trimmed)) return match;
-				return `${prefix}${nodeId}["${trimmed.replace(/"/g, "&quot;")}"]`;
-			}).replace(/\|([^|\n]*[()]+[^|\n]*)\|/g, (match, label) => {
-				return `|${String(label || "").replace(/\(/g, "（").replace(/\)/g, "）")}|`;
-			});
-		}
-		function renderMermaidBlock(codeText) {
-			return `<div class="markdown-mermaid-block" data-mermaid-block="true">
-      <div class="markdown-mermaid-head">
-        <span class="markdown-mermaid-label">Mermaid</span>
-        <div class="markdown-mermaid-toolbar">
-          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="zoom-out" aria-label="缩小 Mermaid 图" title="缩小">-</button>
-          <button class="markdown-mermaid-tool markdown-mermaid-tool-reset" type="button" data-mermaid-action="reset" aria-label="重置 Mermaid 图缩放" title="重置">100%</button>
-          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="zoom-in" aria-label="放大 Mermaid 图" title="放大">+</button>
-          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="expand" aria-label="放大查看 Mermaid 图" title="放大查看">展开</button>
-        </div>
-      </div>
-      <div class="markdown-mermaid-viewer" data-mermaid-viewer="inline">
-        <div class="markdown-mermaid-canvas" data-mermaid-canvas>
-          <div class="markdown-mermaid-loading">正在渲染 Mermaid 图...</div>
-        </div>
-      </div>
-      <details class="markdown-mermaid-source-details">
-        <summary>查看 Mermaid 源码</summary>
-        <pre><code class="language-mermaid">${escapeHtml(codeText)}</code></pre>
-      </details>
-      <pre class="markdown-mermaid-source" hidden>${escapeHtml(codeText)}</pre>
-    </div>`;
-		}
-		function renderBareDataImage(value) {
-			const safeUrl = safeMarkdownDataImageUrl(value);
-			if (!safeUrl) return "";
-			return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="Image" loading="lazy"></figure>`;
-		}
-		function renderMarkdown(value, options = {}) {
-			const source = String(value || "");
-			if (!source.trim()) return "";
-			const lines = source.replace(/\r\n?/g, "\n").split("\n");
-			const blocks = [];
-			let i = 0;
-			while (i < lines.length) {
-				const line = lines[i];
-				if (!line.trim()) {
-					i += 1;
-					continue;
-				}
-				const bareDataImage = renderBareDataImage(line.trim());
-				if (bareDataImage) {
-					blocks.push(bareDataImage);
-					i += 1;
-					continue;
-				}
-				const fence = /^```([A-Za-z0-9_.+-]*)\s*$/.exec(line);
-				if (fence) {
-					const lang = fence[1] || "";
-					const code = [];
-					i += 1;
-					while (i < lines.length && !/^```\s*$/.test(lines[i])) {
-						code.push(lines[i]);
-						i += 1;
-					}
-					if (i < lines.length) i += 1;
-					const codeText = code.join("\n");
-					blocks.push(/^mermaid$/i.test(lang) ? renderMermaidBlock(codeText) : renderCodeBlock(codeText, lang, options));
-					continue;
-				}
-				const heading = /^(#{1,6})\s+(.+)$/.exec(line);
-				if (heading) {
-					const level = Math.min(6, heading[1].length + 1);
-					blocks.push(`<h${level}>${renderInlineMarkdown(heading[2].trim())}</h${level}>`);
-					i += 1;
-					continue;
-				}
-				if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
-					blocks.push("<hr>");
-					i += 1;
-					continue;
-				}
-				if (/^>\s?/.test(line)) {
-					const quote = [];
-					while (i < lines.length && /^>\s?/.test(lines[i])) {
-						quote.push(lines[i].replace(/^>\s?/, ""));
-						i += 1;
-					}
-					blocks.push(`<blockquote>${renderMarkdown(quote.join("\n"), options)}</blockquote>`);
-					continue;
-				}
-				if (line.includes("|") && isMarkdownTableSeparator(lines[i + 1])) {
-					const tableLines = [line, lines[i + 1]];
-					i += 2;
-					while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
-						tableLines.push(lines[i]);
-						i += 1;
-					}
-					blocks.push(renderMarkdownTable(tableLines));
-					continue;
-				}
-				if (/^\s*[-*+]\s+\S/.test(line)) {
-					const list = [];
-					while (i < lines.length && /^\s*[-*+]\s+\S/.test(lines[i])) {
-						list.push(lines[i]);
-						i += 1;
-					}
-					blocks.push(renderMarkdownList(list, false, options));
-					continue;
-				}
-				if (/^\s*\d+[.)]\s+\S/.test(line)) {
-					const list = [];
-					while (i < lines.length && /^\s*\d+[.)]\s+\S/.test(lines[i])) {
-						list.push(lines[i]);
-						i += 1;
-					}
-					blocks.push(renderMarkdownList(list, true, options));
-					continue;
-				}
-				const paragraph = [line.trim()];
-				i += 1;
-				while (i < lines.length && lines[i].trim() && !isMarkdownBlockStart(lines[i], lines[i + 1] || "")) {
-					paragraph.push(lines[i].trim());
-					i += 1;
-				}
-				blocks.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br>")}</p>`);
+			function renderThreadTileSwitchMenu(currentId) {
+				const current = String(currentId || "");
+				const options = threadTileVisibleThreadOptions(current);
+				const layout = threadTileLayout({ enabled: true });
+				const activeIds = threadTileCandidateIds(layout);
+				const count = activeIds.length || effectiveThreadTilePaneCount(layout);
+				const minCount = threadTileMinimumPaneCount(layout);
+				const maxCount = threadTileMaximumPaneCount(layout);
+				const plan = threadTileStatePolicy.switchMenuPlan({
+					currentId: current,
+					switchMenuPaneId: state.threadTileSwitchMenuPaneId,
+					options,
+					activeIds,
+					count,
+					minCount,
+					maxCount
+				});
+				if (plan.action !== "render-switch-menu") return "";
+				return `<div class="thread-tile-switch-menu" role="listbox" aria-label="切换此窗口线程">
+    <div class="thread-tile-switch-actions">
+      <button class="thread-tile-switch-action" type="button" data-thread-tile-close-pane="${escapeHtml(plan.currentId)}"${plan.canClose ? "" : " disabled"}>关闭窗口</button>
+      <span class="thread-tile-switch-count">${escapeHtml(String(plan.count))}/${escapeHtml(String(plan.maxCount))}</span>
+      <button class="thread-tile-switch-action" type="button" data-thread-tile-pane-count="1"${plan.canAdd ? "" : " disabled"}>新增窗口</button>
+    </div>
+    ${plan.options.map((threadId) => {
+					const thread = threadTileDisplayThread(threadId);
+					const title = threadDisplayName(thread) || threadId;
+					const summary = threadTileSummary(threadId) || thread;
+					const pathText = shortPath(thread && thread.cwd || summary && summary.cwd || "") || "聊天";
+					const timeText = formatTime(thread && thread.updatedAt || summary && summary.updatedAt, state.nowMs);
+					const status = statusIconHtml(thread && thread.status, "thread-tile-switch-status", threadId);
+					const selected = threadId === plan.currentId;
+					return `<button class="thread-tile-switch-option${selected ? " selected" : ""}" type="button" role="option" aria-selected="${selected ? "true" : "false"}" data-thread-tile-switch-target="${escapeHtml(threadId)}">
+        <span class="thread-tile-switch-main"><span class="thread-tile-switch-title">${escapeHtml(title)}</span><span class="thread-tile-switch-meta">${escapeHtml([pathText, timeText].filter(Boolean).join(" | "))}</span></span>
+        ${status}
+      </button>`;
+				}).join("")}
+  </div>`;
 			}
-			return `<div class="markdown-body">${blocks.join("")}</div>`;
-		}
-		return {
-			escapeHtml,
-			safeMarkdownUrl,
-			autolinkUrlParts,
-			renderMarkdownLink,
-			renderMarkdownImage,
-			renderAutolinkUrl,
-			renderInlineMarkdown,
-			safeMarkdownImageUrl,
-			normalizeMermaidSourceForRender,
-			isMarkdownTableSeparator,
-			splitMarkdownTableRow,
-			isMarkdownBlockStart,
-			renderMarkdownTable,
-			renderMarkdownList,
-			renderMarkdown
-		};
-	});
-}));
-//#endregion
-//#region public/plugin-embed.js
-var require_plugin_embed = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory(root || {});
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexPluginEmbed = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function(root) {
-		const NAVIGATION_TYPE = "codex-mobile.plugin.navigation";
-		const BACK_RESULT_TYPE = "codex-mobile.plugin.back_result";
-		const REFRESH_REQUIRED_TYPE = "codex-mobile.plugin.refresh_required";
-		const EXTERNAL_LINK_TYPE = "codex-mobile.plugin.external_link";
-		const BACK_TYPE = "hermes.plugin.back";
-		const THEME_VALUES = /* @__PURE__ */ new Set([
-			"system",
-			"dark",
-			"light"
-		]);
-		const FONT_SIZE_VALUES = /* @__PURE__ */ new Set([
-			"small",
-			"default",
-			"large",
-			"xlarge",
-			"xxlarge"
-		]);
-		function stringValue(value) {
-			return String(value || "").trim();
-		}
-		function boundedString(value, maxLength) {
-			const text = stringValue(value);
-			return text ? text.slice(0, Math.max(0, Number(maxLength) || 0)) : "";
-		}
-		function normalizedEnum(value, allowedValues) {
-			const text = stringValue(value).toLowerCase();
-			return allowedValues.has(text) ? text : "";
-		}
-		function urlFrom(value) {
-			try {
-				const location = root.location || {};
-				return new URL(value || location.href || "/", location.origin || "http://127.0.0.1");
-			} catch (_) {
-				return null;
-			}
-		}
-		function detect(value) {
-			const url = urlFrom(value);
-			const params = url ? url.searchParams : new URLSearchParams();
-			const routeHint = normalizeRouteHint({
-				pluginId: boundedString(params.get("pluginId"), 80),
-				route: boundedString(params.get("pluginRoute"), 80),
-				itemId: boundedString(params.get("pluginItemId"), 160),
-				threadId: boundedString(params.get("pluginThreadId"), 160),
-				taskId: boundedString(params.get("pluginTaskId"), 160)
-			}) || {
-				pluginId: "",
-				route: "",
-				itemId: "",
-				threadId: "",
-				taskId: ""
-			};
-			const appearance = {};
-			const theme = normalizedEnum(params.get("pluginTheme") || params.get("theme"), THEME_VALUES);
-			const fontSize = normalizedEnum(params.get("pluginFontSize") || params.get("fontSize"), FONT_SIZE_VALUES);
-			if (theme) appearance.theme = theme;
-			if (fontSize) appearance.fontSize = fontSize;
-			return {
-				embedded: params.get("embed") === "hermes",
-				launchKey: stringValue(params.get("codexPluginLaunch") || params.get("pluginLaunch")),
-				workspaceId: stringValue(params.get("workspaceId") || params.get("workspace_id")),
-				routeHint,
-				appearance
-			};
-		}
-		function normalizeRouteHint(value) {
-			if (!value || typeof value !== "object") return null;
-			const pluginId = boundedString(value.pluginId, 80);
-			const route = boundedString(value.route, 80);
-			const itemId = boundedString(value.itemId, 160);
-			const threadId = boundedString(value.threadId, 160);
-			const taskId = boundedString(value.taskId, 160);
-			if (!(pluginId || route || itemId || threadId || taskId)) return null;
-			return {
-				pluginId,
-				route,
-				itemId,
-				threadId,
-				taskId
-			};
-		}
-		function routeHintFromUrl(value) {
-			return normalizeRouteHint(detect(value).routeHint);
-		}
-		function routeHintTargetId(hint) {
-			const normalized = normalizeRouteHint(hint);
-			return normalized ? stringValue(normalized.taskId || normalized.itemId) : "";
-		}
-		function routeHintOpenPlan(hint) {
-			const normalized = normalizeRouteHint(hint);
-			if (!normalized || normalized.pluginId !== "codex-mobile") return { action: "ignore" };
-			const threadId = stringValue(normalized.threadId);
-			const targetId = routeHintTargetId(normalized);
-			if (!threadId && !targetId) return {
-				action: "primary",
-				diagnostic: normalized.route && normalized.route !== "root" ? {
-					message: "Notification target is unavailable",
-					error: true
-				} : null
-			};
-			if (!threadId) return {
-				action: "primary",
-				diagnostic: {
-					message: "Notification thread is unavailable",
-					error: true
+			function applyThreadTilePaneSlotEffects(effect, layout = threadTileLayout()) {
+				if (!effect || effect.action !== "pane-slot-effects") return false;
+				const sourcePane = effect.patchSourceThreadId ? threadTilePaneElement(effect.patchSourceThreadId) : null;
+				if (effect.saveDraft) saveCurrentDraftNow();
+				if (Array.isArray(effect.paneThreadIds)) state.threadTilePinnedIds = normalizeThreadTilePinnedIds(effect.paneThreadIds);
+				if (Array.isArray(effect.paneSplitPairs)) state.threadTileSplitPairs = normalizeThreadTileSplitPairs(effect.paneSplitPairs, state.threadTilePinnedIds);
+				if (effect.paneCount !== null && effect.paneCount !== void 0) state.threadTilePaneCount = effect.paneCount;
+				if (effect.refreshActiveIds) state.threadTileActiveIds = threadTileCandidateIds(layout);
+				if (effect.selectedThreadId) state.threadTileSelectedThreadId = effect.selectedThreadId;
+				if (effect.selectionPolicy === "pane-selection") state.threadTileSelectedThreadId = threadTileStatePolicy.paneSelectionPlan({
+					selectedThreadId: state.threadTileSelectedThreadId,
+					ids: threadTileCandidateIds(layout),
+					emptyFallback: effect.selectionEmptyFallback === true
+				}).selectedThreadId;
+				state.threadTileSwitchMenuPaneId = effect.switchMenuPaneId || "";
+				(effect.scrollResetIds || []).forEach((id) => state.threadTilePaneScrollHoldById.delete(id));
+				if (effect.scheduleSettingsSave) scheduleThreadDisplaySettingsSave();
+				if (effect.restoreDraft) restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+				if (effect.updateComposer) {
+					renderComposerSettings();
+					updateComposerControls();
 				}
-			};
-			return {
-				action: "openThread",
-				hint: normalized,
-				threadId,
-				targetId,
-				pendingHint: targetId ? normalized : null,
-				statusMessage: targetId ? "Opening notification target" : "Opening notification thread"
-			};
-		}
-		function routeHintFocusPlan(hint, state = {}) {
-			const normalized = normalizeRouteHint(hint);
-			if (!normalized) return { action: "ignore" };
-			const currentThreadId = stringValue(state.currentThreadId);
-			if (!currentThreadId || normalized.threadId !== currentThreadId) return { action: "wait" };
-			if (!routeHintTargetId(normalized)) return { action: "clear" };
-			if (state.targetFound === true) return {
-				action: "focused",
-				diagnostic: {
-					message: "Opened notification target",
-					error: false
+				if (effect.loadThreadId) loadThreadTileDetail(effect.loadThreadId, {
+					force: true,
+					source: effect.loadSource || "tile-switch"
+				}).catch(showError);
+				if (effect.renderMode === "schedule-full") scheduleRenderCurrentThread();
+				else if (effect.renderMode === "full") renderCurrentThread({ stickToBottom: Boolean(effect.renderStickToBottom) });
+				else if (effect.renderMode === "patch-pane" && effect.patchThreadId) {
+					if (!patchThreadTilePane(effect.patchThreadId, {
+						paneElement: sourcePane,
+						stickToBottom: Boolean(effect.patchStickToBottom)
+					}) && effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
 				}
-			};
-			return {
-				action: "primary",
-				diagnostic: {
-					message: "Notification target is no longer available",
-					error: true
-				}
-			};
-		}
-		function routeHintTargetSelectors(hint, options = {}) {
-			const targetId = routeHintTargetId(hint);
-			if (!targetId) return [];
-			const escaped = (typeof options.escapeSelector === "function" ? options.escapeSelector : (value) => stringValue(value).replace(/["\\]/g, "\\$&"))(targetId);
-			return [
-				`[data-approval-card="${escaped}"]`,
-				`[data-task-card="${escaped}"]`,
-				`[data-turn="${escaped}"]`,
-				`[data-item="${escaped}"]`
-			];
-		}
-		function findRouteHintTargetNode(rootNode, hint, options = {}) {
-			if (!rootNode || typeof rootNode.querySelector !== "function") return null;
-			for (const selector of routeHintTargetSelectors(hint, options)) {
-				const node = rootNode.querySelector(selector);
-				if (node) return node;
+				return true;
 			}
-			return null;
-		}
-		function scrubRouteHintPath(value, options = {}) {
-			const url = urlFrom(value);
-			if (!url) return "";
-			url.search = "";
-			url.searchParams.set("embed", "hermes");
-			const workspaceId = boundedString(options.workspaceId, 120);
-			if (workspaceId) url.searchParams.set("workspaceId", workspaceId);
-			const appearance = appearanceFromState(options.appearance || {});
-			if (appearance.theme) url.searchParams.set("pluginTheme", appearance.theme);
-			if (appearance.fontSize) url.searchParams.set("pluginFontSize", appearance.fontSize);
-			return `${url.pathname || "/"}?${url.searchParams.toString()}${url.hash || ""}`;
-		}
-		function parentOriginFromReferrer(referrer) {
-			try {
-				return referrer ? new URL(referrer).origin : "";
-			} catch (_) {
-				return "";
+			function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
+				const from = String(fromThreadId || "").trim();
+				const to = String(toThreadId || "").trim();
+				if (!from || !to || !state.threadTileMode) return false;
+				const layout = threadTileLayout();
+				const ids = threadTileCandidateIds(layout);
+				const plan = threadTileStatePolicy.replacePaneThreadPlan({
+					enabled: state.threadTileMode,
+					fromThreadId: from,
+					toThreadId: to,
+					ids,
+					pinnedIds: state.threadTilePinnedIds
+				}, { maxPanes: THREAD_TILE_USER_MAX_PANES });
+				if (plan.action === "skip") return false;
+				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, { maxPanes: THREAD_TILE_USER_MAX_PANES }), layout);
 			}
-		}
-		function routeFromState(state = {}, ui = {}) {
-			if (ui.imagePreviewOpen) return {
-				kind: "modal",
-				modal: "imagePreview",
-				threadId: stringValue(state.currentThreadId)
-			};
-			if (ui.mermaidPreviewOpen) return {
-				kind: "modal",
-				modal: "mermaidPreview",
-				threadId: stringValue(state.currentThreadId)
-			};
-			if (ui.filePreviewOpen) return {
-				kind: "modal",
-				modal: "filePreview",
-				threadId: stringValue(state.currentThreadId)
-			};
-			if (state.renameThreadId) return {
-				kind: "modal",
-				modal: "renameThread",
-				threadId: stringValue(state.renameThreadId)
-			};
-			if (state.threadActionMenuId) return {
-				kind: "modal",
-				modal: "threadActions",
-				threadId: stringValue(state.threadActionMenuId)
-			};
-			if (state.subagentPanelOpen) return {
-				kind: "panel",
-				panel: "subagent",
-				threadId: stringValue(state.currentThreadId)
-			};
-			if (ui.primaryPage) return {
-				kind: "root",
-				workspace: stringValue(state.selectedCwd),
-				settingsOpen: Boolean(ui.settingsOpen)
-			};
-			if (ui.settingsOpen) return {
-				kind: "panel",
-				panel: "settings",
-				threadId: stringValue(state.currentThreadId)
-			};
-			if (ui.sidebarOpen) return {
-				kind: "drawer",
-				drawer: "threadList",
-				threadId: stringValue(state.currentThreadId)
-			};
-			if (state.newThreadDraft) return {
-				kind: "new_thread",
-				workspace: stringValue(state.selectedCwd)
-			};
-			if (state.currentThreadId) return {
-				kind: "thread",
-				threadId: stringValue(state.currentThreadId)
-			};
-			if (state.selectedCwd) return {
-				kind: "workspace",
-				workspace: stringValue(state.selectedCwd)
-			};
-			return { kind: "root" };
-		}
-		function canGoBack(state = {}, ui = {}) {
-			if (ui.primaryPage) return false;
-			return Boolean(ui.imagePreviewOpen || ui.mermaidPreviewOpen || ui.filePreviewOpen || ui.createWorkspaceOpen || ui.updatePanelOpen || ui.settingsOpen || ui.sidebarOpen || state.renameThreadId || state.threadActionMenuId || state.subagentPanelOpen || state.newThreadDraft || state.currentThreadId);
-		}
-		function appearanceFromState(state = {}) {
-			const source = state.pluginAppearance && typeof state.pluginAppearance === "object" ? state.pluginAppearance : {};
-			const appearance = {};
-			const theme = normalizedEnum(source.theme || state.theme, THEME_VALUES);
-			const fontSize = normalizedEnum(state.fontSize || source.fontSize || source.pluginFontSize, FONT_SIZE_VALUES);
-			if (theme) appearance.theme = theme;
-			if (fontSize) appearance.fontSize = fontSize;
-			return appearance;
-		}
-		function navigationMessage(state = {}, ui = {}) {
-			const message = {
-				type: NAVIGATION_TYPE,
-				version: 1,
-				canGoBack: canGoBack(state, ui),
-				route: routeFromState(state, ui)
-			};
-			const appearance = appearanceFromState(state);
-			if (Object.keys(appearance).length > 0) message.appearance = appearance;
-			return message;
-		}
-		function postNavigation(parentWindow, state = {}, options = {}) {
-			if (!parentWindow || parentWindow === root) return null;
-			const message = navigationMessage(state, options.ui || {});
-			parentWindow.postMessage(message, options.targetOrigin || "*");
-			return message;
-		}
-		function backResultMessage(state = {}, options = {}) {
-			const message = {
-				type: BACK_RESULT_TYPE,
-				version: 1,
-				handled: Boolean(options.handled),
-				route: routeFromState(state, options.ui || {})
-			};
-			const reason = stringValue(options.reason);
-			if (reason) message.reason = reason;
-			return message;
-		}
-		function postBackResult(parentWindow, state = {}, options = {}) {
-			if (!parentWindow || parentWindow === root) return null;
-			const message = backResultMessage(state, options);
-			parentWindow.postMessage(message, options.targetOrigin || "*");
-			return message;
-		}
-		function refreshRequiredRoute(route = {}) {
-			const next = {};
-			const name = boundedString(route.name || route.kind || "", 48);
-			const threadId = boundedString(route.threadId || "", 160);
-			const itemId = boundedString(route.itemId || "", 160);
-			const pluginRoute = boundedString(route.pluginRoute || route.route || "", 80);
-			const pluginThreadId = boundedString(route.pluginThreadId || threadId || "", 160);
-			const pluginTaskId = boundedString(route.pluginTaskId || route.taskId || "", 160);
-			const pluginItemId = boundedString(route.pluginItemId || itemId || "", 160);
-			if (name) next.name = name;
-			if (threadId) next.threadId = threadId;
-			if (itemId) next.itemId = itemId;
-			if (pluginRoute) next.pluginRoute = pluginRoute;
-			if (pluginThreadId) next.pluginThreadId = pluginThreadId;
-			if (pluginTaskId) next.pluginTaskId = pluginTaskId;
-			if (pluginItemId) next.pluginItemId = pluginItemId;
-			return next;
-		}
-		function refreshRequiredMessage(input = {}) {
-			const message = {
-				type: REFRESH_REQUIRED_TYPE,
-				version: 1,
-				reason: boundedString(input.reason || "refresh_required", 80) || "refresh_required"
-			};
-			const route = refreshRequiredRoute(input.route || {});
-			if (Object.keys(route).length > 0) message.route = route;
-			const appearance = appearanceFromState(input.appearance || {});
-			if (Object.keys(appearance).length > 0) message.appearance = appearance;
-			return message;
-		}
-		function postRefreshRequired(parentWindow, input = {}, options = {}) {
-			if (!parentWindow || parentWindow === root) return null;
-			const message = refreshRequiredMessage(input);
-			parentWindow.postMessage(message, options.targetOrigin || "*");
-			return message;
-		}
-		function externalBrowserUrl(value, origin) {
-			const text = stringValue(value);
-			if (!text) return "";
-			if (!/^(https?:|mailto:)/i.test(text)) return "";
-			try {
-				const baseOrigin = origin || root.location && root.location.origin || "http://127.0.0.1";
-				const url = new URL(text, baseOrigin);
-				if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:") return url.toString();
-			} catch (_) {}
-			return "";
-		}
-		function externalLinkMessage(input = {}) {
-			const href = externalBrowserUrl(input.href || input.url || "", input.origin || "");
-			if (!href) return null;
-			return {
-				type: EXTERNAL_LINK_TYPE,
-				version: 1,
-				href: boundedString(href, 2e3),
-				source: boundedString(input.source || "receipt-link", 80) || "receipt-link"
-			};
-		}
-		function postExternalLink(parentWindow, input = {}, options = {}) {
-			if (!parentWindow || parentWindow === root) return null;
-			const message = externalLinkMessage(input);
-			if (!message) return null;
-			parentWindow.postMessage(message, options.targetOrigin || "*");
-			return message;
-		}
-		function isBackMessage(event) {
-			const data = event && event.data;
-			return Boolean(data && data.type === BACK_TYPE && data.version === 1);
-		}
-		function isInternalUrl(value, origin) {
-			const text = stringValue(value);
-			if (text.startsWith("/") && !text.startsWith("//")) return true;
-			try {
-				const baseOrigin = origin || root.location && root.location.origin || "";
-				const url = new URL(text, baseOrigin || "http://127.0.0.1");
-				return !baseOrigin || url.origin === baseOrigin;
-			} catch (_) {
+			function moveThreadTilePaneRelative(fromThreadId, toThreadId, placement = "after") {
+				const from = String(fromThreadId || "").trim();
+				const to = String(toThreadId || "").trim();
+				if (!from || !to || from === to || !state.threadTileMode) return false;
+				const layout = threadTileLayout();
+				const ids = threadTileCandidateIds(layout);
+				const plan = threadTileStatePolicy.movePaneRelativePlan({
+					enabled: state.threadTileMode,
+					fromThreadId: from,
+					toThreadId: to,
+					placement,
+					ids,
+					splitPairs: state.threadTileSplitPairs
+				}, {
+					maxPanes: THREAD_TILE_USER_MAX_PANES,
+					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
+				});
+				if (plan.action !== "move") return false;
+				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, { maxPanes: THREAD_TILE_USER_MAX_PANES }), layout);
+			}
+			function splitThreadTilePaneWithTarget(fromThreadId, toThreadId, placement = "below") {
+				const from = String(fromThreadId || "").trim();
+				const to = String(toThreadId || "").trim();
+				if (!from || !to || from === to || !state.threadTileMode) return false;
+				const layout = threadTileLayout();
+				const ids = threadTileCandidateIds(layout);
+				const plan = threadTileStatePolicy.splitPaneWithTargetPlan({
+					enabled: state.threadTileMode,
+					fromThreadId: from,
+					toThreadId: to,
+					placement,
+					ids,
+					splitPairs: state.threadTileSplitPairs
+				}, {
+					maxPanes: THREAD_TILE_USER_MAX_PANES,
+					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
+				});
+				if (plan.action !== "split") return false;
+				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, { maxPanes: THREAD_TILE_USER_MAX_PANES }), layout);
+			}
+			function dropThreadTilePane(fromThreadId, toThreadId, event) {
+				const from = String(fromThreadId || "").trim();
+				const to = String(toThreadId || "").trim();
+				const pane = event && event.target && event.target.closest ? event.target.closest("[data-thread-tile-pane]") : null;
+				if (!from || !to || from === to || !pane) return false;
+				const rect = pane.getBoundingClientRect();
+				const plan = threadTileStatePolicy.dropPaneIntent({
+					fromThreadId: from,
+					toThreadId: to,
+					left: rect.left,
+					top: rect.top,
+					width: rect.width,
+					height: rect.height,
+					clientX: event.clientX,
+					clientY: event.clientY
+				});
+				if (plan.action === "move-relative") return moveThreadTilePaneRelative(from, to, plan.placement);
+				if (plan.action === "split-with-target") return splitThreadTilePaneWithTarget(from, to, plan.placement);
 				return false;
 			}
-		}
-		return {
-			BACK_TYPE,
-			BACK_RESULT_TYPE,
-			EXTERNAL_LINK_TYPE,
-			REFRESH_REQUIRED_TYPE,
-			NAVIGATION_TYPE,
-			appearanceFromState,
-			backResultMessage,
-			canGoBack,
-			detect,
-			externalBrowserUrl,
-			externalLinkMessage,
-			findRouteHintTargetNode,
-			isBackMessage,
-			isInternalUrl,
-			navigationMessage,
-			normalizeRouteHint,
-			parentOriginFromReferrer,
-			postBackResult,
-			postExternalLink,
-			postRefreshRequired,
-			postNavigation,
-			refreshRequiredMessage,
-			routeHintFocusPlan,
-			routeHintFromUrl,
-			routeHintOpenPlan,
-			routeHintTargetId,
-			routeHintTargetSelectors,
-			routeFromState,
-			scrubRouteHintPath
-		};
-	});
-}));
-//#endregion
-//#region public/frontend-runtime-health.js
-var require_frontend_runtime_health = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexFrontendRuntimeHealth = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_WINDOW_MS = 5e3;
-		const DEFAULT_SUBMISSION_PROBE_MIN_MS = 250;
-		const MAX_COUNT = 1e5;
-		function compactToken(value, fallback = "", maxLength = 80) {
-			return String(value || "").trim().replace(/[^a-zA-Z0-9_.:-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, maxLength) || fallback;
-		}
-		function boundedCount(value) {
-			const number = Number(value);
-			if (!Number.isFinite(number) || number < 0) return 0;
-			return Math.min(MAX_COUNT, Math.trunc(number));
-		}
-		function boolCount(value) {
-			return value ? 1 : 0;
-		}
-		function boundedConfidence(value, fallback = .74) {
-			const number = Number(value);
-			if (!Number.isFinite(number)) return fallback;
-			return Math.max(0, Math.min(1, number));
-		}
-		function baseContext(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const context = {
-				surface: compactToken(source.surface, "frontend-runtime", 80),
-				action: compactToken(source.action, "render", 80)
-			};
-			const routeKind = compactToken(source.routeKind || source.route_kind, "", 80);
-			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
-			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
-			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
-			const itemHash = compactToken(source.itemHash || source.item_hash, "", 80);
-			const renderPlanReason = compactToken(source.renderPlanReason || source.render_plan_reason, "", 80);
-			const patchRejectReason = compactToken(source.patchRejectReason || source.patch_reject_reason, "", 80);
-			if (routeKind) context.route_kind = routeKind;
-			if (readMode) context.read_mode = readMode;
-			if (renderMode) context.render_mode = renderMode;
-			if (threadHash) context.thread_hash = threadHash;
-			if (itemHash) context.item_hash = itemHash;
-			if (renderPlanReason) context.render_plan_reason = renderPlanReason;
-			if (patchRejectReason) context.patch_reject_reason = patchRejectReason;
-			return context;
-		}
-		function runtimeEvent(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			return {
-				category: "frontend_runtime_mismatch",
-				diagnostic_type: compactToken(source.diagnosticType || source.diagnostic_type, "frontend_runtime_mismatch", 80),
-				severity_hint: compactToken(source.severityHint || source.severity_hint, "H2", 8),
-				evidence_confidence: boundedConfidence(source.evidenceConfidence || source.evidence_confidence, .74),
-				error_code: compactToken(source.errorCode || source.error_code, "frontend_runtime_mismatch", 100),
-				context: baseContext(source.context || source),
-				counts: source.counts && typeof source.counts === "object" ? source.counts : {},
-				breadcrumbs: Array.isArray(source.breadcrumbs) ? source.breadcrumbs.slice(0, 6) : []
-			};
-		}
-		function runtimeSuccess(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			return {
-				category: "frontend_runtime_mismatch",
-				diagnostic_type: compactToken(source.diagnosticType || source.diagnostic_type, "frontend_runtime_mismatch", 80),
-				error_code: compactToken(source.errorCode || source.error_code || source.diagnosticType || source.diagnostic_type, "frontend_runtime_mismatch", 100),
-				context: baseContext(source.context || source)
-			};
-		}
-		function submittedMessageDomMissingEvent(input = {}) {
-			const elapsedMs = boundedCount(input.elapsedMs || input.elapsed_ms);
-			const domCount = boundedCount(input.domCount || input.dom_count);
-			const visibleCount = boundedCount(input.visibleCount || input.visible_count);
-			const context = baseContext(Object.assign({}, input, {
-				surface: "user-operation",
-				action: input.action || "message-submit"
-			}));
-			return runtimeEvent({
-				diagnosticType: "submitted_message_dom_missing",
-				severityHint: "H2",
-				evidenceConfidence: .82,
-				errorCode: "submitted_message_dom_missing",
-				context,
-				counts: {
-					elapsed_ms: elapsedMs,
-					dom_count: domCount,
-					visible_count: visibleCount,
-					current_thread_match: boolCount(input.currentThreadMatch),
-					has_thread_submission: boolCount(input.hasThreadSubmission),
-					dom_has_submission: boolCount(input.domHasSubmission),
-					composer_busy: boolCount(input.composerBusy)
-				},
-				breadcrumbs: [{
-					kind: "user-operation",
-					code: "submitted-message-dom-probe",
-					status: "failed",
-					fields: {
-						elapsed_ms: elapsedMs,
-						dom_count: domCount,
-						visible_count: visibleCount,
-						thread_hash: context.thread_hash || "",
-						item_hash: context.item_hash || ""
-					}
-				}]
-			});
-		}
-		function submittedMessageDomSuccess(input = {}) {
-			return runtimeSuccess(Object.assign({}, input, {
-				diagnosticType: "submitted_message_dom_missing",
-				errorCode: "submitted_message_dom_missing",
-				surface: "user-operation",
-				action: input.action || "message-submit"
-			}));
-		}
-		function submittedMessageDomProbeEffects(input = {}) {
-			if (boundedCount(input.elapsedMs || input.elapsed_ms) < boundedCount(input.minElapsedMs || input.min_elapsed_ms || DEFAULT_SUBMISSION_PROBE_MIN_MS)) return {
-				effects: [],
-				reason: "too-early"
-			};
-			if (!input.currentThreadMatch) return {
-				effects: [],
-				reason: "different-thread"
-			};
-			if (!input.hasThreadSubmission) return {
-				effects: [],
-				reason: "no-thread-submission"
-			};
-			const missing = !input.domHasSubmission;
-			return {
-				effects: [{
-					type: missing ? "diagnostic-failure" : "diagnostic-success",
-					diagnostic: missing ? submittedMessageDomMissingEvent(input) : submittedMessageDomSuccess(input),
-					diagnosticType: "submitted_message_dom_missing",
-					reason: missing ? "submitted-message-dom-missing" : "submitted-message-dom-present"
-				}],
-				reason: missing ? "submitted-message-dom-missing" : "submitted-message-dom-present"
-			};
-		}
-		function renderChurnEvent(input = {}) {
-			const context = baseContext(Object.assign({}, input, {
-				surface: "conversation-render",
-				action: input.action || "render"
-			}));
-			const fullRenderCount = boundedCount(input.fullRenderCount || input.full_render_count);
-			const fallbackCount = boundedCount(input.fallbackCount || input.fallback_count);
-			const renderCount = boundedCount(input.renderCount || input.render_count);
-			const domCount = boundedCount(input.domCount || input.dom_count);
-			const visibleCount = boundedCount(input.visibleCount || input.visible_count);
-			const previousCount = boundedCount(input.previousCount || input.previous_count);
-			return runtimeEvent({
-				diagnosticType: "render_churn",
-				severityHint: "H3",
-				evidenceConfidence: .72,
-				errorCode: fallbackCount ? "render_patch_fallback_churn" : "render_full_render_churn",
-				context,
-				counts: {
-					render_count: renderCount,
-					full_render_count: fullRenderCount,
-					fallback_count: fallbackCount,
-					previous_count: previousCount,
-					dom_count: domCount,
-					visible_count: visibleCount,
-					render_elapsed_ms: boundedCount(input.renderElapsedMs || input.render_elapsed_ms),
-					duplicate_count: boundedCount(input.duplicateCount || input.duplicate_count)
-				},
-				breadcrumbs: [{
-					kind: "conversation-render",
-					code: fallbackCount ? "patch-fallback-churn" : "full-render-churn",
-					status: "unstable",
-					fields: {
-						render_mode: context.render_mode || "",
-						render_plan_reason: context.render_plan_reason || "",
-						patch_reject_reason: context.patch_reject_reason || "",
-						previous_count: previousCount,
-						dom_count: domCount,
-						visible_count: visibleCount
-					}
-				}]
-			});
-		}
-		function domDropEvent(input = {}) {
-			const context = baseContext(Object.assign({}, input, {
-				surface: "conversation-render",
-				action: input.action || "render"
-			}));
-			return runtimeEvent({
-				diagnosticType: "render_dom_drop",
-				severityHint: "H2",
-				evidenceConfidence: .8,
-				errorCode: "render_dom_drop",
-				context,
-				counts: {
-					previous_count: boundedCount(input.previousCount || input.previous_count),
-					dom_count: boundedCount(input.domCount || input.dom_count),
-					visible_count: boundedCount(input.visibleCount || input.visible_count),
-					duplicate_count: boundedCount(input.duplicateCount || input.duplicate_count),
-					render_elapsed_ms: boundedCount(input.renderElapsedMs || input.render_elapsed_ms)
-				},
-				breadcrumbs: [{
-					kind: "conversation-render",
-					code: "dom-drop",
-					status: "failed",
-					fields: {
-						previous_count: boundedCount(input.previousCount || input.previous_count),
-						dom_count: boundedCount(input.domCount || input.dom_count),
-						visible_count: boundedCount(input.visibleCount || input.visible_count),
-						render_mode: context.render_mode || ""
-					}
-				}]
-			});
-		}
-		function renderSuccess(input = {}, diagnosticType = "render_churn") {
-			return runtimeSuccess(Object.assign({}, input, {
-				diagnosticType,
-				errorCode: diagnosticType,
-				surface: "conversation-render",
-				action: input.action || "render"
-			}));
-		}
-		function threadListInteractionStallEvent(input = {}) {
-			const maxRafDelayMs = boundedCount(input.maxRafDelayMs || input.max_raf_delay_ms);
-			const maxScrollApplyMs = boundedCount(input.maxScrollApplyMs || input.max_scroll_apply_ms);
-			const maxLongTaskMs = boundedCount(input.maxLongTaskMs || input.max_long_task_ms);
-			const elapsedMs = boundedCount(input.elapsedMs || input.elapsed_ms);
-			const maxDelayMs = Math.max(maxRafDelayMs, maxScrollApplyMs, maxLongTaskMs, elapsedMs);
-			const context = baseContext(Object.assign({}, input, {
-				surface: "thread-list-runtime",
-				action: input.action || "thread-list-interaction"
-			}));
-			const errorCode = maxLongTaskMs >= Math.max(maxRafDelayMs, maxScrollApplyMs) ? "browser_main_thread_long_task" : "browser_thread_list_interaction_blocked";
-			return runtimeEvent({
-				diagnosticType: "thread_list_interaction_stall",
-				severityHint: maxDelayMs >= boundedCount(input.h2ThresholdMs || input.h2_threshold_ms || 3e3) ? "H2" : "H3",
-				evidenceConfidence: maxDelayMs >= 3e3 ? .86 : .74,
-				errorCode,
-				context,
-				counts: {
-					elapsed_ms: elapsedMs,
-					raf_delay_ms: maxRafDelayMs,
-					scroll_apply_ms: maxScrollApplyMs,
-					long_task_ms: maxLongTaskMs,
-					long_task_count: boundedCount(input.longTaskCount || input.long_task_count),
-					thread_list_count: boundedCount(input.threadListCount || input.thread_list_count),
-					thread_list_visible: boolCount(input.threadListVisible || input.thread_list_visible),
-					thread_list_monitorable: boolCount(input.threadListMonitorable || input.thread_list_monitorable),
-					scroll_top: boundedCount(input.scrollTop || input.scroll_top),
-					scroll_height: boundedCount(input.scrollHeight || input.scroll_height)
-				},
-				breadcrumbs: [{
-					kind: "thread-list-runtime",
-					code: errorCode,
-					status: "blocked",
-					fields: {
-						elapsed_ms: elapsedMs,
-						raf_delay_ms: maxRafDelayMs,
-						scroll_apply_ms: maxScrollApplyMs,
-						long_task_ms: maxLongTaskMs,
-						long_task_count: boundedCount(input.longTaskCount || input.long_task_count),
-						thread_list_count: boundedCount(input.threadListCount || input.thread_list_count)
-					}
-				}]
-			});
-		}
-		function threadListInteractionStallEffects(input = {}) {
-			const minDelayMs = boundedCount(input.minDelayMs || input.min_delay_ms || 1e3) || 1e3;
-			const maxDelayMs = Math.max(boundedCount(input.maxRafDelayMs || input.max_raf_delay_ms), boundedCount(input.maxScrollApplyMs || input.max_scroll_apply_ms), boundedCount(input.maxLongTaskMs || input.max_long_task_ms), boundedCount(input.elapsedMs || input.elapsed_ms));
-			if (!input.threadListVisible && !input.threadListMonitorable) return {
-				effects: [],
-				reason: "thread-list-not-visible"
-			};
-			if (maxDelayMs < minDelayMs) return {
-				effects: [],
-				reason: "below-threshold"
-			};
-			return {
-				effects: [{
-					type: "diagnostic-failure",
-					diagnostic: threadListInteractionStallEvent(input),
-					diagnosticType: "thread_list_interaction_stall",
-					reason: "thread-list-interaction-stall"
-				}],
-				reason: "thread-list-interaction-stall"
-			};
-		}
-		function createMonitor(options = {}) {
-			const now = typeof options.now === "function" ? options.now : () => Date.now();
-			const windowMs = boundedCount(options.windowMs || DEFAULT_WINDOW_MS) || DEFAULT_WINDOW_MS;
-			const fullRenderThreshold = boundedCount(options.fullRenderThreshold || 3) || 3;
-			const fallbackThreshold = boundedCount(options.fallbackThreshold || 2) || 2;
-			let samples = [];
-			function trim(currentTime) {
-				samples = samples.filter((entry) => currentTime - entry.at <= windowMs);
-				return samples;
+			function replaceLastThreadTilePaneForThreadListOpen(threadId, options = {}) {
+				const id = String(threadId || "").trim();
+				const source = String(options.source || "").trim();
+				if (!id || source !== "thread-list" || !state.threadTileMode) return false;
+				const layout = threadTileLayout({ enabled: true });
+				if (!layout || !layout.enabled) return false;
+				const ids = threadTileCandidateIds(layout);
+				const plan = threadTileStatePolicy.replaceLastPaneForThreadListOpenPlan({
+					enabled: state.threadTileMode,
+					source,
+					threadId: id,
+					ids,
+					pinnedIds: state.threadTilePinnedIds
+				}, { maxPanes: THREAD_TILE_USER_MAX_PANES });
+				if (plan.action !== "replace-last") return false;
+				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, { maxPanes: THREAD_TILE_USER_MAX_PANES }), layout);
 			}
-			function recordRender(input = {}) {
-				const currentTime = now();
-				const source = input && typeof input === "object" ? input : {};
-				const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
-				const finalAction = compactToken(source.finalAction || source.final_action || renderMode, "", 80);
-				const sample = {
-					at: currentTime,
-					fullRender: Boolean(source.fullRender || finalAction === "set-inner-html" || finalAction === "full-render"),
-					fallbackApplied: Boolean(source.fallbackApplied || source.fallback_applied)
-				};
-				samples.push(sample);
-				trim(currentTime);
-				const renderCount = samples.length;
-				const fullRenderCount = samples.filter((entry) => entry.fullRender).length;
-				const fallbackCount = samples.filter((entry) => entry.fallbackApplied).length;
-				const previousCount = boundedCount(source.previousCount || source.previous_count);
-				const domCount = boundedCount(source.domCount || source.dom_count);
-				const visibleCount = boundedCount(source.visibleCount || source.visible_count);
-				const duplicateCount = boundedCount(source.duplicateCount || source.duplicate_count);
-				const effects = [];
-				if (previousCount >= 2 && visibleCount >= 2 && domCount <= 1 && domCount < previousCount) effects.push({
-					type: "diagnostic-failure",
-					diagnostic: domDropEvent(Object.assign({}, source, {
-						renderCount,
-						fullRenderCount,
-						fallbackCount
-					})),
-					diagnosticType: "render_dom_drop",
-					reason: "render-dom-drop"
+			function toggleThreadTileSwitchMenu(threadId) {
+				const id = String(threadId || "").trim();
+				if (!id || !state.threadTileMode) return false;
+				setThreadTileSelectedThread(id, { render: false });
+				state.threadTileSwitchMenuPaneId = state.threadTileSwitchMenuPaneId === id ? "" : id;
+				if (!patchThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+				return true;
+			}
+			function threadTileHasLiveThread() {
+				if (!state.threadTileMode || !state.threadTileActiveIds.length) return false;
+				return state.threadTileActiveIds.some((id) => {
+					const thread = threadTileDisplayThread(id);
+					return Boolean(latestLiveTurnForThread(thread) || isRunningStatus(thread && thread.status));
 				});
-				else if (domCount >= Math.min(visibleCount || domCount, 2)) effects.push({
-					type: "diagnostic-success",
-					diagnostic: renderSuccess(source, "render_dom_drop"),
-					diagnosticType: "render_dom_drop",
-					reason: "render-dom-stable"
+			}
+			function updateThreadTilePaneStatusBadges() {
+				if (!state.threadTileMode) return;
+				document.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
+					const id = pane.getAttribute("data-thread-tile-pane") || "";
+					const container = pane.querySelector("[data-thread-tile-pane-state]");
+					if (!container) return;
+					const html = turnTimerStateHtml(threadTilePaneTimerState(threadTileDisplayThread(id)));
+					if (container.innerHTML !== html) container.innerHTML = html;
 				});
-				if (fullRenderCount >= fullRenderThreshold || fallbackCount >= fallbackThreshold) effects.push({
-					type: "diagnostic-failure",
-					diagnostic: renderChurnEvent(Object.assign({}, source, {
-						renderCount,
-						fullRenderCount,
-						fallbackCount,
-						previousCount,
-						domCount,
-						visibleCount,
-						duplicateCount
-					})),
-					diagnosticType: "render_churn",
-					reason: "render-churn"
-				});
-				else if (!sample.fullRender && !sample.fallbackApplied && duplicateCount === 0) effects.push({
-					type: "diagnostic-success",
-					diagnostic: renderSuccess(source, "render_churn"),
-					diagnosticType: "render_churn",
-					reason: "render-churn-stable"
-				});
-				return {
-					effects,
-					reason: effects.length ? "frontend-render-health-effects" : "render-observed",
-					renderCount,
-					fullRenderCount,
-					fallbackCount
-				};
 			}
-			function reset() {
-				samples = [];
+			function threadTileError(threadId) {
+				return state.threadTileErrors.get(String(threadId || "")) || "";
 			}
-			return {
-				recordRender,
-				reset,
-				windowMs
-			};
-		}
-		return {
-			compactToken,
-			createMonitor,
-			submittedMessageDomMissingEvent,
-			submittedMessageDomProbeEffects,
-			submittedMessageDomSuccess,
-			threadListInteractionStallEvent,
-			threadListInteractionStallEffects,
-			renderChurnEvent,
-			domDropEvent,
-			runtimeSuccess
-		};
-	});
-}));
-//#endregion
-//#region public/home-ai-diagnostic-reporting.js
-var require_home_ai_diagnostic_reporting = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexHomeAiDiagnosticReporting = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_THRESHOLD = 3;
-		const DEFAULT_THROTTLE_MS = 300 * 1e3;
-		const DEFAULT_SLOW_PATH_REPORT_MODE = "observe";
-		const MAX_BREADCRUMBS = 6;
-		const PLUGIN_ID = "codex-mobile";
-		const SAFE_CONTEXT_KEYS = /* @__PURE__ */ new Set([
-			"action",
-			"app_server_deferred_reason",
-			"app_server_request_reason",
-			"build_id",
-			"cache_id",
-			"client_visibility",
-			"cold_path_owner",
-			"cold_path_reason",
-			"diagnostic_source",
-			"embedded",
-			"fallback_cache_decision",
-			"fallback_deferred_reason",
-			"item_hash",
-			"pluginId",
-			"pwa",
-			"read_mode",
-			"render_mode",
-			"render_plan_reason",
-			"route_kind",
-			"shell_cache",
-			"sourceSurface",
-			"source_kind",
-			"patch_reject_reason",
-			"performance_phase",
-			"projection_partial_kind",
-			"projection_source",
-			"surface",
-			"task_hash",
-			"thread_hash",
-			"turn_hash",
-			"workspaceId"
-		]);
-		const SAFE_FIELD_KEYS = /* @__PURE__ */ new Set([
-			"action",
-			"app_server_deferred_reason",
-			"app_server_request_reason",
-			"api_status",
-			"cold_path_owner",
-			"cold_path_reason",
-			"dom_count",
-			"duplicate_count",
-			"elapsed_ms",
-			"api_elapsed_ms",
-			"active_turn_count",
-			"completed_turn_count",
-			"raf_delay_ms",
-			"item_hash",
-			"item_kind",
-			"item_count",
-			"latest_mismatch_count",
-			"long_task_count",
-			"long_task_ms",
-			"missing_count",
-			"order_mismatch_count",
-			"patch_reject_reason",
-			"previous_count",
-			"projection_partial",
-			"projection_partial_kind",
-			"projection_source",
-			"read_mode",
-			"render_elapsed_ms",
-			"render_mode",
-			"render_plan_reason",
-			"fallback_cache_decision",
-			"fallback_deferred_reason",
-			"repeated_failures",
-			"route_kind",
-			"server_count",
-			"source_kind",
-			"status_code",
-			"scroll_apply_ms",
-			"scroll_height",
-			"scroll_top",
-			"task_hash",
-			"threshold_ms",
-			"thread_list_count",
-			"thread_hash",
-			"turn_count",
-			"turn_hash",
-			"older_cursor",
-			"newer_cursor",
-			"omitted_turns",
-			"visible_count"
-		]);
-		const SAFE_PATH_LABEL_KEYS = /* @__PURE__ */ new Set(["cold_path_owner", "cold_path_reason"]);
-		const UNSAFE_KEY_PATTERN = /(body|content|cookie|file|href|key|launch|log|message|path|payload|prompt|raw|secret|text|title|token|url)/i;
-		function stableTextHash(value) {
-			const text = String(value || "");
-			let hash = 2166136261;
-			for (let index = 0; index < text.length; index += 1) {
-				hash ^= text.charCodeAt(index);
-				hash = Math.imul(hash, 16777619);
+			function threadTilePaneIsVisible(threadId) {
+				const id = String(threadId || "");
+				return Boolean(id && state.threadTileActiveIds.includes(id));
 			}
-			return (hash >>> 0).toString(36);
-		}
-		function hashIdentifier(value, prefix = "h") {
-			const text = String(value || "").trim();
-			return text ? `${prefix}_${stableTextHash(text)}` : "";
-		}
-		function boundedToken(value, fallback = "unknown", maxLength = 80) {
-			return String(value || "").trim().replace(/[^a-zA-Z0-9_.:-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, maxLength) || fallback;
-		}
-		function boundedNumber(value, fallback = 0) {
-			const number = Number(value);
-			if (!Number.isFinite(number)) return fallback;
-			return Math.max(0, Math.round(number));
-		}
-		function durationBucket(value) {
-			const ms = Number(value || 0);
-			if (!Number.isFinite(ms) || ms <= 0) return "";
-			if (ms < 1e3) return "lt_1s";
-			if (ms < 3e3) return "1_3s";
-			if (ms < 1e4) return "3_10s";
-			if (ms < 3e4) return "10_30s";
-			return "30s_plus";
-		}
-		function safeCounts(counts) {
-			const out = {};
-			if (!counts || typeof counts !== "object" || Array.isArray(counts)) return out;
-			for (const [key, value] of Object.entries(counts)) {
-				if (UNSAFE_KEY_PATTERN.test(key)) continue;
-				const safeKey = boundedToken(key, "", 60);
-				if (!safeKey) continue;
-				if (typeof value === "boolean") out[safeKey] = value ? 1 : 0;
-				else if (Number.isFinite(Number(value))) out[safeKey] = boundedNumber(value);
-			}
-			return out;
-		}
-		function safeFields(fields, allowedKeys = SAFE_FIELD_KEYS) {
-			const out = {};
-			if (!fields || typeof fields !== "object" || Array.isArray(fields)) return out;
-			for (const [key, value] of Object.entries(fields)) {
-				if (!allowedKeys.has(key) || UNSAFE_KEY_PATTERN.test(key) && !SAFE_PATH_LABEL_KEYS.has(key)) continue;
-				if (typeof value === "boolean") out[key] = value;
-				else if (Number.isFinite(Number(value)) && !/_hash$/.test(key)) out[key] = boundedNumber(value);
+			function setThreadTileConversationMode(active, layout = null) {
+				const conversation = $("conversation");
+				const main = document.querySelector(".main");
+				document.documentElement.classList.toggle("thread-tile-open", Boolean(active));
+				if (main) main.classList.toggle("thread-tile-main", Boolean(active));
+				if (!conversation) return;
+				conversation.classList.toggle("thread-tile-mode", Boolean(active));
+				if (active && layout && layout.columns) conversation.style.setProperty("--thread-tile-columns", String(layout.columns));
 				else {
-					const safe = boundedToken(value, "", 120);
-					if (safe) out[key] = safe;
+					conversation.style.removeProperty("--thread-tile-columns");
+					state.threadTileActiveIds = [];
+					state.threadTileSelectedThreadId = "";
+					state.threadTileSwitchMenuPaneId = "";
+					state.threadTileViewportBaseline = null;
+					state.threadTileComposerHeightBaselinePx = 0;
+					for (const frame of state.threadTilePaneRenderFramesById.values()) if (window.cancelAnimationFrame) window.cancelAnimationFrame(frame);
+					else clearTimeout(frame);
+					state.threadTilePaneRenderFramesById.clear();
+					state.threadTilePaneScrollHoldById.clear();
+					clearThreadTileRefreshTimer();
+					if (state.threadTileOperationRefreshTimer) {
+						clearTimeout(state.threadTileOperationRefreshTimer);
+						state.threadTileOperationRefreshTimer = null;
+					}
 				}
+				updateComposerControls();
 			}
-			return out;
-		}
-		function safeContext(context) {
-			const out = Object.assign({}, {
-				pluginId: PLUGIN_ID,
-				sourceSurface: "embedded-plugin"
-			});
-			const input = context && typeof context === "object" && !Array.isArray(context) ? context : {};
-			for (const [key, value] of Object.entries(input)) {
-				if (!SAFE_CONTEXT_KEYS.has(key) || UNSAFE_KEY_PATTERN.test(key) && !SAFE_PATH_LABEL_KEYS.has(key)) continue;
-				if (typeof value === "boolean") out[key] = value;
-				else if (Number.isFinite(Number(value)) && !/_hash$/.test(key)) out[key] = boundedNumber(value);
-				else {
-					const safe = boundedToken(value, "", 160);
-					if (safe) out[key] = safe;
-				}
-			}
-			out.pluginId = PLUGIN_ID;
-			out.sourceSurface = "embedded-plugin";
-			return out;
-		}
-		function safeBreadcrumbs(breadcrumbs) {
-			if (!Array.isArray(breadcrumbs)) return [];
-			return breadcrumbs.slice(0, MAX_BREADCRUMBS).map((entry) => {
-				const input = entry && typeof entry === "object" ? entry : {};
-				const out = {
-					kind: boundedToken(input.kind, "runtime", 80),
-					code: boundedToken(input.code, "unknown", 80),
-					status: boundedToken(input.status, "failed", 40)
-				};
-				const bucket = boundedToken(input.duration_bucket || input.durationBucket || "", "", 40);
-				if (bucket) out.duration_bucket = bucket;
-				const fields = safeFields(input.fields || {});
-				if (Object.keys(fields).length) out.fields = fields;
-				return out;
-			});
-		}
-		function safeSeverity(value) {
-			const text = String(value || "").trim().toUpperCase();
-			return text === "H1" || text === "H2" || text === "H3" ? text : "H2";
-		}
-		function safeConfidence(value) {
-			const number = Number(value);
-			if (!Number.isFinite(number)) return .7;
-			return Math.max(0, Math.min(1, Math.round(number * 100) / 100));
-		}
-		function sanitizeInput(input = {}) {
-			const category = boundedToken(input.category, "codex_runtime_failure", 80);
-			const diagnosticType = boundedToken(input.diagnostic_type || input.diagnosticType, category, 80);
-			const errorCode = boundedToken(input.error_code || input.errorCode, `${diagnosticType}_failed`, 100);
-			const context = safeContext(input.context || {});
-			const counts = safeCounts(input.counts || {});
-			const breadcrumbs = safeBreadcrumbs(input.breadcrumbs || []);
-			const bucket = boundedToken(input.duration_bucket || input.durationBucket || durationBucket(input.durationMs), "", 40);
-			return {
-				category,
-				diagnostic_type: diagnosticType,
-				severity_hint: safeSeverity(input.severity_hint || input.severityHint),
-				evidence_confidence: safeConfidence(input.evidence_confidence || input.evidenceConfidence),
-				error_code: errorCode,
-				duration_bucket: bucket,
-				counts,
-				context,
-				breadcrumbs
-			};
-		}
-		function isSlowPathEvent(event) {
-			return event && event.category === "thread_session_slow_path" && /_slow_path$/.test(event.diagnostic_type || "");
-		}
-		function clearKeyFor(event) {
-			if (isSlowPathEvent(event)) return [
-				event.category,
-				event.diagnostic_type,
-				event.context.surface || "",
-				event.context.route_kind || ""
-			].join("|");
-			return [
-				event.category,
-				event.diagnostic_type,
-				event.context.surface || "",
-				event.context.action || "",
-				event.context.route_kind || "",
-				event.context.thread_hash || "",
-				event.context.task_hash || "",
-				event.context.item_hash || ""
-			].join("|");
-		}
-		function signatureFor(event) {
-			if (isSlowPathEvent(event)) return [clearKeyFor(event), event.error_code].join("|");
-			return [
-				clearKeyFor(event),
-				event.error_code,
-				event.context.build_id || "",
-				event.context.read_mode || "",
-				event.context.render_mode || "",
-				event.context.source_kind || ""
-			].join("|");
-		}
-		function reportFor(event, repeatedFailures) {
-			const counts = Object.assign({}, event.counts, { repeated_failures: boundedNumber(repeatedFailures, 1) });
-			const breadcrumbs = event.breadcrumbs.length ? event.breadcrumbs : [{
-				kind: event.context.surface || event.category,
-				code: event.error_code,
-				status: "failed",
-				fields: safeFields({
-					repeated_failures: repeatedFailures,
-					thread_hash: event.context.thread_hash || "",
-					task_hash: event.context.task_hash || "",
-					item_hash: event.context.item_hash || ""
-				})
-			}];
-			return {
-				type: "homeai.diagnostic.report",
-				version: 1,
-				pluginId: PLUGIN_ID,
-				category: event.category,
-				diagnostic_type: event.diagnostic_type,
-				severity_hint: event.severity_hint,
-				evidence_confidence: event.evidence_confidence,
-				error_code: event.error_code,
-				duration_bucket: event.duration_bucket || void 0,
-				counts,
-				context: event.context,
-				breadcrumbs
-			};
-		}
-		function normalizeSlowPathReportMode(options = {}) {
-			const mode = String(options.slowPathReportMode || "").trim().toLowerCase();
-			if (mode === "report" || mode === "post") return "report";
-			if (mode === "observe" || mode === "local" || mode === "off") return "observe";
-			if (options.reportSlowPath === true || options.allowSlowPathReports === true) return "report";
-			return DEFAULT_SLOW_PATH_REPORT_MODE;
-		}
-		function createDiagnosticReporter(options = {}) {
-			const threshold = Math.max(1, Number(options.threshold || DEFAULT_THRESHOLD) || DEFAULT_THRESHOLD);
-			const throttleMs = Math.max(0, Number(options.throttleMs || DEFAULT_THROTTLE_MS) || DEFAULT_THROTTLE_MS);
-			const slowPathReportMode = normalizeSlowPathReportMode(options);
-			const now = typeof options.now === "function" ? options.now : () => Date.now();
-			const failures = /* @__PURE__ */ new Map();
-			const lastReportedAt = /* @__PURE__ */ new Map();
-			function recordFailure(input) {
-				const event = sanitizeInput(input || {});
-				const signature = signatureFor(event);
-				const clearKey = clearKeyFor(event);
-				const previous = failures.get(signature);
-				const count = (previous && previous.count ? previous.count : 0) + 1;
-				failures.set(signature, {
-					count,
-					clearKey,
-					lastAt: now()
+			function captureThreadTilePaneScrollState() {
+				const conversation = $("conversation");
+				const states = /* @__PURE__ */ new Map();
+				if (!conversation) return states;
+				conversation.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
+					const id = pane.getAttribute("data-thread-tile-pane") || "";
+					const body = pane.querySelector(".thread-tile-pane-body");
+					if (!id || !body) return;
+					states.set(id, threadTileStatePolicy.paneScrollMetrics({
+						scrollHeight: body.scrollHeight,
+						clientHeight: body.clientHeight,
+						scrollTop: body.scrollTop,
+						hold: state.threadTilePaneScrollHoldById.get(id) === true
+					}));
 				});
-				if (isSlowPathEvent(event) && slowPathReportMode !== "report") return {
-					eligible: false,
-					report: null,
-					repeatedFailures: count,
-					signature,
-					clearKey,
-					threshold,
-					observeOnly: true,
-					reason: "slow_path_observe_only"
-				};
-				const lastReportAt = Number(lastReportedAt.get(signature) || 0);
-				if (!(count >= threshold && (!lastReportAt || now() - lastReportAt >= throttleMs))) return {
-					eligible: false,
-					report: null,
-					repeatedFailures: count,
-					signature,
-					clearKey,
-					threshold,
-					observeOnly: false,
-					reason: "below_threshold_or_throttled"
-				};
-				lastReportedAt.set(signature, now());
-				return {
-					eligible: true,
-					report: reportFor(event, count),
-					repeatedFailures: count,
-					signature,
-					clearKey,
-					threshold,
-					observeOnly: false,
-					reason: "eligible"
-				};
+				return states;
 			}
-			function recordSuccess(input) {
-				const event = sanitizeInput(input || {});
-				if (isSlowPathEvent(event)) return {
-					cleared: 0,
-					clearKey: clearKeyFor(event),
-					reason: "slow-path-rolling-window"
-				};
-				const clearKey = clearKeyFor(event);
-				let cleared = 0;
-				for (const [signature, entry] of failures.entries()) if (entry && entry.clearKey === clearKey) {
-					failures.delete(signature);
-					cleared += 1;
+			function captureThreadTilePaneElementScrollState(pane) {
+				const id = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "");
+				const body = pane && pane.querySelector(".thread-tile-pane-body");
+				if (!body) return null;
+				return threadTileStatePolicy.paneScrollMetrics({
+					scrollHeight: body.scrollHeight,
+					clientHeight: body.clientHeight,
+					scrollTop: body.scrollTop,
+					hold: id ? state.threadTilePaneScrollHoldById.get(id) === true : false
+				});
+			}
+			function scrollThreadTilePaneBodyToBottom(body, options = {}) {
+				if (!body) return;
+				const top = Math.max(0, Number(body.scrollHeight || 0));
+				if (options.smooth && typeof body.scrollTo === "function") {
+					body.scrollTo({
+						top,
+						behavior: "smooth"
+					});
+					setTimeout(() => updateThreadTileBottomButtonForBody(body), 220);
+					return;
 				}
-				return {
-					cleared,
-					clearKey
-				};
+				body.scrollTop = top;
+				updateThreadTileBottomButtonForBody(body);
 			}
-			function failureCount(input) {
-				const signature = signatureFor(sanitizeInput(input || {}));
-				const entry = failures.get(signature);
-				return entry ? entry.count : 0;
+			function isThreadTilePaneNearBottom(body) {
+				if (!body) return true;
+				return threadTileStatePolicy.paneScrollMetrics({
+					scrollHeight: body.scrollHeight,
+					clientHeight: body.clientHeight,
+					scrollTop: body.scrollTop
+				}).nearBottom;
 			}
-			return {
-				failureCount,
-				recordFailure,
-				recordSuccess,
-				threshold,
-				throttleMs,
-				slowPathReportMode
-			};
-		}
-		function postReportToHomeAi(options = {}) {
-			const report = options.report;
-			const parentWindow = options.parentWindow;
-			const selfWindow = options.selfWindow || null;
-			if (!options.embedded) return {
-				ok: false,
-				reason: "not_embedded"
-			};
-			if (!report || report.type !== "homeai.diagnostic.report") return {
-				ok: false,
-				reason: "invalid_report"
-			};
-			if (!parentWindow || selfWindow && parentWindow === selfWindow) return {
-				ok: false,
-				reason: "missing_parent"
-			};
-			try {
-				parentWindow.postMessage(report, options.targetOrigin || "*");
-				return {
-					ok: true,
-					reason: "posted"
-				};
-			} catch (_) {
-				return {
-					ok: false,
-					reason: "post_failed"
-				};
+			function applyThreadTilePaneScrollHoldPlan(id, plan) {
+				const threadId = String(id || "");
+				if (!threadId || !plan || plan.action !== "pane-scroll-hold") return;
+				if (plan.clearHold) state.threadTilePaneScrollHoldById.delete(threadId);
+				else if (plan.rememberHold) state.threadTilePaneScrollHoldById.set(threadId, true);
 			}
-		}
-		return {
-			DEFAULT_THRESHOLD,
-			DEFAULT_THROTTLE_MS,
-			DEFAULT_SLOW_PATH_REPORT_MODE,
-			boundedToken,
-			createDiagnosticReporter,
-			durationBucket,
-			hashIdentifier,
-			postReportToHomeAi,
-			sanitizeInput,
-			stableTextHash
-		};
-	});
-}));
-//#endregion
-//#region public/thread-diagnostic-events.js
-var require_thread_diagnostic_events = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDiagnosticEvents = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const MAX_COUNT = 1e5;
-		function compactToken(value, fallback = "", maxLength = 80) {
-			return String(value || "").trim().replace(/[^a-zA-Z0-9_.:-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, maxLength) || fallback;
-		}
-		function boundedCount(value) {
-			const number = Number(value);
-			if (!Number.isFinite(number) || number < 0) return 0;
-			return Math.min(MAX_COUNT, Math.trunc(number));
-		}
-		function boundedRolloutMb(value) {
-			const number = Number(value);
-			if (!Number.isFinite(number) || number <= 0) return 0;
-			return boundedCount(Math.ceil(number / (1024 * 1024)));
-		}
-		function boundedPayloadKb(value) {
-			const number = Number(value);
-			if (!Number.isFinite(number) || number <= 0) return 0;
-			return boundedCount(Math.ceil(number / 1024));
-		}
-		function projectionDiagnosticContext(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const out = {
-				surface: compactToken(source.surface, "conversation-render", 80),
-				action: compactToken(source.action, "render", 80)
-			};
-			const routeKind = compactToken(source.route_kind || source.routeKind, "", 80);
-			const readMode = compactToken(source.read_mode || source.readMode, "", 80);
-			const renderMode = compactToken(source.render_mode || source.renderMode, "", 80);
-			const threadHash = compactToken(source.thread_hash || source.threadHash, "", 80);
-			const turnHash = compactToken(source.turn_hash || source.turnHash, "", 80);
-			if (routeKind) out.route_kind = routeKind;
-			if (readMode) out.read_mode = readMode;
-			if (renderMode) out.render_mode = renderMode;
-			if (threadHash) out.thread_hash = threadHash;
-			if (turnHash) out.turn_hash = turnHash;
-			return out;
-		}
-		function projectionDiagnosticCounts(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const out = {
-				dom_count: boundedCount(source.dom_count || source.domCount),
-				duplicate_count: boundedCount(source.duplicate_count || source.duplicateCount),
-				visible_count: boundedCount(source.visible_count || source.visibleCount),
-				turn_count: boundedCount(source.turn_count || source.turnCount)
-			};
-			const paneCount = boundedCount(source.pane_count || source.paneCount);
-			if (paneCount) out.pane_count = paneCount;
-			const orderMismatchCount = boundedCount(source.order_mismatch_count || source.orderMismatchCount);
-			if (orderMismatchCount) out.order_mismatch_count = orderMismatchCount;
-			const latestMismatchCount = boundedCount(source.latest_mismatch_count || source.latestMismatchCount);
-			if (latestMismatchCount) out.latest_mismatch_count = latestMismatchCount;
-			const missingDomTurnCount = boundedCount(source.missing_dom_turn_count || source.missingDomTurnCount);
-			if (missingDomTurnCount) out.missing_dom_turn_count = missingDomTurnCount;
-			return out;
-		}
-		function projectionDiagnosticSnapshot(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			return {
-				renderedSignature: String(source.renderedSignature || ""),
-				currentSignature: String(source.currentSignature || ""),
-				context: projectionDiagnosticContext(source.context || {}),
-				counts: projectionDiagnosticCounts(source.counts || {})
-			};
-		}
-		function visibleShapeFrom(deps, thread) {
-			if (typeof deps.visibleShape === "function") {
-				const shape = deps.visibleShape(thread);
-				if (shape && typeof shape === "object") return shape;
+			function rememberThreadTilePaneScrollPosition(body) {
+				const pane = body && body.closest && body.closest("[data-thread-tile-pane]");
+				const id = String(pane && pane.getAttribute("data-thread-tile-pane") || "");
+				if (!id || !body) return;
+				applyThreadTilePaneScrollHoldPlan(id, threadTileStatePolicy.paneScrollHoldPlan({
+					scrollHeight: body.scrollHeight,
+					clientHeight: body.clientHeight,
+					scrollTop: body.scrollTop
+				}));
 			}
-			return {
-				visibleTurnCount: 0,
-				visibleItemCount: 0
-			};
-		}
-		function domCountsFromShape(domShape = {}) {
-			return {
-				dom_count: domShape.renderKeyCount || domShape.dom_count || domShape.domCount,
-				duplicate_count: domShape.duplicateRenderKeyCount || domShape.duplicate_count || domShape.duplicateCount
-			};
-		}
-		function conversationProjectionDiagnosticSnapshot(input = {}, deps = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const action = compactToken(source.source || source.action, "render", 80);
-			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
-			const renderedSignature = String(source.renderedConversationSignature || source.renderedSignature || "");
-			const baseCounts = domCountsFromShape(source.domShape && typeof source.domShape === "object" ? source.domShape : {});
-			const tileMode = source.threadTileMode === true;
-			const tileDomActive = source.tileDomActive === true;
-			if (tileMode) {
-				if (!tileDomActive) return null;
-				const layout = source.tileLayout || (typeof deps.tileLayout === "function" ? deps.tileLayout() : null);
-				if (!layout || !layout.enabled) return null;
-				const ids = Array.isArray(source.tileIds) ? source.tileIds : typeof deps.tileCandidateIds === "function" ? deps.tileCandidateIds(layout) : [];
-				if (!ids.length) return null;
-				const displayLayout = source.tileDisplayLayout || (typeof deps.tileDisplayLayout === "function" ? deps.tileDisplayLayout(layout, ids) : layout);
-				const currentSignature = source.tileSignature || source.currentSignature || (typeof deps.tileRenderSignature === "function" ? deps.tileRenderSignature(displayLayout, ids) : "");
-				const visibleShape = ids.reduce((acc, id) => {
-					const shape = visibleShapeFrom(deps, typeof deps.tileThreadForId === "function" ? deps.tileThreadForId(id) : null);
-					acc.visibleTurnCount += boundedCount(shape.visibleTurnCount);
-					acc.visibleItemCount += boundedCount(shape.visibleItemCount);
-					return acc;
+			function updateThreadTileBottomButtonForBody(body) {
+				const pane = body && body.closest && body.closest("[data-thread-tile-pane]");
+				const button = pane && pane.querySelector("[data-thread-tile-bottom]");
+				if (!button || !body) return;
+				const metrics = threadTileStatePolicy.paneScrollMetrics({
+					scrollHeight: body.scrollHeight,
+					clientHeight: body.clientHeight,
+					scrollTop: body.scrollTop
+				});
+				applyThreadTilePaneScrollHoldPlan(pane.getAttribute("data-thread-tile-pane") || "", threadTileStatePolicy.paneScrollHoldPlan(metrics));
+				const plan = threadTileStatePolicy.paneBottomButtonPlan({ metrics });
+				const shouldShow = Boolean(plan.shouldShow);
+				button.classList.toggle("hidden", !shouldShow);
+				button.setAttribute("aria-hidden", shouldShow ? "false" : "true");
+				button.tabIndex = shouldShow ? 0 : -1;
+			}
+			function updateThreadTileBottomButtons() {
+				const conversation = $("conversation");
+				if (!conversation) return;
+				conversation.querySelectorAll(".thread-tile-pane-body").forEach(updateThreadTileBottomButtonForBody);
+			}
+			function restoreThreadTilePaneScrollState(scrollState = /* @__PURE__ */ new Map()) {
+				const conversation = $("conversation");
+				if (!conversation) return;
+				conversation.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
+					const id = pane.getAttribute("data-thread-tile-pane") || "";
+					const body = pane.querySelector(".thread-tile-pane-body");
+					if (!id || !body) return;
+					const previous = scrollState.get(id);
+					const plan = threadTileStatePolicy.paneScrollRestorePlan({
+						previous,
+						scrollHeight: body.scrollHeight,
+						clientHeight: body.clientHeight
+					});
+					if (plan.mode === "restore-distance") {
+						body.scrollTop = plan.top;
+						updateThreadTileBottomButtonForBody(body);
+						return;
+					}
+					scrollThreadTilePaneBodyToBottom(body);
+				});
+			}
+			function restoreThreadTilePaneElementScrollState(pane, previous, options = {}) {
+				const body = pane && pane.querySelector(".thread-tile-pane-body");
+				if (!body) return;
+				const id = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "");
+				const plan = threadTileStatePolicy.paneScrollRestorePlan({
+					previous,
+					rememberedHold: Boolean(id && state.threadTilePaneScrollHoldById.get(id) === true),
+					stickToBottom: options.stickToBottom === true,
+					scrollHeight: body.scrollHeight,
+					clientHeight: body.clientHeight
+				});
+				if (plan.mode !== "restore-distance") {
+					scrollThreadTilePaneBodyToBottom(body);
+					return;
+				}
+				body.scrollTop = plan.top;
+				updateThreadTileBottomButtonForBody(body);
+			}
+			function scrollThreadTilePaneToBottom(threadId, options = {}) {
+				const id = String(threadId || "");
+				if (!id) return;
+				const pane = Array.from(document.querySelectorAll("[data-thread-tile-pane]")).find((entry) => String(entry.getAttribute("data-thread-tile-pane") || "") === id);
+				scrollThreadTilePaneBodyToBottom(pane && pane.querySelector(".thread-tile-pane-body"), options);
+			}
+			function clearThreadTileRefreshTimer() {
+				clearTimeout(state.threadTileRefreshTimer);
+				state.threadTileRefreshTimer = null;
+			}
+			function clearThreadTileDetailLoadQueueTimer() {
+				clearTimeout(state.threadTileDetailLoadQueueTimer);
+				state.threadTileDetailLoadQueueTimer = null;
+			}
+			function scheduleThreadTileDetailLoadQueueDrain(options = {}) {
+				const plan = threadTileStatePolicy.detailLoadQueueDrainPlan({
+					enabled: state.threadTileMode,
+					activeIds: state.threadTileActiveIds,
+					hasTimer: Boolean(state.threadTileDetailLoadQueueTimer),
+					pending: options.pending === true,
+					force: options.force === true,
+					delayMs: options.delayMs
+				}, { defaultDelayMs: THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS });
+				if (plan.clearTimer) {
+					clearThreadTileDetailLoadQueueTimer();
+					return false;
+				}
+				if (!plan.schedule) return false;
+				state.threadTileDetailLoadQueueTimer = setTimeout(() => {
+					state.threadTileDetailLoadQueueTimer = null;
+					if (!state.threadTileMode) return;
+					ensureThreadTileDetails(state.threadTileActiveIds);
+				}, plan.delayMs);
+				return true;
+			}
+			function scheduleThreadTileRefresh(delayMs = THREAD_TILE_REFRESH_INTERVAL_MS) {
+				const plan = threadTileStatePolicy.refreshSchedulePlan({
+					enabled: state.threadTileMode,
+					visibilityState: document.visibilityState,
+					activeIds: state.threadTileActiveIds,
+					hasTimer: Boolean(state.threadTileRefreshTimer),
+					delayMs
 				}, {
-					visibleTurnCount: 0,
-					visibleItemCount: 0
+					defaultDelayMs: THREAD_TILE_REFRESH_INTERVAL_MS,
+					minDelayMs: 500
 				});
-				return projectionDiagnosticSnapshot({
-					renderedSignature,
-					currentSignature,
-					context: {
-						surface: "conversation-render",
-						action,
-						route_kind: "thread-tile",
-						read_mode: "mixed",
-						render_mode: renderMode
-					},
-					counts: Object.assign({}, baseCounts, {
-						visible_count: visibleShape.visibleItemCount,
-						turn_count: visibleShape.visibleTurnCount,
-						pane_count: ids.length
-					})
-				});
-			}
-			if (tileDomActive) return null;
-			const thread = source.thread || null;
-			const visibleShape = visibleShapeFrom(deps, thread);
-			return projectionDiagnosticSnapshot({
-				renderedSignature,
-				currentSignature: source.currentSignature || (typeof deps.singleSignature === "function" ? deps.singleSignature(thread) : ""),
-				context: {
-					surface: "conversation-render",
-					action,
-					read_mode: thread && thread.mobileReadMode || "",
-					render_mode: renderMode
-				},
-				counts: Object.assign({}, baseCounts, {
-					visible_count: visibleShape.visibleItemCount,
-					turn_count: visibleShape.visibleTurnCount
-				})
-			});
-		}
-		function turnOrderDiagnosticSnapshot(input = {}, deps = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const expectedIds = Array.isArray(source.expectedTurnIds) ? source.expectedTurnIds.map((id) => String(id || "")).filter(Boolean) : [];
-			const domIds = Array.isArray(source.domTurnIds) ? source.domTurnIds.map((id) => String(id || "")).filter(Boolean) : [];
-			if (!expectedIds.length) return null;
-			const comparableCount = Math.min(expectedIds.length, domIds.length);
-			let orderMismatchCount = Math.abs(expectedIds.length - domIds.length);
-			for (let index = 0; index < comparableCount; index += 1) if (expectedIds[index] !== domIds[index]) orderMismatchCount += 1;
-			const expectedLatestId = expectedIds[expectedIds.length - 1] || "";
-			const domLatestId = domIds[domIds.length - 1] || "";
-			const latestMismatch = Boolean(expectedLatestId && (!domLatestId || expectedLatestId !== domLatestId));
-			const turnHash = compactToken(source.turnHash || (typeof deps.turnHash === "function" ? deps.turnHash(expectedLatestId) : ""), "", 80);
-			return projectionDiagnosticSnapshot({
-				context: {
-					surface: "conversation-render",
-					action: source.source || source.action,
-					read_mode: source.readMode || source.read_mode,
-					render_mode: source.renderMode || source.render_mode,
-					thread_hash: source.threadHash || source.thread_hash,
-					turn_hash: turnHash
-				},
-				counts: {
-					dom_count: domIds.length,
-					visible_count: expectedIds.length,
-					turn_count: expectedIds.length,
-					order_mismatch_count: orderMismatchCount,
-					latest_mismatch_count: latestMismatch ? 1 : 0,
-					missing_dom_turn_count: !domIds.length ? expectedIds.length : 0
+				if (plan.clearTimer) {
+					clearThreadTileRefreshTimer();
+					return;
 				}
-			});
-		}
-		function hasRenderSignatureMismatch(snapshot) {
-			const normalized = projectionDiagnosticSnapshot(snapshot);
-			return Boolean(normalized.renderedSignature && normalized.renderedSignature !== normalized.currentSignature);
-		}
-		function hasDuplicateRenderKeys(snapshot) {
-			return projectionDiagnosticSnapshot(snapshot).counts.duplicate_count > 0;
-		}
-		function hasTurnOrderMismatch(snapshot) {
-			const counts = projectionDiagnosticSnapshot(snapshot).counts;
-			return counts.order_mismatch_count > 0 || counts.latest_mismatch_count > 0 || counts.missing_dom_turn_count > 0;
-		}
-		function renderSignatureMismatchDiagnosticEvent(snapshot = {}) {
-			const normalized = projectionDiagnosticSnapshot(snapshot);
-			const context = normalized.context;
-			const counts = normalized.counts;
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "render_signature_mismatch",
-				severity_hint: "H2",
-				evidence_confidence: .74,
-				error_code: "render_signature_mismatch",
-				context,
-				counts,
-				breadcrumbs: [{
-					kind: "conversation-render",
-					code: "signature-check",
-					status: "failed",
-					fields: {
-						read_mode: context.read_mode || "",
-						render_mode: context.render_mode || "",
-						dom_count: counts.dom_count,
-						visible_count: counts.visible_count
-					}
-				}]
-			};
-		}
-		function renderSignatureMismatchDiagnosticSuccess(snapshot = {}) {
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "render_signature_mismatch",
-				error_code: "render_signature_mismatch",
-				context: projectionDiagnosticSnapshot(snapshot).context
-			};
-		}
-		function duplicateRenderKeysDiagnosticEvent(snapshot = {}) {
-			const normalized = projectionDiagnosticSnapshot(snapshot);
-			const counts = normalized.counts;
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "duplicate_render_keys",
-				severity_hint: "H2",
-				evidence_confidence: .78,
-				error_code: "duplicate_render_keys",
-				context: normalized.context,
-				counts,
-				breadcrumbs: [{
-					kind: "conversation-render",
-					code: "render-key-check",
-					status: "failed",
-					fields: {
-						duplicate_count: counts.duplicate_count,
-						dom_count: counts.dom_count,
-						visible_count: counts.visible_count
-					}
-				}]
-			};
-		}
-		function duplicateRenderKeysDiagnosticSuccess(snapshot = {}) {
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "duplicate_render_keys",
-				error_code: "duplicate_render_keys",
-				context: projectionDiagnosticSnapshot(snapshot).context
-			};
-		}
-		function turnOrderMismatchDiagnosticEvent(snapshot = {}) {
-			const normalized = projectionDiagnosticSnapshot(snapshot);
-			const counts = normalized.counts;
-			const context = normalized.context;
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "turn_order_mismatch",
-				severity_hint: "H2",
-				evidence_confidence: .82,
-				error_code: "turn_order_mismatch",
-				context,
-				counts,
-				breadcrumbs: [{
-					kind: "conversation-render",
-					code: "turn-order-check",
-					status: "failed",
-					fields: {
-						read_mode: context.read_mode || "",
-						render_mode: context.render_mode || "",
-						dom_count: counts.dom_count,
-						visible_count: counts.visible_count,
-						turn_hash: context.turn_hash || "",
-						order_mismatch_count: counts.order_mismatch_count || 0,
-						latest_mismatch_count: counts.latest_mismatch_count || 0,
-						missing_dom_turn_count: counts.missing_dom_turn_count || 0
-					}
-				}]
-			};
-		}
-		function turnOrderMismatchDiagnosticSuccess(snapshot = {}) {
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "turn_order_mismatch",
-				error_code: "turn_order_mismatch",
-				context: projectionDiagnosticSnapshot(snapshot).context
-			};
-		}
-		function conversationProjectionConsistencyEffects(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const snapshot = source.snapshot || null;
-			const orderSnapshot = source.orderSnapshot || null;
-			const effects = [];
-			if (snapshot) {
-				const normalized = projectionDiagnosticSnapshot(snapshot);
-				const signatureMismatch = hasRenderSignatureMismatch(normalized);
-				effects.push({
-					type: signatureMismatch ? "diagnostic-failure" : "diagnostic-success",
-					diagnostic: signatureMismatch ? renderSignatureMismatchDiagnosticEvent(normalized) : renderSignatureMismatchDiagnosticSuccess(normalized),
-					diagnosticType: "render_signature_mismatch",
-					reason: signatureMismatch ? "render-signature-mismatch" : "render-signature-match"
+				if (!plan.schedule) return;
+				state.threadTileRefreshTimer = setTimeout(() => {
+					state.threadTileRefreshTimer = null;
+					if (!state.threadTileMode || document.visibilityState === "hidden") return;
+					refreshThreadTileDetails(state.threadTileActiveIds, { source: "tile-refresh" }).catch(showError);
+					scheduleThreadTileRefresh();
+				}, plan.delayMs);
+			}
+			async function refreshThreadTileDetails(ids = [], options = {}) {
+				const uniqueIds = threadTileStatePolicy.uniqueIds(ids);
+				const visibleIds = uniqueIds.filter((id) => threadTilePaneIsVisible(id));
+				const targetIds = threadTileStatePolicy.refreshTargetIds({
+					enabled: state.threadTileMode,
+					ids: uniqueIds,
+					visibleIds,
+					currentThreadId: state.currentThread && state.currentThread.id
 				});
-				const duplicateKeys = hasDuplicateRenderKeys(normalized);
-				effects.push({
-					type: duplicateKeys ? "diagnostic-failure" : "diagnostic-success",
-					diagnostic: duplicateKeys ? duplicateRenderKeysDiagnosticEvent(normalized) : duplicateRenderKeysDiagnosticSuccess(normalized),
-					diagnosticType: "duplicate_render_keys",
-					reason: duplicateKeys ? "duplicate-render-keys" : "no-duplicate-render-keys"
+				if (!targetIds.length) return;
+				await Promise.all(targetIds.map((id) => {
+					return loadThreadTileDetail(id, {
+						force: true,
+						background: true,
+						source: options.source || "tile-refresh"
+					});
+				}));
+			}
+			function abortThreadTileLoads() {
+				clearThreadTileRefreshTimer();
+				clearThreadTileDetailLoadQueueTimer();
+				state.threadTileActiveIds = [];
+				for (const frame of state.threadTilePaneRenderFramesById.values()) if (window.cancelAnimationFrame) window.cancelAnimationFrame(frame);
+				else clearTimeout(frame);
+				state.threadTilePaneRenderFramesById.clear();
+				state.threadTilePaneScrollHoldById.clear();
+				for (const controller of state.threadTileControllers.values()) try {
+					controller.abort();
+				} catch (_) {}
+				state.threadTileControllers.clear();
+				state.threadTileLoadingIds.clear();
+			}
+			async function loadThreadTileDetail(threadId, options = {}) {
+				const id = String(threadId || "");
+				const cached = state.threadTileDetails.get(id);
+				const currentThreadId = state.currentThread && String(state.currentThread.id || "");
+				const plan = threadTileStatePolicy.detailLoadPlan({
+					threadId: id,
+					currentThreadId,
+					currentThreadLoaded: Boolean(currentThreadId === id && state.currentThread && !state.currentThread.mobileLoading),
+					controllerActive: state.threadTileControllers.has(id),
+					loadingActive: state.threadTileLoadingIds.has(id),
+					cachedReady: Boolean(cached && !cached.mobileLoading && !cached.mobileLoadError),
+					force: options.force === true,
+					backgroundRequested: options.background === true,
+					lastLoadedAt: Number(state.threadTileLoadedAtById.get(id) || 0),
+					nowMs: Date.now(),
+					minIntervalMs: THREAD_TILE_REFRESH_MIN_INTERVAL_MS
+				});
+				if (plan.action !== "load") return;
+				const background = plan.background;
+				const controller = new AbortController();
+				applyThreadTileDetailLoadStartEffects(threadTileStatePolicy.detailLoadStartEffectsPlan(plan), controller);
+				try {
+					const result = await api(threadDetailApiPath(id, { mode: "recent" }), {
+						timeoutMs: 2e4,
+						signal: controller.signal
+					});
+					if (controller.signal.aborted) return;
+					if (result && result.thread) applyThreadTileDetailLoadSuccessEffects(threadTileStatePolicy.detailLoadSuccessEffectsPlan({
+						id,
+						hasThread: true,
+						nowMs: Date.now()
+					}), result.thread);
+				} catch (err) {
+					applyThreadTileDetailLoadErrorEffects(threadTileStatePolicy.detailLoadErrorEffectsPlan({
+						id,
+						aborted: controller.signal.aborted,
+						background,
+						errorMessage: err && err.message ? err.message : String(err)
+					}));
+				} finally {
+					applyThreadTileDetailLoadFinallyEffects(threadTileStatePolicy.detailLoadFinallyEffectsPlan({
+						id,
+						controllerMatches: state.threadTileControllers.get(id) === controller,
+						visible: threadTilePaneIsVisible(id)
+					}));
+				}
+			}
+			function applyThreadTileDetailLoadStartEffects(effect, controller) {
+				if (!effect || effect.action !== "detail-load-start-effects") return false;
+				const id = String(effect.id || "");
+				if (!id) return false;
+				if (effect.setController) state.threadTileControllers.set(id, controller);
+				if (effect.markLoading) {
+					state.threadTileLoadingIds.add(id);
+					if (effect.renderPane && !scheduleRenderThreadTilePane(id, { preserveScroll: effect.preserveScroll !== false })) scheduleRenderCurrentThread();
+				}
+				if (effect.clearError) state.threadTileErrors.delete(id);
+				return true;
+			}
+			function applyThreadTileDetailLoadSuccessEffects(effect, thread) {
+				if (!effect || effect.action !== "detail-load-success-effects" || !thread) return false;
+				const id = String(effect.id || "");
+				if (!id) return false;
+				if (effect.setDetail) {
+					const existing = state.threadTileDetails.get(id);
+					state.threadTileDetails.set(id, mergeThreadPreservingVisibleItems(existing, thread));
+				}
+				if (effect.setLoadedAt) state.threadTileLoadedAtById.set(id, Number(effect.loadedAtMs || Date.now()));
+				if (effect.clearError) state.threadTileErrors.delete(id);
+				if (effect.mergeThread) mergeThreadIntoThreadList(thread);
+				return true;
+			}
+			function applyThreadTileDetailLoadErrorEffects(effect) {
+				if (!effect || effect.action !== "detail-load-error-effects") return false;
+				const id = String(effect.id || "");
+				if (!id) return false;
+				state.threadTileErrors.set(id, effect.errorMessage || "Thread load failed");
+				return true;
+			}
+			function applyThreadTileDetailLoadFinallyEffects(effect) {
+				if (!effect || effect.action !== "detail-load-finally-effects") return false;
+				const id = String(effect.id || "");
+				if (!id) return false;
+				if (effect.clearController) state.threadTileControllers.delete(id);
+				if (effect.clearLoading) state.threadTileLoadingIds.delete(id);
+				if (effect.renderPane && !scheduleRenderThreadTilePane(id, { preserveScroll: effect.preserveScroll !== false })) scheduleRenderCurrentThread();
+				if (effect.scheduleQueueDrain) scheduleThreadTileDetailLoadQueueDrain({ force: true });
+				return true;
+			}
+			function applyThreadTileDetailLoadQueuePlan(plan) {
+				if (!plan || plan.action !== "detail-load-queue") return false;
+				for (const id of Array.isArray(plan.abortIds) ? plan.abortIds : []) {
+					const controller = state.threadTileControllers.get(id);
+					if (controller && typeof controller.abort === "function") try {
+						controller.abort();
+					} catch (_) {}
+					state.threadTileControllers.delete(id);
+					state.threadTileLoadingIds.delete(id);
+				}
+				for (const id of Array.isArray(plan.loadIds) ? plan.loadIds : []) loadThreadTileDetail(id).catch(showError);
+				if (plan.scheduleDrainAfterLoad) scheduleThreadTileDetailLoadQueueDrain({ pending: true });
+				return true;
+			}
+			function ensureThreadTileDetails(ids = []) {
+				if (!state.threadTileMode) return;
+				syncThreadTileActivePaneState(ids);
+				const currentThreadId = state.currentThread && String(state.currentThread.id || "");
+				const readyIds = state.threadTileActiveIds.filter((id) => {
+					if (currentThreadId && currentThreadId === id && state.currentThread && !state.currentThread.mobileLoading) return true;
+					const cached = state.threadTileDetails.get(id);
+					return Boolean(cached && !cached.mobileLoading && !cached.mobileLoadError);
+				});
+				const concurrency = threadTileStatePolicy.detailLoadConcurrencyPlan({
+					activeIds: state.threadTileActiveIds,
+					maxPanes: THREAD_TILE_USER_MAX_PANES
+				});
+				applyThreadTileDetailLoadQueuePlan(threadTileStatePolicy.detailLoadQueuePlan({
+					enabled: state.threadTileMode,
+					activeIds: state.threadTileActiveIds,
+					controllerIds: Array.from(state.threadTileControllers.keys()),
+					loadingIds: Array.from(state.threadTileLoadingIds),
+					readyIds,
+					maxConcurrentLoads: concurrency.maxConcurrentLoads
+				}));
+				scheduleThreadTileRefresh();
+			}
+			function renderThreadTileTurn(thread, turn, previousKeys = /* @__PURE__ */ new Set()) {
+				return withRenderContextThread(thread, () => {
+					const threadId = String(thread && thread.id || "");
+					const renderedItems = visibleItemsForTurn(turn, thread).map((entry, index) => {
+						const item = entry && entry.item;
+						const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
+						return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
+					}).filter(Boolean).join("");
+					const budgetNoticeHtml = renderTurnVisibleItemBudgetNotice(turn, previousKeys);
+					const turnApprovals = approvalsForTurn(threadId, turn && turn.id);
+					const approvalsHtml = turnApprovals.length ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}</div>` : "";
+					if (!budgetNoticeHtml.trim() && !renderedItems.trim() && !approvalsHtml.trim()) return "";
+					const turnId = String(turn && (turn.id || turn.startedAt || "turn") || "turn");
+					return `<article class="turn thread-tile-turn" data-thread-tile-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(`tile-turn|${threadId}|${turnId}`)}">
+      ${budgetNoticeHtml}${renderedItems}${approvalsHtml}
+    </article>`;
 				});
 			}
-			if (orderSnapshot) {
-				const normalizedOrder = projectionDiagnosticSnapshot(orderSnapshot);
-				const turnOrderMismatch = hasTurnOrderMismatch(normalizedOrder);
-				effects.push({
-					type: turnOrderMismatch ? "diagnostic-failure" : "diagnostic-success",
-					diagnostic: turnOrderMismatch ? turnOrderMismatchDiagnosticEvent(normalizedOrder) : turnOrderMismatchDiagnosticSuccess(normalizedOrder),
-					diagnosticType: "turn_order_mismatch",
-					reason: turnOrderMismatch ? "turn-order-mismatch" : "turn-order-match"
+			function scheduleThreadTileOperationMinimumRefresh(delayMs = LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS) {
+				if (state.threadTileOperationRefreshTimer) clearTimeout(state.threadTileOperationRefreshTimer);
+				state.threadTileOperationRefreshTimer = setTimeout(() => {
+					state.threadTileOperationRefreshTimer = null;
+					const plan = threadTileStatePolicy.operationMinimumRefreshPlan({
+						enabled: state.threadTileMode,
+						activeIds: state.threadTileActiveIds
+					});
+					if (plan.action === "operation-minimum-refresh") {
+						let patchedAny = false;
+						for (const id of plan.patchThreadIds || []) patchedAny = scheduleRenderThreadTilePane(id, { preserveScroll: true }) || patchedAny;
+						if (plan.fullRenderOnPatchMiss && !patchedAny) scheduleRenderCurrentThread();
+					}
+				}, Math.max(0, Number(delayMs) || 0) + 16);
+			}
+			function rememberThreadTileOperationBubble(threadId, html = "") {
+				const id = String(threadId || "");
+				const record = threadTileStatePolicy.operationBubbleRecord({
+					threadId: id,
+					html,
+					minVisibleMs: LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+					nowMs: Date.now()
+				});
+				if (!record) return;
+				state.threadTileOperationBubblesById.set(id, record);
+			}
+			function clearThreadTileOperationBubble(threadId) {
+				const id = String(threadId || "");
+				if (!id) return;
+				state.threadTileOperationBubblesById.delete(id);
+			}
+			function renderThreadTileOperationDock(thread, previousKeys = /* @__PURE__ */ new Set()) {
+				const id = String(thread && thread.id || "");
+				if (!id) return "";
+				const entry = currentLiveOperationEntry(thread);
+				const mode = threadTileStatePolicy.normalizeOperationMode(state.threadTileOperationModesById.get(id) || "compact");
+				const plan = threadTileStatePolicy.operationDockPlan({
+					threadId: id,
+					mode,
+					entryType: entry && entry.item && entry.item.type,
+					hasOperation: Boolean(entry && entry.item && entry.item.type !== "liveTurnStatus"),
+					hasLiveTurn: Boolean(latestLiveTurnForThread(thread)),
+					remembered: state.threadTileOperationBubblesById.get(id),
+					nowMs: Date.now()
+				});
+				if (plan.action === "render-remembered-operation") {
+					if (plan.scheduleMinimumRefresh) scheduleThreadTileOperationMinimumRefresh(plan.remainingMs);
+					return plan.html || "";
+				}
+				if (plan.action === "clear-remembered-operation") {
+					if (plan.clearRemembered) state.threadTileOperationBubblesById.delete(id);
+					return "";
+				}
+				if (plan.action !== "render-live-operation" || !entry || !entry.item) return "";
+				const html = `<div class="thread-tile-operation-dock" data-thread-tile-operation-dock="${escapeHtml(id)}" data-mode="${escapeHtml(mode)}">
+    <div class="live-operation-dock-inner">
+      ${renderMobileOperationStack(entry.item, entry.turn, previousKeys, entry.sourceIndex, plan.expanded, {
+					toggleAttribute: "data-thread-tile-operation-toggle",
+					toggleValue: id
+				})}
+    </div>
+  </div>`;
+				rememberThreadTileOperationBubble(id, html);
+				return html;
+			}
+			function threadTileOperationSignature(threadId) {
+				const id = String(threadId || "");
+				const thread = threadTileDisplayThread(id);
+				const entry = currentLiveOperationEntry(thread);
+				return threadTileStatePolicy.operationSignature({
+					mode: state.threadTileOperationModesById.get(id) || "compact",
+					remembered: state.threadTileOperationBubblesById.get(id),
+					nowMs: Date.now(),
+					entrySignature: entry && entry.item && entry.item.type !== "liveTurnStatus" ? visibleItemSignature(entry.item, entry.turn, thread) : null
 				});
 			}
-			return {
-				effects,
-				reason: effects.length ? "projection-consistency-effects" : "no-snapshot"
-			};
-		}
-		function primaryShellSelectionConflictContext(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const context = {
-				surface: "conversation-render",
-				action: compactToken(source.action, "primary-shell-selection", 80),
-				route_kind: compactToken(source.routeKind || source.route_kind, "embedded-primary", 80)
-			};
-			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
-			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
-			const sourceKind = compactToken(source.sourceKind || source.source_kind, "", 80);
-			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
-			if (readMode) context.read_mode = readMode;
-			if (renderMode) context.render_mode = renderMode;
-			if (sourceKind) context.source_kind = sourceKind;
-			if (threadHash) context.thread_hash = threadHash;
-			return context;
-		}
-		function primaryShellSelectionConflictCounts(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			return {
-				visible_count: boundedCount(source.visibleItems || source.visible_count),
-				turn_count: boundedCount(source.turns || source.turn_count),
-				item_count: boundedCount(source.items || source.item_count),
-				dom_count: boundedCount(source.domCount || source.dom_count),
-				previous_count: boundedCount(source.previousCount || source.previous_count),
-				has_current_thread: source.hasCurrentThread || source.has_current_thread ? 1 : 0,
-				has_current_thread_id: source.hasCurrentThreadId || source.has_current_thread_id ? 1 : 0,
-				has_thread_load_controller: source.hasThreadLoadController || source.has_thread_load_controller ? 1 : 0,
-				startup_thread_open_pending: source.startupThreadOpenPending || source.startup_thread_open_pending ? 1 : 0,
-				mobile_loading: source.mobileLoading || source.mobile_loading ? 1 : 0,
-				recent_detail_age_ms: boundedCount(source.recentDetailAgeMs || source.recent_detail_age_ms)
-			};
-		}
-		function primaryShellSelectionConflictDiagnosticEvent(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const context = primaryShellSelectionConflictContext(source);
-			const counts = primaryShellSelectionConflictCounts(source);
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "primary_shell_selection_conflict",
-				severity_hint: "H2",
-				evidence_confidence: .82,
-				error_code: compactToken(source.reason, "primary_shell_selection_conflict", 80),
-				context,
-				counts,
-				breadcrumbs: [{
-					kind: "conversation-render",
-					code: "primary-shell-selection",
-					status: "failed",
-					fields: {
-						read_mode: context.read_mode || "",
-						render_mode: context.render_mode || "",
-						source_kind: context.source_kind || "",
-						thread_hash: context.thread_hash || "",
-						dom_count: counts.dom_count,
-						visible_count: counts.visible_count,
-						turn_count: counts.turn_count,
-						item_count: counts.item_count,
-						previous_count: counts.previous_count
-					}
-				}]
-			};
-		}
-		function primaryShellSelectionConflictDiagnosticSuccess(input = {}) {
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "primary_shell_selection_conflict",
-				error_code: "primary_shell_selection_conflict",
-				context: primaryShellSelectionConflictContext(input)
-			};
-		}
-		function emptyVisibleDetailMismatchContext(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const context = {
-				surface: "conversation-render",
-				action: compactToken(source.action, "single-thread-empty-state", 80),
-				route_kind: compactToken(source.routeKind || source.route_kind, "single-thread", 80)
-			};
-			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
-			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
-			const sourceKind = compactToken(source.sourceKind || source.source_kind, "", 80);
-			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
-			if (readMode) context.read_mode = readMode;
-			if (renderMode) context.render_mode = renderMode;
-			if (sourceKind) context.source_kind = sourceKind;
-			if (threadHash) context.thread_hash = threadHash;
-			return context;
-		}
-		function emptyVisibleDetailMismatchCounts(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			return {
-				visible_count: boundedCount(source.visibleItems || source.visible_count),
-				turn_count: boundedCount(source.turns || source.turn_count),
-				item_count: boundedCount(source.items || source.item_count),
-				current_visible_count: boundedCount(source.currentVisibleItems || source.current_visible_count),
-				current_turn_count: boundedCount(source.currentTurns || source.current_turn_count),
-				dom_count: boundedCount(source.domCount || source.dom_count),
-				previous_count: boundedCount(source.previousCount || source.previous_count),
-				detail_loaded: source.detailLoaded || source.detail_loaded ? 1 : 0,
-				mobile_loading: source.mobileLoading || source.mobile_loading ? 1 : 0,
-				recent_detail_age_ms: boundedCount(source.recentDetailAgeMs || source.recent_detail_age_ms)
-			};
-		}
-		function emptyVisibleDetailMismatchDiagnosticEvent(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const context = emptyVisibleDetailMismatchContext(source);
-			const counts = emptyVisibleDetailMismatchCounts(source);
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "empty_visible_detail_mismatch",
-				severity_hint: "H2",
-				evidence_confidence: .84,
-				error_code: compactToken(source.reason, "empty_visible_detail_mismatch", 80),
-				context,
-				counts,
-				breadcrumbs: [{
-					kind: "conversation-render",
-					code: "empty-state-contract",
-					status: "failed",
-					fields: {
-						read_mode: context.read_mode || "",
-						render_mode: context.render_mode || "",
-						source_kind: context.source_kind || "",
-						thread_hash: context.thread_hash || "",
-						visible_count: counts.visible_count,
-						turn_count: counts.turn_count,
-						item_count: counts.item_count,
-						dom_count: counts.dom_count,
-						previous_count: counts.previous_count
-					}
-				}]
-			};
-		}
-		function emptyVisibleDetailMismatchDiagnosticSuccess(input = {}) {
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "empty_visible_detail_mismatch",
-				error_code: "empty_visible_detail_mismatch",
-				context: emptyVisibleDetailMismatchContext(input)
-			};
-		}
-		function emptyCachedDetailReuseContext(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const context = {
-				surface: "thread-session",
-				action: compactToken(source.action, "thread-open-cache-reuse", 80),
-				route_kind: compactToken(source.routeKind || source.route_kind, "single-thread", 80)
-			};
-			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
-			const sourceKind = compactToken(source.sourceKind || source.source_kind, "", 80);
-			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
-			if (readMode) context.read_mode = readMode;
-			if (sourceKind) context.source_kind = sourceKind;
-			if (threadHash) context.thread_hash = threadHash;
-			return context;
-		}
-		function emptyCachedDetailReuseCounts(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			return {
-				current_turn_count: boundedCount(source.currentTurns || source.current_turn_count),
-				current_visible_count: boundedCount(source.currentVisibleItems || source.current_visible_count),
-				item_count: boundedCount(source.items || source.item_count),
-				detail_loaded: source.detailLoaded || source.detail_loaded ? 1 : 0,
-				reusable_detail: source.reusableDetail || source.reusable_detail ? 1 : 0,
-				mobile_loading: source.mobileLoading || source.mobile_loading ? 1 : 0,
-				thread_task_card_count: boundedCount(source.threadTaskCardCount || source.thread_task_card_count)
-			};
-		}
-		function emptyCachedDetailReuseBlockedDiagnosticEvent(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const context = emptyCachedDetailReuseContext(source);
-			const counts = emptyCachedDetailReuseCounts(source);
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "empty_cached_detail_reuse_blocked",
-				severity_hint: "H2",
-				evidence_confidence: .8,
-				error_code: compactToken(source.reason, "empty_cached_detail_reuse_blocked", 80),
-				context,
-				counts,
-				breadcrumbs: [{
-					kind: "thread-session",
-					code: "thread-open-cache-reuse",
-					status: "blocked",
-					fields: {
-						read_mode: context.read_mode || "",
-						source_kind: context.source_kind || "",
-						thread_hash: context.thread_hash || "",
-						current_turn_count: counts.current_turn_count,
-						current_visible_count: counts.current_visible_count,
-						item_count: counts.item_count,
-						detail_loaded: counts.detail_loaded,
-						reusable_detail: counts.reusable_detail
-					}
-				}]
-			};
-		}
-		function emptyCachedDetailReuseDiagnosticSuccess(input = {}) {
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "empty_cached_detail_reuse_blocked",
-				error_code: "empty_cached_detail_reuse_blocked",
-				context: emptyCachedDetailReuseContext(input)
-			};
-		}
-		function detailPatchRejectedDiagnosticEvent(input = {}) {
-			const readMode = compactToken(input.readMode, "", 80);
-			const renderMode = compactToken(input.renderMode, "", 80);
-			const renderPlanReason = compactToken(input.renderPlanReason, "", 80);
-			const patchRejectReason = compactToken(input.patchRejectReason, "unknown", 80);
-			const previousCount = boundedCount(input.previousVisibleItemCount);
-			const visibleCount = boundedCount(input.visibleItemCount);
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "detail_patch_rejected",
-				severity_hint: "H3",
-				evidence_confidence: .7,
-				error_code: "detail_patch_rejected",
-				context: {
-					surface: "conversation-render",
-					action: "thread-detail-refresh",
-					read_mode: readMode,
-					render_mode: renderMode,
-					render_plan_reason: renderPlanReason,
-					patch_reject_reason: patchRejectReason
-				},
-				counts: {
-					previous_count: previousCount,
-					visible_count: visibleCount
-				},
-				breadcrumbs: [{
-					kind: "conversation-render",
-					code: "detail-patch",
-					status: "rejected",
-					fields: {
-						read_mode: readMode,
-						render_mode: renderMode,
-						render_plan_reason: renderPlanReason,
-						patch_reject_reason: patchRejectReason,
-						visible_count: visibleCount
-					}
-				}]
-			};
-		}
-		function threadDetailRefreshFailedDiagnosticEvent(input = {}) {
-			const threadHash = compactToken(input.threadHash, "", 80);
-			const errorCode = compactToken(input.errorCode, "thread_detail_refresh_failed", 80);
-			const durationBucket = compactToken(input.durationBucket, "", 80);
-			const statusCode = boundedCount(input.statusCode);
-			return {
-				category: "thread_session_load_failed",
-				diagnostic_type: "thread_detail_refresh_failed",
-				severity_hint: "H2",
-				evidence_confidence: .74,
-				error_code: errorCode,
-				duration_bucket: durationBucket,
-				context: {
-					surface: "thread-session",
-					action: "thread-detail-refresh",
-					thread_hash: threadHash
-				},
-				counts: { status_code: statusCode },
-				breadcrumbs: [{
-					kind: "thread-session",
-					code: "thread-detail-refresh",
-					status: "failed",
-					duration_bucket: durationBucket,
-					fields: {
-						status_code: statusCode,
-						thread_hash: threadHash
-					}
-				}]
-			};
-		}
-		function threadDetailLoadFailedDiagnosticEvent(input = {}) {
-			const threadHash = compactToken(input.threadHash, "", 80);
-			const errorCode = compactToken(input.errorCode, "thread_detail_load_failed", 80);
-			const durationBucket = compactToken(input.durationBucket, "", 80);
-			const statusCode = boundedCount(input.statusCode);
-			return {
-				category: "thread_session_load_failed",
-				diagnostic_type: "thread_detail_load_failed",
-				severity_hint: "H2",
-				evidence_confidence: .76,
-				error_code: errorCode,
-				duration_bucket: durationBucket,
-				context: {
-					surface: "thread-session",
-					action: "thread-detail-load",
-					thread_hash: threadHash
-				},
-				counts: { status_code: statusCode },
-				breadcrumbs: [{
-					kind: "thread-session",
-					code: "thread-detail-load",
-					status: "failed",
-					duration_bucket: durationBucket,
-					fields: {
-						status_code: statusCode,
-						thread_hash: threadHash
-					}
-				}]
-			};
-		}
-		function threadDetailSlowPathDiagnosticEvent(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const action = compactToken(source.action, "thread-detail", 80);
-			const reason = compactToken(source.reason, "elapsed-slow", 80);
-			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
-			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
-			const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
-			const coldPathOwner = compactToken(source.coldPathOwner || source.cold_path_owner, "", 80);
-			const coldPathReason = compactToken(source.coldPathReason || source.cold_path_reason, "", 80);
-			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
-			const durationBucket = compactToken(source.durationBucket || source.duration_bucket, "", 80);
-			const counts = {
-				elapsed_ms: boundedCount(source.elapsedMs || source.elapsed_ms),
-				api_elapsed_ms: boundedCount(source.apiElapsedMs || source.api_elapsed_ms),
-				render_elapsed_ms: boundedCount(source.renderElapsedMs || source.render_elapsed_ms),
-				threshold_ms: boundedCount(source.thresholdMs || source.threshold_ms),
-				turn_count: boundedCount(source.turns || source.turn_count),
-				visible_count: boundedCount(source.visibleItems || source.visible_count),
-				omitted_turns: boundedCount(source.omittedTurns || source.omitted_turns)
-			};
-			const rolloutMb = boundedRolloutMb(source.rolloutSizeBytes || source.rollout_size_bytes);
-			if (rolloutMb) counts.rollout_mb = rolloutMb;
-			const context = {
-				surface: "thread-session",
-				action
-			};
-			if (threadHash) context.thread_hash = threadHash;
-			if (readMode) context.read_mode = readMode;
-			if (renderMode) context.render_mode = renderMode;
-			if (performancePhase) context.performance_phase = performancePhase;
-			if (coldPathOwner) context.cold_path_owner = coldPathOwner;
-			if (coldPathReason) context.cold_path_reason = coldPathReason;
-			return {
-				category: "thread_session_slow_path",
-				diagnostic_type: "thread_detail_slow_path",
-				severity_hint: compactToken(source.severityHint || source.severity_hint, "H3", 8),
-				evidence_confidence: .7,
-				error_code: reason,
-				duration_bucket: durationBucket,
-				context,
-				counts,
-				breadcrumbs: [{
-					kind: "thread-session",
-					code: "thread-detail-slow-path",
-					status: "slow",
-					duration_bucket: durationBucket,
-					fields: {
-						read_mode: readMode,
-						render_mode: renderMode,
-						performance_phase: performancePhase,
-						cold_path_owner: coldPathOwner,
-						cold_path_reason: coldPathReason,
-						elapsed_ms: counts.elapsed_ms,
-						api_elapsed_ms: counts.api_elapsed_ms,
-						render_elapsed_ms: counts.render_elapsed_ms,
-						threshold_ms: counts.threshold_ms,
-						thread_hash: threadHash
-					}
-				}]
-			};
-		}
-		function threadDetailSlowPathDiagnosticSuccess(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const context = {
-				surface: "thread-session",
-				action: compactToken(source.action, "thread-detail", 80)
-			};
-			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
-			if (threadHash) context.thread_hash = threadHash;
-			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
-			if (readMode) context.read_mode = readMode;
-			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
-			if (renderMode) context.render_mode = renderMode;
-			return {
-				category: "thread_session_slow_path",
-				diagnostic_type: "thread_detail_slow_path",
-				error_code: "thread_detail_slow_path",
-				context
-			};
-		}
-		function threadListSlowPathDiagnosticEvent(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const action = compactToken(source.action, "thread-list-load", 80);
-			const reason = compactToken(source.reason, "elapsed-slow", 80);
-			const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
-			const coldPathOwner = compactToken(source.coldPathOwner || source.cold_path_owner, "", 80);
-			const coldPathReason = compactToken(source.coldPathReason || source.cold_path_reason, "", 80);
-			const fallbackCacheDecision = compactToken(source.fallbackCacheDecision || source.fallback_cache_decision, "", 80);
-			const fallbackDeferredReason = compactToken(source.fallbackDeferredReason || source.fallback_deferred_reason, "", 80);
-			const appServerDeferredReason = compactToken(source.appServerDeferredReason || source.app_server_deferred_reason, "", 80);
-			const appServerRequestReason = compactToken(source.appServerRequestReason || source.app_server_request_reason, "", 80);
-			const durationBucket = compactToken(source.durationBucket || source.duration_bucket, "", 80);
-			const counts = {
-				elapsed_ms: boundedCount(source.elapsedMs || source.elapsed_ms),
-				api_elapsed_ms: boundedCount(source.apiElapsedMs || source.api_elapsed_ms),
-				render_elapsed_ms: boundedCount(source.renderElapsedMs || source.render_elapsed_ms),
-				threshold_ms: boundedCount(source.thresholdMs || source.threshold_ms),
-				result_count: boundedCount(source.count || source.result_count),
-				server_total_ms: boundedCount(source.totalMs || source.total_ms),
-				app_server_ms: boundedCount(source.appServerMs || source.app_server_ms),
-				app_server_rpc_ms: boundedCount(source.appServerRpcMs || source.app_server_rpc_ms),
-				app_server_unattributed_ms: boundedCount(source.appServerUnattributedMs || source.app_server_unattributed_ms),
-				fallback_ms: boundedCount(source.fallbackMs || source.fallback_ms),
-				merge_ms: boundedCount(source.mergeMs || source.merge_ms),
-				summary_merge_ms: boundedCount(source.summaryMergeTotalMs || source.summary_merge_ms),
-				fallback_snapshot_age_ms: boundedCount(source.fallbackSourceSnapshotAgeMs || source.fallback_snapshot_age_ms),
-				fallback_rollout_stat_count: boundedCount(source.fallbackRolloutFileStatCount || source.fallback_rollout_stat_count),
-				fallback_rollout_head_read_count: boundedCount(source.fallbackRolloutHeadReadCount || source.fallback_rollout_head_read_count),
-				fallback_rollout_summary_read_count: boundedCount(source.fallbackRolloutSummaryReadCount || source.fallback_rollout_summary_read_count),
-				app_server_request_limit: boundedCount(source.appServerRequestLimit || source.app_server_request_limit),
-				app_server_response_kb: boundedCount(source.appServerResponsePayloadKb || source.app_server_response_kb) || boundedPayloadKb(source.appServerResponsePayloadBytes || source.app_server_response_bytes),
-				silent: source.silent || source.is_silent ? 1 : 0,
-				has_search: source.hasSearch || source.has_search ? 1 : 0,
-				has_workspace: source.hasWorkspace || source.has_workspace ? 1 : 0,
-				mobile_fallback: source.mobileFallback || source.mobile_fallback ? 1 : 0
-			};
-			const context = {
-				surface: "thread-session",
-				action
-			};
-			if (performancePhase) context.performance_phase = performancePhase;
-			if (coldPathOwner) context.cold_path_owner = coldPathOwner;
-			if (coldPathReason) context.cold_path_reason = coldPathReason;
-			if (fallbackCacheDecision) context.fallback_cache_decision = fallbackCacheDecision;
-			if (fallbackDeferredReason) context.fallback_deferred_reason = fallbackDeferredReason;
-			if (appServerDeferredReason) context.app_server_deferred_reason = appServerDeferredReason;
-			if (appServerRequestReason) context.app_server_request_reason = appServerRequestReason;
-			return {
-				category: "thread_session_slow_path",
-				diagnostic_type: "thread_list_slow_path",
-				severity_hint: compactToken(source.severityHint || source.severity_hint, "H3", 8),
-				evidence_confidence: .7,
-				error_code: reason,
-				duration_bucket: durationBucket,
-				context,
-				counts,
-				breadcrumbs: [{
-					kind: "thread-session",
-					code: "thread-list-slow-path",
-					status: "slow",
-					duration_bucket: durationBucket,
-					fields: {
-						performance_phase: performancePhase,
-						cold_path_owner: coldPathOwner,
-						cold_path_reason: coldPathReason,
-						fallback_cache_decision: fallbackCacheDecision,
-						app_server_request_reason: appServerRequestReason,
-						elapsed_ms: counts.elapsed_ms,
-						api_elapsed_ms: counts.api_elapsed_ms,
-						render_elapsed_ms: counts.render_elapsed_ms,
-						threshold_ms: counts.threshold_ms,
-						result_count: counts.result_count
-					}
-				}]
-			};
-		}
-		function threadListSlowPathDiagnosticSuccess(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const context = {
-				surface: "thread-session",
-				action: compactToken(source.action, "thread-list-load", 80)
-			};
-			const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
-			if (performancePhase) context.performance_phase = performancePhase;
-			return {
-				category: "thread_session_slow_path",
-				diagnostic_type: "thread_list_slow_path",
-				error_code: "thread_list_slow_path",
-				context
-			};
-		}
-		function threadDetailResponseContractDiagnosticContext(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const context = {
-				surface: "thread-session",
-				action: compactToken(source.action, "thread-detail", 80)
-			};
-			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
-			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
-			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
-			const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
-			const projectionSource = compactToken(source.projectionSource || source.projection_source, "", 80);
-			const projectionPartialKind = compactToken(source.projectionPartialKind || source.projection_partial_kind, "", 80);
-			if (threadHash) context.thread_hash = threadHash;
-			if (readMode) context.read_mode = readMode;
-			if (renderMode) context.render_mode = renderMode;
-			if (performancePhase) context.performance_phase = performancePhase;
-			if (projectionSource) context.projection_source = projectionSource;
-			if (projectionPartialKind) context.projection_partial_kind = projectionPartialKind;
-			return context;
-		}
-		function threadDetailResponseContractCounts(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const out = {
-				turn_count: boundedCount(source.turns || source.turn_count),
-				item_count: boundedCount(source.items || source.item_count),
-				visible_count: boundedCount(source.visibleItems || source.visible_count),
-				active_turn_count: boundedCount(source.activeTurns || source.active_turn_count),
-				completed_turn_count: boundedCount(source.completedTurns || source.completed_turn_count),
-				omitted_turns: boundedCount(source.omittedTurns || source.omitted_turns),
-				older_cursor: source.olderCursor || source.older_cursor ? 1 : 0,
-				newer_cursor: source.newerCursor || source.newer_cursor ? 1 : 0,
-				projection_partial: source.projectionPartial || source.projection_partial ? 1 : 0,
-				response_budget_applied: source.responseBudgetApplied || source.response_budget_applied ? 1 : 0,
-				response_budget_progressive_active: source.responseBudgetProgressiveActiveApplied || source.response_budget_progressive_active ? 1 : 0,
-				response_budget_active_turn_count: boundedCount(source.responseBudgetActiveTurnCount || source.response_budget_active_turn_count),
-				response_budget_retained_item_count: boundedCount(source.responseBudgetRetainedItemCount || source.response_budget_retained_item_count)
-			};
-			const rolloutMb = boundedRolloutMb(source.rolloutSizeBytes || source.rollout_size_bytes);
-			if (rolloutMb) out.rollout_mb = rolloutMb;
-			return out;
-		}
-		function threadDetailResponseContractDiagnosticEvent(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const reason = compactToken(source.reason, "thread-detail-response-contract", 80);
-			const context = threadDetailResponseContractDiagnosticContext(source);
-			const counts = threadDetailResponseContractCounts(source);
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "thread_detail_response_contract_mismatch",
-				severity_hint: compactToken(source.severityHint || source.severity_hint, "H2", 8),
-				evidence_confidence: .82,
-				error_code: reason,
-				duration_bucket: compactToken(source.durationBucket || source.duration_bucket, "", 80),
-				context,
-				counts,
-				breadcrumbs: [{
-					kind: "thread-session",
-					code: "thread-detail-response-contract",
-					status: "failed",
-					fields: {
-						read_mode: context.read_mode || "",
-						render_mode: context.render_mode || "",
-						performance_phase: context.performance_phase || "",
-						projection_source: context.projection_source || "",
-						projection_partial_kind: context.projection_partial_kind || "",
-						turn_count: counts.turn_count,
-						item_count: counts.item_count,
-						visible_count: counts.visible_count,
-						active_turn_count: counts.active_turn_count,
-						older_cursor: counts.older_cursor,
-						newer_cursor: counts.newer_cursor,
-						projection_partial: counts.projection_partial,
-						response_budget_applied: counts.response_budget_applied,
-						response_budget_progressive_active: counts.response_budget_progressive_active,
-						response_budget_active_turn_count: counts.response_budget_active_turn_count,
-						response_budget_retained_item_count: counts.response_budget_retained_item_count,
-						thread_hash: context.thread_hash || ""
-					}
-				}]
-			};
-		}
-		function threadDetailResponseContractDiagnosticSuccess(input = {}) {
-			return {
-				category: "conversation_projection_mismatch",
-				diagnostic_type: "thread_detail_response_contract_mismatch",
-				error_code: "thread_detail_response_contract_mismatch",
-				context: threadDetailResponseContractDiagnosticContext(input)
-			};
-		}
-		function threadDetailResponseDiagnosticEffects(input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const effects = [];
-			const slowPlan = source.slowPlan && typeof source.slowPlan === "object" ? source.slowPlan : null;
-			if (slowPlan) {
-				const shouldReport = slowPlan.shouldReport === true;
-				effects.push({
-					type: shouldReport ? "diagnostic-failure" : "diagnostic-success",
-					diagnostic: shouldReport ? threadDetailSlowPathDiagnosticEvent(slowPlan) : threadDetailSlowPathDiagnosticSuccess(source.slowSuccessInput || {}),
-					diagnosticType: "thread_detail_slow_path",
-					reason: shouldReport ? compactToken(slowPlan.reason, "thread-detail-slow-path", 80) : "thread-detail-slow-path-ok"
+			function applyThreadTileOperationModeTogglePlan(effect) {
+				if (!effect || effect.action !== "operation-mode-toggle-effects") return false;
+				const id = String(effect.id || "");
+				if (!id) return false;
+				state.threadTileOperationModesById.set(id, threadTileStatePolicy.normalizeOperationMode(effect.mode));
+				if (effect.selectPane) setThreadTileSelectedThread(id, { render: effect.selectPaneRender !== false });
+				if (effect.patchThreadId && !patchThreadTilePane(effect.patchThreadId, { preserveScroll: effect.patchPreserveScroll !== false })) {
+					if (effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
+				}
+				return true;
+			}
+			function threadTileMinimumPaneCount(layout = threadTileLayout()) {
+				return threadTilePaneCountState(layout).minPaneCount;
+			}
+			function threadTileMaximumPaneCount(layout = threadTileLayout()) {
+				return threadTilePaneCountState(layout).maxPaneCount;
+			}
+			function setThreadTilePaneCount(nextCount, options = {}) {
+				if (!state.threadTileMode) return false;
+				const layout = threadTileLayout({ enabled: true });
+				if (!layout || !layout.enabled) return false;
+				const minCount = threadTileMinimumPaneCount(layout);
+				const maxCount = threadTileMaximumPaneCount(layout);
+				const current = effectiveThreadTilePaneCount(layout);
+				const plan = threadTileStatePolicy.paneCountChangePlan({
+					enabled: state.threadTileMode,
+					layoutEnabled: layout.enabled,
+					nextCount,
+					currentCount: current,
+					storedPaneCount: state.threadTilePaneCount,
+					minCount,
+					maxCount
+				}, { maxPanes: THREAD_TILE_USER_MAX_PANES });
+				if (plan.action !== "set-pane-count") return false;
+				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
+					maxPanes: THREAD_TILE_USER_MAX_PANES,
+					render: options.render !== false
+				}), layout);
+			}
+			function changeThreadTilePaneCount(delta) {
+				const layout = threadTileLayout({ enabled: true });
+				if (!layout || !layout.enabled) return false;
+				return setThreadTilePaneCount(effectiveThreadTilePaneCount(layout) + (Number(delta) || 0));
+			}
+			function closeThreadTilePane(threadId) {
+				const id = String(threadId || "").trim();
+				if (!id || !state.threadTileMode) return false;
+				const layout = threadTileLayout({ enabled: true });
+				if (!layout || !layout.enabled) return false;
+				const ids = threadTileCandidateIds(layout);
+				const minCount = threadTileMinimumPaneCount(layout);
+				const plan = threadTileStatePolicy.closePanePlan({
+					enabled: state.threadTileMode,
+					layoutEnabled: layout.enabled,
+					threadId: id,
+					ids,
+					pinnedIds: state.threadTilePinnedIds,
+					defaultIds: defaultThreadTileCandidateIds(layout, { maxPanes: threadTileMaximumPaneCount(layout) }),
+					minCount
+				}, { maxPanes: THREAD_TILE_USER_MAX_PANES });
+				if (plan.action !== "close-pane") return false;
+				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, { maxPanes: THREAD_TILE_USER_MAX_PANES }), layout);
+			}
+			function renderThreadTilePane(threadId, layout, previousKeys = /* @__PURE__ */ new Set()) {
+				const thread = threadTileDisplayThread(threadId);
+				const id = String(threadId || thread && thread.id || "");
+				const title = threadTitleForDisplay(thread) || id;
+				const summary = threadTileSummary(id);
+				const paneStateHtml = turnTimerStateHtml(threadTilePaneTimerState(thread || summary));
+				const error = threadTileError(id);
+				const loading = state.threadTileLoadingIds.has(id) || thread && thread.mobileLoading && !threadHasVisibleConversationTurns(thread);
+				const readWarning = threadReadWarningMessage(thread);
+				const turns = visibleTurnsForConversation(thread);
+				const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
+				const omitted = Number(thread && thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread && thread.turns || []).length - turns.length);
+				const historyNote = renderThreadHistoryNote(thread, omitted, previousKeys);
+				const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
+					const turnId = approvalTurnId(request);
+					if (turnId && visibleTurnIds.has(turnId)) return false;
+					return isApprovalActive(request);
+				});
+				const body = error ? `<div class="thread-tile-empty error">Thread failed: ${escapeHtml(error)}</div>` : loading ? `<div class="thread-tile-empty">Loading thread...</div>` : [
+					historyNote,
+					readWarning ? `<div class="history-note">${escapeHtml(readWarning)}</div>` : "",
+					turns.map((turn) => renderThreadTileTurn(thread, turn, previousKeys)).join("") || `<div class="thread-tile-empty">No visible turns.</div>`,
+					approvalsHtml
+				].join("");
+				const active = id && id === effectiveThreadTileSelectedThreadId() ? " active" : "";
+				const operationDock = renderThreadTileOperationDock(thread, previousKeys);
+				const switchMenu = renderThreadTileSwitchMenu(id);
+				return `<section class="thread-tile-pane${active}" data-thread-tile-pane="${escapeHtml(id)}" data-render-key="${escapeHtml(`thread-tile|${id}`)}">
+    <header class="thread-tile-pane-header">
+      <div class="thread-tile-pane-title-wrap">
+        <button class="thread-tile-pane-title-button" type="button" draggable="true" data-thread-tile-drag-handle="${escapeHtml(id)}" data-thread-tile-title="${escapeHtml(id)}" aria-haspopup="listbox" aria-expanded="${state.threadTileSwitchMenuPaneId === id ? "true" : "false"}">
+          <span class="thread-tile-pane-title">${escapeHtml(title)}</span>
+        </button>
+        ${switchMenu}
+      </div>
+      <div class="thread-tile-pane-state-slot" data-thread-tile-pane-state>${paneStateHtml}</div>
+    </header>
+    <div class="thread-tile-pane-body"><div class="thread-tile-pane-content">${body}</div></div>
+    ${operationDock}
+    <button class="thread-tile-bottom-button hidden" type="button" data-thread-tile-bottom="${escapeHtml(id)}" aria-label="跳到此线程底部" title="跳到底部" aria-hidden="true" tabindex="-1">↓</button>
+  </section>`;
+			}
+			function threadTilePaneElement(threadId) {
+				const id = String(threadId || "");
+				if (!id) return null;
+				return Array.from(document.querySelectorAll("[data-thread-tile-pane]")).find((entry) => String(entry.getAttribute("data-thread-tile-pane") || "") === id) || null;
+			}
+			function threadTileRenderSignature(layout, ids) {
+				return threadTileStatePolicy.paneRenderSignaturePlan({
+					layout,
+					ids,
+					desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
+					splitPairs: threadTilePrunedSplitPairs(ids),
+					selectedThreadId: effectiveThreadTileSelectedThreadId(ids),
+					loadingIds: ids.filter((id) => state.threadTileLoadingIds.has(id)),
+					switchMenuPaneId: state.threadTileSwitchMenuPaneId || "",
+					errors: ids.map((id) => [id, threadTileError(id)]),
+					operations: ids.map((id) => [id, threadTileOperationSignature(id)]),
+					threadSignatures: ids.map((id) => conversationRenderSignature(threadTileDisplayThread(id)))
+				}, { maxPanes: THREAD_TILE_USER_MAX_PANES }).signature;
+			}
+			function patchThreadTilePane(threadId, options = {}) {
+				const id = String(threadId || "").trim();
+				let preflight = threadTileStatePolicy.panePatchPreflightPlan({
+					threadId: id,
+					enabled: state.threadTileMode,
+					visible: id ? threadTilePaneIsVisible(id) : false
+				});
+				if (!preflight.shouldContinue) return false;
+				const conversation = $("conversation");
+				preflight = threadTileStatePolicy.panePatchPreflightPlan({
+					threadId: id,
+					enabled: state.threadTileMode,
+					visible: true,
+					conversationPresent: Boolean(conversation),
+					tileSurface: Boolean(conversation && conversation.classList.contains("thread-tile-mode"))
+				});
+				if (!preflight.shouldContinue) return false;
+				const board = conversation.querySelector("[data-thread-tile-board]");
+				preflight = threadTileStatePolicy.panePatchPreflightPlan({
+					threadId: id,
+					enabled: state.threadTileMode,
+					visible: true,
+					conversationPresent: true,
+					tileSurface: true,
+					boardPresent: Boolean(board)
+				});
+				if (!preflight.shouldContinue) return false;
+				const layout = threadTileLayout();
+				preflight = threadTileStatePolicy.panePatchPreflightPlan({
+					threadId: id,
+					enabled: state.threadTileMode,
+					visible: true,
+					conversationPresent: true,
+					tileSurface: true,
+					boardPresent: true,
+					layoutEnabled: Boolean(layout && layout.enabled)
+				});
+				if (!preflight.shouldContinue) return false;
+				const ids = threadTileCandidateIds(layout);
+				preflight = threadTileStatePolicy.panePatchPreflightPlan({
+					threadId: id,
+					enabled: state.threadTileMode,
+					visible: true,
+					conversationPresent: true,
+					tileSurface: true,
+					boardPresent: true,
+					layoutEnabled: true,
+					ids
+				});
+				if (!preflight.shouldContinue) return false;
+				const displayLayout = threadTileDisplayLayout(layout, ids);
+				const pane = options.paneElement || threadTilePaneElement(id);
+				preflight = threadTileStatePolicy.panePatchPreflightPlan({
+					threadId: id,
+					enabled: state.threadTileMode,
+					visible: true,
+					conversationPresent: true,
+					tileSurface: true,
+					boardPresent: true,
+					layoutEnabled: true,
+					ids,
+					panePresent: Boolean(pane)
+				});
+				if (!preflight.canPatch) return false;
+				const previousScroll = captureThreadTilePaneElementScrollState(pane);
+				const previousKeys = existingConversationRenderKeys();
+				const template = document.createElement("template");
+				template.innerHTML = renderThreadTilePane(id, displayLayout, previousKeys);
+				const sourcePane = template.content.firstElementChild;
+				let completion = threadTileStatePolicy.panePatchCompletionPlan({
+					threadId: id,
+					sourcePanePresent: Boolean(sourcePane)
+				});
+				if (!completion.returnValue) return false;
+				const patchedPane = patchNode(pane, sourcePane);
+				completion = threadTileStatePolicy.panePatchCompletionPlan({
+					threadId: id,
+					sourcePanePresent: true,
+					patchedPanePresent: Boolean(patchedPane),
+					requestAnimationFrameAvailable: typeof window.requestAnimationFrame === "function"
+				});
+				if (!completion.returnValue) return false;
+				if (completion.hydrate) hydrateThreadDetailSurface(patchedPane, { imageScanDelays: [0, 180] });
+				if (completion.restoreScroll) restoreThreadTilePaneElementScrollState(patchedPane, previousScroll, options);
+				if (completion.updateBottomButton) {
+					const updateBottomButton = () => updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body"));
+					if (completion.updateBottomButtonMode === "animation-frame" && typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(updateBottomButton);
+					else updateBottomButton();
+				}
+				if (completion.writeRenderSignature) state.renderedConversationSignature = threadTileRenderSignature(displayLayout, ids);
+				if (completion.clearPatchShellSignature) state.renderedConversationPatchShellSignature = "";
+				if (completion.bindActions) bindThreadTileActions();
+				else return false;
+				return completion.returnValue;
+			}
+			function isThreadTileConversationSurface() {
+				const conversation = $("conversation");
+				return Boolean(state.threadTileMode && conversation && conversation.classList && conversation.classList.contains("thread-tile-mode"));
+			}
+			function threadDetailDomPatchSurface(options = {}) {
+				const id = String(options.threadId || state.currentThreadId || state.currentThread && state.currentThread.id || "").trim();
+				return threadDetailPatchPlanApi.planThreadDetailDomPatchSurface({
+					threadId: id,
+					threadTileMode: state.threadTileMode,
+					threadTileSurface: isThreadTileConversationSurface(),
+					tilePaneVisible: id ? threadTilePaneIsVisible(id) : false,
+					conversationPresent: Boolean($("conversation"))
 				});
 			}
-			const contractPlan = source.contractPlan && typeof source.contractPlan === "object" ? source.contractPlan : null;
-			if (contractPlan) {
-				const shouldReport = contractPlan.shouldReport === true;
-				effects.push({
-					type: shouldReport ? "diagnostic-failure" : "diagnostic-success",
-					diagnostic: shouldReport ? threadDetailResponseContractDiagnosticEvent(contractPlan) : threadDetailResponseContractDiagnosticSuccess(contractPlan),
-					diagnosticType: "thread_detail_response_contract_mismatch",
-					reason: shouldReport ? compactToken(contractPlan.reason, "thread-detail-response-contract", 80) : "thread-detail-response-contract-ok"
+			function canPatchSingleThreadConversationDom(options = {}) {
+				const plan = threadDetailDomPatchSurface(options);
+				return Boolean(plan && plan.canPatch && plan.surface === "single-thread");
+			}
+			function patchCurrentThreadTilePaneFromState(options = {}) {
+				const plan = threadDetailDomPatchSurface(options);
+				if (!plan || !plan.canPatch || plan.surface !== "thread-tile-pane") return false;
+				clearGlobalLiveOperationDockForThreadTiles();
+				return patchThreadTilePane(plan.threadId, Object.assign({ preserveScroll: true }, options));
+			}
+			function scheduleRenderThreadTilePane(threadId, options = {}) {
+				const id = String(threadId || "").trim();
+				const plan = threadTileStatePolicy.paneRenderFramePlan({
+					threadId: id,
+					enabled: state.threadTileMode,
+					visible: id ? threadTilePaneIsVisible(id) : false,
+					hasFrame: id ? state.threadTilePaneRenderFramesById.has(id) : false
+				});
+				if (plan.action === "skip" || !plan.returnValue) return false;
+				if (!plan.scheduleFrame) return true;
+				const render = () => {
+					state.threadTilePaneRenderFramesById.delete(id);
+					if (!patchThreadTilePane(id, options) && plan.fullRenderOnPatchMiss) scheduleRenderCurrentThread();
+				};
+				const frame = window.requestAnimationFrame ? window.requestAnimationFrame(render) : setTimeout(render, 33);
+				state.threadTilePaneRenderFramesById.set(id, frame);
+				return true;
+			}
+			function renderThreadTileLayout(layout, options = {}) {
+				const ids = threadTileCandidateIds(layout);
+				if (!ids.length) return false;
+				const displayLayout = threadTileDisplayLayout(layout, ids);
+				const scrollState = captureThreadTilePaneScrollState();
+				ensureThreadTileDetails(ids);
+				updateThreadTileGlobalHeader(displayLayout, ids);
+				state.nowMs = Date.now();
+				const previousKeys = existingConversationRenderKeys();
+				const html = `<div class="thread-tile-board" data-thread-tile-board data-render-key="thread-tile-board">
+    ${(Array.isArray(displayLayout.columnGroups) && displayLayout.columnGroups.length ? displayLayout.columnGroups : ids.map((id) => [id])).map((group, index) => `<div class="thread-tile-column" data-thread-tile-column="${escapeHtml(String(index))}" style="--thread-tile-column-rows: ${escapeHtml(String(Math.max(1, group.length)))}">
+      ${group.map((id) => renderThreadTilePane(id, displayLayout, previousKeys)).join("")}
+    </div>`).join("")}
+  </div>`;
+				const signature = threadTileRenderSignature(displayLayout, ids);
+				const visibleShape = threadTileVisibleShape(ids);
+				const expectedVisibleTurnCount = visibleShape.turnCount;
+				const renderedDomTurnCount = threadTileDomTurnCount();
+				const renderedDomShape = conversationDomShape();
+				setThreadTileConversationMode(true, displayLayout);
+				updateConversationHtml(html, signature, {
+					stickToBottom: options.stickToBottom === true,
+					patchShellSignature: "",
+					expectedVisibleTurnCount,
+					renderedDomTurnCount,
+					expectedVisibleItemCount: visibleShape.visibleItemCount,
+					renderedDomItemCount: renderedDomShape.itemCount,
+					duplicateRenderKeyCount: renderedDomShape.duplicateRenderKeyCount,
+					duplicateUserMessageCount: renderedDomShape.duplicateUserMessageCount,
+					expectedDuplicateUserMessageCount: visibleShape.duplicateUserMessageCount,
+					action: "thread-tile-empty-state",
+					routeKind: "thread-tile",
+					threadHash: diagnosticHash(`thread-tile:${ids.join("|")}`),
+					currentTurns: expectedVisibleTurnCount,
+					currentVisibleItems: visibleShape.visibleItemCount,
+					source: "thread-tile-render",
+					checkProjectionConsistency: true
+				});
+				bindThreadTileActions();
+				restoreThreadTilePaneScrollState(scrollState);
+				if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(() => {
+					restoreThreadTilePaneScrollState(scrollState);
+					updateThreadTileBottomButtons();
+				});
+				return true;
+			}
+			function bindThreadTileActions() {
+				const conversation = $("conversation");
+				if (!conversation) return;
+				if (conversation.dataset.threadTileActionsBound === "true") return;
+				conversation.dataset.threadTileActionsBound = "true";
+				conversation.addEventListener("pointerdown", (event) => {
+					const plan = threadTileActionsApi.resolveThreadTilePointerAction({
+						target: event.target,
+						root: conversation
+					});
+					if (plan.action === "select-pane") {
+						setThreadTileSelectedThread(plan.paneId || "");
+						return;
+					}
+					if (plan.stopPropagation) {
+						event.stopPropagation();
+						return;
+					}
+				});
+				conversation.addEventListener("focusin", (event) => {
+					const plan = threadTileActionsApi.resolveThreadTileFocusAction({
+						target: event.target,
+						root: conversation
+					});
+					if (plan.action === "select-pane") setThreadTileSelectedThread(plan.paneId || "");
+				});
+				conversation.addEventListener("click", (event) => {
+					const plan = threadTileActionsApi.resolveThreadTileClickAction({
+						target: event.target,
+						root: conversation
+					});
+					if (plan.preventDefault) event.preventDefault();
+					if (plan.stopPropagation) event.stopPropagation();
+					if (plan.action === "toggle-switch-menu") {
+						toggleThreadTileSwitchMenu(plan.paneId || "");
+						return;
+					}
+					if (plan.action === "switch-pane-thread") {
+						replaceThreadTilePaneThread(plan.fromId || "", plan.toId || "");
+						return;
+					}
+					if (plan.action === "change-pane-count") {
+						if (!plan.disabled) changeThreadTilePaneCount(Number(plan.delta || 0));
+						return;
+					}
+					if (plan.action === "close-pane") {
+						if (!plan.disabled) closeThreadTilePane(plan.paneId || "");
+						return;
+					}
+					if (plan.action === "scroll-pane-bottom") {
+						scrollThreadTilePaneToBottom(plan.paneId || "", { smooth: true });
+						return;
+					}
+					if (plan.action === "toggle-operation") {
+						const id = plan.paneId || "";
+						applyThreadTileOperationModeTogglePlan(threadTileStatePolicy.operationModeTogglePlan({
+							enabled: state.threadTileMode,
+							threadId: id,
+							mode: state.threadTileOperationModesById.get(id) || "compact"
+						}));
+					}
+				});
+				conversation.addEventListener("scroll", (event) => {
+					const plan = threadTileActionsApi.resolveThreadTileScrollAction({
+						target: event.target,
+						root: conversation
+					});
+					if (plan.action === "pane-scroll") updateThreadTileBottomButtonForBody(plan.body);
+				}, {
+					passive: true,
+					capture: true
+				});
+				conversation.addEventListener("dragstart", (event) => {
+					const plan = threadTileActionsApi.resolveThreadTileDragStartAction({
+						target: event.target,
+						root: conversation
+					});
+					if (plan.action !== "drag-start") return;
+					const id = plan.paneId || "";
+					if (!id) return;
+					state.threadTileDraggingThreadId = id;
+					state.threadTileSwitchMenuPaneId = "";
+					if (event.dataTransfer) {
+						event.dataTransfer.effectAllowed = "move";
+						event.dataTransfer.setData("text/plain", id);
+					}
+					const pane = plan.pane;
+					if (pane) pane.classList.add("dragging");
+				});
+				conversation.addEventListener("dragover", (event) => {
+					const plan = threadTileActionsApi.resolveThreadTileDragOverAction({
+						target: event.target,
+						root: conversation,
+						draggingId: state.threadTileDraggingThreadId || ""
+					});
+					if (plan.action !== "drag-over") return;
+					if (plan.preventDefault) event.preventDefault();
+					if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+					plan.pane.classList.add("drag-over");
+				});
+				conversation.addEventListener("dragleave", (event) => {
+					const plan = threadTileActionsApi.resolveThreadTileDragLeaveAction({
+						target: event.target,
+						root: conversation
+					});
+					if (plan.action === "drag-leave") plan.pane.classList.remove("drag-over");
+				});
+				conversation.addEventListener("drop", (event) => {
+					const plan = threadTileActionsApi.resolveThreadTileDropAction({
+						target: event.target,
+						root: conversation,
+						draggingId: state.threadTileDraggingThreadId || "",
+						transferId: event.dataTransfer && event.dataTransfer.getData("text/plain") || ""
+					});
+					if (plan.action !== "drop-pane") return;
+					if (plan.preventDefault) event.preventDefault();
+					if (plan.stopPropagation) event.stopPropagation();
+					document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
+					state.threadTileDraggingThreadId = "";
+					dropThreadTilePane(plan.draggingId, plan.targetId, event);
+				});
+				conversation.addEventListener("dragend", () => {
+					state.threadTileDraggingThreadId = "";
+					document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
 				});
 			}
+			function threadTileLayoutStatusText(layout) {
+				if (!state.threadTileMode) return "当前视口：单线程";
+				if (layout && layout.enabled) {
+					const count = effectiveThreadTilePaneCount(layout);
+					const maxCount = threadTileMaximumPaneCount(layout);
+					return maxCount > 1 ? `当前视口：平铺 ${count}/${maxCount} 窗` : "当前视口：平铺可用";
+				}
+				const reason = String(layout && layout.reason || "");
+				if (reason === "tablet-portrait") return "当前视口：竖屏单线程";
+				if (reason === "insufficient-width" || reason === "narrow") return "当前视口：宽度不足";
+				if (reason === "disabled") return "当前视口：单线程";
+				return "当前视口：暂不可平铺";
+			}
+			function syncThreadTileToggle() {
+				const layout = threadTileLayout({ enabled: true });
+				document.querySelectorAll("[data-thread-display-choice]").forEach((button) => {
+					const isTile = (button.getAttribute("data-thread-display-choice") || "single") === "tile";
+					const isSelected = isTile ? state.threadTileMode : !state.threadTileMode;
+					button.classList.toggle("selected", isSelected);
+					button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+					if (isTile && !layout.enabled && !state.threadTileMode) button.setAttribute("title", "平铺会在 iPad 横屏或宽屏可用时生效");
+					else button.removeAttribute("title");
+				});
+				const status = $("threadDisplaySettingsStatus");
+				if (status) status.textContent = threadTileLayoutStatusText(layout);
+			}
+			function setThreadTileMode(enabled) {
+				state.threadTileMode = enabled === true;
+				mirrorThreadDisplayModeToLocalStorage();
+				if (!state.threadTileMode) {
+					abortThreadTileLoads();
+					state.threadTileSelectedThreadId = "";
+					setThreadTileConversationMode(false);
+				}
+				scheduleThreadDisplaySettingsSave();
+				syncThreadTileToggle();
+				renderCurrentThread({ stickToBottom: true });
+			}
+			function handleThreadTileModeChoice(event) {
+				const button = event.target.closest("[data-thread-display-choice]");
+				if (!button) return;
+				event.preventDefault();
+				setThreadTileMode(button.getAttribute("data-thread-display-choice") === "tile");
+			}
 			return {
-				effects,
-				reason: effects.length ? "thread-detail-response-diagnostic-effects" : "no-diagnostic-plans"
+				updateThreadTileGlobalHeader,
+				viewportPixelSize,
+				isCoarsePointerViewport,
+				isThreadTileKeyboardFocusActive,
+				threadTileViewportSize,
+				threadTileVerticalChromePx,
+				threadTileLayout,
+				normalizeThreadTilePaneCount,
+				threadTileLayoutCapacity,
+				defaultThreadTileCandidateIds,
+				threadTileRunningPaneIds,
+				threadTilePaneCountState,
+				autoThreadTilePaneCount,
+				effectiveThreadTilePaneCount,
+				threadTileDisplayLayout,
+				normalizeThreadTilePinnedIds,
+				normalizeThreadTileSplitPairs,
+				threadTilePrunedSplitPairs,
+				threadTileVisibleIdSet,
+				threadTileIdsEqual,
+				threadTileCandidateIds,
+				threadDisplaySettingsPayload,
+				localThreadDisplayMode,
+				mirrorThreadDisplayModeToLocalStorage,
+				applyThreadDisplaySettings,
+				loadThreadDisplaySettings,
+				saveThreadDisplaySettingsNow,
+				scheduleThreadDisplaySettingsSave,
+				syncThreadTileActivePaneState,
+				threadTileSummary,
+				threadTileDisplayThread,
+				setThreadTileSelectedThread,
+				applyThreadTileSelectedPaneEffects,
+				threadTileVisibleThreadOptions,
+				renderThreadTileSwitchMenu,
+				applyThreadTilePaneSlotEffects,
+				replaceThreadTilePaneThread,
+				moveThreadTilePaneRelative,
+				splitThreadTilePaneWithTarget,
+				dropThreadTilePane,
+				replaceLastThreadTilePaneForThreadListOpen,
+				toggleThreadTileSwitchMenu,
+				threadTileHasLiveThread,
+				updateThreadTilePaneStatusBadges,
+				threadTileError,
+				threadTilePaneIsVisible,
+				setThreadTileConversationMode,
+				captureThreadTilePaneScrollState,
+				captureThreadTilePaneElementScrollState,
+				scrollThreadTilePaneBodyToBottom,
+				isThreadTilePaneNearBottom,
+				applyThreadTilePaneScrollHoldPlan,
+				rememberThreadTilePaneScrollPosition,
+				updateThreadTileBottomButtonForBody,
+				updateThreadTileBottomButtons,
+				restoreThreadTilePaneScrollState,
+				restoreThreadTilePaneElementScrollState,
+				scrollThreadTilePaneToBottom,
+				clearThreadTileRefreshTimer,
+				clearThreadTileDetailLoadQueueTimer,
+				scheduleThreadTileDetailLoadQueueDrain,
+				scheduleThreadTileRefresh,
+				refreshThreadTileDetails,
+				abortThreadTileLoads,
+				loadThreadTileDetail,
+				applyThreadTileDetailLoadStartEffects,
+				applyThreadTileDetailLoadSuccessEffects,
+				applyThreadTileDetailLoadErrorEffects,
+				applyThreadTileDetailLoadFinallyEffects,
+				applyThreadTileDetailLoadQueuePlan,
+				ensureThreadTileDetails,
+				renderThreadTileTurn,
+				scheduleThreadTileOperationMinimumRefresh,
+				rememberThreadTileOperationBubble,
+				clearThreadTileOperationBubble,
+				renderThreadTileOperationDock,
+				threadTileOperationSignature,
+				applyThreadTileOperationModeTogglePlan,
+				threadTileMinimumPaneCount,
+				threadTileMaximumPaneCount,
+				setThreadTilePaneCount,
+				changeThreadTilePaneCount,
+				closeThreadTilePane,
+				renderThreadTilePane,
+				threadTilePaneElement,
+				threadTileRenderSignature,
+				patchThreadTilePane,
+				isThreadTileConversationSurface,
+				threadDetailDomPatchSurface,
+				canPatchSingleThreadConversationDom,
+				patchCurrentThreadTilePaneFromState,
+				scheduleRenderThreadTilePane,
+				renderThreadTileLayout,
+				bindThreadTileActions,
+				threadTileLayoutStatusText,
+				syncThreadTileToggle,
+				setThreadTileMode,
+				handleThreadTileModeChoice
 			};
 		}
-		return {
-			boundedCount,
-			compactToken,
-			detailPatchRejectedDiagnosticEvent,
-			duplicateRenderKeysDiagnosticEvent,
-			duplicateRenderKeysDiagnosticSuccess,
-			emptyCachedDetailReuseBlockedDiagnosticEvent,
-			emptyCachedDetailReuseDiagnosticSuccess,
-			emptyVisibleDetailMismatchDiagnosticEvent,
-			emptyVisibleDetailMismatchDiagnosticSuccess,
-			hasDuplicateRenderKeys,
-			hasRenderSignatureMismatch,
-			hasTurnOrderMismatch,
-			conversationProjectionDiagnosticSnapshot,
-			conversationProjectionConsistencyEffects,
-			primaryShellSelectionConflictDiagnosticEvent,
-			primaryShellSelectionConflictDiagnosticSuccess,
-			projectionDiagnosticContext,
-			projectionDiagnosticCounts,
-			projectionDiagnosticSnapshot,
-			renderSignatureMismatchDiagnosticEvent,
-			renderSignatureMismatchDiagnosticSuccess,
-			threadDetailResponseContractDiagnosticEvent,
-			threadDetailResponseDiagnosticEffects,
-			threadDetailResponseContractDiagnosticSuccess,
-			threadDetailLoadFailedDiagnosticEvent,
-			threadDetailSlowPathDiagnosticEvent,
-			threadDetailSlowPathDiagnosticSuccess,
-			threadListSlowPathDiagnosticEvent,
-			threadListSlowPathDiagnosticSuccess,
-			turnOrderDiagnosticSnapshot,
-			threadDetailRefreshFailedDiagnosticEvent,
-			turnOrderMismatchDiagnosticEvent,
-			turnOrderMismatchDiagnosticSuccess
-		};
-	});
-}));
-//#endregion
-//#region public/thread-tile-layout.js
-var require_thread_tile_layout = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
+		const api = { createThreadTileRuntime };
 		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadTileLayout = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_MIN_DESKTOP_PANE_WIDTH = 420;
-		const DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH = 300;
-		const DEFAULT_MIN_TABLET_PANE_WIDTH = 260;
-		const DEFAULT_MIN_LANDSCAPE_VIEWPORT_WIDTH = 760;
-		const DEFAULT_MIN_PANE_HEIGHT = 360;
-		const DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT = 480;
-		const DEFAULT_MAX_PANES = 6;
-		const DEFAULT_USER_MAX_PANES = 12;
-		function positiveNumber(value, fallback = 0) {
-			const parsed = Number(value);
-			return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-		}
-		function clampInteger(value, min, max) {
-			const parsed = Math.floor(positiveNumber(value, min));
-			return Math.max(min, Math.min(max, parsed));
-		}
-		function viewportOrientation(width, height) {
-			return positiveNumber(width) >= positiveNumber(height) ? "landscape" : "portrait";
-		}
-		function layoutForViewport(input = {}) {
-			const enabled = input.enabled === true;
-			const viewportWidth = positiveNumber(input.viewportWidth);
-			const viewportHeight = positiveNumber(input.viewportHeight);
-			const sidebarWidth = Math.max(0, Number(input.sidebarWidth || 0) || 0);
-			const coarsePointer = input.coarsePointer === true;
-			const orientation = String(input.orientation || viewportOrientation(viewportWidth, viewportHeight));
-			const minLandscapeViewportWidth = positiveNumber(input.minLandscapeViewportWidth, DEFAULT_MIN_LANDSCAPE_VIEWPORT_WIDTH);
-			const minLandscapeViewportHeight = positiveNumber(input.minLandscapeViewportHeight, DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT);
-			const landscapeTile = orientation === "landscape" && viewportWidth >= minLandscapeViewportWidth && viewportHeight >= minLandscapeViewportHeight;
-			const menuOverlay = input.menuOverlay === true;
-			const tabletLandscape = landscapeTile && (coarsePointer || menuOverlay);
-			const maxPanes = clampInteger(input.maxPanes || DEFAULT_MAX_PANES, 1, DEFAULT_USER_MAX_PANES);
-			const recommendedMaxPanes = clampInteger(input.recommendedMaxPanes || DEFAULT_MAX_PANES, 1, maxPanes);
-			const desiredPaneCount = Math.max(0, Math.min(maxPanes, Math.floor(Number(input.desiredPaneCount || 0)) || 0));
-			if (!enabled || viewportWidth <= 0 || viewportHeight <= 0) return {
-				enabled: false,
-				reason: "disabled",
-				columns: 1,
-				rows: 1,
-				maxPanes: 1,
-				recommendedMaxPanes: 1
-			};
-			if (coarsePointer && orientation !== "landscape") return {
-				enabled: false,
-				reason: "tablet-portrait",
-				columns: 1,
-				rows: 1,
-				maxPanes: 1,
-				recommendedMaxPanes: 1
-			};
-			if (menuOverlay && !tabletLandscape) return {
-				enabled: false,
-				reason: "narrow",
-				columns: 1,
-				rows: 1,
-				maxPanes: 1,
-				recommendedMaxPanes: 1
-			};
-			const availableWidth = Math.max(0, viewportWidth - (menuOverlay ? 0 : sidebarWidth));
-			const availableHeight = Math.max(0, viewportHeight - Math.max(0, Number(input.verticalChromePx || 0) || 0));
-			const manualTargetWidth = desiredPaneCount > 0 && availableWidth > 0 ? Math.floor(availableWidth / desiredPaneCount) : 0;
-			const defaultMinPaneWidth = tabletLandscape ? DEFAULT_MIN_TABLET_PANE_WIDTH : desiredPaneCount > 0 ? Math.min(DEFAULT_MIN_DESKTOP_PANE_WIDTH, Math.max(DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH, manualTargetWidth)) : DEFAULT_MIN_DESKTOP_PANE_WIDTH;
-			const minPaneWidth = positiveNumber(input.minPaneWidth, defaultMinPaneWidth);
-			const minPaneHeight = positiveNumber(input.minPaneHeight, DEFAULT_MIN_PANE_HEIGHT);
-			const rawColumns = Math.floor(availableWidth / minPaneWidth);
-			const rawRows = Math.floor(availableHeight / minPaneHeight);
-			const minimumColumns = tabletLandscape ? 2 : 2;
-			const columns = Math.max(minimumColumns, Math.min(tabletLandscape ? Math.min(4, maxPanes) : maxPanes, rawColumns || 0));
-			if (columns < minimumColumns || availableWidth < minPaneWidth * minimumColumns * .86) return {
-				enabled: false,
-				reason: "insufficient-width",
-				columns: 1,
-				rows: 1,
-				maxPanes: 1,
-				recommendedMaxPanes: 1,
-				availableWidth,
-				availableHeight
-			};
-			const rows = Math.max(1, Math.min(tabletLandscape ? 1 : 2, rawRows || 1));
-			return {
-				enabled: true,
-				reason: tabletLandscape ? "tablet-landscape" : "wide",
-				columns,
-				rows,
-				maxPanes: Math.max(1, Math.min(maxPanes, columns * rows)),
-				recommendedMaxPanes: Math.max(1, Math.min(recommendedMaxPanes, columns * rows)),
-				availableWidth,
-				availableHeight,
-				minPaneWidth,
-				minPaneHeight
-			};
-		}
-		function uniqueThreadIds(values = []) {
-			const seen = /* @__PURE__ */ new Set();
-			const ids = [];
-			for (const value of values || []) {
-				const id = String(value || "").trim();
-				if (!id || seen.has(id)) continue;
-				seen.add(id);
-				ids.push(id);
-			}
-			return ids;
-		}
-		function selectThreadTileIds(input = {}) {
-			const maxPanes = clampInteger(input.maxPanes || 1, 1, 12);
-			return uniqueThreadIds([
-				input.currentThreadId,
-				...Array.isArray(input.pinnedThreadIds) ? input.pinnedThreadIds : [],
-				...Array.isArray(input.threadIds) ? input.threadIds : []
-			]).slice(0, maxPanes);
-		}
-		function selectPinnedThreadTileIds(input = {}) {
-			const maxPanes = clampInteger(input.maxPanes || 1, 1, 12);
-			const currentThreadId = String(input.currentThreadId || "").trim();
-			const ids = uniqueThreadIds([...Array.isArray(input.pinnedThreadIds) ? input.pinnedThreadIds : [], ...Array.isArray(input.threadIds) ? input.threadIds : []]).slice(0, maxPanes);
-			if (!currentThreadId || ids.includes(currentThreadId)) return ids;
-			if (ids.length >= maxPanes) ids[Math.max(0, maxPanes - 1)] = currentThreadId;
-			else ids.push(currentThreadId);
-			return uniqueThreadIds(ids).slice(0, maxPanes);
-		}
-		function normalizeSplitPairs(values = [], ids = []) {
-			const idSet = new Set(uniqueThreadIds(ids));
-			const used = /* @__PURE__ */ new Set();
-			const pairs = [];
-			for (const value of Array.isArray(values) ? values : []) {
-				const anchorId = String(Array.isArray(value) ? value[0] : value && (value.anchorId || value.topId || value.primaryId) || "").trim();
-				const childId = String(Array.isArray(value) ? value[1] : value && (value.childId || value.bottomId || value.secondaryId) || "").trim();
-				if (!anchorId || !childId || anchorId === childId) continue;
-				if (idSet.size && (!idSet.has(anchorId) || !idSet.has(childId))) continue;
-				if (used.has(anchorId) || used.has(childId)) continue;
-				used.add(anchorId);
-				used.add(childId);
-				pairs.push({
-					anchorId,
-					childId
-				});
-			}
-			return pairs;
-		}
-		function threadTileColumnGroups(input = {}) {
-			const ids = uniqueThreadIds(input.ids || input.threadIds || []);
-			const columns = clampInteger(input.columns || 1, 1, DEFAULT_USER_MAX_PANES);
-			if (!ids.length) return [];
-			const pairs = normalizeSplitPairs(input.splitPairs || input.paneSplitPairs || [], ids);
-			const pairByAnchor = new Map(pairs.map((pair) => [pair.anchorId, pair.childId]));
-			const childIds = new Set(pairs.map((pair) => pair.childId));
-			const atomicGroups = [];
-			for (const id of ids) {
-				if (childIds.has(id)) continue;
-				const childId = pairByAnchor.get(id);
-				atomicGroups.push(childId ? [id, childId] : [id]);
-			}
-			const targetColumns = Math.max(1, Math.min(columns, atomicGroups.length));
-			const groups = atomicGroups.slice(0, targetColumns).map((group) => group.slice());
-			atomicGroups.slice(targetColumns).forEach((group, index) => {
-				const targetIndex = Math.max(0, targetColumns - 1 - index % targetColumns);
-				groups[targetIndex].push(...group);
-			});
-			return groups.filter((group) => group.length);
-		}
-		return {
-			DEFAULT_MAX_PANES,
-			DEFAULT_USER_MAX_PANES,
-			DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH,
-			DEFAULT_MIN_DESKTOP_PANE_WIDTH,
-			DEFAULT_MIN_LANDSCAPE_VIEWPORT_WIDTH,
-			DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT,
-			DEFAULT_MIN_PANE_HEIGHT,
-			DEFAULT_MIN_TABLET_PANE_WIDTH,
-			layoutForViewport,
-			normalizeSplitPairs,
-			selectPinnedThreadTileIds,
-			selectThreadTileIds,
-			threadTileColumnGroups
-		};
-	});
-}));
-//#endregion
-//#region public/thread-tile-actions.js
-var require_thread_tile_actions = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadTileActions = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const TILE_CONTROL_SELECTOR = [
-			"[data-thread-tile-switch-target]",
-			".thread-tile-switch-menu",
-			"[data-thread-tile-bottom]",
-			"[data-thread-tile-operation-toggle]",
-			"[data-thread-tile-pane-count]",
-			"[data-thread-tile-close-pane]"
-		].join(", ");
-		function withinRoot(root, node) {
-			if (!root || !node || typeof root.contains !== "function") return true;
-			return root.contains(node);
-		}
-		function closestWithin(target, selector, root = null) {
-			if (!target || typeof target.closest !== "function") return null;
-			const node = target.closest(selector);
-			if (!node || !withinRoot(root, node)) return null;
-			return node;
-		}
-		function attr(node, name) {
-			if (!node || typeof node.getAttribute !== "function") return "";
-			return String(node.getAttribute(name) || "");
-		}
-		function paneFor(node, root = null) {
-			return closestWithin(node, "[data-thread-tile-pane]", root);
-		}
-		function paneIdFor(node, root = null) {
-			return attr(paneFor(node, root), "data-thread-tile-pane");
-		}
-		function action(type, target, fields = {}) {
-			return Object.assign({
-				action: String(type || "none"),
-				target: target || null,
-				preventDefault: false,
-				stopPropagation: false
-			}, fields);
-		}
-		function resolveThreadTilePointerAction(input = {}) {
-			const target = input.target || null;
-			const root = input.root || null;
-			const title = closestWithin(target, "[data-thread-tile-title]", root);
-			if (title) return action("select-pane", title, {
-				paneId: paneIdFor(title, root),
-				source: "title"
-			});
-			const control = closestWithin(target, TILE_CONTROL_SELECTOR, root);
-			if (control) return action("stop-control", control, { stopPropagation: true });
-			const pane = closestWithin(target, "[data-thread-tile-pane]", root);
-			if (pane) return action("select-pane", pane, {
-				paneId: attr(pane, "data-thread-tile-pane"),
-				source: "pane"
-			});
-			return action("none", null, { reason: "no-match" });
-		}
-		function resolveThreadTileFocusAction(input = {}) {
-			const target = input.target || null;
-			const root = input.root || null;
-			const ignored = closestWithin(target, "[data-thread-tile-title], [data-thread-tile-switch-target], .thread-tile-switch-menu", root);
-			if (ignored) return action("none", ignored, { reason: "ignored-control" });
-			const pane = closestWithin(target, "[data-thread-tile-pane]", root);
-			if (pane) return action("select-pane", pane, {
-				paneId: attr(pane, "data-thread-tile-pane"),
-				source: "focus"
-			});
-			return action("none", null, { reason: "no-match" });
-		}
-		function resolveThreadTileClickAction(input = {}) {
-			const target = input.target || null;
-			const root = input.root || null;
-			let node = closestWithin(target, "[data-thread-tile-title]", root);
-			if (node) return action("toggle-switch-menu", node, {
-				paneId: attr(node, "data-thread-tile-title"),
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-thread-tile-switch-target]", root);
-			if (node) return action("switch-pane-thread", node, {
-				fromId: paneIdFor(node, root),
-				toId: attr(node, "data-thread-tile-switch-target"),
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-thread-tile-pane-count]", root);
-			if (node) return action("change-pane-count", node, {
-				delta: Number(attr(node, "data-thread-tile-pane-count") || 0),
-				disabled: Boolean(node.disabled),
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-thread-tile-close-pane]", root);
-			if (node) return action("close-pane", node, {
-				paneId: attr(node, "data-thread-tile-close-pane"),
-				disabled: Boolean(node.disabled),
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-thread-tile-bottom]", root);
-			if (node) return action("scroll-pane-bottom", node, {
-				paneId: attr(node, "data-thread-tile-bottom"),
-				preventDefault: true
-			});
-			node = closestWithin(target, "[data-thread-tile-operation-toggle]", root);
-			if (node) return action("toggle-operation", node, {
-				paneId: attr(node, "data-thread-tile-operation-toggle"),
-				preventDefault: true,
-				stopPropagation: true
-			});
-			return action("none", null, { reason: "no-match" });
-		}
-		function resolveThreadTileScrollAction(input = {}) {
-			const body = closestWithin(input.target || null, ".thread-tile-pane-body", input.root || null);
-			if (body) return action("pane-scroll", body, { body });
-			return action("none", null, { reason: "no-match" });
-		}
-		function resolveThreadTileDragStartAction(input = {}) {
-			const handle = closestWithin(input.target || null, "[data-thread-tile-drag-handle]", input.root || null);
-			if (!handle) return action("none", null, { reason: "no-handle" });
-			const paneId = attr(handle, "data-thread-tile-drag-handle");
-			if (!paneId) return action("none", handle, { reason: "missing-pane-id" });
-			return action("drag-start", handle, {
-				handle,
-				paneId,
-				pane: paneFor(handle, input.root || null)
-			});
-		}
-		function resolveThreadTileDragOverAction(input = {}) {
-			const root = input.root || null;
-			const pane = closestWithin(input.target || null, "[data-thread-tile-pane]", root);
-			const dragging = String(input.draggingId || "");
-			const targetId = attr(pane, "data-thread-tile-pane");
-			if (!dragging || !targetId || dragging === targetId || !pane) return action("none", pane, { reason: "invalid-drag-target" });
-			return action("drag-over", pane, {
-				pane,
-				targetId,
-				preventDefault: true
-			});
-		}
-		function resolveThreadTileDragLeaveAction(input = {}) {
-			const pane = closestWithin(input.target || null, "[data-thread-tile-pane]", input.root || null);
-			if (pane) return action("drag-leave", pane, { pane });
-			return action("none", null, { reason: "no-match" });
-		}
-		function resolveThreadTileDropAction(input = {}) {
-			const root = input.root || null;
-			const pane = closestWithin(input.target || null, "[data-thread-tile-pane]", root);
-			const dragging = String(input.draggingId || input.transferId || "");
-			const targetId = attr(pane, "data-thread-tile-pane");
-			if (!dragging || !targetId || dragging === targetId || !pane) return action("none", pane, { reason: "invalid-drop-target" });
-			return action("drop-pane", pane, {
-				pane,
-				draggingId: dragging,
-				targetId,
-				preventDefault: true,
-				stopPropagation: true
-			});
-		}
-		return {
-			closestWithin,
-			resolveThreadTilePointerAction,
-			resolveThreadTileFocusAction,
-			resolveThreadTileClickAction,
-			resolveThreadTileScrollAction,
-			resolveThreadTileDragStartAction,
-			resolveThreadTileDragOverAction,
-			resolveThreadTileDragLeaveAction,
-			resolveThreadTileDropAction
-		};
-	});
+		root.CodexThreadTileRuntime = api;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
 //#region public/app-update-runtime.js
@@ -4836,167 +3233,743 @@ var require_runtime_wiring_runtime = /* @__PURE__ */ __commonJSMin(((exports, mo
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
-//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-02
-var import_plugin_voice_input = /* @__PURE__ */ __toESM(require_plugin_voice_input());
-var import_api_client = /* @__PURE__ */ __toESM(require_api_client());
-var import_markdown_renderer = /* @__PURE__ */ __toESM(require_markdown_renderer());
-var import_plugin_embed = /* @__PURE__ */ __toESM(require_plugin_embed());
-var import_frontend_runtime_health = /* @__PURE__ */ __toESM(require_frontend_runtime_health());
-var import_home_ai_diagnostic_reporting = /* @__PURE__ */ __toESM(require_home_ai_diagnostic_reporting());
-var import_thread_diagnostic_events = /* @__PURE__ */ __toESM(require_thread_diagnostic_events());
-var import_thread_tile_layout = /* @__PURE__ */ __toESM(require_thread_tile_layout());
-var import_thread_tile_actions = /* @__PURE__ */ __toESM(require_thread_tile_actions());
+//#region public/thread-list-runtime.js
+var require_thread_list_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachThreadListRuntime(root) {
+		function createThreadListRuntime(deps = {}) {
+			const state = deps.state || {};
+			const $ = typeof deps.$ === "function" ? deps.$ : () => null;
+			const api = deps.api;
+			const document = deps.document || root.document || {};
+			const window = deps.window || root.window || root;
+			const localStorage = deps.localStorage || root.localStorage || {
+				getItem: () => null,
+				setItem: () => {},
+				removeItem: () => {}
+			};
+			const setTimeout = typeof deps.setTimeout === "function" ? deps.setTimeout : root.setTimeout.bind(root);
+			const clearTimeout = typeof deps.clearTimeout === "function" ? deps.clearTimeout : root.clearTimeout.bind(root);
+			const THREAD_LIST_PAGE_LIMIT = deps.THREAD_LIST_PAGE_LIMIT;
+			const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = deps.THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS;
+			const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = deps.THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS;
+			const THREAD_LIST_SLOW_PATH_MS = deps.THREAD_LIST_SLOW_PATH_MS;
+			const STORAGE_THREAD_ID = deps.STORAGE_THREAD_ID;
+			const { normalizeFsPath, escapeHtml, shortPath, isMobileViewport, tokenCountValue, formatTokenMillion, displayInputTokensExcludingCached, saveCurrentDraftNow, flushSideChatDraftNow, resetComposerRuntimeSelection, abortCurrentThreadRefresh, clearRecentCompletedReplyAnchor, clearConversationAutoScrollHold, setComposerText, replacePendingAttachments, syncActiveTurnFromThread, connectEvents, threadListLoadPolicy, nowPerfMs, roundedDurationMs, threadListSummaryFromDetailThread, threadListStableOrderPolicy, reconcileThreadStatusHints, renderCurrentThread, threadTileLayout, isThreadTileKeyboardFocusActive, threadTileCandidateIds, threadTileIdsEqual, restoreConnectionState, scheduleVisiblePageRefreshCheck, threadPerformanceMetrics, postPerformanceEvent, diagnosticDurationBucket, recordHomeAiDiagnosticFailure, recordHomeAiDiagnosticSuccess, threadDiagnosticEventsApi, renderThreadLoadError, diagnosticErrorCode, diagnosticErrorStatus, showError, visibleWorkspaceKeys, codexWorktreeRepoName, basenameForFsPath, visibleWorkspaceNames, statusText, scheduleRenderCurrentThread, threadTilePaneIsVisible, scheduleRenderThreadTilePane, updateThreadStatusHints, normalizeThreadGoal, updateThreadGoalDialogState, draftStore, readDraftMap, draftHasContent, restoreDraftForCurrentTarget, updateComposerControls, showHermesPluginPrimaryPage, isHermesEmbedMode, loadThread, isRunningStatus, rolloutSizeText, isRolloutOverThreshold, formatAbsoluteTime, formatTime, statusIconHtml, statusIconInfo, threadGoalForThread, renderThreadGoalBadge, handleThreadCardClick, threadGoalSignature, rolloutSizeBytes } = deps;
+			async function loadWorkspaces() {
+				const result = await api("/api/workspaces");
+				state.workspaces = result.data || [];
+				const select = $("workspaceSelect");
+				const menu = $("workspaceSelectMenu");
+				if (state.selectedCwd && !state.workspaces.some((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd))) state.selectedCwd = "";
+				if (select) {
+					select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+					select.disabled = !state.workspaces.length && !state.workspaceCreateEnabled;
+					select.setAttribute("title", state.workspaces.length ? "Select Workspace" : "Create Workspace");
+				}
+				if (menu) menu.innerHTML = workspaceSidebarOptionsHtml();
+				updateWorkspacePath();
+				if (shouldRenderPrimaryConversationShell()) renderCurrentThread();
+			}
+			function workspaceSidebarOptionsHtml() {
+				const allOption = `<button type="button" class="workspace-select-option${!state.selectedCwd ? " is-selected" : ""}" data-workspace-value="">All workspaces</button>`;
+				const workspaceOptions = state.workspaces.length ? state.workspaces.map((ws) => {
+					const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+					const label = `${ws.label}${count} - ${ws.cwd}`;
+					return `<button type="button" class="workspace-select-option${normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : ""}" data-workspace-value="${escapeHtml(ws.cwd)}">${escapeHtml(label)}</button>`;
+				}).join("") : `<div class="workspace-select-empty">No Workspace yet</div>`;
+				const createRoot = state.workspaceCreateRoot ? `Under ${state.workspaceCreateRoot}` : "Create a local folder";
+				const createOption = state.workspaceCreateEnabled ? `<button type="button" class="workspace-select-option workspace-create-option" data-create-workspace><span class="workspace-create-title">Create Workspace</span><span class="workspace-create-meta">${escapeHtml(createRoot)}</span></button>` : "";
+				return allOption + workspaceOptions + createOption;
+			}
+			function syncSidebarWorkspaceSelect() {
+				const select = $("workspaceSelect");
+				const menu = $("workspaceSelectMenu");
+				if (!select) return;
+				select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+				if (menu) menu.innerHTML = workspaceSidebarOptionsHtml();
+			}
+			function workspaceOptionsHtml() {
+				return `<option value="">All workspaces</option>` + state.workspaces.map((ws) => {
+					const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+					return `<option value="${escapeHtml(ws.cwd)}">${escapeHtml(`${ws.label}${count} - ${ws.cwd}`)}</option>`;
+				}).join("");
+			}
+			function newThreadWorkspaceOptionsHtml() {
+				return `<button type="button" class="new-thread-workspace-option${!state.selectedCwd ? " is-selected" : ""}" data-new-thread-workspace=""><span>不指定 Workspace</span><span class="new-thread-workspace-option-meta">对齐 Codex App 的项目外聊天</span></button>` + state.workspaces.map((ws) => {
+					const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+					const label = `${ws.label}${count} - ${ws.cwd}`;
+					return `<button type="button" class="new-thread-workspace-option${normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : ""}" data-new-thread-workspace="${escapeHtml(ws.cwd)}">${escapeHtml(label)}</button>`;
+				}).join("");
+			}
+			function newThreadChoiceOptionsHtml(values, selectedValue, dataName, labeler) {
+				return normalizeOptionList(values).map((value) => {
+					return `<button type="button" class="new-thread-choice${value === selectedValue ? " is-selected" : ""}" data-new-thread-${dataName}="${escapeHtml(value)}">${escapeHtml(labeler(value))}</button>`;
+				}).join("");
+			}
+			function selectedWorkspaceLabel() {
+				if (!state.selectedCwd) return "聊天";
+				const workspace = state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd));
+				return workspace && workspace.label ? workspace.label : shortPath(state.selectedCwd);
+			}
+			function fitWorkspaceMenuToViewport(menu, anchor, options = {}) {
+				if (!menu || !anchor) return;
+				const rect = anchor.getBoundingClientRect();
+				const composer = $("composer");
+				const composerTop = composer ? composer.getBoundingClientRect().top : 0;
+				const viewportBottom = window.innerHeight || document.documentElement.clientHeight || 0;
+				const bottomLimit = options.avoidComposer !== false && composerTop > rect.bottom ? composerTop : viewportBottom;
+				const gap = Number(options.gap || 18);
+				const cap = Number(options.cap || (isMobileViewport() ? 360 : 420));
+				const available = Math.max(120, Math.floor(bottomLimit - rect.bottom - gap));
+				const height = Math.max(120, Math.min(cap, available));
+				menu.style.setProperty("--workspace-menu-max-height", `${height}px`);
+			}
+			function updateWorkspacePath() {
+				const el = $("workspacePath");
+				if (!el) return;
+				el.hidden = !state.selectedCwd;
+				el.textContent = state.selectedCwd || "";
+			}
+			function renderWorkspaceTokenUsage() {
+				const el = $("workspaceTokenUsage");
+				if (!el) return;
+				const usage = state.workspaceTokenUsage;
+				if (!usage || typeof usage !== "object") {
+					el.hidden = true;
+					el.innerHTML = "";
+					return;
+				}
+				if (!(tokenCountValue(usage.totalTokens) || tokenCountValue(usage.todayTokens) || tokenCountValue(usage.weekTokens))) {
+					el.hidden = true;
+					el.innerHTML = "";
+					return;
+				}
+				el.hidden = false;
+				el.innerHTML = `<div class="workspace-token-usage-summary">
+    <span title="当前 Workspace 累计 token">总 ${escapeHtml(formatTokenMillion(usage.totalTokens))}</span>
+    <span title="本周 token">周 ${escapeHtml(formatTokenMillion(usage.weekTokens))}</span>
+    <span title="今日 token">今 ${escapeHtml(formatTokenMillion(usage.todayTokens))}</span>
+    <button type="button" class="workspace-token-usage-toggle" data-workspace-token-usage-toggle>统计</button>
+  </div>`;
+				renderWorkspaceStatsDialog();
+			}
+			function tokenBreakdownHtml(entry, className = "workspace-token-usage-breakdown") {
+				return `<div class="${escapeHtml(className)}" aria-label="Token usage breakdown">
+    <span title="Uncached input tokens">Uncached ${escapeHtml(formatTokenMillion(displayInputTokensExcludingCached(entry)))}</span>
+    <span title="Cached input tokens">Cached ${escapeHtml(formatTokenMillion(entry && entry.cachedInputTokens))}</span>
+    <span title="Output tokens">Out ${escapeHtml(formatTokenMillion(entry && entry.outputTokens))}</span>
+    <span title="Reasoning output tokens">Reason ${escapeHtml(formatTokenMillion(entry && entry.reasoningOutputTokens))}</span>
+  </div>`;
+			}
+			function renderWorkspaceStatsDialog() {
+				const dialog = $("workspaceStatsDialog");
+				const content = $("workspaceStatsContent");
+				const subtitle = $("workspaceStatsSubtitle");
+				if (!dialog || !content) return;
+				if (!state.workspaceTokenStatsOpen) {
+					dialog.classList.add("hidden");
+					content.innerHTML = "";
+					return;
+				}
+				const usage = state.workspaceTokenUsage && typeof state.workspaceTokenUsage === "object" ? state.workspaceTokenUsage : {};
+				const daily = Array.isArray(usage.daily) ? usage.daily.slice(0, 31) : [];
+				const workspaces = Array.isArray(usage.workspaces) ? usage.workspaces.slice(0, 50) : [];
+				if (subtitle) subtitle.textContent = state.selectedCwd ? `当前 Workspace: ${state.selectedCwd}` : "All workspaces";
+				content.innerHTML = `<section class="workspace-stats-section">
+    <div class="workspace-stats-section-title">总览</div>
+    <div class="workspace-stats-summary-grid">
+      <div><span>总计</span><strong>${escapeHtml(formatTokenMillion(usage.totalTokens))}</strong></div>
+      <div><span>本周</span><strong>${escapeHtml(formatTokenMillion(usage.weekTokens))}</strong></div>
+      <div><span>今日</span><strong>${escapeHtml(formatTokenMillion(usage.todayTokens))}</strong></div>
+    </div>
+    ${tokenBreakdownHtml(usage, "workspace-stats-breakdown")}
+  </section>
+  <section class="workspace-stats-section">
+    <div class="workspace-stats-section-title">按天</div>
+    <div class="workspace-stats-list">
+      ${daily.length ? daily.map((entry) => `<article class="workspace-stats-row">
+        <div class="workspace-stats-row-head">
+          <span>${escapeHtml(entry.date || "")}</span>
+          <strong>${escapeHtml(formatTokenMillion(entry.totalTokens))}</strong>
+        </div>
+        ${tokenBreakdownHtml(entry, "workspace-stats-breakdown")}
+      </article>`).join("") : `<div class="workspace-token-usage-empty">暂无每日明细</div>`}
+    </div>
+  </section>
+  <section class="workspace-stats-section">
+    <div class="workspace-stats-section-title">按项目</div>
+    <div class="workspace-stats-list">
+      ${workspaces.length ? workspaces.map((entry) => `<article class="workspace-stats-row">
+        <div class="workspace-stats-row-head">
+          <span title="${escapeHtml(entry.cwd || "")}">${escapeHtml(shortPath(entry.cwd) || entry.cwd || "")}</span>
+          <strong>${escapeHtml(formatTokenMillion(entry.totalTokens))}</strong>
+        </div>
+        <div class="workspace-stats-row-meta">
+          <span>周 ${escapeHtml(formatTokenMillion(entry.weekTokens))}</span>
+          <span>今 ${escapeHtml(formatTokenMillion(entry.todayTokens))}</span>
+        </div>
+        ${tokenBreakdownHtml(entry, "workspace-stats-breakdown")}
+      </article>`).join("") : `<div class="workspace-token-usage-empty">暂无项目明细</div>`}
+    </div>
+  </section>`;
+				dialog.classList.remove("hidden");
+			}
+			function openWorkspaceStatsDialog() {
+				state.workspaceTokenStatsOpen = true;
+				renderWorkspaceStatsDialog();
+			}
+			function closeWorkspaceStatsDialog() {
+				state.workspaceTokenStatsOpen = false;
+				renderWorkspaceStatsDialog();
+			}
+			function clearCurrentThreadSelection(options = {}) {
+				if (options.saveDraft !== false) saveCurrentDraftNow();
+				flushSideChatDraftNow().catch(() => {});
+				state.threadLoadSeq += 1;
+				state.sendButtonHint = "";
+				resetComposerRuntimeSelection();
+				state.newThreadTitle = "";
+				if (state.threadLoadController) {
+					state.threadLoadController.abort();
+					state.threadLoadController = null;
+				}
+				abortCurrentThreadRefresh();
+				state.currentThread = null;
+				state.currentThreadId = "";
+				state.activeTurnId = "";
+				clearRecentCompletedReplyAnchor();
+				clearConversationAutoScrollHold();
+				localStorage.removeItem(STORAGE_THREAD_ID);
+				setComposerText("");
+				replacePendingAttachments([], { saveDraft: false });
+				syncActiveTurnFromThread();
+				if (state.events) connectEvents();
+			}
+			function renderThreadListLoading() {
+				const list = $("threadList");
+				if (!list) return;
+				list.innerHTML = `<div class="empty-state">Loading threads...</div>`;
+				state.renderedThreadListSignature = `loading|${state.selectedCwd}|${$("threadSearch").value.trim()}`;
+			}
+			function hasThreadDetailSelectionIntent() {
+				return Boolean(state.currentThread || state.currentThreadId || state.threadLoadController || state.startupThreadOpenPending);
+			}
+			function shouldRenderPrimaryConversationShell() {
+				return !hasThreadDetailSelectionIntent() && !state.newThreadDraft;
+			}
+			function clearThreadListDeferredFallbackTimer() {
+				if (!state.threadListDeferredFallbackTimer) return;
+				clearTimeout(state.threadListDeferredFallbackTimer);
+				state.threadListDeferredFallbackTimer = null;
+			}
+			function clearThreadListDeferredSilentTimer() {
+				if (!state.threadListDeferredSilentTimer) return;
+				clearTimeout(state.threadListDeferredSilentTimer);
+				state.threadListDeferredSilentTimer = null;
+			}
+			function hasThreadDetailRequestInFlight() {
+				return Boolean(state.threadLoadController || state.refreshThreadController || state.currentThread && state.currentThread.mobileLoading);
+			}
+			function scheduleThreadListDeferredFallback(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS) {
+				clearThreadListDeferredFallbackTimer();
+				const delay = Math.max(500, Number(delayMs) || THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS);
+				state.threadListDeferredFallbackTimer = setTimeout(() => {
+					state.threadListDeferredFallbackTimer = null;
+					const search = $("threadSearch").value.trim();
+					if (state.selectedCwd || search) return;
+					if (state.threadListLoadController || hasThreadDetailRequestInFlight() || hasThreadDetailSelectionIntent()) {
+						scheduleThreadListDeferredFallback(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS);
+						return;
+					}
+					loadThreads({
+						silent: true,
+						deferFallback: false
+					}).catch(showError);
+				}, delay);
+			}
+			function scheduleThreadListDeferredSilentRefresh(delayMs = 700, options = {}) {
+				clearThreadListDeferredSilentTimer();
+				const delay = Math.max(250, Number(delayMs) || 700);
+				state.threadListDeferredSilentTimer = setTimeout(() => {
+					state.threadListDeferredSilentTimer = null;
+					if (document.visibilityState === "hidden") return;
+					if (state.threadListLoadController || hasThreadDetailRequestInFlight()) {
+						scheduleThreadListDeferredSilentRefresh(900, options);
+						return;
+					}
+					loadThreads(Object.assign({}, options, {
+						silent: true,
+						allowDuringDetail: true,
+						allowHidden: false
+					})).catch(showError);
+				}, delay);
+			}
+			async function loadThreads(options = {}) {
+				const silent = options.silent === true;
+				if (silent && state.threadListLoadController) return null;
+				if (options.deferFallback !== true) clearThreadListDeferredFallbackTimer();
+				const params = new URLSearchParams({
+					limit: String(THREAD_LIST_PAGE_LIMIT),
+					archived: "false"
+				});
+				if (state.selectedCwd) params.set("cwd", state.selectedCwd);
+				const search = $("threadSearch").value.trim();
+				if (search) params.set("search", search);
+				const threadDetailOpening = hasThreadDetailRequestInFlight();
+				const loadPlan = threadListLoadPolicy.planThreadListLoadRequest({
+					deferFallback: options.deferFallback,
+					search,
+					selectedCwd: state.selectedCwd,
+					silent,
+					threadDetailOpening,
+					threadListLoadedAtMs: state.threadListLoadedAtMs,
+					documentHidden: document.visibilityState === "hidden",
+					allowDuringDetail: options.allowDuringDetail === true,
+					allowHidden: options.allowHidden === true
+				});
+				if (!loadPlan.shouldLoad) {
+					if (loadPlan.skipReason === "detail-in-flight") scheduleThreadListDeferredSilentRefresh(loadPlan.retryDelayMs, { deferFallback: options.deferFallback });
+					return null;
+				}
+				if (loadPlan.params && loadPlan.params.fallback) params.set("fallback", "defer");
+				if (loadPlan.params && loadPlan.params.initial) params.set("initial", "warm-fallback");
+				clearThreadListDeferredSilentTimer();
+				const loadStartedAt = nowPerfMs();
+				const seq = state.threadListLoadSeq + 1;
+				state.threadListLoadSeq = seq;
+				if (state.threadListLoadController) state.threadListLoadController.abort();
+				const controller = new AbortController();
+				state.threadListLoadController = controller;
+				if (!silent) renderThreadListLoading();
+				try {
+					const apiStartedAt = nowPerfMs();
+					const result = await api(`/api/threads?${params}`, {
+						timeoutMs: 45e3,
+						signal: controller.signal
+					});
+					const apiElapsedMs = roundedDurationMs(apiStartedAt);
+					if (seq !== state.threadListLoadSeq) return null;
+					const renderStartedAt = nowPerfMs();
+					const nextThreads = visibleThreads(result.data || []).map((thread) => threadListSummaryFromDetailThread(thread) || thread);
+					const stableOrderPlan = threadListStableOrderPolicy.planThreadListStableOrder({
+						threads: nextThreads,
+						previousState: state.threadListStableOrder,
+						scopeKey: threadListStableOrderPolicy.threadListOrderScopeKey({
+							selectedCwd: state.selectedCwd,
+							search
+						}),
+						selectedCwd: state.selectedCwd,
+						search,
+						nowMs: Date.now()
+					});
+					state.threads = stableOrderPlan.threads;
+					state.threadListStableOrder = stableOrderPlan.state;
+					state.workspaceTokenUsage = result.mobileTokenUsage || null;
+					state.threadListLoadedAtMs = Date.now();
+					reconcileThreadStatusHints(state.threads);
+					renderWorkspaceTokenUsage();
+					renderThreads(result);
+					if (state.currentThread && state.threadTileMode && !isThreadTileKeyboardFocusActive()) {
+						const tileLayout = threadTileLayout();
+						if (tileLayout.enabled) {
+							const nextTileIds = threadTileCandidateIds(tileLayout);
+							if (!threadTileIdsEqual(nextTileIds, state.threadTileActiveIds)) renderCurrentThread({ stickToBottom: true });
+						}
+					}
+					restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
+					scheduleVisiblePageRefreshCheck(500);
+					if (result && (result.mobileDeferredFallback || result.mobileDeferredAppServer) && !state.selectedCwd && !search) scheduleThreadListDeferredFallback();
+					if (shouldRenderPrimaryConversationShell()) renderCurrentThread();
+					const listPerformance = threadPerformanceMetrics.threadListEventFields(result);
+					const listPerformanceEvent = {
+						elapsedMs: roundedDurationMs(loadStartedAt),
+						apiElapsedMs,
+						renderElapsedMs: roundedDurationMs(renderStartedAt),
+						serverTimings: listPerformance.serverTimings,
+						performancePhase: listPerformance.performancePhase,
+						count: state.threads.length,
+						silent,
+						hasSearch: Boolean(search),
+						hasWorkspace: Boolean(state.selectedCwd),
+						mobileFallback: Boolean(result.mobileFallback)
+					};
+					postPerformanceEvent("thread_list_rendered", listPerformanceEvent);
+					const listSlowPlan = threadPerformanceMetrics.planThreadListSlowPathDiagnostic(listPerformanceEvent, {
+						action: "thread-list-load",
+						source: silent ? "thread-list-refresh" : "thread-list-load",
+						durationBucket: diagnosticDurationBucket(listPerformanceEvent.elapsedMs),
+						thresholdMs: THREAD_LIST_SLOW_PATH_MS
+					});
+					if (listSlowPlan.shouldReport) recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadListSlowPathDiagnosticEvent(listSlowPlan));
+					else recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.threadListSlowPathDiagnosticSuccess({
+						action: "thread-list-load",
+						performancePhase: listPerformance.performancePhase
+					}));
+					recordHomeAiDiagnosticSuccess({
+						category: "thread_session_load_failed",
+						diagnostic_type: "thread_list_load_failed",
+						error_code: "thread_list_load_failed",
+						context: {
+							surface: "thread-session",
+							action: "thread-list-load"
+						}
+					});
+					return result;
+				} catch (err) {
+					if (seq !== state.threadListLoadSeq || controller.signal.aborted) return null;
+					if (!silent) renderThreadLoadError(err);
+					recordHomeAiDiagnosticFailure({
+						category: "thread_session_load_failed",
+						diagnostic_type: "thread_list_load_failed",
+						severity_hint: "H3",
+						evidence_confidence: .7,
+						error_code: diagnosticErrorCode(err, "thread_list_load_failed"),
+						duration_bucket: diagnosticDurationBucket(roundedDurationMs(loadStartedAt)),
+						context: {
+							surface: "thread-session",
+							action: "thread-list-load"
+						},
+						counts: { status_code: diagnosticErrorStatus(err) },
+						breadcrumbs: [{
+							kind: "thread-session",
+							code: "thread-list-load",
+							status: "failed",
+							duration_bucket: diagnosticDurationBucket(roundedDurationMs(loadStartedAt)),
+							fields: { status_code: diagnosticErrorStatus(err) }
+						}]
+					});
+					throw err;
+				} finally {
+					if (state.threadListLoadController === controller) state.threadListLoadController = null;
+				}
+			}
+			function threadMatchesWorkspaceCwd(threadCwd, workspaceCwd) {
+				const threadKey = normalizeFsPath(threadCwd);
+				const workspaceKey = normalizeFsPath(workspaceCwd);
+				if (!workspaceKey) return true;
+				if (threadKey === workspaceKey) return true;
+				const repoName = codexWorktreeRepoName(threadCwd);
+				return Boolean(repoName && repoName === basenameForFsPath(workspaceCwd));
+			}
+			function threadMatchesVisibleWorkspace(threadCwd) {
+				const cwd = normalizeFsPath(threadCwd);
+				const keys = visibleWorkspaceKeys();
+				if (keys.size <= 0 || !cwd) return true;
+				if (keys.has(cwd)) return true;
+				const repoName = codexWorktreeRepoName(threadCwd);
+				return Boolean(repoName && visibleWorkspaceNames().has(repoName));
+			}
+			function isHiddenThread(thread) {
+				if (!thread) return true;
+				const status = statusText(thread.status).toLowerCase();
+				const location = String(thread.path || thread.rolloutPath || thread.rollout_path || "").toLowerCase();
+				if (thread.archived || thread.archivedAt || thread.archived_at || thread.isArchived) return true;
+				if (thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt) return true;
+				if (/archived|deleted|removed/.test(status)) return true;
+				if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
+				if (/\.jsonl\.(bak|backup|old)(?:\b|[-_.])/.test(location)) return true;
+				const cwd = normalizeFsPath(thread.cwd);
+				if (state.selectedCwd && !threadMatchesWorkspaceCwd(thread.cwd, state.selectedCwd)) return true;
+				if (cwd && !threadMatchesVisibleWorkspace(thread.cwd)) return true;
+				return false;
+			}
+			function visibleThreads(threads = state.threads) {
+				return (threads || []).filter((thread) => !isHiddenThread(thread));
+			}
+			function pruneHiddenThreads() {
+				state.threads = visibleThreads();
+			}
+			function applyThreadStatusToThread(thread, status) {
+				if (!thread) return false;
+				thread.status = status;
+				return true;
+			}
+			function scheduleThreadStatusDetailRender(threadId = "") {
+				const id = String(threadId || state.currentThreadId || "").trim();
+				if (!id) return false;
+				if (state.currentThread && String(state.currentThread.id || "") === id) {
+					scheduleRenderCurrentThread();
+					return true;
+				}
+				if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+					if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+					return true;
+				}
+				return false;
+			}
+			function updateThreadListStatus(threadId, status, options = {}) {
+				const id = String(threadId || "");
+				if (!id) return;
+				applyThreadStatusToThread(state.threads.find((entry) => String(entry && entry.id || "") === id), status);
+				applyThreadStatusToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, status);
+				applyThreadStatusToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, status);
+				if (options.render === true) scheduleThreadStatusDetailRender(id);
+			}
+			function localThreadForStatusContext(threadId) {
+				const id = String(threadId || "").trim();
+				if (!id) return null;
+				if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+				return state.threads.find((entry) => String(entry && entry.id || "") === id) || state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
+			}
+			function snapshotThreadStatus(threadId) {
+				const id = String(threadId || "");
+				if (!id) return null;
+				const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
+				const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
+				const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
+				return {
+					id,
+					hadListThread: Boolean(listThread),
+					listStatus: listThread ? listThread.status : void 0,
+					hadCurrentThread: currentMatches,
+					currentStatus: currentMatches ? state.currentThread.status : void 0,
+					hadTileThread: Boolean(tileThread),
+					tileStatus: tileThread ? tileThread.status : void 0
+				};
+			}
+			function restoreThreadStatusSnapshot(snapshot) {
+				if (!snapshot || !snapshot.id) return;
+				const id = String(snapshot.id);
+				const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
+				const currentThread = state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null;
+				const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
+				const restoredStatus = snapshot.hadCurrentThread ? snapshot.currentStatus : snapshot.hadListThread ? snapshot.listStatus : snapshot.tileStatus;
+				const targetThread = localThreadForStatusContext(id) || currentThread || listThread || tileThread;
+				updateThreadStatusHints(id, { type: "active" }, restoredStatus, {
+					thread: targetThread,
+					notify: false
+				});
+				const listIndex = state.threads.findIndex((entry) => String(entry && entry.id || "") === id);
+				if (snapshot.hadListThread && listIndex >= 0) applyThreadStatusToThread(state.threads[listIndex], snapshot.listStatus);
+				else if (!snapshot.hadListThread && listIndex >= 0) state.threads = state.threads.filter((entry) => String(entry && entry.id || "") !== id);
+				if (snapshot.hadCurrentThread && state.currentThread && String(state.currentThread.id || "") === id) state.currentThread.status = snapshot.currentStatus;
+				if (snapshot.hadTileThread) applyThreadStatusToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, snapshot.tileStatus);
+				pruneHiddenThreads();
+				scheduleThreadStatusDetailRender(id);
+			}
+			function scheduleRenderThreads() {
+				if (state.threadListRenderFrame || state.threadListRenderScheduled) return;
+				state.threadListRenderScheduled = true;
+				const render = () => {
+					state.threadListRenderFrame = null;
+					state.threadListRenderScheduled = false;
+					renderThreads();
+				};
+				if (window.requestAnimationFrame) state.threadListRenderFrame = window.requestAnimationFrame(render);
+				else state.threadListRenderFrame = setTimeout(render, 33);
+			}
+			function updateThreadGoalState(threadId, goal) {
+				const id = String(threadId || goal && goal.threadId || "").trim();
+				if (!id) return;
+				const normalizedGoal = goal ? normalizeThreadGoal(goal, id) : null;
+				const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
+				applyThreadGoalToThread(thread, normalizedGoal);
+				applyThreadGoalToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, normalizedGoal);
+				applyThreadGoalToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, normalizedGoal);
+				scheduleThreadGoalDetailRender(id);
+				if (state.goalDialogThreadId && state.goalDialogThreadId === id) updateThreadGoalDialogState(normalizedGoal);
+				scheduleRenderThreads();
+			}
+			function renderThreads(result = null) {
+				const list = $("threadList");
+				pruneHiddenThreads();
+				if (!state.threads.length) {
+					if (state.renderedThreadListSignature !== "empty") {
+						list.innerHTML = `<div class="empty-state">No threads.</div>`;
+						state.renderedThreadListSignature = "empty";
+					}
+					return;
+				}
+				const warning = result && result.mobileFallback ? `<div class="history-note">Live thread list recovering. Showing cached session index.</div>` : "";
+				const nowMs = Date.now();
+				const html = warning + state.threads.map((thread) => {
+					const title = thread.name || thread.preview || thread.id;
+					const sizeText = rolloutSizeText(thread);
+					const sizeWarn = isRolloutOverThreshold(thread);
+					const updatedTitle = formatAbsoluteTime(thread.updatedAt);
+					const pathText = shortPath(thread.cwd) || "聊天";
+					const isWorkspaceLess = !thread.cwd;
+					const timeText = formatTime(thread.updatedAt, nowMs);
+					const statusIcon = statusIconHtml(thread.status, "thread-status-icon", thread.id);
+					const iconKind = statusIconInfo(thread.status, thread.id)?.kind || "";
+					const active = thread.id === state.currentThreadId ? " active" : "";
+					const emphasis = iconKind ? ` has-status-${iconKind}` : "";
+					const goal = threadGoalForThread(thread);
+					const goalBadge = renderThreadGoalBadge(goal);
+					const pendingIncomingTaskCards = Math.max(0, Number(thread && thread.pendingIncomingTaskCardCount) || 0);
+					const taskCardBadge = pendingIncomingTaskCards ? `<div class="thread-card-task-badge" title="Pending incoming task cards">${escapeHtml(`Task ${pendingIncomingTaskCards}`)}</div>` : "";
+					const sizeBadge = sizeText ? `<div class="thread-card-size${sizeWarn ? " warn" : ""}" title="Rollout file size">${escapeHtml(sizeText)}</div>` : "";
+					return `<div class="thread-card-wrap${sizeWarn ? " rollout-warn" : ""}" data-thread-row="${escapeHtml(thread.id)}">
+      <button class="thread-card${active}${emphasis}${sizeWarn ? " rollout-warn" : ""}" type="button" data-thread="${escapeHtml(thread.id)}">
+        <div class="thread-card-title-row">
+          <div class="thread-card-title">${escapeHtml(title)}</div>
+          <div class="thread-card-title-actions">${statusIcon}</div>
+        </div>
+        <div class="thread-card-meta-row">
+          <div class="thread-card-meta">
+            <span class="thread-card-path${isWorkspaceLess ? " thread-card-path-chat" : ""}">${escapeHtml(pathText)}</span>
+            ${timeText ? `<span class="thread-card-time" title="${escapeHtml(updatedTitle)}">${escapeHtml(timeText)}</span>` : ""}
+          </div>
+          <div class="thread-card-meta-badges">
+            ${goalBadge}
+            ${taskCardBadge}
+            ${sizeBadge}
+          </div>
+        </div>
+      </button>
+    </div>`;
+				}).join("");
+				const signature = JSON.stringify({
+					warning: Boolean(warning),
+					currentThreadId: state.currentThreadId,
+					timeBucket: Math.floor(nowMs / 6e4),
+					threads: state.threads.map((thread) => [
+						thread.id,
+						thread.name || thread.preview || thread.id,
+						shortPath(thread.cwd) || "聊天",
+						thread.updatedAt,
+						statusText(thread.status),
+						statusIconInfo(thread.status, thread.id)?.kind || "",
+						threadGoalSignature(thread),
+						state.unreadThreadIds.has(thread.id) ? 1 : 0,
+						Number(thread.pendingIncomingTaskCardCount || 0),
+						rolloutSizeBytes(thread),
+						isRolloutOverThreshold(thread)
+					])
+				});
+				if (state.renderedThreadListSignature === signature) return;
+				list.innerHTML = html;
+				state.renderedThreadListSignature = signature;
+				list.querySelectorAll("[data-thread]").forEach((button) => {
+					button.addEventListener("click", handleThreadCardClick);
+				});
+			}
+			async function restoreThreadSelection() {
+				if (hasThreadDetailSelectionIntent()) return;
+				if (isHermesEmbedMode()) {
+					state.startupThreadOpenPending = false;
+					showHermesPluginPrimaryPage({ source: "restore-empty" });
+					return;
+				}
+				const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
+				if (!state.threads.length && !savedThreadId) {
+					state.startupThreadOpenPending = false;
+					restoreNewThreadDraftSelection();
+					return;
+				}
+				const saved = savedThreadId && state.threads.find((thread) => thread.id === savedThreadId);
+				const active = state.threads.find((thread) => isRunningStatus(thread.status));
+				const target = saved || (savedThreadId ? { id: savedThreadId } : active);
+				if (!target) {
+					state.startupThreadOpenPending = false;
+					restoreNewThreadDraftSelection();
+					return;
+				}
+				try {
+					await loadThread(target.id, { source: "restore" });
+				} catch (err) {
+					state.startupThreadOpenPending = false;
+					if (target.id === savedThreadId) localStorage.removeItem(STORAGE_THREAD_ID);
+					showError(err);
+					renderCurrentThread();
+				}
+			}
+			function restoreNewThreadDraftSelection() {
+				const key = draftStore.getTargetKey();
+				if (!key.startsWith("new:")) return false;
+				const draft = readDraftMap()[key];
+				if (!draftHasContent(draft)) return false;
+				const cwd = String(draft.cwd || "");
+				const workspace = cwd ? state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(cwd)) : null;
+				if (!workspace) return false;
+				state.selectedCwd = workspace.cwd || cwd;
+				clearCurrentThreadSelection({ saveDraft: false });
+				state.newThreadDraft = true;
+				restoreDraftForCurrentTarget();
+				syncSidebarWorkspaceSelect();
+				updateWorkspacePath();
+				renderThreads();
+				renderCurrentThread();
+				updateComposerControls();
+				return true;
+			}
+			async function selectWorkspaceShortcut(cwd) {
+				saveCurrentDraftNow();
+				state.selectedCwd = cwd || "";
+				clearCurrentThreadSelection({ saveDraft: false });
+				const select = $("workspaceSelect");
+				if (select) select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+				syncSidebarWorkspaceSelect();
+				updateWorkspacePath();
+				updateComposerControls();
+				renderCurrentThread();
+				await loadThreads();
+			}
+			return {
+				loadWorkspaces,
+				workspaceSidebarOptionsHtml,
+				syncSidebarWorkspaceSelect,
+				workspaceOptionsHtml,
+				newThreadWorkspaceOptionsHtml,
+				newThreadChoiceOptionsHtml,
+				selectedWorkspaceLabel,
+				fitWorkspaceMenuToViewport,
+				updateWorkspacePath,
+				renderWorkspaceTokenUsage,
+				tokenBreakdownHtml,
+				renderWorkspaceStatsDialog,
+				openWorkspaceStatsDialog,
+				closeWorkspaceStatsDialog,
+				clearCurrentThreadSelection,
+				renderThreadListLoading,
+				hasThreadDetailSelectionIntent,
+				shouldRenderPrimaryConversationShell,
+				clearThreadListDeferredFallbackTimer,
+				clearThreadListDeferredSilentTimer,
+				hasThreadDetailRequestInFlight,
+				scheduleThreadListDeferredFallback,
+				scheduleThreadListDeferredSilentRefresh,
+				loadThreads,
+				threadMatchesWorkspaceCwd,
+				threadMatchesVisibleWorkspace,
+				isHiddenThread,
+				visibleThreads,
+				pruneHiddenThreads,
+				applyThreadStatusToThread,
+				scheduleThreadStatusDetailRender,
+				updateThreadListStatus,
+				localThreadForStatusContext,
+				snapshotThreadStatus,
+				restoreThreadStatusSnapshot,
+				scheduleRenderThreads,
+				updateThreadGoalState,
+				renderThreads,
+				restoreThreadSelection,
+				restoreNewThreadDraftSelection,
+				selectWorkspaceShortcut
+			};
+		}
+		const api = { createThreadListRuntime };
+		if (typeof module === "object" && module.exports) module.exports = api;
+		root.CodexThreadListRuntime = api;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
+//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-03
+var import_thread_tile_runtime = /* @__PURE__ */ __toESM(require_thread_tile_runtime());
 var import_app_update_runtime = /* @__PURE__ */ __toESM(require_app_update_runtime());
 var import_modal_runtime = /* @__PURE__ */ __toESM(require_modal_runtime());
 var import_runtime_wiring_runtime = /* @__PURE__ */ __toESM(require_runtime_wiring_runtime());
+var import_thread_list_runtime = /* @__PURE__ */ __toESM(require_thread_list_runtime());
 var moduleDefinitions = [
 	{
-		"id": "plugin-voice-input",
-		"source": "public/plugin-voice-input.js",
-		"globalName": "CodexPluginVoiceInput",
-		"expectedFunctions": [
-			"actionFromMessageType",
-			"capabilityStateMessage",
-			"errorMessage",
-			"insertResultMessage",
-			"isVoiceInputMessage",
-			"normalizeAction",
-			"startRequestMessage",
-			"textFromMessage"
-		],
-		"assetPath": "/plugin-voice-input.js",
+		"id": "thread-tile-runtime",
+		"source": "public/thread-tile-runtime.js",
+		"globalName": "CodexThreadTileRuntime",
+		"expectedFunctions": ["createThreadTileRuntime"],
+		"assetPath": "/thread-tile-runtime.js",
 		"classicLoaderExcluded": true,
-		"bytes": 8247
-	},
-	{
-		"id": "api-client",
-		"source": "public/api-client.js",
-		"globalName": "CodexApiClient",
-		"expectedFunctions": ["createApiClient", "isFormDataBody"],
-		"assetPath": "/api-client.js",
-		"classicLoaderExcluded": true,
-		"bytes": 4099
-	},
-	{
-		"id": "markdown-renderer",
-		"source": "public/markdown-renderer.js",
-		"globalName": "CodexMarkdownRenderer",
-		"expectedFunctions": [
-			"escapeHtml",
-			"safeMarkdownUrl",
-			"renderInlineMarkdown",
-			"renderMarkdown",
-			"renderMarkdownList",
-			"renderMarkdownTable",
-			"splitMarkdownTableRow",
-			"isMarkdownTableSeparator"
-		],
-		"assetPath": "/markdown-renderer.js",
-		"classicLoaderExcluded": true,
-		"bytes": 18044
-	},
-	{
-		"id": "plugin-embed",
-		"source": "public/plugin-embed.js",
-		"globalName": "CodexPluginEmbed",
-		"expectedFunctions": [
-			"detect",
-			"navigationMessage",
-			"routeHintOpenPlan",
-			"routeHintTargetSelectors",
-			"scrubRouteHintPath",
-			"externalLinkMessage",
-			"refreshRequiredMessage"
-		],
-		"assetPath": "/plugin-embed.js",
-		"classicLoaderExcluded": true,
-		"bytes": 14761
-	},
-	{
-		"id": "frontend-runtime-health",
-		"source": "public/frontend-runtime-health.js",
-		"globalName": "CodexFrontendRuntimeHealth",
-		"expectedFunctions": [
-			"compactToken",
-			"createMonitor",
-			"submittedMessageDomProbeEffects",
-			"threadListInteractionStallEffects",
-			"renderChurnEvent",
-			"domDropEvent",
-			"runtimeSuccess"
-		],
-		"assetPath": "/frontend-runtime-health.js",
-		"classicLoaderExcluded": true,
-		"bytes": 17014
-	},
-	{
-		"id": "home-ai-diagnostic-reporting",
-		"source": "public/home-ai-diagnostic-reporting.js",
-		"globalName": "CodexHomeAiDiagnosticReporting",
-		"expectedFunctions": [
-			"boundedToken",
-			"createDiagnosticReporter",
-			"durationBucket",
-			"hashIdentifier",
-			"postReportToHomeAi",
-			"sanitizeInput",
-			"stableTextHash"
-		],
-		"assetPath": "/home-ai-diagnostic-reporting.js",
-		"classicLoaderExcluded": true,
-		"bytes": 14358
-	},
-	{
-		"id": "thread-diagnostic-events",
-		"source": "public/thread-diagnostic-events.js",
-		"globalName": "CodexThreadDiagnosticEvents",
-		"expectedFunctions": [
-			"boundedCount",
-			"compactToken",
-			"conversationProjectionDiagnosticSnapshot",
-			"conversationProjectionConsistencyEffects",
-			"projectionDiagnosticSnapshot",
-			"renderSignatureMismatchDiagnosticEvent",
-			"threadDetailResponseDiagnosticEffects",
-			"turnOrderDiagnosticSnapshot"
-		],
-		"assetPath": "/thread-diagnostic-events.js",
-		"classicLoaderExcluded": true,
-		"bytes": 46238
-	},
-	{
-		"id": "thread-tile-layout",
-		"source": "public/thread-tile-layout.js",
-		"globalName": "CodexThreadTileLayout",
-		"expectedFunctions": [
-			"layoutForViewport",
-			"normalizeSplitPairs",
-			"selectPinnedThreadTileIds",
-			"selectThreadTileIds",
-			"threadTileColumnGroups"
-		],
-		"assetPath": "/thread-tile-layout.js",
-		"classicLoaderExcluded": true,
-		"bytes": 8454
-	},
-	{
-		"id": "thread-tile-actions",
-		"source": "public/thread-tile-actions.js",
-		"globalName": "CodexThreadTileActions",
-		"expectedFunctions": [
-			"closestWithin",
-			"resolveThreadTilePointerAction",
-			"resolveThreadTileFocusAction",
-			"resolveThreadTileClickAction",
-			"resolveThreadTileScrollAction",
-			"resolveThreadTileDragStartAction",
-			"resolveThreadTileDragOverAction",
-			"resolveThreadTileDragLeaveAction",
-			"resolveThreadTileDropAction"
-		],
-		"assetPath": "/thread-tile-actions.js",
-		"classicLoaderExcluded": true,
-		"bytes": 7380
+		"bytes": 74569
 	},
 	{
 		"id": "app-update-runtime",
@@ -5024,21 +3997,23 @@ var moduleDefinitions = [
 		"assetPath": "/runtime-wiring-runtime.js",
 		"classicLoaderExcluded": true,
 		"bytes": 8628
+	},
+	{
+		"id": "thread-list-runtime",
+		"source": "public/thread-list-runtime.js",
+		"globalName": "CodexThreadListRuntime",
+		"expectedFunctions": ["createThreadListRuntime"],
+		"assetPath": "/thread-list-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 37203
 	}
 ];
 var moduleApis = {
-	"plugin-voice-input": import_plugin_voice_input.default,
-	"api-client": import_api_client.default,
-	"markdown-renderer": import_markdown_renderer.default,
-	"plugin-embed": import_plugin_embed.default,
-	"frontend-runtime-health": import_frontend_runtime_health.default,
-	"home-ai-diagnostic-reporting": import_home_ai_diagnostic_reporting.default,
-	"thread-diagnostic-events": import_thread_diagnostic_events.default,
-	"thread-tile-layout": import_thread_tile_layout.default,
-	"thread-tile-actions": import_thread_tile_actions.default,
+	"thread-tile-runtime": import_thread_tile_runtime.default,
 	"app-update-runtime": import_app_update_runtime.default,
 	"modal-runtime": import_modal_runtime.default,
-	"runtime-wiring-runtime": import_runtime_wiring_runtime.default
+	"runtime-wiring-runtime": import_runtime_wiring_runtime.default,
+	"thread-list-runtime": import_thread_list_runtime.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");

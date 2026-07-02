@@ -745,6 +745,8 @@ const VITE_APP_PREVIEW_CLASSIC_LOADER_EXCLUDED_MODULE_IDS = new Set([
   "plugin-embed",
   "thread-tile-layout",
   "thread-tile-actions",
+  "thread-tile-state",
+  "thread-tile-runtime",
   "app-update-runtime",
   "modal-runtime",
   "runtime-wiring-runtime",

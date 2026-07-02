@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CXGq3ZiM.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CVPJRGZ_.js";
 //#region public/thread-detail-runtime.js
 var require_thread_detail_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachThreadDetailRuntime(root) {
@@ -3585,7 +3585,7 @@ var require_notification_ui_runtime = /* @__PURE__ */ __commonJSMin(((exports, m
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
-//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-04
+//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-05
 var import_thread_detail_runtime = /* @__PURE__ */ __toESM(require_thread_detail_runtime());
 var import_task_card_runtime = /* @__PURE__ */ __toESM(require_task_card_runtime());
 var import_notification_ui_runtime = /* @__PURE__ */ __toESM(require_notification_ui_runtime());

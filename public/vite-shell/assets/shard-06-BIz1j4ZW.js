@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CXGq3ZiM.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CVPJRGZ_.js";
 //#region public/conversation-render-runtime.js
 var require_conversation_render_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function renderLiveOperationDock(thread, previousKeys = /* @__PURE__ */ new Set()) {
@@ -3109,7 +3109,7 @@ var require_live_operation_dock_state = /* @__PURE__ */ __commonJSMin(((exports,
 	});
 }));
 //#endregion
-//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-05
+//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-06
 var import_conversation_render_runtime = /* @__PURE__ */ __toESM(require_conversation_render_runtime());
 var import_event_stream_runtime = /* @__PURE__ */ __toESM(require_event_stream_runtime());
 var import_client_render_stability_guard = /* @__PURE__ */ __toESM(require_client_render_stability_guard());
