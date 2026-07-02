@@ -1,4 +1,5 @@
 import shellManifest from "../public/shell-asset-manifest.json";
+import buildRefreshPolicy from "../public/build-refresh-policy.js";
 import {
   codexMobileViteEntryGroupIds,
   loadCodexMobileViteEntryGroups,
@@ -56,6 +57,47 @@ const classicCompatibility = {
   startupGlobalContracts,
   classicGlobalExports,
 };
+
+function functionReady(api, name) {
+  return Boolean(api && typeof api[name] === "function");
+}
+
+function buildEsmCompatibilityProof() {
+  const api = buildRefreshPolicy && typeof buildRefreshPolicy === "object"
+    ? buildRefreshPolicy
+    : {};
+  const exportedFunctions = [
+    "shellSequenceFromBuildId",
+    "classifyServerBuildChange",
+    "shouldPromptForServerBuildChange",
+  ].filter((name) => functionReady(api, name));
+  const sampleClassification = functionReady(api, "classifyServerBuildChange")
+    ? api.classifyServerBuildChange("0.1.11|codex-mobile-shell-v626", shellManifest.clientBuildId)
+    : "";
+  const samplePrompt = functionReady(api, "shouldPromptForServerBuildChange")
+    ? api.shouldPromptForServerBuildChange("0.1.11|codex-mobile-shell-v626", shellManifest.clientBuildId)
+    : false;
+  const moduleRecord = {
+    id: "build-refresh-policy",
+    source: "public/build-refresh-policy.js",
+    globalName: "CodexBuildRefreshPolicy",
+    exportedFunctions,
+    sampleClassification,
+    samplePrompt,
+    ready: exportedFunctions.length === 3
+      && sampleClassification === "server-newer"
+      && samplePrompt === true,
+  };
+  return {
+    schemaVersion: 1,
+    owner: "vite-shell-entry",
+    moduleCount: 1,
+    readyCount: moduleRecord.ready ? 1 : 0,
+    modules: [moduleRecord],
+  };
+}
+
+const esmCompatibility = buildEsmCompatibilityProof();
 
 function shellManifestScriptAssets() {
   return entryGroups.flatMap((group) => Array.isArray(group.assets) ? group.assets : [])
@@ -199,6 +241,7 @@ const appPreviewPromise = isAppPreviewPage() ? startCodexMobileViteAppPreview() 
 globalThis.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ = "entry-topology-v1";
 globalThis.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ = entryTopology;
 globalThis.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ = classicCompatibility;
+globalThis.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__ = esmCompatibility;
 globalThis.__CODEX_MOBILE_VITE_DEFERRED_ENTRY_TOPOLOGY__ = deferredEntryTopologyPromise;
 globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__ = "vite-shell-entry";
 globalThis.__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__ = entryDynamicImportGraph;
@@ -214,6 +257,16 @@ export function loadCodexMobileDeferredEntryTopology() {
 
 export function codexMobileClassicCompatibility() {
   return classicCompatibility;
+}
+
+export function codexMobileEsmCompatibility() {
+  return {
+    ...esmCompatibility,
+    modules: esmCompatibility.modules.map((entry) => ({
+      ...entry,
+      exportedFunctions: entry.exportedFunctions.slice(),
+    })),
+  };
 }
 
 export function codexMobileEntryGroupImportIds() {

@@ -4982,6 +4982,29 @@ This keeps current production health gates stable while providing a precise
 cutover verification command for an isolated default-shell server and,
 eventually, for the production restart that intentionally enables Vite on `/`.
 
+The next ESM compatibility slice keeps production `/` on classic-script
+fallback while proving the Vite shell entry can directly import a real pure
+runtime policy module:
+
+- `frontend/vite-shell-entry.mjs` now imports `public/build-refresh-policy.js`
+  through the Vite module graph and publishes
+  `__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__` with bounded owner, module-count,
+  ready-count, and sample classification metadata.
+- The imported module remains the same classic/global-compatible
+  build-refresh policy used by the current shell. This is not a business
+  runtime rewrite; it is a controlled proof that a pure runtime policy can be
+  consumed from the Vite entry without breaking classic fallback semantics.
+- `scripts/codex-mobile-browser-runtime-self-check.js --vite-preview-only`
+  and the Vite app-preview checks now require the ESM compatibility proof and
+  report `vite_preview_esm_compatibility_missing` or
+  `vite_app_preview_esm_compatibility_missing` when the Vite entry no longer
+  exposes that imported-module readiness.
+
+Production `/` still remains classic-script fallback after this slice. The
+cutover invariant moves forward one step: Vite preview/app-preview must prove
+at least one real runtime policy import before default shell ownership can
+move from the generated classic script block to the module entry.
+
 ## Release Rule
 
 Follow the current release order:

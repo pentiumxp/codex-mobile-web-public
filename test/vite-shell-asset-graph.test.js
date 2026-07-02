@@ -78,6 +78,15 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   assert.ok(manifest.assets.every((asset) => asset.exists));
 });
 
+test("Vite shell entry imports the build refresh policy as an ESM compatibility proof", () => {
+  const root = path.resolve(__dirname, "..");
+  const source = fs.readFileSync(path.join(root, "frontend", "vite-shell-entry.mjs"), "utf8");
+  assert.match(source, /import buildRefreshPolicy from "\.\.\/public\/build-refresh-policy\.js"/);
+  assert.match(source, /__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__/);
+  assert.match(source, /codexMobileEsmCompatibility/);
+  assert.match(source, /build-refresh-policy/);
+});
+
 test("Vite shell build contract records entry chunks and classic fallback outputs", async () => {
   const { VITE_ENTRY_GROUP_SOURCE_PREFIX, buildShellAssetManifest, buildViteShellBuildContract } = await loadAssetGraphModule();
   const root = path.resolve(__dirname, "..");

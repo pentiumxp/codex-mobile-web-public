@@ -9,6 +9,18 @@ const service = require(path.join(__dirname, "..", "services", "runtime", "brows
 const adapter = require(path.join(__dirname, "..", "adapters", "browser-runtime-self-check-service.js"));
 const script = require(path.join(__dirname, "..", "scripts", "codex-mobile-browser-runtime-self-check.js"));
 const scriptSource = fs.readFileSync(path.join(__dirname, "..", "scripts", "codex-mobile-browser-runtime-self-check.js"), "utf8");
+const viteEsmCompatibilityReady = {
+  esmCompatibilityReady: true,
+  esmCompatibilityOwner: "vite-shell-entry",
+  esmCompatibilityModuleCount: 1,
+  esmCompatibilityReadyCount: 1,
+};
+const viteEsmCompatibilityMissing = {
+  esmCompatibilityReady: false,
+  esmCompatibilityOwner: "",
+  esmCompatibilityModuleCount: 0,
+  esmCompatibilityReadyCount: 0,
+};
 
 test("browser runtime self-check adapter re-exports canonical runtime service", () => {
   assert.equal(adapter.analyzeBrowserRuntimeSamples, service.analyzeBrowserRuntimeSamples);
@@ -124,6 +136,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     classicCompatibilityReady: true,
     classicCompatibilityStartupGlobalsReady: true,
     classicCompatibilityStartupGlobalContractReady: true,
+    ...viteEsmCompatibilityReady,
     deferredLoaded: true,
   }, { consoleEvents: [], exceptions: [] });
   assert.equal(passing.ok, true);
@@ -155,6 +168,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     classicCompatibilityReady: false,
     classicCompatibilityStartupGlobalsReady: false,
     classicCompatibilityStartupGlobalContractReady: false,
+    ...viteEsmCompatibilityMissing,
     deferredLoaded: false,
   }, { consoleEvents: [{ type: "error" }], exceptions: [{ code: "runtime_exception" }] });
   assert.equal(failing.ok, false);
@@ -172,6 +186,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_compatibility_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_startup_globals_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_startup_global_contract_mismatch"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_esm_compatibility_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_browser_exception"));
 });
 
@@ -192,6 +207,7 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
     loaderPlanMatchesShellScripts: true,
     loaderPlanMatchesInjectedScripts: true,
     loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
     rootPreviewExpected: true,
     rootPathPreserved: true,
     rootViteShellParamPresent: true,
@@ -211,6 +227,7 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
     markerPresent: false,
     metaPresent: false,
     moduleScriptMatchesPreview: false,
+    ...viteEsmCompatibilityMissing,
     loaderOk: false,
     loaderTimedOut: true,
     loaderErrorCode: "timeout",
@@ -234,6 +251,7 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_module_entry_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_classic_loader_plan_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_classic_loader_plan_mismatch"));
+  assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_esm_compatibility_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_loader_failed"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_classic_script_order_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_client_build_mismatch"));
@@ -264,6 +282,7 @@ test("browser runtime self-check analyzes Vite app-preview default-root readines
     loaderPlanMatchesShellScripts: true,
     loaderPlanMatchesInjectedScripts: true,
     loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
     rootPreviewExpected: true,
     defaultRootPreviewExpected: true,
     rootPathPreserved: true,
@@ -297,6 +316,7 @@ test("browser runtime self-check analyzes Vite app-preview default-root readines
     loaderPlanMatchesShellScripts: true,
     loaderPlanMatchesInjectedScripts: true,
     loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
     rootPreviewExpected: true,
     defaultRootPreviewExpected: true,
     rootPathPreserved: true,
@@ -332,6 +352,7 @@ test("browser runtime self-check analyzes Vite app-preview Hermes embed startup 
     loaderPlanMatchesShellScripts: true,
     loaderPlanMatchesInjectedScripts: true,
     loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
     embedExpected: true,
     embedQueryPresent: true,
     embedHtmlClassPresent: true,
@@ -366,6 +387,7 @@ test("browser runtime self-check analyzes Vite app-preview Hermes embed startup 
     loaderPlanMatchesShellScripts: true,
     loaderPlanMatchesInjectedScripts: true,
     loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
     embedExpected: true,
     embedQueryPresent: false,
     embedHtmlClassPresent: false,
@@ -406,6 +428,7 @@ test("browser runtime self-check analyzes Vite app-preview Hermes launch session
     loaderPlanMatchesShellScripts: true,
     loaderPlanMatchesInjectedScripts: true,
     loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
     embedExpected: true,
     pluginSessionExpected: true,
     embedQueryPresent: true,
@@ -505,6 +528,7 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("vite_app_preview_classic_script_order_mismatch"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__"));
+  assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__"));
@@ -515,6 +539,9 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("entryDynamicImportEntryGroupCountMatches"));
   assert.ok(scriptSource.includes("entryGroupClassicCoverageOk"));
   assert.ok(scriptSource.includes("classicCompatibilityStartupGlobalContractReady"));
+  assert.ok(scriptSource.includes("esmCompatibilityReady"));
+  assert.ok(scriptSource.includes("vite_preview_esm_compatibility_missing"));
+  assert.ok(scriptSource.includes("vite_app_preview_esm_compatibility_missing"));
   assert.ok(scriptSource.includes("shellRefreshContractReady"));
   assert.ok(scriptSource.includes("refreshPageForNewBuild"));
   assert.ok(scriptSource.includes("clearAllShellCaches"));

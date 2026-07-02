@@ -972,6 +972,10 @@ function vitePreviewProbeExpression(input = {}) {
         ? topology.startupGroups.flatMap((group) => Array.isArray(group && group.assets) ? group.assets : [])
         : [];
       const compatibility = window.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ || {};
+      const esmCompatibility = window.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__ || {};
+      const esmCompatibilityModules = Array.isArray(esmCompatibility.modules)
+        ? esmCompatibility.modules
+        : [];
       const entryGroupImportOwner = window.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__
         || (marker ? String(marker.dataset.entryGroupImportOwner || "") : "");
       const entryDynamicImportGraph = window.__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__ || {};
@@ -1179,6 +1183,13 @@ function vitePreviewProbeExpression(input = {}) {
           && startupGlobalContractCoverage.every((entry) => entry && entry.ok === true)
           && (marker ? Number(marker.dataset.startupGlobalContractCount) === startupGlobalContractCoverage.length : false),
         classicCompatibilityStartupGlobalContractMismatchCount: startupGlobalContractCoverage.filter((entry) => entry && entry.ok !== true).length,
+        esmCompatibilityReady: String(esmCompatibility.owner || "") === "vite-shell-entry"
+          && Number(esmCompatibility.moduleCount) === 1
+          && Number(esmCompatibility.readyCount) === 1
+          && esmCompatibilityModules.some((entry) => entry && entry.id === "build-refresh-policy" && entry.ready === true),
+        esmCompatibilityOwner: String(esmCompatibility.owner || ""),
+        esmCompatibilityModuleCount: Number(esmCompatibility.moduleCount) || esmCompatibilityModules.length,
+        esmCompatibilityReadyCount: Number(esmCompatibility.readyCount) || esmCompatibilityModules.filter((entry) => entry && entry.ready === true).length,
         deferredGroupCount,
         deferredLoaded,
       };
@@ -1225,6 +1236,7 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   if (sample && sample.classicCompatibilityStartupGlobalContractReady !== true) {
     append("vite_preview_classic_startup_global_contract_mismatch");
   }
+  if (sample && sample.esmCompatibilityReady !== true) append("vite_preview_esm_compatibility_missing");
   if (sample && sample.deferredLoaded !== true) append("vite_preview_deferred_not_loaded");
   if ((runtimeSignals.exceptions || []).length) append("vite_preview_browser_exception");
   if ((runtimeSignals.consoleEvents || []).some((entry) => entry && entry.type === "error")) {
@@ -1298,6 +1310,10 @@ function viteAppPreviewProbeExpression(input = {}) {
       const bootRecovery = document.getElementById("bootRecovery");
       const html = document.documentElement;
       const status = window.__CODEX_MOBILE_VITE_APP_PREVIEW__ || {};
+      const esmCompatibility = window.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__ || {};
+      const esmCompatibilityModules = Array.isArray(esmCompatibility.modules)
+        ? esmCompatibility.modules
+        : [];
       const locationUrl = new URL(window.location.href);
       const initialPluginEmbed = window.INITIAL_PLUGIN_EMBED || {};
       const state = window.state || {};
@@ -1358,6 +1374,13 @@ function viteAppPreviewProbeExpression(input = {}) {
         loaderPlanMatchesInjectedScripts: JSON.stringify(loaderPlanScripts) === JSON.stringify(classicScripts),
         loaderPlanLoadedMatches: statusLoaded.length > 0
           && JSON.stringify(statusLoaded) === JSON.stringify(loaderPlanScripts),
+        esmCompatibilityReady: String(esmCompatibility.owner || "") === "vite-shell-entry"
+          && Number(esmCompatibility.moduleCount) === 1
+          && Number(esmCompatibility.readyCount) === 1
+          && esmCompatibilityModules.some((entry) => entry && entry.id === "build-refresh-policy" && entry.ready === true),
+        esmCompatibilityOwner: String(esmCompatibility.owner || ""),
+        esmCompatibilityModuleCount: Number(esmCompatibility.moduleCount) || esmCompatibilityModules.length,
+        esmCompatibilityReadyCount: Number(esmCompatibility.readyCount) || esmCompatibilityModules.filter((entry) => entry && entry.ready === true).length,
         loaderOk: Boolean(appPreviewResult && appPreviewResult.ok),
         loaderTimedOut: Boolean(appPreviewResult && appPreviewResult.timeout),
         loaderLoadedCount: Number(appPreviewResult && appPreviewResult.loadedCount || status.loaded && status.loaded.length || 0) || 0,
@@ -1423,6 +1446,13 @@ function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}, options = 
     append("vite_app_preview_classic_loader_plan_mismatch", "H2", {
       loaderPlanScriptCount: Number(sample.loaderPlanScriptCount) || 0,
       expectedClassicScriptCount: Number(sample.expectedClassicScriptCount) || 0,
+    });
+  }
+  if (sample && sample.esmCompatibilityReady !== true) {
+    append("vite_app_preview_esm_compatibility_missing", "H2", {
+      owner: sample.esmCompatibilityOwner || "",
+      moduleCount: Number(sample.esmCompatibilityModuleCount) || 0,
+      readyCount: Number(sample.esmCompatibilityReadyCount) || 0,
     });
   }
   if (sample && sample.loaderOk !== true) append("vite_app_preview_loader_failed", "H2", {

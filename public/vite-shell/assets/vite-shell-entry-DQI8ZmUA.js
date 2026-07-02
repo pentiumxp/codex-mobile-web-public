@@ -1,3 +1,25 @@
+//#region \0rolldown/runtime.js
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod), cb = null), mod.exports);
+var __copyProps = (to, from, except, desc) => {
+	if (from && typeof from === "object" || typeof from === "function") for (var keys = __getOwnPropNames(from), i = 0, n = keys.length, key; i < n; i++) {
+		key = keys[i];
+		if (!__hasOwnProp.call(to, key) && key !== except) __defProp(to, key, {
+			get: ((k) => from[k]).bind(null, key),
+			enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+		});
+	}
+	return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", {
+	value: mod,
+	enumerable: true
+}) : target, mod));
 var shell_asset_manifest_default = {
 	schemaVersion: 4,
 	generatedBy: "generate-frontend-shell-manifest",
@@ -803,6 +825,44 @@ var shell_asset_manifest_default = {
 };
 //#endregion
 //#region \0vite/preload-helper.js
+var import_build_refresh_policy = /* @__PURE__ */ __toESM((/* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexBuildRefreshPolicy = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function normalizeBuildId(value) {
+			return String(value || "").trim();
+		}
+		function shellSequenceFromBuildId(value) {
+			const match = normalizeBuildId(value).match(/\bcodex-mobile-shell-v([0-9]+)\b/);
+			if (!match) return null;
+			const parsed = Number.parseInt(match[1], 10);
+			return Number.isSafeInteger(parsed) ? parsed : null;
+		}
+		function classifyServerBuildChange(serverBuildId, clientBuildId) {
+			const server = normalizeBuildId(serverBuildId);
+			const client = normalizeBuildId(clientBuildId);
+			if (!server || !client || server === client) return "same";
+			const serverSeq = shellSequenceFromBuildId(server);
+			const clientSeq = shellSequenceFromBuildId(client);
+			if (serverSeq !== null && clientSeq !== null) {
+				if (serverSeq > clientSeq) return "server-newer";
+				if (serverSeq < clientSeq) return "client-newer";
+			}
+			return "changed";
+		}
+		function shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
+			const direction = classifyServerBuildChange(serverBuildId, clientBuildId);
+			return direction === "server-newer" || direction === "changed";
+		}
+		return {
+			shellSequenceFromBuildId,
+			classifyServerBuildChange,
+			shouldPromptForServerBuildChange
+		};
+	});
+})))(), 1);
 var scriptRel = "modulepreload";
 var assetsURL = function(dep) {
 	return "/" + dep;
@@ -948,6 +1008,36 @@ var classicCompatibility = {
 	startupGlobalContracts,
 	classicGlobalExports
 };
+function functionReady(api, name) {
+	return Boolean(api && typeof api[name] === "function");
+}
+function buildEsmCompatibilityProof() {
+	const api = import_build_refresh_policy.default && typeof import_build_refresh_policy.default === "object" ? import_build_refresh_policy.default : {};
+	const exportedFunctions = [
+		"shellSequenceFromBuildId",
+		"classifyServerBuildChange",
+		"shouldPromptForServerBuildChange"
+	].filter((name) => functionReady(api, name));
+	const sampleClassification = functionReady(api, "classifyServerBuildChange") ? api.classifyServerBuildChange("0.1.11|codex-mobile-shell-v626", shell_asset_manifest_default.clientBuildId) : "";
+	const samplePrompt = functionReady(api, "shouldPromptForServerBuildChange") ? api.shouldPromptForServerBuildChange("0.1.11|codex-mobile-shell-v626", shell_asset_manifest_default.clientBuildId) : false;
+	const moduleRecord = {
+		id: "build-refresh-policy",
+		source: "public/build-refresh-policy.js",
+		globalName: "CodexBuildRefreshPolicy",
+		exportedFunctions,
+		sampleClassification,
+		samplePrompt,
+		ready: exportedFunctions.length === 3 && sampleClassification === "server-newer" && samplePrompt === true
+	};
+	return {
+		schemaVersion: 1,
+		owner: "vite-shell-entry",
+		moduleCount: 1,
+		readyCount: moduleRecord.ready ? 1 : 0,
+		modules: [moduleRecord]
+	};
+}
+var esmCompatibility = buildEsmCompatibilityProof();
 function shellManifestScriptAssets() {
 	return entryGroups.flatMap((group) => Array.isArray(group.assets) ? group.assets : []).filter((asset) => String(asset || "").startsWith("/"));
 }
@@ -1055,7 +1145,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-INy2SLVw.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-kUrezUBp.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
@@ -1067,6 +1157,7 @@ var appPreviewPromise = isAppPreviewPage() ? startCodexMobileViteAppPreview() : 
 globalThis.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ = "entry-topology-v1";
 globalThis.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ = entryTopology;
 globalThis.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ = classicCompatibility;
+globalThis.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__ = esmCompatibility;
 globalThis.__CODEX_MOBILE_VITE_DEFERRED_ENTRY_TOPOLOGY__ = deferredEntryTopologyPromise;
 globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__ = "vite-shell-entry";
 globalThis.__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__ = entryDynamicImportGraph;
