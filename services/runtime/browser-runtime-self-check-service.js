@@ -353,6 +353,21 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         duplicateItemIds: toNumber(sample.duplicateItemIds),
       }));
     }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
+      && sample.latestTurnMatchesTarget
+      && sample.latestTurnAtDomBottom === false
+      && sample.latestTurnHash
+      && sample.actualLatestTurnHash
+      && String(sample.latestTurnHash || "") !== String(sample.actualLatestTurnHash || "")) {
+      issues.push(issue("H2", "browser_latest_turn_not_at_dom_bottom", sample, {
+        expectedLatestTurnHash: safeLabel(sample.latestTurnHash, ""),
+        actualLatestTurnHash: safeLabel(sample.actualLatestTurnHash, ""),
+        latestTurnDomIndex: Math.max(-1, Math.trunc(toNumber(sample.latestTurnDomIndex, -1))),
+        domTurnCount: toNumber(sample.turns),
+      }));
+    }
     if (sampleIsConfirmed(sample) && toNumber(sample.imageFailureCount) > 0) {
       const imageFailureDetails = toArray(sample.imageFailureDetails).slice(0, 4);
       const imageFailureKindCounts = sample.imageFailureKindCounts && typeof sample.imageFailureKindCounts === "object"

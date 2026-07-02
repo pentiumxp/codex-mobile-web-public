@@ -17,6 +17,42 @@ function comparableText(item) {
   return String(item && (item.message || item.text || item.content || "") || "").trim().toLowerCase();
 }
 
+function isCompletedStatus(status) {
+  return /completed|failed|canceled|cancelled|interrupted/i.test(
+    String(status && status.type || status || ""),
+  );
+}
+
+function testTurnOrderMs(candidate) {
+  if (!candidate) return 0;
+  const fields = isCompletedStatus(candidate.status)
+    ? [
+      "completedAtMs",
+      "completedAt",
+      "updatedAtMs",
+      "updatedAt",
+      "startedAtMs",
+      "startedAt",
+      "createdAtMs",
+      "createdAt",
+    ]
+    : [
+      "startedAtMs",
+      "startedAt",
+      "createdAtMs",
+      "createdAt",
+      "updatedAtMs",
+      "updatedAt",
+      "completedAtMs",
+      "completedAt",
+    ];
+  for (const field of fields) {
+    const value = Number(candidate[field]);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return 0;
+}
+
 function createPolicy() {
   return createThreadDetailV4MergePolicy({
     normalizeThreadVisibleUserMessages: (thread) => thread,
@@ -38,21 +74,19 @@ function createPolicy() {
       && pending.type === "userMessage"
       && comparableText(incoming) === comparableText(pending),
     ),
-    isTurnComplete: (candidate) => /completed|failed|canceled|cancelled|interrupted/i.test(
-      String(candidate && (candidate.status && candidate.status.type || candidate.status) || ""),
-    ),
+    isTurnComplete: (candidate) => isCompletedStatus(candidate && candidate.status),
     isRunningStatus: (status) => /active|running|queued|processing|pending|started/i.test(
       String(status && status.type || status || ""),
     ),
     isIncompleteInterruptedTurn: () => false,
     turnHasActiveLiveItems: (candidate) => (candidate && Array.isArray(candidate.items) ? candidate.items : [])
       .some((item) => item && item.status && !/completed|failed|canceled|cancelled/i.test(String(item.status.type || item.status))),
-    turnOrderMs: (candidate) => Number(candidate && (candidate.startedAtMs || candidate.completedAtMs || 0)) || 0,
+    turnOrderMs: testTurnOrderMs,
     mergeTurnPreservingVisibleItems: (existingTurn, incomingTurn) => Object.assign({}, existingTurn, incomingTurn, {
       items: Array.isArray(incomingTurn && incomingTurn.items) ? incomingTurn.items.slice() : [],
     }),
     sortTurnsForDisplay: (turns) => (turns || []).slice().sort((a, b) => (
-      (Number(a && a.startedAtMs) || 0) - (Number(b && b.startedAtMs) || 0)
+      testTurnOrderMs(a) - testTurnOrderMs(b)
     )),
     maxVisibleTurnsForThread: () => 10,
   });
@@ -145,4 +179,36 @@ test("regressive v4 projection refresh keeps newer revision and active visible t
   const merged = policy.mergeV4ProjectionThread(existing, incoming);
   assert.equal(merged.mobileProjectionRevision, 9);
   assert.deepEqual(merged.turns.map((candidate) => candidate.id), ["old-turn", "active-turn"]);
+});
+
+test("non-regressive v4 projection drops stale active-like turn superseded by newer completed receipt", () => {
+  const policy = createPolicy();
+  const existing = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 11,
+    mobileHistoryExpanded: true,
+    turns: [
+      turn("old-active-turn", [userMessage("old bottom user")], {
+        startedAtMs: 200,
+        status: { type: "running" },
+      }),
+    ],
+  };
+  const incoming = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 12,
+    mobileHistoryExpanded: true,
+    mobileReadMode: "projection-v4-dynamic",
+    turns: [
+      turn("new-receipt-turn", [userMessage("return receipt"), { type: "agentMessage", text: "done" }], {
+        startedAtMs: 50,
+        completedAtMs: 300,
+        status: { type: "completed" },
+      }),
+    ],
+  };
+  const merged = policy.mergeV4ProjectionThread(existing, incoming);
+  assert.deepEqual(merged.turns.map((candidate) => candidate.id), ["new-receipt-turn"]);
 });

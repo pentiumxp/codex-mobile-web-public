@@ -61,14 +61,17 @@ function threadTileRuntimeFunctionBody(name) {
   return sourceFunctionBody(threadTileRuntimeJs, name);
 }
 
-test("client turn ordering follows server started-at-first semantics", () => {
+test("client turn ordering keeps active turns stable and completed turns completion-ordered", () => {
   const body = sourceFunctionBody(threadDetailRuntimeJs, "turnOrderMs");
-  const startedAtIndex = body.indexOf("numericTimestampMs(turn.startedAtMs)");
-  const completedAtIndex = body.indexOf("numericTimestampMs(turn.completedAtMs)");
+  const completedBranchStart = body.indexOf("if (isTurnComplete(turn))");
+  const completedAtIndex = body.indexOf('"completedAtMs"', completedBranchStart);
+  const startedAtIndex = body.indexOf('"startedAtMs"', completedBranchStart);
   assert.notEqual(startedAtIndex, -1);
   assert.notEqual(completedAtIndex, -1);
-  assert.ok(startedAtIndex < completedAtIndex, "startedAt must sort before completedAt");
-  assert.match(body, /numericTimestampMs\(turn\.startedAt\)[\s\S]*numericTimestampMs\(turn\.createdAtMs\)[\s\S]*numericTimestampMs\(turn\.completedAtMs\)/);
+  assert.ok(completedAtIndex < startedAtIndex, "completed turns must sort by completedAt before startedAt");
+  assert.match(body, /if \(isTurnComplete\(turn\)\) \{[\s\S]*"completedAtMs"[\s\S]*"updatedAtMs"[\s\S]*"startedAtMs"[\s\S]*"createdAtMs"/);
+  assert.match(body, /return firstTurnTimestampMs\(turn, \[[\s\S]*"startedAtMs"[\s\S]*"createdAtMs"[\s\S]*"updatedAtMs"[\s\S]*"completedAtMs"/);
+  assert.match(sourceFunctionBody(threadDetailRuntimeJs, "firstTurnTimestampMs"), /numericTimestampMs\(turn && turn\[field\]\)/);
 
   const consistencyBody = functionBody("checkConversationProjectionConsistency");
   assert.match(consistencyBody, /const orderSnapshot = conversationTurnOrderDiagnosticSnapshot\(source, extra\);/);

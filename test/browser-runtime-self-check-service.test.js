@@ -71,6 +71,32 @@ test("browser runtime self-check preserves bounded default shell mode in public 
   assert.match(scriptSource, /defaultShellMode: String\(config && config\.defaultShellMode \|\| ""\)\.slice\(0, 40\)/);
 });
 
+test("browser runtime self-check reports API latest turn when it is not the DOM bottom turn", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "settled",
+      threadHash: "thread-a",
+      delayMs: 1500,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      turns: 20,
+      items: 80,
+      expectedTurnHashCount: 10,
+      expectedTurnMatchCount: 10,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "expected-latest",
+      actualLatestTurnHash: "stale-bottom",
+      latestTurnAtDomBottom: false,
+      latestTurnDomIndex: 18,
+    }],
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "browser_latest_turn_not_at_dom_bottom"));
+});
+
 test("browser runtime self-check analyzes Vite preview module readiness", () => {
   const passing = script.analyzeVitePreviewProbe({
     markerVisible: true,

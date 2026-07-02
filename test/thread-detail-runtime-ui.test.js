@@ -140,3 +140,24 @@ test("thread detail runtime exposes merge and echo-normalizer APIs", () => {
   assert.equal(merged[0].id, durable.id);
   assert.equal(merged[0].mobilePendingSubmission, undefined);
 });
+
+test("turn ordering uses completion timestamps for completed turns and start timestamps for active turns", () => {
+  const runtime = createRuntimeFixture();
+
+  assert.equal(runtime.turnOrderMs({
+    status: { type: "completed" },
+    startedAtMs: 100,
+    completedAtMs: 300,
+  }), 300);
+  assert.equal(runtime.turnOrderMs({
+    status: { type: "running" },
+    startedAtMs: 100,
+    updatedAtMs: 400,
+    completedAtMs: 500,
+  }), 100);
+  assert.equal(runtime.turnOrderMs({
+    status: { type: "completed" },
+    startedAtMs: 100,
+    updatedAtMs: 250,
+  }), 250);
+});

@@ -1126,25 +1126,54 @@ function createThreadDetailRuntime(deps = {}) {
     });
   }
 
+  function firstTurnTimestampMs(turn, fields = []) {
+    for (const field of fields) {
+      const timestamp = numericTimestampMs(turn && turn[field]);
+      if (timestamp) return timestamp;
+    }
+    return 0;
+  }
+
   function turnOrderMs(turn) {
     if (!turn) return 0;
-    return numericTimestampMs(turn.startedAtMs)
-      || numericTimestampMs(turn.startedAt)
-      || numericTimestampMs(turn.started_at_ms)
-      || numericTimestampMs(turn.started_at)
-      || numericTimestampMs(turn.createdAtMs)
-      || numericTimestampMs(turn.createdAt)
-      || numericTimestampMs(turn.created_at_ms)
-      || numericTimestampMs(turn.created_at)
-      || numericTimestampMs(turn.completedAtMs)
-      || numericTimestampMs(turn.completedAt)
-      || numericTimestampMs(turn.completed_at_ms)
-      || numericTimestampMs(turn.completed_at)
-      || numericTimestampMs(turn.updatedAtMs)
-      || numericTimestampMs(turn.updatedAt)
-      || numericTimestampMs(turn.updated_at_ms)
-      || numericTimestampMs(turn.updated_at)
-      || 0;
+    if (isTurnComplete(turn)) {
+      return firstTurnTimestampMs(turn, [
+        "completedAtMs",
+        "completedAt",
+        "completed_at_ms",
+        "completed_at",
+        "updatedAtMs",
+        "updatedAt",
+        "updated_at_ms",
+        "updated_at",
+        "startedAtMs",
+        "startedAt",
+        "started_at_ms",
+        "started_at",
+        "createdAtMs",
+        "createdAt",
+        "created_at_ms",
+        "created_at",
+      ]);
+    }
+    return firstTurnTimestampMs(turn, [
+      "startedAtMs",
+      "startedAt",
+      "started_at_ms",
+      "started_at",
+      "createdAtMs",
+      "createdAt",
+      "created_at_ms",
+      "created_at",
+      "updatedAtMs",
+      "updatedAt",
+      "updated_at_ms",
+      "updated_at",
+      "completedAtMs",
+      "completedAt",
+      "completed_at_ms",
+      "completed_at",
+    ]);
   }
 
   function turnIsSupersededBy(turn, newerTurn) {

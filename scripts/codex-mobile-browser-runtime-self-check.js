@@ -1996,6 +1996,8 @@ function snapshotExpression(input = {}) {
         expectedTurnShapes,
         domTurnShapes,
         latestTurnHash,
+        latestTurnDomIndex: latestTurnIndex,
+        latestTurnAtDomBottom: Boolean(latestMatches && latestTurnIndex === turnNodes.length - 1),
         latestTurnItemCount: latestItemNodes.length,
         latestTurnUserMessageCount: latestUserNodes.length,
         latestTurnTaskCardItemCount: latestTaskCardNodes.length,
