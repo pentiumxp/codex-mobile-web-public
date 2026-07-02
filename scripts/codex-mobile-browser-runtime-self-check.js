@@ -513,6 +513,16 @@ function itemTimestampMs(item = {}) {
   );
 }
 
+function turnItemTimestampRange(items = []) {
+  const values = (Array.isArray(items) ? items : [])
+    .map(itemTimestampMs)
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return {
+    firstTimestampMs: values.length ? Math.min(...values) : 0,
+    lastTimestampMs: values.length ? Math.max(...values) : 0,
+  };
+}
+
 function duplicateLatestUserMessageEventCount(userItems = []) {
   const seen = new Set();
   let duplicates = 0;
@@ -558,10 +568,13 @@ function turnShapeExpectation(detail = {}) {
     const userItems = items.filter((item) => item && /^userMessage$/i.test(String(item.type || "")));
     const injectedTaskCardUserItems = userItems.filter(isInjectedThreadTaskCardItem);
     const itemTypes = items.map((item) => String(item && item.type || "unknown").trim() || "unknown");
+    const timestampRange = turnItemTimestampRange(items);
     return {
       index,
       turnHash: browserStableHash(turn && turn.id || ""),
       completed: completedStatus(turn && turn.status),
+      expectedFirstTimestampMs: timestampRange.firstTimestampMs,
+      expectedLastTimestampMs: timestampRange.lastTimestampMs,
       expectedItemCount: items.length,
       expectedUserMessageCount: Math.max(0, userItems.length - injectedTaskCardUserItems.length),
       expectedTaskCardUserMessageCount: injectedTaskCardUserItems.length,
@@ -1920,6 +1933,32 @@ function snapshotExpression(input = {}) {
         });
         return counts;
       };
+      const nodeTimestampMs = (node) => {
+        if (!node || !node.querySelector) return 0;
+        const timestamp = node.querySelector(".item-timestamp");
+        const datetime = String(timestamp && timestamp.getAttribute("datetime") || "").trim();
+        const parsed = datetime ? Date.parse(datetime) : 0;
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+      };
+      const timestampRangeForNodes = (nodes) => {
+        const values = nodes.map(nodeTimestampMs).filter((value) => Number.isFinite(value) && value > 0);
+        return {
+          firstTimestampMs: values.length ? Math.min(...values) : 0,
+          lastTimestampMs: values.length ? Math.max(...values) : 0,
+        };
+      };
+      const safeStatusKind = (value) => {
+        const text = String(value || "").replace(/\\s+/g, " ").trim().toLowerCase();
+        if (!text) return "";
+        if (text === "refreshing thread" || text === "刷新线程") return "refreshing-thread";
+        if (text === "loading thread" || text === "加载线程") return "loading-thread";
+        if (/connected|shared|已连接/.test(text)) return "connected";
+        if (/starting|启动|加载/.test(text)) return "starting";
+        if (/sync|同步/.test(text)) return "sync";
+        if (/running|运行/.test(text)) return "running";
+        if (/思考|输出|计划/.test(text)) return "live-output";
+        return "other";
+      };
       const latestUsageCount = latestTurnNode ? latestTurnNode.querySelectorAll(".item.turnUsageSummary").length : 0;
       const latestItemNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll("[data-item]")) : [];
       const latestUserNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(".item.userMessage")) : [];
@@ -1977,6 +2016,7 @@ function snapshotExpression(input = {}) {
         });
       const domTurnShapes = turnNodes.slice(-20).map((turnNode, index) => {
         const nodes = itemNodesForTurn(turnNode);
+        const timestampRange = timestampRangeForNodes(nodes);
         const usageIndexes = [];
         const userIndexes = [];
         let assistantMessageCount = 0;
@@ -2007,6 +2047,8 @@ function snapshotExpression(input = {}) {
         return {
           index,
           turnHash: stableHash(turnNode.getAttribute("data-turn") || turnNode.getAttribute("data-thread-tile-turn") || ""),
+          firstTimestampMs: timestampRange.firstTimestampMs,
+          lastTimestampMs: timestampRange.lastTimestampMs,
           itemCount: nodes.length,
           userMessageCount: userIndexes.length,
           taskCardUserMessageCount,
@@ -2075,6 +2117,11 @@ function snapshotExpression(input = {}) {
       const activeButtonMatchesTarget = Boolean(activeButton && activeButton.getAttribute("data-thread") === threadId);
       const loadingNote = Boolean(conversation && conversation.querySelector('[data-render-key^="loading-visible|"]'));
       const emptyState = Boolean(conversation && conversation.querySelector(".empty-state"));
+      const connectionState = document.getElementById("connectionState");
+      const turnTimer = document.getElementById("turnTimer");
+      const turnTimerDetail = turnTimer ? turnTimer.querySelector(".turn-timer-detail") : null;
+      const connectionStateKind = safeStatusKind(connectionState && connectionState.textContent);
+      const turnTimerDetailKind = safeStatusKind(turnTimerDetail && turnTimerDetail.textContent);
       const appRect = app ? app.getBoundingClientRect() : { width: 0, height: 0 };
       const conversationRect = conversation ? conversation.getBoundingClientRect() : { top: 0, bottom: 0, height: 0 };
       const visualTop = Math.max(0, conversationRect.top || 0);
@@ -2118,6 +2165,12 @@ function snapshotExpression(input = {}) {
         expectedTurnMatchCount: expectedMatches,
         expectedTurnHashCount: expectedTurnHashes.size,
         latestTurnMatchesTarget: latestMatches,
+        expectedLatestTurnHash,
+        connectionStateKind,
+        turnTimerVisible: Boolean(turnTimer && turnTimer.classList && turnTimer.classList.contains("visible")),
+        turnTimerActive: Boolean(turnTimer && turnTimer.classList && turnTimer.classList.contains("active")),
+        turnTimerSettled: Boolean(turnTimer && turnTimer.classList && turnTimer.classList.contains("settled")),
+        turnTimerDetailKind,
         expectedLatestUsageRequired,
         expectedLatestUserMessageCount,
         expectedLatestUserMessageDuplicateCount,

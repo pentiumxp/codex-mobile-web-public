@@ -151,6 +151,8 @@ function safeTurnShape(value = {}) {
     index: Math.max(0, Math.trunc(toNumber(row.index))),
     turnHash: safeLabel(row.turnHash, ""),
     completed: row.completed === true,
+    firstTimestampMs: Math.max(0, Math.trunc(toNumber(row.firstTimestampMs || row.expectedFirstTimestampMs))),
+    lastTimestampMs: Math.max(0, Math.trunc(toNumber(row.lastTimestampMs || row.expectedLastTimestampMs))),
     expectedItemCount: toNumber(row.expectedItemCount),
     actualItemCount: toNumber(row.itemCount),
     expectedUserMessageCount: toNumber(row.expectedUserMessageCount),
@@ -166,6 +168,23 @@ function safeTurnShape(value = {}) {
     timestampMissingKindCounts: safeTimestampKindCounts(row.timestampMissingKindCounts),
     userAfterUsageCount: toNumber(row.userAfterUsageCount),
   };
+}
+
+function turnTimestampOrderIssue(rows = []) {
+  const normalized = toArray(rows)
+    .map((row) => safeTurnShape(row))
+    .filter((row) => row.turnHash && row.firstTimestampMs > 0 && row.lastTimestampMs > 0);
+  for (let index = 1; index < normalized.length; index += 1) {
+    const previous = normalized[index - 1];
+    const current = normalized[index];
+    if (current.lastTimestampMs + 1000 < previous.lastTimestampMs) {
+      return { previous, current, order: "last-timestamp-regressed" };
+    }
+    if (current.firstTimestampMs + 1000 < previous.firstTimestampMs) {
+      return { previous, current, order: "first-timestamp-regressed" };
+    }
+  }
+  return null;
 }
 
 function safeTimestampKindCounts(value = {}) {
@@ -360,6 +379,22 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     if (sampleIsConfirmed(sample)
       && toNumber(sample.delayMs) >= minSettledDelayMs
       && !sample.loadingNote
+      && toNumber(sample.expectedTurnHashCount) > 0
+      && toNumber(sample.turns) > 0
+      && sample.latestTurnMatchesTarget === false
+      && sample.expectedLatestTurnHash
+      && sample.actualLatestTurnHash) {
+      issues.push(issue("H2", "browser_latest_turn_missing_from_dom", sample, {
+        expectedLatestTurnHash: safeLabel(sample.expectedLatestTurnHash, ""),
+        actualLatestTurnHash: safeLabel(sample.actualLatestTurnHash, ""),
+        expectedTurnHashCount: toNumber(sample.expectedTurnHashCount),
+        expectedTurnMatchCount: toNumber(sample.expectedTurnMatchCount),
+        domTurnCount: toNumber(sample.turns),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
       && sample.latestTurnMatchesTarget
       && sample.latestTurnAtDomBottom === false
       && sample.latestTurnHash
@@ -370,6 +405,42 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         actualLatestTurnHash: safeLabel(sample.actualLatestTurnHash, ""),
         latestTurnDomIndex: Math.max(-1, Math.trunc(toNumber(sample.latestTurnDomIndex, -1))),
         domTurnCount: toNumber(sample.turns),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
+      && sample.latestTurnMatchesTarget
+      && sample.latestTurnAtDomBottom === true
+      && sample.turnTimerVisible === true
+      && sample.turnTimerActive === true
+      && /^(refreshing-thread|loading-thread)$/i.test(String(sample.turnTimerDetailKind || ""))) {
+      issues.push(issue("H2", "browser_thread_detail_activity_status_stuck", sample, {
+        turnTimerDetailKind: safeLabel(sample.turnTimerDetailKind, ""),
+        connectionStateKind: safeLabel(sample.connectionStateKind, ""),
+        domTurnCount: toNumber(sample.turns),
+        expectedTurnHashCount: toNumber(sample.expectedTurnHashCount),
+      }));
+    }
+    const apiTimestampOrderIssue = turnTimestampOrderIssue(sample.expectedTurnShapes);
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && apiTimestampOrderIssue) {
+      issues.push(issue("H2", "browser_api_turn_timestamp_order_mismatch", sample, {
+        order: safeLabel(apiTimestampOrderIssue.order, ""),
+        previousTurn: safeTurnShape(apiTimestampOrderIssue.previous),
+        currentTurn: safeTurnShape(apiTimestampOrderIssue.current),
+      }));
+    }
+    const domTimestampOrderIssue = turnTimestampOrderIssue(sample.domTurnShapes);
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
+      && domTimestampOrderIssue) {
+      issues.push(issue("H2", "browser_dom_turn_timestamp_order_mismatch", sample, {
+        order: safeLabel(domTimestampOrderIssue.order, ""),
+        previousTurn: safeTurnShape(domTimestampOrderIssue.previous),
+        currentTurn: safeTurnShape(domTimestampOrderIssue.current),
       }));
     }
     if (sampleIsConfirmed(sample) && toNumber(sample.imageFailureCount) > 0) {
@@ -513,13 +584,15 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       }));
     }
     const hash = sampleThreadHash(sample);
-    if (!hash || !sampleIsConfirmed(sample)) continue;
+    const targetComparable = sampleIsConfirmed(sample) || toNumber(sample.expectedTurnHashCount) > 0;
+    if (!hash || !targetComparable) continue;
     if (!samplesByThread.has(hash)) samplesByThread.set(hash, []);
     samplesByThread.get(hash).push(sample);
   }
 
   for (const [threadHash, rows] of samplesByThread.entries()) {
     let seenNonEmpty = false;
+    let initialSparseIssueSample = null;
     let maxItems = 0;
     let maxTurns = 0;
     let maxConfirmedItems = 0;
@@ -632,11 +705,27 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         };
       }
       if (isNonEmptySample(sample)) {
+        if (!seenNonEmpty && initialSparseIssueSample) {
+          issues.push(issue("H2", "browser_dom_initial_sparse_before_nonempty", initialSparseIssueSample, {
+            threadHash,
+            laterTurns: turns,
+            laterItems: items,
+            loadingNote: Boolean(initialSparseIssueSample.loadingNote),
+            emptyState: Boolean(initialSparseIssueSample.emptyState),
+          }));
+          initialSparseIssueSample = null;
+        }
         if (sample.contentConfirmed !== false) {
           seenNonEmpty = true;
           maxConfirmedTurns = Math.max(maxConfirmedTurns, turns);
           maxConfirmedItems = Math.max(maxConfirmedItems, items);
         }
+      }
+      else if (!seenNonEmpty
+        && settled
+        && isSparseSample(sample)
+        && toNumber(sample.expectedTurnHashCount) > 0) {
+        initialSparseIssueSample = initialSparseIssueSample || sample;
       }
       else if (seenNonEmpty && isSparseSample(sample)) {
         issues.push(issue(settled ? "H2" : "H3", "browser_dom_sparse_after_nonempty", sample, {

@@ -393,7 +393,11 @@ function evaluatedActiveRuntimeHarness() {
     "turnHasDisplayItems",
     "latestTurn",
     "latestRawTurn",
+    "latestTurnForThread",
     "currentThreadHasActiveRuntimeStatus",
+    "isLiveTurnForThread",
+    "latestLiveTurnForThread",
+    "currentThreadHasForegroundActiveRuntimeStatus",
     "latestLiveTurnCandidate",
     "isLiveTurn",
     "shouldPollCurrentThread",
@@ -425,6 +429,7 @@ ${sources.join("\n")}
 return {
   state,
   currentThreadHasActiveRuntimeStatus,
+  currentThreadHasForegroundActiveRuntimeStatus,
   shouldPollCurrentThread,
   currentLiveCandidate: () => latestLiveTurnCandidate(),
   latestIsLive: () => isLiveTurn(latestTurn()),
@@ -2705,6 +2710,7 @@ test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(appJs, /function liveActivityLabelForTurn\(/);
   assert.match(appJs, /function activeLiveOperationItemForTurn\(/);
   assert.match(appJs, /function currentThreadHasActiveRuntimeStatus\(/);
+  assert.match(appJs, /function currentThreadHasForegroundActiveRuntimeStatus\(/);
   assert.match(appJs, /function currentThreadTurnTimerState\(/);
   assert.match(appJs, /function turnTimerStateFromThread\(/);
   assert.match(appJs, /function turnTimerStateHtml\(/);
@@ -2724,7 +2730,7 @@ test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(functionBody("markIdleActivity"), /if \(liveActivityLabelForTurn\(liveTurn\)\) return;/);
   assert.match(functionBody("markIdleActivity"), /if \(isIdleSyncActivityLabel\(label\) && liveTurn\) return;/);
   assert.match(functionBody("currentThreadTurnTimerState"), /liveActivityLabelForTurn\(live\) \|\| liveTurnFallbackActivityLabel\(live\)/);
-  assert.match(functionBody("currentThreadTurnTimerState"), /activeRuntime: currentThreadHasActiveRuntimeStatus\(\)/);
+  assert.match(functionBody("currentThreadTurnTimerState"), /activeRuntime: currentThreadHasForegroundActiveRuntimeStatus\(\)/);
   assert.match(functionBody("currentThreadTurnTimerState"), /activeLabel: activeThreadFallbackActivityLabel\(\)/);
   assert.match(functionBody("updateTurnTimer"), /applyTurnTimerState\(el, currentThreadTurnTimerState\(\)\)/);
   assert.match(functionBody("updateTickTimer"), /if \(!currentLiveTurn\(\) && !currentThreadHasActiveRuntimeStatus\(\)\) return;/);
@@ -2734,12 +2740,14 @@ test("turn timer prefers live item activity over idle sync labels", () => {
 test("thread-level active status keeps polling through stale completed latest turn rows", () => {
   const harness = evaluatedActiveRuntimeHarness();
   assert.equal(harness.currentThreadHasActiveRuntimeStatus(), true);
+  assert.equal(harness.currentThreadHasForegroundActiveRuntimeStatus(), false);
   assert.equal(harness.currentLiveCandidate(), null);
   assert.equal(harness.latestIsLive(), false);
   assert.equal(harness.shouldPollCurrentThread(), true);
 
   harness.state.currentThread.status = { type: "active", mobileStaleActiveTurn: true };
   assert.equal(harness.currentThreadHasActiveRuntimeStatus(), false);
+  assert.equal(harness.currentThreadHasForegroundActiveRuntimeStatus(), false);
   assert.equal(harness.shouldPollCurrentThread(), false);
 });
 

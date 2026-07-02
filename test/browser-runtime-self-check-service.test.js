@@ -127,6 +127,123 @@ test("browser runtime self-check reports API latest turn when it is not the DOM 
   assert.ok(result.issues.some((issue) => issue.code === "browser_latest_turn_not_at_dom_bottom"));
 });
 
+test("browser runtime self-check reports API latest turn when it is missing from settled DOM", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "settled",
+      threadHash: "thread-a",
+      delayMs: 1500,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: false,
+      turns: 20,
+      items: 80,
+      expectedTurnHashCount: 10,
+      expectedTurnMatchCount: 9,
+      latestTurnMatchesTarget: false,
+      expectedLatestTurnHash: "expected-latest",
+      actualLatestTurnHash: "stale-bottom",
+      latestTurnHash: "stale-bottom",
+      latestTurnAtDomBottom: false,
+      latestTurnDomIndex: 19,
+    }],
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "browser_latest_turn_missing_from_dom"));
+});
+
+test("browser runtime self-check blocks stuck refresh activity after latest turn reaches DOM bottom", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "settled",
+      threadHash: "thread-a",
+      delayMs: 1800,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      turns: 8,
+      items: 40,
+      expectedTurnHashCount: 8,
+      expectedTurnMatchCount: 8,
+      latestTurnMatchesTarget: true,
+      expectedLatestTurnHash: "latest",
+      latestTurnHash: "latest",
+      actualLatestTurnHash: "latest",
+      latestTurnAtDomBottom: true,
+      turnTimerVisible: true,
+      turnTimerActive: true,
+      turnTimerDetailKind: "refreshing-thread",
+      connectionStateKind: "connected",
+    }],
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "browser_thread_detail_activity_status_stuck"));
+});
+
+test("browser runtime self-check blocks settled initial sparse target before later nonempty content", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "initial-settled",
+        threadHash: "thread-a",
+        delayMs: 1400,
+        appVisible: true,
+        loginVisible: false,
+        targetConfirmed: false,
+        contentConfirmed: false,
+        turns: 0,
+        items: 0,
+        expectedTurnHashCount: 8,
+      },
+      {
+        label: "later",
+        threadHash: "thread-a",
+        delayMs: 3000,
+        appVisible: true,
+        loginVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 8,
+        items: 36,
+        expectedTurnHashCount: 8,
+      },
+    ],
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "browser_dom_initial_sparse_before_nonempty"));
+});
+
+test("browser runtime self-check catches DOM turn timestamp order regressions", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "settled",
+      threadHash: "thread-a",
+      delayMs: 1500,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      turns: 2,
+      items: 8,
+      expectedTurnHashCount: 2,
+      latestTurnMatchesTarget: true,
+      latestTurnAtDomBottom: true,
+      domTurnShapes: [
+        { index: 0, turnHash: "older-dom", itemCount: 4, firstTimestampMs: 20000, lastTimestampMs: 30000 },
+        { index: 1, turnHash: "bottom-dom", itemCount: 4, firstTimestampMs: 10000, lastTimestampMs: 12000 },
+      ],
+    }],
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "browser_dom_turn_timestamp_order_mismatch"));
+});
+
 test("browser runtime self-check analyzes Vite preview module readiness", () => {
   const passing = script.analyzeVitePreviewProbe({
     markerVisible: true,

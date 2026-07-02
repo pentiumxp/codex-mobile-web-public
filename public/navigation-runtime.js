@@ -732,6 +732,15 @@ function currentThreadHasActiveRuntimeStatus(thread = null) {
   return (isCurrentThread && Boolean(state.activeTurnId)) || isRunningStatus(sourceThread.status);
 }
 
+function currentThreadHasForegroundActiveRuntimeStatus(thread = null) {
+  const sourceThread = renderContextThread(thread);
+  if (!sourceThread || isStaleActiveStatus(sourceThread.status) || sourceThread.mobileStaleActiveTurn) return false;
+  const threadId = String(sourceThread.id || "");
+  const isCurrentThread = Boolean(threadId && threadId === String(state.currentThreadId || ""));
+  if (isCurrentThread && Boolean(state.activeTurnId)) return true;
+  return Boolean(latestLiveTurnForThread(sourceThread));
+}
+
 function latestLiveTurnCandidate() {
   const displayLatest = latestTurn();
   if (displayLatest && !isTurnComplete(displayLatest) && isRunningStatus(displayLatest.status)) return displayLatest;
@@ -1718,7 +1727,7 @@ function currentThreadTurnTimerState() {
     };
   }
   return turnTimerStateFromThread(thread, {
-    activeRuntime: currentThreadHasActiveRuntimeStatus(),
+    activeRuntime: currentThreadHasForegroundActiveRuntimeStatus(),
     activityAtMs: state.activityAtMs,
     activeLabel: activeThreadFallbackActivityLabel(),
     latest,
