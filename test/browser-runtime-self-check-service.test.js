@@ -454,6 +454,37 @@ test("browser runtime self-check catches DOM turn timestamp order regressions", 
   assert.ok(result.issues.some((issue) => issue.code === "browser_dom_turn_timestamp_order_mismatch"));
 });
 
+test("browser runtime self-check accepts overlapping turn completion timestamps", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "settled",
+      threadHash: "thread-a",
+      delayMs: 1000,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      turns: 2,
+      items: 8,
+      expectedTurnHashCount: 2,
+      latestTurnMatchesTarget: true,
+      latestTurnAtDomBottom: true,
+      expectedTurnShapes: [
+        { index: 0, turnHash: "started-earlier-completed-later", itemCount: 4, firstTimestampMs: 10000, lastTimestampMs: 30000 },
+        { index: 1, turnHash: "started-later-completed-earlier", itemCount: 4, firstTimestampMs: 12000, lastTimestampMs: 20000 },
+      ],
+      domTurnShapes: [
+        { index: 0, turnHash: "started-earlier-completed-later", itemCount: 4, firstTimestampMs: 10000, lastTimestampMs: 30000 },
+        { index: 1, turnHash: "started-later-completed-earlier", itemCount: 4, firstTimestampMs: 12000, lastTimestampMs: 20000 },
+      ],
+    }],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.issues.some((issue) => issue.code === "browser_api_turn_timestamp_order_mismatch"), false);
+  assert.equal(result.issues.some((issue) => issue.code === "browser_dom_turn_timestamp_order_mismatch"), false);
+});
+
 test("browser runtime self-check ignores empty DOM turn shells for timestamp ordering", () => {
   const result = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,

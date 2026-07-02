@@ -75,6 +75,7 @@ function evaluatedSortTurnsForDisplay() {
     "turnDisplaySortTimestampMs",
     "turnDisplayItemTimestampMs",
     "turnDisplayItemTimestampRange",
+    "turnDisplayStartMs",
     "turnDisplayActivityMs",
     "turnDisplaySortPhase",
     "sortTurnsForDisplay",
@@ -112,6 +113,8 @@ test("client turn ordering keeps active turns stable and completed turns complet
   assert.match(sourceFunctionBody(threadDetailRuntimeJs, "firstTurnTimestampMs"), /numericTimestampMs\(turn && turn\[field\]\)/);
   assert.match(functionBody("turnDisplaySortPhase"), /isRunningStatus\(turn && turn\.status\) && !isTurnComplete\(turn\)[\s\S]*return 2/);
   assert.match(functionBody("turnDisplaySortPhase"), /if \(isTurnComplete\(turn\)\) return 1/);
+  assert.match(functionBody("turnDisplayStartMs"), /"startedAtMs"[\s\S]*"createdAtMs"[\s\S]*"completedAtMs"/);
+  assert.match(functionBody("turnDisplayActivityMs"), /if \(isTurnComplete\(turn\)\) return orderMs \|\| range\.first \|\| range\.last;/);
   assert.match(functionBody("turnDisplayActivityMs"), /return Math\.max\(orderMs, range\.last, range\.first\);/);
   const sortBody = functionBody("sortTurnsForDisplay");
   assert.match(sortBody, /const leftActivity = turnDisplayActivityMs\(leftTurn\);/);
@@ -174,6 +177,25 @@ test("client turn display sorting does not pin older active turns below newer co
   assert.deepEqual(sortTurnsForDisplay([sameTimeActive, newerCompleted]).map((turn) => turn.id), [
     "newer-completed",
     "same-time-active",
+  ]);
+
+  const overlappingCompletedEarly = {
+    id: "overlapping-completed-early",
+    status: "completed",
+    startedAtMs: base + 2500,
+    completedAtMs: base + 9000,
+    items: [{ id: "slow-receipt", type: "agentMessage", completedAtMs: base + 9000 }],
+  };
+  const overlappingCompletedLater = {
+    id: "overlapping-completed-later",
+    status: "completed",
+    startedAtMs: base + 3000,
+    completedAtMs: base + 5000,
+    items: [{ id: "fast-receipt", type: "agentMessage", completedAtMs: base + 5000 }],
+  };
+  assert.deepEqual(sortTurnsForDisplay([overlappingCompletedLater, overlappingCompletedEarly]).map((turn) => turn.id), [
+    "overlapping-completed-early",
+    "overlapping-completed-later",
   ]);
 });
 

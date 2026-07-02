@@ -199,9 +199,6 @@ function turnTimestampOrderIssue(rows = []) {
   for (let index = 1; index < normalized.length; index += 1) {
     const previous = normalized[index - 1];
     const current = normalized[index];
-    if (current.lastTimestampMs + 1000 < previous.lastTimestampMs) {
-      return { previous, current, order: "last-timestamp-regressed" };
-    }
     if (current.firstTimestampMs + 1000 < previous.firstTimestampMs) {
       return { previous, current, order: "first-timestamp-regressed" };
     }

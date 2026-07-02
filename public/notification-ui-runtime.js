@@ -809,9 +809,40 @@ function turnDisplayItemTimestampRange(turn) {
   };
 }
 
+function turnDisplayStartMs(turn) {
+  if (!turn || typeof turn !== "object") return 0;
+  const fields = [
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+    "mobileDisplayTimestampMs",
+    "mobileDisplayTimestamp",
+    "updatedAtMs",
+    "updatedAt",
+    "updated_at_ms",
+    "updated_at",
+    "completedAtMs",
+    "completedAt",
+    "completed_at_ms",
+    "completed_at",
+  ];
+  for (const field of fields) {
+    const timestamp = turnDisplaySortTimestampMs(turn[field]);
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
 function turnDisplayActivityMs(turn) {
-  const orderMs = turnOrderMs(turn);
+  const startMs = turnDisplayStartMs(turn);
+  const orderMs = startMs || turnOrderMs(turn);
   const range = turnDisplayItemTimestampRange(turn);
+  if (isTurnComplete(turn)) return orderMs || range.first || range.last;
   return Math.max(orderMs, range.last, range.first);
 }
 

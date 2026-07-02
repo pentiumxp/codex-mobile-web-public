@@ -1,5 +1,5 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-BXz2ab_9.js","assets/rolldown-runtime-FDOR9p9I.js","assets/shard-02-DraJBbDn.js","assets/shard-03-BRI0JuJd.js","assets/shard-04-CtZ3hmZ5.js","assets/shard-05-CCO48-eM.js","assets/shard-06-BZn0F_UE.js","assets/shard-07-D7uWInmi.js"])))=>i.map(i=>d[i]);
-import { t as __vitePreload } from "./vite-shell-entry-IDDFoZlt.js";
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-BXz2ab_9.js","assets/rolldown-runtime-FDOR9p9I.js","assets/shard-02-DraJBbDn.js","assets/shard-03-BRI0JuJd.js","assets/shard-04-CtZ3hmZ5.js","assets/shard-05-CCO48-eM.js","assets/shard-06-DMnEXXxY.js","assets/shard-07-D7uWInmi.js"])))=>i.map(i=>d[i]);
+import { t as __vitePreload } from "./vite-shell-entry-DOGR-ZGD.js";
 //#region \0virtual:codex-mobile-esm-compatibility
 var codexMobileViteEsmCompatibilityShardSources = [
 	{
@@ -92,7 +92,7 @@ var codexMobileViteEsmCompatibilityShardSources = [
 			"task-card-runtime",
 			"notification-ui-runtime"
 		],
-		"byteCount": 175935
+		"byteCount": 176695
 	},
 	{
 		"id": "shard-07",
@@ -114,7 +114,7 @@ var shardLoaders = {
 	"shard-03": () => __vitePreload(() => import("./shard-03-BRI0JuJd.js"), __vite__mapDeps([3,1])),
 	"shard-04": () => __vitePreload(() => import("./shard-04-CtZ3hmZ5.js"), __vite__mapDeps([4,1])),
 	"shard-05": () => __vitePreload(() => import("./shard-05-CCO48-eM.js"), __vite__mapDeps([5,1])),
-	"shard-06": () => __vitePreload(() => import("./shard-06-BZn0F_UE.js"), __vite__mapDeps([6,1])),
+	"shard-06": () => __vitePreload(() => import("./shard-06-DMnEXXxY.js"), __vite__mapDeps([6,1])),
 	"shard-07": () => __vitePreload(() => import("./shard-07-D7uWInmi.js"), __vite__mapDeps([7,1]))
 };
 var compatibilityPromise = null;

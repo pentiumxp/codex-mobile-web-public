@@ -3010,9 +3010,37 @@ var require_notification_ui_runtime = /* @__PURE__ */ __commonJSMin(((exports, m
 			last: timestamps.length ? Math.max(...timestamps) : 0
 		};
 	}
+	function turnDisplayStartMs(turn) {
+		if (!turn || typeof turn !== "object") return 0;
+		for (const field of [
+			"startedAtMs",
+			"startedAt",
+			"started_at_ms",
+			"started_at",
+			"createdAtMs",
+			"createdAt",
+			"created_at_ms",
+			"created_at",
+			"mobileDisplayTimestampMs",
+			"mobileDisplayTimestamp",
+			"updatedAtMs",
+			"updatedAt",
+			"updated_at_ms",
+			"updated_at",
+			"completedAtMs",
+			"completedAt",
+			"completed_at_ms",
+			"completed_at"
+		]) {
+			const timestamp = turnDisplaySortTimestampMs(turn[field]);
+			if (timestamp) return timestamp;
+		}
+		return 0;
+	}
 	function turnDisplayActivityMs(turn) {
-		const orderMs = turnOrderMs(turn);
+		const orderMs = turnDisplayStartMs(turn) || turnOrderMs(turn);
 		const range = turnDisplayItemTimestampRange(turn);
+		if (isTurnComplete(turn)) return orderMs || range.first || range.last;
 		return Math.max(orderMs, range.last, range.first);
 	}
 	function sortTurnsForDisplay(turns) {
@@ -3587,7 +3615,7 @@ var moduleDefinitions = [
 		"expectedFunctions": ["createNotificationUiRuntime"],
 		"assetPath": "/notification-ui-runtime.js",
 		"classicLoaderExcluded": true,
-		"bytes": 54294
+		"bytes": 55054
 	}
 ];
 var moduleApis = {
