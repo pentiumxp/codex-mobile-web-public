@@ -108,6 +108,9 @@ test("thread detail runtime is wired into the static shell", () => {
 });
 
 test("thread detail runtime exposes merge and echo-normalizer APIs", () => {
+  assert.equal(typeof globalThis.CodexThreadDetailRuntime.createThreadDetailRuntime, "function");
+  assert.equal(globalThis.CodexThreadDetailRuntime.createThreadDetailRuntime, createThreadDetailRuntime);
+
   const runtime = createRuntimeFixture();
 
   for (const name of [

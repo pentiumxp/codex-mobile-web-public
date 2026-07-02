@@ -4620,207 +4620,6 @@ var require_thread_detail_v4_merge_state = /* @__PURE__ */ __commonJSMin(((expor
 	});
 }));
 //#endregion
-//#region public/client-render-stability-guard.js
-var require_client_render_stability_guard = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function initClientRenderStabilityGuard(globalScope) {
-		function stringValue(value) {
-			return String(value || "").trim();
-		}
-		function shortHash(value) {
-			const text = stringValue(value);
-			let hash = 2166136261;
-			for (let index = 0; index < text.length; index += 1) {
-				hash ^= text.charCodeAt(index);
-				hash = Math.imul(hash, 16777619);
-			}
-			return (hash >>> 0).toString(36);
-		}
-		function submittedUserItemClientSubmissionId(item) {
-			if (!item || item.type !== "userMessage") return "";
-			return stringValue(item.clientSubmissionId);
-		}
-		function firstSubmittedUserMessageClientSubmissionId(turn) {
-			const items = Array.isArray(turn && turn.items) ? turn.items : [];
-			for (const item of items) {
-				const submissionId = submittedUserItemClientSubmissionId(item);
-				if (submissionId) return submissionId;
-			}
-			return "";
-		}
-		function localSubmissionRenderKey(clientSubmissionId) {
-			const submissionId = stringValue(clientSubmissionId);
-			return submissionId ? `submitted:${shortHash(submissionId)}` : "";
-		}
-		function submittedTurnRenderKey(turn) {
-			const explicit = stringValue(turn && turn.mobileLocalSubmissionRenderKey);
-			if (explicit) return explicit;
-			return localSubmissionRenderKey(firstSubmittedUserMessageClientSubmissionId(turn));
-		}
-		function stableTurnIdentity(turn) {
-			return submittedTurnRenderKey(turn) || stringValue(turn && (turn.id || turn.startedAt)) || "turn";
-		}
-		function markSubmittedTurn(turn, clientSubmissionId) {
-			if (!turn || typeof turn !== "object") return "";
-			const key = localSubmissionRenderKey(clientSubmissionId);
-			if (key) turn.mobileLocalSubmissionRenderKey = key;
-			return key;
-		}
-		function transferSubmittedTurnIdentity(sourceTurn, targetTurn, clientSubmissionId) {
-			if (!targetTurn || typeof targetTurn !== "object") return "";
-			const key = submittedTurnRenderKey(sourceTurn) || submittedTurnRenderKey(targetTurn) || localSubmissionRenderKey(clientSubmissionId);
-			if (key) targetTurn.mobileLocalSubmissionRenderKey = key;
-			return key;
-		}
-		const api = {
-			firstSubmittedUserMessageClientSubmissionId,
-			localSubmissionRenderKey,
-			markSubmittedTurn,
-			shortHash,
-			stableTurnIdentity,
-			submittedTurnRenderKey,
-			transferSubmittedTurnIdentity
-		};
-		if (typeof module !== "undefined" && module.exports) module.exports = api;
-		globalScope.CodexClientRenderStabilityGuard = api;
-	})(typeof globalThis !== "undefined" ? globalThis : window);
-}));
-//#endregion
-//#region public/live-operation-dock-state.js
-var require_live_operation_dock_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexLiveOperationDockState = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_MIN_VISIBLE_MS = 500;
-		function normalizeMode(mode) {
-			return String(mode || "") === "expanded" ? "expanded" : "compact";
-		}
-		function text(value) {
-			return String(value || "");
-		}
-		function isCompletedStatusText(value) {
-			return /completed|failed|cancel|error|interrupted/i.test(text(value));
-		}
-		function nowValue(value) {
-			const parsed = Number(value);
-			return Number.isFinite(parsed) ? parsed : Date.now();
-		}
-		function containsBubble(html) {
-			return text(html).includes("mobile-operation-bubble");
-		}
-		function containsSheet(html) {
-			return text(html).includes("mobile-operation-sheet");
-		}
-		function rememberCompactBubble(input = {}) {
-			const nowMs = nowValue(input.nowMs);
-			const minVisibleMs = Math.max(0, Number(input.minVisibleMs || DEFAULT_MIN_VISIBLE_MS));
-			const existingUntilMs = Number(input.existingVisibleUntilMs || 0);
-			const html = text(input.html);
-			const threadId = text(input.threadId);
-			return {
-				visibleUntilMs: Math.max(existingUntilMs, nowMs + minVisibleMs),
-				html,
-				threadId,
-				recallHtml: html,
-				recallThreadId: threadId,
-				recallAtMs: nowMs
-			};
-		}
-		function compactBubblePreservation(input = {}) {
-			if (containsBubble(input.nextHtml)) return { preserve: false };
-			if (input.liveTurnActive === false) return { preserve: false };
-			const remainingMs = Number(input.visibleUntilMs || 0) - nowValue(input.nowMs);
-			if (remainingMs <= 0) return { preserve: false };
-			const savedThreadId = text(input.savedThreadId);
-			if (!savedThreadId || savedThreadId !== text(input.currentThreadId)) return { preserve: false };
-			const savedHtml = text(input.savedHtml);
-			const dockHasBubble = Boolean(input.dockHasBubble);
-			if (!dockHasBubble && !containsBubble(savedHtml)) return { preserve: false };
-			return {
-				preserve: true,
-				remainingMs,
-				patchSavedHtml: Boolean(savedHtml && !dockHasBubble),
-				savedHtml
-			};
-		}
-		function shouldPreservePinned(input = {}) {
-			return Boolean(input.pinned && normalizeMode(input.mode) === "expanded" && text(input.pinnedThreadId) === text(input.currentThreadId) && input.dockHasSheet && input.liveTurnActive !== false && !containsBubble(input.nextHtml));
-		}
-		function shouldShowRecall(input = {}) {
-			const recallThreadId = text(input.recallThreadId);
-			return Boolean(input.isMobile && input.hasCurrentThread && !input.newThreadDraft && input.liveTurnActive !== false && recallThreadId && recallThreadId === text(input.currentThreadId) && containsSheet(input.recallHtml));
-		}
-		function operationCardContentPlan(input = {}) {
-			const status = text(input.status || (input.completed ? "completed" : "running")).trim();
-			const type = text(input.type || input.itemType || "item").trim() || "item";
-			const title = text(input.title || type).trim() || type;
-			const detail = text(input.detail).replace(/\s+/g, " ").trim();
-			const durationText = text(input.durationText).trim();
-			const extraClass = text(input.extraClass).trim();
-			const completed = Boolean(input.completed || isCompletedStatusText(status));
-			return {
-				itemId: text(input.itemId).trim(),
-				type,
-				status,
-				title,
-				detail,
-				detailEmpty: !detail,
-				statusVisible: Boolean(status),
-				durationVisible: Boolean(durationText),
-				durationText,
-				durationTitle: durationText ? `Elapsed ${durationText}` : "",
-				durationAttrs: text(input.durationAttrs).trim(),
-				classTokens: [
-					"item",
-					"live-operation",
-					extraClass,
-					completed ? "completed" : "",
-					type
-				].filter(Boolean)
-			};
-		}
-		function htmlEscaper(input = {}) {
-			return typeof input.escapeHtml === "function" ? input.escapeHtml : (value) => text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-		}
-		function durationAttributeHtml(value, escape) {
-			const attrs = [];
-			const input = text(value);
-			const attrPattern = /\b(data-(?:started|completed|duration)-ms)="([^"]*)"/g;
-			let match;
-			while (match = attrPattern.exec(input)) attrs.push(`${match[1]}="${escape(match[2])}"`);
-			return attrs.join(" ");
-		}
-		function operationCardHtml(input = {}) {
-			const escape = htmlEscaper(input);
-			const plan = input.plan || operationCardContentPlan(input);
-			const renderKey = text(input.renderKey || input.key).trim();
-			const durationAttrs = durationAttributeHtml(plan.durationAttrs, escape);
-			const duration = plan.durationVisible ? `<time class="operation-duration" ${durationAttrs} title="${escape(plan.durationTitle)}">${escape(plan.durationText)}</time>` : "";
-			const classes = (Array.isArray(plan.classTokens) ? plan.classTokens : []).map(escape).join(" ");
-			const detailValue = plan.detail ? escape(plan.detail) : "&nbsp;";
-			const body = `<div class="operation-detail-line${plan.detailEmpty ? " empty" : ""}"><span class="operation-detail">${detailValue}</span></div>`;
-			const statusHtml = plan.statusVisible ? `<span class="operation-status">${escape(plan.status)}</span>` : "";
-			return `<section class="${classes}" data-item="${escape(plan.itemId)}" data-render-key="${escape(renderKey)}">
-    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escape(plan.title)}</span>${statusHtml}</span>${duration}</div>
-    ${body}
-  </section>`;
-		}
-		return {
-			DEFAULT_MIN_VISIBLE_MS,
-			compactBubblePreservation,
-			containsBubble,
-			containsSheet,
-			normalizeMode,
-			operationCardContentPlan,
-			operationCardHtml,
-			rememberCompactBubble,
-			shouldPreservePinned,
-			shouldShowRecall
-		};
-	});
-}));
-//#endregion
 //#region \0virtual:codex-mobile-esm-compatibility/shard/shard-05
 var import_composer_runtime = /* @__PURE__ */ __toESM(require_composer_runtime());
 var import_composer_bridge_runtime = /* @__PURE__ */ __toESM(require_composer_bridge_runtime());
@@ -4832,8 +4631,6 @@ var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_det
 var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
 var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
 var import_thread_detail_v4_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_v4_merge_state());
-var import_client_render_stability_guard = /* @__PURE__ */ __toESM(require_client_render_stability_guard());
-var import_live_operation_dock_state = /* @__PURE__ */ __toESM(require_live_operation_dock_state());
 var moduleDefinitions = [
 	{
 		"id": "composer-runtime",
@@ -4938,36 +4735,6 @@ var moduleDefinitions = [
 		"assetPath": "/thread-detail-v4-merge-state.js",
 		"classicLoaderExcluded": true,
 		"bytes": 12071
-	},
-	{
-		"id": "client-render-stability-guard",
-		"source": "public/client-render-stability-guard.js",
-		"globalName": "CodexClientRenderStabilityGuard",
-		"expectedFunctions": [
-			"firstSubmittedUserMessageClientSubmissionId",
-			"localSubmissionRenderKey",
-			"markSubmittedTurn",
-			"shortHash",
-			"stableTurnIdentity",
-			"submittedTurnRenderKey",
-			"transferSubmittedTurnIdentity"
-		],
-		"assetPath": "/client-render-stability-guard.js",
-		"classicLoaderExcluded": true,
-		"bytes": 2528
-	},
-	{
-		"id": "live-operation-dock-state",
-		"source": "public/live-operation-dock-state.js",
-		"globalName": "CodexLiveOperationDockState",
-		"expectedFunctions": [
-			"compactBubblePreservation",
-			"operationCardContentPlan",
-			"shouldShowRecall"
-		],
-		"assetPath": "/live-operation-dock-state.js",
-		"classicLoaderExcluded": true,
-		"bytes": 6190
 	}
 ];
 var moduleApis = {
@@ -4980,9 +4747,7 @@ var moduleApis = {
 	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
 	"thread-detail-actions": import_thread_detail_actions.default,
 	"thread-detail-merge-state": import_thread_detail_merge_state.default,
-	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default,
-	"client-render-stability-guard": import_client_render_stability_guard.default,
-	"live-operation-dock-state": import_live_operation_dock_state.default
+	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");
@@ -6546,6 +6311,45 @@ function sampleModule(id, api) {
 			ok: typeof policy.mergeV4ProjectionThread === "function" && typeof policy.v4ProjectionRevisionValue === "function" && policy.v4ProjectionRevisionValue(merged) === 3 && turns.map((turn) => String(turn && turn.id || "")).join(",") === "new,active",
 			revision: policy && typeof policy.v4ProjectionRevisionValue === "function" ? policy.v4ProjectionRevisionValue(merged) : 0,
 			turnOrder: turns.map((turn) => String(turn && turn.id || ""))
+		};
+	}
+	if (id === "thread-detail-runtime") {
+		const statePolicy = {
+			completedIncomingTurnHasAuthoritativeReceipt: () => false,
+			shouldDropLocalOnlyReceiptForIncomingTurn: () => false,
+			shouldPreserveLocalOnlyItem: () => false,
+			shouldPreserveExistingTurnVisibleItems: () => false
+		};
+		const runtime = functionReady(api, "createThreadDetailRuntime") ? api.createThreadDetailRuntime({
+			threadDetailStateApi: {
+				createThreadDetailStatePolicy: () => statePolicy,
+				threadListSummaryFromDetailThread: () => ({}),
+				planThreadOpenCacheReuse: () => ({ action: "skip" }),
+				threadHasReusableLoadedDetailState: () => false
+			},
+			threadDetailMergeStateApi: { createThreadDetailMergePolicy: () => ({ mergeThreadPreservingVisibleItems: (existingThread, incomingThread) => incomingThread || existingThread }) },
+			threadDetailV4MergeStateApi: { createThreadDetailV4MergePolicy: () => ({
+				isV4ProjectionThread: () => false,
+				mergeV4ProjectionThread: (existingThread, incomingThread) => incomingThread || existingThread
+			}) },
+			statusText: (status) => String(status && status.type || status || ""),
+			isLiveTurn: (turn) => /active|running/i.test(String(turn && (turn.status && turn.status.type || turn.status) || "")),
+			isLatestTurn: (turn, thread) => Array.isArray(thread && thread.turns) && thread.turns.at(-1) === turn,
+			isReasoningItem: (item) => String(item && item.type || "") === "reasoning",
+			isOperationalItem: (item) => String(item && item.type || "") === "commandExecution",
+			isContextCompactionItem: () => false,
+			isTurnComplete: (turn) => /completed|failed|cancel|interrupted/i.test(String(turn && (turn.status && turn.status.type || turn.status) || "")),
+			isRunningStatus: (status) => /active|running|queued|processing/i.test(String(status && status.type || status || "")),
+			sortTurnsForDisplay: (turns) => Array.isArray(turns) ? turns : []
+		}) : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.visibleItemsForTurn === "function" && typeof runtime.mergeThreadPreservingVisibleItems === "function" && typeof runtime.normalizeThreadVisibleUserMessages === "function" && typeof runtime.threadUserMessageEntries === "function" && typeof runtime.turnOrderMs === "function" && typeof runtime.turnIsSupersededBy === "function" && typeof globalThis.CodexThreadDetailRuntime === "object" && typeof globalThis.CodexThreadDetailRuntime.createThreadDetailRuntime === "function",
+			factoryType: typeof api.createThreadDetailRuntime,
+			visibleItemsType: typeof (runtime && runtime.visibleItemsForTurn),
+			mergeType: typeof (runtime && runtime.mergeThreadPreservingVisibleItems),
+			normalizeType: typeof (runtime && runtime.normalizeThreadVisibleUserMessages),
+			turnOrderType: typeof (runtime && runtime.turnOrderMs),
+			globalFactoryType: typeof (globalThis.CodexThreadDetailRuntime && globalThis.CodexThreadDetailRuntime.createThreadDetailRuntime)
 		};
 	}
 	if (id === "client-render-stability-guard") {

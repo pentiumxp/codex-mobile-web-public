@@ -166,6 +166,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
       "thread-detail-actions",
       "thread-detail-merge-state",
       "thread-detail-v4-merge-state",
+      "thread-detail-runtime",
       "client-render-stability-guard",
       "live-operation-dock-state",
     ]
@@ -218,6 +219,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/thread-detail-actions\.js/);
   assert.match(shardSources, /public\/thread-detail-merge-state\.js/);
   assert.match(shardSources, /public\/thread-detail-v4-merge-state\.js/);
+  assert.match(shardSources, /public\/thread-detail-runtime\.js/);
   assert.match(shardSources, /public\/client-render-stability-guard\.js/);
   assert.match(shardSources, /public\/live-operation-dock-state\.js/);
   assert.match(shardSources, /planThreadListLoadRequest/);
@@ -257,6 +259,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /planVisibleItemRefreshPatch/);
   assert.match(shardSources, /createThreadDetailMergePolicy/);
   assert.match(shardSources, /mergeV4ProjectionThread/);
+  assert.match(shardSources, /createThreadDetailRuntime/);
+  assert.match(shardSources, /visibleItemsForTurn/);
   assert.match(shardSources, /stableTurnIdentity/);
   assert.match(shardSources, /operationCardContentPlan/);
 });

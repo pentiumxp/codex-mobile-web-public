@@ -6844,6 +6844,45 @@ function sampleModule(id, api) {
 			turnOrder: turns.map((turn) => String(turn && turn.id || ""))
 		};
 	}
+	if (id === "thread-detail-runtime") {
+		const statePolicy = {
+			completedIncomingTurnHasAuthoritativeReceipt: () => false,
+			shouldDropLocalOnlyReceiptForIncomingTurn: () => false,
+			shouldPreserveLocalOnlyItem: () => false,
+			shouldPreserveExistingTurnVisibleItems: () => false
+		};
+		const runtime = functionReady(api, "createThreadDetailRuntime") ? api.createThreadDetailRuntime({
+			threadDetailStateApi: {
+				createThreadDetailStatePolicy: () => statePolicy,
+				threadListSummaryFromDetailThread: () => ({}),
+				planThreadOpenCacheReuse: () => ({ action: "skip" }),
+				threadHasReusableLoadedDetailState: () => false
+			},
+			threadDetailMergeStateApi: { createThreadDetailMergePolicy: () => ({ mergeThreadPreservingVisibleItems: (existingThread, incomingThread) => incomingThread || existingThread }) },
+			threadDetailV4MergeStateApi: { createThreadDetailV4MergePolicy: () => ({
+				isV4ProjectionThread: () => false,
+				mergeV4ProjectionThread: (existingThread, incomingThread) => incomingThread || existingThread
+			}) },
+			statusText: (status) => String(status && status.type || status || ""),
+			isLiveTurn: (turn) => /active|running/i.test(String(turn && (turn.status && turn.status.type || turn.status) || "")),
+			isLatestTurn: (turn, thread) => Array.isArray(thread && thread.turns) && thread.turns.at(-1) === turn,
+			isReasoningItem: (item) => String(item && item.type || "") === "reasoning",
+			isOperationalItem: (item) => String(item && item.type || "") === "commandExecution",
+			isContextCompactionItem: () => false,
+			isTurnComplete: (turn) => /completed|failed|cancel|interrupted/i.test(String(turn && (turn.status && turn.status.type || turn.status) || "")),
+			isRunningStatus: (status) => /active|running|queued|processing/i.test(String(status && status.type || status || "")),
+			sortTurnsForDisplay: (turns) => Array.isArray(turns) ? turns : []
+		}) : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.visibleItemsForTurn === "function" && typeof runtime.mergeThreadPreservingVisibleItems === "function" && typeof runtime.normalizeThreadVisibleUserMessages === "function" && typeof runtime.threadUserMessageEntries === "function" && typeof runtime.turnOrderMs === "function" && typeof runtime.turnIsSupersededBy === "function" && typeof globalThis.CodexThreadDetailRuntime === "object" && typeof globalThis.CodexThreadDetailRuntime.createThreadDetailRuntime === "function",
+			factoryType: typeof api.createThreadDetailRuntime,
+			visibleItemsType: typeof (runtime && runtime.visibleItemsForTurn),
+			mergeType: typeof (runtime && runtime.mergeThreadPreservingVisibleItems),
+			normalizeType: typeof (runtime && runtime.normalizeThreadVisibleUserMessages),
+			turnOrderType: typeof (runtime && runtime.turnOrderMs),
+			globalFactoryType: typeof (globalThis.CodexThreadDetailRuntime && globalThis.CodexThreadDetailRuntime.createThreadDetailRuntime)
+		};
+	}
 	if (id === "client-render-stability-guard") {
 		const sourceTurn = {
 			id: "local-turn-secret",

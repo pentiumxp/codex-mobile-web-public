@@ -1,5 +1,5 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-DUlLNZdW.js","assets/rolldown-runtime-FDOR9p9I.js","assets/shard-02-DDkBv2VX.js","assets/shard-03-B0Rcngq5.js","assets/shard-04-CyQMKxkK.js","assets/shard-05-FWHPcjIG.js"])))=>i.map(i=>d[i]);
-import { t as __vitePreload } from "./vite-shell-entry-D5RoZDMx.js";
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-_OnkENP_.js","assets/rolldown-runtime-FDOR9p9I.js","assets/shard-02-vv4MKzJ9.js","assets/shard-03-lXHW1f1i.js","assets/shard-04-CLpvbqQL.js","assets/shard-05-DkBiI8nu.js","assets/shard-06-DsiO006o.js"])))=>i.map(i=>d[i]);
+import { t as __vitePreload } from "./vite-shell-entry-DF4LIjfv.js";
 //#region \0virtual:codex-mobile-esm-compatibility
 var codexMobileViteEsmCompatibilityShardSources = [
 	{
@@ -67,7 +67,7 @@ var codexMobileViteEsmCompatibilityShardSources = [
 		"id": "shard-05",
 		"index": 4,
 		"source": "virtual:codex-mobile-esm-compatibility/shard/shard-05",
-		"moduleCount": 12,
+		"moduleCount": 10,
 		"moduleIds": [
 			"composer-runtime",
 			"composer-bridge-runtime",
@@ -78,19 +78,30 @@ var codexMobileViteEsmCompatibilityShardSources = [
 			"thread-detail-patch-plan",
 			"thread-detail-actions",
 			"thread-detail-merge-state",
-			"thread-detail-v4-merge-state",
+			"thread-detail-v4-merge-state"
+		],
+		"byteCount": 208918
+	},
+	{
+		"id": "shard-06",
+		"index": 5,
+		"source": "virtual:codex-mobile-esm-compatibility/shard/shard-06",
+		"moduleCount": 3,
+		"moduleIds": [
+			"thread-detail-runtime",
 			"client-render-stability-guard",
 			"live-operation-dock-state"
 		],
-		"byteCount": 217636
+		"byteCount": 66246
 	}
 ];
 var shardLoaders = {
-	"shard-01": () => __vitePreload(() => import("./shard-01-DUlLNZdW.js"), __vite__mapDeps([0,1])),
-	"shard-02": () => __vitePreload(() => import("./shard-02-DDkBv2VX.js"), __vite__mapDeps([2,1])),
-	"shard-03": () => __vitePreload(() => import("./shard-03-B0Rcngq5.js"), __vite__mapDeps([3,1])),
-	"shard-04": () => __vitePreload(() => import("./shard-04-CyQMKxkK.js"), __vite__mapDeps([4,1])),
-	"shard-05": () => __vitePreload(() => import("./shard-05-FWHPcjIG.js"), __vite__mapDeps([5,1]))
+	"shard-01": () => __vitePreload(() => import("./shard-01-_OnkENP_.js"), __vite__mapDeps([0,1])),
+	"shard-02": () => __vitePreload(() => import("./shard-02-vv4MKzJ9.js"), __vite__mapDeps([2,1])),
+	"shard-03": () => __vitePreload(() => import("./shard-03-lXHW1f1i.js"), __vite__mapDeps([3,1])),
+	"shard-04": () => __vitePreload(() => import("./shard-04-CLpvbqQL.js"), __vite__mapDeps([4,1])),
+	"shard-05": () => __vitePreload(() => import("./shard-05-DkBiI8nu.js"), __vite__mapDeps([5,1])),
+	"shard-06": () => __vitePreload(() => import("./shard-06-DsiO006o.js"), __vite__mapDeps([6,1]))
 };
 var compatibilityPromise = null;
 async function loadCompatibilityShard(descriptor) {
