@@ -1615,8 +1615,13 @@ function rateLimitModelKeys(rateLimits) {
   return [...keys];
 }
 
-function rememberRateLimits(rateLimits, rateLimitsByModel) {
+function rememberRateLimits(rateLimits, rateLimitsByModel, options = {}) {
   let changed = false;
+  if (options && options.replace === true) {
+    state.rateLimits = null;
+    state.rateLimitsByModel = {};
+    changed = true;
+  }
   if (rateLimitsByModel && typeof rateLimitsByModel === "object") {
     for (const [model, value] of Object.entries(rateLimitsByModel)) {
       const key = normalizeModelKey(model);
@@ -1664,7 +1669,7 @@ function rememberRateLimitsFromConfig(config) {
   if (Object.prototype.hasOwnProperty.call(config, "rateLimits")
     || Object.prototype.hasOwnProperty.call(config, "rateLimitsByModel")) {
     if (hasRateLimitSnapshot(config.rateLimits || null, config.rateLimitsByModel || null)) {
-      rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
+      rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null, { replace: true });
     } else if (shouldKeepStoredRateLimitsOnEmptyConfig()) {
       renderQuotaUsage();
     } else {

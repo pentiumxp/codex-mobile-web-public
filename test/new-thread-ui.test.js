@@ -259,9 +259,17 @@ test("quota UI clears stale cache when config has no valid quota snapshot", () =
   const body = functionBody("rememberRateLimitsFromConfig");
 
   assert.match(body, /hasRateLimitSnapshot\(config\.rateLimits \|\| null,\s*config\.rateLimitsByModel \|\| null\)/);
+  assert.match(body, /rememberRateLimits\(config\.rateLimits \|\| null,\s*config\.rateLimitsByModel \|\| null,\s*\{\s*replace:\s*true\s*\}\)/);
   assert.match(appJs, /function shouldKeepStoredRateLimitsOnEmptyConfig\(\)[\s\S]*isHermesEmbedMode\(\)[\s\S]*hasRateLimitSnapshot\(state\.rateLimits,\s*state\.rateLimitsByModel\)/);
   assert.match(body, /else if \(shouldKeepStoredRateLimitsOnEmptyConfig\(\)\)[\s\S]*renderQuotaUsage\(\)/);
   assert.match(body, /clearStoredRateLimits\(\)/);
+});
+
+test("quota config sync replaces stale per-model quota cache", () => {
+  const body = functionBody("rememberRateLimits");
+
+  assert.match(appJs, /function rememberRateLimits\(rateLimits,\s*rateLimitsByModel,\s*options = \{\}\)/);
+  assert.match(body, /options && options\.replace === true[\s\S]*state\.rateLimits = null[\s\S]*state\.rateLimitsByModel = \{\}/);
 });
 
 test("quota grouping treats Spark as independent and other Codex models as shared", () => {

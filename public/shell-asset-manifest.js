@@ -4,8 +4,8 @@
   var manifest = {
     "schemaVersion": 4,
     "generatedBy": "generate-frontend-shell-manifest",
-    "shellCacheName": "codex-mobile-shell-v625-38b734e60d69",
-    "clientBuildId": "0.1.11|codex-mobile-shell-v625-38b734e60d69",
+    "shellCacheName": "codex-mobile-shell-v625-2d28de445869",
+    "clientBuildId": "0.1.11|codex-mobile-shell-v625-2d28de445869",
     "scriptAssets": [
       "/shell-asset-manifest.js",
       "/api-client.js",

@@ -147,6 +147,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
       "thread-tile-actions",
       "thread-tile-state",
       "app-update-runtime",
+      "thread-list-runtime",
       "thread-list-load-policy",
       "thread-list-stable-order",
       "thread-status-hints",
@@ -176,6 +177,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(virtualSource, /public\/plugin-voice-input\.js/);
   assert.match(virtualSource, /public\/thread-tile-layout\.js/);
   assert.match(virtualSource, /public\/thread-tile-actions\.js/);
+  assert.match(virtualSource, /public\/thread-list-runtime\.js/);
   assert.match(virtualSource, /public\/thread-tile-state\.js/);
   assert.match(virtualSource, /public\/app-update-runtime\.js/);
   assert.match(virtualSource, /public\/thread-list-load-policy\.js/);
