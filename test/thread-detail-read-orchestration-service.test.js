@@ -2428,7 +2428,7 @@ test("notification active overlay seeds bounded window so repeated reads avoid t
   assert.equal(timings.projectionSeedSource, "");
 });
 
-test("active summary without turn id suppresses bounded turns/list", async () => {
+test("status-only active summary can use bounded turns/list before full thread/read", async () => {
   const { service, calls } = createHarness({
     summary: {
       id: "thread-1",
@@ -2452,16 +2452,21 @@ test("active summary without turn id suppresses bounded turns/list", async () =>
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.mode, "thread-read");
-  assert.equal(calls.includes("turns-list:turns-list-large"), false);
-  assert.equal(calls.includes("thread-read"), true);
+  assert.equal(response.mode, "turns-list-large");
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-from-list"]);
+  assert.equal(calls.includes("turns-list:turns-list-large"), true);
+  assert.equal(calls.includes("thread-read"), false);
   assert.equal(calls.includes("seed"), true);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadReason, "status-active");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "active-thread-requires-full-read");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "seeded");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "active-thread-read");
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "bounded-large-turns-list");
+  assert.equal(timings.activeFullReadRequired, true);
+  assert.equal(timings.activeFullReadReason, "status-active");
+  assert.equal(timings.activeOverlayAction, "require-full-read");
+  assert.equal(timings.activeOverlayReason, "active-full-read-not-overlay-closable");
+  assert.equal(timings.largeReadProtected, true);
+  assert.equal(timings.largeReadReason, "large-rollout");
+  assert.equal(timings.projectionSeedStatus, "seeded");
+  assert.equal(timings.projectionSeedSource, "turns-list-large");
 });
 
 test("small summary read still uses full thread/read when projection input is unavailable", async () => {

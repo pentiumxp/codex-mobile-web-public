@@ -53,11 +53,18 @@ function planActiveThreadDetailReadPolicy(input = {}) {
   };
 }
 
+function activeReasonRequiresFullThreadRead(reason) {
+  const normalized = nonEmptyText(reason);
+  return normalized === "active-turn-id" || normalized === "projection-live-active-turn";
+}
+
 function applyActiveThreadPolicyToBoundedReadDecision(boundedReadDecision, activePolicy = {}) {
   const decision = boundedReadDecision && typeof boundedReadDecision === "object"
     ? boundedReadDecision
     : {};
-  if (decision.prefer && activePolicy.activeFullReadRequired) {
+  if (decision.prefer
+    && activePolicy.activeFullReadRequired
+    && activeReasonRequiresFullThreadRead(activePolicy.activeFullReadReason)) {
     return Object.assign({}, decision, {
       prefer: false,
       reason: "active-thread-requires-full-read",
@@ -67,6 +74,7 @@ function applyActiveThreadPolicyToBoundedReadDecision(boundedReadDecision, activ
 }
 
 module.exports = {
+  activeReasonRequiresFullThreadRead,
   activeFullThreadReadReason,
   applyActiveThreadPolicyToBoundedReadDecision,
   isActiveLikeStatus,

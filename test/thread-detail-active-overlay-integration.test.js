@@ -277,7 +277,7 @@ test("read orchestration compacts active overlay tool payload before returning d
   assert.equal(serialized.includes("raw result"), false);
 });
 
-test("read orchestration requires full read for status-active summary without activeTurnId", async () => {
+test("read orchestration uses bounded read for status-active summary without activeTurnId", async () => {
   const { calls, service } = createActiveOverlayHarness({ summary: { activeTurnId: "" } });
   const response = await service.readThreadDetail({
     codex: { transportKind: "mux", ready: true },
@@ -287,9 +287,11 @@ test("read orchestration requires full read for status-active summary without ac
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.mode, "thread-read");
-  assert.equal(calls.includes("thread-read"), true);
+  assert.equal(response.mode, "turns-list-large");
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("turns-list"), true);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "bounded-large-turns-list");
   assert.equal(timings.activeFullReadRequired, true);
   assert.equal(timings.activeFullReadReason, "status-active");
   assert.equal(timings.activeOverlayAction, "require-full-read");
@@ -311,9 +313,11 @@ test("read orchestration ignores stale active overlay shortcut for status-only a
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.mode, "thread-read");
-  assert.equal(calls.includes("thread-read"), true);
+  assert.equal(response.mode, "turns-list-large");
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("turns-list"), true);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "bounded-large-turns-list");
   assert.equal(timings.activeFullReadReason, "status-active");
   assert.equal(timings.activeOverlayAction, "require-full-read");
   assert.equal(timings.activeOverlayReason, "active-full-read-not-overlay-closable");

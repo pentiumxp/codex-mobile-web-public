@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
 const {
+  activeReasonRequiresFullThreadRead,
   activeFullThreadReadReason,
   applyActiveThreadPolicyToBoundedReadDecision,
   isActiveLikeStatus,
@@ -16,6 +17,7 @@ const adapter = require("../adapters/thread-detail-active-read-policy-service");
 test("active detail read policy adapter re-exports canonical service", () => {
   assert.equal(adapter.planActiveThreadDetailReadPolicy, planActiveThreadDetailReadPolicy);
   assert.equal(adapter.activeFullThreadReadReason, activeFullThreadReadReason);
+  assert.equal(adapter.activeReasonRequiresFullThreadRead, activeReasonRequiresFullThreadRead);
 });
 
 test("active detail read policy allows recent partial reads for idle summaries", () => {
@@ -92,7 +94,7 @@ test("active detail read policy only allows partial projection in recent mode", 
   assert.equal(policy.shouldUseInitialTurnsList, false);
 });
 
-test("active detail read policy suppresses bounded reads for active summaries without turn ids", () => {
+test("active detail read policy preserves bounded reads for status-only active summaries", () => {
   const activePolicy = planActiveThreadDetailReadPolicy({
     preferRecentTurns: true,
     summary: { status: { type: "active" } },
@@ -105,18 +107,14 @@ test("active detail read policy suppresses bounded reads for active summaries wi
     reason: "large-rollout",
   };
   const suppressedActive = applyActiveThreadPolicyToBoundedReadDecision(original, activePolicy);
-  assert.deepEqual(suppressedActive, {
-    prefer: false,
-    rolloutSizeBytes: 12_000_000,
-    thresholdBytes: 8_000_000,
-    source: "summary",
-    reason: "active-thread-requires-full-read",
-  });
+  assert.deepEqual(suppressedActive, original);
+  assert.equal(activeReasonRequiresFullThreadRead(activePolicy.activeFullReadReason), false);
 
   const activeTurnPolicy = planActiveThreadDetailReadPolicy({
     preferRecentTurns: true,
     summary: { status: { type: "active" }, activeTurnId: "turn-active" },
   });
+  assert.equal(activeReasonRequiresFullThreadRead(activeTurnPolicy.activeFullReadReason), true);
   const suppressed = applyActiveThreadPolicyToBoundedReadDecision({
     prefer: true,
     rolloutSizeBytes: 12_000_000,
