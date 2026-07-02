@@ -14,10 +14,10 @@
       "assets/vite-entry-group-bootstrap-state-DKvl11uE.js",
       "assets/vite-entry-group-shell-services-BGVOJSIU.js",
       "assets/vite-entry-group-app-entry-9WxAQ_0R.js",
-      "assets/vite-deferred-entry-topology-DO8aEayh.js"
+      "assets/vite-deferred-entry-topology-wH-yEfBd.js"
     ],
     "expectedFiles": [
-      "assets/vite-deferred-entry-topology-DO8aEayh.js",
+      "assets/vite-deferred-entry-topology-wH-yEfBd.js",
       "assets/vite-entry-group-app-entry-9WxAQ_0R.js",
       "assets/vite-entry-group-bootstrap-state-DKvl11uE.js",
       "assets/vite-entry-group-feature-runtimes-DA8rmK4C.js",
@@ -34,12 +34,12 @@
   "clientBuildId": "0.1.11|codex-mobile-shell-v625-a5a3d596240d",
   "entry": {
     "source": "frontend/vite-shell-entry.mjs",
-    "fileName": "assets/vite-shell-entry-DPsOBw3N.js"
+    "fileName": "assets/vite-shell-entry-DAJ2_4XA.js"
   },
   "deferredChunks": [
     {
       "source": "frontend/vite-deferred-entry-topology.mjs",
-      "fileName": "assets/vite-deferred-entry-topology-DO8aEayh.js"
+      "fileName": "assets/vite-deferred-entry-topology-wH-yEfBd.js"
     }
   ],
   "entryGroupChunks": [
@@ -448,11 +448,11 @@
   ],
   "preview": {
     "fileName": "preview.html",
-    "entryScript": "/vite-shell/assets/vite-shell-entry-DPsOBw3N.js"
+    "entryScript": "/vite-shell/assets/vite-shell-entry-DAJ2_4XA.js"
   },
   "appPreview": {
     "fileName": "app-preview.html",
-    "entryScript": "/vite-shell/assets/vite-shell-entry-DPsOBw3N.js",
+    "entryScript": "/vite-shell/assets/vite-shell-entry-DAJ2_4XA.js",
     "sourceShell": "public/index.html"
   },
   "startupCriticalAssets": [
@@ -796,14 +796,14 @@
     "source": "generated-vite-app-preview-classic-loader-plan",
     "owner": "vite-shell-entry",
     "sourceScriptCount": 51,
-    "scriptCount": 26,
+    "scriptCount": 23,
     "firstScript": "/shell-asset-manifest.js",
     "lastScript": "/app.js",
-    "hashCount": 26,
-    "byteCount": 1462027,
-    "excludedEsmScriptCount": 25,
-    "excludedEsmHashCount": 25,
-    "excludedEsmByteCount": 260618,
+    "hashCount": 23,
+    "byteCount": 1307677,
+    "excludedEsmScriptCount": 28,
+    "excludedEsmHashCount": 28,
+    "excludedEsmByteCount": 414968,
     "excludedEsmScripts": [
       {
         "index": 1,
@@ -1058,6 +1058,34 @@
         "globalName": "CodexLiveOperationDockState"
       },
       {
+        "index": 21,
+        "sourceIndex": 21,
+        "path": "/thread-detail-state.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-detail-state.js",
+        "bytes": 30743,
+        "sha256": "7425555f500eee52b4ad073b9e3835c3d59660a9533c416cdb16995af1f39312",
+        "esmModuleId": "thread-detail-state",
+        "globalName": "CodexThreadDetailState"
+      },
+      {
+        "index": 22,
+        "sourceIndex": 22,
+        "path": "/thread-detail-render-plan.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-detail-render-plan.js",
+        "bytes": 74010,
+        "sha256": "4bf2cb63c21951102eae1822e7f00a3e7e589ef1c0990a34ea5765e6151a4038",
+        "esmModuleId": "thread-detail-render-plan",
+        "globalName": "CodexThreadDetailRenderPlan"
+      },
+      {
         "index": 23,
         "sourceIndex": 23,
         "path": "/thread-detail-merge-state.js",
@@ -1098,6 +1126,20 @@
         "sha256": "7953e47d8c7e18e6deb865bb33969529e289618010e7813c986898aff22f67b4",
         "esmModuleId": "thread-detail-patch-plan",
         "globalName": "CodexThreadDetailPatchPlan"
+      },
+      {
+        "index": 27,
+        "sourceIndex": 27,
+        "path": "/thread-detail-dom-patch.js",
+        "groupId": "feature-runtimes",
+        "phase": "classic-runtime",
+        "startupCritical": false,
+        "chunkTarget": "deferred-feature-runtimes",
+        "sourcePath": "public/thread-detail-dom-patch.js",
+        "bytes": 49597,
+        "sha256": "05ec3638f47ee25740161fb908c47e7d182d3bf340d954984e29faa61de02118",
+        "esmModuleId": "thread-detail-dom-patch",
+        "globalName": "CodexThreadDetailDomPatch"
       },
       {
         "index": 28,
@@ -1156,7 +1198,7 @@
         "globalName": "CodexBuildRefreshPolicy"
       }
     ],
-    "sha256": "1dc6fb7d762d65e89e1eb92fc81b04194ff0109520d7b2ac31053583831f64c5",
+    "sha256": "7a98ac5fad9ec746556075ce6a1bcad952969ee5bfa8b33d756bda238f221d92",
     "scripts": [
       {
         "index": 0,
@@ -1196,30 +1238,6 @@
       },
       {
         "index": 3,
-        "sourceIndex": 21,
-        "path": "/thread-detail-state.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-detail-state.js",
-        "bytes": 30743,
-        "sha256": "7425555f500eee52b4ad073b9e3835c3d59660a9533c416cdb16995af1f39312"
-      },
-      {
-        "index": 4,
-        "sourceIndex": 22,
-        "path": "/thread-detail-render-plan.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-detail-render-plan.js",
-        "bytes": 74010,
-        "sha256": "4bf2cb63c21951102eae1822e7f00a3e7e589ef1c0990a34ea5765e6151a4038"
-      },
-      {
-        "index": 5,
         "sourceIndex": 25,
         "path": "/thread-detail-runtime.js",
         "groupId": "feature-runtimes",
@@ -1231,19 +1249,7 @@
         "sha256": "c85f81bfb420af89a50b0580ab51adadfae37832270e8b5db18a9de2046b7db9"
       },
       {
-        "index": 6,
-        "sourceIndex": 27,
-        "path": "/thread-detail-dom-patch.js",
-        "groupId": "feature-runtimes",
-        "phase": "classic-runtime",
-        "startupCritical": false,
-        "chunkTarget": "deferred-feature-runtimes",
-        "sourcePath": "public/thread-detail-dom-patch.js",
-        "bytes": 49597,
-        "sha256": "05ec3638f47ee25740161fb908c47e7d182d3bf340d954984e29faa61de02118"
-      },
-      {
-        "index": 7,
+        "index": 4,
         "sourceIndex": 30,
         "path": "/thread-tile-state.js",
         "groupId": "feature-runtimes",
@@ -1255,7 +1261,7 @@
         "sha256": "2977e432183e659be290af4a2b031d3fea856a25adf08e0954243f79e5290c37"
       },
       {
-        "index": 8,
+        "index": 5,
         "sourceIndex": 32,
         "path": "/thread-tile-runtime.js",
         "groupId": "feature-runtimes",
@@ -1267,7 +1273,7 @@
         "sha256": "0fa2d9a20e62ebb7eeb3682547864c857a0821fdcd0fb97aea9beb9d37bc3725"
       },
       {
-        "index": 9,
+        "index": 6,
         "sourceIndex": 34,
         "path": "/app-update-runtime.js",
         "groupId": "feature-runtimes",
@@ -1279,7 +1285,7 @@
         "sha256": "ac291c5d8caf728580f346234fbda3ce96e1a484bb8c2ee74c36bc3602dab4f7"
       },
       {
-        "index": 10,
+        "index": 7,
         "sourceIndex": 35,
         "path": "/side-chat-runtime.js",
         "groupId": "feature-runtimes",
@@ -1291,7 +1297,7 @@
         "sha256": "f8c3d723929f11bcfe1a6d7ce7c6a2aa2697b863cd5c0bf413c557bd758b0d49"
       },
       {
-        "index": 11,
+        "index": 8,
         "sourceIndex": 36,
         "path": "/media-preview-runtime.js",
         "groupId": "feature-runtimes",
@@ -1303,7 +1309,7 @@
         "sha256": "fd665173935ba29c77db757fa8a3734f95d46e740fd8e9b81ba265fd5d2e44a8"
       },
       {
-        "index": 12,
+        "index": 9,
         "sourceIndex": 37,
         "path": "/app-bootstrap.js",
         "groupId": "bootstrap-state",
@@ -1315,7 +1321,7 @@
         "sha256": "abc68b254ec05696beed7dda2b3ab2d7a5f61165ab964cc2777890f20a9673a7"
       },
       {
-        "index": 13,
+        "index": 10,
         "sourceIndex": 38,
         "path": "/settings-runtime.js",
         "groupId": "shell-services",
@@ -1327,7 +1333,7 @@
         "sha256": "f6e05c783414bb9902877bde3a45730beae78b942648640ea24499f7fc3451ec"
       },
       {
-        "index": 14,
+        "index": 11,
         "sourceIndex": 39,
         "path": "/modal-runtime.js",
         "groupId": "shell-services",
@@ -1339,7 +1345,7 @@
         "sha256": "0f5fcb51fe6e779ba3853e2833d023cc9780abbb97b2e3ab53f632cad13b56d5"
       },
       {
-        "index": 15,
+        "index": 12,
         "sourceIndex": 40,
         "path": "/navigation-runtime.js",
         "groupId": "shell-services",
@@ -1351,7 +1357,7 @@
         "sha256": "064d1c42e4bb2c6b00915414035c2933806d13ac6700b90d8ec07a53744c62b9"
       },
       {
-        "index": 16,
+        "index": 13,
         "sourceIndex": 41,
         "path": "/api-client-runtime.js",
         "groupId": "shell-services",
@@ -1363,7 +1369,7 @@
         "sha256": "58f1168a0bd7d2c356f304552445e92b301e7f048cf245fbaa41895a0fa2638e"
       },
       {
-        "index": 17,
+        "index": 14,
         "sourceIndex": 42,
         "path": "/notification-ui-runtime.js",
         "groupId": "shell-services",
@@ -1375,7 +1381,7 @@
         "sha256": "3c97f50045051e11bca54b0d5e4c2b2d7811d90250c4535ec17d8a10bac6afdd"
       },
       {
-        "index": 18,
+        "index": 15,
         "sourceIndex": 43,
         "path": "/pane-layout-runtime.js",
         "groupId": "shell-services",
@@ -1387,7 +1393,7 @@
         "sha256": "e28d8a898be301095103f442fc360011b293b346562aa6615ff824905b37679a"
       },
       {
-        "index": 19,
+        "index": 16,
         "sourceIndex": 44,
         "path": "/task-card-runtime.js",
         "groupId": "shell-services",
@@ -1399,7 +1405,7 @@
         "sha256": "898a793ded3009ebeed21a92d1f05419c0e1460e14b309243d4ed00fbfe5e4ca"
       },
       {
-        "index": 20,
+        "index": 17,
         "sourceIndex": 45,
         "path": "/conversation-render-runtime.js",
         "groupId": "shell-services",
@@ -1411,7 +1417,7 @@
         "sha256": "6726936652392fed23668cb4a2ff7100930f53fa4b81bfacf0fb8d7ff2ee8d09"
       },
       {
-        "index": 21,
+        "index": 18,
         "sourceIndex": 46,
         "path": "/event-stream-runtime.js",
         "groupId": "shell-services",
@@ -1423,7 +1429,7 @@
         "sha256": "d431424d4dc0d28e8ae55ea6893797bccad005d76f64e0bd0e4f14bc13e064e6"
       },
       {
-        "index": 22,
+        "index": 19,
         "sourceIndex": 47,
         "path": "/composer-bridge-runtime.js",
         "groupId": "shell-services",
@@ -1435,7 +1441,7 @@
         "sha256": "d185a4ac33929ee77ccb181a68992504377e8551985e1f663eb77cb1be094762"
       },
       {
-        "index": 23,
+        "index": 20,
         "sourceIndex": 48,
         "path": "/runtime-wiring-runtime.js",
         "groupId": "app-entry",
@@ -1447,7 +1453,7 @@
         "sha256": "de35d56b7e9f9c317d6ca8d30f499e06c662643d1a3f89ec1d894d22cd178ac2"
       },
       {
-        "index": 24,
+        "index": 21,
         "sourceIndex": 49,
         "path": "/app-shell-runtime.js",
         "groupId": "app-entry",
@@ -1459,7 +1465,7 @@
         "sha256": "1beb88ea0475465bf4da99fc12de6412b4e8aabdb8a760ddce9a2b95e7ef52fb"
       },
       {
-        "index": 25,
+        "index": 22,
         "sourceIndex": 50,
         "path": "/app.js",
         "groupId": "app-entry",
@@ -1477,10 +1483,10 @@
     "source": "generated-vite-esm-compatibility-contract",
     "owner": "vite-shell-entry",
     "virtualModuleSource": "virtual:codex-mobile-esm-compatibility",
-    "moduleCount": 25,
-    "expectedFunctionCount": 152,
-    "hashCount": 25,
-    "byteCount": 260618,
+    "moduleCount": 28,
+    "expectedFunctionCount": 271,
+    "hashCount": 28,
+    "byteCount": 414968,
     "modules": [
       {
         "index": 0,
@@ -1608,6 +1614,167 @@
       },
       {
         "index": 5,
+        "id": "thread-detail-state",
+        "source": "public/thread-detail-state.js",
+        "assetPath": "/thread-detail-state.js",
+        "globalName": "CodexThreadDetailState",
+        "classicLoaderExcluded": true,
+        "expectedFunctions": [
+          "buildThreadDetailRenderEvidence",
+          "activeDetailLoadingPreviewThread",
+          "createThreadDetailStatePolicy",
+          "emptyDetailHistoryEvidenceForThread",
+          "hasNonemptyThreadDetailRenderEvidence",
+          "mergeThreadSummaryIntoList",
+          "planEmptyDetailHistoryRecovery",
+          "planThreadOpenLoadingShell",
+          "planThreadOpenCacheReuse",
+          "planSummaryOnlyCurrentThreadRecovery",
+          "planSummaryOnlyCurrentThreadRecoveryEffects",
+          "recentThreadDetailRenderEvidence",
+          "rolloutSizeBytesFromThread",
+          "sameThreadDetailRenderEvidence",
+          "threadHasLoadedDetailState",
+          "threadHasReusableLoadedDetailState",
+          "threadHasVisualBaselineLoadedDetailState",
+          "threadIsSummaryOnlyCurrentThread",
+          "threadListSummaryFromDetailThread"
+        ],
+        "expectedFunctionCount": 19,
+        "bytes": 30743,
+        "sha256": "7425555f500eee52b4ad073b9e3835c3d59660a9533c416cdb16995af1f39312",
+        "hashPresent": true
+      },
+      {
+        "index": 6,
+        "id": "thread-detail-render-plan",
+        "source": "public/thread-detail-render-plan.js",
+        "assetPath": "/thread-detail-render-plan.js",
+        "globalName": "CodexThreadDetailRenderPlan",
+        "classicLoaderExcluded": true,
+        "expectedFunctions": [
+          "emptyThreadDetailRefreshPatchAttempt",
+          "finalizeThreadDetailRenderPlan",
+          "normalizeSignature",
+          "planThreadDetailCachedCurrentTelemetryEffects",
+          "planThreadDetailCachedCurrentPostRenderEffects",
+          "planThreadDetailFirstPaintAfterRenderEffects",
+          "planThreadDetailFirstPaintDraftRestoreEffects",
+          "planThreadDetailFirstPaintPerformanceInput",
+          "planThreadDetailFirstPaintReportingStage",
+          "planThreadDetailFirstPaintPostTimingEffects",
+          "planThreadDetailFirstPaintPreRenderEffects",
+          "planThreadDetailFirstPaintResponseEffects",
+          "planThreadDetailFullBackfillResponseEffects",
+          "planThreadDetailFullBackfillPerformanceInput",
+          "planThreadDetailFullBackfillReportingStage",
+          "planThreadDetailLoadErrorEffects",
+          "planThreadDetailLoadingShellPostStateEffects",
+          "planThreadDetailFullBackfillPostRenderEffects",
+          "planThreadDetailFullBackfillTelemetryEffects",
+          "planThreadDetailFirstPaintPostRenderEffects",
+          "planThreadDetailFirstPaintTelemetryEffects",
+          "planThreadDetailSwitchCancelledClientEvent",
+          "planThreadDetailSwitchStartClientEvent",
+          "planThreadDetailSwitchErrorClientEvent",
+          "planThreadDetailRefreshCompletionEffects",
+          "planThreadDetailRefreshConsistencyCheck",
+          "planThreadDetailRefreshConsistencyCheckEffects",
+          "planThreadDetailRefreshResponseEffects",
+          "planThreadDetailRefreshPatchAttemptEffects",
+          "planThreadDetailRefreshPatchAttemptResult",
+          "planThreadDetailRefreshPatchAttemptResultStage",
+          "planThreadDetailRefreshPatchAttemptResultEvidenceStage",
+          "planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage",
+          "planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage",
+          "planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects",
+          "planThreadDetailRefreshPatchRejectedDiagnostic",
+          "planThreadDetailRefreshPatchRejectedDiagnosticEffects",
+          "planThreadDetailRefreshOutcomeExecution",
+          "planThreadDetailRefreshOutcomeExecutionStage",
+          "planThreadDetailRefreshExecutionEffects",
+          "planThreadDetailRefreshPerformanceInput",
+          "planThreadDetailRefreshReportingStage",
+          "planThreadDetailRefreshReportingEffectsStage",
+          "planThreadDetailRefreshTelemetryEffects",
+          "planThreadDetailRefreshFailureDiagnosticEffects",
+          "planThreadDetailRefreshRequest",
+          "planThreadDetailRefreshPatchSurface",
+          "planThreadDetailRefreshPatchSurfaceProbeEffects",
+          "planThreadDetailRefreshPatchSurfaceProbeStage",
+          "planThreadDetailRefreshPatchSurfaceExecutionStage",
+          "planThreadDetailRefreshPatchSurfaceResultStage",
+          "planThreadDetailRefreshPostMergeEffects",
+          "planThreadDetailRefreshPostMergeTimingFields",
+          "planThreadDetailFirstPaintPostMergeTimingEffects",
+          "planThreadDetailRefreshPatchExecutionStage",
+          "planSingleThreadEarlyShellExecution",
+          "planSingleThreadFullRenderShell",
+          "planSingleThreadShellConversationUpdate",
+          "planSingleThreadShellPostUpdateEffects",
+          "planThreadDetailHistoryAutoBackfill",
+          "planThreadDetailHistoryAutoBackfillEffects",
+          "planThreadDetailRefreshPatchExecution",
+          "planThreadDetailRefreshRenderInput",
+          "planThreadDetailRefreshRender",
+          "planThreadDetailRefreshRenderStage",
+          "reduceThreadDetailRefreshPatchAttempt",
+          "threadDetailRefreshPatchAttemptEffectContext"
+        ],
+        "expectedFunctionCount": 67,
+        "bytes": 74010,
+        "sha256": "4bf2cb63c21951102eae1822e7f00a3e7e589ef1c0990a34ea5765e6151a4038",
+        "hashPresent": true
+      },
+      {
+        "index": 7,
+        "id": "thread-detail-dom-patch",
+        "source": "public/thread-detail-dom-patch.js",
+        "assetPath": "/thread-detail-dom-patch.js",
+        "globalName": "CodexThreadDetailDomPatch",
+        "classicLoaderExcluded": true,
+        "expectedFunctions": [
+          "applyLiveTextItemDomPatch",
+          "applyThreadDetailPatchTransaction",
+          "applyThreadTurnRefreshDomPatch",
+          "applyVisibleItemRefreshDomPatch",
+          "canPatchNode",
+          "createElementFromHtml",
+          "createTurnArticleElement",
+          "findElementByRenderKey",
+          "findTurnArticleElement",
+          "hydrateRenderedSurface",
+          "insertTurnArticleElement",
+          "insertVisibleItemElement",
+          "normalizeOperation",
+          "normalizeTurnOperation",
+          "patchChildNodes",
+          "patchHtml",
+          "patchNode",
+          "planConversationHtmlUpdate",
+          "planConversationHtmlUpdateEffects",
+          "planConversationHtmlUpdateApplication",
+          "planConversationPostApplyDomConsistency",
+          "planConversationDomAuthorityInvalidation",
+          "planConversationHtmlPatchFallbackClientEvent",
+          "planConversationHtmlPerformanceEvent",
+          "planLocalConversationDomUpdateCompletionSnapshot",
+          "planLocalConversationDomUpdateCompletion",
+          "planLocalConversationDomUpdateCompletionEffects",
+          "planThreadDetailRefreshLocalPatchTransactionEffects",
+          "renderKeyForNode",
+          "resolveTurnInsertAnchor",
+          "syncAttributes",
+          "threadDetailPatchResult",
+          "visibleTurnOrderMismatch"
+        ],
+        "expectedFunctionCount": 33,
+        "bytes": 49597,
+        "sha256": "05ec3638f47ee25740161fb908c47e7d182d3bf340d954984e29faa61de02118",
+        "hashPresent": true
+      },
+      {
+        "index": 8,
         "id": "draft-store",
         "source": "public/draft-store.js",
         "assetPath": "/draft-store.js",
@@ -1627,7 +1794,7 @@
         "hashPresent": true
       },
       {
-        "index": 6,
+        "index": 9,
         "id": "image-compressor",
         "source": "public/image-compressor.js",
         "assetPath": "/image-compressor.js",
@@ -1646,7 +1813,7 @@
         "hashPresent": true
       },
       {
-        "index": 7,
+        "index": 10,
         "id": "plugin-voice-input",
         "source": "public/plugin-voice-input.js",
         "assetPath": "/plugin-voice-input.js",
@@ -1668,7 +1835,7 @@
         "hashPresent": true
       },
       {
-        "index": 8,
+        "index": 11,
         "id": "api-client",
         "source": "public/api-client.js",
         "assetPath": "/api-client.js",
@@ -1684,7 +1851,7 @@
         "hashPresent": true
       },
       {
-        "index": 9,
+        "index": 12,
         "id": "markdown-renderer",
         "source": "public/markdown-renderer.js",
         "assetPath": "/markdown-renderer.js",
@@ -1706,7 +1873,7 @@
         "hashPresent": true
       },
       {
-        "index": 10,
+        "index": 13,
         "id": "plugin-embed",
         "source": "public/plugin-embed.js",
         "assetPath": "/plugin-embed.js",
@@ -1727,7 +1894,7 @@
         "hashPresent": true
       },
       {
-        "index": 11,
+        "index": 14,
         "id": "frontend-runtime-health",
         "source": "public/frontend-runtime-health.js",
         "assetPath": "/frontend-runtime-health.js",
@@ -1748,7 +1915,7 @@
         "hashPresent": true
       },
       {
-        "index": 12,
+        "index": 15,
         "id": "home-ai-diagnostic-reporting",
         "source": "public/home-ai-diagnostic-reporting.js",
         "assetPath": "/home-ai-diagnostic-reporting.js",
@@ -1769,7 +1936,7 @@
         "hashPresent": true
       },
       {
-        "index": 13,
+        "index": 16,
         "id": "thread-diagnostic-events",
         "source": "public/thread-diagnostic-events.js",
         "assetPath": "/thread-diagnostic-events.js",
@@ -1791,7 +1958,7 @@
         "hashPresent": true
       },
       {
-        "index": 14,
+        "index": 17,
         "id": "thread-tile-layout",
         "source": "public/thread-tile-layout.js",
         "assetPath": "/thread-tile-layout.js",
@@ -1810,7 +1977,7 @@
         "hashPresent": true
       },
       {
-        "index": 15,
+        "index": 18,
         "id": "thread-tile-actions",
         "source": "public/thread-tile-actions.js",
         "assetPath": "/thread-tile-actions.js",
@@ -1833,7 +2000,7 @@
         "hashPresent": true
       },
       {
-        "index": 16,
+        "index": 19,
         "id": "thread-list-load-policy",
         "source": "public/thread-list-load-policy.js",
         "assetPath": "/thread-list-load-policy.js",
@@ -1848,7 +2015,7 @@
         "hashPresent": true
       },
       {
-        "index": 17,
+        "index": 20,
         "id": "thread-list-stable-order",
         "source": "public/thread-list-stable-order.js",
         "assetPath": "/thread-list-stable-order.js",
@@ -1864,7 +2031,7 @@
         "hashPresent": true
       },
       {
-        "index": 18,
+        "index": 21,
         "id": "thread-status-hints",
         "source": "public/thread-status-hints.js",
         "assetPath": "/thread-status-hints.js",
@@ -1881,7 +2048,7 @@
         "hashPresent": true
       },
       {
-        "index": 19,
+        "index": 22,
         "id": "thread-detail-patch-plan",
         "source": "public/thread-detail-patch-plan.js",
         "assetPath": "/thread-detail-patch-plan.js",
@@ -1898,7 +2065,7 @@
         "hashPresent": true
       },
       {
-        "index": 20,
+        "index": 23,
         "id": "thread-detail-actions",
         "source": "public/thread-detail-actions.js",
         "assetPath": "/thread-detail-actions.js",
@@ -1917,7 +2084,7 @@
         "hashPresent": true
       },
       {
-        "index": 21,
+        "index": 24,
         "id": "thread-detail-merge-state",
         "source": "public/thread-detail-merge-state.js",
         "assetPath": "/thread-detail-merge-state.js",
@@ -1932,7 +2099,7 @@
         "hashPresent": true
       },
       {
-        "index": 22,
+        "index": 25,
         "id": "thread-detail-v4-merge-state",
         "source": "public/thread-detail-v4-merge-state.js",
         "assetPath": "/thread-detail-v4-merge-state.js",
@@ -1947,7 +2114,7 @@
         "hashPresent": true
       },
       {
-        "index": 23,
+        "index": 26,
         "id": "client-render-stability-guard",
         "source": "public/client-render-stability-guard.js",
         "assetPath": "/client-render-stability-guard.js",
@@ -1968,7 +2135,7 @@
         "hashPresent": true
       },
       {
-        "index": 24,
+        "index": 27,
         "id": "live-operation-dock-state",
         "source": "public/live-operation-dock-state.js",
         "assetPath": "/live-operation-dock-state.js",
@@ -1991,12 +2158,12 @@
     "entryGroupChunks": 6,
     "startupCriticalAssets": 22,
     "classicShellScriptBlockScripts": 51,
-    "appPreviewClassicLoaderScripts": 26,
-    "appPreviewClassicLoaderHashes": 26,
-    "appPreviewClassicLoaderBytes": 1462027,
-    "esmCompatibilityModules": 25,
-    "esmCompatibilityHashes": 25,
-    "esmCompatibilityExpectedFunctions": 152,
+    "appPreviewClassicLoaderScripts": 23,
+    "appPreviewClassicLoaderHashes": 23,
+    "appPreviewClassicLoaderBytes": 1307677,
+    "esmCompatibilityModules": 28,
+    "esmCompatibilityHashes": 28,
+    "esmCompatibilityExpectedFunctions": 271,
     "startupGlobalContracts": 30,
     "startupGlobalContractAssets": 30,
     "startupGlobalContractHashes": 30,
@@ -2010,18 +2177,18 @@
   "publishedFiles": [
     {
       "fileName": "codex-mobile-shell-manifest.json",
-      "bytes": 177440,
-      "sha256": "14038534b12012d81d6d0c6338216c097158942950d983eeab0c565e73187726"
+      "bytes": 185508,
+      "sha256": "56cc4b8615534258955bb3c423bb990c7b7699be3f396493fec0a1a3f4b7626b"
     },
     {
-      "fileName": "assets/vite-shell-entry-DPsOBw3N.js",
-      "bytes": 344228,
-      "sha256": "bb8bd81d7543a642b05801649dcd773bd69ec63557d2c0f6c25db7fe6ab9afee"
+      "fileName": "assets/vite-shell-entry-DAJ2_4XA.js",
+      "bytes": 499599,
+      "sha256": "b6139c6ad17802af7ae62384c8e92a04b5e9ff3632a9541feb1dc0a4edb298b9"
     },
     {
-      "fileName": "assets/vite-deferred-entry-topology-DO8aEayh.js",
+      "fileName": "assets/vite-deferred-entry-topology-wH-yEfBd.js",
       "bytes": 748,
-      "sha256": "db053171d0d4c21562517b41a00c522499a425a0c70fefaf3a84ba0779f8b53a"
+      "sha256": "8067445bee725042c6dc03e16d14c713a24eb740c3374f601b55572745ba723f"
     },
     {
       "fileName": "assets/vite-entry-group-app-entry-9WxAQ_0R.js",
@@ -2056,12 +2223,12 @@
     {
       "fileName": "preview.html",
       "bytes": 4352,
-      "sha256": "3e59f1c0388434caa3370741ccfdfa76c82c34bed3f0b9e74ddcd5bf3a0a1cf8"
+      "sha256": "86b9af07c6f0efb555a41b605e90e4de241b143fbcfce596486ea6c7c2aab744"
     },
     {
       "fileName": "app-preview.html",
-      "bytes": 62986,
-      "sha256": "08208c8f90b7f77b3e30a2e597dc938bfe597c37810d559d60ce96e41dfa442c"
+      "bytes": 63274,
+      "sha256": "a48fefc50abc8587dee3d896c58279220749960c0145c9a6a02105dc2bf1c312"
     }
   ],
   "validation": {

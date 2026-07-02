@@ -1943,6 +1943,3432 @@ var require_thread_performance_metrics = /* @__PURE__ */ __commonJSMin(((exports
 	});
 }));
 //#endregion
+//#region public/thread-detail-state.js
+var require_thread_detail_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDetailState = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const DETAIL_ONLY_SUMMARY_FIELDS = Object.freeze([
+			"turns",
+			"runtimeSettings",
+			"threadTaskCards",
+			"mobileDetailLoaded",
+			"mobileLoading",
+			"mobileLoadError",
+			"mobileReadWarning",
+			"mobileReadMode",
+			"mobileDiagnostics",
+			"mobileProjectionVersion",
+			"mobileProjection",
+			"mobileProjectionRevision",
+			"mobileVisibleItemKeys",
+			"mobileOlderTurnsCursor",
+			"mobileNewerTurnsCursor"
+		]);
+		function defaultVisibleWeight(item) {
+			return item ? JSON.stringify(item).length : 0;
+		}
+		function boundedCount(value) {
+			const number = Number(value);
+			if (!Number.isFinite(number) || number < 0) return 0;
+			return Math.trunc(number);
+		}
+		function shortString(value, maxLength = 80) {
+			return String(value || "").slice(0, maxLength);
+		}
+		function objectOrEmpty(value) {
+			return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+		}
+		function threadListSummaryFromDetailThread(thread) {
+			if (!thread || typeof thread !== "object" || !thread.id) return null;
+			const summary = Object.assign({}, thread);
+			for (const field of DETAIL_ONLY_SUMMARY_FIELDS) delete summary[field];
+			return summary;
+		}
+		function threadHasLoadedDetailState(thread) {
+			if (!thread || typeof thread !== "object") return false;
+			if (thread.mobileLoading || thread.mobileLoadError) return false;
+			if (!Array.isArray(thread.turns)) return false;
+			if (thread.turns.length > 0) return true;
+			return thread.mobileDetailLoaded === true;
+		}
+		function threadHasReusableLoadedDetailState(thread) {
+			if (!threadHasLoadedDetailState(thread)) return false;
+			if (threadHasActiveDetailEvidence(thread)) return false;
+			return Array.isArray(thread.turns) && thread.turns.length > 0;
+		}
+		function threadHasVisualBaselineLoadedDetailState(thread) {
+			if (!threadHasLoadedDetailState(thread)) return false;
+			return Array.isArray(thread.turns) && thread.turns.length > 0;
+		}
+		function statusKind(value) {
+			if (!value) return "";
+			if (typeof value === "string") return value;
+			if (value && typeof value === "object") return String(value.type || value.status || value.kind || "");
+			return "";
+		}
+		function turnIsSettled(turn) {
+			const kind = statusKind(turn && turn.status).toLowerCase();
+			return kind === "completed" || kind === "failed" || kind === "cancelled" || kind === "canceled";
+		}
+		function threadHasActiveDetailEvidence(thread) {
+			if (!thread || typeof thread !== "object") return false;
+			if (thread.activeTurnId || thread.mobileRolloutActiveTurn) return true;
+			const kind = statusKind(thread.status).toLowerCase();
+			if ([
+				"active",
+				"running",
+				"in_progress",
+				"in-progress",
+				"pending",
+				"processing",
+				"status-error"
+			].includes(kind)) return true;
+			if (!Array.isArray(thread.turns)) return false;
+			return thread.turns.some((turn) => {
+				const kind = statusKind(turn && turn.status);
+				return Boolean(kind && !turnIsSettled(turn));
+			});
+		}
+		function activeTurnIdentifier(value) {
+			if (!value) return "";
+			if (typeof value === "string") return value;
+			if (value && typeof value === "object") return String(value.id || value.turnId || value.activeTurnId || "");
+			return "";
+		}
+		function activeTurnIdsForThread(thread) {
+			const ids = /* @__PURE__ */ new Set();
+			const direct = activeTurnIdentifier(thread && thread.activeTurnId);
+			const rollout = activeTurnIdentifier(thread && thread.mobileRolloutActiveTurn);
+			if (direct) ids.add(direct);
+			if (rollout) ids.add(rollout);
+			return ids;
+		}
+		function turnIsActivePreviewTarget(thread, turn, index, turns) {
+			if (!turn || typeof turn !== "object") return false;
+			const turnId = String(turn.id || "");
+			const activeIds = activeTurnIdsForThread(thread);
+			if (turnId && activeIds.has(turnId)) return true;
+			if (statusKind(turn.status) && !turnIsSettled(turn)) return true;
+			const threadKind = statusKind(thread && thread.status).toLowerCase();
+			if ([
+				"active",
+				"running",
+				"in_progress",
+				"in-progress",
+				"pending",
+				"processing",
+				"status-error"
+			].includes(threadKind)) return index === turns.length - 1;
+			return false;
+		}
+		function activePreviewSafeItem(item) {
+			if (!item || typeof item !== "object") return false;
+			const type = String(item.type || "").toLowerCase();
+			return type === "usermessage" || type === "taskcard" || type === "turndiagnostic" || type === "contextcompaction";
+		}
+		function previewUserMessageText(item) {
+			if (!item || item.type !== "userMessage") return "";
+			if (typeof item.text === "string") return item.text.trim();
+			if (typeof item.message === "string") return item.message.trim();
+			return (Array.isArray(item.content) ? item.content : []).map((part) => {
+				if (typeof part === "string") return part;
+				if (!part || typeof part !== "object") return "";
+				if (typeof part.text === "string") return part.text;
+				if (typeof part.value === "string") return part.value;
+				if (typeof part.content === "string") return part.content;
+				return "";
+			}).join("").trim();
+		}
+		function previewUserMessageSubmissionIds(item) {
+			if (!item || item.type !== "userMessage") return [];
+			return [
+				item.clientSubmissionId,
+				item.submissionId,
+				item.mobileSubmissionId,
+				item.id && /^local-user-/.test(String(item.id)) ? String(item.id).replace(/^local-user-/, "") : ""
+			].map((value) => String(value || "").trim()).filter(Boolean);
+		}
+		function previewUserMessageHasSubmissionId(item, submissionId) {
+			if (!submissionId || !item || item.type !== "userMessage") return false;
+			return previewUserMessageSubmissionIds(item).includes(submissionId);
+		}
+		function isPreviewOptimisticUserMessage(item) {
+			if (!item || item.type !== "userMessage") return false;
+			return Boolean(item.mobilePendingSubmission || item.mobileSendError || /^local-user-/.test(String(item.id || "")));
+		}
+		function previewDurableUserMessageMatchesOptimistic(durableItem, optimisticItem) {
+			if (!durableItem || !optimisticItem) return false;
+			if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
+			if (isPreviewOptimisticUserMessage(durableItem) || !isPreviewOptimisticUserMessage(optimisticItem)) return false;
+			if (previewUserMessageSubmissionIds(optimisticItem).some((submissionId) => previewUserMessageHasSubmissionId(durableItem, submissionId))) return true;
+			const durableText = previewUserMessageText(durableItem);
+			const optimisticText = previewUserMessageText(optimisticItem);
+			return Boolean(durableText && optimisticText && durableText === optimisticText);
+		}
+		function threadHasDurableUserMessageMatchingPreviewEcho(thread, optimisticItem) {
+			if (!thread || !Array.isArray(thread.turns) || !isPreviewOptimisticUserMessage(optimisticItem)) return false;
+			return thread.turns.some((turn) => (Array.isArray(turn && turn.items) ? turn.items : []).some((candidate) => previewDurableUserMessageMatchesOptimistic(candidate, optimisticItem)));
+		}
+		function activePreviewItemAllowed(thread, item) {
+			if (!activePreviewSafeItem(item)) return false;
+			if (item && item.type === "userMessage" && threadHasDurableUserMessageMatchingPreviewEcho(thread, item)) return false;
+			return true;
+		}
+		function cloneActivePreviewItem(item) {
+			if (!item || typeof item !== "object") return item;
+			const clone = Object.assign({}, item);
+			if (Array.isArray(item.content)) clone.content = item.content.map((entry) => entry && typeof entry === "object" ? Object.assign({}, entry) : entry);
+			return clone;
+		}
+		function activeDetailLoadingPreviewThread(thread) {
+			if (!threadHasLoadedDetailState(thread) || !threadHasActiveDetailEvidence(thread)) return null;
+			const turns = Array.isArray(thread.turns) ? thread.turns : [];
+			if (!turns.length) return null;
+			let previewedActiveTurn = false;
+			const nextTurns = turns.map((turn, index) => {
+				if (!turn || typeof turn !== "object") return turn;
+				if (!turnIsActivePreviewTarget(thread, turn, index, turns)) return turn;
+				previewedActiveTurn = true;
+				return Object.assign({}, turn, {
+					items: Array.isArray(turn.items) ? turn.items.filter((item) => activePreviewItemAllowed(thread, item)).map(cloneActivePreviewItem) : [],
+					mobileActiveCachePreview: true,
+					mobileLoading: true
+				});
+			});
+			if (!previewedActiveTurn) return null;
+			return Object.assign({}, thread, {
+				turns: nextTurns,
+				mobileLoading: true,
+				mobileLoadError: "",
+				mobileActiveCachePreview: true
+			});
+		}
+		function rolloutSizeBytesFromThread(thread) {
+			const size = Number(thread && thread.rolloutSizeBytes);
+			return Number.isFinite(size) && size > 0 ? size : 0;
+		}
+		function emptyDetailHistoryEvidenceForThread(thread) {
+			const rolloutSizeBytes = rolloutSizeBytesFromThread(thread);
+			const omittedTurns = boundedCount(thread && thread.mobileOmittedTurnCount);
+			const visibleItemKeyCount = Array.isArray(thread && thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys.length : 0;
+			const taskCardCount = Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards.length : 0;
+			const pendingTaskCardCount = boundedCount(thread && thread.pendingTaskCardCount);
+			const hasActiveTurnEvidence = Boolean(thread && (thread.activeTurnId || thread.mobileRolloutActiveTurn));
+			return {
+				hasEvidence: rolloutSizeBytes > 0 || omittedTurns > 0 || visibleItemKeyCount > 0 || hasActiveTurnEvidence || taskCardCount > 0 || pendingTaskCardCount > 0,
+				rolloutSizeBytes,
+				omittedTurns,
+				visibleItemKeyCount,
+				hasActiveTurnEvidence,
+				taskCardCount,
+				pendingTaskCardCount
+			};
+		}
+		function planEmptyDetailHistoryRecovery(input = {}) {
+			const thread = input.thread;
+			if (!thread || typeof thread !== "object") return {
+				shouldRecover: false,
+				reason: "missing-thread"
+			};
+			if (thread.mobileLoading) return {
+				shouldRecover: false,
+				reason: "thread-loading"
+			};
+			if (thread.mobileLoadError) return {
+				shouldRecover: false,
+				reason: "thread-load-error"
+			};
+			const threadId = String(input.threadId || input.currentThreadId || thread.id || "").trim();
+			if (!threadId) return {
+				shouldRecover: false,
+				reason: "missing-thread-id"
+			};
+			const evidence = emptyDetailHistoryEvidenceForThread(thread);
+			if (!evidence.hasEvidence) return {
+				shouldRecover: false,
+				reason: "no-history-evidence",
+				evidence
+			};
+			const readMode = String(thread.mobileReadMode || "");
+			const recoveryKey = [
+				threadId,
+				readMode,
+				evidence.rolloutSizeBytes,
+				evidence.omittedTurns,
+				evidence.visibleItemKeyCount
+			].join("|");
+			const nowMs = Number.isFinite(Number(input.nowMs)) ? Number(input.nowMs) : Date.now();
+			const lastRecoveredAtMs = Number(input.lastRecoveredAtMs || 0);
+			const cooldownMs = Math.max(0, Number(input.cooldownMs || 0));
+			if (lastRecoveredAtMs && cooldownMs && nowMs - lastRecoveredAtMs < cooldownMs) return {
+				shouldRecover: false,
+				reason: "cooldown",
+				evidence,
+				recoveryKey,
+				nowMs
+			};
+			const details = input.details && typeof input.details === "object" ? input.details : {};
+			return {
+				shouldRecover: true,
+				reason: "empty-detail-history-evidence",
+				evidence,
+				recoveryKey,
+				nowMs,
+				diagnosticReason: "empty_render_with_history_evidence",
+				event: {
+					threadId,
+					readMode,
+					rolloutSizeBytes: evidence.rolloutSizeBytes,
+					omittedTurns: evidence.omittedTurns,
+					visibleItemKeyCount: evidence.visibleItemKeyCount,
+					source: String(details.source || "").slice(0, 80),
+					renderMode: String(details.renderMode || "").slice(0, 80)
+				}
+			};
+		}
+		function buildThreadDetailRenderEvidence(input = {}) {
+			const threadId = String(input.threadId || "").trim();
+			if (!threadId) return null;
+			const turnCount = boundedCount(input.turnCount);
+			const visibleItemCount = boundedCount(input.visibleItemCount);
+			if (!turnCount && !visibleItemCount) return null;
+			return {
+				atMs: Number.isFinite(Number(input.atMs)) ? Number(input.atMs) : Date.now(),
+				threadId,
+				threadHash: shortString(input.threadHash, 80),
+				readMode: shortString(input.readMode, 80),
+				sourceKind: shortString(input.sourceKind, 80),
+				turnCount,
+				visibleItemCount,
+				itemCount: boundedCount(input.itemCount)
+			};
+		}
+		function recentThreadDetailRenderEvidence(input = {}) {
+			const evidence = input.evidence && typeof input.evidence === "object" ? input.evidence : null;
+			if (!evidence || !evidence.atMs) return null;
+			const nowMs = Number.isFinite(Number(input.nowMs)) ? Number(input.nowMs) : Date.now();
+			const maxAgeMs = Math.max(0, Number(input.maxAgeMs || 0));
+			const ageMs = Math.max(0, nowMs - Number(evidence.atMs || 0));
+			if (maxAgeMs && ageMs > maxAgeMs) return null;
+			return Object.assign({}, evidence, {
+				ageMs,
+				turnCount: boundedCount(evidence.turnCount),
+				visibleItemCount: boundedCount(evidence.visibleItemCount),
+				itemCount: boundedCount(evidence.itemCount)
+			});
+		}
+		function sameThreadDetailRenderEvidence(input = {}) {
+			const evidence = input.evidence && typeof input.evidence === "object" ? input.evidence : null;
+			if (!evidence) return null;
+			const threadId = String(input.threadId || "").trim();
+			if (threadId && String(evidence.threadId || "") !== threadId) return null;
+			return evidence;
+		}
+		function timestampMs(value) {
+			if (value === null || value === void 0 || value === "") return 0;
+			const numberValue = Number(value);
+			if (Number.isFinite(numberValue) && numberValue > 0) return numberValue > 0xe8d4a51000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1e3);
+			const parsed = Date.parse(String(value));
+			return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+		}
+		function threadUpdatedAtMs(thread) {
+			if (!thread || typeof thread !== "object") return 0;
+			return timestampMs(thread.updatedAtMs) || timestampMs(thread.updatedAt) || timestampMs(thread.updated_at_ms) || timestampMs(thread.updated_at) || timestampMs(thread.lastActivityAtMs) || timestampMs(thread.lastActivityAt) || timestampMs(thread.last_activity_at_ms) || timestampMs(thread.last_activity_at) || 0;
+		}
+		function summaryIsNewerThanCachedDetail(summaryThread, cachedThread, toleranceMs = 1e3) {
+			const summaryMs = threadUpdatedAtMs(summaryThread);
+			const cachedMs = threadUpdatedAtMs(cachedThread);
+			if (!summaryMs) return false;
+			if (!cachedMs) return true;
+			return summaryMs > cachedMs + Math.max(0, Number(toleranceMs || 0));
+		}
+		function hasNonemptyThreadDetailRenderEvidence(evidence) {
+			return Boolean(evidence && (boundedCount(evidence.turnCount) || boundedCount(evidence.visibleItemCount)));
+		}
+		function planThreadOpenCacheReuse(input = {}) {
+			const requestedThreadId = String(input.requestedThreadId || input.threadId || "").trim();
+			const currentThreadId = String(input.currentThreadId || "").trim();
+			const thread = input.currentThread || input.thread || null;
+			const summaryThread = input.summaryThread || input.summary || null;
+			const threadId = String(thread && thread.id || "").trim();
+			if (!requestedThreadId) return {
+				shouldUseCachedCurrent: false,
+				shouldReportEmptyCachedDetail: false,
+				reason: "missing-requested-thread-id"
+			};
+			if (requestedThreadId !== currentThreadId) return {
+				shouldUseCachedCurrent: false,
+				shouldReportEmptyCachedDetail: false,
+				reason: "different-current-thread"
+			};
+			if (!thread || typeof thread !== "object") return {
+				shouldUseCachedCurrent: false,
+				shouldReportEmptyCachedDetail: false,
+				reason: "missing-current-thread"
+			};
+			if (threadId && threadId !== requestedThreadId) return {
+				shouldUseCachedCurrent: false,
+				shouldReportEmptyCachedDetail: false,
+				reason: "current-thread-id-mismatch"
+			};
+			if (thread.mobileLoading) return {
+				shouldUseCachedCurrent: false,
+				shouldReportEmptyCachedDetail: false,
+				reason: "current-thread-loading"
+			};
+			if (thread.mobileLoadError) return {
+				shouldUseCachedCurrent: false,
+				shouldReportEmptyCachedDetail: false,
+				reason: "current-thread-load-error"
+			};
+			if (summaryIsNewerThanCachedDetail(summaryThread, thread)) return {
+				shouldUseCachedCurrent: false,
+				shouldReportEmptyCachedDetail: false,
+				reason: threadHasLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread) ? "summary-newer-than-active-detail" : "summary-newer-than-cached-detail"
+			};
+			if (threadHasVisualBaselineLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread)) return {
+				shouldUseCachedCurrent: true,
+				shouldRefreshCurrent: true,
+				shouldReportEmptyCachedDetail: false,
+				reason: "active-loaded-detail-refresh-baseline"
+			};
+			if (threadHasReusableLoadedDetailState(thread)) return {
+				shouldUseCachedCurrent: true,
+				shouldReportEmptyCachedDetail: false,
+				reason: "reusable-loaded-detail"
+			};
+			if (threadHasLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread)) return {
+				shouldUseCachedCurrent: false,
+				shouldUseActivePreview: true,
+				shouldReportEmptyCachedDetail: false,
+				reason: "active-detail-cache-not-reusable"
+			};
+			if (threadHasLoadedDetailState(thread) && Array.isArray(thread.turns) && thread.turns.length === 0) return {
+				shouldUseCachedCurrent: false,
+				shouldReportEmptyCachedDetail: true,
+				reason: "empty-loaded-detail-not-reusable"
+			};
+			return {
+				shouldUseCachedCurrent: false,
+				shouldReportEmptyCachedDetail: false,
+				reason: "not-loaded-detail"
+			};
+		}
+		function planThreadOpenLoadingShell(input = {}) {
+			const threadId = String(input.threadId || input.requestedThreadId || "").trim();
+			const summaryThread = input.summaryThread || input.summary || null;
+			const summaryId = String(summaryThread && summaryThread.id || "").trim();
+			if (!threadId) return {
+				currentThreadId: "",
+				thread: null,
+				hasSummary: false,
+				summaryAccepted: false,
+				hadListTurnsField: false,
+				reason: "missing-thread-id"
+			};
+			const summaryAccepted = Boolean(summaryThread && summaryId === threadId);
+			const base = (summaryAccepted ? threadListSummaryFromDetailThread(summaryThread) : null) || {
+				id: threadId,
+				name: threadId,
+				preview: threadId
+			};
+			return {
+				currentThreadId: threadId,
+				thread: Object.assign({}, base, {
+					id: threadId,
+					turns: [],
+					mobileLoading: true,
+					mobileLoadError: ""
+				}),
+				hasSummary: Boolean(summaryThread),
+				summaryAccepted,
+				hadListTurnsField: Boolean(summaryThread && Object.prototype.hasOwnProperty.call(summaryThread, "turns")),
+				reason: summaryAccepted ? "summary-loading-shell" : "fallback-loading-shell"
+			};
+		}
+		function threadIsSummaryOnlyCurrentThread(thread, currentThreadId) {
+			return Boolean(thread && currentThreadId && String(thread.id || "") === String(currentThreadId || "") && !threadHasLoadedDetailState(thread) && !thread.mobileLoading && !thread.mobileLoadError);
+		}
+		function planSummaryOnlyCurrentThreadRecovery(input = {}) {
+			const thread = input.thread;
+			const currentThreadId = input.currentThreadId;
+			if (!threadIsSummaryOnlyCurrentThread(thread, currentThreadId)) return {
+				shouldRecover: false,
+				shouldScheduleRefresh: false,
+				nextThread: thread || null,
+				event: null,
+				reason: "not-summary-only-current-thread"
+			};
+			const summary = threadListSummaryFromDetailThread(thread) || Object.assign({}, thread || {});
+			const nextThread = Object.assign({}, summary, {
+				turns: [],
+				mobileLoading: true,
+				mobileLoadError: ""
+			});
+			return {
+				shouldRecover: true,
+				shouldScheduleRefresh: !input.hasThreadLoadController && !input.hasRefreshThreadController,
+				nextThread,
+				event: {
+					threadId: String(currentThreadId || nextThread.id || ""),
+					reason: "summary-only-current-thread",
+					hasListTurnsField: Object.prototype.hasOwnProperty.call(thread, "turns"),
+					buildId: String(input.clientBuildId || "")
+				},
+				reason: "summary-only-current-thread"
+			};
+		}
+		function planSummaryOnlyCurrentThreadRecoveryEffects(plan = {}) {
+			const recoveryPlan = objectOrEmpty(plan);
+			const effects = [];
+			if (!recoveryPlan.shouldRecover) return {
+				effects,
+				reason: shortString(recoveryPlan.reason || "not-recovered")
+			};
+			effects.push({
+				type: "set-current-thread",
+				thread: recoveryPlan.nextThread || null
+			});
+			if (recoveryPlan.event) effects.push({
+				type: "post-client-event",
+				name: "thread_summary_detail_recovery",
+				payload: recoveryPlan.event
+			});
+			if (recoveryPlan.shouldScheduleRefresh) effects.push({
+				type: "schedule-current-thread-refresh",
+				delayMs: 0,
+				reason: "summary-detail-recovery"
+			});
+			return {
+				effects,
+				reason: shortString(recoveryPlan.reason || "summary-only-current-thread")
+			};
+		}
+		function mergeThreadSummaryIntoList(threads, thread, options = {}) {
+			const summary = threadListSummaryFromDetailThread(thread);
+			const currentThreads = Array.isArray(threads) ? threads : [];
+			if (!summary) return {
+				changed: false,
+				threads: currentThreads
+			};
+			const id = String(summary.id);
+			const index = currentThreads.findIndex((entry) => String(entry && entry.id || "") === id);
+			let nextThreads;
+			if (index >= 0) {
+				const existingSummary = threadListSummaryFromDetailThread(currentThreads[index]) || {};
+				nextThreads = currentThreads.map((entry, entryIndex) => entryIndex === index ? Object.assign({}, existingSummary, summary) : entry);
+			} else nextThreads = [summary, ...currentThreads];
+			return {
+				changed: true,
+				threads: (typeof options.visibleThreads === "function" ? options.visibleThreads : (value) => value)(nextThreads)
+			};
+		}
+		function createThreadDetailStatePolicy(options = {}) {
+			const itemVisibleWeight = typeof options.itemVisibleWeight === "function" ? options.itemVisibleWeight : defaultVisibleWeight;
+			const isContextCompactionItem = typeof options.isContextCompactionItem === "function" ? options.isContextCompactionItem : () => false;
+			const isOperationalItem = typeof options.isOperationalItem === "function" ? options.isOperationalItem : () => false;
+			const isAssistantReceiptLikeItem = typeof options.isAssistantReceiptLikeItem === "function" ? options.isAssistantReceiptLikeItem : () => false;
+			const isTurnComplete = typeof options.isTurnComplete === "function" ? options.isTurnComplete : () => false;
+			const isReasoningItem = typeof options.isReasoningItem === "function" ? options.isReasoningItem : () => false;
+			const visualReceiptMatchesSuppressionKeys = typeof options.visualReceiptMatchesSuppressionKeys === "function" ? options.visualReceiptMatchesSuppressionKeys : () => false;
+			const comparableVisibleText = typeof options.comparableVisibleText === "function" ? options.comparableVisibleText : () => "";
+			const visibleTextItemsLikelySame = typeof options.visibleTextItemsLikelySame === "function" ? options.visibleTextItemsLikelySame : () => false;
+			const completedReceiptItemsLikelySame = typeof options.completedReceiptItemsLikelySame === "function" ? options.completedReceiptItemsLikelySame : () => false;
+			const turnVisibleWeight = typeof options.turnVisibleWeight === "function" ? options.turnVisibleWeight : (turn) => (Array.isArray(turn && turn.items) ? turn.items : []).reduce((total, item) => total + itemVisibleWeight(item), 0);
+			function completedIncomingTurnHasAuthoritativeReceipt(incomingTurn) {
+				if (!incomingTurn || !isTurnComplete(incomingTurn) || !Array.isArray(incomingTurn.items)) return false;
+				return incomingTurn.items.some((item) => isAssistantReceiptLikeItem(item));
+			}
+			function shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn = null) {
+				return isAssistantReceiptLikeItem(item) && completedIncomingTurnHasAuthoritativeReceipt(incomingTurn);
+			}
+			function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false, suppressedVisualReceiptKeys = null, incomingTurn = null) {
+				if (!item || itemVisibleWeight(item) <= 0) return false;
+				if (visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys)) return false;
+				if (shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn)) return false;
+				if (item.type === "userMessage" && completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)) return false;
+				if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
+				return preserveLocalVisible && !isReasoningItem(item);
+			}
+			function shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
+				if (!existingTurn || !incomingTurn) return false;
+				if (String(existingTurn.id || "") !== String(incomingTurn.id || "")) return false;
+				if (isTurnComplete(existingTurn)) return false;
+				return (existingWeight == null ? turnVisibleWeight(existingTurn) : Number(existingWeight || 0)) > 0;
+			}
+			function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
+				if (!existingItem || !incomingItem) return incomingItem || existingItem;
+				if (itemVisibleWeight(existingItem) <= itemVisibleWeight(incomingItem)) return incomingItem;
+				const merged = Object.assign({}, existingItem, incomingItem);
+				if (typeof existingItem.text === "string") merged.text = existingItem.text;
+				if (Array.isArray(existingItem.content)) merged.content = existingItem.content;
+				if (Array.isArray(existingItem.summary)) merged.summary = existingItem.summary;
+				if (isContextCompactionItem(existingItem) || isContextCompactionItem(incomingItem)) {
+					if (!Object.prototype.hasOwnProperty.call(incomingItem, "mobileNotice")) delete merged.mobileNotice;
+					if (!Object.prototype.hasOwnProperty.call(incomingItem, "mobileCompactionStatus")) delete merged.mobileCompactionStatus;
+				} else if (existingItem.mobileNotice) merged.mobileNotice = existingItem.mobileNotice;
+				if (isOperationalItem(existingItem)) {
+					if (existingItem.command) merged.command = existingItem.command;
+					if (Array.isArray(existingItem.fileNames)) merged.fileNames = existingItem.fileNames;
+					if (existingItem.tool) merged.tool = existingItem.tool;
+					if (existingItem.server) merged.server = existingItem.server;
+					if (existingItem.namespace) merged.namespace = existingItem.namespace;
+				}
+				return merged;
+			}
+			function visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
+				return visibleTextItemsLikelySame(existingItem, incomingItem) || completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn);
+			}
+			function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
+				const merged = mergeItemPreservingVisibleFields(existingItem, incomingItem);
+				if (!existingItem || !incomingItem || !merged || !visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn)) return merged;
+				const existingText = comparableVisibleText(existingItem);
+				const incomingText = comparableVisibleText(incomingItem);
+				if (completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn) && typeof existingItem.text === "string" && existingText.length > incomingText.length && existingText.startsWith(incomingText)) merged.text = existingItem.text;
+				if (existingItem.id) merged.id = existingItem.id;
+				if (existingItem.startedAtMs && !incomingItem.startedAtMs) merged.startedAtMs = existingItem.startedAtMs;
+				return merged;
+			}
+			return {
+				completedIncomingTurnHasAuthoritativeReceipt,
+				mergeItemPreservingVisibleFields,
+				mergeVisibleTextItemPreservingRenderIdentity,
+				shouldDropLocalOnlyReceiptForIncomingTurn,
+				shouldPreserveExistingTurnVisibleItems,
+				shouldPreserveLocalOnlyItem,
+				visibleTextItemsCanShareRenderIdentity
+			};
+		}
+		return {
+			buildThreadDetailRenderEvidence,
+			activeDetailLoadingPreviewThread,
+			createThreadDetailStatePolicy,
+			emptyDetailHistoryEvidenceForThread,
+			hasNonemptyThreadDetailRenderEvidence,
+			mergeThreadSummaryIntoList,
+			planEmptyDetailHistoryRecovery,
+			planThreadOpenLoadingShell,
+			planThreadOpenCacheReuse,
+			planSummaryOnlyCurrentThreadRecovery,
+			planSummaryOnlyCurrentThreadRecoveryEffects,
+			recentThreadDetailRenderEvidence,
+			rolloutSizeBytesFromThread,
+			sameThreadDetailRenderEvidence,
+			threadHasLoadedDetailState,
+			threadHasReusableLoadedDetailState,
+			threadHasVisualBaselineLoadedDetailState,
+			threadIsSummaryOnlyCurrentThread,
+			threadListSummaryFromDetailThread
+		};
+	});
+}));
+//#endregion
+//#region public/thread-detail-render-plan.js
+var require_thread_detail_render_plan = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDetailRenderPlan = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function normalizeSignature(value) {
+			return String(value || "");
+		}
+		function normalizedDurationMs(value) {
+			const numberValue = Number(value);
+			return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
+		}
+		function normalizedOptionalDurationMs(value) {
+			if (value == null) return null;
+			return normalizedDurationMs(value);
+		}
+		function normalizedCount(value) {
+			const numberValue = Number(value);
+			return Number.isFinite(numberValue) && numberValue > 0 ? Math.trunc(numberValue) : 0;
+		}
+		function normalizedStringList(value) {
+			return Array.isArray(value) ? value.map((entry) => String(entry || "")).filter(Boolean) : [];
+		}
+		function turnOrderMismatch(expectedValue, renderedValue) {
+			const expected = normalizedStringList(expectedValue);
+			const rendered = normalizedStringList(renderedValue);
+			if (!expected.length) return false;
+			if (expected.length !== rendered.length) return true;
+			for (let index = 0; index < expected.length; index += 1) if (expected[index] !== rendered[index]) return true;
+			return false;
+		}
+		function compactReason(value, fallback = "", maxLength = 80) {
+			return (String(value || "").trim() || fallback).slice(0, maxLength);
+		}
+		function objectOrEmpty(value) {
+			return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+		}
+		function textContentFromValue(value) {
+			if (value == null) return "";
+			if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+			if (Array.isArray(value)) return value.map(textContentFromValue).join("");
+			if (typeof value !== "object") return "";
+			if (typeof value.text === "string") return value.text;
+			if (typeof value.markdown === "string") return value.markdown;
+			if (typeof value.content === "string" || Array.isArray(value.content)) return textContentFromValue(value.content);
+			if (typeof value.summary === "string" || Array.isArray(value.summary)) return textContentFromValue(value.summary);
+			return "";
+		}
+		function itemVisibleText(item) {
+			if (typeof item === "string") return item;
+			const value = objectOrEmpty(item);
+			return [
+				textContentFromValue(value.text),
+				textContentFromValue(value.markdown),
+				textContentFromValue(value.content),
+				textContentFromValue(value.summary)
+			].join("");
+		}
+		function textLooksLikeWorkflowCard(value) {
+			const body = String(value || "");
+			return /^\s*\[Cross-thread task card/im.test(body) || /^\s*\[Codex Mobile task-card continuation\]/im.test(body) || /^\s*#\s*Continuation Bootstrap Index\b/im.test(body) || /^\s*Task card id:/im.test(body) || /^\s*Source workspace:/im.test(body) || /^\s*Source thread:/im.test(body) || /^\s*Approval:/im.test(body) || /^\s*Workflow mode:/im.test(body) || /^\s*Auto-return:/im.test(body) || /^\s*Return required:/im.test(body) || /^\s*Return policy:/im.test(body);
+		}
+		function analyzeThreadDetailHistoryWindow(thread) {
+			const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+			const counts = {
+				turnCount: turns.length,
+				textItemCount: 0,
+				workflowItemCount: 0,
+				ordinaryUserMessageCount: 0,
+				leadingAssistantOnlyWorkflowTurns: 0
+			};
+			let stillLeading = true;
+			for (const turn of turns) {
+				const items = Array.isArray(turn && turn.items) ? turn.items : [];
+				let turnHasText = false;
+				let turnHasWorkflow = false;
+				let turnHasOrdinaryUser = false;
+				for (const item of items) {
+					const itemType = String(item && item.type || "");
+					const textValue = itemVisibleText(item).trim();
+					if (!textValue) continue;
+					turnHasText = true;
+					counts.textItemCount += 1;
+					const workflow = textLooksLikeWorkflowCard(textValue);
+					if (workflow) {
+						counts.workflowItemCount += 1;
+						turnHasWorkflow = true;
+					}
+					if (itemType === "userMessage" && !workflow) {
+						counts.ordinaryUserMessageCount += 1;
+						turnHasOrdinaryUser = true;
+					}
+				}
+				if (stillLeading && turnHasText && turnHasWorkflow && !turnHasOrdinaryUser) counts.leadingAssistantOnlyWorkflowTurns += 1;
+				else if (turnHasText) stillLeading = false;
+			}
+			return counts;
+		}
+		function planThreadDetailHistoryAutoBackfill(input = {}) {
+			const thread = objectOrEmpty(input.thread);
+			const counts = analyzeThreadDetailHistoryWindow(thread);
+			const hasOlder = Boolean(input.hasOlder || thread.mobileOlderTurnsCursor);
+			const base = {
+				shouldLoad: false,
+				reason: "",
+				counts
+			};
+			if (!hasOlder) return Object.assign({}, base, { reason: "no-older-cursor" });
+			if (input.alreadyRequested) return Object.assign({}, base, { reason: "already-requested" });
+			if (input.historyBusy || input.busy) return Object.assign({}, base, { reason: "history-busy" });
+			if (input.mobileHistoryExpanded || thread.mobileHistoryExpanded) return Object.assign({}, base, { reason: "history-expanded" });
+			if (thread.mobileLoading) return Object.assign({}, base, { reason: "thread-loading" });
+			if (counts.turnCount <= 0) return Object.assign({}, base, {
+				shouldLoad: true,
+				reason: "empty-recent-window"
+			});
+			if (counts.leadingAssistantOnlyWorkflowTurns >= 3 && counts.workflowItemCount > 0) return Object.assign({}, base, {
+				shouldLoad: true,
+				reason: "leading-workflow-receipts"
+			});
+			const workflowRatio = counts.textItemCount > 0 ? counts.workflowItemCount / counts.textItemCount : 0;
+			if (counts.workflowItemCount >= 3 && workflowRatio >= .45) return Object.assign({}, base, {
+				shouldLoad: true,
+				reason: "workflow-dominated-window"
+			});
+			if (counts.ordinaryUserMessageCount < 2 && counts.workflowItemCount > 0) return Object.assign({}, base, {
+				shouldLoad: true,
+				reason: "sparse-conversation-context"
+			});
+			return Object.assign({}, base, { reason: "recent-window-has-context" });
+		}
+		function planThreadDetailHistoryAutoBackfillEffects(input = {}) {
+			const plan = objectOrEmpty(input.plan);
+			if (!plan.shouldLoad) return {
+				effects: [],
+				reason: compactReason(plan.reason, "not-needed")
+			};
+			const source = compactReason(input.source, "unknown").slice(0, 40);
+			const threadId = compactReason(input.threadId, "");
+			const seq = Number(input.seq);
+			return {
+				effects: [
+					{
+						type: "remember-history-auto-backfill-key",
+						key: compactReason(input.key, "")
+					},
+					{
+						type: "post-client-event",
+						eventName: "thread_history_auto_backfill",
+						payload: {
+							source,
+							reason: compactReason(plan.reason, ""),
+							counts: objectOrEmpty(plan.counts),
+							thread_hash: compactReason(input.threadHash, ""),
+							readMode: compactReason(input.readMode, ""),
+							buildId: compactReason(input.buildId, "")
+						}
+					},
+					{
+						type: "schedule-load-older-thread-turns",
+						threadId,
+						seq: Number.isFinite(seq) ? seq : 0,
+						delayMs: normalizedDurationMs(input.delayMs),
+						preserveScroll: true,
+						source: "auto-context"
+					}
+				],
+				reason: "history-auto-backfill-effects"
+			};
+		}
+		function planThreadDetailRefreshRequest(input = {}) {
+			const options = objectOrEmpty(input.options);
+			const threadId = input.threadId || input.currentThreadId || "";
+			const source = String(options.source || "refresh").slice(0, 40);
+			if (!threadId) return {
+				shouldRefresh: false,
+				threadId: "",
+				seq: input.threadLoadSeq,
+				source: "",
+				requestedMode: "",
+				query: {},
+				timeoutMs: 2e4,
+				abortActiveRefresh: false,
+				reason: "missing-thread-id"
+			};
+			if (input.documentHidden === true && options.force !== true) return {
+				shouldRefresh: false,
+				threadId,
+				seq: input.threadLoadSeq,
+				source,
+				requestedMode: "",
+				query: {},
+				timeoutMs: 2e4,
+				abortActiveRefresh: false,
+				reason: "document-hidden"
+			};
+			if (input.hasActiveThreadLoadController === true && options.force !== true) return {
+				shouldRefresh: false,
+				threadId,
+				seq: input.threadLoadSeq,
+				source,
+				requestedMode: "",
+				query: {},
+				timeoutMs: 2e4,
+				abortActiveRefresh: false,
+				reason: "thread-load-in-flight"
+			};
+			const requestedMode = options.full === true || String(options.mode || "").toLowerCase() === "full" ? "full" : "recent";
+			return {
+				shouldRefresh: true,
+				threadId,
+				seq: input.threadLoadSeq,
+				source,
+				requestedMode,
+				query: requestedMode === "recent" ? { mode: "recent" } : {},
+				timeoutMs: 2e4,
+				abortActiveRefresh: Boolean(input.hasActiveRefreshController),
+				reason: requestedMode === "full" ? "full-requested" : "recent-default"
+			};
+		}
+		function planThreadDetailRefreshResponseEffects(input = {}) {
+			const threadId = text(input.threadId || input.requestThreadId).trim();
+			const currentThreadId = text(input.currentThreadId).trim();
+			const seq = Number(input.seq ?? input.requestSeq);
+			const currentSeq = Number(input.currentThreadSeq ?? input.threadLoadSeq);
+			const source = compactReason(input.source, "refresh");
+			const staleThread = Boolean(threadId && currentThreadId && threadId !== currentThreadId);
+			if (staleThread || Boolean(Number.isFinite(seq) && Number.isFinite(currentSeq) && seq !== currentSeq)) return {
+				shouldApply: false,
+				effects: [],
+				reason: staleThread ? "stale-thread" : "stale-seq"
+			};
+			return {
+				shouldApply: true,
+				effects: [
+					{ type: "mark-thread-detail-loaded" },
+					{
+						type: "remember-render-evidence",
+						source: `${source}-detail-api`
+					},
+					{ type: "merge-current-thread" }
+				],
+				reason: "current-thread"
+			};
+		}
+		function planThreadDetailFirstPaintResponseEffects(input = {}) {
+			return {
+				shouldApply: true,
+				effects: [
+					{ type: "mark-thread-detail-loaded" },
+					{
+						type: "remember-render-evidence",
+						source: `${compactReason(input.source, "unknown").slice(0, 40)}-detail-api`
+					},
+					{ type: "sync-pending-server-requests" },
+					{ type: "merge-current-thread" }
+				],
+				reason: "first-paint-response"
+			};
+		}
+		function planThreadDetailFullBackfillResponseEffects(input = {}) {
+			return {
+				shouldApply: true,
+				effects: [
+					{ type: "mark-thread-detail-loaded" },
+					{
+						type: "remember-render-evidence",
+						source: `${compactReason(input.source, "unknown").slice(0, 40)}-detail-api`
+					},
+					{ type: "sync-pending-server-requests" },
+					{ type: "merge-current-thread" }
+				],
+				reason: "full-backfill-response"
+			};
+		}
+		function planThreadDetailRefreshConsistencyCheck(input = {}) {
+			const phase = compactReason(input.projectionConsistencyPhase || input.phase, "");
+			const renderMode = compactReason(input.renderMode || input.detailRenderMode, "");
+			if (!phase) return {
+				shouldCheck: false,
+				phase: "",
+				renderMode,
+				reason: "no-phase"
+			};
+			return {
+				shouldCheck: true,
+				phase,
+				renderMode,
+				reason: "phase-present"
+			};
+		}
+		function planThreadDetailRefreshConsistencyCheckEffects(input = {}) {
+			const consistencyCheck = objectOrEmpty(input.consistencyCheck || input);
+			const phase = compactReason(consistencyCheck.phase, "");
+			const renderMode = compactReason(consistencyCheck.renderMode, "");
+			if (!consistencyCheck.shouldCheck || !phase) return {
+				effects: [],
+				reason: compactReason(consistencyCheck.reason, "no-consistency-check")
+			};
+			return {
+				effects: [{
+					type: "conversation-projection-consistency-check",
+					phase,
+					renderMode
+				}],
+				reason: "consistency-check"
+			};
+		}
+		function planThreadDetailRefreshRenderInput(input = {}) {
+			const nextVisibleShape = objectOrEmpty(input.nextVisibleShape);
+			const nextVisibleTurnCount = Object.prototype.hasOwnProperty.call(input, "nextVisibleTurnCount") ? input.nextVisibleTurnCount : nextVisibleShape.visibleTurnCount;
+			const nextVisibleItemCount = Object.prototype.hasOwnProperty.call(input, "nextVisibleItemCount") ? input.nextVisibleItemCount : nextVisibleShape.visibleItemCount;
+			return {
+				previousConversationSignature: normalizeSignature(input.previousConversationSignature),
+				nextConversationSignature: normalizeSignature(input.nextConversationSignature),
+				renderedConversationSignature: normalizeSignature(input.renderedConversationSignature),
+				previousPatchShellSignature: normalizeSignature(input.previousPatchShellSignature),
+				renderedPatchShellSignature: normalizeSignature(input.renderedPatchShellSignature),
+				allowPatch: input.allowPatch !== false,
+				singleThreadSurfaceAvailable: input.singleThreadSurfaceAvailable === true,
+				renderedDomTurnCount: normalizedCount(input.renderedDomTurnCount),
+				renderedDomItemCount: normalizedCount(input.renderedDomItemCount),
+				duplicateRenderKeyCount: normalizedCount(input.duplicateRenderKeyCount),
+				nextVisibleTurnCount: normalizedCount(nextVisibleTurnCount),
+				nextVisibleItemCount: normalizedCount(nextVisibleItemCount),
+				expectedTurnIds: normalizedStringList(input.expectedTurnIds),
+				renderedDomTurnIds: normalizedStringList(input.renderedDomTurnIds)
+			};
+		}
+		function planThreadDetailRefreshRender(input = {}) {
+			const renderInput = planThreadDetailRefreshRenderInput(input);
+			const previousConversationSignature = renderInput.previousConversationSignature;
+			const nextConversationSignature = renderInput.nextConversationSignature;
+			const renderedConversationSignature = renderInput.renderedConversationSignature;
+			const previousPatchShellSignature = renderInput.previousPatchShellSignature;
+			const renderedPatchShellSignature = renderInput.renderedPatchShellSignature;
+			const allowPatch = renderInput.allowPatch !== false;
+			const singleThreadSurfaceAvailable = renderInput.singleThreadSurfaceAvailable === true;
+			const renderedDomTurnCount = renderInput.renderedDomTurnCount;
+			const nextVisibleTurnCount = renderInput.nextVisibleTurnCount;
+			const renderedDomMissingVisibleTurns = Boolean(singleThreadSurfaceAvailable && nextVisibleTurnCount > 0 && renderedDomTurnCount < nextVisibleTurnCount);
+			const renderedDomMissingVisibleItems = Boolean(singleThreadSurfaceAvailable && renderInput.nextVisibleItemCount > 0 && renderInput.renderedDomItemCount < renderInput.nextVisibleItemCount);
+			const renderedDomDuplicateKeys = Boolean(singleThreadSurfaceAvailable && renderInput.duplicateRenderKeyCount > 0);
+			const renderedDomTurnOrderMismatch = Boolean(singleThreadSurfaceAvailable && turnOrderMismatch(renderInput.expectedTurnIds, renderInput.renderedDomTurnIds));
+			const renderedDomInvalidForNonemptyDetail = renderedDomMissingVisibleTurns || renderedDomMissingVisibleItems || renderedDomDuplicateKeys || renderedDomTurnOrderMismatch;
+			if (!(renderedDomInvalidForNonemptyDetail || previousConversationSignature !== nextConversationSignature || renderedConversationSignature !== nextConversationSignature)) return {
+				shouldRenderDetail: false,
+				canPatch: false,
+				detailRenderMode: "metadata-only",
+				reason: "signature-stable"
+			};
+			if (renderedDomInvalidForNonemptyDetail) {
+				let reason = "rendered-dom-empty";
+				if (renderedDomDuplicateKeys) reason = "rendered-dom-duplicate-render-keys";
+				else if (renderedDomTurnOrderMismatch) reason = "rendered-dom-turn-order-mismatch";
+				else if (renderedDomMissingVisibleItems) reason = "rendered-dom-item-mismatch";
+				else if (renderedDomMissingVisibleTurns && renderedDomTurnCount > 0) reason = "rendered-dom-turn-mismatch";
+				return {
+					shouldRenderDetail: true,
+					canPatch: false,
+					detailRenderMode: "full-render",
+					reason
+				};
+			}
+			const fullSignatureMatches = Boolean(previousConversationSignature && renderedConversationSignature && previousConversationSignature === renderedConversationSignature);
+			const canPatch = Boolean(allowPatch && (fullSignatureMatches || Boolean(previousPatchShellSignature && renderedPatchShellSignature && previousPatchShellSignature === renderedPatchShellSignature)));
+			return {
+				shouldRenderDetail: true,
+				canPatch,
+				detailRenderMode: canPatch ? "patch" : "full-render",
+				reason: canPatch ? fullSignatureMatches ? "signature-changed" : "patch-shell-stable" : "rendered-signature-stale"
+			};
+		}
+		function planThreadDetailRefreshRenderStage(input = {}) {
+			const refreshRenderInput = planThreadDetailRefreshRenderInput(input);
+			const renderPlan = planThreadDetailRefreshRender(refreshRenderInput);
+			return {
+				refreshRenderInput,
+				renderPlan,
+				shouldRenderDetail: Boolean(renderPlan.shouldRenderDetail),
+				detailRenderMode: compactReason(renderPlan.detailRenderMode, ""),
+				reason: compactReason(renderPlan.reason, "refresh-render-stage")
+			};
+		}
+		function planThreadDetailRefreshPatchExecution(input = {}) {
+			const shouldRenderDetail = Boolean(input.shouldRenderDetail);
+			const canPatch = Boolean(input.canPatch);
+			const tileSurfaceRefresh = Boolean(input.tileSurfaceRefresh);
+			if (!shouldRenderDetail) return {
+				tryTilePanePatch: true,
+				tryLocalPatch: false,
+				updateMetadataOnTileMiss: true,
+				fallbackAction: "metadata-update",
+				localPatchBlockedReason: "signature-stable",
+				reason: "metadata-only"
+			};
+			if (!canPatch) return {
+				tryTilePanePatch: true,
+				tryLocalPatch: false,
+				updateMetadataOnTileMiss: false,
+				fallbackAction: "full-render",
+				localPatchBlockedReason: "patch-not-allowed",
+				reason: "full-render-required"
+			};
+			if (tileSurfaceRefresh) return {
+				tryTilePanePatch: true,
+				tryLocalPatch: true,
+				updateMetadataOnTileMiss: false,
+				fallbackAction: "full-render",
+				localPatchBlockedReason: "",
+				reason: "tile-surface-patch-chain"
+			};
+			return {
+				tryTilePanePatch: true,
+				tryLocalPatch: true,
+				updateMetadataOnTileMiss: false,
+				fallbackAction: "full-render",
+				localPatchBlockedReason: "",
+				reason: "local-patch-eligible"
+			};
+		}
+		function planThreadDetailRefreshPatchSurface(input = {}) {
+			const shouldRenderDetail = Boolean(input.shouldRenderDetail);
+			const threadTileMode = Boolean(input.threadTileMode);
+			const threadTileConversationSurface = Boolean(input.threadTileConversationSurface);
+			const tilePatchSurface = compactReason(input.tilePatchSurface || input.surface, "");
+			const tilePatchSurfaceMatch = tilePatchSurface === "thread-tile-pane";
+			const tileSurfaceRefresh = Boolean(threadTileMode || threadTileConversationSurface || tilePatchSurfaceMatch);
+			let reason = "single-thread-surface";
+			if (threadTileMode) reason = "tile-mode";
+			else if (threadTileConversationSurface) reason = "tile-conversation-surface";
+			else if (tilePatchSurfaceMatch) reason = "tile-patch-surface";
+			else if (!shouldRenderDetail) reason = "metadata-only-single-thread-surface";
+			return {
+				shouldProbeTilePatchSurface: shouldRenderDetail,
+				tileSurfaceRefresh,
+				tilePatchSurface,
+				reason
+			};
+		}
+		function planThreadDetailRefreshPatchSurfaceProbeEffects(input = {}) {
+			const patchSurfacePlan = objectOrEmpty(input.patchSurfacePlan || input.plan);
+			if (!patchSurfacePlan.shouldProbeTilePatchSurface) return {
+				effects: [],
+				reason: compactReason(patchSurfacePlan.reason, "no-patch-surface-probe")
+			};
+			return {
+				effects: [{
+					type: "probe-thread-detail-dom-patch-surface",
+					threadId: compactReason(input.threadId, "")
+				}],
+				reason: "patch-surface-probe"
+			};
+		}
+		function planThreadDetailRefreshPatchSurfaceProbeStage(input = {}) {
+			const patchSurfaceProbePlan = planThreadDetailRefreshPatchSurface({
+				shouldRenderDetail: input.shouldRenderDetail,
+				threadTileMode: input.threadTileMode,
+				threadTileConversationSurface: input.threadTileConversationSurface
+			});
+			const patchSurfaceProbeEffectsPlan = planThreadDetailRefreshPatchSurfaceProbeEffects({
+				patchSurfacePlan: patchSurfaceProbePlan,
+				threadId: input.threadId
+			});
+			return {
+				patchSurfaceProbePlan,
+				patchSurfaceProbeEffectsPlan,
+				reason: patchSurfaceProbeEffectsPlan.reason
+			};
+		}
+		function planThreadDetailRefreshPatchSurfaceResultStage(input = {}) {
+			const tilePatchPlan = objectOrEmpty(input.tilePatchPlan);
+			const patchSurfacePlan = planThreadDetailRefreshPatchSurface({
+				shouldRenderDetail: input.shouldRenderDetail,
+				threadTileMode: input.threadTileMode,
+				threadTileConversationSurface: input.threadTileConversationSurface,
+				tilePatchSurface: input.tilePatchSurface || tilePatchPlan.surface
+			});
+			return {
+				patchSurfacePlan,
+				reason: patchSurfacePlan.reason
+			};
+		}
+		function planThreadDetailRefreshPatchSurfaceExecutionStage(input = {}) {
+			const renderPlan = objectOrEmpty(input.renderPlan);
+			const shouldRenderDetail = Object.prototype.hasOwnProperty.call(input, "shouldRenderDetail") ? Boolean(input.shouldRenderDetail) : Boolean(renderPlan.shouldRenderDetail);
+			const patchSurfaceResultStage = planThreadDetailRefreshPatchSurfaceResultStage({
+				shouldRenderDetail,
+				threadTileMode: input.threadTileMode,
+				threadTileConversationSurface: input.threadTileConversationSurface,
+				tilePatchPlan: input.tilePatchPlan,
+				tilePatchSurface: input.tilePatchSurface
+			});
+			const patchExecutionStage = planThreadDetailRefreshPatchExecutionStage({
+				renderPlan,
+				shouldRenderDetail,
+				patchSurfacePlan: patchSurfaceResultStage.patchSurfacePlan
+			});
+			return {
+				patchSurfaceResultStage,
+				patchSurfacePlan: patchSurfaceResultStage.patchSurfacePlan,
+				patchExecutionStage,
+				patchExecutionPlan: patchExecutionStage.patchExecutionPlan,
+				patchAttemptEffectsPlan: patchExecutionStage.patchAttemptEffectsPlan,
+				reason: patchExecutionStage.reason
+			};
+		}
+		function planThreadDetailRefreshPostMergeEffects() {
+			return {
+				groups: [
+					{
+						timing: "merge",
+						timingField: "mergeMs",
+						effects: ["merge-thread-list"]
+					},
+					{
+						timing: "composer-render",
+						timingField: "composerRenderMs",
+						effects: ["render-composer-settings", "sync-active-turn"]
+					},
+					{
+						timing: "thread-list-render",
+						timingField: "threadListRenderMs",
+						effects: ["render-threads"]
+					}
+				],
+				reason: "default-post-merge-effects"
+			};
+		}
+		function planThreadDetailRefreshPostMergeTimingFields(plan = {}) {
+			const groups = Array.isArray(plan && plan.groups) ? plan.groups : [];
+			if (!groups.length) return {
+				ok: false,
+				entries: [],
+				timings: {},
+				reason: "missing-post-merge-groups"
+			};
+			const seenFields = /* @__PURE__ */ new Set();
+			const entries = [];
+			const timings = {};
+			for (const group of groups) {
+				const timing = compactReason(group && group.timing, "");
+				const field = compactReason(group && group.timingField, "");
+				if (!timing || !field) return {
+					ok: false,
+					entries: [],
+					timings: {},
+					reason: "missing-post-merge-timing-metadata"
+				};
+				if (seenFields.has(field)) return {
+					ok: false,
+					entries: [],
+					timings: {},
+					reason: "duplicate-post-merge-timing-field"
+				};
+				seenFields.add(field);
+				entries.push({
+					timing,
+					field
+				});
+				timings[field] = 0;
+			}
+			return {
+				ok: true,
+				entries,
+				timings,
+				reason: "post-merge-timing-fields"
+			};
+		}
+		function planThreadDetailFirstPaintPostMergeTimingEffects(plan = {}) {
+			const timingFieldsPlan = planThreadDetailRefreshPostMergeTimingFields(plan);
+			if (!timingFieldsPlan.ok) return {
+				ok: false,
+				beforeDraftRestore: [],
+				afterDraftRestore: [],
+				timings: {},
+				reason: timingFieldsPlan.reason
+			};
+			const beforeDraftRestore = [];
+			const afterDraftRestore = [];
+			for (const entry of timingFieldsPlan.entries) if (entry.timing === "merge") beforeDraftRestore.push(entry);
+			else afterDraftRestore.push(entry);
+			if (!beforeDraftRestore.length) return {
+				ok: false,
+				beforeDraftRestore: [],
+				afterDraftRestore: [],
+				timings: {},
+				reason: "missing-first-paint-merge-timing"
+			};
+			return {
+				ok: true,
+				beforeDraftRestore,
+				afterDraftRestore,
+				timings: Object.assign({}, timingFieldsPlan.timings),
+				reason: "first-paint-post-merge-timing-effects"
+			};
+		}
+		function planThreadDetailRefreshPatchAttemptEffects(input = {}) {
+			const shouldRenderDetail = Boolean(input.shouldRenderDetail);
+			const tryTilePanePatch = Boolean(input.tryTilePanePatch);
+			const tryLocalPatch = Boolean(input.tryLocalPatch);
+			const effects = [];
+			if (tryTilePanePatch) effects.push({
+				type: "tile-pane-patch",
+				timingTarget: "tile-pane-patch",
+				preserveScroll: true
+			});
+			if (shouldRenderDetail && tryLocalPatch) effects.push({
+				type: "local-patch",
+				timingTarget: "local-patch",
+				skipWhenTilePanePatched: true
+			});
+			return {
+				effects,
+				reason: effects.length ? "patch-attempt-effects" : "no-patch-attempt-effects"
+			};
+		}
+		function planThreadDetailRefreshPatchExecutionStage(input = {}) {
+			const renderPlan = objectOrEmpty(input.renderPlan);
+			const patchSurfacePlan = objectOrEmpty(input.patchSurfacePlan);
+			const shouldRenderDetail = Object.prototype.hasOwnProperty.call(input, "shouldRenderDetail") ? Boolean(input.shouldRenderDetail) : Boolean(renderPlan.shouldRenderDetail);
+			const patchExecutionPlan = planThreadDetailRefreshPatchExecution({
+				shouldRenderDetail,
+				canPatch: Object.prototype.hasOwnProperty.call(input, "canPatch") ? Boolean(input.canPatch) : Boolean(renderPlan.canPatch),
+				tileSurfaceRefresh: Object.prototype.hasOwnProperty.call(input, "tileSurfaceRefresh") ? Boolean(input.tileSurfaceRefresh) : Boolean(patchSurfacePlan.tileSurfaceRefresh)
+			});
+			return {
+				patchExecutionPlan,
+				patchAttemptEffectsPlan: planThreadDetailRefreshPatchAttemptEffects({
+					shouldRenderDetail,
+					tryTilePanePatch: patchExecutionPlan.tryTilePanePatch,
+					tryLocalPatch: patchExecutionPlan.tryLocalPatch
+				}),
+				reason: patchExecutionPlan.reason
+			};
+		}
+		function emptyThreadDetailRefreshPatchAttempt() {
+			return {
+				tilePanePatchAttempted: false,
+				tilePanePatchedDetail: false,
+				localPatchAttempted: false,
+				locallyPatchedDetail: false,
+				tilePanePatchMs: 0,
+				localPatchMs: 0,
+				patchRejectReason: ""
+			};
+		}
+		function threadDetailRefreshPatchAttemptEffectContext(context = {}, aggregate = {}) {
+			return Object.assign({}, objectOrEmpty(context), { tilePanePatchedDetail: Boolean(aggregate && aggregate.tilePanePatchedDetail) });
+		}
+		function reduceThreadDetailRefreshPatchAttempt(aggregate = {}, attempt = {}) {
+			const result = Object.assign(emptyThreadDetailRefreshPatchAttempt(), objectOrEmpty(aggregate));
+			const patchAttempt = objectOrEmpty(attempt);
+			if (patchAttempt.tilePanePatchAttempted) {
+				result.tilePanePatchAttempted = true;
+				result.tilePanePatchedDetail = Boolean(patchAttempt.tilePanePatchedDetail);
+				result.tilePanePatchMs = normalizedDurationMs(result.tilePanePatchMs) + normalizedDurationMs(patchAttempt.tilePanePatchMs);
+			}
+			if (patchAttempt.localPatchAttempted) {
+				result.localPatchAttempted = true;
+				result.locallyPatchedDetail = Boolean(patchAttempt.locallyPatchedDetail);
+				result.localPatchMs = normalizedDurationMs(result.localPatchMs) + normalizedDurationMs(patchAttempt.localPatchMs);
+				result.patchRejectReason = compactReason(patchAttempt.patchRejectReason, "");
+			}
+			return result;
+		}
+		function planThreadDetailRefreshPatchAttemptResult(input = {}) {
+			const shouldRenderDetail = Boolean(input.shouldRenderDetail);
+			const tilePanePatchAttempted = Boolean(input.tilePanePatchAttempted);
+			const localPatchAttempted = Boolean(input.localPatchAttempted);
+			const tilePanePatchedDetail = Boolean(input.tilePanePatchedDetail);
+			const locallyPatchedDetail = !tilePanePatchedDetail && Boolean(input.locallyPatchedDetail);
+			const tilePanePatchMs = normalizedDurationMs(input.tilePanePatchMs);
+			const localPatchMs = normalizedDurationMs(input.localPatchMs);
+			let patchResult = "not-attempted";
+			let detailPatchMs = 0;
+			let patchTimingSource = "";
+			if (tilePanePatchedDetail) {
+				patchResult = shouldRenderDetail ? "tile-pane-patched" : "tile-pane-metadata-patched";
+				detailPatchMs = tilePanePatchMs;
+				patchTimingSource = "tile-pane";
+			} else if (locallyPatchedDetail) {
+				patchResult = "local-patched";
+				detailPatchMs = localPatchMs;
+				patchTimingSource = "local-patch";
+			} else if (localPatchAttempted) {
+				patchResult = "local-patch-rejected";
+				detailPatchMs = localPatchMs;
+				patchTimingSource = "local-patch-rejected";
+			} else if (tilePanePatchAttempted) patchResult = "tile-pane-miss";
+			const reportLocalPatchRejected = Boolean(shouldRenderDetail && localPatchAttempted && !locallyPatchedDetail && !tilePanePatchedDetail);
+			return {
+				patchResult,
+				locallyPatchedDetail,
+				tilePanePatchedDetail,
+				detailPatchMs,
+				patchTimingSource,
+				patchRejectReason: reportLocalPatchRejected ? compactReason(input.patchRejectReason, "unknown") : "",
+				reportLocalPatchRejected,
+				localPatchAttempted,
+				tilePanePatchAttempted,
+				patchResult,
+				patchTimingSource,
+				finalizeResult: {
+					locallyPatchedDetail,
+					tilePanePatchedDetail
+				}
+			};
+		}
+		function visibleItemCountFromShape(shape, fallback = 0) {
+			const value = objectOrEmpty(shape);
+			return normalizedCount(value.visibleItemCount ?? value.visible_count ?? fallback);
+		}
+		function planThreadDetailRefreshPatchRejectedDiagnostic(input = {}) {
+			const patchAttemptResult = objectOrEmpty(input.patchAttemptResult);
+			if (!patchAttemptResult.reportLocalPatchRejected) return {
+				shouldReport: false,
+				diagnosticInput: null,
+				reason: "not-rejected"
+			};
+			const renderPlan = objectOrEmpty(input.renderPlan);
+			return {
+				shouldReport: true,
+				diagnosticInput: {
+					readMode: compactReason(input.readMode || input.read_mode, ""),
+					renderMode: compactReason(renderPlan.detailRenderMode || input.renderMode, ""),
+					renderPlanReason: compactReason(renderPlan.reason || input.renderPlanReason, ""),
+					patchRejectReason: compactReason(patchAttemptResult.patchRejectReason || input.patchRejectReason, "unknown"),
+					previousVisibleItemCount: visibleItemCountFromShape(input.previousVisibleShape, input.previousVisibleItemCount),
+					visibleItemCount: visibleItemCountFromShape(input.nextVisibleShape, input.visibleItemCount)
+				},
+				reason: "local-patch-rejected"
+			};
+		}
+		function planThreadDetailRefreshPatchRejectedDiagnosticEffects(input = {}) {
+			const diagnosticPlan = objectOrEmpty(input.diagnosticPlan || input.plan);
+			if (!diagnosticPlan.shouldReport) return {
+				effects: [],
+				reason: compactReason(diagnosticPlan.reason, "not-rejected")
+			};
+			return {
+				effects: [{
+					type: "detail-patch-rejected-diagnostic-failure",
+					diagnosticInput: objectOrEmpty(diagnosticPlan.diagnosticInput)
+				}],
+				reason: "local-patch-rejected-diagnostic"
+			};
+		}
+		function hasOwnPropertyValue(object, key) {
+			return Object.prototype.hasOwnProperty.call(objectOrEmpty(object), key);
+		}
+		function planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects(input = {}) {
+			const stage = objectOrEmpty(input.patchAttemptResultStage || input.stage);
+			if (!stage.needsPatchRejectedVisibleShapes) return {
+				effects: [],
+				reason: compactReason(stage.reason, "visible-shapes-not-required")
+			};
+			return {
+				effects: [{ type: "collect-patch-rejected-visible-shapes" }],
+				reason: "visible-shapes-required"
+			};
+		}
+		function planThreadDetailRefreshPatchAttemptResultStage(input = {}) {
+			const patchAttempt = objectOrEmpty(input.patchAttempt);
+			const patchAttemptResult = planThreadDetailRefreshPatchAttemptResult({
+				shouldRenderDetail: input.shouldRenderDetail,
+				tilePanePatchAttempted: patchAttempt.tilePanePatchAttempted,
+				tilePanePatchedDetail: patchAttempt.tilePanePatchedDetail,
+				localPatchAttempted: patchAttempt.localPatchAttempted,
+				locallyPatchedDetail: patchAttempt.locallyPatchedDetail,
+				tilePanePatchMs: patchAttempt.tilePanePatchMs,
+				localPatchMs: patchAttempt.localPatchMs,
+				patchRejectReason: patchAttempt.patchRejectReason
+			});
+			if (Boolean(patchAttemptResult.reportLocalPatchRejected && (!hasOwnPropertyValue(input, "previousVisibleShape") || !hasOwnPropertyValue(input, "nextVisibleShape")))) return {
+				patchAttemptResult,
+				needsPatchRejectedVisibleShapes: true,
+				patchRejectedDiagnosticPlan: null,
+				patchRejectedDiagnosticEffectsPlan: {
+					effects: [],
+					reason: "visible-shapes-required"
+				},
+				reason: "visible-shapes-required"
+			};
+			const patchRejectedDiagnosticPlan = planThreadDetailRefreshPatchRejectedDiagnostic({
+				readMode: input.readMode,
+				renderPlan: input.renderPlan,
+				patchAttemptResult,
+				previousVisibleShape: input.previousVisibleShape,
+				nextVisibleShape: input.nextVisibleShape
+			});
+			return {
+				patchAttemptResult,
+				needsPatchRejectedVisibleShapes: false,
+				patchRejectedDiagnosticPlan,
+				patchRejectedDiagnosticEffectsPlan: planThreadDetailRefreshPatchRejectedDiagnosticEffects({ diagnosticPlan: patchRejectedDiagnosticPlan }),
+				reason: patchRejectedDiagnosticPlan.reason
+			};
+		}
+		function planThreadDetailRefreshPatchAttemptResultEvidenceStage(input = {}) {
+			const patchAttemptResultStage = planThreadDetailRefreshPatchAttemptResultStage(input);
+			return {
+				patchAttemptResultStage,
+				visibleShapeEvidenceEffectsPlan: planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects({ patchAttemptResultStage }),
+				needsPatchRejectedVisibleShapes: patchAttemptResultStage.needsPatchRejectedVisibleShapes,
+				reason: patchAttemptResultStage.reason
+			};
+		}
+		function planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage(input = {}) {
+			const visibleShapeEvidence = objectOrEmpty(input.visibleShapeEvidence);
+			return planThreadDetailRefreshPatchAttemptResultStage({
+				shouldRenderDetail: input.shouldRenderDetail,
+				patchAttempt: input.patchAttempt,
+				renderPlan: input.renderPlan,
+				readMode: input.readMode,
+				previousVisibleShape: visibleShapeEvidence.previousVisibleShape,
+				nextVisibleShape: visibleShapeEvidence.nextVisibleShape
+			});
+		}
+		function planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage(input = {}) {
+			const patchAttemptResultStage = objectOrEmpty(input.patchAttemptResultStage);
+			const visibleShapeEvidence = objectOrEmpty(input.visibleShapeEvidence);
+			if (!visibleShapeEvidence.collected) return {
+				patchAttemptResultStage,
+				resolvedFromEvidence: false,
+				reason: compactReason(patchAttemptResultStage.reason, "visible-shapes-not-collected")
+			};
+			const completedStage = planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage({
+				shouldRenderDetail: input.shouldRenderDetail,
+				patchAttempt: input.patchAttempt,
+				renderPlan: input.renderPlan,
+				readMode: input.readMode,
+				visibleShapeEvidence
+			});
+			return {
+				patchAttemptResultStage: completedStage,
+				resolvedFromEvidence: true,
+				reason: completedStage.reason
+			};
+		}
+		function finalizeThreadDetailRenderPlan(plan = {}, result = {}) {
+			const tilePanePatchedDetail = Boolean(result.tilePanePatchedDetail);
+			const locallyPatchedDetail = Boolean(result.locallyPatchedDetail);
+			if (!plan.shouldRenderDetail) {
+				if (tilePanePatchedDetail) return {
+					detailRenderMode: "tile-pane-metadata",
+					locallyPatchedDetail: false,
+					tilePanePatchedDetail: true,
+					renderAction: "tile-pane-patch",
+					projectionConsistencyPhase: "refresh-metadata"
+				};
+				return {
+					detailRenderMode: "metadata-only",
+					locallyPatchedDetail: false,
+					tilePanePatchedDetail: false,
+					renderAction: "metadata-update",
+					projectionConsistencyPhase: "refresh-metadata"
+				};
+			}
+			if (tilePanePatchedDetail) return {
+				detailRenderMode: "tile-pane",
+				locallyPatchedDetail: false,
+				tilePanePatchedDetail: true,
+				renderAction: "tile-pane-patch",
+				projectionConsistencyPhase: "refresh-local-patch"
+			};
+			if (locallyPatchedDetail) return {
+				detailRenderMode: "patch",
+				locallyPatchedDetail: true,
+				tilePanePatchedDetail: false,
+				renderAction: "local-patch-metadata-update",
+				projectionConsistencyPhase: "refresh-local-patch"
+			};
+			return {
+				detailRenderMode: "full-render",
+				locallyPatchedDetail: false,
+				tilePanePatchedDetail: false,
+				renderAction: "full-render",
+				projectionConsistencyPhase: ""
+			};
+		}
+		function planThreadDetailRefreshOutcomeExecution(outcome = {}) {
+			const renderAction = String(outcome.renderAction || "");
+			const projectionConsistencyPhase = String(outcome.projectionConsistencyPhase || "");
+			const consistencyCheck = planThreadDetailRefreshConsistencyCheck({
+				projectionConsistencyPhase,
+				detailRenderMode: outcome.detailRenderMode
+			});
+			if (renderAction === "local-patch-metadata-update") return {
+				renderAction,
+				metadataUpdateMode: "local-patch",
+				metadataEffects: [
+					"update-current-thread-header",
+					"update-tick-timer",
+					"publish-plugin-navigation-state"
+				],
+				executionAction: "metadata-effects",
+				timingTarget: "metadata-update",
+				runFullRender: false,
+				projectionConsistencyPhase,
+				consistencyCheck,
+				reason: "local-patch-complete"
+			};
+			if (renderAction === "metadata-update") return {
+				renderAction,
+				metadataUpdateMode: "metadata-only",
+				metadataEffects: [
+					"update-current-thread-header",
+					"update-live-operation-dock",
+					"update-tick-timer",
+					"schedule-scroll-button-update"
+				],
+				executionAction: "metadata-effects",
+				timingTarget: "metadata-update",
+				runFullRender: false,
+				projectionConsistencyPhase,
+				consistencyCheck,
+				reason: "metadata-only"
+			};
+			if (renderAction === "full-render") return {
+				renderAction,
+				metadataUpdateMode: "",
+				metadataEffects: [],
+				executionAction: "full-render",
+				timingTarget: "conversation-render",
+				runFullRender: true,
+				projectionConsistencyPhase: "refresh-full-render",
+				consistencyCheck: planThreadDetailRefreshConsistencyCheck({
+					projectionConsistencyPhase: "refresh-full-render",
+					detailRenderMode: outcome.detailRenderMode
+				}),
+				reason: "full-render"
+			};
+			return {
+				renderAction,
+				metadataUpdateMode: "",
+				metadataEffects: [],
+				executionAction: "none",
+				timingTarget: "",
+				runFullRender: false,
+				projectionConsistencyPhase,
+				consistencyCheck,
+				reason: renderAction || "none"
+			};
+		}
+		function planThreadDetailRefreshOutcomeExecutionStage(input = {}) {
+			const renderOutcome = finalizeThreadDetailRenderPlan(objectOrEmpty(input.renderPlan), objectOrEmpty(input.patchAttemptResult).finalizeResult);
+			const executionPlan = planThreadDetailRefreshOutcomeExecution(renderOutcome);
+			return {
+				renderOutcome,
+				executionPlan,
+				executionEffectsPlan: planThreadDetailRefreshExecutionEffects(executionPlan),
+				consistencyCheckEffectsPlan: planThreadDetailRefreshConsistencyCheckEffects(executionPlan.consistencyCheck || {}),
+				reason: executionPlan.reason
+			};
+		}
+		function planThreadDetailRefreshPerformanceInput(input = {}) {
+			const renderPlan = objectOrEmpty(input.renderPlan);
+			const renderOutcome = objectOrEmpty(input.renderOutcome);
+			const patchAttemptResult = objectOrEmpty(input.patchAttemptResult);
+			const patchSurfacePlan = objectOrEmpty(input.patchSurfacePlan);
+			const patchExecutionPlan = objectOrEmpty(input.patchExecutionPlan);
+			const timings = objectOrEmpty(input.timings);
+			return {
+				source: compactReason(input.source, ""),
+				threadId: compactReason(input.threadId, ""),
+				requestedMode: compactReason(input.requestedMode, ""),
+				elapsedMs: normalizedDurationMs(timings.elapsedMs),
+				apiElapsedMs: normalizedDurationMs(timings.apiElapsedMs),
+				renderElapsedMs: normalizedDurationMs(timings.renderElapsedMs),
+				mergeMs: normalizedDurationMs(timings.mergeMs),
+				composerRenderMs: normalizedDurationMs(timings.composerRenderMs),
+				threadListRenderMs: normalizedDurationMs(timings.threadListRenderMs),
+				conversationRenderMs: normalizedDurationMs(timings.conversationRenderMs),
+				detailPatchMs: normalizedDurationMs(patchAttemptResult.detailPatchMs),
+				metadataUpdateMs: normalizedDurationMs(timings.metadataUpdateMs),
+				detailRenderMode: compactReason(renderOutcome.detailRenderMode || renderPlan.detailRenderMode, ""),
+				refreshRenderAction: compactReason(renderOutcome.renderAction, ""),
+				renderPlanReason: compactReason(renderPlan.reason, ""),
+				patchRejectReason: compactReason(patchAttemptResult.patchRejectReason, ""),
+				patchResult: compactReason(patchAttemptResult.patchResult, ""),
+				patchTimingSource: compactReason(patchAttemptResult.patchTimingSource, ""),
+				patchSurfaceReason: compactReason(patchSurfacePlan.reason, ""),
+				patchSurface: compactReason(patchSurfacePlan.tilePatchSurface || patchSurfacePlan.surface, ""),
+				patchExecutionReason: compactReason(patchExecutionPlan.reason, ""),
+				skippedDetailRender: input.shouldRenderDetail === false,
+				locallyPatchedDetail: Boolean(renderOutcome.locallyPatchedDetail),
+				tilePanePatchedDetail: Boolean(renderOutcome.tilePanePatchedDetail),
+				localPatchAttempted: Boolean(patchAttemptResult.localPatchAttempted),
+				tilePanePatchAttempted: Boolean(patchAttemptResult.tilePanePatchAttempted)
+			};
+		}
+		function planThreadDetailRefreshReportingStage(input = {}) {
+			const eventName = compactReason(input.eventName, "thread_refresh_ms");
+			const threadId = compactReason(input.threadId, "");
+			return {
+				performanceInput: planThreadDetailRefreshPerformanceInput(input),
+				telemetryConfig: {
+					eventName,
+					throttleKey: compactReason(input.throttleKey, eventName),
+					minIntervalMs: normalizedDurationMs(input.minIntervalMs),
+					action: compactReason(input.action, "thread-detail-refresh"),
+					threadId
+				},
+				completionConfig: { threadHash: compactReason(input.threadHash, "") },
+				reason: "refresh-reporting"
+			};
+		}
+		function addOptionalTimingField(out, key, value) {
+			const timing = normalizedOptionalDurationMs(value);
+			if (timing !== null) out[key] = timing;
+		}
+		function planThreadDetailFirstPaintPerformanceInput(input = {}) {
+			const timings = objectOrEmpty(input.timings);
+			const cached = input.cached === true;
+			const out = {
+				source: compactReason(input.source, "").slice(0, 40),
+				threadId: compactReason(input.threadId, ""),
+				elapsedMs: normalizedDurationMs(timings.elapsedMs),
+				apiElapsedMs: normalizedDurationMs(timings.apiElapsedMs),
+				renderElapsedMs: normalizedDurationMs(timings.renderElapsedMs),
+				detailRenderMode: compactReason(input.detailRenderMode, cached ? "cached-current" : "first-paint"),
+				cached
+			};
+			addOptionalTimingField(out, "mergeMs", timings.mergeMs);
+			addOptionalTimingField(out, "draftRestoreMs", timings.draftRestoreMs);
+			addOptionalTimingField(out, "composerRenderMs", timings.composerRenderMs);
+			addOptionalTimingField(out, "threadListRenderMs", timings.threadListRenderMs);
+			addOptionalTimingField(out, "conversationRenderMs", timings.conversationRenderMs);
+			addOptionalTimingField(out, "postRenderMs", timings.postRenderMs);
+			return out;
+		}
+		function planThreadDetailFirstPaintReportingStage(input = {}) {
+			const cached = input.cached === true;
+			const performanceInput = planThreadDetailFirstPaintPerformanceInput({
+				source: input.source,
+				threadId: input.threadId,
+				detailRenderMode: input.detailRenderMode || (cached ? "cached-current" : "first-paint"),
+				cached,
+				timings: objectOrEmpty(input.timings)
+			});
+			return {
+				performanceInput,
+				telemetryInput: {
+					source: performanceInput.source,
+					threadId: performanceInput.threadId,
+					elapsedMs: performanceInput.elapsedMs,
+					apiElapsedMs: performanceInput.apiElapsedMs,
+					renderElapsedMs: performanceInput.renderElapsedMs,
+					readMode: compactReason(input.readMode, ""),
+					status: compactReason(input.status, ""),
+					turns: normalizedCount(input.turns),
+					omittedTurns: normalizedCount(input.omittedTurns),
+					rolloutSizeBytes: normalizedCount(input.rolloutSizeBytes),
+					threadHash: compactReason(input.threadHash, "")
+				},
+				reason: cached ? "cached-current-reporting" : "first-paint-reporting"
+			};
+		}
+		function planThreadDetailFullBackfillPerformanceInput(input = {}) {
+			const timings = objectOrEmpty(input.timings);
+			return {
+				source: compactReason(input.source, "").slice(0, 40),
+				threadId: compactReason(input.threadId, ""),
+				elapsedMs: normalizedDurationMs(timings.elapsedMs),
+				apiElapsedMs: normalizedDurationMs(timings.apiElapsedMs),
+				renderElapsedMs: normalizedDurationMs(timings.renderElapsedMs),
+				mergeMs: normalizedDurationMs(timings.mergeMs),
+				composerRenderMs: normalizedDurationMs(timings.composerRenderMs),
+				threadListRenderMs: normalizedDurationMs(timings.threadListRenderMs),
+				conversationRenderMs: normalizedDurationMs(timings.conversationRenderMs),
+				postRenderMs: normalizedDurationMs(timings.postRenderMs),
+				detailRenderMode: "full-backfill"
+			};
+		}
+		function planThreadDetailFullBackfillReportingStage(input = {}) {
+			const performanceInput = planThreadDetailFullBackfillPerformanceInput({
+				source: input.source,
+				threadId: input.threadId,
+				timings: objectOrEmpty(input.timings)
+			});
+			return {
+				performanceInput,
+				telemetryInput: { threadId: performanceInput.threadId },
+				reason: "full-backfill-reporting"
+			};
+		}
+		function planThreadDetailRefreshTelemetryEffects(input = {}) {
+			const performanceEvent = objectOrEmpty(input.performanceEvent);
+			const eventName = compactReason(input.eventName, "thread_refresh_ms");
+			const throttleKey = compactReason(input.throttleKey, eventName);
+			const minIntervalMs = normalizedDurationMs(input.minIntervalMs);
+			const action = compactReason(input.action, "thread-detail-refresh");
+			const threadId = compactReason(input.threadId, "");
+			return {
+				effects: [{
+					type: "post-performance-event",
+					eventName,
+					payload: performanceEvent,
+					options: {
+						key: throttleKey,
+						minIntervalMs
+					}
+				}, {
+					type: "record-thread-detail-response-diagnostics",
+					performanceEvent,
+					context: {
+						action,
+						threadId
+					}
+				}],
+				reason: "refresh-telemetry"
+			};
+		}
+		function planThreadDetailRefreshReportingEffectsStage(input = {}) {
+			const telemetryConfig = objectOrEmpty(input.telemetryConfig);
+			const completionConfig = objectOrEmpty(input.completionConfig);
+			return {
+				telemetryEffectsPlan: planThreadDetailRefreshTelemetryEffects({
+					performanceEvent: input.performanceEvent,
+					eventName: telemetryConfig.eventName,
+					throttleKey: telemetryConfig.throttleKey,
+					minIntervalMs: telemetryConfig.minIntervalMs,
+					action: telemetryConfig.action,
+					threadId: telemetryConfig.threadId
+				}),
+				completionEffectsPlan: planThreadDetailRefreshCompletionEffects(completionConfig),
+				reason: "refresh-reporting-effects"
+			};
+		}
+		function planThreadDetailRefreshFailureDiagnosticEffects(input = {}) {
+			return {
+				effects: [{
+					type: "thread-detail-refresh-failed-diagnostic-failure",
+					diagnosticInput: {
+						errorCode: compactReason(input.errorCode || input.error_code, "thread_detail_refresh_failed"),
+						durationBucket: compactReason(input.durationBucket || input.duration_bucket, ""),
+						statusCode: compactReason(input.statusCode || input.status_code, ""),
+						threadHash: compactReason(input.threadHash || input.thread_hash, "")
+					}
+				}],
+				reason: "refresh-failed-diagnostic"
+			};
+		}
+		function planThreadDetailRefreshExecutionEffects(input = {}) {
+			const executionAction = compactReason(input.executionAction, "");
+			const metadataEffects = Array.isArray(input.metadataEffects) ? input.metadataEffects.slice() : [];
+			if (executionAction === "metadata-effects") return {
+				effects: [{
+					type: "metadata-effects",
+					timingTarget: "metadata-update",
+					metadataEffects,
+					requireEffects: true
+				}],
+				reason: "metadata-effects"
+			};
+			if (executionAction === "full-render") return {
+				effects: [{
+					type: "full-render",
+					timingTarget: "conversation-render",
+					metadataEffects: [],
+					requireEffects: false
+				}],
+				reason: "full-render"
+			};
+			if (!executionAction || executionAction === "none") return {
+				effects: [],
+				reason: executionAction || "none"
+			};
+			return {
+				effects: [{
+					type: executionAction,
+					timingTarget: "",
+					metadataEffects: [],
+					requireEffects: false
+				}],
+				reason: "unknown-execution-action"
+			};
+		}
+		function planThreadDetailRefreshCompletionEffects(input = {}) {
+			return {
+				effects: [
+					{
+						type: "diagnostic-success",
+						payload: {
+							category: "thread_session_load_failed",
+							diagnostic_type: "thread_detail_refresh_failed",
+							error_code: "thread_detail_refresh_failed",
+							context: {
+								surface: "thread-session",
+								action: "thread-detail-refresh",
+								thread_hash: compactReason(input.threadHash, "")
+							}
+						}
+					},
+					{ type: "schedule-usage-backfill-refresh" },
+					{ type: "schedule-live-poll" }
+				],
+				reason: "refresh-complete"
+			};
+		}
+		function planThreadDetailFirstPaintPostRenderEffects(input = {}) {
+			const seq = Number(input.seq);
+			return {
+				effects: [
+					{
+						type: "publish-plugin-navigation-state",
+						force: true
+					},
+					{ type: "restore-connection-state" },
+					{
+						type: "schedule-live-poll",
+						delayMs: 1200
+					},
+					{ type: "update-composer-controls" },
+					{ type: "close-sidebar-menu-if-overlay" },
+					{
+						type: "backfill-full-thread-detail-if-needed",
+						threadId: compactReason(input.threadId, ""),
+						seq: Number.isFinite(seq) ? seq : 0,
+						source: compactReason(input.source, "").slice(0, 40)
+					},
+					{ type: "schedule-usage-backfill-refresh" }
+				],
+				reason: "first-paint-post-render"
+			};
+		}
+		function planThreadDetailFirstPaintAfterRenderEffects(input = {}) {
+			const seq = Number(input.seq);
+			return {
+				effects: [{
+					type: "history-auto-backfill",
+					seq: Number.isFinite(seq) ? seq : 0,
+					source: compactReason(input.source, "first-paint").slice(0, 40)
+				}],
+				reason: "first-paint-after-render"
+			};
+		}
+		function planThreadDetailFirstPaintPostTimingEffects() {
+			return {
+				effects: [{
+					type: "check-conversation-projection-consistency",
+					phase: "first-paint",
+					renderMode: "first-paint"
+				}],
+				reason: "first-paint-post-timing"
+			};
+		}
+		function planThreadDetailFirstPaintPreRenderEffects(input = {}) {
+			const threadId = compactReason(input.threadId, "");
+			const effects = [
+				{
+					type: "persist-current-thread-id",
+					threadId
+				},
+				{ type: "clear-draft-target-key" },
+				{
+					type: "follow-thread-open-to-bottom",
+					threadId
+				}
+			];
+			if (input.hasEvents) effects.push({ type: "connect-events" });
+			return {
+				effects,
+				reason: "first-paint-pre-render"
+			};
+		}
+		function planThreadDetailFirstPaintDraftRestoreEffects() {
+			return {
+				effects: [{ type: "restore-draft-for-current-target" }],
+				reason: "first-paint-draft-restore"
+			};
+		}
+		function planThreadDetailLoadErrorEffects(input = {}) {
+			return {
+				effects: [
+					{
+						type: "set-current-thread-load-error",
+						threadId: compactReason(input.threadId, ""),
+						errorMessage: String(input.errorMessage || input.error || "")
+					},
+					{ type: "sync-active-turn-from-thread" },
+					{ type: "render-thread-list" },
+					{ type: "render-current-thread" },
+					{ type: "update-composer-controls" }
+				],
+				reason: "thread-detail-load-error"
+			};
+		}
+		function planThreadDetailLoadingShellPostStateEffects(input = {}) {
+			const threadId = compactReason(input.threadId, "");
+			const source = compactReason(input.source, "").slice(0, 40);
+			return {
+				effects: [
+					{
+						type: "follow-thread-open-to-bottom",
+						threadId
+					},
+					{ type: "restore-draft-for-current-target" },
+					{ type: "render-composer-settings" },
+					{ type: "sync-active-turn-from-thread" },
+					{ type: "render-thread-list" },
+					{
+						type: "render-current-thread",
+						options: { stickToBottom: true }
+					},
+					{
+						type: "publish-plugin-navigation-state",
+						force: true
+					},
+					{ type: "update-composer-controls" },
+					{
+						type: "load-side-chat",
+						threadId,
+						silent: true
+					},
+					{
+						type: "set-connection-state",
+						removeClass: "error",
+						text: "Loading thread"
+					},
+					{
+						type: "mark-activity",
+						label: "加载线程"
+					},
+					{
+						type: "start-thread-load-watchdog",
+						threadId,
+						source
+					}
+				],
+				reason: "loading-shell-post-state"
+			};
+		}
+		function planThreadDetailCachedCurrentPostRenderEffects(input = {}) {
+			const seq = Number(input.seq);
+			const threadId = compactReason(input.threadId, "");
+			const source = compactReason(input.source, "cached-current").slice(0, 40);
+			const effects = [{
+				type: "history-auto-backfill",
+				seq: Number.isFinite(seq) ? seq : 0,
+				source
+			}];
+			if (input.replacedTilePane) effects.push({ type: "restore-composer-for-replaced-tile-pane" });
+			effects.push({ type: "close-sidebar-menu-if-overlay" }, {
+				type: "check-conversation-projection-consistency",
+				phase: "cached-current",
+				renderMode: "cached-current"
+			}, {
+				type: "record-empty-cached-detail-reuse-healthy",
+				reason: "cached-current"
+			});
+			if (!input.hasSideChat) effects.push({
+				type: "load-side-chat",
+				threadId,
+				silent: true
+			});
+			return {
+				effects,
+				reason: "cached-current-post-render"
+			};
+		}
+		function planThreadDetailFullBackfillPostRenderEffects() {
+			return {
+				effects: [
+					{ type: "schedule-usage-backfill-refresh" },
+					{ type: "schedule-live-poll" },
+					{ type: "update-composer-controls" }
+				],
+				reason: "full-backfill-post-render"
+			};
+		}
+		function planThreadDetailFirstPaintTelemetryEffects(input = {}) {
+			const source = compactReason(input.source, "").slice(0, 40);
+			const threadId = compactReason(input.threadId, "");
+			const threadHash = compactReason(input.threadHash, "");
+			const performanceEvent = objectOrEmpty(input.performanceEvent);
+			return {
+				effects: [
+					{
+						type: "post-performance-event",
+						eventName: "thread_detail_first_paint",
+						payload: performanceEvent
+					},
+					{
+						type: "record-thread-detail-response-diagnostics",
+						performanceEvent,
+						context: {
+							action: "thread-detail-load",
+							threadId
+						}
+					},
+					{
+						type: "post-client-event",
+						eventName: "thread_switch_complete",
+						payload: {
+							source,
+							threadId,
+							elapsedMs: normalizedDurationMs(input.elapsedMs),
+							apiElapsedMs: normalizedDurationMs(input.apiElapsedMs),
+							renderElapsedMs: normalizedDurationMs(input.renderElapsedMs),
+							readMode: compactReason(input.readMode, ""),
+							status: compactReason(input.status, ""),
+							turns: normalizedCount(input.turns),
+							omittedTurns: normalizedCount(input.omittedTurns),
+							rolloutSizeBytes: normalizedCount(input.rolloutSizeBytes)
+						}
+					},
+					{
+						type: "diagnostic-success",
+						payload: {
+							category: "thread_session_load_failed",
+							diagnostic_type: "thread_detail_load_failed",
+							error_code: "thread_detail_load_failed",
+							context: {
+								surface: "thread-session",
+								action: "thread-detail-load",
+								thread_hash: threadHash
+							}
+						}
+					}
+				],
+				reason: "first-paint-telemetry"
+			};
+		}
+		function planThreadDetailFullBackfillTelemetryEffects(input = {}) {
+			const threadId = compactReason(input.threadId, "");
+			const performanceEvent = objectOrEmpty(input.performanceEvent);
+			return {
+				effects: [{
+					type: "post-performance-event",
+					eventName: "thread_detail_full_ready",
+					payload: performanceEvent,
+					options: { force: true }
+				}, {
+					type: "record-thread-detail-response-diagnostics",
+					performanceEvent,
+					context: {
+						action: "thread-detail-full-backfill",
+						threadId
+					}
+				}],
+				reason: "full-backfill-telemetry"
+			};
+		}
+		function planThreadDetailCachedCurrentTelemetryEffects(input = {}) {
+			const source = compactReason(input.source, "").slice(0, 40);
+			const threadId = compactReason(input.threadId, "");
+			const threadHash = compactReason(input.threadHash, "");
+			return {
+				effects: [
+					{
+						type: "post-performance-event",
+						eventName: "thread_detail_first_paint",
+						payload: objectOrEmpty(input.performanceEvent)
+					},
+					{
+						type: "post-client-event",
+						eventName: "thread_switch_cached",
+						payload: {
+							source,
+							threadId,
+							elapsedMs: normalizedDurationMs(input.elapsedMs)
+						}
+					},
+					{
+						type: "diagnostic-success",
+						payload: {
+							category: "thread_session_load_failed",
+							diagnostic_type: "thread_detail_load_failed",
+							error_code: "thread_detail_load_failed",
+							context: {
+								surface: "thread-session",
+								action: "thread-detail-load",
+								thread_hash: threadHash
+							}
+						}
+					}
+				],
+				reason: "cached-current-telemetry"
+			};
+		}
+		function planThreadDetailSwitchCancelledClientEvent(input = {}) {
+			return {
+				effects: [{
+					type: "post-client-event",
+					eventName: "thread_switch_cancelled",
+					payload: {
+						source: compactReason(input.source, "").slice(0, 40),
+						threadId: compactReason(input.threadId, ""),
+						elapsedMs: normalizedDurationMs(input.elapsedMs),
+						apiElapsedMs: normalizedDurationMs(input.apiElapsedMs)
+					}
+				}],
+				reason: "thread-switch-cancelled"
+			};
+		}
+		function planThreadDetailSwitchStartClientEvent(input = {}) {
+			return {
+				effects: [{
+					type: "post-client-event",
+					eventName: "thread_switch_start",
+					payload: {
+						source: compactReason(input.source, "").slice(0, 40),
+						fromThreadId: compactReason(input.fromThreadId, ""),
+						toThreadId: compactReason(input.toThreadId, ""),
+						listAgeMs: normalizedOptionalDurationMs(input.listAgeMs),
+						currentHadThread: Boolean(input.currentHadThread),
+						eventOpen: Boolean(input.eventOpen)
+					}
+				}],
+				reason: "thread-switch-start"
+			};
+		}
+		function planThreadDetailSwitchErrorClientEvent(input = {}) {
+			return {
+				effects: [{
+					type: "post-client-event",
+					eventName: "thread_switch_error",
+					payload: {
+						source: compactReason(input.source, "").slice(0, 40),
+						threadId: compactReason(input.threadId, ""),
+						elapsedMs: normalizedDurationMs(input.elapsedMs),
+						apiElapsedMs: normalizedDurationMs(input.apiElapsedMs),
+						error: compactReason(input.error, "", 200)
+					}
+				}],
+				reason: "thread-switch-error"
+			};
+		}
+		function text(value) {
+			return String(value ?? "");
+		}
+		function htmlEscaper(input = {}) {
+			return typeof input.escapeHtml === "function" ? input.escapeHtml : (value) => text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+		}
+		function hasHtml(value) {
+			return text(value).trim().length > 0;
+		}
+		function planSingleThreadFullRenderShell(input = {}) {
+			const escape = htmlEscaper(input);
+			const threadId = text(input.threadId || input.currentThreadId).trim();
+			if (input.loadingWithoutVisibleTurns) return {
+				mode: "loading",
+				html: `<div class="history-note entry-animate thread-loading-note" data-render-key="${`loading-visible|${escape(threadId)}`}">正在加载最新线程状态...</div>`,
+				clearLiveOperationDock: true,
+				bindRetry: false,
+				retryThreadId: "",
+				hasPrimaryContent: false,
+				emptyMessage: ""
+			};
+			if (input.loadError) return {
+				mode: "load-error",
+				html: `<div class="empty-state entry-animate">
+        <div>Thread failed: ${escape(input.loadError)}</div>
+        <button id="retryCurrentThread" class="retry-button" type="button">Retry</button>
+      </div>`,
+				clearLiveOperationDock: true,
+				bindRetry: true,
+				retryThreadId: threadId,
+				hasPrimaryContent: false,
+				emptyMessage: ""
+			};
+			const hasPrimaryContent = hasHtml(input.turnsHtml) || hasHtml(input.approvalsHtml) || hasHtml(input.taskCardsHtml);
+			const emptyMessage = input.readWarningMessage ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。" : "No visible turns.";
+			const body = hasPrimaryContent ? `${text(input.turnsHtml)}${text(input.approvalsHtml)}${text(input.taskCardsHtml)}${text(input.pluginRefreshNotice)}` : `${text(input.pluginRefreshNotice)}<div class="empty-state entry-animate">${escape(emptyMessage)}</div>`;
+			return {
+				mode: "detail",
+				html: `${text(input.goalCard)}${text(input.rolloutWarning)}${text(input.loadingNote)}${text(input.taskToolbar)}${text(input.omittedBanner)}${text(input.readWarning)}${body}`,
+				clearLiveOperationDock: false,
+				bindRetry: false,
+				retryThreadId: "",
+				hasPrimaryContent,
+				emptyMessage
+			};
+		}
+		function planSingleThreadEarlyShellExecution(input = {}) {
+			const loadingWithoutVisibleTurns = Boolean(input.loadingWithoutVisibleTurns);
+			const loadError = text(input.loadError);
+			if (!loadingWithoutVisibleTurns && !loadError) return {
+				shouldRender: false,
+				mode: "detail",
+				reason: "detail-content",
+				html: "",
+				clearLiveOperationDock: false,
+				bindRetry: false,
+				retryThreadId: "",
+				conversationSignature: text(input.conversationSignature),
+				patchShellSignature: text(input.patchShellSignature),
+				stickToBottom: Boolean(input.stickToBottom)
+			};
+			const shellPlan = planSingleThreadFullRenderShell({
+				threadId: input.threadId || input.currentThreadId,
+				currentThreadId: input.currentThreadId,
+				loadingWithoutVisibleTurns,
+				loadError,
+				escapeHtml: input.escapeHtml
+			});
+			return {
+				shouldRender: true,
+				mode: shellPlan.mode,
+				reason: shellPlan.mode,
+				html: shellPlan.html,
+				clearLiveOperationDock: Boolean(shellPlan.clearLiveOperationDock),
+				bindRetry: Boolean(shellPlan.bindRetry),
+				retryThreadId: shellPlan.retryThreadId || "",
+				conversationSignature: text(input.conversationSignature),
+				patchShellSignature: text(input.patchShellSignature),
+				stickToBottom: Boolean(input.stickToBottom)
+			};
+		}
+		function planSingleThreadShellConversationUpdate(input = {}) {
+			const shellPlan = objectOrEmpty(input.shellPlan);
+			const source = compactReason(input.source, "single-thread-render");
+			return {
+				html: text(shellPlan.html),
+				conversationSignature: text(input.conversationSignature),
+				options: {
+					stickToBottom: Boolean(input.stickToBottom),
+					patchShellSignature: text(input.patchShellSignature),
+					expectedVisibleTurnCount: normalizedCount(input.expectedVisibleTurnCount),
+					expectedVisibleItemCount: normalizedCount(input.expectedVisibleItemCount),
+					renderedDomTurnCount: normalizedCount(input.renderedDomTurnCount),
+					renderedDomItemCount: normalizedCount(input.renderedDomItemCount),
+					duplicateRenderKeyCount: normalizedCount(input.duplicateRenderKeyCount),
+					expectedTurnIds: normalizedStringList(input.expectedTurnIds),
+					renderedDomTurnIds: normalizedStringList(input.renderedDomTurnIds),
+					checkProjectionConsistency: input.checkProjectionConsistency === true,
+					source
+				},
+				reason: source
+			};
+		}
+		function planSingleThreadShellPostUpdateEffects(input = {}) {
+			const shellPlan = objectOrEmpty(input.shellPlan);
+			const effects = [];
+			if (input.bindRetry || shellPlan.bindRetry) effects.push({
+				type: "bind-retry-current-thread",
+				threadId: text(input.retryThreadId || shellPlan.retryThreadId).trim()
+			});
+			if (input.checkEmptyVisibleDetailMismatch) effects.push({
+				type: "check-empty-visible-detail-mismatch",
+				source: compactReason(input.source, "single-thread-render"),
+				renderMode: compactReason(input.renderMode, "full-render"),
+				domCount: normalizedCount(input.domCount),
+				previousCount: normalizedCount(input.previousCount)
+			});
+			if (input.bindCurrentThreadActions) effects.push({ type: "bind-current-thread-actions" });
+			const turnId = text(input.scrollToTurnReceiptStart).trim();
+			if (turnId) effects.push({
+				type: "scroll-turn-receipt-start",
+				turnId
+			});
+			if (input.applyPendingPluginRouteHintFocus) effects.push({ type: "apply-pending-plugin-route-hint-focus" });
+			if (input.updateTickTimer) effects.push({ type: "update-tick-timer" });
+			if (input.publishPluginNavigationState) effects.push({ type: "publish-plugin-navigation-state" });
+			return {
+				effects,
+				reason: compactReason(input.reason, effects.length ? "single-thread-shell-post-update" : "no-post-update-effects")
+			};
+		}
+		return {
+			emptyThreadDetailRefreshPatchAttempt,
+			finalizeThreadDetailRenderPlan,
+			normalizeSignature,
+			planThreadDetailCachedCurrentTelemetryEffects,
+			planThreadDetailCachedCurrentPostRenderEffects,
+			planThreadDetailFirstPaintAfterRenderEffects,
+			planThreadDetailFirstPaintDraftRestoreEffects,
+			planThreadDetailFirstPaintPerformanceInput,
+			planThreadDetailFirstPaintReportingStage,
+			planThreadDetailFirstPaintPostTimingEffects,
+			planThreadDetailFirstPaintPreRenderEffects,
+			planThreadDetailFirstPaintResponseEffects,
+			planThreadDetailFullBackfillResponseEffects,
+			planThreadDetailFullBackfillPerformanceInput,
+			planThreadDetailFullBackfillReportingStage,
+			planThreadDetailLoadErrorEffects,
+			planThreadDetailLoadingShellPostStateEffects,
+			planThreadDetailFullBackfillPostRenderEffects,
+			planThreadDetailFullBackfillTelemetryEffects,
+			planThreadDetailFirstPaintPostRenderEffects,
+			planThreadDetailFirstPaintTelemetryEffects,
+			planThreadDetailSwitchCancelledClientEvent,
+			planThreadDetailSwitchStartClientEvent,
+			planThreadDetailSwitchErrorClientEvent,
+			planThreadDetailRefreshCompletionEffects,
+			planThreadDetailRefreshConsistencyCheck,
+			planThreadDetailRefreshConsistencyCheckEffects,
+			planThreadDetailRefreshResponseEffects,
+			planThreadDetailRefreshPatchAttemptEffects,
+			planThreadDetailRefreshPatchAttemptResult,
+			planThreadDetailRefreshPatchAttemptResultStage,
+			planThreadDetailRefreshPatchAttemptResultEvidenceStage,
+			planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage,
+			planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage,
+			planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects,
+			planThreadDetailRefreshPatchRejectedDiagnostic,
+			planThreadDetailRefreshPatchRejectedDiagnosticEffects,
+			planThreadDetailRefreshOutcomeExecution,
+			planThreadDetailRefreshOutcomeExecutionStage,
+			planThreadDetailRefreshExecutionEffects,
+			planThreadDetailRefreshPerformanceInput,
+			planThreadDetailRefreshReportingStage,
+			planThreadDetailRefreshReportingEffectsStage,
+			planThreadDetailRefreshTelemetryEffects,
+			planThreadDetailRefreshFailureDiagnosticEffects,
+			planThreadDetailRefreshRequest,
+			planThreadDetailRefreshPatchSurface,
+			planThreadDetailRefreshPatchSurfaceProbeEffects,
+			planThreadDetailRefreshPatchSurfaceProbeStage,
+			planThreadDetailRefreshPatchSurfaceExecutionStage,
+			planThreadDetailRefreshPatchSurfaceResultStage,
+			planThreadDetailRefreshPostMergeEffects,
+			planThreadDetailRefreshPostMergeTimingFields,
+			planThreadDetailFirstPaintPostMergeTimingEffects,
+			planThreadDetailRefreshPatchExecutionStage,
+			planSingleThreadEarlyShellExecution,
+			planSingleThreadFullRenderShell,
+			planSingleThreadShellConversationUpdate,
+			planSingleThreadShellPostUpdateEffects,
+			planThreadDetailHistoryAutoBackfill,
+			planThreadDetailHistoryAutoBackfillEffects,
+			planThreadDetailRefreshPatchExecution,
+			planThreadDetailRefreshRenderInput,
+			planThreadDetailRefreshRender,
+			planThreadDetailRefreshRenderStage,
+			reduceThreadDetailRefreshPatchAttempt,
+			threadDetailRefreshPatchAttemptEffectContext
+		};
+	});
+}));
+//#endregion
+//#region public/thread-detail-dom-patch.js
+var require_thread_detail_dom_patch = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDetailDomPatch = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const ELEMENT_NODE = 1;
+		const TEXT_NODE = 3;
+		const COMMENT_NODE = 8;
+		function result(ok, reason, counts = {}) {
+			return Object.assign({
+				ok: Boolean(ok),
+				reason: String(reason || (ok ? "applied" : "unknown")),
+				reused: 0,
+				patched: 0,
+				inserted: 0
+			}, counts);
+		}
+		function threadDetailPatchResult(ok, reason, counts = {}) {
+			const fallback = ok ? "patched" : "unknown";
+			return result(ok, String(reason || fallback).slice(0, 80) || fallback, counts);
+		}
+		function objectOrEmpty(value) {
+			return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+		}
+		function boundedCount(value) {
+			const numberValue = Number(value);
+			return Number.isFinite(numberValue) && numberValue > 0 ? Math.trunc(numberValue) : 0;
+		}
+		function hasOwn(input, key) {
+			return Object.prototype.hasOwnProperty.call(input, key);
+		}
+		function normalizedStringList(value) {
+			return Array.isArray(value) ? value.map((entry) => String(entry || "")).filter(Boolean) : [];
+		}
+		function visibleTurnOrderMismatch(input = {}) {
+			const expected = normalizedStringList(input.expectedTurnIds);
+			const rendered = normalizedStringList(input.renderedDomTurnIds || input.domTurnIds);
+			if (!expected.length) return false;
+			if (expected.length !== rendered.length) return true;
+			for (let index = 0; index < expected.length; index += 1) if (expected[index] !== rendered[index]) return true;
+			return false;
+		}
+		function boundedDuration(value) {
+			const numberValue = Number(value);
+			return Number.isFinite(numberValue) && numberValue >= 0 ? Math.round(numberValue) : 0;
+		}
+		function renderKeyForNode(node) {
+			return node && node.nodeType === ELEMENT_NODE && typeof node.getAttribute === "function" ? node.getAttribute("data-render-key") || "" : "";
+		}
+		function visibleItemRenderKeyForNode(node) {
+			if (!node || node.nodeType !== ELEMENT_NODE || typeof node.getAttribute !== "function") return "";
+			if (node.getAttribute("data-item") == null) return "";
+			return renderKeyForNode(node);
+		}
+		function visibleItemRenderKeysForArticle(article) {
+			return Array.from(article && article.childNodes || []).map(visibleItemRenderKeyForNode).filter(Boolean);
+		}
+		function visibleItemOrderMatches(article, expectedKeys) {
+			const expected = normalizedStringList(expectedKeys);
+			const rendered = visibleItemRenderKeysForArticle(article);
+			if (!expected.length || !rendered.length) return true;
+			if (expected.length !== rendered.length) return false;
+			for (let index = 0; index < expected.length; index += 1) if (expected[index] !== rendered[index]) return false;
+			return true;
+		}
+		function placeVisibleItemNode(article, node, lastPatchedNode) {
+			if (!article || typeof article.insertBefore !== "function" || !node) return node;
+			const anchor = lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild || null;
+			if (node === anchor) return node;
+			article.insertBefore(node, anchor || null);
+			return node;
+		}
+		function canPatchNode(target, source) {
+			if (!target || !source || target.nodeType !== source.nodeType) return false;
+			if (target.nodeType !== ELEMENT_NODE) return true;
+			return target.tagName === source.tagName;
+		}
+		function syncAttributes(target, source) {
+			const sourceNames = new Set(Array.from(source.attributes || []).map((attr) => attr.name));
+			for (const attr of Array.from(target.attributes || [])) if (!sourceNames.has(attr.name)) target.removeAttribute(attr.name);
+			for (const attr of Array.from(source.attributes || [])) if (target.getAttribute(attr.name) !== attr.value) target.setAttribute(attr.name, attr.value);
+		}
+		function patchNode(target, source) {
+			if (!canPatchNode(target, source)) {
+				const replacement = source.cloneNode(true);
+				target.replaceWith(replacement);
+				return replacement;
+			}
+			if (target.nodeType === TEXT_NODE || target.nodeType === COMMENT_NODE) {
+				if (target.nodeValue !== source.nodeValue) target.nodeValue = source.nodeValue;
+				return target;
+			}
+			syncAttributes(target, source);
+			patchChildNodes(target, source);
+			return target;
+		}
+		function patchChildNodes(target, source) {
+			const sourceChildren = Array.from(source.childNodes || []);
+			const targetChildren = Array.from(target.childNodes || []);
+			const keyedTargets = /* @__PURE__ */ new Map();
+			for (const child of targetChildren) {
+				const key = renderKeyForNode(child);
+				if (key && !keyedTargets.has(key)) keyedTargets.set(key, child);
+			}
+			const used = /* @__PURE__ */ new Set();
+			let cursor = target.firstChild || null;
+			for (const sourceChild of sourceChildren) {
+				const key = renderKeyForNode(sourceChild);
+				let targetChild = key ? keyedTargets.get(key) : null;
+				if (targetChild && used.has(targetChild)) targetChild = null;
+				if (!targetChild && cursor && !renderKeyForNode(cursor) && canPatchNode(cursor, sourceChild)) targetChild = cursor;
+				if (targetChild) {
+					const patched = patchNode(targetChild, sourceChild);
+					used.add(patched);
+					if (patched !== cursor) target.insertBefore(patched, cursor);
+					cursor = patched.nextSibling || null;
+					continue;
+				}
+				const inserted = sourceChild.cloneNode(true);
+				target.insertBefore(inserted, cursor);
+				used.add(inserted);
+			}
+			for (const child of Array.from(target.childNodes || [])) if (!used.has(child)) child.remove();
+		}
+		function normalizeOperation(operation) {
+			if (!operation || typeof operation !== "object") return null;
+			const type = String(operation.type || "");
+			const nextEntry = operation.nextEntry && typeof operation.nextEntry === "object" ? operation.nextEntry : null;
+			const key = String(operation.key || nextEntry && nextEntry.key || "");
+			if (!type || !key || !nextEntry) return null;
+			return Object.assign({}, operation, {
+				key,
+				nextEntry,
+				type
+			});
+		}
+		function normalizeTurnOperation(operation) {
+			if (!operation || typeof operation !== "object") return null;
+			const type = String(operation.type || "");
+			const key = String(operation.key || "");
+			if (!type || !key) return null;
+			return Object.assign({}, operation, {
+				key,
+				type
+			});
+		}
+		function callbackOk(value) {
+			if (!value) return false;
+			if (typeof value === "object" && Object.prototype.hasOwnProperty.call(value, "ok")) return Boolean(value.ok);
+			return true;
+		}
+		function callbackReason(value, fallback) {
+			if (value && typeof value === "object" && value.reason) return String(value.reason || fallback);
+			return fallback;
+		}
+		function callbackTarget(value) {
+			if (!value || typeof value !== "object") return null;
+			return value.target || value.node || value.element || null;
+		}
+		function firstTurnElementFrom(input) {
+			if (typeof input.firstTurnElement === "function") return input.firstTurnElement() || null;
+			return input.firstTurnElement || null;
+		}
+		function placeTurnNode(conversation, node, lastPlacedNode, firstTurnElement) {
+			if (!conversation || typeof conversation.insertBefore !== "function") return result(false, "missing-turn-order-root");
+			if (!node) return result(false, "place-turn-missing-element");
+			const anchor = lastPlacedNode ? lastPlacedNode.nextSibling || null : firstTurnElement || conversation.firstChild || null;
+			if (node === anchor) return result(true, "turn-already-placed", {
+				target: node,
+				moved: false
+			});
+			conversation.insertBefore(node, anchor || null);
+			return result(true, "turn-placed", {
+				target: node,
+				moved: true
+			});
+		}
+		function documentFrom(input = {}) {
+			if (input.document && typeof input.document.createElement === "function") return input.document;
+			if (typeof document !== "undefined" && document && typeof document.createElement === "function") return document;
+			return null;
+		}
+		function normalizePatchHtmlInput(input, html, options = {}) {
+			if (input && typeof input === "object" && typeof input.insertBefore === "function") return Object.assign({}, options || {}, {
+				target: input,
+				html
+			});
+			return input && typeof input === "object" ? input : {};
+		}
+		function patchHtml(input = {}, html, options = {}) {
+			const normalized = normalizePatchHtmlInput(input, html, options);
+			const target = normalized.target || normalized.root || null;
+			if (!target || typeof target.insertBefore !== "function") return result(false, "missing-target");
+			const doc = documentFrom(normalized);
+			if (!doc) return result(false, "missing-document");
+			try {
+				const template = doc.createElement("template");
+				if (!template) return result(false, "missing-template");
+				template.innerHTML = String(normalized.html || "");
+				patchChildNodes(target, template.content || { childNodes: [] });
+				return result(true, "patched", {
+					patched: 1,
+					target
+				});
+			} catch (_) {
+				return result(false, "patch-html-failed", { target });
+			}
+		}
+		function planConversationHtmlUpdate(input = {}) {
+			const signature = String(input.signature || "");
+			const renderedConversationSignature = String(input.renderedConversationSignature || "");
+			const renderedConversationPatchShellSignature = String(input.renderedConversationPatchShellSignature || "");
+			const patchShellSignature = String(input.patchShellSignature || "");
+			const stableSignature = renderedConversationSignature === signature;
+			const expectedVisibleTurnCount = Math.max(0, Number(input.expectedVisibleTurnCount || 0));
+			const renderedDomTurnCount = Math.max(0, Number(input.renderedDomTurnCount || 0));
+			const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
+			const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
+			const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
+			const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount);
+			const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount);
+			const excessiveDuplicateUserMessages = Math.max(0, duplicateUserMessageCount - expectedDuplicateUserMessageCount);
+			const stableSignatureButMissingTurns = Boolean(stableSignature && expectedVisibleTurnCount > 0 && renderedDomTurnCount < expectedVisibleTurnCount);
+			const stableSignatureButMissingItems = Boolean(stableSignature && expectedVisibleItemCount > 0 && hasOwn(input, "renderedDomItemCount") && renderedDomItemCount < expectedVisibleItemCount);
+			const stableSignatureButDuplicateKeys = Boolean(stableSignature && duplicateRenderKeyCount > 0);
+			const stableSignatureButDuplicateUserMessages = Boolean(stableSignature && excessiveDuplicateUserMessages > 0);
+			const stableSignatureButTurnOrderMismatch = Boolean(stableSignature && visibleTurnOrderMismatch(input));
+			const stableSignatureDomInvalid = stableSignatureButMissingTurns || stableSignatureButMissingItems || stableSignatureButDuplicateKeys || stableSignatureButDuplicateUserMessages || stableSignatureButTurnOrderMismatch;
+			let invalidationReason = "signature-changed";
+			if (stableSignatureButDuplicateKeys) invalidationReason = "stable-signature-duplicate-render-keys";
+			else if (stableSignatureButDuplicateUserMessages) invalidationReason = "stable-signature-duplicate-user-messages";
+			else if (stableSignatureButTurnOrderMismatch) invalidationReason = "stable-signature-turn-order-mismatch";
+			else if (stableSignatureButMissingItems) invalidationReason = "stable-signature-dom-item-mismatch";
+			else if (stableSignatureButMissingTurns) invalidationReason = renderedDomTurnCount <= 0 ? "stable-signature-dom-empty" : "stable-signature-dom-turn-mismatch";
+			const scrollAction = input.stickToBottom ? "scroll-to-bottom" : "update-bottom-button";
+			if (stableSignature && !stableSignatureDomInvalid) return {
+				action: "hydrate-existing",
+				changed: false,
+				stableSignature: true,
+				reason: "signature-stable",
+				signature,
+				patchShellSignature,
+				updateRenderedConversationSignature: false,
+				updatePatchShellSignature: Boolean(patchShellSignature),
+				nextRenderedConversationSignature: renderedConversationSignature,
+				nextRenderedConversationPatchShellSignature: patchShellSignature || renderedConversationPatchShellSignature,
+				hydrateOptions: {
+					imageScanDelays: [0, 180],
+					skipRichHydration: true
+				},
+				scrollAction,
+				performance: false
+			};
+			return {
+				action: stableSignatureDomInvalid || !input.hasExistingChildren ? "set-inner-html" : "patch-html",
+				fallbackAction: "set-inner-html",
+				changed: true,
+				stableSignature,
+				reason: invalidationReason,
+				signature,
+				patchShellSignature,
+				updateRenderedConversationSignature: true,
+				updatePatchShellSignature: true,
+				nextRenderedConversationSignature: signature,
+				nextRenderedConversationPatchShellSignature: patchShellSignature,
+				hydrateOptions: {},
+				scrollAction,
+				performance: true
+			};
+		}
+		function scrollEffectFromAction(scrollAction) {
+			if (scrollAction === "scroll-to-bottom") return { type: "schedule-conversation-to-bottom" };
+			if (scrollAction === "update-bottom-button") return { type: "schedule-scroll-button-update" };
+			return null;
+		}
+		function planConversationHtmlUpdateEffects(plan = {}) {
+			const updatePlan = objectOrEmpty(plan);
+			const action = String(updatePlan.action || "");
+			const effects = [];
+			const scrollEffect = scrollEffectFromAction(updatePlan.scrollAction);
+			if (action === "hydrate-existing") {
+				if (updatePlan.updatePatchShellSignature) effects.push({
+					type: "set-rendered-conversation-patch-shell-signature",
+					value: String(updatePlan.nextRenderedConversationPatchShellSignature || "")
+				});
+				effects.push({
+					type: "hydrate-root",
+					hydrateOptions: objectOrEmpty(updatePlan.hydrateOptions)
+				});
+				if (scrollEffect) effects.push(scrollEffect);
+				return {
+					effects,
+					reason: effects.length ? "hydrate-existing-effects" : "no-update-effects"
+				};
+			}
+			if (action !== "patch-html" && action !== "set-inner-html") return {
+				effects: [],
+				reason: action ? "unknown-action" : "missing-action"
+			};
+			effects.push({
+				type: "hydrate-root",
+				hydrateOptions: objectOrEmpty(updatePlan.hydrateOptions)
+			});
+			if (updatePlan.updateRenderedConversationSignature) effects.push({
+				type: "set-rendered-conversation-signature",
+				value: String(updatePlan.nextRenderedConversationSignature || "")
+			});
+			if (updatePlan.updatePatchShellSignature) effects.push({
+				type: "set-rendered-conversation-patch-shell-signature",
+				value: String(updatePlan.nextRenderedConversationPatchShellSignature || "")
+			});
+			if (scrollEffect) effects.push(scrollEffect);
+			return {
+				effects,
+				reason: effects.length ? "conversation-update-effects" : "no-update-effects"
+			};
+		}
+		function planConversationHtmlUpdateApplication(input = {}) {
+			const updatePlan = objectOrEmpty(input.updatePlan || input.plan);
+			const action = String(updatePlan.action || "");
+			if (action === "hydrate-existing") return {
+				shouldMutateDom: false,
+				primaryAction: "hydrate-existing",
+				finalAction: "hydrate-existing",
+				patchAttempted: false,
+				patchApplied: false,
+				fallbackApplied: false,
+				patchRejectReason: "",
+				reason: "hydrate-existing"
+			};
+			if (action === "set-inner-html") return {
+				shouldMutateDom: true,
+				primaryAction: "set-inner-html",
+				finalAction: "set-inner-html",
+				patchAttempted: false,
+				patchApplied: false,
+				fallbackApplied: false,
+				patchRejectReason: "",
+				reason: "set-inner-html"
+			};
+			if (action === "patch-html") {
+				const patchResult = objectOrEmpty(input.patchResult);
+				const patchApplied = patchResult.ok === true;
+				const patchRejectReason = patchApplied ? "" : String(patchResult.reason || "patch-html-failed").slice(0, 80);
+				return {
+					shouldMutateDom: true,
+					primaryAction: "patch-html",
+					finalAction: patchApplied ? "patch-html" : "set-inner-html",
+					patchAttempted: true,
+					patchApplied,
+					fallbackApplied: !patchApplied,
+					patchRejectReason,
+					reason: patchApplied ? "patch-html" : "patch-html-failed"
+				};
+			}
+			return {
+				shouldMutateDom: false,
+				primaryAction: action,
+				finalAction: "",
+				patchAttempted: false,
+				patchApplied: false,
+				fallbackApplied: false,
+				patchRejectReason: "",
+				reason: action ? "unknown-action" : "missing-action"
+			};
+		}
+		function compactMismatchReason(reason) {
+			return String(reason || "unknown").replace(/[^a-z0-9_-]+/gi, "_").replace(/-+/g, "_").slice(0, 80) || "unknown";
+		}
+		function conversationDomConsistencyReason(input = {}) {
+			const expectedVisibleTurnCount = boundedCount(input.expectedVisibleTurnCount);
+			const renderedDomTurnCount = boundedCount(input.renderedDomTurnCount);
+			const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
+			const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
+			const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
+			const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount);
+			const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount);
+			if (Math.max(0, duplicateUserMessageCount - expectedDuplicateUserMessageCount) > 0) return "post-apply-duplicate-user-messages";
+			if (duplicateRenderKeyCount > 0) return "post-apply-duplicate-render-keys";
+			if (visibleTurnOrderMismatch(input)) return "post-apply-turn-order-mismatch";
+			if (expectedVisibleItemCount > 0 && hasOwn(input, "renderedDomItemCount") && renderedDomItemCount < expectedVisibleItemCount) return "post-apply-dom-item-mismatch";
+			if (expectedVisibleTurnCount > 0 && renderedDomTurnCount < expectedVisibleTurnCount) return renderedDomTurnCount <= 0 ? "post-apply-dom-empty" : "post-apply-dom-turn-mismatch";
+			return "";
+		}
+		function planConversationPostApplyDomConsistency(input = {}) {
+			const updatePlan = objectOrEmpty(input.updatePlan);
+			const applicationPlan = objectOrEmpty(input.applicationPlan);
+			const reason = conversationDomConsistencyReason(input);
+			if (!reason) return {
+				ok: true,
+				shouldFallbackToInnerHtml: false,
+				shouldReport: false,
+				reason: "dom-consistent",
+				diagnosticInput: null
+			};
+			const finalAction = String(applicationPlan.finalAction || updatePlan.action || "");
+			const expectedVisibleTurnCount = boundedCount(input.expectedVisibleTurnCount);
+			const renderedDomTurnCount = boundedCount(input.renderedDomTurnCount);
+			const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
+			const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
+			return {
+				ok: false,
+				shouldFallbackToInnerHtml: finalAction !== "set-inner-html",
+				shouldReport: true,
+				reason,
+				diagnosticInput: {
+					readMode: optionalBoundedString(input, "readMode", 80) || "",
+					renderMode: finalAction.slice(0, 40),
+					renderPlanReason: String(updatePlan.reason || "").slice(0, 80),
+					patchRejectReason: reason,
+					previousVisibleItemCount: renderedDomItemCount || renderedDomTurnCount,
+					visibleItemCount: expectedVisibleItemCount || expectedVisibleTurnCount
+				}
+			};
+		}
+		function planConversationHtmlPatchFallbackClientEvent(input = {}) {
+			const applicationPlan = objectOrEmpty(input.applicationPlan || input.plan);
+			if (!applicationPlan.fallbackApplied) return {
+				shouldPost: false,
+				eventName: "",
+				payload: null,
+				reason: "no-fallback"
+			};
+			const updatePlan = objectOrEmpty(input.updatePlan);
+			return {
+				shouldPost: true,
+				eventName: "conversation_patch_html_fallback",
+				payload: {
+					threadId: String(input.threadId || ""),
+					reason: String(applicationPlan.patchRejectReason || applicationPlan.reason || "patch-html-failed").slice(0, 80),
+					updateReason: String(updatePlan.reason || "").slice(0, 80),
+					expectedVisibleTurnCount: boundedCount(input.expectedVisibleTurnCount),
+					renderedDomTurnCount: boundedCount(input.renderedDomTurnCount),
+					action: String(applicationPlan.primaryAction || "").slice(0, 40),
+					finalAction: String(applicationPlan.finalAction || "").slice(0, 40)
+				},
+				reason: "patch-html-fallback"
+			};
+		}
+		function optionalBoundedString(input, key, max = 120) {
+			if (!hasOwn(input, key) || input[key] === void 0 || input[key] === null) return void 0;
+			return String(input[key] || "").slice(0, max) || void 0;
+		}
+		function planConversationDomAuthorityInvalidation(input = {}) {
+			const updatePlan = objectOrEmpty(input.updatePlan || input.plan);
+			const expectedVisibleTurnCount = boundedCount(input.expectedVisibleTurnCount);
+			const renderedDomTurnCount = boundedCount(input.renderedDomTurnCount);
+			const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
+			const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
+			const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
+			const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount);
+			const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount);
+			const reason = String(updatePlan.reason || "");
+			const invalidationReasons = /* @__PURE__ */ new Set([
+				"stable-signature-dom-empty",
+				"stable-signature-dom-turn-mismatch",
+				"stable-signature-dom-item-mismatch",
+				"stable-signature-duplicate-render-keys",
+				"stable-signature-duplicate-user-messages",
+				"stable-signature-turn-order-mismatch"
+			]);
+			if (!Boolean(invalidationReasons.has(reason) && (expectedVisibleTurnCount > 0 || expectedVisibleItemCount > 0 || duplicateRenderKeyCount > 0 || duplicateUserMessageCount > expectedDuplicateUserMessageCount))) return {
+				shouldRecordMismatch: false,
+				mismatchReason: "",
+				mismatchPayload: null,
+				shouldPostClientEvent: false,
+				clientEventName: "",
+				clientEventPayload: null,
+				reason: invalidationReasons.has(reason) ? "no-expected-visible-content" : "not-authority-invalidated"
+			};
+			const mismatchPayload = {
+				source: String(input.source || "conversation-update").slice(0, 120),
+				action: optionalBoundedString(input, "action", 80),
+				routeKind: optionalBoundedString(input, "routeKind", 80),
+				threadHash: optionalBoundedString(input, "threadHash", 80),
+				renderMode: String(updatePlan.action || "full-render").slice(0, 40),
+				currentTurns: hasOwn(input, "currentTurns") ? input.currentTurns : void 0,
+				currentVisibleItems: hasOwn(input, "currentVisibleItems") ? input.currentVisibleItems : void 0,
+				domCount: renderedDomTurnCount,
+				domItemCount: renderedDomItemCount,
+				duplicateRenderKeyCount,
+				duplicateUserMessageCount,
+				expectedDuplicateUserMessageCount,
+				previousCount: boundedCount(input.previousChildCount)
+			};
+			return {
+				shouldRecordMismatch: true,
+				mismatchReason: compactMismatchReason(reason),
+				mismatchPayload,
+				shouldPostClientEvent: true,
+				clientEventName: "conversation_dom_authority_invalidated",
+				clientEventPayload: {
+					threadId: String(input.threadId || ""),
+					reason: reason.slice(0, 80),
+					expectedVisibleTurnCount,
+					renderedDomTurnCount,
+					expectedVisibleItemCount,
+					renderedDomItemCount,
+					duplicateRenderKeyCount,
+					duplicateUserMessageCount,
+					expectedDuplicateUserMessageCount,
+					action: String(updatePlan.action || "").slice(0, 40)
+				},
+				reason
+			};
+		}
+		function planConversationHtmlPerformanceEvent(input = {}) {
+			const updatePlan = objectOrEmpty(input.updatePlan);
+			const applicationPlan = objectOrEmpty(input.applicationPlan);
+			const renderElapsedMs = boundedDuration(input.renderElapsedMs);
+			const slowThresholdMs = boundedDuration(input.slowThresholdMs);
+			const minIntervalMs = boundedDuration(input.minIntervalMs);
+			const force = slowThresholdMs > 0 && renderElapsedMs >= slowThresholdMs;
+			return {
+				eventName: "conversation_render_ms",
+				payload: {
+					renderElapsedMs,
+					htmlChars: String(input.html || "").length,
+					previousChildCount: boundedCount(input.previousChildCount),
+					childCount: boundedCount(input.childCount),
+					stickToBottom: input.stickToBottom === true,
+					threadId: String(input.threadId || ""),
+					currentThreadStatus: String(input.currentThreadStatus || ""),
+					updateReason: String(updatePlan.reason || "").slice(0, 80),
+					domUpdateAction: String(applicationPlan.finalAction || "").slice(0, 40),
+					patchFallbackApplied: applicationPlan.fallbackApplied === true,
+					patchRejectReason: String(applicationPlan.patchRejectReason || "").slice(0, 80)
+				},
+				options: {
+					key: "conversation_render_ms",
+					minIntervalMs: force ? 0 : minIntervalMs,
+					force
+				},
+				reason: force ? "slow-render" : "normal-render"
+			};
+		}
+		function planLocalConversationDomUpdateCompletionSnapshot(input = {}) {
+			const tilePanePatched = Boolean(input.tilePanePatched);
+			const scrollAction = input.scrollAction === "scroll-to-bottom" ? "scroll-to-bottom" : "update-bottom-button";
+			return {
+				tilePanePatched,
+				canPatchSingleThread: tilePanePatched ? false : Boolean(input.canPatchSingleThread),
+				hasRoot: Boolean(input.hasRoot),
+				conversationSignature: tilePanePatched ? "" : String(input.conversationSignature || ""),
+				patchShellSignature: tilePanePatched ? "" : String(input.patchShellSignature || ""),
+				scrollAction: tilePanePatched ? "none" : scrollAction
+			};
+		}
+		function planLocalConversationDomUpdateCompletion(input = {}) {
+			const snapshot = planLocalConversationDomUpdateCompletionSnapshot(input);
+			if (snapshot.tilePanePatched) return {
+				action: "tile-pane-complete",
+				complete: true,
+				reason: "tile-pane-patched",
+				hydrateRoot: false,
+				updateRenderedConversationSignature: false,
+				updatePatchShellSignature: false,
+				nextRenderedConversationSignature: "",
+				nextRenderedConversationPatchShellSignature: "",
+				scrollAction: "none"
+			};
+			if (!snapshot.canPatchSingleThread) return {
+				action: "blocked",
+				complete: false,
+				reason: "single-thread-unpatchable",
+				hydrateRoot: false,
+				updateRenderedConversationSignature: false,
+				updatePatchShellSignature: false,
+				nextRenderedConversationSignature: "",
+				nextRenderedConversationPatchShellSignature: "",
+				scrollAction: "none"
+			};
+			return {
+				action: "single-thread-complete",
+				complete: true,
+				reason: "single-thread-patched",
+				hydrateRoot: Boolean(input.hasRoot),
+				hydrateOptions: {},
+				updateRenderedConversationSignature: true,
+				updatePatchShellSignature: true,
+				nextRenderedConversationSignature: snapshot.conversationSignature,
+				nextRenderedConversationPatchShellSignature: snapshot.patchShellSignature,
+				scrollAction: snapshot.scrollAction
+			};
+		}
+		function planLocalConversationDomUpdateCompletionEffects(plan = {}) {
+			const completionPlan = objectOrEmpty(plan);
+			if (!completionPlan.complete) return {
+				effects: [],
+				reason: "completion-incomplete"
+			};
+			const effects = [];
+			if (completionPlan.hydrateRoot) effects.push({
+				type: "hydrate-root",
+				hydrateOptions: objectOrEmpty(completionPlan.hydrateOptions)
+			});
+			if (completionPlan.updateRenderedConversationSignature) effects.push({
+				type: "set-rendered-conversation-signature",
+				value: String(completionPlan.nextRenderedConversationSignature || "")
+			});
+			if (completionPlan.updatePatchShellSignature) effects.push({
+				type: "set-rendered-conversation-patch-shell-signature",
+				value: String(completionPlan.nextRenderedConversationPatchShellSignature || "")
+			});
+			const scrollEffect = scrollEffectFromAction(completionPlan.scrollAction);
+			if (scrollEffect) effects.push(scrollEffect);
+			return {
+				effects,
+				reason: effects.length ? "completion-effects" : "no-completion-effects"
+			};
+		}
+		function planThreadDetailRefreshLocalPatchTransactionEffects(input = {}) {
+			return {
+				commitEffects: [{
+					type: "complete-local-conversation-dom-update",
+					name: "complete-local-conversation-dom-update",
+					completionSnapshot: objectOrEmpty(input.completionSnapshot)
+				}],
+				afterSuccess: [{
+					type: "update-live-operation-dock",
+					name: "update-live-operation-dock"
+				}, {
+					type: "bind-current-thread-actions",
+					name: "bind-current-thread-actions"
+				}],
+				reason: "refresh-local-patch-transaction-effects"
+			};
+		}
+		function createElementFromHtml(input = {}) {
+			const html = String(input.html || "");
+			if (!html.trim()) return null;
+			const doc = documentFrom(input);
+			if (!doc) return null;
+			let template = null;
+			try {
+				template = doc.createElement("template");
+				if (!template) return null;
+				template.innerHTML = html;
+				return template.content && template.content.firstElementChild || null;
+			} catch (_) {
+				return null;
+			}
+		}
+		function createTurnArticleElement(input = {}) {
+			const turn = input.turn || null;
+			const renderTurnHtml = typeof input.renderTurnHtml === "function" ? input.renderTurnHtml : null;
+			if (!turn || !renderTurnHtml) return null;
+			let html = "";
+			try {
+				html = renderTurnHtml(turn, input.previousKeys);
+			} catch (_) {
+				return null;
+			}
+			return createElementFromHtml({
+				document: input.document,
+				html
+			});
+		}
+		function hydrateRenderedSurface(input = {}) {
+			const root = input.root || input.surface || null;
+			if (!root) return result(false, "missing-root", {
+				githubHydrated: 0,
+				mermaidHydrated: 0,
+				imageScans: 0
+			});
+			const hydrateGitHubLinks = typeof input.hydrateGitHubLinks === "function" ? input.hydrateGitHubLinks : null;
+			const hydrateMermaid = typeof input.hydrateMermaid === "function" ? input.hydrateMermaid : null;
+			const scheduleImageScan = typeof input.scheduleImageScan === "function" ? input.scheduleImageScan : null;
+			const counts = {
+				githubHydrated: 0,
+				mermaidHydrated: 0,
+				imageScans: 0
+			};
+			if (hydrateGitHubLinks) {
+				hydrateGitHubLinks(root);
+				counts.githubHydrated += 1;
+			}
+			if (hydrateMermaid) {
+				hydrateMermaid(root);
+				counts.mermaidHydrated += 1;
+			}
+			if (scheduleImageScan) {
+				if (hasOwn(input, "imageScanDelays")) scheduleImageScan(root, input.imageScanDelays);
+				else scheduleImageScan(root);
+				counts.imageScans += 1;
+			}
+			return result(true, "hydrated", counts);
+		}
+		function defaultEscapeSelectorAttr(value) {
+			return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+		}
+		function findElementByRenderKey(input = {}) {
+			const root = input.root || input.conversation || null;
+			if (!root || typeof root.querySelector !== "function") return null;
+			const key = String(input.key || input.renderKey || input.turnKey || "");
+			if (!key) return null;
+			const escapeSelectorAttr = typeof input.escapeSelectorAttr === "function" ? input.escapeSelectorAttr : defaultEscapeSelectorAttr;
+			try {
+				return root.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`) || null;
+			} catch (_) {
+				return null;
+			}
+		}
+		function findTurnArticleElement(input = {}) {
+			return findElementByRenderKey(input);
+		}
+		function resolveTurnInsertAnchor(input = {}) {
+			const turn = input.turn || null;
+			if (!turn) return {
+				ok: false,
+				reason: "missing-turn",
+				anchor: null
+			};
+			const visibleTurns = Array.isArray(input.visibleTurns) ? input.visibleTurns : [];
+			const findTurnElement = typeof input.findTurnElement === "function" ? input.findTurnElement : null;
+			if (!findTurnElement) return {
+				ok: false,
+				reason: "missing-find-turn-element",
+				anchor: null
+			};
+			const turnIndex = visibleTurns.indexOf(turn);
+			for (let index = turnIndex - 1; index >= 0; index -= 1) {
+				const previous = findTurnElement(visibleTurns[index], index);
+				if (previous) return {
+					ok: true,
+					reason: "after-previous-turn",
+					anchor: previous.nextSibling || null
+				};
+			}
+			const firstTurn = firstTurnElementFrom(input);
+			return {
+				ok: true,
+				reason: firstTurn ? "before-first-turn" : "append",
+				anchor: firstTurn || null
+			};
+		}
+		function insertTurnArticleElement(input = {}) {
+			const conversation = input.conversation;
+			if (!conversation || typeof conversation.insertBefore !== "function") return result(false, "missing-conversation");
+			const source = input.source || null;
+			if (!source) return result(false, "missing-source");
+			const anchorPlan = resolveTurnInsertAnchor(input);
+			if (!anchorPlan.ok) return result(false, anchorPlan.reason || "insert-anchor-failed");
+			conversation.insertBefore(source, anchorPlan.anchor || null);
+			return result(true, anchorPlan.reason || "inserted", { inserted: 1 });
+		}
+		function insertVisibleItemElement(input = {}) {
+			const article = input.article || input.root || null;
+			if (!article || typeof article.insertBefore !== "function") return result(false, "missing-article");
+			const source = input.source || null;
+			if (!source) return result(false, "missing-source");
+			const entries = Array.isArray(input.entries) ? input.entries : [];
+			const visibleIndex = Number.isInteger(input.visibleIndex) ? input.visibleIndex : -1;
+			if (visibleIndex < 0 || visibleIndex >= entries.length) return result(false, "invalid-visible-index");
+			const keyForEntry = typeof input.keyForEntry === "function" ? input.keyForEntry : null;
+			const findElementByKey = typeof input.findElementByKey === "function" ? input.findElementByKey : null;
+			if (!keyForEntry || !findElementByKey) return result(false, "missing-key-lookup");
+			let anchor = null;
+			let foundPrevious = false;
+			for (let index = visibleIndex - 1; index >= 0; index -= 1) {
+				const entry = entries[index];
+				const key = String(keyForEntry(entry, index) || "");
+				if (!key) continue;
+				const previousNode = findElementByKey(key, entry, index);
+				if (!previousNode) continue;
+				foundPrevious = true;
+				anchor = previousNode.nextSibling || null;
+				break;
+			}
+			if (!foundPrevious) anchor = article.firstChild || null;
+			article.insertBefore(source, anchor);
+			return result(true, "inserted", {
+				inserted: 1,
+				target: source,
+				anchor,
+				anchorMode: foundPrevious ? anchor ? "after-previous-before-next" : "append-after-previous" : "before-first"
+			});
+		}
+		function applyVisibleItemRefreshDomPatch(input = {}) {
+			const patchPlan = input.patchPlan;
+			if (!patchPlan || !patchPlan.canPatch || !Array.isArray(patchPlan.operations)) return result(false, "plan-not-patchable");
+			const article = input.article;
+			if (!article || typeof article.insertBefore !== "function") return result(false, "missing-article");
+			const findElementByKey = typeof input.findElementByKey === "function" ? input.findElementByKey : null;
+			const renderElement = typeof input.renderElement === "function" ? input.renderElement : null;
+			const patchElement = typeof input.patchElement === "function" ? input.patchElement : null;
+			if (!findElementByKey) return result(false, "missing-find-element");
+			if (!renderElement) return result(false, "missing-render-element");
+			if (!patchElement) return result(false, "missing-patch-element");
+			let lastPatchedNode = null;
+			const counts = {
+				reused: 0,
+				patched: 0,
+				inserted: 0
+			};
+			for (const rawOperation of patchPlan.operations) {
+				const operation = normalizeOperation(rawOperation);
+				if (!operation) return result(false, "invalid-operation", counts);
+				const nextEntry = operation.nextEntry;
+				if (operation.type === "reuse" || operation.type === "patch") {
+					const existingNode = findElementByKey(operation.key, nextEntry);
+					if (!existingNode) return result(false, "missing-existing-node", counts);
+					if (operation.type === "reuse") {
+						lastPatchedNode = placeVisibleItemNode(article, existingNode, lastPatchedNode);
+						counts.reused += 1;
+						continue;
+					}
+					const patchedNode = patchElement(existingNode, nextEntry);
+					if (!patchedNode) return result(false, "patch-existing-node-failed", counts);
+					lastPatchedNode = placeVisibleItemNode(article, patchedNode, lastPatchedNode);
+					counts.patched += 1;
+					continue;
+				}
+				if (operation.type !== "insert") return result(false, "unknown-operation", counts);
+				const source = renderElement(nextEntry);
+				if (!source) return result(false, "render-insert-node-failed", counts);
+				const anchor = lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild || null;
+				article.insertBefore(source, anchor || null);
+				lastPatchedNode = source;
+				counts.inserted += 1;
+			}
+			const nextKeys = new Set(patchPlan.operations.map((operation) => normalizeOperation(operation)).filter(Boolean).map((operation) => operation.key));
+			for (const child of Array.from(article.childNodes || [])) {
+				const key = visibleItemRenderKeyForNode(child);
+				if (!key || nextKeys.has(key)) continue;
+				if (typeof child.remove === "function") child.remove();
+			}
+			if (!visibleItemOrderMatches(article, Array.from(nextKeys))) return result(false, "post-apply-visible-item-order-mismatch", counts);
+			return result(true, "applied", counts);
+		}
+		function applyThreadTurnRefreshDomPatch(input = {}) {
+			const patchPlan = input.patchPlan;
+			if (!patchPlan || !patchPlan.canPatch || !Array.isArray(patchPlan.operations)) return result(false, "turn-patch-plan-not-patchable", {
+				itemPatched: 0,
+				replaced: 0
+			});
+			const findTurnByKey = typeof input.findTurnByKey === "function" ? input.findTurnByKey : null;
+			const applyItemPatch = typeof input.applyItemPatch === "function" ? input.applyItemPatch : null;
+			const renderTurnElement = typeof input.renderTurnElement === "function" ? input.renderTurnElement : null;
+			const insertTurnElement = typeof input.insertTurnElement === "function" ? input.insertTurnElement : null;
+			const replaceTurnElement = typeof input.replaceTurnElement === "function" ? input.replaceTurnElement : null;
+			const removeTurnElement = typeof input.removeTurnElement === "function" ? input.removeTurnElement : null;
+			const findTurnElementByKey = typeof input.findTurnElementByKey === "function" ? input.findTurnElementByKey : null;
+			const conversation = input.conversation || input.root || null;
+			const firstTurnElement = firstTurnElementFrom(input);
+			if (!findTurnByKey) return result(false, "missing-find-turn", {
+				itemPatched: 0,
+				replaced: 0
+			});
+			if (!applyItemPatch) return result(false, "missing-apply-item-patch", {
+				itemPatched: 0,
+				replaced: 0
+			});
+			if (!renderTurnElement) return result(false, "missing-render-turn", {
+				itemPatched: 0,
+				replaced: 0
+			});
+			if (!insertTurnElement) return result(false, "missing-insert-turn", {
+				itemPatched: 0,
+				replaced: 0
+			});
+			if (!replaceTurnElement) return result(false, "missing-replace-turn", {
+				itemPatched: 0,
+				replaced: 0
+			});
+			const counts = {
+				reused: 0,
+				patched: 0,
+				inserted: 0,
+				itemPatched: 0,
+				replaced: 0,
+				removed: 0,
+				reordered: 0
+			};
+			let lastPlacedTurnElement = null;
+			function placeAppliedTurn(operation, callbackValue, fallbackNode = null) {
+				const target = callbackTarget(callbackValue) || fallbackNode || (findTurnElementByKey ? findTurnElementByKey(operation.key, operation) : null);
+				if (!target) return result(false, findTurnElementByKey ? "place-turn-missing-element" : "missing-find-turn-element", counts);
+				const placeResult = placeTurnNode(conversation, target, lastPlacedTurnElement, firstTurnElement);
+				if (!placeResult.ok) return result(false, placeResult.reason || "place-turn-failed", counts);
+				lastPlacedTurnElement = callbackTarget(placeResult) || target;
+				if (placeResult.moved) counts.reordered += 1;
+				return null;
+			}
+			for (const rawOperation of patchPlan.operations) {
+				const operation = normalizeTurnOperation(rawOperation);
+				if (!operation) return result(false, "invalid-turn-operation", counts);
+				if (operation.type === "remove-turn") {
+					if (!removeTurnElement) return result(false, "missing-remove-turn", counts);
+					const removeResult = removeTurnElement(operation);
+					if (!callbackOk(removeResult)) return result(false, callbackReason(removeResult, "remove-turn-failed"), counts);
+					counts.removed += 1;
+					continue;
+				}
+				const turn = findTurnByKey(operation.key, operation);
+				if (!turn) return result(false, "turn-patch-operation-missing-turn", counts);
+				if (operation.type === "item-patch") {
+					const itemPatchResult = applyItemPatch(turn, operation);
+					if (!callbackOk(itemPatchResult)) return result(false, callbackReason(itemPatchResult, "item-patch-failed"), counts);
+					const placeFailure = placeAppliedTurn(operation, itemPatchResult);
+					if (placeFailure) return placeFailure;
+					counts.itemPatched += 1;
+					counts.patched += 1;
+					continue;
+				}
+				if (operation.type !== "insert-turn" && operation.type !== "replace-turn") return result(false, "unknown-turn-patch-operation", counts);
+				const source = renderTurnElement(turn, operation);
+				if (!source) return result(false, "render-turn-failed", counts);
+				if (operation.type === "insert-turn") {
+					const insertResult = insertTurnElement(source, turn, operation);
+					if (!callbackOk(insertResult)) return result(false, callbackReason(insertResult, "insert-turn-failed"), counts);
+					const placeFailure = placeAppliedTurn(operation, insertResult, source);
+					if (placeFailure) return placeFailure;
+					counts.inserted += 1;
+					continue;
+				}
+				const replaceResult = replaceTurnElement(source, turn, operation);
+				if (!callbackOk(replaceResult)) return result(false, callbackReason(replaceResult, "replace-turn-failed"), counts);
+				const placeFailure = placeAppliedTurn(operation, replaceResult);
+				if (placeFailure) return placeFailure;
+				counts.replaced += 1;
+				counts.patched += 1;
+			}
+			return result(true, "applied", counts);
+		}
+		function resultCounts(source = {}) {
+			const counts = {};
+			for (const key of [
+				"reused",
+				"patched",
+				"inserted",
+				"itemPatched",
+				"replaced",
+				"removed",
+				"reordered"
+			]) if (Number.isFinite(Number(source[key]))) counts[key] = Number(source[key]);
+			return counts;
+		}
+		function normalizeTransactionEffect(effect, index) {
+			if (typeof effect === "function") return {
+				name: `effect-${index}`,
+				apply: effect
+			};
+			if (effect && typeof effect === "object" && typeof effect.apply === "function") return {
+				name: String(effect.name || `effect-${index}`),
+				apply: effect.apply
+			};
+			return null;
+		}
+		function applyTransactionEffects(effects, patchResult, counts, countKey) {
+			const list = Array.isArray(effects) ? effects : [];
+			for (let index = 0; index < list.length; index += 1) {
+				const effect = normalizeTransactionEffect(list[index], index);
+				if (!effect) return result(false, "invalid-transaction-effect", counts);
+				let effectResult = null;
+				try {
+					effectResult = effect.apply(patchResult);
+				} catch (_) {
+					return result(false, `${effect.name || "effect"}-threw`, counts);
+				}
+				if (!callbackOk(effectResult)) return result(false, callbackReason(effectResult, `${effect.name || "effect"}-failed`), counts);
+				counts.effectsApplied += 1;
+				counts[countKey] = Number(counts[countKey] || 0) + 1;
+			}
+			return result(true, "effects-applied", counts);
+		}
+		function applyThreadDetailPatchTransaction(input = {}) {
+			const applyPatch = typeof input.applyPatch === "function" ? input.applyPatch : null;
+			if (!applyPatch) return result(false, "missing-apply-patch", {
+				effectsApplied: 0,
+				commitEffectsApplied: 0,
+				postCommitEffectsApplied: 0
+			});
+			let patchResult = null;
+			try {
+				patchResult = applyPatch();
+			} catch (_) {
+				return result(false, "apply-patch-threw", {
+					effectsApplied: 0,
+					commitEffectsApplied: 0,
+					postCommitEffectsApplied: 0
+				});
+			}
+			const counts = Object.assign({
+				effectsApplied: 0,
+				commitEffectsApplied: 0,
+				postCommitEffectsApplied: 0
+			}, resultCounts(patchResult));
+			if (!callbackOk(patchResult)) return result(false, callbackReason(patchResult, "patch-failed"), counts);
+			const commitResult = applyTransactionEffects(input.commitEffects, patchResult, counts, "commitEffectsApplied");
+			if (!commitResult.ok) return commitResult;
+			const postCommitResult = applyTransactionEffects(input.afterSuccess, patchResult, counts, "postCommitEffectsApplied");
+			if (!postCommitResult.ok) return postCommitResult;
+			return result(true, "transaction-applied", counts);
+		}
+		function applyLiveTextItemDomPatch(input = {}) {
+			const root = input.root || input.conversation || null;
+			if (!root || typeof root.querySelector !== "function") return result(false, "missing-root");
+			const key = String(input.key || input.renderKey || "");
+			if (!key) return result(false, "missing-render-key");
+			const renderHtml = typeof input.renderHtml === "function" ? input.renderHtml : null;
+			const patchElement = typeof input.patchElement === "function" ? input.patchElement : null;
+			if (!renderHtml) return result(false, "missing-render-html");
+			if (!patchElement) return result(false, "missing-patch-element");
+			const target = findElementByRenderKey({
+				root,
+				key,
+				escapeSelectorAttr: input.escapeSelectorAttr
+			});
+			if (!target) return result(false, "missing-live-text-target");
+			let html = "";
+			try {
+				html = renderHtml();
+			} catch (_) {
+				return result(false, "render-live-text-html-failed");
+			}
+			const source = createElementFromHtml({
+				document: input.document,
+				html
+			});
+			if (!source) return result(false, "render-live-text-node-failed");
+			const patched = patchElement(target, source);
+			if (!callbackOk(patched)) return result(false, callbackReason(patched, "patch-live-text-node-failed"));
+			return result(true, "patched", {
+				patched: 1,
+				target: patched && typeof patched === "object" && patched.target ? patched.target : target
+			});
+		}
+		return {
+			applyLiveTextItemDomPatch,
+			applyThreadDetailPatchTransaction,
+			applyThreadTurnRefreshDomPatch,
+			applyVisibleItemRefreshDomPatch,
+			canPatchNode,
+			createElementFromHtml,
+			createTurnArticleElement,
+			findElementByRenderKey,
+			findTurnArticleElement,
+			hydrateRenderedSurface,
+			insertTurnArticleElement,
+			insertVisibleItemElement,
+			normalizeOperation,
+			normalizeTurnOperation,
+			patchChildNodes,
+			patchHtml,
+			patchNode,
+			planConversationHtmlUpdate,
+			planConversationHtmlUpdateEffects,
+			planConversationHtmlUpdateApplication,
+			planConversationPostApplyDomConsistency,
+			planConversationDomAuthorityInvalidation,
+			planConversationHtmlPatchFallbackClientEvent,
+			planConversationHtmlPerformanceEvent,
+			planLocalConversationDomUpdateCompletionSnapshot,
+			planLocalConversationDomUpdateCompletion,
+			planLocalConversationDomUpdateCompletionEffects,
+			planThreadDetailRefreshLocalPatchTransactionEffects,
+			renderKeyForNode,
+			resolveTurnInsertAnchor,
+			syncAttributes,
+			threadDetailPatchResult,
+			visibleTurnOrderMismatch
+		};
+	});
+}));
+//#endregion
 //#region public/draft-store.js
 var require_draft_store = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -6667,6 +10093,9 @@ var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings()
 var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics());
 var import_conversation_scroll = /* @__PURE__ */ __toESM(require_conversation_scroll());
 var import_thread_performance_metrics = /* @__PURE__ */ __toESM(require_thread_performance_metrics());
+var import_thread_detail_state = /* @__PURE__ */ __toESM(require_thread_detail_state());
+var import_thread_detail_render_plan = /* @__PURE__ */ __toESM(require_thread_detail_render_plan());
+var import_thread_detail_dom_patch = /* @__PURE__ */ __toESM(require_thread_detail_dom_patch());
 var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
 var import_image_compressor = /* @__PURE__ */ __toESM(require_image_compressor());
 var import_plugin_voice_input = /* @__PURE__ */ __toESM(require_plugin_voice_input());
@@ -6785,6 +10214,152 @@ var moduleDefinitions = [
 			"threadListTimings"
 		],
 		"assetPath": "/thread-performance-metrics.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "thread-detail-state",
+		"source": "public/thread-detail-state.js",
+		"globalName": "CodexThreadDetailState",
+		"expectedFunctions": [
+			"buildThreadDetailRenderEvidence",
+			"activeDetailLoadingPreviewThread",
+			"createThreadDetailStatePolicy",
+			"emptyDetailHistoryEvidenceForThread",
+			"hasNonemptyThreadDetailRenderEvidence",
+			"mergeThreadSummaryIntoList",
+			"planEmptyDetailHistoryRecovery",
+			"planThreadOpenLoadingShell",
+			"planThreadOpenCacheReuse",
+			"planSummaryOnlyCurrentThreadRecovery",
+			"planSummaryOnlyCurrentThreadRecoveryEffects",
+			"recentThreadDetailRenderEvidence",
+			"rolloutSizeBytesFromThread",
+			"sameThreadDetailRenderEvidence",
+			"threadHasLoadedDetailState",
+			"threadHasReusableLoadedDetailState",
+			"threadHasVisualBaselineLoadedDetailState",
+			"threadIsSummaryOnlyCurrentThread",
+			"threadListSummaryFromDetailThread"
+		],
+		"assetPath": "/thread-detail-state.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "thread-detail-render-plan",
+		"source": "public/thread-detail-render-plan.js",
+		"globalName": "CodexThreadDetailRenderPlan",
+		"expectedFunctions": [
+			"emptyThreadDetailRefreshPatchAttempt",
+			"finalizeThreadDetailRenderPlan",
+			"normalizeSignature",
+			"planThreadDetailCachedCurrentTelemetryEffects",
+			"planThreadDetailCachedCurrentPostRenderEffects",
+			"planThreadDetailFirstPaintAfterRenderEffects",
+			"planThreadDetailFirstPaintDraftRestoreEffects",
+			"planThreadDetailFirstPaintPerformanceInput",
+			"planThreadDetailFirstPaintReportingStage",
+			"planThreadDetailFirstPaintPostTimingEffects",
+			"planThreadDetailFirstPaintPreRenderEffects",
+			"planThreadDetailFirstPaintResponseEffects",
+			"planThreadDetailFullBackfillResponseEffects",
+			"planThreadDetailFullBackfillPerformanceInput",
+			"planThreadDetailFullBackfillReportingStage",
+			"planThreadDetailLoadErrorEffects",
+			"planThreadDetailLoadingShellPostStateEffects",
+			"planThreadDetailFullBackfillPostRenderEffects",
+			"planThreadDetailFullBackfillTelemetryEffects",
+			"planThreadDetailFirstPaintPostRenderEffects",
+			"planThreadDetailFirstPaintTelemetryEffects",
+			"planThreadDetailSwitchCancelledClientEvent",
+			"planThreadDetailSwitchStartClientEvent",
+			"planThreadDetailSwitchErrorClientEvent",
+			"planThreadDetailRefreshCompletionEffects",
+			"planThreadDetailRefreshConsistencyCheck",
+			"planThreadDetailRefreshConsistencyCheckEffects",
+			"planThreadDetailRefreshResponseEffects",
+			"planThreadDetailRefreshPatchAttemptEffects",
+			"planThreadDetailRefreshPatchAttemptResult",
+			"planThreadDetailRefreshPatchAttemptResultStage",
+			"planThreadDetailRefreshPatchAttemptResultEvidenceStage",
+			"planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage",
+			"planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage",
+			"planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects",
+			"planThreadDetailRefreshPatchRejectedDiagnostic",
+			"planThreadDetailRefreshPatchRejectedDiagnosticEffects",
+			"planThreadDetailRefreshOutcomeExecution",
+			"planThreadDetailRefreshOutcomeExecutionStage",
+			"planThreadDetailRefreshExecutionEffects",
+			"planThreadDetailRefreshPerformanceInput",
+			"planThreadDetailRefreshReportingStage",
+			"planThreadDetailRefreshReportingEffectsStage",
+			"planThreadDetailRefreshTelemetryEffects",
+			"planThreadDetailRefreshFailureDiagnosticEffects",
+			"planThreadDetailRefreshRequest",
+			"planThreadDetailRefreshPatchSurface",
+			"planThreadDetailRefreshPatchSurfaceProbeEffects",
+			"planThreadDetailRefreshPatchSurfaceProbeStage",
+			"planThreadDetailRefreshPatchSurfaceExecutionStage",
+			"planThreadDetailRefreshPatchSurfaceResultStage",
+			"planThreadDetailRefreshPostMergeEffects",
+			"planThreadDetailRefreshPostMergeTimingFields",
+			"planThreadDetailFirstPaintPostMergeTimingEffects",
+			"planThreadDetailRefreshPatchExecutionStage",
+			"planSingleThreadEarlyShellExecution",
+			"planSingleThreadFullRenderShell",
+			"planSingleThreadShellConversationUpdate",
+			"planSingleThreadShellPostUpdateEffects",
+			"planThreadDetailHistoryAutoBackfill",
+			"planThreadDetailHistoryAutoBackfillEffects",
+			"planThreadDetailRefreshPatchExecution",
+			"planThreadDetailRefreshRenderInput",
+			"planThreadDetailRefreshRender",
+			"planThreadDetailRefreshRenderStage",
+			"reduceThreadDetailRefreshPatchAttempt",
+			"threadDetailRefreshPatchAttemptEffectContext"
+		],
+		"assetPath": "/thread-detail-render-plan.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "thread-detail-dom-patch",
+		"source": "public/thread-detail-dom-patch.js",
+		"globalName": "CodexThreadDetailDomPatch",
+		"expectedFunctions": [
+			"applyLiveTextItemDomPatch",
+			"applyThreadDetailPatchTransaction",
+			"applyThreadTurnRefreshDomPatch",
+			"applyVisibleItemRefreshDomPatch",
+			"canPatchNode",
+			"createElementFromHtml",
+			"createTurnArticleElement",
+			"findElementByRenderKey",
+			"findTurnArticleElement",
+			"hydrateRenderedSurface",
+			"insertTurnArticleElement",
+			"insertVisibleItemElement",
+			"normalizeOperation",
+			"normalizeTurnOperation",
+			"patchChildNodes",
+			"patchHtml",
+			"patchNode",
+			"planConversationHtmlUpdate",
+			"planConversationHtmlUpdateEffects",
+			"planConversationHtmlUpdateApplication",
+			"planConversationPostApplyDomConsistency",
+			"planConversationDomAuthorityInvalidation",
+			"planConversationHtmlPatchFallbackClientEvent",
+			"planConversationHtmlPerformanceEvent",
+			"planLocalConversationDomUpdateCompletionSnapshot",
+			"planLocalConversationDomUpdateCompletion",
+			"planLocalConversationDomUpdateCompletionEffects",
+			"planThreadDetailRefreshLocalPatchTransactionEffects",
+			"renderKeyForNode",
+			"resolveTurnInsertAnchor",
+			"syncAttributes",
+			"threadDetailPatchResult",
+			"visibleTurnOrderMismatch"
+		],
+		"assetPath": "/thread-detail-dom-patch.js",
 		"classicLoaderExcluded": true
 	},
 	{
@@ -7060,6 +10635,9 @@ var moduleApis = {
 	"viewport-metrics": import_viewport_metrics.default,
 	"conversation-scroll": import_conversation_scroll.default,
 	"thread-performance-metrics": import_thread_performance_metrics.default,
+	"thread-detail-state": import_thread_detail_state.default,
+	"thread-detail-render-plan": import_thread_detail_render_plan.default,
+	"thread-detail-dom-patch": import_thread_detail_dom_patch.default,
 	"draft-store": import_draft_store.default,
 	"image-compressor": import_image_compressor.default,
 	"plugin-voice-input": import_plugin_voice_input.default,
@@ -7289,6 +10867,107 @@ function sampleModule(id, api) {
 			detailPerformancePhase: String(detailFields.performancePhase || ""),
 			visibleItems: Number(shape.visibleItems) || 0,
 			slowReason: String(slow.reason || "")
+		};
+	}
+	if (id === "thread-detail-state") {
+		const loadedThread = {
+			id: "thread-a",
+			title: "Thread A",
+			status: "completed",
+			mobileDetailLoaded: true,
+			mobileLoading: false,
+			turns: [{
+				id: "turn-a",
+				status: "completed",
+				items: [{
+					type: "userMessage",
+					text: "hello"
+				}]
+			}],
+			mobileProjection: { source: "sample" }
+		};
+		const summary = functionReady(api, "threadListSummaryFromDetailThread") ? api.threadListSummaryFromDetailThread(loadedThread) : {};
+		const loaded = functionReady(api, "threadHasLoadedDetailState") ? api.threadHasLoadedDetailState(loadedThread) : false;
+		const reusable = functionReady(api, "threadHasReusableLoadedDetailState") ? api.threadHasReusableLoadedDetailState(loadedThread) : false;
+		const visualBaseline = functionReady(api, "threadHasVisualBaselineLoadedDetailState") ? api.threadHasVisualBaselineLoadedDetailState(Object.assign({}, loadedThread, { status: "active" })) : false;
+		const cacheReuse = functionReady(api, "planThreadOpenCacheReuse") ? api.planThreadOpenCacheReuse({
+			currentThread: loadedThread,
+			threadId: "thread-a"
+		}) : {};
+		return {
+			ok: summary && summary.id === "thread-a" && !Object.prototype.hasOwnProperty.call(summary, "turns") && !Object.prototype.hasOwnProperty.call(summary, "mobileProjection") && loaded === true && reusable === true && visualBaseline === true && cacheReuse && typeof cacheReuse === "object",
+			summaryId: String(summary && summary.id || ""),
+			summaryHasTurns: Object.prototype.hasOwnProperty.call(summary || {}, "turns"),
+			loaded,
+			reusable,
+			visualBaseline,
+			cacheReuseReason: String(cacheReuse.reason || "")
+		};
+	}
+	if (id === "thread-detail-render-plan") {
+		const backfill = functionReady(api, "planThreadDetailHistoryAutoBackfill") ? api.planThreadDetailHistoryAutoBackfill({
+			hasOlder: true,
+			thread: {
+				mobileOlderTurnsCursor: "cursor-a",
+				turns: [{ items: [{
+					type: "assistantMessage",
+					text: "[Cross-thread task card sent by source thread]"
+				}] }]
+			}
+		}) : {};
+		const request = functionReady(api, "planThreadDetailRefreshRequest") ? api.planThreadDetailRefreshRequest({
+			threadId: "thread-a",
+			threadLoadSeq: 7,
+			options: { source: "auto-refresh" }
+		}) : {};
+		const postUpdate = functionReady(api, "planSingleThreadShellPostUpdateEffects") ? api.planSingleThreadShellPostUpdateEffects({
+			bindCurrentThreadActions: true,
+			updateTickTimer: true,
+			publishPluginNavigationState: true,
+			reason: "sample"
+		}) : {};
+		const normalizedSignature = functionReady(api, "normalizeSignature") ? api.normalizeSignature(42) : "";
+		const effects = Array.isArray(postUpdate.effects) ? postUpdate.effects : [];
+		return {
+			ok: normalizedSignature === "42" && backfill.shouldLoad === true && backfill.reason === "sparse-conversation-context" && request.shouldRefresh === true && request.threadId === "thread-a" && request.requestedMode === "recent" && request.query && request.query.mode === "recent" && effects.map((entry) => String(entry && entry.type || "")).join(",") === "bind-current-thread-actions,update-tick-timer,publish-plugin-navigation-state",
+			normalizedSignature,
+			backfillReason: String(backfill.reason || ""),
+			refreshReason: String(request.reason || ""),
+			effectTypes: effects.map((entry) => String(entry && entry.type || ""))
+		};
+	}
+	if (id === "thread-detail-dom-patch") {
+		const patch = functionReady(api, "threadDetailPatchResult") ? api.threadDetailPatchResult(true, "patched", { patched: 2 }) : {};
+		const mismatch = functionReady(api, "visibleTurnOrderMismatch") ? api.visibleTurnOrderMismatch({
+			expectedTurnIds: ["a", "b"],
+			renderedDomTurnIds: ["a", "c"]
+		}) : false;
+		const match = functionReady(api, "visibleTurnOrderMismatch") ? api.visibleTurnOrderMismatch({
+			expectedTurnIds: ["a", "b"],
+			renderedDomTurnIds: ["a", "b"]
+		}) : true;
+		const operation = functionReady(api, "normalizeOperation") ? api.normalizeOperation({
+			type: "insert",
+			key: "turn-a",
+			nextEntry: {
+				key: "turn-a",
+				html: "<article></article>"
+			}
+		}) : null;
+		const htmlUpdate = functionReady(api, "planConversationHtmlUpdate") ? api.planConversationHtmlUpdate({
+			html: "<article data-turn-id=\"a\"></article>",
+			previousHtml: "<article data-turn-id=\"a\"></article>",
+			conversationSignature: "sig-a",
+			previousConversationSignature: "sig-a"
+		}) : {};
+		return {
+			ok: patch.ok === true && patch.reason === "patched" && patch.patched === 2 && mismatch === true && match === false && operation && operation.key === "turn-a" && htmlUpdate.action === "hydrate-existing" && htmlUpdate.reason === "signature-stable",
+			patchReason: String(patch.reason || ""),
+			patched: Number(patch.patched) || 0,
+			mismatch,
+			match,
+			operationKey: String(operation && operation.key || ""),
+			htmlAction: String(htmlUpdate.action || "")
 		};
 	}
 	if (id === "draft-store") {
@@ -8400,7 +12079,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DO8aEayh.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-wH-yEfBd.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

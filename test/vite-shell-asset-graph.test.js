@@ -128,6 +128,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
       "viewport-metrics",
       "conversation-scroll",
       "thread-performance-metrics",
+      "thread-detail-state",
+      "thread-detail-render-plan",
+      "thread-detail-dom-patch",
       "draft-store",
       "image-compressor",
       "plugin-voice-input",
@@ -160,6 +163,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(virtualSource, /public\/viewport-metrics\.js/);
   assert.match(virtualSource, /public\/conversation-scroll\.js/);
   assert.match(virtualSource, /public\/thread-performance-metrics\.js/);
+  assert.match(virtualSource, /public\/thread-detail-state\.js/);
+  assert.match(virtualSource, /public\/thread-detail-render-plan\.js/);
+  assert.match(virtualSource, /public\/thread-detail-dom-patch\.js/);
   assert.match(virtualSource, /public\/draft-store\.js/);
   assert.match(virtualSource, /public\/image-compressor\.js/);
   assert.match(virtualSource, /public\/plugin-voice-input\.js/);
@@ -179,6 +185,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(virtualSource, /stablePixelChanged/);
   assert.match(virtualSource, /planBottomFollowScrollSchedule/);
   assert.match(virtualSource, /threadDetailShape/);
+  assert.match(virtualSource, /threadHasReusableLoadedDetailState/);
+  assert.match(virtualSource, /planThreadDetailRefreshRequest/);
+  assert.match(virtualSource, /visibleTurnOrderMismatch/);
   assert.match(virtualSource, /createDraftStore/);
   assert.match(virtualSource, /folder_screen\.webp/);
   assert.match(virtualSource, /voice_input\.start_request/);
