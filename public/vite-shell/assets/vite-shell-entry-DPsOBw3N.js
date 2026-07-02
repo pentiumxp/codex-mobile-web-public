@@ -1055,6 +1055,894 @@ var require_viewport_metrics = /* @__PURE__ */ __commonJSMin(((exports, module) 
 	});
 }));
 //#endregion
+//#region public/conversation-scroll.js
+var require_conversation_scroll = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexConversationScroll = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const DEFAULT_NEAR_BOTTOM_PX = 96;
+		const DEFAULT_SUBMIT_FOLLOW_MS = 15e3;
+		const DEFAULT_VIEWPORT_FOLLOW_MS = 3200;
+		const DEFAULT_RECENT_BOTTOM_MS = 12e4;
+		const DEFAULT_BOTTOM_FOLLOW_DELAYS_MS = Object.freeze([
+			0,
+			80,
+			240,
+			600,
+			1200
+		]);
+		function numberOrZero(value) {
+			const numeric = Number(value);
+			return Number.isFinite(numeric) ? numeric : 0;
+		}
+		function isNearBottom(metrics = {}, thresholdPx = DEFAULT_NEAR_BOTTOM_PX) {
+			const scrollHeight = numberOrZero(metrics.scrollHeight);
+			const scrollTop = numberOrZero(metrics.scrollTop);
+			const clientHeight = numberOrZero(metrics.clientHeight);
+			const threshold = Math.max(0, numberOrZero(thresholdPx));
+			return scrollHeight - scrollTop - clientHeight < threshold;
+		}
+		function createSubmittedMessageFollow(threadId, options = {}) {
+			const id = String(threadId || "").trim();
+			if (!id) return null;
+			const nowMs = numberOrZero(options.nowMs) || Date.now();
+			const ttlMs = Math.max(1e3, numberOrZero(options.ttlMs) || DEFAULT_SUBMIT_FOLLOW_MS);
+			return {
+				threadId: id,
+				clientSubmissionId: String(options.clientSubmissionId || ""),
+				untilMs: nowMs + ttlMs
+			};
+		}
+		function shouldFollowSubmittedMessage(follow, options = {}) {
+			if (!follow || !follow.threadId) return false;
+			const threadId = String(options.threadId || "").trim();
+			if (!threadId || String(follow.threadId) !== threadId) return false;
+			return (numberOrZero(options.nowMs) || Date.now()) <= numberOrZero(follow.untilMs);
+		}
+		function extendSubmittedMessageFollow(follow, options = {}) {
+			if (!follow || !follow.threadId) return null;
+			const nowMs = numberOrZero(options.nowMs) || Date.now();
+			const ttlMs = Math.max(1e3, numberOrZero(options.ttlMs) || DEFAULT_SUBMIT_FOLLOW_MS);
+			return {
+				...follow,
+				untilMs: nowMs + ttlMs
+			};
+		}
+		function shouldStartViewportFollow(options = {}) {
+			if (options.nearBottom) return true;
+			const nowMs = numberOrZero(options.nowMs) || Date.now();
+			const recentBottomMs = Math.max(0, numberOrZero(options.recentBottomMs) || DEFAULT_RECENT_BOTTOM_MS);
+			const lastNearBottomAtMs = numberOrZero(options.lastNearBottomAtMs);
+			return Boolean(lastNearBottomAtMs && nowMs - lastNearBottomAtMs <= recentBottomMs);
+		}
+		function createViewportFollow(threadId, options = {}) {
+			const id = String(threadId || "").trim();
+			if (!id) return null;
+			const nowMs = numberOrZero(options.nowMs) || Date.now();
+			const ttlMs = Math.max(500, numberOrZero(options.ttlMs) || DEFAULT_VIEWPORT_FOLLOW_MS);
+			return {
+				threadId: id,
+				reason: String(options.reason || "viewport"),
+				untilMs: nowMs + ttlMs
+			};
+		}
+		function shouldFollowViewport(follow, options = {}) {
+			if (!follow || !follow.threadId) return false;
+			const threadId = String(options.threadId || "").trim();
+			if (!threadId || String(follow.threadId) !== threadId) return false;
+			return (numberOrZero(options.nowMs) || Date.now()) <= numberOrZero(follow.untilMs);
+		}
+		function planBottomFollowLeaseEvaluation(options = {}) {
+			if (options.userReadingCurrentTurn) return {
+				shouldFollow: false,
+				clearLease: true,
+				reason: "user-reading-current-turn"
+			};
+			if (options.leaseActive) return {
+				shouldFollow: true,
+				clearLease: false,
+				reason: "lease-active"
+			};
+			if (options.hasLease) return {
+				shouldFollow: false,
+				clearLease: true,
+				reason: "lease-inactive"
+			};
+			return {
+				shouldFollow: false,
+				clearLease: false,
+				reason: "no-lease"
+			};
+		}
+		function planBottomFollowScrollSchedule() {
+			return {
+				clearExistingTimers: true,
+				delaysMs: DEFAULT_BOTTOM_FOLLOW_DELAYS_MS.slice(),
+				reason: "bottom-follow-retry"
+			};
+		}
+		function planLocalPatchScrollCompletion(options = {}) {
+			if (options.userReadingCurrentTurn) return {
+				action: "update-button",
+				reason: "user-reading-current-turn"
+			};
+			if (options.autoScrollHold) return {
+				action: "update-button",
+				reason: "auto-scroll-hold"
+			};
+			if (options.nearBottom) return {
+				action: "scroll-to-bottom",
+				reason: "near-bottom"
+			};
+			if (options.submittedMessageFollow) return {
+				action: "scroll-to-bottom",
+				reason: "submitted-message-follow"
+			};
+			if (options.viewportFollow) return {
+				action: "scroll-to-bottom",
+				reason: "viewport-follow"
+			};
+			return {
+				action: "update-button",
+				reason: "not-following-bottom"
+			};
+		}
+		function planConversationJumpButtons(options = {}) {
+			const canShow = Boolean(options.hasThread && !options.loading && !options.loadError && options.isScrollable);
+			const showBottom = Boolean(canShow && !options.nearBottom);
+			const showReply = Boolean(canShow && !showBottom && options.hasReplyTarget && options.replyTargetAbove);
+			return {
+				showBottom,
+				showReply,
+				reason: !canShow ? "not-available" : showBottom ? "bottom-available" : showReply ? "reply-available" : "hidden"
+			};
+		}
+		function planUserReadingCurrentTurn(options = {}) {
+			if (options.nearBottom) return {
+				userReadingCurrentTurn: false,
+				reason: "near-bottom"
+			};
+			if (options.autoScrollHold) return {
+				userReadingCurrentTurn: true,
+				reason: "auto-scroll-hold"
+			};
+			if (!options.recentScrollIntent) return {
+				userReadingCurrentTurn: false,
+				reason: "no-recent-scroll-intent"
+			};
+			if (options.hasCurrentTurn) return {
+				userReadingCurrentTurn: true,
+				reason: "current-turn-candidate"
+			};
+			return {
+				userReadingCurrentTurn: false,
+				reason: "no-current-turn"
+			};
+		}
+		function planConversationAutoScrollHoldFromScroll(options = {}) {
+			if (options.nearBottom) return {
+				action: "clear-hold",
+				reason: "near-bottom"
+			};
+			if (!options.recentScrollIntent) return {
+				action: "none",
+				reason: "no-recent-scroll-intent"
+			};
+			if (options.hasCurrentTurn) return {
+				action: "remember-hold",
+				reason: "current-turn-candidate"
+			};
+			return {
+				action: "none",
+				reason: "no-current-turn"
+			};
+		}
+		function planReadingViewportPreservation(options = {}) {
+			if (options.nearBottom) return {
+				preserve: false,
+				reason: "near-bottom"
+			};
+			if (options.userReadingCurrentTurn) return {
+				preserve: true,
+				reason: "user-reading-current-turn"
+			};
+			if (options.autoScrollHold) return {
+				preserve: true,
+				reason: "auto-scroll-hold"
+			};
+			if (options.userReadingAwayFromBottom) return {
+				preserve: true,
+				reason: "user-reading-away-from-bottom"
+			};
+			if (options.recentScrollIntent) return {
+				preserve: true,
+				reason: "recent-scroll-intent"
+			};
+			return {
+				preserve: false,
+				reason: "no-user-scroll-protection"
+			};
+		}
+		function planAutomaticConversationRefresh(options = {}) {
+			if (options.userInitiated) return {
+				allowRefresh: true,
+				cancelScheduled: false,
+				reason: "user-initiated"
+			};
+			if (!options.hasThread) return {
+				allowRefresh: true,
+				cancelScheduled: false,
+				reason: "no-current-thread"
+			};
+			if (options.nearBottom) return {
+				allowRefresh: true,
+				cancelScheduled: false,
+				reason: "near-bottom"
+			};
+			if (options.userReadingCurrentTurn) return {
+				allowRefresh: false,
+				cancelScheduled: true,
+				reason: "user-reading-current-turn"
+			};
+			if (options.autoScrollHold) return {
+				allowRefresh: false,
+				cancelScheduled: true,
+				reason: "auto-scroll-hold"
+			};
+			if (options.userReadingAwayFromBottom) return {
+				allowRefresh: false,
+				cancelScheduled: true,
+				reason: "user-reading-away-from-bottom"
+			};
+			if (options.recentScrollIntent) return {
+				allowRefresh: false,
+				cancelScheduled: true,
+				reason: "recent-scroll-intent"
+			};
+			return {
+				allowRefresh: true,
+				cancelScheduled: false,
+				reason: "no-user-scroll-protection"
+			};
+		}
+		function planFullRenderScroll(options = {}) {
+			if (options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart)) return {
+				stickToBottom: false,
+				explicitNoStickToBottom: true,
+				shouldFollowBottom: false,
+				reason: "explicit-no-stick"
+			};
+			if (options.userReadingCurrentTurn) return {
+				stickToBottom: false,
+				explicitNoStickToBottom: false,
+				shouldFollowBottom: false,
+				reason: "user-reading-current-turn"
+			};
+			if (options.autoScrollHold) return {
+				stickToBottom: false,
+				explicitNoStickToBottom: false,
+				shouldFollowBottom: false,
+				reason: "auto-scroll-hold"
+			};
+			if (Boolean(options.sustainedSubmittedFollow || options.submittedMessageFollow || options.viewportFollow)) return {
+				stickToBottom: true,
+				explicitNoStickToBottom: false,
+				shouldFollowBottom: true,
+				reason: options.sustainedSubmittedFollow ? "sustained-submitted-message-follow" : options.submittedMessageFollow ? "submitted-message-follow" : "viewport-follow"
+			};
+			if (options.stickToBottom === true) return {
+				stickToBottom: true,
+				explicitNoStickToBottom: false,
+				shouldFollowBottom: false,
+				reason: "requested-stick"
+			};
+			if (options.nearBottom) return {
+				stickToBottom: true,
+				explicitNoStickToBottom: false,
+				shouldFollowBottom: false,
+				reason: "near-bottom"
+			};
+			return {
+				stickToBottom: false,
+				explicitNoStickToBottom: false,
+				shouldFollowBottom: false,
+				reason: "not-following-bottom"
+			};
+		}
+		return {
+			DEFAULT_NEAR_BOTTOM_PX,
+			DEFAULT_SUBMIT_FOLLOW_MS,
+			DEFAULT_VIEWPORT_FOLLOW_MS,
+			DEFAULT_RECENT_BOTTOM_MS,
+			DEFAULT_BOTTOM_FOLLOW_DELAYS_MS,
+			createSubmittedMessageFollow,
+			extendSubmittedMessageFollow,
+			createViewportFollow,
+			isNearBottom,
+			planBottomFollowLeaseEvaluation,
+			planBottomFollowScrollSchedule,
+			planConversationAutoScrollHoldFromScroll,
+			planAutomaticConversationRefresh,
+			planConversationJumpButtons,
+			planFullRenderScroll,
+			planLocalPatchScrollCompletion,
+			planReadingViewportPreservation,
+			planUserReadingCurrentTurn,
+			shouldFollowViewport,
+			shouldFollowSubmittedMessage,
+			shouldStartViewportFollow
+		};
+	});
+}));
+//#endregion
+//#region public/thread-performance-metrics.js
+var require_thread_performance_metrics = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadPerformanceMetrics = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function objectOrNull(value) {
+			return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+		}
+		const MAX_TIMING_MS = 600 * 1e3;
+		const CLIENT_TIMING_KEYS = [
+			"elapsedMs",
+			"apiElapsedMs",
+			"renderElapsedMs",
+			"mergeMs",
+			"draftRestoreMs",
+			"composerRenderMs",
+			"threadListRenderMs",
+			"conversationRenderMs",
+			"detailPatchMs",
+			"metadataUpdateMs",
+			"postRenderMs"
+		];
+		const CLIENT_LABEL_KEYS = [
+			"refreshRenderAction",
+			"renderPlanReason",
+			"patchRejectReason",
+			"patchResult",
+			"patchTimingSource",
+			"patchSurfaceReason",
+			"patchSurface",
+			"patchExecutionReason"
+		];
+		const ALLOWED_DETAIL_RENDER_MODES = Object.freeze({
+			"cached-current": true,
+			"first-paint": true,
+			"full-backfill": true,
+			"full-render": true,
+			"metadata-only": true,
+			patch: true,
+			skipped: true,
+			"tile-pane": true,
+			"tile-pane-metadata": true
+		});
+		const MAX_COUNT = 1e5;
+		function threadDetailTimings(thread) {
+			const diagnostics = objectOrNull(thread && thread.mobileDiagnostics);
+			return objectOrNull(diagnostics && diagnostics.threadDetailTimings);
+		}
+		function threadListTimings(result) {
+			const diagnostics = objectOrNull(result && result.mobileDiagnostics);
+			return objectOrNull(diagnostics && diagnostics.threadListTimings);
+		}
+		function classifyThreadListPhase(timings) {
+			const value = objectOrNull(timings);
+			if (!value) return "unknown";
+			if (value.fallbackDeferred) return "deferred-fallback";
+			if (value.appServerDeferred) return "warm-fallback-initial";
+			const decision = compactLabel(value.fallbackCacheDecision, 40);
+			if (decision === "hit" || value.fallbackCacheHit) return "warm-fallback-cache";
+			if (decision === "expired-rebuild") return "cold-fallback-expired-rebuild";
+			if (decision === "miss-rebuild") return "cold-fallback-miss-build";
+			if (Number(value.fallbackMs || 0) > 0) return "cold-fallback-build";
+			if (Number(value.appServerMs || 0) > 0) return "app-server-only";
+			return "unknown";
+		}
+		function classifyThreadDetailPhase(timings, input = {}) {
+			const value = objectOrNull(timings);
+			const source = objectOrNull(input) || {};
+			if (source.cached === true) return "warm-client-current";
+			if (!value) return "unknown";
+			const existingPhase = compactLabel(value.phase, 80);
+			if (existingPhase && existingPhase !== "unknown") return existingPhase;
+			const readDecision = compactLabel(value.readDecision || source.readDecision, 80).toLowerCase();
+			const readMode = compactLabel(value.readMode || source.readMode, 80).toLowerCase();
+			const projectionState = compactLabel(value.projectionState, 80).toLowerCase();
+			const projectionSource = compactLabel(value.projectionSource, 80).toLowerCase();
+			const projectionSeedStatus = compactLabel(value.projectionSeedStatus, 80).toLowerCase();
+			if (readDecision === "projection-partial-hit" || readDecision === "projection-stale-partial-hit" || /projection-v?\d*-partial|projection-partial/.test(readMode)) return "warm-projection-partial";
+			if (readDecision === "projection-hit" || projectionState === "hit") {
+				if (/dynamic/.test(projectionSource) || /projection-v?\d*-dynamic|projection-dynamic/.test(readMode)) return "warm-projection-dynamic";
+				return "warm-projection-cache";
+			}
+			if (readDecision === "bounded-large-turns-list" || /turns-list-large/.test(readMode)) return "bounded-large-thread-window";
+			if (readDecision === "initial-turns-list" || /turns-list-initial/.test(readMode)) return projectionSeedStatus === "seeded-partial" ? "cold-turns-list-initial-seeded-partial" : "cold-turns-list-initial";
+			if (/thread-read-raw/.test(readMode)) return "cold-thread-read-raw";
+			if (readDecision === "full-thread-read" || /thread-read/.test(readMode)) return "cold-thread-read";
+			if (readDecision === "fallback-turns-list" || /turns-list/.test(readMode)) return "fallback-turns-list";
+			if (readDecision === "summary-fallback" || /summary-timeout|unmaterialized|fallback/.test(readMode)) return "fallback-summary";
+			return "unknown";
+		}
+		function threadDetailEventFields(thread) {
+			const timings = threadDetailTimings(thread);
+			return {
+				serverTimings: timings,
+				performancePhase: classifyThreadDetailPhase(timings, { readMode: thread && thread.mobileReadMode }),
+				detailShape: threadDetailShape(thread)
+			};
+		}
+		function boundedTiming(value) {
+			const number = Number(value);
+			if (!Number.isFinite(number) || number < 0) return null;
+			return Math.min(MAX_TIMING_MS, Math.round(number));
+		}
+		function compactLabel(value, maxLength = 40) {
+			return String(value || "").trim().slice(0, maxLength);
+		}
+		function threadDetailClientTimings(input = {}) {
+			const source = objectOrNull(input) || {};
+			const result = {};
+			for (const key of CLIENT_TIMING_KEYS) {
+				const timing = boundedTiming(source[key]);
+				if (timing !== null) result[key] = timing;
+			}
+			const renderMode = compactLabel(source.detailRenderMode || source.renderMode);
+			if (renderMode && ALLOWED_DETAIL_RENDER_MODES[renderMode]) result.detailRenderMode = renderMode;
+			const sourceLabel = compactLabel(source.source);
+			if (sourceLabel) result.source = sourceLabel;
+			for (const key of CLIENT_LABEL_KEYS) {
+				const label = compactLabel(source[key]);
+				if (label) result[key] = label;
+			}
+			if (source.skippedDetailRender !== void 0) result.skippedDetailRender = Boolean(source.skippedDetailRender);
+			if (source.locallyPatchedDetail !== void 0) result.locallyPatchedDetail = Boolean(source.locallyPatchedDetail);
+			if (source.tilePanePatchedDetail !== void 0) result.tilePanePatchedDetail = Boolean(source.tilePanePatchedDetail);
+			if (source.localPatchAttempted !== void 0) result.localPatchAttempted = Boolean(source.localPatchAttempted);
+			if (source.tilePanePatchAttempted !== void 0) result.tilePanePatchAttempted = Boolean(source.tilePanePatchAttempted);
+			return Object.keys(result).length ? result : null;
+		}
+		function threadDetailEventFieldsWithClient(thread, clientTimingInput = {}) {
+			const fields = threadDetailEventFields(thread);
+			fields.clientTimings = threadDetailClientTimings(clientTimingInput);
+			return fields;
+		}
+		function statusText(status) {
+			if (!status) return "";
+			if (typeof status === "string") return compactLabel(status, 80);
+			if (status && typeof status === "object") {
+				const type = compactLabel(status.type, 80);
+				if (type) return type;
+				try {
+					return compactLabel(JSON.stringify(status), 80);
+				} catch (_) {
+					return "";
+				}
+			}
+			return compactLabel(status, 80);
+		}
+		function rolloutSizeBytes(thread) {
+			const size = Number(thread && thread.rolloutSizeBytes);
+			return Number.isFinite(size) && size > 0 ? Math.trunc(size) : 0;
+		}
+		function hasCursor(value) {
+			if (!value) return false;
+			if (typeof value === "string") return Boolean(value.trim());
+			if (typeof value === "object") return Object.keys(value).length > 0;
+			return true;
+		}
+		function booleanFlag(value) {
+			if (value === true || value === 1) return true;
+			const text = String(value || "").trim().toLowerCase();
+			return text === "true" || text === "1" || text === "yes";
+		}
+		function threadTurnCount(thread) {
+			return Array.isArray(thread && thread.turns) ? boundedCount(thread.turns.length) : 0;
+		}
+		function threadOmittedTurnCount(thread) {
+			return boundedCount(thread && thread.mobileOmittedTurnCount);
+		}
+		function setTimingField(out, key, value) {
+			const timing = boundedTiming(value);
+			if (timing !== null) out[key] = timing;
+		}
+		function threadDetailRefreshEventFields(thread, input = {}) {
+			const source = objectOrNull(input) || {};
+			const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
+			const out = {
+				source: compactLabel(source.source, 40),
+				threadId: compactLabel(source.threadId, 220),
+				requestedMode: compactLabel(source.requestedMode, 40),
+				readMode: compactLabel(thread && thread.mobileReadMode, 80),
+				serverTimings: detailPerformance.serverTimings,
+				performancePhase: detailPerformance.performancePhase,
+				clientTimings: detailPerformance.clientTimings,
+				detailShape: detailPerformance.detailShape,
+				status: statusText(thread && thread.status),
+				turns: threadTurnCount(thread),
+				omittedTurns: threadOmittedTurnCount(thread),
+				rolloutSizeBytes: rolloutSizeBytes(thread),
+				renderPlanReason: compactLabel(source.renderPlanReason, 80),
+				refreshRenderAction: compactLabel(source.refreshRenderAction, 80),
+				patchRejectReason: compactLabel(source.patchRejectReason, 80),
+				patchResult: compactLabel(source.patchResult, 80),
+				patchTimingSource: compactLabel(source.patchTimingSource, 80),
+				patchSurfaceReason: compactLabel(source.patchSurfaceReason, 80),
+				patchSurface: compactLabel(source.patchSurface, 80),
+				patchExecutionReason: compactLabel(source.patchExecutionReason, 80),
+				skippedDetailRender: Boolean(source.skippedDetailRender),
+				locallyPatchedDetail: Boolean(source.locallyPatchedDetail),
+				tilePanePatchedDetail: Boolean(source.tilePanePatchedDetail),
+				localPatchAttempted: Boolean(source.localPatchAttempted),
+				tilePanePatchAttempted: Boolean(source.tilePanePatchAttempted)
+			};
+			for (const key of [
+				"elapsedMs",
+				"apiElapsedMs",
+				"renderElapsedMs"
+			]) setTimingField(out, key, source[key]);
+			return out;
+		}
+		function threadDetailFirstPaintEventFields(thread, input = {}) {
+			const source = objectOrNull(input) || {};
+			const cached = source.cached === true;
+			const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
+			const performancePhase = classifyThreadDetailPhase(detailPerformance.serverTimings, {
+				cached,
+				readMode: thread && thread.mobileReadMode,
+				readDecision: source.readDecision
+			});
+			const out = {
+				source: compactLabel(source.source, 40),
+				threadId: compactLabel(source.threadId, 220),
+				serverTimings: detailPerformance.serverTimings,
+				performancePhase,
+				clientTimings: detailPerformance.clientTimings,
+				detailShape: detailPerformance.detailShape,
+				cached,
+				readMode: compactLabel(thread && thread.mobileReadMode, 80),
+				turns: threadTurnCount(thread),
+				rolloutSizeBytes: rolloutSizeBytes(thread)
+			};
+			for (const key of [
+				"elapsedMs",
+				"apiElapsedMs",
+				"renderElapsedMs"
+			]) setTimingField(out, key, source[key]);
+			if (!cached) {
+				out.status = statusText(thread && thread.status);
+				out.omittedTurns = threadOmittedTurnCount(thread);
+			}
+			return out;
+		}
+		function threadDetailFullReadyEventFields(thread, input = {}) {
+			const source = objectOrNull(input) || {};
+			const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
+			const out = {
+				source: compactLabel(source.source, 40),
+				threadId: compactLabel(source.threadId, 220),
+				serverTimings: detailPerformance.serverTimings,
+				performancePhase: detailPerformance.performancePhase,
+				clientTimings: detailPerformance.clientTimings,
+				detailShape: detailPerformance.detailShape,
+				readMode: compactLabel(thread && thread.mobileReadMode, 80),
+				turns: threadTurnCount(thread),
+				omittedTurns: threadOmittedTurnCount(thread),
+				rolloutSizeBytes: rolloutSizeBytes(thread)
+			};
+			for (const key of [
+				"elapsedMs",
+				"apiElapsedMs",
+				"renderElapsedMs"
+			]) setTimingField(out, key, source[key]);
+			return out;
+		}
+		function planThreadDetailSlowPathDiagnostic(event = {}, input = {}) {
+			const fields = objectOrNull(event) || {};
+			const source = objectOrNull(input) || {};
+			const thresholdMs = boundedTiming(source.thresholdMs) || 1500;
+			const elapsedMs = boundedTiming(fields.elapsedMs || fields.clientTimings && fields.clientTimings.elapsedMs) || 0;
+			const apiElapsedMs = boundedTiming(fields.apiElapsedMs || fields.clientTimings && fields.clientTimings.apiElapsedMs) || 0;
+			const renderElapsedMs = boundedTiming(fields.renderElapsedMs || fields.clientTimings && fields.clientTimings.renderElapsedMs) || 0;
+			const serverTimings = objectOrNull(fields.serverTimings) || {};
+			const slowElapsed = elapsedMs >= thresholdMs;
+			const slowApi = apiElapsedMs >= thresholdMs;
+			const slowRender = renderElapsedMs >= thresholdMs;
+			if (!slowElapsed && !slowApi && !slowRender) return {
+				shouldReport: false,
+				reason: "below-threshold",
+				thresholdMs,
+				elapsedMs,
+				apiElapsedMs,
+				renderElapsedMs
+			};
+			const performancePhase = compactLabel(fields.performancePhase, 80);
+			const reason = slowApi ? "api-slow" : slowRender ? "render-slow" : "elapsed-slow";
+			const severe = elapsedMs >= thresholdMs * 2 || apiElapsedMs >= thresholdMs * 2 || /cold-thread-read|fallback|bounded-large/.test(performancePhase);
+			const detailShape = objectOrNull(fields.detailShape) || {};
+			return {
+				shouldReport: true,
+				reason,
+				severityHint: severe ? "H2" : "H3",
+				thresholdMs,
+				elapsedMs,
+				apiElapsedMs,
+				renderElapsedMs,
+				readMode: compactLabel(fields.readMode, 80),
+				performancePhase,
+				coldPathOwner: compactLabel(fields.coldPathOwner || serverTimings.coldPathOwner, 80),
+				coldPathReason: compactLabel(fields.coldPathReason || serverTimings.coldPathReason, 80),
+				source: compactLabel(fields.source || source.source, 40),
+				action: compactLabel(source.action || "thread-detail", 80),
+				threadHash: compactLabel(source.threadHash || source.thread_hash, 80),
+				durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
+				renderMode: compactLabel(fields.clientTimings && fields.clientTimings.detailRenderMode, 40),
+				rolloutSizeBytes: rolloutSizeBytes(fields),
+				turns: boundedCount(fields.turns || detailShape.turns),
+				visibleItems: boundedCount(detailShape.visibleItems),
+				omittedTurns: boundedCount(fields.omittedTurns || detailShape.omittedTurns)
+			};
+		}
+		function planThreadListSlowPathDiagnostic(event = {}, input = {}) {
+			const fields = objectOrNull(event) || {};
+			const source = objectOrNull(input) || {};
+			const thresholdMs = boundedTiming(source.thresholdMs) || 1500;
+			const elapsedMs = boundedTiming(fields.elapsedMs || source.elapsedMs) || 0;
+			const apiElapsedMs = boundedTiming(fields.apiElapsedMs || source.apiElapsedMs) || 0;
+			const renderElapsedMs = boundedTiming(fields.renderElapsedMs || source.renderElapsedMs) || 0;
+			const serverTimings = objectOrNull(fields.serverTimings) || {};
+			const slowElapsed = elapsedMs >= thresholdMs;
+			const slowApi = apiElapsedMs >= thresholdMs;
+			const slowRender = renderElapsedMs >= thresholdMs;
+			if (!slowElapsed && !slowApi && !slowRender) return {
+				shouldReport: false,
+				reason: "below-threshold",
+				thresholdMs,
+				elapsedMs,
+				apiElapsedMs,
+				renderElapsedMs
+			};
+			const performancePhase = compactLabel(fields.performancePhase, 80);
+			const reason = slowApi ? "api-slow" : slowRender ? "render-slow" : "elapsed-slow";
+			const severe = elapsedMs >= thresholdMs * 3 || apiElapsedMs >= thresholdMs * 3 || /cold|app-server-only|fallback-build/.test(performancePhase);
+			const responseBytes = Number(serverTimings.appServerResponsePayloadBytes);
+			return {
+				shouldReport: true,
+				reason,
+				severityHint: severe ? "H2" : "H3",
+				thresholdMs,
+				elapsedMs,
+				apiElapsedMs,
+				renderElapsedMs,
+				action: compactLabel(source.action || "thread-list-load", 80),
+				source: compactLabel(fields.source || source.source, 40),
+				durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
+				performancePhase,
+				count: boundedCount(fields.count || source.count),
+				silent: fields.silent === true || source.silent === true,
+				hasSearch: fields.hasSearch === true || source.hasSearch === true,
+				hasWorkspace: fields.hasWorkspace === true || source.hasWorkspace === true,
+				mobileFallback: fields.mobileFallback === true || source.mobileFallback === true,
+				coldPathOwner: compactLabel(fields.coldPathOwner || serverTimings.coldPathOwner, 80),
+				coldPathReason: compactLabel(fields.coldPathReason || serverTimings.coldPathReason, 80),
+				fallbackCacheDecision: compactLabel(serverTimings.fallbackCacheDecision, 80),
+				fallbackDeferredReason: compactLabel(serverTimings.fallbackDeferredReason, 80),
+				appServerDeferredReason: compactLabel(serverTimings.appServerDeferredReason || serverTimings.appServerDeferredInitialReason, 80),
+				appServerRequestReason: compactLabel(serverTimings.appServerRequestReason, 80),
+				totalMs: boundedTiming(serverTimings.totalMs),
+				appServerMs: boundedTiming(serverTimings.appServerMs),
+				appServerRpcMs: boundedTiming(serverTimings.appServerRpcMs),
+				appServerUnattributedMs: boundedTiming(serverTimings.appServerUnattributedMs),
+				fallbackMs: boundedTiming(serverTimings.fallbackMs),
+				mergeMs: boundedTiming(serverTimings.mergeMs),
+				summaryMergeTotalMs: boundedTiming(serverTimings.summaryMergeTotalMs),
+				fallbackSourceSnapshotAgeMs: boundedTiming(serverTimings.fallbackSourceSnapshotAgeMs),
+				fallbackRolloutFileStatCount: boundedCount(serverTimings.fallbackRolloutFileStatCount),
+				fallbackRolloutHeadReadCount: boundedCount(serverTimings.fallbackRolloutHeadReadCount),
+				fallbackRolloutSummaryReadCount: boundedCount(serverTimings.fallbackRolloutSummaryReadCount),
+				appServerRequestLimit: boundedCount(serverTimings.appServerRequestLimit),
+				appServerResponsePayloadKb: Number.isFinite(responseBytes) && responseBytes > 0 ? boundedCount(Math.ceil(responseBytes / 1024)) : 0
+			};
+		}
+		function threadDetailProjectionContractFields(thread) {
+			const projection = objectOrNull(thread && thread.mobileProjection) || {};
+			const timings = threadDetailTimings(thread) || {};
+			const responseBudget = objectOrNull(thread && thread.mobileDetailResponseBudget) || {};
+			const readMode = compactLabel(thread && thread.mobileReadMode, 80);
+			return {
+				readMode,
+				projectionSource: compactLabel(projection.source || thread && thread.mobileProjectionSource || timings.projectionSource, 80),
+				projectionPartial: booleanFlag(projection.partial) || /projection-v?\d*-partial|projection-partial/.test(readMode),
+				projectionPartialKind: compactLabel(projection.partialKind || timings.projectionPartialKind, 80),
+				responseBudgetApplied: responseBudget.applied === true,
+				responseBudgetProgressiveActiveApplied: responseBudget.progressiveActiveBudgetApplied === true,
+				responseBudgetActiveTurnCount: boundedCount(responseBudget.activeTurnCount),
+				responseBudgetRetainedItemCount: boundedCount(responseBudget.retainedItemCount),
+				olderCursor: hasCursor(thread && thread.mobileOlderTurnsCursor),
+				newerCursor: hasCursor(thread && thread.mobileNewerTurnsCursor),
+				status: statusText(thread && thread.status),
+				detailShape: threadDetailShape(thread),
+				turns: threadTurnCount(thread),
+				omittedTurns: threadOmittedTurnCount(thread),
+				rolloutSizeBytes: rolloutSizeBytes(thread)
+			};
+		}
+		function activeLikeStatus(value) {
+			return /active|running|in[_-]?progress|pending|thinking|queued/.test(String(value || "").toLowerCase());
+		}
+		function planThreadDetailResponseContractDiagnostic(event = {}, input = {}) {
+			const fields = objectOrNull(event) || {};
+			const source = objectOrNull(input) || {};
+			const contract = source.thread ? threadDetailProjectionContractFields(source.thread) : objectOrNull(source.contract) || {};
+			const detailShape = objectOrNull(fields.detailShape) || objectOrNull(contract.detailShape) || objectOrNull(source.detailShape) || {};
+			const readMode = compactLabel(fields.readMode || contract.readMode || source.readMode, 80);
+			const performancePhase = compactLabel(fields.performancePhase || source.performancePhase, 80);
+			const projectionSource = compactLabel(contract.projectionSource || source.projectionSource, 80);
+			const projectionPartialKind = compactLabel(contract.projectionPartialKind || source.projectionPartialKind, 80);
+			const projectionPartial = Boolean(contract.projectionPartial || source.projectionPartial);
+			const responseBudgetApplied = Boolean(contract.responseBudgetApplied || source.responseBudgetApplied);
+			const responseBudgetProgressiveActiveApplied = Boolean(contract.responseBudgetProgressiveActiveApplied || source.responseBudgetProgressiveActiveApplied);
+			const responseBudgetActiveTurnCount = boundedCount(contract.responseBudgetActiveTurnCount || source.responseBudgetActiveTurnCount);
+			const responseBudgetRetainedItemCount = boundedCount(contract.responseBudgetRetainedItemCount || source.responseBudgetRetainedItemCount);
+			const olderCursor = Boolean(contract.olderCursor || source.olderCursor);
+			const newerCursor = Boolean(contract.newerCursor || source.newerCursor);
+			const turns = boundedCount(fields.turns || contract.turns || detailShape.turns);
+			const items = boundedCount(detailShape.items);
+			const visibleItems = boundedCount(detailShape.visibleItems);
+			const activeTurns = boundedCount(detailShape.activeTurns);
+			const completedTurns = boundedCount(detailShape.completedTurns);
+			const omittedTurns = boundedCount(fields.omittedTurns || contract.omittedTurns || detailShape.omittedTurns);
+			const status = compactLabel(fields.status || contract.status || source.status, 80);
+			const activeLike = Boolean(source.expectedActiveFullRead) || activeTurns > 0 || activeLikeStatus(status);
+			const windowedMode = /turns-list|projection-v?\d*-partial|projection-partial|summary-timeout|unmaterialized|fallback/.test(readMode) || /bounded-large|turns-list|partial|fallback/.test(performancePhase);
+			const partialProjectionMode = projectionPartial || /projection-v?\d*-partial|projection-partial/.test(readMode);
+			const hasActiveProjectionEvidence = activeTurns > 0 || responseBudgetActiveTurnCount > 0;
+			const hasVisibleProjectionEvidence = visibleItems > 0 || responseBudgetRetainedItemCount > 0;
+			const activePartialProjectionOk = !source.expectedActiveFullRead && partialProjectionMode && hasActiveProjectionEvidence && hasVisibleProjectionEvidence && (responseBudgetApplied || responseBudgetProgressiveActiveApplied || /warm-projection-partial|projection-partial/.test(performancePhase));
+			const projectionModeMarkedFull = /projection-v?\d*-(cache|dynamic)|projection-(cache|dynamic)/.test(readMode) && !projectionPartial;
+			let reason = "";
+			let severityHint = "H3";
+			if (projectionModeMarkedFull && newerCursor) {
+				reason = "projection-window-marked-full";
+				severityHint = "H2";
+			} else if (turns > 0 && visibleItems === 0 && (items === 0 || projectionPartial || projectionPartialKind === "notification-shell")) {
+				reason = "empty-projection-shell";
+				severityHint = "H2";
+			} else if (activeLike && windowedMode && !activePartialProjectionOk) {
+				reason = "active-thread-window-downgrade";
+				severityHint = "H2";
+			}
+			return {
+				shouldReport: Boolean(reason),
+				reason: reason || "ok",
+				severityHint,
+				action: compactLabel(source.action || fields.source || "thread-detail", 80),
+				source: compactLabel(fields.source || source.source, 40),
+				threadHash: compactLabel(source.threadHash || source.thread_hash, 80),
+				durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
+				readMode,
+				renderMode: compactLabel(fields.clientTimings && fields.clientTimings.detailRenderMode || source.renderMode, 40),
+				performancePhase,
+				projectionSource,
+				projectionPartialKind,
+				projectionPartial,
+				responseBudgetApplied,
+				responseBudgetProgressiveActiveApplied,
+				responseBudgetActiveTurnCount,
+				responseBudgetRetainedItemCount,
+				olderCursor,
+				newerCursor,
+				turns,
+				items,
+				visibleItems,
+				activeTurns,
+				completedTurns,
+				omittedTurns,
+				rolloutSizeBytes: rolloutSizeBytes(contract.rolloutSizeBytes ? contract : fields)
+			};
+		}
+		function boundedCount(value) {
+			const number = Number(value);
+			if (!Number.isFinite(number) || number < 0) return 0;
+			return Math.min(MAX_COUNT, Math.trunc(number));
+		}
+		function itemType(value) {
+			return String(value && value.type || "").trim();
+		}
+		function isVisibleItem(item) {
+			if (!item || typeof item !== "object") return false;
+			if (item.hidden || item.mobileHidden) return false;
+			const type = itemType(item);
+			if (!type || type === "reasoning") return false;
+			if (typeof item.text === "string" && item.text.trim()) return true;
+			if (Array.isArray(item.content) && item.content.length) return true;
+			if (Array.isArray(item.summary) && item.summary.length) return true;
+			if (type === "imageView" || type === "generatedImage" || type === "fileChange" || type === "commandExecution") return true;
+			if (type === "turnUsageSummary" || type === "taskCard" || type === "toolCall") return true;
+			return false;
+		}
+		function itemShapeBucket(item) {
+			const type = itemType(item);
+			if (type === "userMessage") return "userItems";
+			if (type === "agentMessage" || type === "plan") return "receiptItems";
+			if (type === "imageView" || type === "generatedImage") return "imageItems";
+			if (type === "commandExecution" || type === "fileChange" || type === "toolCall") return "operationItems";
+			if (type === "turnUsageSummary") return "usageItems";
+			if (type === "turnDiagnostic") return "diagnosticItems";
+			return "";
+		}
+		function turnIsComplete(turn) {
+			const text = String(turn && (turn.status && turn.status.type || turn.status) || "").toLowerCase();
+			return /completed|success|succeeded|done|finished|failed|error|cancel|cancelled|canceled|interrupted/.test(text);
+		}
+		function threadDetailShape(thread) {
+			const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+			const shape = {
+				turns: boundedCount(turns.length),
+				omittedTurns: boundedCount(thread && thread.mobileOmittedTurnCount),
+				items: 0,
+				visibleItems: 0,
+				userItems: 0,
+				receiptItems: 0,
+				imageItems: 0,
+				operationItems: 0,
+				usageItems: 0,
+				diagnosticItems: 0,
+				completedTurns: 0,
+				activeTurns: 0
+			};
+			for (const turn of turns) {
+				if (turnIsComplete(turn)) shape.completedTurns += 1;
+				else shape.activeTurns += 1;
+				const items = Array.isArray(turn && turn.items) ? turn.items : [];
+				shape.items += items.length;
+				for (const item of items) {
+					if (isVisibleItem(item)) shape.visibleItems += 1;
+					const bucket = itemShapeBucket(item);
+					if (bucket) shape[bucket] += 1;
+				}
+			}
+			for (const key of Object.keys(shape)) shape[key] = boundedCount(shape[key]);
+			return shape;
+		}
+		function threadListEventFields(result) {
+			const timings = threadListTimings(result);
+			return {
+				serverTimings: timings,
+				performancePhase: classifyThreadListPhase(timings)
+			};
+		}
+		return {
+			boundedTiming,
+			classifyThreadDetailPhase,
+			classifyThreadListPhase,
+			rolloutSizeBytes,
+			statusText,
+			threadDetailClientTimings,
+			threadDetailEventFields,
+			threadDetailEventFieldsWithClient,
+			threadDetailFirstPaintEventFields,
+			threadDetailFullReadyEventFields,
+			threadDetailRefreshEventFields,
+			threadDetailShape,
+			threadDetailTimings,
+			planThreadDetailResponseContractDiagnostic,
+			planThreadDetailSlowPathDiagnostic,
+			planThreadListSlowPathDiagnostic,
+			threadDetailProjectionContractFields,
+			threadOmittedTurnCount,
+			threadTurnCount,
+			threadListEventFields,
+			threadListTimings
+		};
+	});
+}));
+//#endregion
 //#region public/draft-store.js
 var require_draft_store = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -5408,6 +6296,170 @@ var require_thread_detail_merge_state = /* @__PURE__ */ __commonJSMin(((exports,
 	});
 }));
 //#endregion
+//#region public/thread-detail-v4-merge-state.js
+var require_thread_detail_v4_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDetailV4MergeState = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function defaultNormalizeThread(thread) {
+			return thread;
+		}
+		function defaultTurnVisibleWeight(turn) {
+			return Array.isArray(turn && turn.items) ? turn.items.length : 0;
+		}
+		function defaultSortTurns(turns) {
+			return Array.isArray(turns) ? turns.slice() : [];
+		}
+		function statusText(status) {
+			if (!status) return "";
+			if (typeof status === "object" && status.type) return String(status.type || "");
+			return String(status || "");
+		}
+		function createThreadDetailV4MergePolicy(options = {}) {
+			const normalizeThreadVisibleUserMessages = typeof options.normalizeThreadVisibleUserMessages === "function" ? options.normalizeThreadVisibleUserMessages : defaultNormalizeThread;
+			const turnVisibleWeight = typeof options.turnVisibleWeight === "function" ? options.turnVisibleWeight : defaultTurnVisibleWeight;
+			const isOptimisticUserMessage = typeof options.isOptimisticUserMessage === "function" ? options.isOptimisticUserMessage : () => false;
+			const isRecentlySubmittedUserMessage = typeof options.isRecentlySubmittedUserMessage === "function" ? options.isRecentlySubmittedUserMessage : () => false;
+			const isReasoningItem = typeof options.isReasoningItem === "function" ? options.isReasoningItem : () => false;
+			const userMessageHasSubmissionId = typeof options.userMessageHasSubmissionId === "function" ? options.userMessageHasSubmissionId : (item, submissionId) => Boolean(item && submissionId && String(item.clientSubmissionId || "") === String(submissionId || ""));
+			const userMessagesCanShadow = typeof options.userMessagesCanShadow === "function" ? options.userMessagesCanShadow : () => false;
+			const isTurnComplete = typeof options.isTurnComplete === "function" ? options.isTurnComplete : (turn) => /completed|failed|cancel|error|interrupted/i.test(statusText(turn && turn.status));
+			const isRunningStatus = typeof options.isRunningStatus === "function" ? options.isRunningStatus : (status) => /active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/i.test(statusText(status));
+			const isIncompleteInterruptedTurn = typeof options.isIncompleteInterruptedTurn === "function" ? options.isIncompleteInterruptedTurn : () => false;
+			const turnHasActiveLiveItems = typeof options.turnHasActiveLiveItems === "function" ? options.turnHasActiveLiveItems : () => false;
+			const turnOrderMs = typeof options.turnOrderMs === "function" ? options.turnOrderMs : () => 0;
+			const mergeTurnPreservingVisibleItems = typeof options.mergeTurnPreservingVisibleItems === "function" ? options.mergeTurnPreservingVisibleItems : (existingTurn, incomingTurn) => incomingTurn || existingTurn;
+			const sortTurnsForDisplay = typeof options.sortTurnsForDisplay === "function" ? options.sortTurnsForDisplay : defaultSortTurns;
+			const maxVisibleTurnsForThread = typeof options.maxVisibleTurnsForThread === "function" ? options.maxVisibleTurnsForThread : () => 10;
+			function isV4ProjectionThread(thread) {
+				return Boolean(thread && (thread.mobileProjectionVersion === "v4" || thread.mobileProjection && thread.mobileProjection.version === "v4"));
+			}
+			function shouldPreserveV4PendingOverlayItem(item) {
+				return Boolean(item && item.type === "userMessage" && isOptimisticUserMessage(item) && (isRecentlySubmittedUserMessage(item) || item.mobileSendError));
+			}
+			function v4ThreadHasPendingMatch(thread, pendingItem) {
+				if (!pendingItem || pendingItem.type !== "userMessage") return false;
+				const submissionId = String(pendingItem.clientSubmissionId || "").trim();
+				for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
+					if (!item || item.type !== "userMessage") continue;
+					if (submissionId && userMessageHasSubmissionId(item, submissionId)) return true;
+					if (!isOptimisticUserMessage(item) && userMessagesCanShadow(item, pendingItem)) return true;
+				}
+				return false;
+			}
+			function appendV4PendingOverlayItem(turn, item) {
+				if (!turn || !item) return;
+				turn.items = Array.isArray(turn.items) ? turn.items : [];
+				const submissionId = String(item.clientSubmissionId || "").trim();
+				if (!turn.items.some((existing) => existing && (submissionId && userMessageHasSubmissionId(existing, submissionId) || existing.id === item.id || userMessagesCanShadow(existing, item)))) turn.items.push(item);
+			}
+			function copyTurnWithOnlyItems(turn, items) {
+				return Object.assign({}, turn || {}, { items: (items || []).slice() });
+			}
+			function applyV4PendingOverlay(existingThread, mergedThread) {
+				if (!existingThread || !mergedThread || !Array.isArray(existingThread.turns)) return mergedThread;
+				mergedThread.turns = Array.isArray(mergedThread.turns) ? mergedThread.turns : [];
+				const turnsById = new Map(mergedThread.turns.map((turn) => [String(turn && turn.id || ""), turn]));
+				for (const existingTurn of existingThread.turns) {
+					const pendingItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : []).filter((item) => shouldPreserveV4PendingOverlayItem(item) && !v4ThreadHasPendingMatch(mergedThread, item));
+					if (!pendingItems.length) continue;
+					const targetTurn = turnsById.get(String(existingTurn.id || ""));
+					if (targetTurn) {
+						pendingItems.forEach((item) => appendV4PendingOverlayItem(targetTurn, item));
+						continue;
+					}
+					const overlayTurn = copyTurnWithOnlyItems(existingTurn, pendingItems);
+					overlayTurn.mobilePendingOverlay = true;
+					mergedThread.turns.push(overlayTurn);
+					if (overlayTurn.id) turnsById.set(String(overlayTurn.id), overlayTurn);
+				}
+				return mergedThread;
+			}
+			function v4ProjectionRevisionValue(thread) {
+				const direct = Number(thread && thread.mobileProjectionRevision);
+				if (Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
+				const nested = Number(thread && thread.mobileProjection && thread.mobileProjection.revision);
+				return Number.isFinite(nested) && nested > 0 ? Math.trunc(nested) : 0;
+			}
+			function isV4ProjectionRefreshRegressive(existingThread, incomingThread) {
+				const existingRevision = v4ProjectionRevisionValue(existingThread);
+				const incomingRevision = v4ProjectionRevisionValue(incomingThread);
+				return Boolean(existingRevision && incomingRevision && incomingRevision < existingRevision);
+			}
+			function isActiveLikeProjectionTurn(turn) {
+				return Boolean(turn && !isTurnComplete(turn) && (isRunningStatus(turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn)));
+			}
+			function incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns) {
+				const existingOrder = turnOrderMs(existingTurn);
+				if (!existingOrder) return false;
+				return (incomingTurns || []).some((incomingTurn) => {
+					if (!incomingTurn || String(incomingTurn.id || "") === String(existingTurn && existingTurn.id || "")) return false;
+					const incomingOrder = turnOrderMs(incomingTurn);
+					return Boolean(incomingOrder && incomingOrder > existingOrder);
+				});
+			}
+			function existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns) {
+				const visibleItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : []).filter((item) => item && turnVisibleWeight({ items: [item] }) > 0 && !isReasoningItem(item));
+				return Boolean(visibleItems.length && visibleItems.every((item) => shouldPreserveV4PendingOverlayItem(item) && v4ThreadHasPendingMatch({ turns: incomingTurns || [] }, item)));
+			}
+			function shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, incomingTurns) {
+				if (!existingTurn || turnVisibleWeight(existingTurn) <= 0) return false;
+				const id = String(existingTurn.id || "");
+				if (id && (incomingTurns || []).some((turn) => String(turn && turn.id || "") === id)) return false;
+				if (existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns)) return false;
+				const activeLike = isActiveLikeProjectionTurn(existingTurn);
+				const regressiveRefresh = isV4ProjectionRefreshRegressive(existingThread, incomingThread);
+				if (!activeLike && !regressiveRefresh) return false;
+				return !incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns);
+			}
+			function mergeV4ProjectionThread(existingThread, incomingThread) {
+				if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeThreadVisibleUserMessages(incomingThread);
+				const merged = Object.assign({}, existingThread, incomingThread);
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
+				if (Array.isArray(incomingThread.turns)) {
+					const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
+					const incomingTurns = incomingThread.turns.slice();
+					const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+					const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+					if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
+						merged.turns = existingTurns;
+						return normalizeThreadVisibleUserMessages(merged);
+					}
+					const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
+					merged.turns = incomingTurns.map((incomingTurn) => {
+						const existingTurn = existingById.get(String(incomingTurn && incomingTurn.id || ""));
+						return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
+					});
+					for (const existingTurn of existingTurns) if (shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, merged.turns)) merged.turns.push(existingTurn);
+					applyV4PendingOverlay(existingThread, merged);
+					merged.turns = sortTurnsForDisplay(merged.turns).slice(-maxVisibleTurnsForThread(merged));
+				}
+				if (isV4ProjectionRefreshRegressive(existingThread, incomingThread)) {
+					const existingRevision = v4ProjectionRevisionValue(existingThread);
+					if (existingRevision) {
+						merged.mobileProjectionRevision = existingRevision;
+						if (merged.mobileProjection && typeof merged.mobileProjection === "object") merged.mobileProjection = Object.assign({}, merged.mobileProjection, { revision: existingRevision });
+					}
+				}
+				return normalizeThreadVisibleUserMessages(merged);
+			}
+			return {
+				applyV4PendingOverlay,
+				isV4ProjectionRefreshRegressive,
+				isV4ProjectionThread,
+				mergeV4ProjectionThread,
+				shouldPreserveExistingV4ProjectionTurn,
+				v4ProjectionRevisionValue
+			};
+		}
+		return { createThreadDetailV4MergePolicy };
+	});
+}));
+//#endregion
 //#region public/client-render-stability-guard.js
 var require_client_render_stability_guard = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function initClientRenderStabilityGuard(globalScope) {
@@ -5613,6 +6665,8 @@ var require_live_operation_dock_state = /* @__PURE__ */ __commonJSMin(((exports,
 var import_build_refresh_policy = /* @__PURE__ */ __toESM(require_build_refresh_policy());
 var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings());
 var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics());
+var import_conversation_scroll = /* @__PURE__ */ __toESM(require_conversation_scroll());
+var import_thread_performance_metrics = /* @__PURE__ */ __toESM(require_thread_performance_metrics());
 var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
 var import_image_compressor = /* @__PURE__ */ __toESM(require_image_compressor());
 var import_plugin_voice_input = /* @__PURE__ */ __toESM(require_plugin_voice_input());
@@ -5630,6 +6684,7 @@ var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_h
 var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_detail_patch_plan());
 var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
 var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
+var import_thread_detail_v4_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_v4_merge_state());
 var import_client_render_stability_guard = /* @__PURE__ */ __toESM(require_client_render_stability_guard());
 var import_live_operation_dock_state = /* @__PURE__ */ __toESM(require_live_operation_dock_state());
 var moduleDefinitions = [
@@ -5675,6 +6730,61 @@ var moduleDefinitions = [
 			"stablePixelChanged"
 		],
 		"assetPath": "/viewport-metrics.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "conversation-scroll",
+		"source": "public/conversation-scroll.js",
+		"globalName": "CodexConversationScroll",
+		"expectedFunctions": [
+			"createSubmittedMessageFollow",
+			"extendSubmittedMessageFollow",
+			"createViewportFollow",
+			"isNearBottom",
+			"planBottomFollowLeaseEvaluation",
+			"planBottomFollowScrollSchedule",
+			"planConversationAutoScrollHoldFromScroll",
+			"planAutomaticConversationRefresh",
+			"planConversationJumpButtons",
+			"planFullRenderScroll",
+			"planLocalPatchScrollCompletion",
+			"planReadingViewportPreservation",
+			"planUserReadingCurrentTurn",
+			"shouldFollowViewport",
+			"shouldFollowSubmittedMessage",
+			"shouldStartViewportFollow"
+		],
+		"assetPath": "/conversation-scroll.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "thread-performance-metrics",
+		"source": "public/thread-performance-metrics.js",
+		"globalName": "CodexThreadPerformanceMetrics",
+		"expectedFunctions": [
+			"boundedTiming",
+			"classifyThreadDetailPhase",
+			"classifyThreadListPhase",
+			"rolloutSizeBytes",
+			"statusText",
+			"threadDetailClientTimings",
+			"threadDetailEventFields",
+			"threadDetailEventFieldsWithClient",
+			"threadDetailFirstPaintEventFields",
+			"threadDetailFullReadyEventFields",
+			"threadDetailRefreshEventFields",
+			"threadDetailShape",
+			"threadDetailTimings",
+			"planThreadDetailResponseContractDiagnostic",
+			"planThreadDetailSlowPathDiagnostic",
+			"planThreadListSlowPathDiagnostic",
+			"threadDetailProjectionContractFields",
+			"threadOmittedTurnCount",
+			"threadTurnCount",
+			"threadListEventFields",
+			"threadListTimings"
+		],
+		"assetPath": "/thread-performance-metrics.js",
 		"classicLoaderExcluded": true
 	},
 	{
@@ -5908,6 +7018,14 @@ var moduleDefinitions = [
 		"classicLoaderExcluded": true
 	},
 	{
+		"id": "thread-detail-v4-merge-state",
+		"source": "public/thread-detail-v4-merge-state.js",
+		"globalName": "CodexThreadDetailV4MergeState",
+		"expectedFunctions": ["createThreadDetailV4MergePolicy"],
+		"assetPath": "/thread-detail-v4-merge-state.js",
+		"classicLoaderExcluded": true
+	},
+	{
 		"id": "client-render-stability-guard",
 		"source": "public/client-render-stability-guard.js",
 		"globalName": "CodexClientRenderStabilityGuard",
@@ -5940,6 +7058,8 @@ var moduleApis = {
 	"build-refresh-policy": import_build_refresh_policy.default,
 	"runtime-settings": import_runtime_settings.default,
 	"viewport-metrics": import_viewport_metrics.default,
+	"conversation-scroll": import_conversation_scroll.default,
+	"thread-performance-metrics": import_thread_performance_metrics.default,
 	"draft-store": import_draft_store.default,
 	"image-compressor": import_image_compressor.default,
 	"plugin-voice-input": import_plugin_voice_input.default,
@@ -5957,6 +7077,7 @@ var moduleApis = {
 	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
 	"thread-detail-actions": import_thread_detail_actions.default,
 	"thread-detail-merge-state": import_thread_detail_merge_state.default,
+	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default,
 	"client-render-stability-guard": import_client_render_stability_guard.default,
 	"live-operation-dock-state": import_live_operation_dock_state.default
 };
@@ -6050,6 +7171,124 @@ function sampleModule(id, api) {
 			stableChanged,
 			stableNoise,
 			cssPixel
+		};
+	}
+	if (id === "conversation-scroll") {
+		const nearBottom = functionReady(api, "isNearBottom") ? api.isNearBottom({
+			scrollHeight: 1800,
+			scrollTop: 725,
+			clientHeight: 980
+		}) : false;
+		const notNearBottom = functionReady(api, "isNearBottom") ? api.isNearBottom({
+			scrollHeight: 1800,
+			scrollTop: 640,
+			clientHeight: 980
+		}) : true;
+		const submittedFollow = functionReady(api, "createSubmittedMessageFollow") ? api.createSubmittedMessageFollow("thread-a", {
+			clientSubmissionId: "submit-1",
+			nowMs: 1e3,
+			ttlMs: 5e3
+		}) : null;
+		const submittedActive = functionReady(api, "shouldFollowSubmittedMessage") ? api.shouldFollowSubmittedMessage(submittedFollow, {
+			threadId: "thread-a",
+			nowMs: 5999
+		}) : false;
+		const submittedWrongThread = functionReady(api, "shouldFollowSubmittedMessage") ? api.shouldFollowSubmittedMessage(submittedFollow, {
+			threadId: "thread-b",
+			nowMs: 2e3
+		}) : true;
+		const viewportFollow = functionReady(api, "createViewportFollow") ? api.createViewportFollow("thread-a", {
+			reason: "orientation",
+			nowMs: 1e3,
+			ttlMs: 3e3
+		}) : null;
+		const viewportActive = functionReady(api, "shouldFollowViewport") ? api.shouldFollowViewport(viewportFollow, {
+			threadId: "thread-a",
+			nowMs: 3999
+		}) : false;
+		const lease = functionReady(api, "planBottomFollowLeaseEvaluation") ? api.planBottomFollowLeaseEvaluation({
+			leaseActive: true,
+			hasLease: true
+		}) : {};
+		const schedule = functionReady(api, "planBottomFollowScrollSchedule") ? api.planBottomFollowScrollSchedule() : {};
+		const refresh = functionReady(api, "planAutomaticConversationRefresh") ? api.planAutomaticConversationRefresh({
+			hasThread: true,
+			nearBottom: false,
+			userReadingCurrentTurn: true
+		}) : {};
+		const fullRender = functionReady(api, "planFullRenderScroll") ? api.planFullRenderScroll({ submittedMessageFollow: true }) : {};
+		return {
+			ok: nearBottom === true && notNearBottom === false && submittedFollow && submittedFollow.untilMs === 6e3 && submittedActive === true && submittedWrongThread === false && viewportFollow && viewportFollow.untilMs === 4e3 && viewportActive === true && lease.reason === "lease-active" && Array.isArray(schedule.delaysMs) && schedule.delaysMs.join(",") === "0,80,240,600,1200" && refresh.allowRefresh === false && refresh.reason === "user-reading-current-turn" && fullRender.stickToBottom === true && fullRender.reason === "submitted-message-follow",
+			nearBottom,
+			submittedActive,
+			viewportActive,
+			leaseReason: String(lease.reason || ""),
+			scheduleDelays: Array.isArray(schedule.delaysMs) ? schedule.delaysMs : [],
+			refreshReason: String(refresh.reason || ""),
+			fullRenderReason: String(fullRender.reason || "")
+		};
+	}
+	if (id === "thread-performance-metrics") {
+		const listPhase = functionReady(api, "classifyThreadListPhase") ? api.classifyThreadListPhase({
+			fallbackCacheDecision: "expired-rebuild",
+			fallbackMs: 25
+		}) : "";
+		const detailPhase = functionReady(api, "classifyThreadDetailPhase") ? api.classifyThreadDetailPhase({
+			readDecision: "projection-hit",
+			projectionSource: "dynamic"
+		}) : "";
+		const clientTimings = functionReady(api, "threadDetailClientTimings") ? api.threadDetailClientTimings({
+			elapsedMs: 26.4,
+			renderElapsedMs: 7.2,
+			detailRenderMode: "patch"
+		}) : {};
+		const detailFields = functionReady(api, "threadDetailEventFields") ? api.threadDetailEventFields({
+			mobileDiagnostics: { threadDetailTimings: {
+				phase: "warm-projection-cache",
+				totalMs: 8
+			} },
+			turns: [{
+				status: "completed",
+				items: [{
+					type: "userMessage",
+					text: "prompt"
+				}]
+			}]
+		}) : {};
+		const shape = functionReady(api, "threadDetailShape") ? api.threadDetailShape({
+			mobileOmittedTurnCount: 2,
+			turns: [{
+				status: "completed",
+				items: [{
+					type: "userMessage",
+					text: "prompt"
+				}]
+			}, {
+				status: "running",
+				items: [{
+					type: "agentMessage",
+					text: "reply"
+				}]
+			}]
+		}) : {};
+		const slow = functionReady(api, "planThreadDetailSlowPathDiagnostic") ? api.planThreadDetailSlowPathDiagnostic({
+			elapsedMs: 1600,
+			apiElapsedMs: 1550,
+			renderElapsedMs: 20,
+			performancePhase: "cold-turns-list-initial"
+		}, {
+			action: "thread-detail-load",
+			threadHash: "thread_hash",
+			durationBucket: "1_3s"
+		}) : {};
+		return {
+			ok: listPhase === "cold-fallback-expired-rebuild" && detailPhase === "warm-projection-dynamic" && clientTimings.elapsedMs === 26 && clientTimings.renderElapsedMs === 7 && clientTimings.detailRenderMode === "patch" && detailFields.performancePhase === "warm-projection-cache" && shape.turns === 2 && shape.visibleItems === 2 && shape.omittedTurns === 2 && shape.completedTurns === 1 && shape.activeTurns === 1 && slow.shouldReport === true && slow.reason === "api-slow",
+			listPhase,
+			detailPhase,
+			elapsedMs: Number(clientTimings.elapsedMs) || 0,
+			detailPerformancePhase: String(detailFields.performancePhase || ""),
+			visibleItems: Number(shape.visibleItems) || 0,
+			slowReason: String(slow.reason || "")
 		};
 	}
 	if (id === "draft-store") {
@@ -6733,6 +7972,54 @@ function sampleModule(id, api) {
 			preservedItemCount: Array.isArray(preserved && preserved.items) ? preserved.items.length : 0
 		};
 	}
+	if (id === "thread-detail-v4-merge-state") {
+		const policy = functionReady(api, "createThreadDetailV4MergePolicy") ? api.createThreadDetailV4MergePolicy({
+			normalizeThreadVisibleUserMessages: (thread) => thread,
+			turnVisibleWeight: (turn) => Array.isArray(turn && turn.items) ? turn.items.length : 0,
+			isOptimisticUserMessage: (item) => Boolean(item && item.mobilePendingSubmission),
+			isRecentlySubmittedUserMessage: (item) => Boolean(item && item.mobilePendingSubmission),
+			isReasoningItem: (item) => String(item && item.type || "") === "reasoning",
+			userMessagesCanShadow: () => false,
+			isTurnComplete: (turn) => /completed|failed|cancel|interrupted/i.test(String(turn && (turn.status && turn.status.type || turn.status) || "")),
+			isRunningStatus: (status) => /running|active|inprogress|in_progress/i.test(String(status && status.type || status || "")),
+			isIncompleteInterruptedTurn: () => false,
+			turnHasActiveLiveItems: () => false,
+			turnOrderMs: (turn) => Number(turn && turn.startedAtMs) || 0,
+			sortTurnsForDisplay: (turns) => Array.isArray(turns) ? turns.slice().sort((left, right) => (Number(left && left.startedAtMs) || 0) - (Number(right && right.startedAtMs) || 0)) : [],
+			maxVisibleTurnsForThread: () => 5
+		}) : {};
+		const merged = policy && typeof policy.mergeV4ProjectionThread === "function" ? policy.mergeV4ProjectionThread({
+			id: "thread-a",
+			mobileProjectionRevision: 3,
+			turns: [{
+				id: "active",
+				startedAtMs: 100,
+				status: "running",
+				items: [{
+					type: "agentMessage",
+					text: "streaming"
+				}]
+			}]
+		}, {
+			id: "thread-a",
+			mobileProjectionRevision: 2,
+			turns: [{
+				id: "new",
+				startedAtMs: 50,
+				status: "completed",
+				items: [{
+					type: "userMessage",
+					text: "prompt"
+				}]
+			}]
+		}) : {};
+		const turns = Array.isArray(merged && merged.turns) ? merged.turns : [];
+		return {
+			ok: typeof policy.mergeV4ProjectionThread === "function" && typeof policy.v4ProjectionRevisionValue === "function" && policy.v4ProjectionRevisionValue(merged) === 3 && turns.map((turn) => String(turn && turn.id || "")).join(",") === "new,active",
+			revision: policy && typeof policy.v4ProjectionRevisionValue === "function" ? policy.v4ProjectionRevisionValue(merged) : 0,
+			turnOrder: turns.map((turn) => String(turn && turn.id || ""))
+		};
+	}
 	if (id === "client-render-stability-guard") {
 		const sourceTurn = {
 			id: "local-turn-secret",
@@ -7113,7 +8400,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-C9GSb-4D.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DO8aEayh.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
