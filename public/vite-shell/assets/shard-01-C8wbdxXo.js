@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CQo547DZ.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-DlB4qcnz.js";
 //#region public/build-refresh-policy.js
 var require_build_refresh_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -548,6 +548,572 @@ var require_conversation_scroll = /* @__PURE__ */ __commonJSMin(((exports, modul
 			shouldFollowViewport,
 			shouldFollowSubmittedMessage,
 			shouldStartViewportFollow
+		};
+	});
+}));
+//#endregion
+//#region public/thread-performance-metrics.js
+var require_thread_performance_metrics = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadPerformanceMetrics = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function objectOrNull(value) {
+			return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+		}
+		const MAX_TIMING_MS = 600 * 1e3;
+		const CLIENT_TIMING_KEYS = [
+			"elapsedMs",
+			"apiElapsedMs",
+			"renderElapsedMs",
+			"mergeMs",
+			"draftRestoreMs",
+			"composerRenderMs",
+			"threadListRenderMs",
+			"conversationRenderMs",
+			"detailPatchMs",
+			"metadataUpdateMs",
+			"postRenderMs"
+		];
+		const CLIENT_LABEL_KEYS = [
+			"refreshRenderAction",
+			"renderPlanReason",
+			"patchRejectReason",
+			"patchResult",
+			"patchTimingSource",
+			"patchSurfaceReason",
+			"patchSurface",
+			"patchExecutionReason"
+		];
+		const ALLOWED_DETAIL_RENDER_MODES = Object.freeze({
+			"cached-current": true,
+			"first-paint": true,
+			"full-backfill": true,
+			"full-render": true,
+			"metadata-only": true,
+			patch: true,
+			skipped: true,
+			"tile-pane": true,
+			"tile-pane-metadata": true
+		});
+		const MAX_COUNT = 1e5;
+		function threadDetailTimings(thread) {
+			const diagnostics = objectOrNull(thread && thread.mobileDiagnostics);
+			return objectOrNull(diagnostics && diagnostics.threadDetailTimings);
+		}
+		function threadListTimings(result) {
+			const diagnostics = objectOrNull(result && result.mobileDiagnostics);
+			return objectOrNull(diagnostics && diagnostics.threadListTimings);
+		}
+		function classifyThreadListPhase(timings) {
+			const value = objectOrNull(timings);
+			if (!value) return "unknown";
+			if (value.fallbackDeferred) return "deferred-fallback";
+			if (value.appServerDeferred) return "warm-fallback-initial";
+			const decision = compactLabel(value.fallbackCacheDecision, 40);
+			if (decision === "hit" || value.fallbackCacheHit) return "warm-fallback-cache";
+			if (decision === "expired-rebuild") return "cold-fallback-expired-rebuild";
+			if (decision === "miss-rebuild") return "cold-fallback-miss-build";
+			if (Number(value.fallbackMs || 0) > 0) return "cold-fallback-build";
+			if (Number(value.appServerMs || 0) > 0) return "app-server-only";
+			return "unknown";
+		}
+		function classifyThreadDetailPhase(timings, input = {}) {
+			const value = objectOrNull(timings);
+			const source = objectOrNull(input) || {};
+			if (source.cached === true) return "warm-client-current";
+			if (!value) return "unknown";
+			const existingPhase = compactLabel(value.phase, 80);
+			if (existingPhase && existingPhase !== "unknown") return existingPhase;
+			const readDecision = compactLabel(value.readDecision || source.readDecision, 80).toLowerCase();
+			const readMode = compactLabel(value.readMode || source.readMode, 80).toLowerCase();
+			const projectionState = compactLabel(value.projectionState, 80).toLowerCase();
+			const projectionSource = compactLabel(value.projectionSource, 80).toLowerCase();
+			const projectionSeedStatus = compactLabel(value.projectionSeedStatus, 80).toLowerCase();
+			if (readDecision === "projection-partial-hit" || readDecision === "projection-stale-partial-hit" || /projection-v?\d*-partial|projection-partial/.test(readMode)) return "warm-projection-partial";
+			if (readDecision === "projection-hit" || projectionState === "hit") {
+				if (/dynamic/.test(projectionSource) || /projection-v?\d*-dynamic|projection-dynamic/.test(readMode)) return "warm-projection-dynamic";
+				return "warm-projection-cache";
+			}
+			if (readDecision === "bounded-large-turns-list" || /turns-list-large/.test(readMode)) return "bounded-large-thread-window";
+			if (readDecision === "initial-turns-list" || /turns-list-initial/.test(readMode)) return projectionSeedStatus === "seeded-partial" ? "cold-turns-list-initial-seeded-partial" : "cold-turns-list-initial";
+			if (/thread-read-raw/.test(readMode)) return "cold-thread-read-raw";
+			if (readDecision === "full-thread-read" || /thread-read/.test(readMode)) return "cold-thread-read";
+			if (readDecision === "fallback-turns-list" || /turns-list/.test(readMode)) return "fallback-turns-list";
+			if (readDecision === "summary-fallback" || /summary-timeout|unmaterialized|fallback/.test(readMode)) return "fallback-summary";
+			return "unknown";
+		}
+		function threadDetailEventFields(thread) {
+			const timings = threadDetailTimings(thread);
+			return {
+				serverTimings: timings,
+				performancePhase: classifyThreadDetailPhase(timings, { readMode: thread && thread.mobileReadMode }),
+				detailShape: threadDetailShape(thread)
+			};
+		}
+		function boundedTiming(value) {
+			const number = Number(value);
+			if (!Number.isFinite(number) || number < 0) return null;
+			return Math.min(MAX_TIMING_MS, Math.round(number));
+		}
+		function compactLabel(value, maxLength = 40) {
+			return String(value || "").trim().slice(0, maxLength);
+		}
+		function threadDetailClientTimings(input = {}) {
+			const source = objectOrNull(input) || {};
+			const result = {};
+			for (const key of CLIENT_TIMING_KEYS) {
+				const timing = boundedTiming(source[key]);
+				if (timing !== null) result[key] = timing;
+			}
+			const renderMode = compactLabel(source.detailRenderMode || source.renderMode);
+			if (renderMode && ALLOWED_DETAIL_RENDER_MODES[renderMode]) result.detailRenderMode = renderMode;
+			const sourceLabel = compactLabel(source.source);
+			if (sourceLabel) result.source = sourceLabel;
+			for (const key of CLIENT_LABEL_KEYS) {
+				const label = compactLabel(source[key]);
+				if (label) result[key] = label;
+			}
+			if (source.skippedDetailRender !== void 0) result.skippedDetailRender = Boolean(source.skippedDetailRender);
+			if (source.locallyPatchedDetail !== void 0) result.locallyPatchedDetail = Boolean(source.locallyPatchedDetail);
+			if (source.tilePanePatchedDetail !== void 0) result.tilePanePatchedDetail = Boolean(source.tilePanePatchedDetail);
+			if (source.localPatchAttempted !== void 0) result.localPatchAttempted = Boolean(source.localPatchAttempted);
+			if (source.tilePanePatchAttempted !== void 0) result.tilePanePatchAttempted = Boolean(source.tilePanePatchAttempted);
+			return Object.keys(result).length ? result : null;
+		}
+		function threadDetailEventFieldsWithClient(thread, clientTimingInput = {}) {
+			const fields = threadDetailEventFields(thread);
+			fields.clientTimings = threadDetailClientTimings(clientTimingInput);
+			return fields;
+		}
+		function statusText(status) {
+			if (!status) return "";
+			if (typeof status === "string") return compactLabel(status, 80);
+			if (status && typeof status === "object") {
+				const type = compactLabel(status.type, 80);
+				if (type) return type;
+				try {
+					return compactLabel(JSON.stringify(status), 80);
+				} catch (_) {
+					return "";
+				}
+			}
+			return compactLabel(status, 80);
+		}
+		function rolloutSizeBytes(thread) {
+			const size = Number(thread && thread.rolloutSizeBytes);
+			return Number.isFinite(size) && size > 0 ? Math.trunc(size) : 0;
+		}
+		function hasCursor(value) {
+			if (!value) return false;
+			if (typeof value === "string") return Boolean(value.trim());
+			if (typeof value === "object") return Object.keys(value).length > 0;
+			return true;
+		}
+		function booleanFlag(value) {
+			if (value === true || value === 1) return true;
+			const text = String(value || "").trim().toLowerCase();
+			return text === "true" || text === "1" || text === "yes";
+		}
+		function threadTurnCount(thread) {
+			return Array.isArray(thread && thread.turns) ? boundedCount(thread.turns.length) : 0;
+		}
+		function threadOmittedTurnCount(thread) {
+			return boundedCount(thread && thread.mobileOmittedTurnCount);
+		}
+		function setTimingField(out, key, value) {
+			const timing = boundedTiming(value);
+			if (timing !== null) out[key] = timing;
+		}
+		function threadDetailRefreshEventFields(thread, input = {}) {
+			const source = objectOrNull(input) || {};
+			const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
+			const out = {
+				source: compactLabel(source.source, 40),
+				threadId: compactLabel(source.threadId, 220),
+				requestedMode: compactLabel(source.requestedMode, 40),
+				readMode: compactLabel(thread && thread.mobileReadMode, 80),
+				serverTimings: detailPerformance.serverTimings,
+				performancePhase: detailPerformance.performancePhase,
+				clientTimings: detailPerformance.clientTimings,
+				detailShape: detailPerformance.detailShape,
+				status: statusText(thread && thread.status),
+				turns: threadTurnCount(thread),
+				omittedTurns: threadOmittedTurnCount(thread),
+				rolloutSizeBytes: rolloutSizeBytes(thread),
+				renderPlanReason: compactLabel(source.renderPlanReason, 80),
+				refreshRenderAction: compactLabel(source.refreshRenderAction, 80),
+				patchRejectReason: compactLabel(source.patchRejectReason, 80),
+				patchResult: compactLabel(source.patchResult, 80),
+				patchTimingSource: compactLabel(source.patchTimingSource, 80),
+				patchSurfaceReason: compactLabel(source.patchSurfaceReason, 80),
+				patchSurface: compactLabel(source.patchSurface, 80),
+				patchExecutionReason: compactLabel(source.patchExecutionReason, 80),
+				skippedDetailRender: Boolean(source.skippedDetailRender),
+				locallyPatchedDetail: Boolean(source.locallyPatchedDetail),
+				tilePanePatchedDetail: Boolean(source.tilePanePatchedDetail),
+				localPatchAttempted: Boolean(source.localPatchAttempted),
+				tilePanePatchAttempted: Boolean(source.tilePanePatchAttempted)
+			};
+			for (const key of [
+				"elapsedMs",
+				"apiElapsedMs",
+				"renderElapsedMs"
+			]) setTimingField(out, key, source[key]);
+			return out;
+		}
+		function threadDetailFirstPaintEventFields(thread, input = {}) {
+			const source = objectOrNull(input) || {};
+			const cached = source.cached === true;
+			const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
+			const performancePhase = classifyThreadDetailPhase(detailPerformance.serverTimings, {
+				cached,
+				readMode: thread && thread.mobileReadMode,
+				readDecision: source.readDecision
+			});
+			const out = {
+				source: compactLabel(source.source, 40),
+				threadId: compactLabel(source.threadId, 220),
+				serverTimings: detailPerformance.serverTimings,
+				performancePhase,
+				clientTimings: detailPerformance.clientTimings,
+				detailShape: detailPerformance.detailShape,
+				cached,
+				readMode: compactLabel(thread && thread.mobileReadMode, 80),
+				turns: threadTurnCount(thread),
+				rolloutSizeBytes: rolloutSizeBytes(thread)
+			};
+			for (const key of [
+				"elapsedMs",
+				"apiElapsedMs",
+				"renderElapsedMs"
+			]) setTimingField(out, key, source[key]);
+			if (!cached) {
+				out.status = statusText(thread && thread.status);
+				out.omittedTurns = threadOmittedTurnCount(thread);
+			}
+			return out;
+		}
+		function threadDetailFullReadyEventFields(thread, input = {}) {
+			const source = objectOrNull(input) || {};
+			const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
+			const out = {
+				source: compactLabel(source.source, 40),
+				threadId: compactLabel(source.threadId, 220),
+				serverTimings: detailPerformance.serverTimings,
+				performancePhase: detailPerformance.performancePhase,
+				clientTimings: detailPerformance.clientTimings,
+				detailShape: detailPerformance.detailShape,
+				readMode: compactLabel(thread && thread.mobileReadMode, 80),
+				turns: threadTurnCount(thread),
+				omittedTurns: threadOmittedTurnCount(thread),
+				rolloutSizeBytes: rolloutSizeBytes(thread)
+			};
+			for (const key of [
+				"elapsedMs",
+				"apiElapsedMs",
+				"renderElapsedMs"
+			]) setTimingField(out, key, source[key]);
+			return out;
+		}
+		function planThreadDetailSlowPathDiagnostic(event = {}, input = {}) {
+			const fields = objectOrNull(event) || {};
+			const source = objectOrNull(input) || {};
+			const thresholdMs = boundedTiming(source.thresholdMs) || 1500;
+			const elapsedMs = boundedTiming(fields.elapsedMs || fields.clientTimings && fields.clientTimings.elapsedMs) || 0;
+			const apiElapsedMs = boundedTiming(fields.apiElapsedMs || fields.clientTimings && fields.clientTimings.apiElapsedMs) || 0;
+			const renderElapsedMs = boundedTiming(fields.renderElapsedMs || fields.clientTimings && fields.clientTimings.renderElapsedMs) || 0;
+			const serverTimings = objectOrNull(fields.serverTimings) || {};
+			const slowElapsed = elapsedMs >= thresholdMs;
+			const slowApi = apiElapsedMs >= thresholdMs;
+			const slowRender = renderElapsedMs >= thresholdMs;
+			if (!slowElapsed && !slowApi && !slowRender) return {
+				shouldReport: false,
+				reason: "below-threshold",
+				thresholdMs,
+				elapsedMs,
+				apiElapsedMs,
+				renderElapsedMs
+			};
+			const performancePhase = compactLabel(fields.performancePhase, 80);
+			const reason = slowApi ? "api-slow" : slowRender ? "render-slow" : "elapsed-slow";
+			const severe = elapsedMs >= thresholdMs * 2 || apiElapsedMs >= thresholdMs * 2 || /cold-thread-read|fallback|bounded-large/.test(performancePhase);
+			const detailShape = objectOrNull(fields.detailShape) || {};
+			return {
+				shouldReport: true,
+				reason,
+				severityHint: severe ? "H2" : "H3",
+				thresholdMs,
+				elapsedMs,
+				apiElapsedMs,
+				renderElapsedMs,
+				readMode: compactLabel(fields.readMode, 80),
+				performancePhase,
+				coldPathOwner: compactLabel(fields.coldPathOwner || serverTimings.coldPathOwner, 80),
+				coldPathReason: compactLabel(fields.coldPathReason || serverTimings.coldPathReason, 80),
+				source: compactLabel(fields.source || source.source, 40),
+				action: compactLabel(source.action || "thread-detail", 80),
+				threadHash: compactLabel(source.threadHash || source.thread_hash, 80),
+				durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
+				renderMode: compactLabel(fields.clientTimings && fields.clientTimings.detailRenderMode, 40),
+				rolloutSizeBytes: rolloutSizeBytes(fields),
+				turns: boundedCount(fields.turns || detailShape.turns),
+				visibleItems: boundedCount(detailShape.visibleItems),
+				omittedTurns: boundedCount(fields.omittedTurns || detailShape.omittedTurns)
+			};
+		}
+		function planThreadListSlowPathDiagnostic(event = {}, input = {}) {
+			const fields = objectOrNull(event) || {};
+			const source = objectOrNull(input) || {};
+			const thresholdMs = boundedTiming(source.thresholdMs) || 1500;
+			const elapsedMs = boundedTiming(fields.elapsedMs || source.elapsedMs) || 0;
+			const apiElapsedMs = boundedTiming(fields.apiElapsedMs || source.apiElapsedMs) || 0;
+			const renderElapsedMs = boundedTiming(fields.renderElapsedMs || source.renderElapsedMs) || 0;
+			const serverTimings = objectOrNull(fields.serverTimings) || {};
+			const slowElapsed = elapsedMs >= thresholdMs;
+			const slowApi = apiElapsedMs >= thresholdMs;
+			const slowRender = renderElapsedMs >= thresholdMs;
+			if (!slowElapsed && !slowApi && !slowRender) return {
+				shouldReport: false,
+				reason: "below-threshold",
+				thresholdMs,
+				elapsedMs,
+				apiElapsedMs,
+				renderElapsedMs
+			};
+			const performancePhase = compactLabel(fields.performancePhase, 80);
+			const reason = slowApi ? "api-slow" : slowRender ? "render-slow" : "elapsed-slow";
+			const severe = elapsedMs >= thresholdMs * 3 || apiElapsedMs >= thresholdMs * 3 || /cold|app-server-only|fallback-build/.test(performancePhase);
+			const responseBytes = Number(serverTimings.appServerResponsePayloadBytes);
+			return {
+				shouldReport: true,
+				reason,
+				severityHint: severe ? "H2" : "H3",
+				thresholdMs,
+				elapsedMs,
+				apiElapsedMs,
+				renderElapsedMs,
+				action: compactLabel(source.action || "thread-list-load", 80),
+				source: compactLabel(fields.source || source.source, 40),
+				durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
+				performancePhase,
+				count: boundedCount(fields.count || source.count),
+				silent: fields.silent === true || source.silent === true,
+				hasSearch: fields.hasSearch === true || source.hasSearch === true,
+				hasWorkspace: fields.hasWorkspace === true || source.hasWorkspace === true,
+				mobileFallback: fields.mobileFallback === true || source.mobileFallback === true,
+				coldPathOwner: compactLabel(fields.coldPathOwner || serverTimings.coldPathOwner, 80),
+				coldPathReason: compactLabel(fields.coldPathReason || serverTimings.coldPathReason, 80),
+				fallbackCacheDecision: compactLabel(serverTimings.fallbackCacheDecision, 80),
+				fallbackDeferredReason: compactLabel(serverTimings.fallbackDeferredReason, 80),
+				appServerDeferredReason: compactLabel(serverTimings.appServerDeferredReason || serverTimings.appServerDeferredInitialReason, 80),
+				appServerRequestReason: compactLabel(serverTimings.appServerRequestReason, 80),
+				totalMs: boundedTiming(serverTimings.totalMs),
+				appServerMs: boundedTiming(serverTimings.appServerMs),
+				appServerRpcMs: boundedTiming(serverTimings.appServerRpcMs),
+				appServerUnattributedMs: boundedTiming(serverTimings.appServerUnattributedMs),
+				fallbackMs: boundedTiming(serverTimings.fallbackMs),
+				mergeMs: boundedTiming(serverTimings.mergeMs),
+				summaryMergeTotalMs: boundedTiming(serverTimings.summaryMergeTotalMs),
+				fallbackSourceSnapshotAgeMs: boundedTiming(serverTimings.fallbackSourceSnapshotAgeMs),
+				fallbackRolloutFileStatCount: boundedCount(serverTimings.fallbackRolloutFileStatCount),
+				fallbackRolloutHeadReadCount: boundedCount(serverTimings.fallbackRolloutHeadReadCount),
+				fallbackRolloutSummaryReadCount: boundedCount(serverTimings.fallbackRolloutSummaryReadCount),
+				appServerRequestLimit: boundedCount(serverTimings.appServerRequestLimit),
+				appServerResponsePayloadKb: Number.isFinite(responseBytes) && responseBytes > 0 ? boundedCount(Math.ceil(responseBytes / 1024)) : 0
+			};
+		}
+		function threadDetailProjectionContractFields(thread) {
+			const projection = objectOrNull(thread && thread.mobileProjection) || {};
+			const timings = threadDetailTimings(thread) || {};
+			const responseBudget = objectOrNull(thread && thread.mobileDetailResponseBudget) || {};
+			const readMode = compactLabel(thread && thread.mobileReadMode, 80);
+			return {
+				readMode,
+				projectionSource: compactLabel(projection.source || thread && thread.mobileProjectionSource || timings.projectionSource, 80),
+				projectionPartial: booleanFlag(projection.partial) || /projection-v?\d*-partial|projection-partial/.test(readMode),
+				projectionPartialKind: compactLabel(projection.partialKind || timings.projectionPartialKind, 80),
+				responseBudgetApplied: responseBudget.applied === true,
+				responseBudgetProgressiveActiveApplied: responseBudget.progressiveActiveBudgetApplied === true,
+				responseBudgetActiveTurnCount: boundedCount(responseBudget.activeTurnCount),
+				responseBudgetRetainedItemCount: boundedCount(responseBudget.retainedItemCount),
+				olderCursor: hasCursor(thread && thread.mobileOlderTurnsCursor),
+				newerCursor: hasCursor(thread && thread.mobileNewerTurnsCursor),
+				status: statusText(thread && thread.status),
+				detailShape: threadDetailShape(thread),
+				turns: threadTurnCount(thread),
+				omittedTurns: threadOmittedTurnCount(thread),
+				rolloutSizeBytes: rolloutSizeBytes(thread)
+			};
+		}
+		function activeLikeStatus(value) {
+			return /active|running|in[_-]?progress|pending|thinking|queued/.test(String(value || "").toLowerCase());
+		}
+		function planThreadDetailResponseContractDiagnostic(event = {}, input = {}) {
+			const fields = objectOrNull(event) || {};
+			const source = objectOrNull(input) || {};
+			const contract = source.thread ? threadDetailProjectionContractFields(source.thread) : objectOrNull(source.contract) || {};
+			const detailShape = objectOrNull(fields.detailShape) || objectOrNull(contract.detailShape) || objectOrNull(source.detailShape) || {};
+			const readMode = compactLabel(fields.readMode || contract.readMode || source.readMode, 80);
+			const performancePhase = compactLabel(fields.performancePhase || source.performancePhase, 80);
+			const projectionSource = compactLabel(contract.projectionSource || source.projectionSource, 80);
+			const projectionPartialKind = compactLabel(contract.projectionPartialKind || source.projectionPartialKind, 80);
+			const projectionPartial = Boolean(contract.projectionPartial || source.projectionPartial);
+			const responseBudgetApplied = Boolean(contract.responseBudgetApplied || source.responseBudgetApplied);
+			const responseBudgetProgressiveActiveApplied = Boolean(contract.responseBudgetProgressiveActiveApplied || source.responseBudgetProgressiveActiveApplied);
+			const responseBudgetActiveTurnCount = boundedCount(contract.responseBudgetActiveTurnCount || source.responseBudgetActiveTurnCount);
+			const responseBudgetRetainedItemCount = boundedCount(contract.responseBudgetRetainedItemCount || source.responseBudgetRetainedItemCount);
+			const olderCursor = Boolean(contract.olderCursor || source.olderCursor);
+			const newerCursor = Boolean(contract.newerCursor || source.newerCursor);
+			const turns = boundedCount(fields.turns || contract.turns || detailShape.turns);
+			const items = boundedCount(detailShape.items);
+			const visibleItems = boundedCount(detailShape.visibleItems);
+			const activeTurns = boundedCount(detailShape.activeTurns);
+			const completedTurns = boundedCount(detailShape.completedTurns);
+			const omittedTurns = boundedCount(fields.omittedTurns || contract.omittedTurns || detailShape.omittedTurns);
+			const status = compactLabel(fields.status || contract.status || source.status, 80);
+			const activeLike = Boolean(source.expectedActiveFullRead) || activeTurns > 0 || activeLikeStatus(status);
+			const windowedMode = /turns-list|projection-v?\d*-partial|projection-partial|summary-timeout|unmaterialized|fallback/.test(readMode) || /bounded-large|turns-list|partial|fallback/.test(performancePhase);
+			const partialProjectionMode = projectionPartial || /projection-v?\d*-partial|projection-partial/.test(readMode);
+			const hasActiveProjectionEvidence = activeTurns > 0 || responseBudgetActiveTurnCount > 0;
+			const hasVisibleProjectionEvidence = visibleItems > 0 || responseBudgetRetainedItemCount > 0;
+			const activePartialProjectionOk = !source.expectedActiveFullRead && partialProjectionMode && hasActiveProjectionEvidence && hasVisibleProjectionEvidence && (responseBudgetApplied || responseBudgetProgressiveActiveApplied || /warm-projection-partial|projection-partial/.test(performancePhase));
+			const projectionModeMarkedFull = /projection-v?\d*-(cache|dynamic)|projection-(cache|dynamic)/.test(readMode) && !projectionPartial;
+			let reason = "";
+			let severityHint = "H3";
+			if (projectionModeMarkedFull && newerCursor) {
+				reason = "projection-window-marked-full";
+				severityHint = "H2";
+			} else if (turns > 0 && visibleItems === 0 && (items === 0 || projectionPartial || projectionPartialKind === "notification-shell")) {
+				reason = "empty-projection-shell";
+				severityHint = "H2";
+			} else if (activeLike && windowedMode && !activePartialProjectionOk) {
+				reason = "active-thread-window-downgrade";
+				severityHint = "H2";
+			}
+			return {
+				shouldReport: Boolean(reason),
+				reason: reason || "ok",
+				severityHint,
+				action: compactLabel(source.action || fields.source || "thread-detail", 80),
+				source: compactLabel(fields.source || source.source, 40),
+				threadHash: compactLabel(source.threadHash || source.thread_hash, 80),
+				durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
+				readMode,
+				renderMode: compactLabel(fields.clientTimings && fields.clientTimings.detailRenderMode || source.renderMode, 40),
+				performancePhase,
+				projectionSource,
+				projectionPartialKind,
+				projectionPartial,
+				responseBudgetApplied,
+				responseBudgetProgressiveActiveApplied,
+				responseBudgetActiveTurnCount,
+				responseBudgetRetainedItemCount,
+				olderCursor,
+				newerCursor,
+				turns,
+				items,
+				visibleItems,
+				activeTurns,
+				completedTurns,
+				omittedTurns,
+				rolloutSizeBytes: rolloutSizeBytes(contract.rolloutSizeBytes ? contract : fields)
+			};
+		}
+		function boundedCount(value) {
+			const number = Number(value);
+			if (!Number.isFinite(number) || number < 0) return 0;
+			return Math.min(MAX_COUNT, Math.trunc(number));
+		}
+		function itemType(value) {
+			return String(value && value.type || "").trim();
+		}
+		function isVisibleItem(item) {
+			if (!item || typeof item !== "object") return false;
+			if (item.hidden || item.mobileHidden) return false;
+			const type = itemType(item);
+			if (!type || type === "reasoning") return false;
+			if (typeof item.text === "string" && item.text.trim()) return true;
+			if (Array.isArray(item.content) && item.content.length) return true;
+			if (Array.isArray(item.summary) && item.summary.length) return true;
+			if (type === "imageView" || type === "generatedImage" || type === "fileChange" || type === "commandExecution") return true;
+			if (type === "turnUsageSummary" || type === "taskCard" || type === "toolCall") return true;
+			return false;
+		}
+		function itemShapeBucket(item) {
+			const type = itemType(item);
+			if (type === "userMessage") return "userItems";
+			if (type === "agentMessage" || type === "plan") return "receiptItems";
+			if (type === "imageView" || type === "generatedImage") return "imageItems";
+			if (type === "commandExecution" || type === "fileChange" || type === "toolCall") return "operationItems";
+			if (type === "turnUsageSummary") return "usageItems";
+			if (type === "turnDiagnostic") return "diagnosticItems";
+			return "";
+		}
+		function turnIsComplete(turn) {
+			const text = String(turn && (turn.status && turn.status.type || turn.status) || "").toLowerCase();
+			return /completed|success|succeeded|done|finished|failed|error|cancel|cancelled|canceled|interrupted/.test(text);
+		}
+		function threadDetailShape(thread) {
+			const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+			const shape = {
+				turns: boundedCount(turns.length),
+				omittedTurns: boundedCount(thread && thread.mobileOmittedTurnCount),
+				items: 0,
+				visibleItems: 0,
+				userItems: 0,
+				receiptItems: 0,
+				imageItems: 0,
+				operationItems: 0,
+				usageItems: 0,
+				diagnosticItems: 0,
+				completedTurns: 0,
+				activeTurns: 0
+			};
+			for (const turn of turns) {
+				if (turnIsComplete(turn)) shape.completedTurns += 1;
+				else shape.activeTurns += 1;
+				const items = Array.isArray(turn && turn.items) ? turn.items : [];
+				shape.items += items.length;
+				for (const item of items) {
+					if (isVisibleItem(item)) shape.visibleItems += 1;
+					const bucket = itemShapeBucket(item);
+					if (bucket) shape[bucket] += 1;
+				}
+			}
+			for (const key of Object.keys(shape)) shape[key] = boundedCount(shape[key]);
+			return shape;
+		}
+		function threadListEventFields(result) {
+			const timings = threadListTimings(result);
+			return {
+				serverTimings: timings,
+				performancePhase: classifyThreadListPhase(timings)
+			};
+		}
+		return {
+			boundedTiming,
+			classifyThreadDetailPhase,
+			classifyThreadListPhase,
+			rolloutSizeBytes,
+			statusText,
+			threadDetailClientTimings,
+			threadDetailEventFields,
+			threadDetailEventFieldsWithClient,
+			threadDetailFirstPaintEventFields,
+			threadDetailFullReadyEventFields,
+			threadDetailRefreshEventFields,
+			threadDetailShape,
+			threadDetailTimings,
+			planThreadDetailResponseContractDiagnostic,
+			planThreadDetailSlowPathDiagnostic,
+			planThreadListSlowPathDiagnostic,
+			threadDetailProjectionContractFields,
+			threadOmittedTurnCount,
+			threadTurnCount,
+			threadListEventFields,
+			threadListTimings
 		};
 	});
 }));
@@ -4377,789 +4943,338 @@ var require_modal_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => 
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
-//#region public/composer-bridge-runtime.js
-var require_composer_bridge_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function attachComposerBridgeRuntime(root) {
-		function updateComposerHeightVar(...args) {
-			return composerRuntime.updateComposerHeightVar(...args);
-		}
-		function showError(err) {
-			const raw = err instanceof Error ? err.message : String(err || "");
-			const message = normalizeClientErrorMessage(raw, err) || err && err.message || String(err);
-			$("connectionState").textContent = message;
-			$("connectionState").classList.add("error");
-			postClientEvent("client_error", {
-				message,
-				raw,
-				currentThreadId: state.currentThreadId || "",
-				composerBusy: state.composerBusy,
-				continuationBusy: state.continuationBusy
-			});
-		}
-		function clearSendProgressWatchdog(...args) {
-			return composerRuntime.clearSendProgressWatchdog(...args);
-		}
-		function startSendProgressWatchdog(...args) {
-			return composerRuntime.startSendProgressWatchdog(...args);
-		}
-		function finishSendProgressWatchdog(...args) {
-			return composerRuntime.finishSendProgressWatchdog(...args);
-		}
-		function threadNotificationThrottleKey(method, params) {
-			if (!params) return "";
-			if (method === "thread/started" && params.thread) return `${method}:${String(params.thread.id || "")}:${String(statusText(params.thread.status) || "")}`;
-			if (method === "thread/status/changed") return `${method}:${String(params.threadId || "")}:${String(statusText(params.status) || "")}`;
-			if (method === "thread/name/updated") return `${method}:${String(params.threadId || "")}:${String(params.threadName || "")}`;
-			if (method === "thread/archived") return `${method}:${String(params.threadId || "")}`;
-			return "";
-		}
-		function shouldThrottleThreadNotification(method, params) {
-			const key = threadNotificationThrottleKey(method, params);
-			if (!key) return false;
-			const now = Date.now();
-			if (now - (state.threadNotificationThrottle.get(key) || 0) < 450) return true;
-			state.threadNotificationThrottle.set(key, now);
-			if (state.threadNotificationThrottle.size > 220) {
-				for (const [existingKey, existingAt] of state.threadNotificationThrottle.entries()) if (now - existingAt > 8e3) state.threadNotificationThrottle.delete(existingKey);
-				if (state.threadNotificationThrottle.size > 220) for (const existingKey of Array.from(state.threadNotificationThrottle.keys()).slice(0, 120)) state.threadNotificationThrottle.delete(existingKey);
-			}
-			return false;
-		}
-		function normalizeClientErrorMessage(...args) {
-			return composerRuntime.normalizeClientErrorMessage(...args);
-		}
-		function rawMessageFallback(...args) {
-			return composerRuntime.rawMessageFallback(...args);
-		}
-		function composerText(...args) {
-			return composerRuntime.composerText(...args);
-		}
-		function setComposerText(...args) {
-			return composerRuntime.setComposerText(...args);
-		}
-		function placeMessageInputCaretAtEnd(...args) {
-			return composerRuntime.placeMessageInputCaretAtEnd(...args);
-		}
-		function focusMessageInput(...args) {
-			return composerRuntime.focusMessageInput(...args);
-		}
-		function messageInputKeyboardVisible(...args) {
-			return composerRuntime.messageInputKeyboardVisible(...args);
-		}
-		function shouldRecoverMessageInputKeyboard(...args) {
-			return composerRuntime.shouldRecoverMessageInputKeyboard(...args);
-		}
-		function recoverMessageInputKeyboardFromGesture(...args) {
-			return composerRuntime.recoverMessageInputKeyboardFromGesture(...args);
-		}
-		function messageInputCanEnableForNativeGesture(...args) {
-			return composerRuntime.messageInputCanEnableForNativeGesture(...args);
-		}
-		function releaseStaleAndroidMessageInputFocusBeforeNativeTap(...args) {
-			return composerRuntime.releaseStaleAndroidMessageInputFocusBeforeNativeTap(...args);
-		}
-		function prepareMessageInputForNativeGesture(...args) {
-			return composerRuntime.prepareMessageInputForNativeGesture(...args);
-		}
-		function normalizedComposerIntentText(...args) {
-			return composerRuntime.normalizedComposerIntentText(...args);
-		}
-		function composerIntentOptions(...args) {
-			return composerRuntime.composerIntentOptions(...args);
-		}
-		function composerIntentOption(...args) {
-			return composerRuntime.composerIntentOption(...args);
-		}
-		function composerIntentDraftKey(...args) {
-			return composerRuntime.composerIntentDraftKey(...args);
-		}
-		function loadComposerIntentDraft(...args) {
-			return composerRuntime.loadComposerIntentDraft(...args);
-		}
-		function saveComposerIntentDraft(...args) {
-			return composerRuntime.saveComposerIntentDraft(...args);
-		}
-		function composerIntentBareTagKind(...args) {
-			return composerRuntime.composerIntentBareTagKind(...args);
-		}
-		function shouldShowComposerIntentMenu(...args) {
-			return composerRuntime.shouldShowComposerIntentMenu(...args);
-		}
-		function closeComposerIntentMenu(...args) {
-			return composerRuntime.closeComposerIntentMenu(...args);
-		}
-		function onComposerIntentOutsidePointer(...args) {
-			return composerRuntime.onComposerIntentOutsidePointer(...args);
-		}
-		function openComposerIntentMenu(...args) {
-			return composerRuntime.openComposerIntentMenu(...args);
-		}
-		function positionComposerIntentMenu(...args) {
-			return composerRuntime.positionComposerIntentMenu(...args);
-		}
-		function updateComposerIntentMenu(...args) {
-			return composerRuntime.updateComposerIntentMenu(...args);
-		}
-		function queueComposerIntentMenuUpdate(...args) {
-			return composerRuntime.queueComposerIntentMenuUpdate(...args);
-		}
-		function selectComposerIntent(...args) {
-			return composerRuntime.selectComposerIntent(...args);
-		}
-		function setComposerIntentDialogStatus(...args) {
-			return composerRuntime.setComposerIntentDialogStatus(...args);
-		}
-		function closeComposerIntentDialog(...args) {
-			return composerRuntime.closeComposerIntentDialog(...args);
-		}
-		function openComposerIntentDialog(...args) {
-			return composerRuntime.openComposerIntentDialog(...args);
-		}
-		async function submitComposerIntentDialog(...args) {
-			return composerRuntime.submitComposerIntentDialog(...args);
-		}
-		function saveComposerIntentDialogDraft(...args) {
-			return composerRuntime.saveComposerIntentDialogDraft(...args);
-		}
-		function shouldKeepAndroidMessageInputEditable(...args) {
-			return composerRuntime.shouldKeepAndroidMessageInputEditable(...args);
-		}
-		function setMessageInputDisabled(...args) {
-			return composerRuntime.setMessageInputDisabled(...args);
-		}
-		function messageInputTextLength(...args) {
-			return composerRuntime.messageInputTextLength(...args);
-		}
-		function messageInputTargetHeight(...args) {
-			return composerRuntime.messageInputTargetHeight(...args);
-		}
-		function currentMessageInputHeight(...args) {
-			return composerRuntime.currentMessageInputHeight(...args);
-		}
-		function updateMessageInputOverflow(...args) {
-			return composerRuntime.updateMessageInputOverflow(...args);
-		}
-		function autoSizeMessageInput(...args) {
-			return composerRuntime.autoSizeMessageInput(...args);
-		}
-		function formatFileSize(...args) {
-			return composerRuntime.formatFileSize(...args);
-		}
-		function appendLocalAttachmentSummary(...args) {
-			return composerRuntime.appendLocalAttachmentSummary(...args);
-		}
-		function localImageInputPartsForAttachments(...args) {
-			return composerRuntime.localImageInputPartsForAttachments(...args);
-		}
-		function localUserMessageItem(...args) {
-			return composerRuntime.localUserMessageItem(...args);
-		}
-		function attachmentId(...args) {
-			return composerRuntime.attachmentId(...args);
-		}
-		function pendingAttachmentBytes(...args) {
-			return composerRuntime.pendingAttachmentBytes(...args);
-		}
-		async function prepareAttachmentFile(...args) {
-			return composerRuntime.prepareAttachmentFile(...args);
-		}
-		async function prepareAttachmentFiles(...args) {
-			return composerRuntime.prepareAttachmentFiles(...args);
-		}
-		async function addAttachmentFiles(...args) {
-			return composerRuntime.addAttachmentFiles(...args);
-		}
-		function removeAttachment(...args) {
-			return composerRuntime.removeAttachment(...args);
-		}
-		function clearPendingAttachments(...args) {
-			return composerRuntime.clearPendingAttachments(...args);
-		}
-		function renderAttachmentList(...args) {
-			return composerRuntime.renderAttachmentList(...args);
-		}
-		function composerHasContent(...args) {
-			return composerRuntime.composerHasContent(...args);
-		}
-		function effectiveDefaultModel(...args) {
-			return composerRuntime.effectiveDefaultModel(...args);
-		}
-		function effectiveDefaultEffort(...args) {
-			return composerRuntime.effectiveDefaultEffort(...args);
-		}
-		function effectiveDefaultPermissionMode(...args) {
-			return composerRuntime.effectiveDefaultPermissionMode(...args);
-		}
-		function selectedComposerModel(...args) {
-			return composerRuntime.selectedComposerModel(...args);
-		}
-		function selectedComposerEffort(...args) {
-			return composerRuntime.selectedComposerEffort(...args);
-		}
-		function selectedComposerPermissionMode(...args) {
-			return composerRuntime.selectedComposerPermissionMode(...args);
-		}
-		function resetComposerRuntimeSelection(...args) {
-			return composerRuntime.resetComposerRuntimeSelection(...args);
-		}
-		function runtimeOptionValues(...args) {
-			return composerRuntime.runtimeOptionValues(...args);
-		}
-		function runtimeOptionLabel(...args) {
-			return composerRuntime.runtimeOptionLabel(...args);
-		}
-		function runtimeSelectedValue(...args) {
-			return composerRuntime.runtimeSelectedValue(...args);
-		}
-		function codexFastCommandEnabled(...args) {
-			return composerRuntime.codexFastCommandEnabled(...args);
-		}
-		function clearLegacyCodexFastModeStorage(...args) {
-			return composerRuntime.clearLegacyCodexFastModeStorage(...args);
-		}
-		function setCodexFastCommandEnabled(...args) {
-			return composerRuntime.setCodexFastCommandEnabled(...args);
-		}
-		function applyRuntimeSelection(...args) {
-			return composerRuntime.applyRuntimeSelection(...args);
-		}
-		function closeComposerRuntimeMenu(...args) {
-			return composerRuntime.closeComposerRuntimeMenu(...args);
-		}
-		function onComposerRuntimeOutsidePointer(...args) {
-			return composerRuntime.onComposerRuntimeOutsidePointer(...args);
-		}
-		function openComposerRuntimeMenu(...args) {
-			return composerRuntime.openComposerRuntimeMenu(...args);
-		}
-		function composerRuntimeMenuDiagnostics(...args) {
-			return composerRuntime.composerRuntimeMenuDiagnostics(...args);
-		}
-		function reportComposerRuntimeMenu(...args) {
-			return composerRuntime.reportComposerRuntimeMenu(...args);
-		}
-		function handleComposerRuntimeControl(...args) {
-			return composerRuntime.handleComposerRuntimeControl(...args);
-		}
-		function fitComposerPopupToAnchor(...args) {
-			return composerRuntime.fitComposerPopupToAnchor(...args);
-		}
-		function closeQuotaDetails(...args) {
-			return composerRuntime.closeQuotaDetails(...args);
-		}
-		function onQuotaOutsidePointer(...args) {
-			return composerRuntime.onQuotaOutsidePointer(...args);
-		}
-		function toggleQuotaDetails(...args) {
-			return composerRuntime.toggleQuotaDetails(...args);
-		}
-		function composerPlaceholderText(...args) {
-			return composerRuntime.composerPlaceholderText(...args);
-		}
-		function composerShowsTargetPlaceholder(...args) {
-			return composerRuntime.composerShowsTargetPlaceholder(...args);
-		}
-		function applyComposerActionControlPlan(...args) {
-			return composerRuntime.applyComposerActionControlPlan(...args);
-		}
-		function renderComposerSettings(...args) {
-			return composerRuntime.renderComposerSettings(...args);
-		}
-		function updateComposerControls(...args) {
-			return composerRuntime.updateComposerControls(...args);
-		}
-		function hasTransferFiles(...args) {
-			return composerRuntime.hasTransferFiles(...args);
-		}
-		function goalDialogFormValues(...args) {
-			return composerRuntime.goalDialogFormValues(...args);
-		}
-		async function submitThreadGoalMessage(...args) {
-			return composerRuntime.submitThreadGoalMessage(...args);
-		}
-		function threadGoalActionStatusText(...args) {
-			return composerRuntime.threadGoalActionStatusText(...args);
-		}
-		function threadGoalActionBusyText(...args) {
-			return composerRuntime.threadGoalActionBusyText(...args);
-		}
-		async function runThreadGoalDialogAction(...args) {
-			return composerRuntime.runThreadGoalDialogAction(...args);
-		}
-		function requestGoalDialogSubmitFromEnter(...args) {
-			return composerRuntime.requestGoalDialogSubmitFromEnter(...args);
-		}
-		function requestGoalDialogSubmitFromButton(...args) {
-			return composerRuntime.requestGoalDialogSubmitFromButton(...args);
-		}
-		function requestGoalDialogSubmit(...args) {
-			return composerRuntime.requestGoalDialogSubmit(...args);
-		}
-		async function sendThreadTaskCardCommand(...args) {
-			return composerRuntime.sendThreadTaskCardCommand(...args);
-		}
-		async function sendMessage(...args) {
-			return composerRuntime.sendMessage(...args);
-		}
-		async function sendNewThreadMessage(...args) {
-			return composerRuntime.sendNewThreadMessage(...args);
-		}
-		function requestComposerSubmitFromButton(...args) {
-			return composerRuntime.requestComposerSubmitFromButton(...args);
-		}
-		function requestAttachmentPickerFromButton(...args) {
-			return composerRuntime.requestAttachmentPickerFromButton(...args);
-		}
-		async function interruptActiveTurn(...args) {
-			return composerRuntime.interruptActiveTurn(...args);
-		}
-		async function answerServerRequest(requestId, payload, options = {}) {
-			const key = requestId !== null && requestId !== void 0 ? String(requestId) : "";
-			const request = state.pendingApprovals.get(key);
-			if (!request || request.status !== "waiting") return;
-			const threadId = approvalActionThreadId(request, options.threadId);
-			request.status = "responding";
-			request.decision = payload && (payload.decision || payload.action) || "submitted";
-			markActivity(isUserInputRequest(request) ? "输入发送中" : "批准中");
-			scheduleApprovalThreadRender(threadId);
-			try {
-				const result = await api(`/api/approvals/${encodeURIComponent(key)}`, {
-					method: "POST",
-					body: JSON.stringify(payload || {}),
-					timeoutMs: 2e4
-				});
-				if (result && result.request) state.pendingApprovals.set(key, serverRequestWithThreadContext(result.request, threadId));
-				$("connectionState").classList.remove("error");
-				$("connectionState").textContent = isUserInputRequest(request) ? "Response sent" : "Approval sent";
-				markActivity(isUserInputRequest(request) ? "输入已发送" : "批准发送");
-				scheduleApprovalThreadRender(threadId);
-			} catch (err) {
-				request.status = "waiting";
-				request.decision = null;
-				showError(err);
-				scheduleApprovalThreadRender(threadId);
-			}
-		}
-		function answerApproval(requestId, decision, options = {}) {
-			return answerServerRequest(requestId, { decision }, options);
-		}
-		function serverRequestPayload(request, responseText, questionId) {
-			if (request && request.method === "mcpServer/elicitation/request") return {
-				action: "accept",
-				responseText
-			};
-			return {
-				responseText,
-				questionId
-			};
-		}
-		function declineServerRequest(requestId, options = {}) {
-			const key = requestId !== null && requestId !== void 0 ? String(requestId) : "";
-			const request = state.pendingApprovals.get(key);
-			if (!request) return Promise.resolve();
-			if (request.method === "mcpServer/elicitation/request") return answerServerRequest(key, { action: "decline" }, options);
-			if (request.method === "item/tool/requestUserInput") return answerServerRequest(key, { answers: {} }, options);
-			return answerApproval(key, "deny", options);
-		}
-		async function mutateThreadTaskCard(cardId, action, body = {}, options = {}) {
-			const id = String(cardId || "").trim();
-			const threadId = String(options.threadId || body.threadId || state.currentThreadId || "").trim();
-			if (!id || !threadId) return;
-			$("connectionState").classList.remove("error");
-			$("connectionState").textContent = action === "approve" ? "Approving task card" : `${action} task card`;
-			try {
-				const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {
-					method: "POST",
-					body: JSON.stringify(Object.assign({}, body, { threadId })),
-					timeoutMs: 3e4
-				});
-				if (action === "approve" && result && result.execution && result.execution.turnId) $("connectionState").textContent = "Task card approved; starting target turn";
-				else $("connectionState").textContent = "Task card updated";
-				settleThreadTaskCardForThread(threadId, id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
-				recordHomeAiDiagnosticSuccess({
-					category: "task_card_workflow_failed",
-					diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
-					error_code: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
-					context: {
-						surface: "task-card",
-						action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
-						thread_hash: diagnosticThreadHash(threadId),
-						task_hash: diagnosticTaskHash(id)
-					}
-				});
-				if (action === "approve" && result && result.execution && result.execution.turnId) {
-					let injectedVisible = false;
-					if (threadId === String(state.currentThreadId || "")) injectedVisible = await waitForCurrentThreadTurn(result.execution.turnId, {
-						timeoutMs: 1e4,
-						intervalMs: 500
-					});
-					else scheduleComposerTargetRefresh(threadId, 300, "task-card-approved");
-					$("connectionState").textContent = injectedVisible ? "Task card approved and injected" : "Task card approved; waiting for thread refresh";
-					loadThreads({ silent: true }).catch(showError);
-					return;
-				}
-				await refreshThreadAfterTaskCard(threadId);
-			} catch (err) {
-				showError(err);
-			}
-		}
-		async function replyTaskCard(cardId, options = {}) {
-			const threadId = String(options.threadId || state.currentThreadId || "").trim();
-			const card = findThreadTaskCard(cardId, threadId);
-			if (!card) return;
-			const body = await requestAppTextInput("输入回复内容。", "", {
-				title: "回复任务卡片",
-				confirmLabel: "发送回复",
-				rows: 6
-			}) || "";
-			if (!String(body).trim()) return;
-			const title = `Reply: ${card.message && card.message.title ? card.message.title : "Task card"}`;
-			return mutateThreadTaskCard(card.id, "reply", {
-				format: "markdown",
-				title,
-				summary: summarizeTaskCardText(body),
-				body: String(body).trim(),
-				idempotencyKey: `task-card-reply:${card.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`
-			}, { threadId });
-		}
-		function findThreadTaskCardDraftByKey(draftKey, thread = renderContextThread()) {
-			const key = String(draftKey || "");
-			const sourceThread = renderContextThread(thread) || state.currentThread;
-			const turns = Array.isArray(sourceThread && sourceThread.turns) ? sourceThread.turns : [];
-			for (const turn of turns) {
-				const items = Array.isArray(turn && turn.items) ? turn.items : [];
-				for (const item of items) {
-					if (!item || item.type !== "agentMessage" && item.type !== "plan") continue;
-					const draft = parseThreadTaskCardDraftText(item.text || "");
-					if (!draft) continue;
-					const itemKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
-					const legacyItemKey = threadTaskCardDraftKey(turn.id, item.id || "");
-					if (itemKey !== key && legacyItemKey !== key) continue;
-					return {
-						key,
-						draft,
-						turn,
-						item,
-						sourceThread
-					};
-				}
-			}
-			return null;
-		}
-		function scheduleThreadTaskCardDraftStateRender(threadId = "") {
-			const id = String(threadId || state.currentThreadId || "").trim();
-			if (!id || id === String(state.currentThreadId || "")) {
-				renderCurrentThread();
-				return true;
-			}
-			if (state.threadTileMode && threadTilePaneIsVisible(id)) {
-				if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) renderCurrentThread();
-				return true;
-			}
-			return false;
-		}
-		function setThreadTaskCardDraftState(draftKey, nextState, options = {}) {
-			const key = String(draftKey || "");
-			if (!key) return;
-			state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}, { updatedAtMs: Date.now() }));
-			saveThreadTaskCardDraftStates();
-			const threadId = String(options.threadId || options.thread && options.thread.id || "").trim();
-			if (options.render !== false) scheduleThreadTaskCardDraftStateRender(threadId);
-		}
-		function dismissThreadTaskCardDraft(draftKey, options = {}) {
-			setThreadTaskCardDraftState(draftKey, {
-				status: "dismissed",
-				error: ""
-			}, options);
-		}
-		function queueThreadTaskCardDraftCreation(draftKey, thread = renderContextThread()) {
-			const key = String(draftKey || "");
-			if (!key || state.scheduledThreadTaskCardDraftCreations.has(key) || state.activeThreadTaskCardDraftCreations.has(key)) return;
-			const sourceThreadId = renderContextThreadId(thread);
-			state.scheduledThreadTaskCardDraftCreations.add(key);
-			const current = threadTaskCardDraftState(key);
-			setThreadTaskCardDraftState(key, {
-				status: "creating",
-				error: "",
-				attempts: Math.max(0, Number(current.attempts || 0)) + 1
-			}, { render: false });
-			window.setTimeout(() => {
-				state.scheduledThreadTaskCardDraftCreations.delete(key);
-				createThreadTaskCardDraft(key, { threadId: sourceThreadId }).catch(showError);
-			}, 0);
-		}
-		async function createThreadTaskCardDraft(draftKey, options = {}) {
-			const activeKey = String(draftKey || "");
-			if (!activeKey || state.activeThreadTaskCardDraftCreations.has(activeKey)) return;
-			state.activeThreadTaskCardDraftCreations.add(activeKey);
-			const requestedThreadId = String(options.threadId || "").trim();
-			try {
-				const requestedThread = taskCardActionThread(requestedThreadId);
-				const resolved = findThreadTaskCardDraftByKey(draftKey, requestedThread);
-				const sourceThread = resolved && (resolved.sourceThread || requestedThread || state.currentThread);
-				const sourceThreadId = String(sourceThread && sourceThread.id || requestedThreadId || "").trim();
-				if (!resolved || !sourceThreadId || !sourceThread) {
-					setThreadTaskCardDraftState(draftKey, {
-						status: "pending",
-						error: ""
-					}, { render: false });
-					return;
-				}
-				const { draft, turn } = resolved;
-				const targetRefs = threadTaskCardDraftTargetThreads(draft);
-				const targetThreadIds = threadTaskCardDraftTargetIds(draft);
-				if (!targetThreadIds.length) {
-					setThreadTaskCardDraftState(draftKey, {
-						status: "failed",
-						error: draft.error || "Draft did not include a target thread id"
-					}, { threadId: sourceThreadId });
-					return;
-				}
-				if (!draft.title || !draft.body) {
-					setThreadTaskCardDraftState(draftKey, {
-						status: "failed",
-						error: draft.error || "Draft is incomplete"
-					}, { threadId: sourceThreadId });
-					return;
-				}
-				setThreadTaskCardDraftState(draftKey, {
-					status: "creating",
-					error: ""
-				}, { threadId: sourceThreadId });
-				$("connectionState").classList.remove("error");
-				$("connectionState").textContent = "Creating task card";
-				const body = truncateThreadTaskCardBody(draft.body);
-				const targetWorkspaceIds = {};
-				for (const entry of targetRefs) if (entry.thread) targetWorkspaceIds[entry.threadId] = String(entry.thread.cwd || "");
-				const result = await api("/api/thread-task-cards", {
-					method: "POST",
-					body: JSON.stringify({
-						sourceWorkspaceId: sourceThread.cwd || state.selectedCwd || "",
-						sourceThreadId,
-						sourceTurnId: String(turn && turn.id || ""),
-						sourceThreadTitle: threadTitleForDisplay(sourceThread) || sourceThreadId,
-						targetThreadIds,
-						targetWorkspaceIds,
-						idempotencyKey: `task-card-draft:${sourceThreadId}:${draftKey}`,
-						format: "markdown",
-						title: draft.title,
-						summary: draft.summary || summarizeTaskCardText(body),
-						body,
-						workflowMode: draft.workflowMode || "manual",
-						workflowId: draft.workflowId || ""
-					}),
-					timeoutMs: 3e4
-				});
-				const createdCards = Array.isArray(result && result.cards) ? result.cards.filter(Boolean) : result && result.card ? [result.card] : [];
-				if (!createdCards.length) throw new Error("Task card creation returned no cards");
-				for (const createdCard of createdCards) {
-					const pending = String(createdCard && createdCard.status || "pending") === "pending";
-					upsertThreadTaskCardOnThread(sourceThread, createdCard);
-					if (pending) {
-						incrementPendingOutgoingTaskCardCount(sourceThreadId, 1);
-						incrementPendingIncomingTaskCardCount(createdCard && createdCard.target && createdCard.target.threadId, 1);
-					}
-				}
-				if (state.threadTileDetails.has(sourceThreadId)) state.threadTileDetails.set(sourceThreadId, sourceThread);
-				setThreadTaskCardDraftState(draftKey, {
-					status: "created",
-					error: "",
-					cardId: String(createdCards[0] && createdCards[0].id || ""),
-					cardIds: createdCards.map((card) => String(card && card.id || "")).filter(Boolean)
-				}, { threadId: sourceThreadId });
-				$("connectionState").classList.remove("error");
-				$("connectionState").textContent = createdCards.length === 1 ? "Task card created; opening target thread" : `Task cards created: ${createdCards.length}`;
-				state.pendingPluginRouteHint = createdCards.length === 1 ? normalizePluginRouteHint({
-					pluginId: "codex-mobile",
-					route: "thread-task-card",
-					threadId: createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0],
-					taskId: createdCards[0].id
-				}) : null;
-				recordHomeAiDiagnosticSuccess({
-					category: "task_card_workflow_failed",
-					diagnostic_type: "task_card_draft_materialize_failed",
-					error_code: "task_card_draft_materialize_failed",
-					context: {
-						surface: "task-card",
-						action: "draft-materialize",
-						thread_hash: diagnosticThreadHash(sourceThreadId),
-						item_hash: diagnosticItemHash(draftKey)
-					}
-				});
-				renderThreads();
-				loadThreads({ silent: true }).catch(showError);
-				if (createdCards.length === 1) await loadThread(createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0], { source: "task-card-created" });
-				else if (sourceThreadId === String(state.currentThreadId || "")) renderCurrentThread();
-				else if (state.threadTileMode && threadTilePaneIsVisible(sourceThreadId)) scheduleRenderThreadTilePane(sourceThreadId, { preserveScroll: true });
-				else renderCurrentThread();
-			} catch (err) {
-				const diagnosticThreadId = String(options.threadId || state.currentThreadId || "").trim();
-				setThreadTaskCardDraftState(draftKey, {
-					status: "failed",
-					error: normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Task card creation failed"
-				}, { threadId: diagnosticThreadId });
-				recordHomeAiDiagnosticFailure({
-					category: "task_card_workflow_failed",
-					diagnostic_type: "task_card_draft_materialize_failed",
-					severity_hint: "H2",
-					evidence_confidence: .78,
-					error_code: diagnosticErrorCode(err, "task_card_draft_materialize_failed"),
-					context: {
-						surface: "task-card",
-						action: "draft-materialize",
-						thread_hash: diagnosticThreadHash(diagnosticThreadId),
-						item_hash: diagnosticItemHash(draftKey)
-					},
-					counts: { status_code: diagnosticErrorStatus(err) },
-					breadcrumbs: [{
-						kind: "task-card",
-						code: "draft-materialize",
-						status: "failed",
-						fields: {
-							status_code: diagnosticErrorStatus(err),
-							item_hash: diagnosticItemHash(draftKey)
-						}
-					}]
-				});
-				throw err;
-			} finally {
-				state.activeThreadTaskCardDraftCreations.delete(activeKey);
-			}
-		}
-		function createComposerBridgeRuntime() {
-			return {
-				sendMessage: typeof sendMessage === "function" ? sendMessage : null,
-				sendNewThreadMessage: typeof sendNewThreadMessage === "function" ? sendNewThreadMessage : null,
-				answerServerRequest: typeof answerServerRequest === "function" ? answerServerRequest : null,
-				answerApproval: typeof answerApproval === "function" ? answerApproval : null,
-				declineServerRequest: typeof declineServerRequest === "function" ? declineServerRequest : null,
-				mutateThreadTaskCard: typeof mutateThreadTaskCard === "function" ? mutateThreadTaskCard : null,
-				replyTaskCard: typeof replyTaskCard === "function" ? replyTaskCard : null,
-				queueThreadTaskCardDraftCreation: typeof queueThreadTaskCardDraftCreation === "function" ? queueThreadTaskCardDraftCreation : null,
-				createThreadTaskCardDraft: typeof createThreadTaskCardDraft === "function" ? createThreadTaskCardDraft : null
-			};
-		}
-		const legacyGlobals = {
-			updateComposerHeightVar,
+//#region public/runtime-wiring-runtime.js
+var require_runtime_wiring_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	function initializeThreadDetailRuntimeWiring() {
+		if (threadDetailRuntime) return threadDetailRuntime;
+		threadDetailRuntime = threadDetailRuntimeApi.createThreadDetailRuntime({
+			state,
+			MAX_EXPANDED_VISIBLE_TURNS,
+			MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN,
+			threadDetailStateApi,
+			threadDetailMergeStateApi,
+			threadDetailV4MergeStateApi,
+			statusText,
+			normalizeFsPath,
+			imageUrlValue,
+			isInputTextPart,
+			inputTextValue,
+			isInputImagePart,
+			splitAttachmentSummaryText,
+			canRenderImageAttachment,
+			truncateMiddle,
+			isLiveTurn,
+			isLatestTurn,
+			latestTurnForThread,
+			isLiveTurnForThread,
+			isActiveOperationalItem,
+			isReasoningItem,
+			isOperationalItem,
+			isContextCompactionItem,
+			contextCompactionNotice,
+			operationCommandText,
+			operationDetailText,
+			imageViewPath,
+			imageViewContentUrl,
+			imageViewUrl,
+			isTurnComplete,
+			isRunningStatus,
+			isIncompleteInterruptedTurn,
+			turnHasActiveLiveItems,
+			isRecentlySubmittedUserMessage,
+			sortTurnsForDisplay,
+			maxVisibleTurnsForThread,
+			numericTimestampMs,
+			renderContextThread
+		});
+		return threadDetailRuntime;
+	}
+	function initializeComposerRuntimeWiring() {
+		if (composerRuntime) return composerRuntime;
+		composerRuntime = composerRuntimeApi.createComposerRuntime({
+			$,
+			COMPOSER_INTENT_BODY_MAX_CHARS,
+			MESSAGE_INPUT_MAX_HEIGHT_PX,
+			MESSAGE_INPUT_MIN_HEIGHT_PX,
+			STORAGE_CODEX_FAST_MODE,
+			STORAGE_COMPOSER_INTENT_DRAFTS,
+			THREAD_GOAL_MENTION_PATTERN,
+			THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN,
+			THREAD_TASK_CARD_MENTION_PATTERN,
+			api,
+			clearDraftForKey,
+			clearSubmittedMessageBottomFollow,
+			closeThreadGoalDialog,
+			commitPluginVoiceInputSessionsAfterSend,
+			composerTargetThread,
+			composerTargetActiveTurnId,
+			connectEvents,
+			createSubmissionId,
+			currentComposerThreadId,
+			currentDraftKey,
+			defaultNewThreadEffort,
+			defaultNewThreadModel,
+			defaultNewThreadPermissionMode,
+			deleteDraftAttachments,
+			diagnosticErrorCode,
+			diagnosticErrorStatus,
+			diagnosticTaskHash,
+			diagnosticThreadHash,
+			document,
+			draftKeyForThread,
+			effectiveComposerPermissionMode,
+			escapeHtml,
+			followSubmittedMessageToBottom,
+			homeAiDiagnosticReportingApi,
+			imageCompressor,
+			insertLocalSubmittedUserMessage,
+			isAndroidBrowser,
+			isChatGptProCommandText,
+			isHermesEmbedMode,
+			isKeyboardEditableElement,
+			isThreadGoalCommandText,
+			isThreadTaskCardCommandText,
+			isThreadTileComposerContext,
+			labelForEffort,
+			labelForModel,
+			labelForPermissionMode,
+			loadJsonStorage,
+			loadThread,
+			loadThreads,
+			localAttachmentPreviewUrl,
+			localStorage,
+			markActivity,
+			markSubmittedUserMessageFailed,
+			markThreadOptimisticallyActive,
+			mergeItemsPreservingLocalVisible,
+			newThreadSelectedEffort,
+			newThreadSelectedModel,
+			newThreadSelectedPermissionMode,
+			normalizeOptionList,
+			normalizeThreadGoal,
+			openThreadGoalDialog,
+			postClientEvent,
+			publishPluginVoiceInputCapability,
+			reconcileSubmittedUserMessageTurn,
+			recordHomeAiDiagnosticFailure,
+			renderCurrentThread,
+			renderQuotaUsage,
+			renderThreads,
+			replacePendingAttachments,
+			restoreThreadStatusSnapshot,
+			saveCurrentDraftNow,
+			saveDraftAttachmentFiles,
+			scheduleComposerTargetRefresh,
+			scheduleCurrentDraftSave,
+			scheduleCurrentThreadRefresh,
+			scheduleLivePollIfNeeded,
+			scheduleScrollToBottomButtonUpdate,
+			scheduleSubmittedMessageDomProbe,
+			selectedQuotaModel,
+			setComposerActionButtonLabel,
+			setSteerFeedback,
+			setThreadGoalDialogBusy,
+			showComposerFastHint,
 			showError,
-			clearSendProgressWatchdog,
-			startSendProgressWatchdog,
-			finishSendProgressWatchdog,
-			threadNotificationThrottleKey,
-			shouldThrottleThreadNotification,
-			normalizeClientErrorMessage,
-			rawMessageFallback,
-			composerText,
-			setComposerText,
-			placeMessageInputCaretAtEnd,
-			focusMessageInput,
-			messageInputKeyboardVisible,
-			shouldRecoverMessageInputKeyboard,
-			recoverMessageInputKeyboardFromGesture,
-			messageInputCanEnableForNativeGesture,
-			releaseStaleAndroidMessageInputFocusBeforeNativeTap,
-			prepareMessageInputForNativeGesture,
-			normalizedComposerIntentText,
-			composerIntentOptions,
-			composerIntentOption,
-			composerIntentDraftKey,
-			loadComposerIntentDraft,
-			saveComposerIntentDraft,
-			composerIntentBareTagKind,
-			shouldShowComposerIntentMenu,
-			closeComposerIntentMenu,
-			onComposerIntentOutsidePointer,
-			openComposerIntentMenu,
-			positionComposerIntentMenu,
-			updateComposerIntentMenu,
-			queueComposerIntentMenuUpdate,
-			selectComposerIntent,
-			setComposerIntentDialogStatus,
-			closeComposerIntentDialog,
-			openComposerIntentDialog,
-			submitComposerIntentDialog,
-			saveComposerIntentDialogDraft,
-			shouldKeepAndroidMessageInputEditable,
-			setMessageInputDisabled,
-			messageInputTextLength,
-			messageInputTargetHeight,
-			currentMessageInputHeight,
-			updateMessageInputOverflow,
-			autoSizeMessageInput,
-			formatFileSize,
-			appendLocalAttachmentSummary,
-			localImageInputPartsForAttachments,
-			localUserMessageItem,
-			attachmentId,
-			pendingAttachmentBytes,
-			prepareAttachmentFile,
-			prepareAttachmentFiles,
-			addAttachmentFiles,
-			removeAttachment,
-			clearPendingAttachments,
-			renderAttachmentList,
-			composerHasContent,
-			effectiveDefaultModel,
-			effectiveDefaultEffort,
-			effectiveDefaultPermissionMode,
-			selectedComposerModel,
-			selectedComposerEffort,
-			selectedComposerPermissionMode,
+			snapshotThreadStatus,
+			startedTurnId,
+			state,
+			submitChatGptProRequest,
+			submittedThreadGoal,
+			threadDisplayName,
+			threadTaskCardCommandText,
+			threadTileStatePolicy,
+			updateThreadGoalState,
+			viewportMetrics,
+			viewportState,
+			window,
+			writeCurrentDraftToKey
+		});
+		return composerRuntime;
+	}
+	function initializeThreadListRuntimeWiring() {
+		if (threadListRuntime) return threadListRuntime;
+		threadListRuntime = window.CodexThreadListRuntime.createThreadListRuntime({
+			state,
+			$,
+			api,
+			document,
+			window,
+			localStorage,
+			setTimeout,
+			clearTimeout,
+			THREAD_LIST_PAGE_LIMIT,
+			THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS,
+			THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS,
+			THREAD_LIST_SLOW_PATH_MS,
+			STORAGE_THREAD_ID,
+			normalizeFsPath,
+			escapeHtml,
+			shortPath,
+			isMobileViewport,
+			tokenCountValue,
+			formatTokenMillion,
+			displayInputTokensExcludingCached,
+			saveCurrentDraftNow,
+			flushSideChatDraftNow,
 			resetComposerRuntimeSelection,
-			runtimeOptionValues,
-			runtimeOptionLabel,
-			runtimeSelectedValue,
-			codexFastCommandEnabled,
-			clearLegacyCodexFastModeStorage,
-			setCodexFastCommandEnabled,
-			applyRuntimeSelection,
-			closeComposerRuntimeMenu,
-			onComposerRuntimeOutsidePointer,
-			openComposerRuntimeMenu,
-			composerRuntimeMenuDiagnostics,
-			reportComposerRuntimeMenu,
-			handleComposerRuntimeControl,
-			fitComposerPopupToAnchor,
-			closeQuotaDetails,
-			onQuotaOutsidePointer,
-			toggleQuotaDetails,
-			composerPlaceholderText,
-			composerShowsTargetPlaceholder,
-			applyComposerActionControlPlan,
+			abortCurrentThreadRefresh,
+			clearRecentCompletedReplyAnchor,
+			clearConversationAutoScrollHold,
+			setComposerText,
+			replacePendingAttachments,
+			syncActiveTurnFromThread,
+			connectEvents,
+			threadListLoadPolicy,
+			nowPerfMs,
+			roundedDurationMs,
+			threadListSummaryFromDetailThread,
+			threadListStableOrderPolicy,
+			reconcileThreadStatusHints,
+			renderCurrentThread,
+			threadTileLayout,
+			isThreadTileKeyboardFocusActive,
+			threadTileCandidateIds,
+			threadTileIdsEqual,
+			restoreConnectionState,
+			scheduleVisiblePageRefreshCheck,
+			threadPerformanceMetrics,
+			postPerformanceEvent,
+			diagnosticDurationBucket,
+			recordHomeAiDiagnosticFailure,
+			recordHomeAiDiagnosticSuccess,
+			threadDiagnosticEventsApi,
+			renderThreadLoadError,
+			diagnosticErrorCode,
+			diagnosticErrorStatus,
+			showError,
+			visibleWorkspaceKeys,
+			codexWorktreeRepoName,
+			basenameForFsPath,
+			visibleWorkspaceNames,
+			statusText,
+			scheduleRenderCurrentThread,
+			threadTilePaneIsVisible,
+			scheduleRenderThreadTilePane,
+			updateThreadStatusHints,
+			normalizeThreadGoal,
+			updateThreadGoalDialogState,
+			draftStore,
+			readDraftMap,
+			draftHasContent,
+			restoreDraftForCurrentTarget,
+			updateComposerControls,
+			showHermesPluginPrimaryPage,
+			isHermesEmbedMode,
+			loadThread,
+			isRunningStatus,
+			rolloutSizeText,
+			isRolloutOverThreshold,
+			formatAbsoluteTime,
+			formatTime,
+			statusIconHtml,
+			statusIconInfo,
+			threadGoalForThread,
+			renderThreadGoalBadge,
+			handleThreadCardClick,
+			threadGoalSignature,
+			rolloutSizeBytes
+		});
+		return threadListRuntime;
+	}
+	function initializeThreadTileRuntimeWiring() {
+		if (threadTileRuntime) return threadTileRuntime;
+		threadTileRuntime = threadTileRuntimeApi.createThreadTileRuntime({
+			state,
+			$,
+			api,
+			document,
+			window,
+			localStorage,
+			setTimeout,
+			clearTimeout,
+			AbortController,
+			THREAD_TILE_USER_MAX_PANES,
+			THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS,
+			THREAD_TILE_REFRESH_INTERVAL_MS,
+			THREAD_TILE_REFRESH_MIN_INTERVAL_MS,
+			THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS,
+			STORAGE_THREAD_DISPLAY_MODE,
+			STORAGE_LEGACY_THREAD_TILE_MODE,
+			LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+			threadTileActionsApi,
+			threadTileStatePolicy,
+			threadTileLayoutPolicy,
+			threadDetailPatchPlanApi,
+			isKeyboardEditableElement,
+			splitPaneSidebarVisible,
+			isMenuOverlayMode,
+			visibleThreads,
+			isRunningStatus,
+			saveCurrentDraftNow,
+			restoreDraftForCurrentTarget,
 			renderComposerSettings,
 			updateComposerControls,
-			hasTransferFiles,
-			goalDialogFormValues,
-			submitThreadGoalMessage,
-			threadGoalActionStatusText,
-			threadGoalActionBusyText,
-			runThreadGoalDialogAction,
-			requestGoalDialogSubmitFromEnter,
-			requestGoalDialogSubmitFromButton,
-			requestGoalDialogSubmit,
-			sendThreadTaskCardCommand,
-			sendMessage,
-			sendNewThreadMessage,
-			requestComposerSubmitFromButton,
-			requestAttachmentPickerFromButton,
-			interruptActiveTurn,
-			answerServerRequest,
-			answerApproval,
-			serverRequestPayload,
-			declineServerRequest,
-			mutateThreadTaskCard,
-			replyTaskCard,
-			findThreadTaskCardDraftByKey,
-			scheduleThreadTaskCardDraftStateRender,
-			setThreadTaskCardDraftState,
-			dismissThreadTaskCardDraft,
-			queueThreadTaskCardDraftCreation,
-			createThreadTaskCardDraft
-		};
-		const api = { createComposerBridgeRuntime };
-		if (typeof module === "object" && module.exports) module.exports = api;
-		for (const [name, value] of Object.entries(legacyGlobals)) if (typeof value === "function") root[name] = value;
-		root.CodexComposerBridgeRuntime = api;
+			scheduleRenderCurrentThread,
+			renderCurrentThread,
+			showError,
+			threadById,
+			threadDisplayName,
+			shortPath,
+			formatTime,
+			statusIconHtml,
+			threadDetailApiPath,
+			mergeThreadPreservingVisibleItems,
+			mergeThreadIntoThreadList,
+			withRenderContextThread,
+			visibleItemsForTurn,
+			renderVisibleItemPatchHtml,
+			renderTurnVisibleItemBudgetNotice,
+			approvalsForTurn,
+			renderApprovalRequest,
+			approvalTurnId,
+			isApprovalActive,
+			currentLiveOperationEntry,
+			latestLiveTurnForThread,
+			renderMobileOperationStack,
+			visibleItemSignature,
+			threadTitleForDisplay,
+			turnTimerStateHtml,
+			threadTilePaneTimerState,
+			threadHasVisibleConversationTurns,
+			threadReadWarningMessage,
+			visibleTurnsForConversation,
+			renderThreadHistoryNote,
+			renderPendingApprovals,
+			effectiveThreadTileSelectedThreadId,
+			conversationRenderSignature,
+			existingConversationRenderKeys,
+			patchNode,
+			hydrateThreadDetailSurface,
+			clearGlobalLiveOperationDockForThreadTiles,
+			updateConversationHtml,
+			threadTileVisibleShape,
+			threadTileDomTurnCount,
+			conversationDomShape,
+			diagnosticHash,
+			publishPluginNavigationState,
+			escapeHtml
+		});
+		return threadTileRuntime;
+	}
+	function initializeCodexMobileRuntimeWiring() {
+		initializeThreadDetailRuntimeWiring();
+		initializeComposerRuntimeWiring();
+		initializeThreadListRuntimeWiring();
+		initializeThreadTileRuntimeWiring();
+	}
+	function createRuntimeWiringRuntime() {
+		return { initialize: initializeCodexMobileRuntimeWiring };
+	}
+	(function exposeCodexRuntimeWiringRuntime(root) {
+		const runtimeWiringApi = { createRuntimeWiringRuntime };
+		if (typeof module === "object" && module.exports) module.exports = runtimeWiringApi;
+		root.CodexRuntimeWiringRuntime = runtimeWiringApi;
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
@@ -5168,6 +5283,7 @@ var import_build_refresh_policy = /* @__PURE__ */ __toESM(require_build_refresh_
 var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings());
 var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics());
 var import_conversation_scroll = /* @__PURE__ */ __toESM(require_conversation_scroll());
+var import_thread_performance_metrics = /* @__PURE__ */ __toESM(require_thread_performance_metrics());
 var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
 var import_image_compressor = /* @__PURE__ */ __toESM(require_image_compressor());
 var import_plugin_voice_input = /* @__PURE__ */ __toESM(require_plugin_voice_input());
@@ -5180,7 +5296,7 @@ var import_thread_diagnostic_events = /* @__PURE__ */ __toESM(require_thread_dia
 var import_thread_tile_layout = /* @__PURE__ */ __toESM(require_thread_tile_layout());
 var import_thread_tile_actions = /* @__PURE__ */ __toESM(require_thread_tile_actions());
 var import_modal_runtime = /* @__PURE__ */ __toESM(require_modal_runtime());
-var import_composer_bridge_runtime = /* @__PURE__ */ __toESM(require_composer_bridge_runtime());
+var import_runtime_wiring_runtime = /* @__PURE__ */ __toESM(require_runtime_wiring_runtime());
 var moduleDefinitions = [
 	{
 		"id": "build-refresh-policy",
@@ -5254,6 +5370,37 @@ var moduleDefinitions = [
 		"assetPath": "/conversation-scroll.js",
 		"classicLoaderExcluded": true,
 		"bytes": 11683
+	},
+	{
+		"id": "thread-performance-metrics",
+		"source": "public/thread-performance-metrics.js",
+		"globalName": "CodexThreadPerformanceMetrics",
+		"expectedFunctions": [
+			"boundedTiming",
+			"classifyThreadDetailPhase",
+			"classifyThreadListPhase",
+			"rolloutSizeBytes",
+			"statusText",
+			"threadDetailClientTimings",
+			"threadDetailEventFields",
+			"threadDetailEventFieldsWithClient",
+			"threadDetailFirstPaintEventFields",
+			"threadDetailFullReadyEventFields",
+			"threadDetailRefreshEventFields",
+			"threadDetailShape",
+			"threadDetailTimings",
+			"planThreadDetailResponseContractDiagnostic",
+			"planThreadDetailSlowPathDiagnostic",
+			"planThreadListSlowPathDiagnostic",
+			"threadDetailProjectionContractFields",
+			"threadOmittedTurnCount",
+			"threadTurnCount",
+			"threadListEventFields",
+			"threadListTimings"
+		],
+		"assetPath": "/thread-performance-metrics.js",
+		"classicLoaderExcluded": true,
+		"bytes": 28700
 	},
 	{
 		"id": "draft-store",
@@ -5444,13 +5591,13 @@ var moduleDefinitions = [
 		"bytes": 12049
 	},
 	{
-		"id": "composer-bridge-runtime",
-		"source": "public/composer-bridge-runtime.js",
-		"globalName": "CodexComposerBridgeRuntime",
-		"expectedFunctions": ["createComposerBridgeRuntime"],
-		"assetPath": "/composer-bridge-runtime.js",
+		"id": "runtime-wiring-runtime",
+		"source": "public/runtime-wiring-runtime.js",
+		"globalName": "CodexRuntimeWiringRuntime",
+		"expectedFunctions": ["createRuntimeWiringRuntime"],
+		"assetPath": "/runtime-wiring-runtime.js",
 		"classicLoaderExcluded": true,
-		"bytes": 32086
+		"bytes": 8628
 	}
 ];
 var moduleApis = {
@@ -5458,6 +5605,7 @@ var moduleApis = {
 	"runtime-settings": import_runtime_settings.default,
 	"viewport-metrics": import_viewport_metrics.default,
 	"conversation-scroll": import_conversation_scroll.default,
+	"thread-performance-metrics": import_thread_performance_metrics.default,
 	"draft-store": import_draft_store.default,
 	"image-compressor": import_image_compressor.default,
 	"plugin-voice-input": import_plugin_voice_input.default,
@@ -5470,7 +5618,7 @@ var moduleApis = {
 	"thread-tile-layout": import_thread_tile_layout.default,
 	"thread-tile-actions": import_thread_tile_actions.default,
 	"modal-runtime": import_modal_runtime.default,
-	"composer-bridge-runtime": import_composer_bridge_runtime.default
+	"runtime-wiring-runtime": import_runtime_wiring_runtime.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");
