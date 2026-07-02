@@ -68,6 +68,69 @@ test("client-event stall self-check keeps sub-H2 stalls advisory", () => {
   assert.equal(summary.issues[0].severity, "H3");
 });
 
+test("client-event stall self-check blocks repeated active thread detail full renders", () => {
+  const text = [
+    '[client-event] thread_refresh_ms {"ts":"2026-07-02T01:29:00.000Z","threadId":"private-thread","details":{"status":"active","readMode":"projection-active-overlay","clientTimings":{"refreshRenderAction":"full-render","renderPlanReason":"signature-changed","renderElapsedMs":14}}}',
+    '[client-event] thread_refresh_ms {"ts":"2026-07-02T01:29:04.000Z","threadId":"private-thread","details":{"status":"active","readMode":"projection-active-overlay","clientTimings":{"refreshRenderAction":"full-render","renderPlanReason":"signature-changed","renderElapsedMs":18}}}',
+  ].join("\n");
+
+  const summary = summarizeClientEventText(text, {
+    nowMs: Date.parse("2026-07-02T01:29:10.000Z"),
+    windowMs: 30 * 60 * 1000,
+  });
+
+  assert.equal(summary.ok, false);
+  assert.equal(summary.blockingIssueCount, 1);
+  assert.equal(summary.sampleSummary.activeDetailFullRenderEventCount, 2);
+  assert.equal(summary.issues[0].severity, "H2");
+  assert.equal(summary.issues[0].code, "browser_active_thread_detail_full_render");
+  assert.equal(summary.issues[0].counts.max_render_elapsed_ms, 18);
+  assert.doesNotMatch(JSON.stringify(summary), /private-thread/);
+});
+
+test("client-event stall self-check keeps one active thread detail full render advisory", () => {
+  const text = '[client-event] thread_refresh_ms {"ts":"2026-07-02T01:29:00.000Z","details":{"status":"active","readMode":"projection-active-overlay","clientTimings":{"refreshRenderAction":"full-render","renderPlanReason":"signature-changed"}}}';
+  const summary = summarizeClientEventText(text, {
+    nowMs: Date.parse("2026-07-02T01:29:10.000Z"),
+  });
+
+  assert.equal(summary.ok, true);
+  assert.equal(summary.issueCount, 1);
+  assert.equal(summary.blockingIssueCount, 0);
+  assert.equal(summary.issues[0].severity, "H3");
+});
+
+test("client-event stall self-check uses a short default active detail window", () => {
+  const text = [
+    '[client-event] thread_refresh_ms {"ts":"2026-07-02T01:29:00.000Z","details":{"status":"active","readMode":"projection-active-overlay","clientTimings":{"refreshRenderAction":"full-render","renderPlanReason":"signature-changed"}}}',
+    '[client-event] thread_refresh_ms {"ts":"2026-07-02T01:29:04.000Z","details":{"status":"active","readMode":"projection-active-overlay","clientTimings":{"refreshRenderAction":"full-render","renderPlanReason":"signature-changed"}}}',
+  ].join("\n");
+  const summary = summarizeClientEventText(text, {
+    nowMs: Date.parse("2026-07-02T01:35:00.000Z"),
+    windowMs: 30 * 60 * 1000,
+  });
+
+  assert.equal(summary.ok, true);
+  assert.equal(summary.issueCount, 0);
+  assert.equal(summary.sampleSummary.activeDetailFullRenderEventCount, 0);
+  assert.equal(summary.sampleSummary.outOfWindowActiveDetailFullRenderEventCount, 2);
+});
+
+test("client-event stall self-check blocks conversation patch fallbacks", () => {
+  const text = [
+    '[client-event] conversation_render_ms {"ts":"2026-07-02T01:29:00.000Z","details":{"domUpdateAction":"set-inner-html","patchFallbackApplied":true}}',
+  ].join("\n");
+
+  const summary = summarizeClientEventText(text, {
+    nowMs: Date.parse("2026-07-02T01:29:10.000Z"),
+  });
+
+  assert.equal(summary.ok, false);
+  assert.equal(summary.blockingIssueCount, 1);
+  assert.equal(summary.sampleSummary.conversationPatchFallbackEventCount, 1);
+  assert.equal(summary.issues[0].code, "browser_conversation_patch_fallback");
+});
+
 test("client-event stall self-check ignores stale or untimed severe stalls for blocking gates", () => {
   const text = [
     '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T16:00:00.000Z","details":{"maxRafDelayMs":5000}}',

@@ -1186,6 +1186,8 @@ async function refreshCurrentThread(options = {}) {
     renderPlan,
     renderOutcome,
     patchAttemptResult,
+    patchSurfacePlan: patchSurfaceExecutionStage.patchSurfacePlan,
+    patchExecutionPlan: patchSurfaceExecutionStage.patchExecutionPlan,
     timings: {
       elapsedMs: roundedDurationMs(refreshStartedAt),
       apiElapsedMs,

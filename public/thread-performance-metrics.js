@@ -30,6 +30,11 @@
     "refreshRenderAction",
     "renderPlanReason",
     "patchRejectReason",
+    "patchResult",
+    "patchTimingSource",
+    "patchSurfaceReason",
+    "patchSurface",
+    "patchExecutionReason",
   ];
   const ALLOWED_DETAIL_RENDER_MODES = Object.freeze({
     "cached-current": true,
@@ -145,6 +150,8 @@
     if (source.skippedDetailRender !== undefined) result.skippedDetailRender = Boolean(source.skippedDetailRender);
     if (source.locallyPatchedDetail !== undefined) result.locallyPatchedDetail = Boolean(source.locallyPatchedDetail);
     if (source.tilePanePatchedDetail !== undefined) result.tilePanePatchedDetail = Boolean(source.tilePanePatchedDetail);
+    if (source.localPatchAttempted !== undefined) result.localPatchAttempted = Boolean(source.localPatchAttempted);
+    if (source.tilePanePatchAttempted !== undefined) result.tilePanePatchAttempted = Boolean(source.tilePanePatchAttempted);
     return Object.keys(result).length ? result : null;
   }
 
@@ -219,9 +226,16 @@
       renderPlanReason: compactLabel(source.renderPlanReason, 80),
       refreshRenderAction: compactLabel(source.refreshRenderAction, 80),
       patchRejectReason: compactLabel(source.patchRejectReason, 80),
+      patchResult: compactLabel(source.patchResult, 80),
+      patchTimingSource: compactLabel(source.patchTimingSource, 80),
+      patchSurfaceReason: compactLabel(source.patchSurfaceReason, 80),
+      patchSurface: compactLabel(source.patchSurface, 80),
+      patchExecutionReason: compactLabel(source.patchExecutionReason, 80),
       skippedDetailRender: Boolean(source.skippedDetailRender),
       locallyPatchedDetail: Boolean(source.locallyPatchedDetail),
       tilePanePatchedDetail: Boolean(source.tilePanePatchedDetail),
+      localPatchAttempted: Boolean(source.localPatchAttempted),
+      tilePanePatchAttempted: Boolean(source.tilePanePatchAttempted),
     };
     for (const key of ["elapsedMs", "apiElapsedMs", "renderElapsedMs"]) {
       setTimingField(out, key, source[key]);

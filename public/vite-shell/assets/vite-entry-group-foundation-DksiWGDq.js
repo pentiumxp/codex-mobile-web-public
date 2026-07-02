@@ -112,8 +112,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/thread-performance-metrics.js",
 			"sourcePath": "public/thread-performance-metrics.js",
-			"bytes": 27876,
-			"sha256": "a6f2bd048b70ebc530d0c2c49d8f1c6fa07637eefd9181f2a6c1924207b63aed"
+			"bytes": 28700,
+			"sha256": "286fd9dafb042b384bfec8eb86b3ef3322ea3f5d18a6cd171b7672cfd658cb55"
 		},
 		{
 			"path": "/thread-list-load-policy.js",
@@ -129,7 +129,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 17,
-	"classicAssetBytes": 277711,
+	"classicAssetBytes": 278535,
 	"classicGlobalExports": [
 		{
 			"asset": "/api-client.js",

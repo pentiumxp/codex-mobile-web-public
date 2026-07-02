@@ -505,11 +505,11 @@
     if (tileSurfaceRefresh) {
       return {
         tryTilePanePatch: true,
-        tryLocalPatch: false,
+        tryLocalPatch: true,
         updateMetadataOnTileMiss: false,
         fallbackAction: "full-render",
-        localPatchBlockedReason: "tile-surface-refresh",
-        reason: "tile-surface-refresh",
+        localPatchBlockedReason: "",
+        reason: "tile-surface-patch-chain",
       };
     }
     return {
@@ -855,6 +855,10 @@
         ? compactReason(input.patchRejectReason, "unknown")
         : "",
       reportLocalPatchRejected,
+      localPatchAttempted,
+      tilePanePatchAttempted,
+      patchResult,
+      patchTimingSource,
       finalizeResult: {
         locallyPatchedDetail,
         tilePanePatchedDetail,
@@ -1168,6 +1172,8 @@
     const renderPlan = objectOrEmpty(input.renderPlan);
     const renderOutcome = objectOrEmpty(input.renderOutcome);
     const patchAttemptResult = objectOrEmpty(input.patchAttemptResult);
+    const patchSurfacePlan = objectOrEmpty(input.patchSurfacePlan);
+    const patchExecutionPlan = objectOrEmpty(input.patchExecutionPlan);
     const timings = objectOrEmpty(input.timings);
     return {
       source: compactReason(input.source, ""),
@@ -1186,9 +1192,16 @@
       refreshRenderAction: compactReason(renderOutcome.renderAction, ""),
       renderPlanReason: compactReason(renderPlan.reason, ""),
       patchRejectReason: compactReason(patchAttemptResult.patchRejectReason, ""),
+      patchResult: compactReason(patchAttemptResult.patchResult, ""),
+      patchTimingSource: compactReason(patchAttemptResult.patchTimingSource, ""),
+      patchSurfaceReason: compactReason(patchSurfacePlan.reason, ""),
+      patchSurface: compactReason(patchSurfacePlan.tilePatchSurface || patchSurfacePlan.surface, ""),
+      patchExecutionReason: compactReason(patchExecutionPlan.reason, ""),
       skippedDetailRender: input.shouldRenderDetail === false,
       locallyPatchedDetail: Boolean(renderOutcome.locallyPatchedDetail),
       tilePanePatchedDetail: Boolean(renderOutcome.tilePanePatchedDetail),
+      localPatchAttempted: Boolean(patchAttemptResult.localPatchAttempted),
+      tilePanePatchAttempted: Boolean(patchAttemptResult.tilePanePatchAttempted),
     };
   }
 

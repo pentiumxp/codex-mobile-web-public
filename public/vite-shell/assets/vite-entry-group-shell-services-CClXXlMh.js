@@ -51,8 +51,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/pane-layout-runtime.js",
 			"sourcePath": "public/pane-layout-runtime.js",
-			"bytes": 199784,
-			"sha256": "54dbdd20837972531930cf9ec539cae8f17dab0dcd7fd34073203cf8af585a65"
+			"bytes": 199922,
+			"sha256": "62f4f299345b2d1a46969c9412f7f08e29a6ae07de40146f6b572fa4717bacfc"
 		},
 		{
 			"path": "/task-card-runtime.js",
@@ -80,7 +80,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 10,
-	"classicAssetBytes": 674339,
+	"classicAssetBytes": 674477,
 	"classicGlobalExports": [
 		{
 			"asset": "/settings-runtime.js",
