@@ -840,7 +840,7 @@ function createAppUpdateRuntime(deps = {}) {
       return !buildId || text.includes(buildId) || text.includes(shellCacheName);
     }
     if (asset === "/sw.js") {
-      return !shellCacheName || text.includes(shellCacheName);
+      return text.includes("shell-asset-manifest.js");
     }
     return true;
   }

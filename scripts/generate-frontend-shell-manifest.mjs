@@ -1,8 +1,9 @@
 import fs from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 
 export const SHELL_MANIFEST_SCHEMA_VERSION = 4;
-export const SHELL_CACHE_NAME = "codex-mobile-shell-v625";
+export const SHELL_CACHE_NAME_BASE = "codex-mobile-shell-v625";
 export const SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
 export const SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
 
@@ -173,6 +174,28 @@ function assetFilePath(root, assetPath) {
   if (assetPath === "/") return path.join(root, "public", "index.html");
   const normalized = String(assetPath || "").replace(/^\/+/, "");
   return normalized ? path.join(root, "public", normalized) : "";
+}
+
+function shellCacheContentHash(root, assets, appVersion) {
+  const hash = crypto.createHash("sha256");
+  hash.update(`schema=${SHELL_MANIFEST_SCHEMA_VERSION}\n`);
+  hash.update(`app=${appVersion}\n`);
+  for (const asset of uniqueValues(assets)) {
+    if (asset === "/shell-asset-manifest.js" || asset === "/shell-asset-manifest.json") continue;
+    const filePath = assetFilePath(root, asset);
+    hash.update(`asset=${asset}\n`);
+    try {
+      hash.update(fs.readFileSync(filePath));
+    } catch (_) {
+      hash.update("missing\n");
+    }
+    hash.update("\n");
+  }
+  return hash.digest("hex").slice(0, 12);
+}
+
+export function shellCacheNameForAssets(root, assets, appVersion = packageVersion(root)) {
+  return `${SHELL_CACHE_NAME_BASE}-${shellCacheContentHash(root, assets, appVersion)}`;
 }
 
 function assertAssetsExist(root, assets) {
@@ -374,6 +397,7 @@ export function buildPublicShellManifest(root = process.cwd()) {
     "/sw.js",
   ]);
   assertAssetsExist(root, pageShellAssets);
+  const shellCacheName = shellCacheNameForAssets(root, hashAssets, appVersion);
   const classicGlobalExports = buildClassicGlobalExports(root, scriptAssets);
   const startupGlobalContracts = buildStartupGlobalContracts(root, entryGroups, classicGlobalExports);
   const missingStartupGlobals = startupGlobalContracts
@@ -385,8 +409,8 @@ export function buildPublicShellManifest(root = process.cwd()) {
   return {
     schemaVersion: SHELL_MANIFEST_SCHEMA_VERSION,
     generatedBy: "generate-frontend-shell-manifest",
-    shellCacheName: SHELL_CACHE_NAME,
-    clientBuildId: `${appVersion}|${SHELL_CACHE_NAME}`,
+    shellCacheName,
+    clientBuildId: `${appVersion}|${shellCacheName}`,
     scriptAssets,
     entryGroups,
     classicGlobalExports,

@@ -23,8 +23,8 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var shell_asset_manifest_default = {
 	schemaVersion: 4,
 	generatedBy: "generate-frontend-shell-manifest",
-	shellCacheName: "codex-mobile-shell-v625",
-	clientBuildId: "0.1.11|codex-mobile-shell-v625",
+	shellCacheName: "codex-mobile-shell-v625-a5a3d596240d",
+	clientBuildId: "0.1.11|codex-mobile-shell-v625-a5a3d596240d",
 	scriptAssets: [
 		"/shell-asset-manifest.js",
 		"/api-client.js",
@@ -1904,12 +1904,12 @@ var codexMobileViteEntryGroupIds = [
 	"app-entry"
 ];
 var codexMobileViteEntryGroupLoaders = {
-	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-CIB80LK9.js"), []),
-	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-DksiWGDq.js"), []),
-	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-Con3DSBY.js"), []),
-	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-DieReWP_.js"), []),
-	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-yQzl3QFI.js"), []),
-	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-BoKkKh0s.js"), [])
+	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-B1n76OzZ.js"), []),
+	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-B1IKmadt.js"), []),
+	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-DA8rmK4C.js"), []),
+	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-DKvl11uE.js"), []),
+	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-BGVOJSIU.js"), []),
+	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-9WxAQ_0R.js"), [])
 };
 function loadCodexMobileViteEntryGroups() {
 	const status = {
@@ -2116,7 +2116,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DU-lwTP5.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-BZ1mtFAK.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
