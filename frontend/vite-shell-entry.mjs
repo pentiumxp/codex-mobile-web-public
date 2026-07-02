@@ -196,6 +196,22 @@ function loadClassicScript(assetPath) {
   });
 }
 
+async function loadViteOwnedAppBootstrap(loaderPlan) {
+  const viteOwnedScripts = loaderPlan && Array.isArray(loaderPlan.excludedViteOwnedScripts)
+    ? loaderPlan.excludedViteOwnedScripts
+    : [];
+  const ownsAppBootstrap = viteOwnedScripts.some((entry) => String(entry && entry.path || "") === "/app-bootstrap.js");
+  if (!ownsAppBootstrap) return null;
+  if (!globalThis.CodexAppBootstrap || typeof globalThis.CodexAppBootstrap.createAppBootstrapRuntime !== "function") {
+    await import("../public/app-bootstrap.js");
+  }
+  const api = globalThis.CodexAppBootstrap;
+  if (!api || typeof api.createAppBootstrapRuntime !== "function") {
+    throw new Error("codex_mobile_vite_app_preview_app_bootstrap_missing");
+  }
+  return api.createAppBootstrapRuntime();
+}
+
 async function startCodexMobileViteAppPreview() {
   const loaderPlan = readAppPreviewClassicLoaderPlan();
   const manifestAssets = shellManifestScriptAssets();
@@ -229,6 +245,7 @@ async function startCodexMobileViteAppPreview() {
     loaderPlanSha256: loaderPlan ? loaderPlan.sha256 : "",
     loaderPlanMatchesShellManifest: Boolean(loaderPlan) && manifestCoverageMatches,
     esmCompatibilityReady: false,
+    viteOwnedAppBootstrapReady: false,
     excludedEsmGlobalMissing: [],
     excludedViteOwnedGlobalMissing: [],
     scriptCount: assets.length,
@@ -268,6 +285,8 @@ async function startCodexMobileViteAppPreview() {
     if (missingExcludedGlobals.length) {
       throw new Error("codex_mobile_vite_app_preview_esm_globals_missing");
     }
+    const appBootstrapRuntime = await loadViteOwnedAppBootstrap(loaderPlan);
+    status.viteOwnedAppBootstrapReady = Boolean(appBootstrapRuntime);
     const missingExcludedViteOwnedGlobals = loaderPlan && Array.isArray(loaderPlan.excludedViteOwnedScripts)
       ? loaderPlan.excludedViteOwnedScripts
           .filter((entry) => !entry.globalName || !globalThis[entry.globalName])
@@ -286,7 +305,7 @@ async function startCodexMobileViteAppPreview() {
       if (!appEntry || typeof appEntry.startCodexMobileApp !== "function") {
         throw new Error("codex_mobile_vite_app_preview_app_entry_missing");
       }
-      appEntry.startCodexMobileApp();
+      await appEntry.startCodexMobileApp();
     }
     status.ok = true;
   } catch (error) {
@@ -311,6 +330,7 @@ async function startCodexMobileViteAppPreview() {
     loaderPlanSha256: status.loaderPlanSha256,
     loaderPlanMatchesShellManifest: status.loaderPlanMatchesShellManifest,
     esmCompatibilityReady: status.esmCompatibilityReady,
+    viteOwnedAppBootstrapReady: status.viteOwnedAppBootstrapReady,
     excludedEsmGlobalMissingCount: status.excludedEsmGlobalMissing.length,
     excludedViteOwnedGlobalMissingCount: status.excludedViteOwnedGlobalMissing.length,
     scriptCount: status.scriptCount,
@@ -324,10 +344,11 @@ const entryGroupImportPromise = loadCodexMobileViteEntryGroups();
 const entryDynamicImportGraph = {
   owner: "vite-shell-entry",
   esmCompatibilitySources: ["virtual:codex-mobile-esm-compatibility"],
+  viteOwnedSources: ["public/app-bootstrap.js"],
   deferredSources: ["frontend/vite-deferred-entry-topology.mjs"],
   entryGroupSources: codexMobileViteEntryGroupIds
     .map((groupId) => `virtual:codex-mobile-shell-entry-group/${groupId}`),
-  expectedImportCount: 2 + codexMobileViteEntryGroupIds.length,
+  expectedImportCount: 3 + codexMobileViteEntryGroupIds.length,
 };
 const appPreviewPromise = viteAppPreviewPage ? startCodexMobileViteAppPreview() : Promise.resolve(null);
 
@@ -371,6 +392,7 @@ export function codexMobileEntryDynamicImportGraph() {
   return {
     ...entryDynamicImportGraph,
     esmCompatibilitySources: entryDynamicImportGraph.esmCompatibilitySources.slice(),
+    viteOwnedSources: entryDynamicImportGraph.viteOwnedSources.slice(),
     deferredSources: entryDynamicImportGraph.deferredSources.slice(),
     entryGroupSources: entryDynamicImportGraph.entryGroupSources.slice(),
   };

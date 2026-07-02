@@ -1,4 +1,4 @@
-import { n as __toESM, t as __commonJSMin } from "./rolldown-runtime-FDOR9p9I.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-B8IOcWAX.js";
 //#region public/pane-layout-runtime.js
 var require_pane_layout_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function handleLaunchTargetUrl(targetUrl) {
@@ -4690,7 +4690,7 @@ var require_app = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		if (!window.CodexRuntimeWiringRuntime || typeof window.CodexRuntimeWiringRuntime.createRuntimeWiringRuntime !== "function") throw new Error("CodexRuntimeWiringRuntime script failed to load");
 		if (!window.CodexAppShellRuntime || typeof window.CodexAppShellRuntime.createAppShellRuntime !== "function") throw new Error("CodexAppShellRuntime script failed to load");
 		window.CodexRuntimeWiringRuntime.createRuntimeWiringRuntime().initialize();
-		window.CodexAppShellRuntime.createAppShellRuntime().startCodexMobileAppWithRecovery();
+		return window.CodexAppShellRuntime.createAppShellRuntime().startCodexMobileAppWithRecovery();
 	}
 	function createCodexMobileAppEntry() {
 		return { startCodexMobileApp };
@@ -4727,7 +4727,7 @@ var moduleDefinitions = [{
 	"expectedFunctions": ["createCodexMobileAppEntry", "startCodexMobileApp"],
 	"assetPath": "/app.js",
 	"classicLoaderExcluded": true,
-	"bytes": 1472
+	"bytes": 1479
 }];
 var moduleApis = {
 	"pane-layout-runtime": import_pane_layout_runtime.default,

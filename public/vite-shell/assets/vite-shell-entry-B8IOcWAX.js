@@ -1,8 +1,30 @@
+//#region \0rolldown/runtime.js
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod), cb = null), mod.exports);
+var __copyProps = (to, from, except, desc) => {
+	if (from && typeof from === "object" || typeof from === "function") for (var keys = __getOwnPropNames(from), i = 0, n = keys.length, key; i < n; i++) {
+		key = keys[i];
+		if (!__hasOwnProp.call(to, key) && key !== except) __defProp(to, key, {
+			get: ((k) => from[k]).bind(null, key),
+			enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+		});
+	}
+	return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", {
+	value: mod,
+	enumerable: true
+}) : target, mod));
 var shell_asset_manifest_default = {
 	schemaVersion: 4,
 	generatedBy: "generate-frontend-shell-manifest",
-	shellCacheName: "codex-mobile-shell-v625-2466e0a03fb0",
-	clientBuildId: "0.1.11|codex-mobile-shell-v625-2466e0a03fb0",
+	shellCacheName: "codex-mobile-shell-v625-b68d6999e293",
+	clientBuildId: "0.1.11|codex-mobile-shell-v625-b68d6999e293",
 	scriptAssets: [
 		"/shell-asset-manifest.js",
 		"/api-client.js",
@@ -314,6 +336,7 @@ var shell_asset_manifest_default = {
 				"CONTEXT_COMPACTION_COMPLETE_NOTICE",
 				"CONTEXT_COMPACTION_PENDING_NOTICE",
 				"CONVERSATION_SCROLL_INTENT_MS",
+				"CodexAppBootstrap",
 				"DRAFT_SAVE_DEBOUNCE_MS",
 				"EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS",
 				"FILE_PREVIEW_SWIPE_CLOSE_MIN_PX",
@@ -422,16 +445,21 @@ var shell_asset_manifest_default = {
 				"appUpdateRuntime",
 				"appUpdateRuntimeApi",
 				"buildRefreshPolicy",
+				"classicGlobalBindingNamesFromManifest",
 				"clientRenderStabilityGuard",
 				"composerRuntime",
 				"composerRuntimeApi",
 				"conversationScroll",
+				"createAppBootstrapRuntime",
 				"draftStore",
+				"fetchJsonWithTimeout",
+				"fetchPublicConfigWithRetry",
 				"frontendRuntimeHealthApi",
 				"hasStartupThreadOpenIntent",
 				"homeAiDiagnosticReportingApi",
 				"imageCompressor",
 				"initialPluginLaunchKeyFromUrl",
+				"installClassicGlobalBindings",
 				"liveOperationDockPolicy",
 				"loadJsonStorage",
 				"loadNumberMapStorage",
@@ -611,6 +639,14 @@ var shell_asset_manifest_default = {
 		},
 		{
 			"name": "buildRefreshPolicy",
+			"asset": "/app-bootstrap.js",
+			"groupId": "bootstrap-state",
+			"startupCritical": true,
+			"source": "app-bootstrap-script-global",
+			"present": true
+		},
+		{
+			"name": "classicGlobalBindingNamesFromManifest",
 			"asset": "/app-bootstrap.js",
 			"groupId": "bootstrap-state",
 			"startupCritical": true,
@@ -938,6 +974,14 @@ var shell_asset_manifest_default = {
 			"present": true
 		},
 		{
+			"name": "createAppBootstrapRuntime",
+			"asset": "/app-bootstrap.js",
+			"groupId": "bootstrap-state",
+			"startupCritical": true,
+			"source": "app-bootstrap-script-global",
+			"present": true
+		},
+		{
 			"name": "DRAFT_SAVE_DEBOUNCE_MS",
 			"asset": "/app-bootstrap.js",
 			"groupId": "bootstrap-state",
@@ -955,6 +999,22 @@ var shell_asset_manifest_default = {
 		},
 		{
 			"name": "EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS",
+			"asset": "/app-bootstrap.js",
+			"groupId": "bootstrap-state",
+			"startupCritical": true,
+			"source": "app-bootstrap-script-global",
+			"present": true
+		},
+		{
+			"name": "fetchJsonWithTimeout",
+			"asset": "/app-bootstrap.js",
+			"groupId": "bootstrap-state",
+			"startupCritical": true,
+			"source": "app-bootstrap-script-global",
+			"present": true
+		},
+		{
+			"name": "fetchPublicConfigWithRetry",
 			"asset": "/app-bootstrap.js",
 			"groupId": "bootstrap-state",
 			"startupCritical": true,
@@ -1107,6 +1167,14 @@ var shell_asset_manifest_default = {
 		},
 		{
 			"name": "initialPluginLaunchKeyFromUrl",
+			"asset": "/app-bootstrap.js",
+			"groupId": "bootstrap-state",
+			"startupCritical": true,
+			"source": "app-bootstrap-script-global",
+			"present": true
+		},
+		{
+			"name": "installClassicGlobalBindings",
 			"asset": "/app-bootstrap.js",
 			"groupId": "bootstrap-state",
 			"startupCritical": true,
@@ -2349,8 +2417,8 @@ var shell_asset_manifest_default = {
 		"scriptAssets": 51,
 		"entryGroups": 6,
 		"classicGlobalExportAssets": 50,
-		"classicGlobalExports": 221,
-		"startupGlobalContracts": 202,
+		"classicGlobalExports": 227,
+		"startupGlobalContracts": 207,
 		"linkAssets": 4,
 		"iconAssets": 4,
 		"precacheAssets": 60,
@@ -2432,12 +2500,12 @@ var codexMobileViteEntryGroupIds = [
 	"app-entry"
 ];
 var codexMobileViteEntryGroupLoaders = {
-	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-DA7-Iq7n.js"), []),
-	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-B5XaLxD7.js"), []),
-	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-BedI4to0.js"), []),
-	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-Dm7OdV5i.js"), []),
-	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-CvLUl8H-.js"), []),
-	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry--QwNoa_u.js"), [])
+	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-DUBCblER.js"), []),
+	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-KFhsRv1u.js"), []),
+	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-DPuMRGnX.js"), []),
+	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-D4-i-u9X.js"), []),
+	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-Bq2mQkjs.js"), []),
+	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-MyJcyURZ.js"), [])
 };
 function loadCodexMobileViteEntryGroups() {
 	const status = {
@@ -2517,7 +2585,7 @@ var pendingEsmCompatibility = {
 var esmCompatibility = pendingEsmCompatibility;
 var viteAppPreviewPage = isAppPreviewPage();
 globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__ = viteAppPreviewPage;
-var esmCompatibilityImportPromise = __vitePreload(() => import("./_virtual_codex-mobile-esm-compatibility-C-vlVmvJ.js").then(async (module) => {
+var esmCompatibilityImportPromise = __vitePreload(() => import("./_virtual_codex-mobile-esm-compatibility-BElwXV4K.js").then(async (module) => {
 	const createCompatibility = module && typeof module.codexMobileViteEsmCompatibility === "function" ? module.codexMobileViteEsmCompatibility : null;
 	if (!createCompatibility) throw new Error("codex_mobile_vite_esm_compatibility_factory_missing");
 	esmCompatibility = await createCompatibility();
@@ -2623,6 +2691,13 @@ function loadClassicScript(assetPath) {
 		(document.head || document.documentElement).appendChild(script);
 	});
 }
+async function loadViteOwnedAppBootstrap(loaderPlan) {
+	if (!(loaderPlan && Array.isArray(loaderPlan.excludedViteOwnedScripts) ? loaderPlan.excludedViteOwnedScripts : []).some((entry) => String(entry && entry.path || "") === "/app-bootstrap.js")) return null;
+	if (!globalThis.CodexAppBootstrap || typeof globalThis.CodexAppBootstrap.createAppBootstrapRuntime !== "function") await __vitePreload(() => import("./app-bootstrap-C3nJPEun.js").then((m) => /* @__PURE__ */ __toESM(m.default, 1)), []);
+	const api = globalThis.CodexAppBootstrap;
+	if (!api || typeof api.createAppBootstrapRuntime !== "function") throw new Error("codex_mobile_vite_app_preview_app_bootstrap_missing");
+	return api.createAppBootstrapRuntime();
+}
 async function startCodexMobileViteAppPreview() {
 	const loaderPlan = readAppPreviewClassicLoaderPlan();
 	const manifestAssets = shellManifestScriptAssets();
@@ -2652,6 +2727,7 @@ async function startCodexMobileViteAppPreview() {
 		loaderPlanSha256: loaderPlan ? loaderPlan.sha256 : "",
 		loaderPlanMatchesShellManifest: Boolean(loaderPlan) && manifestCoverageMatches,
 		esmCompatibilityReady: false,
+		viteOwnedAppBootstrapReady: false,
 		excludedEsmGlobalMissing: [],
 		excludedViteOwnedGlobalMissing: [],
 		scriptCount: assets.length,
@@ -2670,6 +2746,8 @@ async function startCodexMobileViteAppPreview() {
 		const missingExcludedGlobals = loaderPlan && Array.isArray(loaderPlan.excludedEsmScripts) ? loaderPlan.excludedEsmScripts.filter((entry) => !entry.globalName || !globalThis[entry.globalName]).map((entry) => entry.globalName || entry.path) : [];
 		status.excludedEsmGlobalMissing = missingExcludedGlobals;
 		if (missingExcludedGlobals.length) throw new Error("codex_mobile_vite_app_preview_esm_globals_missing");
+		const appBootstrapRuntime = await loadViteOwnedAppBootstrap(loaderPlan);
+		status.viteOwnedAppBootstrapReady = Boolean(appBootstrapRuntime);
 		const missingExcludedViteOwnedGlobals = loaderPlan && Array.isArray(loaderPlan.excludedViteOwnedScripts) ? loaderPlan.excludedViteOwnedScripts.filter((entry) => !entry.globalName || !globalThis[entry.globalName]).map((entry) => entry.globalName || entry.path) : [];
 		status.excludedViteOwnedGlobalMissing = missingExcludedViteOwnedGlobals;
 		if (missingExcludedViteOwnedGlobals.length) throw new Error("codex_mobile_vite_app_preview_vite_owned_globals_missing");
@@ -2680,7 +2758,7 @@ async function startCodexMobileViteAppPreview() {
 		if (excludedEsmAssets.includes("/app.js")) {
 			const appEntry = globalThis.CodexMobileAppEntry;
 			if (!appEntry || typeof appEntry.startCodexMobileApp !== "function") throw new Error("codex_mobile_vite_app_preview_app_entry_missing");
-			appEntry.startCodexMobileApp();
+			await appEntry.startCodexMobileApp();
 		}
 		status.ok = true;
 	} catch (error) {
@@ -2705,6 +2783,7 @@ async function startCodexMobileViteAppPreview() {
 		loaderPlanSha256: status.loaderPlanSha256,
 		loaderPlanMatchesShellManifest: status.loaderPlanMatchesShellManifest,
 		esmCompatibilityReady: status.esmCompatibilityReady,
+		viteOwnedAppBootstrapReady: status.viteOwnedAppBootstrapReady,
 		excludedEsmGlobalMissingCount: status.excludedEsmGlobalMissing.length,
 		excludedViteOwnedGlobalMissingCount: status.excludedViteOwnedGlobalMissing.length,
 		scriptCount: status.scriptCount,
@@ -2712,14 +2791,15 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-BBIXSFjC.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-CQp0wr3X.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
 	esmCompatibilitySources: ["virtual:codex-mobile-esm-compatibility"],
+	viteOwnedSources: ["public/app-bootstrap.js"],
 	deferredSources: ["frontend/vite-deferred-entry-topology.mjs"],
 	entryGroupSources: codexMobileViteEntryGroupIds.map((groupId) => `virtual:codex-mobile-shell-entry-group/${groupId}`),
-	expectedImportCount: 2 + codexMobileViteEntryGroupIds.length
+	expectedImportCount: 3 + codexMobileViteEntryGroupIds.length
 };
 var appPreviewPromise = viteAppPreviewPage ? startCodexMobileViteAppPreview() : Promise.resolve(null);
 globalThis.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ = "entry-topology-v1";
@@ -2732,4 +2812,4 @@ globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__ = "vite-shell-entry";
 globalThis.__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__ = entryDynamicImportGraph;
 globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_PROMISE__ = appPreviewPromise;
 //#endregion
-export { shell_asset_manifest_default as n, __vitePreload as t };
+export { __toESM as i, shell_asset_manifest_default as n, __commonJSMin as r, __vitePreload as t };

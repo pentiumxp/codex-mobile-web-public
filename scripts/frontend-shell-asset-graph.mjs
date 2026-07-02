@@ -24,6 +24,11 @@ const VITE_APP_PREVIEW_OWNED_CLASSIC_SCRIPTS = [
     ownerId: "shell-manifest",
     globalName: "CODEX_MOBILE_SHELL_MANIFEST",
   },
+  {
+    path: "/app-bootstrap.js",
+    ownerId: "app-bootstrap",
+    globalName: "CodexAppBootstrap",
+  },
 ];
 export const VITE_ESM_COMPATIBILITY_MODULES = [
   {
@@ -3827,6 +3832,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     || chunks.find((chunk) => chunk.isEntry);
   const deferredChunks = chunks.filter((chunk) => chunk.source === VITE_DEFERRED_ENTRY_SOURCE);
   const esmCompatibilityEntryChunks = chunks.filter((chunk) => chunk.source === VITE_ESM_COMPATIBILITY_SOURCE);
+  const viteOwnedAppBootstrapChunks = chunks.filter((chunk) => chunk.source === "public/app-bootstrap.js");
   const esmCompatibilityChunks = chunks.filter((chunk) => (
     chunk.source === VITE_ESM_COMPATIBILITY_SOURCE
       || String(chunk.source || "").startsWith(VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX)
@@ -3870,6 +3876,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
   ].filter(Boolean));
   const expectedEntryDynamicImportFiles = uniqueValues([
     ...esmCompatibilityEntryChunks.map((chunk) => chunk.fileName),
+    ...viteOwnedAppBootstrapChunks.map((chunk) => chunk.fileName),
     ...deferredChunks.map((chunk) => chunk.fileName),
     ...entryGroupChunks.map((chunk) => chunk.fileName),
   ]);
@@ -3885,6 +3892,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     missingFiles: expectedEntryDynamicImportFiles.filter((fileName) => !actualDynamicImportSet.has(fileName)),
     extraFiles: actualEntryDynamicImportFiles.filter((fileName) => !expectedDynamicImportSet.has(fileName)),
     esmCompatibilityFileCount: esmCompatibilityEntryChunks.length,
+    viteOwnedFileCount: viteOwnedAppBootstrapChunks.length,
     deferredFileCount: deferredChunks.length,
     entryGroupFileCount: entryGroupChunks.length,
   };
@@ -3920,6 +3928,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     esmCompatibility,
     viteEntry: viteEntry || null,
     viteEsmCompatibilityChunks: esmCompatibilityChunks,
+    viteOwnedAppBootstrapChunks,
     viteDeferredChunks: deferredChunks,
     viteEntryGroupChunks: entryGroupChunks,
     viteSharedChunks,

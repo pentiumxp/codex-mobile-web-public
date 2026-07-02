@@ -647,6 +647,10 @@ function wireUi() {
 
 async function start() {
   const startStartedAt = nowPerfMs();
+  state.appShellStartAttempted = true;
+  state.appShellPublicConfigLoaded = false;
+  state.appShellPublicConfigFailed = false;
+  state.appShellPublicConfigErrorCode = "";
   state.startupInProgress = true;
   wireUi();
   startThreadListRuntimeStallMonitoring();
@@ -663,7 +667,10 @@ async function start() {
   let config;
   try {
     config = await fetchPublicConfigWithRetry(startStartedAt);
+    state.appShellPublicConfigLoaded = true;
   } catch (err) {
+    state.appShellPublicConfigFailed = true;
+    state.appShellPublicConfigErrorCode = String(err && err.message || err || "public_config_failed").slice(0, 160);
     postStartupStage("public_config_failed", startStartedAt, {
       error: err && err.message ? err.message : String(err),
     });
@@ -731,10 +738,22 @@ async function start() {
   rememberRateLimitsFromConfig(config);
   rememberCodexProfiles(config.codexProfiles || null);
   updatePushButton();
+  state.pluginLaunchExchangeGate = {
+    embed: isHermesEmbedMode() === true,
+    launchSession: state.pluginLaunchSession === true,
+    hasKey: Boolean(state.key),
+  };
   if (isHermesEmbedMode() && state.pluginLaunchSession) {
+    state.pluginLaunchExchangeAttempted = true;
+    state.pluginLaunchExchangeCompleted = false;
+    state.pluginLaunchExchangeFailed = false;
+    state.pluginLaunchExchangeErrorCode = "";
     try {
       await exchangePluginLaunchSession();
+      state.pluginLaunchExchangeCompleted = true;
     } catch (err) {
+      state.pluginLaunchExchangeFailed = true;
+      state.pluginLaunchExchangeErrorCode = String(err && err.message || err || "plugin_launch_exchange_failed").slice(0, 160);
       requestHermesPluginRefresh(pluginRefreshReasonForApiError({
         status: 401,
         message: err && err.message ? err.message : String(err),
@@ -786,6 +805,9 @@ async function start() {
 
 function startCodexMobileAppWithRecovery() {
   return start().catch((err) => {
+    if (typeof state === "object" && state) {
+      state.appShellStartupRecoveryErrorCode = String(err && err.message || err || "app_shell_start_failed").slice(0, 160);
+    }
     var boot = window.codexMobileBoot;
     if (boot && typeof boot.fail === "function") boot.fail("script-error");
     try {

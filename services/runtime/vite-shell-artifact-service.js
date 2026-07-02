@@ -462,7 +462,7 @@ function createViteShellArtifactService(dependencies = {}) {
       && !arraysEqual(actualClassicScriptBlock.scriptAssets, publicIndexScripts)) {
       issues.push({ code: "vite_shell_classic_script_block_manifest_mismatch" });
     }
-    if (!readbackAppPreviewClassicLoaderPlan || !readbackAppPreviewClassicLoaderPlan.scripts.length) {
+    if (!readbackAppPreviewClassicLoaderPlan) {
       issues.push({ code: "vite_shell_app_preview_classic_loader_plan_missing" });
     } else {
       const loaderPlanPaths = readbackAppPreviewClassicLoaderPlan.scripts.map((entry) => entry.path);
@@ -589,9 +589,13 @@ function createViteShellArtifactService(dependencies = {}) {
     const expectedPublishedFiles = Array.from(new Set([
       "codex-mobile-shell-manifest.json",
       readback.entry && readback.entry.fileName,
+      ...(entryDynamicImportGraph && Array.isArray(entryDynamicImportGraph.expectedFiles)
+        ? entryDynamicImportGraph.expectedFiles
+        : []),
       ...(readback.esmCompatibilityChunks || []).map((chunk) => chunk && chunk.fileName),
       ...(readback.deferredChunks || []).map((chunk) => chunk && chunk.fileName),
       ...readbackEntryGroupChunks.map((chunk) => chunk && chunk.fileName),
+      ...(readback.viteOwnedAppBootstrapChunks || []).map((chunk) => chunk && chunk.fileName),
       ...(readback.sharedChunks || []).map((chunk) => chunk && chunk.fileName),
       previewFileName,
       appPreviewFileName,
@@ -632,7 +636,7 @@ function createViteShellArtifactService(dependencies = {}) {
       const expectedStartupGlobalContracts = startupGlobalContracts(artifactManifest);
       const artifactAppPreviewClassicLoaderPlan = appPreviewClassicLoaderPlan(artifactManifest.viteBuild || {});
       const artifactEsmCompatibility = esmCompatibilityContract(artifactManifest.viteBuild || {});
-      if (!artifactAppPreviewClassicLoaderPlan || !artifactAppPreviewClassicLoaderPlan.scripts.length) {
+      if (!artifactAppPreviewClassicLoaderPlan) {
         issues.push({ code: "vite_shell_artifact_app_preview_classic_loader_plan_missing" });
       } else if (JSON.stringify(readbackAppPreviewClassicLoaderPlan) !== JSON.stringify(artifactAppPreviewClassicLoaderPlan)) {
         issues.push({ code: "vite_shell_app_preview_classic_loader_plan_manifest_mismatch" });
@@ -895,6 +899,9 @@ function createViteShellArtifactService(dependencies = {}) {
           : 0,
         esmCompatibilityFileCount: Number.isFinite(Number(entryDynamicImportGraph.esmCompatibilityFileCount))
           ? Number(entryDynamicImportGraph.esmCompatibilityFileCount)
+          : 0,
+        viteOwnedFileCount: Number.isFinite(Number(entryDynamicImportGraph.viteOwnedFileCount))
+          ? Number(entryDynamicImportGraph.viteOwnedFileCount)
           : 0,
         deferredFileCount: Number.isFinite(Number(entryDynamicImportGraph.deferredFileCount))
           ? Number(entryDynamicImportGraph.deferredFileCount)

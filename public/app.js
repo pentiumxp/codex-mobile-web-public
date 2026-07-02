@@ -9,7 +9,7 @@ function startCodexMobileApp() {
   }
 
   window.CodexRuntimeWiringRuntime.createRuntimeWiringRuntime().initialize();
-  window.CodexAppShellRuntime.createAppShellRuntime().startCodexMobileAppWithRecovery();
+  return window.CodexAppShellRuntime.createAppShellRuntime().startCodexMobileAppWithRecovery();
 }
 
 function createCodexMobileAppEntry() {

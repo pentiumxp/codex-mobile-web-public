@@ -78,16 +78,23 @@ function publicArtifactUrl(fileName) {
 function requiredArtifactFiles(manifest) {
   const viteBuild = manifest && manifest.viteBuild || {};
   const entryFile = viteBuild.viteEntry && viteBuild.viteEntry.fileName;
+  const dynamicImportFiles = viteBuild.entryDynamicImportGraph
+    && Array.isArray(viteBuild.entryDynamicImportGraph.expectedFiles)
+    ? viteBuild.entryDynamicImportGraph.expectedFiles
+    : [];
   const esmCompatibilityFiles = (viteBuild.viteEsmCompatibilityChunks || []).map((chunk) => chunk && chunk.fileName);
   const deferredFiles = (viteBuild.viteDeferredChunks || []).map((chunk) => chunk && chunk.fileName);
   const entryGroupFiles = (viteBuild.viteEntryGroupChunks || []).map((chunk) => chunk && chunk.fileName);
+  const viteOwnedAppBootstrapFiles = (viteBuild.viteOwnedAppBootstrapChunks || []).map((chunk) => chunk && chunk.fileName);
   const sharedFiles = (viteBuild.viteSharedChunks || []).map((chunk) => chunk && chunk.fileName);
   return uniqueValues([
     "codex-mobile-shell-manifest.json",
     entryFile,
+    ...dynamicImportFiles,
     ...esmCompatibilityFiles,
     ...deferredFiles,
     ...entryGroupFiles,
+    ...viteOwnedAppBootstrapFiles,
     ...sharedFiles,
   ]);
 }
@@ -372,11 +379,16 @@ export function buildViteShellPublicReadback(options = {}) {
     fileName: normalizeRelativeFileName(chunk && chunk.fileName),
     entryScript: publicArtifactUrl(chunk && chunk.fileName),
   })).filter((chunk) => chunk.fileName);
+  const viteOwnedAppBootstrapChunks = (viteBuild.viteOwnedAppBootstrapChunks || []).map((chunk) => ({
+    source: String(chunk && chunk.source || ""),
+    fileName: normalizeRelativeFileName(chunk && chunk.fileName),
+    entryScript: publicArtifactUrl(chunk && chunk.fileName),
+  })).filter((chunk) => chunk.fileName);
   const startupAssets = startupCriticalAssets(manifest);
   const classicShellScriptBlock = classicShellScriptBlockContract(manifest, viteBuild);
   const appPreviewClassicLoaderPlan = normalizeAppPreviewClassicLoaderPlan(viteBuild.appPreviewClassicLoaderPlan);
   const esmCompatibility = normalizeEsmCompatibilityContract(viteBuild.esmCompatibility);
-  if (!appPreviewClassicLoaderPlan || !appPreviewClassicLoaderPlan.scripts.length) {
+  if (!appPreviewClassicLoaderPlan) {
     issues.push({ code: "vite_app_preview_classic_loader_plan_missing" });
   } else {
     const scriptAssets = scriptAssetsFromManifest(manifest);
@@ -452,6 +464,7 @@ export function buildViteShellPublicReadback(options = {}) {
     } : null,
     esmCompatibilityChunks,
     sharedChunks,
+    viteOwnedAppBootstrapChunks,
     entryGroupChunks,
     preview,
     startupCriticalAssets: startupAssets,
@@ -487,6 +500,7 @@ export function buildViteShellPublicReadback(options = {}) {
     })).filter((chunk) => chunk.fileName),
     esmCompatibilityChunks,
     sharedChunks,
+    viteOwnedAppBootstrapChunks,
     entryGroupChunks,
     preview,
     appPreview,
@@ -499,6 +513,7 @@ export function buildViteShellPublicReadback(options = {}) {
       entryGroups: Array.isArray(manifest.entryGroups) ? manifest.entryGroups.length : 0,
       esmCompatibilityChunks: esmCompatibilityChunks.length,
       sharedChunks: sharedChunks.length,
+      viteOwnedAppBootstrapChunks: viteOwnedAppBootstrapChunks.length,
       entryGroupChunks: entryGroupChunks.length,
       startupCriticalAssets: startupAssets.length,
       classicShellScriptBlockScripts: classicShellScriptBlock.scriptCount,

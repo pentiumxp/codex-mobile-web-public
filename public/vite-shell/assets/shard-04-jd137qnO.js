@@ -1,4 +1,4 @@
-import { n as __toESM, t as __commonJSMin } from "./rolldown-runtime-FDOR9p9I.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-B8IOcWAX.js";
 //#region public/modal-runtime.js
 var require_modal_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function renderAppNativeDialog() {
@@ -3048,6 +3048,10 @@ var require_app_shell_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 	}
 	async function start() {
 		const startStartedAt = nowPerfMs();
+		state.appShellStartAttempted = true;
+		state.appShellPublicConfigLoaded = false;
+		state.appShellPublicConfigFailed = false;
+		state.appShellPublicConfigErrorCode = "";
 		state.startupInProgress = true;
 		wireUi();
 		startThreadListRuntimeStallMonitoring();
@@ -3064,7 +3068,10 @@ var require_app_shell_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 		let config;
 		try {
 			config = await fetchPublicConfigWithRetry(startStartedAt);
+			state.appShellPublicConfigLoaded = true;
 		} catch (err) {
+			state.appShellPublicConfigFailed = true;
+			state.appShellPublicConfigErrorCode = String(err && err.message || err || "public_config_failed").slice(0, 160);
 			postStartupStage("public_config_failed", startStartedAt, { error: err && err.message ? err.message : String(err) });
 			if (isHermesEmbedMode()) {
 				requestHermesPluginRefresh("public_config_failed", { force: true });
@@ -3128,18 +3135,32 @@ var require_app_shell_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 		rememberRateLimitsFromConfig(config);
 		rememberCodexProfiles(config.codexProfiles || null);
 		updatePushButton();
-		if (isHermesEmbedMode() && state.pluginLaunchSession) try {
-			await exchangePluginLaunchSession();
-		} catch (err) {
-			requestHermesPluginRefresh(pluginRefreshReasonForApiError({
-				status: 401,
-				message: err && err.message ? err.message : String(err),
-				path: "/api/v1/hermes/plugin/session"
-			}) || "plugin_launch_invalid", { force: true });
-			showPluginEmbedRecovering("Refreshing Codex Mobile plugin launch...");
-			markBootReady();
-			state.startupInProgress = false;
-			return;
+		state.pluginLaunchExchangeGate = {
+			embed: isHermesEmbedMode() === true,
+			launchSession: state.pluginLaunchSession === true,
+			hasKey: Boolean(state.key)
+		};
+		if (isHermesEmbedMode() && state.pluginLaunchSession) {
+			state.pluginLaunchExchangeAttempted = true;
+			state.pluginLaunchExchangeCompleted = false;
+			state.pluginLaunchExchangeFailed = false;
+			state.pluginLaunchExchangeErrorCode = "";
+			try {
+				await exchangePluginLaunchSession();
+				state.pluginLaunchExchangeCompleted = true;
+			} catch (err) {
+				state.pluginLaunchExchangeFailed = true;
+				state.pluginLaunchExchangeErrorCode = String(err && err.message || err || "plugin_launch_exchange_failed").slice(0, 160);
+				requestHermesPluginRefresh(pluginRefreshReasonForApiError({
+					status: 401,
+					message: err && err.message ? err.message : String(err),
+					path: "/api/v1/hermes/plugin/session"
+				}) || "plugin_launch_invalid", { force: true });
+				showPluginEmbedRecovering("Refreshing Codex Mobile plugin launch...");
+				markBootReady();
+				state.startupInProgress = false;
+				return;
+			}
 		}
 		if (config.authRequired && !state.key) {
 			if (isHermesEmbedMode()) {
@@ -3176,6 +3197,7 @@ var require_app_shell_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 	}
 	function startCodexMobileAppWithRecovery() {
 		return start().catch((err) => {
+			if (typeof state === "object" && state) state.appShellStartupRecoveryErrorCode = String(err && err.message || err || "app_shell_start_failed").slice(0, 160);
 			var boot = window.codexMobileBoot;
 			if (boot && typeof boot.fail === "function") boot.fail("script-error");
 			try {
@@ -3238,7 +3260,7 @@ var moduleDefinitions = [
 		"expectedFunctions": ["createAppShellRuntime"],
 		"assetPath": "/app-shell-runtime.js",
 		"classicLoaderExcluded": true,
-		"bytes": 41219
+		"bytes": 42357
 	}
 ];
 var moduleApis = {

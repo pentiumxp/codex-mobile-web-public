@@ -746,6 +746,45 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
   assert.equal(passing.ok, true);
   assert.equal(passing.issueCount, 0);
 
+  const zeroLoaderPassing = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    loaderStatusOk: true,
+    loaderStatusCompleted: true,
+    classicScriptCount: 0,
+    shellScriptCount: 51,
+    expectedClassicScriptCount: 0,
+    classicScriptOrderMatches: true,
+    loaderPlanPresent: true,
+    loaderPlanOwnerOk: true,
+    loaderPlanHashPresent: true,
+    loaderPlanSourceScriptCount: 51,
+    loaderPlanScriptCount: 0,
+    loaderPlanHashCount: 0,
+    loaderPlanExcludedEsmScriptCount: 49,
+    loaderPlanExcludedEsmHashCount: 49,
+    loaderPlanExcludedEsmGlobalsReady: true,
+    loaderPlanExcludedViteOwnedScriptCount: 2,
+    loaderPlanExcludedViteOwnedHashCount: 2,
+    loaderPlanExcludedViteOwnedGlobalsReady: true,
+    loaderPlanMatchesShellScripts: true,
+    loaderPlanMatchesInjectedScripts: true,
+    loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] });
+  assert.equal(zeroLoaderPassing.ok, true);
+  assert.equal(zeroLoaderPassing.issueCount, 0);
+
   const lateLoaderCompletion = script.analyzeViteAppPreviewProbe({
     markerPresent: true,
     metaPresent: true,

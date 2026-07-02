@@ -9,11 +9,11 @@ var codexMobileViteEntryGroup = {
 	"classicAssetRecords": [{
 		"path": "/app-bootstrap.js",
 		"sourcePath": "public/app-bootstrap.js",
-		"bytes": 35599,
-		"sha256": "898d0f345a29e8bbf58ac874d0fe90970945b6bb5aa40a93a1506f8962a97d4f"
+		"bytes": 49019,
+		"sha256": "f504b0801b963a03c3b7435924ccc2a6fcd08d4830e10fb4cf9b859341a25840"
 	}],
 	"classicAssetHashCount": 1,
-	"classicAssetBytes": 35599,
+	"classicAssetBytes": 49019,
 	"classicGlobalExports": [{
 		"asset": "/app-bootstrap.js",
 		"globals": [
@@ -30,6 +30,7 @@ var codexMobileViteEntryGroup = {
 			"CONTEXT_COMPACTION_COMPLETE_NOTICE",
 			"CONTEXT_COMPACTION_PENDING_NOTICE",
 			"CONVERSATION_SCROLL_INTENT_MS",
+			"CodexAppBootstrap",
 			"DRAFT_SAVE_DEBOUNCE_MS",
 			"EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS",
 			"FILE_PREVIEW_SWIPE_CLOSE_MIN_PX",
@@ -138,16 +139,21 @@ var codexMobileViteEntryGroup = {
 			"appUpdateRuntime",
 			"appUpdateRuntimeApi",
 			"buildRefreshPolicy",
+			"classicGlobalBindingNamesFromManifest",
 			"clientRenderStabilityGuard",
 			"composerRuntime",
 			"composerRuntimeApi",
 			"conversationScroll",
+			"createAppBootstrapRuntime",
 			"draftStore",
+			"fetchJsonWithTimeout",
+			"fetchPublicConfigWithRetry",
 			"frontendRuntimeHealthApi",
 			"hasStartupThreadOpenIntent",
 			"homeAiDiagnosticReportingApi",
 			"imageCompressor",
 			"initialPluginLaunchKeyFromUrl",
+			"installClassicGlobalBindings",
 			"liveOperationDockPolicy",
 			"loadJsonStorage",
 			"loadNumberMapStorage",
@@ -192,7 +198,7 @@ var codexMobileViteEntryGroup = {
 		]
 	}],
 	"classicGlobalExportAssetCount": 1,
-	"classicGlobalExportCount": 172,
+	"classicGlobalExportCount": 178,
 	"startupGlobalContracts": [
 		{
 			"name": "$",
@@ -283,6 +289,14 @@ var codexMobileViteEntryGroup = {
 			"present": true
 		},
 		{
+			"name": "classicGlobalBindingNamesFromManifest",
+			"asset": "/app-bootstrap.js",
+			"groupId": "bootstrap-state",
+			"startupCritical": true,
+			"source": "app-bootstrap-script-global",
+			"present": true
+		},
+		{
 			"name": "CLIENT_BUILD_ID",
 			"asset": "/app-bootstrap.js",
 			"groupId": "bootstrap-state",
@@ -363,6 +377,14 @@ var codexMobileViteEntryGroup = {
 			"present": true
 		},
 		{
+			"name": "createAppBootstrapRuntime",
+			"asset": "/app-bootstrap.js",
+			"groupId": "bootstrap-state",
+			"startupCritical": true,
+			"source": "app-bootstrap-script-global",
+			"present": true
+		},
+		{
 			"name": "DRAFT_SAVE_DEBOUNCE_MS",
 			"asset": "/app-bootstrap.js",
 			"groupId": "bootstrap-state",
@@ -380,6 +402,22 @@ var codexMobileViteEntryGroup = {
 		},
 		{
 			"name": "EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS",
+			"asset": "/app-bootstrap.js",
+			"groupId": "bootstrap-state",
+			"startupCritical": true,
+			"source": "app-bootstrap-script-global",
+			"present": true
+		},
+		{
+			"name": "fetchJsonWithTimeout",
+			"asset": "/app-bootstrap.js",
+			"groupId": "bootstrap-state",
+			"startupCritical": true,
+			"source": "app-bootstrap-script-global",
+			"present": true
+		},
+		{
+			"name": "fetchPublicConfigWithRetry",
 			"asset": "/app-bootstrap.js",
 			"groupId": "bootstrap-state",
 			"startupCritical": true,
@@ -532,6 +570,14 @@ var codexMobileViteEntryGroup = {
 		},
 		{
 			"name": "initialPluginLaunchKeyFromUrl",
+			"asset": "/app-bootstrap.js",
+			"groupId": "bootstrap-state",
+			"startupCritical": true,
+			"source": "app-bootstrap-script-global",
+			"present": true
+		},
+		{
+			"name": "installClassicGlobalBindings",
 			"asset": "/app-bootstrap.js",
 			"groupId": "bootstrap-state",
 			"startupCritical": true,
@@ -1571,8 +1617,8 @@ var codexMobileViteEntryGroup = {
 			"present": true
 		}
 	],
-	"shellCacheName": "codex-mobile-shell-v625-2466e0a03fb0",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-2466e0a03fb0"
+	"shellCacheName": "codex-mobile-shell-v625-b68d6999e293",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-b68d6999e293"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

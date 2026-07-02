@@ -4,8 +4,8 @@
   var manifest = {
     "schemaVersion": 4,
     "generatedBy": "generate-frontend-shell-manifest",
-    "shellCacheName": "codex-mobile-shell-v625-2466e0a03fb0",
-    "clientBuildId": "0.1.11|codex-mobile-shell-v625-2466e0a03fb0",
+    "shellCacheName": "codex-mobile-shell-v625-b68d6999e293",
+    "clientBuildId": "0.1.11|codex-mobile-shell-v625-b68d6999e293",
     "scriptAssets": [
       "/shell-asset-manifest.js",
       "/api-client.js",
@@ -393,6 +393,7 @@
           "CONTEXT_COMPACTION_COMPLETE_NOTICE",
           "CONTEXT_COMPACTION_PENDING_NOTICE",
           "CONVERSATION_SCROLL_INTENT_MS",
+          "CodexAppBootstrap",
           "DRAFT_SAVE_DEBOUNCE_MS",
           "EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS",
           "FILE_PREVIEW_SWIPE_CLOSE_MIN_PX",
@@ -501,16 +502,21 @@
           "appUpdateRuntime",
           "appUpdateRuntimeApi",
           "buildRefreshPolicy",
+          "classicGlobalBindingNamesFromManifest",
           "clientRenderStabilityGuard",
           "composerRuntime",
           "composerRuntimeApi",
           "conversationScroll",
+          "createAppBootstrapRuntime",
           "draftStore",
+          "fetchJsonWithTimeout",
+          "fetchPublicConfigWithRetry",
           "frontendRuntimeHealthApi",
           "hasStartupThreadOpenIntent",
           "homeAiDiagnosticReportingApi",
           "imageCompressor",
           "initialPluginLaunchKeyFromUrl",
+          "installClassicGlobalBindings",
           "liveOperationDockPolicy",
           "loadJsonStorage",
           "loadNumberMapStorage",
@@ -716,6 +722,14 @@
       },
       {
         "name": "buildRefreshPolicy",
+        "asset": "/app-bootstrap.js",
+        "groupId": "bootstrap-state",
+        "startupCritical": true,
+        "source": "app-bootstrap-script-global",
+        "present": true
+      },
+      {
+        "name": "classicGlobalBindingNamesFromManifest",
         "asset": "/app-bootstrap.js",
         "groupId": "bootstrap-state",
         "startupCritical": true,
@@ -1043,6 +1057,14 @@
         "present": true
       },
       {
+        "name": "createAppBootstrapRuntime",
+        "asset": "/app-bootstrap.js",
+        "groupId": "bootstrap-state",
+        "startupCritical": true,
+        "source": "app-bootstrap-script-global",
+        "present": true
+      },
+      {
         "name": "DRAFT_SAVE_DEBOUNCE_MS",
         "asset": "/app-bootstrap.js",
         "groupId": "bootstrap-state",
@@ -1060,6 +1082,22 @@
       },
       {
         "name": "EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS",
+        "asset": "/app-bootstrap.js",
+        "groupId": "bootstrap-state",
+        "startupCritical": true,
+        "source": "app-bootstrap-script-global",
+        "present": true
+      },
+      {
+        "name": "fetchJsonWithTimeout",
+        "asset": "/app-bootstrap.js",
+        "groupId": "bootstrap-state",
+        "startupCritical": true,
+        "source": "app-bootstrap-script-global",
+        "present": true
+      },
+      {
+        "name": "fetchPublicConfigWithRetry",
         "asset": "/app-bootstrap.js",
         "groupId": "bootstrap-state",
         "startupCritical": true,
@@ -1212,6 +1250,14 @@
       },
       {
         "name": "initialPluginLaunchKeyFromUrl",
+        "asset": "/app-bootstrap.js",
+        "groupId": "bootstrap-state",
+        "startupCritical": true,
+        "source": "app-bootstrap-script-global",
+        "present": true
+      },
+      {
+        "name": "installClassicGlobalBindings",
         "asset": "/app-bootstrap.js",
         "groupId": "bootstrap-state",
         "startupCritical": true,
@@ -2454,8 +2500,8 @@
       "scriptAssets": 51,
       "entryGroups": 6,
       "classicGlobalExportAssets": 50,
-      "classicGlobalExports": 221,
-      "startupGlobalContracts": 202,
+      "classicGlobalExports": 227,
+      "startupGlobalContracts": 207,
       "linkAssets": 4,
       "iconAssets": 4,
       "precacheAssets": 60,

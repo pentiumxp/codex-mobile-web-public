@@ -222,7 +222,7 @@ function extractClassicGlobalExports(source) {
 
 function extractClassicTopLevelScriptGlobals(source) {
   const names = new Set();
-  const pattern = /^(?:var|function)\s+([$A-Za-z_][0-9A-Za-z_$]*)(?=\s|=|\()/gm;
+  const pattern = /^(?:var|function|async\s+function)\s+([$A-Za-z_][0-9A-Za-z_$]*)(?=\s|=|\()/gm;
   let match;
   while ((match = pattern.exec(String(source || "")))) {
     names.add(match[1]);

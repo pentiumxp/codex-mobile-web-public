@@ -27,6 +27,7 @@ function runtimeStubs(counters) {
         return {
           startCodexMobileAppWithRecovery() {
             counters.start += 1;
+            return "startup-result";
           },
         };
       },
@@ -45,7 +46,7 @@ test("app entry exposes a delayed startup API for Vite app-preview", () => {
     assert.equal(globalThis.CodexMobileAppEntry, appEntry);
     assert.deepEqual(counters, { initialize: 0, start: 0 });
     const runtime = appEntry.createCodexMobileAppEntry();
-    runtime.startCodexMobileApp();
+    assert.equal(runtime.startCodexMobileApp(), "startup-result");
     assert.deepEqual(counters, { initialize: 1, start: 1 });
   } finally {
     delete global.window;
@@ -69,7 +70,7 @@ test("app entry does not auto-start when imported by Vite app-preview ESM", () =
   assert.equal(typeof context.CodexMobileAppEntry.createCodexMobileAppEntry, "function");
   assert.equal(typeof context.CodexMobileAppEntry.startCodexMobileApp, "function");
   assert.deepEqual(counters, { initialize: 0, start: 0 });
-  context.CodexMobileAppEntry.startCodexMobileApp();
+  assert.equal(context.CodexMobileAppEntry.startCodexMobileApp(), "startup-result");
   assert.deepEqual(counters, { initialize: 1, start: 1 });
 });
 
@@ -78,5 +79,5 @@ test("Vite app-preview starts the excluded app entry after classic loader script
   assert.match(source, /__CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__/);
   assert.match(source, /excludedEsmAssets\.includes\("\/app\.js"\)/);
   assert.match(source, /CodexMobileAppEntry/);
-  assert.match(source, /startCodexMobileApp\(\)/);
+  assert.match(source, /await appEntry\.startCodexMobileApp\(\)/);
 });

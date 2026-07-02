@@ -1693,7 +1693,7 @@ function viteAppPreviewProbeExpression(input = {}) {
         ...loaderPlanExcludedViteOwnedPaths,
       ]);
       const loaderPlanCoveredShellScripts = shellScripts.filter((path) => loaderPlanCoveredShellScriptSet.has(path));
-      const expectedInjectedScripts = loaderPlanScripts.length ? loaderPlanScripts : shellScripts;
+      const expectedInjectedScripts = loaderPlan ? loaderPlanScripts : shellScripts;
       const excludedEsmGlobalsReady = loaderPlanExcludedEsmScripts.every((entry) => (
         entry.globalName && Boolean(window[entry.globalName])
       ));
@@ -1713,10 +1713,37 @@ function viteAppPreviewProbeExpression(input = {}) {
       const loaderStatusOk = status.ok === true
         && loaderStatusCompleted
         && statusFailed.length === 0
-        && loaderPlanScripts.length > 0
         && JSON.stringify(statusLoaded) === JSON.stringify(loaderPlanScripts);
       const loaderPromiseOk = Boolean(appPreviewResult && appPreviewResult.ok);
       const loaderPromiseTimedOut = Boolean(appPreviewResult && appPreviewResult.timeout);
+      const classicBindingProbe = (() => {
+        const result = {
+          bareStateType: "",
+          stateMatchesGlobal: false,
+          bareEmbedFunctionType: "",
+          globalEmbedFunctionType: typeof window.isHermesEmbedMode,
+          bareEmbedResult: null,
+          globalEmbedResult: null,
+          bareExchangeFunctionType: "",
+          globalExchangeFunctionType: typeof window.exchangePluginLaunchSession,
+          exchangeMatchesGlobal: false,
+        };
+        try {
+          result.bareStateType = typeof state;
+          result.stateMatchesGlobal = state === window.state;
+        } catch (_) {}
+        try {
+          result.bareEmbedFunctionType = typeof isHermesEmbedMode;
+          result.bareEmbedResult = typeof isHermesEmbedMode === "function" ? isHermesEmbedMode() === true : null;
+          result.globalEmbedResult = typeof window.isHermesEmbedMode === "function" ? window.isHermesEmbedMode() === true : null;
+        } catch (_) {}
+        try {
+          result.bareExchangeFunctionType = typeof exchangePluginLaunchSession;
+          result.exchangeMatchesGlobal = typeof exchangePluginLaunchSession === "function"
+            && exchangePluginLaunchSession === window.exchangePluginLaunchSession;
+        } catch (_) {}
+        return result;
+      })();
       return {
         label: "vite-app-preview",
         probeKind: "vite-app-preview",
@@ -1745,8 +1772,7 @@ function viteAppPreviewProbeExpression(input = {}) {
         loaderPlanMatchesShellScripts: JSON.stringify(loaderPlanCoveredShellScripts) === JSON.stringify(shellScripts)
           && loaderPlanCoveredShellScriptSet.size === shellScripts.length,
         loaderPlanMatchesInjectedScripts: JSON.stringify(loaderPlanScripts) === JSON.stringify(classicScripts),
-        loaderPlanLoadedMatches: statusLoaded.length > 0
-          && JSON.stringify(statusLoaded) === JSON.stringify(loaderPlanScripts),
+        loaderPlanLoadedMatches: JSON.stringify(statusLoaded) === JSON.stringify(loaderPlanScripts),
         esmCompatibilityReady: String(esmCompatibility.owner || "") === "vite-shell-entry"
           && Number(esmCompatibility.moduleCount) === expectedEsmCompatibilityCount
           && Number(esmCompatibility.readyCount) === expectedEsmCompatibilityCount
@@ -1779,6 +1805,24 @@ function viteAppPreviewProbeExpression(input = {}) {
         pluginEmbedApiReady: Boolean(window.CodexPluginEmbed && typeof window.CodexPluginEmbed.detect === "function"),
         initialPluginEmbedEmbedded: Boolean(initialPluginEmbed && initialPluginEmbed.embedded === true),
         initialPluginLaunchKeyPresent: Boolean(window.INITIAL_PLUGIN_LAUNCH_KEY),
+        classicBindingProbe,
+        pluginLaunchExchangeGate: state.pluginLaunchExchangeGate && typeof state.pluginLaunchExchangeGate === "object"
+          ? {
+            embed: state.pluginLaunchExchangeGate.embed === true,
+            launchSession: state.pluginLaunchExchangeGate.launchSession === true,
+            hasKey: state.pluginLaunchExchangeGate.hasKey === true,
+          }
+          : null,
+        pluginLaunchExchangeAttempted: state.pluginLaunchExchangeAttempted === true,
+        pluginLaunchExchangeCompleted: state.pluginLaunchExchangeCompleted === true,
+        pluginLaunchExchangeFailed: state.pluginLaunchExchangeFailed === true,
+        pluginLaunchExchangeErrorCode: String(state.pluginLaunchExchangeErrorCode || "").slice(0, 160),
+        appShellStartupRecoveryErrorCode: String(state.appShellStartupRecoveryErrorCode || "").slice(0, 160),
+        appShellStartAttempted: state.appShellStartAttempted === true,
+        appShellPublicConfigLoaded: state.appShellPublicConfigLoaded === true,
+        appShellPublicConfigFailed: state.appShellPublicConfigFailed === true,
+        appShellPublicConfigErrorCode: String(state.appShellPublicConfigErrorCode || "").slice(0, 160),
+        startupInProgress: state.startupInProgress === true,
         pluginModeLocalKeySuppressed: Boolean(window.state && !state.key),
         pluginLaunchUrlScrubbed: !locationUrl.searchParams.has("codexPluginLaunch") && !locationUrl.searchParams.has("pluginLaunch"),
         pluginLaunchSessionCleared: state.pluginLaunchSession === false,
@@ -1820,12 +1864,20 @@ function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}, options = 
       owner: sample.loaderPlanOwner || "",
     });
   }
-  if (sample && (Number(sample.loaderPlanScriptCount) !== Number(sample.expectedClassicScriptCount)
-    || Number(sample.loaderPlanHashCount) !== Number(sample.expectedClassicScriptCount)
+  const loaderPlanScriptCount = Number(sample && sample.loaderPlanScriptCount || 0) || 0;
+  const loaderPlanExcludedEsmScriptCount = Number(sample && sample.loaderPlanExcludedEsmScriptCount || 0) || 0;
+  const loaderPlanExcludedViteOwnedScriptCount = Number(sample && sample.loaderPlanExcludedViteOwnedScriptCount || 0) || 0;
+  const loaderPlanCoveredScriptCount = loaderPlanScriptCount
+    + loaderPlanExcludedEsmScriptCount
+    + loaderPlanExcludedViteOwnedScriptCount;
+  const loaderPlanSourceScriptCount = Number(sample && sample.loaderPlanSourceScriptCount || 0) || 0;
+  const shellScriptCount = Number(sample && sample.shellScriptCount || sample && sample.expectedClassicScriptCount || 0) || 0;
+  if (sample && (Number(sample.loaderPlanHashCount) !== loaderPlanScriptCount
     || (Number(sample.loaderPlanSourceScriptCount) > 0
-      && Number(sample.loaderPlanSourceScriptCount) !== Number(sample.shellScriptCount || sample.expectedClassicScriptCount))
-    || Number(sample.loaderPlanExcludedEsmScriptCount || 0) !== Number(sample.loaderPlanExcludedEsmHashCount || 0)
-    || Number(sample.loaderPlanExcludedViteOwnedScriptCount || 0) !== Number(sample.loaderPlanExcludedViteOwnedHashCount || 0)
+      && loaderPlanSourceScriptCount !== shellScriptCount)
+    || (loaderPlanSourceScriptCount > 0 && loaderPlanCoveredScriptCount !== loaderPlanSourceScriptCount)
+    || loaderPlanExcludedEsmScriptCount !== Number(sample.loaderPlanExcludedEsmHashCount || 0)
+    || loaderPlanExcludedViteOwnedScriptCount !== Number(sample.loaderPlanExcludedViteOwnedHashCount || 0)
     || sample.loaderPlanMatchesShellScripts !== true)) {
     append("vite_app_preview_classic_loader_plan_mismatch", "H2", {
       loaderPlanScriptCount: Number(sample.loaderPlanScriptCount) || 0,
@@ -1855,8 +1907,7 @@ function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}, options = 
     errorCode: sample.loaderErrorCode || "",
     timedOut: sample.loaderTimedOut === true,
   });
-  if (sample && (Number(sample.classicScriptCount) < 1
-    || Number(sample.classicScriptCount) !== Number(sample.expectedClassicScriptCount)
+  if (sample && (Number(sample.classicScriptCount) !== loaderPlanScriptCount
     || sample.classicScriptOrderMatches !== true
     || sample.loaderPlanMatchesInjectedScripts !== true
     || sample.loaderPlanLoadedMatches !== true)) {
