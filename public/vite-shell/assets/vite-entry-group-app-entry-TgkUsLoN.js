@@ -14,8 +14,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/runtime-wiring-runtime.js",
 			"sourcePath": "public/runtime-wiring-runtime.js",
-			"bytes": 8604,
-			"sha256": "51e11abcdb8fc8b9af79f244d82f2ae77503433db25ef98bd13b0a06d3048256"
+			"bytes": 8628,
+			"sha256": "d8af2dd662125c4ba83294d4268f1d32b1fe92b6eb8df5bceb15629bac9341bf"
 		},
 		{
 			"path": "/app-shell-runtime.js",
@@ -31,7 +31,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 3,
-	"classicAssetBytes": 50378,
+	"classicAssetBytes": 50402,
 	"classicGlobalExports": [{
 		"asset": "/runtime-wiring-runtime.js",
 		"globals": ["CodexRuntimeWiringRuntime"]
@@ -56,8 +56,8 @@ var codexMobileViteEntryGroup = {
 		"source": "startup-window-guard",
 		"present": true
 	}],
-	"shellCacheName": "codex-mobile-shell-v625-d4bcac34014f",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-d4bcac34014f"
+	"shellCacheName": "codex-mobile-shell-v625-ebe657c8cf2c",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-ebe657c8cf2c"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

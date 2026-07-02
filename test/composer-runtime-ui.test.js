@@ -78,6 +78,32 @@ test("composer runtime is created after its constant dependencies", () => {
   }
 });
 
+test("composer runtime receives composer target thread as an explicit dependency", () => {
+  assert.match(composerRuntimeJs, /composerTargetThread = \(\) => null/);
+  assert.match(appJs, /composerTargetThread,\n  composerTargetActiveTurnId,/);
+
+  const runtime = composerRuntime.createComposerRuntime({
+    state: {
+      defaultModel: "fallback-model",
+      defaultReasoningEffort: "low",
+      currentThreadId: "thread-a",
+      newThreadDraft: false,
+      pendingAttachments: [],
+      composerRuntimeSelection: {},
+    },
+    composerTargetThread: () => ({
+      model: "thread-model",
+      effort: "high",
+      runtimeSettings: { permissionMode: "ask" },
+    }),
+    effectiveComposerPermissionMode: (value) => value || "default",
+  });
+
+  assert.equal(runtime.effectiveDefaultModel(), "thread-model");
+  assert.equal(runtime.effectiveDefaultEffort(), "high");
+  assert.equal(runtime.effectiveDefaultPermissionMode(), "ask");
+});
+
 test("composer runtime is part of the current static shell", () => {
   assert.match(indexHtml, /<script src="\/composer-runtime\.js"><\/script>/);
   assert.ok(shellManifest.precacheAssets.includes("/composer-runtime.js"));

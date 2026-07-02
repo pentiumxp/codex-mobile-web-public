@@ -17,6 +17,7 @@ function createComposerRuntime(deps = {}) {
     clearSubmittedMessageBottomFollow,
     closeThreadGoalDialog,
     commitPluginVoiceInputSessionsAfterSend,
+    composerTargetThread = () => null,
     connectEvents,
     composerTargetActiveTurnId,
     createSubmissionId,

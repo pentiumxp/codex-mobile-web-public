@@ -3261,1339 +3261,29 @@ var require_media_preview_runtime = /* @__PURE__ */ __commonJSMin(((exports, mod
 	})(typeof window !== "undefined" ? window : globalThis);
 }));
 //#endregion
-//#region public/thread-list-load-policy.js
-var require_thread_list_load_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadListLoadPolicy = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function bool(value) {
-			return value === true;
-		}
-		function text(value) {
-			return String(value || "").trim();
-		}
-		function planThreadListLoadRequest(input = {}) {
-			const silent = bool(input.silent);
-			const selectedCwd = text(input.selectedCwd);
-			const search = text(input.search);
-			const threadDetailOpening = bool(input.threadDetailOpening);
-			const documentHidden = bool(input.documentHidden);
-			const allowDuringDetail = bool(input.allowDuringDetail);
-			const allowHidden = bool(input.allowHidden);
-			const hasLoadedList = Number(input.threadListLoadedAtMs || 0) > 0;
-			const deferFallback = input.deferFallback;
-			const suppressHiddenSilent = silent && documentHidden && !allowHidden;
-			const suppressDetailSilent = silent && threadDetailOpening && !allowDuringDetail;
-			const allowWarmFallbackInitial = deferFallback !== false && !selectedCwd && !search;
-			const shouldDeferFallback = deferFallback === true || silent && deferFallback !== false && threadDetailOpening && !selectedCwd && !search;
-			const shouldUseWarmFallbackInitial = allowWarmFallbackInitial && (shouldDeferFallback || !hasLoadedList);
-			return {
-				action: "thread-list-load-request",
-				selectedCwd,
-				search,
-				silent,
-				threadDetailOpening,
-				documentHidden,
-				shouldLoad: !suppressHiddenSilent && !suppressDetailSilent,
-				skipReason: suppressHiddenSilent ? "hidden-silent" : suppressDetailSilent ? "detail-in-flight" : "",
-				retryDelayMs: suppressDetailSilent ? 700 : 0,
-				shouldDeferFallback,
-				shouldUseWarmFallbackInitial,
-				params: {
-					fallback: shouldDeferFallback ? "defer" : "",
-					initial: shouldUseWarmFallbackInitial ? "warm-fallback" : ""
-				}
-			};
-		}
-		return { planThreadListLoadRequest };
-	});
-}));
-//#endregion
-//#region public/thread-list-stable-order.js
-var require_thread_list_stable_order = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadListStableOrder = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_HOLD_MS = 45e3;
-		function text(value) {
-			return String(value || "").trim();
-		}
-		function boundedHoldMs(value) {
-			const number = Math.trunc(Number(value) || 0);
-			if (number <= 0) return DEFAULT_HOLD_MS;
-			return Math.min(3e5, Math.max(5e3, number));
-		}
-		function threadId(thread) {
-			return text(thread && thread.id);
-		}
-		function threadListOrderScopeKey(input = {}) {
-			const cwd = text(input.selectedCwd);
-			const search = text(input.search).toLowerCase();
-			return JSON.stringify({
-				cwd,
-				search
-			});
-		}
-		function orderedThreadsById(threads, ids) {
-			const byId = /* @__PURE__ */ new Map();
-			for (const thread of threads || []) {
-				const id = threadId(thread);
-				if (id && !byId.has(id)) byId.set(id, thread);
-			}
-			return (ids || []).map((id) => byId.get(id)).filter(Boolean);
-		}
-		function mergeHeldOrder(previousOrder, incomingIds) {
-			const incomingSet = new Set(incomingIds);
-			const rank = new Map(incomingIds.map((id, index) => [id, index]));
-			const ordered = (previousOrder || []).filter((id) => incomingSet.has(id));
-			const orderedSet = new Set(ordered);
-			const additions = incomingIds.filter((id) => !orderedSet.has(id));
-			for (const id of additions) {
-				const idRank = rank.get(id);
-				let insertAt = ordered.length;
-				for (let index = 0; index < ordered.length; index += 1) if ((rank.get(ordered[index]) ?? Number.MAX_SAFE_INTEGER) > idRank) {
-					insertAt = index;
-					break;
-				}
-				ordered.splice(insertAt, 0, id);
-				orderedSet.add(id);
-			}
-			return ordered;
-		}
-		function planThreadListStableOrder(input = {}) {
-			const threads = Array.isArray(input.threads) ? input.threads : [];
-			const incomingIds = threads.map(threadId).filter(Boolean);
-			const previous = input.previousState && typeof input.previousState === "object" ? input.previousState : {};
-			const previousOrder = Array.isArray(previous.order) ? previous.order.map(text).filter(Boolean) : [];
-			const scopeKey = text(input.scopeKey) || threadListOrderScopeKey(input);
-			const nowMs = Math.max(0, Math.trunc(Number(input.nowMs) || Date.now()));
-			const holdMs = boundedHoldMs(input.holdMs);
-			const previousHoldUntilMs = Math.max(0, Math.trunc(Number(previous.holdUntilMs) || 0));
-			const sameScope = text(previous.scopeKey) === scopeKey;
-			const canHold = !input.forceServerOrder && sameScope && previousOrder.length > 0 && previousHoldUntilMs > nowMs;
-			const order = canHold ? mergeHeldOrder(previousOrder, incomingIds) : incomingIds;
-			const holdUntilMs = canHold ? previousHoldUntilMs : nowMs + holdMs;
-			return {
-				action: "thread-list-stable-order",
-				held: canHold,
-				scopeKey,
-				holdUntilMs,
-				order,
-				threads: orderedThreadsById(threads, order),
-				state: {
-					scopeKey,
-					holdUntilMs,
-					order
-				}
-			};
-		}
-		return {
-			DEFAULT_HOLD_MS,
-			threadListOrderScopeKey,
-			planThreadListStableOrder
-		};
-	});
-}));
-//#endregion
-//#region public/thread-status-hints.js
-var require_thread_status_hints = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadStatusHints = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_RUNNING_HINT_STALE_MS = 1200 * 1e3;
-		const DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS = 60 * 1e3;
-		const DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS = 1e3;
-		function timestampMs(value) {
-			if (value === null || value === void 0 || value === "") return 0;
-			if (typeof value === "number") {
-				if (!Number.isFinite(value) || value <= 0) return 0;
-				return value > 0xe8d4a51000 ? Math.trunc(value) : Math.trunc(value * 1e3);
-			}
-			if (/^\d+(?:\.\d+)?$/.test(String(value))) {
-				const numeric = Number(value);
-				if (Number.isFinite(numeric) && numeric > 0) return numeric > 0xe8d4a51000 ? Math.trunc(numeric) : Math.trunc(numeric * 1e3);
-			}
-			const parsed = Date.parse(String(value));
-			return Number.isFinite(parsed) ? parsed : 0;
-		}
-		function statusText(status) {
-			if (!status) return "";
-			if (typeof status === "string") return status;
-			if (status && typeof status === "object" && status.type) return String(status.type);
-			try {
-				return JSON.stringify(status);
-			} catch (_) {
-				return String(status);
-			}
-		}
-		function isStaleActiveStatus(status, thread) {
-			return Boolean(status && typeof status === "object" && (status.mobileStaleActiveTurn || status.staleActiveTurn || status.reason === "context-only-active-turn") || thread && thread.mobileStaleActiveTurn);
-		}
-		function isRunningStatus(status) {
-			return /active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(statusText(status).toLowerCase());
-		}
-		function isSettledStatus(status) {
-			return /^(idle|notloaded|not_loaded|not-loaded|completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(statusText(status).toLowerCase());
-		}
-		function isIdleStatus(status) {
-			return /^(idle|notloaded|not_loaded|not-loaded)$/.test(statusText(status).toLowerCase());
-		}
-		function isTerminalStatus(status) {
-			return /^(completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(statusText(status).toLowerCase());
-		}
-		function threadUpdatedAtMs(thread) {
-			return timestampMs(thread && (thread.updatedAtMs || thread.updatedAt || thread.updated_at_ms || thread.updated_at));
-		}
-		function terminalTurnAtMs(turn) {
-			return timestampMs(turn && turn.completedAtMs) || timestampMs(turn && turn.completedAt) || timestampMs(turn && turn.completed_at_ms) || timestampMs(turn && turn.completed_at) || timestampMs(turn && turn.finishedAt) || timestampMs(turn && turn.finished_at) || timestampMs(turn && turn.updatedAtMs) || timestampMs(turn && turn.updatedAt) || timestampMs(turn && turn.updated_at_ms) || timestampMs(turn && turn.updated_at) || timestampMs(turn && turn.startedAtMs) || timestampMs(turn && turn.startedAt) || timestampMs(turn && turn.started_at_ms) || timestampMs(turn && turn.started_at) || timestampMs(turn && turn.createdAtMs) || timestampMs(turn && turn.createdAt) || timestampMs(turn && turn.created_at_ms) || timestampMs(turn && turn.created_at);
-		}
-		function notificationDurableEventAtMs(params = {}) {
-			return timestampMs(params.eventAtMs) || timestampMs(params.eventAt) || terminalTurnAtMs(params.turn) || timestampMs(params.receivedAtMs) || timestampMs(params.timestampMs) || timestampMs(params.timestamp);
-		}
-		function notificationEventAtMs(params = {}, fallbackMs = 0, options = {}) {
-			const durableAt = notificationDurableEventAtMs(params);
-			if (durableAt) return durableAt;
-			if (options.allowReplayReceivedAt !== false) {
-				const replayAt = timestampMs(params.mobileReplayReceivedAtMs);
-				if (replayAt) return replayAt;
-			}
-			return timestampMs(params.receivedAtMs) || timestampMs(params.timestampMs) || timestampMs(params.timestamp) || timestampMs(fallbackMs);
-		}
-		function latestTerminalTurn(thread) {
-			const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
-			const latest = turns.length ? turns[turns.length - 1] : null;
-			if (!latest) return null;
-			return isTerminalStatus(latest.status) ? latest : null;
-		}
-		function latestTerminalTurnAtMs(thread) {
-			const turn = latestTerminalTurn(thread);
-			return turn ? terminalTurnAtMs(turn) : 0;
-		}
-		function hasFreshSubmittedProcessingHint(submittedProcessingHintedAtMs, nowMs, staleMs = DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS) {
-			const hintedAt = timestampMs(submittedProcessingHintedAtMs);
-			const now = timestampMs(nowMs) || Date.now();
-			return Boolean(hintedAt > 0 && now - hintedAt <= Math.max(0, Number(staleMs) || DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS));
-		}
-		function statusFreshnessAtMs(thread, eventAtMs) {
-			return Math.max(threadUpdatedAtMs(thread) || 0, timestampMs(eventAtMs) || 0);
-		}
-		function settledStatusFreshEnoughForRunningHint(input = {}) {
-			const hintedAt = timestampMs(input.runningHintedAtMs);
-			if (!hintedAt) return true;
-			const statusAt = statusFreshnessAtMs(input.thread, input.eventAtMs);
-			if (!statusAt) return false;
-			if (input.mobileReplay) return statusAt >= hintedAt;
-			return statusAt + Math.max(0, Number(input.freshnessToleranceMs) || DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS) >= hintedAt;
-		}
-		function shouldKeepRunningHintForSettledStatus(input = {}) {
-			const threadId = String(input.threadId || "");
-			if (!threadId || !input.isRunningHinted) return false;
-			const status = input.status || input.thread && input.thread.status;
-			if (isStaleActiveStatus(status, input.thread)) return false;
-			if (!isSettledStatus(status)) return false;
-			if (isIdleStatus(status) && !latestTerminalTurn(input.thread) && !input.eventIsTerminal) return true;
-			if (input.allowLocalProcessing !== false && isIdleStatus(status) && !latestTerminalTurn(input.thread) && hasFreshSubmittedProcessingHint(input.submittedProcessingHintedAtMs, input.nowMs, input.submittedProcessingHintStaleMs)) return true;
-			if (input.currentThreadId && threadId === String(input.currentThreadId) && input.currentThreadSettled) return false;
-			if (input.currentThreadHasLiveTurn) return true;
-			if (!input.mobileReplay && (isTerminalStatus(status) || latestTerminalTurn(input.thread) || input.eventIsTerminal)) return false;
-			return !settledStatusFreshEnoughForRunningHint(input);
-		}
-		function threadUnreadTerminalAtMs(thread, eventAtMs = 0, options = {}) {
-			const eventAt = options.eventIsTerminal ? timestampMs(eventAtMs) : 0;
-			return Math.max(latestTerminalTurnAtMs(thread) || 0, eventAt || 0);
-		}
-		function shouldMarkThreadUnread(input = {}) {
-			const threadId = String(input.threadId || "");
-			if (!threadId || threadId === String(input.currentThreadId || "")) return false;
-			const status = input.status || input.thread && input.thread.status;
-			if (isStaleActiveStatus(status, input.thread)) return false;
-			if (!isSettledStatus(status)) return false;
-			if (isIdleStatus(status) && !latestTerminalTurn(input.thread) && !input.eventIsTerminal) return false;
-			const terminalAt = threadUnreadTerminalAtMs(input.thread, input.eventAtMs, { eventIsTerminal: Boolean(input.eventIsTerminal) });
-			const viewedAt = timestampMs(input.viewedAtMs);
-			if (viewedAt > 0) return terminalAt > viewedAt;
-			const updateAt = terminalAt || (input.wasRunning ? statusFreshnessAtMs(input.thread, input.eventAtMs) : 0);
-			if (input.mobileReplay && !updateAt) return false;
-			const hintedAt = timestampMs(input.runningHintedAtMs);
-			if (!input.wasRunning || hintedAt <= 0) return false;
-			if (!updateAt) return !input.mobileReplay;
-			return updateAt + (input.mobileReplay ? 0 : Math.max(0, Number(input.freshnessToleranceMs) || DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS)) >= hintedAt;
-		}
-		function runningHintAgeMs(input = {}) {
-			const hintedAt = timestampMs(input.runningHintedAtMs);
-			const now = timestampMs(input.nowMs) || Date.now();
-			if (hintedAt > 0) return now - hintedAt;
-			const updatedAt = threadUpdatedAtMs(input.thread);
-			if (updatedAt > 0) return now - updatedAt;
-			return (Number(input.runningHintStaleMs) || DEFAULT_RUNNING_HINT_STALE_MS) + 1;
-		}
-		function shouldExpireRunningThreadHint(input = {}) {
-			if (!input.threadId || !input.isRunningHinted) return false;
-			const status = input.status || input.thread && input.thread.status;
-			if (isStaleActiveStatus(status, input.thread)) return true;
-			if (isRunningStatus(status)) return false;
-			if (isSettledStatus(status) && !shouldKeepRunningHintForSettledStatus(input)) return false;
-			if (input.currentThreadHasLiveTurn) return false;
-			return runningHintAgeMs(input) > (Number(input.runningHintStaleMs) || DEFAULT_RUNNING_HINT_STALE_MS);
-		}
-		return {
-			DEFAULT_RUNNING_HINT_STALE_MS,
-			DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS,
-			DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
-			hasFreshSubmittedProcessingHint,
-			isIdleStatus,
-			isRunningStatus,
-			isSettledStatus,
-			isStaleActiveStatus,
-			isTerminalStatus,
-			latestTerminalTurnAtMs,
-			notificationDurableEventAtMs,
-			notificationEventAtMs,
-			runningHintAgeMs,
-			shouldExpireRunningThreadHint,
-			shouldKeepRunningHintForSettledStatus,
-			shouldMarkThreadUnread,
-			statusFreshnessAtMs,
-			statusText,
-			terminalTurnAtMs,
-			threadUpdatedAtMs,
-			timestampMs
-		};
-	});
-}));
-//#endregion
-//#region public/thread-detail-patch-plan.js
-var require_thread_detail_patch_plan = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDetailPatchPlan = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function normalizePatchEntry(entry) {
-			if (!entry || typeof entry !== "object") return null;
-			const key = String(entry.key || "");
-			if (!key) return null;
-			return Object.assign({}, entry, { key });
-		}
-		function normalizeRefreshTurnPatchEntry(entry) {
-			if (!entry || typeof entry !== "object") return null;
-			const key = String(entry.key || "");
-			if (!key) return null;
-			return {
-				key,
-				hasPreviousTurn: Boolean(entry.hasPreviousTurn),
-				itemPatchable: Boolean(entry.itemPatchable),
-				articlePresent: Boolean(entry.articlePresent)
-			};
-		}
-		function normalizedStringList(value) {
-			return Array.isArray(value) ? value.map((entry) => String(entry || "")).filter(Boolean) : [];
-		}
-		function signatureText(signature) {
-			if (signature == null) return "";
-			if (typeof signature === "string") return signature;
-			try {
-				return JSON.stringify(signature);
-			} catch (_) {
-				return "";
-			}
-		}
-		function planThreadDetailDomPatchSurface(input = {}) {
-			const threadId = String(input.threadId || "").trim();
-			const threadTileMode = Boolean(input.threadTileMode);
-			const threadTileSurface = Boolean(input.threadTileSurface);
-			const tilePaneVisible = Boolean(input.tilePaneVisible);
-			const conversationPresent = Boolean(input.conversationPresent);
-			if (threadTileMode || threadTileSurface) {
-				if (!threadTileMode) return {
-					canPatch: false,
-					surface: "blocked",
-					reason: "tile-surface-without-tile-mode",
-					threadId
-				};
-				if (!threadTileSurface) return {
-					canPatch: false,
-					surface: "blocked",
-					reason: "tile-mode-surface-mismatch",
-					threadId
-				};
-				if (!threadId) return {
-					canPatch: false,
-					surface: "thread-tile-pane",
-					reason: "missing-thread-id",
-					threadId: ""
-				};
-				if (!tilePaneVisible) return {
-					canPatch: false,
-					surface: "thread-tile-pane",
-					reason: "tile-pane-not-visible",
-					threadId
-				};
-				return {
-					canPatch: true,
-					surface: "thread-tile-pane",
-					reason: "tile-pane-visible",
-					threadId
-				};
-			}
-			if (!conversationPresent) return {
-				canPatch: false,
-				surface: "single-thread",
-				reason: "missing-conversation",
-				threadId
-			};
-			return {
-				canPatch: true,
-				surface: "single-thread",
-				reason: "single-thread-surface",
-				threadId
-			};
-		}
-		function planThreadDetailRefreshLocalPatchPreflight(input = {}) {
-			const conversationPresent = Boolean(input.conversationPresent);
-			const previousThreadPresent = Boolean(input.previousThreadPresent);
-			const nextThreadPresent = Boolean(input.nextThreadPresent);
-			if (!conversationPresent) return {
-				canPatch: false,
-				terminal: false,
-				reason: "missing-conversation-root"
-			};
-			if (!previousThreadPresent || !nextThreadPresent) return {
-				canPatch: false,
-				terminal: false,
-				reason: "missing-thread"
-			};
-			if (String(input.stage || "complete") === "root") return {
-				canPatch: true,
-				terminal: false,
-				reason: "root-ready"
-			};
-			if (input.tilePanePatched) return {
-				canPatch: true,
-				terminal: true,
-				reason: "tile-pane-patched"
-			};
-			if (!input.singleThreadSurfaceAvailable) return {
-				canPatch: false,
-				terminal: false,
-				reason: "single-thread-surface-unavailable"
-			};
-			if (input.previousLoadingOrError || input.nextLoadingOrError) return {
-				canPatch: false,
-				terminal: false,
-				reason: "loading-or-error-state"
-			};
-			const renderedConversationSignature = signatureText(input.renderedConversationSignature);
-			const previousConversationSignature = signatureText(input.previousConversationSignature);
-			const renderedPatchShellSignature = signatureText(input.renderedPatchShellSignature);
-			const previousPatchShellSignature = signatureText(input.previousPatchShellSignature);
-			const nextPatchShellSignature = signatureText(input.nextPatchShellSignature);
-			if (renderedConversationSignature !== previousConversationSignature && (!renderedPatchShellSignature || renderedPatchShellSignature !== previousPatchShellSignature)) return {
-				canPatch: false,
-				terminal: false,
-				reason: "rendered-dom-stale"
-			};
-			if (previousPatchShellSignature !== nextPatchShellSignature) return {
-				canPatch: false,
-				terminal: false,
-				reason: "patch-shell-changed"
-			};
-			return {
-				canPatch: true,
-				terminal: false,
-				reason: "preflight-passed"
-			};
-		}
-		function visibleItemPatchShapePreservesExisting(previousEntries, nextEntries) {
-			if (!Array.isArray(previousEntries) || !Array.isArray(nextEntries)) return false;
-			const previous = previousEntries.map(normalizePatchEntry).filter(Boolean);
-			const next = nextEntries.map(normalizePatchEntry).filter(Boolean);
-			if (previous.length !== previousEntries.length || next.length !== nextEntries.length) return false;
-			if (previous.length > next.length) return false;
-			let previousIndex = 0;
-			for (const nextEntry of next) {
-				const previousEntry = previous[previousIndex];
-				if (previousEntry && previousEntry.key === nextEntry.key) previousIndex += 1;
-			}
-			return previousIndex === previous.length;
-		}
-		function planVisibleItemRefreshPatch(previousEntries, nextEntries) {
-			if (!visibleItemPatchShapePreservesExisting(previousEntries, nextEntries)) return {
-				canPatch: false,
-				reason: "shape-changed",
-				operations: []
-			};
-			const previousByKey = new Map(previousEntries.map(normalizePatchEntry).filter(Boolean).map((entry) => [entry.key, entry]));
-			const operations = [];
-			for (const rawNextEntry of nextEntries) {
-				const nextEntry = normalizePatchEntry(rawNextEntry);
-				if (!nextEntry) return {
-					canPatch: false,
-					reason: "invalid-entry",
-					operations: []
-				};
-				const previousEntry = previousByKey.get(nextEntry.key);
-				if (!previousEntry) {
-					operations.push({
-						type: "insert",
-						key: nextEntry.key,
-						nextEntry
-					});
-					continue;
-				}
-				const previousSignature = signatureText(previousEntry.signature);
-				const nextSignature = signatureText(nextEntry.signature);
-				operations.push({
-					type: previousSignature === nextSignature ? "reuse" : "patch",
-					key: nextEntry.key,
-					previousEntry,
-					nextEntry
-				});
-			}
-			return {
-				canPatch: true,
-				reason: "shape-preserved",
-				operations
-			};
-		}
-		function planThreadDetailRefreshDomPatch(entries, options = {}) {
-			if (!Array.isArray(entries)) return {
-				canPatch: false,
-				reason: "invalid-turn-entries",
-				operations: []
-			};
-			const operations = [];
-			const nextKeys = /* @__PURE__ */ new Set();
-			for (const rawEntry of entries) {
-				const entry = normalizeRefreshTurnPatchEntry(rawEntry);
-				if (!entry) return {
-					canPatch: false,
-					reason: "invalid-turn-entry",
-					operations: []
-				};
-				nextKeys.add(entry.key);
-				if (entry.hasPreviousTurn && entry.itemPatchable && entry.articlePresent) {
-					operations.push({
-						type: "item-patch",
-						key: entry.key,
-						entry
-					});
-					continue;
-				}
-				operations.push({
-					type: entry.articlePresent ? "replace-turn" : "insert-turn",
-					key: entry.key,
-					entry
-				});
-			}
-			const previousTurnKeys = normalizedStringList(options.previousTurnKeys || options.previousKeys);
-			for (const previousKey of previousTurnKeys) {
-				if (nextKeys.has(previousKey)) continue;
-				operations.push({
-					type: "remove-turn",
-					key: previousKey,
-					entry: {
-						key: previousKey,
-						stale: true
-					}
-				});
-			}
-			return {
-				canPatch: true,
-				reason: "planned",
-				operations
-			};
-		}
-		return {
-			normalizePatchEntry,
-			normalizeRefreshTurnPatchEntry,
-			planThreadDetailRefreshDomPatch,
-			planThreadDetailRefreshLocalPatchPreflight,
-			planVisibleItemRefreshPatch,
-			planThreadDetailDomPatchSurface,
-			visibleItemPatchShapePreservesExisting
-		};
-	});
-}));
-//#endregion
-//#region public/thread-detail-actions.js
-var require_thread_detail_actions = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDetailActions = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function withinRoot(root, node) {
-			if (!root || !node || typeof root.contains !== "function") return true;
-			return root.contains(node);
-		}
-		function closestWithin(target, selector, root = null) {
-			if (!target || typeof target.closest !== "function") return null;
-			const node = target.closest(selector);
-			if (!node || !withinRoot(root, node)) return null;
-			return node;
-		}
-		function action(type, target, fields = {}) {
-			return Object.assign({
-				action: String(type || "none"),
-				target: target || null,
-				preventDefault: false,
-				stopPropagation: false
-			}, fields);
-		}
-		function dataValue(node, key) {
-			return String(node && node.dataset && node.dataset[key] || "");
-		}
-		function contextThreadIdFromNode(node, explicitDatasetKey = "") {
-			if (!node) return "";
-			const explicit = explicitDatasetKey ? dataValue(node, explicitDatasetKey) : "";
-			if (explicit) return explicit;
-			if (typeof node.closest !== "function") return "";
-			return dataValue(node.closest("[data-thread-tile-pane]"), "threadTilePane");
-		}
-		function previewableImageFromTarget(target, root = null) {
-			const image = closestWithin(target, ".input-image img, .image-view img, .markdown-image img, .file-preview-image, .attachment-thumb", root);
-			if (!image) return null;
-			if (image.closest && image.closest(".github-link-card")) return null;
-			return image;
-		}
-		function resolveRichContentClickAction(input = {}) {
-			const target = input.target || null;
-			const root = input.root || null;
-			let node = closestWithin(target, "[data-copy-key]", root);
-			if (node) return action("copy", node, {
-				button: node,
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-local-file-path]", root);
-			if (node) return action("local-file-preview", node, {
-				link: node,
-				threadId: contextThreadIdFromNode(node, "localFileThreadId"),
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-mermaid-action]", root);
-			if (node) return action("mermaid", node, {
-				button: node,
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-github-link-preview-expand]", root);
-			if (node) return action("github-preview-toggle", node, {
-				button: node,
-				preventDefault: true,
-				stopPropagation: true
-			});
-			return action("none", null, { reason: "no-match" });
-		}
-		function resolveThreadDetailClickAction(input = {}) {
-			const target = input.target || null;
-			const root = input.root || null;
-			const rich = resolveRichContentClickAction({
-				target,
-				root
-			});
-			if (rich.action !== "none") return rich;
-			let node = closestWithin(target, "[data-approval-action]", root);
-			if (node) return action("approval-answer", node, {
-				button: node,
-				approvalId: dataValue(node, "approvalId"),
-				approvalAction: dataValue(node, "approvalAction"),
-				threadId: dataValue(node, "approvalThreadId")
-			});
-			node = closestWithin(target, "[data-task-card-action]", root);
-			if (node) {
-				const taskCardAction = dataValue(node, "taskCardAction");
-				const cardId = dataValue(node, "taskCardId");
-				const threadId = dataValue(node, "taskCardThreadId");
-				if (taskCardAction === "reply") return action("task-card-reply", node, {
-					button: node,
-					cardId,
-					taskCardAction,
-					threadId
-				});
-				if (taskCardAction === "approve" || taskCardAction === "delete" || taskCardAction === "revoke") return action("task-card-mutate", node, {
-					button: node,
-					cardId,
-					taskCardAction,
-					threadId
-				});
-				return action("task-card-unknown", node, {
-					button: node,
-					cardId,
-					taskCardAction,
-					threadId
-				});
-			}
-			node = closestWithin(target, "[data-task-card-draft-action]", root);
-			if (node) return action("task-card-draft", node, {
-				button: node,
-				draftAction: dataValue(node, "taskCardDraftAction"),
-				draftKey: dataValue(node, "taskCardDraftKey"),
-				threadId: dataValue(node, "taskCardDraftThreadId")
-			});
-			node = closestWithin(target, "[data-server-response-text]", root);
-			if (node) return action("server-response", node, {
-				option: node,
-				requestId: dataValue(node, "serverRequestId"),
-				threadId: dataValue(node, "serverRequestThreadId"),
-				responseText: dataValue(node, "serverResponseText"),
-				questionId: dataValue(node, "serverQuestionId") || "answer"
-			});
-			node = closestWithin(target, "[data-server-request-decline]", root);
-			if (node) return action("server-request-decline", node, {
-				button: node,
-				requestId: dataValue(node, "serverRequestId"),
-				threadId: dataValue(node, "serverRequestThreadId")
-			});
-			return action("none", null, { reason: "no-match" });
-		}
-		return {
-			closestWithin,
-			previewableImageFromTarget,
-			resolveRichContentClickAction,
-			resolveThreadDetailClickAction,
-			contextThreadIdFromNode
-		};
-	});
-}));
-//#endregion
-//#region public/thread-detail-merge-state.js
-var require_thread_detail_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDetailMergeState = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function defaultNormalizeThread(thread) {
-			return thread;
-		}
-		function defaultSortTurns(turns) {
-			return Array.isArray(turns) ? turns.slice() : [];
-		}
-		function createThreadDetailMergePolicy(options = {}) {
-			const isV4ProjectionThread = typeof options.isV4ProjectionThread === "function" ? options.isV4ProjectionThread : () => false;
-			const mergeV4ProjectionThread = typeof options.mergeV4ProjectionThread === "function" ? options.mergeV4ProjectionThread : (existingThread, incomingThread) => incomingThread || existingThread || null;
-			const normalizeThreadVisibleUserMessages = typeof options.normalizeThreadVisibleUserMessages === "function" ? options.normalizeThreadVisibleUserMessages : defaultNormalizeThread;
-			const turnVisibleWeight = typeof options.turnVisibleWeight === "function" ? options.turnVisibleWeight : () => 0;
-			const shouldPreserveExistingTurnVisibleItems = typeof options.shouldPreserveExistingTurnVisibleItems === "function" ? options.shouldPreserveExistingTurnVisibleItems : () => false;
-			const mergeItemsPreservingLocalVisible = typeof options.mergeItemsPreservingLocalVisible === "function" ? options.mergeItemsPreservingLocalVisible : (existingItems, incomingItems) => Array.isArray(incomingItems) ? incomingItems : existingItems;
-			const shouldDropInitialSubmissionEchoTurn = typeof options.shouldDropInitialSubmissionEchoTurn === "function" ? options.shouldDropInitialSubmissionEchoTurn : () => false;
-			const turnIsSupersededBy = typeof options.turnIsSupersededBy === "function" ? options.turnIsSupersededBy : () => false;
-			const isTurnComplete = typeof options.isTurnComplete === "function" ? options.isTurnComplete : () => false;
-			const shouldPreserveMissingExistingTurn = typeof options.shouldPreserveMissingExistingTurn === "function" ? options.shouldPreserveMissingExistingTurn : () => false;
-			const sortTurnsForDisplay = typeof options.sortTurnsForDisplay === "function" ? options.sortTurnsForDisplay : defaultSortTurns;
-			const threadHasInitialSubmissionEcho = typeof options.threadHasInitialSubmissionEcho === "function" ? options.threadHasInitialSubmissionEcho : () => false;
-			const maxExpandedVisibleTurns = Math.max(1, Number(options.maxExpandedVisibleTurns || 200) || 200);
-			function normalizeMergedThread(thread, limit = 0) {
-				const normalized = normalizeThreadVisibleUserMessages(thread);
-				if (normalized && Array.isArray(normalized.turns)) {
-					const sorted = sortTurnsForDisplay(normalized.turns);
-					normalized.turns = limit > 0 ? sorted.slice(-limit) : sorted;
-				}
-				return normalized;
-			}
-			function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
-				return shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight);
-			}
-			function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
-				if (!existingTurn) return incomingTurn;
-				if (!incomingTurn) return existingTurn;
-				const existingItems = Array.isArray(existingTurn.items) ? existingTurn.items : [];
-				const incomingHasItems = Array.isArray(incomingTurn.items);
-				const merged = Object.assign({}, existingTurn, incomingTurn);
-				if (!incomingHasItems) {
-					merged.items = existingItems;
-					return merged;
-				}
-				const incomingWeight = turnVisibleWeight(Object.assign({}, incomingTurn, { items: incomingTurn.items || [] }));
-				const existingWeight = turnVisibleWeight(existingTurn);
-				const preserveLocalVisible = incomingWeight < existingWeight || shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
-				merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible, incomingTurn);
-				return merged;
-			}
-			function mergeThreadPreservingVisibleItems(existingThread, incomingThread, runtime = {}) {
-				if (isV4ProjectionThread(incomingThread)) return mergeV4ProjectionThread(existingThread, incomingThread);
-				if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeMergedThread(incomingThread);
-				const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
-				const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
-				const existingById = new Map(existingTurns.map((turn) => [turn && turn.id, turn]).filter(([id]) => id));
-				const initialSubmissionId = String(existingThread.mobileInitialSubmissionId || "");
-				const merged = Object.assign({}, existingThread, incomingThread);
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
-				if (!incomingTurns) return normalizeMergedThread(merged);
-				const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-				const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-				const incomingHasAuthoritativeVisibleWindow = incomingTurns.length > 0 && incomingVisibleWeight > 0;
-				if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
-					merged.turns = existingTurns;
-					return normalizeMergedThread(merged);
-				}
-				merged.turns = incomingTurns.map((incomingTurn) => {
-					const existingTurn = existingById.get(incomingTurn && incomingTurn.id);
-					return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
-				});
-				merged.turns = sortTurnsForDisplay(merged.turns);
-				const incomingIds = new Set(merged.turns.map((turn) => turn && turn.id).filter(Boolean));
-				const latestIncoming = merged.turns.length ? merged.turns[merged.turns.length - 1] : null;
-				const preserveExpandedHistory = Boolean(existingThread.mobileHistoryExpanded) && (/turns-list/i.test(String(incomingThread.mobileReadMode || "")) || Boolean(incomingThread.mobileOlderTurnsCursor) || Number(incomingThread.mobileOmittedTurnCount || 0) > 0);
-				let preservedExpandedTurnCount = 0;
-				const activeTurnId = String(runtime.activeTurnId || "");
-				for (const existingTurn of existingTurns) {
-					if (!existingTurn || incomingIds.has(existingTurn.id)) continue;
-					if (shouldDropInitialSubmissionEchoTurn(existingTurn, merged.turns, initialSubmissionId)) continue;
-					if (preserveExpandedHistory) {
-						merged.turns.push(existingTurn);
-						preservedExpandedTurnCount += 1;
-						continue;
-					}
-					if (incomingHasAuthoritativeVisibleWindow && !shouldPreserveMissingExistingTurn(existingTurn, merged, runtime)) continue;
-					if (turnIsSupersededBy(existingTurn, latestIncoming)) continue;
-					if (String(existingTurn.id || "") === activeTurnId || !isTurnComplete(existingTurn) && turnVisibleWeight(existingTurn) > 0) merged.turns.push(existingTurn);
-				}
-				if (preserveExpandedHistory) {
-					merged.mobileHistoryExpanded = true;
-					if (preservedExpandedTurnCount > 0) merged.mobileOmittedTurnCount = Math.max(0, Number(merged.mobileOmittedTurnCount || 0) - preservedExpandedTurnCount);
-				}
-				const normalized = normalizeMergedThread(merged, preserveExpandedHistory ? maxExpandedVisibleTurns : 0);
-				if (!threadHasInitialSubmissionEcho(normalized, initialSubmissionId)) delete normalized.mobileInitialSubmissionId;
-				return normalized;
-			}
-			return {
-				mergeThreadPreservingVisibleItems,
-				mergeTurnPreservingVisibleItems,
-				shouldPreserveLiveTurnLocalVisibleItems
-			};
-		}
-		return { createThreadDetailMergePolicy };
-	});
-}));
-//#endregion
-//#region public/thread-detail-v4-merge-state.js
-var require_thread_detail_v4_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDetailV4MergeState = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function defaultNormalizeThread(thread) {
-			return thread;
-		}
-		function defaultTurnVisibleWeight(turn) {
-			return Array.isArray(turn && turn.items) ? turn.items.length : 0;
-		}
-		function defaultSortTurns(turns) {
-			return Array.isArray(turns) ? turns.slice() : [];
-		}
-		function statusText(status) {
-			if (!status) return "";
-			if (typeof status === "object" && status.type) return String(status.type || "");
-			return String(status || "");
-		}
-		function createThreadDetailV4MergePolicy(options = {}) {
-			const normalizeThreadVisibleUserMessages = typeof options.normalizeThreadVisibleUserMessages === "function" ? options.normalizeThreadVisibleUserMessages : defaultNormalizeThread;
-			const turnVisibleWeight = typeof options.turnVisibleWeight === "function" ? options.turnVisibleWeight : defaultTurnVisibleWeight;
-			const isOptimisticUserMessage = typeof options.isOptimisticUserMessage === "function" ? options.isOptimisticUserMessage : () => false;
-			const isRecentlySubmittedUserMessage = typeof options.isRecentlySubmittedUserMessage === "function" ? options.isRecentlySubmittedUserMessage : () => false;
-			const isReasoningItem = typeof options.isReasoningItem === "function" ? options.isReasoningItem : () => false;
-			const userMessageHasSubmissionId = typeof options.userMessageHasSubmissionId === "function" ? options.userMessageHasSubmissionId : (item, submissionId) => Boolean(item && submissionId && String(item.clientSubmissionId || "") === String(submissionId || ""));
-			const userMessagesCanShadow = typeof options.userMessagesCanShadow === "function" ? options.userMessagesCanShadow : () => false;
-			const isTurnComplete = typeof options.isTurnComplete === "function" ? options.isTurnComplete : (turn) => /completed|failed|cancel|error|interrupted/i.test(statusText(turn && turn.status));
-			const isRunningStatus = typeof options.isRunningStatus === "function" ? options.isRunningStatus : (status) => /active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/i.test(statusText(status));
-			const isIncompleteInterruptedTurn = typeof options.isIncompleteInterruptedTurn === "function" ? options.isIncompleteInterruptedTurn : () => false;
-			const turnHasActiveLiveItems = typeof options.turnHasActiveLiveItems === "function" ? options.turnHasActiveLiveItems : () => false;
-			const turnOrderMs = typeof options.turnOrderMs === "function" ? options.turnOrderMs : () => 0;
-			const mergeTurnPreservingVisibleItems = typeof options.mergeTurnPreservingVisibleItems === "function" ? options.mergeTurnPreservingVisibleItems : (existingTurn, incomingTurn) => incomingTurn || existingTurn;
-			const sortTurnsForDisplay = typeof options.sortTurnsForDisplay === "function" ? options.sortTurnsForDisplay : defaultSortTurns;
-			const maxVisibleTurnsForThread = typeof options.maxVisibleTurnsForThread === "function" ? options.maxVisibleTurnsForThread : () => 10;
-			function isV4ProjectionThread(thread) {
-				return Boolean(thread && (thread.mobileProjectionVersion === "v4" || thread.mobileProjection && thread.mobileProjection.version === "v4"));
-			}
-			function shouldPreserveV4PendingOverlayItem(item) {
-				return Boolean(item && item.type === "userMessage" && isOptimisticUserMessage(item) && (isRecentlySubmittedUserMessage(item) || item.mobileSendError));
-			}
-			function v4ThreadHasPendingMatch(thread, pendingItem) {
-				if (!pendingItem || pendingItem.type !== "userMessage") return false;
-				const submissionId = String(pendingItem.clientSubmissionId || "").trim();
-				for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
-					if (!item || item.type !== "userMessage") continue;
-					if (submissionId && userMessageHasSubmissionId(item, submissionId)) return true;
-					if (!isOptimisticUserMessage(item) && userMessagesCanShadow(item, pendingItem)) return true;
-				}
-				return false;
-			}
-			function appendV4PendingOverlayItem(turn, item) {
-				if (!turn || !item) return;
-				turn.items = Array.isArray(turn.items) ? turn.items : [];
-				const submissionId = String(item.clientSubmissionId || "").trim();
-				if (!turn.items.some((existing) => existing && (submissionId && userMessageHasSubmissionId(existing, submissionId) || existing.id === item.id || userMessagesCanShadow(existing, item)))) turn.items.push(item);
-			}
-			function copyTurnWithOnlyItems(turn, items) {
-				return Object.assign({}, turn || {}, { items: (items || []).slice() });
-			}
-			function applyV4PendingOverlay(existingThread, mergedThread) {
-				if (!existingThread || !mergedThread || !Array.isArray(existingThread.turns)) return mergedThread;
-				mergedThread.turns = Array.isArray(mergedThread.turns) ? mergedThread.turns : [];
-				const turnsById = new Map(mergedThread.turns.map((turn) => [String(turn && turn.id || ""), turn]));
-				for (const existingTurn of existingThread.turns) {
-					const pendingItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : []).filter((item) => shouldPreserveV4PendingOverlayItem(item) && !v4ThreadHasPendingMatch(mergedThread, item));
-					if (!pendingItems.length) continue;
-					const targetTurn = turnsById.get(String(existingTurn.id || ""));
-					if (targetTurn) {
-						pendingItems.forEach((item) => appendV4PendingOverlayItem(targetTurn, item));
-						continue;
-					}
-					const overlayTurn = copyTurnWithOnlyItems(existingTurn, pendingItems);
-					overlayTurn.mobilePendingOverlay = true;
-					mergedThread.turns.push(overlayTurn);
-					if (overlayTurn.id) turnsById.set(String(overlayTurn.id), overlayTurn);
-				}
-				return mergedThread;
-			}
-			function v4ProjectionRevisionValue(thread) {
-				const direct = Number(thread && thread.mobileProjectionRevision);
-				if (Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
-				const nested = Number(thread && thread.mobileProjection && thread.mobileProjection.revision);
-				return Number.isFinite(nested) && nested > 0 ? Math.trunc(nested) : 0;
-			}
-			function isV4ProjectionRefreshRegressive(existingThread, incomingThread) {
-				const existingRevision = v4ProjectionRevisionValue(existingThread);
-				const incomingRevision = v4ProjectionRevisionValue(incomingThread);
-				return Boolean(existingRevision && incomingRevision && incomingRevision < existingRevision);
-			}
-			function isActiveLikeProjectionTurn(turn) {
-				return Boolean(turn && !isTurnComplete(turn) && (isRunningStatus(turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn)));
-			}
-			function incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns) {
-				const existingOrder = turnOrderMs(existingTurn);
-				if (!existingOrder) return false;
-				return (incomingTurns || []).some((incomingTurn) => {
-					if (!incomingTurn || String(incomingTurn.id || "") === String(existingTurn && existingTurn.id || "")) return false;
-					const incomingOrder = turnOrderMs(incomingTurn);
-					return Boolean(incomingOrder && incomingOrder > existingOrder);
-				});
-			}
-			function existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns) {
-				const visibleItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : []).filter((item) => item && turnVisibleWeight({ items: [item] }) > 0 && !isReasoningItem(item));
-				return Boolean(visibleItems.length && visibleItems.every((item) => shouldPreserveV4PendingOverlayItem(item) && v4ThreadHasPendingMatch({ turns: incomingTurns || [] }, item)));
-			}
-			function shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, incomingTurns) {
-				if (!existingTurn || turnVisibleWeight(existingTurn) <= 0) return false;
-				const id = String(existingTurn.id || "");
-				if (id && (incomingTurns || []).some((turn) => String(turn && turn.id || "") === id)) return false;
-				if (existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns)) return false;
-				const activeLike = isActiveLikeProjectionTurn(existingTurn);
-				const regressiveRefresh = isV4ProjectionRefreshRegressive(existingThread, incomingThread);
-				if (!activeLike && !regressiveRefresh) return false;
-				return !incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns);
-			}
-			function mergeV4ProjectionThread(existingThread, incomingThread) {
-				if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeThreadVisibleUserMessages(incomingThread);
-				const merged = Object.assign({}, existingThread, incomingThread);
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
-				if (Array.isArray(incomingThread.turns)) {
-					const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
-					const incomingTurns = incomingThread.turns.slice();
-					const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-					const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-					if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
-						merged.turns = existingTurns;
-						return normalizeThreadVisibleUserMessages(merged);
-					}
-					const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
-					merged.turns = incomingTurns.map((incomingTurn) => {
-						const existingTurn = existingById.get(String(incomingTurn && incomingTurn.id || ""));
-						return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
-					});
-					for (const existingTurn of existingTurns) if (shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, merged.turns)) merged.turns.push(existingTurn);
-					applyV4PendingOverlay(existingThread, merged);
-					merged.turns = sortTurnsForDisplay(merged.turns).slice(-maxVisibleTurnsForThread(merged));
-				}
-				if (isV4ProjectionRefreshRegressive(existingThread, incomingThread)) {
-					const existingRevision = v4ProjectionRevisionValue(existingThread);
-					if (existingRevision) {
-						merged.mobileProjectionRevision = existingRevision;
-						if (merged.mobileProjection && typeof merged.mobileProjection === "object") merged.mobileProjection = Object.assign({}, merged.mobileProjection, { revision: existingRevision });
-					}
-				}
-				return normalizeThreadVisibleUserMessages(merged);
-			}
-			return {
-				applyV4PendingOverlay,
-				isV4ProjectionRefreshRegressive,
-				isV4ProjectionThread,
-				mergeV4ProjectionThread,
-				shouldPreserveExistingV4ProjectionTurn,
-				v4ProjectionRevisionValue
-			};
-		}
-		return { createThreadDetailV4MergePolicy };
-	});
-}));
-//#endregion
-//#region public/client-render-stability-guard.js
-var require_client_render_stability_guard = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function initClientRenderStabilityGuard(globalScope) {
-		function stringValue(value) {
-			return String(value || "").trim();
-		}
-		function shortHash(value) {
-			const text = stringValue(value);
-			let hash = 2166136261;
-			for (let index = 0; index < text.length; index += 1) {
-				hash ^= text.charCodeAt(index);
-				hash = Math.imul(hash, 16777619);
-			}
-			return (hash >>> 0).toString(36);
-		}
-		function submittedUserItemClientSubmissionId(item) {
-			if (!item || item.type !== "userMessage") return "";
-			return stringValue(item.clientSubmissionId);
-		}
-		function firstSubmittedUserMessageClientSubmissionId(turn) {
-			const items = Array.isArray(turn && turn.items) ? turn.items : [];
-			for (const item of items) {
-				const submissionId = submittedUserItemClientSubmissionId(item);
-				if (submissionId) return submissionId;
-			}
-			return "";
-		}
-		function localSubmissionRenderKey(clientSubmissionId) {
-			const submissionId = stringValue(clientSubmissionId);
-			return submissionId ? `submitted:${shortHash(submissionId)}` : "";
-		}
-		function submittedTurnRenderKey(turn) {
-			const explicit = stringValue(turn && turn.mobileLocalSubmissionRenderKey);
-			if (explicit) return explicit;
-			return localSubmissionRenderKey(firstSubmittedUserMessageClientSubmissionId(turn));
-		}
-		function stableTurnIdentity(turn) {
-			return submittedTurnRenderKey(turn) || stringValue(turn && (turn.id || turn.startedAt)) || "turn";
-		}
-		function markSubmittedTurn(turn, clientSubmissionId) {
-			if (!turn || typeof turn !== "object") return "";
-			const key = localSubmissionRenderKey(clientSubmissionId);
-			if (key) turn.mobileLocalSubmissionRenderKey = key;
-			return key;
-		}
-		function transferSubmittedTurnIdentity(sourceTurn, targetTurn, clientSubmissionId) {
-			if (!targetTurn || typeof targetTurn !== "object") return "";
-			const key = submittedTurnRenderKey(sourceTurn) || submittedTurnRenderKey(targetTurn) || localSubmissionRenderKey(clientSubmissionId);
-			if (key) targetTurn.mobileLocalSubmissionRenderKey = key;
-			return key;
-		}
-		const api = {
-			firstSubmittedUserMessageClientSubmissionId,
-			localSubmissionRenderKey,
-			markSubmittedTurn,
-			shortHash,
-			stableTurnIdentity,
-			submittedTurnRenderKey,
-			transferSubmittedTurnIdentity
-		};
-		if (typeof module !== "undefined" && module.exports) module.exports = api;
-		globalScope.CodexClientRenderStabilityGuard = api;
-	})(typeof globalThis !== "undefined" ? globalThis : window);
-}));
-//#endregion
-//#region public/live-operation-dock-state.js
-var require_live_operation_dock_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexLiveOperationDockState = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_MIN_VISIBLE_MS = 500;
-		function normalizeMode(mode) {
-			return String(mode || "") === "expanded" ? "expanded" : "compact";
-		}
-		function text(value) {
-			return String(value || "");
-		}
-		function isCompletedStatusText(value) {
-			return /completed|failed|cancel|error|interrupted/i.test(text(value));
-		}
-		function nowValue(value) {
-			const parsed = Number(value);
-			return Number.isFinite(parsed) ? parsed : Date.now();
-		}
-		function containsBubble(html) {
-			return text(html).includes("mobile-operation-bubble");
-		}
-		function containsSheet(html) {
-			return text(html).includes("mobile-operation-sheet");
-		}
-		function rememberCompactBubble(input = {}) {
-			const nowMs = nowValue(input.nowMs);
-			const minVisibleMs = Math.max(0, Number(input.minVisibleMs || DEFAULT_MIN_VISIBLE_MS));
-			const existingUntilMs = Number(input.existingVisibleUntilMs || 0);
-			const html = text(input.html);
-			const threadId = text(input.threadId);
-			return {
-				visibleUntilMs: Math.max(existingUntilMs, nowMs + minVisibleMs),
-				html,
-				threadId,
-				recallHtml: html,
-				recallThreadId: threadId,
-				recallAtMs: nowMs
-			};
-		}
-		function compactBubblePreservation(input = {}) {
-			if (containsBubble(input.nextHtml)) return { preserve: false };
-			if (input.liveTurnActive === false) return { preserve: false };
-			const remainingMs = Number(input.visibleUntilMs || 0) - nowValue(input.nowMs);
-			if (remainingMs <= 0) return { preserve: false };
-			const savedThreadId = text(input.savedThreadId);
-			if (!savedThreadId || savedThreadId !== text(input.currentThreadId)) return { preserve: false };
-			const savedHtml = text(input.savedHtml);
-			const dockHasBubble = Boolean(input.dockHasBubble);
-			if (!dockHasBubble && !containsBubble(savedHtml)) return { preserve: false };
-			return {
-				preserve: true,
-				remainingMs,
-				patchSavedHtml: Boolean(savedHtml && !dockHasBubble),
-				savedHtml
-			};
-		}
-		function shouldPreservePinned(input = {}) {
-			return Boolean(input.pinned && normalizeMode(input.mode) === "expanded" && text(input.pinnedThreadId) === text(input.currentThreadId) && input.dockHasSheet && input.liveTurnActive !== false && !containsBubble(input.nextHtml));
-		}
-		function shouldShowRecall(input = {}) {
-			const recallThreadId = text(input.recallThreadId);
-			return Boolean(input.isMobile && input.hasCurrentThread && !input.newThreadDraft && input.liveTurnActive !== false && recallThreadId && recallThreadId === text(input.currentThreadId) && containsSheet(input.recallHtml));
-		}
-		function operationCardContentPlan(input = {}) {
-			const status = text(input.status || (input.completed ? "completed" : "running")).trim();
-			const type = text(input.type || input.itemType || "item").trim() || "item";
-			const title = text(input.title || type).trim() || type;
-			const detail = text(input.detail).replace(/\s+/g, " ").trim();
-			const durationText = text(input.durationText).trim();
-			const extraClass = text(input.extraClass).trim();
-			const completed = Boolean(input.completed || isCompletedStatusText(status));
-			return {
-				itemId: text(input.itemId).trim(),
-				type,
-				status,
-				title,
-				detail,
-				detailEmpty: !detail,
-				statusVisible: Boolean(status),
-				durationVisible: Boolean(durationText),
-				durationText,
-				durationTitle: durationText ? `Elapsed ${durationText}` : "",
-				durationAttrs: text(input.durationAttrs).trim(),
-				classTokens: [
-					"item",
-					"live-operation",
-					extraClass,
-					completed ? "completed" : "",
-					type
-				].filter(Boolean)
-			};
-		}
-		function htmlEscaper(input = {}) {
-			return typeof input.escapeHtml === "function" ? input.escapeHtml : (value) => text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-		}
-		function durationAttributeHtml(value, escape) {
-			const attrs = [];
-			const input = text(value);
-			const attrPattern = /\b(data-(?:started|completed|duration)-ms)="([^"]*)"/g;
-			let match;
-			while (match = attrPattern.exec(input)) attrs.push(`${match[1]}="${escape(match[2])}"`);
-			return attrs.join(" ");
-		}
-		function operationCardHtml(input = {}) {
-			const escape = htmlEscaper(input);
-			const plan = input.plan || operationCardContentPlan(input);
-			const renderKey = text(input.renderKey || input.key).trim();
-			const durationAttrs = durationAttributeHtml(plan.durationAttrs, escape);
-			const duration = plan.durationVisible ? `<time class="operation-duration" ${durationAttrs} title="${escape(plan.durationTitle)}">${escape(plan.durationText)}</time>` : "";
-			const classes = (Array.isArray(plan.classTokens) ? plan.classTokens : []).map(escape).join(" ");
-			const detailValue = plan.detail ? escape(plan.detail) : "&nbsp;";
-			const body = `<div class="operation-detail-line${plan.detailEmpty ? " empty" : ""}"><span class="operation-detail">${detailValue}</span></div>`;
-			const statusHtml = plan.statusVisible ? `<span class="operation-status">${escape(plan.status)}</span>` : "";
-			return `<section class="${classes}" data-item="${escape(plan.itemId)}" data-render-key="${escape(renderKey)}">
-    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escape(plan.title)}</span>${statusHtml}</span>${duration}</div>
-    ${body}
-  </section>`;
-		}
-		return {
-			DEFAULT_MIN_VISIBLE_MS,
-			compactBubblePreservation,
-			containsBubble,
-			containsSheet,
-			normalizeMode,
-			operationCardContentPlan,
-			operationCardHtml,
-			rememberCompactBubble,
-			shouldPreservePinned,
-			shouldShowRecall
-		};
-	});
-}));
-//#endregion
 //#region \0virtual:codex-mobile-esm-compatibility/shard/shard-04
 var import_side_chat_runtime = /* @__PURE__ */ __toESM(require_side_chat_runtime());
 var import_media_preview_runtime = /* @__PURE__ */ __toESM(require_media_preview_runtime());
-var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
-var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
-var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
-var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_detail_patch_plan());
-var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
-var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
-var import_thread_detail_v4_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_v4_merge_state());
-var import_client_render_stability_guard = /* @__PURE__ */ __toESM(require_client_render_stability_guard());
-var import_live_operation_dock_state = /* @__PURE__ */ __toESM(require_live_operation_dock_state());
-var moduleDefinitions = [
-	{
-		"id": "side-chat-runtime",
-		"source": "public/side-chat-runtime.js",
-		"globalName": "CodexSideChatRuntime",
-		"expectedFunctions": ["createSideChatRuntime"],
-		"assetPath": "/side-chat-runtime.js",
-		"classicLoaderExcluded": true,
-		"bytes": 51946
-	},
-	{
-		"id": "media-preview-runtime",
-		"source": "public/media-preview-runtime.js",
-		"globalName": "CodexMediaPreviewRuntime",
-		"expectedFunctions": ["createMediaPreviewRuntime"],
-		"assetPath": "/media-preview-runtime.js",
-		"classicLoaderExcluded": true,
-		"bytes": 95096
-	},
-	{
-		"id": "thread-list-load-policy",
-		"source": "public/thread-list-load-policy.js",
-		"globalName": "CodexThreadListLoadPolicy",
-		"expectedFunctions": ["planThreadListLoadRequest"],
-		"assetPath": "/thread-list-load-policy.js",
-		"classicLoaderExcluded": true,
-		"bytes": 2160
-	},
-	{
-		"id": "thread-list-stable-order",
-		"source": "public/thread-list-stable-order.js",
-		"globalName": "CodexThreadListStableOrder",
-		"expectedFunctions": ["threadListOrderScopeKey", "planThreadListStableOrder"],
-		"assetPath": "/thread-list-stable-order.js",
-		"classicLoaderExcluded": true,
-		"bytes": 3327
-	},
-	{
-		"id": "thread-status-hints",
-		"source": "public/thread-status-hints.js",
-		"globalName": "CodexThreadStatusHints",
-		"expectedFunctions": [
-			"isRunningStatus",
-			"shouldExpireRunningThreadHint",
-			"shouldMarkThreadUnread"
-		],
-		"assetPath": "/thread-status-hints.js",
-		"classicLoaderExcluded": true,
-		"bytes": 9883
-	},
-	{
-		"id": "thread-detail-patch-plan",
-		"source": "public/thread-detail-patch-plan.js",
-		"globalName": "CodexThreadDetailPatchPlan",
-		"expectedFunctions": [
-			"planThreadDetailDomPatchSurface",
-			"planThreadDetailRefreshDomPatch",
-			"planVisibleItemRefreshPatch"
-		],
-		"assetPath": "/thread-detail-patch-plan.js",
-		"classicLoaderExcluded": true,
-		"bytes": 8310
-	},
-	{
-		"id": "thread-detail-actions",
-		"source": "public/thread-detail-actions.js",
-		"globalName": "CodexThreadDetailActions",
-		"expectedFunctions": [
-			"closestWithin",
-			"contextThreadIdFromNode",
-			"previewableImageFromTarget",
-			"resolveRichContentClickAction",
-			"resolveThreadDetailClickAction"
-		],
-		"assetPath": "/thread-detail-actions.js",
-		"classicLoaderExcluded": true,
-		"bytes": 5362
-	},
-	{
-		"id": "thread-detail-merge-state",
-		"source": "public/thread-detail-merge-state.js",
-		"globalName": "CodexThreadDetailMergeState",
-		"expectedFunctions": ["createThreadDetailMergePolicy"],
-		"assetPath": "/thread-detail-merge-state.js",
-		"classicLoaderExcluded": true,
-		"bytes": 8461
-	},
-	{
-		"id": "thread-detail-v4-merge-state",
-		"source": "public/thread-detail-v4-merge-state.js",
-		"globalName": "CodexThreadDetailV4MergeState",
-		"expectedFunctions": ["createThreadDetailV4MergePolicy"],
-		"assetPath": "/thread-detail-v4-merge-state.js",
-		"classicLoaderExcluded": true,
-		"bytes": 12071
-	},
-	{
-		"id": "client-render-stability-guard",
-		"source": "public/client-render-stability-guard.js",
-		"globalName": "CodexClientRenderStabilityGuard",
-		"expectedFunctions": [
-			"firstSubmittedUserMessageClientSubmissionId",
-			"localSubmissionRenderKey",
-			"markSubmittedTurn",
-			"shortHash",
-			"stableTurnIdentity",
-			"submittedTurnRenderKey",
-			"transferSubmittedTurnIdentity"
-		],
-		"assetPath": "/client-render-stability-guard.js",
-		"classicLoaderExcluded": true,
-		"bytes": 2528
-	},
-	{
-		"id": "live-operation-dock-state",
-		"source": "public/live-operation-dock-state.js",
-		"globalName": "CodexLiveOperationDockState",
-		"expectedFunctions": [
-			"compactBubblePreservation",
-			"operationCardContentPlan",
-			"shouldShowRecall"
-		],
-		"assetPath": "/live-operation-dock-state.js",
-		"classicLoaderExcluded": true,
-		"bytes": 6190
-	}
-];
+var moduleDefinitions = [{
+	"id": "side-chat-runtime",
+	"source": "public/side-chat-runtime.js",
+	"globalName": "CodexSideChatRuntime",
+	"expectedFunctions": ["createSideChatRuntime"],
+	"assetPath": "/side-chat-runtime.js",
+	"classicLoaderExcluded": true,
+	"bytes": 51946
+}, {
+	"id": "media-preview-runtime",
+	"source": "public/media-preview-runtime.js",
+	"globalName": "CodexMediaPreviewRuntime",
+	"expectedFunctions": ["createMediaPreviewRuntime"],
+	"assetPath": "/media-preview-runtime.js",
+	"classicLoaderExcluded": true,
+	"bytes": 95096
+}];
 var moduleApis = {
 	"side-chat-runtime": import_side_chat_runtime.default,
-	"media-preview-runtime": import_media_preview_runtime.default,
-	"thread-list-load-policy": import_thread_list_load_policy.default,
-	"thread-list-stable-order": import_thread_list_stable_order.default,
-	"thread-status-hints": import_thread_status_hints.default,
-	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
-	"thread-detail-actions": import_thread_detail_actions.default,
-	"thread-detail-merge-state": import_thread_detail_merge_state.default,
-	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default,
-	"client-render-stability-guard": import_client_render_stability_guard.default,
-	"live-operation-dock-state": import_live_operation_dock_state.default
+	"media-preview-runtime": import_media_preview_runtime.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");
@@ -5683,6 +4373,7 @@ function sampleModule(id, api) {
 			getAttribute: () => "",
 			removeAttribute: () => {},
 			textContent: "",
+			innerText: id === "messageInput" ? "hello" : "",
 			innerHTML: ""
 		};
 		const document = {
@@ -5753,6 +4444,145 @@ function sampleModule(id, api) {
 			imagePreviewType: typeof (runtime && runtime.openImagePreviewFromImage),
 			imageViewType: typeof (runtime && runtime.renderImageView),
 			scanType: typeof (runtime && runtime.scheduleVisibleImageFailureScan)
+		};
+	}
+	if (id === "composer-runtime") {
+		const elements = /* @__PURE__ */ new Map();
+		const element = (id = "") => ({
+			id,
+			value: id === "messageInput" ? "hello" : "",
+			files: [],
+			classList: {
+				contains: () => false,
+				add: () => {},
+				remove: () => {},
+				toggle: () => {}
+			},
+			dataset: {},
+			style: {
+				setProperty: () => {},
+				removeProperty: () => {}
+			},
+			getBoundingClientRect: () => ({
+				width: 120,
+				height: 32,
+				left: 0,
+				top: 0,
+				right: 120,
+				bottom: 32
+			}),
+			focus: () => {},
+			blur: () => {},
+			select: () => {},
+			setSelectionRange: () => {},
+			querySelector: () => null,
+			querySelectorAll: () => [],
+			closest: () => null,
+			addEventListener: () => {},
+			removeEventListener: () => {},
+			appendChild: () => {},
+			setAttribute: () => {},
+			getAttribute: () => "",
+			removeAttribute: () => {},
+			textContent: "",
+			innerHTML: ""
+		});
+		function getElement(id) {
+			if (!elements.has(id)) elements.set(id, element(id));
+			return elements.get(id);
+		}
+		const runtime = functionReady(api, "createComposerRuntime") ? api.createComposerRuntime({
+			state: {
+				threads: [],
+				pendingAttachments: [],
+				composerRuntimeSelection: {},
+				codexProfiles: [],
+				currentThreadId: "thread-a",
+				currentThread: { id: "thread-a" },
+				newThreadDraft: false
+			},
+			document: {
+				documentElement: { style: {
+					setProperty: () => {},
+					removeProperty: () => {}
+				} },
+				activeElement: null,
+				addEventListener: () => {},
+				removeEventListener: () => {},
+				createElement: () => element(),
+				getElementById: getElement,
+				querySelector: () => null,
+				querySelectorAll: () => []
+			},
+			window: {
+				setTimeout: (callback) => {
+					if (typeof callback === "function") callback();
+					return 1;
+				},
+				clearTimeout: () => {},
+				requestAnimationFrame: (callback) => {
+					if (typeof callback === "function") callback();
+					return 1;
+				},
+				crypto: { randomUUID: () => "sample-uuid" },
+				visualViewport: {
+					width: 390,
+					height: 700
+				},
+				innerWidth: 390,
+				innerHeight: 700
+			},
+			$: getElement,
+			api: async () => ({}),
+			escapeHtml: (value) => String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"),
+			viewportMetrics: {
+				cssPixel: (value) => Math.round(Number(value) || 0),
+				stablePixelChanged: (left, right) => Math.abs((Number(left) || 0) - (Number(right) || 0)) >= 2
+			},
+			normalizeOptionList: (values) => Array.isArray(values) ? values.filter(Boolean).map((value) => String(value).trim()) : [],
+			labelForModel: (value) => `Model ${String(value || "")}`.trim(),
+			labelForEffort: (value) => `Effort ${String(value || "")}`.trim(),
+			labelForPermissionMode: (value) => `Permission ${String(value || "")}`.trim(),
+			defaultNewThreadModel: () => "gpt-5.5",
+			defaultNewThreadEffort: () => "medium",
+			defaultNewThreadPermissionMode: () => "auto",
+			effectiveComposerPermissionMode: (value) => String(value || "").trim() || "auto",
+			newThreadSelectedModel: () => "",
+			newThreadSelectedEffort: () => "",
+			newThreadSelectedPermissionMode: () => "",
+			currentComposerThreadId: () => "thread-a",
+			composerTargetThread: () => ({
+				id: "thread-a",
+				model: "gpt-5.5",
+				effort: "medium",
+				runtimeSettings: { permissionMode: "auto" }
+			}),
+			selectedQuotaModel: () => "gpt-5.5",
+			threadDisplayName: () => "Thread A",
+			isThreadTileComposerContext: () => false,
+			isAndroidBrowser: () => false,
+			isHermesEmbedMode: () => false,
+			isKeyboardEditableElement: () => false,
+			threadTileStatePolicy: { composerTargetPlaceholderPlan: () => ({ text: "Send to Thread A" }) },
+			imageCompressor: {},
+			homeAiDiagnosticReportingApi: {}
+		}) : {};
+		const model = runtime && typeof runtime.effectiveDefaultModel === "function" ? runtime.effectiveDefaultModel() : "";
+		const effort = runtime && typeof runtime.effectiveDefaultEffort === "function" ? runtime.effectiveDefaultEffort() : "";
+		const permission = runtime && typeof runtime.effectiveDefaultPermissionMode === "function" ? runtime.effectiveDefaultPermissionMode() : "";
+		const label = runtime && typeof runtime.runtimeOptionLabel === "function" ? runtime.runtimeOptionLabel("model", "gpt-5.5") : "";
+		const placeholder = runtime && typeof runtime.composerPlaceholderText === "function" ? runtime.composerPlaceholderText() : "";
+		return {
+			ok: runtime && typeof runtime === "object" && model === "gpt-5.5" && effort === "medium" && permission === "auto" && label === "Model gpt-5.5" && placeholder === "Send to Thread A" && typeof runtime.sendMessage === "function" && typeof runtime.sendNewThreadMessage === "function" && typeof runtime.interruptActiveTurn === "function",
+			factoryType: typeof api.createComposerRuntime,
+			model,
+			effort,
+			permission,
+			label,
+			placeholder,
+			sendType: typeof (runtime && runtime.sendMessage),
+			newThreadType: typeof (runtime && runtime.sendNewThreadMessage),
+			interruptType: typeof (runtime && runtime.interruptActiveTurn)
 		};
 	}
 	if (id === "thread-list-load-policy") {

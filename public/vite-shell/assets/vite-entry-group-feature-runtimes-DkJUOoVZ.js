@@ -370,8 +370,8 @@ var codexMobileViteEntryGroup = {
 			"present": true
 		}
 	],
-	"shellCacheName": "codex-mobile-shell-v625-d4bcac34014f",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-d4bcac34014f"
+	"shellCacheName": "codex-mobile-shell-v625-ebe657c8cf2c",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-ebe657c8cf2c"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

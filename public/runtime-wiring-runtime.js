@@ -62,6 +62,7 @@ composerRuntime = composerRuntimeApi.createComposerRuntime({
   clearSubmittedMessageBottomFollow,
   closeThreadGoalDialog,
   commitPluginVoiceInputSessionsAfterSend,
+  composerTargetThread,
   composerTargetActiveTurnId,
   connectEvents,
   createSubmissionId,
