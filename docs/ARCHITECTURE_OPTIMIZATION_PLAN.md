@@ -5019,6 +5019,26 @@ graph instead of hard-coding a single import in the shell entry:
   require both module ids to report ready before default shell ownership can
   move forward.
 
+After the private default-shell cutover, the next ESM compatibility slice keeps
+plain `/` on the Vite app-preview shell and broadens the build-owned proof
+from two pure policies to six:
+
+- The Vite asset graph now also imports
+  `public/thread-list-stable-order.js`,
+  `public/thread-status-hints.js`,
+  `public/thread-detail-patch-plan.js`, and
+  `public/live-operation-dock-state.js`.
+- Each module has a behavior sample in the virtual compatibility module, so
+  readiness requires real deterministic output from list ordering, status
+  hinting, thread-detail patch planning, and live-operation dock state
+  planning rather than only export presence.
+- Browser Vite preview/app-preview/default-root gates now expect all six module
+  ids to report ready through `__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__`.
+- The app-preview classic loader remains in place for the rest of the runtime
+  graph. This step reduces the remaining `window.Codex*` migration surface by
+  converting more side-effect-free policy modules into Vite-imported contracts
+  without changing business runtime ownership.
+
 The next default-root rehearsal gate closes the remaining pre-cutover evidence
 gap without changing production launchd defaults:
 

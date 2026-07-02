@@ -1401,10 +1401,10 @@
         "assets/vite-entry-group-bootstrap-state-DieReWP_.js",
         "assets/vite-entry-group-shell-services-CClXXlMh.js",
         "assets/vite-entry-group-app-entry-BoKkKh0s.js",
-        "assets/vite-deferred-entry-topology-BUJ33a5b.js"
+        "assets/vite-deferred-entry-topology-BOR1nZcY.js"
       ],
       "expectedFiles": [
-        "assets/vite-deferred-entry-topology-BUJ33a5b.js",
+        "assets/vite-deferred-entry-topology-BOR1nZcY.js",
         "assets/vite-entry-group-app-entry-BoKkKh0s.js",
         "assets/vite-entry-group-bootstrap-state-DieReWP_.js",
         "assets/vite-entry-group-feature-runtimes-BVPZH6RC.js",
@@ -3096,7 +3096,7 @@
       "sha256": "4120e4971babd8611d1cab56c8db75b5f040d38c30108af3c86087e04cdccd4d"
     },
     "viteEntry": {
-      "fileName": "assets/vite-shell-entry-DitUHFQu.js",
+      "fileName": "assets/vite-shell-entry-3Awcgec_.js",
       "name": "vite-shell-entry",
       "source": "frontend/vite-shell-entry.mjs",
       "isEntry": true,
@@ -3109,18 +3109,18 @@
         "assets/vite-entry-group-bootstrap-state-DieReWP_.js",
         "assets/vite-entry-group-shell-services-CClXXlMh.js",
         "assets/vite-entry-group-app-entry-BoKkKh0s.js",
-        "assets/vite-deferred-entry-topology-BUJ33a5b.js"
+        "assets/vite-deferred-entry-topology-BOR1nZcY.js"
       ]
     },
     "viteDeferredChunks": [
       {
-        "fileName": "assets/vite-deferred-entry-topology-BUJ33a5b.js",
+        "fileName": "assets/vite-deferred-entry-topology-BOR1nZcY.js",
         "name": "vite-deferred-entry-topology",
         "source": "frontend/vite-deferred-entry-topology.mjs",
         "isEntry": false,
         "isDynamicEntry": true,
         "imports": [
-          "assets/vite-shell-entry-DitUHFQu.js"
+          "assets/vite-shell-entry-3Awcgec_.js"
         ],
         "dynamicImports": []
       }
@@ -4593,14 +4593,14 @@
       }
     ],
     "outputFiles": [
-      "assets/vite-deferred-entry-topology-BUJ33a5b.js",
+      "assets/vite-deferred-entry-topology-BOR1nZcY.js",
       "assets/vite-entry-group-app-entry-BoKkKh0s.js",
       "assets/vite-entry-group-bootstrap-state-DieReWP_.js",
       "assets/vite-entry-group-feature-runtimes-BVPZH6RC.js",
       "assets/vite-entry-group-foundation-DksiWGDq.js",
       "assets/vite-entry-group-manifest-CIB80LK9.js",
       "assets/vite-entry-group-shell-services-CClXXlMh.js",
-      "assets/vite-shell-entry-DitUHFQu.js",
+      "assets/vite-shell-entry-3Awcgec_.js",
       "codex-mobile-shell-manifest.json",
       "shell-assets/api-client-runtime.js",
       "shell-assets/api-client.js",

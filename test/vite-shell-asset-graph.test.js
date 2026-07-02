@@ -92,7 +92,14 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(source, /codexMobileEsmCompatibility/);
   assert.deepEqual(
     VITE_ESM_COMPATIBILITY_MODULES.map((entry) => entry.id),
-    ["build-refresh-policy", "thread-list-load-policy"]
+    [
+      "build-refresh-policy",
+      "thread-list-load-policy",
+      "thread-list-stable-order",
+      "thread-status-hints",
+      "thread-detail-patch-plan",
+      "live-operation-dock-state",
+    ]
   );
   const plugin = createShellEntryGroupVirtualModulePlugin({ root });
   const resolved = plugin.resolveId(VITE_ESM_COMPATIBILITY_SOURCE);
@@ -101,9 +108,17 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(virtualSource, /codexMobileViteEsmCompatibility/);
   assert.match(virtualSource, /public\/build-refresh-policy\.js/);
   assert.match(virtualSource, /public\/thread-list-load-policy\.js/);
+  assert.match(virtualSource, /public\/thread-list-stable-order\.js/);
+  assert.match(virtualSource, /public\/thread-status-hints\.js/);
+  assert.match(virtualSource, /public\/thread-detail-patch-plan\.js/);
+  assert.match(virtualSource, /public\/live-operation-dock-state\.js/);
   assert.match(virtualSource, /planThreadListLoadRequest/);
   assert.match(virtualSource, /detail-in-flight/);
   assert.match(virtualSource, /server-newer/);
+  assert.match(virtualSource, /planThreadListStableOrder/);
+  assert.match(virtualSource, /shouldMarkThreadUnread/);
+  assert.match(virtualSource, /planVisibleItemRefreshPatch/);
+  assert.match(virtualSource, /operationCardContentPlan/);
 });
 
 test("Vite shell build contract records entry chunks and classic fallback outputs", async () => {

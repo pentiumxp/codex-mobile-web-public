@@ -976,7 +976,14 @@ function vitePreviewProbeExpression(input = {}) {
       const esmCompatibilityModules = Array.isArray(esmCompatibility.modules)
         ? esmCompatibility.modules
         : [];
-      const expectedEsmCompatibilityIds = ["build-refresh-policy", "thread-list-load-policy"];
+      const expectedEsmCompatibilityIds = [
+        "build-refresh-policy",
+        "thread-list-load-policy",
+        "thread-list-stable-order",
+        "thread-status-hints",
+        "thread-detail-patch-plan",
+        "live-operation-dock-state",
+      ];
       const readyEsmCompatibilityIds = new Set(esmCompatibilityModules
         .filter((entry) => entry && entry.ready === true)
         .map((entry) => String(entry.id || "")));
@@ -1319,7 +1326,14 @@ function viteAppPreviewProbeExpression(input = {}) {
       const esmCompatibilityModules = Array.isArray(esmCompatibility.modules)
         ? esmCompatibility.modules
         : [];
-      const expectedEsmCompatibilityIds = ["build-refresh-policy", "thread-list-load-policy"];
+      const expectedEsmCompatibilityIds = [
+        "build-refresh-policy",
+        "thread-list-load-policy",
+        "thread-list-stable-order",
+        "thread-status-hints",
+        "thread-detail-patch-plan",
+        "live-operation-dock-state",
+      ];
       const readyEsmCompatibilityIds = new Set(esmCompatibilityModules
         .filter((entry) => entry && entry.ready === true)
         .map((entry) => String(entry.id || "")));
