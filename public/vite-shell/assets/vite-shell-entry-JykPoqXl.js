@@ -1560,19 +1560,25 @@ var moduleDefinitions = [
 			"shellSequenceFromBuildId",
 			"classifyServerBuildChange",
 			"shouldPromptForServerBuildChange"
-		]
+		],
+		"assetPath": "/build-refresh-policy.js",
+		"classicLoaderExcluded": true
 	},
 	{
 		"id": "thread-list-load-policy",
 		"source": "public/thread-list-load-policy.js",
 		"globalName": "CodexThreadListLoadPolicy",
-		"expectedFunctions": ["planThreadListLoadRequest"]
+		"expectedFunctions": ["planThreadListLoadRequest"],
+		"assetPath": "/thread-list-load-policy.js",
+		"classicLoaderExcluded": true
 	},
 	{
 		"id": "thread-list-stable-order",
 		"source": "public/thread-list-stable-order.js",
 		"globalName": "CodexThreadListStableOrder",
-		"expectedFunctions": ["threadListOrderScopeKey", "planThreadListStableOrder"]
+		"expectedFunctions": ["threadListOrderScopeKey", "planThreadListStableOrder"],
+		"assetPath": "/thread-list-stable-order.js",
+		"classicLoaderExcluded": true
 	},
 	{
 		"id": "thread-status-hints",
@@ -1582,7 +1588,9 @@ var moduleDefinitions = [
 			"isRunningStatus",
 			"shouldExpireRunningThreadHint",
 			"shouldMarkThreadUnread"
-		]
+		],
+		"assetPath": "/thread-status-hints.js",
+		"classicLoaderExcluded": true
 	},
 	{
 		"id": "thread-detail-patch-plan",
@@ -1592,7 +1600,9 @@ var moduleDefinitions = [
 			"planThreadDetailDomPatchSurface",
 			"planThreadDetailRefreshDomPatch",
 			"planVisibleItemRefreshPatch"
-		]
+		],
+		"assetPath": "/thread-detail-patch-plan.js",
+		"classicLoaderExcluded": true
 	},
 	{
 		"id": "live-operation-dock-state",
@@ -1602,7 +1612,9 @@ var moduleDefinitions = [
 			"compactBubblePreservation",
 			"operationCardContentPlan",
 			"shouldShowRecall"
-		]
+		],
+		"assetPath": "/live-operation-dock-state.js",
+		"classicLoaderExcluded": true
 	}
 ];
 var moduleApis = {
@@ -1615,6 +1627,12 @@ var moduleApis = {
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");
+}
+function publishClassicGlobal(definition, api) {
+	const globalName = String(definition && definition.globalName || "");
+	if (!globalName || !api || typeof api !== "object" || typeof globalThis === "undefined") return false;
+	globalThis[globalName] = api;
+	return globalThis[globalName] === api;
 }
 function sampleModule(id, api) {
 	if (id === "build-refresh-policy") {
@@ -1773,14 +1791,18 @@ function codexMobileViteEsmCompatibility() {
 		const expectedFunctions = Array.isArray(definition.expectedFunctions) ? definition.expectedFunctions : [];
 		const exportedFunctions = expectedFunctions.filter((name) => functionReady(api, name));
 		const sample = sampleModule(definition.id, api);
+		const globalPublished = publishClassicGlobal(definition, api);
 		return {
 			id: definition.id,
 			source: definition.source,
+			assetPath: definition.assetPath,
 			globalName: definition.globalName,
+			classicLoaderExcluded: definition.classicLoaderExcluded === true,
 			expectedFunctions: expectedFunctions.slice(),
 			exportedFunctions,
 			sample,
-			ready: exportedFunctions.length === expectedFunctions.length && sample.ok === true
+			globalPublished,
+			ready: exportedFunctions.length === expectedFunctions.length && sample.ok === true && (definition.classicLoaderExcluded !== true || globalPublished === true)
 		};
 	});
 	return {
@@ -1960,11 +1982,29 @@ function readAppPreviewClassicLoaderPlan() {
 			schemaVersion: Number(plan.schemaVersion) || 1,
 			source: String(plan.source || ""),
 			owner: String(plan.owner || ""),
+			sourceScriptCount: Number(plan.sourceScriptCount) || 0,
 			scriptCount: Number(plan.scriptCount) || scripts.length,
 			firstScript: String(plan.firstScript || ""),
 			lastScript: String(plan.lastScript || ""),
 			hashCount: Number(plan.hashCount) || scripts.filter((entry) => entry.sha256).length,
 			byteCount: Number(plan.byteCount) || scripts.reduce((total, entry) => total + entry.bytes, 0),
+			excludedEsmScriptCount: Number(plan.excludedEsmScriptCount) || 0,
+			excludedEsmHashCount: Number(plan.excludedEsmHashCount) || 0,
+			excludedEsmByteCount: Number(plan.excludedEsmByteCount) || 0,
+			excludedEsmScripts: (Array.isArray(plan.excludedEsmScripts) ? plan.excludedEsmScripts : []).map((entry) => ({
+				index: Number(entry && entry.index) || 0,
+				sourceIndex: Number(entry && entry.sourceIndex) || 0,
+				path: String(entry && entry.path || ""),
+				groupId: String(entry && entry.groupId || ""),
+				phase: String(entry && entry.phase || ""),
+				startupCritical: Boolean(entry && entry.startupCritical),
+				chunkTarget: String(entry && entry.chunkTarget || ""),
+				sourcePath: String(entry && entry.sourcePath || ""),
+				bytes: Number(entry && entry.bytes) || 0,
+				sha256: String(entry && entry.sha256 || ""),
+				esmModuleId: String(entry && entry.esmModuleId || ""),
+				globalName: String(entry && entry.globalName || "")
+			})).filter((entry) => entry.path.startsWith("/")),
 			sha256: String(plan.sha256 || ""),
 			scripts
 		};
@@ -1998,6 +2038,10 @@ async function startCodexMobileViteAppPreview() {
 	const loaderPlan = readAppPreviewClassicLoaderPlan();
 	const manifestAssets = shellManifestScriptAssets();
 	const assets = loaderPlan && Array.isArray(loaderPlan.scripts) ? loaderPlan.scripts.map((entry) => entry.path) : [];
+	const excludedEsmAssets = loaderPlan && Array.isArray(loaderPlan.excludedEsmScripts) ? loaderPlan.excludedEsmScripts.map((entry) => entry.path) : [];
+	const coveredAssets = /* @__PURE__ */ new Set([...assets, ...excludedEsmAssets]);
+	const manifestCoverageMatches = manifestAssets.length > 0 && coveredAssets.size === manifestAssets.length && JSON.stringify(manifestAssets.filter((asset) => coveredAssets.has(asset))) === JSON.stringify(manifestAssets);
+	const missingExcludedGlobals = loaderPlan && Array.isArray(loaderPlan.excludedEsmScripts) ? loaderPlan.excludedEsmScripts.filter((entry) => !entry.globalName || !globalThis[entry.globalName]).map((entry) => entry.globalName || entry.path) : [];
 	const status = {
 		ok: false,
 		mode: "vite-app-preview",
@@ -2007,8 +2051,12 @@ async function startCodexMobileViteAppPreview() {
 		loaderPlanSource: loaderPlan ? loaderPlan.source : "",
 		loaderPlanScriptCount: loaderPlan ? loaderPlan.scriptCount : 0,
 		loaderPlanHashCount: loaderPlan ? loaderPlan.hashCount : 0,
+		loaderPlanSourceScriptCount: loaderPlan ? loaderPlan.sourceScriptCount : 0,
+		loaderPlanExcludedEsmScriptCount: loaderPlan ? loaderPlan.excludedEsmScriptCount : 0,
+		loaderPlanExcludedEsmHashCount: loaderPlan ? loaderPlan.excludedEsmHashCount : 0,
 		loaderPlanSha256: loaderPlan ? loaderPlan.sha256 : "",
-		loaderPlanMatchesShellManifest: Boolean(loaderPlan) && JSON.stringify(assets) === JSON.stringify(manifestAssets),
+		loaderPlanMatchesShellManifest: Boolean(loaderPlan) && manifestCoverageMatches,
+		excludedEsmGlobalMissing: missingExcludedGlobals,
 		scriptCount: assets.length,
 		loaded: [],
 		failed: [],
@@ -2019,7 +2067,8 @@ async function startCodexMobileViteAppPreview() {
 	globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_LOADER_PLAN__ = loaderPlan;
 	try {
 		if (!loaderPlan) throw new Error("codex_mobile_vite_app_preview_loader_plan_missing");
-		if (loaderPlan.owner !== "vite-shell-entry" || !loaderPlan.sha256 || Number(loaderPlan.scriptCount) !== manifestAssets.length || Number(loaderPlan.hashCount) !== manifestAssets.length || JSON.stringify(assets) !== JSON.stringify(manifestAssets)) throw new Error("codex_mobile_vite_app_preview_loader_plan_invalid");
+		if (loaderPlan.owner !== "vite-shell-entry" || !loaderPlan.sha256 || Number(loaderPlan.sourceScriptCount) !== manifestAssets.length || Number(loaderPlan.scriptCount) !== assets.length || Number(loaderPlan.hashCount) !== assets.length || Number(loaderPlan.excludedEsmScriptCount) !== excludedEsmAssets.length || Number(loaderPlan.excludedEsmHashCount) !== excludedEsmAssets.length || !manifestCoverageMatches) throw new Error("codex_mobile_vite_app_preview_loader_plan_invalid");
+		if (missingExcludedGlobals.length) throw new Error("codex_mobile_vite_app_preview_esm_globals_missing");
 		for (const asset of assets) {
 			await loadClassicScript(asset);
 			status.loaded.push(asset);
@@ -2039,14 +2088,18 @@ async function startCodexMobileViteAppPreview() {
 		loaderPlanPresent: status.loaderPlanPresent,
 		loaderPlanScriptCount: status.loaderPlanScriptCount,
 		loaderPlanHashCount: status.loaderPlanHashCount,
+		loaderPlanSourceScriptCount: status.loaderPlanSourceScriptCount,
+		loaderPlanExcludedEsmScriptCount: status.loaderPlanExcludedEsmScriptCount,
+		loaderPlanExcludedEsmHashCount: status.loaderPlanExcludedEsmHashCount,
 		loaderPlanSha256: status.loaderPlanSha256,
 		loaderPlanMatchesShellManifest: status.loaderPlanMatchesShellManifest,
+		excludedEsmGlobalMissingCount: status.excludedEsmGlobalMissing.length,
 		scriptCount: status.scriptCount,
 		loadedCount: status.loaded.length,
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-BOR1nZcY.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-D-dcnLzx.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

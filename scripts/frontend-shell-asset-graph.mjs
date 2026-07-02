@@ -385,23 +385,46 @@ function esmCompatibilityModuleSource(root, moduleRecord) {
   return pathToFileURL(path.join(root, sourcePath)).href;
 }
 
+function publicAssetPathFromSourcePath(sourcePath) {
+  const text = String(sourcePath || "").trim().replace(/\\/g, "/");
+  if (!text.startsWith("public/")) return "";
+  const relative = text.slice("public".length);
+  return relative.startsWith("/") ? relative : `/${relative}`;
+}
+
+function esmCompatibilityModuleDefinitions() {
+  return VITE_ESM_COMPATIBILITY_MODULES.map((moduleRecord) => ({
+    ...moduleRecord,
+    assetPath: publicAssetPathFromSourcePath(moduleRecord.source),
+    classicLoaderExcluded: true,
+  }));
+}
+
 function createEsmCompatibilityVirtualModuleSource(root) {
-  const importLines = VITE_ESM_COMPATIBILITY_MODULES.map((moduleRecord) => (
+  const moduleDefinitions = esmCompatibilityModuleDefinitions();
+  const importLines = moduleDefinitions.map((moduleRecord) => (
     `import ${esmCompatibilityImportName(moduleRecord.id)} from ${JSON.stringify(esmCompatibilityModuleSource(root, moduleRecord))};`
   ));
-  const apiEntries = VITE_ESM_COMPATIBILITY_MODULES.map((moduleRecord) => (
+  const apiEntries = moduleDefinitions.map((moduleRecord) => (
     `  ${JSON.stringify(moduleRecord.id)}: ${esmCompatibilityImportName(moduleRecord.id)},`
   ));
   return [
     ...importLines,
     "",
-    `const moduleDefinitions = ${JSON.stringify(VITE_ESM_COMPATIBILITY_MODULES, null, 2)};`,
+    `const moduleDefinitions = ${JSON.stringify(moduleDefinitions, null, 2)};`,
     "const moduleApis = {",
     ...apiEntries,
     "};",
     "",
     "function functionReady(api, name) {",
     "  return Boolean(api && typeof api[name] === \"function\");",
+    "}",
+    "",
+    "function publishClassicGlobal(definition, api) {",
+    "  const globalName = String(definition && definition.globalName || \"\");",
+    "  if (!globalName || !api || typeof api !== \"object\" || typeof globalThis === \"undefined\") return false;",
+    "  globalThis[globalName] = api;",
+    "  return globalThis[globalName] === api;",
     "}",
     "",
     "function sampleModule(id, api) {",
@@ -562,16 +585,22 @@ function createEsmCompatibilityVirtualModuleSource(root) {
     "    const expectedFunctions = Array.isArray(definition.expectedFunctions) ? definition.expectedFunctions : [];",
     "    const exportedFunctions = expectedFunctions.filter((name) => functionReady(api, name));",
     "    const sample = sampleModule(definition.id, api);",
+    "    const globalPublished = publishClassicGlobal(definition, api);",
     "    return {",
     "      id: definition.id,",
     "      source: definition.source,",
+    "      assetPath: definition.assetPath,",
     "      globalName: definition.globalName,",
+    "      classicLoaderExcluded: definition.classicLoaderExcluded === true,",
     "      expectedFunctions: expectedFunctions.slice(),",
     "      exportedFunctions,",
     "      sample,",
-    "      ready: exportedFunctions.length === expectedFunctions.length && sample.ok === true,",
+    "      globalPublished,",
+    "      ready: exportedFunctions.length === expectedFunctions.length",
+    "        && sample.ok === true",
+    "        && (definition.classicLoaderExcluded !== true || globalPublished === true),",
     "    };",
-    "  });",
+  "  });",
     "  return {",
     "    schemaVersion: 1,",
     "    owner: \"vite-shell-entry\",",
@@ -750,6 +779,9 @@ function appPreviewClassicLoaderPlanContract(manifest) {
     : [];
   const assetRecords = new Map((Array.isArray(manifest && manifest.assets) ? manifest.assets : [])
     .map((entry) => [String(entry && entry.path || ""), entry]));
+  const esmModuleByAssetPath = new Map(esmCompatibilityModuleDefinitions()
+    .filter((entry) => entry.classicLoaderExcluded && entry.assetPath)
+    .map((entry) => [entry.assetPath, entry]));
   const groupByAsset = new Map();
   for (const group of Array.isArray(manifest && manifest.entryGroups) ? manifest.entryGroups : []) {
     for (const asset of Array.isArray(group && group.assets) ? group.assets : []) {
@@ -761,11 +793,12 @@ function appPreviewClassicLoaderPlanContract(manifest) {
       });
     }
   }
-  const scripts = scriptAssets.map((assetPath, index) => {
+  function scriptRecord(assetPath, sourceIndex, index) {
     const assetRecord = assetRecords.get(assetPath) || {};
     const group = groupByAsset.get(assetPath) || {};
     return {
       index,
+      sourceIndex,
       path: assetPath,
       groupId: String(group.groupId || ""),
       phase: String(group.phase || ""),
@@ -775,16 +808,35 @@ function appPreviewClassicLoaderPlanContract(manifest) {
       bytes: Number(assetRecord.bytes) || 0,
       sha256: String(assetRecord.sha256 || ""),
     };
+  }
+  const scripts = [];
+  const excludedEsmScripts = [];
+  scriptAssets.forEach((assetPath, sourceIndex) => {
+    const esmModule = esmModuleByAssetPath.get(assetPath);
+    if (esmModule) {
+      excludedEsmScripts.push({
+        ...scriptRecord(assetPath, sourceIndex, sourceIndex),
+        esmModuleId: String(esmModule.id || ""),
+        globalName: String(esmModule.globalName || ""),
+      });
+      return;
+    }
+    scripts.push(scriptRecord(assetPath, sourceIndex, scripts.length));
   });
   const contract = {
     schemaVersion: 1,
     source: "generated-vite-app-preview-classic-loader-plan",
     owner: "vite-shell-entry",
+    sourceScriptCount: scriptAssets.length,
     scriptCount: scripts.length,
     firstScript: scripts[0] ? scripts[0].path : "",
     lastScript: scripts.length ? scripts[scripts.length - 1].path : "",
     hashCount: scripts.filter((entry) => entry.sha256).length,
     byteCount: scripts.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
+    excludedEsmScriptCount: excludedEsmScripts.length,
+    excludedEsmHashCount: excludedEsmScripts.filter((entry) => entry.sha256).length,
+    excludedEsmByteCount: excludedEsmScripts.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
+    excludedEsmScripts,
     scripts,
   };
   return {
@@ -794,7 +846,7 @@ function appPreviewClassicLoaderPlanContract(manifest) {
 }
 
 function esmCompatibilityContract(root = process.cwd()) {
-  const modules = VITE_ESM_COMPATIBILITY_MODULES.map((moduleRecord, index) => {
+  const modules = esmCompatibilityModuleDefinitions().map((moduleRecord, index) => {
     const sourcePath = String(moduleRecord && moduleRecord.source || "");
     let bytes = 0;
     let sha256 = "";
@@ -812,7 +864,9 @@ function esmCompatibilityContract(root = process.cwd()) {
       index,
       id: String(moduleRecord && moduleRecord.id || ""),
       source: sourcePath,
+      assetPath: String(moduleRecord && moduleRecord.assetPath || ""),
       globalName: String(moduleRecord && moduleRecord.globalName || ""),
+      classicLoaderExcluded: moduleRecord && moduleRecord.classicLoaderExcluded === true,
       expectedFunctions,
       expectedFunctionCount: expectedFunctions.length,
       bytes,
@@ -937,26 +991,43 @@ function validateViteShellBuildContract(contract, manifest) {
     const planScripts = Array.isArray(appPreviewClassicLoaderPlan.scripts)
       ? appPreviewClassicLoaderPlan.scripts
       : [];
+    const excludedEsmScripts = Array.isArray(appPreviewClassicLoaderPlan.excludedEsmScripts)
+      ? appPreviewClassicLoaderPlan.excludedEsmScripts
+      : [];
+    const planPaths = planScripts.map((entry) => entry && entry.path).filter(Boolean);
+    const excludedPaths = excludedEsmScripts.map((entry) => entry && entry.path).filter(Boolean);
+    const sourceScriptAssets = Array.isArray(manifest.indexScriptAssets) ? manifest.indexScriptAssets : [];
+    const coveredPaths = new Set([...planPaths, ...excludedPaths]);
+    const reconstructedSourcePaths = sourceScriptAssets.filter((asset) => coveredPaths.has(asset));
     if (appPreviewClassicLoaderPlan.owner !== "vite-shell-entry") {
       issues.push({ code: "vite_app_preview_classic_loader_plan_owner_mismatch" });
     }
     if (appPreviewClassicLoaderPlan.sha256 !== expectedAppPreviewClassicLoaderPlan.sha256) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_hash_mismatch" });
     }
-    if (Number(appPreviewClassicLoaderPlan.scriptCount) !== expectedAppPreviewClassicLoaderPlan.scriptCount
+    if (Number(appPreviewClassicLoaderPlan.sourceScriptCount) !== sourceScriptAssets.length
+      || Number(appPreviewClassicLoaderPlan.scriptCount) !== expectedAppPreviewClassicLoaderPlan.scriptCount
       || Number(appPreviewClassicLoaderPlan.hashCount) !== expectedAppPreviewClassicLoaderPlan.hashCount
-      || Number(appPreviewClassicLoaderPlan.hashCount) !== Number(appPreviewClassicLoaderPlan.scriptCount)) {
+      || Number(appPreviewClassicLoaderPlan.hashCount) !== Number(appPreviewClassicLoaderPlan.scriptCount)
+      || Number(appPreviewClassicLoaderPlan.excludedEsmScriptCount) !== expectedAppPreviewClassicLoaderPlan.excludedEsmScriptCount
+      || Number(appPreviewClassicLoaderPlan.excludedEsmHashCount) !== expectedAppPreviewClassicLoaderPlan.excludedEsmHashCount) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_count_mismatch" });
     }
     if (String(appPreviewClassicLoaderPlan.firstScript || "") !== expectedAppPreviewClassicLoaderPlan.firstScript
       || String(appPreviewClassicLoaderPlan.lastScript || "") !== expectedAppPreviewClassicLoaderPlan.lastScript) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_boundary_mismatch" });
     }
-    if (JSON.stringify(planScripts.map((entry) => entry && entry.path)) !== JSON.stringify(manifest.indexScriptAssets || [])) {
+    if (JSON.stringify(planPaths) !== JSON.stringify(expectedAppPreviewClassicLoaderPlan.scripts.map((entry) => entry.path))
+      || JSON.stringify(excludedPaths) !== JSON.stringify(expectedAppPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.path))
+      || JSON.stringify(reconstructedSourcePaths) !== JSON.stringify(sourceScriptAssets)
+      || coveredPaths.size !== sourceScriptAssets.length) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_order_mismatch" });
     }
     if (planScripts.some((entry) => !entry || !entry.groupId || !entry.sha256 || !Number(entry.bytes))) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_record_missing" });
+    }
+    if (excludedEsmScripts.some((entry) => !entry || !entry.groupId || !entry.esmModuleId || !entry.globalName || !entry.sha256 || !Number(entry.bytes))) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_exclusion_record_missing" });
     }
   }
   if (!esmCompatibility) {
@@ -983,7 +1054,9 @@ function validateViteShellBuildContract(contract, manifest) {
       const expected = VITE_ESM_COMPATIBILITY_MODULES[index];
       const actual = modules[index] || {};
       if (actual.source !== expected.source
+        || actual.assetPath !== publicAssetPathFromSourcePath(expected.source)
         || actual.globalName !== expected.globalName
+        || actual.classicLoaderExcluded !== true
         || JSON.stringify(actual.expectedFunctions || []) !== JSON.stringify(expected.expectedFunctions || [])) {
         issues.push({ code: "vite_esm_compatibility_module_mismatch", id: expected.id });
         break;

@@ -116,14 +116,34 @@ if (!fs.existsSync(manifestPath)) {
       && Array.isArray(appPreviewClassicLoaderPlan.scripts)
       ? appPreviewClassicLoaderPlan.scripts
       : [];
+    const appPreviewClassicLoaderExcludedEsmScripts = appPreviewClassicLoaderPlan
+      && Array.isArray(appPreviewClassicLoaderPlan.excludedEsmScripts)
+      ? appPreviewClassicLoaderPlan.excludedEsmScripts
+      : [];
+    const appPreviewClassicLoaderPaths = appPreviewClassicLoaderScripts
+      .map((entry) => entry && entry.path)
+      .filter(Boolean);
+    const appPreviewClassicLoaderExcludedPaths = appPreviewClassicLoaderExcludedEsmScripts
+      .map((entry) => entry && entry.path)
+      .filter(Boolean);
+    const appPreviewClassicLoaderCoveredPaths = new Set([
+      ...appPreviewClassicLoaderPaths,
+      ...appPreviewClassicLoaderExcludedPaths,
+    ]);
+    const indexScriptAssets = current.indexScriptAssets || [];
+    const appPreviewClassicLoaderReconstructedPaths = indexScriptAssets
+      .filter((entry) => appPreviewClassicLoaderCoveredPaths.has(entry));
     if (!appPreviewClassicLoaderPlan || appPreviewClassicLoaderPlan.owner !== "vite-shell-entry") {
       mismatch.push("viteBuildAppPreviewClassicLoaderPlan");
-    } else if (Number(appPreviewClassicLoaderPlan.scriptCount) !== (current.indexScriptAssets || []).length
-      || Number(appPreviewClassicLoaderPlan.hashCount) !== (current.indexScriptAssets || []).length
+    } else if (Number(appPreviewClassicLoaderPlan.sourceScriptCount) !== indexScriptAssets.length
+      || Number(appPreviewClassicLoaderPlan.scriptCount) !== appPreviewClassicLoaderPaths.length
+      || Number(appPreviewClassicLoaderPlan.hashCount) !== appPreviewClassicLoaderPaths.length
+      || Number(appPreviewClassicLoaderPlan.excludedEsmScriptCount) !== appPreviewClassicLoaderExcludedPaths.length
+      || Number(appPreviewClassicLoaderPlan.excludedEsmHashCount) !== appPreviewClassicLoaderExcludedPaths.length
       || !appPreviewClassicLoaderPlan.sha256) {
       mismatch.push("viteBuildAppPreviewClassicLoaderPlanCount");
-    } else if (JSON.stringify(appPreviewClassicLoaderScripts.map((entry) => entry && entry.path))
-      !== JSON.stringify(current.indexScriptAssets || [])) {
+    } else if (JSON.stringify(appPreviewClassicLoaderReconstructedPaths) !== JSON.stringify(indexScriptAssets)
+      || appPreviewClassicLoaderCoveredPaths.size !== indexScriptAssets.length) {
       mismatch.push("viteBuildAppPreviewClassicLoaderPlanOrder");
     }
     const esmCompatibility = viteBuild.esmCompatibility && typeof viteBuild.esmCompatibility === "object"
@@ -222,6 +242,9 @@ if (!fs.existsSync(manifestPath)) {
         : 0,
       appPreviewClassicLoaderScripts: built.viteBuild.appPreviewClassicLoaderPlan
         ? built.viteBuild.appPreviewClassicLoaderPlan.scriptCount
+        : 0,
+      appPreviewClassicLoaderExcludedEsmScripts: built.viteBuild.appPreviewClassicLoaderPlan
+        ? built.viteBuild.appPreviewClassicLoaderPlan.excludedEsmScriptCount
         : 0,
       esmCompatibilityModules: built.viteBuild.esmCompatibility
         ? built.viteBuild.esmCompatibility.moduleCount

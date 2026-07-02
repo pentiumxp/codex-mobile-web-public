@@ -169,28 +169,42 @@ function classicShellScriptBlockContract(manifest, viteBuild) {
 
 function normalizeAppPreviewClassicLoaderPlan(plan) {
   if (!plan || typeof plan !== "object") return null;
+  const normalizeScript = (entry) => ({
+    index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
+    sourceIndex: Number.isFinite(Number(entry && entry.sourceIndex)) ? Number(entry.sourceIndex) : 0,
+    path: String(entry && entry.path || ""),
+    groupId: String(entry && entry.groupId || ""),
+    phase: String(entry && entry.phase || ""),
+    startupCritical: Boolean(entry && entry.startupCritical),
+    chunkTarget: String(entry && entry.chunkTarget || ""),
+    sourcePath: String(entry && entry.sourcePath || ""),
+    bytes: Number.isFinite(Number(entry && entry.bytes)) ? Number(entry.bytes) : 0,
+    sha256: String(entry && entry.sha256 || ""),
+  });
   const scripts = (Array.isArray(plan.scripts) ? plan.scripts : [])
+    .map(normalizeScript)
+    .filter((entry) => entry.path);
+  const excludedEsmScripts = (Array.isArray(plan.excludedEsmScripts) ? plan.excludedEsmScripts : [])
     .map((entry) => ({
-      index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
-      path: String(entry && entry.path || ""),
-      groupId: String(entry && entry.groupId || ""),
-      phase: String(entry && entry.phase || ""),
-      startupCritical: Boolean(entry && entry.startupCritical),
-      chunkTarget: String(entry && entry.chunkTarget || ""),
-      sourcePath: String(entry && entry.sourcePath || ""),
-      bytes: Number.isFinite(Number(entry && entry.bytes)) ? Number(entry.bytes) : 0,
-      sha256: String(entry && entry.sha256 || ""),
+      ...normalizeScript(entry),
+      esmModuleId: String(entry && entry.esmModuleId || ""),
+      globalName: String(entry && entry.globalName || ""),
     }))
     .filter((entry) => entry.path);
   return {
     schemaVersion: Number(plan.schemaVersion) || 1,
     source: String(plan.source || "generated-vite-app-preview-classic-loader-plan"),
     owner: String(plan.owner || ""),
+    sourceScriptCount: Number.isFinite(Number(plan.sourceScriptCount)) ? Number(plan.sourceScriptCount) : scripts.length + excludedEsmScripts.length,
     scriptCount: Number.isFinite(Number(plan.scriptCount)) ? Number(plan.scriptCount) : scripts.length,
     firstScript: String(plan.firstScript || ""),
     lastScript: String(plan.lastScript || ""),
     hashCount: Number.isFinite(Number(plan.hashCount)) ? Number(plan.hashCount) : scripts.filter((entry) => entry.sha256).length,
     byteCount: Number.isFinite(Number(plan.byteCount)) ? Number(plan.byteCount) : scripts.reduce((total, entry) => total + entry.bytes, 0),
+    excludedEsmScriptCount: Number.isFinite(Number(plan.excludedEsmScriptCount)) ? Number(plan.excludedEsmScriptCount) : excludedEsmScripts.length,
+    excludedEsmHashCount: Number.isFinite(Number(plan.excludedEsmHashCount)) ? Number(plan.excludedEsmHashCount) : excludedEsmScripts.filter((entry) => entry.sha256).length,
+    excludedEsmByteCount: Number.isFinite(Number(plan.excludedEsmByteCount)) ? Number(plan.excludedEsmByteCount) : excludedEsmScripts.reduce((total, entry) => total + entry.bytes, 0),
+    excludedEsmScripts,
     sha256: String(plan.sha256 || ""),
     scripts,
   };
@@ -203,7 +217,9 @@ function normalizeEsmCompatibilityContract(contract) {
       index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
       id: String(entry && entry.id || ""),
       source: String(entry && entry.source || ""),
+      assetPath: String(entry && entry.assetPath || ""),
       globalName: String(entry && entry.globalName || ""),
+      classicLoaderExcluded: Boolean(entry && entry.classicLoaderExcluded),
       expectedFunctions: Array.isArray(entry && entry.expectedFunctions)
         ? entry.expectedFunctions.map((name) => String(name || "")).filter(Boolean)
         : [],
@@ -324,15 +340,25 @@ export function buildViteShellPublicReadback(options = {}) {
   } else {
     const scriptAssets = scriptAssetsFromManifest(manifest);
     const loaderPaths = appPreviewClassicLoaderPlan.scripts.map((entry) => entry.path);
+    const excludedPaths = appPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.path);
+    const coveredPaths = new Set([...loaderPaths, ...excludedPaths]);
+    const reconstructedPaths = scriptAssets.filter((asset) => coveredPaths.has(asset));
     if (appPreviewClassicLoaderPlan.owner !== "vite-shell-entry") {
       issues.push({ code: "vite_app_preview_classic_loader_plan_owner_mismatch" });
     }
-    if (JSON.stringify(loaderPaths) !== JSON.stringify(scriptAssets)) {
+    if (JSON.stringify(reconstructedPaths) !== JSON.stringify(scriptAssets)
+      || coveredPaths.size !== scriptAssets.length) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_order_mismatch" });
     }
-    if (Number(appPreviewClassicLoaderPlan.scriptCount) !== scriptAssets.length
-      || Number(appPreviewClassicLoaderPlan.hashCount) !== scriptAssets.length) {
+    if (Number(appPreviewClassicLoaderPlan.sourceScriptCount) !== scriptAssets.length
+      || Number(appPreviewClassicLoaderPlan.scriptCount) !== loaderPaths.length
+      || Number(appPreviewClassicLoaderPlan.hashCount) !== loaderPaths.length
+      || Number(appPreviewClassicLoaderPlan.excludedEsmScriptCount) !== excludedPaths.length
+      || Number(appPreviewClassicLoaderPlan.excludedEsmHashCount) !== excludedPaths.length) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_count_mismatch" });
+    }
+    if (appPreviewClassicLoaderPlan.excludedEsmScripts.some((entry) => !entry.esmModuleId || !entry.globalName || !entry.sha256 || !Number(entry.bytes))) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_exclusion_record_missing" });
     }
     if (!appPreviewClassicLoaderPlan.sha256) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_hash_missing" });
@@ -352,7 +378,14 @@ export function buildViteShellPublicReadback(options = {}) {
       ), 0)) {
       issues.push({ code: "vite_esm_compatibility_count_mismatch" });
     }
-    if (esmCompatibility.modules.some((entry) => !entry.source || !entry.globalName || !entry.sha256 || !Number(entry.bytes))) {
+    if (esmCompatibility.modules.some((entry) => (
+      !entry.source
+        || !entry.assetPath
+        || !entry.globalName
+        || entry.classicLoaderExcluded !== true
+        || !entry.sha256
+        || !Number(entry.bytes)
+    ))) {
       issues.push({ code: "vite_esm_compatibility_module_record_missing" });
     }
   }

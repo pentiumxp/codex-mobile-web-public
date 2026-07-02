@@ -5057,6 +5057,34 @@ The browser gates still own runtime `ready` and behavior-sample proof. The
 artifact gate now owns static provenance, so `/api/vite-shell-artifact` can
 detect ESM compatibility drift before a browser probe runs.
 
+The follow-up ESM-owned loader exclusion slice makes the default Vite
+app-preview shell stop reloading the six policy modules that are already owned
+by the Vite entry:
+
+- `virtual:codex-mobile-esm-compatibility` now publishes each imported
+  policy API back onto its existing `window.Codex*` global before app-preview
+  startup continues. Runtime `ready` requires both deterministic behavior
+  samples and successful classic-global publication.
+- The app-preview classic loader plan now records the full source script count
+  (`51`), the remaining loader script count (`45`), and six
+  `excludedEsmScripts` with module id, global name, source path, byte count,
+  and SHA-256. The loader validates that loader scripts plus exclusions cover
+  the exact shell script order before injecting any classic script.
+- `scripts/verify-vite-shell-manifest.mjs`,
+  `scripts/publish-vite-shell-artifact.mjs`, and
+  `services/runtime/vite-shell-artifact-service.js` all fail closed when the
+  exclusion records drift from the Vite build manifest, the current public
+  files, or the generated classic shell script block.
+- Browser Vite preview and app-preview probes now require ESM compatibility
+  globals to be published. App-preview probes accept the reduced injected
+  classic script count only when the excluded ESM globals are present and the
+  loader plan still covers the complete source shell graph.
+
+This is the first default-root Vite slice that removes scripts from the
+app-preview classic loader path. It does not change the canonical classic
+fallback script block; it narrows the remaining classic loader surface while
+keeping the same public API globals for downstream runtime modules.
+
 The next default-root rehearsal gate closes the remaining pre-cutover evidence
 gap without changing production launchd defaults:
 

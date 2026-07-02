@@ -145,28 +145,42 @@ function startupGlobalContracts(manifest) {
 function appPreviewClassicLoaderPlan(source) {
   const plan = source && source.appPreviewClassicLoaderPlan;
   if (!plan || typeof plan !== "object") return null;
+  const normalizeScript = (entry) => ({
+    index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
+    sourceIndex: Number.isFinite(Number(entry && entry.sourceIndex)) ? Number(entry.sourceIndex) : 0,
+    path: String(entry && entry.path || ""),
+    groupId: String(entry && entry.groupId || ""),
+    phase: String(entry && entry.phase || ""),
+    startupCritical: Boolean(entry && entry.startupCritical),
+    chunkTarget: String(entry && entry.chunkTarget || ""),
+    sourcePath: String(entry && entry.sourcePath || ""),
+    bytes: Number.isFinite(Number(entry && entry.bytes)) ? Number(entry.bytes) : 0,
+    sha256: String(entry && entry.sha256 || ""),
+  });
   const scripts = (Array.isArray(plan.scripts) ? plan.scripts : [])
+    .map(normalizeScript)
+    .filter((entry) => entry.path);
+  const excludedEsmScripts = (Array.isArray(plan.excludedEsmScripts) ? plan.excludedEsmScripts : [])
     .map((entry) => ({
-      index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
-      path: String(entry && entry.path || ""),
-      groupId: String(entry && entry.groupId || ""),
-      phase: String(entry && entry.phase || ""),
-      startupCritical: Boolean(entry && entry.startupCritical),
-      chunkTarget: String(entry && entry.chunkTarget || ""),
-      sourcePath: String(entry && entry.sourcePath || ""),
-      bytes: Number.isFinite(Number(entry && entry.bytes)) ? Number(entry.bytes) : 0,
-      sha256: String(entry && entry.sha256 || ""),
+      ...normalizeScript(entry),
+      esmModuleId: String(entry && entry.esmModuleId || ""),
+      globalName: String(entry && entry.globalName || ""),
     }))
     .filter((entry) => entry.path);
   return {
     schemaVersion: Number(plan.schemaVersion) || 1,
     source: String(plan.source || ""),
     owner: String(plan.owner || ""),
+    sourceScriptCount: Number.isFinite(Number(plan.sourceScriptCount)) ? Number(plan.sourceScriptCount) : scripts.length + excludedEsmScripts.length,
     scriptCount: Number.isFinite(Number(plan.scriptCount)) ? Number(plan.scriptCount) : scripts.length,
     firstScript: String(plan.firstScript || ""),
     lastScript: String(plan.lastScript || ""),
     hashCount: Number.isFinite(Number(plan.hashCount)) ? Number(plan.hashCount) : scripts.filter((entry) => entry.sha256).length,
     byteCount: Number.isFinite(Number(plan.byteCount)) ? Number(plan.byteCount) : scripts.reduce((total, entry) => total + entry.bytes, 0),
+    excludedEsmScriptCount: Number.isFinite(Number(plan.excludedEsmScriptCount)) ? Number(plan.excludedEsmScriptCount) : excludedEsmScripts.length,
+    excludedEsmHashCount: Number.isFinite(Number(plan.excludedEsmHashCount)) ? Number(plan.excludedEsmHashCount) : excludedEsmScripts.filter((entry) => entry.sha256).length,
+    excludedEsmByteCount: Number.isFinite(Number(plan.excludedEsmByteCount)) ? Number(plan.excludedEsmByteCount) : excludedEsmScripts.reduce((total, entry) => total + entry.bytes, 0),
+    excludedEsmScripts,
     sha256: String(plan.sha256 || ""),
     scripts,
   };
@@ -180,7 +194,9 @@ function esmCompatibilityContract(source) {
       index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
       id: String(entry && entry.id || ""),
       source: String(entry && entry.source || ""),
+      assetPath: String(entry && entry.assetPath || ""),
       globalName: String(entry && entry.globalName || ""),
+      classicLoaderExcluded: Boolean(entry && entry.classicLoaderExcluded),
       expectedFunctions: Array.isArray(entry && entry.expectedFunctions)
         ? entry.expectedFunctions.map((name) => String(name || "")).filter(Boolean)
         : [],
@@ -424,16 +440,28 @@ function createViteShellArtifactService(dependencies = {}) {
       issues.push({ code: "vite_shell_app_preview_classic_loader_plan_missing" });
     } else {
       const loaderPlanPaths = readbackAppPreviewClassicLoaderPlan.scripts.map((entry) => entry.path);
+      const excludedEsmPaths = readbackAppPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.path);
+      const coveredPaths = new Set([...loaderPlanPaths, ...excludedEsmPaths]);
+      const sourceScriptAssets = actualClassicScriptBlock.scriptAssets;
+      const reconstructedPaths = sourceScriptAssets.filter((asset) => coveredPaths.has(asset));
       if (readbackAppPreviewClassicLoaderPlan.owner !== EXPECTED_ENTRY_GROUP_IMPORT_OWNER) {
         issues.push({ code: "vite_shell_app_preview_classic_loader_plan_owner_mismatch" });
       }
-      if (actualClassicScriptBlock.exists && !arraysEqual(loaderPlanPaths, actualClassicScriptBlock.scriptAssets)) {
+      if (actualClassicScriptBlock.exists
+        && (!arraysEqual(reconstructedPaths, sourceScriptAssets)
+          || coveredPaths.size !== sourceScriptAssets.length)) {
         issues.push({ code: "vite_shell_app_preview_classic_loader_plan_order_mismatch" });
       }
-      if (Number(readbackAppPreviewClassicLoaderPlan.scriptCount) !== loaderPlanPaths.length
+      if (Number(readbackAppPreviewClassicLoaderPlan.sourceScriptCount) !== sourceScriptAssets.length
+        || Number(readbackAppPreviewClassicLoaderPlan.scriptCount) !== loaderPlanPaths.length
         || Number(readbackAppPreviewClassicLoaderPlan.hashCount) !== loaderPlanPaths.length
+        || Number(readbackAppPreviewClassicLoaderPlan.excludedEsmScriptCount) !== excludedEsmPaths.length
+        || Number(readbackAppPreviewClassicLoaderPlan.excludedEsmHashCount) !== excludedEsmPaths.length
         || !readbackAppPreviewClassicLoaderPlan.sha256) {
         issues.push({ code: "vite_shell_app_preview_classic_loader_plan_count_mismatch" });
+      }
+      if (readbackAppPreviewClassicLoaderPlan.excludedEsmScripts.some((entry) => !entry.esmModuleId || !entry.globalName || !entry.sha256 || !Number(entry.bytes))) {
+        issues.push({ code: "vite_shell_app_preview_classic_loader_plan_exclusion_record_missing" });
       }
     }
     const entryGroupImportOwner = String(readback.entryGroupImportOwner || "");
@@ -455,7 +483,12 @@ function createViteShellArtifactService(dependencies = {}) {
         issues.push({ code: "vite_shell_esm_compatibility_count_mismatch" });
       }
       if (readbackEsmCompatibility.modules.some((entry) => (
-        !entry.source || !entry.globalName || !entry.sha256 || !Number(entry.bytes)
+        !entry.source
+          || !entry.assetPath
+          || !entry.globalName
+          || entry.classicLoaderExcluded !== true
+          || !entry.sha256
+          || !Number(entry.bytes)
       ))) {
         issues.push({ code: "vite_shell_esm_compatibility_module_record_missing" });
       }
@@ -567,6 +600,10 @@ function createViteShellArtifactService(dependencies = {}) {
       if (readbackEsmCompatibility) {
         for (const record of readbackEsmCompatibility.modules) {
           const assetPath = publicAssetPathFromSource(record.source);
+          if (record.assetPath !== assetPath) {
+            issues.push({ code: "vite_shell_esm_compatibility_module_asset_path_mismatch", moduleId: record.id });
+            break;
+          }
           const currentAsset = publicAssetStatus(appRoot, assetPath);
           if (!assetPath || !currentAsset.exists) {
             issues.push({ code: currentAsset.code || "vite_shell_esm_compatibility_module_missing", moduleId: record.id });
@@ -583,7 +620,11 @@ function createViteShellArtifactService(dependencies = {}) {
         }
       }
       if (readbackAppPreviewClassicLoaderPlan) {
-        for (const record of readbackAppPreviewClassicLoaderPlan.scripts) {
+        const loaderRecords = [
+          ...readbackAppPreviewClassicLoaderPlan.scripts,
+          ...readbackAppPreviewClassicLoaderPlan.excludedEsmScripts,
+        ];
+        for (const record of loaderRecords) {
           const assetPath = String(record && record.path || "");
           const artifactRecord = artifactAssetRecords.get(assetPath);
           if (!artifactRecord || artifactRecord.sha256 !== String(record && record.sha256 || "")) {
@@ -756,6 +797,27 @@ function createViteShellArtifactService(dependencies = {}) {
       }
     }
 
+    const loaderPlanScriptPaths = readbackAppPreviewClassicLoaderPlan
+      ? readbackAppPreviewClassicLoaderPlan.scripts.map((entry) => entry.path)
+      : [];
+    const loaderPlanExcludedEsmPaths = readbackAppPreviewClassicLoaderPlan
+      ? readbackAppPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.path)
+      : [];
+    const loaderPlanCoveredPaths = new Set([...loaderPlanScriptPaths, ...loaderPlanExcludedEsmPaths]);
+    const loaderPlanReconstructedSourcePaths = actualClassicScriptBlock.scriptAssets
+      .filter((asset) => loaderPlanCoveredPaths.has(asset));
+    const loaderPlanCurrentAssetsMatch = readbackAppPreviewClassicLoaderPlan
+      ? [
+          ...readbackAppPreviewClassicLoaderPlan.scripts,
+          ...readbackAppPreviewClassicLoaderPlan.excludedEsmScripts,
+        ].every((entry) => {
+          const currentAsset = publicAssetStatus(appRoot, entry.path);
+          return currentAsset.exists
+            && currentAsset.sha256 === entry.sha256
+            && Number(currentAsset.bytes) === Number(entry.bytes);
+        })
+      : false;
+
     return {
       ok: issues.length === 0,
       available: issues.length === 0,
@@ -818,32 +880,38 @@ function createViteShellArtifactService(dependencies = {}) {
       appPreviewClassicLoaderPlan: readbackAppPreviewClassicLoaderPlan ? {
         match: Boolean(actualClassicScriptBlock.exists
           && readbackAppPreviewClassicLoaderPlan.owner === EXPECTED_ENTRY_GROUP_IMPORT_OWNER
-          && arraysEqual(
-            readbackAppPreviewClassicLoaderPlan.scripts.map((entry) => entry.path),
-            actualClassicScriptBlock.scriptAssets
-          )
-          && Number(readbackAppPreviewClassicLoaderPlan.scriptCount) === actualClassicScriptBlock.scriptCount
-          && Number(readbackAppPreviewClassicLoaderPlan.hashCount) === actualClassicScriptBlock.scriptCount
+          && arraysEqual(loaderPlanReconstructedSourcePaths, actualClassicScriptBlock.scriptAssets)
+          && loaderPlanCoveredPaths.size === actualClassicScriptBlock.scriptAssets.length
+          && Number(readbackAppPreviewClassicLoaderPlan.sourceScriptCount) === actualClassicScriptBlock.scriptCount
+          && Number(readbackAppPreviewClassicLoaderPlan.scriptCount) === loaderPlanScriptPaths.length
+          && Number(readbackAppPreviewClassicLoaderPlan.hashCount) === loaderPlanScriptPaths.length
+          && Number(readbackAppPreviewClassicLoaderPlan.excludedEsmScriptCount) === loaderPlanExcludedEsmPaths.length
+          && Number(readbackAppPreviewClassicLoaderPlan.excludedEsmHashCount) === loaderPlanExcludedEsmPaths.length
           && Boolean(readbackAppPreviewClassicLoaderPlan.sha256)
-          && readbackAppPreviewClassicLoaderPlan.scripts.every((entry) => {
-            const currentAsset = publicAssetStatus(appRoot, entry.path);
-            return currentAsset.exists
-              && currentAsset.sha256 === entry.sha256
-              && Number(currentAsset.bytes) === Number(entry.bytes);
-          })),
+          && loaderPlanCurrentAssetsMatch),
         owner: readbackAppPreviewClassicLoaderPlan.owner,
+        sourceScriptCount: readbackAppPreviewClassicLoaderPlan.sourceScriptCount,
         scriptCount: readbackAppPreviewClassicLoaderPlan.scriptCount,
         hashCount: readbackAppPreviewClassicLoaderPlan.hashCount,
         byteCount: readbackAppPreviewClassicLoaderPlan.byteCount,
+        excludedEsmScriptCount: readbackAppPreviewClassicLoaderPlan.excludedEsmScriptCount,
+        excludedEsmHashCount: readbackAppPreviewClassicLoaderPlan.excludedEsmHashCount,
+        excludedEsmByteCount: readbackAppPreviewClassicLoaderPlan.excludedEsmByteCount,
+        excludedEsmModuleIds: readbackAppPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.esmModuleId),
         firstScript: readbackAppPreviewClassicLoaderPlan.firstScript,
         lastScript: readbackAppPreviewClassicLoaderPlan.lastScript,
         sha256: readbackAppPreviewClassicLoaderPlan.sha256,
       } : {
         match: false,
         owner: "",
+        sourceScriptCount: 0,
         scriptCount: 0,
         hashCount: 0,
         byteCount: 0,
+        excludedEsmScriptCount: 0,
+        excludedEsmHashCount: 0,
+        excludedEsmByteCount: 0,
+        excludedEsmModuleIds: [],
         firstScript: "",
         lastScript: "",
         sha256: "",
@@ -854,8 +922,11 @@ function createViteShellArtifactService(dependencies = {}) {
           && Number(readbackEsmCompatibility.moduleCount) === readbackEsmCompatibility.modules.length
           && Number(readbackEsmCompatibility.hashCount) === readbackEsmCompatibility.modules.length
           && readbackEsmCompatibility.modules.every((entry) => {
-            const currentAsset = publicAssetStatus(appRoot, publicAssetPathFromSource(entry.source));
+            const assetPath = publicAssetPathFromSource(entry.source);
+            const currentAsset = publicAssetStatus(appRoot, assetPath);
             return currentAsset.exists
+              && entry.assetPath === assetPath
+              && entry.classicLoaderExcluded === true
               && currentAsset.sha256 === entry.sha256
               && Number(currentAsset.bytes) === Number(entry.bytes);
           })),
