@@ -1270,6 +1270,143 @@ var require_draft_store = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	});
 }));
 //#endregion
+//#region public/image-compressor.js
+var require_image_compressor = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function initImageCompressor(root, factory) {
+		if (typeof module === "object" && module.exports) {
+			module.exports = factory({});
+			return;
+		}
+		root.CodexImageCompressor = factory(root);
+	})(typeof globalThis !== "undefined" ? globalThis : window, function imageCompressorFactory(root) {
+		const DEFAULT_OPTIONS = Object.freeze({
+			maxEdge: 1280,
+			quality: .72,
+			minBytes: 256 * 1024,
+			minSavingsRatio: .92,
+			outputType: "image/jpeg"
+		});
+		const COMPRESSIBLE_TYPES = /* @__PURE__ */ new Set([
+			"image/jpeg",
+			"image/jpg",
+			"image/png",
+			"image/webp"
+		]);
+		function imageType(file) {
+			return String(file && file.type || "").toLowerCase();
+		}
+		function isCompressibleImageFile(file, options = {}) {
+			const settings = Object.assign({}, DEFAULT_OPTIONS, options || {});
+			return Boolean(file && Number(file.size || 0) >= settings.minBytes && COMPRESSIBLE_TYPES.has(imageType(file)));
+		}
+		function targetDimensions(width, height, maxEdge = DEFAULT_OPTIONS.maxEdge) {
+			const sourceWidth = Math.max(1, Number(width || 0));
+			const sourceHeight = Math.max(1, Number(height || 0));
+			const edge = Math.max(1, Number(maxEdge || DEFAULT_OPTIONS.maxEdge));
+			const scale = Math.min(1, edge / Math.max(sourceWidth, sourceHeight));
+			return {
+				width: Math.max(1, Math.round(sourceWidth * scale)),
+				height: Math.max(1, Math.round(sourceHeight * scale)),
+				scaled: scale < 1
+			};
+		}
+		function compressedImageName(name, outputType = DEFAULT_OPTIONS.outputType) {
+			const fallback = "image";
+			return `${String(name || fallback).replace(/[\\/]+/g, "_").replace(/\.[^.]*$/, "").trim() || fallback}.${outputType === "image/webp" ? "webp" : "jpg"}`;
+		}
+		function shouldUseCompressedBlob(originalFile, blob, options = {}) {
+			const settings = Object.assign({}, DEFAULT_OPTIONS, options || {});
+			if (!blob || !Number.isFinite(blob.size) || blob.size <= 0) return false;
+			const originalSize = Number(originalFile && originalFile.size || 0);
+			if (!originalSize) return true;
+			return blob.size < Math.max(1, Math.floor(originalSize * settings.minSavingsRatio));
+		}
+		function loadImageElement(file, deps) {
+			const documentRef = deps.document;
+			const urlApi = deps.URL;
+			if (!documentRef || !urlApi || typeof documentRef.createElement !== "function") return Promise.reject(/* @__PURE__ */ new Error("image compression is unavailable"));
+			return new Promise((resolve, reject) => {
+				const url = urlApi.createObjectURL(file);
+				const image = documentRef.createElement("img");
+				let settled = false;
+				const cleanup = () => {
+					try {
+						urlApi.revokeObjectURL(url);
+					} catch (_) {}
+				};
+				image.onload = () => {
+					if (settled) return;
+					settled = true;
+					resolve({
+						width: image.naturalWidth || image.width,
+						height: image.naturalHeight || image.height,
+						source: image,
+						close: cleanup
+					});
+				};
+				image.onerror = () => {
+					if (settled) return;
+					settled = true;
+					cleanup();
+					reject(/* @__PURE__ */ new Error("image decode failed"));
+				};
+				image.src = url;
+			});
+		}
+		function canvasToBlob(canvas, outputType, quality) {
+			return new Promise((resolve) => {
+				if (!canvas || typeof canvas.toBlob !== "function") {
+					resolve(null);
+					return;
+				}
+				canvas.toBlob((blob) => resolve(blob), outputType, quality);
+			});
+		}
+		async function compressImageFile(file, options = {}) {
+			const settings = Object.assign({}, DEFAULT_OPTIONS, options || {});
+			if (!isCompressibleImageFile(file, settings)) return file;
+			const deps = {
+				document: settings.document || root.document,
+				URL: settings.URL || root.URL,
+				File: settings.File || root.File
+			};
+			let image = null;
+			try {
+				image = await loadImageElement(file, deps);
+				const dims = targetDimensions(image.width, image.height, settings.maxEdge);
+				const canvas = deps.document.createElement("canvas");
+				canvas.width = dims.width;
+				canvas.height = dims.height;
+				const ctx = canvas.getContext("2d", { alpha: false });
+				if (!ctx) return file;
+				ctx.fillStyle = "#ffffff";
+				ctx.fillRect(0, 0, dims.width, dims.height);
+				ctx.drawImage(image.source, 0, 0, dims.width, dims.height);
+				const blob = await canvasToBlob(canvas, settings.outputType, settings.quality);
+				if (!shouldUseCompressedBlob(file, blob, settings)) return file;
+				const name = compressedImageName(file.name, settings.outputType);
+				if (typeof deps.File === "function") return new deps.File([blob], name, {
+					type: blob.type || settings.outputType,
+					lastModified: Number(file.lastModified || Date.now())
+				});
+				blob.name = name;
+				blob.lastModified = Number(file.lastModified || Date.now());
+				return blob;
+			} finally {
+				if (image && typeof image.close === "function") image.close();
+			}
+		}
+		return {
+			DEFAULT_OPTIONS,
+			compressedImageName,
+			compressImageFile,
+			isCompressibleImageFile,
+			shouldUseCompressedBlob,
+			targetDimensions
+		};
+	});
+}));
+//#endregion
 //#region public/thread-tile-layout.js
 var require_thread_tile_layout = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -2511,6 +2648,7 @@ var import_build_refresh_policy = /* @__PURE__ */ __toESM(require_build_refresh_
 var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings());
 var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics());
 var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
+var import_image_compressor = /* @__PURE__ */ __toESM(require_image_compressor());
 var import_thread_tile_layout = /* @__PURE__ */ __toESM(require_thread_tile_layout());
 var import_thread_tile_actions = /* @__PURE__ */ __toESM(require_thread_tile_actions());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
@@ -2578,6 +2716,20 @@ var moduleDefinitions = [
 			"createDraftStore"
 		],
 		"assetPath": "/draft-store.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "image-compressor",
+		"source": "public/image-compressor.js",
+		"globalName": "CodexImageCompressor",
+		"expectedFunctions": [
+			"compressedImageName",
+			"compressImageFile",
+			"isCompressibleImageFile",
+			"shouldUseCompressedBlob",
+			"targetDimensions"
+		],
+		"assetPath": "/image-compressor.js",
 		"classicLoaderExcluded": true
 	},
 	{
@@ -2694,6 +2846,7 @@ var moduleApis = {
 	"runtime-settings": import_runtime_settings.default,
 	"viewport-metrics": import_viewport_metrics.default,
 	"draft-store": import_draft_store.default,
+	"image-compressor": import_image_compressor.default,
 	"thread-tile-layout": import_thread_tile_layout.default,
 	"thread-tile-actions": import_thread_tile_actions.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
@@ -2855,6 +3008,31 @@ function sampleModule(id, api) {
 			hasContent,
 			attachmentKey,
 			normalizedPath
+		};
+	}
+	if (id === "image-compressor") {
+		const compressible = functionReady(api, "isCompressibleImageFile") ? api.isCompressibleImageFile({
+			type: "image/png",
+			size: 300 * 1024
+		}) : false;
+		const smallImage = functionReady(api, "isCompressibleImageFile") ? api.isCompressibleImageFile({
+			type: "image/png",
+			size: 12 * 1024
+		}) : true;
+		const dims = functionReady(api, "targetDimensions") ? api.targetDimensions(3e3, 1500, 1200) : {};
+		const name = functionReady(api, "compressedImageName") ? api.compressedImageName("folder/screen.png", "image/webp") : "";
+		const useful = functionReady(api, "shouldUseCompressedBlob") ? api.shouldUseCompressedBlob({ size: 1e3 }, { size: 800 }) : false;
+		const marginal = functionReady(api, "shouldUseCompressedBlob") ? api.shouldUseCompressedBlob({ size: 1e3 }, { size: 930 }) : true;
+		return {
+			ok: compressible === true && smallImage === false && dims.width === 1200 && dims.height === 600 && dims.scaled === true && name === "folder_screen.webp" && useful === true && marginal === false,
+			compressible,
+			smallImage,
+			width: Number(dims.width) || 0,
+			height: Number(dims.height) || 0,
+			scaled: Boolean(dims.scaled),
+			name,
+			useful,
+			marginal
 		};
 	}
 	if (id === "thread-tile-layout") {
@@ -3533,7 +3711,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-CbDzU0mK.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-Dj2zAKwY.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
