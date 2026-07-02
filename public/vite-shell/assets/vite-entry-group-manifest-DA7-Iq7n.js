@@ -1,19 +1,19 @@
-//#region \0virtual:codex-mobile-shell-entry-group/bootstrap-state
+//#region \0virtual:codex-mobile-shell-entry-group/manifest
 var codexMobileViteEntryGroup = {
-	"id": "bootstrap-state",
-	"phase": "startup-critical",
+	"id": "manifest",
+	"phase": "startup-manifest",
 	"startupCritical": true,
-	"chunkTarget": "startup-bootstrap",
-	"assets": ["/app-bootstrap.js"],
+	"chunkTarget": "startup-manifest",
+	"assets": ["/shell-asset-manifest.js"],
 	"assetCount": 1,
 	"classicAssetRecords": [{
-		"path": "/app-bootstrap.js",
-		"sourcePath": "public/app-bootstrap.js",
-		"bytes": 35599,
-		"sha256": "898d0f345a29e8bbf58ac874d0fe90970945b6bb5aa40a93a1506f8962a97d4f"
+		"path": "/shell-asset-manifest.js",
+		"sourcePath": "public/shell-asset-manifest.js",
+		"bytes": 74226,
+		"sha256": "6e7f3837e24e48108fefe76ad97dfcaacc7547e6030e51e234cbdcdf80e5efa1"
 	}],
 	"classicAssetHashCount": 1,
-	"classicAssetBytes": 35599,
+	"classicAssetBytes": 74226,
 	"classicGlobalExports": [],
 	"classicGlobalExportAssetCount": 0,
 	"classicGlobalExportCount": 0,

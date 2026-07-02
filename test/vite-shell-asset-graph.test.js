@@ -31,7 +31,12 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   assert.ok(manifest.serverHashAssets.includes("/app-shell-runtime.js"));
   assert.ok(manifest.serverHashAssets.includes("/shell-asset-manifest.json"));
   assert.equal(manifest.entryGroups.length, 6);
-  assert.equal(manifest.classicGlobalExports.length, 49);
+  assert.ok(manifest.classicGlobalExports.length >= 50);
+  const appBootstrapExports = manifest.classicGlobalExports.find((entry) => entry.asset === "/app-bootstrap.js");
+  assert.ok(appBootstrapExports);
+  for (const name of ["$", "CLIENT_BUILD_ID", "PAGE_SHELL_ASSETS", "apiClient", "draftStore", "state"]) {
+    assert.ok(appBootstrapExports.globals.includes(name), `missing app-bootstrap global ${name}`);
+  }
   assert.deepEqual(
     manifest.classicGlobalExports.find((entry) => entry.asset === "/runtime-wiring-runtime.js").globals,
     ["CodexRuntimeWiringRuntime"]
@@ -44,7 +49,7 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
     manifest.classicGlobalExports.find((entry) => entry.asset === "/app.js").globals,
     ["CodexMobileAppEntry"]
   );
-  assert.equal(manifest.startupGlobalContracts.length, 30);
+  assert.ok(manifest.startupGlobalContracts.length > 30);
   assert.deepEqual(
     manifest.startupGlobalContracts.find((entry) => entry.name === "CodexRuntimeWiringRuntime"),
     {
@@ -64,6 +69,28 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
       groupId: "feature-runtimes",
       startupCritical: false,
       source: "startup-window-guard",
+      present: true,
+    }
+  );
+  assert.deepEqual(
+    manifest.startupGlobalContracts.find((entry) => entry.name === "state"),
+    {
+      name: "state",
+      asset: "/app-bootstrap.js",
+      groupId: "bootstrap-state",
+      startupCritical: true,
+      source: "app-bootstrap-script-global",
+      present: true,
+    }
+  );
+  assert.deepEqual(
+    manifest.startupGlobalContracts.find((entry) => entry.name === "apiClient"),
+    {
+      name: "apiClient",
+      asset: "/app-bootstrap.js",
+      groupId: "bootstrap-state",
+      startupCritical: true,
+      source: "app-bootstrap-script-global",
       present: true,
     }
   );
@@ -411,9 +438,12 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.equal(contract.entryDynamicImportGraph.esmCompatibilityFileCount, 1);
   assert.equal(contract.entryDynamicImportGraph.deferredFileCount, 1);
   assert.equal(contract.entryDynamicImportGraph.entryGroupFileCount, manifest.entryGroups.length);
-  assert.equal(contract.startupCompatibility.requiredGlobalCount, 30);
-  assert.equal(contract.startupCompatibility.hashCount, 30);
-  assert.equal(contract.startupCompatibility.assetCount, 30);
+  assert.equal(contract.startupCompatibility.requiredGlobalCount, manifest.startupGlobalContracts.length);
+  assert.equal(contract.startupCompatibility.hashCount, manifest.startupGlobalContracts.length);
+  assert.equal(
+    contract.startupCompatibility.assetCount,
+    new Set(manifest.startupGlobalContracts.map((entry) => entry.asset).filter(Boolean)).size
+  );
   assert.ok(contract.startupCompatibility.byteCount > 0);
   assert.equal(contract.appPreviewClassicLoaderPlan.owner, "vite-shell-entry");
   assert.equal(contract.appPreviewClassicLoaderPlan.sourceScriptCount, manifest.indexScriptAssets.length);

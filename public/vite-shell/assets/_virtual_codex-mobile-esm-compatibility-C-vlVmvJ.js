@@ -1,5 +1,5 @@
 const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-BPiNvAyS.js","assets/rolldown-runtime-FDOR9p9I.js","assets/shard-02-8kSpXkFn.js","assets/shard-03-DvYDQqs9.js","assets/shard-04-2apgJ2FR.js","assets/shard-05-CsgajjUG.js","assets/shard-06-w6muM3Hk.js","assets/shard-07-CC-eYT9-.js","assets/shard-08-C4v1YOCX.js","assets/shard-09-BPCMq6hF.js"])))=>i.map(i=>d[i]);
-import { t as __vitePreload } from "./vite-shell-entry-C0nW--eA.js";
+import { t as __vitePreload } from "./vite-shell-entry-Benrd1e7.js";
 //#region \0virtual:codex-mobile-esm-compatibility
 var codexMobileViteEsmCompatibilityShardSources = [
 	{

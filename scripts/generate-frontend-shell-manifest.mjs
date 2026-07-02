@@ -220,6 +220,16 @@ function extractClassicGlobalExports(source) {
   return [...names].sort();
 }
 
+function extractClassicTopLevelScriptGlobals(source) {
+  const names = new Set();
+  const pattern = /^(?:var|function)\s+([$A-Za-z_][0-9A-Za-z_$]*)(?=\s|=|\()/gm;
+  let match;
+  while ((match = pattern.exec(String(source || "")))) {
+    names.add(match[1]);
+  }
+  return [...names].sort();
+}
+
 function extractStartupWindowGuardGlobals(source) {
   const names = new Set();
   const variableGuardPattern = /var\s+([A-Za-z0-9_]+)\s*=\s*window\.(Codex[A-Za-z0-9_]+)\s*;[\s\S]{0,320}?if\s*\(\s*!\s*\1\b/g;
@@ -264,6 +274,32 @@ function startupWindowGuardGlobals(root) {
   return [...names].sort();
 }
 
+function appBootstrapScriptGlobals(root) {
+  try {
+    return extractClassicTopLevelScriptGlobals(readText(root, "public/app-bootstrap.js"));
+  } catch (_) {
+    return [];
+  }
+}
+
+function startupRequiredGlobalEntries(root, classicGlobalExports = []) {
+  const byName = new Map();
+  const exportedAssetSet = new Set((Array.isArray(classicGlobalExports) ? classicGlobalExports : [])
+    .map((entry) => String(entry && entry.asset || ""))
+    .filter(Boolean));
+  for (const name of startupWindowGuardGlobals(root)) {
+    byName.set(name, { name, source: "startup-window-guard" });
+  }
+  if (exportedAssetSet.has("/app-bootstrap.js")) {
+    for (const name of appBootstrapScriptGlobals(root)) {
+      if (!byName.has(name)) {
+        byName.set(name, { name, source: "app-bootstrap-script-global" });
+      }
+    }
+  }
+  return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
 function classicGlobalExportsForAsset(root, assetPath) {
   const normalized = String(assetPath || "").replace(/^\/+/, "");
   if (!normalized || !normalized.endsWith(".js")) return null;
@@ -273,11 +309,15 @@ function classicGlobalExportsForAsset(root, assetPath) {
   } catch (_) {
     source = "";
   }
-  const globals = extractClassicGlobalExports(source);
-  if (!globals.length) return null;
+  const globals = new Set(extractClassicGlobalExports(source));
+  if (assetPath === "/app-bootstrap.js") {
+    for (const name of extractClassicTopLevelScriptGlobals(source)) globals.add(name);
+  }
+  const orderedGlobals = [...globals].sort();
+  if (!orderedGlobals.length) return null;
   return {
     asset: assetPath,
-    globals,
+    globals: orderedGlobals,
   };
 }
 
@@ -342,7 +382,8 @@ function buildStartupGlobalContracts(root, entryGroups, classicGlobalExports) {
     }
   }
   const groupsByAsset = groupByAsset(entryGroups);
-  return startupWindowGuardGlobals(root).map((name) => {
+  return startupRequiredGlobalEntries(root, classicGlobalExports).map((contract) => {
+    const name = contract.name;
     const exportEntry = exportsByGlobal.get(name);
     const asset = exportEntry ? String(exportEntry.asset || "") : "";
     const group = groupsByAsset.get(asset) || {};
@@ -351,7 +392,7 @@ function buildStartupGlobalContracts(root, entryGroups, classicGlobalExports) {
       asset,
       groupId: String(group.id || ""),
       startupCritical: Boolean(group.startupCritical),
-      source: "startup-window-guard",
+      source: contract.source,
       present: Boolean(exportEntry && asset),
     };
   });
