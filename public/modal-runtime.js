@@ -283,16 +283,39 @@ async function performCodexProfileSwitch(profileId) {
 }
 
 
-(function exposeCodexModalRuntime(root) {
-  root.CodexModalRuntime = root.CodexModalRuntime || {
-    createModalRuntime: function createModalRuntime() {
-      return {
-      requestAppNativeDialog: typeof requestAppNativeDialog === "function" ? requestAppNativeDialog : null,
-      requestAppAlert: typeof requestAppAlert === "function" ? requestAppAlert : null,
-      requestAppConfirmation: typeof requestAppConfirmation === "function" ? requestAppConfirmation : null,
-      requestAppTextInput: typeof requestAppTextInput === "function" ? requestAppTextInput : null,
-      requestCodexProfileSwitchConfirmation: typeof requestCodexProfileSwitchConfirmation === "function" ? requestCodexProfileSwitchConfirmation : null,
-      };
-    },
+function createModalRuntime() {
+  return {
+    requestAppNativeDialog: typeof requestAppNativeDialog === "function" ? requestAppNativeDialog : null,
+    requestAppAlert: typeof requestAppAlert === "function" ? requestAppAlert : null,
+    requestAppConfirmation: typeof requestAppConfirmation === "function" ? requestAppConfirmation : null,
+    requestAppTextInput: typeof requestAppTextInput === "function" ? requestAppTextInput : null,
+    requestCodexProfileSwitchConfirmation: typeof requestCodexProfileSwitchConfirmation === "function" ? requestCodexProfileSwitchConfirmation : null,
   };
-})(window);
+}
+
+(function exposeCodexModalRuntime(root) {
+  const modalRuntimeApi = { createModalRuntime };
+  if (typeof module === "object" && module.exports) {
+    module.exports = modalRuntimeApi;
+  }
+  Object.assign(root, {
+    renderAppNativeDialog,
+    closeAppNativeDialog,
+    requestAppNativeDialog,
+    requestAppAlert,
+    requestAppConfirmation,
+    requestAppTextInput,
+    handleAppNativeDialogKeydown,
+    renderCodexProfileSwitchDialog,
+    closeCodexProfileSwitchDialog,
+    requestCodexProfileSwitchConfirmation,
+    codexProfileSwitchStageLabel,
+    formatCodexProfileSwitchProgress,
+    setCodexProfileSwitchStage,
+    clearCodexProfileSwitchStageTimers,
+    stopCodexProfileSwitchProgressPolling,
+    startCodexProfileSwitchProgressPolling,
+    performCodexProfileSwitch,
+  });
+  root.CodexModalRuntime = modalRuntimeApi;
+})(typeof globalThis !== "undefined" ? globalThis : window);
