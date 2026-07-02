@@ -5,6 +5,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const { createThreadListRuntime } = require(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"));
+const threadListLoadPolicy = require(path.resolve(__dirname, "..", "public", "thread-list-load-policy.js"));
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -23,8 +24,8 @@ function basenameForFsPath(value) {
   return parts.length ? parts[parts.length - 1] : "";
 }
 
-function createRuntime(state) {
-  return createThreadListRuntime({
+function createRuntime(state, overrides = {}) {
+  return createThreadListRuntime(Object.assign({
     state,
     $: () => null,
     api: async () => ({}),
@@ -55,7 +56,7 @@ function createRuntime(state) {
     replacePendingAttachments: () => {},
     syncActiveTurnFromThread: () => {},
     connectEvents: () => {},
-    threadListLoadPolicy: {},
+    threadListLoadPolicy,
     nowPerfMs: () => 0,
     roundedDurationMs: (value) => value,
     threadListSummaryFromDetailThread: (thread) => thread,
@@ -109,7 +110,7 @@ function createRuntime(state) {
     handleThreadCardClick: () => {},
     threadGoalSignature: () => "",
     rolloutSizeBytes: () => 0,
-  });
+  }, overrides));
 }
 
 test("thread list runtime owns workspace menu labels and cwd visibility filtering", () => {
@@ -133,4 +134,36 @@ test("thread list runtime owns workspace menu labels and cwd visibility filterin
 
   assert.deepEqual(runtime.visibleThreads().map((thread) => thread.id), ["music-a"]);
   assert.equal(runtime.threadMatchesWorkspaceCwd("/tmp/.codex/worktrees/abc/music", "/repos/music"), false);
+});
+
+test("thread list deferred fallback waits while a thread detail is selected", () => {
+  const timers = [];
+  let apiCallCount = 0;
+  const state = {
+    selectedCwd: "",
+    workspaces: [],
+    currentThread: { id: "thread-1" },
+    currentThreadId: "thread-1",
+  };
+  const runtime = createRuntime(state, {
+    api: async () => {
+      apiCallCount += 1;
+      return { data: [] };
+    },
+    setTimeout: (fn, delayMs) => {
+      const timer = { fn, delayMs };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeout: () => {},
+    $: (id) => (id === "threadSearch" ? { value: "" } : null),
+  });
+
+  runtime.scheduleThreadListDeferredFallback(1);
+
+  assert.equal(timers.length, 1);
+  timers.shift().fn();
+  assert.equal(apiCallCount, 0);
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].delayMs, 1000);
 });

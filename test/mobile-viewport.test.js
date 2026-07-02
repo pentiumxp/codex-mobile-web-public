@@ -1015,7 +1015,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /(?:const|var) THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;/);
   assert.match(appJs, /threadListDeferredFallbackTimer: null/);
   assert.match(threadListRuntimeJs, /function scheduleThreadListDeferredFallback\(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS\)/);
-  assert.match(threadListRuntimeJs, /if \(state\.threadListLoadController \|\| hasThreadDetailRequestInFlight\(\)\) \{[\s\S]*scheduleThreadListDeferredFallback\(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS\);[\s\S]*return;/);
+  assert.match(threadListRuntimeJs, /if \(state\.threadListLoadController \|\| hasThreadDetailRequestInFlight\(\) \|\| hasThreadDetailSelectionIntent\(\)\) \{[\s\S]*scheduleThreadListDeferredFallback\(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS\);[\s\S]*return;/);
   assert.match(threadListRuntimeJs, /if \(options\.deferFallback !== true\) clearThreadListDeferredFallbackTimer\(\);/);
   assert.match(threadListRuntimeJs, /result\.mobileDeferredFallback \|\| result\.mobileDeferredAppServer/);
   assert.match(threadListRuntimeJs, /if \(result && \(result\.mobileDeferredFallback \|\| result\.mobileDeferredAppServer\) && !state\.selectedCwd && !search\) \{[\s\S]*scheduleThreadListDeferredFallback\(\);[\s\S]*\}/);

@@ -366,7 +366,7 @@ function scheduleThreadListDeferredFallback(delayMs = THREAD_LIST_DEFERRED_FALLB
     state.threadListDeferredFallbackTimer = null;
     const search = $("threadSearch").value.trim();
     if (state.selectedCwd || search) return;
-    if (state.threadListLoadController || hasThreadDetailRequestInFlight()) {
+    if (state.threadListLoadController || hasThreadDetailRequestInFlight() || hasThreadDetailSelectionIntent()) {
       scheduleThreadListDeferredFallback(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS);
       return;
     }
