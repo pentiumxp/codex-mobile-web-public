@@ -278,6 +278,7 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
   assert.match(line, /"name":"browser-vite-preview","enabled":true/);
   assert.match(line, /"name":"browser-vite-app-preview","enabled":true/);
   assert.match(line, /"name":"browser-vite-app-preview-root","enabled":true/);
+  assert.match(line, /"name":"browser-vite-app-preview-default-root","enabled":false/);
   assert.match(line, /"name":"browser-vite-app-preview-default-root-rehearsal","enabled":true/);
   assert.match(line, /"name":"browser-vite-app-preview-embed","enabled":true/);
   assert.match(line, /"name":"browser-vite-app-preview-session","enabled":true/);
@@ -675,6 +676,7 @@ test("runtime self-check loop records skipped periodic browser budget", async ()
     ["browser-vite-preview", false, "browser_mode_off"],
     ["browser-vite-app-preview", false, "browser_mode_off"],
     ["browser-vite-app-preview-root", false, "browser_mode_off"],
+    ["browser-vite-app-preview-default-root", false, "explicit_flag_required"],
     ["browser-vite-app-preview-default-root-rehearsal", false, "browser_mode_off"],
     ["browser-vite-app-preview-embed", false, "browser_mode_off"],
     ["browser-vite-app-preview-session", false, "browser_mode_off"],

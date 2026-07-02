@@ -5044,6 +5044,29 @@ This makes the default-shell switch evidence repeatable in deploy gates instead
 of depending on ad hoc temporary-server readbacks. Production `/` still remains
 classic until the default-shell environment is intentionally changed.
 
+The follow-up default-root ownership slice makes the future production
+plain-`/` gate a first-class scheduler job instead of borrowing the root
+opt-in job's budget:
+
+- `services/runtime/runtime-job-scheduler-service.js` declares
+  `browser-vite-app-preview-default-root` separately from
+  `browser-vite-app-preview-root` and from the temporary rehearsal job. It is
+  disabled by default while production remains classic and becomes enabled only
+  for an explicit default-root run or after the browser runtime observes
+  `/api/public-config.defaultShellMode=vite-app-preview`.
+- `scripts/codex-mobile-runtime-self-check-loop.js` re-resolves the runtime job
+  plan after the normal browser-runtime child reports a Vite default shell, so
+  the real default-root production check gets its own timeout, skip reason, and
+  browser-budget metadata. In that Vite-default state, the temporary rehearsal
+  job is skipped because the actual server now owns the plain `/` proof.
+- Explicit `--browser-vite-app-preview-default-root` also disables the
+  rehearsal path, keeping cutover verification focused on the real target
+  server rather than a temporary local server.
+
+This does not change production defaults. It removes an ownership ambiguity in
+the deploy gate before any production restart intentionally moves plain `/` to
+the Vite app-preview shell.
+
 ## Release Rule
 
 Follow the current release order:

@@ -241,7 +241,11 @@ function baseArgs(options = {}) {
 async function runOnce(options = {}, deps = {}) {
   const startedAt = new Date().toISOString();
   const checks = [];
-  const jobPlan = resolveRuntimeSelfCheckPlan(options);
+  let planOptions = { ...options };
+  if (planOptions.browserViteAppPreviewDefaultRoot) {
+    planOptions.skipViteDefaultRootRehearsal = true;
+  }
+  let jobPlan = resolveRuntimeSelfCheckPlan(planOptions);
   let observedDefaultShellMode = "";
   const root = path.resolve(__dirname, "..");
   const apiJob = runtimeSelfCheckJob(jobPlan, "api-thread");
@@ -269,6 +273,15 @@ async function runOnce(options = {}, deps = {}) {
     if (!options.browserStartupOnly && options.browserSubmitSampleDelaysMs) browserArgs.push("--submit-sample-delays-ms", options.browserSubmitSampleDelaysMs);
     const result = await runNodeScript(browserScript, browserArgs, deps, browserJob);
     observedDefaultShellMode = defaultShellModeFromPublicConfig(publicConfigFromReport(result.report || {}));
+    if (observedDefaultShellMode === "vite-app-preview"
+      && (!planOptions.browserViteAppPreviewDefaultRoot || !planOptions.skipViteDefaultRootRehearsal)) {
+      planOptions = {
+        ...planOptions,
+        browserViteAppPreviewDefaultRoot: true,
+        skipViteDefaultRootRehearsal: true,
+      };
+      jobPlan = resolveRuntimeSelfCheckPlan(planOptions);
+    }
     checks.push(summarizeCheck("browser-runtime", result));
   }
   const browserVitePreviewJob = runtimeSelfCheckJob(jobPlan, "browser-vite-preview");
@@ -328,7 +341,7 @@ async function runOnce(options = {}, deps = {}) {
   const shouldRunViteAppPreviewDefaultRoot = options.browserViteAppPreviewDefaultRoot
     || observedDefaultShellMode === "vite-app-preview";
   if (shouldRunViteAppPreviewDefaultRoot) {
-    const browserViteAppPreviewDefaultRootJob = runtimeSelfCheckJob(jobPlan, "browser-vite-app-preview-root");
+    const browserViteAppPreviewDefaultRootJob = runtimeSelfCheckJob(jobPlan, "browser-vite-app-preview-default-root");
     if (browserViteAppPreviewDefaultRootJob && browserViteAppPreviewDefaultRootJob.enabled) {
       const viteAppPreviewDefaultRootArgs = baseArgs(options);
       if (options.browserStartupOnly) {

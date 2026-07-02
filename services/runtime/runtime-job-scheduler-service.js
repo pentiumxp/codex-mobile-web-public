@@ -84,6 +84,15 @@ const RUNTIME_SELF_CHECK_JOBS = Object.freeze({
     periodicDefaultEnabled: false,
     deployDefaultEnabled: true,
   }),
+  "browser-vite-app-preview-default-root": normalizeRuntimeJobDeclaration("browser-vite-app-preview-default-root", {
+    maxConcurrency: 1,
+    cpuBudgetClass: "high",
+    realBrowserAllowed: true,
+    userRequestPreemptible: true,
+    periodicAllowed: true,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
   "browser-vite-app-preview-default-root-rehearsal": normalizeRuntimeJobDeclaration("browser-vite-app-preview-default-root-rehearsal", {
     maxConcurrency: 1,
     cpuBudgetClass: "high",
@@ -128,6 +137,7 @@ const JOB_ORDER = Object.freeze([
   "browser-vite-preview",
   "browser-vite-app-preview",
   "browser-vite-app-preview-root",
+  "browser-vite-app-preview-default-root",
   "browser-vite-app-preview-default-root-rehearsal",
   "browser-vite-app-preview-embed",
   "browser-vite-app-preview-session",
@@ -385,6 +395,7 @@ function skipFlagForJobName(name) {
     || name === "browser-vite-preview"
     || name === "browser-vite-app-preview"
     || name === "browser-vite-app-preview-root"
+    || name === "browser-vite-app-preview-default-root"
     || name === "browser-vite-app-preview-default-root-rehearsal"
     || name === "browser-vite-app-preview-embed"
     || name === "browser-vite-app-preview-session") return "skipBrowser";
@@ -399,12 +410,21 @@ function planRuntimeSelfCheckJob(name, options = {}) {
   const browserMode = defaultBrowserModeForGate(gateMode, options.browserMode);
   const skipFlag = skipFlagForJobName(name);
   if (skipFlag && options[skipFlag]) return disabledJob(spec, "skip_flag");
+  if (name === "browser-vite-app-preview-default-root" && !options.browserViteAppPreviewDefaultRoot) {
+    return disabledJob(spec, "explicit_flag_required");
+  }
+  if (name === "browser-vite-app-preview-default-root-rehearsal" && options.skipViteDefaultRootRehearsal) {
+    return disabledJob(spec, "skip_flag");
+  }
   if (gateMode === "periodic" && !spec.periodicAllowed) return disabledJob(spec, "periodic_not_allowed");
   if (spec.realBrowserAllowed && browserMode !== "full") return disabledJob(spec, "browser_mode_off");
   if (gateMode === "periodic" && !spec.periodicDefaultEnabled && !(spec.realBrowserAllowed && browserMode === "full")) {
     return disabledJob(spec, "periodic_not_default");
   }
-  if (gateMode === "deploy" && !spec.deployDefaultEnabled) return disabledJob(spec, "deploy_not_default");
+  if (gateMode === "deploy" && !spec.deployDefaultEnabled
+    && !(name === "browser-vite-app-preview-default-root" && options.browserViteAppPreviewDefaultRoot)) {
+    return disabledJob(spec, "deploy_not_default");
+  }
   return enabledJob(spec);
 }
 

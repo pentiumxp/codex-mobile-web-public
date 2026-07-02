@@ -141,6 +141,10 @@ test("runtime job scheduler keeps periodic checks lightweight by default", () =>
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").reason, "browser_mode_off");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").realBrowserAllowed, true);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").periodicAllowed, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").enabled, false);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").reason, "explicit_flag_required");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").realBrowserAllowed, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").periodicAllowed, true);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root-rehearsal").enabled, false);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root-rehearsal").reason, "browser_mode_off");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root-rehearsal").realBrowserAllowed, true);
@@ -198,6 +202,15 @@ test("runtime job scheduler enables browser checks for deploy gates", () => {
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").realBrowserAllowed, true);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").cpuBudgetClass, "high");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").userRequestPreemptible, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").enabled, false);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").reason, "explicit_flag_required");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").timeoutMs, service.DEFAULT_JOB_TIMEOUT_MS);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").timeBudgetMs, service.DEFAULT_JOB_TIMEOUT_MS);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").maxConcurrency, 1);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").usesBrowser, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").realBrowserAllowed, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").cpuBudgetClass, "high");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").userRequestPreemptible, true);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root-rehearsal").timeoutMs, service.DEFAULT_JOB_TIMEOUT_MS);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root-rehearsal").timeBudgetMs, service.DEFAULT_JOB_TIMEOUT_MS);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root-rehearsal").maxConcurrency, 1);
@@ -240,6 +253,23 @@ test("runtime job scheduler allows explicit periodic browser diagnostics", () =>
   ]);
   assert.equal(service.runtimeSelfCheckJob(plan, "api-thread").enabled, false);
   assert.equal(service.runtimeSelfCheckJob(plan, "api-thread").reason, "periodic_not_default");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").enabled, false);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").reason, "explicit_flag_required");
+});
+
+test("runtime job scheduler enables actual Vite default-root gate only when requested", () => {
+  const plan = service.resolveRuntimeSelfCheckPlan({
+    gateMode: "deploy",
+    browserViteAppPreviewDefaultRoot: true,
+  });
+
+  assert.ok(plan.enabledJobNames.includes("browser-vite-app-preview-default-root"));
+  const job = service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root");
+  assert.equal(job.enabled, true);
+  assert.equal(job.timeoutMs, service.DEFAULT_JOB_TIMEOUT_MS);
+  assert.equal(job.realBrowserAllowed, true);
+  assert.equal(job.cpuBudgetClass, "high");
+  assert.equal(job.userRequestPreemptible, true);
 });
 
 test("runtime job scheduler distinguishes skip flags from budget policy", () => {
@@ -254,6 +284,7 @@ test("runtime job scheduler distinguishes skip flags from budget policy", () => 
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-preview").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-root").reason, "skip_flag");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-default-root-rehearsal").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-embed").reason, "skip_flag");
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-vite-app-preview-session").reason, "skip_flag");
