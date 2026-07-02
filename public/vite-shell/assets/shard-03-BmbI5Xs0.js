@@ -1,4 +1,1898 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CgwK8ksJ.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-4WUavjDd.js";
+//#region public/thread-list-runtime.js
+var require_thread_list_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachThreadListRuntime(root) {
+		function createThreadListRuntime(deps = {}) {
+			const state = deps.state || {};
+			const $ = typeof deps.$ === "function" ? deps.$ : () => null;
+			const api = deps.api;
+			const document = deps.document || root.document || {};
+			const window = deps.window || root.window || root;
+			const localStorage = deps.localStorage || root.localStorage || {
+				getItem: () => null,
+				setItem: () => {},
+				removeItem: () => {}
+			};
+			const setTimeout = typeof deps.setTimeout === "function" ? deps.setTimeout : root.setTimeout.bind(root);
+			const clearTimeout = typeof deps.clearTimeout === "function" ? deps.clearTimeout : root.clearTimeout.bind(root);
+			const THREAD_LIST_PAGE_LIMIT = deps.THREAD_LIST_PAGE_LIMIT;
+			const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = deps.THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS;
+			const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = deps.THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS;
+			const THREAD_LIST_SLOW_PATH_MS = deps.THREAD_LIST_SLOW_PATH_MS;
+			const STORAGE_THREAD_ID = deps.STORAGE_THREAD_ID;
+			const { normalizeFsPath, escapeHtml, shortPath, isMobileViewport, tokenCountValue, formatTokenMillion, displayInputTokensExcludingCached, saveCurrentDraftNow, flushSideChatDraftNow, resetComposerRuntimeSelection, abortCurrentThreadRefresh, clearRecentCompletedReplyAnchor, clearConversationAutoScrollHold, setComposerText, replacePendingAttachments, syncActiveTurnFromThread, connectEvents, threadListLoadPolicy, nowPerfMs, roundedDurationMs, threadListSummaryFromDetailThread, threadListStableOrderPolicy, reconcileThreadStatusHints, renderCurrentThread, threadTileLayout, isThreadTileKeyboardFocusActive, threadTileCandidateIds, threadTileIdsEqual, restoreConnectionState, scheduleVisiblePageRefreshCheck, threadPerformanceMetrics, postPerformanceEvent, diagnosticDurationBucket, recordHomeAiDiagnosticFailure, recordHomeAiDiagnosticSuccess, threadDiagnosticEventsApi, renderThreadLoadError, diagnosticErrorCode, diagnosticErrorStatus, showError, visibleWorkspaceKeys, codexWorktreeRepoName, basenameForFsPath, visibleWorkspaceNames, statusText, scheduleRenderCurrentThread, threadTilePaneIsVisible, scheduleRenderThreadTilePane, updateThreadStatusHints, normalizeThreadGoal, updateThreadGoalDialogState, draftStore, readDraftMap, draftHasContent, restoreDraftForCurrentTarget, updateComposerControls, showHermesPluginPrimaryPage, isHermesEmbedMode, loadThread, isRunningStatus, rolloutSizeText, isRolloutOverThreshold, formatAbsoluteTime, formatTime, statusIconHtml, statusIconInfo, threadGoalForThread, renderThreadGoalBadge, handleThreadCardClick, threadGoalSignature, rolloutSizeBytes } = deps;
+			async function loadWorkspaces() {
+				const result = await api("/api/workspaces");
+				state.workspaces = result.data || [];
+				const select = $("workspaceSelect");
+				const menu = $("workspaceSelectMenu");
+				if (state.selectedCwd && !state.workspaces.some((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd))) state.selectedCwd = "";
+				if (select) {
+					select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+					select.disabled = !state.workspaces.length && !state.workspaceCreateEnabled;
+					select.setAttribute("title", state.workspaces.length ? "Select Workspace" : "Create Workspace");
+				}
+				if (menu) menu.innerHTML = workspaceSidebarOptionsHtml();
+				updateWorkspacePath();
+				if (shouldRenderPrimaryConversationShell()) renderCurrentThread();
+			}
+			function workspaceSidebarOptionsHtml() {
+				const allOption = `<button type="button" class="workspace-select-option${!state.selectedCwd ? " is-selected" : ""}" data-workspace-value="">All workspaces</button>`;
+				const workspaceOptions = state.workspaces.length ? state.workspaces.map((ws) => {
+					const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+					const label = `${ws.label}${count} - ${ws.cwd}`;
+					return `<button type="button" class="workspace-select-option${normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : ""}" data-workspace-value="${escapeHtml(ws.cwd)}">${escapeHtml(label)}</button>`;
+				}).join("") : `<div class="workspace-select-empty">No Workspace yet</div>`;
+				const createRoot = state.workspaceCreateRoot ? `Under ${state.workspaceCreateRoot}` : "Create a local folder";
+				const createOption = state.workspaceCreateEnabled ? `<button type="button" class="workspace-select-option workspace-create-option" data-create-workspace><span class="workspace-create-title">Create Workspace</span><span class="workspace-create-meta">${escapeHtml(createRoot)}</span></button>` : "";
+				return allOption + workspaceOptions + createOption;
+			}
+			function syncSidebarWorkspaceSelect() {
+				const select = $("workspaceSelect");
+				const menu = $("workspaceSelectMenu");
+				if (!select) return;
+				select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+				if (menu) menu.innerHTML = workspaceSidebarOptionsHtml();
+			}
+			function workspaceOptionsHtml() {
+				return `<option value="">All workspaces</option>` + state.workspaces.map((ws) => {
+					const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+					return `<option value="${escapeHtml(ws.cwd)}">${escapeHtml(`${ws.label}${count} - ${ws.cwd}`)}</option>`;
+				}).join("");
+			}
+			function newThreadWorkspaceOptionsHtml() {
+				return `<button type="button" class="new-thread-workspace-option${!state.selectedCwd ? " is-selected" : ""}" data-new-thread-workspace=""><span>不指定 Workspace</span><span class="new-thread-workspace-option-meta">对齐 Codex App 的项目外聊天</span></button>` + state.workspaces.map((ws) => {
+					const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+					const label = `${ws.label}${count} - ${ws.cwd}`;
+					return `<button type="button" class="new-thread-workspace-option${normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : ""}" data-new-thread-workspace="${escapeHtml(ws.cwd)}">${escapeHtml(label)}</button>`;
+				}).join("");
+			}
+			function newThreadChoiceOptionsHtml(values, selectedValue, dataName, labeler) {
+				return normalizeOptionList(values).map((value) => {
+					return `<button type="button" class="new-thread-choice${value === selectedValue ? " is-selected" : ""}" data-new-thread-${dataName}="${escapeHtml(value)}">${escapeHtml(labeler(value))}</button>`;
+				}).join("");
+			}
+			function selectedWorkspaceLabel() {
+				if (!state.selectedCwd) return "聊天";
+				const workspace = state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd));
+				return workspace && workspace.label ? workspace.label : shortPath(state.selectedCwd);
+			}
+			function fitWorkspaceMenuToViewport(menu, anchor, options = {}) {
+				if (!menu || !anchor) return;
+				const rect = anchor.getBoundingClientRect();
+				const composer = $("composer");
+				const composerTop = composer ? composer.getBoundingClientRect().top : 0;
+				const viewportBottom = window.innerHeight || document.documentElement.clientHeight || 0;
+				const bottomLimit = options.avoidComposer !== false && composerTop > rect.bottom ? composerTop : viewportBottom;
+				const gap = Number(options.gap || 18);
+				const cap = Number(options.cap || (isMobileViewport() ? 360 : 420));
+				const available = Math.max(120, Math.floor(bottomLimit - rect.bottom - gap));
+				const height = Math.max(120, Math.min(cap, available));
+				menu.style.setProperty("--workspace-menu-max-height", `${height}px`);
+			}
+			function updateWorkspacePath() {
+				const el = $("workspacePath");
+				if (!el) return;
+				el.hidden = !state.selectedCwd;
+				el.textContent = state.selectedCwd || "";
+			}
+			function renderWorkspaceTokenUsage() {
+				const el = $("workspaceTokenUsage");
+				if (!el) return;
+				const usage = state.workspaceTokenUsage;
+				if (!usage || typeof usage !== "object") {
+					el.hidden = true;
+					el.innerHTML = "";
+					return;
+				}
+				if (!(tokenCountValue(usage.totalTokens) || tokenCountValue(usage.todayTokens) || tokenCountValue(usage.weekTokens))) {
+					el.hidden = true;
+					el.innerHTML = "";
+					return;
+				}
+				el.hidden = false;
+				el.innerHTML = `<div class="workspace-token-usage-summary">
+    <span title="当前 Workspace 累计 token">总 ${escapeHtml(formatTokenMillion(usage.totalTokens))}</span>
+    <span title="本周 token">周 ${escapeHtml(formatTokenMillion(usage.weekTokens))}</span>
+    <span title="今日 token">今 ${escapeHtml(formatTokenMillion(usage.todayTokens))}</span>
+    <button type="button" class="workspace-token-usage-toggle" data-workspace-token-usage-toggle>统计</button>
+  </div>`;
+				renderWorkspaceStatsDialog();
+			}
+			function tokenBreakdownHtml(entry, className = "workspace-token-usage-breakdown") {
+				return `<div class="${escapeHtml(className)}" aria-label="Token usage breakdown">
+    <span title="Uncached input tokens">Uncached ${escapeHtml(formatTokenMillion(displayInputTokensExcludingCached(entry)))}</span>
+    <span title="Cached input tokens">Cached ${escapeHtml(formatTokenMillion(entry && entry.cachedInputTokens))}</span>
+    <span title="Output tokens">Out ${escapeHtml(formatTokenMillion(entry && entry.outputTokens))}</span>
+    <span title="Reasoning output tokens">Reason ${escapeHtml(formatTokenMillion(entry && entry.reasoningOutputTokens))}</span>
+  </div>`;
+			}
+			function renderWorkspaceStatsDialog() {
+				const dialog = $("workspaceStatsDialog");
+				const content = $("workspaceStatsContent");
+				const subtitle = $("workspaceStatsSubtitle");
+				if (!dialog || !content) return;
+				if (!state.workspaceTokenStatsOpen) {
+					dialog.classList.add("hidden");
+					content.innerHTML = "";
+					return;
+				}
+				const usage = state.workspaceTokenUsage && typeof state.workspaceTokenUsage === "object" ? state.workspaceTokenUsage : {};
+				const daily = Array.isArray(usage.daily) ? usage.daily.slice(0, 31) : [];
+				const workspaces = Array.isArray(usage.workspaces) ? usage.workspaces.slice(0, 50) : [];
+				if (subtitle) subtitle.textContent = state.selectedCwd ? `当前 Workspace: ${state.selectedCwd}` : "All workspaces";
+				content.innerHTML = `<section class="workspace-stats-section">
+    <div class="workspace-stats-section-title">总览</div>
+    <div class="workspace-stats-summary-grid">
+      <div><span>总计</span><strong>${escapeHtml(formatTokenMillion(usage.totalTokens))}</strong></div>
+      <div><span>本周</span><strong>${escapeHtml(formatTokenMillion(usage.weekTokens))}</strong></div>
+      <div><span>今日</span><strong>${escapeHtml(formatTokenMillion(usage.todayTokens))}</strong></div>
+    </div>
+    ${tokenBreakdownHtml(usage, "workspace-stats-breakdown")}
+  </section>
+  <section class="workspace-stats-section">
+    <div class="workspace-stats-section-title">按天</div>
+    <div class="workspace-stats-list">
+      ${daily.length ? daily.map((entry) => `<article class="workspace-stats-row">
+        <div class="workspace-stats-row-head">
+          <span>${escapeHtml(entry.date || "")}</span>
+          <strong>${escapeHtml(formatTokenMillion(entry.totalTokens))}</strong>
+        </div>
+        ${tokenBreakdownHtml(entry, "workspace-stats-breakdown")}
+      </article>`).join("") : `<div class="workspace-token-usage-empty">暂无每日明细</div>`}
+    </div>
+  </section>
+  <section class="workspace-stats-section">
+    <div class="workspace-stats-section-title">按项目</div>
+    <div class="workspace-stats-list">
+      ${workspaces.length ? workspaces.map((entry) => `<article class="workspace-stats-row">
+        <div class="workspace-stats-row-head">
+          <span title="${escapeHtml(entry.cwd || "")}">${escapeHtml(shortPath(entry.cwd) || entry.cwd || "")}</span>
+          <strong>${escapeHtml(formatTokenMillion(entry.totalTokens))}</strong>
+        </div>
+        <div class="workspace-stats-row-meta">
+          <span>周 ${escapeHtml(formatTokenMillion(entry.weekTokens))}</span>
+          <span>今 ${escapeHtml(formatTokenMillion(entry.todayTokens))}</span>
+        </div>
+        ${tokenBreakdownHtml(entry, "workspace-stats-breakdown")}
+      </article>`).join("") : `<div class="workspace-token-usage-empty">暂无项目明细</div>`}
+    </div>
+  </section>`;
+				dialog.classList.remove("hidden");
+			}
+			function openWorkspaceStatsDialog() {
+				state.workspaceTokenStatsOpen = true;
+				renderWorkspaceStatsDialog();
+			}
+			function closeWorkspaceStatsDialog() {
+				state.workspaceTokenStatsOpen = false;
+				renderWorkspaceStatsDialog();
+			}
+			function clearCurrentThreadSelection(options = {}) {
+				if (options.saveDraft !== false) saveCurrentDraftNow();
+				flushSideChatDraftNow().catch(() => {});
+				state.threadLoadSeq += 1;
+				state.sendButtonHint = "";
+				resetComposerRuntimeSelection();
+				state.newThreadTitle = "";
+				if (state.threadLoadController) {
+					state.threadLoadController.abort();
+					state.threadLoadController = null;
+				}
+				abortCurrentThreadRefresh();
+				state.currentThread = null;
+				state.currentThreadId = "";
+				state.activeTurnId = "";
+				clearRecentCompletedReplyAnchor();
+				clearConversationAutoScrollHold();
+				localStorage.removeItem(STORAGE_THREAD_ID);
+				setComposerText("");
+				replacePendingAttachments([], { saveDraft: false });
+				syncActiveTurnFromThread();
+				if (state.events) connectEvents();
+			}
+			function renderThreadListLoading() {
+				const list = $("threadList");
+				if (!list) return;
+				list.innerHTML = `<div class="empty-state">Loading threads...</div>`;
+				state.renderedThreadListSignature = `loading|${state.selectedCwd}|${$("threadSearch").value.trim()}`;
+			}
+			function hasThreadDetailSelectionIntent() {
+				return Boolean(state.currentThread || state.currentThreadId || state.threadLoadController || state.startupThreadOpenPending);
+			}
+			function shouldRenderPrimaryConversationShell() {
+				return !hasThreadDetailSelectionIntent() && !state.newThreadDraft;
+			}
+			function clearThreadListDeferredFallbackTimer() {
+				if (!state.threadListDeferredFallbackTimer) return;
+				clearTimeout(state.threadListDeferredFallbackTimer);
+				state.threadListDeferredFallbackTimer = null;
+			}
+			function clearThreadListDeferredSilentTimer() {
+				if (!state.threadListDeferredSilentTimer) return;
+				clearTimeout(state.threadListDeferredSilentTimer);
+				state.threadListDeferredSilentTimer = null;
+			}
+			function hasThreadDetailRequestInFlight() {
+				return Boolean(state.threadLoadController || state.refreshThreadController || state.currentThread && state.currentThread.mobileLoading);
+			}
+			function scheduleThreadListDeferredFallback(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS) {
+				clearThreadListDeferredFallbackTimer();
+				const delay = Math.max(500, Number(delayMs) || THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS);
+				state.threadListDeferredFallbackTimer = setTimeout(() => {
+					state.threadListDeferredFallbackTimer = null;
+					const search = $("threadSearch").value.trim();
+					if (state.selectedCwd || search) return;
+					if (state.threadListLoadController || hasThreadDetailRequestInFlight() || hasThreadDetailSelectionIntent()) {
+						scheduleThreadListDeferredFallback(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS);
+						return;
+					}
+					loadThreads({
+						silent: true,
+						deferFallback: false
+					}).catch(showError);
+				}, delay);
+			}
+			function scheduleThreadListDeferredSilentRefresh(delayMs = 700, options = {}) {
+				clearThreadListDeferredSilentTimer();
+				const delay = Math.max(250, Number(delayMs) || 700);
+				state.threadListDeferredSilentTimer = setTimeout(() => {
+					state.threadListDeferredSilentTimer = null;
+					if (document.visibilityState === "hidden") return;
+					if (state.threadListLoadController || hasThreadDetailRequestInFlight()) {
+						scheduleThreadListDeferredSilentRefresh(900, options);
+						return;
+					}
+					loadThreads(Object.assign({}, options, {
+						silent: true,
+						allowDuringDetail: true,
+						allowHidden: false
+					})).catch(showError);
+				}, delay);
+			}
+			async function loadThreads(options = {}) {
+				const silent = options.silent === true;
+				if (silent && state.threadListLoadController) return null;
+				if (options.deferFallback !== true) clearThreadListDeferredFallbackTimer();
+				const params = new URLSearchParams({
+					limit: String(THREAD_LIST_PAGE_LIMIT),
+					archived: "false"
+				});
+				if (state.selectedCwd) params.set("cwd", state.selectedCwd);
+				const search = $("threadSearch").value.trim();
+				if (search) params.set("search", search);
+				const threadDetailOpening = hasThreadDetailRequestInFlight();
+				const loadPlan = threadListLoadPolicy.planThreadListLoadRequest({
+					deferFallback: options.deferFallback,
+					search,
+					selectedCwd: state.selectedCwd,
+					silent,
+					threadDetailOpening,
+					threadListLoadedAtMs: state.threadListLoadedAtMs,
+					documentHidden: document.visibilityState === "hidden",
+					allowDuringDetail: options.allowDuringDetail === true,
+					allowHidden: options.allowHidden === true
+				});
+				if (!loadPlan.shouldLoad) {
+					if (loadPlan.skipReason === "detail-in-flight") scheduleThreadListDeferredSilentRefresh(loadPlan.retryDelayMs, { deferFallback: options.deferFallback });
+					return null;
+				}
+				if (loadPlan.params && loadPlan.params.fallback) params.set("fallback", "defer");
+				if (loadPlan.params && loadPlan.params.initial) params.set("initial", "warm-fallback");
+				clearThreadListDeferredSilentTimer();
+				const loadStartedAt = nowPerfMs();
+				const seq = state.threadListLoadSeq + 1;
+				state.threadListLoadSeq = seq;
+				if (state.threadListLoadController) state.threadListLoadController.abort();
+				const controller = new AbortController();
+				state.threadListLoadController = controller;
+				if (!silent) renderThreadListLoading();
+				try {
+					const apiStartedAt = nowPerfMs();
+					const result = await api(`/api/threads?${params}`, {
+						timeoutMs: 45e3,
+						signal: controller.signal
+					});
+					const apiElapsedMs = roundedDurationMs(apiStartedAt);
+					if (seq !== state.threadListLoadSeq) return null;
+					const renderStartedAt = nowPerfMs();
+					const nextThreads = visibleThreads(result.data || []).map((thread) => threadListSummaryFromDetailThread(thread) || thread);
+					const stableOrderPlan = threadListStableOrderPolicy.planThreadListStableOrder({
+						threads: nextThreads,
+						previousState: state.threadListStableOrder,
+						scopeKey: threadListStableOrderPolicy.threadListOrderScopeKey({
+							selectedCwd: state.selectedCwd,
+							search
+						}),
+						selectedCwd: state.selectedCwd,
+						search,
+						nowMs: Date.now()
+					});
+					state.threads = stableOrderPlan.threads;
+					state.threadListStableOrder = stableOrderPlan.state;
+					state.workspaceTokenUsage = result.mobileTokenUsage || null;
+					state.threadListLoadedAtMs = Date.now();
+					reconcileThreadStatusHints(state.threads);
+					renderWorkspaceTokenUsage();
+					renderThreads(result);
+					if (state.currentThread && state.threadTileMode && !isThreadTileKeyboardFocusActive()) {
+						const tileLayout = threadTileLayout();
+						if (tileLayout.enabled) {
+							const nextTileIds = threadTileCandidateIds(tileLayout);
+							if (!threadTileIdsEqual(nextTileIds, state.threadTileActiveIds)) renderCurrentThread({ stickToBottom: true });
+						}
+					}
+					restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
+					scheduleVisiblePageRefreshCheck(500);
+					if (result && (result.mobileDeferredFallback || result.mobileDeferredAppServer) && !state.selectedCwd && !search) scheduleThreadListDeferredFallback();
+					if (shouldRenderPrimaryConversationShell()) renderCurrentThread();
+					const listPerformance = threadPerformanceMetrics.threadListEventFields(result);
+					const listPerformanceEvent = {
+						elapsedMs: roundedDurationMs(loadStartedAt),
+						apiElapsedMs,
+						renderElapsedMs: roundedDurationMs(renderStartedAt),
+						serverTimings: listPerformance.serverTimings,
+						performancePhase: listPerformance.performancePhase,
+						count: state.threads.length,
+						silent,
+						hasSearch: Boolean(search),
+						hasWorkspace: Boolean(state.selectedCwd),
+						mobileFallback: Boolean(result.mobileFallback)
+					};
+					postPerformanceEvent("thread_list_rendered", listPerformanceEvent);
+					const listSlowPlan = threadPerformanceMetrics.planThreadListSlowPathDiagnostic(listPerformanceEvent, {
+						action: "thread-list-load",
+						source: silent ? "thread-list-refresh" : "thread-list-load",
+						durationBucket: diagnosticDurationBucket(listPerformanceEvent.elapsedMs),
+						thresholdMs: THREAD_LIST_SLOW_PATH_MS
+					});
+					if (listSlowPlan.shouldReport) recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadListSlowPathDiagnosticEvent(listSlowPlan));
+					else recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.threadListSlowPathDiagnosticSuccess({
+						action: "thread-list-load",
+						performancePhase: listPerformance.performancePhase
+					}));
+					recordHomeAiDiagnosticSuccess({
+						category: "thread_session_load_failed",
+						diagnostic_type: "thread_list_load_failed",
+						error_code: "thread_list_load_failed",
+						context: {
+							surface: "thread-session",
+							action: "thread-list-load"
+						}
+					});
+					return result;
+				} catch (err) {
+					if (seq !== state.threadListLoadSeq || controller.signal.aborted) return null;
+					if (!silent) renderThreadLoadError(err);
+					recordHomeAiDiagnosticFailure({
+						category: "thread_session_load_failed",
+						diagnostic_type: "thread_list_load_failed",
+						severity_hint: "H3",
+						evidence_confidence: .7,
+						error_code: diagnosticErrorCode(err, "thread_list_load_failed"),
+						duration_bucket: diagnosticDurationBucket(roundedDurationMs(loadStartedAt)),
+						context: {
+							surface: "thread-session",
+							action: "thread-list-load"
+						},
+						counts: { status_code: diagnosticErrorStatus(err) },
+						breadcrumbs: [{
+							kind: "thread-session",
+							code: "thread-list-load",
+							status: "failed",
+							duration_bucket: diagnosticDurationBucket(roundedDurationMs(loadStartedAt)),
+							fields: { status_code: diagnosticErrorStatus(err) }
+						}]
+					});
+					throw err;
+				} finally {
+					if (state.threadListLoadController === controller) state.threadListLoadController = null;
+				}
+			}
+			function threadMatchesWorkspaceCwd(threadCwd, workspaceCwd) {
+				const threadKey = normalizeFsPath(threadCwd);
+				const workspaceKey = normalizeFsPath(workspaceCwd);
+				if (!workspaceKey) return true;
+				if (threadKey === workspaceKey) return true;
+				const repoName = codexWorktreeRepoName(threadCwd);
+				return Boolean(repoName && repoName === basenameForFsPath(workspaceCwd));
+			}
+			function threadMatchesVisibleWorkspace(threadCwd) {
+				const cwd = normalizeFsPath(threadCwd);
+				const keys = visibleWorkspaceKeys();
+				if (keys.size <= 0 || !cwd) return true;
+				if (keys.has(cwd)) return true;
+				const repoName = codexWorktreeRepoName(threadCwd);
+				return Boolean(repoName && visibleWorkspaceNames().has(repoName));
+			}
+			function isHiddenThread(thread) {
+				if (!thread) return true;
+				const status = statusText(thread.status).toLowerCase();
+				const location = String(thread.path || thread.rolloutPath || thread.rollout_path || "").toLowerCase();
+				if (thread.archived || thread.archivedAt || thread.archived_at || thread.isArchived) return true;
+				if (thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt) return true;
+				if (/archived|deleted|removed/.test(status)) return true;
+				if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
+				if (/\.jsonl\.(bak|backup|old)(?:\b|[-_.])/.test(location)) return true;
+				const cwd = normalizeFsPath(thread.cwd);
+				if (state.selectedCwd && !threadMatchesWorkspaceCwd(thread.cwd, state.selectedCwd)) return true;
+				if (cwd && !threadMatchesVisibleWorkspace(thread.cwd)) return true;
+				return false;
+			}
+			function visibleThreads(threads = state.threads) {
+				return (threads || []).filter((thread) => !isHiddenThread(thread));
+			}
+			function pruneHiddenThreads() {
+				state.threads = visibleThreads();
+			}
+			function applyThreadStatusToThread(thread, status) {
+				if (!thread) return false;
+				thread.status = status;
+				return true;
+			}
+			function scheduleThreadStatusDetailRender(threadId = "") {
+				const id = String(threadId || state.currentThreadId || "").trim();
+				if (!id) return false;
+				if (state.currentThread && String(state.currentThread.id || "") === id) {
+					scheduleRenderCurrentThread();
+					return true;
+				}
+				if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+					if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+					return true;
+				}
+				return false;
+			}
+			function updateThreadListStatus(threadId, status, options = {}) {
+				const id = String(threadId || "");
+				if (!id) return;
+				applyThreadStatusToThread(state.threads.find((entry) => String(entry && entry.id || "") === id), status);
+				applyThreadStatusToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, status);
+				applyThreadStatusToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, status);
+				if (options.render === true) scheduleThreadStatusDetailRender(id);
+			}
+			function localThreadForStatusContext(threadId) {
+				const id = String(threadId || "").trim();
+				if (!id) return null;
+				if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+				return state.threads.find((entry) => String(entry && entry.id || "") === id) || state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
+			}
+			function snapshotThreadStatus(threadId) {
+				const id = String(threadId || "");
+				if (!id) return null;
+				const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
+				const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
+				const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
+				return {
+					id,
+					hadListThread: Boolean(listThread),
+					listStatus: listThread ? listThread.status : void 0,
+					hadCurrentThread: currentMatches,
+					currentStatus: currentMatches ? state.currentThread.status : void 0,
+					hadTileThread: Boolean(tileThread),
+					tileStatus: tileThread ? tileThread.status : void 0
+				};
+			}
+			function restoreThreadStatusSnapshot(snapshot) {
+				if (!snapshot || !snapshot.id) return;
+				const id = String(snapshot.id);
+				const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
+				const currentThread = state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null;
+				const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
+				const restoredStatus = snapshot.hadCurrentThread ? snapshot.currentStatus : snapshot.hadListThread ? snapshot.listStatus : snapshot.tileStatus;
+				const targetThread = localThreadForStatusContext(id) || currentThread || listThread || tileThread;
+				updateThreadStatusHints(id, { type: "active" }, restoredStatus, {
+					thread: targetThread,
+					notify: false
+				});
+				const listIndex = state.threads.findIndex((entry) => String(entry && entry.id || "") === id);
+				if (snapshot.hadListThread && listIndex >= 0) applyThreadStatusToThread(state.threads[listIndex], snapshot.listStatus);
+				else if (!snapshot.hadListThread && listIndex >= 0) state.threads = state.threads.filter((entry) => String(entry && entry.id || "") !== id);
+				if (snapshot.hadCurrentThread && state.currentThread && String(state.currentThread.id || "") === id) state.currentThread.status = snapshot.currentStatus;
+				if (snapshot.hadTileThread) applyThreadStatusToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, snapshot.tileStatus);
+				pruneHiddenThreads();
+				scheduleThreadStatusDetailRender(id);
+			}
+			function scheduleRenderThreads() {
+				if (state.threadListRenderFrame || state.threadListRenderScheduled) return;
+				state.threadListRenderScheduled = true;
+				const render = () => {
+					state.threadListRenderFrame = null;
+					state.threadListRenderScheduled = false;
+					renderThreads();
+				};
+				if (window.requestAnimationFrame) state.threadListRenderFrame = window.requestAnimationFrame(render);
+				else state.threadListRenderFrame = setTimeout(render, 33);
+			}
+			function updateThreadGoalState(threadId, goal) {
+				const id = String(threadId || goal && goal.threadId || "").trim();
+				if (!id) return;
+				const normalizedGoal = goal ? normalizeThreadGoal(goal, id) : null;
+				const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
+				applyThreadGoalToThread(thread, normalizedGoal);
+				applyThreadGoalToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, normalizedGoal);
+				applyThreadGoalToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, normalizedGoal);
+				scheduleThreadGoalDetailRender(id);
+				if (state.goalDialogThreadId && state.goalDialogThreadId === id) updateThreadGoalDialogState(normalizedGoal);
+				scheduleRenderThreads();
+			}
+			function renderThreads(result = null) {
+				const list = $("threadList");
+				pruneHiddenThreads();
+				if (!state.threads.length) {
+					if (state.renderedThreadListSignature !== "empty") {
+						list.innerHTML = `<div class="empty-state">No threads.</div>`;
+						state.renderedThreadListSignature = "empty";
+					}
+					return;
+				}
+				const warning = result && result.mobileFallback ? `<div class="history-note">Live thread list recovering. Showing cached session index.</div>` : "";
+				const nowMs = Date.now();
+				const html = warning + state.threads.map((thread) => {
+					const title = thread.name || thread.preview || thread.id;
+					const sizeText = rolloutSizeText(thread);
+					const sizeWarn = isRolloutOverThreshold(thread);
+					const updatedTitle = formatAbsoluteTime(thread.updatedAt);
+					const pathText = shortPath(thread.cwd) || "聊天";
+					const isWorkspaceLess = !thread.cwd;
+					const timeText = formatTime(thread.updatedAt, nowMs);
+					const statusIcon = statusIconHtml(thread.status, "thread-status-icon", thread.id);
+					const iconKind = statusIconInfo(thread.status, thread.id)?.kind || "";
+					const active = thread.id === state.currentThreadId ? " active" : "";
+					const emphasis = iconKind ? ` has-status-${iconKind}` : "";
+					const goal = threadGoalForThread(thread);
+					const goalBadge = renderThreadGoalBadge(goal);
+					const pendingIncomingTaskCards = Math.max(0, Number(thread && thread.pendingIncomingTaskCardCount) || 0);
+					const taskCardBadge = pendingIncomingTaskCards ? `<div class="thread-card-task-badge" title="Pending incoming task cards">${escapeHtml(`Task ${pendingIncomingTaskCards}`)}</div>` : "";
+					const sizeBadge = sizeText ? `<div class="thread-card-size${sizeWarn ? " warn" : ""}" title="Rollout file size">${escapeHtml(sizeText)}</div>` : "";
+					return `<div class="thread-card-wrap${sizeWarn ? " rollout-warn" : ""}" data-thread-row="${escapeHtml(thread.id)}">
+      <button class="thread-card${active}${emphasis}${sizeWarn ? " rollout-warn" : ""}" type="button" data-thread="${escapeHtml(thread.id)}">
+        <div class="thread-card-title-row">
+          <div class="thread-card-title">${escapeHtml(title)}</div>
+          <div class="thread-card-title-actions">${statusIcon}</div>
+        </div>
+        <div class="thread-card-meta-row">
+          <div class="thread-card-meta">
+            <span class="thread-card-path${isWorkspaceLess ? " thread-card-path-chat" : ""}">${escapeHtml(pathText)}</span>
+            ${timeText ? `<span class="thread-card-time" title="${escapeHtml(updatedTitle)}">${escapeHtml(timeText)}</span>` : ""}
+          </div>
+          <div class="thread-card-meta-badges">
+            ${goalBadge}
+            ${taskCardBadge}
+            ${sizeBadge}
+          </div>
+        </div>
+      </button>
+    </div>`;
+				}).join("");
+				const signature = JSON.stringify({
+					warning: Boolean(warning),
+					currentThreadId: state.currentThreadId,
+					timeBucket: Math.floor(nowMs / 6e4),
+					threads: state.threads.map((thread) => [
+						thread.id,
+						thread.name || thread.preview || thread.id,
+						shortPath(thread.cwd) || "聊天",
+						thread.updatedAt,
+						statusText(thread.status),
+						statusIconInfo(thread.status, thread.id)?.kind || "",
+						threadGoalSignature(thread),
+						state.unreadThreadIds.has(thread.id) ? 1 : 0,
+						Number(thread.pendingIncomingTaskCardCount || 0),
+						rolloutSizeBytes(thread),
+						isRolloutOverThreshold(thread)
+					])
+				});
+				if (state.renderedThreadListSignature === signature) return;
+				list.innerHTML = html;
+				state.renderedThreadListSignature = signature;
+				list.querySelectorAll("[data-thread]").forEach((button) => {
+					button.addEventListener("click", handleThreadCardClick);
+				});
+			}
+			async function restoreThreadSelection() {
+				if (hasThreadDetailSelectionIntent()) return;
+				if (isHermesEmbedMode()) {
+					state.startupThreadOpenPending = false;
+					showHermesPluginPrimaryPage({ source: "restore-empty" });
+					return;
+				}
+				const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
+				if (!state.threads.length && !savedThreadId) {
+					state.startupThreadOpenPending = false;
+					restoreNewThreadDraftSelection();
+					return;
+				}
+				const saved = savedThreadId && state.threads.find((thread) => thread.id === savedThreadId);
+				const active = state.threads.find((thread) => isRunningStatus(thread.status));
+				const target = saved || (savedThreadId ? { id: savedThreadId } : active);
+				if (!target) {
+					state.startupThreadOpenPending = false;
+					restoreNewThreadDraftSelection();
+					return;
+				}
+				try {
+					await loadThread(target.id, { source: "restore" });
+				} catch (err) {
+					state.startupThreadOpenPending = false;
+					if (target.id === savedThreadId) localStorage.removeItem(STORAGE_THREAD_ID);
+					showError(err);
+					renderCurrentThread();
+				}
+			}
+			function restoreNewThreadDraftSelection() {
+				const key = draftStore.getTargetKey();
+				if (!key.startsWith("new:")) return false;
+				const draft = readDraftMap()[key];
+				if (!draftHasContent(draft)) return false;
+				const cwd = String(draft.cwd || "");
+				const workspace = cwd ? state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(cwd)) : null;
+				if (!workspace) return false;
+				state.selectedCwd = workspace.cwd || cwd;
+				clearCurrentThreadSelection({ saveDraft: false });
+				state.newThreadDraft = true;
+				restoreDraftForCurrentTarget();
+				syncSidebarWorkspaceSelect();
+				updateWorkspacePath();
+				renderThreads();
+				renderCurrentThread();
+				updateComposerControls();
+				return true;
+			}
+			async function selectWorkspaceShortcut(cwd) {
+				saveCurrentDraftNow();
+				state.selectedCwd = cwd || "";
+				clearCurrentThreadSelection({ saveDraft: false });
+				const select = $("workspaceSelect");
+				if (select) select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+				syncSidebarWorkspaceSelect();
+				updateWorkspacePath();
+				updateComposerControls();
+				renderCurrentThread();
+				await loadThreads();
+			}
+			return {
+				loadWorkspaces,
+				workspaceSidebarOptionsHtml,
+				syncSidebarWorkspaceSelect,
+				workspaceOptionsHtml,
+				newThreadWorkspaceOptionsHtml,
+				newThreadChoiceOptionsHtml,
+				selectedWorkspaceLabel,
+				fitWorkspaceMenuToViewport,
+				updateWorkspacePath,
+				renderWorkspaceTokenUsage,
+				tokenBreakdownHtml,
+				renderWorkspaceStatsDialog,
+				openWorkspaceStatsDialog,
+				closeWorkspaceStatsDialog,
+				clearCurrentThreadSelection,
+				renderThreadListLoading,
+				hasThreadDetailSelectionIntent,
+				shouldRenderPrimaryConversationShell,
+				clearThreadListDeferredFallbackTimer,
+				clearThreadListDeferredSilentTimer,
+				hasThreadDetailRequestInFlight,
+				scheduleThreadListDeferredFallback,
+				scheduleThreadListDeferredSilentRefresh,
+				loadThreads,
+				threadMatchesWorkspaceCwd,
+				threadMatchesVisibleWorkspace,
+				isHiddenThread,
+				visibleThreads,
+				pruneHiddenThreads,
+				applyThreadStatusToThread,
+				scheduleThreadStatusDetailRender,
+				updateThreadListStatus,
+				localThreadForStatusContext,
+				snapshotThreadStatus,
+				restoreThreadStatusSnapshot,
+				scheduleRenderThreads,
+				updateThreadGoalState,
+				renderThreads,
+				restoreThreadSelection,
+				restoreNewThreadDraftSelection,
+				selectWorkspaceShortcut
+			};
+		}
+		const api = { createThreadListRuntime };
+		if (typeof module === "object" && module.exports) module.exports = api;
+		root.CodexThreadListRuntime = api;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
+//#region public/side-chat-runtime.js
+var require_side_chat_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachSideChatRuntime(root) {
+		function noop() {}
+		function noopFalse() {
+			return false;
+		}
+		function noopString() {
+			return "";
+		}
+		function defaultRequestAnimationFrame(callback) {
+			return typeof root.setTimeout === "function" ? root.setTimeout(callback, 16) : 0;
+		}
+		function createSideChatRuntime(deps = {}) {
+			const state = deps.state || {};
+			const $ = typeof deps.$ === "function" ? deps.$ : () => null;
+			const document = deps.document || root.document || {};
+			const window = deps.window || root.window || root;
+			const requestAnimationFrame = typeof deps.requestAnimationFrame === "function" ? deps.requestAnimationFrame : typeof root.requestAnimationFrame === "function" ? root.requestAnimationFrame.bind(root) : defaultRequestAnimationFrame;
+			const setTimeout = typeof deps.setTimeout === "function" ? deps.setTimeout : typeof root.setTimeout === "function" ? root.setTimeout.bind(root) : () => 0;
+			const clearTimeout = typeof deps.clearTimeout === "function" ? deps.clearTimeout : typeof root.clearTimeout === "function" ? root.clearTimeout.bind(root) : noop;
+			const SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS = Math.max(0, Number(deps.SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS || 450) || 450);
+			const SIDE_CHAT_DRAFT_MAX_CHARS = Math.max(1, Number(deps.SIDE_CHAT_DRAFT_MAX_CHARS || 8e3) || 8e3);
+			const SUBAGENT_EDGE_SWIPE_PX = Math.max(1, Number(deps.SUBAGENT_EDGE_SWIPE_PX || 56) || 56);
+			const SUBAGENT_EDGE_SWIPE_MAX_PX = Math.max(SUBAGENT_EDGE_SWIPE_PX, Number(deps.SUBAGENT_EDGE_SWIPE_MAX_PX || 88) || 88);
+			const SUBAGENT_EDGE_SWIPE_RATIO = Math.max(0, Number(deps.SUBAGENT_EDGE_SWIPE_RATIO || .08) || .08);
+			const SUBAGENT_SWIPE_MIN_PX = Math.max(1, Number(deps.SUBAGENT_SWIPE_MIN_PX || 70) || 70);
+			const SUBAGENT_WHEEL_SWIPE_MIN_PX = Math.max(1, Number(deps.SUBAGENT_WHEEL_SWIPE_MIN_PX || 48) || 48);
+			const CLIENT_BUILD_ID = String(deps.CLIENT_BUILD_ID || "");
+			const { api, collabAgentNameText = noopString, collabAgentTaskText = noopString, collabAgentThreadText = noopString, conversationDomTurnIds = () => [], conversationPatchShellSignature = noopString, conversationRenderSignature = noopString, createSubmissionId = () => "sidechat-" + Date.now(), currentLiveTurn = () => null, diagnosticThreadHash = noopString, escapeHtml = (value) => String(value || ""), escapeSelectorAttr = (value) => String(value || ""), formatTime = noopString, homeAiDiagnosticReportingApi = { boundedToken: (value) => String(value || "") }, isInteractiveGestureTarget = noopFalse, latestTurn = () => null, loadThread = async () => null, loadThreads = async () => null, markActivity = noop, normalizeClientErrorMessage = (value) => String(value || ""), primaryTouch = () => null, renderCurrentThread = noop, requestAppConfirmation = async () => false, scheduleCurrentThreadRefresh = noop, scheduleLivePollIfNeeded = noop, showError = noop, statusText = noopString, truncateMiddle = (value) => String(value || ""), visibleConversationShape = () => ({}) } = deps;
+			function isSubagentItem(item) {
+				return Boolean(item && item.type === "collabAgentToolCall");
+			}
+			function turnSubagentItems(turn) {
+				return (Array.isArray(turn && turn.items) ? turn.items : []).filter(isSubagentItem);
+			}
+			function activeSubagentItems(turn) {
+				return turnSubagentItems(turn).filter(isActiveSubagentItem);
+			}
+			function currentSubagentTurn() {
+				if (!state.currentThread) return null;
+				const live = currentLiveTurn();
+				if (turnSubagentItems(live).length) return live;
+				const latest = latestTurn();
+				return activeSubagentItems(latest).length ? latest : null;
+			}
+			function currentSubagentItems() {
+				const turn = currentSubagentTurn();
+				if (turn && currentLiveTurn() === turn) return turnSubagentItems(turn);
+				return activeSubagentItems(turn);
+			}
+			function subagentStatusKind(status) {
+				const text = statusText(status).toLowerCase();
+				if (/fail|error|denied|reject|cancel|interrupt|stop/.test(text)) return "failed";
+				if (/complete|success|succeeded|done|finished|closed/.test(text)) return "completed";
+				if (/queue|pending|waiting|wait/.test(text)) return "queued";
+				if (/running|active|started|processing|inprogress|in_progress|in-progress|working|open|spawned|starting/.test(text)) return "running";
+				return "unknown";
+			}
+			function isActiveSubagentItem(item) {
+				const kind = subagentStatusKind(item && item.status);
+				return kind === "running" || kind === "queued";
+			}
+			function currentSubagentStatusKind(item, turn) {
+				const kind = subagentStatusKind(item && item.status);
+				if (turn && currentLiveTurn() === turn && (kind === "completed" || kind === "unknown")) return "running";
+				return kind;
+			}
+			function subagentStatusLabel(kind) {
+				return {
+					running: "运行中",
+					queued: "等待",
+					completed: "完成",
+					failed: "失败",
+					unknown: "未知"
+				}[kind] || "未知";
+			}
+			function subagentSwipeAvailable() {
+				return Boolean(state.currentThread);
+			}
+			function sideChatThreadId() {
+				return String(state.currentThreadId || state.currentThread && state.currentThread.id || "");
+			}
+			function defaultSideChatState(threadId) {
+				return {
+					threadId: String(threadId || ""),
+					version: 0,
+					messages: [],
+					draft: {
+						text: "",
+						updatedAt: ""
+					},
+					candidates: [],
+					queue: null,
+					sidecar: {
+						status: "idle",
+						pendingUserMessageId: "",
+						updatedAt: "",
+						error: ""
+					},
+					audit: {
+						createdAt: "",
+						updatedAt: ""
+					},
+					persistence: "server"
+				};
+			}
+			function normalizeSideChatSidecar(input) {
+				const source = input && typeof input === "object" ? input : {};
+				const status = String(source.status || "idle").toLowerCase();
+				return {
+					status: [
+						"idle",
+						"pending",
+						"failed"
+					].includes(status) ? status : "idle",
+					pendingUserMessageId: String(source.pendingUserMessageId || ""),
+					updatedAt: String(source.updatedAt || ""),
+					error: String(source.error || "")
+				};
+			}
+			function normalizeSideChatState(input, threadId = "") {
+				const source = input && typeof input === "object" ? input : {};
+				return {
+					threadId: String(source.threadId || threadId || ""),
+					version: Math.max(0, Number(source.version) || 0),
+					messages: Array.isArray(source.messages) ? source.messages.filter(Boolean) : [],
+					draft: {
+						text: String(source.draft && source.draft.text || ""),
+						updatedAt: String(source.draft && source.draft.updatedAt || "")
+					},
+					candidates: Array.isArray(source.candidates) ? source.candidates.filter(Boolean) : [],
+					queue: source.queue && typeof source.queue === "object" ? source.queue : null,
+					sidecar: normalizeSideChatSidecar(source.sidecar),
+					audit: {
+						createdAt: String(source.audit && source.audit.createdAt || ""),
+						updatedAt: String(source.audit && source.audit.updatedAt || "")
+					},
+					persistence: "server"
+				};
+			}
+			function setSideChatState(threadId, sideChat) {
+				const id = String(threadId || sideChat && sideChat.threadId || "");
+				if (!id) return defaultSideChatState("");
+				const normalized = normalizeSideChatState(sideChat, id);
+				state.threadSideChats.set(id, normalized);
+				return normalized;
+			}
+			function sideChatStateForThread(threadId = sideChatThreadId()) {
+				const id = String(threadId || "");
+				if (!id) return defaultSideChatState("");
+				return state.threadSideChats.get(id) || defaultSideChatState(id);
+			}
+			function sideChatApiPath(threadId, suffix = "") {
+				return `/api/threads/${encodeURIComponent(threadId)}/side-chat${suffix}`;
+			}
+			function sideChatDraftTextarea() {
+				const panel = $("subagentPanel");
+				if (!panel) return null;
+				const textarea = panel.querySelector("[data-side-chat-draft]");
+				return textarea && textarea.tagName === "TEXTAREA" ? textarea : null;
+			}
+			function ensureSideChatDraftVisible() {
+				const textarea = sideChatDraftTextarea();
+				if (!textarea || document.activeElement !== textarea) return;
+				const form = textarea.closest("[data-side-chat-form]");
+				const panel = $("subagentPanel");
+				try {
+					if (form) form.scrollIntoView({
+						block: "nearest",
+						inline: "nearest"
+					});
+					else textarea.scrollIntoView({
+						block: "nearest",
+						inline: "nearest"
+					});
+				} catch (_) {}
+				if (!panel || !form) return;
+				const panelRect = panel.getBoundingClientRect();
+				const formRect = form.getBoundingClientRect();
+				const overflow = Math.ceil(formRect.bottom - panelRect.bottom + 8);
+				if (overflow > 0) panel.scrollTop = Math.max(0, Number(panel.scrollTop || 0) + overflow);
+			}
+			function autoSizeSideChatDraftTextarea(textarea = sideChatDraftTextarea()) {
+				if (!textarea) return;
+				textarea.style.height = "auto";
+				const style = window.getComputedStyle ? window.getComputedStyle(textarea) : null;
+				const maxHeight = style ? Number.parseFloat(style.maxHeight) : 160;
+				const minHeight = style ? Number.parseFloat(style.minHeight) : 44;
+				const nextHeight = Math.min(Number.isFinite(maxHeight) && maxHeight > 0 ? maxHeight : 160, Math.max(Number.isFinite(minHeight) && minHeight > 0 ? minHeight : 44, textarea.scrollHeight));
+				textarea.style.height = `${nextHeight}px`;
+				textarea.style.overflowY = textarea.scrollHeight > nextHeight + 1 ? "auto" : "hidden";
+			}
+			function sideChatScrollContainer() {
+				const panel = $("subagentPanel");
+				return panel ? panel.querySelector(".side-chat-scroll") : null;
+			}
+			function scrollSideChatToBottom() {
+				const scroller = sideChatScrollContainer();
+				if (!scroller) return false;
+				scroller.scrollTop = scroller.scrollHeight;
+				return true;
+			}
+			function scheduleSideChatToBottom() {
+				requestAnimationFrame(() => {
+					scrollSideChatToBottom();
+					requestAnimationFrame(scrollSideChatToBottom);
+				});
+			}
+			function openSideChatCandidate(candidateId = "") {
+				const scroller = sideChatScrollContainer();
+				if (!scroller) return false;
+				const id = String(candidateId || "");
+				const target = id ? scroller.querySelector(`[data-side-chat-candidate="${escapeSelectorAttr(id)}"]`) : scroller.querySelector(".side-chat-candidate");
+				if (!target) {
+					scrollSideChatToBottom();
+					return false;
+				}
+				target.scrollIntoView({
+					block: "center",
+					inline: "nearest"
+				});
+				target.classList.add("side-chat-focus");
+				setTimeout(() => target.classList.remove("side-chat-focus"), 1200);
+				return true;
+			}
+			function currentSideChatDraftText(threadId = sideChatThreadId()) {
+				const textarea = sideChatDraftTextarea();
+				if (textarea && String(textarea.dataset.threadId || "") === String(threadId || "")) return textarea.value;
+				return sideChatStateForThread(threadId).draft.text || "";
+			}
+			function truncateSideChatText(text) {
+				const value = String(text || "");
+				if (value.length <= SIDE_CHAT_DRAFT_MAX_CHARS) return value;
+				return value.slice(0, SIDE_CHAT_DRAFT_MAX_CHARS);
+			}
+			async function loadSideChat(threadId = sideChatThreadId(), options = {}) {
+				const id = String(threadId || "");
+				if (!id) return null;
+				const silent = options.silent === true;
+				if (!silent) state.sideChatError = "";
+				state.sideChatLoadingThreadId = id;
+				if (state.subagentPanelOpen && !silent) updateSubagentPanelUi({ force: true });
+				try {
+					const result = await api(sideChatApiPath(id), { timeoutMs: 2e4 });
+					const sideChat = setSideChatState(id, result && result.sideChat || null);
+					if (state.sideChatLoadingThreadId === id) state.sideChatLoadingThreadId = "";
+					if (state.sideChatError && sideChatThreadId() === id) state.sideChatError = "";
+					if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({
+						force: true,
+						scrollSideChatToBottom: true
+					});
+					if (sideChatReplyPending(id)) scheduleSideChatPoll(id);
+					return sideChat;
+				} catch (err) {
+					if (state.sideChatLoadingThreadId === id) state.sideChatLoadingThreadId = "";
+					if (sideChatThreadId() === id) state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({
+						force: true,
+						scrollSideChatToBottom: true
+					});
+					throw err;
+				}
+			}
+			function sideChatReplyPending(threadId = sideChatThreadId()) {
+				const sideChat = sideChatStateForThread(threadId);
+				return String(sideChat.sidecar && sideChat.sidecar.status || "") === "pending";
+			}
+			function scheduleSideChatPoll(threadId = sideChatThreadId(), delayMs = 1600) {
+				const id = String(threadId || "");
+				clearTimeout(state.sideChatPollTimer);
+				state.sideChatPollTimer = null;
+				if (!id || !state.subagentPanelOpen || sideChatThreadId() !== id || !sideChatReplyPending(id)) return;
+				state.sideChatPollTimer = setTimeout(() => {
+					state.sideChatPollTimer = null;
+					loadSideChat(id, { silent: true }).then(() => {
+						if (sideChatReplyPending(id)) scheduleSideChatPoll(id, 1800);
+					}).catch(() => {
+						if (sideChatThreadId() === id) scheduleSideChatPoll(id, 2600);
+					});
+				}, Math.max(500, Number(delayMs) || 1600));
+			}
+			async function saveSideChatDraft(threadId, text, options = {}) {
+				const id = String(threadId || "");
+				if (!id) return null;
+				const nextText = truncateSideChatText(text);
+				const result = await api(sideChatApiPath(id, "/draft"), {
+					method: "PUT",
+					body: JSON.stringify({ text: nextText }),
+					timeoutMs: 2e4
+				});
+				const sideChat = setSideChatState(id, result && result.sideChat || null);
+				if (state.sideChatError && sideChatThreadId() === id) state.sideChatError = "";
+				if (options.render !== false && state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({ force: true });
+				return sideChat;
+			}
+			function scheduleSideChatDraftSave(threadId = sideChatThreadId(), text = currentSideChatDraftText(threadId)) {
+				const id = String(threadId || "");
+				if (!id) return;
+				const sideChat = sideChatStateForThread(id);
+				sideChat.draft = Object.assign({}, sideChat.draft || {}, { text: truncateSideChatText(text) });
+				state.threadSideChats.set(id, sideChat);
+				clearTimeout(state.sideChatDraftSaveTimer);
+				const seq = state.sideChatDraftSaveSeq + 1;
+				state.sideChatDraftSaveSeq = seq;
+				state.sideChatDraftSaveTimer = setTimeout(() => {
+					state.sideChatDraftSaveTimer = null;
+					saveSideChatDraft(id, sideChatStateForThread(id).draft.text, { render: false }).catch((err) => {
+						if (seq !== state.sideChatDraftSaveSeq) return;
+						if (sideChatThreadId() === id) {
+							state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+							updateSubagentPanelUi({ force: true });
+						}
+					});
+				}, SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS);
+			}
+			function flushSideChatDraftNow() {
+				const id = sideChatThreadId();
+				if (!id) return Promise.resolve(null);
+				const text = currentSideChatDraftText(id);
+				clearTimeout(state.sideChatDraftSaveTimer);
+				state.sideChatDraftSaveTimer = null;
+				return saveSideChatDraft(id, text, { render: false }).catch((err) => {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					return null;
+				});
+			}
+			function sideChatStatusLabel(status) {
+				return {
+					draft: "草稿",
+					queued: "已排队",
+					applied: "已发送",
+					cancelled: "已取消",
+					sending: "发送中",
+					sent: "已发送",
+					failed: "失败"
+				}[String(status || "").toLowerCase()] || "草稿";
+			}
+			function sideChatQueueSummary(queue) {
+				if (!queue) return "";
+				return `${sideChatStatusLabel(queue.status)} · ${queue.mode === "autoSendWhenIdle" ? "完成后自动发送" : "等待确认"}`;
+			}
+			function sideChatTimeLabel(value) {
+				const text = String(value || "");
+				const ms = Date.parse(text);
+				if (!Number.isFinite(ms)) return "";
+				return formatTime(Math.floor(ms / 1e3), state.nowMs);
+			}
+			function sideChatBusy(key) {
+				return Boolean(key && state.sideChatBusyKey === key);
+			}
+			function setSideChatNotice(kind, message, options = {}) {
+				const threadId = sideChatThreadId();
+				state.sideChatNotice = {
+					threadId,
+					kind: String(kind || "info"),
+					message: String(message || ""),
+					actionLabel: String(options.actionLabel || ""),
+					candidateId: String(options.candidateId || ""),
+					createdAtMs: Date.now()
+				};
+			}
+			function clearSideChatNotice() {
+				state.sideChatNotice = null;
+			}
+			function sideChatNoticeForThread(threadId = sideChatThreadId()) {
+				const notice = state.sideChatNotice;
+				if (!notice || String(notice.threadId || "") !== String(threadId || "")) return null;
+				return notice;
+			}
+			function sideChatPanelRenderSignature() {
+				const threadId = sideChatThreadId();
+				const sideChat = sideChatStateForThread(threadId);
+				const notice = sideChatNoticeForThread(threadId);
+				const messages = sideChat.messages.map((message) => [
+					message.id,
+					message.role,
+					String(message.text || "").length,
+					message.createdAt
+				].join(":")).join(",");
+				const candidates = sideChat.candidates.map((candidate) => [
+					candidate.id,
+					candidate.status,
+					candidate.updatedAt,
+					String(candidate.body || "").length,
+					candidate.appliedTurnId || ""
+				].join(":")).join(",");
+				const queue = sideChat.queue ? [
+					sideChat.queue.candidateId,
+					sideChat.queue.mode,
+					sideChat.queue.status,
+					sideChat.queue.updatedAt,
+					String(sideChat.queue.error || "").length
+				].join(":") : "";
+				const sidecar = sideChat.sidecar ? [
+					sideChat.sidecar.status,
+					sideChat.sidecar.pendingUserMessageId,
+					sideChat.sidecar.updatedAt,
+					String(sideChat.sidecar.error || "").length
+				].join(":") : "";
+				const turn = currentSubagentTurn();
+				const subagents = currentSubagentItems().map((item) => [
+					item.id || item.itemId || "",
+					item.tool || item.name || "",
+					statusText(item.status),
+					collabAgentThreadText(item),
+					String(collabAgentTaskText(item) || "").length
+				].join(":")).join(",");
+				return [
+					threadId,
+					state.activeTurnId || "",
+					state.sideChatLoadingThreadId === threadId ? "loading" : "",
+					state.sideChatError || "",
+					state.sideChatBusyKey || "",
+					notice ? [
+						notice.kind,
+						notice.message,
+						notice.actionLabel,
+						notice.candidateId
+					].join(":") : "",
+					messages,
+					candidates,
+					queue,
+					sidecar,
+					turn && turn.id || "",
+					subagents
+				].join("|");
+			}
+			function renderSideChatNotice(threadId = sideChatThreadId()) {
+				const notice = sideChatNoticeForThread(threadId);
+				if (!notice || !notice.message) return "";
+				const action = notice.actionLabel ? `<button type="button" data-side-chat-action="open-notice" data-candidate-id="${escapeHtml(notice.candidateId || "")}">${escapeHtml(notice.actionLabel)}</button>` : "";
+				return `<div class="side-chat-notice ${escapeHtml(notice.kind || "info")}">
+    <span>${escapeHtml(notice.message)}</span>
+    <span class="side-chat-notice-actions">${action}<button type="button" data-side-chat-action="dismiss-notice" aria-label="关闭提示">×</button></span>
+  </div>`;
+			}
+			function renderSubagentStatusWindow() {
+				const turn = currentSubagentTurn();
+				const items = currentSubagentItems();
+				if (!items.length) return "";
+				const rows = items.map((item, index) => {
+					const kind = currentSubagentStatusKind(item, turn);
+					const label = collabAgentNameText(item) || collabAgentThreadText(item) || (item.tool === "spawnAgent" ? "Subagent" : item.tool || item.name || `Subagent ${index + 1}`);
+					const task = collabAgentTaskText(item);
+					const thread = collabAgentThreadText(item);
+					const meta = [
+						subagentStatusLabel(kind),
+						thread ? truncateMiddle(thread, 32, "thread") : "",
+						item.tool && item.tool !== "collabAgentToolCall" ? item.tool : ""
+					].filter(Boolean).join(" | ");
+					return `<article class="subagent-status-row ${escapeHtml(kind)}">
+      <div class="subagent-status-main">
+        <div class="subagent-status-title"><span class="subagent-status-dot ${escapeHtml(kind)}"></span>${escapeHtml(label)}</div>
+        ${task ? `<div class="subagent-status-task">${escapeHtml(truncateMiddle(task, 180, "task"))}</div>` : ""}
+      </div>
+      <div class="subagent-status-meta">${escapeHtml(meta)}</div>
+    </article>`;
+				}).join("");
+				return `<section class="subagent-status-window" aria-label="Subagent 状态">
+    <div class="subagent-status-header">
+      <div>
+        <div class="subagent-status-heading">Subagent 状态</div>
+        <div class="subagent-status-summary">当前进行中 · ${items.length.toLocaleString()} 个</div>
+      </div>
+      <button class="subagent-window-close" type="button" data-subagent-panel-close aria-label="关闭 Subagent 状态">×</button>
+    </div>
+    <div class="subagent-status-list">${rows}</div>
+  </section>`;
+			}
+			function latestAssistantSideChatMessageIndex(sideChat) {
+				const messages = Array.isArray(sideChat && sideChat.messages) ? sideChat.messages : [];
+				for (let index = messages.length - 1; index >= 0; index -= 1) if (String(messages[index] && messages[index].role || "").toLowerCase() === "assistant") return index;
+				return -1;
+			}
+			function renderSideChatMessage(message, index, sideChat) {
+				const role = String(message && message.role || "user").toLowerCase();
+				const text = String(message && message.text || "");
+				const time = sideChatTimeLabel(message && message.createdAt);
+				const latestAssistant = role === "assistant" && index === latestAssistantSideChatMessageIndex(sideChat);
+				const running = Boolean(state.activeTurnId);
+				const busy = sideChatBusy(`message:${index}`) || sideChatBusy(`message-candidate:${index}`);
+				const actions = latestAssistant && text.trim() ? `<div class="side-chat-message-actions">
+        <button type="button" data-side-chat-action="message-apply" data-message-index="${index}"${busy ? " disabled" : ""}>发送主线程</button>
+        <button type="button" data-side-chat-action="message-queue" data-message-index="${index}"${busy ? " disabled" : ""}>${running ? "完成后发送" : "排队"}</button>
+        <button type="button" data-side-chat-action="message-candidate" data-message-index="${index}"${busy ? " disabled" : ""}>存为候选</button>
+      </div>` : "";
+				return `<article class="side-chat-message ${escapeHtml(role)}">
+    <div class="side-chat-message-meta">
+      <span>${escapeHtml(role === "assistant" ? "侧聊" : "我")}</span>
+      ${time ? `<time>${escapeHtml(time)}</time>` : ""}
+    </div>
+    <div class="side-chat-message-text">${escapeHtml(text)}</div>
+    ${actions}
+  </article>`;
+			}
+			function renderSideChatCandidate(candidate, sideChat) {
+				const id = String(candidate && candidate.id || "");
+				const status = String(candidate && candidate.status || "draft").toLowerCase();
+				const body = String(candidate && candidate.body || "");
+				const queue = sideChat.queue && sideChat.queue.candidateId === id ? sideChat.queue : null;
+				const busy = sideChatBusy(`candidate:${id}`) || sideChatBusy(`apply:${id}`) || sideChatBusy(`queue:${id}`) || sideChatBusy(`cancel:${id}`);
+				const running = Boolean(state.activeTurnId);
+				const canApply = (status === "draft" || status === "queued") && !running;
+				const canQueue = status === "draft";
+				const canCancel = status === "draft" || status === "queued";
+				const appliedTurn = String(candidate && candidate.appliedTurnId || "");
+				const queueSummary = queue ? sideChatQueueSummary(queue) : sideChatStatusLabel(status);
+				const error = queue && queue.status === "failed" && queue.error ? `<div class="side-chat-candidate-error">${escapeHtml(queue.error)}</div>` : "";
+				return `<article class="side-chat-candidate ${escapeHtml(status)}" data-side-chat-candidate="${escapeHtml(id)}">
+    <div class="side-chat-candidate-main">
+      <div class="side-chat-candidate-title">${escapeHtml(candidate && candidate.title || "候选指令")}</div>
+      <div class="side-chat-candidate-status">${escapeHtml(queueSummary)}${appliedTurn ? ` · ${escapeHtml(truncateMiddle(appliedTurn, 24, "turn"))}` : ""}</div>
+      <div class="side-chat-candidate-body">${escapeHtml(truncateMiddle(body, 420, "candidate"))}</div>
+      ${error}
+    </div>
+    <div class="side-chat-candidate-actions">
+      ${canApply ? `<button type="button" data-side-chat-action="apply" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>发送主线程</button>` : ""}
+      ${running && status === "draft" ? `<button type="button" data-side-chat-action="queue" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>完成后发送</button>` : ""}
+      ${!running && canQueue && status !== "queued" ? `<button type="button" data-side-chat-action="queue" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>排队</button>` : ""}
+      ${canCancel ? `<button type="button" data-side-chat-action="cancel" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>取消</button>` : ""}
+    </div>
+  </article>`;
+			}
+			function renderSideChatPanel() {
+				const threadId = sideChatThreadId();
+				const sideChat = sideChatStateForThread(threadId);
+				const loading = state.sideChatLoadingThreadId === threadId;
+				const messages = sideChat.messages.map((message, index) => renderSideChatMessage(message, index, sideChat)).join("");
+				const candidates = sideChat.candidates.slice().reverse().map((candidate) => renderSideChatCandidate(candidate, sideChat)).join("");
+				const queue = sideChat.queue && sideChat.queue.status !== "sent" && sideChat.queue.status !== "cancelled" ? `<div class="side-chat-queue ${escapeHtml(sideChat.queue.status || "queued")}">${escapeHtml(sideChatQueueSummary(sideChat.queue))}</div>` : "";
+				const sidecar = normalizeSideChatSidecar(sideChat.sidecar);
+				const replyStatus = sidecar.status === "pending" ? `<div class="side-chat-queue pending">侧聊正在回复...</div>` : sidecar.status === "failed" && sidecar.error ? `<div class="side-chat-error">侧聊回复失败：${escapeHtml(sidecar.error)}</div>` : "";
+				const error = state.sideChatError ? `<div class="side-chat-error">${escapeHtml(state.sideChatError)}</div>` : "";
+				const notice = renderSideChatNotice(threadId);
+				const transcript = `${messages}${sidecar.status === "pending" ? `<article class="side-chat-message assistant pending">
+    <div class="side-chat-message-meta"><span>侧聊</span></div>
+    <div class="side-chat-message-text">正在整理回复...</div>
+  </article>` : ""}` || `<div class="side-chat-empty">暂无侧聊内容。</div>`;
+				const candidateList = candidates ? `<div class="side-chat-candidates">${candidates}</div>` : "";
+				const draftText = sideChat.draft && sideChat.draft.text || "";
+				const draftEmpty = !String(draftText || "").trim();
+				const busy = Boolean(state.sideChatBusyKey);
+				const loadingLabel = loading ? `<span class="side-chat-saving">同步中</span>` : "";
+				const clearDisabled = busy || !sideChat.messages.length && !sideChat.candidates.length && draftEmpty;
+				return `<section class="side-chat-section" aria-label="侧边聊天">
+    <div class="side-chat-header">
+      <div>
+        <div class="side-chat-heading">侧边聊天</div>
+        <div class="side-chat-summary">服务器保存 · ${sideChat.messages.length.toLocaleString()} 条</div>
+      </div>
+      ${loadingLabel}
+      <button class="side-chat-clear side-chat-header-clear" type="button" data-side-chat-action="clear" aria-label="清空侧聊"${clearDisabled ? " disabled" : ""}>清空</button>
+      <button class="subagent-window-close side-chat-close" type="button" data-subagent-panel-close aria-label="关闭侧边聊天">×</button>
+    </div>
+    ${queue}
+    ${replyStatus}
+    ${error}
+    ${notice}
+    <div class="side-chat-scroll">
+      <div class="side-chat-transcript">${transcript}</div>
+      ${candidateList}
+    </div>
+    <form class="side-chat-form" data-side-chat-form>
+      <div class="side-chat-composer-row">
+        <button class="side-chat-tool-button" type="button" data-side-chat-action="tools" aria-label="侧聊工具">+</button>
+        <textarea data-side-chat-draft data-thread-id="${escapeHtml(threadId)}" rows="1" maxlength="${SIDE_CHAT_DRAFT_MAX_CHARS}" placeholder="整理想法，不进入主线程">${escapeHtml(draftText)}</textarea>
+        <button class="side-chat-send" type="submit" data-side-chat-action="message"${busy || draftEmpty ? " disabled" : ""}>Send</button>
+      </div>
+      <div class="side-chat-tool-row" hidden>
+        <button type="button" data-side-chat-action="candidate"${busy || draftEmpty ? " disabled" : ""}>存为候选</button>
+      </div>
+    </form>
+  </section>`;
+			}
+			function renderSubagentPanel() {
+				const subagentWindow = renderSubagentStatusWindow();
+				return `<div class="thread-side-panel${subagentWindow ? "" : " no-subagents"}">
+    ${subagentWindow}
+    ${renderSideChatPanel()}
+  </div>`;
+			}
+			function updateSubagentPanelUi(options = {}) {
+				const panel = $("subagentPanel");
+				if (!panel) return;
+				if (!state.subagentPanelOpen || !subagentSwipeAvailable()) {
+					state.subagentPanelOpen = false;
+					panel.classList.add("hidden");
+					panel.innerHTML = "";
+					panel.dataset.renderSignature = "";
+					state.sideChatRenderSignature = "";
+					clearTimeout(state.sideChatPollTimer);
+					state.sideChatPollTimer = null;
+					return;
+				}
+				const signature = sideChatPanelRenderSignature();
+				if (options.force !== true && panel.dataset.renderSignature === signature) return;
+				panel.classList.remove("hidden");
+				panel.innerHTML = renderSubagentPanel();
+				panel.dataset.renderSignature = signature;
+				state.sideChatRenderSignature = signature;
+				panel.querySelectorAll("[data-subagent-panel-close]").forEach((button) => {
+					button.addEventListener("click", () => {
+						state.subagentPanelOpen = false;
+						updateSubagentPanelUi();
+					});
+				});
+				const form = panel.querySelector("[data-side-chat-form]");
+				if (form) form.addEventListener("submit", submitSideChatMessage);
+				const textarea = sideChatDraftTextarea();
+				if (textarea) {
+					textarea.addEventListener("input", handleSideChatDraftInput);
+					textarea.addEventListener("focus", () => requestAnimationFrame(ensureSideChatDraftVisible));
+					autoSizeSideChatDraftTextarea(textarea);
+					requestAnimationFrame(() => autoSizeSideChatDraftTextarea(textarea));
+				}
+				panel.querySelectorAll("[data-side-chat-action]").forEach((button) => {
+					if (button.closest("[data-side-chat-form]") && button.type === "submit") return;
+					button.addEventListener("click", handleSideChatActionClick);
+				});
+				if (options.scrollSideChatToBottom) scheduleSideChatToBottom();
+			}
+			function visualHarnessThreadShape(thread) {
+				const shape = visibleConversationShape(thread);
+				const itemCount = (Array.isArray(thread && thread.turns) ? thread.turns : []).reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
+				return {
+					visibleTurnCount: Number(shape.visibleTurnCount || 0),
+					visibleItemCount: Number(shape.visibleItemCount || 0),
+					itemCount,
+					detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
+					loading: Boolean(thread && thread.mobileLoading),
+					loadError: Boolean(thread && thread.mobileLoadError),
+					readMode: homeAiDiagnosticReportingApi.boundedToken(thread && thread.mobileReadMode || "", "", 80)
+				};
+			}
+			async function simulateEmptyCachedDetailOpenForHarness(threadId) {
+				const id = String(threadId || state.currentThreadId || "").trim();
+				const threadHash = diagnosticThreadHash(id);
+				const before = {
+					visibleTurnCount: 0,
+					visibleItemCount: 0,
+					itemCount: 0,
+					detailLoaded: true,
+					loading: false,
+					loadError: false,
+					readMode: "visual-harness-empty-cache"
+				};
+				if (!id) return {
+					ok: false,
+					error: "missing_thread_id",
+					clientBuildId: CLIENT_BUILD_ID,
+					thread_hash: "",
+					before,
+					after: null
+				};
+				state.currentThreadId = id;
+				state.currentThread = {
+					id,
+					turns: [],
+					mobileDetailLoaded: true,
+					mobileLoading: false,
+					mobileLoadError: "",
+					mobileReadMode: "visual-harness-empty-cache"
+				};
+				await loadThread(id, { source: "visual-harness-empty-cache" });
+				const after = visualHarnessThreadShape(state.currentThread);
+				return {
+					ok: Boolean(after.visibleTurnCount || after.visibleItemCount),
+					error: after.loadError ? "thread_detail_load_error" : "",
+					clientBuildId: CLIENT_BUILD_ID,
+					thread_hash: threadHash,
+					before,
+					after
+				};
+			}
+			async function simulateStableSignatureEmptyDomForHarness(threadId) {
+				const id = String(threadId || state.currentThreadId || "").trim();
+				const threadHash = diagnosticThreadHash(id);
+				if (!id) return {
+					ok: false,
+					error: "missing_thread_id",
+					clientBuildId: CLIENT_BUILD_ID,
+					thread_hash: "",
+					before: null,
+					after: null,
+					domBefore: null,
+					domAfter: null
+				};
+				await loadThread(id, { source: "visual-harness-stable-signature-seed" });
+				const before = visualHarnessThreadShape(state.currentThread);
+				const signature = conversationRenderSignature(state.currentThread);
+				const patchShellSignature = conversationPatchShellSignature(state.currentThread);
+				const conversation = $("conversation");
+				const domBefore = {
+					turnCount: conversationDomTurnIds(conversation).length,
+					itemCount: conversation ? conversation.querySelectorAll(".item[data-item]").length : 0
+				};
+				state.renderedConversationSignature = signature;
+				state.renderedConversationPatchShellSignature = patchShellSignature;
+				if (conversation) conversation.innerHTML = "<div class=\"empty-state\">No visible turns.</div>";
+				renderCurrentThread({
+					stickToBottom: true,
+					source: "visual-harness-stable-signature-empty-dom"
+				});
+				const afterConversation = $("conversation");
+				const hasEmptyState = afterConversation ? Boolean(afterConversation.querySelector(".empty-state")) : false;
+				const domAfter = {
+					turnCount: conversationDomTurnIds(afterConversation).length,
+					itemCount: afterConversation ? afterConversation.querySelectorAll(".item[data-item]").length : 0,
+					emptyState: hasEmptyState ? "empty-state" : ""
+				};
+				const after = visualHarnessThreadShape(state.currentThread);
+				return {
+					ok: Boolean(before.visibleTurnCount && after.visibleTurnCount && domAfter.turnCount > 0 && !hasEmptyState),
+					error: after.loadError ? "thread_detail_load_error" : "",
+					clientBuildId: CLIENT_BUILD_ID,
+					thread_hash: threadHash,
+					before,
+					after,
+					domBefore,
+					domAfter
+				};
+			}
+			function refreshSideChatFormButtons() {
+				const textarea = sideChatDraftTextarea();
+				if (!textarea) return;
+				const form = textarea.closest("[data-side-chat-form]");
+				if (!form) return;
+				const panel = $("subagentPanel");
+				const sideChat = sideChatStateForThread(String(textarea.dataset.threadId || sideChatThreadId()));
+				const draftEmpty = !textarea.value.trim();
+				form.querySelectorAll("[data-side-chat-action='message'], [data-side-chat-action='candidate']").forEach((button) => {
+					button.disabled = Boolean(state.sideChatBusyKey) || draftEmpty;
+				});
+				if (panel) panel.querySelectorAll("[data-side-chat-action='clear']").forEach((button) => {
+					button.disabled = Boolean(state.sideChatBusyKey) || draftEmpty && !sideChat.messages.length && !sideChat.candidates.length;
+				});
+			}
+			function setSideChatBusy(key) {
+				state.sideChatBusyKey = String(key || "");
+				updateSubagentPanelUi({ force: true });
+			}
+			function applySideChatResult(threadId, result) {
+				if (result && result.state) return setSideChatState(threadId, result.state);
+				if (result && result.sideChat) return setSideChatState(threadId, result.sideChat);
+				return sideChatStateForThread(threadId);
+			}
+			function handleSideChatDraftInput(event) {
+				const textarea = event && event.currentTarget;
+				if (!textarea) return;
+				const threadId = String(textarea.dataset.threadId || sideChatThreadId());
+				const text = truncateSideChatText(textarea.value);
+				if (text !== textarea.value) textarea.value = text;
+				autoSizeSideChatDraftTextarea(textarea);
+				scheduleSideChatDraftSave(threadId, text);
+				refreshSideChatFormButtons();
+				ensureSideChatDraftVisible();
+			}
+			function installCodexMobileVisualHarnessFacade() {
+				if (!isHermesEmbedMode() || window.__codexMobileVisualHarness) return;
+				Object.defineProperty(window, "__codexMobileVisualHarness", {
+					configurable: false,
+					enumerable: false,
+					value: Object.freeze({
+						clientBuildId: () => CLIENT_BUILD_ID,
+						currentThreadId: () => String(state.currentThreadId || ""),
+						hostViewport: () => state.pluginHostViewport || null,
+						sideChatPanelOpen: () => Boolean(state.subagentPanelOpen),
+						setSideChatPanelOpen: (open) => {
+							state.subagentPanelOpen = Boolean(open);
+							updateSubagentPanelUi({
+								force: true,
+								scrollSideChatToBottom: Boolean(open)
+							});
+							return Boolean(state.subagentPanelOpen);
+						},
+						openThread: (threadId) => loadThread(String(threadId || ""), { source: "visual-harness" }),
+						simulateEmptyCachedDetailOpen: (threadId) => simulateEmptyCachedDetailOpenForHarness(threadId),
+						simulateStableSignatureEmptyDom: (threadId) => simulateStableSignatureEmptyDomForHarness(threadId),
+						loadSideChat: (threadId) => loadSideChat(String(threadId || sideChatThreadId()), { silent: true }),
+						ensureSideChatDraftVisible,
+						autoSizeSideChatDraftTextarea
+					})
+				});
+			}
+			async function submitSideChatMessage(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				const threadId = sideChatThreadId();
+				const text = currentSideChatDraftText(threadId).trim();
+				if (!threadId || !text || state.sideChatBusyKey) return;
+				setSideChatBusy("message");
+				try {
+					clearTimeout(state.sideChatDraftSaveTimer);
+					state.sideChatDraftSaveTimer = null;
+					applySideChatResult(threadId, await api(sideChatApiPath(threadId, "/messages"), {
+						method: "POST",
+						body: JSON.stringify({
+							role: "user",
+							text,
+							idempotencyKey: createSubmissionId()
+						}),
+						timeoutMs: 2e4
+					}));
+					state.sideChatError = "";
+					if (sideChatReplyPending(threadId)) scheduleSideChatPoll(threadId, 900);
+					markActivity("侧聊已发送");
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({
+						force: true,
+						scrollSideChatToBottom: true
+					});
+				}
+			}
+			async function createSideChatCandidateFromText(text, options = {}) {
+				const threadId = sideChatThreadId();
+				const body = String(text || "").trim();
+				if (!threadId || !body || state.sideChatBusyKey) return null;
+				setSideChatBusy(options.busyKey || "candidate");
+				try {
+					clearTimeout(state.sideChatDraftSaveTimer);
+					state.sideChatDraftSaveTimer = null;
+					const sideChat = applySideChatResult(threadId, await api(sideChatApiPath(threadId, "/candidates"), {
+						method: "POST",
+						body: JSON.stringify({
+							body,
+							idempotencyKey: createSubmissionId()
+						}),
+						timeoutMs: 2e4
+					}));
+					if (options.clearDraft) await saveSideChatDraft(threadId, "", { render: false });
+					state.sideChatError = "";
+					markActivity("候选已保存");
+					const candidates = Array.isArray(sideChat && sideChat.candidates) ? sideChat.candidates : [];
+					const candidate = candidates[candidates.length - 1] || null;
+					if (candidate && candidate.id) setSideChatNotice("success", "候选已保存，可以稍后发送到主线程。", {
+						actionLabel: "打开候选",
+						candidateId: candidate.id
+					});
+					return candidate;
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+					return null;
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({
+						force: true,
+						scrollSideChatToBottom: true
+					});
+				}
+			}
+			async function createSideChatCandidateFromDraft() {
+				const threadId = sideChatThreadId();
+				const text = currentSideChatDraftText(threadId).trim();
+				if (!threadId || !text || state.sideChatBusyKey) return;
+				await createSideChatCandidateFromText(text, {
+					clearDraft: true,
+					busyKey: "candidate"
+				});
+			}
+			function sideChatMessageTextByIndex(index) {
+				const message = sideChatStateForThread(sideChatThreadId()).messages[Number(index)];
+				return String(message && message.text || "").trim();
+			}
+			async function createSideChatCandidateFromMessage(index, nextAction = "") {
+				const text = sideChatMessageTextByIndex(index);
+				if (!text || state.sideChatBusyKey) return;
+				const candidate = await createSideChatCandidateFromText(text, { busyKey: `message-candidate:${index}` });
+				const id = String(candidate && candidate.id || "");
+				if (!id) return;
+				if (nextAction === "apply") await applySideChatCandidate(id);
+				else if (nextAction === "queue") await queueSideChatCandidate(id, state.activeTurnId ? "autoSendWhenIdle" : "confirmWhenIdle");
+			}
+			async function queueSideChatCandidate(candidateId, mode = "autoSendWhenIdle") {
+				const threadId = sideChatThreadId();
+				const id = String(candidateId || "");
+				if (!threadId || !id || state.sideChatBusyKey) return;
+				setSideChatBusy(`queue:${id}`);
+				try {
+					applySideChatResult(threadId, await api(sideChatApiPath(threadId, `/candidates/${encodeURIComponent(id)}/queue`), {
+						method: "POST",
+						body: JSON.stringify({
+							mode,
+							idempotencyKey: `sidechat:${threadId}:${id}:${mode}`
+						}),
+						timeoutMs: 2e4
+					}));
+					state.sideChatError = "";
+					setSideChatNotice("success", mode === "autoSendWhenIdle" ? "已排队，当前任务完成后会发送到主线程。" : "候选已排队，空闲后可从队列继续。", {
+						actionLabel: "打开队列",
+						candidateId: id
+					});
+					markActivity(mode === "autoSendWhenIdle" ? "侧聊已排队" : "候选已排队");
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({
+						force: true,
+						scrollSideChatToBottom: true
+					});
+				}
+			}
+			async function applySideChatCandidate(candidateId) {
+				const threadId = sideChatThreadId();
+				const id = String(candidateId || "");
+				if (!threadId || !id || state.sideChatBusyKey) return;
+				if (state.activeTurnId) {
+					await queueSideChatCandidate(id, "autoSendWhenIdle");
+					return;
+				}
+				setSideChatBusy(`apply:${id}`);
+				try {
+					applySideChatResult(threadId, await api(sideChatApiPath(threadId, `/candidates/${encodeURIComponent(id)}/apply`), {
+						method: "POST",
+						body: JSON.stringify({
+							mode: "confirmWhenIdle",
+							idempotencyKey: `sidechat:${threadId}:${id}:apply`
+						}),
+						timeoutMs: 18e4
+					}));
+					state.sideChatError = "";
+					clearSideChatNotice();
+					markActivity("侧聊已发送");
+					scheduleCurrentThreadRefresh(600);
+					scheduleLivePollIfNeeded(1200);
+					loadThreads({ silent: true }).catch(showError);
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({ force: true });
+				}
+			}
+			async function cancelSideChatCandidate(candidateId) {
+				const threadId = sideChatThreadId();
+				const id = String(candidateId || "");
+				if (!threadId || !id || state.sideChatBusyKey) return;
+				setSideChatBusy(`cancel:${id}`);
+				try {
+					applySideChatResult(threadId, await api(sideChatApiPath(threadId, `/candidates/${encodeURIComponent(id)}/cancel`), {
+						method: "POST",
+						body: JSON.stringify({}),
+						timeoutMs: 2e4
+					}));
+					state.sideChatError = "";
+					clearSideChatNotice();
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({ force: true });
+				}
+			}
+			async function clearSideChat() {
+				const threadId = sideChatThreadId();
+				if (!threadId || state.sideChatBusyKey) return;
+				if (!await requestAppConfirmation("清空这个线程的侧聊内容？", {
+					title: "清空侧聊",
+					confirmLabel: "清空",
+					cancelLabel: "取消"
+				})) return;
+				setSideChatBusy("clear");
+				try {
+					clearTimeout(state.sideChatDraftSaveTimer);
+					state.sideChatDraftSaveTimer = null;
+					applySideChatResult(threadId, await api(sideChatApiPath(threadId, "/clear"), {
+						method: "POST",
+						body: JSON.stringify({}),
+						timeoutMs: 2e4
+					}));
+					state.sideChatError = "";
+					clearSideChatNotice();
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({ force: true });
+				}
+			}
+			function handleSideChatActionClick(event) {
+				const button = event && event.currentTarget || event && event.target && event.target.closest("[data-side-chat-action]");
+				if (!button) return;
+				const action = String(button.dataset.sideChatAction || "");
+				const candidateId = String(button.dataset.candidateId || "");
+				const messageIndex = String(button.dataset.messageIndex || "");
+				if (action === "candidate") createSideChatCandidateFromDraft();
+				else if (action === "tools") {
+					const row = button.closest("[data-side-chat-form]") && button.closest("[data-side-chat-form]").querySelector(".side-chat-tool-row");
+					if (row) row.hidden = !row.hidden;
+				} else if (action === "message-candidate") createSideChatCandidateFromMessage(messageIndex);
+				else if (action === "message-apply") createSideChatCandidateFromMessage(messageIndex, "apply");
+				else if (action === "message-queue") createSideChatCandidateFromMessage(messageIndex, "queue");
+				else if (action === "apply") applySideChatCandidate(candidateId);
+				else if (action === "queue") queueSideChatCandidate(candidateId, state.activeTurnId ? "autoSendWhenIdle" : "confirmWhenIdle");
+				else if (action === "cancel") cancelSideChatCandidate(candidateId);
+				else if (action === "clear") clearSideChat();
+				else if (action === "open-notice") openSideChatCandidate(candidateId);
+				else if (action === "dismiss-notice") {
+					clearSideChatNotice();
+					updateSubagentPanelUi({ force: true });
+				}
+			}
+			function openSubagentPanelFromGesture() {
+				if (!state.currentThread) return;
+				state.subagentPanelOpen = true;
+				updateSubagentPanelUi({
+					force: true,
+					scrollSideChatToBottom: true
+				});
+				if (!state.threadSideChats.has(sideChatThreadId())) loadSideChat(sideChatThreadId(), { silent: true }).catch(showError);
+			}
+			function isHorizontalScrollableGestureTarget(target) {
+				return Boolean(target && target.closest && target.closest(".markdown-mermaid-viewer, .markdown-mermaid-canvas, .markdown-mermaid-artboard, .markdown-table-wrap, .markdown-code-table-preview, .markdown-code-block pre"));
+			}
+			function subagentSwipeEdgeLimitPx() {
+				const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
+				if (!viewportWidth) return SUBAGENT_EDGE_SWIPE_PX;
+				const responsiveLimit = Math.round(viewportWidth * SUBAGENT_EDGE_SWIPE_RATIO);
+				return Math.min(SUBAGENT_EDGE_SWIPE_MAX_PX, Math.max(SUBAGENT_EDGE_SWIPE_PX, responsiveLimit));
+			}
+			function subagentSwipeStartsNearEdge(clientX) {
+				const x = Number(clientX);
+				const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
+				if (!Number.isFinite(x) || !viewportWidth) return false;
+				return viewportWidth - x <= subagentSwipeEdgeLimitPx();
+			}
+			function beginSubagentSwipe(event) {
+				if (!subagentSwipeAvailable()) return;
+				if (event.touches && event.touches.length > 1) return;
+				if (isInteractiveGestureTarget(event.target)) return;
+				if (isHorizontalScrollableGestureTarget(event.target)) return;
+				const touch = primaryTouch(event);
+				if (!touch) return;
+				if (!subagentSwipeStartsNearEdge(touch.clientX)) return;
+				state.subagentSwipe = {
+					startX: touch.clientX,
+					startY: touch.clientY,
+					currentX: touch.clientX,
+					currentY: touch.clientY,
+					moved: false
+				};
+			}
+			function moveSubagentSwipe(event) {
+				const swipe = state.subagentSwipe;
+				if (!swipe) return;
+				const touch = primaryTouch(event);
+				if (!touch) return;
+				const dx = touch.clientX - swipe.startX;
+				const dy = touch.clientY - swipe.startY;
+				if (!swipe.moved) {
+					if (Math.abs(dx) < 10 && Math.abs(dy) < 12) return;
+					if (dx >= 0 || Math.abs(dy) > Math.abs(dx)) {
+						cancelSubagentSwipe();
+						return;
+					}
+				}
+				swipe.moved = true;
+				swipe.currentX = touch.clientX;
+				swipe.currentY = touch.clientY;
+				if (event.cancelable !== false) event.preventDefault();
+			}
+			function finishSubagentSwipe() {
+				const swipe = state.subagentSwipe;
+				state.subagentSwipe = null;
+				if (!swipe || !swipe.moved) return;
+				const dx = Number(swipe.currentX || swipe.startX) - swipe.startX;
+				const dy = Number(swipe.currentY || swipe.startY) - swipe.startY;
+				if (dx <= -SUBAGENT_SWIPE_MIN_PX && Math.abs(dy) <= Math.abs(dx) * .85) openSubagentPanelFromGesture();
+			}
+			function cancelSubagentSwipe() {
+				state.subagentSwipe = null;
+			}
+			function handleSubagentWheelSwipe(event) {
+				if (state.subagentPanelOpen || !subagentSwipeAvailable()) return;
+				if (isHorizontalScrollableGestureTarget(event.target)) return;
+				if (!subagentSwipeStartsNearEdge(event.clientX)) return;
+				const dx = Number(event.deltaX || 0);
+				const dy = Number(event.deltaY || 0);
+				if (dx >= SUBAGENT_WHEEL_SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.2) openSubagentPanelFromGesture();
+			}
+			return Object.freeze({
+				isSubagentItem,
+				turnSubagentItems,
+				activeSubagentItems,
+				currentSubagentTurn,
+				currentSubagentItems,
+				subagentStatusKind,
+				isActiveSubagentItem,
+				currentSubagentStatusKind,
+				subagentStatusLabel,
+				subagentSwipeAvailable,
+				sideChatThreadId,
+				defaultSideChatState,
+				normalizeSideChatSidecar,
+				normalizeSideChatState,
+				setSideChatState,
+				sideChatStateForThread,
+				sideChatApiPath,
+				sideChatDraftTextarea,
+				ensureSideChatDraftVisible,
+				autoSizeSideChatDraftTextarea,
+				sideChatScrollContainer,
+				scrollSideChatToBottom,
+				scheduleSideChatToBottom,
+				openSideChatCandidate,
+				currentSideChatDraftText,
+				truncateSideChatText,
+				loadSideChat,
+				sideChatReplyPending,
+				scheduleSideChatPoll,
+				saveSideChatDraft,
+				scheduleSideChatDraftSave,
+				flushSideChatDraftNow,
+				sideChatStatusLabel,
+				sideChatQueueSummary,
+				sideChatTimeLabel,
+				sideChatBusy,
+				setSideChatNotice,
+				clearSideChatNotice,
+				sideChatNoticeForThread,
+				sideChatPanelRenderSignature,
+				renderSideChatNotice,
+				renderSubagentStatusWindow,
+				latestAssistantSideChatMessageIndex,
+				renderSideChatMessage,
+				renderSideChatCandidate,
+				renderSideChatPanel,
+				renderSubagentPanel,
+				updateSubagentPanelUi,
+				visualHarnessThreadShape,
+				simulateEmptyCachedDetailOpenForHarness,
+				simulateStableSignatureEmptyDomForHarness,
+				refreshSideChatFormButtons,
+				setSideChatBusy,
+				applySideChatResult,
+				handleSideChatDraftInput,
+				installCodexMobileVisualHarnessFacade,
+				submitSideChatMessage,
+				createSideChatCandidateFromText,
+				createSideChatCandidateFromDraft,
+				sideChatMessageTextByIndex,
+				createSideChatCandidateFromMessage,
+				queueSideChatCandidate,
+				applySideChatCandidate,
+				cancelSideChatCandidate,
+				clearSideChat,
+				handleSideChatActionClick,
+				openSubagentPanelFromGesture,
+				isHorizontalScrollableGestureTarget,
+				subagentSwipeEdgeLimitPx,
+				subagentSwipeStartsNearEdge,
+				beginSubagentSwipe,
+				moveSubagentSwipe,
+				finishSubagentSwipe,
+				cancelSubagentSwipe,
+				handleSubagentWheelSwipe
+			});
+		}
+		root.CodexSideChatRuntime = Object.freeze({ createSideChatRuntime });
+		if (typeof module !== "undefined" && module.exports) module.exports = { createSideChatRuntime };
+	})(typeof window !== "undefined" ? window : globalThis);
+}));
+//#endregion
 //#region public/composer-bridge-runtime.js
 var require_composer_bridge_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachComposerBridgeRuntime(root) {
@@ -2839,1256 +4733,9 @@ var require_thread_detail_v4_merge_state = /* @__PURE__ */ __commonJSMin(((expor
 	});
 }));
 //#endregion
-//#region public/thread-detail-runtime.js
-var require_thread_detail_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function attachThreadDetailRuntime(root) {
-		function noopString() {
-			return "";
-		}
-		function noopFalse() {
-			return false;
-		}
-		function identityArray(value) {
-			return Array.isArray(value) ? value : [];
-		}
-		function createThreadDetailRuntime(deps = {}) {
-			const { state = {}, MAX_EXPANDED_VISIBLE_TURNS = 200, MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24, threadDetailStateApi = root.CodexThreadDetailState, threadDetailMergeStateApi = root.CodexThreadDetailMergeState, threadDetailV4MergeStateApi = root.CodexThreadDetailV4MergeState, statusText = noopString, normalizeFsPath = (value) => String(value || ""), imageUrlValue = noopString, isInputTextPart = noopFalse, inputTextValue = noopString, isInputImagePart = noopFalse, splitAttachmentSummaryText = (value) => ({
-				text: String(value || ""),
-				attachments: []
-			}), canRenderImageAttachment = noopFalse, truncateMiddle = (value) => String(value || ""), isLiveTurn = noopFalse, isLatestTurn = noopFalse, latestTurnForThread = (thread) => {
-				const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
-				return turns.length ? turns[turns.length - 1] : null;
-			}, isLiveTurnForThread = (thread, turn) => isLiveTurn(turn, thread), isActiveOperationalItem = noopFalse, isReasoningItem = noopFalse, isOperationalItem = noopFalse, isContextCompactionItem = noopFalse, contextCompactionNotice = () => null, operationCommandText = noopString, operationDetailText = noopString, imageViewPath = noopString, imageViewContentUrl = noopString, imageViewUrl = noopString, isTurnComplete = noopFalse, isRunningStatus = noopFalse, isIncompleteInterruptedTurn = noopFalse, turnHasActiveLiveItems = noopFalse, isRecentlySubmittedUserMessage = noopFalse, sortTurnsForDisplay = identityArray, maxVisibleTurnsForThread = () => 10, numericTimestampMs = (value) => {
-				const numberValue = Number(value);
-				return Number.isFinite(numberValue) ? numberValue : 0;
-			}, renderContextThread = (thread = null) => thread || state.currentThread || null } = deps;
-			if (!threadDetailStateApi || typeof threadDetailStateApi.createThreadDetailStatePolicy !== "function") throw new Error("CodexThreadDetailState policy script failed to load");
-			if (!threadDetailMergeStateApi || typeof threadDetailMergeStateApi.createThreadDetailMergePolicy !== "function") throw new Error("CodexThreadDetailMergeState script failed to load");
-			if (!threadDetailV4MergeStateApi || typeof threadDetailV4MergeStateApi.createThreadDetailV4MergePolicy !== "function") throw new Error("CodexThreadDetailV4MergeState script failed to load");
-			function liveTurnHasNonUserProgress(turn, thread = null) {
-				if (!turn || !isLiveTurn(turn, thread)) return false;
-				return (turn.items || []).some((item) => item && item.type !== "userMessage" && (isReasoningItem(item) || isOperationalItem(item) || isContextCompactionItem(item) || item.type === "agentMessage" || item.type === "plan" || item.type === "turnDiagnostic" || item.type === "turnUsageSummary"));
-			}
-			function isVisibleNonUserProgressItem(item) {
-				return Boolean(item && item.type !== "userMessage" && (isReasoningItem(item) || isOperationalItem(item) || isContextCompactionItem(item) || item.type === "agentMessage" || item.type === "plan" || item.type === "turnDiagnostic" || item.type === "turnUsageSummary"));
-			}
-			function liveTurnHasNonUserProgressBefore(turn, index, thread = null) {
-				if (!turn || !isLiveTurn(turn, thread)) return false;
-				const items = Array.isArray(turn.items) ? turn.items : [];
-				for (let pos = 0; pos < Math.min(index, items.length); pos += 1) if (isVisibleNonUserProgressItem(items[pos])) return true;
-				return false;
-			}
-			function liveTurnHasNonUserProgressAfter(turn, index, thread = null) {
-				if (!turn || !isLiveTurn(turn, thread)) return false;
-				const items = Array.isArray(turn.items) ? turn.items : [];
-				for (let pos = Math.max(0, index + 1); pos < items.length; pos += 1) if (isVisibleNonUserProgressItem(items[pos])) return true;
-				return false;
-			}
-			function isUserVisibleTextReplyItem(item) {
-				return Boolean(item && item.type !== "userMessage" && (item.type === "agentMessage" || item.type === "plan" || item.type === "turnUsageSummary"));
-			}
-			function liveTurnHasUserVisibleTextReplyAfter(turn, index, thread = null) {
-				if (!turn || !isLiveTurn(turn, thread)) return false;
-				const items = Array.isArray(turn.items) ? turn.items : [];
-				for (let pos = Math.max(0, index + 1); pos < items.length; pos += 1) if (isUserVisibleTextReplyItem(items[pos])) return true;
-				return false;
-			}
-			function userMessageHasVisualAttachment(item) {
-				if (!item || item.type !== "userMessage") return false;
-				const textValues = [];
-				if (typeof item.text === "string") textValues.push(item.text);
-				if (typeof item.message === "string") textValues.push(item.message);
-				const content = Array.isArray(item.content) ? item.content : [];
-				for (const part of content) {
-					if (!part || typeof part !== "object") continue;
-					if (isInputImagePart(part)) return true;
-					if (isInputTextPart(part)) textValues.push(inputTextValue(part));
-					if (part.path && /\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(String(part.path))) return true;
-					const url = imageUrlValue(part);
-					if (url && /\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(String(url))) return true;
-				}
-				return textValues.some((text) => splitAttachmentSummaryText(text).attachments.some((attachment) => attachment.isImage && canRenderImageAttachment(attachment)));
-			}
-			function shouldHideDurableLiveUserMessage(turn, item, index = 0, thread = null) {
-				return false;
-			}
-			function durableUserMessageMatchesOptimisticEcho(durableItem, optimisticItem) {
-				if (!durableItem || !optimisticItem) return false;
-				if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
-				if (isOptimisticUserMessage(durableItem) || !isOptimisticUserMessage(optimisticItem)) return false;
-				return userMessagesShareSubmissionId(durableItem, optimisticItem) || userMessagesLikelySame(durableItem, optimisticItem);
-			}
-			function threadHasDurableUserMessageWithSubmissionId(thread, optimisticItem) {
-				const submissionIds = userMessageSubmissionIdCandidates(optimisticItem);
-				if (!submissionIds.length || !thread || !Array.isArray(thread.turns)) return false;
-				return thread.turns.some((candidateTurn) => (Array.isArray(candidateTurn && candidateTurn.items) ? candidateTurn.items : []).some((candidate) => candidate && candidate.type === "userMessage" && !isOptimisticUserMessage(candidate) && submissionIds.some((submissionId) => userMessageHasSubmissionId(candidate, submissionId))));
-			}
-			function threadHasDurableUserMessageMatchingOptimisticEcho(thread, optimisticItem) {
-				if (!thread || !Array.isArray(thread.turns) || !isOptimisticUserMessage(optimisticItem)) return false;
-				return thread.turns.some((candidateTurn) => (Array.isArray(candidateTurn && candidateTurn.items) ? candidateTurn.items : []).some((candidate) => candidate && candidate.type === "userMessage" && !isOptimisticUserMessage(candidate) && optimisticEchoCanMatchEarlierDurable(candidate, optimisticItem)));
-			}
-			function shouldHideOptimisticUserMessageEcho(turn, item, index = 0, thread = null) {
-				if (!item || item.type !== "userMessage" || !isOptimisticUserMessage(item)) return false;
-				if ((Array.isArray(turn && turn.items) ? turn.items : []).some((candidate, candidateIndex) => candidateIndex !== index && durableUserMessageMatchesOptimisticEcho(candidate, item))) return true;
-				const contextThread = renderContextThread(thread);
-				return threadHasDurableUserMessageWithSubmissionId(contextThread, item) || threadHasDurableUserMessageMatchingOptimisticEcho(contextThread, item);
-			}
-			function isSupersededLiveTurn(turn) {
-				return Boolean(turn && (turn.mobileSupersededLive || turn.status && turn.status.mobileSupersededLive));
-			}
-			function shouldHideSupersededLiveUserMessage(turn, item) {
-				return Boolean(isSupersededLiveTurn(turn) && item && item.type === "userMessage" && !userMessageHasVisualAttachment(item));
-			}
-			function isRawThreadReadMode(thread) {
-				return Boolean(thread && (thread.mobileRawThreadRead || String(thread.mobileReadMode || "") === "thread-read-raw"));
-			}
-			function shouldPreserveRawThreadVisibleEntry(entry) {
-				const item = entry && entry.item;
-				if (!item) return false;
-				return item.type === "userMessage" || item.type === "imageView" || item.type === "imageGeneration" || item.type === "turnUsageSummary" || isContextCompactionItem(item);
-			}
-			function itemTextValue(value) {
-				if (typeof value === "string") return value;
-				if (Array.isArray(value)) return value.map(itemTextValue).join("");
-				return "";
-			}
-			function reasoningItemHasVisibleText(item) {
-				return Boolean(itemTextValue(item && item.text).trim() || itemTextValue(item && item.content).trim() || itemTextValue(item && item.summary).trim());
-			}
-			function isLatestCompletedProcessTurn(turn, thread = null) {
-				if (!turn || !isTurnComplete(turn)) return false;
-				const contextThread = renderContextThread(thread);
-				const turns = Array.isArray(contextThread && contextThread.turns) ? contextThread.turns : [];
-				for (let index = turns.length - 1; index >= 0; index -= 1) {
-					const candidate = turns[index];
-					if (!candidate || isLiveTurn(candidate, contextThread)) continue;
-					if (!isTurnComplete(candidate)) continue;
-					return candidate === turn;
-				}
-				return isLatestTurn(turn, contextThread);
-			}
-			function limitRawThreadVisibleEntries(entries, thread = null) {
-				if (!isRawThreadReadMode(renderContextThread(thread))) return entries;
-				if (!Array.isArray(entries) || entries.length <= MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN) return entries;
-				const keep = /* @__PURE__ */ new Set();
-				entries.forEach((entry, index) => {
-					if (shouldPreserveRawThreadVisibleEntry(entry)) keep.add(index);
-				});
-				for (let index = Math.max(0, entries.length - MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN); index < entries.length; index += 1) keep.add(index);
-				return entries.filter((_, index) => keep.has(index));
-			}
-			function visibleItemsForTurn(turn, thread = null) {
-				const visible = [];
-				const contextEntryByKey = /* @__PURE__ */ new Map();
-				const contextThread = renderContextThread(thread);
-				(turn.items || []).forEach((item, index) => {
-					if (!item) return;
-					if (isReasoningItem(item)) return;
-					if (shouldHideSupersededLiveUserMessage(turn, item)) return;
-					if (shouldHideOptimisticUserMessageEcho(turn, item, index, contextThread)) return;
-					if (shouldHideDurableLiveUserMessage(turn, item, index, contextThread)) return;
-					if (isContextCompactionItem(item)) {
-						if (!contextCompactionNotice(item, turn, contextThread)) return;
-						const groupKey = "context-compaction";
-						const existing = contextEntryByKey.get(groupKey);
-						if (existing) visible[existing.visibleIndex] = null;
-						contextEntryByKey.set(groupKey, { visibleIndex: visible.length });
-						visible.push({
-							item,
-							sourceIndex: index
-						});
-						return;
-					}
-					if (isOperationalItem(item)) return;
-					visible.push({
-						item,
-						sourceIndex: index
-					});
-				});
-				const filtered = visible.filter(Boolean);
-				if (isSupersededLiveTurn(turn) && filtered.length && filtered.every((entry) => isTurnUsageSummaryItem(entry.item))) return [];
-				return limitRawThreadVisibleEntries(filtered, thread);
-			}
-			function currentLiveOperationEntry(thread) {
-				if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return null;
-				let turn = null;
-				for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
-					const candidate = thread.turns[index];
-					if (isSupersededLiveTurn(candidate)) continue;
-					if (isLiveTurnForThread(thread, candidate)) {
-						turn = candidate;
-						break;
-					}
-				}
-				if (!turn) return null;
-				const items = Array.isArray(turn.items) ? turn.items : [];
-				for (let index = items.length - 1; index >= 0; index -= 1) {
-					const item = items[index];
-					if (isActiveOperationalItem(item)) return {
-						turn,
-						item,
-						sourceIndex: index
-					};
-				}
-				return {
-					turn,
-					item: liveTurnStatusDockItem(turn),
-					sourceIndex: -1
-				};
-			}
-			function liveTurnStatusDockItem(turn) {
-				return {
-					id: `live-turn-status-${turn && (turn.id || turn.startedAt || "active")}`,
-					type: "liveTurnStatus",
-					status: "",
-					title: "Command"
-				};
-			}
-			function visibleItemSignature(item, turn = null, thread = null) {
-				if (!item || isReasoningItem(item)) return null;
-				const projection = {
-					mobileVisibleKey: item.mobileVisibleKey || "",
-					mobileVisibleKind: item.mobileVisibleKind || ""
-				};
-				if (isContextCompactionItem(item)) {
-					const notice = contextCompactionNotice(item, turn, thread);
-					if (!notice) return null;
-					return {
-						...projection,
-						id: item.id || "",
-						type: item.type || "",
-						status: statusText(item.status),
-						mobileCompactionStatus: item.mobileCompactionStatus || "",
-						mobileNotice: item.mobileNotice || "",
-						notice
-					};
-				}
-				if (isOperationalItem(item)) return {
-					...projection,
-					id: item.id || "",
-					type: item.type || "",
-					status: statusText(item.status),
-					startedAtMs: item.startedAtMs || item.startedAt || item.started_at_ms || item.started_at || "",
-					completedAtMs: item.completedAtMs || item.completedAt || item.completed_at_ms || item.completed_at || "",
-					durationMs: item.durationMs || item.duration_ms || item.elapsedMs || item.elapsed_ms || "",
-					command: operationCommandText(item),
-					fileNames: Array.isArray(item.fileNames) ? item.fileNames : [],
-					tool: item.tool || "",
-					server: item.server || "",
-					namespace: item.namespace || "",
-					detail: operationDetailText(item)
-				};
-				if (item.type === "turnUsageSummary") return {
-					...projection,
-					id: item.id || "",
-					type: item.type || "",
-					status: statusText(item.status),
-					mobileUsageSummary: item.mobileUsageSummary || {}
-				};
-				if (item.type === "turnDiagnostic") return {
-					...projection,
-					id: item.id || "",
-					type: item.type || "",
-					status: statusText(item.status),
-					code: item.code || "",
-					severity: item.severity || "",
-					title: item.title || "",
-					message: item.message || "",
-					source: item.source || "",
-					mobileRuntimeDiagnostic: Boolean(item.mobileRuntimeDiagnostic)
-				};
-				if (item.type === "imageView") return {
-					...projection,
-					id: item.id || "",
-					type: item.type || "",
-					status: statusText(item.status),
-					path: imageViewPath(item),
-					contentUrl: imageSourceSignature(imageViewContentUrl(item)),
-					url: imageSourceSignature(imageViewUrl(item))
-				};
-				return {
-					...projection,
-					id: item.id || "",
-					type: item.type || "",
-					status: statusText(item.status),
-					text: item.text || "",
-					content: Array.isArray(item.content) ? inputContentSignature(item.content) : [],
-					summary: Array.isArray(item.summary) ? item.summary : [],
-					mobileNotice: item.mobileNotice || ""
-				};
-			}
-			function visibleItemBudgetForTurn(turn) {
-				if (!turn || typeof turn !== "object") return null;
-				const budget = turn.mobileVisibleItemBudget && typeof turn.mobileVisibleItemBudget === "object" ? turn.mobileVisibleItemBudget : {};
-				const omitted = Math.max(0, Math.trunc(Number(turn.mobileOmittedVisibleItemCount || budget.omitted || 0)));
-				if (!omitted) return null;
-				return {
-					omitted,
-					retained: Math.max(0, Math.trunc(Number(budget.retained || 0))),
-					original: Math.max(0, Math.trunc(Number(budget.original || 0))),
-					ceiling: Math.max(0, Math.trunc(Number(budget.ceiling || 0))),
-					reason: String(budget.reason || "response-budget")
-				};
-			}
-			function visibleItemBudgetSignature(turn) {
-				const budget = visibleItemBudgetForTurn(turn);
-				if (!budget) return null;
-				return budget;
-			}
-			function inputContentSignature(content) {
-				return (content || []).map((part) => {
-					if (!part || typeof part !== "object") return String(part || "");
-					if (isInputTextPart(part)) return {
-						type: "text",
-						text: inputTextValue(part)
-					};
-					if (isInputImagePart(part)) return {
-						type: part.type || "image",
-						path: part.path || "",
-						url: imageSourceSignature(imageUrlValue(part))
-					};
-					return compactStructuredForSignature(part);
-				});
-			}
-			function imageSourceSignature(value) {
-				const text = String(value || "");
-				if (/^data:image\//i.test(text)) return `${text.slice(0, 48)}...${text.length}`;
-				return text;
-			}
-			function compactStructuredForSignature(value) {
-				try {
-					return truncateMiddle(JSON.stringify(value), 600, "payload");
-				} catch (_) {
-					return String(value || "");
-				}
-			}
-			function itemVisibleWeight(item) {
-				const signature = visibleItemSignature(item);
-				return signature ? JSON.stringify(signature).length : 0;
-			}
-			function turnVisibleWeight(turn) {
-				return (turn && Array.isArray(turn.items) ? turn.items : []).reduce((total, item) => total + itemVisibleWeight(item), 0);
-			}
-			function isAssistantReceiptLikeItem(item) {
-				return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
-			}
-			function completedIncomingTurnHasAuthoritativeReceipt(incomingTurn) {
-				return threadDetailStatePolicy.completedIncomingTurnHasAuthoritativeReceipt(incomingTurn);
-			}
-			function shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn = null) {
-				return threadDetailStatePolicy.shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn);
-			}
-			function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false, suppressedVisualReceiptKeys = null, incomingTurn = null) {
-				return threadDetailStatePolicy.shouldPreserveLocalOnlyItem(item, preserveLocalVisible, suppressedVisualReceiptKeys, incomingTurn);
-			}
-			function isMuxUserMessage(item) {
-				return Boolean(item && item.type === "userMessage" && /^mux-user-/.test(String(item.id || "")));
-			}
-			function isOptimisticUserMessage(item) {
-				return Boolean(item && item.type === "userMessage" && (item.mobilePendingSubmission || /^local-user-/.test(String(item.id || "")) || isMuxUserMessage(item)));
-			}
-			function userMessageSubmissionIdCandidates(item) {
-				if (!item || item.type !== "userMessage") return [];
-				const values = [];
-				const explicit = String(item.clientSubmissionId || "").trim();
-				if (explicit) values.push(explicit);
-				const local = String(item.id || "").match(/^local-user-(.+)$/);
-				if (local && local[1]) values.push(local[1]);
-				return [...new Set(values)];
-			}
-			function userMessageHasSubmissionId(item, submissionId) {
-				const value = String(submissionId || "").trim();
-				if (!value || !item || item.type !== "userMessage") return false;
-				if (userMessageSubmissionIdCandidates(item).includes(value)) return true;
-				const id = String(item.id || "");
-				return Boolean(id && id.endsWith(`-${value}`));
-			}
-			function userMessagesShareSubmissionId(left, right) {
-				const leftValues = userMessageSubmissionIdCandidates(left);
-				const rightValues = userMessageSubmissionIdCandidates(right);
-				return leftValues.some((value) => userMessageHasSubmissionId(right, value)) || rightValues.some((value) => userMessageHasSubmissionId(left, value));
-			}
-			function isTurnUsageSummaryItem(item) {
-				return Boolean(item && item.type === "turnUsageSummary");
-			}
-			function isTurnDiagnosticItem(item) {
-				return Boolean(item && item.type === "turnDiagnostic");
-			}
-			function dedupeTurnUsageSummaryItems(items) {
-				if (!Array.isArray(items)) return [];
-				let lastSummaryIndex = -1;
-				items.forEach((item, index) => {
-					if (isTurnUsageSummaryItem(item)) lastSummaryIndex = index;
-				});
-				if (lastSummaryIndex < 0) return items;
-				return items.filter((item, index) => !isTurnUsageSummaryItem(item) || index === lastSummaryIndex);
-			}
-			function normalizeComparableText(value) {
-				return String(value || "").replace(/\s+/g, " ").trim();
-			}
-			function userMessageComparableParts(item) {
-				const result = {
-					text: "",
-					paths: []
-				};
-				if (!item || item.type !== "userMessage") return result;
-				const textParts = [];
-				const paths = [];
-				if (typeof item.text === "string") textParts.push(item.text);
-				if (typeof item.message === "string") textParts.push(item.message);
-				const contentParts = Array.isArray(item.content) ? item.content : typeof item.content === "string" ? [{
-					type: "text",
-					text: item.content
-				}] : [];
-				for (const part of contentParts) {
-					if (!part || typeof part !== "object") continue;
-					if (isInputTextPart(part)) {
-						const split = splitAttachmentSummaryText(inputTextValue(part));
-						if (split.text) textParts.push(split.text);
-						for (const attachment of split.attachments) if (attachment.path) paths.push(normalizeFsPath(attachment.path));
-						continue;
-					}
-					if (part.path) paths.push(normalizeFsPath(part.path));
-					else if (isInputImagePart(part)) {
-						const url = imageUrlValue(part);
-						if (url && !/^data:image\//i.test(url)) paths.push(normalizeFsPath(url));
-					}
-				}
-				result.text = normalizeComparableText(textParts.join("\n"));
-				result.paths = [...new Set(paths.filter(Boolean))].sort();
-				return result;
-			}
-			function userMessagePathOverlap(left, right) {
-				return left.paths.length > 0 && right.paths.length > 0 && left.paths.some((pathValue) => right.paths.includes(pathValue));
-			}
-			function comparablePathName(pathValue) {
-				const text = String(pathValue || "").split(/[?#]/)[0];
-				const parts = normalizeFsPath(text).split("\\").filter(Boolean);
-				return parts[parts.length - 1] || "";
-			}
-			function userMessagePathNameOverlap(left, right) {
-				if (!left.paths.length || !right.paths.length) return false;
-				const leftNames = new Set(left.paths.map(comparablePathName).filter(Boolean));
-				if (!leftNames.size) return false;
-				return right.paths.some((pathValue) => {
-					const rightName = comparablePathName(pathValue);
-					return rightName && Array.from(leftNames).some((leftName) => comparablePathNamesLikelySame(leftName, rightName));
-				});
-			}
-			function comparablePathNamesLikelySame(leftName, rightName) {
-				const left = String(leftName || "");
-				const right = String(rightName || "");
-				if (!left || !right) return false;
-				if (left === right) return true;
-				return left.endsWith(`-${right}`) || right.endsWith(`-${left}`);
-			}
-			function isVisualReceiptItem(item) {
-				return Boolean(item && (item.type === "imageView" || item.type === "imageGeneration"));
-			}
-			function visualReceiptComparableNames(item) {
-				if (!isVisualReceiptItem(item)) return [];
-				const values = [
-					imageViewPath(item),
-					imageViewContentUrl(item),
-					imageViewUrl(item),
-					item.fileName,
-					item.file_name,
-					item.label,
-					item.caption,
-					item.name
-				];
-				return [...new Set(values.map(comparablePathName).filter(Boolean))];
-			}
-			function visualReceiptCallId(item) {
-				return String(item && (item.callId || item.call_id || item.toolCallId || item.tool_call_id || item.arguments && (item.arguments.callId || item.arguments.call_id || item.arguments.toolCallId || item.arguments.tool_call_id) || item.result && (item.result.callId || item.result.call_id || item.result.toolCallId || item.result.tool_call_id)) || "").trim();
-			}
-			function visualReceiptSuppressionKeys(item) {
-				if (!isVisualReceiptItem(item)) return [];
-				const keys = /* @__PURE__ */ new Set();
-				const id = String(item && item.id || "").trim();
-				const callId = visualReceiptCallId(item);
-				if (id) keys.add(`id:${id}`);
-				if (callId) keys.add(`call:${callId}`);
-				for (const name of visualReceiptComparableNames(item)) keys.add(`name:${name}`);
-				return [...keys];
-			}
-			function suppressedVisualReceiptKeySet(turn) {
-				const values = Array.isArray(turn && turn.mobileSuppressedVisualReceiptKeys) ? turn.mobileSuppressedVisualReceiptKeys : [];
-				return new Set(values.map((entry) => String(entry || "").trim()).filter(Boolean));
-			}
-			function visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys) {
-				if (!isVisualReceiptItem(item) || !suppressedVisualReceiptKeys || !suppressedVisualReceiptKeys.size) return false;
-				return visualReceiptSuppressionKeys(item).some((key) => suppressedVisualReceiptKeys.has(key));
-			}
-			function userMessageSpecificity(item) {
-				const parts = userMessageComparableParts(item);
-				return parts.text.length + parts.paths.length * 240;
-			}
-			function userMessagesLikelySame(left, right) {
-				if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
-				const a = userMessageComparableParts(left);
-				const b = userMessageComparableParts(right);
-				if (a.text && b.text && a.text === b.text) {
-					if (isOptimisticUserMessage(left) || isOptimisticUserMessage(right)) return true;
-					if (!a.paths.length && !b.paths.length) return true;
-					return userMessagePathOverlap(a, b);
-				}
-				if ((isOptimisticUserMessage(left) || isOptimisticUserMessage(right)) && userMessagePathNameOverlap(a, b) && (!a.text || !b.text || a.text === b.text)) return true;
-				return userMessagePathOverlap(a, b) && (!a.text || !b.text || a.text === b.text);
-			}
-			function userMessagesCanShadow(left, right) {
-				const leftSubmittedEcho = Boolean(String(left && left.clientSubmissionId || "").trim() && !(left && left.mobileSendError));
-				const rightSubmittedEcho = Boolean(String(right && right.clientSubmissionId || "").trim() && !(right && right.mobileSendError));
-				const projectionIndexId = (item) => String(item && (item.id || item.itemId || item.item_id) || "").trim().match(/^item-(\d+)$/i);
-				const leftProjectionIndex = Boolean(projectionIndexId(left));
-				const rightProjectionIndex = Boolean(projectionIndexId(right));
-				const itemTimeMs = (item) => {
-					const value = item && (item.startedAtMs || item.startedAt || item.createdAtMs || item.createdAt || item.timestampMs || item.timestamp || item.updatedAtMs || item.updatedAt);
-					if (value === null || value === void 0 || value === "") return 0;
-					const numberValue = Number(value);
-					if (Number.isFinite(numberValue) && numberValue > 0) return numberValue > 0xe8d4a51000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1e3);
-					const parsed = Date.parse(String(value));
-					return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-				};
-				const leftProjectionTime = itemTimeMs(left);
-				const rightProjectionTime = itemTimeMs(right);
-				const projectionIndexEcho = Boolean(leftProjectionIndex && rightProjectionIndex && leftProjectionTime && rightProjectionTime && Math.abs(leftProjectionTime - rightProjectionTime) <= 5e3);
-				return Boolean(left && right && left.type === "userMessage" && right.type === "userMessage" && (isOptimisticUserMessage(left) || isOptimisticUserMessage(right) || leftSubmittedEcho || rightSubmittedEcho || projectionIndexEcho) && userMessagesLikelySame(left, right));
-			}
-			function userMessageTimestampMs(item) {
-				const value = item && (item.startedAtMs || item.startedAt || item.createdAtMs || item.createdAt || item.timestampMs || item.timestamp || item.updatedAtMs || item.updatedAt || item.mobileDisplayTimestampMs);
-				if (value === null || value === void 0 || value === "") return 0;
-				const numberValue = Number(value);
-				if (Number.isFinite(numberValue) && numberValue > 0) return numberValue > 0xe8d4a51000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1e3);
-				const parsed = Date.parse(String(value));
-				return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-			}
-			function userMessagesHaveNearbyTimestamps(left, right, windowMs = 600 * 1e3) {
-				const leftMs = userMessageTimestampMs(left);
-				const rightMs = userMessageTimestampMs(right);
-				return Boolean(leftMs && rightMs && Math.abs(leftMs - rightMs) <= windowMs);
-			}
-			function isProjectionIndexUserMessage(item) {
-				return Boolean(String(item && (item.id || item.itemId || item.item_id) || "").trim().match(/^item-\d+$/i));
-			}
-			function userMessagesAreSameEventAcrossTurns(left, right) {
-				if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
-				if (!userMessagesLikelySame(left, right)) return false;
-				if (userMessagesShareSubmissionId(left, right)) return true;
-				if (userMessagesCanShadow(left, right)) return true;
-				const leftTime = userMessageTimestampMs(left);
-				const rightTime = userMessageTimestampMs(right);
-				if (!leftTime || !rightTime || Math.abs(leftTime - rightTime) > 5e3) return false;
-				return Boolean(isOptimisticUserMessage(left) || isOptimisticUserMessage(right) || isProjectionIndexUserMessage(left) || isProjectionIndexUserMessage(right));
-			}
-			function durableTurnCanReceivePendingEcho(turn) {
-				if (!turn) return false;
-				const status = turn.status;
-				const statusType = status && typeof status === "object" ? String(status.type || status.status || status.state || "") : String(status || "");
-				if (/completed|failed|cancel|error|interrupted/i.test(statusType)) return false;
-				if (/running|active|queued|processing|inprogress|in_progress|in-progress|pending|started/i.test(statusType)) return true;
-				return Boolean(turn.live || turn.mobileLive || turn.mobileActiveLiveTurn || turn.mobilePendingOverlay);
-			}
-			function optimisticEchoCanMatchEarlierDurable(durableItem, optimisticItem, durableTurn = null) {
-				if (!durableItem || !optimisticItem) return false;
-				if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
-				if (isOptimisticUserMessage(durableItem) || !isOptimisticUserMessage(optimisticItem)) return false;
-				if (userMessagesShareSubmissionId(durableItem, optimisticItem)) return true;
-				const likelySameNearby = userMessagesLikelySame(durableItem, optimisticItem) && userMessagesHaveNearbyTimestamps(durableItem, optimisticItem);
-				if (optimisticItem.mobileSendError) return likelySameNearby;
-				if (!Boolean(optimisticItem.mobilePendingSubmission && String(optimisticItem.clientSubmissionId || "").trim() && /^local-user-/.test(String(optimisticItem.id || ""))) || !durableTurnCanReceivePendingEcho(durableTurn)) return false;
-				return likelySameNearby;
-			}
-			function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
-				if (!existingItem || existingItem.type !== "userMessage") return false;
-				return (incomingItems || []).some((incomingItem) => incomingItem && incomingItem.id !== existingItem.id && incomingItem.type === "userMessage" && userMessagesCanShadow(existingItem, incomingItem));
-			}
-			function hasMatchingRealUserMessage(item, items) {
-				if (!isMuxUserMessage(item)) return false;
-				return (items || []).some((candidate) => candidate && candidate.id !== item.id && candidate.type === "userMessage" && !isMuxUserMessage(candidate) && userMessagesCanShadow(candidate, item));
-			}
-			function removeShadowedMuxUserMessages(items) {
-				return (items || []).filter((item) => !hasMatchingRealUserMessage(item, items));
-			}
-			function userMessageShadowPriority(item) {
-				if (!item || item.type !== "userMessage") return 0;
-				if (/^local-user-/.test(String(item.id || ""))) return 1;
-				if (isMuxUserMessage(item) || item.mobilePendingSubmission || String(item.clientSubmissionId || "").trim()) return 2;
-				const projectionMatch = String(item.id || item.itemId || item.item_id || "").trim().match(/^item-(\d+)$/i);
-				if (projectionMatch) return 2 + Math.max(0, Math.min(999999, Number(projectionMatch[1]) || 0)) / 1e6;
-				return 3;
-			}
-			function mergeLikelySameUserMessage(existingItem, incomingItem) {
-				const existingPriority = userMessageShadowPriority(existingItem);
-				const incomingPriority = userMessageShadowPriority(incomingItem);
-				const merged = mergeItemPreservingVisibleFields(existingItem, incomingItem);
-				const preferred = incomingPriority >= existingPriority ? incomingItem : existingItem;
-				if (preferred && preferred.id) merged.id = preferred.id;
-				if (preferred && preferred.clientSubmissionId) merged.clientSubmissionId = preferred.clientSubmissionId;
-				else if (existingItem && existingItem.clientSubmissionId) merged.clientSubmissionId = existingItem.clientSubmissionId;
-				else if (incomingItem && incomingItem.clientSubmissionId) merged.clientSubmissionId = incomingItem.clientSubmissionId;
-				if (preferred && preferred.startedAtMs && !merged.startedAtMs) merged.startedAtMs = preferred.startedAtMs;
-				if (preferred && !isOptimisticUserMessage(preferred)) {
-					delete merged.mobilePendingSubmission;
-					delete merged.mobileSendError;
-				}
-				if (incomingItem && !isOptimisticUserMessage(incomingItem) && isOptimisticUserMessage(existingItem) || incomingPriority > existingPriority && incomingPriority >= 3) {
-					if (Array.isArray(incomingItem.content)) merged.content = incomingItem.content;
-					if (typeof incomingItem.text === "string") merged.text = incomingItem.text;
-					if (typeof incomingItem.message === "string") merged.message = incomingItem.message;
-				}
-				return merged;
-			}
-			function dedupeLikelySameUserMessages(items) {
-				const out = [];
-				for (const item of items || []) {
-					if (item && item.type === "userMessage") {
-						const existingIndex = out.findIndex((candidate) => userMessagesCanShadow(candidate, item));
-						if (existingIndex >= 0) {
-							out[existingIndex] = mergeLikelySameUserMessage(out[existingIndex], item);
-							continue;
-						}
-					}
-					out.push(item);
-				}
-				return out;
-			}
-			function normalizeThreadVisibleUserMessages(thread) {
-				if (!thread || !Array.isArray(thread.turns)) return thread;
-				for (const turn of thread.turns) {
-					if (!turn || !Array.isArray(turn.items)) continue;
-					turn.items = removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(turn.items));
-				}
-				const userMessages = threadUserMessageEntries(thread.turns);
-				const durableUserMessages = [];
-				for (const entry of userMessages) if (entry && entry.item && !isOptimisticUserMessage(entry.item)) durableUserMessages.push(entry);
-				if (!durableUserMessages.length && userMessages.length < 2) return thread;
-				for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
-					const turn = thread.turns[turnIndex];
-					if (!turn || !Array.isArray(turn.items)) continue;
-					turn.items = turn.items.filter((item, itemIndex) => !shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages) && !shouldDropOptimisticUserMessageForHigherPriorityEcho(item, turnIndex, itemIndex, userMessages) && !shouldDropDuplicateUserMessageEvent(item, turnIndex, itemIndex, userMessages));
-				}
-				return thread;
-			}
-			function threadUserMessageEntries(turns) {
-				const entries = [];
-				for (let turnIndex = 0; turnIndex < (turns || []).length; turnIndex += 1) {
-					const turn = turns[turnIndex];
-					const items = Array.isArray(turn && turn.items) ? turn.items : [];
-					for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
-						const item = items[itemIndex];
-						if (item && item.type === "userMessage") entries.push({
-							item,
-							turn,
-							turnIndex,
-							itemIndex
-						});
-					}
-				}
-				return entries;
-			}
-			function shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages) {
-				if (!isOptimisticUserMessage(item) || !Array.isArray(durableUserMessages)) return false;
-				return durableUserMessages.some((real) => {
-					if (!real || !real.item || real.item.id === item.id) return false;
-					if (!userMessagesCanShadow(real.item, item)) return false;
-					if (real.turnIndex >= turnIndex) return true;
-					if (optimisticEchoCanMatchEarlierDurable(real.item, item, real.turn)) return true;
-					return userMessageHasVisualAttachment(real.item) && userMessageHasVisualAttachment(item);
-				});
-			}
-			function shouldDropOptimisticUserMessageForHigherPriorityEcho(item, turnIndex, itemIndex, userMessages) {
-				if (!isOptimisticUserMessage(item) || item.mobileSendError || !Array.isArray(userMessages)) return false;
-				const itemPriority = userMessageShadowPriority(item);
-				if (itemPriority <= 0 || itemPriority >= 3) return false;
-				return userMessages.some((candidate) => {
-					if (!candidate || !candidate.item || candidate.item === item || candidate.item.id === item.id) return false;
-					if (userMessageShadowPriority(candidate.item) <= itemPriority) return false;
-					if (!userMessagesShareSubmissionId(candidate.item, item)) {
-						if (candidate.turnIndex < turnIndex) return false;
-						if (candidate.turnIndex === turnIndex && candidate.itemIndex <= itemIndex) return false;
-					}
-					return userMessagesCanShadow(candidate.item, item);
-				});
-			}
-			function shouldDropDuplicateUserMessageEvent(item, turnIndex, itemIndex, userMessages) {
-				if (!item || item.type !== "userMessage" || !Array.isArray(userMessages)) return false;
-				const itemHasVisualAttachment = userMessageHasVisualAttachment(item);
-				const itemPriority = userMessageShadowPriority(item);
-				return userMessages.some((candidate) => {
-					if (!candidate || !candidate.item || candidate.item === item || candidate.item.id === item.id) return false;
-					if (candidate.turnIndex < turnIndex) return false;
-					if (candidate.turnIndex === turnIndex && candidate.itemIndex <= itemIndex) return false;
-					const sameSubmission = userMessagesShareSubmissionId(candidate.item, item);
-					if ((itemHasVisualAttachment || userMessageHasVisualAttachment(candidate.item)) && !sameSubmission) return false;
-					if (!userMessagesAreSameEventAcrossTurns(candidate.item, item)) return false;
-					const candidatePriority = userMessageShadowPriority(candidate.item);
-					if (candidatePriority > itemPriority) return true;
-					if (candidatePriority === itemPriority) return true;
-					return false;
-				});
-			}
-			function threadDurableUserMessages(turns) {
-				const messages = [];
-				for (const turn of turns || []) {
-					const items = Array.isArray(turn && turn.items) ? turn.items : [];
-					for (const item of items) if (item && item.type === "userMessage" && !isOptimisticUserMessage(item)) messages.push(item);
-				}
-				return messages;
-			}
-			function shouldDropInitialSubmissionEchoTurn(existingTurn, incomingTurns, initialSubmissionId) {
-				const submissionId = String(initialSubmissionId || "").trim();
-				if (!submissionId || !existingTurn || !Array.isArray(existingTurn.items)) return false;
-				const visibleItems = existingTurn.items.filter((item) => item && itemVisibleWeight(item) > 0 && !isReasoningItem(item));
-				const submittedEchoes = visibleItems.filter((item) => item && item.type === "userMessage" && isOptimisticUserMessage(item) && String(item.clientSubmissionId || "") === submissionId);
-				if (!submittedEchoes.length || submittedEchoes.length !== visibleItems.length) return false;
-				const durableMessages = threadDurableUserMessages(incomingTurns);
-				return submittedEchoes.every((echo) => durableMessages.some((real) => userMessagesCanShadow(real, echo)));
-			}
-			function threadHasInitialSubmissionEcho(thread, initialSubmissionId) {
-				const submissionId = String(initialSubmissionId || "").trim();
-				if (!submissionId || !thread || !Array.isArray(thread.turns)) return false;
-				return thread.turns.some((turn) => {
-					return (Array.isArray(turn && turn.items) ? turn.items : []).some((item) => item && item.type === "userMessage" && isOptimisticUserMessage(item) && String(item.clientSubmissionId || "") === submissionId);
-				});
-			}
-			function shouldPreserveMissingExistingTurn(existingTurn) {
-				if (!existingTurn || isTurnComplete(existingTurn)) return false;
-				const visibleItems = (Array.isArray(existingTurn.items) ? existingTurn.items : []).filter((item) => item && itemVisibleWeight(item) > 0 && !isReasoningItem(item));
-				return Boolean(visibleItems.length && visibleItems.every((item) => item.type === "userMessage" && isOptimisticUserMessage(item)));
-			}
-			function comparableVisibleTextItem(item) {
-				return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
-			}
-			function comparableVisibleText(item) {
-				if (!comparableVisibleTextItem(item)) return "";
-				return normalizeComparableText(item.text || "");
-			}
-			function visibleTextItemsLikelySame(existingItem, incomingItem) {
-				if (!comparableVisibleTextItem(existingItem) || !comparableVisibleTextItem(incomingItem)) return false;
-				if (existingItem.type !== incomingItem.type) return false;
-				const existingText = comparableVisibleText(existingItem);
-				const incomingText = comparableVisibleText(incomingItem);
-				if (!existingText || !incomingText) return false;
-				return incomingText === existingText || incomingText.length >= existingText.length && incomingText.startsWith(existingText);
-			}
-			function visibleTextItemsHaveStableSharedPrefix(existingItem, incomingItem) {
-				if (!comparableVisibleTextItem(existingItem) || !comparableVisibleTextItem(incomingItem)) return false;
-				if (existingItem.type !== incomingItem.type) return false;
-				const existingText = comparableVisibleText(existingItem);
-				const incomingText = comparableVisibleText(incomingItem);
-				if (!existingText || !incomingText) return false;
-				if (existingText === incomingText) return true;
-				const shorterText = existingText.length <= incomingText.length ? existingText : incomingText;
-				const longerText = existingText.length <= incomingText.length ? incomingText : existingText;
-				if (shorterText.length < 16) return false;
-				if (!longerText.startsWith(shorterText)) return false;
-				return shorterText.length / Math.max(1, longerText.length) >= .5;
-			}
-			function completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn = null) {
-				if (!completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)) return false;
-				if (!isAssistantReceiptLikeItem(existingItem) || !isAssistantReceiptLikeItem(incomingItem)) return false;
-				return visibleTextItemsLikelySame(existingItem, incomingItem) || visibleTextItemsHaveStableSharedPrefix(existingItem, incomingItem);
-			}
-			function visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
-				return threadDetailStatePolicy.visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn);
-			}
-			function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, usedExistingIndexes, incomingTurn = null) {
-				if (!incomingItem) return -1;
-				const used = usedExistingIndexes || /* @__PURE__ */ new Set();
-				if (incomingItem.id) {
-					const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem && !used.has(candidateIndex) && existingItem.id === incomingItem.id);
-					if (index >= 0) return index;
-				}
-				if (incomingItem.type === "userMessage") {
-					const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem && !used.has(candidateIndex) && existingItem.type === "userMessage" && userMessagesCanShadow(existingItem, incomingItem));
-					if (index >= 0) return index;
-				}
-				if (comparableVisibleTextItem(incomingItem)) {
-					const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem && !used.has(candidateIndex) && visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn));
-					if (index >= 0) return index;
-				}
-				return -1;
-			}
-			function mergeIncomingOrderedItem(existingItem, incomingItem, incomingTurn = null) {
-				if (!existingItem) return incomingItem;
-				if (!incomingItem) return existingItem;
-				if (incomingItem.type === "userMessage" && existingItem.type === "userMessage") return mergeLikelySameUserMessage(existingItem, incomingItem);
-				if (visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn)) return mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn);
-				return mergeItemPreservingVisibleFields(existingItem, incomingItem);
-			}
-			function insertLocalOnlyItemByExistingOrder(merged, item, existingIndex, existingIndexToMergedIndex) {
-				if (!item) return;
-				let insertAt = -1;
-				for (let index = existingIndex - 1; index >= 0; index -= 1) if (existingIndexToMergedIndex.has(index)) {
-					insertAt = existingIndexToMergedIndex.get(index) + 1;
-					break;
-				}
-				if (insertAt < 0) {
-					for (const [index, mergedIndex] of existingIndexToMergedIndex.entries()) if (index > existingIndex && (insertAt < 0 || mergedIndex < insertAt)) insertAt = mergedIndex;
-				}
-				if (insertAt < 0 || insertAt > merged.length) insertAt = merged.length;
-				merged.splice(insertAt, 0, item);
-				for (const [index, mergedIndex] of existingIndexToMergedIndex.entries()) if (mergedIndex >= insertAt) existingIndexToMergedIndex.set(index, mergedIndex + 1);
-				existingIndexToMergedIndex.set(existingIndex, insertAt);
-			}
-			function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
-				return threadDetailStatePolicy.mergeItemPreservingVisibleFields(existingItem, incomingItem);
-			}
-			function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
-				return threadDetailStatePolicy.mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn);
-			}
-			function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false, incomingTurn = null) {
-				const added = /* @__PURE__ */ new Set();
-				const usedExistingIndexes = /* @__PURE__ */ new Set();
-				const existingIndexToMergedIndex = /* @__PURE__ */ new Map();
-				const merged = [];
-				const suppressedVisualReceiptKeys = suppressedVisualReceiptKeySet(incomingTurn);
-				for (const incomingItem of incomingItems || []) {
-					if (!incomingItem) continue;
-					if (incomingItem.id && added.has(incomingItem.id)) continue;
-					if (hasMatchingRealUserMessage(incomingItem, merged) || hasMatchingRealUserMessage(incomingItem, incomingItems)) continue;
-					const existingIndex = findUnusedExistingItemIndexForIncoming(incomingItem, existingItems || [], usedExistingIndexes, incomingTurn);
-					const existingItem = existingIndex >= 0 ? existingItems[existingIndex] : null;
-					const mergedItem = mergeIncomingOrderedItem(existingItem, incomingItem, incomingTurn);
-					merged.push(mergedItem);
-					if (incomingItem.id) added.add(incomingItem.id);
-					if (mergedItem && mergedItem.id) added.add(mergedItem.id);
-					if (existingItem && existingItem.id) added.add(existingItem.id);
-					if (existingIndex >= 0) {
-						usedExistingIndexes.add(existingIndex);
-						existingIndexToMergedIndex.set(existingIndex, merged.length - 1);
-					}
-				}
-				(existingItems || []).forEach((existingItem, existingIndex) => {
-					if (!existingItem || usedExistingIndexes.has(existingIndex)) return;
-					if (!shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible, suppressedVisualReceiptKeys, incomingTurn)) return;
-					if (existingItem.id && added.has(existingItem.id)) return;
-					insertLocalOnlyItemByExistingOrder(merged, existingItem, existingIndex, existingIndexToMergedIndex);
-					if (existingItem.id) added.add(existingItem.id);
-				});
-				return dedupeTurnUsageSummaryItems(removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(merged)));
-			}
-			function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
-				return threadDetailMergePolicy.mergeTurnPreservingVisibleItems(existingTurn, incomingTurn);
-			}
-			function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
-				return threadDetailMergePolicy.shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
-			}
-			function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
-				return threadDetailMergePolicy.mergeThreadPreservingVisibleItems(existingThread, incomingThread, { activeTurnId: state.activeTurnId });
-			}
-			function firstTurnTimestampMs(turn, fields = []) {
-				for (const field of fields) {
-					const timestamp = numericTimestampMs(turn && turn[field]);
-					if (timestamp) return timestamp;
-				}
-				return 0;
-			}
-			function turnOrderMs(turn) {
-				if (!turn) return 0;
-				if (isTurnComplete(turn)) return firstTurnTimestampMs(turn, [
-					"completedAtMs",
-					"completedAt",
-					"completed_at_ms",
-					"completed_at",
-					"updatedAtMs",
-					"updatedAt",
-					"updated_at_ms",
-					"updated_at",
-					"startedAtMs",
-					"startedAt",
-					"started_at_ms",
-					"started_at",
-					"createdAtMs",
-					"createdAt",
-					"created_at_ms",
-					"created_at"
-				]);
-				return firstTurnTimestampMs(turn, [
-					"startedAtMs",
-					"startedAt",
-					"started_at_ms",
-					"started_at",
-					"createdAtMs",
-					"createdAt",
-					"created_at_ms",
-					"created_at",
-					"updatedAtMs",
-					"updatedAt",
-					"updated_at_ms",
-					"updated_at",
-					"completedAtMs",
-					"completedAt",
-					"completed_at_ms",
-					"completed_at"
-				]);
-			}
-			function turnIsSupersededBy(turn, newerTurn) {
-				if (!turn || !newerTurn || turn.id === newerTurn.id) return false;
-				const left = turnOrderMs(turn);
-				const right = turnOrderMs(newerTurn);
-				if (left && right) return right > left;
-				return isTurnComplete(newerTurn) && !isTurnComplete(turn);
-			}
-			const threadDetailStatePolicy = threadDetailStateApi.createThreadDetailStatePolicy({
-				itemVisibleWeight,
-				isContextCompactionItem,
-				isOperationalItem,
-				isAssistantReceiptLikeItem,
-				isTurnComplete,
-				isReasoningItem,
-				visualReceiptMatchesSuppressionKeys,
-				comparableVisibleText,
-				visibleTextItemsLikelySame,
-				completedReceiptItemsLikelySame
-			});
-			const threadListSummaryFromDetailThread = threadDetailStateApi.threadListSummaryFromDetailThread;
-			const planThreadOpenCacheReuse = threadDetailStateApi.planThreadOpenCacheReuse;
-			const threadHasReusableLoadedDetailState = threadDetailStateApi.threadHasReusableLoadedDetailState;
-			const threadDetailV4MergePolicy = threadDetailV4MergeStateApi.createThreadDetailV4MergePolicy({
-				normalizeThreadVisibleUserMessages,
-				turnVisibleWeight,
-				isOptimisticUserMessage,
-				isRecentlySubmittedUserMessage,
-				isReasoningItem,
-				userMessageHasSubmissionId,
-				userMessagesCanShadow,
-				isTurnComplete,
-				isRunningStatus,
-				isIncompleteInterruptedTurn,
-				turnHasActiveLiveItems,
-				turnOrderMs,
-				mergeTurnPreservingVisibleItems,
-				sortTurnsForDisplay,
-				maxVisibleTurnsForThread
-			});
-			const threadDetailMergePolicy = threadDetailMergeStateApi.createThreadDetailMergePolicy({
-				isV4ProjectionThread: threadDetailV4MergePolicy.isV4ProjectionThread,
-				mergeV4ProjectionThread: threadDetailV4MergePolicy.mergeV4ProjectionThread,
-				normalizeThreadVisibleUserMessages,
-				turnVisibleWeight,
-				shouldPreserveExistingTurnVisibleItems: (existingTurn, incomingTurn, existingWeight) => threadDetailStatePolicy.shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight),
-				mergeItemsPreservingLocalVisible,
-				shouldDropInitialSubmissionEchoTurn,
-				shouldPreserveMissingExistingTurn,
-				turnIsSupersededBy,
-				isTurnComplete,
-				sortTurnsForDisplay,
-				threadHasInitialSubmissionEcho,
-				maxExpandedVisibleTurns: MAX_EXPANDED_VISIBLE_TURNS
-			});
-			return {
-				threadDetailStatePolicy,
-				threadDetailV4MergePolicy,
-				threadDetailMergePolicy,
-				threadListSummaryFromDetailThread,
-				planThreadOpenCacheReuse,
-				threadHasReusableLoadedDetailState,
-				liveTurnHasNonUserProgress,
-				isVisibleNonUserProgressItem,
-				liveTurnHasNonUserProgressBefore,
-				liveTurnHasNonUserProgressAfter,
-				isUserVisibleTextReplyItem,
-				liveTurnHasUserVisibleTextReplyAfter,
-				userMessageHasVisualAttachment,
-				shouldHideDurableLiveUserMessage,
-				durableUserMessageMatchesOptimisticEcho,
-				threadHasDurableUserMessageWithSubmissionId,
-				threadHasDurableUserMessageMatchingOptimisticEcho,
-				shouldHideOptimisticUserMessageEcho,
-				isSupersededLiveTurn,
-				shouldHideSupersededLiveUserMessage,
-				isRawThreadReadMode,
-				shouldPreserveRawThreadVisibleEntry,
-				itemTextValue,
-				reasoningItemHasVisibleText,
-				isLatestCompletedProcessTurn,
-				limitRawThreadVisibleEntries,
-				visibleItemsForTurn,
-				currentLiveOperationEntry,
-				liveTurnStatusDockItem,
-				visibleItemSignature,
-				visibleItemBudgetForTurn,
-				visibleItemBudgetSignature,
-				inputContentSignature,
-				imageSourceSignature,
-				compactStructuredForSignature,
-				itemVisibleWeight,
-				turnVisibleWeight,
-				isAssistantReceiptLikeItem,
-				completedIncomingTurnHasAuthoritativeReceipt,
-				shouldDropLocalOnlyReceiptForIncomingTurn,
-				shouldPreserveLocalOnlyItem,
-				isMuxUserMessage,
-				isOptimisticUserMessage,
-				userMessageSubmissionIdCandidates,
-				userMessageHasSubmissionId,
-				userMessagesShareSubmissionId,
-				isTurnUsageSummaryItem,
-				isTurnDiagnosticItem,
-				dedupeTurnUsageSummaryItems,
-				normalizeComparableText,
-				userMessageComparableParts,
-				userMessagePathOverlap,
-				comparablePathName,
-				userMessagePathNameOverlap,
-				comparablePathNamesLikelySame,
-				isVisualReceiptItem,
-				visualReceiptComparableNames,
-				visualReceiptCallId,
-				visualReceiptSuppressionKeys,
-				suppressedVisualReceiptKeySet,
-				visualReceiptMatchesSuppressionKeys,
-				userMessageSpecificity,
-				userMessagesLikelySame,
-				userMessagesCanShadow,
-				userMessageTimestampMs,
-				userMessagesHaveNearbyTimestamps,
-				isProjectionIndexUserMessage,
-				userMessagesAreSameEventAcrossTurns,
-				durableTurnCanReceivePendingEcho,
-				optimisticEchoCanMatchEarlierDurable,
-				hasMatchingIncomingUserMessage,
-				hasMatchingRealUserMessage,
-				removeShadowedMuxUserMessages,
-				userMessageShadowPriority,
-				mergeLikelySameUserMessage,
-				dedupeLikelySameUserMessages,
-				normalizeThreadVisibleUserMessages,
-				threadUserMessageEntries,
-				shouldDropOptimisticUserMessageForDurable,
-				shouldDropOptimisticUserMessageForHigherPriorityEcho,
-				shouldDropDuplicateUserMessageEvent,
-				threadDurableUserMessages,
-				shouldDropInitialSubmissionEchoTurn,
-				threadHasInitialSubmissionEcho,
-				comparableVisibleTextItem,
-				comparableVisibleText,
-				visibleTextItemsLikelySame,
-				visibleTextItemsHaveStableSharedPrefix,
-				completedReceiptItemsLikelySame,
-				visibleTextItemsCanShareRenderIdentity,
-				findUnusedExistingItemIndexForIncoming,
-				mergeIncomingOrderedItem,
-				insertLocalOnlyItemByExistingOrder,
-				mergeItemPreservingVisibleFields,
-				mergeVisibleTextItemPreservingRenderIdentity,
-				mergeItemsPreservingLocalVisible,
-				mergeTurnPreservingVisibleItems,
-				shouldPreserveLiveTurnLocalVisibleItems,
-				mergeThreadPreservingVisibleItems,
-				turnOrderMs,
-				turnIsSupersededBy
-			};
-		}
-		root.CodexThreadDetailRuntime = { createThreadDetailRuntime };
-		if (typeof module !== "undefined" && module.exports) module.exports = { createThreadDetailRuntime };
-	})(typeof globalThis !== "undefined" ? globalThis : exports);
-}));
-//#endregion
-//#region public/client-render-stability-guard.js
-var require_client_render_stability_guard = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function initClientRenderStabilityGuard(globalScope) {
-		function stringValue(value) {
-			return String(value || "").trim();
-		}
-		function shortHash(value) {
-			const text = stringValue(value);
-			let hash = 2166136261;
-			for (let index = 0; index < text.length; index += 1) {
-				hash ^= text.charCodeAt(index);
-				hash = Math.imul(hash, 16777619);
-			}
-			return (hash >>> 0).toString(36);
-		}
-		function submittedUserItemClientSubmissionId(item) {
-			if (!item || item.type !== "userMessage") return "";
-			return stringValue(item.clientSubmissionId);
-		}
-		function firstSubmittedUserMessageClientSubmissionId(turn) {
-			const items = Array.isArray(turn && turn.items) ? turn.items : [];
-			for (const item of items) {
-				const submissionId = submittedUserItemClientSubmissionId(item);
-				if (submissionId) return submissionId;
-			}
-			return "";
-		}
-		function localSubmissionRenderKey(clientSubmissionId) {
-			const submissionId = stringValue(clientSubmissionId);
-			return submissionId ? `submitted:${shortHash(submissionId)}` : "";
-		}
-		function submittedTurnRenderKey(turn) {
-			const explicit = stringValue(turn && turn.mobileLocalSubmissionRenderKey);
-			if (explicit) return explicit;
-			return localSubmissionRenderKey(firstSubmittedUserMessageClientSubmissionId(turn));
-		}
-		function stableTurnIdentity(turn) {
-			return submittedTurnRenderKey(turn) || stringValue(turn && (turn.id || turn.startedAt)) || "turn";
-		}
-		function markSubmittedTurn(turn, clientSubmissionId) {
-			if (!turn || typeof turn !== "object") return "";
-			const key = localSubmissionRenderKey(clientSubmissionId);
-			if (key) turn.mobileLocalSubmissionRenderKey = key;
-			return key;
-		}
-		function transferSubmittedTurnIdentity(sourceTurn, targetTurn, clientSubmissionId) {
-			if (!targetTurn || typeof targetTurn !== "object") return "";
-			const key = submittedTurnRenderKey(sourceTurn) || submittedTurnRenderKey(targetTurn) || localSubmissionRenderKey(clientSubmissionId);
-			if (key) targetTurn.mobileLocalSubmissionRenderKey = key;
-			return key;
-		}
-		const api = {
-			firstSubmittedUserMessageClientSubmissionId,
-			localSubmissionRenderKey,
-			markSubmittedTurn,
-			shortHash,
-			stableTurnIdentity,
-			submittedTurnRenderKey,
-			transferSubmittedTurnIdentity
-		};
-		if (typeof module !== "undefined" && module.exports) module.exports = api;
-		globalScope.CodexClientRenderStabilityGuard = api;
-	})(typeof globalThis !== "undefined" ? globalThis : window);
-}));
-//#endregion
-//#region public/live-operation-dock-state.js
-var require_live_operation_dock_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexLiveOperationDockState = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_MIN_VISIBLE_MS = 500;
-		function normalizeMode(mode) {
-			return String(mode || "") === "expanded" ? "expanded" : "compact";
-		}
-		function text(value) {
-			return String(value || "");
-		}
-		function isCompletedStatusText(value) {
-			return /completed|failed|cancel|error|interrupted/i.test(text(value));
-		}
-		function nowValue(value) {
-			const parsed = Number(value);
-			return Number.isFinite(parsed) ? parsed : Date.now();
-		}
-		function containsBubble(html) {
-			return text(html).includes("mobile-operation-bubble");
-		}
-		function containsSheet(html) {
-			return text(html).includes("mobile-operation-sheet");
-		}
-		function rememberCompactBubble(input = {}) {
-			const nowMs = nowValue(input.nowMs);
-			const minVisibleMs = Math.max(0, Number(input.minVisibleMs || DEFAULT_MIN_VISIBLE_MS));
-			const existingUntilMs = Number(input.existingVisibleUntilMs || 0);
-			const html = text(input.html);
-			const threadId = text(input.threadId);
-			return {
-				visibleUntilMs: Math.max(existingUntilMs, nowMs + minVisibleMs),
-				html,
-				threadId,
-				recallHtml: html,
-				recallThreadId: threadId,
-				recallAtMs: nowMs
-			};
-		}
-		function compactBubblePreservation(input = {}) {
-			if (containsBubble(input.nextHtml)) return { preserve: false };
-			if (input.liveTurnActive === false) return { preserve: false };
-			const remainingMs = Number(input.visibleUntilMs || 0) - nowValue(input.nowMs);
-			if (remainingMs <= 0) return { preserve: false };
-			const savedThreadId = text(input.savedThreadId);
-			if (!savedThreadId || savedThreadId !== text(input.currentThreadId)) return { preserve: false };
-			const savedHtml = text(input.savedHtml);
-			const dockHasBubble = Boolean(input.dockHasBubble);
-			if (!dockHasBubble && !containsBubble(savedHtml)) return { preserve: false };
-			return {
-				preserve: true,
-				remainingMs,
-				patchSavedHtml: Boolean(savedHtml && !dockHasBubble),
-				savedHtml
-			};
-		}
-		function shouldPreservePinned(input = {}) {
-			return Boolean(input.pinned && normalizeMode(input.mode) === "expanded" && text(input.pinnedThreadId) === text(input.currentThreadId) && input.dockHasSheet && input.liveTurnActive !== false && !containsBubble(input.nextHtml));
-		}
-		function shouldShowRecall(input = {}) {
-			const recallThreadId = text(input.recallThreadId);
-			return Boolean(input.isMobile && input.hasCurrentThread && !input.newThreadDraft && input.liveTurnActive !== false && recallThreadId && recallThreadId === text(input.currentThreadId) && containsSheet(input.recallHtml));
-		}
-		function operationCardContentPlan(input = {}) {
-			const status = text(input.status || (input.completed ? "completed" : "running")).trim();
-			const type = text(input.type || input.itemType || "item").trim() || "item";
-			const title = text(input.title || type).trim() || type;
-			const detail = text(input.detail).replace(/\s+/g, " ").trim();
-			const durationText = text(input.durationText).trim();
-			const extraClass = text(input.extraClass).trim();
-			const completed = Boolean(input.completed || isCompletedStatusText(status));
-			return {
-				itemId: text(input.itemId).trim(),
-				type,
-				status,
-				title,
-				detail,
-				detailEmpty: !detail,
-				statusVisible: Boolean(status),
-				durationVisible: Boolean(durationText),
-				durationText,
-				durationTitle: durationText ? `Elapsed ${durationText}` : "",
-				durationAttrs: text(input.durationAttrs).trim(),
-				classTokens: [
-					"item",
-					"live-operation",
-					extraClass,
-					completed ? "completed" : "",
-					type
-				].filter(Boolean)
-			};
-		}
-		function htmlEscaper(input = {}) {
-			return typeof input.escapeHtml === "function" ? input.escapeHtml : (value) => text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-		}
-		function durationAttributeHtml(value, escape) {
-			const attrs = [];
-			const input = text(value);
-			const attrPattern = /\b(data-(?:started|completed|duration)-ms)="([^"]*)"/g;
-			let match;
-			while (match = attrPattern.exec(input)) attrs.push(`${match[1]}="${escape(match[2])}"`);
-			return attrs.join(" ");
-		}
-		function operationCardHtml(input = {}) {
-			const escape = htmlEscaper(input);
-			const plan = input.plan || operationCardContentPlan(input);
-			const renderKey = text(input.renderKey || input.key).trim();
-			const durationAttrs = durationAttributeHtml(plan.durationAttrs, escape);
-			const duration = plan.durationVisible ? `<time class="operation-duration" ${durationAttrs} title="${escape(plan.durationTitle)}">${escape(plan.durationText)}</time>` : "";
-			const classes = (Array.isArray(plan.classTokens) ? plan.classTokens : []).map(escape).join(" ");
-			const detailValue = plan.detail ? escape(plan.detail) : "&nbsp;";
-			const body = `<div class="operation-detail-line${plan.detailEmpty ? " empty" : ""}"><span class="operation-detail">${detailValue}</span></div>`;
-			const statusHtml = plan.statusVisible ? `<span class="operation-status">${escape(plan.status)}</span>` : "";
-			return `<section class="${classes}" data-item="${escape(plan.itemId)}" data-render-key="${escape(renderKey)}">
-    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escape(plan.title)}</span>${statusHtml}</span>${duration}</div>
-    ${body}
-  </section>`;
-		}
-		return {
-			DEFAULT_MIN_VISIBLE_MS,
-			compactBubblePreservation,
-			containsBubble,
-			containsSheet,
-			normalizeMode,
-			operationCardContentPlan,
-			operationCardHtml,
-			rememberCompactBubble,
-			shouldPreservePinned,
-			shouldShowRecall
-		};
-	});
-}));
-//#endregion
 //#region \0virtual:codex-mobile-esm-compatibility/shard/shard-03
+var import_thread_list_runtime = /* @__PURE__ */ __toESM(require_thread_list_runtime());
+var import_side_chat_runtime = /* @__PURE__ */ __toESM(require_side_chat_runtime());
 var import_composer_bridge_runtime = /* @__PURE__ */ __toESM(require_composer_bridge_runtime());
 var import_api_client_runtime = /* @__PURE__ */ __toESM(require_api_client_runtime());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
@@ -4098,10 +4745,25 @@ var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_det
 var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
 var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
 var import_thread_detail_v4_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_v4_merge_state());
-var import_thread_detail_runtime = /* @__PURE__ */ __toESM(require_thread_detail_runtime());
-var import_client_render_stability_guard = /* @__PURE__ */ __toESM(require_client_render_stability_guard());
-var import_live_operation_dock_state = /* @__PURE__ */ __toESM(require_live_operation_dock_state());
 var moduleDefinitions = [
+	{
+		"id": "thread-list-runtime",
+		"source": "public/thread-list-runtime.js",
+		"globalName": "CodexThreadListRuntime",
+		"expectedFunctions": ["createThreadListRuntime"],
+		"assetPath": "/thread-list-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 37203
+	},
+	{
+		"id": "side-chat-runtime",
+		"source": "public/side-chat-runtime.js",
+		"globalName": "CodexSideChatRuntime",
+		"expectedFunctions": ["createSideChatRuntime"],
+		"assetPath": "/side-chat-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 51946
+	},
 	{
 		"id": "composer-bridge-runtime",
 		"source": "public/composer-bridge-runtime.js",
@@ -4196,48 +4858,11 @@ var moduleDefinitions = [
 		"assetPath": "/thread-detail-v4-merge-state.js",
 		"classicLoaderExcluded": true,
 		"bytes": 12071
-	},
-	{
-		"id": "thread-detail-runtime",
-		"source": "public/thread-detail-runtime.js",
-		"globalName": "CodexThreadDetailRuntime",
-		"expectedFunctions": ["createThreadDetailRuntime"],
-		"assetPath": "/thread-detail-runtime.js",
-		"classicLoaderExcluded": true,
-		"bytes": 57528
-	},
-	{
-		"id": "client-render-stability-guard",
-		"source": "public/client-render-stability-guard.js",
-		"globalName": "CodexClientRenderStabilityGuard",
-		"expectedFunctions": [
-			"firstSubmittedUserMessageClientSubmissionId",
-			"localSubmissionRenderKey",
-			"markSubmittedTurn",
-			"shortHash",
-			"stableTurnIdentity",
-			"submittedTurnRenderKey",
-			"transferSubmittedTurnIdentity"
-		],
-		"assetPath": "/client-render-stability-guard.js",
-		"classicLoaderExcluded": true,
-		"bytes": 2528
-	},
-	{
-		"id": "live-operation-dock-state",
-		"source": "public/live-operation-dock-state.js",
-		"globalName": "CodexLiveOperationDockState",
-		"expectedFunctions": [
-			"compactBubblePreservation",
-			"operationCardContentPlan",
-			"shouldShowRecall"
-		],
-		"assetPath": "/live-operation-dock-state.js",
-		"classicLoaderExcluded": true,
-		"bytes": 6190
 	}
 ];
 var moduleApis = {
+	"thread-list-runtime": import_thread_list_runtime.default,
+	"side-chat-runtime": import_side_chat_runtime.default,
 	"composer-bridge-runtime": import_composer_bridge_runtime.default,
 	"api-client-runtime": import_api_client_runtime.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
@@ -4246,10 +4871,7 @@ var moduleApis = {
 	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
 	"thread-detail-actions": import_thread_detail_actions.default,
 	"thread-detail-merge-state": import_thread_detail_merge_state.default,
-	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default,
-	"thread-detail-runtime": import_thread_detail_runtime.default,
-	"client-render-stability-guard": import_client_render_stability_guard.default,
-	"live-operation-dock-state": import_live_operation_dock_state.default
+	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");
