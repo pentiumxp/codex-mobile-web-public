@@ -82,6 +82,32 @@ test("thread detail self check accepts repeated operation groups with unique cli
   assert.ok(!codes.includes("duplicate_client_render_keys"));
 });
 
+test("thread detail self check blocks active turns superseded by newer completed receipts", () => {
+  const detail = healthyDetail();
+  detail.thread.updatedAt = 3000;
+  detail.thread.activeTurnId = "old-active";
+  detail.thread.mobileDetailResponseBudget.activeTurnCount = 1;
+  detail.thread.turns[0].completedAtMs = 3000;
+  detail.thread.turns[0].items[1].completedAtMs = 3000;
+  detail.thread.turns.push({
+    id: "old-active",
+    status: "inProgress",
+    startedAtMs: 1000,
+    items: [
+      { id: "old-user", type: "userMessage", startedAtMs: 1000 },
+      { id: "old-agent", type: "agentMessage", startedAtMs: 1500 },
+    ],
+  });
+
+  const report = analyzeThreadDetail(detail);
+  const issue = report.issues.find((entry) => entry.code === "thread_detail_active_turn_superseded_by_completed");
+
+  assert.equal(report.ok, false);
+  assert.equal(issue && issue.severity, "H2");
+  assert.equal(issue && issue.activeActivityMs, 1500000);
+  assert.equal(issue && issue.latestCompletedAtMs, 3000000);
+});
+
 test("thread detail self check detects duplicate client render keys", () => {
   const detail = healthyDetail();
   detail.thread.activeTurnId = "turn-active";

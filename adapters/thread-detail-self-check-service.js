@@ -405,6 +405,22 @@ function summarizeTurn(turn = {}, thread = null) {
   };
 }
 
+function turnActivityTimestampMs(turn = {}, thread = null) {
+  let value = Math.max(
+    turnStartedAtMs(turn),
+    numericTimestampMs(turn && (
+      turn.updatedAtMs
+      || turn.updatedAt
+      || turn.completedAtMs
+      || turn.completedAt
+      || turn.endedAtMs
+      || turn.endedAt
+    )),
+  );
+  for (const item of safeArray(turn.items)) value = Math.max(value, itemTimestampMs(item, turn, thread));
+  return value;
+}
+
 function detailSignature(detail = {}) {
   const thread = objectOrNull(detail.thread) || objectOrNull(detail) || {};
   return safeArray(thread.turns).map((turn) => ({
@@ -556,6 +572,8 @@ function analyzeThreadDetail(detail = {}, options = {}) {
     const limitedReplayAssistantItems = boundedCount(budget.limitedReplayAssistantItems);
     const progressiveActiveBudgetApplied = budget.progressiveActiveBudgetApplied === true;
     const activeAssistantItemsAfter = boundedCount(budget.activeAssistantItemsAfter);
+    const activeActivityMs = turnActivityTimestampMs(active.turn, thread);
+    const latestCompletedAtMs = latest.turn ? turnCompletedAtMs(latest.turn, thread) : 0;
     const overlayCounts = objectOrNull(objectOrNull(thread.mobileActiveOverlay) && thread.mobileActiveOverlay.counts) || {};
     const overlayAssistantItems = boundedCount(overlayCounts.assistantItems);
     const syntheticAssistantDeduped = boundedCount(Math.max(
@@ -577,6 +595,15 @@ function analyzeThreadDetail(detail = {}, options = {}) {
         turnHash: shortHash(turnId(active.turn)),
         omittedAssistantItems: activeOmittedAssistantItems,
         retainedAssistantItems: boundedCount(activeAssistantItems),
+      });
+    }
+    if (latestCompletedAtMs && activeActivityMs && activeActivityMs < latestCompletedAtMs - 1000) {
+      pushIssue(issues, "thread_detail_active_turn_superseded_by_completed", "H2", "thread-detail", {
+        threadHash,
+        turnHash: shortHash(turnId(active.turn)),
+        latestCompletedTurnHash: shortHash(turnId(latest.turn)),
+        activeActivityMs: boundedCount(activeActivityMs, Number.MAX_SAFE_INTEGER),
+        latestCompletedAtMs: boundedCount(latestCompletedAtMs, Number.MAX_SAFE_INTEGER),
       });
     }
     if (overlayAssistantGap > 0 && !(progressiveReplayBudgetExplainsActiveTail && overlayAssistantGap <= activeOmittedAssistantItems)) {

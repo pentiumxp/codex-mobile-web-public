@@ -223,7 +223,24 @@ async function handleThreadListRoute(options = {}) {
         });
       }
       markTiming("fallbackMs", fallbackStartedAtMs);
-      if (initialFallback.length && (!initialFallbackPlan.requireCacheHit || initialFallbackCacheHit)) {
+      const initialFallbackEligible = initialFallback.length
+        && (!initialFallbackPlan.requireCacheHit || initialFallbackCacheHit);
+      const initialFallbackInsufficientDefaultWindow = initialFallbackEligible
+        && initialFallbackPlan.reason === "default-warm-cache"
+        && initialFallback.length < limit;
+      if (initialFallbackEligible && initialFallbackInsufficientDefaultWindow) {
+        Object.assign(timings, {
+          initialFallbackMs: Number(timings.fallbackMs || 0),
+          initialFallbackCacheHit: fallbackDiagnostics.cacheHit === true,
+          initialFallbackCacheDecision: String(fallbackDiagnostics.cacheDecision || "hit"),
+          initialFallbackReason: initialFallbackPlan.reason,
+          initialFallbackResultCount: boundedRequestCount(initialFallback.length),
+          initialFallbackRequestedLimit: limit,
+          initialFallbackSkipped: true,
+          initialFallbackSkippedReason: "insufficient-default-warm-cache-window",
+        });
+      }
+      if (initialFallbackEligible && !initialFallbackInsufficientDefaultWindow) {
         const initialFallbackMeta = threadListInitialFallbackMetadata({
           cacheHit: initialFallbackCacheHit,
           reason: initialFallbackPlan.reason,

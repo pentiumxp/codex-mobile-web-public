@@ -57,6 +57,38 @@ test("thread-detail active turn evidence owns live status and superseded shell p
   assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["image-user", "receipt"]);
 });
 
+test("thread-detail active turn evidence downgrades active turns superseded by newer completed activity", () => {
+  const evidence = createService();
+  const thread = {
+    status: { type: "idle" },
+    activeTurnId: "old-active",
+    mobileActiveTurnId: "old-active",
+    mobileLocalActiveStatus: { turnId: "old-active" },
+    mobileRolloutActiveTurn: { turnId: "old-active" },
+    turns: [{
+      id: "new-completed",
+      status: { type: "completed" },
+      completedAtMs: 3000,
+      items: [{ id: "receipt", type: "agentMessage", completedAtMs: 3000 }],
+    }, {
+      id: "old-active",
+      status: { type: "inProgress" },
+      startedAtMs: 1000,
+      items: [{ id: "old-receipt", type: "agentMessage", startedAtMs: 1500 }],
+    }],
+  };
+
+  evidence.normalizeSupersededLiveTurns(thread);
+
+  assert.equal(thread.activeTurnId, undefined);
+  assert.equal(thread.mobileActiveTurnId, undefined);
+  assert.equal(thread.mobileLocalActiveStatus, undefined);
+  assert.equal(thread.mobileRolloutActiveTurn, undefined);
+  assert.equal(thread.turns[1].status.type, "completed");
+  assert.equal(thread.turns[1].status.mobileSupersededLive, true);
+  assert.equal(thread.turns[1].mobileSupersededByCompletedActivityMs, 3000);
+});
+
 test("thread-detail active turn evidence reconciles materialized rollout active turn", () => {
   const evidence = createService({
     rolloutLatestTurnEvidence: () => ({

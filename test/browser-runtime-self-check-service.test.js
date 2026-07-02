@@ -218,6 +218,120 @@ test("browser runtime self-check blocks settled initial sparse target before lat
   assert.ok(result.issues.some((issue) => issue.code === "browser_dom_initial_sparse_before_nonempty"));
 });
 
+test("browser runtime self-check blocks settled stale DOM before target content appears", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "old-thread-residue",
+        threadHash: "thread-a",
+        delayMs: 1400,
+        appVisible: true,
+        loginVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: false,
+        loadingNote: false,
+        turns: 6,
+        items: 28,
+        expectedTurnHashCount: 8,
+        expectedTurnMatchCount: 0,
+        actualLatestTurnHash: "old-bottom",
+      },
+      {
+        label: "target-content",
+        threadHash: "thread-a",
+        delayMs: 3000,
+        appVisible: true,
+        loginVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 8,
+        items: 36,
+        expectedTurnHashCount: 8,
+        expectedTurnMatchCount: 8,
+      },
+    ],
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "browser_dom_stale_before_target_content"));
+});
+
+test("browser runtime self-check reports delayed first target content paint", () => {
+  const advisory = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "initial-loading",
+        threadHash: "thread-a",
+        delayMs: 0,
+        appVisible: true,
+        loginVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: false,
+        loadingNote: true,
+        turns: 0,
+        items: 0,
+        expectedTurnHashCount: 8,
+      },
+      {
+        label: "target-content",
+        threadHash: "thread-a",
+        delayMs: 1500,
+        appVisible: true,
+        loginVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 8,
+        items: 36,
+        expectedTurnHashCount: 8,
+        expectedTurnMatchCount: 8,
+      },
+    ],
+  });
+  const advisoryIssue = advisory.issues.find((issue) => issue.code === "browser_target_content_first_paint_delayed");
+  assert.equal(advisory.ok, true);
+  assert.equal(advisoryIssue && advisoryIssue.severity, "H3");
+  assert.equal(advisoryIssue && advisoryIssue.firstContentDelayMs, 1500);
+
+  const blocking = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "initial-loading",
+        threadHash: "thread-a",
+        delayMs: 0,
+        appVisible: true,
+        loginVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: false,
+        loadingNote: true,
+        turns: 0,
+        items: 0,
+        expectedTurnHashCount: 8,
+      },
+      {
+        label: "target-content",
+        threadHash: "thread-a",
+        delayMs: 3000,
+        appVisible: true,
+        loginVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 8,
+        items: 36,
+        expectedTurnHashCount: 8,
+        expectedTurnMatchCount: 8,
+      },
+    ],
+  });
+  assert.equal(blocking.ok, false);
+  assert.ok(blocking.issues.some((issue) => (
+    issue.code === "browser_target_content_first_paint_delayed"
+    && issue.severity === "H2"
+    && issue.firstContentDelayMs === 3000
+  )));
+});
+
 test("browser runtime self-check catches DOM turn timestamp order regressions", () => {
   const result = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,

@@ -599,6 +599,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     let maxConfirmedTurns = 0;
     let maxClientSubmissions = 0;
     let maxLatestTurnUserMessages = 0;
+    let firstConfirmedTargetContentSample = null;
     const latestTurnWindows = new Map();
     let previousVisualAnchor = null;
     let visualAnchorSmallJitterCount = 0;
@@ -703,6 +704,30 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           scrollHeight,
           distancePx: bottomDistancePx,
         };
+      }
+      const expectedTargetContent = toNumber(sample.expectedTurnHashCount) > 0;
+      const confirmedTargetContent = sampleIsConfirmed(sample)
+        && sample.contentConfirmed !== false
+        && expectedTargetContent
+        && isNonEmptySample(sample);
+      if (!firstConfirmedTargetContentSample && confirmedTargetContent) {
+        firstConfirmedTargetContentSample = sample;
+      }
+      if (!seenNonEmpty
+        && sampleIsConfirmed(sample)
+        && settled
+        && expectedTargetContent
+        && sample.contentConfirmed === false
+        && isNonEmptySample(sample)
+        && !sample.loadingNote) {
+        issues.push(issue("H2", "browser_dom_stale_before_target_content", sample, {
+          threadHash,
+          expectedTurnHashCount: toNumber(sample.expectedTurnHashCount),
+          expectedTurnMatchCount: toNumber(sample.expectedTurnMatchCount),
+          domTurnCount: turns,
+          domItemCount: items,
+          actualLatestTurnHash: safeLabel(sample.actualLatestTurnHash, ""),
+        }));
       }
       if (isNonEmptySample(sample)) {
         if (!seenNonEmpty && initialSparseIssueSample) {
@@ -864,6 +889,21 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         jitterCount: bottomFollowJitterCount,
         maxDistancePx: bottomFollowMaxDistancePx,
       }));
+    }
+    if (firstConfirmedTargetContentSample) {
+      const firstContentDelayMs = toNumber(firstConfirmedTargetContentSample.delayMs);
+      const h2DelayMs = Math.max(2500, minSettledDelayMs * 2);
+      if (firstContentDelayMs > minSettledDelayMs) {
+        issues.push(issue(firstContentDelayMs >= h2DelayMs ? "H2" : "H3", "browser_target_content_first_paint_delayed", firstConfirmedTargetContentSample, {
+          threadHash,
+          firstContentDelayMs,
+          h2DelayMs,
+          domTurnCount: toNumber(firstConfirmedTargetContentSample.turns),
+          domItemCount: toNumber(firstConfirmedTargetContentSample.items),
+          expectedTurnHashCount: toNumber(firstConfirmedTargetContentSample.expectedTurnHashCount),
+          expectedTurnMatchCount: toNumber(firstConfirmedTargetContentSample.expectedTurnMatchCount),
+        }));
+      }
     }
     const final = rows[rows.length - 1];
     if (final && seenNonEmpty && isSparseSample(final) && maxConfirmedItems > 3 && toNumber(final.delayMs) >= minSettledDelayMs) {

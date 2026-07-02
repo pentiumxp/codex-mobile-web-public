@@ -45,11 +45,40 @@ function createThreadDetailActiveTurnEvidenceService(dependencies = {}) {
 
   function normalizeSupersededLiveTurns(thread) {
     if (!thread || !Array.isArray(thread.turns) || thread.turns.length < 2) return thread;
+    let latestCompletedActivityMs = 0;
+    for (const turn of thread.turns) {
+      if (!turn || isLiveTurn(turn)) continue;
+      if (!isCompletedStatus(turn.status) && !isEndedTurn(turn)) continue;
+      latestCompletedActivityMs = Math.max(latestCompletedActivityMs, turnActivityTimestampMs(turn));
+    }
+    const supersededIds = new Set();
     for (let index = 0; index < thread.turns.length - 1; index += 1) {
       const turn = thread.turns[index];
       if (!turn || !isLiveTurn(turn)) continue;
+      supersededIds.add(turnIdentifier(turn));
       turn.status = completedSupersededStatus(turn.status);
       turn.mobileSupersededLive = true;
+    }
+    if (latestCompletedActivityMs) {
+      for (const turn of thread.turns) {
+        if (!turn || !isLiveTurn(turn)) continue;
+        const activityMs = turnActivityTimestampMs(turn);
+        if (!activityMs || activityMs >= latestCompletedActivityMs) continue;
+        supersededIds.add(turnIdentifier(turn));
+        turn.status = completedSupersededStatus(turn.status);
+        turn.mobileSupersededLive = true;
+        turn.mobileSupersededByCompletedActivityMs = latestCompletedActivityMs;
+      }
+    }
+    if (threadActiveTurnIds(thread).some((id) => supersededIds.has(id))) {
+      delete thread.activeTurnId;
+      delete thread.mobileActiveTurnId;
+    }
+    if (thread.mobileLocalActiveStatus && supersededIds.has(String(thread.mobileLocalActiveStatus.turnId || ""))) {
+      delete thread.mobileLocalActiveStatus;
+    }
+    if (thread.mobileRolloutActiveTurn && supersededIds.has(String(thread.mobileRolloutActiveTurn.turnId || ""))) {
+      delete thread.mobileRolloutActiveTurn;
     }
     return thread;
   }
@@ -88,6 +117,16 @@ function createThreadDetailActiveTurnEvidenceService(dependencies = {}) {
     return String(turn && (turn.id || turn.turnId) || "");
   }
 
+  function threadActiveTurnIds(thread) {
+    const ids = [
+      thread && thread.activeTurnId,
+      thread && thread.mobileActiveTurnId,
+      thread && thread.mobileLocalActiveStatus && thread.mobileLocalActiveStatus.turnId,
+      thread && thread.mobileRolloutActiveTurn && thread.mobileRolloutActiveTurn.turnId,
+    ];
+    return ids.map((id) => String(id || "").trim()).filter(Boolean);
+  }
+
   function turnTimestampFromFields(turn, fields) {
     for (const field of fields) {
       const value = timestampToMs(turn && turn[field]);
@@ -107,6 +146,49 @@ function createThreadDetailActiveTurnEvidenceService(dependencies = {}) {
       "created_at_ms",
       "created_at",
     ]);
+  }
+
+  function itemTimestampMs(item) {
+    return turnTimestampFromFields(item, [
+      "completedAtMs",
+      "completedAt",
+      "completed_at_ms",
+      "completed_at",
+      "updatedAtMs",
+      "updatedAt",
+      "updated_at_ms",
+      "updated_at",
+      "startedAtMs",
+      "startedAt",
+      "started_at_ms",
+      "started_at",
+      "createdAtMs",
+      "createdAt",
+      "created_at_ms",
+      "created_at",
+      "timestampMs",
+      "timestamp",
+    ]);
+  }
+
+  function turnActivityTimestampMs(turn) {
+    if (!turn || typeof turn !== "object") return 0;
+    let value = Math.max(
+      turnStartedAtMs(turn),
+      turnTimestampFromFields(turn, [
+        "completedAtMs",
+        "completedAt",
+        "completed_at_ms",
+        "completed_at",
+        "updatedAtMs",
+        "updatedAt",
+        "updated_at_ms",
+        "updated_at",
+      ]),
+    );
+    const items = Array.isArray(turn.items) ? turn.items : [];
+    for (const item of items) value = Math.max(value, itemTimestampMs(item));
+    return value;
   }
 
   function turnHasNoVisibleItems(turn) {

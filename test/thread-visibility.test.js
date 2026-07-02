@@ -1338,7 +1338,10 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /let initialFallback = readThreadListCachedFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\)/);
   assert.match(routeBody, /const initialFallbackCacheHit = fallbackDiagnostics\.cacheHit === true/);
   assert.match(routeBody, /if \(!initialFallback\.length && initialFallbackPlan\.allowBaseline\) \{[\s\S]*const initialMergeOptions = getMergeThreadSummaryListOptions\(\);[\s\S]*initialFallback = readThreadListFallback\(limit, \{[\s\S]*archivedIds: initialMergeOptions\.archivedIds,[\s\S]*mergeThreadSummaryListOptions: initialMergeOptions,[\s\S]*\}\);[\s\S]*\}/);
-  assert.match(routeBody, /if \(initialFallback\.length && \(!initialFallbackPlan\.requireCacheHit \|\| initialFallbackCacheHit\)\) \{/);
+  assert.match(routeBody, /const initialFallbackEligible = initialFallback\.length[\s\S]*&& \(!initialFallbackPlan\.requireCacheHit \|\| initialFallbackCacheHit\);/);
+  assert.match(routeBody, /const initialFallbackInsufficientDefaultWindow = initialFallbackEligible[\s\S]*&& initialFallbackPlan\.reason === "default-warm-cache"[\s\S]*&& initialFallback\.length < limit;/);
+  assert.match(routeBody, /initialFallbackSkippedReason: "insufficient-default-warm-cache-window"/);
+  assert.match(routeBody, /if \(initialFallbackEligible && !initialFallbackInsufficientDefaultWindow\) \{/);
   assert.match(routeBody, /const fallbackSourceTimings = initialFallbackCacheHit[\s\S]*\? fallbackDiagnostics[\s\S]*: \(Object\.keys\(cachedSourceTimings\)\.length \? cachedSourceTimings : fallbackDiagnostics\)/);
   assert.match(routeBody, /decorated\.mobileDeferredAppServer = true/);
   assert.match(routeBody, /const initialFallbackMeta = threadListInitialFallbackMetadata\(\{/);
