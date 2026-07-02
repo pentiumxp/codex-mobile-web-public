@@ -96,7 +96,7 @@ function usage() {
     "  --vite-app-preview-launch-session",
     "                             Create a short Hermes launch and verify app-preview session exchange.",
     "  --rounds <n>               Thread switch rounds. Default: 3.",
-    "  --sample-delays-ms <csv>   Delays after each switch. Default: 350,1200,2800.",
+    "  --sample-delays-ms <csv>   Delays after each switch. Default: 100,350,700,900,1200,1600,2800,6000.",
     "  --thread-list-stress-rounds <n> Thread-list open/scroll/click stress rounds. Default: 2.",
     "  --exercise-submit          Send one short UI message through Composer in the target test thread.",
     "  --submit-thread-id <id>    Dedicated thread id for --exercise-submit. Defaults to first selected thread.",
@@ -124,7 +124,7 @@ function readNonNegativeInt(value, fallback, max = 100000) {
   return Math.min(max, Math.trunc(number));
 }
 
-function parseDelayList(value, fallback = [350, 1200, 2800]) {
+function parseDelayList(value, fallback = [100, 350, 700, 900, 1200, 1600, 2800, 6000]) {
   const parsed = String(value || "")
     .split(",")
     .map((entry) => readPositiveInt(entry.trim(), 0, 30000))
@@ -2332,6 +2332,25 @@ function snapshotExpression(input = {}) {
       const turnTimerDetail = turnTimer ? turnTimer.querySelector(".turn-timer-detail") : null;
       const connectionStateKind = safeStatusKind(connectionState && connectionState.textContent);
       const turnTimerDetailKind = safeStatusKind(turnTimerDetail && turnTimerDetail.textContent);
+      const currentLiveTurnValue = (() => {
+        try {
+          if (typeof currentLiveTurn === "function") return currentLiveTurn();
+          if (typeof window.currentLiveTurn === "function") return window.currentLiveTurn();
+        } catch (_) {}
+        return null;
+      })();
+      const currentLiveTurnHash = currentLiveTurnValue && currentLiveTurnValue.id
+        ? stableHash(currentLiveTurnValue.id)
+        : "";
+      const stateActiveTurnHash = (() => {
+        try {
+          const sourceState = typeof state !== "undefined" ? state : window.state;
+          const activeTurnId = sourceState && sourceState.activeTurnId;
+          return activeTurnId ? stableHash(activeTurnId) : "";
+        } catch (_) {
+          return "";
+        }
+      })();
       const appRect = app ? app.getBoundingClientRect() : { width: 0, height: 0 };
       const conversationRect = conversation ? conversation.getBoundingClientRect() : { top: 0, bottom: 0, height: 0 };
       const visualTop = Math.max(0, conversationRect.top || 0);
@@ -2381,6 +2400,10 @@ function snapshotExpression(input = {}) {
         turnTimerActive: Boolean(turnTimer && turnTimer.classList && turnTimer.classList.contains("active")),
         turnTimerSettled: Boolean(turnTimer && turnTimer.classList && turnTimer.classList.contains("settled")),
         turnTimerDetailKind,
+        currentLiveTurnHash,
+        stateActiveTurnHash,
+        currentLiveTurnMatchesExpectedLatest: Boolean(currentLiveTurnHash && expectedLatestTurnHash && currentLiveTurnHash === expectedLatestTurnHash),
+        stateActiveTurnMatchesExpectedLatest: Boolean(stateActiveTurnHash && expectedLatestTurnHash && stateActiveTurnHash === expectedLatestTurnHash),
         expectedLatestUsageRequired,
         expectedLatestItemCount,
         expectedLatestUserMessageCount,

@@ -393,7 +393,10 @@ function evaluatedActiveRuntimeHarness() {
     "turnHasDisplayItems",
     "latestTurn",
     "latestRawTurn",
+    "turnHasNewerDisplayTurn",
+    "turnById",
     "latestTurnForThread",
+    "isStaleOrSupersededLiveTurn",
     "currentThreadHasActiveRuntimeStatus",
     "isLiveTurnForThread",
     "latestLiveTurnForThread",
@@ -425,6 +428,7 @@ const state = {
 function turnHasActiveLiveItems() { return false; }
 function isIncompleteInterruptedTurn() { return false; }
 function isLatestTurn(turn) { return Boolean(turn && latestTurn() === turn); }
+function isSupersededLiveTurn(turn) { return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive))); }
 ${sources.join("\n")}
 return {
   state,
@@ -442,6 +446,8 @@ function evaluatedLiveOperationDockEntryHarness() {
     "liveTurnStatusDockItem",
     "currentLiveOperationEntry",
     "latestTurnForThread",
+    "turnHasNewerDisplayTurn",
+    "isStaleOrSupersededLiveTurn",
     "isLiveTurnForThread",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -458,6 +464,10 @@ function isLiveTurn(turn) { return Boolean(turn && turn.live); }
 function isTurnComplete(turn) { return Boolean(turn && turn.complete); }
 function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
 function isIncompleteInterruptedTurn() { return false; }
+function isStaleActiveStatus(status) { return Boolean(status && status.mobileStaleActiveTurn); }
+function isSupersededLiveTurn(turn) { return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive))); }
+function renderContextThread(thread) { return thread || state.currentThread; }
+function turnHasDisplayItems(turn) { return Boolean(turn && Array.isArray(turn.items) && turn.items.some(Boolean)); }
 function turnHasActiveLiveItems(turn) { return Boolean(turn && turn.live); }
 function isActiveOperationalItem(item) { return Boolean(item && item.activeOperation); }
 function liveActivityLabelForTurn(turn) { return String(turn && turn.activityLabel || ""); }
@@ -1331,6 +1341,7 @@ function evaluatedLatestTurnHelpers() {
     "turnHasDisplayItems",
     "latestTurn",
     "latestRawTurn",
+    "isStaleOrSupersededLiveTurn",
     "latestLiveTurnCandidate",
     "syncActiveTurnFromThread",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -1356,6 +1367,8 @@ function isRunningStatus(status) {
   return /(running|active|queued|processing|inprogress|in_progress|in-progress)/.test(text)
     && !/(completed|failed|cancel|error|interrupted)/.test(text);
 }
+function isStaleActiveStatus(status) { return Boolean(status && status.mobileStaleActiveTurn); }
+function isSupersededLiveTurn(turn) { return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive))); }
 function $(id) {
   if (id !== "interruptTurn") return null;
   return { set disabled(value) { interruptDisabled = value; } };
@@ -1368,7 +1381,11 @@ return { state, latestTurn, syncActiveTurnFromThread, interruptDisabled: () => i
 
 function evaluatedComposerTargetActiveTurnId() {
   const sources = [
+    "renderContextThread",
+    "turnHasDisplayItems",
+    "turnHasNewerDisplayTurn",
     "latestTurnForThread",
+    "isStaleOrSupersededLiveTurn",
     "isLiveTurnForThread",
     "latestLiveTurnForThread",
     "activeTurnIdForThread",
@@ -1396,6 +1413,8 @@ function isRunningStatus(status) {
   return /(running|active|queued|processing|inprogress|in_progress|in-progress)/.test(text)
     && !/(completed|failed|cancel|error|interrupted)/.test(text);
 }
+function isStaleActiveStatus(status) { return Boolean(status && status.mobileStaleActiveTurn); }
+function isSupersededLiveTurn(turn) { return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive))); }
 function isIncompleteInterruptedTurn() { return false; }
 function turnHasActiveLiveItems() { return false; }
 function composerTargetThread() { return state.currentThread; }
@@ -2721,6 +2740,10 @@ test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(functionBody("liveActivityLabelForTurn"), /if \(operation\) return activityLabelForItem\(operation\);/);
   assert.match(appJs, /function turnHasActiveLiveItems\(/);
   assert.match(appJs, /function liveTurnStartedAtMs\(/);
+  assert.match(appJs, /function isStaleOrSupersededLiveTurn\(/);
+  assert.match(appJs, /function turnHasNewerDisplayTurn\(/);
+  assert.match(functionBody("isLiveTurn"), /isStaleOrSupersededLiveTurn\(turn\)/);
+  assert.match(functionBody("isLiveTurn"), /turnHasNewerDisplayTurn\(thread, turn\)/);
   assert.match(functionBody("isLiveTurn"), /turnHasActiveLiveItems\(turn\)/);
   assert.match(functionBody("isLiveTurn"), /isLatestTurn\(turn, thread\) && currentThreadHasActiveRuntimeStatus\(thread\)/);
   assert.match(functionBody("turnElapsedSeconds"), /liveTurnStartedAtMs\(turn\) \|\| state\.nowMs/);
@@ -2751,6 +2774,16 @@ test("thread-level active status keeps polling through stale completed latest tu
   assert.equal(harness.currentThreadHasActiveRuntimeStatus(), false);
   assert.equal(harness.currentThreadHasForegroundActiveRuntimeStatus(), false);
   assert.equal(harness.shouldPollCurrentThread(), false);
+
+  harness.state.currentThread.status = { type: "active" };
+  harness.state.currentThread.turns.push({
+    id: "turn-stale-live",
+    status: { type: "active", mobileSupersededLive: true },
+    items: [{ id: "old-status", type: "agentMessage" }],
+  });
+  harness.state.activeTurnId = "turn-stale-live";
+  assert.equal(harness.currentThreadHasForegroundActiveRuntimeStatus(), false);
+  assert.equal(harness.currentLiveCandidate(), null);
 });
 
 test("loading and thread-list state preserve locally visible live turns", () => {
@@ -4471,6 +4504,8 @@ test("live turn helpers use pane render context thread before global current thr
     "turnHasDisplayItems",
     "latestTurn",
     "latestRawTurn",
+    "turnHasNewerDisplayTurn",
+    "isStaleOrSupersededLiveTurn",
     "currentThreadHasActiveRuntimeStatus",
     "isLatestTurn",
     "isLiveTurn",
@@ -4493,6 +4528,7 @@ const state = {
 function isTurnComplete(turn) { return Boolean(turn && turn.complete); }
 function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
 function isStaleActiveStatus() { return false; }
+function isSupersededLiveTurn() { return false; }
 function isIncompleteInterruptedTurn() { return false; }
 function turnHasActiveLiveItems() { return false; }
 ${sources.join("\n")}
@@ -4530,6 +4566,8 @@ test("visible item signatures use explicit pane thread for context compaction st
     "renderContextThread",
     "turnHasDisplayItems",
     "latestTurn",
+    "turnHasNewerDisplayTurn",
+    "isStaleOrSupersededLiveTurn",
     "currentThreadHasActiveRuntimeStatus",
     "isLatestTurn",
     "isLiveTurn",
@@ -4560,6 +4598,7 @@ function isTurnUsageSummaryItem() { return false; }
 function isTurnComplete() { return false; }
 function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
 function isStaleActiveStatus() { return false; }
+function isSupersededLiveTurn() { return false; }
 function isIncompleteInterruptedTurn() { return false; }
 function turnHasActiveLiveItems() { return false; }
 ${sources.join("\n")}
@@ -4584,6 +4623,8 @@ test("thread tile visible shape uses pane thread context for visible item filter
     "renderContextThread",
     "turnHasDisplayItems",
     "latestTurn",
+    "turnHasNewerDisplayTurn",
+    "isStaleOrSupersededLiveTurn",
     "currentThreadHasActiveRuntimeStatus",
     "isLatestTurn",
     "isLiveTurn",
@@ -4660,6 +4701,8 @@ test("visible conversation shape uses explicit thread context for visible item f
     "renderContextThread",
     "turnHasDisplayItems",
     "latestTurn",
+    "turnHasNewerDisplayTurn",
+    "isStaleOrSupersededLiveTurn",
     "currentThreadHasActiveRuntimeStatus",
     "isLatestTurn",
     "isLiveTurn",
@@ -4911,6 +4954,8 @@ test("visible item patch entries use render context thread for filtering and sig
     "renderContextThreadId",
     "turnHasDisplayItems",
     "latestTurn",
+    "turnHasNewerDisplayTurn",
+    "isStaleOrSupersededLiveTurn",
     "currentThreadHasActiveRuntimeStatus",
     "isLatestTurn",
     "isLiveTurn",
@@ -6682,14 +6727,17 @@ test("active turn state follows only the latest durable turn", () => {
   const candidateBody = functionBody("latestLiveTurnCandidate");
   assert.match(candidateBody, /const displayLatest = latestTurn\(\);/);
   assert.match(candidateBody, /const rawLatest = latestRawTurn\(\);/);
+  assert.match(candidateBody, /isStaleOrSupersededLiveTurn\(displayLatest\)/);
+  assert.match(candidateBody, /isStaleOrSupersededLiveTurn\(rawLatest\)/);
   assert.match(candidateBody, /isRunningStatus\(displayLatest\.status\)/);
   assert.match(candidateBody, /isRunningStatus\(rawLatest\.status\)/);
   assert.doesNotMatch(candidateBody, /reverse\(\)\.find/);
 
   const liveBody = functionBody("currentLiveTurn");
+  assert.match(liveBody, /const active = turnById\(state\.activeTurnId\);/);
+  assert.match(liveBody, /isLiveTurn\(active, state\.currentThread\)/);
   assert.match(liveBody, /const latest = latestLiveTurnCandidate\(\) \|\| latestTurn\(\);/);
-  assert.match(liveBody, /const active = latest && latest\.id === state\.activeTurnId \? latest : null/);
-  assert.match(liveBody, /return latest && isLiveTurn\(latest\) \? latest : null/);
+  assert.match(liveBody, /return latest && isLiveTurn\(latest, state\.currentThread\) \? latest : null/);
   assert.doesNotMatch(liveBody, /reverse\(\)\.find/);
 });
 

@@ -445,18 +445,12 @@
     }
     const summaryNewerThanCachedDetail = summaryIsNewerThanCachedDetail(summaryThread, thread);
     if (summaryNewerThanCachedDetail) {
-      if (threadHasLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread)) {
-        return {
-          shouldUseCachedCurrent: false,
-          shouldUseActivePreview: true,
-          shouldReportEmptyCachedDetail: false,
-          reason: "active-detail-summary-newer-preview",
-        };
-      }
       return {
         shouldUseCachedCurrent: false,
         shouldReportEmptyCachedDetail: false,
-        reason: "summary-newer-than-cached-detail",
+        reason: threadHasLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread)
+          ? "summary-newer-than-active-detail"
+          : "summary-newer-than-cached-detail",
       };
     }
     if (threadHasVisualBaselineLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread)) {

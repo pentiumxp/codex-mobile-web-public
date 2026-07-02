@@ -161,7 +161,7 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
     threadIds: ["private-thread-id"],
     sampleThreads: 1,
     browserRounds: 6,
-    browserSampleDelaysMs: "100,350,1200,2800,6000",
+    browserSampleDelaysMs: "100,350,700,900,1200,1600,2800,6000",
     browserMinSettledDelayMs: 1200,
     browserExerciseSubmit: true,
     browserSubmitThreadId: "private-submit-thread-id",
@@ -187,7 +187,7 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
         assert.ok(args.includes("--rounds"));
         assert.equal(args[args.indexOf("--rounds") + 1], "6");
         assert.ok(args.includes("--sample-delays-ms"));
-        assert.equal(args[args.indexOf("--sample-delays-ms") + 1], "100,350,1200,2800,6000");
+        assert.equal(args[args.indexOf("--sample-delays-ms") + 1], "100,350,700,900,1200,1600,2800,6000");
         assert.ok(args.includes("--min-settled-delay-ms"));
         assert.equal(args[args.indexOf("--min-settled-delay-ms") + 1], "1200");
         assert.ok(args.includes("--exercise-submit"));
@@ -215,7 +215,7 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
         assert.ok(args.includes("--rounds"));
         assert.equal(args[args.indexOf("--rounds") + 1], "6");
         assert.ok(args.includes("--sample-delays-ms"));
-        assert.equal(args[args.indexOf("--sample-delays-ms") + 1], "100,350,1200,2800,6000");
+        assert.equal(args[args.indexOf("--sample-delays-ms") + 1], "100,350,700,900,1200,1600,2800,6000");
         assert.ok(args.includes("--min-settled-delay-ms"));
         assert.equal(args[args.indexOf("--min-settled-delay-ms") + 1], "1200");
         assert.doesNotMatch(args.join(" "), /--exercise-submit|--submit-thread-id|--submit-message|--submit-sample-delays-ms/);

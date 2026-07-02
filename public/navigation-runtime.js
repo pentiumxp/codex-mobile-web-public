@@ -610,6 +610,14 @@ function isTurnComplete(turn) {
   return Boolean(turn && (turn.completedAt || turn.durationMs || isCompletedStatus(turn.status)));
 }
 
+function isStaleOrSupersededLiveTurn(turn) {
+  return Boolean(turn && (
+    turn.mobileStaleActiveTurn
+    || isStaleActiveStatus(turn.status)
+    || isSupersededLiveTurn(turn)
+  ));
+}
+
 function isReasoningItem(item) {
   return item && item.type === "reasoning";
 }
@@ -724,12 +732,30 @@ function latestRawTurn(thread = null) {
   return turns.length ? turns[turns.length - 1] : null;
 }
 
+function turnHasNewerDisplayTurn(thread, turn) {
+  if (!turn) return false;
+  const sourceThread = renderContextThread(thread);
+  const turns = sourceThread && Array.isArray(sourceThread.turns)
+    ? sourceThread.turns
+    : [];
+  const index = turns.indexOf(turn);
+  if (index < 0) return false;
+  for (let cursor = index + 1; cursor < turns.length; cursor += 1) {
+    if (turnHasDisplayItems(turns[cursor])) return true;
+  }
+  return false;
+}
+
 function currentThreadHasActiveRuntimeStatus(thread = null) {
   const sourceThread = renderContextThread(thread);
   if (!sourceThread || isStaleActiveStatus(sourceThread.status) || sourceThread.mobileStaleActiveTurn) return false;
   const threadId = String(sourceThread.id || "");
   const isCurrentThread = Boolean(threadId && threadId === String(state.currentThreadId || ""));
-  return (isCurrentThread && Boolean(state.activeTurnId)) || isRunningStatus(sourceThread.status);
+  if (isCurrentThread && state.activeTurnId) {
+    const active = turnById(state.activeTurnId);
+    if (active && isLiveTurnForThread(sourceThread, active)) return true;
+  }
+  return isRunningStatus(sourceThread.status);
 }
 
 function currentThreadHasForegroundActiveRuntimeStatus(thread = null) {
@@ -737,15 +763,18 @@ function currentThreadHasForegroundActiveRuntimeStatus(thread = null) {
   if (!sourceThread || isStaleActiveStatus(sourceThread.status) || sourceThread.mobileStaleActiveTurn) return false;
   const threadId = String(sourceThread.id || "");
   const isCurrentThread = Boolean(threadId && threadId === String(state.currentThreadId || ""));
-  if (isCurrentThread && Boolean(state.activeTurnId)) return true;
+  if (isCurrentThread && state.activeTurnId) {
+    const active = turnById(state.activeTurnId);
+    if (active && isLiveTurnForThread(sourceThread, active)) return true;
+  }
   return Boolean(latestLiveTurnForThread(sourceThread));
 }
 
 function latestLiveTurnCandidate() {
   const displayLatest = latestTurn();
-  if (displayLatest && !isTurnComplete(displayLatest) && isRunningStatus(displayLatest.status)) return displayLatest;
+  if (displayLatest && !isStaleOrSupersededLiveTurn(displayLatest) && !isTurnComplete(displayLatest) && isRunningStatus(displayLatest.status)) return displayLatest;
   const rawLatest = latestRawTurn();
-  return rawLatest && !isTurnComplete(rawLatest) && isRunningStatus(rawLatest.status) ? rawLatest : null;
+  return rawLatest && !isStaleOrSupersededLiveTurn(rawLatest) && !isTurnComplete(rawLatest) && isRunningStatus(rawLatest.status) ? rawLatest : null;
 }
 
 function turnById(turnId) {
@@ -766,6 +795,7 @@ function shouldPollCurrentThread() {
   if (currentThreadHasActiveRuntimeStatus()) return true;
   const turn = latestTurn();
   if (!turn) return false;
+  if (isStaleOrSupersededLiveTurn(turn)) return false;
   if (isTurnComplete(turn)) return false;
   return Boolean(state.activeTurnId) || isRunningStatus(turn.status) || isIncompleteInterruptedTurn(turn);
 }
@@ -789,7 +819,8 @@ function currentThreadNeedsForegroundRefresh() {
 }
 
 function isLiveTurn(turn, thread = null) {
-  if (!turn || isTurnComplete(turn)) return false;
+  if (!turn || isTurnComplete(turn) || isStaleOrSupersededLiveTurn(turn)) return false;
+  if (turnHasNewerDisplayTurn(thread, turn)) return false;
   return isRunningStatus(turn && turn.status)
     || isIncompleteInterruptedTurn(turn)
     || turnHasActiveLiveItems(turn)
@@ -1552,7 +1583,8 @@ function latestTurnForThread(thread) {
 }
 
 function isLiveTurnForThread(thread, turn) {
-  if (!turn || isTurnComplete(turn)) return false;
+  if (!turn || isTurnComplete(turn) || isStaleOrSupersededLiveTurn(turn)) return false;
+  if (turnHasNewerDisplayTurn(thread, turn)) return false;
   return isRunningStatus(turn && turn.status)
     || isIncompleteInterruptedTurn(turn)
     || turnHasActiveLiveItems(turn)
@@ -1560,8 +1592,12 @@ function isLiveTurnForThread(thread, turn) {
 }
 
 function latestLiveTurnForThread(thread) {
-  const latest = latestTurnForThread(thread);
-  return latest && isLiveTurnForThread(thread, latest) ? latest : null;
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (isLiveTurnForThread(thread, turn)) return turn;
+  }
+  return null;
 }
 
 function activeTurnIdForThread(thread) {
@@ -1570,12 +1606,12 @@ function activeTurnIdForThread(thread) {
 }
 
 function currentLiveTurn() {
-  const latest = latestLiveTurnCandidate() || latestTurn();
   if (state.activeTurnId) {
-    const active = latest && latest.id === state.activeTurnId ? latest : null;
-    if (active && isLiveTurn(active)) return active;
+    const active = turnById(state.activeTurnId);
+    if (active && isLiveTurn(active, state.currentThread)) return active;
   }
-  return latest && isLiveTurn(latest) ? latest : null;
+  const latest = latestLiveTurnCandidate() || latestTurn();
+  return latest && isLiveTurn(latest, state.currentThread) ? latest : null;
 }
 
 function turnElapsedSeconds(turn) {
@@ -1693,9 +1729,9 @@ function turnTimerStateFromThread(thread, options = {}) {
   const activeRuntime = options.activeRuntime === true;
   const activeLabel = String(options.activeLabel || "").trim();
   const latest = options.latest || latestTurnForThread(thread);
-  const live = latest && isLiveTurnForThread(thread, latest) ? latest : null;
+  const live = latestLiveTurnForThread(thread);
   if (!live) {
-    if (activeRuntime) {
+    if (activeRuntime && latest && !isStaleOrSupersededLiveTurn(latest) && !isTurnComplete(latest)) {
       const startedMs = liveTurnStartedAtMs(latest) || turnStartedAtMs(latest) || Number(options.activityAtMs || 0) || state.nowMs;
       const seconds = Math.max(0, Math.floor((state.nowMs - startedMs) / 1000));
       return { visible: true, active: true, settled: false, seconds, detail: activeLabel || "运行" };
@@ -1763,7 +1799,7 @@ function turnTimerStateHtml(timerState = {}) {
 
 function threadTilePaneTimerState(thread) {
   return turnTimerStateFromThread(thread, {
-    activeRuntime: Boolean(thread && !isStaleActiveStatus(thread.status) && !thread.mobileStaleActiveTurn && isRunningStatus(thread.status)),
+    activeRuntime: Boolean(latestLiveTurnForThread(thread)),
     activeLabel: "运行",
     liveFallbackLabel: "运行",
   });

@@ -287,8 +287,16 @@ function createThreadDetailRuntime(deps = {}) {
 
   function currentLiveOperationEntry(thread) {
     if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return null;
-    const turn = latestTurnForThread(thread);
-    if (!turn || !isLiveTurnForThread(thread, turn)) return null;
+    let turn = null;
+    for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
+      const candidate = thread.turns[index];
+      if (isSupersededLiveTurn(candidate)) continue;
+      if (isLiveTurnForThread(thread, candidate)) {
+        turn = candidate;
+        break;
+      }
+    }
+    if (!turn) return null;
     const items = Array.isArray(turn.items) ? turn.items : [];
     for (let index = items.length - 1; index >= 0; index -= 1) {
       const item = items[index];

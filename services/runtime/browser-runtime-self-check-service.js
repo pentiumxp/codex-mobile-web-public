@@ -502,6 +502,39 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         expectedTurnHashCount: toNumber(sample.expectedTurnHashCount),
       }));
     }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
+      && sample.latestTurnMatchesTarget
+      && sample.latestTurnAtDomBottom === true
+      && sample.turnTimerVisible === true
+      && sample.turnTimerActive === true
+      && sample.expectedLatestTurnHash
+      && sample.currentLiveTurnHash
+      && String(sample.currentLiveTurnHash || "") !== String(sample.expectedLatestTurnHash || "")) {
+      issues.push(issue("H2", "browser_turn_timer_bound_to_stale_live_turn", sample, {
+        expectedLatestTurnHash: safeLabel(sample.expectedLatestTurnHash, ""),
+        currentLiveTurnHash: safeLabel(sample.currentLiveTurnHash, ""),
+        stateActiveTurnHash: safeLabel(sample.stateActiveTurnHash, ""),
+        turnTimerDetailKind: safeLabel(sample.turnTimerDetailKind, ""),
+        domTurnCount: toNumber(sample.turns),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && sample.loadingNote
+      && sample.latestTurnMatchesTarget
+      && sample.latestTurnAtDomBottom === true
+      && toNumber(sample.expectedTurnHashCount) > 0
+      && toNumber(sample.turns) > 0) {
+      issues.push(issue("H2", "browser_thread_detail_loading_note_stuck", sample, {
+        expectedLatestTurnHash: safeLabel(sample.expectedLatestTurnHash || sample.latestTurnHash, ""),
+        actualLatestTurnHash: safeLabel(sample.actualLatestTurnHash, ""),
+        connectionStateKind: safeLabel(sample.connectionStateKind, ""),
+        domTurnCount: toNumber(sample.turns),
+        expectedTurnHashCount: toNumber(sample.expectedTurnHashCount),
+      }));
+    }
     const apiTimestampOrderIssue = turnTimestampOrderIssue(sample.expectedTurnShapes);
     if (sampleIsConfirmed(sample)
       && toNumber(sample.delayMs) >= minSettledDelayMs

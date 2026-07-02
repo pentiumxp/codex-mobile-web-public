@@ -445,9 +445,8 @@ test("thread detail state plans open-thread cache reuse without accepting empty 
     },
   }), {
     shouldUseCachedCurrent: false,
-    shouldUseActivePreview: true,
     shouldReportEmptyCachedDetail: false,
-    reason: "active-detail-summary-newer-preview",
+    reason: "summary-newer-than-active-detail",
   });
 
   assert.deepEqual(planThreadOpenCacheReuse({
@@ -519,7 +518,7 @@ test("thread detail state builds active loading preview without stale assistant 
   assert.notEqual(preview.turns[1].items[0], source.turns[1].items[0]);
 });
 
-test("thread detail state uses active preview instead of stale active cache when summary is newer", () => {
+test("thread detail state refuses stale active preview when summary is newer", () => {
   const cached = {
     id: "thread-1",
     updatedAt: "2026-06-30T02:00:00.000Z",
@@ -544,8 +543,8 @@ test("thread detail state uses active preview instead of stale active cache when
   const preview = activeDetailLoadingPreviewThread(cached);
 
   assert.equal(plan.shouldUseCachedCurrent, false);
-  assert.equal(plan.shouldUseActivePreview, true);
-  assert.equal(plan.reason, "active-detail-summary-newer-preview");
+  assert.equal(plan.shouldUseActivePreview, undefined);
+  assert.equal(plan.reason, "summary-newer-than-active-detail");
   assert.deepEqual(preview.turns[0].items.map((item) => item.id), ["active-user"]);
 });
 

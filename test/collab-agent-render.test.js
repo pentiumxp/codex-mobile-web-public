@@ -100,8 +100,10 @@ test("collab agent tool calls render as compact summary cards", () => {
 
 test("live operation cards dock on wide screens and become a mobile bubble", () => {
   assert.match(threadDetailRuntimeJs, /function currentLiveOperationEntry\(thread\)/);
-  assert.match(functionBody("currentLiveOperationEntry"), /const turn = latestTurnForThread\(thread\);/);
-  assert.match(functionBody("currentLiveOperationEntry"), /if \(!turn \|\| !isLiveTurnForThread\(thread, turn\)\) return null;/);
+  assert.match(functionBody("currentLiveOperationEntry"), /for \(let index = thread\.turns\.length - 1; index >= 0; index -= 1\)/);
+  assert.match(functionBody("currentLiveOperationEntry"), /if \(isSupersededLiveTurn\(candidate\)\) continue;/);
+  assert.match(functionBody("currentLiveOperationEntry"), /if \(isLiveTurnForThread\(thread, candidate\)\)/);
+  assert.match(functionBody("currentLiveOperationEntry"), /if \(!turn\) return null;/);
   assert.match(appJs, /function latestTurnForThread\(thread\)/);
   assert.match(appJs, /function isLiveTurnForThread\(thread, turn\)/);
   assert.match(appJs, /function isActiveOperationalItem\(item\)/);
@@ -306,6 +308,10 @@ function isLiveTurn(turn) {
   return Boolean(turn && !isTurnComplete(turn) && isRunningStatus(turn.status));
 }
 function isIncompleteInterruptedTurn() { return false; }
+function isStaleActiveStatus(status) { return Boolean(status && status.mobileStaleActiveTurn); }
+function isSupersededLiveTurn(turn) { return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive))); }
+function renderContextThread(thread) { return thread || state.currentThread; }
+function turnHasDisplayItems(turn) { return Boolean(turn && Array.isArray(turn.items) && turn.items.some(Boolean)); }
 function turnHasActiveLiveItems(turn) {
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
   return items.some(isActiveOperationalItem);
@@ -314,6 +320,8 @@ function turnStartedAtMs() { return 0; }
 ${functionSource("isActiveOperationalItem")}
 ${functionSource("liveTurnStatusDockItem")}
 ${functionSource("latestTurnForThread")}
+${functionSource("turnHasNewerDisplayTurn")}
+${functionSource("isStaleOrSupersededLiveTurn")}
 ${functionSource("isLiveTurnForThread")}
 ${functionSource("currentLiveOperationEntry")}
 return (thread) => {
@@ -344,6 +352,16 @@ return (thread) => {
   assert.equal(fallbackEntry.item.type, "liveTurnStatus");
   assert.equal(fallbackEntry.item.title, "Command");
   assert.equal(fallbackEntry.item.status, "");
+
+  thread.turns.push({
+    id: "superseded-old-live",
+    status: { type: "active", mobileSupersededLive: true },
+    items: [
+      { id: "stale-running-cmd", type: "commandExecution", status: "running", command: "npm test" },
+    ],
+  });
+
+  assert.equal(currentLiveOperationEntry(thread), null);
 });
 
 test("current-turn subagent panel opens from a left swipe without a topbar button", () => {

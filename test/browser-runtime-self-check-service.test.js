@@ -184,6 +184,65 @@ test("browser runtime self-check blocks stuck refresh activity after latest turn
   assert.ok(result.issues.some((issue) => issue.code === "browser_thread_detail_activity_status_stuck"));
 });
 
+test("browser runtime self-check blocks stale live turn timers after latest turn reaches DOM bottom", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "settled",
+      threadHash: "thread-a",
+      delayMs: 1800,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      turns: 8,
+      items: 40,
+      expectedTurnHashCount: 8,
+      expectedTurnMatchCount: 8,
+      latestTurnMatchesTarget: true,
+      expectedLatestTurnHash: "latest",
+      latestTurnHash: "latest",
+      actualLatestTurnHash: "latest",
+      latestTurnAtDomBottom: true,
+      turnTimerVisible: true,
+      turnTimerActive: true,
+      turnTimerDetailKind: "running",
+      currentLiveTurnHash: "old-live",
+      stateActiveTurnHash: "old-live",
+    }],
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "browser_turn_timer_bound_to_stale_live_turn"));
+});
+
+test("browser runtime self-check blocks stuck loading notes after latest turn reaches DOM bottom", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "settled",
+      threadHash: "thread-a",
+      delayMs: 1800,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      loadingNote: true,
+      turns: 8,
+      items: 40,
+      expectedTurnHashCount: 8,
+      expectedTurnMatchCount: 8,
+      latestTurnMatchesTarget: true,
+      expectedLatestTurnHash: "latest",
+      latestTurnHash: "latest",
+      actualLatestTurnHash: "latest",
+      latestTurnAtDomBottom: true,
+      connectionStateKind: "connected",
+    }],
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "browser_thread_detail_loading_note_stuck"));
+});
+
 test("browser runtime self-check blocks settled initial sparse target before later nonempty content", () => {
   const result = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,
