@@ -56,6 +56,7 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
     "1500",
     "--browser-startup-only",
     "--browser-vite-app-preview-default-root",
+    "--skip-vite-default-root-rehearsal",
     "--browser-exercise-submit",
     "--browser-submit-thread-id",
     "submit-thread",
@@ -83,6 +84,7 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
   assert.equal(loop.browserMinSettledDelayMs, 1500);
   assert.equal(loop.browserStartupOnly, true);
   assert.equal(loop.browserViteAppPreviewDefaultRoot, true);
+  assert.equal(loop.skipViteDefaultRootRehearsal, true);
   assert.equal(loop.browserExerciseSubmit, true);
   assert.equal(loop.browserSubmitThreadId, "submit-thread");
   assert.equal(loop.browserSubmitMessage, "Reply OK only");
@@ -276,6 +278,7 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
   assert.match(line, /"name":"browser-vite-preview","enabled":true/);
   assert.match(line, /"name":"browser-vite-app-preview","enabled":true/);
   assert.match(line, /"name":"browser-vite-app-preview-root","enabled":true/);
+  assert.match(line, /"name":"browser-vite-app-preview-default-root-rehearsal","enabled":true/);
   assert.match(line, /"name":"browser-vite-app-preview-embed","enabled":true/);
   assert.match(line, /"name":"browser-vite-app-preview-session","enabled":true/);
   assert.match(line, /"gate":/);
@@ -400,6 +403,35 @@ test("runtime self-check browser job can run startup-only without submit exercis
     ...fakeProcessPressureDeps(),
     execFile(_node, args, _options, callback) {
       const script = String(args[0] || "");
+      const isDefaultRootRehearsal = /vite-default-root-rehearsal/.test(script);
+      if (isDefaultRootRehearsal) {
+        calls.push(args.slice());
+        assert.deepEqual(args, [
+          String(args[0]),
+          "--json",
+          "--browser-timeout-ms",
+          "20200",
+        ]);
+        callback(null, JSON.stringify({
+          ok: true,
+          mode: "vite-default-root-rehearsal",
+          publicConfig: {
+            clientBuildId: "build",
+            shellCacheName: "shell",
+            defaultShellMode: "vite-app-preview",
+            authRequired: false,
+          },
+          summary: { issueCount: 0, blockingIssueCount: 0, issues: [] },
+          browser: {
+            ok: true,
+            mode: "vite-app-preview-default-root",
+            issueCount: 0,
+            blockingIssueCount: 0,
+            issueCodes: [],
+          },
+        }), "");
+        return;
+      }
       assert.match(script, /browser-runtime/);
       calls.push(args.slice());
       const isVitePreview = args.includes("--vite-preview-only");
@@ -461,7 +493,7 @@ test("runtime self-check browser job can run startup-only without submit exercis
   });
 
   assert.equal(result.ok, true);
-  assert.equal(calls.length, 6);
+  assert.equal(calls.length, 7);
   const browserCheck = result.checks.find((check) => check.name === "browser-runtime");
   assert.equal(browserCheck.ok, true);
   const vitePreviewCheck = result.checks.find((check) => check.name === "browser-vite-preview");
@@ -470,6 +502,8 @@ test("runtime self-check browser job can run startup-only without submit exercis
   assert.equal(viteAppPreviewCheck.ok, true);
   const viteAppPreviewRootCheck = result.checks.find((check) => check.name === "browser-vite-app-preview-root");
   assert.equal(viteAppPreviewRootCheck.ok, true);
+  const viteAppPreviewDefaultRootRehearsalCheck = result.checks.find((check) => check.name === "browser-vite-app-preview-default-root-rehearsal");
+  assert.equal(viteAppPreviewDefaultRootRehearsalCheck.ok, true);
   const viteAppPreviewEmbedCheck = result.checks.find((check) => check.name === "browser-vite-app-preview-embed");
   assert.equal(viteAppPreviewEmbedCheck.ok, true);
   const viteAppPreviewSessionCheck = result.checks.find((check) => check.name === "browser-vite-app-preview-session");
@@ -612,7 +646,7 @@ test("runtime self-check loop keeps empty child output as execution failure", as
   });
 
   assert.equal(result.ok, false);
-  assert.equal(result.gate.executionFailureCount, 6);
+  assert.equal(result.gate.executionFailureCount, 7);
   assert.equal(result.gate.deployPass, false);
   assert.match(result.gate.actionableIssueCodes[0], /^Command_failed:/);
   const browserCheck = result.checks.find((check) => check.name === "browser-runtime");
@@ -641,6 +675,7 @@ test("runtime self-check loop records skipped periodic browser budget", async ()
     ["browser-vite-preview", false, "browser_mode_off"],
     ["browser-vite-app-preview", false, "browser_mode_off"],
     ["browser-vite-app-preview-root", false, "browser_mode_off"],
+    ["browser-vite-app-preview-default-root-rehearsal", false, "browser_mode_off"],
     ["browser-vite-app-preview-embed", false, "browser_mode_off"],
     ["browser-vite-app-preview-session", false, "browser_mode_off"],
     ["client-events", false, "skip_flag"],

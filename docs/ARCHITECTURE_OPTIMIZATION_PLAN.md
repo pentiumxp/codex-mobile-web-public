@@ -5019,6 +5019,31 @@ graph instead of hard-coding a single import in the shell entry:
   require both module ids to report ready before default shell ownership can
   move forward.
 
+The next default-root rehearsal gate closes the remaining pre-cutover evidence
+gap without changing production launchd defaults:
+
+- `scripts/codex-mobile-vite-default-root-rehearsal.js` starts a temporary
+  local static/API rehearsal server that serves plain `/` as
+  `public/vite-shell/app-preview.html` with
+  `defaultShellMode=vite-app-preview`, `authRequired=false`, bounded
+  `/api/public-config`, `/api/status`, `/api/threads`, `/api/client-events`,
+  and `/api/events` support, then reuses
+  `scripts/codex-mobile-browser-runtime-self-check.js
+  --vite-app-preview-only --vite-app-preview-default-root`.
+- `services/runtime/runtime-job-scheduler-service.js` now declares
+  `browser-vite-app-preview-default-root-rehearsal` as a deploy-default
+  real-browser job, and `scripts/codex-mobile-runtime-self-check-loop.js` runs
+  that job whenever the currently tested production server still reports
+  `defaultShellMode=classic`.
+- When a future production restart intentionally reports
+  `defaultShellMode=vite-app-preview`, the loop skips the rehearsal and relies
+  on the existing actual `browser-vite-app-preview-default-root` production
+  check against the real plain `/` route.
+
+This makes the default-shell switch evidence repeatable in deploy gates instead
+of depending on ad hoc temporary-server readbacks. Production `/` still remains
+classic until the default-shell environment is intentionally changed.
+
 ## Release Rule
 
 Follow the current release order:
