@@ -797,15 +797,18 @@ function startCodexMobileAppWithRecovery() {
   });
 }
 
+function createAppShellRuntime() {
+  return {
+    wireUi: typeof wireUi === "function" ? wireUi : null,
+    start: typeof start === "function" ? start : null,
+    startCodexMobileAppWithRecovery: typeof startCodexMobileAppWithRecovery === "function" ? startCodexMobileAppWithRecovery : null,
+  };
+}
 
 (function exposeCodexAppShellRuntime(root) {
-  root.CodexAppShellRuntime = root.CodexAppShellRuntime || {
-    createAppShellRuntime: function createAppShellRuntime() {
-      return {
-      wireUi: typeof wireUi === "function" ? wireUi : null,
-      start: typeof start === "function" ? start : null,
-      startCodexMobileAppWithRecovery: typeof startCodexMobileAppWithRecovery === "function" ? startCodexMobileAppWithRecovery : null,
-      };
-    },
-  };
-})(window);
+  const appShellApi = { createAppShellRuntime };
+  if (typeof module === "object" && module.exports) {
+    module.exports = appShellApi;
+  }
+  root.CodexAppShellRuntime = appShellApi;
+})(typeof globalThis !== "undefined" ? globalThis : window);
