@@ -963,9 +963,9 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     }
     if (firstConfirmedTargetContentSample) {
       const firstContentDelayMs = toNumber(firstConfirmedTargetContentSample.delayMs);
-      const h2DelayMs = Math.max(2500, minSettledDelayMs * 2);
+      const h2DelayMs = minSettledDelayMs;
       if (firstContentDelayMs > minSettledDelayMs) {
-        issues.push(issue(firstContentDelayMs >= h2DelayMs ? "H2" : "H3", "browser_target_content_first_paint_delayed", firstConfirmedTargetContentSample, {
+        issues.push(issue("H2", "browser_target_content_first_paint_delayed", firstConfirmedTargetContentSample, {
           threadHash,
           firstContentDelayMs,
           h2DelayMs,

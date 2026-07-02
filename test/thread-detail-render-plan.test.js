@@ -2827,7 +2827,7 @@ test("single-thread full render shell plans loading state", () => {
     loadingWithoutVisibleTurns: true,
   }), {
     mode: "loading",
-    html: `<div class="empty-state entry-animate">Loading thread...</div>`,
+    html: `<div class="history-note entry-animate thread-loading-note" data-render-key="loading-visible|thread-1">正在加载最新线程状态...</div>`,
     clearLiveOperationDock: true,
     bindRetry: false,
     retryThreadId: "",
@@ -2847,7 +2847,7 @@ test("single-thread early shell execution plans loading terminal render", () => 
     shouldRender: true,
     mode: "loading",
     reason: "loading",
-    html: `<div class="empty-state entry-animate">Loading thread...</div>`,
+    html: `<div class="history-note entry-animate thread-loading-note" data-render-key="loading-visible|thread-1">正在加载最新线程状态...</div>`,
     clearLiveOperationDock: true,
     bindRetry: false,
     retryThreadId: "",

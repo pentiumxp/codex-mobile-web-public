@@ -107,7 +107,7 @@ test("browser runtime self-check reports API latest turn when it is not the DOM 
     samples: [{
       label: "settled",
       threadHash: "thread-a",
-      delayMs: 1500,
+      delayMs: 1000,
       appVisible: true,
       loginVisible: false,
       targetConfirmed: true,
@@ -133,7 +133,7 @@ test("browser runtime self-check reports API latest turn when it is missing from
     samples: [{
       label: "settled",
       threadHash: "thread-a",
-      delayMs: 1500,
+      delayMs: 1000,
       appVisible: true,
       loginVisible: false,
       targetConfirmed: true,
@@ -257,7 +257,7 @@ test("browser runtime self-check blocks settled stale DOM before target content 
 });
 
 test("browser runtime self-check reports delayed first target content paint", () => {
-  const advisory = service.analyzeBrowserRuntimeSamples({
+  const blockingAtSettledBoundary = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,
     samples: [
       {
@@ -288,10 +288,11 @@ test("browser runtime self-check reports delayed first target content paint", ()
       },
     ],
   });
-  const advisoryIssue = advisory.issues.find((issue) => issue.code === "browser_target_content_first_paint_delayed");
-  assert.equal(advisory.ok, true);
-  assert.equal(advisoryIssue && advisoryIssue.severity, "H3");
-  assert.equal(advisoryIssue && advisoryIssue.firstContentDelayMs, 1500);
+  const boundaryIssue = blockingAtSettledBoundary.issues.find((issue) => issue.code === "browser_target_content_first_paint_delayed");
+  assert.equal(blockingAtSettledBoundary.ok, false);
+  assert.equal(boundaryIssue && boundaryIssue.severity, "H2");
+  assert.equal(boundaryIssue && boundaryIssue.firstContentDelayMs, 1500);
+  assert.equal(boundaryIssue && boundaryIssue.h2DelayMs, 1000);
 
   const blocking = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,
@@ -338,7 +339,7 @@ test("browser runtime self-check catches DOM turn timestamp order regressions", 
     samples: [{
       label: "settled",
       threadHash: "thread-a",
-      delayMs: 1500,
+      delayMs: 1000,
       appVisible: true,
       loginVisible: false,
       targetConfirmed: true,
@@ -364,7 +365,7 @@ test("browser runtime self-check ignores empty DOM turn shells for timestamp ord
     samples: [{
       label: "settled",
       threadHash: "thread-a",
-      delayMs: 1500,
+      delayMs: 1000,
       appVisible: true,
       loginVisible: false,
       targetConfirmed: true,
@@ -391,7 +392,7 @@ test("browser runtime self-check ignores already-normalized empty DOM turn shape
     samples: [{
       label: "settled",
       threadHash: "thread-a",
-      delayMs: 1500,
+      delayMs: 1000,
       appVisible: true,
       loginVisible: false,
       targetConfirmed: true,

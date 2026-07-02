@@ -1801,9 +1801,10 @@
     const escape = htmlEscaper(input);
     const threadId = text(input.threadId || input.currentThreadId).trim();
     if (input.loadingWithoutVisibleTurns) {
+      const loadingKey = `loading-visible|${escape(threadId)}`;
       return {
         mode: "loading",
-        html: `<div class="empty-state entry-animate">Loading thread...</div>`,
+        html: `<div class="history-note entry-animate thread-loading-note" data-render-key="${loadingKey}">正在加载最新线程状态...</div>`,
         clearLiveOperationDock: true,
         bindRetry: false,
         retryThreadId: "",
