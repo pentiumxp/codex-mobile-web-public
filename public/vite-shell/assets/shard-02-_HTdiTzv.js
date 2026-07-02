@@ -1,1475 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-DlB4qcnz.js";
-//#region public/build-refresh-policy.js
-var require_build_refresh_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexBuildRefreshPolicy = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function normalizeBuildId(value) {
-			return String(value || "").trim();
-		}
-		function shellSequenceFromBuildId(value) {
-			const match = normalizeBuildId(value).match(/\bcodex-mobile-shell-v([0-9]+)\b/);
-			if (!match) return null;
-			const parsed = Number.parseInt(match[1], 10);
-			return Number.isSafeInteger(parsed) ? parsed : null;
-		}
-		function classifyServerBuildChange(serverBuildId, clientBuildId) {
-			const server = normalizeBuildId(serverBuildId);
-			const client = normalizeBuildId(clientBuildId);
-			if (!server || !client || server === client) return "same";
-			const serverSeq = shellSequenceFromBuildId(server);
-			const clientSeq = shellSequenceFromBuildId(client);
-			if (serverSeq !== null && clientSeq !== null) {
-				if (serverSeq > clientSeq) return "server-newer";
-				if (serverSeq < clientSeq) return "client-newer";
-			}
-			return "changed";
-		}
-		function shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
-			const direction = classifyServerBuildChange(serverBuildId, clientBuildId);
-			return direction === "server-newer" || direction === "changed";
-		}
-		return {
-			shellSequenceFromBuildId,
-			classifyServerBuildChange,
-			shouldPromptForServerBuildChange
-		};
-	});
-}));
-//#endregion
-//#region public/runtime-settings.js
-var require_runtime_settings = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexRuntimeSettings = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const MODEL_LABELS = {
-			"gpt-5.5": "GPT-5.5",
-			"gpt-5.4": "GPT-5.4",
-			"gpt-5.4-mini": "GPT-5.4 Mini",
-			"gpt-5.3-codex": "GPT-5.3 Codex",
-			"gpt-5.3-codex-spark": "GPT-5.3 Codex Spark",
-			"gpt-5.2": "GPT-5.2"
-		};
-		const COMPACT_MODEL_LABELS = {
-			"gpt-5.5": "5.5",
-			"gpt-5.4": "5.4",
-			"gpt-5.4-mini": "5.4 Mini",
-			"gpt-5.3-codex": "5.3 Codex",
-			"gpt-5.3-codex-spark": "5.3 Spark",
-			"gpt-5.2": "5.2"
-		};
-		const EFFORT_LABELS = {
-			low: "Low",
-			medium: "Medium",
-			high: "High",
-			xhigh: "XHigh"
-		};
-		const PERMISSION_LABELS = {
-			default: "默认权限",
-			auto: "自动审查",
-			full: "完全访问权限",
-			custom: "自定义 (config.toml)"
-		};
-		const PERMISSION_ALIASES = {
-			"full-access": "full",
-			"workspace-write": "auto",
-			"read-only": "auto",
-			"auto-review": "auto",
-			"auto-reviewing": "auto",
-			config: "custom",
-			"config.toml": "custom",
-			"custom-config": "custom"
-		};
-		function normalizeOptionList(values) {
-			return [...new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean))];
-		}
-		function labelForModel(value) {
-			return MODEL_LABELS[value] || value;
-		}
-		function compactLabelForModel(value) {
-			return COMPACT_MODEL_LABELS[value] || labelForModel(value).replace(/^GPT-/, "");
-		}
-		function labelForEffort(value) {
-			return EFFORT_LABELS[value] || value;
-		}
-		function labelForPermissionMode(value) {
-			return PERMISSION_LABELS[value] || value || "Perm";
-		}
-		function titleForPermissionMode(value) {
-			return PERMISSION_LABELS[value] || "Thread permission";
-		}
-		function normalizePermissionModeValue(value) {
-			const text = String(value || "").trim().toLowerCase();
-			return PERMISSION_ALIASES[text] || text;
-		}
-		function firstRuntimeValue(values) {
-			return normalizeOptionList(values)[0] || "";
-		}
-		function selectedNewThreadModel(settings) {
-			return firstRuntimeValue([
-				settings && settings.selected,
-				settings && settings.defaultValue,
-				...settings && settings.options || []
-			]);
-		}
-		function selectedNewThreadEffort(settings) {
-			return firstRuntimeValue([
-				settings && settings.selected,
-				settings && settings.defaultValue,
-				...settings && settings.options || []
-			]);
-		}
-		function selectedNewThreadPermission(settings) {
-			const normalized = normalizePermissionModeValue(settings && settings.selected);
-			if (normalized) return normalized;
-			return normalizePermissionModeValue(settings && settings.defaultValue) || normalizePermissionModeValue((settings && settings.options || [])[0]) || "full";
-		}
-		return {
-			normalizeOptionList,
-			labelForModel,
-			compactLabelForModel,
-			labelForEffort,
-			labelForPermissionMode,
-			titleForPermissionMode,
-			normalizePermissionModeValue,
-			selectedNewThreadModel,
-			selectedNewThreadEffort,
-			selectedNewThreadPermission
-		};
-	});
-}));
-//#endregion
-//#region public/viewport-metrics.js
-var require_viewport_metrics = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexViewportMetrics = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_KEYBOARD_SHRINK_PX = 120;
-		const DEFAULT_MIN_HEIGHT = 320;
-		const DEFAULT_STABLE_PIXEL_EPSILON_PX = 1;
-		const NON_TEXT_INPUT_TYPES = /* @__PURE__ */ new Set([
-			"button",
-			"checkbox",
-			"color",
-			"file",
-			"hidden",
-			"image",
-			"radio",
-			"range",
-			"reset",
-			"submit"
-		]);
-		function positiveNumber(value) {
-			const numeric = Number(value);
-			return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
-		}
-		function cssPixel(value) {
-			const numeric = Number(value);
-			return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 0;
-		}
-		function stablePixelChanged(previous, next, options = {}) {
-			const previousPx = cssPixel(previous);
-			const nextPx = cssPixel(next);
-			const configuredEpsilon = Number(options.epsilonPx);
-			const epsilonPx = Math.max(0, Number.isFinite(configuredEpsilon) ? configuredEpsilon : DEFAULT_STABLE_PIXEL_EPSILON_PX);
-			if (!previousPx) return Boolean(nextPx);
-			if (!nextPx) return Boolean(previousPx);
-			return Math.abs(nextPx - previousPx) > epsilonPx;
-		}
-		function isKeyboardEditable(element) {
-			if (!element) return false;
-			if (element.isContentEditable) return true;
-			const tag = String(element.tagName || "").toLowerCase();
-			if (tag === "textarea") return !element.disabled && !element.readOnly;
-			if (tag !== "input") return false;
-			const type = String(element.type || "text").toLowerCase();
-			return !element.disabled && !element.readOnly && !NON_TEXT_INPUT_TYPES.has(type);
-		}
-		function measureViewport(input = {}) {
-			const threshold = positiveNumber(input.keyboardShrinkPx) || DEFAULT_KEYBOARD_SHRINK_PX;
-			const minHeight = positiveNumber(input.minHeight) || DEFAULT_MIN_HEIGHT;
-			const visual = positiveNumber(input.visualHeight);
-			const visualOffsetTop = Math.max(0, Number(input.visualOffsetTop) || 0);
-			const scrollTop = Math.max(0, Number(input.scrollTop) || 0);
-			const localVisibleTop = Math.max(visualOffsetTop, scrollTop);
-			const visualBottom = visual ? visual + visualOffsetTop : 0;
-			const layout = Math.max(positiveNumber(input.innerHeight), positiveNumber(input.clientHeight));
-			const hostViewportHeight = positiveNumber(input.hostViewportHeight);
-			const hostKeyboardBottomInset = Math.max(0, Number(input.hostKeyboardBottomInset) || 0);
-			const hostBottomSafeArea = Math.max(0, Number(input.hostBottomSafeArea) || 0);
-			const hostKeyboardVisible = Boolean(input.hostKeyboardVisible && hostKeyboardBottomInset > threshold);
-			const keyboardCandidate = Boolean(visualBottom && layout && visualBottom < layout - threshold);
-			const keyboardInputActive = Boolean(input.keyboardInputActive || isKeyboardEditable(input.activeElement));
-			const keyboardShrunk = Boolean(keyboardInputActive && (keyboardCandidate || Boolean(keyboardInputActive && visualOffsetTop > 40) || Boolean(keyboardInputActive && scrollTop > 40) || hostKeyboardVisible));
-			const hostKeyboardHeight = hostKeyboardVisible ? Math.max(minHeight, hostViewportHeight || (layout ? layout - hostKeyboardBottomInset : 0)) : 0;
-			const localVisualHeight = visual || (visualBottom ? Math.max(0, visualBottom - visualOffsetTop) : 0);
-			return {
-				height: Math.max(minHeight, Math.round(keyboardShrunk ? hostKeyboardHeight || localVisualHeight || visualBottom || layout || 0 : Math.max(visualBottom || 0, layout || 0))),
-				top: Math.round(keyboardShrunk ? localVisibleTop : 0),
-				keyboardShrunk,
-				keyboardCandidate,
-				visualBottom: Math.round(visualBottom),
-				layout: Math.round(layout),
-				hostKeyboardVisible,
-				hostKeyboardBottomInset: Math.round(hostKeyboardBottomInset),
-				hostBottomSafeArea: Math.round(hostBottomSafeArea)
-			};
-		}
-		return {
-			cssPixel,
-			isKeyboardEditable,
-			measureViewport,
-			stablePixelChanged
-		};
-	});
-}));
-//#endregion
-//#region public/conversation-scroll.js
-var require_conversation_scroll = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexConversationScroll = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_NEAR_BOTTOM_PX = 96;
-		const DEFAULT_SUBMIT_FOLLOW_MS = 15e3;
-		const DEFAULT_VIEWPORT_FOLLOW_MS = 3200;
-		const DEFAULT_RECENT_BOTTOM_MS = 12e4;
-		const DEFAULT_BOTTOM_FOLLOW_DELAYS_MS = Object.freeze([
-			0,
-			80,
-			240,
-			600,
-			1200
-		]);
-		function numberOrZero(value) {
-			const numeric = Number(value);
-			return Number.isFinite(numeric) ? numeric : 0;
-		}
-		function isNearBottom(metrics = {}, thresholdPx = DEFAULT_NEAR_BOTTOM_PX) {
-			const scrollHeight = numberOrZero(metrics.scrollHeight);
-			const scrollTop = numberOrZero(metrics.scrollTop);
-			const clientHeight = numberOrZero(metrics.clientHeight);
-			const threshold = Math.max(0, numberOrZero(thresholdPx));
-			return scrollHeight - scrollTop - clientHeight < threshold;
-		}
-		function createSubmittedMessageFollow(threadId, options = {}) {
-			const id = String(threadId || "").trim();
-			if (!id) return null;
-			const nowMs = numberOrZero(options.nowMs) || Date.now();
-			const ttlMs = Math.max(1e3, numberOrZero(options.ttlMs) || DEFAULT_SUBMIT_FOLLOW_MS);
-			return {
-				threadId: id,
-				clientSubmissionId: String(options.clientSubmissionId || ""),
-				untilMs: nowMs + ttlMs
-			};
-		}
-		function shouldFollowSubmittedMessage(follow, options = {}) {
-			if (!follow || !follow.threadId) return false;
-			const threadId = String(options.threadId || "").trim();
-			if (!threadId || String(follow.threadId) !== threadId) return false;
-			return (numberOrZero(options.nowMs) || Date.now()) <= numberOrZero(follow.untilMs);
-		}
-		function extendSubmittedMessageFollow(follow, options = {}) {
-			if (!follow || !follow.threadId) return null;
-			const nowMs = numberOrZero(options.nowMs) || Date.now();
-			const ttlMs = Math.max(1e3, numberOrZero(options.ttlMs) || DEFAULT_SUBMIT_FOLLOW_MS);
-			return {
-				...follow,
-				untilMs: nowMs + ttlMs
-			};
-		}
-		function shouldStartViewportFollow(options = {}) {
-			if (options.nearBottom) return true;
-			const nowMs = numberOrZero(options.nowMs) || Date.now();
-			const recentBottomMs = Math.max(0, numberOrZero(options.recentBottomMs) || DEFAULT_RECENT_BOTTOM_MS);
-			const lastNearBottomAtMs = numberOrZero(options.lastNearBottomAtMs);
-			return Boolean(lastNearBottomAtMs && nowMs - lastNearBottomAtMs <= recentBottomMs);
-		}
-		function createViewportFollow(threadId, options = {}) {
-			const id = String(threadId || "").trim();
-			if (!id) return null;
-			const nowMs = numberOrZero(options.nowMs) || Date.now();
-			const ttlMs = Math.max(500, numberOrZero(options.ttlMs) || DEFAULT_VIEWPORT_FOLLOW_MS);
-			return {
-				threadId: id,
-				reason: String(options.reason || "viewport"),
-				untilMs: nowMs + ttlMs
-			};
-		}
-		function shouldFollowViewport(follow, options = {}) {
-			if (!follow || !follow.threadId) return false;
-			const threadId = String(options.threadId || "").trim();
-			if (!threadId || String(follow.threadId) !== threadId) return false;
-			return (numberOrZero(options.nowMs) || Date.now()) <= numberOrZero(follow.untilMs);
-		}
-		function planBottomFollowLeaseEvaluation(options = {}) {
-			if (options.userReadingCurrentTurn) return {
-				shouldFollow: false,
-				clearLease: true,
-				reason: "user-reading-current-turn"
-			};
-			if (options.leaseActive) return {
-				shouldFollow: true,
-				clearLease: false,
-				reason: "lease-active"
-			};
-			if (options.hasLease) return {
-				shouldFollow: false,
-				clearLease: true,
-				reason: "lease-inactive"
-			};
-			return {
-				shouldFollow: false,
-				clearLease: false,
-				reason: "no-lease"
-			};
-		}
-		function planBottomFollowScrollSchedule() {
-			return {
-				clearExistingTimers: true,
-				delaysMs: DEFAULT_BOTTOM_FOLLOW_DELAYS_MS.slice(),
-				reason: "bottom-follow-retry"
-			};
-		}
-		function planLocalPatchScrollCompletion(options = {}) {
-			if (options.userReadingCurrentTurn) return {
-				action: "update-button",
-				reason: "user-reading-current-turn"
-			};
-			if (options.autoScrollHold) return {
-				action: "update-button",
-				reason: "auto-scroll-hold"
-			};
-			if (options.nearBottom) return {
-				action: "scroll-to-bottom",
-				reason: "near-bottom"
-			};
-			if (options.submittedMessageFollow) return {
-				action: "scroll-to-bottom",
-				reason: "submitted-message-follow"
-			};
-			if (options.viewportFollow) return {
-				action: "scroll-to-bottom",
-				reason: "viewport-follow"
-			};
-			return {
-				action: "update-button",
-				reason: "not-following-bottom"
-			};
-		}
-		function planConversationJumpButtons(options = {}) {
-			const canShow = Boolean(options.hasThread && !options.loading && !options.loadError && options.isScrollable);
-			const showBottom = Boolean(canShow && !options.nearBottom);
-			const showReply = Boolean(canShow && !showBottom && options.hasReplyTarget && options.replyTargetAbove);
-			return {
-				showBottom,
-				showReply,
-				reason: !canShow ? "not-available" : showBottom ? "bottom-available" : showReply ? "reply-available" : "hidden"
-			};
-		}
-		function planUserReadingCurrentTurn(options = {}) {
-			if (options.nearBottom) return {
-				userReadingCurrentTurn: false,
-				reason: "near-bottom"
-			};
-			if (options.autoScrollHold) return {
-				userReadingCurrentTurn: true,
-				reason: "auto-scroll-hold"
-			};
-			if (!options.recentScrollIntent) return {
-				userReadingCurrentTurn: false,
-				reason: "no-recent-scroll-intent"
-			};
-			if (options.hasCurrentTurn) return {
-				userReadingCurrentTurn: true,
-				reason: "current-turn-candidate"
-			};
-			return {
-				userReadingCurrentTurn: false,
-				reason: "no-current-turn"
-			};
-		}
-		function planConversationAutoScrollHoldFromScroll(options = {}) {
-			if (options.nearBottom) return {
-				action: "clear-hold",
-				reason: "near-bottom"
-			};
-			if (!options.recentScrollIntent) return {
-				action: "none",
-				reason: "no-recent-scroll-intent"
-			};
-			if (options.hasCurrentTurn) return {
-				action: "remember-hold",
-				reason: "current-turn-candidate"
-			};
-			return {
-				action: "none",
-				reason: "no-current-turn"
-			};
-		}
-		function planReadingViewportPreservation(options = {}) {
-			if (options.nearBottom) return {
-				preserve: false,
-				reason: "near-bottom"
-			};
-			if (options.userReadingCurrentTurn) return {
-				preserve: true,
-				reason: "user-reading-current-turn"
-			};
-			if (options.autoScrollHold) return {
-				preserve: true,
-				reason: "auto-scroll-hold"
-			};
-			if (options.userReadingAwayFromBottom) return {
-				preserve: true,
-				reason: "user-reading-away-from-bottom"
-			};
-			if (options.recentScrollIntent) return {
-				preserve: true,
-				reason: "recent-scroll-intent"
-			};
-			return {
-				preserve: false,
-				reason: "no-user-scroll-protection"
-			};
-		}
-		function planAutomaticConversationRefresh(options = {}) {
-			if (options.userInitiated) return {
-				allowRefresh: true,
-				cancelScheduled: false,
-				reason: "user-initiated"
-			};
-			if (!options.hasThread) return {
-				allowRefresh: true,
-				cancelScheduled: false,
-				reason: "no-current-thread"
-			};
-			if (options.nearBottom) return {
-				allowRefresh: true,
-				cancelScheduled: false,
-				reason: "near-bottom"
-			};
-			if (options.userReadingCurrentTurn) return {
-				allowRefresh: false,
-				cancelScheduled: true,
-				reason: "user-reading-current-turn"
-			};
-			if (options.autoScrollHold) return {
-				allowRefresh: false,
-				cancelScheduled: true,
-				reason: "auto-scroll-hold"
-			};
-			if (options.userReadingAwayFromBottom) return {
-				allowRefresh: false,
-				cancelScheduled: true,
-				reason: "user-reading-away-from-bottom"
-			};
-			if (options.recentScrollIntent) return {
-				allowRefresh: false,
-				cancelScheduled: true,
-				reason: "recent-scroll-intent"
-			};
-			return {
-				allowRefresh: true,
-				cancelScheduled: false,
-				reason: "no-user-scroll-protection"
-			};
-		}
-		function planFullRenderScroll(options = {}) {
-			if (options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart)) return {
-				stickToBottom: false,
-				explicitNoStickToBottom: true,
-				shouldFollowBottom: false,
-				reason: "explicit-no-stick"
-			};
-			if (options.userReadingCurrentTurn) return {
-				stickToBottom: false,
-				explicitNoStickToBottom: false,
-				shouldFollowBottom: false,
-				reason: "user-reading-current-turn"
-			};
-			if (options.autoScrollHold) return {
-				stickToBottom: false,
-				explicitNoStickToBottom: false,
-				shouldFollowBottom: false,
-				reason: "auto-scroll-hold"
-			};
-			if (Boolean(options.sustainedSubmittedFollow || options.submittedMessageFollow || options.viewportFollow)) return {
-				stickToBottom: true,
-				explicitNoStickToBottom: false,
-				shouldFollowBottom: true,
-				reason: options.sustainedSubmittedFollow ? "sustained-submitted-message-follow" : options.submittedMessageFollow ? "submitted-message-follow" : "viewport-follow"
-			};
-			if (options.stickToBottom === true) return {
-				stickToBottom: true,
-				explicitNoStickToBottom: false,
-				shouldFollowBottom: false,
-				reason: "requested-stick"
-			};
-			if (options.nearBottom) return {
-				stickToBottom: true,
-				explicitNoStickToBottom: false,
-				shouldFollowBottom: false,
-				reason: "near-bottom"
-			};
-			return {
-				stickToBottom: false,
-				explicitNoStickToBottom: false,
-				shouldFollowBottom: false,
-				reason: "not-following-bottom"
-			};
-		}
-		return {
-			DEFAULT_NEAR_BOTTOM_PX,
-			DEFAULT_SUBMIT_FOLLOW_MS,
-			DEFAULT_VIEWPORT_FOLLOW_MS,
-			DEFAULT_RECENT_BOTTOM_MS,
-			DEFAULT_BOTTOM_FOLLOW_DELAYS_MS,
-			createSubmittedMessageFollow,
-			extendSubmittedMessageFollow,
-			createViewportFollow,
-			isNearBottom,
-			planBottomFollowLeaseEvaluation,
-			planBottomFollowScrollSchedule,
-			planConversationAutoScrollHoldFromScroll,
-			planAutomaticConversationRefresh,
-			planConversationJumpButtons,
-			planFullRenderScroll,
-			planLocalPatchScrollCompletion,
-			planReadingViewportPreservation,
-			planUserReadingCurrentTurn,
-			shouldFollowViewport,
-			shouldFollowSubmittedMessage,
-			shouldStartViewportFollow
-		};
-	});
-}));
-//#endregion
-//#region public/thread-performance-metrics.js
-var require_thread_performance_metrics = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadPerformanceMetrics = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function objectOrNull(value) {
-			return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-		}
-		const MAX_TIMING_MS = 600 * 1e3;
-		const CLIENT_TIMING_KEYS = [
-			"elapsedMs",
-			"apiElapsedMs",
-			"renderElapsedMs",
-			"mergeMs",
-			"draftRestoreMs",
-			"composerRenderMs",
-			"threadListRenderMs",
-			"conversationRenderMs",
-			"detailPatchMs",
-			"metadataUpdateMs",
-			"postRenderMs"
-		];
-		const CLIENT_LABEL_KEYS = [
-			"refreshRenderAction",
-			"renderPlanReason",
-			"patchRejectReason",
-			"patchResult",
-			"patchTimingSource",
-			"patchSurfaceReason",
-			"patchSurface",
-			"patchExecutionReason"
-		];
-		const ALLOWED_DETAIL_RENDER_MODES = Object.freeze({
-			"cached-current": true,
-			"first-paint": true,
-			"full-backfill": true,
-			"full-render": true,
-			"metadata-only": true,
-			patch: true,
-			skipped: true,
-			"tile-pane": true,
-			"tile-pane-metadata": true
-		});
-		const MAX_COUNT = 1e5;
-		function threadDetailTimings(thread) {
-			const diagnostics = objectOrNull(thread && thread.mobileDiagnostics);
-			return objectOrNull(diagnostics && diagnostics.threadDetailTimings);
-		}
-		function threadListTimings(result) {
-			const diagnostics = objectOrNull(result && result.mobileDiagnostics);
-			return objectOrNull(diagnostics && diagnostics.threadListTimings);
-		}
-		function classifyThreadListPhase(timings) {
-			const value = objectOrNull(timings);
-			if (!value) return "unknown";
-			if (value.fallbackDeferred) return "deferred-fallback";
-			if (value.appServerDeferred) return "warm-fallback-initial";
-			const decision = compactLabel(value.fallbackCacheDecision, 40);
-			if (decision === "hit" || value.fallbackCacheHit) return "warm-fallback-cache";
-			if (decision === "expired-rebuild") return "cold-fallback-expired-rebuild";
-			if (decision === "miss-rebuild") return "cold-fallback-miss-build";
-			if (Number(value.fallbackMs || 0) > 0) return "cold-fallback-build";
-			if (Number(value.appServerMs || 0) > 0) return "app-server-only";
-			return "unknown";
-		}
-		function classifyThreadDetailPhase(timings, input = {}) {
-			const value = objectOrNull(timings);
-			const source = objectOrNull(input) || {};
-			if (source.cached === true) return "warm-client-current";
-			if (!value) return "unknown";
-			const existingPhase = compactLabel(value.phase, 80);
-			if (existingPhase && existingPhase !== "unknown") return existingPhase;
-			const readDecision = compactLabel(value.readDecision || source.readDecision, 80).toLowerCase();
-			const readMode = compactLabel(value.readMode || source.readMode, 80).toLowerCase();
-			const projectionState = compactLabel(value.projectionState, 80).toLowerCase();
-			const projectionSource = compactLabel(value.projectionSource, 80).toLowerCase();
-			const projectionSeedStatus = compactLabel(value.projectionSeedStatus, 80).toLowerCase();
-			if (readDecision === "projection-partial-hit" || readDecision === "projection-stale-partial-hit" || /projection-v?\d*-partial|projection-partial/.test(readMode)) return "warm-projection-partial";
-			if (readDecision === "projection-hit" || projectionState === "hit") {
-				if (/dynamic/.test(projectionSource) || /projection-v?\d*-dynamic|projection-dynamic/.test(readMode)) return "warm-projection-dynamic";
-				return "warm-projection-cache";
-			}
-			if (readDecision === "bounded-large-turns-list" || /turns-list-large/.test(readMode)) return "bounded-large-thread-window";
-			if (readDecision === "initial-turns-list" || /turns-list-initial/.test(readMode)) return projectionSeedStatus === "seeded-partial" ? "cold-turns-list-initial-seeded-partial" : "cold-turns-list-initial";
-			if (/thread-read-raw/.test(readMode)) return "cold-thread-read-raw";
-			if (readDecision === "full-thread-read" || /thread-read/.test(readMode)) return "cold-thread-read";
-			if (readDecision === "fallback-turns-list" || /turns-list/.test(readMode)) return "fallback-turns-list";
-			if (readDecision === "summary-fallback" || /summary-timeout|unmaterialized|fallback/.test(readMode)) return "fallback-summary";
-			return "unknown";
-		}
-		function threadDetailEventFields(thread) {
-			const timings = threadDetailTimings(thread);
-			return {
-				serverTimings: timings,
-				performancePhase: classifyThreadDetailPhase(timings, { readMode: thread && thread.mobileReadMode }),
-				detailShape: threadDetailShape(thread)
-			};
-		}
-		function boundedTiming(value) {
-			const number = Number(value);
-			if (!Number.isFinite(number) || number < 0) return null;
-			return Math.min(MAX_TIMING_MS, Math.round(number));
-		}
-		function compactLabel(value, maxLength = 40) {
-			return String(value || "").trim().slice(0, maxLength);
-		}
-		function threadDetailClientTimings(input = {}) {
-			const source = objectOrNull(input) || {};
-			const result = {};
-			for (const key of CLIENT_TIMING_KEYS) {
-				const timing = boundedTiming(source[key]);
-				if (timing !== null) result[key] = timing;
-			}
-			const renderMode = compactLabel(source.detailRenderMode || source.renderMode);
-			if (renderMode && ALLOWED_DETAIL_RENDER_MODES[renderMode]) result.detailRenderMode = renderMode;
-			const sourceLabel = compactLabel(source.source);
-			if (sourceLabel) result.source = sourceLabel;
-			for (const key of CLIENT_LABEL_KEYS) {
-				const label = compactLabel(source[key]);
-				if (label) result[key] = label;
-			}
-			if (source.skippedDetailRender !== void 0) result.skippedDetailRender = Boolean(source.skippedDetailRender);
-			if (source.locallyPatchedDetail !== void 0) result.locallyPatchedDetail = Boolean(source.locallyPatchedDetail);
-			if (source.tilePanePatchedDetail !== void 0) result.tilePanePatchedDetail = Boolean(source.tilePanePatchedDetail);
-			if (source.localPatchAttempted !== void 0) result.localPatchAttempted = Boolean(source.localPatchAttempted);
-			if (source.tilePanePatchAttempted !== void 0) result.tilePanePatchAttempted = Boolean(source.tilePanePatchAttempted);
-			return Object.keys(result).length ? result : null;
-		}
-		function threadDetailEventFieldsWithClient(thread, clientTimingInput = {}) {
-			const fields = threadDetailEventFields(thread);
-			fields.clientTimings = threadDetailClientTimings(clientTimingInput);
-			return fields;
-		}
-		function statusText(status) {
-			if (!status) return "";
-			if (typeof status === "string") return compactLabel(status, 80);
-			if (status && typeof status === "object") {
-				const type = compactLabel(status.type, 80);
-				if (type) return type;
-				try {
-					return compactLabel(JSON.stringify(status), 80);
-				} catch (_) {
-					return "";
-				}
-			}
-			return compactLabel(status, 80);
-		}
-		function rolloutSizeBytes(thread) {
-			const size = Number(thread && thread.rolloutSizeBytes);
-			return Number.isFinite(size) && size > 0 ? Math.trunc(size) : 0;
-		}
-		function hasCursor(value) {
-			if (!value) return false;
-			if (typeof value === "string") return Boolean(value.trim());
-			if (typeof value === "object") return Object.keys(value).length > 0;
-			return true;
-		}
-		function booleanFlag(value) {
-			if (value === true || value === 1) return true;
-			const text = String(value || "").trim().toLowerCase();
-			return text === "true" || text === "1" || text === "yes";
-		}
-		function threadTurnCount(thread) {
-			return Array.isArray(thread && thread.turns) ? boundedCount(thread.turns.length) : 0;
-		}
-		function threadOmittedTurnCount(thread) {
-			return boundedCount(thread && thread.mobileOmittedTurnCount);
-		}
-		function setTimingField(out, key, value) {
-			const timing = boundedTiming(value);
-			if (timing !== null) out[key] = timing;
-		}
-		function threadDetailRefreshEventFields(thread, input = {}) {
-			const source = objectOrNull(input) || {};
-			const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
-			const out = {
-				source: compactLabel(source.source, 40),
-				threadId: compactLabel(source.threadId, 220),
-				requestedMode: compactLabel(source.requestedMode, 40),
-				readMode: compactLabel(thread && thread.mobileReadMode, 80),
-				serverTimings: detailPerformance.serverTimings,
-				performancePhase: detailPerformance.performancePhase,
-				clientTimings: detailPerformance.clientTimings,
-				detailShape: detailPerformance.detailShape,
-				status: statusText(thread && thread.status),
-				turns: threadTurnCount(thread),
-				omittedTurns: threadOmittedTurnCount(thread),
-				rolloutSizeBytes: rolloutSizeBytes(thread),
-				renderPlanReason: compactLabel(source.renderPlanReason, 80),
-				refreshRenderAction: compactLabel(source.refreshRenderAction, 80),
-				patchRejectReason: compactLabel(source.patchRejectReason, 80),
-				patchResult: compactLabel(source.patchResult, 80),
-				patchTimingSource: compactLabel(source.patchTimingSource, 80),
-				patchSurfaceReason: compactLabel(source.patchSurfaceReason, 80),
-				patchSurface: compactLabel(source.patchSurface, 80),
-				patchExecutionReason: compactLabel(source.patchExecutionReason, 80),
-				skippedDetailRender: Boolean(source.skippedDetailRender),
-				locallyPatchedDetail: Boolean(source.locallyPatchedDetail),
-				tilePanePatchedDetail: Boolean(source.tilePanePatchedDetail),
-				localPatchAttempted: Boolean(source.localPatchAttempted),
-				tilePanePatchAttempted: Boolean(source.tilePanePatchAttempted)
-			};
-			for (const key of [
-				"elapsedMs",
-				"apiElapsedMs",
-				"renderElapsedMs"
-			]) setTimingField(out, key, source[key]);
-			return out;
-		}
-		function threadDetailFirstPaintEventFields(thread, input = {}) {
-			const source = objectOrNull(input) || {};
-			const cached = source.cached === true;
-			const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
-			const performancePhase = classifyThreadDetailPhase(detailPerformance.serverTimings, {
-				cached,
-				readMode: thread && thread.mobileReadMode,
-				readDecision: source.readDecision
-			});
-			const out = {
-				source: compactLabel(source.source, 40),
-				threadId: compactLabel(source.threadId, 220),
-				serverTimings: detailPerformance.serverTimings,
-				performancePhase,
-				clientTimings: detailPerformance.clientTimings,
-				detailShape: detailPerformance.detailShape,
-				cached,
-				readMode: compactLabel(thread && thread.mobileReadMode, 80),
-				turns: threadTurnCount(thread),
-				rolloutSizeBytes: rolloutSizeBytes(thread)
-			};
-			for (const key of [
-				"elapsedMs",
-				"apiElapsedMs",
-				"renderElapsedMs"
-			]) setTimingField(out, key, source[key]);
-			if (!cached) {
-				out.status = statusText(thread && thread.status);
-				out.omittedTurns = threadOmittedTurnCount(thread);
-			}
-			return out;
-		}
-		function threadDetailFullReadyEventFields(thread, input = {}) {
-			const source = objectOrNull(input) || {};
-			const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
-			const out = {
-				source: compactLabel(source.source, 40),
-				threadId: compactLabel(source.threadId, 220),
-				serverTimings: detailPerformance.serverTimings,
-				performancePhase: detailPerformance.performancePhase,
-				clientTimings: detailPerformance.clientTimings,
-				detailShape: detailPerformance.detailShape,
-				readMode: compactLabel(thread && thread.mobileReadMode, 80),
-				turns: threadTurnCount(thread),
-				omittedTurns: threadOmittedTurnCount(thread),
-				rolloutSizeBytes: rolloutSizeBytes(thread)
-			};
-			for (const key of [
-				"elapsedMs",
-				"apiElapsedMs",
-				"renderElapsedMs"
-			]) setTimingField(out, key, source[key]);
-			return out;
-		}
-		function planThreadDetailSlowPathDiagnostic(event = {}, input = {}) {
-			const fields = objectOrNull(event) || {};
-			const source = objectOrNull(input) || {};
-			const thresholdMs = boundedTiming(source.thresholdMs) || 1500;
-			const elapsedMs = boundedTiming(fields.elapsedMs || fields.clientTimings && fields.clientTimings.elapsedMs) || 0;
-			const apiElapsedMs = boundedTiming(fields.apiElapsedMs || fields.clientTimings && fields.clientTimings.apiElapsedMs) || 0;
-			const renderElapsedMs = boundedTiming(fields.renderElapsedMs || fields.clientTimings && fields.clientTimings.renderElapsedMs) || 0;
-			const serverTimings = objectOrNull(fields.serverTimings) || {};
-			const slowElapsed = elapsedMs >= thresholdMs;
-			const slowApi = apiElapsedMs >= thresholdMs;
-			const slowRender = renderElapsedMs >= thresholdMs;
-			if (!slowElapsed && !slowApi && !slowRender) return {
-				shouldReport: false,
-				reason: "below-threshold",
-				thresholdMs,
-				elapsedMs,
-				apiElapsedMs,
-				renderElapsedMs
-			};
-			const performancePhase = compactLabel(fields.performancePhase, 80);
-			const reason = slowApi ? "api-slow" : slowRender ? "render-slow" : "elapsed-slow";
-			const severe = elapsedMs >= thresholdMs * 2 || apiElapsedMs >= thresholdMs * 2 || /cold-thread-read|fallback|bounded-large/.test(performancePhase);
-			const detailShape = objectOrNull(fields.detailShape) || {};
-			return {
-				shouldReport: true,
-				reason,
-				severityHint: severe ? "H2" : "H3",
-				thresholdMs,
-				elapsedMs,
-				apiElapsedMs,
-				renderElapsedMs,
-				readMode: compactLabel(fields.readMode, 80),
-				performancePhase,
-				coldPathOwner: compactLabel(fields.coldPathOwner || serverTimings.coldPathOwner, 80),
-				coldPathReason: compactLabel(fields.coldPathReason || serverTimings.coldPathReason, 80),
-				source: compactLabel(fields.source || source.source, 40),
-				action: compactLabel(source.action || "thread-detail", 80),
-				threadHash: compactLabel(source.threadHash || source.thread_hash, 80),
-				durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
-				renderMode: compactLabel(fields.clientTimings && fields.clientTimings.detailRenderMode, 40),
-				rolloutSizeBytes: rolloutSizeBytes(fields),
-				turns: boundedCount(fields.turns || detailShape.turns),
-				visibleItems: boundedCount(detailShape.visibleItems),
-				omittedTurns: boundedCount(fields.omittedTurns || detailShape.omittedTurns)
-			};
-		}
-		function planThreadListSlowPathDiagnostic(event = {}, input = {}) {
-			const fields = objectOrNull(event) || {};
-			const source = objectOrNull(input) || {};
-			const thresholdMs = boundedTiming(source.thresholdMs) || 1500;
-			const elapsedMs = boundedTiming(fields.elapsedMs || source.elapsedMs) || 0;
-			const apiElapsedMs = boundedTiming(fields.apiElapsedMs || source.apiElapsedMs) || 0;
-			const renderElapsedMs = boundedTiming(fields.renderElapsedMs || source.renderElapsedMs) || 0;
-			const serverTimings = objectOrNull(fields.serverTimings) || {};
-			const slowElapsed = elapsedMs >= thresholdMs;
-			const slowApi = apiElapsedMs >= thresholdMs;
-			const slowRender = renderElapsedMs >= thresholdMs;
-			if (!slowElapsed && !slowApi && !slowRender) return {
-				shouldReport: false,
-				reason: "below-threshold",
-				thresholdMs,
-				elapsedMs,
-				apiElapsedMs,
-				renderElapsedMs
-			};
-			const performancePhase = compactLabel(fields.performancePhase, 80);
-			const reason = slowApi ? "api-slow" : slowRender ? "render-slow" : "elapsed-slow";
-			const severe = elapsedMs >= thresholdMs * 3 || apiElapsedMs >= thresholdMs * 3 || /cold|app-server-only|fallback-build/.test(performancePhase);
-			const responseBytes = Number(serverTimings.appServerResponsePayloadBytes);
-			return {
-				shouldReport: true,
-				reason,
-				severityHint: severe ? "H2" : "H3",
-				thresholdMs,
-				elapsedMs,
-				apiElapsedMs,
-				renderElapsedMs,
-				action: compactLabel(source.action || "thread-list-load", 80),
-				source: compactLabel(fields.source || source.source, 40),
-				durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
-				performancePhase,
-				count: boundedCount(fields.count || source.count),
-				silent: fields.silent === true || source.silent === true,
-				hasSearch: fields.hasSearch === true || source.hasSearch === true,
-				hasWorkspace: fields.hasWorkspace === true || source.hasWorkspace === true,
-				mobileFallback: fields.mobileFallback === true || source.mobileFallback === true,
-				coldPathOwner: compactLabel(fields.coldPathOwner || serverTimings.coldPathOwner, 80),
-				coldPathReason: compactLabel(fields.coldPathReason || serverTimings.coldPathReason, 80),
-				fallbackCacheDecision: compactLabel(serverTimings.fallbackCacheDecision, 80),
-				fallbackDeferredReason: compactLabel(serverTimings.fallbackDeferredReason, 80),
-				appServerDeferredReason: compactLabel(serverTimings.appServerDeferredReason || serverTimings.appServerDeferredInitialReason, 80),
-				appServerRequestReason: compactLabel(serverTimings.appServerRequestReason, 80),
-				totalMs: boundedTiming(serverTimings.totalMs),
-				appServerMs: boundedTiming(serverTimings.appServerMs),
-				appServerRpcMs: boundedTiming(serverTimings.appServerRpcMs),
-				appServerUnattributedMs: boundedTiming(serverTimings.appServerUnattributedMs),
-				fallbackMs: boundedTiming(serverTimings.fallbackMs),
-				mergeMs: boundedTiming(serverTimings.mergeMs),
-				summaryMergeTotalMs: boundedTiming(serverTimings.summaryMergeTotalMs),
-				fallbackSourceSnapshotAgeMs: boundedTiming(serverTimings.fallbackSourceSnapshotAgeMs),
-				fallbackRolloutFileStatCount: boundedCount(serverTimings.fallbackRolloutFileStatCount),
-				fallbackRolloutHeadReadCount: boundedCount(serverTimings.fallbackRolloutHeadReadCount),
-				fallbackRolloutSummaryReadCount: boundedCount(serverTimings.fallbackRolloutSummaryReadCount),
-				appServerRequestLimit: boundedCount(serverTimings.appServerRequestLimit),
-				appServerResponsePayloadKb: Number.isFinite(responseBytes) && responseBytes > 0 ? boundedCount(Math.ceil(responseBytes / 1024)) : 0
-			};
-		}
-		function threadDetailProjectionContractFields(thread) {
-			const projection = objectOrNull(thread && thread.mobileProjection) || {};
-			const timings = threadDetailTimings(thread) || {};
-			const responseBudget = objectOrNull(thread && thread.mobileDetailResponseBudget) || {};
-			const readMode = compactLabel(thread && thread.mobileReadMode, 80);
-			return {
-				readMode,
-				projectionSource: compactLabel(projection.source || thread && thread.mobileProjectionSource || timings.projectionSource, 80),
-				projectionPartial: booleanFlag(projection.partial) || /projection-v?\d*-partial|projection-partial/.test(readMode),
-				projectionPartialKind: compactLabel(projection.partialKind || timings.projectionPartialKind, 80),
-				responseBudgetApplied: responseBudget.applied === true,
-				responseBudgetProgressiveActiveApplied: responseBudget.progressiveActiveBudgetApplied === true,
-				responseBudgetActiveTurnCount: boundedCount(responseBudget.activeTurnCount),
-				responseBudgetRetainedItemCount: boundedCount(responseBudget.retainedItemCount),
-				olderCursor: hasCursor(thread && thread.mobileOlderTurnsCursor),
-				newerCursor: hasCursor(thread && thread.mobileNewerTurnsCursor),
-				status: statusText(thread && thread.status),
-				detailShape: threadDetailShape(thread),
-				turns: threadTurnCount(thread),
-				omittedTurns: threadOmittedTurnCount(thread),
-				rolloutSizeBytes: rolloutSizeBytes(thread)
-			};
-		}
-		function activeLikeStatus(value) {
-			return /active|running|in[_-]?progress|pending|thinking|queued/.test(String(value || "").toLowerCase());
-		}
-		function planThreadDetailResponseContractDiagnostic(event = {}, input = {}) {
-			const fields = objectOrNull(event) || {};
-			const source = objectOrNull(input) || {};
-			const contract = source.thread ? threadDetailProjectionContractFields(source.thread) : objectOrNull(source.contract) || {};
-			const detailShape = objectOrNull(fields.detailShape) || objectOrNull(contract.detailShape) || objectOrNull(source.detailShape) || {};
-			const readMode = compactLabel(fields.readMode || contract.readMode || source.readMode, 80);
-			const performancePhase = compactLabel(fields.performancePhase || source.performancePhase, 80);
-			const projectionSource = compactLabel(contract.projectionSource || source.projectionSource, 80);
-			const projectionPartialKind = compactLabel(contract.projectionPartialKind || source.projectionPartialKind, 80);
-			const projectionPartial = Boolean(contract.projectionPartial || source.projectionPartial);
-			const responseBudgetApplied = Boolean(contract.responseBudgetApplied || source.responseBudgetApplied);
-			const responseBudgetProgressiveActiveApplied = Boolean(contract.responseBudgetProgressiveActiveApplied || source.responseBudgetProgressiveActiveApplied);
-			const responseBudgetActiveTurnCount = boundedCount(contract.responseBudgetActiveTurnCount || source.responseBudgetActiveTurnCount);
-			const responseBudgetRetainedItemCount = boundedCount(contract.responseBudgetRetainedItemCount || source.responseBudgetRetainedItemCount);
-			const olderCursor = Boolean(contract.olderCursor || source.olderCursor);
-			const newerCursor = Boolean(contract.newerCursor || source.newerCursor);
-			const turns = boundedCount(fields.turns || contract.turns || detailShape.turns);
-			const items = boundedCount(detailShape.items);
-			const visibleItems = boundedCount(detailShape.visibleItems);
-			const activeTurns = boundedCount(detailShape.activeTurns);
-			const completedTurns = boundedCount(detailShape.completedTurns);
-			const omittedTurns = boundedCount(fields.omittedTurns || contract.omittedTurns || detailShape.omittedTurns);
-			const status = compactLabel(fields.status || contract.status || source.status, 80);
-			const activeLike = Boolean(source.expectedActiveFullRead) || activeTurns > 0 || activeLikeStatus(status);
-			const windowedMode = /turns-list|projection-v?\d*-partial|projection-partial|summary-timeout|unmaterialized|fallback/.test(readMode) || /bounded-large|turns-list|partial|fallback/.test(performancePhase);
-			const partialProjectionMode = projectionPartial || /projection-v?\d*-partial|projection-partial/.test(readMode);
-			const hasActiveProjectionEvidence = activeTurns > 0 || responseBudgetActiveTurnCount > 0;
-			const hasVisibleProjectionEvidence = visibleItems > 0 || responseBudgetRetainedItemCount > 0;
-			const activePartialProjectionOk = !source.expectedActiveFullRead && partialProjectionMode && hasActiveProjectionEvidence && hasVisibleProjectionEvidence && (responseBudgetApplied || responseBudgetProgressiveActiveApplied || /warm-projection-partial|projection-partial/.test(performancePhase));
-			const projectionModeMarkedFull = /projection-v?\d*-(cache|dynamic)|projection-(cache|dynamic)/.test(readMode) && !projectionPartial;
-			let reason = "";
-			let severityHint = "H3";
-			if (projectionModeMarkedFull && newerCursor) {
-				reason = "projection-window-marked-full";
-				severityHint = "H2";
-			} else if (turns > 0 && visibleItems === 0 && (items === 0 || projectionPartial || projectionPartialKind === "notification-shell")) {
-				reason = "empty-projection-shell";
-				severityHint = "H2";
-			} else if (activeLike && windowedMode && !activePartialProjectionOk) {
-				reason = "active-thread-window-downgrade";
-				severityHint = "H2";
-			}
-			return {
-				shouldReport: Boolean(reason),
-				reason: reason || "ok",
-				severityHint,
-				action: compactLabel(source.action || fields.source || "thread-detail", 80),
-				source: compactLabel(fields.source || source.source, 40),
-				threadHash: compactLabel(source.threadHash || source.thread_hash, 80),
-				durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
-				readMode,
-				renderMode: compactLabel(fields.clientTimings && fields.clientTimings.detailRenderMode || source.renderMode, 40),
-				performancePhase,
-				projectionSource,
-				projectionPartialKind,
-				projectionPartial,
-				responseBudgetApplied,
-				responseBudgetProgressiveActiveApplied,
-				responseBudgetActiveTurnCount,
-				responseBudgetRetainedItemCount,
-				olderCursor,
-				newerCursor,
-				turns,
-				items,
-				visibleItems,
-				activeTurns,
-				completedTurns,
-				omittedTurns,
-				rolloutSizeBytes: rolloutSizeBytes(contract.rolloutSizeBytes ? contract : fields)
-			};
-		}
-		function boundedCount(value) {
-			const number = Number(value);
-			if (!Number.isFinite(number) || number < 0) return 0;
-			return Math.min(MAX_COUNT, Math.trunc(number));
-		}
-		function itemType(value) {
-			return String(value && value.type || "").trim();
-		}
-		function isVisibleItem(item) {
-			if (!item || typeof item !== "object") return false;
-			if (item.hidden || item.mobileHidden) return false;
-			const type = itemType(item);
-			if (!type || type === "reasoning") return false;
-			if (typeof item.text === "string" && item.text.trim()) return true;
-			if (Array.isArray(item.content) && item.content.length) return true;
-			if (Array.isArray(item.summary) && item.summary.length) return true;
-			if (type === "imageView" || type === "generatedImage" || type === "fileChange" || type === "commandExecution") return true;
-			if (type === "turnUsageSummary" || type === "taskCard" || type === "toolCall") return true;
-			return false;
-		}
-		function itemShapeBucket(item) {
-			const type = itemType(item);
-			if (type === "userMessage") return "userItems";
-			if (type === "agentMessage" || type === "plan") return "receiptItems";
-			if (type === "imageView" || type === "generatedImage") return "imageItems";
-			if (type === "commandExecution" || type === "fileChange" || type === "toolCall") return "operationItems";
-			if (type === "turnUsageSummary") return "usageItems";
-			if (type === "turnDiagnostic") return "diagnosticItems";
-			return "";
-		}
-		function turnIsComplete(turn) {
-			const text = String(turn && (turn.status && turn.status.type || turn.status) || "").toLowerCase();
-			return /completed|success|succeeded|done|finished|failed|error|cancel|cancelled|canceled|interrupted/.test(text);
-		}
-		function threadDetailShape(thread) {
-			const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
-			const shape = {
-				turns: boundedCount(turns.length),
-				omittedTurns: boundedCount(thread && thread.mobileOmittedTurnCount),
-				items: 0,
-				visibleItems: 0,
-				userItems: 0,
-				receiptItems: 0,
-				imageItems: 0,
-				operationItems: 0,
-				usageItems: 0,
-				diagnosticItems: 0,
-				completedTurns: 0,
-				activeTurns: 0
-			};
-			for (const turn of turns) {
-				if (turnIsComplete(turn)) shape.completedTurns += 1;
-				else shape.activeTurns += 1;
-				const items = Array.isArray(turn && turn.items) ? turn.items : [];
-				shape.items += items.length;
-				for (const item of items) {
-					if (isVisibleItem(item)) shape.visibleItems += 1;
-					const bucket = itemShapeBucket(item);
-					if (bucket) shape[bucket] += 1;
-				}
-			}
-			for (const key of Object.keys(shape)) shape[key] = boundedCount(shape[key]);
-			return shape;
-		}
-		function threadListEventFields(result) {
-			const timings = threadListTimings(result);
-			return {
-				serverTimings: timings,
-				performancePhase: classifyThreadListPhase(timings)
-			};
-		}
-		return {
-			boundedTiming,
-			classifyThreadDetailPhase,
-			classifyThreadListPhase,
-			rolloutSizeBytes,
-			statusText,
-			threadDetailClientTimings,
-			threadDetailEventFields,
-			threadDetailEventFieldsWithClient,
-			threadDetailFirstPaintEventFields,
-			threadDetailFullReadyEventFields,
-			threadDetailRefreshEventFields,
-			threadDetailShape,
-			threadDetailTimings,
-			planThreadDetailResponseContractDiagnostic,
-			planThreadDetailSlowPathDiagnostic,
-			planThreadListSlowPathDiagnostic,
-			threadDetailProjectionContractFields,
-			threadOmittedTurnCount,
-			threadTurnCount,
-			threadListEventFields,
-			threadListTimings
-		};
-	});
-}));
-//#endregion
-//#region public/draft-store.js
-var require_draft_store = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexDraftStore = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULTS = {
-			draftsKey: "codexMobileDraftsV1",
-			draftTargetKey: "codexMobileDraftTargetV1",
-			dbName: "codex-mobile-drafts",
-			dbVersion: 1,
-			attachmentStore: "attachments",
-			maxDrafts: 80
-		};
-		function defaultNormalizeFsPath(value) {
-			return String(value || "").replace(/^\\\\\?\\/, "").replace(/[\\/]+/g, "\\").replace(/\\+$/, "").toLowerCase();
-		}
-		function safeStorage(options) {
-			return options && options.storage ? options.storage : null;
-		}
-		function report(options, type, details) {
-			if (options && typeof options.reportError === "function") options.reportError(type, details || {});
-		}
-		function parseDraftMap(raw) {
-			try {
-				const value = raw ? JSON.parse(raw) : {};
-				return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-			} catch (_) {
-				return {};
-			}
-		}
-		function normalizeAttachmentMeta(item) {
-			if (!item || !item.id || !item.file) return null;
-			return {
-				id: String(item.id),
-				name: String(item.file.name || "upload"),
-				type: String(item.file.type || ""),
-				size: Number(item.file.size || 0),
-				lastModified: Number(item.file.lastModified || 0)
-			};
-		}
-		function draftHasContent(draft) {
-			return Boolean(draft && (String(draft.text || "").trim() || Array.isArray(draft.attachments) && draft.attachments.length || draft.model || draft.effort || draft.permissionMode || draft.fastMode === true));
-		}
-		function attachmentStorageKey(draftKey, attachmentIdValue) {
-			return `${encodeURIComponent(draftKey)}|${encodeURIComponent(attachmentIdValue)}`;
-		}
-		function createDraftStore(options = {}) {
-			const config = Object.assign({}, DEFAULTS, options);
-			const normalizeFsPath = typeof config.normalizeFsPath === "function" ? config.normalizeFsPath : defaultNormalizeFsPath;
-			let dbPromise = null;
-			function keyForThread(threadId) {
-				const id = String(threadId || "").trim();
-				return id ? `thread:${id}` : "";
-			}
-			function keyForNewThread(cwd) {
-				const key = normalizeFsPath(cwd || "");
-				return key ? `new:${key}` : "";
-			}
-			function readMap() {
-				const storage = safeStorage(config);
-				if (!storage) return {};
-				try {
-					return parseDraftMap(storage.getItem(config.draftsKey));
-				} catch (_) {
-					return {};
-				}
-			}
-			function writeMap(map) {
-				const storage = safeStorage(config);
-				if (!storage) return;
-				const entries = Object.entries(map || {}).filter(([, draft]) => draft && typeof draft === "object").sort((a, b) => Number(b[1].updatedAt || 0) - Number(a[1].updatedAt || 0)).slice(0, config.maxDrafts);
-				const next = Object.fromEntries(entries);
-				try {
-					if (entries.length) storage.setItem(config.draftsKey, JSON.stringify(next));
-					else storage.removeItem(config.draftsKey);
-				} catch (err) {
-					report(config, "draft_save_failed", { message: err.message || String(err) });
-				}
-			}
-			function setTargetKey(key) {
-				const storage = safeStorage(config);
-				if (!storage) return;
-				try {
-					if (key) storage.setItem(config.draftTargetKey, key);
-					else storage.removeItem(config.draftTargetKey);
-				} catch (err) {
-					report(config, "draft_target_save_failed", { message: err.message || String(err) });
-				}
-			}
-			function getTargetKey() {
-				const storage = safeStorage(config);
-				if (!storage) return "";
-				try {
-					return String(storage.getItem(config.draftTargetKey) || "");
-				} catch (_) {
-					return "";
-				}
-			}
-			function clearTargetKeyIfMatches(key) {
-				if (getTargetKey() === String(key || "")) setTargetKey("");
-			}
-			function openAttachmentDb() {
-				const indexedDBRef = config.indexedDB;
-				if (!indexedDBRef || typeof indexedDBRef.open !== "function") return Promise.resolve(null);
-				if (dbPromise) return dbPromise;
-				dbPromise = new Promise((resolve) => {
-					const request = indexedDBRef.open(config.dbName, config.dbVersion);
-					request.onupgradeneeded = () => {
-						const db = request.result;
-						const store = db.objectStoreNames.contains(config.attachmentStore) ? request.transaction.objectStore(config.attachmentStore) : db.createObjectStore(config.attachmentStore, { keyPath: "key" });
-						if (!store.indexNames.contains("draftKey")) store.createIndex("draftKey", "draftKey", { unique: false });
-					};
-					request.onsuccess = () => resolve(request.result);
-					request.onerror = () => {
-						report(config, "draft_db_open_failed", { message: request.error ? request.error.message : "" });
-						resolve(null);
-					};
-					request.onblocked = () => resolve(null);
-				});
-				return dbPromise;
-			}
-			async function storeAttachment(draftKey, item) {
-				if (!draftKey || !item || !item.id || !item.file) return;
-				const db = await openAttachmentDb();
-				if (!db) throw new Error("Draft attachment storage unavailable");
-				await new Promise((resolve, reject) => {
-					const tx = db.transaction(config.attachmentStore, "readwrite");
-					tx.objectStore(config.attachmentStore).put({
-						key: attachmentStorageKey(draftKey, item.id),
-						draftKey,
-						id: item.id,
-						name: item.file.name || "upload",
-						type: item.file.type || "",
-						lastModified: item.file.lastModified || Date.now(),
-						file: item.file
-					});
-					tx.oncomplete = resolve;
-					tx.onerror = () => reject(tx.error || /* @__PURE__ */ new Error("Draft attachment save failed"));
-					tx.onabort = () => reject(tx.error || /* @__PURE__ */ new Error("Draft attachment save aborted"));
-				});
-			}
-			async function loadAttachment(draftKey, meta) {
-				const db = await openAttachmentDb();
-				if (!db || !draftKey || !meta || !meta.id) return null;
-				const record = await new Promise((resolve, reject) => {
-					const request = db.transaction(config.attachmentStore, "readonly").objectStore(config.attachmentStore).get(attachmentStorageKey(draftKey, meta.id));
-					request.onsuccess = () => resolve(request.result || null);
-					request.onerror = () => reject(request.error || /* @__PURE__ */ new Error("Draft attachment read failed"));
-				});
-				const blob = record && record.file;
-				const FileCtor = config.FileCtor;
-				if (!blob || typeof FileCtor !== "function") return null;
-				const file = blob instanceof FileCtor ? blob : new FileCtor([blob], meta.name || record.name || "upload", {
-					type: meta.type || record.type || blob.type || "",
-					lastModified: meta.lastModified || record.lastModified || Date.now()
-				});
-				const urlApi = config.URLApi;
-				const previewUrl = file.type && file.type.startsWith("image/") && urlApi && typeof urlApi.createObjectURL === "function" ? urlApi.createObjectURL(file) : "";
-				return {
-					id: meta.id,
-					file,
-					previewUrl
-				};
-			}
-			async function deleteAttachments(draftKey, attachmentIds = null) {
-				const db = await openAttachmentDb();
-				const keyRange = config.IDBKeyRangeCtor;
-				if (!db || !draftKey || !keyRange || typeof keyRange.only !== "function") return;
-				const ids = attachmentIds ? new Set(Array.from(attachmentIds).map(String)) : null;
-				await new Promise((resolve, reject) => {
-					const tx = db.transaction(config.attachmentStore, "readwrite");
-					const request = tx.objectStore(config.attachmentStore).index("draftKey").openCursor(keyRange.only(draftKey));
-					request.onsuccess = () => {
-						const cursor = request.result;
-						if (!cursor) return;
-						if (!ids || ids.has(String(cursor.value && cursor.value.id))) cursor.delete();
-						cursor.continue();
-					};
-					request.onerror = () => reject(request.error || /* @__PURE__ */ new Error("Draft attachment cleanup failed"));
-					tx.oncomplete = resolve;
-					tx.onerror = () => reject(tx.error || /* @__PURE__ */ new Error("Draft attachment cleanup failed"));
-					tx.onabort = () => reject(tx.error || /* @__PURE__ */ new Error("Draft attachment cleanup aborted"));
-				});
-			}
-			return {
-				keyForThread,
-				keyForNewThread,
-				readMap,
-				writeMap,
-				setTargetKey,
-				getTargetKey,
-				clearTargetKeyIfMatches,
-				hasContent: draftHasContent,
-				normalizeAttachmentMeta,
-				attachmentStorageKey,
-				openAttachmentDb,
-				storeAttachment,
-				loadAttachment,
-				deleteAttachments
-			};
-		}
-		return {
-			DEFAULTS,
-			defaultNormalizeFsPath,
-			parseDraftMap,
-			draftHasContent,
-			normalizeAttachmentMeta,
-			attachmentStorageKey,
-			createDraftStore
-		};
-	});
-}));
-//#endregion
-//#region public/image-compressor.js
-var require_image_compressor = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function initImageCompressor(root, factory) {
-		if (typeof module === "object" && module.exports) {
-			module.exports = factory({});
-			return;
-		}
-		root.CodexImageCompressor = factory(root);
-	})(typeof globalThis !== "undefined" ? globalThis : window, function imageCompressorFactory(root) {
-		const DEFAULT_OPTIONS = Object.freeze({
-			maxEdge: 1280,
-			quality: .72,
-			minBytes: 256 * 1024,
-			minSavingsRatio: .92,
-			outputType: "image/jpeg"
-		});
-		const COMPRESSIBLE_TYPES = /* @__PURE__ */ new Set([
-			"image/jpeg",
-			"image/jpg",
-			"image/png",
-			"image/webp"
-		]);
-		function imageType(file) {
-			return String(file && file.type || "").toLowerCase();
-		}
-		function isCompressibleImageFile(file, options = {}) {
-			const settings = Object.assign({}, DEFAULT_OPTIONS, options || {});
-			return Boolean(file && Number(file.size || 0) >= settings.minBytes && COMPRESSIBLE_TYPES.has(imageType(file)));
-		}
-		function targetDimensions(width, height, maxEdge = DEFAULT_OPTIONS.maxEdge) {
-			const sourceWidth = Math.max(1, Number(width || 0));
-			const sourceHeight = Math.max(1, Number(height || 0));
-			const edge = Math.max(1, Number(maxEdge || DEFAULT_OPTIONS.maxEdge));
-			const scale = Math.min(1, edge / Math.max(sourceWidth, sourceHeight));
-			return {
-				width: Math.max(1, Math.round(sourceWidth * scale)),
-				height: Math.max(1, Math.round(sourceHeight * scale)),
-				scaled: scale < 1
-			};
-		}
-		function compressedImageName(name, outputType = DEFAULT_OPTIONS.outputType) {
-			const fallback = "image";
-			return `${String(name || fallback).replace(/[\\/]+/g, "_").replace(/\.[^.]*$/, "").trim() || fallback}.${outputType === "image/webp" ? "webp" : "jpg"}`;
-		}
-		function shouldUseCompressedBlob(originalFile, blob, options = {}) {
-			const settings = Object.assign({}, DEFAULT_OPTIONS, options || {});
-			if (!blob || !Number.isFinite(blob.size) || blob.size <= 0) return false;
-			const originalSize = Number(originalFile && originalFile.size || 0);
-			if (!originalSize) return true;
-			return blob.size < Math.max(1, Math.floor(originalSize * settings.minSavingsRatio));
-		}
-		function loadImageElement(file, deps) {
-			const documentRef = deps.document;
-			const urlApi = deps.URL;
-			if (!documentRef || !urlApi || typeof documentRef.createElement !== "function") return Promise.reject(/* @__PURE__ */ new Error("image compression is unavailable"));
-			return new Promise((resolve, reject) => {
-				const url = urlApi.createObjectURL(file);
-				const image = documentRef.createElement("img");
-				let settled = false;
-				const cleanup = () => {
-					try {
-						urlApi.revokeObjectURL(url);
-					} catch (_) {}
-				};
-				image.onload = () => {
-					if (settled) return;
-					settled = true;
-					resolve({
-						width: image.naturalWidth || image.width,
-						height: image.naturalHeight || image.height,
-						source: image,
-						close: cleanup
-					});
-				};
-				image.onerror = () => {
-					if (settled) return;
-					settled = true;
-					cleanup();
-					reject(/* @__PURE__ */ new Error("image decode failed"));
-				};
-				image.src = url;
-			});
-		}
-		function canvasToBlob(canvas, outputType, quality) {
-			return new Promise((resolve) => {
-				if (!canvas || typeof canvas.toBlob !== "function") {
-					resolve(null);
-					return;
-				}
-				canvas.toBlob((blob) => resolve(blob), outputType, quality);
-			});
-		}
-		async function compressImageFile(file, options = {}) {
-			const settings = Object.assign({}, DEFAULT_OPTIONS, options || {});
-			if (!isCompressibleImageFile(file, settings)) return file;
-			const deps = {
-				document: settings.document || root.document,
-				URL: settings.URL || root.URL,
-				File: settings.File || root.File
-			};
-			let image = null;
-			try {
-				image = await loadImageElement(file, deps);
-				const dims = targetDimensions(image.width, image.height, settings.maxEdge);
-				const canvas = deps.document.createElement("canvas");
-				canvas.width = dims.width;
-				canvas.height = dims.height;
-				const ctx = canvas.getContext("2d", { alpha: false });
-				if (!ctx) return file;
-				ctx.fillStyle = "#ffffff";
-				ctx.fillRect(0, 0, dims.width, dims.height);
-				ctx.drawImage(image.source, 0, 0, dims.width, dims.height);
-				const blob = await canvasToBlob(canvas, settings.outputType, settings.quality);
-				if (!shouldUseCompressedBlob(file, blob, settings)) return file;
-				const name = compressedImageName(file.name, settings.outputType);
-				if (typeof deps.File === "function") return new deps.File([blob], name, {
-					type: blob.type || settings.outputType,
-					lastModified: Number(file.lastModified || Date.now())
-				});
-				blob.name = name;
-				blob.lastModified = Number(file.lastModified || Date.now());
-				return blob;
-			} finally {
-				if (image && typeof image.close === "function") image.close();
-			}
-		}
-		return {
-			DEFAULT_OPTIONS,
-			compressedImageName,
-			compressImageFile,
-			isCompressibleImageFile,
-			shouldUseCompressedBlob,
-			targetDimensions
-		};
-	});
-}));
-//#endregion
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-BVypqeeD.js";
 //#region public/plugin-voice-input.js
 var require_plugin_voice_input = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -5278,14 +3807,793 @@ var require_runtime_wiring_runtime = /* @__PURE__ */ __commonJSMin(((exports, mo
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
-//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-01
-var import_build_refresh_policy = /* @__PURE__ */ __toESM(require_build_refresh_policy());
-var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings());
-var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics());
-var import_conversation_scroll = /* @__PURE__ */ __toESM(require_conversation_scroll());
-var import_thread_performance_metrics = /* @__PURE__ */ __toESM(require_thread_performance_metrics());
-var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
-var import_image_compressor = /* @__PURE__ */ __toESM(require_image_compressor());
+//#region public/composer-bridge-runtime.js
+var require_composer_bridge_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachComposerBridgeRuntime(root) {
+		function updateComposerHeightVar(...args) {
+			return composerRuntime.updateComposerHeightVar(...args);
+		}
+		function showError(err) {
+			const raw = err instanceof Error ? err.message : String(err || "");
+			const message = normalizeClientErrorMessage(raw, err) || err && err.message || String(err);
+			$("connectionState").textContent = message;
+			$("connectionState").classList.add("error");
+			postClientEvent("client_error", {
+				message,
+				raw,
+				currentThreadId: state.currentThreadId || "",
+				composerBusy: state.composerBusy,
+				continuationBusy: state.continuationBusy
+			});
+		}
+		function clearSendProgressWatchdog(...args) {
+			return composerRuntime.clearSendProgressWatchdog(...args);
+		}
+		function startSendProgressWatchdog(...args) {
+			return composerRuntime.startSendProgressWatchdog(...args);
+		}
+		function finishSendProgressWatchdog(...args) {
+			return composerRuntime.finishSendProgressWatchdog(...args);
+		}
+		function threadNotificationThrottleKey(method, params) {
+			if (!params) return "";
+			if (method === "thread/started" && params.thread) return `${method}:${String(params.thread.id || "")}:${String(statusText(params.thread.status) || "")}`;
+			if (method === "thread/status/changed") return `${method}:${String(params.threadId || "")}:${String(statusText(params.status) || "")}`;
+			if (method === "thread/name/updated") return `${method}:${String(params.threadId || "")}:${String(params.threadName || "")}`;
+			if (method === "thread/archived") return `${method}:${String(params.threadId || "")}`;
+			return "";
+		}
+		function shouldThrottleThreadNotification(method, params) {
+			const key = threadNotificationThrottleKey(method, params);
+			if (!key) return false;
+			const now = Date.now();
+			if (now - (state.threadNotificationThrottle.get(key) || 0) < 450) return true;
+			state.threadNotificationThrottle.set(key, now);
+			if (state.threadNotificationThrottle.size > 220) {
+				for (const [existingKey, existingAt] of state.threadNotificationThrottle.entries()) if (now - existingAt > 8e3) state.threadNotificationThrottle.delete(existingKey);
+				if (state.threadNotificationThrottle.size > 220) for (const existingKey of Array.from(state.threadNotificationThrottle.keys()).slice(0, 120)) state.threadNotificationThrottle.delete(existingKey);
+			}
+			return false;
+		}
+		function normalizeClientErrorMessage(...args) {
+			return composerRuntime.normalizeClientErrorMessage(...args);
+		}
+		function rawMessageFallback(...args) {
+			return composerRuntime.rawMessageFallback(...args);
+		}
+		function composerText(...args) {
+			return composerRuntime.composerText(...args);
+		}
+		function setComposerText(...args) {
+			return composerRuntime.setComposerText(...args);
+		}
+		function placeMessageInputCaretAtEnd(...args) {
+			return composerRuntime.placeMessageInputCaretAtEnd(...args);
+		}
+		function focusMessageInput(...args) {
+			return composerRuntime.focusMessageInput(...args);
+		}
+		function messageInputKeyboardVisible(...args) {
+			return composerRuntime.messageInputKeyboardVisible(...args);
+		}
+		function shouldRecoverMessageInputKeyboard(...args) {
+			return composerRuntime.shouldRecoverMessageInputKeyboard(...args);
+		}
+		function recoverMessageInputKeyboardFromGesture(...args) {
+			return composerRuntime.recoverMessageInputKeyboardFromGesture(...args);
+		}
+		function messageInputCanEnableForNativeGesture(...args) {
+			return composerRuntime.messageInputCanEnableForNativeGesture(...args);
+		}
+		function releaseStaleAndroidMessageInputFocusBeforeNativeTap(...args) {
+			return composerRuntime.releaseStaleAndroidMessageInputFocusBeforeNativeTap(...args);
+		}
+		function prepareMessageInputForNativeGesture(...args) {
+			return composerRuntime.prepareMessageInputForNativeGesture(...args);
+		}
+		function normalizedComposerIntentText(...args) {
+			return composerRuntime.normalizedComposerIntentText(...args);
+		}
+		function composerIntentOptions(...args) {
+			return composerRuntime.composerIntentOptions(...args);
+		}
+		function composerIntentOption(...args) {
+			return composerRuntime.composerIntentOption(...args);
+		}
+		function composerIntentDraftKey(...args) {
+			return composerRuntime.composerIntentDraftKey(...args);
+		}
+		function loadComposerIntentDraft(...args) {
+			return composerRuntime.loadComposerIntentDraft(...args);
+		}
+		function saveComposerIntentDraft(...args) {
+			return composerRuntime.saveComposerIntentDraft(...args);
+		}
+		function composerIntentBareTagKind(...args) {
+			return composerRuntime.composerIntentBareTagKind(...args);
+		}
+		function shouldShowComposerIntentMenu(...args) {
+			return composerRuntime.shouldShowComposerIntentMenu(...args);
+		}
+		function closeComposerIntentMenu(...args) {
+			return composerRuntime.closeComposerIntentMenu(...args);
+		}
+		function onComposerIntentOutsidePointer(...args) {
+			return composerRuntime.onComposerIntentOutsidePointer(...args);
+		}
+		function openComposerIntentMenu(...args) {
+			return composerRuntime.openComposerIntentMenu(...args);
+		}
+		function positionComposerIntentMenu(...args) {
+			return composerRuntime.positionComposerIntentMenu(...args);
+		}
+		function updateComposerIntentMenu(...args) {
+			return composerRuntime.updateComposerIntentMenu(...args);
+		}
+		function queueComposerIntentMenuUpdate(...args) {
+			return composerRuntime.queueComposerIntentMenuUpdate(...args);
+		}
+		function selectComposerIntent(...args) {
+			return composerRuntime.selectComposerIntent(...args);
+		}
+		function setComposerIntentDialogStatus(...args) {
+			return composerRuntime.setComposerIntentDialogStatus(...args);
+		}
+		function closeComposerIntentDialog(...args) {
+			return composerRuntime.closeComposerIntentDialog(...args);
+		}
+		function openComposerIntentDialog(...args) {
+			return composerRuntime.openComposerIntentDialog(...args);
+		}
+		async function submitComposerIntentDialog(...args) {
+			return composerRuntime.submitComposerIntentDialog(...args);
+		}
+		function saveComposerIntentDialogDraft(...args) {
+			return composerRuntime.saveComposerIntentDialogDraft(...args);
+		}
+		function shouldKeepAndroidMessageInputEditable(...args) {
+			return composerRuntime.shouldKeepAndroidMessageInputEditable(...args);
+		}
+		function setMessageInputDisabled(...args) {
+			return composerRuntime.setMessageInputDisabled(...args);
+		}
+		function messageInputTextLength(...args) {
+			return composerRuntime.messageInputTextLength(...args);
+		}
+		function messageInputTargetHeight(...args) {
+			return composerRuntime.messageInputTargetHeight(...args);
+		}
+		function currentMessageInputHeight(...args) {
+			return composerRuntime.currentMessageInputHeight(...args);
+		}
+		function updateMessageInputOverflow(...args) {
+			return composerRuntime.updateMessageInputOverflow(...args);
+		}
+		function autoSizeMessageInput(...args) {
+			return composerRuntime.autoSizeMessageInput(...args);
+		}
+		function formatFileSize(...args) {
+			return composerRuntime.formatFileSize(...args);
+		}
+		function appendLocalAttachmentSummary(...args) {
+			return composerRuntime.appendLocalAttachmentSummary(...args);
+		}
+		function localImageInputPartsForAttachments(...args) {
+			return composerRuntime.localImageInputPartsForAttachments(...args);
+		}
+		function localUserMessageItem(...args) {
+			return composerRuntime.localUserMessageItem(...args);
+		}
+		function attachmentId(...args) {
+			return composerRuntime.attachmentId(...args);
+		}
+		function pendingAttachmentBytes(...args) {
+			return composerRuntime.pendingAttachmentBytes(...args);
+		}
+		async function prepareAttachmentFile(...args) {
+			return composerRuntime.prepareAttachmentFile(...args);
+		}
+		async function prepareAttachmentFiles(...args) {
+			return composerRuntime.prepareAttachmentFiles(...args);
+		}
+		async function addAttachmentFiles(...args) {
+			return composerRuntime.addAttachmentFiles(...args);
+		}
+		function removeAttachment(...args) {
+			return composerRuntime.removeAttachment(...args);
+		}
+		function clearPendingAttachments(...args) {
+			return composerRuntime.clearPendingAttachments(...args);
+		}
+		function renderAttachmentList(...args) {
+			return composerRuntime.renderAttachmentList(...args);
+		}
+		function composerHasContent(...args) {
+			return composerRuntime.composerHasContent(...args);
+		}
+		function effectiveDefaultModel(...args) {
+			return composerRuntime.effectiveDefaultModel(...args);
+		}
+		function effectiveDefaultEffort(...args) {
+			return composerRuntime.effectiveDefaultEffort(...args);
+		}
+		function effectiveDefaultPermissionMode(...args) {
+			return composerRuntime.effectiveDefaultPermissionMode(...args);
+		}
+		function selectedComposerModel(...args) {
+			return composerRuntime.selectedComposerModel(...args);
+		}
+		function selectedComposerEffort(...args) {
+			return composerRuntime.selectedComposerEffort(...args);
+		}
+		function selectedComposerPermissionMode(...args) {
+			return composerRuntime.selectedComposerPermissionMode(...args);
+		}
+		function resetComposerRuntimeSelection(...args) {
+			return composerRuntime.resetComposerRuntimeSelection(...args);
+		}
+		function runtimeOptionValues(...args) {
+			return composerRuntime.runtimeOptionValues(...args);
+		}
+		function runtimeOptionLabel(...args) {
+			return composerRuntime.runtimeOptionLabel(...args);
+		}
+		function runtimeSelectedValue(...args) {
+			return composerRuntime.runtimeSelectedValue(...args);
+		}
+		function codexFastCommandEnabled(...args) {
+			return composerRuntime.codexFastCommandEnabled(...args);
+		}
+		function clearLegacyCodexFastModeStorage(...args) {
+			return composerRuntime.clearLegacyCodexFastModeStorage(...args);
+		}
+		function setCodexFastCommandEnabled(...args) {
+			return composerRuntime.setCodexFastCommandEnabled(...args);
+		}
+		function applyRuntimeSelection(...args) {
+			return composerRuntime.applyRuntimeSelection(...args);
+		}
+		function closeComposerRuntimeMenu(...args) {
+			return composerRuntime.closeComposerRuntimeMenu(...args);
+		}
+		function onComposerRuntimeOutsidePointer(...args) {
+			return composerRuntime.onComposerRuntimeOutsidePointer(...args);
+		}
+		function openComposerRuntimeMenu(...args) {
+			return composerRuntime.openComposerRuntimeMenu(...args);
+		}
+		function composerRuntimeMenuDiagnostics(...args) {
+			return composerRuntime.composerRuntimeMenuDiagnostics(...args);
+		}
+		function reportComposerRuntimeMenu(...args) {
+			return composerRuntime.reportComposerRuntimeMenu(...args);
+		}
+		function handleComposerRuntimeControl(...args) {
+			return composerRuntime.handleComposerRuntimeControl(...args);
+		}
+		function fitComposerPopupToAnchor(...args) {
+			return composerRuntime.fitComposerPopupToAnchor(...args);
+		}
+		function closeQuotaDetails(...args) {
+			return composerRuntime.closeQuotaDetails(...args);
+		}
+		function onQuotaOutsidePointer(...args) {
+			return composerRuntime.onQuotaOutsidePointer(...args);
+		}
+		function toggleQuotaDetails(...args) {
+			return composerRuntime.toggleQuotaDetails(...args);
+		}
+		function composerPlaceholderText(...args) {
+			return composerRuntime.composerPlaceholderText(...args);
+		}
+		function composerShowsTargetPlaceholder(...args) {
+			return composerRuntime.composerShowsTargetPlaceholder(...args);
+		}
+		function applyComposerActionControlPlan(...args) {
+			return composerRuntime.applyComposerActionControlPlan(...args);
+		}
+		function renderComposerSettings(...args) {
+			return composerRuntime.renderComposerSettings(...args);
+		}
+		function updateComposerControls(...args) {
+			return composerRuntime.updateComposerControls(...args);
+		}
+		function hasTransferFiles(...args) {
+			return composerRuntime.hasTransferFiles(...args);
+		}
+		function goalDialogFormValues(...args) {
+			return composerRuntime.goalDialogFormValues(...args);
+		}
+		async function submitThreadGoalMessage(...args) {
+			return composerRuntime.submitThreadGoalMessage(...args);
+		}
+		function threadGoalActionStatusText(...args) {
+			return composerRuntime.threadGoalActionStatusText(...args);
+		}
+		function threadGoalActionBusyText(...args) {
+			return composerRuntime.threadGoalActionBusyText(...args);
+		}
+		async function runThreadGoalDialogAction(...args) {
+			return composerRuntime.runThreadGoalDialogAction(...args);
+		}
+		function requestGoalDialogSubmitFromEnter(...args) {
+			return composerRuntime.requestGoalDialogSubmitFromEnter(...args);
+		}
+		function requestGoalDialogSubmitFromButton(...args) {
+			return composerRuntime.requestGoalDialogSubmitFromButton(...args);
+		}
+		function requestGoalDialogSubmit(...args) {
+			return composerRuntime.requestGoalDialogSubmit(...args);
+		}
+		async function sendThreadTaskCardCommand(...args) {
+			return composerRuntime.sendThreadTaskCardCommand(...args);
+		}
+		async function sendMessage(...args) {
+			return composerRuntime.sendMessage(...args);
+		}
+		async function sendNewThreadMessage(...args) {
+			return composerRuntime.sendNewThreadMessage(...args);
+		}
+		function requestComposerSubmitFromButton(...args) {
+			return composerRuntime.requestComposerSubmitFromButton(...args);
+		}
+		function requestAttachmentPickerFromButton(...args) {
+			return composerRuntime.requestAttachmentPickerFromButton(...args);
+		}
+		async function interruptActiveTurn(...args) {
+			return composerRuntime.interruptActiveTurn(...args);
+		}
+		async function answerServerRequest(requestId, payload, options = {}) {
+			const key = requestId !== null && requestId !== void 0 ? String(requestId) : "";
+			const request = state.pendingApprovals.get(key);
+			if (!request || request.status !== "waiting") return;
+			const threadId = approvalActionThreadId(request, options.threadId);
+			request.status = "responding";
+			request.decision = payload && (payload.decision || payload.action) || "submitted";
+			markActivity(isUserInputRequest(request) ? "输入发送中" : "批准中");
+			scheduleApprovalThreadRender(threadId);
+			try {
+				const result = await api(`/api/approvals/${encodeURIComponent(key)}`, {
+					method: "POST",
+					body: JSON.stringify(payload || {}),
+					timeoutMs: 2e4
+				});
+				if (result && result.request) state.pendingApprovals.set(key, serverRequestWithThreadContext(result.request, threadId));
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = isUserInputRequest(request) ? "Response sent" : "Approval sent";
+				markActivity(isUserInputRequest(request) ? "输入已发送" : "批准发送");
+				scheduleApprovalThreadRender(threadId);
+			} catch (err) {
+				request.status = "waiting";
+				request.decision = null;
+				showError(err);
+				scheduleApprovalThreadRender(threadId);
+			}
+		}
+		function answerApproval(requestId, decision, options = {}) {
+			return answerServerRequest(requestId, { decision }, options);
+		}
+		function serverRequestPayload(request, responseText, questionId) {
+			if (request && request.method === "mcpServer/elicitation/request") return {
+				action: "accept",
+				responseText
+			};
+			return {
+				responseText,
+				questionId
+			};
+		}
+		function declineServerRequest(requestId, options = {}) {
+			const key = requestId !== null && requestId !== void 0 ? String(requestId) : "";
+			const request = state.pendingApprovals.get(key);
+			if (!request) return Promise.resolve();
+			if (request.method === "mcpServer/elicitation/request") return answerServerRequest(key, { action: "decline" }, options);
+			if (request.method === "item/tool/requestUserInput") return answerServerRequest(key, { answers: {} }, options);
+			return answerApproval(key, "deny", options);
+		}
+		async function mutateThreadTaskCard(cardId, action, body = {}, options = {}) {
+			const id = String(cardId || "").trim();
+			const threadId = String(options.threadId || body.threadId || state.currentThreadId || "").trim();
+			if (!id || !threadId) return;
+			$("connectionState").classList.remove("error");
+			$("connectionState").textContent = action === "approve" ? "Approving task card" : `${action} task card`;
+			try {
+				const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {
+					method: "POST",
+					body: JSON.stringify(Object.assign({}, body, { threadId })),
+					timeoutMs: 3e4
+				});
+				if (action === "approve" && result && result.execution && result.execution.turnId) $("connectionState").textContent = "Task card approved; starting target turn";
+				else $("connectionState").textContent = "Task card updated";
+				settleThreadTaskCardForThread(threadId, id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
+				recordHomeAiDiagnosticSuccess({
+					category: "task_card_workflow_failed",
+					diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+					error_code: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+					context: {
+						surface: "task-card",
+						action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+						thread_hash: diagnosticThreadHash(threadId),
+						task_hash: diagnosticTaskHash(id)
+					}
+				});
+				if (action === "approve" && result && result.execution && result.execution.turnId) {
+					let injectedVisible = false;
+					if (threadId === String(state.currentThreadId || "")) injectedVisible = await waitForCurrentThreadTurn(result.execution.turnId, {
+						timeoutMs: 1e4,
+						intervalMs: 500
+					});
+					else scheduleComposerTargetRefresh(threadId, 300, "task-card-approved");
+					$("connectionState").textContent = injectedVisible ? "Task card approved and injected" : "Task card approved; waiting for thread refresh";
+					loadThreads({ silent: true }).catch(showError);
+					return;
+				}
+				await refreshThreadAfterTaskCard(threadId);
+			} catch (err) {
+				showError(err);
+			}
+		}
+		async function replyTaskCard(cardId, options = {}) {
+			const threadId = String(options.threadId || state.currentThreadId || "").trim();
+			const card = findThreadTaskCard(cardId, threadId);
+			if (!card) return;
+			const body = await requestAppTextInput("输入回复内容。", "", {
+				title: "回复任务卡片",
+				confirmLabel: "发送回复",
+				rows: 6
+			}) || "";
+			if (!String(body).trim()) return;
+			const title = `Reply: ${card.message && card.message.title ? card.message.title : "Task card"}`;
+			return mutateThreadTaskCard(card.id, "reply", {
+				format: "markdown",
+				title,
+				summary: summarizeTaskCardText(body),
+				body: String(body).trim(),
+				idempotencyKey: `task-card-reply:${card.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`
+			}, { threadId });
+		}
+		function findThreadTaskCardDraftByKey(draftKey, thread = renderContextThread()) {
+			const key = String(draftKey || "");
+			const sourceThread = renderContextThread(thread) || state.currentThread;
+			const turns = Array.isArray(sourceThread && sourceThread.turns) ? sourceThread.turns : [];
+			for (const turn of turns) {
+				const items = Array.isArray(turn && turn.items) ? turn.items : [];
+				for (const item of items) {
+					if (!item || item.type !== "agentMessage" && item.type !== "plan") continue;
+					const draft = parseThreadTaskCardDraftText(item.text || "");
+					if (!draft) continue;
+					const itemKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
+					const legacyItemKey = threadTaskCardDraftKey(turn.id, item.id || "");
+					if (itemKey !== key && legacyItemKey !== key) continue;
+					return {
+						key,
+						draft,
+						turn,
+						item,
+						sourceThread
+					};
+				}
+			}
+			return null;
+		}
+		function scheduleThreadTaskCardDraftStateRender(threadId = "") {
+			const id = String(threadId || state.currentThreadId || "").trim();
+			if (!id || id === String(state.currentThreadId || "")) {
+				renderCurrentThread();
+				return true;
+			}
+			if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+				if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) renderCurrentThread();
+				return true;
+			}
+			return false;
+		}
+		function setThreadTaskCardDraftState(draftKey, nextState, options = {}) {
+			const key = String(draftKey || "");
+			if (!key) return;
+			state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}, { updatedAtMs: Date.now() }));
+			saveThreadTaskCardDraftStates();
+			const threadId = String(options.threadId || options.thread && options.thread.id || "").trim();
+			if (options.render !== false) scheduleThreadTaskCardDraftStateRender(threadId);
+		}
+		function dismissThreadTaskCardDraft(draftKey, options = {}) {
+			setThreadTaskCardDraftState(draftKey, {
+				status: "dismissed",
+				error: ""
+			}, options);
+		}
+		function queueThreadTaskCardDraftCreation(draftKey, thread = renderContextThread()) {
+			const key = String(draftKey || "");
+			if (!key || state.scheduledThreadTaskCardDraftCreations.has(key) || state.activeThreadTaskCardDraftCreations.has(key)) return;
+			const sourceThreadId = renderContextThreadId(thread);
+			state.scheduledThreadTaskCardDraftCreations.add(key);
+			const current = threadTaskCardDraftState(key);
+			setThreadTaskCardDraftState(key, {
+				status: "creating",
+				error: "",
+				attempts: Math.max(0, Number(current.attempts || 0)) + 1
+			}, { render: false });
+			window.setTimeout(() => {
+				state.scheduledThreadTaskCardDraftCreations.delete(key);
+				createThreadTaskCardDraft(key, { threadId: sourceThreadId }).catch(showError);
+			}, 0);
+		}
+		async function createThreadTaskCardDraft(draftKey, options = {}) {
+			const activeKey = String(draftKey || "");
+			if (!activeKey || state.activeThreadTaskCardDraftCreations.has(activeKey)) return;
+			state.activeThreadTaskCardDraftCreations.add(activeKey);
+			const requestedThreadId = String(options.threadId || "").trim();
+			try {
+				const requestedThread = taskCardActionThread(requestedThreadId);
+				const resolved = findThreadTaskCardDraftByKey(draftKey, requestedThread);
+				const sourceThread = resolved && (resolved.sourceThread || requestedThread || state.currentThread);
+				const sourceThreadId = String(sourceThread && sourceThread.id || requestedThreadId || "").trim();
+				if (!resolved || !sourceThreadId || !sourceThread) {
+					setThreadTaskCardDraftState(draftKey, {
+						status: "pending",
+						error: ""
+					}, { render: false });
+					return;
+				}
+				const { draft, turn } = resolved;
+				const targetRefs = threadTaskCardDraftTargetThreads(draft);
+				const targetThreadIds = threadTaskCardDraftTargetIds(draft);
+				if (!targetThreadIds.length) {
+					setThreadTaskCardDraftState(draftKey, {
+						status: "failed",
+						error: draft.error || "Draft did not include a target thread id"
+					}, { threadId: sourceThreadId });
+					return;
+				}
+				if (!draft.title || !draft.body) {
+					setThreadTaskCardDraftState(draftKey, {
+						status: "failed",
+						error: draft.error || "Draft is incomplete"
+					}, { threadId: sourceThreadId });
+					return;
+				}
+				setThreadTaskCardDraftState(draftKey, {
+					status: "creating",
+					error: ""
+				}, { threadId: sourceThreadId });
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = "Creating task card";
+				const body = truncateThreadTaskCardBody(draft.body);
+				const targetWorkspaceIds = {};
+				for (const entry of targetRefs) if (entry.thread) targetWorkspaceIds[entry.threadId] = String(entry.thread.cwd || "");
+				const result = await api("/api/thread-task-cards", {
+					method: "POST",
+					body: JSON.stringify({
+						sourceWorkspaceId: sourceThread.cwd || state.selectedCwd || "",
+						sourceThreadId,
+						sourceTurnId: String(turn && turn.id || ""),
+						sourceThreadTitle: threadTitleForDisplay(sourceThread) || sourceThreadId,
+						targetThreadIds,
+						targetWorkspaceIds,
+						idempotencyKey: `task-card-draft:${sourceThreadId}:${draftKey}`,
+						format: "markdown",
+						title: draft.title,
+						summary: draft.summary || summarizeTaskCardText(body),
+						body,
+						workflowMode: draft.workflowMode || "manual",
+						workflowId: draft.workflowId || ""
+					}),
+					timeoutMs: 3e4
+				});
+				const createdCards = Array.isArray(result && result.cards) ? result.cards.filter(Boolean) : result && result.card ? [result.card] : [];
+				if (!createdCards.length) throw new Error("Task card creation returned no cards");
+				for (const createdCard of createdCards) {
+					const pending = String(createdCard && createdCard.status || "pending") === "pending";
+					upsertThreadTaskCardOnThread(sourceThread, createdCard);
+					if (pending) {
+						incrementPendingOutgoingTaskCardCount(sourceThreadId, 1);
+						incrementPendingIncomingTaskCardCount(createdCard && createdCard.target && createdCard.target.threadId, 1);
+					}
+				}
+				if (state.threadTileDetails.has(sourceThreadId)) state.threadTileDetails.set(sourceThreadId, sourceThread);
+				setThreadTaskCardDraftState(draftKey, {
+					status: "created",
+					error: "",
+					cardId: String(createdCards[0] && createdCards[0].id || ""),
+					cardIds: createdCards.map((card) => String(card && card.id || "")).filter(Boolean)
+				}, { threadId: sourceThreadId });
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = createdCards.length === 1 ? "Task card created; opening target thread" : `Task cards created: ${createdCards.length}`;
+				state.pendingPluginRouteHint = createdCards.length === 1 ? normalizePluginRouteHint({
+					pluginId: "codex-mobile",
+					route: "thread-task-card",
+					threadId: createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0],
+					taskId: createdCards[0].id
+				}) : null;
+				recordHomeAiDiagnosticSuccess({
+					category: "task_card_workflow_failed",
+					diagnostic_type: "task_card_draft_materialize_failed",
+					error_code: "task_card_draft_materialize_failed",
+					context: {
+						surface: "task-card",
+						action: "draft-materialize",
+						thread_hash: diagnosticThreadHash(sourceThreadId),
+						item_hash: diagnosticItemHash(draftKey)
+					}
+				});
+				renderThreads();
+				loadThreads({ silent: true }).catch(showError);
+				if (createdCards.length === 1) await loadThread(createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0], { source: "task-card-created" });
+				else if (sourceThreadId === String(state.currentThreadId || "")) renderCurrentThread();
+				else if (state.threadTileMode && threadTilePaneIsVisible(sourceThreadId)) scheduleRenderThreadTilePane(sourceThreadId, { preserveScroll: true });
+				else renderCurrentThread();
+			} catch (err) {
+				const diagnosticThreadId = String(options.threadId || state.currentThreadId || "").trim();
+				setThreadTaskCardDraftState(draftKey, {
+					status: "failed",
+					error: normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Task card creation failed"
+				}, { threadId: diagnosticThreadId });
+				recordHomeAiDiagnosticFailure({
+					category: "task_card_workflow_failed",
+					diagnostic_type: "task_card_draft_materialize_failed",
+					severity_hint: "H2",
+					evidence_confidence: .78,
+					error_code: diagnosticErrorCode(err, "task_card_draft_materialize_failed"),
+					context: {
+						surface: "task-card",
+						action: "draft-materialize",
+						thread_hash: diagnosticThreadHash(diagnosticThreadId),
+						item_hash: diagnosticItemHash(draftKey)
+					},
+					counts: { status_code: diagnosticErrorStatus(err) },
+					breadcrumbs: [{
+						kind: "task-card",
+						code: "draft-materialize",
+						status: "failed",
+						fields: {
+							status_code: diagnosticErrorStatus(err),
+							item_hash: diagnosticItemHash(draftKey)
+						}
+					}]
+				});
+				throw err;
+			} finally {
+				state.activeThreadTaskCardDraftCreations.delete(activeKey);
+			}
+		}
+		function createComposerBridgeRuntime() {
+			return {
+				sendMessage: typeof sendMessage === "function" ? sendMessage : null,
+				sendNewThreadMessage: typeof sendNewThreadMessage === "function" ? sendNewThreadMessage : null,
+				answerServerRequest: typeof answerServerRequest === "function" ? answerServerRequest : null,
+				answerApproval: typeof answerApproval === "function" ? answerApproval : null,
+				declineServerRequest: typeof declineServerRequest === "function" ? declineServerRequest : null,
+				mutateThreadTaskCard: typeof mutateThreadTaskCard === "function" ? mutateThreadTaskCard : null,
+				replyTaskCard: typeof replyTaskCard === "function" ? replyTaskCard : null,
+				queueThreadTaskCardDraftCreation: typeof queueThreadTaskCardDraftCreation === "function" ? queueThreadTaskCardDraftCreation : null,
+				createThreadTaskCardDraft: typeof createThreadTaskCardDraft === "function" ? createThreadTaskCardDraft : null
+			};
+		}
+		const legacyGlobals = {
+			updateComposerHeightVar,
+			showError,
+			clearSendProgressWatchdog,
+			startSendProgressWatchdog,
+			finishSendProgressWatchdog,
+			threadNotificationThrottleKey,
+			shouldThrottleThreadNotification,
+			normalizeClientErrorMessage,
+			rawMessageFallback,
+			composerText,
+			setComposerText,
+			placeMessageInputCaretAtEnd,
+			focusMessageInput,
+			messageInputKeyboardVisible,
+			shouldRecoverMessageInputKeyboard,
+			recoverMessageInputKeyboardFromGesture,
+			messageInputCanEnableForNativeGesture,
+			releaseStaleAndroidMessageInputFocusBeforeNativeTap,
+			prepareMessageInputForNativeGesture,
+			normalizedComposerIntentText,
+			composerIntentOptions,
+			composerIntentOption,
+			composerIntentDraftKey,
+			loadComposerIntentDraft,
+			saveComposerIntentDraft,
+			composerIntentBareTagKind,
+			shouldShowComposerIntentMenu,
+			closeComposerIntentMenu,
+			onComposerIntentOutsidePointer,
+			openComposerIntentMenu,
+			positionComposerIntentMenu,
+			updateComposerIntentMenu,
+			queueComposerIntentMenuUpdate,
+			selectComposerIntent,
+			setComposerIntentDialogStatus,
+			closeComposerIntentDialog,
+			openComposerIntentDialog,
+			submitComposerIntentDialog,
+			saveComposerIntentDialogDraft,
+			shouldKeepAndroidMessageInputEditable,
+			setMessageInputDisabled,
+			messageInputTextLength,
+			messageInputTargetHeight,
+			currentMessageInputHeight,
+			updateMessageInputOverflow,
+			autoSizeMessageInput,
+			formatFileSize,
+			appendLocalAttachmentSummary,
+			localImageInputPartsForAttachments,
+			localUserMessageItem,
+			attachmentId,
+			pendingAttachmentBytes,
+			prepareAttachmentFile,
+			prepareAttachmentFiles,
+			addAttachmentFiles,
+			removeAttachment,
+			clearPendingAttachments,
+			renderAttachmentList,
+			composerHasContent,
+			effectiveDefaultModel,
+			effectiveDefaultEffort,
+			effectiveDefaultPermissionMode,
+			selectedComposerModel,
+			selectedComposerEffort,
+			selectedComposerPermissionMode,
+			resetComposerRuntimeSelection,
+			runtimeOptionValues,
+			runtimeOptionLabel,
+			runtimeSelectedValue,
+			codexFastCommandEnabled,
+			clearLegacyCodexFastModeStorage,
+			setCodexFastCommandEnabled,
+			applyRuntimeSelection,
+			closeComposerRuntimeMenu,
+			onComposerRuntimeOutsidePointer,
+			openComposerRuntimeMenu,
+			composerRuntimeMenuDiagnostics,
+			reportComposerRuntimeMenu,
+			handleComposerRuntimeControl,
+			fitComposerPopupToAnchor,
+			closeQuotaDetails,
+			onQuotaOutsidePointer,
+			toggleQuotaDetails,
+			composerPlaceholderText,
+			composerShowsTargetPlaceholder,
+			applyComposerActionControlPlan,
+			renderComposerSettings,
+			updateComposerControls,
+			hasTransferFiles,
+			goalDialogFormValues,
+			submitThreadGoalMessage,
+			threadGoalActionStatusText,
+			threadGoalActionBusyText,
+			runThreadGoalDialogAction,
+			requestGoalDialogSubmitFromEnter,
+			requestGoalDialogSubmitFromButton,
+			requestGoalDialogSubmit,
+			sendThreadTaskCardCommand,
+			sendMessage,
+			sendNewThreadMessage,
+			requestComposerSubmitFromButton,
+			requestAttachmentPickerFromButton,
+			interruptActiveTurn,
+			answerServerRequest,
+			answerApproval,
+			serverRequestPayload,
+			declineServerRequest,
+			mutateThreadTaskCard,
+			replyTaskCard,
+			findThreadTaskCardDraftByKey,
+			scheduleThreadTaskCardDraftStateRender,
+			setThreadTaskCardDraftState,
+			dismissThreadTaskCardDraft,
+			queueThreadTaskCardDraftCreation,
+			createThreadTaskCardDraft
+		};
+		const api = { createComposerBridgeRuntime };
+		if (typeof module === "object" && module.exports) module.exports = api;
+		for (const [name, value] of Object.entries(legacyGlobals)) if (typeof value === "function") root[name] = value;
+		root.CodexComposerBridgeRuntime = api;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
+//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-02
 var import_plugin_voice_input = /* @__PURE__ */ __toESM(require_plugin_voice_input());
 var import_api_client = /* @__PURE__ */ __toESM(require_api_client());
 var import_markdown_renderer = /* @__PURE__ */ __toESM(require_markdown_renderer());
@@ -5297,142 +4605,8 @@ var import_thread_tile_layout = /* @__PURE__ */ __toESM(require_thread_tile_layo
 var import_thread_tile_actions = /* @__PURE__ */ __toESM(require_thread_tile_actions());
 var import_modal_runtime = /* @__PURE__ */ __toESM(require_modal_runtime());
 var import_runtime_wiring_runtime = /* @__PURE__ */ __toESM(require_runtime_wiring_runtime());
+var import_composer_bridge_runtime = /* @__PURE__ */ __toESM(require_composer_bridge_runtime());
 var moduleDefinitions = [
-	{
-		"id": "build-refresh-policy",
-		"source": "public/build-refresh-policy.js",
-		"globalName": "CodexBuildRefreshPolicy",
-		"expectedFunctions": [
-			"shellSequenceFromBuildId",
-			"classifyServerBuildChange",
-			"shouldPromptForServerBuildChange"
-		],
-		"assetPath": "/build-refresh-policy.js",
-		"classicLoaderExcluded": true,
-		"bytes": 1532
-	},
-	{
-		"id": "runtime-settings",
-		"source": "public/runtime-settings.js",
-		"globalName": "CodexRuntimeSettings",
-		"expectedFunctions": [
-			"normalizeOptionList",
-			"labelForModel",
-			"compactLabelForModel",
-			"labelForEffort",
-			"labelForPermissionMode",
-			"titleForPermissionMode",
-			"normalizePermissionModeValue",
-			"selectedNewThreadModel",
-			"selectedNewThreadEffort",
-			"selectedNewThreadPermission"
-		],
-		"assetPath": "/runtime-settings.js",
-		"classicLoaderExcluded": true,
-		"bytes": 3184
-	},
-	{
-		"id": "viewport-metrics",
-		"source": "public/viewport-metrics.js",
-		"globalName": "CodexViewportMetrics",
-		"expectedFunctions": [
-			"cssPixel",
-			"isKeyboardEditable",
-			"measureViewport",
-			"stablePixelChanged"
-		],
-		"assetPath": "/viewport-metrics.js",
-		"classicLoaderExcluded": true,
-		"bytes": 4306
-	},
-	{
-		"id": "conversation-scroll",
-		"source": "public/conversation-scroll.js",
-		"globalName": "CodexConversationScroll",
-		"expectedFunctions": [
-			"createSubmittedMessageFollow",
-			"extendSubmittedMessageFollow",
-			"createViewportFollow",
-			"isNearBottom",
-			"planBottomFollowLeaseEvaluation",
-			"planBottomFollowScrollSchedule",
-			"planConversationAutoScrollHoldFromScroll",
-			"planAutomaticConversationRefresh",
-			"planConversationJumpButtons",
-			"planFullRenderScroll",
-			"planLocalPatchScrollCompletion",
-			"planReadingViewportPreservation",
-			"planUserReadingCurrentTurn",
-			"shouldFollowViewport",
-			"shouldFollowSubmittedMessage",
-			"shouldStartViewportFollow"
-		],
-		"assetPath": "/conversation-scroll.js",
-		"classicLoaderExcluded": true,
-		"bytes": 11683
-	},
-	{
-		"id": "thread-performance-metrics",
-		"source": "public/thread-performance-metrics.js",
-		"globalName": "CodexThreadPerformanceMetrics",
-		"expectedFunctions": [
-			"boundedTiming",
-			"classifyThreadDetailPhase",
-			"classifyThreadListPhase",
-			"rolloutSizeBytes",
-			"statusText",
-			"threadDetailClientTimings",
-			"threadDetailEventFields",
-			"threadDetailEventFieldsWithClient",
-			"threadDetailFirstPaintEventFields",
-			"threadDetailFullReadyEventFields",
-			"threadDetailRefreshEventFields",
-			"threadDetailShape",
-			"threadDetailTimings",
-			"planThreadDetailResponseContractDiagnostic",
-			"planThreadDetailSlowPathDiagnostic",
-			"planThreadListSlowPathDiagnostic",
-			"threadDetailProjectionContractFields",
-			"threadOmittedTurnCount",
-			"threadTurnCount",
-			"threadListEventFields",
-			"threadListTimings"
-		],
-		"assetPath": "/thread-performance-metrics.js",
-		"classicLoaderExcluded": true,
-		"bytes": 28700
-	},
-	{
-		"id": "draft-store",
-		"source": "public/draft-store.js",
-		"globalName": "CodexDraftStore",
-		"expectedFunctions": [
-			"defaultNormalizeFsPath",
-			"parseDraftMap",
-			"draftHasContent",
-			"normalizeAttachmentMeta",
-			"attachmentStorageKey",
-			"createDraftStore"
-		],
-		"assetPath": "/draft-store.js",
-		"classicLoaderExcluded": true,
-		"bytes": 9065
-	},
-	{
-		"id": "image-compressor",
-		"source": "public/image-compressor.js",
-		"globalName": "CodexImageCompressor",
-		"expectedFunctions": [
-			"compressedImageName",
-			"compressImageFile",
-			"isCompressibleImageFile",
-			"shouldUseCompressedBlob",
-			"targetDimensions"
-		],
-		"assetPath": "/image-compressor.js",
-		"classicLoaderExcluded": true,
-		"bytes": 5261
-	},
 	{
 		"id": "plugin-voice-input",
 		"source": "public/plugin-voice-input.js",
@@ -5598,16 +4772,18 @@ var moduleDefinitions = [
 		"assetPath": "/runtime-wiring-runtime.js",
 		"classicLoaderExcluded": true,
 		"bytes": 8628
+	},
+	{
+		"id": "composer-bridge-runtime",
+		"source": "public/composer-bridge-runtime.js",
+		"globalName": "CodexComposerBridgeRuntime",
+		"expectedFunctions": ["createComposerBridgeRuntime"],
+		"assetPath": "/composer-bridge-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 32086
 	}
 ];
 var moduleApis = {
-	"build-refresh-policy": import_build_refresh_policy.default,
-	"runtime-settings": import_runtime_settings.default,
-	"viewport-metrics": import_viewport_metrics.default,
-	"conversation-scroll": import_conversation_scroll.default,
-	"thread-performance-metrics": import_thread_performance_metrics.default,
-	"draft-store": import_draft_store.default,
-	"image-compressor": import_image_compressor.default,
 	"plugin-voice-input": import_plugin_voice_input.default,
 	"api-client": import_api_client.default,
 	"markdown-renderer": import_markdown_renderer.default,
@@ -5618,7 +4794,8 @@ var moduleApis = {
 	"thread-tile-layout": import_thread_tile_layout.default,
 	"thread-tile-actions": import_thread_tile_actions.default,
 	"modal-runtime": import_modal_runtime.default,
-	"runtime-wiring-runtime": import_runtime_wiring_runtime.default
+	"runtime-wiring-runtime": import_runtime_wiring_runtime.default,
+	"composer-bridge-runtime": import_composer_bridge_runtime.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");

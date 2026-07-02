@@ -1,55 +1,71 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-C8wbdxXo.js","assets/vite-shell-entry-DlB4qcnz.js","assets/shard-02-CwUSvvPA.js"])))=>i.map(i=>d[i]);
-import { t as __vitePreload } from "./vite-shell-entry-DlB4qcnz.js";
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-CkNNroB1.js","assets/vite-shell-entry-BVypqeeD.js","assets/shard-02-_HTdiTzv.js","assets/shard-03-CQbkYlaZ.js"])))=>i.map(i=>d[i]);
+import { t as __vitePreload } from "./vite-shell-entry-BVypqeeD.js";
 //#region \0virtual:codex-mobile-esm-compatibility
-var codexMobileViteEsmCompatibilityShardSources = [{
-	"id": "shard-01",
-	"index": 0,
-	"source": "virtual:codex-mobile-esm-compatibility/shard/shard-01",
-	"moduleCount": 18,
-	"moduleIds": [
-		"build-refresh-policy",
-		"runtime-settings",
-		"viewport-metrics",
-		"conversation-scroll",
-		"thread-performance-metrics",
-		"draft-store",
-		"image-compressor",
-		"plugin-voice-input",
-		"api-client",
-		"markdown-renderer",
-		"plugin-embed",
-		"frontend-runtime-health",
-		"home-ai-diagnostic-reporting",
-		"thread-diagnostic-events",
-		"thread-tile-layout",
-		"thread-tile-actions",
-		"modal-runtime",
-		"runtime-wiring-runtime"
-	],
-	"byteCount": 223003
-}, {
-	"id": "shard-02",
-	"index": 1,
-	"source": "virtual:codex-mobile-esm-compatibility/shard/shard-02",
-	"moduleCount": 11,
-	"moduleIds": [
-		"composer-bridge-runtime",
-		"api-client-runtime",
-		"thread-list-load-policy",
-		"thread-list-stable-order",
-		"thread-status-hints",
-		"thread-detail-patch-plan",
-		"thread-detail-actions",
-		"thread-detail-merge-state",
-		"thread-detail-v4-merge-state",
-		"client-render-stability-guard",
-		"live-operation-dock-state"
-	],
-	"byteCount": 139392
-}];
+var codexMobileViteEsmCompatibilityShardSources = [
+	{
+		"id": "shard-01",
+		"index": 0,
+		"source": "virtual:codex-mobile-esm-compatibility/shard/shard-01",
+		"moduleCount": 10,
+		"moduleIds": [
+			"build-refresh-policy",
+			"runtime-settings",
+			"viewport-metrics",
+			"conversation-scroll",
+			"thread-performance-metrics",
+			"thread-detail-state",
+			"thread-detail-render-plan",
+			"thread-detail-dom-patch",
+			"draft-store",
+			"image-compressor"
+		],
+		"byteCount": 218081
+	},
+	{
+		"id": "shard-02",
+		"index": 1,
+		"source": "virtual:codex-mobile-esm-compatibility/shard/shard-02",
+		"moduleCount": 12,
+		"moduleIds": [
+			"plugin-voice-input",
+			"api-client",
+			"markdown-renderer",
+			"plugin-embed",
+			"frontend-runtime-health",
+			"home-ai-diagnostic-reporting",
+			"thread-diagnostic-events",
+			"thread-tile-layout",
+			"thread-tile-actions",
+			"modal-runtime",
+			"runtime-wiring-runtime",
+			"composer-bridge-runtime"
+		],
+		"byteCount": 191358
+	},
+	{
+		"id": "shard-03",
+		"index": 2,
+		"source": "virtual:codex-mobile-esm-compatibility/shard/shard-03",
+		"moduleCount": 10,
+		"moduleIds": [
+			"api-client-runtime",
+			"thread-list-load-policy",
+			"thread-list-stable-order",
+			"thread-status-hints",
+			"thread-detail-patch-plan",
+			"thread-detail-actions",
+			"thread-detail-merge-state",
+			"thread-detail-v4-merge-state",
+			"client-render-stability-guard",
+			"live-operation-dock-state"
+		],
+		"byteCount": 107306
+	}
+];
 var shardLoaders = {
-	"shard-01": () => __vitePreload(() => import("./shard-01-C8wbdxXo.js"), __vite__mapDeps([0,1])),
-	"shard-02": () => __vitePreload(() => import("./shard-02-CwUSvvPA.js"), __vite__mapDeps([2,1]))
+	"shard-01": () => __vitePreload(() => import("./shard-01-CkNNroB1.js"), __vite__mapDeps([0,1])),
+	"shard-02": () => __vitePreload(() => import("./shard-02-_HTdiTzv.js"), __vite__mapDeps([2,1])),
+	"shard-03": () => __vitePreload(() => import("./shard-03-CQbkYlaZ.js"), __vite__mapDeps([3,1]))
 };
 var compatibilityPromise = null;
 async function loadCompatibilityShard(descriptor) {
