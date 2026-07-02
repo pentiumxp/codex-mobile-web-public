@@ -10,7 +10,7 @@ const runtimeLoop = require("../scripts/codex-mobile-runtime-self-check-loop");
 
 function fakeProcessPressureDeps() {
   const psText = [
-    "33840 1 xuxin 1.5 204800 00:10:00 Ss /runtime/node server.js",
+    "33840 1 hermes-host 1.5 204800 00:10:00 Ss /runtime/node server.js",
     "26623 26622 xuxin 2.5 409600 00:10:00 S /Users/xuxin/.local/bin/codex app-server --analytics-default-enabled",
   ].join("\n");
   const lsofText = [
@@ -26,9 +26,23 @@ function fakeProcessPressureDeps() {
         if (pid === "33840") return "p33840\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n";
         if (pid === "26623") return "p26623\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n";
       }
+      if (command === "launchctl") {
+        return [
+          "system/com.hermesmobile.plugin.codex-mobile = {",
+          "\tactive count = 1",
+          "\tstate = running",
+          "\tworking directory = /Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+          "\tusername = hermes-host",
+          "\tpid = 33840",
+          "}",
+        ].join("\n");
+      }
       return "";
     },
-    readFileSync() {
+    readFileSync(filePath, ...args) {
+      if (!/\.codex[/\\]app-server-mux[/\\]endpoint\.json$/.test(String(filePath || ""))) {
+        return fs.readFileSync(filePath, ...args);
+      }
       return JSON.stringify({ pid: 26622, host: "127.0.0.1", port: 54498, protocol: "jsonl-tcp" });
     },
   };
@@ -525,6 +539,7 @@ test("runtime self-check gate lets slow-path observations remain nonblocking", a
     output: "",
     gateMode: "deploy",
   }, {
+    ...fakeProcessPressureDeps(),
     execFile(_node, _args, _options, callback) {
       callback(null, JSON.stringify({
         ok: false,
@@ -565,6 +580,7 @@ test("runtime self-check gate blocks actionable browser regressions", async () =
     output: "",
     gateMode: "deploy",
   }, {
+    ...fakeProcessPressureDeps(),
     execFile(_node, _args, _options, callback) {
       callback(null, JSON.stringify({
         ok: false,
@@ -586,6 +602,71 @@ test("runtime self-check gate blocks actionable browser regressions", async () =
   assert.deepEqual(result.gate.actionableIssueCodes, ["browser_pending_user_message_disappeared"]);
 });
 
+test("runtime self-check gate blocks production listener owner mismatch", async () => {
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: [],
+    sampleThreads: 1,
+    browserRounds: 1,
+    browserSampleDelaysMs: "100",
+    browserMinSettledDelayMs: 1000,
+    skipClientEvents: true,
+    skipApi: true,
+    skipBrowser: true,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    execFile(_node, _args, _options, callback) {
+      callback(null, JSON.stringify({
+        ok: true,
+        publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
+        summary: { issueCount: 0, blockingIssueCount: 0, diagnosticCandidateCount: 0 },
+      }), "");
+    },
+    execFileSync(command, args) {
+      if (command === "ps") {
+        return [
+          "33840 1 xuxin 1.5 204800 00:10:00 Ss /runtime/node server.js",
+          "33841 1 hermes-host 0.1 204800 00:10:00 S /runtime/node server.js",
+        ].join("\n");
+      }
+      if (command === "lsof" && args.includes("-iTCP")) {
+        return [
+          "COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME",
+          "node    33840 xuxin  20u  IPv4 0x1      0t0  TCP 127.0.0.1:8787 (LISTEN)",
+        ].join("\n");
+      }
+      if (command === "lsof" && args.includes("-p")) {
+        const pid = args[args.indexOf("-p") + 1];
+        if (pid === "33840") return "p33840\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n";
+        if (pid === "33841") return "p33841\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n";
+      }
+      if (command === "launchctl") {
+        return [
+          "system/com.hermesmobile.plugin.codex-mobile = {",
+          "\tactive count = 1",
+          "\tstate = running",
+          "\tworking directory = /Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+          "\tusername = hermes-host",
+          "\tpid = 33840",
+          "}",
+        ].join("\n");
+      }
+      return "";
+    },
+    readFileSync() {
+      return JSON.stringify({ pid: 0, host: "127.0.0.1", port: 0, protocol: "" });
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.gate.deployPass, false);
+  assert.deepEqual(result.gate.actionableIssueCodes, ["production_listener_owner_mismatch"]);
+  const processCheck = result.checks.find((check) => check.name === "process-pressure");
+  assert.equal(processCheck.ok, false);
+  assert.equal(processCheck.blockingIssueCount, 1);
+});
+
 test("runtime self-check loop treats parsed child JSON as contract result", async () => {
   let childOptions = null;
   const result = await runtimeLoop.runOnce({
@@ -601,6 +682,7 @@ test("runtime self-check loop treats parsed child JSON as contract result", asyn
     output: "",
     gateMode: "deploy",
   }, {
+    ...fakeProcessPressureDeps(),
     execFile(_node, _args, options, callback) {
       childOptions = options;
       const error = new Error("Command failed: private command");
@@ -641,6 +723,7 @@ test("runtime self-check loop keeps empty child output as execution failure", as
     output: "",
     gateMode: "deploy",
   }, {
+    ...fakeProcessPressureDeps(),
     execFile(_node, _args, _options, callback) {
       callback(new Error("Command failed: private command"), "", "private stderr");
     },
@@ -664,12 +747,20 @@ test("runtime self-check loop records skipped periodic browser budget", async ()
     skipClientEvents: true,
     output: "",
   }, {
+    ...fakeProcessPressureDeps(),
     execFile() {
       throw new Error("no child self-check should run");
     },
   });
 
-  assert.deepEqual(result.checks, []);
+  assert.deepEqual(result.checks.map((check) => [
+    check.name,
+    check.ok,
+    check.issueCount,
+    check.blockingIssueCount,
+  ]), [
+    ["process-pressure", true, 0, 0],
+  ]);
   assert.deepEqual(result.runtimeJobs.map((job) => [job.name, job.enabled, job.reason]), [
     ["api-thread", false, "skip_flag"],
     ["browser-runtime", false, "browser_mode_off"],
@@ -711,7 +802,7 @@ test("runtime self-check loop includes recent client-event stall summary", async
       clientEventWindowMs: 30 * 60 * 1000,
       output: "",
       gateMode: "deploy",
-    });
+    }, fakeProcessPressureDeps());
   } finally {
     Date.now = realDateNow;
   }

@@ -223,6 +223,26 @@ function summarizeCheck(name, result = {}) {
   };
 }
 
+function runtimeCheckFromProcessPressure(processPressure = {}) {
+  const issues = Array.isArray(processPressure.issues) ? processPressure.issues : [];
+  const blockingIssues = issues.filter((issue) => {
+    const severity = String(issue && issue.severity || "").toUpperCase();
+    return severity === "H1" || severity === "H2";
+  });
+  return {
+    name: "process-pressure",
+    ok: blockingIssues.length === 0,
+    issueCount: issues.length,
+    blockingIssueCount: blockingIssues.length,
+    diagnosticCandidateCount: 0,
+    clientBuildId: "",
+    shellCacheName: "",
+    errorCode: "",
+    issues,
+    diagnosticCandidates: [],
+  };
+}
+
 function appendJsonLine(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.appendFileSync(filePath, `${JSON.stringify(value)}\n`, "utf8");
@@ -416,6 +436,8 @@ async function runOnce(options = {}, deps = {}) {
     });
     checks.push(runtimeCheckFromClientEventSummary(clientEventSummary));
   }
+  const processPressure = collectRuntimeProcessPressure({ topLimit: 12 }, deps);
+  checks.push(runtimeCheckFromProcessPressure(processPressure));
   const event = {
     privacy: "metadata_only",
     startedAt,
@@ -429,7 +451,7 @@ async function runOnce(options = {}, deps = {}) {
         : "off",
     },
     runtimeJobs: jobPlan.jobs,
-    processPressure: collectRuntimeProcessPressure({ topLimit: 12 }, deps),
+    processPressure,
     checks,
   };
   event.issueCount = checks.reduce((total, check) => total + check.issueCount, 0);
@@ -484,4 +506,5 @@ module.exports = {
   summarizeCheck,
   collectRuntimeProcessPressure,
   usage,
+  runtimeCheckFromProcessPressure,
 };

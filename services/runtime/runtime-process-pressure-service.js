@@ -6,6 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const DEFAULT_TOP_LIMIT = 12;
+const DEFAULT_LAUNCHD_LABEL = "system/com.hermesmobile.plugin.codex-mobile";
 
 function positiveNumber(value, fallback = 0) {
   const number = Number(value);
@@ -104,6 +105,47 @@ function readMuxEndpoint(filePath = defaultMuxEndpointPath(), deps = {}) {
   }
 }
 
+function parseLaunchdServiceReadback(text = "", label = DEFAULT_LAUNCHD_LABEL) {
+  const source = String(text || "");
+  const stateMatch = source.match(/\n\s*state = ([^\n]+)/);
+  const activeCountMatch = source.match(/\n\s*active count = (\d+)/);
+  const pidMatch = source.match(/\n\s*pid = (\d+)/);
+  const usernameMatch = source.match(/\n\s*username = ([^\n]+)/);
+  const workingDirectoryMatch = source.match(/\n\s*working directory = ([^\n]+)/);
+  const defaultShellModeMatch = source.match(/\n\s*CODEX_MOBILE_DEFAULT_SHELL => ([^\n]+)/);
+  const found = Boolean(stateMatch || activeCountMatch || pidMatch || usernameMatch || workingDirectoryMatch);
+  return {
+    found,
+    label: String(label || "").slice(0, 120),
+    state: stateMatch ? String(stateMatch[1] || "").trim().slice(0, 80) : "",
+    activeCount: activeCountMatch ? positiveInt(activeCountMatch[1], 0) : 0,
+    pid: pidMatch ? positiveInt(pidMatch[1], 0) : 0,
+    username: usernameMatch ? String(usernameMatch[1] || "").trim().slice(0, 64) : "",
+    workingDirectory: workingDirectoryMatch ? String(workingDirectoryMatch[1] || "").trim().slice(0, 240) : "",
+    defaultShellMode: defaultShellModeMatch ? String(defaultShellModeMatch[1] || "").trim().slice(0, 80) : "",
+  };
+}
+
+function readLaunchdService(options = {}, deps = {}) {
+  const execFileSync = deps.execFileSync || childProcess.execFileSync;
+  const label = String(
+    options.launchdLabel
+    || process.env.CODEX_MOBILE_PROCESS_PRESSURE_LAUNCHD_LABEL
+    || DEFAULT_LAUNCHD_LABEL,
+  ).trim();
+  if (!label) return null;
+  try {
+    const text = execFileSync("launchctl", ["print", label], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const parsed = parseLaunchdServiceReadback(text, label);
+    return parsed.found ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 function classifyProcess(process = {}, context = {}) {
   const command = process.command || "";
   const cwd = process.cwd || "";
@@ -156,6 +198,113 @@ function boundedProcess(process = {}) {
     listeners: Array.isArray(process.listeners) ? process.listeners.slice(0, 4) : [],
     command: process.command,
   };
+}
+
+function normalizedPath(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return path.normalize(text).replace(/\/+$/, "");
+}
+
+function pathMatchesOrContains(actual = "", expected = "") {
+  const actualPath = normalizedPath(actual);
+  const expectedPath = normalizedPath(expected);
+  if (!actualPath || !expectedPath) return false;
+  return actualPath === expectedPath || actualPath.startsWith(`${expectedPath}${path.sep}`);
+}
+
+function productionListenerOwnershipIssues(processes = [], options = {}) {
+  const launchdService = options.launchdService || null;
+  const expectedUser = String(options.productionListenerUser || process.env.CODEX_MOBILE_EXPECTED_PRODUCTION_LISTENER_USER || "").trim();
+  const expectedCwd = String(options.productionListenerCwd || process.env.CODEX_MOBILE_EXPECTED_PRODUCTION_LISTENER_CWD || "").trim();
+  const listenerProcesses = (processes || []).filter((row) => row && row.kind === "production-server");
+  const issues = [];
+  if (listenerProcesses.length > 1) {
+    issues.push({
+      severity: "H2",
+      code: "production_listener_duplicate",
+      surface: "runtime-process-pressure",
+      category: "production_listener_ownership",
+      diagnostic_type: "production_listener_duplicate",
+      count: listenerProcesses.length,
+    });
+  }
+  if (launchdService && launchdService.found && launchdService.state === "running") {
+    if (!listenerProcesses.length) {
+      issues.push({
+        severity: "H2",
+        code: "production_listener_missing",
+        surface: "runtime-process-pressure",
+        category: "production_listener_ownership",
+        diagnostic_type: "production_listener_missing",
+        count: 1,
+        expectedPid: launchdService.pid,
+        expectedUser: launchdService.username,
+        expectedCwd: launchdService.workingDirectory,
+      });
+    }
+    const matchingPid = listenerProcesses.find((listener) => listener.pid === launchdService.pid);
+    if (launchdService.pid && listenerProcesses.length && !matchingPid) {
+      issues.push({
+        severity: "H2",
+        code: "production_listener_launchd_pid_mismatch",
+        surface: "runtime-process-pressure",
+        category: "production_listener_ownership",
+        diagnostic_type: "production_listener_launchd_pid_mismatch",
+        count: 1,
+        expectedPid: launchdService.pid,
+        listenerPids: listenerProcesses.map((listener) => listener.pid).slice(0, 8),
+      });
+    }
+    for (const listener of matchingPid ? [matchingPid] : []) {
+      if (launchdService.username && String(listener.user || "") !== launchdService.username) {
+        issues.push({
+          severity: "H2",
+          code: "production_listener_owner_mismatch",
+          surface: "runtime-process-pressure",
+          category: "production_listener_ownership",
+          diagnostic_type: "production_listener_owner_mismatch",
+          count: 1,
+          listenerPid: listener.pid,
+          listenerUser: String(listener.user || "").slice(0, 64),
+          expectedUser: launchdService.username,
+        });
+      }
+      if (launchdService.workingDirectory && !pathMatchesOrContains(listener.cwd, launchdService.workingDirectory)) {
+        issues.push({
+          severity: "H2",
+          code: "production_listener_cwd_mismatch",
+          surface: "runtime-process-pressure",
+          category: "production_listener_ownership",
+          diagnostic_type: "production_listener_cwd_mismatch",
+          count: 1,
+          listenerPid: listener.pid,
+          listenerCwd: String(listener.cwd || "").slice(0, 240),
+          expectedCwd: launchdService.workingDirectory,
+        });
+      }
+    }
+    return issues;
+  }
+  if (!expectedUser && !expectedCwd) return issues;
+  for (const listener of listenerProcesses) {
+    if (expectedCwd && !pathMatchesOrContains(listener.cwd, expectedCwd)) continue;
+    if (expectedUser && String(listener.user || "") === expectedUser) continue;
+    issues.push({
+      severity: "H2",
+      code: "production_listener_owner_mismatch",
+      surface: "runtime-process-pressure",
+      category: "production_listener_ownership",
+      diagnostic_type: "production_listener_owner_mismatch",
+      count: 1,
+      listenerPid: listener.pid,
+      listenerUser: String(listener.user || "").slice(0, 64),
+      listenerCwd: String(listener.cwd || "").slice(0, 240),
+      expectedUser: expectedUser.slice(0, 64) || "",
+      expectedCwd: expectedCwd.slice(0, 240),
+    });
+  }
+  return issues;
 }
 
 function summarizeAppServerChildren(processes = [], options = {}) {
@@ -249,6 +398,8 @@ function summarizeProcessPressure(processes = [], options = {}) {
     .sort((a, b) => (b.cpuPercent - a.cpuPercent) || (b.rssMb - a.rssMb))
     .slice(0, topLimit)
     .map(boundedProcess);
+  const launchdService = options.launchdService || null;
+  const issues = productionListenerOwnershipIssues(processes, Object.assign({}, options, { launchdService }));
   return {
     privacy: "metadata_only",
     sampledAt: new Date().toISOString(),
@@ -264,6 +415,10 @@ function summarizeProcessPressure(processes = [], options = {}) {
     staleCodexAppServerCount: processes.filter((process) => process.kind === "stale-codex-app-server").length,
     activeAppServerMuxCount: processes.filter((process) => process.kind === "active-app-server-mux").length,
     staleAppServerMuxCount: processes.filter((process) => process.kind === "stale-app-server-mux").length,
+    launchdService,
+    issueCount: issues.length,
+    blockingIssueCount: issues.filter((issue) => issue.severity === "H1" || issue.severity === "H2").length,
+    issues,
     appServerChildProcessCount: appServerChildSummary.count,
     appServerChildCpuPercent: appServerChildSummary.cpuPercent,
     appServerChildRssMb: appServerChildSummary.rssMb,
@@ -278,6 +433,7 @@ function collectRuntimeProcessPressure(options = {}, deps = {}) {
   const execFileSync = deps.execFileSync || childProcess.execFileSync;
   const encoding = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
   const muxEndpoint = readMuxEndpoint(options.muxEndpointPath, deps);
+  const launchdService = readLaunchdService(options, deps);
   let psText = "";
   let lsofText = "";
   try {
@@ -322,7 +478,7 @@ function collectRuntimeProcessPressure(options = {}, deps = {}) {
       ...process,
       childKind: classifyAppServerChildProcess(process),
     }));
-  const summary = summarizeProcessPressure(classified, Object.assign({}, options, { appServerChildren }));
+  const summary = summarizeProcessPressure(classified, Object.assign({}, options, { appServerChildren, launchdService }));
   summary.activeMuxEndpoint = muxEndpoint ? {
     pid: muxEndpoint.pid,
     host: muxEndpoint.host,
@@ -338,9 +494,12 @@ module.exports = {
   collectRuntimeProcessPressure,
   elapsedSeconds,
   parseCwdFromLsofFn,
+  parseLaunchdServiceReadback,
   parseLsofListeners,
   parsePsRows,
+  productionListenerOwnershipIssues,
   redactCommand,
+  readLaunchdService,
   readMuxEndpoint,
   summarizeProcessPressure,
 };

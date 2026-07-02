@@ -7,7 +7,7 @@ const service = require("../services/runtime/runtime-process-pressure-service");
 
 test("runtime process pressure classifies production, stale hotfix, app-server, browser, and Spotlight", () => {
   const psText = [
-    "33840 1 xuxin 14.4 3079088 32:15 Ss /runtime/node server.js",
+    "33840 1 hermes-host 14.4 3079088 32:15 Ss /runtime/node server.js",
     "26622 1 xuxin 0.2 631248 03-19:12:27 Ss /runtime/node /prod/codex-mobile-web/codex-app-server-mux.js app-server --analytics-default-enabled",
     "26623 26622 xuxin 50.7 3033504 03-19:12:27 R /Users/xuxin/.local/bin/codex app-server --analytics-default-enabled",
     "30001 26623 xuxin 0.0 102400 01-02:10:00 S /runtime/node/lib/node_modules/@colbymchenry/codegraph-darwin-arm64/node --liftoff-only codegraph.js serve --mcp",
@@ -38,6 +38,17 @@ test("runtime process pressure classifies production, stale hotfix, app-server, 
       if (command === "ps") return psText;
       if (command === "lsof" && args.includes("-iTCP")) return lsofText;
       if (command === "lsof" && args.includes("-p")) return cwdByPid.get(args[args.indexOf("-p") + 1]) || "";
+      if (command === "launchctl") {
+        return [
+          "system/com.hermesmobile.plugin.codex-mobile = {",
+          "\tactive count = 1",
+          "\tstate = running",
+          "\tworking directory = /Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+          "\tusername = hermes-host",
+          "\tpid = 33840",
+          "}",
+        ].join("\n");
+      }
       return "";
     },
     readFileSync() {
@@ -46,6 +57,7 @@ test("runtime process pressure classifies production, stale hotfix, app-server, 
   });
 
   assert.equal(result.productionServerCount, 1);
+  assert.equal(result.blockingIssueCount, 0);
   assert.equal(result.staleHotfixServerCount, 1);
   assert.equal(result.browserSelfCheckProcessCount, 1);
   assert.equal(result.codexAppServerCount, 1);
@@ -77,6 +89,52 @@ test("runtime process pressure classifies production, stale hotfix, app-server, 
   assert.ok(result.codexOwnedCpuPercent > 80);
   assert.ok(result.codexOwnedRssMb > 7000);
   assert.ok(result.groups.some((group) => group.kind === "spotlight"));
+  assert.doesNotMatch(JSON.stringify(result), /private\/key|Authorization|Bearer/i);
+});
+
+test("runtime process pressure flags production listener owner mismatch", () => {
+  const psText = [
+    "33840 1 xuxin 1.0 204800 00:10:00 Ss /runtime/node server.js",
+    "33841 1 hermes-host 0.1 204800 00:10:00 S /runtime/node server.js",
+  ].join("\n");
+  const lsofText = [
+    "COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME",
+    "node    33840 xuxin  20u  IPv4 0x1      0t0  TCP 127.0.0.1:8787 (LISTEN)",
+  ].join("\n");
+  const cwdByPid = new Map([
+    ["33840", "p33840\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n"],
+    ["33841", "p33841\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n"],
+  ]);
+
+  const result = service.collectRuntimeProcessPressure({}, {
+    execFileSync(command, args) {
+      if (command === "ps") return psText;
+      if (command === "lsof" && args.includes("-iTCP")) return lsofText;
+      if (command === "lsof" && args.includes("-p")) return cwdByPid.get(args[args.indexOf("-p") + 1]) || "";
+      if (command === "launchctl") {
+        return [
+          "system/com.hermesmobile.plugin.codex-mobile = {",
+          "\tactive count = 1",
+          "\tstate = running",
+          "\tworking directory = /Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+          "\tusername = hermes-host",
+          "\tpid = 33840",
+          "}",
+        ].join("\n");
+      }
+      return "";
+    },
+    readFileSync() {
+      return JSON.stringify({ pid: 0, host: "127.0.0.1", port: 0, protocol: "" });
+    },
+  });
+
+  assert.equal(result.productionServerCount, 1);
+  assert.equal(result.blockingIssueCount, 1);
+  assert.equal(result.issues[0].code, "production_listener_owner_mismatch");
+  assert.equal(result.issues[0].listenerPid, 33840);
+  assert.equal(result.issues[0].listenerUser, "xuxin");
+  assert.equal(result.issues[0].expectedUser, "hermes-host");
   assert.doesNotMatch(JSON.stringify(result), /private\/key|Authorization|Bearer/i);
 });
 
