@@ -4898,15 +4898,24 @@ removes an ambiguity in the cutover path: app-preview can no longer pass merely
 because 51 scripts eventually appeared; it must prove the scripts came from the
 same ordered, hashed loader plan that the Vite artifact readback validates.
 
-Current correction: the app-preview loader must not be driven to zero classic
-scripts until the remaining large runtimes have explicit module contracts. A
-dev-only zero-loader experiment showed that superficially ready Vite startup
-can still break thread detail because classic runtimes share script-global
-lexical state that Vite modules isolate into module scope. The valid migration
-path is therefore incremental: exclude only proven independent ESM-owned
-modules from the app-preview loader, keep `/app-bootstrap.js` and other
-not-yet-migrated shared-state runtimes in original classic order, and require
-real thread-detail browser gates before considering any default-root cutover.
+Current correction: the early dev-only zero-loader experiment was valid as a
+failure signal, but its conclusion has been superseded by the Vite-owned
+`/app-bootstrap.js` contract. The observed breakage was not the absence of
+classic script injection by itself; it was that Vite module scope isolated
+startup lexical state, leaving `window.loadThread()` unable to see the
+classic/runtime handles that `app-bootstrap.js` expected from the script-global
+environment. The current valid migration path is therefore stricter than
+"remove scripts from the loader": every excluded script must be owned either by
+the ESM compatibility contract or by an explicit Vite-owned startup contract.
+`/app-bootstrap.js` now has that contract: the asset graph marks it as
+Vite-owned, the Vite entry imports it before real app startup, the module
+exports the startup globals that the classic shell still expects, and the
+bootstrap code synchronizes classic runtime handles from `globalThis` before
+thread-detail or app-update startup calls run. With that boundary in place,
+dev app-preview can reach zero injected classic scripts while still preserving
+the production classic fallback. Default `/` remains classic until Owner
+approval for a production cutover, and real thread-detail browser gates remain
+the required closure evidence.
 
 The follow-up root-path rehearsal keeps the default shell unchanged while
 testing the exact URL surface that a later default Vite cutover would use:
