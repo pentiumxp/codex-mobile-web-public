@@ -122,7 +122,13 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
 });
 
 test("Vite shell build contract records entry chunks and classic fallback outputs", async () => {
-  const { VITE_ENTRY_GROUP_SOURCE_PREFIX, buildShellAssetManifest, buildViteShellBuildContract } = await loadAssetGraphModule();
+  const {
+    VITE_ENTRY_GROUP_SOURCE_PREFIX,
+    VITE_ESM_COMPATIBILITY_MODULES,
+    VITE_ESM_COMPATIBILITY_SOURCE,
+    buildShellAssetManifest,
+    buildViteShellBuildContract,
+  } = await loadAssetGraphModule();
   const root = path.resolve(__dirname, "..");
   const manifest = buildShellAssetManifest(root);
   const bundle = {
@@ -194,6 +200,17 @@ test("Vite shell build contract records entry chunks and classic fallback output
   );
   assert.ok(contract.appPreviewClassicLoaderPlan.scripts.every((entry) => entry.groupId && entry.bytes > 0));
   assert.ok(contract.appPreviewClassicLoaderPlan.scripts.every((entry) => /^[a-f0-9]{64}$/.test(entry.sha256)));
+  assert.equal(contract.esmCompatibility.owner, "vite-shell-entry");
+  assert.equal(contract.esmCompatibility.virtualModuleSource, VITE_ESM_COMPATIBILITY_SOURCE);
+  assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
+  assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
+  assert.equal(contract.esmCompatibility.expectedFunctionCount, 15);
+  assert.deepEqual(
+    contract.esmCompatibility.modules.map((entry) => entry.id),
+    VITE_ESM_COMPATIBILITY_MODULES.map((entry) => entry.id)
+  );
+  assert.ok(contract.esmCompatibility.modules.every((entry) => entry.bytes > 0));
+  assert.ok(contract.esmCompatibility.modules.every((entry) => /^[a-f0-9]{64}$/.test(entry.sha256)));
   assert.deepEqual(
     contract.startupCompatibility.requiredGlobals.find((entry) => entry.name === "CodexAppShellRuntime"),
     {

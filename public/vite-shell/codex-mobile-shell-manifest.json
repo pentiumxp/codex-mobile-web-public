@@ -3095,6 +3095,105 @@
       ],
       "sha256": "4120e4971babd8611d1cab56c8db75b5f040d38c30108af3c86087e04cdccd4d"
     },
+    "esmCompatibility": {
+      "schemaVersion": 1,
+      "source": "generated-vite-esm-compatibility-contract",
+      "owner": "vite-shell-entry",
+      "virtualModuleSource": "virtual:codex-mobile-esm-compatibility",
+      "moduleCount": 6,
+      "expectedFunctionCount": 15,
+      "hashCount": 6,
+      "byteCount": 30809,
+      "modules": [
+        {
+          "index": 0,
+          "id": "build-refresh-policy",
+          "source": "public/build-refresh-policy.js",
+          "globalName": "CodexBuildRefreshPolicy",
+          "expectedFunctions": [
+            "shellSequenceFromBuildId",
+            "classifyServerBuildChange",
+            "shouldPromptForServerBuildChange"
+          ],
+          "expectedFunctionCount": 3,
+          "bytes": 1532,
+          "sha256": "b103ff2e801a446f92693c6b3a3830af6ab24afdc46fad901ff1ea2e7a88d2ef",
+          "hashPresent": true
+        },
+        {
+          "index": 1,
+          "id": "thread-list-load-policy",
+          "source": "public/thread-list-load-policy.js",
+          "globalName": "CodexThreadListLoadPolicy",
+          "expectedFunctions": [
+            "planThreadListLoadRequest"
+          ],
+          "expectedFunctionCount": 1,
+          "bytes": 2160,
+          "sha256": "0de557c28bc45b6b9eb252dc9227083e17279053315bfd40cb7911f7c1b29d5f",
+          "hashPresent": true
+        },
+        {
+          "index": 2,
+          "id": "thread-list-stable-order",
+          "source": "public/thread-list-stable-order.js",
+          "globalName": "CodexThreadListStableOrder",
+          "expectedFunctions": [
+            "threadListOrderScopeKey",
+            "planThreadListStableOrder"
+          ],
+          "expectedFunctionCount": 2,
+          "bytes": 3327,
+          "sha256": "5923fb2af75796c21bd74f307a4a665ff45fc8e9b09d5505bd35c287f528acc9",
+          "hashPresent": true
+        },
+        {
+          "index": 3,
+          "id": "thread-status-hints",
+          "source": "public/thread-status-hints.js",
+          "globalName": "CodexThreadStatusHints",
+          "expectedFunctions": [
+            "isRunningStatus",
+            "shouldExpireRunningThreadHint",
+            "shouldMarkThreadUnread"
+          ],
+          "expectedFunctionCount": 3,
+          "bytes": 9883,
+          "sha256": "4a0a8b01297b8cbfbbccfe0f347470683d0dada4ed778c4999dcaaad9147e0a3",
+          "hashPresent": true
+        },
+        {
+          "index": 4,
+          "id": "thread-detail-patch-plan",
+          "source": "public/thread-detail-patch-plan.js",
+          "globalName": "CodexThreadDetailPatchPlan",
+          "expectedFunctions": [
+            "planThreadDetailDomPatchSurface",
+            "planThreadDetailRefreshDomPatch",
+            "planVisibleItemRefreshPatch"
+          ],
+          "expectedFunctionCount": 3,
+          "bytes": 7717,
+          "sha256": "e6324db973e487acd0072b0bef3a13ea35ff1a94561dbede9b59734d1c6469e4",
+          "hashPresent": true
+        },
+        {
+          "index": 5,
+          "id": "live-operation-dock-state",
+          "source": "public/live-operation-dock-state.js",
+          "globalName": "CodexLiveOperationDockState",
+          "expectedFunctions": [
+            "compactBubblePreservation",
+            "operationCardContentPlan",
+            "shouldShowRecall"
+          ],
+          "expectedFunctionCount": 3,
+          "bytes": 6190,
+          "sha256": "4b8132044674329ac03900c46cd6b46f5b77e3ad3a53adc750932c847a7a3f42",
+          "hashPresent": true
+        }
+      ]
+    },
     "viteEntry": {
       "fileName": "assets/vite-shell-entry-3Awcgec_.js",
       "name": "vite-shell-entry",

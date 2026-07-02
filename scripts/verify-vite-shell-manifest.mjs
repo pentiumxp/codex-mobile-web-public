@@ -1,7 +1,11 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { buildShellAssetManifest } from "./frontend-shell-asset-graph.mjs";
+import {
+  VITE_ESM_COMPATIBILITY_MODULES,
+  VITE_ESM_COMPATIBILITY_SOURCE,
+  buildShellAssetManifest,
+} from "./frontend-shell-asset-graph.mjs";
 import { renderShellScriptBlock } from "./generate-frontend-shell-manifest.mjs";
 
 const root = process.cwd();
@@ -122,6 +126,30 @@ if (!fs.existsSync(manifestPath)) {
       !== JSON.stringify(current.indexScriptAssets || [])) {
       mismatch.push("viteBuildAppPreviewClassicLoaderPlanOrder");
     }
+    const esmCompatibility = viteBuild.esmCompatibility && typeof viteBuild.esmCompatibility === "object"
+      ? viteBuild.esmCompatibility
+      : null;
+    const esmCompatibilityModules = esmCompatibility && Array.isArray(esmCompatibility.modules)
+      ? esmCompatibility.modules
+      : [];
+    const expectedEsmIds = VITE_ESM_COMPATIBILITY_MODULES.map((entry) => entry.id);
+    const expectedEsmFunctionCount = VITE_ESM_COMPATIBILITY_MODULES.reduce((total, entry) => (
+      total + (Array.isArray(entry && entry.expectedFunctions) ? entry.expectedFunctions.length : 0)
+    ), 0);
+    if (!esmCompatibility
+      || esmCompatibility.owner !== "vite-shell-entry"
+      || esmCompatibility.virtualModuleSource !== VITE_ESM_COMPATIBILITY_SOURCE) {
+      mismatch.push("viteBuildEsmCompatibility");
+    } else if (Number(esmCompatibility.moduleCount) !== expectedEsmIds.length
+      || Number(esmCompatibility.hashCount) !== expectedEsmIds.length
+      || Number(esmCompatibility.expectedFunctionCount) !== expectedEsmFunctionCount) {
+      mismatch.push("viteBuildEsmCompatibilityCount");
+    } else if (JSON.stringify(esmCompatibilityModules.map((entry) => entry && entry.id))
+      !== JSON.stringify(expectedEsmIds)) {
+      mismatch.push("viteBuildEsmCompatibilityOrder");
+    } else if (esmCompatibilityModules.some((entry) => !entry || !entry.source || !entry.sha256 || !Number(entry.bytes))) {
+      mismatch.push("viteBuildEsmCompatibilityHash");
+    }
     const entryDynamicImportGraph = viteBuild.entryDynamicImportGraph && typeof viteBuild.entryDynamicImportGraph === "object"
       ? viteBuild.entryDynamicImportGraph
       : null;
@@ -194,6 +222,9 @@ if (!fs.existsSync(manifestPath)) {
         : 0,
       appPreviewClassicLoaderScripts: built.viteBuild.appPreviewClassicLoaderPlan
         ? built.viteBuild.appPreviewClassicLoaderPlan.scriptCount
+        : 0,
+      esmCompatibilityModules: built.viteBuild.esmCompatibility
+        ? built.viteBuild.esmCompatibility.moduleCount
         : 0,
       viteBuildStage: built.viteBuild.stage,
     }));

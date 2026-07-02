@@ -5039,6 +5039,24 @@ from two pure policies to six:
   converting more side-effect-free policy modules into Vite-imported contracts
   without changing business runtime ownership.
 
+The follow-up ESM artifact-contract slice moves that same six-module proof
+into server-side readback instead of relying only on browser runtime probes:
+
+- `scripts/frontend-shell-asset-graph.mjs` now records
+  `esmCompatibility` in the Vite build contract, including module id, source,
+  classic global name, expected functions, bytes, and SHA-256 hash for each
+  build-owned ESM compatibility module.
+- `scripts/publish-vite-shell-artifact.mjs` carries the contract into
+  `public/vite-shell/vite-shell-readback.json` and exposes the bounded module
+  count marker on `public/vite-shell/preview.html`.
+- `services/runtime/vite-shell-artifact-service.js` fails closed when the
+  readback contract drifts from the published artifact manifest or when any
+  referenced `public/` source file hash/size no longer matches the contract.
+
+The browser gates still own runtime `ready` and behavior-sample proof. The
+artifact gate now owns static provenance, so `/api/vite-shell-artifact` can
+detect ESM compatibility drift before a browser probe runs.
+
 The next default-root rehearsal gate closes the remaining pre-cutover evidence
 gap without changing production launchd defaults:
 

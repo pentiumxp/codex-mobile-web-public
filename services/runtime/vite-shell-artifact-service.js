@@ -172,6 +172,45 @@ function appPreviewClassicLoaderPlan(source) {
   };
 }
 
+function esmCompatibilityContract(source) {
+  const contract = source && source.esmCompatibility;
+  if (!contract || typeof contract !== "object") return null;
+  const modules = (Array.isArray(contract.modules) ? contract.modules : [])
+    .map((entry) => ({
+      index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
+      id: String(entry && entry.id || ""),
+      source: String(entry && entry.source || ""),
+      globalName: String(entry && entry.globalName || ""),
+      expectedFunctions: Array.isArray(entry && entry.expectedFunctions)
+        ? entry.expectedFunctions.map((name) => String(name || "")).filter(Boolean)
+        : [],
+      expectedFunctionCount: Number.isFinite(Number(entry && entry.expectedFunctionCount))
+        ? Number(entry.expectedFunctionCount)
+        : 0,
+      bytes: Number.isFinite(Number(entry && entry.bytes)) ? Number(entry.bytes) : 0,
+      sha256: String(entry && entry.sha256 || ""),
+      hashPresent: Boolean(entry && entry.hashPresent),
+    }))
+    .filter((entry) => entry.id);
+  return {
+    schemaVersion: Number(contract.schemaVersion) || 1,
+    source: String(contract.source || ""),
+    owner: String(contract.owner || ""),
+    virtualModuleSource: String(contract.virtualModuleSource || ""),
+    moduleCount: Number.isFinite(Number(contract.moduleCount)) ? Number(contract.moduleCount) : modules.length,
+    expectedFunctionCount: Number.isFinite(Number(contract.expectedFunctionCount))
+      ? Number(contract.expectedFunctionCount)
+      : modules.reduce((total, entry) => total + entry.expectedFunctions.length, 0),
+    hashCount: Number.isFinite(Number(contract.hashCount))
+      ? Number(contract.hashCount)
+      : modules.filter((entry) => entry.sha256).length,
+    byteCount: Number.isFinite(Number(contract.byteCount))
+      ? Number(contract.byteCount)
+      : modules.reduce((total, entry) => total + entry.bytes, 0),
+    modules,
+  };
+}
+
 function assetRecordsByPath(manifest) {
   const records = new Map();
   for (const entry of Array.isArray(manifest && manifest.assets) ? manifest.assets : []) {
@@ -216,6 +255,13 @@ function publicAssetStatus(appRoot, assetPath) {
   } catch (_) {
     return { path: text, exists: false, code: "classic_asset_missing" };
   }
+}
+
+function publicAssetPathFromSource(sourcePath) {
+  const text = String(sourcePath || "").trim().replace(/\\/g, "/");
+  if (!text.startsWith("public/")) return "";
+  const relative = text.slice("public".length);
+  return relative.startsWith("/") ? relative : `/${relative}`;
 }
 
 function readClassicShellScriptBlock(appRoot) {
@@ -346,6 +392,7 @@ function createViteShellArtifactService(dependencies = {}) {
       ? readback.classicShellScriptBlock
       : null;
     const readbackAppPreviewClassicLoaderPlan = appPreviewClassicLoaderPlan(readback);
+    const readbackEsmCompatibility = esmCompatibilityContract(readback);
     const actualClassicScriptBlock = readClassicShellScriptBlock(appRoot);
     if (!readbackClassicScriptBlock) {
       issues.push({ code: "vite_shell_classic_script_block_missing" });
@@ -392,6 +439,26 @@ function createViteShellArtifactService(dependencies = {}) {
     const entryGroupImportOwner = String(readback.entryGroupImportOwner || "");
     if (readbackEntryGroupChunks.length && entryGroupImportOwner !== EXPECTED_ENTRY_GROUP_IMPORT_OWNER) {
       issues.push({ code: "vite_shell_entry_group_import_owner_mismatch" });
+    }
+    if (!readbackEsmCompatibility || !readbackEsmCompatibility.modules.length) {
+      issues.push({ code: "vite_shell_esm_compatibility_contract_missing" });
+    } else {
+      if (readbackEsmCompatibility.owner !== EXPECTED_ENTRY_GROUP_IMPORT_OWNER
+        || readbackEsmCompatibility.virtualModuleSource !== "virtual:codex-mobile-esm-compatibility") {
+        issues.push({ code: "vite_shell_esm_compatibility_owner_mismatch" });
+      }
+      if (Number(readbackEsmCompatibility.moduleCount) !== readbackEsmCompatibility.modules.length
+        || Number(readbackEsmCompatibility.hashCount) !== readbackEsmCompatibility.modules.length
+        || Number(readbackEsmCompatibility.expectedFunctionCount) !== readbackEsmCompatibility.modules.reduce((total, entry) => (
+          total + entry.expectedFunctions.length
+        ), 0)) {
+        issues.push({ code: "vite_shell_esm_compatibility_count_mismatch" });
+      }
+      if (readbackEsmCompatibility.modules.some((entry) => (
+        !entry.source || !entry.globalName || !entry.sha256 || !Number(entry.bytes)
+      ))) {
+        issues.push({ code: "vite_shell_esm_compatibility_module_record_missing" });
+      }
     }
     const entryDynamicImportGraph = readback.entryDynamicImportGraph && typeof readback.entryDynamicImportGraph === "object"
       ? readback.entryDynamicImportGraph
@@ -486,10 +553,34 @@ function createViteShellArtifactService(dependencies = {}) {
       const artifactAssetRecords = assetRecordsByPath(artifactManifest);
       const expectedStartupGlobalContracts = startupGlobalContracts(artifactManifest);
       const artifactAppPreviewClassicLoaderPlan = appPreviewClassicLoaderPlan(artifactManifest.viteBuild || {});
+      const artifactEsmCompatibility = esmCompatibilityContract(artifactManifest.viteBuild || {});
       if (!artifactAppPreviewClassicLoaderPlan || !artifactAppPreviewClassicLoaderPlan.scripts.length) {
         issues.push({ code: "vite_shell_artifact_app_preview_classic_loader_plan_missing" });
       } else if (JSON.stringify(readbackAppPreviewClassicLoaderPlan) !== JSON.stringify(artifactAppPreviewClassicLoaderPlan)) {
         issues.push({ code: "vite_shell_app_preview_classic_loader_plan_manifest_mismatch" });
+      }
+      if (!artifactEsmCompatibility || !artifactEsmCompatibility.modules.length) {
+        issues.push({ code: "vite_shell_artifact_esm_compatibility_contract_missing" });
+      } else if (JSON.stringify(readbackEsmCompatibility) !== JSON.stringify(artifactEsmCompatibility)) {
+        issues.push({ code: "vite_shell_esm_compatibility_contract_manifest_mismatch" });
+      }
+      if (readbackEsmCompatibility) {
+        for (const record of readbackEsmCompatibility.modules) {
+          const assetPath = publicAssetPathFromSource(record.source);
+          const currentAsset = publicAssetStatus(appRoot, assetPath);
+          if (!assetPath || !currentAsset.exists) {
+            issues.push({ code: currentAsset.code || "vite_shell_esm_compatibility_module_missing", moduleId: record.id });
+            break;
+          }
+          if (currentAsset.sha256 !== String(record && record.sha256 || "")) {
+            issues.push({ code: "vite_shell_esm_compatibility_module_file_hash_mismatch", moduleId: record.id });
+            break;
+          }
+          if (Number(currentAsset.bytes) !== Number(record && record.bytes)) {
+            issues.push({ code: "vite_shell_esm_compatibility_module_file_size_mismatch", moduleId: record.id });
+            break;
+          }
+        }
       }
       if (readbackAppPreviewClassicLoaderPlan) {
         for (const record of readbackAppPreviewClassicLoaderPlan.scripts) {
@@ -633,6 +724,10 @@ function createViteShellArtifactService(dependencies = {}) {
         && !previewHtml.includes(`data-startup-global-contract-count="${readbackStartupGlobalContracts.length}"`)) {
         issues.push({ code: "vite_shell_preview_startup_global_contract_missing" });
       }
+      if (readbackEsmCompatibility && readbackEsmCompatibility.modules.length
+        && !previewHtml.includes(`data-esm-compatibility-module-count="${readbackEsmCompatibility.modules.length}"`)) {
+        issues.push({ code: "vite_shell_preview_esm_compatibility_contract_missing" });
+      }
     }
     const appPreviewPath = publicArtifactPath(appPreviewFileName);
     const appPreviewHtml = appPreviewPath ? safeReadText(appPreviewPath) : "";
@@ -753,6 +848,32 @@ function createViteShellArtifactService(dependencies = {}) {
         lastScript: "",
         sha256: "",
       },
+      esmCompatibility: readbackEsmCompatibility ? {
+        match: Boolean(readbackEsmCompatibility.owner === EXPECTED_ENTRY_GROUP_IMPORT_OWNER
+          && readbackEsmCompatibility.virtualModuleSource === "virtual:codex-mobile-esm-compatibility"
+          && Number(readbackEsmCompatibility.moduleCount) === readbackEsmCompatibility.modules.length
+          && Number(readbackEsmCompatibility.hashCount) === readbackEsmCompatibility.modules.length
+          && readbackEsmCompatibility.modules.every((entry) => {
+            const currentAsset = publicAssetStatus(appRoot, publicAssetPathFromSource(entry.source));
+            return currentAsset.exists
+              && currentAsset.sha256 === entry.sha256
+              && Number(currentAsset.bytes) === Number(entry.bytes);
+          })),
+        owner: readbackEsmCompatibility.owner,
+        moduleCount: readbackEsmCompatibility.moduleCount,
+        expectedFunctionCount: readbackEsmCompatibility.expectedFunctionCount,
+        hashCount: readbackEsmCompatibility.hashCount,
+        byteCount: readbackEsmCompatibility.byteCount,
+        moduleIds: readbackEsmCompatibility.modules.map((entry) => entry.id),
+      } : {
+        match: false,
+        owner: "",
+        moduleCount: 0,
+        expectedFunctionCount: 0,
+        hashCount: 0,
+        byteCount: 0,
+        moduleIds: [],
+      },
       entryGroupChunkCount: readbackEntryGroupChunks.length,
       artifactManifest: artifactManifest ? {
         shellCacheName: String(artifactManifest.shellCacheName || ""),
@@ -774,6 +895,11 @@ function createViteShellArtifactService(dependencies = {}) {
           ), 0)
           : 0,
         startupGlobalContractCount: startupGlobalContracts(artifactManifest).length,
+        esmCompatibilityModuleCount: artifactManifest.viteBuild
+          && artifactManifest.viteBuild.esmCompatibility
+          && Array.isArray(artifactManifest.viteBuild.esmCompatibility.modules)
+          ? artifactManifest.viteBuild.esmCompatibility.modules.length
+          : 0,
         pageShellAssetCount: Array.isArray(canonicalShellTopology(artifactManifest).pageShellAssets)
           ? canonicalShellTopology(artifactManifest).pageShellAssets.length
           : 0,

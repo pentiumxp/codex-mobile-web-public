@@ -196,6 +196,44 @@ function normalizeAppPreviewClassicLoaderPlan(plan) {
   };
 }
 
+function normalizeEsmCompatibilityContract(contract) {
+  if (!contract || typeof contract !== "object") return null;
+  const modules = (Array.isArray(contract.modules) ? contract.modules : [])
+    .map((entry) => ({
+      index: Number.isFinite(Number(entry && entry.index)) ? Number(entry.index) : 0,
+      id: String(entry && entry.id || ""),
+      source: String(entry && entry.source || ""),
+      globalName: String(entry && entry.globalName || ""),
+      expectedFunctions: Array.isArray(entry && entry.expectedFunctions)
+        ? entry.expectedFunctions.map((name) => String(name || "")).filter(Boolean)
+        : [],
+      expectedFunctionCount: Number.isFinite(Number(entry && entry.expectedFunctionCount))
+        ? Number(entry.expectedFunctionCount)
+        : 0,
+      bytes: Number.isFinite(Number(entry && entry.bytes)) ? Number(entry.bytes) : 0,
+      sha256: String(entry && entry.sha256 || ""),
+      hashPresent: Boolean(entry && entry.hashPresent),
+    }))
+    .filter((entry) => entry.id);
+  return {
+    schemaVersion: Number(contract.schemaVersion) || 1,
+    source: String(contract.source || "generated-vite-esm-compatibility-contract"),
+    owner: String(contract.owner || ""),
+    virtualModuleSource: String(contract.virtualModuleSource || ""),
+    moduleCount: Number.isFinite(Number(contract.moduleCount)) ? Number(contract.moduleCount) : modules.length,
+    expectedFunctionCount: Number.isFinite(Number(contract.expectedFunctionCount))
+      ? Number(contract.expectedFunctionCount)
+      : modules.reduce((total, entry) => total + entry.expectedFunctions.length, 0),
+    hashCount: Number.isFinite(Number(contract.hashCount))
+      ? Number(contract.hashCount)
+      : modules.filter((entry) => entry.sha256).length,
+    byteCount: Number.isFinite(Number(contract.byteCount))
+      ? Number(contract.byteCount)
+      : modules.reduce((total, entry) => total + entry.bytes, 0),
+    modules,
+  };
+}
+
 function jsonScriptBody(value) {
   return JSON.stringify(value || {}, null, 2)
     .replace(/</g, "\\u003c")
@@ -280,6 +318,7 @@ export function buildViteShellPublicReadback(options = {}) {
   const startupAssets = startupCriticalAssets(manifest);
   const classicShellScriptBlock = classicShellScriptBlockContract(manifest, viteBuild);
   const appPreviewClassicLoaderPlan = normalizeAppPreviewClassicLoaderPlan(viteBuild.appPreviewClassicLoaderPlan);
+  const esmCompatibility = normalizeEsmCompatibilityContract(viteBuild.esmCompatibility);
   if (!appPreviewClassicLoaderPlan || !appPreviewClassicLoaderPlan.scripts.length) {
     issues.push({ code: "vite_app_preview_classic_loader_plan_missing" });
   } else {
@@ -297,6 +336,24 @@ export function buildViteShellPublicReadback(options = {}) {
     }
     if (!appPreviewClassicLoaderPlan.sha256) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_hash_missing" });
+    }
+  }
+  if (!esmCompatibility || !esmCompatibility.modules.length) {
+    issues.push({ code: "vite_esm_compatibility_contract_missing" });
+  } else {
+    if (esmCompatibility.owner !== "vite-shell-entry"
+      || esmCompatibility.virtualModuleSource !== "virtual:codex-mobile-esm-compatibility") {
+      issues.push({ code: "vite_esm_compatibility_owner_mismatch" });
+    }
+    if (Number(esmCompatibility.moduleCount) !== esmCompatibility.modules.length
+      || Number(esmCompatibility.hashCount) !== esmCompatibility.modules.length
+      || Number(esmCompatibility.expectedFunctionCount) !== esmCompatibility.modules.reduce((total, entry) => (
+        total + entry.expectedFunctions.length
+      ), 0)) {
+      issues.push({ code: "vite_esm_compatibility_count_mismatch" });
+    }
+    if (esmCompatibility.modules.some((entry) => !entry.source || !entry.globalName || !entry.sha256 || !Number(entry.bytes))) {
+      issues.push({ code: "vite_esm_compatibility_module_record_missing" });
     }
   }
   const startupGlobalNames = startupContracts.map((entry) => entry.name);
@@ -319,6 +376,7 @@ export function buildViteShellPublicReadback(options = {}) {
     startupGlobalContracts: startupContracts,
     classicShellScriptBlock,
     appPreviewClassicLoaderPlan,
+    esmCompatibility,
   };
   const previewHtml = renderViteShellPreviewHtml(readbackForPreview);
   const previewRecord = bufferRecord(VITE_SHELL_PUBLIC_PREVIEW_FILE, previewHtml);
@@ -352,6 +410,7 @@ export function buildViteShellPublicReadback(options = {}) {
     startupGlobalContracts: startupContracts,
     classicShellScriptBlock,
     appPreviewClassicLoaderPlan,
+    esmCompatibility,
     counts: {
       entryGroups: Array.isArray(manifest.entryGroups) ? manifest.entryGroups.length : 0,
       entryGroupChunks: entryGroupChunks.length,
@@ -360,6 +419,9 @@ export function buildViteShellPublicReadback(options = {}) {
       appPreviewClassicLoaderScripts: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.scriptCount : 0,
       appPreviewClassicLoaderHashes: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.hashCount : 0,
       appPreviewClassicLoaderBytes: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.byteCount : 0,
+      esmCompatibilityModules: esmCompatibility ? esmCompatibility.moduleCount : 0,
+      esmCompatibilityHashes: esmCompatibility ? esmCompatibility.hashCount : 0,
+      esmCompatibilityExpectedFunctions: esmCompatibility ? esmCompatibility.expectedFunctionCount : 0,
       startupGlobalContracts: startupContracts.length,
       startupGlobalContractAssets: startupGlobalAssets.length,
       startupGlobalContractHashes: startupContracts.filter((entry) => entry.sha256).length,
@@ -423,6 +485,7 @@ export function renderViteShellPreviewHtml(readback = {}) {
     `    data-classic-shell-script-block-sha256=\"${escapeHtml(readback.classicShellScriptBlock && readback.classicShellScriptBlock.sha256)}\"`,
     `    data-app-preview-classic-loader-count=\"${escapeHtml(readback.appPreviewClassicLoaderPlan && readback.appPreviewClassicLoaderPlan.scriptCount)}\"`,
     `    data-app-preview-classic-loader-sha256=\"${escapeHtml(readback.appPreviewClassicLoaderPlan && readback.appPreviewClassicLoaderPlan.sha256)}\"`,
+    `    data-esm-compatibility-module-count=\"${escapeHtml(readback.esmCompatibility && readback.esmCompatibility.moduleCount)}\"`,
     "  >",
     "    <h1>Codex Mobile Vite Shell Preview</h1>",
     "  </main>",
@@ -525,6 +588,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       clientBuildId: result.clientBuildId,
       entryGroupChunks: result.counts.entryGroupChunks,
       startupCriticalAssets: result.counts.startupCriticalAssets,
+      esmCompatibilityModules: result.counts.esmCompatibilityModules,
       publishedFiles: result.counts.publishedFiles,
     }));
   } catch (err) {
