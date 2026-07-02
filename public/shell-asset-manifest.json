@@ -1,8 +1,8 @@
 {
   "schemaVersion": 4,
   "generatedBy": "generate-frontend-shell-manifest",
-  "shellCacheName": "codex-mobile-shell-v625-e80b19b8fe61",
-  "clientBuildId": "0.1.11|codex-mobile-shell-v625-e80b19b8fe61",
+  "shellCacheName": "codex-mobile-shell-v625-75df7c30f88a",
+  "clientBuildId": "0.1.11|codex-mobile-shell-v625-75df7c30f88a",
   "scriptAssets": [
     "/shell-asset-manifest.js",
     "/api-client.js",
@@ -444,6 +444,12 @@
       "asset": "/app-shell-runtime.js",
       "globals": [
         "CodexAppShellRuntime"
+      ]
+    },
+    {
+      "asset": "/app.js",
+      "globals": [
+        "CodexMobileAppEntry"
       ]
     }
   ],
@@ -891,8 +897,8 @@
   "counts": {
     "scriptAssets": 51,
     "entryGroups": 6,
-    "classicGlobalExportAssets": 48,
-    "classicGlobalExports": 48,
+    "classicGlobalExportAssets": 49,
+    "classicGlobalExports": 49,
     "startupGlobalContracts": 30,
     "linkAssets": 4,
     "iconAssets": 4,

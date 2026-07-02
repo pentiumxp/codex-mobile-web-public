@@ -1432,6 +1432,31 @@ var require_app_shell_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
+//#region public/app.js
+var require_app = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	function startCodexMobileApp() {
+		if (!window.CodexRuntimeWiringRuntime || typeof window.CodexRuntimeWiringRuntime.createRuntimeWiringRuntime !== "function") throw new Error("CodexRuntimeWiringRuntime script failed to load");
+		if (!window.CodexAppShellRuntime || typeof window.CodexAppShellRuntime.createAppShellRuntime !== "function") throw new Error("CodexAppShellRuntime script failed to load");
+		window.CodexRuntimeWiringRuntime.createRuntimeWiringRuntime().initialize();
+		window.CodexAppShellRuntime.createAppShellRuntime().startCodexMobileAppWithRecovery();
+	}
+	function createCodexMobileAppEntry() {
+		return { startCodexMobileApp };
+	}
+	(function exposeCodexMobileAppEntry(root) {
+		const appEntryApi = {
+			createCodexMobileAppEntry,
+			startCodexMobileApp
+		};
+		if (typeof module !== "undefined" && module.exports) module.exports = appEntryApi;
+		root.CodexMobileAppEntry = appEntryApi;
+		const currentScript = root.document && root.document.currentScript;
+		const loadedByClassicAppPreview = Boolean(currentScript && currentScript.dataset && currentScript.dataset.codexViteAppPreviewClassicScript === "true");
+		const shouldAutoStart = !root.__CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__ || loadedByClassicAppPreview;
+		if (!(typeof module !== "undefined" && module.exports) && shouldAutoStart) startCodexMobileApp();
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
 //#region public/thread-list-runtime.js
 var require_thread_list_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachThreadListRuntime(root) {
@@ -3330,6 +3355,7 @@ var require_side_chat_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 var import_modal_runtime = /* @__PURE__ */ __toESM(require_modal_runtime());
 var import_runtime_wiring_runtime = /* @__PURE__ */ __toESM(require_runtime_wiring_runtime());
 var import_app_shell_runtime = /* @__PURE__ */ __toESM(require_app_shell_runtime());
+var import_app = /* @__PURE__ */ __toESM(require_app());
 var import_thread_list_runtime = /* @__PURE__ */ __toESM(require_thread_list_runtime());
 var import_side_chat_runtime = /* @__PURE__ */ __toESM(require_side_chat_runtime());
 var moduleDefinitions = [
@@ -3361,6 +3387,15 @@ var moduleDefinitions = [
 		"bytes": 41219
 	},
 	{
+		"id": "app-entry",
+		"source": "public/app.js",
+		"globalName": "CodexMobileAppEntry",
+		"expectedFunctions": ["createCodexMobileAppEntry", "startCodexMobileApp"],
+		"assetPath": "/app.js",
+		"classicLoaderExcluded": true,
+		"bytes": 1472
+	},
+	{
 		"id": "thread-list-runtime",
 		"source": "public/thread-list-runtime.js",
 		"globalName": "CodexThreadListRuntime",
@@ -3383,6 +3418,7 @@ var moduleApis = {
 	"modal-runtime": import_modal_runtime.default,
 	"runtime-wiring-runtime": import_runtime_wiring_runtime.default,
 	"app-shell-runtime": import_app_shell_runtime.default,
+	"app-entry": import_app.default,
 	"thread-list-runtime": import_thread_list_runtime.default,
 	"side-chat-runtime": import_side_chat_runtime.default
 };
@@ -5014,6 +5050,17 @@ function sampleModule(id, api) {
 			rateLimitsType: typeof (runtime && runtime.rememberRateLimitsFromConfig),
 			profilesType: typeof (runtime && runtime.rememberCodexProfiles),
 			globalFactoryType: typeof (globalThis.CodexSettingsRuntime && globalThis.CodexSettingsRuntime.createSettingsRuntime)
+		};
+	}
+	if (id === "app-entry") {
+		const runtime = functionReady(api, "createCodexMobileAppEntry") ? api.createCodexMobileAppEntry() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.startCodexMobileApp === "function" && typeof api.startCodexMobileApp === "function" && typeof globalThis.CodexMobileAppEntry === "object" && typeof globalThis.CodexMobileAppEntry.createCodexMobileAppEntry === "function" && typeof globalThis.CodexMobileAppEntry.startCodexMobileApp === "function",
+			factoryType: typeof api.createCodexMobileAppEntry,
+			startType: typeof api.startCodexMobileApp,
+			runtimeStartType: typeof (runtime && runtime.startCodexMobileApp),
+			globalFactoryType: typeof (globalThis.CodexMobileAppEntry && globalThis.CodexMobileAppEntry.createCodexMobileAppEntry),
+			globalStartType: typeof (globalThis.CodexMobileAppEntry && globalThis.CodexMobileAppEntry.startCodexMobileApp)
 		};
 	}
 	if (id === "notification-ui-runtime") {

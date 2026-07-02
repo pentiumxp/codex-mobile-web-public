@@ -65,6 +65,8 @@ const pendingEsmCompatibility = {
   loading: true,
 };
 let esmCompatibility = pendingEsmCompatibility;
+const viteAppPreviewPage = isAppPreviewPage();
+globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__ = viteAppPreviewPage;
 
 const esmCompatibilityImportPromise = import("virtual:codex-mobile-esm-compatibility")
   .then(async (module) => {
@@ -241,6 +243,13 @@ async function startCodexMobileViteAppPreview() {
       await loadClassicScript(asset);
       status.loaded.push(asset);
     }
+    if (excludedEsmAssets.includes("/app.js")) {
+      const appEntry = globalThis.CodexMobileAppEntry;
+      if (!appEntry || typeof appEntry.startCodexMobileApp !== "function") {
+        throw new Error("codex_mobile_vite_app_preview_app_entry_missing");
+      }
+      appEntry.startCodexMobileApp();
+    }
     status.ok = true;
   } catch (error) {
     status.ok = false;
@@ -279,7 +288,7 @@ const entryDynamicImportGraph = {
     .map((groupId) => `virtual:codex-mobile-shell-entry-group/${groupId}`),
   expectedImportCount: 2 + codexMobileViteEntryGroupIds.length,
 };
-const appPreviewPromise = isAppPreviewPage() ? startCodexMobileViteAppPreview() : Promise.resolve(null);
+const appPreviewPromise = viteAppPreviewPage ? startCodexMobileViteAppPreview() : Promise.resolve(null);
 
 globalThis.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ = "entry-topology-v1";
 globalThis.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ = entryTopology;

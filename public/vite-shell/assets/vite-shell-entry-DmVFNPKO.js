@@ -1,8 +1,8 @@
 var shell_asset_manifest_default = {
 	schemaVersion: 4,
 	generatedBy: "generate-frontend-shell-manifest",
-	shellCacheName: "codex-mobile-shell-v625-e80b19b8fe61",
-	clientBuildId: "0.1.11|codex-mobile-shell-v625-e80b19b8fe61",
+	shellCacheName: "codex-mobile-shell-v625-75df7c30f88a",
+	clientBuildId: "0.1.11|codex-mobile-shell-v625-75df7c30f88a",
 	scriptAssets: [
 		"/shell-asset-manifest.js",
 		"/api-client.js",
@@ -345,6 +345,10 @@ var shell_asset_manifest_default = {
 		{
 			"asset": "/app-shell-runtime.js",
 			"globals": ["CodexAppShellRuntime"]
+		},
+		{
+			"asset": "/app.js",
+			"globals": ["CodexMobileAppEntry"]
 		}
 	],
 	startupGlobalContracts: [
@@ -791,8 +795,8 @@ var shell_asset_manifest_default = {
 	counts: {
 		"scriptAssets": 51,
 		"entryGroups": 6,
-		"classicGlobalExportAssets": 48,
-		"classicGlobalExports": 48,
+		"classicGlobalExportAssets": 49,
+		"classicGlobalExports": 49,
 		"startupGlobalContracts": 30,
 		"linkAssets": 4,
 		"iconAssets": 4,
@@ -875,12 +879,12 @@ var codexMobileViteEntryGroupIds = [
 	"app-entry"
 ];
 var codexMobileViteEntryGroupLoaders = {
-	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-ub-ckr-Q.js"), []),
-	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-BBcqCRK0.js"), []),
-	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-CwK1xZ3K.js"), []),
-	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-CYEVQbi2.js"), []),
-	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-Cbp7cVzh.js"), []),
-	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-DOCtr3k-.js"), [])
+	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-BLsopolA.js"), []),
+	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-BnSVPB57.js"), []),
+	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-B5NDep9Z.js"), []),
+	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-CM9F2ba6.js"), []),
+	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-DyaMjrRZ.js"), []),
+	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-BV3XqdSf.js"), [])
 };
 function loadCodexMobileViteEntryGroups() {
 	const status = {
@@ -957,7 +961,9 @@ var pendingEsmCompatibility = {
 	loading: true
 };
 var esmCompatibility = pendingEsmCompatibility;
-var esmCompatibilityImportPromise = __vitePreload(() => import("./_virtual_codex-mobile-esm-compatibility-Dt4XCmdk.js").then(async (module) => {
+var viteAppPreviewPage = isAppPreviewPage();
+globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__ = viteAppPreviewPage;
+var esmCompatibilityImportPromise = __vitePreload(() => import("./_virtual_codex-mobile-esm-compatibility-VMwhlhvC.js").then(async (module) => {
 	const createCompatibility = module && typeof module.codexMobileViteEsmCompatibility === "function" ? module.codexMobileViteEsmCompatibility : null;
 	if (!createCompatibility) throw new Error("codex_mobile_vite_esm_compatibility_factory_missing");
 	esmCompatibility = await createCompatibility();
@@ -1089,6 +1095,11 @@ async function startCodexMobileViteAppPreview() {
 			await loadClassicScript(asset);
 			status.loaded.push(asset);
 		}
+		if (excludedEsmAssets.includes("/app.js")) {
+			const appEntry = globalThis.CodexMobileAppEntry;
+			if (!appEntry || typeof appEntry.startCodexMobileApp !== "function") throw new Error("codex_mobile_vite_app_preview_app_entry_missing");
+			appEntry.startCodexMobileApp();
+		}
 		status.ok = true;
 	} catch (error) {
 		status.ok = false;
@@ -1116,7 +1127,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-Bmch_bEu.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-CA6PeyyN.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
@@ -1125,7 +1136,7 @@ var entryDynamicImportGraph = {
 	entryGroupSources: codexMobileViteEntryGroupIds.map((groupId) => `virtual:codex-mobile-shell-entry-group/${groupId}`),
 	expectedImportCount: 2 + codexMobileViteEntryGroupIds.length
 };
-var appPreviewPromise = isAppPreviewPage() ? startCodexMobileViteAppPreview() : Promise.resolve(null);
+var appPreviewPromise = viteAppPreviewPage ? startCodexMobileViteAppPreview() : Promise.resolve(null);
 globalThis.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ = "entry-topology-v1";
 globalThis.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ = entryTopology;
 globalThis.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ = classicCompatibility;

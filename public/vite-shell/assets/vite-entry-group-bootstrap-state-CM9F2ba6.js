@@ -1,25 +1,25 @@
-//#region \0virtual:codex-mobile-shell-entry-group/manifest
+//#region \0virtual:codex-mobile-shell-entry-group/bootstrap-state
 var codexMobileViteEntryGroup = {
-	"id": "manifest",
-	"phase": "startup-manifest",
+	"id": "bootstrap-state",
+	"phase": "startup-critical",
 	"startupCritical": true,
-	"chunkTarget": "startup-manifest",
-	"assets": ["/shell-asset-manifest.js"],
+	"chunkTarget": "startup-bootstrap",
+	"assets": ["/app-bootstrap.js"],
 	"assetCount": 1,
 	"classicAssetRecords": [{
-		"path": "/shell-asset-manifest.js",
-		"sourcePath": "public/shell-asset-manifest.js",
-		"bytes": 25281,
-		"sha256": "9f5a8cb9338f432c014a0113cbe00d0f1204d075d43fa10371971a6c5b5f549d"
+		"path": "/app-bootstrap.js",
+		"sourcePath": "public/app-bootstrap.js",
+		"bytes": 35599,
+		"sha256": "898d0f345a29e8bbf58ac874d0fe90970945b6bb5aa40a93a1506f8962a97d4f"
 	}],
 	"classicAssetHashCount": 1,
-	"classicAssetBytes": 25281,
+	"classicAssetBytes": 35599,
 	"classicGlobalExports": [],
 	"classicGlobalExportAssetCount": 0,
 	"classicGlobalExportCount": 0,
 	"startupGlobalContracts": [],
-	"shellCacheName": "codex-mobile-shell-v625-e80b19b8fe61",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-e80b19b8fe61"
+	"shellCacheName": "codex-mobile-shell-v625-75df7c30f88a",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-75df7c30f88a"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;
