@@ -148,6 +148,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
       "thread-tile-state",
       "app-update-runtime",
       "thread-list-runtime",
+      "side-chat-runtime",
       "thread-list-load-policy",
       "thread-list-stable-order",
       "thread-status-hints",
@@ -178,6 +179,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(virtualSource, /public\/thread-tile-layout\.js/);
   assert.match(virtualSource, /public\/thread-tile-actions\.js/);
   assert.match(virtualSource, /public\/thread-list-runtime\.js/);
+  assert.match(virtualSource, /public\/side-chat-runtime\.js/);
   assert.match(virtualSource, /public\/thread-tile-state\.js/);
   assert.match(virtualSource, /public\/app-update-runtime\.js/);
   assert.match(virtualSource, /public\/thread-list-load-policy\.js/);
@@ -205,6 +207,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(virtualSource, /candidatePaneIdsPlan/);
   assert.match(virtualSource, /clientBuildVersionText/);
   assert.match(virtualSource, /detail-in-flight/);
+  assert.match(virtualSource, /renderSideChatPanel/);
   assert.match(virtualSource, /approval-answer/);
   assert.match(virtualSource, /server-newer/);
   assert.match(virtualSource, /planThreadListStableOrder/);
