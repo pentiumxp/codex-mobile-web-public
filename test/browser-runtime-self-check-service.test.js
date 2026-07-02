@@ -1070,8 +1070,10 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__"));
-  assert.ok(scriptSource.includes("build-refresh-policy"));
-  assert.ok(scriptSource.includes("thread-list-load-policy"));
+  assert.ok(scriptSource.includes("declaredEsmCompatibilityIds"));
+  assert.ok(scriptSource.includes("loaderPlanExcludedEsmIds"));
+  assert.ok(scriptSource.includes("esmCompatibilityIdsComplete"));
+  assert.ok(scriptSource.includes("dataset.esmCompatibilityModuleCount"));
   assert.ok(scriptSource.includes("esmCompatibilityExpectedCount"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__"));
   assert.ok(scriptSource.includes("__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__"));
@@ -1093,6 +1095,21 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("browser_startup_shell_refresh_contract_missing"));
   assert.ok(scriptSource.includes("data-codex-vite-startup-asset"));
   assert.ok(scriptSource.includes("data-codex-vite-entry-group-chunk"));
+});
+
+test("browser runtime self-check derives Vite ESM module expectations from page contracts", () => {
+  assert.ok(scriptSource.includes("declaredEsmCompatibilityIds"));
+  assert.ok(scriptSource.includes("loaderPlanExcludedEsmIds"));
+  assert.ok(scriptSource.includes("dataset.esmCompatibilityModuleCount"));
+  assert.ok(scriptSource.includes("esmCompatibilityIdsComplete"));
+  assert.doesNotMatch(scriptSource, /"build-refresh-policy"/);
+  assert.doesNotMatch(scriptSource, /"thread-list-load-policy"/);
+  assert.doesNotMatch(scriptSource, /"thread-list-stable-order"/);
+  assert.doesNotMatch(scriptSource, /"thread-status-hints"/);
+  assert.doesNotMatch(scriptSource, /"thread-detail-patch-plan"/);
+  assert.doesNotMatch(scriptSource, /"thread-detail-merge-state"/);
+  assert.doesNotMatch(scriptSource, /"client-render-stability-guard"/);
+  assert.doesNotMatch(scriptSource, /"live-operation-dock-state"/);
 });
 
 test("browser runtime startup gate blocks missing shell refresh contract", () => {

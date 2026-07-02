@@ -1232,16 +1232,19 @@ function vitePreviewProbeExpression(input = {}) {
       const esmCompatibilityModules = Array.isArray(esmCompatibility.modules)
         ? esmCompatibility.modules
         : [];
-      const expectedEsmCompatibilityIds = [
-        "build-refresh-policy",
-        "thread-list-load-policy",
-        "thread-list-stable-order",
-        "thread-status-hints",
-        "thread-detail-patch-plan",
-        "thread-detail-merge-state",
-        "client-render-stability-guard",
-        "live-operation-dock-state",
-      ];
+      const declaredEsmCompatibilityIds = esmCompatibilityModules
+        .map((entry) => String(entry && entry.id || ""))
+        .filter(Boolean);
+      const expectedEsmCompatibilityIds = declaredEsmCompatibilityIds;
+      const expectedEsmCompatibilityCount = Math.max(
+        marker ? Number(marker.dataset.esmCompatibilityModuleCount) || 0 : 0,
+        Number(esmCompatibility.moduleCount) || 0,
+        expectedEsmCompatibilityIds.length
+      );
+      const expectedEsmCompatibilityIdSet = new Set(expectedEsmCompatibilityIds);
+      const esmCompatibilityIdsComplete = expectedEsmCompatibilityCount > 0
+        && expectedEsmCompatibilityIds.length === expectedEsmCompatibilityCount
+        && expectedEsmCompatibilityIdSet.size === expectedEsmCompatibilityCount;
       const readyEsmCompatibilityIds = new Set(esmCompatibilityModules
         .filter((entry) => entry && entry.ready === true)
         .map((entry) => String(entry.id || "")));
@@ -1456,14 +1459,15 @@ function vitePreviewProbeExpression(input = {}) {
           && (marker ? Number(marker.dataset.startupGlobalContractCount) === startupGlobalContractCoverage.length : false),
         classicCompatibilityStartupGlobalContractMismatchCount: startupGlobalContractCoverage.filter((entry) => entry && entry.ok !== true).length,
         esmCompatibilityReady: String(esmCompatibility.owner || "") === "vite-shell-entry"
-          && Number(esmCompatibility.moduleCount) >= expectedEsmCompatibilityIds.length
-          && Number(esmCompatibility.readyCount) >= expectedEsmCompatibilityIds.length
+          && Number(esmCompatibility.moduleCount) === expectedEsmCompatibilityCount
+          && Number(esmCompatibility.readyCount) === expectedEsmCompatibilityCount
+          && esmCompatibilityIdsComplete === true
           && expectedEsmCompatibilityIds.every((id) => readyEsmCompatibilityIds.has(id))
           && esmCompatibilityGlobalsPublished === true,
         esmCompatibilityOwner: String(esmCompatibility.owner || ""),
         esmCompatibilityModuleCount: Number(esmCompatibility.moduleCount) || esmCompatibilityModules.length,
         esmCompatibilityReadyCount: Number(esmCompatibility.readyCount) || esmCompatibilityModules.filter((entry) => entry && entry.ready === true).length,
-        esmCompatibilityExpectedCount: expectedEsmCompatibilityIds.length,
+        esmCompatibilityExpectedCount: expectedEsmCompatibilityCount,
         esmCompatibilityGlobalsPublished,
         deferredGroupCount,
         deferredLoaded,
@@ -1589,16 +1593,9 @@ function viteAppPreviewProbeExpression(input = {}) {
       const esmCompatibilityModules = Array.isArray(esmCompatibility.modules)
         ? esmCompatibility.modules
         : [];
-      const expectedEsmCompatibilityIds = [
-        "build-refresh-policy",
-        "thread-list-load-policy",
-        "thread-list-stable-order",
-        "thread-status-hints",
-        "thread-detail-patch-plan",
-        "thread-detail-merge-state",
-        "client-render-stability-guard",
-        "live-operation-dock-state",
-      ];
+      const declaredEsmCompatibilityIds = esmCompatibilityModules
+        .map((entry) => String(entry && entry.id || ""))
+        .filter(Boolean);
       const readyEsmCompatibilityIds = new Set(esmCompatibilityModules
         .filter((entry) => entry && entry.ready === true)
         .map((entry) => String(entry.id || "")));
@@ -1646,6 +1643,25 @@ function viteAppPreviewProbeExpression(input = {}) {
         })).filter((entry) => entry.path)
         : [];
       const loaderPlanExcludedEsmPaths = loaderPlanExcludedEsmScripts.map((entry) => entry.path);
+      const loaderPlanExcludedEsmIds = loaderPlanExcludedEsmScripts
+        .map((entry) => String(entry && entry.esmModuleId || ""))
+        .filter(Boolean);
+      const expectedEsmCompatibilityIds = loaderPlanExcludedEsmIds.length
+        ? loaderPlanExcludedEsmIds
+        : declaredEsmCompatibilityIds;
+      const expectedEsmCompatibilityCount = Math.max(
+        Number(loaderPlan && loaderPlan.excludedEsmScriptCount || 0) || 0,
+        Number(esmCompatibility.moduleCount) || 0,
+        expectedEsmCompatibilityIds.length
+      );
+      const expectedEsmCompatibilityIdSet = new Set(expectedEsmCompatibilityIds);
+      const declaredEsmCompatibilityIdSet = new Set(declaredEsmCompatibilityIds);
+      const esmCompatibilityIdsComplete = expectedEsmCompatibilityCount > 0
+        && expectedEsmCompatibilityIds.length === expectedEsmCompatibilityCount
+        && expectedEsmCompatibilityIdSet.size === expectedEsmCompatibilityCount
+        && declaredEsmCompatibilityIds.length === expectedEsmCompatibilityCount
+        && declaredEsmCompatibilityIdSet.size === expectedEsmCompatibilityCount
+        && expectedEsmCompatibilityIds.every((id) => declaredEsmCompatibilityIdSet.has(id));
       const loaderPlanCoveredShellScriptSet = new Set([
         ...loaderPlanScripts,
         ...loaderPlanExcludedEsmPaths,
@@ -1700,13 +1716,14 @@ function viteAppPreviewProbeExpression(input = {}) {
         loaderPlanLoadedMatches: statusLoaded.length > 0
           && JSON.stringify(statusLoaded) === JSON.stringify(loaderPlanScripts),
         esmCompatibilityReady: String(esmCompatibility.owner || "") === "vite-shell-entry"
-          && Number(esmCompatibility.moduleCount) >= expectedEsmCompatibilityIds.length
-          && Number(esmCompatibility.readyCount) >= expectedEsmCompatibilityIds.length
+          && Number(esmCompatibility.moduleCount) === expectedEsmCompatibilityCount
+          && Number(esmCompatibility.readyCount) === expectedEsmCompatibilityCount
+          && esmCompatibilityIdsComplete === true
           && expectedEsmCompatibilityIds.every((id) => readyEsmCompatibilityIds.has(id)),
         esmCompatibilityOwner: String(esmCompatibility.owner || ""),
         esmCompatibilityModuleCount: Number(esmCompatibility.moduleCount) || esmCompatibilityModules.length,
         esmCompatibilityReadyCount: Number(esmCompatibility.readyCount) || esmCompatibilityModules.filter((entry) => entry && entry.ready === true).length,
-        esmCompatibilityExpectedCount: expectedEsmCompatibilityIds.length,
+        esmCompatibilityExpectedCount: expectedEsmCompatibilityCount,
         esmCompatibilityGlobalsPublished,
         loaderOk: loaderPromiseOk || loaderStatusOk,
         loaderTimedOut: loaderPromiseTimedOut && !loaderStatusOk,
