@@ -968,6 +968,93 @@ var require_runtime_settings = /* @__PURE__ */ __commonJSMin(((exports, module) 
 	});
 }));
 //#endregion
+//#region public/viewport-metrics.js
+var require_viewport_metrics = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexViewportMetrics = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const DEFAULT_KEYBOARD_SHRINK_PX = 120;
+		const DEFAULT_MIN_HEIGHT = 320;
+		const DEFAULT_STABLE_PIXEL_EPSILON_PX = 1;
+		const NON_TEXT_INPUT_TYPES = /* @__PURE__ */ new Set([
+			"button",
+			"checkbox",
+			"color",
+			"file",
+			"hidden",
+			"image",
+			"radio",
+			"range",
+			"reset",
+			"submit"
+		]);
+		function positiveNumber(value) {
+			const numeric = Number(value);
+			return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+		}
+		function cssPixel(value) {
+			const numeric = Number(value);
+			return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 0;
+		}
+		function stablePixelChanged(previous, next, options = {}) {
+			const previousPx = cssPixel(previous);
+			const nextPx = cssPixel(next);
+			const configuredEpsilon = Number(options.epsilonPx);
+			const epsilonPx = Math.max(0, Number.isFinite(configuredEpsilon) ? configuredEpsilon : DEFAULT_STABLE_PIXEL_EPSILON_PX);
+			if (!previousPx) return Boolean(nextPx);
+			if (!nextPx) return Boolean(previousPx);
+			return Math.abs(nextPx - previousPx) > epsilonPx;
+		}
+		function isKeyboardEditable(element) {
+			if (!element) return false;
+			if (element.isContentEditable) return true;
+			const tag = String(element.tagName || "").toLowerCase();
+			if (tag === "textarea") return !element.disabled && !element.readOnly;
+			if (tag !== "input") return false;
+			const type = String(element.type || "text").toLowerCase();
+			return !element.disabled && !element.readOnly && !NON_TEXT_INPUT_TYPES.has(type);
+		}
+		function measureViewport(input = {}) {
+			const threshold = positiveNumber(input.keyboardShrinkPx) || DEFAULT_KEYBOARD_SHRINK_PX;
+			const minHeight = positiveNumber(input.minHeight) || DEFAULT_MIN_HEIGHT;
+			const visual = positiveNumber(input.visualHeight);
+			const visualOffsetTop = Math.max(0, Number(input.visualOffsetTop) || 0);
+			const scrollTop = Math.max(0, Number(input.scrollTop) || 0);
+			const localVisibleTop = Math.max(visualOffsetTop, scrollTop);
+			const visualBottom = visual ? visual + visualOffsetTop : 0;
+			const layout = Math.max(positiveNumber(input.innerHeight), positiveNumber(input.clientHeight));
+			const hostViewportHeight = positiveNumber(input.hostViewportHeight);
+			const hostKeyboardBottomInset = Math.max(0, Number(input.hostKeyboardBottomInset) || 0);
+			const hostBottomSafeArea = Math.max(0, Number(input.hostBottomSafeArea) || 0);
+			const hostKeyboardVisible = Boolean(input.hostKeyboardVisible && hostKeyboardBottomInset > threshold);
+			const keyboardCandidate = Boolean(visualBottom && layout && visualBottom < layout - threshold);
+			const keyboardInputActive = Boolean(input.keyboardInputActive || isKeyboardEditable(input.activeElement));
+			const keyboardShrunk = Boolean(keyboardInputActive && (keyboardCandidate || Boolean(keyboardInputActive && visualOffsetTop > 40) || Boolean(keyboardInputActive && scrollTop > 40) || hostKeyboardVisible));
+			const hostKeyboardHeight = hostKeyboardVisible ? Math.max(minHeight, hostViewportHeight || (layout ? layout - hostKeyboardBottomInset : 0)) : 0;
+			const localVisualHeight = visual || (visualBottom ? Math.max(0, visualBottom - visualOffsetTop) : 0);
+			return {
+				height: Math.max(minHeight, Math.round(keyboardShrunk ? hostKeyboardHeight || localVisualHeight || visualBottom || layout || 0 : Math.max(visualBottom || 0, layout || 0))),
+				top: Math.round(keyboardShrunk ? localVisibleTop : 0),
+				keyboardShrunk,
+				keyboardCandidate,
+				visualBottom: Math.round(visualBottom),
+				layout: Math.round(layout),
+				hostKeyboardVisible,
+				hostKeyboardBottomInset: Math.round(hostKeyboardBottomInset),
+				hostBottomSafeArea: Math.round(hostBottomSafeArea)
+			};
+		}
+		return {
+			cssPixel,
+			isKeyboardEditable,
+			measureViewport,
+			stablePixelChanged
+		};
+	});
+}));
+//#endregion
 //#region public/thread-list-load-policy.js
 var require_thread_list_load_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -1846,6 +1933,7 @@ var require_live_operation_dock_state = /* @__PURE__ */ __commonJSMin(((exports,
 //#region \0virtual:codex-mobile-esm-compatibility
 var import_build_refresh_policy = /* @__PURE__ */ __toESM(require_build_refresh_policy());
 var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings());
+var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
 var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
 var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
@@ -1883,6 +1971,19 @@ var moduleDefinitions = [
 			"selectedNewThreadPermission"
 		],
 		"assetPath": "/runtime-settings.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "viewport-metrics",
+		"source": "public/viewport-metrics.js",
+		"globalName": "CodexViewportMetrics",
+		"expectedFunctions": [
+			"cssPixel",
+			"isKeyboardEditable",
+			"measureViewport",
+			"stablePixelChanged"
+		],
+		"assetPath": "/viewport-metrics.js",
 		"classicLoaderExcluded": true
 	},
 	{
@@ -1965,6 +2066,7 @@ var moduleDefinitions = [
 var moduleApis = {
 	"build-refresh-policy": import_build_refresh_policy.default,
 	"runtime-settings": import_runtime_settings.default,
+	"viewport-metrics": import_viewport_metrics.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
 	"thread-list-stable-order": import_thread_list_stable_order.default,
 	"thread-status-hints": import_thread_status_hints.default,
@@ -2032,6 +2134,37 @@ function sampleModule(id, api) {
 			selectedModel,
 			selectedEffort,
 			selectedPermission
+		};
+	}
+	if (id === "viewport-metrics") {
+		const editable = functionReady(api, "isKeyboardEditable") ? api.isKeyboardEditable({
+			tagName: "INPUT",
+			type: "text"
+		}) : false;
+		const checkboxEditable = functionReady(api, "isKeyboardEditable") ? api.isKeyboardEditable({
+			tagName: "INPUT",
+			type: "checkbox"
+		}) : true;
+		const measurement = functionReady(api, "measureViewport") ? api.measureViewport({
+			visualHeight: 520,
+			visualOffsetTop: 16,
+			innerHeight: 1024,
+			clientHeight: 1024,
+			activeElement: { tagName: "TEXTAREA" }
+		}) : {};
+		const stableChanged = functionReady(api, "stablePixelChanged") ? api.stablePixelChanged(92, 94) : false;
+		const stableNoise = functionReady(api, "stablePixelChanged") ? api.stablePixelChanged(92, 93) : true;
+		const cssPixel = functionReady(api, "cssPixel") ? api.cssPixel(92.6) : 0;
+		return {
+			ok: editable === true && checkboxEditable === false && measurement.keyboardShrunk === true && measurement.height === 520 && measurement.top === 16 && stableChanged === true && stableNoise === false && cssPixel === 93,
+			editable,
+			checkboxEditable,
+			keyboardShrunk: Boolean(measurement.keyboardShrunk),
+			height: Number(measurement.height) || 0,
+			top: Number(measurement.top) || 0,
+			stableChanged,
+			stableNoise,
+			cssPixel
 		};
 	}
 	if (id === "thread-list-load-policy") {
@@ -2553,7 +2686,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DSfZ6X6P.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DZ1ye6qC.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
