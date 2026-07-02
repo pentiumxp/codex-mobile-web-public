@@ -191,6 +191,10 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     "thread-detail-merge-state",
     "thread-detail-v4-merge-state",
     "thread-detail-runtime",
+    "task-card-runtime",
+    "notification-ui-runtime",
+    "conversation-render-runtime",
+    "event-stream-runtime",
     "client-render-stability-guard",
     "live-operation-dock-state",
   ];
@@ -245,6 +249,10 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/thread-detail-merge-state\.js/);
   assert.match(shardSources, /public\/thread-detail-v4-merge-state\.js/);
   assert.match(shardSources, /public\/thread-detail-runtime\.js/);
+  assert.match(shardSources, /public\/task-card-runtime\.js/);
+  assert.match(shardSources, /public\/notification-ui-runtime\.js/);
+  assert.match(shardSources, /public\/conversation-render-runtime\.js/);
+  assert.match(shardSources, /public\/event-stream-runtime\.js/);
   assert.match(shardSources, /public\/client-render-stability-guard\.js/);
   assert.match(shardSources, /public\/live-operation-dock-state\.js/);
   assert.match(shardSources, /createApiClient/);
@@ -282,6 +290,10 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /createThreadDetailMergePolicy/);
   assert.match(shardSources, /createThreadDetailV4MergePolicy/);
   assert.match(shardSources, /createThreadDetailRuntime/);
+  assert.match(shardSources, /createTaskCardRuntime/);
+  assert.match(shardSources, /createNotificationUiRuntime/);
+  assert.match(shardSources, /createConversationRenderRuntime/);
+  assert.match(shardSources, /createEventStreamRuntime/);
   assert.match(shardSources, /renderLiveOperationDock/);
   assert.match(shardSources, /operationCardContentPlan/);
 });

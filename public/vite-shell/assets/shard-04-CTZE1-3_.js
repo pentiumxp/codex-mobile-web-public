@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-4WUavjDd.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CXGq3ZiM.js";
 //#region public/thread-detail-runtime.js
 var require_thread_detail_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachThreadDetailRuntime(root) {
@@ -1047,211 +1047,2548 @@ var require_thread_detail_runtime = /* @__PURE__ */ __commonJSMin(((exports, mod
 	})(typeof globalThis !== "undefined" ? globalThis : exports);
 }));
 //#endregion
-//#region public/client-render-stability-guard.js
-var require_client_render_stability_guard = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function initClientRenderStabilityGuard(globalScope) {
-		function stringValue(value) {
-			return String(value || "").trim();
+//#region public/task-card-runtime.js
+var require_task_card_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	function taskCardActionThread(threadId) {
+		const id = String(threadId || "").trim();
+		if (id && state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+		if (id && state.threadTileDetails.has(id)) return state.threadTileDetails.get(id);
+		if (!id) return state.currentThread || null;
+		return null;
+	}
+	function findThreadTaskCard(cardId, threadId = "") {
+		const thread = taskCardActionThread(threadId);
+		return threadTaskCardsForThread(thread || {}).find((card) => card.id === String(cardId || "")) || null;
+	}
+	function summarizeTaskCardText(value) {
+		return truncateSingleLine(String(value || "").replace(/\s+/g, " ").trim(), 280);
+	}
+	function truncateThreadTaskCardBody(value, maxChars = THREAD_TASK_CARD_BODY_MAX_CHARS) {
+		const text = String(value || "").trim();
+		const limit = Math.max(0, Number(maxChars) || 0);
+		if (!limit || text.length <= limit) return text;
+		const marker = `\n\n[Task card body truncated: ${text.length} chars total]\n\n`;
+		const available = Math.max(0, limit - marker.length);
+		if (available <= 0) return text.slice(0, limit);
+		const head = Math.ceil(available * .6);
+		const tail = Math.max(0, available - head);
+		return `${text.slice(0, head).trimEnd()}${marker}${text.slice(-tail).trimStart()}`.slice(0, limit);
+	}
+	function isThreadTaskCardCommandText(value) {
+		const text = String(value || "").trim();
+		return (text.startsWith(THREAD_TASK_CARD_COMMAND_PREFIX) || THREAD_TASK_CARD_MENTION_PATTERN.test(text) || THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(text)) && threadTaskCardCommandText(text).length > 0;
+	}
+	function isThreadGoalCommandText(value) {
+		const text = String(value || "").trim();
+		return text.toLowerCase() === THREAD_GOAL_COMMAND_PREFIX || THREAD_GOAL_MENTION_PATTERN.test(text);
+	}
+	function isChatGptProCommandText(value) {
+		return /(?:^|\s)@(?:ChatGPT\s+Pro|ChatGPTPro|GPT\s+Pro)\b/i.test(String(value || ""));
+	}
+	async function submitChatGptProRequest(text, options = {}) {
+		if (!String(text || "").trim()) return false;
+		if (state.pendingAttachments.length) {
+			showError(/* @__PURE__ */ new Error("@ChatGPT Pro does not support attachments in this entry point"));
+			return true;
 		}
-		function shortHash(value) {
-			const text = stringValue(value);
-			let hash = 2166136261;
-			for (let index = 0; index < text.length; index += 1) {
-				hash ^= text.charCodeAt(index);
-				hash = Math.imul(hash, 16777619);
+		const sourceThreadId = currentComposerThreadId() || state.currentThreadId || "";
+		const sourceThread = composerTargetThread() || state.currentThread || null;
+		const cwd = state.newThreadDraft ? state.selectedCwd || "" : sourceThread && sourceThread.cwd || "";
+		state.composerBusy = true;
+		state.sendButtonHint = "";
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = "正在提交 ChatGPT Pro 分析";
+		markActivity("Pro 分析");
+		updateComposerControls();
+		try {
+			const result = await api("/api/chatgpt-pro/generate", {
+				method: "POST",
+				body: JSON.stringify({
+					prompt: text,
+					sourceThreadId,
+					sourceThreadTitle: sourceThread ? threadDisplayName(sourceThread) : "",
+					cwd,
+					language: "zh-CN",
+					outputFormat: "markdown",
+					bridgeMode: isHermesEmbedMode() ? "embedded" : "standalone"
+				}),
+				timeoutMs: 18e4
+			});
+			setComposerText("");
+			clearPendingAttachments();
+			scheduleCurrentDraftSave();
+			const proThreadId = String(result && result.proThreadId || "");
+			$("connectionState").textContent = proThreadId ? `ChatGPT Pro 分析已提交：${proThreadId.slice(0, 8)}` : "ChatGPT Pro 分析已提交";
+			markActivity("Pro 已提交");
+			await loadThreads({ silent: true }).catch(showError);
+			if (state.newThreadDraft && proThreadId) {
+				state.newThreadDraft = false;
+				await loadThread(proThreadId, { source: "chatgpt-pro" }).catch(showError);
 			}
-			return (hash >>> 0).toString(36);
+			return true;
+		} catch (err) {
+			$("connectionState").classList.add("error");
+			$("connectionState").textContent = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err) || "ChatGPT Pro 提交失败";
+			showError(err);
+			if (options.rethrow) throw err;
+			return true;
+		} finally {
+			state.composerBusy = false;
+			updateComposerControls();
 		}
-		function submittedUserItemClientSubmissionId(item) {
-			if (!item || item.type !== "userMessage") return "";
-			return stringValue(item.clientSubmissionId);
-		}
-		function firstSubmittedUserMessageClientSubmissionId(turn) {
-			const items = Array.isArray(turn && turn.items) ? turn.items : [];
-			for (const item of items) {
-				const submissionId = submittedUserItemClientSubmissionId(item);
-				if (submissionId) return submissionId;
-			}
-			return "";
-		}
-		function localSubmissionRenderKey(clientSubmissionId) {
-			const submissionId = stringValue(clientSubmissionId);
-			return submissionId ? `submitted:${shortHash(submissionId)}` : "";
-		}
-		function submittedTurnRenderKey(turn) {
-			const explicit = stringValue(turn && turn.mobileLocalSubmissionRenderKey);
-			if (explicit) return explicit;
-			return localSubmissionRenderKey(firstSubmittedUserMessageClientSubmissionId(turn));
-		}
-		function stableTurnIdentity(turn) {
-			return submittedTurnRenderKey(turn) || stringValue(turn && (turn.id || turn.startedAt)) || "turn";
-		}
-		function markSubmittedTurn(turn, clientSubmissionId) {
-			if (!turn || typeof turn !== "object") return "";
-			const key = localSubmissionRenderKey(clientSubmissionId);
-			if (key) turn.mobileLocalSubmissionRenderKey = key;
-			return key;
-		}
-		function transferSubmittedTurnIdentity(sourceTurn, targetTurn, clientSubmissionId) {
-			if (!targetTurn || typeof targetTurn !== "object") return "";
-			const key = submittedTurnRenderKey(sourceTurn) || submittedTurnRenderKey(targetTurn) || localSubmissionRenderKey(clientSubmissionId);
-			if (key) targetTurn.mobileLocalSubmissionRenderKey = key;
-			return key;
-		}
-		const api = {
-			firstSubmittedUserMessageClientSubmissionId,
-			localSubmissionRenderKey,
-			markSubmittedTurn,
-			shortHash,
-			stableTurnIdentity,
-			submittedTurnRenderKey,
-			transferSubmittedTurnIdentity
+	}
+	function threadTaskCardCommandText(value) {
+		const text = String(value || "").trim();
+		if (text.startsWith(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX)) return text.slice(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX.length).trim();
+		if (THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(text)) return text.replace(THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN, "").trim();
+		if (THREAD_TASK_CARD_MENTION_PATTERN.test(text)) return text.replace(THREAD_TASK_CARD_MENTION_PATTERN, "").trim();
+		return text.startsWith(THREAD_TASK_CARD_COMMAND_PREFIX) ? text.slice(THREAD_TASK_CARD_COMMAND_PREFIX.length).trim() : "";
+	}
+	function threadTaskCardVisibleTargets() {
+		const sourceThreadId = currentComposerThreadId() || state.currentThreadId;
+		return (state.threads || []).filter((thread) => thread && thread.id && thread.id !== sourceThreadId).slice(0, 40).map((thread) => ({
+			threadId: String(thread.id || ""),
+			title: threadTitleForDisplay(thread) || String(thread.id || ""),
+			cwd: String(thread.cwd || "")
+		}));
+	}
+	function buildThreadTaskCardDraftRequestText(commandText, sourceThread = composerTargetThread()) {
+		const original = String(commandText || "").trim();
+		if (!threadTaskCardCommandText(original)) throw new Error("Task-card command is empty");
+		const legacyAutonomousCommand = original.startsWith(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX) || THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(original);
+		const source = sourceThread || {};
+		const sourceThreadId = currentComposerThreadId() || state.currentThreadId || "";
+		const envelope = {
+			version: 1,
+			sourceThreadId: String(sourceThreadId),
+			sourceThreadTitle: threadTitleForDisplay(source) || String(sourceThreadId),
+			availableTargets: threadTaskCardVisibleTargets()
 		};
-		if (typeof module !== "undefined" && module.exports) module.exports = api;
-		globalScope.CodexClientRenderStabilityGuard = api;
+		return [
+			original,
+			"",
+			`<${THREAD_TASK_CARD_REQUEST_TAG}>`,
+			JSON.stringify(envelope, null, 2),
+			`</${THREAD_TASK_CARD_REQUEST_TAG}>`,
+			"",
+			"Interpret the command above as a cross-thread pending task card request.",
+			"Return only one XML block in exactly this format:",
+			`<${THREAD_TASK_CARD_DRAFT_TAG}>`,
+			"{\"targetThreadIds\":[\"one or more exact threadId values from availableTargets\"],\"workflowMode\":\"manual|autonomous\",\"workflowId\":\"optional existing workflow id\",\"title\":\"short title\",\"summary\":\"one-line summary\",\"body\":\"full markdown body\",\"error\":\"\"}",
+			`</${THREAD_TASK_CARD_DRAFT_TAG}>`,
+			"Rules:",
+			"- Choose one or more targetThreadIds only from availableTargets.threadId.",
+			"- Do not invent a thread id; when the request names multiple clear targets, include all of them.",
+			"- Default workflowMode to manual for plain # or @任务卡片 single-card commands.",
+			"- Use autonomous only when the command uses #自由协作, @自由协作, or explicitly asks for autonomous/free collaboration/auto-return workflow.",
+			legacyAutonomousCommand ? "- This command used #自由协作 or @自由协作, so default workflowMode to autonomous unless it explicitly asks for manual." : "- This command used a manual task-card entry, so default workflowMode to manual unless it explicitly asks for autonomous/free collaboration.",
+			"- Autonomous workflow means the target approves the first card once; after the target turn completes, Mobile Web sends the return card back automatically without another approval.",
+			"- For a new autonomous workflow, leave workflowId empty. Reuse workflowId only when the command or visible context provides an existing id.",
+			"- If the command is unclear or no target fits, set targetThreadIds to an empty array and explain the problem in error.",
+			"- Keep title under 120 chars and summary under 280 chars.",
+			"- Keep body under 7600 chars and put the actual requested work there.",
+			"- Do not add any explanation outside the XML block."
+		].join("\n");
+	}
+	function threadTaskCardRequestMarkerMatch(value) {
+		const text = String(value || "");
+		return new RegExp(`\\n\\s*<${THREAD_TASK_CARD_REQUEST_TAG}>[\\s\\S]*?<\\/${THREAD_TASK_CARD_REQUEST_TAG}>[\\s\\S]*$`, "i").exec(text);
+	}
+	function uniqueThreadTaskCardTargetIds(values, fallbackValue = "") {
+		const raw = Array.isArray(values) && values.length ? values : [fallbackValue];
+		const seen = /* @__PURE__ */ new Set();
+		const ids = [];
+		for (const value of raw) {
+			const id = String(value || "").trim();
+			if (!id || seen.has(id)) continue;
+			seen.add(id);
+			ids.push(id);
+			if (ids.length >= 12) break;
+		}
+		return ids;
+	}
+	function normalizeThreadTaskCardWorkflowMode(value) {
+		const mode = String(value || "manual").trim().toLowerCase();
+		if (mode === "autonomous" || mode === "auto" || mode === "automatic") return "autonomous";
+		return "manual";
+	}
+	function visibleThreadTaskCardCommandText(value) {
+		const text = String(value || "");
+		const match = threadTaskCardRequestMarkerMatch(text);
+		return match ? text.slice(0, match.index).trimEnd() : text;
+	}
+	function parseThreadTaskCardDraftText(value) {
+		const text = String(value || "");
+		const match = new RegExp(`<${THREAD_TASK_CARD_DRAFT_TAG}>\\s*([\\s\\S]*?)\\s*<\\/${THREAD_TASK_CARD_DRAFT_TAG}>`, "i").exec(text);
+		if (!match) return null;
+		let parsed;
+		try {
+			parsed = JSON.parse(match[1]);
+		} catch (_) {
+			return null;
+		}
+		if (!parsed || typeof parsed !== "object") return null;
+		const targetThreadIds = uniqueThreadTaskCardTargetIds(parsed.targetThreadIds, parsed.targetThreadId);
+		return {
+			rawText: text,
+			targetThreadId: targetThreadIds[0] || "",
+			targetThreadIds,
+			workflowMode: normalizeThreadTaskCardWorkflowMode(parsed.workflowMode),
+			workflowId: truncateSingleLine(String(parsed.workflowId || "").trim(), 220),
+			title: truncateSingleLine(String(parsed.title || "").trim(), 120),
+			summary: truncateSingleLine(String(parsed.summary || "").trim(), 280),
+			body: String(parsed.body || "").trim(),
+			error: truncateSingleLine(String(parsed.error || "").trim(), 280)
+		};
+	}
+	function hasThreadTaskCardDraftTag(value) {
+		return String(value || "").includes(`<${THREAD_TASK_CARD_DRAFT_TAG}>`);
+	}
+	function turnHasThreadTaskCardRequest(turn) {
+		return (Array.isArray(turn && turn.items) ? turn.items : []).some((item) => {
+			if (!item || item.type !== "userMessage") return false;
+			return (Array.isArray(item.content) ? item.content : []).some((part) => isInputTextPart(part) && Boolean(threadTaskCardRequestMarkerMatch(inputTextValue(part))));
+		});
+	}
+	function turnHasThreadTaskCardDraftResponse(turn) {
+		return (Array.isArray(turn && turn.items) ? turn.items : []).some((item) => item && (item.type === "agentMessage" || item.type === "plan") && hasThreadTaskCardDraftTag(item.text || ""));
+	}
+	function renderTurnThreadTaskCardDraft(turn, previousKeys = /* @__PURE__ */ new Set(), thread = renderContextThread()) {
+		const contextThread = renderContextThread(thread);
+		const items = Array.isArray(turn && turn.items) ? turn.items : [];
+		for (const item of items) {
+			if (!item || item.type !== "agentMessage" && item.type !== "plan") continue;
+			const text = String(item.text || "");
+			const draft = parseThreadTaskCardDraftText(text);
+			if (draft) {
+				const draftKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
+				let draftState = threadTaskCardDraftState(draftKey);
+				if (draftState.status === "pending") {
+					const existing = matchingThreadTaskCardsForDraft(draft, turn, contextThread);
+					if (existing.length) {
+						setThreadTaskCardDraftState(draftKey, {
+							status: "created",
+							error: "",
+							cardId: String(existing[0] && existing[0].id || ""),
+							cardIds: existing.map((card) => String(card && card.id || "")).filter(Boolean)
+						}, { render: false });
+						draftState = threadTaskCardDraftState(draftKey);
+					}
+				}
+				if (canRecoverFailedThreadTaskCardDraft(draft, draftState)) {
+					setThreadTaskCardDraftState(draftKey, {
+						status: "pending",
+						error: ""
+					}, { render: false });
+					queueThreadTaskCardDraftCreation(draftKey, contextThread);
+					draftState = Object.assign({}, draftState, { status: "creating" });
+				}
+				if (draftState.status === "created" || draftState.status === "dismissed") return "";
+				if (draftState.status === "creating" && isThreadTaskCardDraftCreationStale(draftKey, draftState)) {
+					const attempts = Math.max(1, Number(draftState.attempts || 1));
+					if (attempts < THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS) {
+						setThreadTaskCardDraftState(draftKey, {
+							status: "pending",
+							error: "",
+							attempts
+						}, { render: false });
+						queueThreadTaskCardDraftCreation(draftKey, contextThread);
+						draftState = Object.assign({}, draftState, {
+							status: "creating",
+							attempts: attempts + 1
+						});
+					} else {
+						setThreadTaskCardDraftState(draftKey, {
+							status: "failed",
+							error: "Task card creation timed out before the server stored a card"
+						}, { render: false });
+						draftState = threadTaskCardDraftState(draftKey);
+					}
+				}
+				if (draftState.status === "pending") {
+					queueThreadTaskCardDraftCreation(draftKey, contextThread);
+					draftState = Object.assign({}, draftState, { status: "creating" });
+				}
+				if (draftState.status === "creating") return "";
+				return renderThreadTaskCardDraft(draft, item, turn, previousKeys, draftKey, draftState, contextThread);
+			}
+			if (hasThreadTaskCardDraftTag(text)) return renderPendingThreadTaskCardDraft("Generating cross-thread task card draft...", "Generating");
+		}
+		return "";
+	}
+	function renderPendingThreadTaskCardDraft(message, status = "Generating") {
+		const detail = escapeHtml(String(message || "Generating cross-thread task card draft..."));
+		return `<section class="approval-card thread-task-card-draft pending synthetic">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">Cross-thread task card draft</div>
+        <div class="approval-method">Pending</div>
+      </div>
+      <span class="approval-status">${escapeHtml(String(status || "Generating"))}</span>
+    </div>
+    <div class="approval-summary-line">${detail}</div>
+  </section>`;
+	}
+	function threadTaskCardDraftKey(turnId, itemId) {
+		return `task-card-draft|${String(turnId || "")}|${String(itemId || "")}`;
+	}
+	function isThreadTaskCardDraftCreationStale(draftKey, draftState) {
+		if (!draftKey || !draftState || draftState.status !== "creating") return false;
+		const updatedAtMs = Number(draftState.updatedAtMs || 0);
+		if (!updatedAtMs) return false;
+		if (Date.now() - updatedAtMs < THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS) return false;
+		state.scheduledThreadTaskCardDraftCreations.delete(String(draftKey));
+		state.activeThreadTaskCardDraftCreations.delete(String(draftKey));
+		return true;
+	}
+	function threadTaskCardDraftPayloadKey(draft) {
+		const targetThreadIds = threadTaskCardDraftTargetIds(draft).sort();
+		return stableTextHash(JSON.stringify({
+			targetThreadIds,
+			workflowMode: normalizeThreadTaskCardWorkflowMode(draft && draft.workflowMode),
+			workflowId: String(draft && draft.workflowId || "").trim(),
+			title: String(draft && draft.title || "").trim(),
+			summary: String(draft && draft.summary || "").trim(),
+			body: String(draft && draft.body || "").trim()
+		}));
+	}
+	function threadTaskCardDraftKeyForDraft(turn, draft, item = null) {
+		const turnId = String(turn && turn.id || "");
+		const payloadKey = threadTaskCardDraftPayloadKey(draft);
+		if (turnId && payloadKey) return threadTaskCardDraftKey(turnId, `draft-${payloadKey}`);
+		return threadTaskCardDraftKey(turnId, item && item.id || "");
+	}
+	function findThreadById(threadId) {
+		const id = String(threadId || "").trim();
+		return (state.threads || []).find((thread) => String(thread && thread.id || "") === id) || null;
+	}
+	function threadTaskCardDraftTargetIds(draft) {
+		return uniqueThreadTaskCardTargetIds(draft && draft.targetThreadIds, draft && draft.targetThreadId);
+	}
+	function commonPrefixLength(a, b) {
+		const left = String(a || "");
+		const right = String(b || "");
+		const max = Math.min(left.length, right.length);
+		let index = 0;
+		while (index < max && left[index] === right[index]) index += 1;
+		return index;
+	}
+	function recoverVisibleThreadForDraftTargetId(threadId) {
+		const id = String(threadId || "").trim();
+		if (!id || id.length < 12) return null;
+		if (findThreadById(id)) return null;
+		const candidates = (state.threads || []).filter((thread) => thread && thread.id && thread.id !== state.currentThreadId).map((thread) => ({
+			thread,
+			prefix: commonPrefixLength(id, thread.id)
+		})).filter((entry) => entry.prefix >= 14).sort((a, b) => b.prefix - a.prefix);
+		if (!candidates.length) return null;
+		const bestPrefix = candidates[0].prefix;
+		const best = candidates.filter((entry) => entry.prefix === bestPrefix);
+		return best.length === 1 ? best[0].thread : null;
+	}
+	function threadTaskCardDraftTargetThreads(draft) {
+		return threadTaskCardDraftTargetIds(draft).map((threadId) => ({
+			threadId,
+			thread: findThreadById(threadId) || recoverVisibleThreadForDraftTargetId(threadId)
+		}));
+	}
+	function canRecoverFailedThreadTaskCardDraft(draft, draftState) {
+		if (!draft || !draftState || draftState.status !== "failed") return false;
+		const error = String(draftState.error || "");
+		if (!/Target thread is missing from the visible thread list/i.test(error)) return false;
+		return threadTaskCardDraftTargetIds(draft).length > 0;
+	}
+	function matchingThreadTaskCardsForDraft(draft, turn, thread = renderContextThread()) {
+		const contextThread = renderContextThread(thread);
+		const sourceThread = contextThread || state.currentThread;
+		const cards = Array.isArray(sourceThread && sourceThread.threadTaskCards) ? sourceThread.threadTaskCards : [];
+		const targetIds = new Set(threadTaskCardDraftTargetIds(draft));
+		const sourceThreadId = String(sourceThread && sourceThread.id || renderContextThreadId(contextThread) || "");
+		const sourceTurnId = String(turn && turn.id || "");
+		const title = String(draft && draft.title || "").trim();
+		const body = String(draft && draft.body || "").trim();
+		return cards.filter((card) => {
+			if (!card) return false;
+			if (sourceThreadId && String(card.source && card.source.threadId || "") !== sourceThreadId) return false;
+			if (sourceTurnId && String(card.source && card.source.turnId || "") !== sourceTurnId) return false;
+			if (targetIds.size && !targetIds.has(String(card.target && card.target.threadId || ""))) return false;
+			if (title && String(card.message && card.message.title || "").trim() !== title) return false;
+			if (body && String(card.message && card.message.body || "").trim() !== body) return false;
+			return true;
+		});
+	}
+	function upsertThreadTaskCardOnThread(thread, card) {
+		if (!thread || !card) return;
+		thread.threadTaskCards = [card, ...(Array.isArray(thread.threadTaskCards) ? thread.threadTaskCards : []).filter((entry) => String(entry && entry.id || "") !== String(card.id || ""))];
+	}
+	function replaceTaskCardBodyPlaceholder(details, card) {
+		if (!details || !card || !card.message || typeof card.message.body !== "string") return false;
+		const placeholder = details.querySelector("[data-task-card-body-placeholder]");
+		if (!placeholder) return false;
+		const pre = document.createElement("pre");
+		pre.className = "approval-detail";
+		pre.textContent = card.message.body;
+		placeholder.replaceWith(pre);
+		return true;
+	}
+	async function loadThreadTaskCardBody(cardId, threadId = "", details = null) {
+		const id = String(cardId || "").trim();
+		const ownerThreadId = String(threadId || state.currentThreadId || "").trim();
+		if (!id || !ownerThreadId) return null;
+		const loadKey = `${ownerThreadId}:${id}`;
+		if (state.threadTaskCardBodyLoads.has(loadKey)) return null;
+		const currentCard = findThreadTaskCard(id, ownerThreadId);
+		if (currentCard && currentCard.message && typeof currentCard.message.body === "string") {
+			replaceTaskCardBodyPlaceholder(details, currentCard);
+			return currentCard;
+		}
+		state.threadTaskCardBodyLoads.add(loadKey);
+		const placeholder = details && details.querySelector("[data-task-card-body-placeholder]");
+		if (placeholder) placeholder.textContent = "Loading task card body...";
+		try {
+			const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}?threadId=${encodeURIComponent(ownerThreadId)}`, { timeoutMs: 15e3 });
+			const card = result && result.card;
+			if (!card) throw new Error("task_card_body_missing");
+			const thread = taskCardActionThread(ownerThreadId);
+			if (thread) upsertThreadTaskCardOnThread(thread, card);
+			if (!replaceTaskCardBodyPlaceholder(details, card) && thread) {
+				if (ownerThreadId === String(state.currentThreadId || "")) renderCurrentThread();
+				else if (!scheduleRenderThreadTilePane(ownerThreadId, { preserveScroll: true })) renderCurrentThread();
+			}
+			return card;
+		} catch (err) {
+			if (placeholder) placeholder.textContent = "Failed to load task card body.";
+			throw err;
+		} finally {
+			state.threadTaskCardBodyLoads.delete(loadKey);
+		}
+	}
+	function handleThreadTaskCardDetailsToggle(event) {
+		const details = event && event.target && event.target.closest ? event.target.closest("[data-task-card-details]") : null;
+		if (!details || !details.open) return;
+		const cardId = details.dataset.taskCardId || "";
+		const threadId = details.dataset.taskCardThreadId || "";
+		if (!details.querySelector("[data-task-card-body-placeholder]")) return;
+		loadThreadTaskCardBody(cardId, threadId, details).catch(showError);
+	}
+	function taskCardCountThreadsForId(threadId) {
+		const id = String(threadId || "").trim();
+		if (!id) return [];
+		const threads = [];
+		const add = (thread) => {
+			if (!thread || String(thread.id || "") !== id || threads.includes(thread)) return;
+			threads.push(thread);
+		};
+		add(state.currentThread);
+		add(state.threadTileDetails && state.threadTileDetails.get(id));
+		add(findThreadById(id));
+		return threads;
+	}
+	function incrementPendingIncomingTaskCardCount(threadId, delta = 1) {
+		const threads = taskCardCountThreadsForId(threadId);
+		const base = threads[0] || null;
+		if (!base) return;
+		const current = Math.max(0, Number(base.pendingIncomingTaskCardCount) || 0);
+		const next = Math.max(0, current + Number(delta || 0));
+		const outgoing = Math.max(0, Number(base.pendingOutgoingTaskCardCount) || 0);
+		for (const thread of threads) {
+			thread.pendingIncomingTaskCardCount = next;
+			thread.pendingOutgoingTaskCardCount = outgoing;
+			thread.pendingTaskCardCount = next + outgoing;
+		}
+	}
+	function incrementPendingOutgoingTaskCardCount(threadId, delta = 1) {
+		const threads = taskCardCountThreadsForId(threadId);
+		const base = threads[0] || null;
+		if (!base) return;
+		const current = Math.max(0, Number(base.pendingOutgoingTaskCardCount) || 0);
+		const next = Math.max(0, current + Number(delta || 0));
+		const incoming = Math.max(0, Number(base.pendingIncomingTaskCardCount) || 0);
+		for (const thread of threads) {
+			thread.pendingIncomingTaskCardCount = incoming;
+			thread.pendingOutgoingTaskCardCount = next;
+			thread.pendingTaskCardCount = incoming + next;
+		}
+	}
+	function settleThreadTaskCardForThread(threadId, cardId, nextStatus, nextCard = null) {
+		const thread = taskCardActionThread(String(threadId || "").trim() || String(state.currentThreadId || "").trim());
+		if (!thread || !Array.isArray(thread.threadTaskCards)) return;
+		const id = String(cardId || "").trim();
+		if (!id) return;
+		let settledCard = null;
+		thread.threadTaskCards = thread.threadTaskCards.map((entry) => {
+			if (String(entry && entry.id || "") !== id) return entry;
+			settledCard = Object.assign({}, entry || {}, nextCard || {}, { status: nextStatus || nextCard && nextCard.status || entry.status });
+			return settledCard;
+		});
+		if (!settledCard) return;
+		if (settledCard.threadRole === "target") incrementPendingIncomingTaskCardCount(thread.id, -1);
+		if (settledCard.threadRole === "source") incrementPendingOutgoingTaskCardCount(thread.id, -1);
+		if (state.threadTileDetails.has(String(thread.id || ""))) state.threadTileDetails.set(String(thread.id || ""), thread);
+		renderThreads();
+		if (String(thread.id || "") === String(state.currentThreadId || "")) renderCurrentThread();
+		else if (state.threadTileMode && threadTilePaneIsVisible(thread.id) && !scheduleRenderThreadTilePane(thread.id, { preserveScroll: true })) scheduleRenderCurrentThread();
+	}
+	function settleCurrentThreadTaskCard(cardId, nextStatus, nextCard = null) {
+		settleThreadTaskCardForThread(state.currentThreadId, cardId, nextStatus, nextCard);
+	}
+	function resolveTargetThreadReference(input) {
+		const raw = String(input || "").trim();
+		if (!raw) return null;
+		const lowered = raw.toLowerCase();
+		return state.threads.find((thread) => thread && thread.id !== state.currentThreadId && (String(thread.id || "").toLowerCase() === lowered || String(threadTitleForDisplay(thread) || "").trim().toLowerCase() === lowered)) || null;
+	}
+	function resolveTargetThreadReferences(input) {
+		const parts = String(input || "").split(/[\n,;，；]+/u).map((part) => part.trim()).filter(Boolean);
+		const seen = /* @__PURE__ */ new Set();
+		const targets = [];
+		for (const part of parts) {
+			const thread = resolveTargetThreadReference(part);
+			const id = String(thread && thread.id || part || "").trim();
+			if (!id || id === state.currentThreadId || seen.has(id)) continue;
+			seen.add(id);
+			targets.push({
+				threadId: id,
+				thread
+			});
+			if (targets.length >= 12) break;
+		}
+		return targets;
+	}
+	async function refreshThreadAfterTaskCard(threadId = "") {
+		const id = String(threadId || state.currentThreadId || "").trim();
+		if (!id) return;
+		if (id === String(state.currentThreadId || "")) await refreshCurrentThread({ source: "task-card" });
+		else if (state.threadTileMode && threadTilePaneIsVisible(id)) await loadThreadTileDetail(id, {
+			force: true,
+			background: true,
+			source: "task-card"
+		});
+		loadThreads({ silent: true }).catch(showError);
+	}
+	async function refreshCurrentThreadAfterTaskCard() {
+		await refreshThreadAfterTaskCard(state.currentThreadId);
+	}
+	function currentThreadHasTurn(turnId) {
+		const targetTurnId = String(turnId || "").trim();
+		if (!targetTurnId || !state.currentThread) return false;
+		return (Array.isArray(state.currentThread.turns) ? state.currentThread.turns : []).some((turn) => String(turn && turn.id || "") === targetTurnId);
+	}
+	async function waitForCurrentThreadTurn(turnId, options = {}) {
+		const targetTurnId = String(turnId || "").trim();
+		if (!targetTurnId || !state.currentThreadId) return false;
+		const timeoutMs = Math.max(500, Number(options.timeoutMs) || 1e4);
+		const intervalMs = Math.max(150, Number(options.intervalMs) || 500);
+		const deadline = Date.now() + timeoutMs;
+		while (state.currentThreadId && Date.now() <= deadline) {
+			await refreshCurrentThread({ source: "wait-turn" });
+			if (!state.currentThreadId) return false;
+			if (currentThreadHasTurn(targetTurnId)) {
+				state.pendingPluginRouteHint = normalizePluginRouteHint({
+					pluginId: "codex-mobile",
+					route: "thread-turn",
+					threadId: state.currentThreadId,
+					itemId: targetTurnId
+				});
+				renderCurrentThread();
+				return true;
+			}
+			await sleep(intervalMs);
+		}
+		return currentThreadHasTurn(targetTurnId);
+	}
+	async function createThreadTaskCardFromThread(sourceThread, event) {
+		if (event) {
+			event.preventDefault();
+			event.stopPropagation();
+		}
+		const thread = sourceThread || state.currentThread;
+		if (!thread || !thread.id) return;
+		const targetInput = await requestAppTextInput("输入目标 thread id 或精确标题；多个目标用英文逗号分隔。", "", {
+			title: "任务卡片目标",
+			confirmLabel: "下一步",
+			placeholder: "thread id 或标题",
+			rows: 3
+		});
+		if (targetInput == null) return;
+		const targets = resolveTargetThreadReferences(targetInput);
+		if (!targets.length) {
+			showError(/* @__PURE__ */ new Error("At least one different target thread is required"));
+			return;
+		}
+		const title = await requestAppTextInput("输入任务卡片标题。", `Need response from ${threadTitleForDisplay(thread) || thread.id}`, {
+			title: "任务卡片标题",
+			confirmLabel: "下一步",
+			rows: 2
+		}) || "";
+		if (!String(title).trim()) return;
+		const body = await requestAppTextInput("输入任务卡片正文。", "", {
+			title: "任务卡片正文",
+			confirmLabel: "创建",
+			rows: 7
+		}) || "";
+		if (!String(body).trim()) return;
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = "Creating task card";
+		try {
+			const targetWorkspaceIds = {};
+			for (const target of targets) if (target.thread) targetWorkspaceIds[target.threadId] = String(target.thread.cwd || "");
+			await api("/api/thread-task-cards", {
+				method: "POST",
+				body: JSON.stringify({
+					sourceWorkspaceId: thread.cwd || state.selectedCwd || "",
+					sourceThreadId: thread.id,
+					sourceTurnId: activeTurnIdForThread(thread),
+					sourceThreadTitle: threadTitleForDisplay(thread) || thread.id,
+					targetThreadIds: targets.map((target) => target.threadId),
+					targetWorkspaceIds,
+					idempotencyKey: `task-card:${thread.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`,
+					format: "markdown",
+					title: String(title).trim(),
+					summary: summarizeTaskCardText(body),
+					body: String(body).trim()
+				}),
+				timeoutMs: 3e4
+			});
+			$("connectionState").textContent = "Task card created";
+			recordHomeAiDiagnosticSuccess({
+				category: "task_card_workflow_failed",
+				diagnostic_type: "task_card_creation_failed",
+				error_code: "task_card_create_failed",
+				context: {
+					surface: "task-card",
+					action: "manual-create",
+					thread_hash: diagnosticThreadHash(thread.id)
+				}
+			});
+			await refreshThreadAfterTaskCard(thread.id);
+		} catch (err) {
+			recordHomeAiDiagnosticFailure({
+				category: "task_card_workflow_failed",
+				diagnostic_type: "task_card_creation_failed",
+				severity_hint: "H2",
+				evidence_confidence: .78,
+				error_code: diagnosticErrorCode(err, "task_card_create_failed"),
+				context: {
+					surface: "task-card",
+					action: "manual-create",
+					thread_hash: diagnosticThreadHash(thread.id)
+				},
+				counts: {
+					target_count: targets.length,
+					status_code: diagnosticErrorStatus(err)
+				},
+				breadcrumbs: [{
+					kind: "task-card",
+					code: "manual-create",
+					status: "failed",
+					fields: {
+						status_code: diagnosticErrorStatus(err),
+						thread_hash: diagnosticThreadHash(thread.id)
+					}
+				}]
+			});
+			showError(err);
+		}
+	}
+	async function createThreadTaskCardFromCurrent(event) {
+		await createThreadTaskCardFromThread(state.currentThread, event);
+	}
+	function startThreadRequestBody(sourceThread = null, options = {}) {
+		const thread = sourceThread || state.currentThread || {};
+		const pluginMode = isHermesEmbedMode() ? "hermes" : "";
+		return {
+			cwd: thread.cwd || state.selectedCwd || "",
+			sourceThreadId: thread.id || "",
+			sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
+			archiveSourceThread: Boolean(options.archiveSourceThread && thread.id),
+			pluginMode,
+			hermesPluginMode: Boolean(pluginMode),
+			pluginId: pluginMode ? "codex-mobile" : ""
+		};
+	}
+	function threadActionTargetRow(target) {
+		if (!target || !target.closest) return null;
+		return target.closest("[data-thread-row]");
+	}
+	function primaryTouch(event) {
+		return event.touches && event.touches[0] || event.changedTouches && event.changedTouches[0] || null;
+	}
+	function startedThreadId(result) {
+		return String(result && result.threadId || result && result.thread && result.thread.id || result && result.result && result.result.thread && result.result.thread.id || result && result.result && result.result.threadId || "");
+	}
+	function startedTurnId(result) {
+		return String(result && result.turnId || result && result.turn && result.turn.id || result && result.result && result.result.turnId || result && result.result && result.result.turn && result.result.turn.id || "");
+	}
+	function continuationJobStatusText(job) {
+		const status = String(job && job.status || "");
+		const message = String(job && job.message || "").trim();
+		if (message) return message;
+		return {
+			queued: "续接任务已排队",
+			running: "正在生成交接并续接",
+			done: "续接线程已就绪",
+			failed: "续接任务失败"
+		}[status] || "正在生成交接并续接";
+	}
+	function rememberContinuationJob(jobId) {
+		const id = String(jobId || "").trim();
+		if (!id) return;
+		state.continuationJobId = id;
+		localStorage.setItem(STORAGE_CONTINUATION_JOB, id);
+	}
+	function clearRememberedContinuationJob(jobId = "") {
+		const id = String(jobId || "").trim();
+		if (!id || localStorage.getItem(STORAGE_CONTINUATION_JOB) === id) localStorage.removeItem(STORAGE_CONTINUATION_JOB);
+		if (!id || state.continuationJobId === id) state.continuationJobId = "";
+	}
+	async function openContinuationResult(result) {
+		const threadId = startedThreadId(result);
+		if (!threadId) throw new Error("Continuation thread was created without a thread id");
+		state.continuationNewThreadId = threadId;
+		const archivedSourceThreadId = result.sourceArchive && result.sourceArchive.archived ? result.sourceArchive.threadId : "";
+		if (archivedSourceThreadId) state.threads = state.threads.filter((entry) => entry.id !== archivedSourceThreadId);
+		if (result.thread) {
+			state.threads = [result.thread, ...state.threads.filter((thread) => thread.id !== result.thread.id)];
+			renderThreads();
+		}
+		$("connectionState").classList.remove("error");
+		if (result.sourceArchive && result.sourceArchive.error && !result.sourceArchive.archived) {
+			$("connectionState").classList.add("error");
+			$("connectionState").textContent = `续接线程已就绪；归档失败：${result.sourceArchive.error}`;
+		} else if (result.sourceArchive && result.sourceArchive.error) $("connectionState").textContent = "交接已生成；旧线程已在 Mobile 隐藏";
+		else $("connectionState").textContent = "交接已生成；正在打开续接线程";
+		await loadThread(threadId, { source: "continuation" });
+		loadThreads().catch(showError);
+	}
+	async function waitForContinuationJob(jobId) {
+		const id = String(jobId || "").trim();
+		if (!id) throw new Error("Continuation job was created without a job id");
+		rememberContinuationJob(id);
+		let delayMs = 800;
+		while (state.continuationJobId === id) {
+			const job = await api(`/api/thread-continuations/${encodeURIComponent(id)}`, { timeoutMs: 3e4 });
+			$("connectionState").classList.toggle("error", job.status === "failed");
+			$("connectionState").textContent = continuationJobStatusText(job);
+			setContinuationDialogStatus(continuationJobStatusText(job), { error: job.status === "failed" });
+			postClientEvent("continuation_job_poll", {
+				jobId: id,
+				status: String(job.status || ""),
+				step: String(job.step || "")
+			});
+			markActivity(job.step || "续接任务");
+			if (job.status === "done") {
+				clearRememberedContinuationJob(id);
+				postClientEvent("continuation_job_done", { jobId: id });
+				return job.result || job;
+			}
+			if (job.status === "failed") {
+				clearRememberedContinuationJob(id);
+				postClientEvent("continuation_job_failed", {
+					jobId: id,
+					message: String(job.error || job.message || "Continuation job failed")
+				});
+				throw new Error(job.error || job.message || "Continuation job failed");
+			}
+			await sleep(delayMs);
+			delayMs = Math.min(1800, Math.round(delayMs * 1.25));
+		}
+		throw new Error("Continuation job was cancelled");
+	}
+	async function resumeRememberedContinuationJob() {
+		const jobId = String(localStorage.getItem(STORAGE_CONTINUATION_JOB) || "").trim();
+		if (!jobId || state.continuationBusy) return;
+		state.continuationBusy = true;
+		state.continuationJobId = jobId;
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = "正在恢复续接任务";
+		try {
+			await openContinuationResult(await waitForContinuationJob(jobId));
+		} catch (err) {
+			clearRememberedContinuationJob(jobId);
+			if (!/Continuation job not found/i.test(err.message || "")) showError(err);
+		} finally {
+			state.continuationBusy = false;
+		}
+	}
+	async function startNewThreadFromThread(sourceThread, event) {
+		if (event) event.preventDefault();
+		if (event) event.stopPropagation();
+		if (state.continuationBusy) {
+			setContinuationDialogStatus("续接任务已经在运行，请稍等。");
+			$("connectionState").textContent = "续接任务已经在运行";
+			postClientEvent("continuation_start_ignored_busy", {
+				jobId: state.continuationJobId || "",
+				sourceThreadId: state.continuationSourceThreadId || ""
+			});
+			return;
+		}
+		const thread = sourceThread || state.currentThread || {};
+		if (!continuationDialogOpen()) {
+			openContinuationDialog(thread);
+			return;
+		}
+		const button = event && event.currentTarget;
+		const cwd = thread.cwd ? String(thread.cwd).trim() : String(state.selectedCwd || "").trim();
+		const sourceThreadId = thread.id || state.currentThreadId || "";
+		const body = {
+			cwd,
+			sourceThreadId: thread.id || "",
+			sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
+			archiveSourceThread: Boolean(thread.id),
+			pluginMode: isHermesEmbedMode() ? "hermes" : "",
+			hermesPluginMode: isHermesEmbedMode(),
+			pluginId: isHermesEmbedMode() ? "codex-mobile" : ""
+		};
+		if (!body.cwd) {
+			showError(/* @__PURE__ */ new Error("Thread has no workspace path"));
+			return;
+		}
+		if (sourceThreadId) {
+			state.continuationSourceThreadId = sourceThreadId;
+			state.continuationNewThreadId = "";
+			clearRememberedContinuationJob();
+		}
+		state.continuationBusy = true;
+		if (button) button.disabled = true;
+		setContinuationDialogBusy(true, "正在创建续接任务。");
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = "正在创建续接任务";
+		markActivity("创建续接任务");
+		let completed = false;
+		let failed = false;
+		postClientEvent("continuation_start_requested", {
+			sourceThreadId,
+			hasWorkspace: Boolean(body.cwd),
+			hermesPluginMode: Boolean(body.hermesPluginMode)
+		});
+		try {
+			const job = await api("/api/thread-continuations", {
+				method: "POST",
+				body: JSON.stringify(body),
+				timeoutMs: 3e4
+			});
+			$("connectionState").textContent = continuationJobStatusText(job);
+			setContinuationDialogStatus(continuationJobStatusText(job));
+			postClientEvent("continuation_job_created", {
+				jobId: String(job.jobId || ""),
+				status: String(job.status || ""),
+				pluginMode: String(job.pluginMode || "")
+			});
+			const result = await waitForContinuationJob(job.jobId);
+			closeContinuationDialog({ force: true });
+			completed = true;
+			await openContinuationResult(result);
+		} catch (err) {
+			failed = true;
+			setContinuationDialogBusy(false, err && err.message ? err.message : String(err), { error: true });
+			postClientEvent("continuation_start_failed", {
+				sourceThreadId,
+				message: err && err.message ? err.message : String(err)
+			});
+			showError(err);
+		} finally {
+			clearRememberedContinuationJob();
+			state.continuationBusy = false;
+			if (!failed) setContinuationDialogBusy(false, completed || !continuationDialogOpen() ? "" : "续接任务未完成，可以重试。");
+			if (button) button.disabled = false;
+		}
+	}
+	async function startNewThreadFromCurrent(event) {
+		await startNewThreadFromThread(state.currentThread, event);
+	}
+	function renderThreadArchiveDialog() {
+		const dialog = $("threadArchiveConfirmDialog");
+		const subtitle = $("threadArchiveConfirmSubtitle");
+		if (!dialog || !subtitle) return;
+		dialog.classList.toggle("hidden", !state.threadArchiveConfirmOpen);
+		subtitle.textContent = state.threadArchiveConfirmOpen ? `目标会话：${state.threadArchiveConfirmTitle || state.threadArchiveConfirmTargetId || "--"}` : "";
+	}
+	function closeThreadArchiveDialog(confirmed = false) {
+		const resolve = state.threadArchiveConfirmResolve;
+		state.threadArchiveConfirmOpen = false;
+		state.threadArchiveConfirmTargetId = "";
+		state.threadArchiveConfirmTitle = "";
+		state.threadArchiveConfirmResolve = null;
+		renderThreadArchiveDialog();
+		if (resolve) resolve(Boolean(confirmed));
+	}
+	function requestThreadArchiveConfirmation(threadId, title) {
+		const label = String(title || "会话");
+		if (state.threadArchiveConfirmResolve) closeThreadArchiveDialog(false);
+		state.threadArchiveConfirmOpen = true;
+		state.threadArchiveConfirmTargetId = String(threadId || "");
+		state.threadArchiveConfirmTitle = label;
+		renderThreadArchiveDialog();
+		return new Promise((resolve) => {
+			state.threadArchiveConfirmResolve = resolve;
+		});
+	}
+	async function archiveThread(threadId, button = null) {
+		const id = String(threadId || "");
+		const thread = state.threads.find((entry) => entry.id === id);
+		if (!thread) {
+			showError(/* @__PURE__ */ new Error("Thread is no longer in the current list"));
+			return;
+		}
+		const title = threadTitleForDisplay(thread) || "会话";
+		if (!await requestThreadArchiveConfirmation(thread.id, title)) return;
+		if (button) button.disabled = true;
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = "正在归档会话";
+		markActivity("归档会话");
+		try {
+			await api(`/api/threads/${encodeURIComponent(thread.id)}/archive`, {
+				method: "POST",
+				timeoutMs: 3e4
+			});
+			state.threads = state.threads.filter((entry) => entry.id !== thread.id);
+			if (state.currentThreadId === thread.id) {
+				clearCurrentThreadSelection();
+				renderCurrentThread();
+			}
+			renderThreads();
+			loadThreads().catch(showError);
+		} catch (err) {
+			showError(err);
+		} finally {
+			if (button) button.disabled = false;
+		}
+	}
+	function taskCardStatusLabel(status) {
+		const text = String(status || "pending");
+		return {
+			pending: "Pending",
+			approving: "Approving",
+			approved: "Approved",
+			deleted: "Deleted",
+			revoked: "Revoked",
+			replied: "Replied"
+		}[text] || text;
+	}
+	function taskCardDirectionLabel(card) {
+		if (!card) return "Task card";
+		if (card.threadRole === "target") return `Task card from ${card.source && (card.source.title || card.source.threadId || card.source.workspaceId || "source thread")}`;
+		if (card.threadRole === "source") return `Task card to ${card.target && (card.target.threadId || card.target.workspaceId || "target thread")}`;
+		return "Task card";
+	}
+	function taskCardDetailLines(card) {
+		if (!card) return [];
+		const workflow = card.workflow && card.workflow.mode === "autonomous" ? card.workflow : null;
+		return [
+			card.target && card.threadRole === "source" ? `Target thread: ${card.target.threadId}` : "",
+			card.source && card.threadRole === "target" ? `Source workspace: ${card.source.workspaceId}` : "",
+			workflow ? `Workflow: autonomous${workflow.authorized ? " (authorized)" : " (first approval required)"}` : "",
+			workflow && workflow.id ? `Workflow id: ${workflow.id}` : "",
+			card.injectedTurnId ? `Injected turn: ${card.injectedTurnId}` : ""
+		].filter(Boolean);
+	}
+	function threadTaskCardSummaryLine(text) {
+		return truncateSingleLine(String(text || "").trim(), 220);
+	}
+	function renderThreadTaskCardExpandable(preview, sections, attributes = "") {
+		const blocks = (Array.isArray(sections) ? sections : []).filter(Boolean);
+		if (!blocks.length) return "";
+		const attr = String(attributes || "").trim();
+		return `<details class="approval-details"${attr ? ` ${attr}` : ""}>
+    <summary><span>${escapeHtml(threadTaskCardSummaryLine(preview) || "Show details")}</span></summary>
+    ${blocks.join("")}
+  </details>`;
+	}
+	function renderThreadTaskCardActions(card, threadId = "") {
+		if (!card) return "";
+		const ownerThreadId = String(threadId || "").trim();
+		const ownerAttribute = ownerThreadId ? ` data-task-card-thread-id="${escapeHtml(ownerThreadId)}"` : "";
+		if (card.canApprove || card.canDelete || card.canReply || card.canRevoke) {
+			const buttons = [];
+			const approveLabel = card.workflow && card.workflow.mode === "autonomous" ? "Approve workflow" : "Approve";
+			if (card.canApprove) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="approve" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>${escapeHtml(approveLabel)}</button>`);
+			if (card.canReply) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="reply" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Reply</button>`);
+			if (card.canDelete) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="delete" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Delete</button>`);
+			if (card.canRevoke) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="revoke" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Revoke</button>`);
+			return `<div class="approval-actions">${buttons.join("")}</div>`;
+		}
+		return "";
+	}
+	function renderThreadTaskCard(card, previousKeys = /* @__PURE__ */ new Set(), threadId = "") {
+		const key = `task-card|${card.id}`;
+		const status = String(card.status || "pending");
+		const detail = taskCardDetailLines(card).join("\n");
+		const summary = threadTaskCardSummaryLine(card.message && card.message.summary ? card.message.summary : "");
+		const body = card.message && card.message.body ? `<pre class="approval-detail">${escapeHtml(card.message.body)}</pre>` : card.message && card.message.bodyOmitted ? `<div class="approval-detail" data-task-card-body-placeholder data-task-card-id="${escapeHtml(card.id)}" data-task-card-thread-id="${escapeHtml(threadId)}">Task card body loads when opened.</div>` : "";
+		const compact = status !== "pending" ? " compact" : "";
+		const detailBlocks = [detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : "", body];
+		return `<section class="approval-card thread-task-card${compact}${entryAnimationClass(key, previousKeys)} ${escapeHtml(status)}" data-render-key="${escapeHtml(key)}" data-task-card="${escapeHtml(card.id)}">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">${escapeHtml(taskCardDirectionLabel(card))}</div>
+        <div class="approval-method">${escapeHtml(card.message && card.message.title || "Task card")}</div>
+      </div>
+      <span class="approval-status">${escapeHtml(taskCardStatusLabel(status))}</span>
+    </div>
+    ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
+    ${renderThreadTaskCardExpandable(summary || detail || card.message && card.message.title || "Task card details", detailBlocks, `data-task-card-details data-task-card-id="${escapeHtml(card.id)}" data-task-card-thread-id="${escapeHtml(threadId)}"`)}
+    ${renderThreadTaskCardActions(card, threadId)}
+  </section>`;
+	}
+	function renderThreadTaskCards(thread, previousKeys = /* @__PURE__ */ new Set()) {
+		const cards = threadTaskCardsForThread(thread);
+		if (!cards.length) return "";
+		const threadId = String(thread && thread.id || "").trim();
+		return `<div class="approval-stack thread-task-card-stack">
+    ${cards.map((card) => renderThreadTaskCard(card, previousKeys, threadId)).join("")}
+  </div>`;
+	}
+	function threadTaskCardDraftState(key) {
+		return state.threadTaskCardDraftStates.get(String(key || "")) || {
+			status: "pending",
+			error: "",
+			cardId: ""
+		};
+	}
+	function threadTaskCardDraftStatusLabel(status) {
+		return {
+			pending: "Draft",
+			creating: "Creating",
+			created: "Created",
+			dismissed: "Dismissed",
+			failed: "Failed"
+		}[status] || "Draft";
+	}
+	function threadTaskCardDraftDetailLines(draft, targetRefs, draftState) {
+		const refs = Array.isArray(targetRefs) ? targetRefs : [];
+		const targetLine = refs.length ? `Target threads: ${refs.map((entry) => {
+			const thread = entry && entry.thread;
+			return thread ? thread.title || thread.id || entry.threadId : entry && entry.threadId || "";
+		}).filter(Boolean).join(", ")}` : "";
+		const missing = refs.filter((entry) => entry && !entry.thread).map((entry) => entry.threadId).filter(Boolean);
+		return [
+			targetLine,
+			draft && draft.workflowMode === "autonomous" ? `Workflow: autonomous${draft.workflowId ? ` (${draft.workflowId})` : " (new)"}` : "",
+			missing.length ? `Missing targets: ${missing.join(", ")}` : "",
+			draft.error ? `Model note: ${draft.error}` : "",
+			draftState.error ? `Last error: ${draftState.error}` : ""
+		].filter(Boolean);
+	}
+	function renderThreadTaskCardDraftActions(draftKey, draft, draftState, thread = renderContextThread()) {
+		if (!draft || draftState.status === "pending" || draftState.status === "creating" || draftState.status === "created" || draftState.status === "dismissed") return "";
+		const threadId = renderContextThreadId(thread);
+		const threadAttr = threadId ? ` data-task-card-draft-thread-id="${escapeHtml(threadId)}"` : "";
+		if (draftState.status === "failed") return `<div class="approval-actions">
+      <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}"${threadAttr}>Dismiss</button>
+    </div>`;
+		return `<div class="approval-actions">
+    <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}"${threadAttr}>Dismiss</button>
+  </div>`;
+	}
+	function renderThreadTaskCardDraft(draft, item, turn, previousKeys = /* @__PURE__ */ new Set(), draftKey = "", draftState = null, thread = renderContextThread()) {
+		if (!draft || !item || !turn) return "";
+		const contextThread = renderContextThread(thread);
+		const resolvedDraftKey = draftKey || threadTaskCardDraftKeyForDraft(turn, draft, item);
+		const resolvedDraftState = draftState || threadTaskCardDraftState(resolvedDraftKey);
+		const targetRefs = threadTaskCardDraftTargetThreads(draft);
+		const compact = resolvedDraftState.status === "created" || resolvedDraftState.status === "dismissed" ? " compact" : "";
+		const detail = threadTaskCardDraftDetailLines(draft, targetRefs, resolvedDraftState).join("\n");
+		const summary = threadTaskCardSummaryLine(draft.summary || draft.error || "");
+		const detailBlocks = [detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : "", draft.body ? `<pre class="approval-detail">${escapeHtml(draft.body)}</pre>` : ""];
+		return `<section class="approval-card thread-task-card-draft${compact}${entryAnimationClass(draftKey, previousKeys)} ${escapeHtml(draftState.status)}" data-render-key="${escapeHtml(draftKey)}" data-task-card-draft="${escapeHtml(draftKey)}">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">Cross-thread task card draft</div>
+        <div class="approval-method">${escapeHtml(draft.title || "Task card draft")}</div>
+      </div>
+      <span class="approval-status">${escapeHtml(threadTaskCardDraftStatusLabel(resolvedDraftState.status))}</span>
+    </div>
+    ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
+    ${renderThreadTaskCardExpandable(summary || detail || draft.title || "Task card draft details", detailBlocks)}
+    ${renderThreadTaskCardDraftActions(resolvedDraftKey, draft, resolvedDraftState, contextThread)}
+  </section>`;
+	}
+	function approvalTitle(method) {
+		return {
+			"item/commandExecution/requestApproval": "命令需要批准",
+			"execCommandApproval": "命令需要批准",
+			"item/fileChange/requestApproval": "文件改动需要批准",
+			"applyPatchApproval": "文件改动需要批准",
+			"item/permissions/requestApproval": "权限需要批准",
+			"item/tool/requestUserInput": "需要你补充信息",
+			"mcpServer/elicitation/request": "MCP 需要输入",
+			"item/tool/call": "工具请求",
+			"account/chatgptAuthTokens/refresh": "账号授权"
+		}[method] || "待处理请求";
+	}
+	function approvalStatusLabel(status) {
+		const text = String(status || "waiting");
+		if (text === "waiting") return "等待中";
+		if (text === "responding") return "发送中";
+		if (text === "responded" || text === "resolved") return "已处理";
+		if (text === "connectionClosed") return "已关闭";
+		return text.charAt(0).toUpperCase() + text.slice(1);
+	}
+	function permissionSummary(permissions) {
+		if (!permissions || typeof permissions !== "object") return "";
+		const parts = [];
+		if (permissions.network) parts.push(`Network: ${JSON.stringify(permissions.network)}`);
+		if (permissions.fileSystem) parts.push(`File system: ${JSON.stringify(permissions.fileSystem)}`);
+		return parts.join("\n");
+	}
+	function approvalDetailLines(request) {
+		const params = request.params || {};
+		const questions = Array.isArray(params.questions) ? params.questions : [];
+		return [
+			params.reason ? `原因: ${params.reason}` : "",
+			params.command ? `命令:\n${params.command}` : "",
+			params.cwd ? `工作目录:\n${params.cwd}` : "",
+			params.grantRoot ? `授权目录:\n${params.grantRoot}` : "",
+			Array.isArray(params.fileNames) && params.fileNames.length ? `文件:\n${params.fileNames.join("\n")}` : "",
+			params.permissions ? `权限:\n${permissionSummary(params.permissions) || JSON.stringify(params.permissions, null, 2)}` : "",
+			params.networkApprovalContext ? `网络:\n${JSON.stringify(params.networkApprovalContext, null, 2)}` : "",
+			questions.length ? questions.map((question, index) => {
+				return [
+					question.header ? `${question.header}` : `问题 ${index + 1}`,
+					question.question || "",
+					Array.isArray(question.options) && question.options.length ? question.options.map((option) => `- ${option.label}${option.description ? `: ${option.description}` : ""}`).join("\n") : ""
+				].filter(Boolean).join("\n");
+			}).join("\n\n") : "",
+			params.title ? `标题:\n${params.title}` : "",
+			params.message ? `说明:\n${params.message}` : "",
+			params.schema ? `结构:\n${JSON.stringify(params.schema, null, 2)}` : "",
+			params.elicitation ? `请求:\n${JSON.stringify(params.elicitation, null, 2)}` : ""
+		].filter(Boolean);
+	}
+	function isUserInputRequest(request) {
+		return USER_INPUT_REQUEST_METHODS.has(request && request.method);
+	}
+	function renderUserInputOptions(request, fallbackThreadId = "") {
+		const params = request.params || {};
+		const questions = Array.isArray(params.questions) ? params.questions : [];
+		const question = questions.find((entry) => Array.isArray(entry.options) && entry.options.length) || questions[0] || null;
+		if (!question || !Array.isArray(question.options) || !question.options.length) return "";
+		const threadId = approvalActionThreadId(request, fallbackThreadId);
+		return `<div class="approval-option-grid">
+    ${question.options.map((option) => `<button class="approval-option" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-question-id="${escapeHtml(question.id || "answer")}" data-server-response-text="${escapeHtml(option.label || "")}">
+      <span>${escapeHtml(option.label || "选项")}</span>
+      ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
+    </button>`).join("")}
+  </div>`;
+	}
+	function renderUserInputActions(request, fallbackThreadId = "") {
+		const params = request.params || {};
+		const question = (Array.isArray(params.questions) ? params.questions : [])[0] || {};
+		const threadId = approvalActionThreadId(request, fallbackThreadId);
+		return `<form class="approval-response-form" data-server-request-form data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-question-id="${escapeHtml(question.id || "answer")}">
+    ${renderUserInputOptions(request, threadId)}
+    <textarea class="approval-response-input" name="responseText" rows="3" placeholder="输入回复内容"></textarea>
+    <div class="approval-actions request-actions">
+      <button class="approval-button allow" type="submit">提交</button>
+      <button class="approval-button deny" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-request-decline>取消</button>
+    </div>
+  </form>`;
+	}
+	function renderApprovalActions(request, fallbackThreadId = "") {
+		const waiting = request.status === "waiting";
+		if (!request.actionable || !waiting) return "";
+		if (isUserInputRequest(request)) return renderUserInputActions(request, fallbackThreadId);
+		const threadId = approvalActionThreadId(request, fallbackThreadId);
+		return `<div class="approval-actions">
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="allow_once">允许一次</button>
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="allow_session">本会话允许</button>
+    <button class="approval-button deny" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="deny">拒绝</button>
+  </div>`;
+	}
+	function renderApprovalRequest(request, previousKeys = /* @__PURE__ */ new Set(), fallbackThreadId = "") {
+		const key = `approval|${request.id}`;
+		const status = String(request.status || "waiting");
+		if (isApprovalSettled(request)) return `<section class="approval-card compact${entryAnimationClass(key, previousKeys)} ${escapeHtml(status)}" data-render-key="${escapeHtml(key)}" data-approval-card="${escapeHtml(request.id)}">
+      <div class="approval-line">
+        <span>${escapeHtml(approvalTitle(request.method))}</span>
+        <span>${escapeHtml(approvalStatusLabel(request.status))}</span>
+      </div>
+    </section>`;
+		const detail = approvalDetailLines(request).join("\n");
+		return `<section class="approval-card${entryAnimationClass(key, previousKeys)} ${escapeHtml(status)}" data-render-key="${escapeHtml(key)}" data-approval-card="${escapeHtml(request.id)}">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">${escapeHtml(approvalTitle(request.method))}</div>
+        <div class="approval-method">${escapeHtml(request.method)}</div>
+      </div>
+      <span class="approval-status">${escapeHtml(approvalStatusLabel(request.status))}</span>
+    </div>
+    ${detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : ""}
+    ${renderApprovalActions(request, fallbackThreadId)}
+  </section>`;
+	}
+	function renderPendingApprovals(thread, previousKeys = /* @__PURE__ */ new Set(), filter = null) {
+		const threadId = String(thread && (thread.id || state.currentThreadId) || "").trim();
+		const requests = pendingApprovalsForThread(threadId).filter((request) => !filter || filter(request));
+		if (!requests.length) return "";
+		return `<div class="approval-stack">
+    ${requests.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}
+  </div>`;
+	}
+	function createTaskCardRuntime() {
+		return {
+			renderThreadTaskCard: typeof renderThreadTaskCard === "function" ? renderThreadTaskCard : null,
+			renderThreadTaskCards: typeof renderThreadTaskCards === "function" ? renderThreadTaskCards : null,
+			createThreadTaskCardFromCurrent: typeof createThreadTaskCardFromCurrent === "function" ? createThreadTaskCardFromCurrent : null,
+			mutateThreadTaskCard: typeof mutateThreadTaskCard === "function" ? mutateThreadTaskCard : null,
+			replyTaskCard: typeof replyTaskCard === "function" ? replyTaskCard : null,
+			renderApprovalRequest: typeof renderApprovalRequest === "function" ? renderApprovalRequest : null
+		};
+	}
+	(function exposeCodexTaskCardRuntime(root) {
+		const taskCardRuntimeApi = { createTaskCardRuntime };
+		const legacyGlobals = {
+			approvalDetailLines,
+			approvalStatusLabel,
+			approvalTitle,
+			archiveThread,
+			buildThreadTaskCardDraftRequestText,
+			canRecoverFailedThreadTaskCardDraft,
+			clearRememberedContinuationJob,
+			closeThreadArchiveDialog,
+			commonPrefixLength,
+			continuationJobStatusText,
+			createThreadTaskCardFromCurrent,
+			createThreadTaskCardFromThread,
+			currentThreadHasTurn,
+			findThreadById,
+			findThreadTaskCard,
+			handleThreadTaskCardDetailsToggle,
+			hasThreadTaskCardDraftTag,
+			incrementPendingIncomingTaskCardCount,
+			incrementPendingOutgoingTaskCardCount,
+			isChatGptProCommandText,
+			isThreadGoalCommandText,
+			isThreadTaskCardCommandText,
+			isThreadTaskCardDraftCreationStale,
+			isUserInputRequest,
+			loadThreadTaskCardBody,
+			matchingThreadTaskCardsForDraft,
+			normalizeThreadTaskCardWorkflowMode,
+			openContinuationResult,
+			parseThreadTaskCardDraftText,
+			permissionSummary,
+			primaryTouch,
+			recoverVisibleThreadForDraftTargetId,
+			rememberContinuationJob,
+			renderApprovalActions,
+			renderApprovalRequest,
+			renderPendingApprovals,
+			renderPendingThreadTaskCardDraft,
+			renderThreadArchiveDialog,
+			renderThreadTaskCard,
+			renderThreadTaskCardActions,
+			renderThreadTaskCardDraft,
+			renderThreadTaskCardDraftActions,
+			renderThreadTaskCardExpandable,
+			renderThreadTaskCards,
+			renderTurnThreadTaskCardDraft,
+			renderUserInputActions,
+			renderUserInputOptions,
+			replaceTaskCardBodyPlaceholder,
+			requestThreadArchiveConfirmation,
+			resolveTargetThreadReference,
+			resolveTargetThreadReferences,
+			resumeRememberedContinuationJob,
+			refreshCurrentThreadAfterTaskCard,
+			refreshThreadAfterTaskCard,
+			settleCurrentThreadTaskCard,
+			settleThreadTaskCardForThread,
+			startNewThreadFromCurrent,
+			startNewThreadFromThread,
+			startThreadRequestBody,
+			startedThreadId,
+			startedTurnId,
+			submitChatGptProRequest,
+			summarizeTaskCardText,
+			taskCardActionThread,
+			taskCardCountThreadsForId,
+			taskCardDetailLines,
+			taskCardDirectionLabel,
+			taskCardStatusLabel,
+			threadActionTargetRow,
+			threadTaskCardCommandText,
+			threadTaskCardDraftDetailLines,
+			threadTaskCardDraftKey,
+			threadTaskCardDraftKeyForDraft,
+			threadTaskCardDraftPayloadKey,
+			threadTaskCardDraftState,
+			threadTaskCardDraftStatusLabel,
+			threadTaskCardDraftTargetIds,
+			threadTaskCardDraftTargetThreads,
+			threadTaskCardRequestMarkerMatch,
+			threadTaskCardSummaryLine,
+			threadTaskCardVisibleTargets,
+			truncateThreadTaskCardBody,
+			turnHasThreadTaskCardDraftResponse,
+			turnHasThreadTaskCardRequest,
+			uniqueThreadTaskCardTargetIds,
+			upsertThreadTaskCardOnThread,
+			visibleThreadTaskCardCommandText,
+			waitForContinuationJob,
+			waitForCurrentThreadTurn
+		};
+		if (typeof module === "object" && module.exports) module.exports = taskCardRuntimeApi;
+		Object.assign(root, legacyGlobals);
+		root.CodexTaskCardRuntime = taskCardRuntimeApi;
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
-//#region public/live-operation-dock-state.js
-var require_live_operation_dock_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexLiveOperationDockState = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_MIN_VISIBLE_MS = 500;
-		function normalizeMode(mode) {
-			return String(mode || "") === "expanded" ? "expanded" : "compact";
+//#region public/notification-ui-runtime.js
+var require_notification_ui_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	function isHermesEmbedMode() {
+		return Boolean(state.pluginEmbed && state.pluginEmbed.embedded);
+	}
+	function currentPluginParentWindowOrigin() {
+		try {
+			if (!window.parent || window.parent === window || !window.parent.location) return "";
+			const origin = String(window.parent.location.origin || "").trim();
+			return origin && origin !== "null" ? origin : "";
+		} catch (_) {
+			return "";
 		}
-		function text(value) {
-			return String(value || "");
-		}
-		function isCompletedStatusText(value) {
-			return /completed|failed|cancel|error|interrupted/i.test(text(value));
-		}
-		function nowValue(value) {
-			const parsed = Number(value);
-			return Number.isFinite(parsed) ? parsed : Date.now();
-		}
-		function containsBubble(html) {
-			return text(html).includes("mobile-operation-bubble");
-		}
-		function containsSheet(html) {
-			return text(html).includes("mobile-operation-sheet");
-		}
-		function rememberCompactBubble(input = {}) {
-			const nowMs = nowValue(input.nowMs);
-			const minVisibleMs = Math.max(0, Number(input.minVisibleMs || DEFAULT_MIN_VISIBLE_MS));
-			const existingUntilMs = Number(input.existingVisibleUntilMs || 0);
-			const html = text(input.html);
-			const threadId = text(input.threadId);
-			return {
-				visibleUntilMs: Math.max(existingUntilMs, nowMs + minVisibleMs),
-				html,
-				threadId,
-				recallHtml: html,
-				recallThreadId: threadId,
-				recallAtMs: nowMs
-			};
-		}
-		function compactBubblePreservation(input = {}) {
-			if (containsBubble(input.nextHtml)) return { preserve: false };
-			if (input.liveTurnActive === false) return { preserve: false };
-			const remainingMs = Number(input.visibleUntilMs || 0) - nowValue(input.nowMs);
-			if (remainingMs <= 0) return { preserve: false };
-			const savedThreadId = text(input.savedThreadId);
-			if (!savedThreadId || savedThreadId !== text(input.currentThreadId)) return { preserve: false };
-			const savedHtml = text(input.savedHtml);
-			const dockHasBubble = Boolean(input.dockHasBubble);
-			if (!dockHasBubble && !containsBubble(savedHtml)) return { preserve: false };
-			return {
-				preserve: true,
-				remainingMs,
-				patchSavedHtml: Boolean(savedHtml && !dockHasBubble),
-				savedHtml
-			};
-		}
-		function shouldPreservePinned(input = {}) {
-			return Boolean(input.pinned && normalizeMode(input.mode) === "expanded" && text(input.pinnedThreadId) === text(input.currentThreadId) && input.dockHasSheet && input.liveTurnActive !== false && !containsBubble(input.nextHtml));
-		}
-		function shouldShowRecall(input = {}) {
-			const recallThreadId = text(input.recallThreadId);
-			return Boolean(input.isMobile && input.hasCurrentThread && !input.newThreadDraft && input.liveTurnActive !== false && recallThreadId && recallThreadId === text(input.currentThreadId) && containsSheet(input.recallHtml));
-		}
-		function operationCardContentPlan(input = {}) {
-			const status = text(input.status || (input.completed ? "completed" : "running")).trim();
-			const type = text(input.type || input.itemType || "item").trim() || "item";
-			const title = text(input.title || type).trim() || type;
-			const detail = text(input.detail).replace(/\s+/g, " ").trim();
-			const durationText = text(input.durationText).trim();
-			const extraClass = text(input.extraClass).trim();
-			const completed = Boolean(input.completed || isCompletedStatusText(status));
-			return {
-				itemId: text(input.itemId).trim(),
-				type,
-				status,
-				title,
-				detail,
-				detailEmpty: !detail,
-				statusVisible: Boolean(status),
-				durationVisible: Boolean(durationText),
-				durationText,
-				durationTitle: durationText ? `Elapsed ${durationText}` : "",
-				durationAttrs: text(input.durationAttrs).trim(),
-				classTokens: [
-					"item",
-					"live-operation",
-					extraClass,
-					completed ? "completed" : "",
-					type
-				].filter(Boolean)
-			};
-		}
-		function htmlEscaper(input = {}) {
-			return typeof input.escapeHtml === "function" ? input.escapeHtml : (value) => text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-		}
-		function durationAttributeHtml(value, escape) {
-			const attrs = [];
-			const input = text(value);
-			const attrPattern = /\b(data-(?:started|completed|duration)-ms)="([^"]*)"/g;
-			let match;
-			while (match = attrPattern.exec(input)) attrs.push(`${match[1]}="${escape(match[2])}"`);
-			return attrs.join(" ");
-		}
-		function operationCardHtml(input = {}) {
-			const escape = htmlEscaper(input);
-			const plan = input.plan || operationCardContentPlan(input);
-			const renderKey = text(input.renderKey || input.key).trim();
-			const durationAttrs = durationAttributeHtml(plan.durationAttrs, escape);
-			const duration = plan.durationVisible ? `<time class="operation-duration" ${durationAttrs} title="${escape(plan.durationTitle)}">${escape(plan.durationText)}</time>` : "";
-			const classes = (Array.isArray(plan.classTokens) ? plan.classTokens : []).map(escape).join(" ");
-			const detailValue = plan.detail ? escape(plan.detail) : "&nbsp;";
-			const body = `<div class="operation-detail-line${plan.detailEmpty ? " empty" : ""}"><span class="operation-detail">${detailValue}</span></div>`;
-			const statusHtml = plan.statusVisible ? `<span class="operation-status">${escape(plan.status)}</span>` : "";
-			return `<section class="${classes}" data-item="${escape(plan.itemId)}" data-render-key="${escape(renderKey)}">
-    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escape(plan.title)}</span>${statusHtml}</span>${duration}</div>
-    ${body}
-  </section>`;
-		}
-		return {
-			DEFAULT_MIN_VISIBLE_MS,
-			compactBubblePreservation,
-			containsBubble,
-			containsSheet,
-			normalizeMode,
-			operationCardContentPlan,
-			operationCardHtml,
-			rememberCompactBubble,
-			shouldPreservePinned,
-			shouldShowRecall
+	}
+	function normalizePluginParentOrigin(value) {
+		const liveParentOrigin = currentPluginParentWindowOrigin();
+		if (liveParentOrigin) return liveParentOrigin;
+		const origin = String(value || "").trim();
+		if (origin && origin !== "*") return origin;
+		const referrerOrigin = pluginEmbedApi.parentOriginFromReferrer ? pluginEmbedApi.parentOriginFromReferrer(document.referrer) : "";
+		return String(referrerOrigin || "").trim();
+	}
+	function pluginVoiceInputParentOriginAllowed(event) {
+		if (!isHermesEmbedMode()) return false;
+		if (event && event.source && event.source !== window.parent) return false;
+		const origin = String(event && event.origin || "").trim();
+		const expected = normalizePluginParentOrigin(state.pluginParentOrigin);
+		if (expected && origin && origin !== expected) return false;
+		if (!expected && origin && origin !== "null" && (!state.pluginParentOrigin || state.pluginParentOrigin === "*")) state.pluginParentOrigin = origin;
+		return true;
+	}
+	function pluginVoiceInputSafeDraftId() {
+		if (state.newThreadDraft) return "new-thread";
+		return state.currentThreadId ? `thread:${String(state.currentThreadId).slice(0, 160)}` : "";
+	}
+	function pluginVoiceInputComposerId() {
+		return state.newThreadDraft ? "new-thread-composer" : "thread-composer";
+	}
+	function pluginVoiceInputComposerWritable() {
+		if (!isHermesEmbedMode()) return false;
+		if (state.composerBusy || state.attachmentProcessingCount > 0) return false;
+		const input = $("messageInput");
+		if (!input || input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
+		if (state.newThreadDraft) return Boolean(state.selectedCwd);
+		return Boolean(state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError);
+	}
+	function pluginVoiceInputActiveTurnHoldAvailable() {
+		if (!isHermesEmbedMode()) return false;
+		if (!state.activeTurnId || state.attachmentProcessingCount > 0) return false;
+		return Boolean(state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError);
+	}
+	function pluginVoiceInputCanReceiveText() {
+		if (pluginVoiceInputComposerWritable()) return true;
+		return pluginVoiceInputActiveTurnHoldAvailable();
+	}
+	function pluginVoiceInputEnsureComposerWritableForDraft() {
+		if (!isHermesEmbedMode()) return false;
+		const input = $("messageInput");
+		if (!input) return false;
+		if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") setMessageInputDisabled(false);
+		if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
+		focusMessageInput({
+			moveCaretToEnd: true,
+			retry: true
+		});
+		return true;
+	}
+	function persistPluginVoiceInputDraft(draftKey = currentPluginVoiceInputDraftKey()) {
+		const key = String(draftKey || "");
+		if (!key) return false;
+		writeCurrentDraftToKey(key);
+		return true;
+	}
+	function pluginVoiceInputCapabilityPayload(extra = {}) {
+		return Object.assign({
+			pluginId: "codex-mobile",
+			writable: pluginVoiceInputCanReceiveText(),
+			composerId: pluginVoiceInputComposerId(),
+			threadId: String(state.currentThreadId || "").slice(0, 160),
+			draftId: pluginVoiceInputSafeDraftId(),
+			maxChars: Math.max(1, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12e3) || 12e3),
+			actions: [
+				"append_text",
+				"replace_draft",
+				"insert_text",
+				"provisional_text"
+			]
+		}, extra || {});
+	}
+	function pluginVoiceInputGestureAvailable() {
+		if (!isHermesEmbedMode()) return false;
+		if (pluginVoiceInputActiveTurnHoldAvailable()) return true;
+		if (state.activeTurnId && !composerHasContent()) return false;
+		return pluginVoiceInputComposerWritable();
+	}
+	function postPluginVoiceInputMessage(message) {
+		if (!isHermesEmbedMode() || !message) return false;
+		const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
+		if (targetOrigin) state.pluginParentOrigin = targetOrigin;
+		return pluginVoiceInputApi.postToParent ? pluginVoiceInputApi.postToParent(window.parent, message, targetOrigin || "*") : false;
+	}
+	function publishPluginVoiceInputCapability(options = {}) {
+		if (!isHermesEmbedMode()) return false;
+		const payload = pluginVoiceInputCapabilityPayload({ requestId: options.requestId || "" });
+		const signature = JSON.stringify({
+			writable: payload.writable,
+			composerId: payload.composerId,
+			threadId: payload.threadId,
+			draftId: payload.draftId,
+			maxChars: payload.maxChars,
+			actions: payload.actions
+		});
+		if (!options.force && !options.requestId && state.pluginVoiceInputCapabilitySignature === signature) return false;
+		state.pluginVoiceInputCapabilitySignature = signature;
+		return postPluginVoiceInputMessage(pluginVoiceInputApi.capabilityStateMessage(payload));
+	}
+	function currentPluginVoiceInputDraftKey() {
+		return currentDraftKey() || "";
+	}
+	function rememberPluginVoiceInputSession(payload = {}, insertedText = "") {
+		const voiceSessionId = pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : String(payload.voiceSessionId || payload.voice_session_id || "").trim();
+		if (!voiceSessionId) return;
+		const draftKey = currentPluginVoiceInputDraftKey();
+		if (!draftKey) return;
+		const sessions = state.pluginVoiceInputSessionsByDraftKey[draftKey] || [];
+		const existing = sessions.find((entry) => entry.voiceSessionId === voiceSessionId);
+		const next = {
+			voiceSessionId,
+			composerId: pluginVoiceInputComposerId(),
+			threadId: String(state.currentThreadId || "").slice(0, 160),
+			insertedText: String(insertedText || "").slice(0, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12e3) || 12e3),
+			insertedAtMs: Date.now()
 		};
-	});
+		if (existing) Object.assign(existing, next);
+		else sessions.push(next);
+		state.pluginVoiceInputSessionsByDraftKey[draftKey] = sessions.slice(-8);
+	}
+	function takePluginVoiceInputSessionsForDraft(draftKey) {
+		const key = String(draftKey || "");
+		if (!key) return [];
+		const sessions = Array.isArray(state.pluginVoiceInputSessionsByDraftKey[key]) ? state.pluginVoiceInputSessionsByDraftKey[key].slice() : [];
+		delete state.pluginVoiceInputSessionsByDraftKey[key];
+		return sessions;
+	}
+	function commitPluginVoiceInputSessionsAfterSend(draftKey, finalText, options = {}) {
+		if (!isHermesEmbedMode()) return;
+		const sessions = takePluginVoiceInputSessionsForDraft(draftKey);
+		const submittedText = String(finalText || "").trim();
+		if (!sessions.length || !submittedText) return;
+		for (const session of sessions) postPluginVoiceInputMessage(pluginVoiceInputApi.commitResultMessage({
+			voiceSessionId: session.voiceSessionId,
+			composerId: options.composerId || session.composerId || pluginVoiceInputComposerId(),
+			threadId: options.threadId || state.currentThreadId || session.threadId || "",
+			messageId: options.messageId || "",
+			finalText: submittedText,
+			action: "submitted"
+		}));
+	}
+	function pluginVoiceInputAppendText(currentText, insertedText) {
+		const current = String(currentText || "").trim();
+		const next = String(insertedText || "").trim();
+		if (!current) return next;
+		if (!next) return current;
+		return `${current}\n${next}`;
+	}
+	function pluginVoiceInputSessionIdFromPayload(payload = {}) {
+		return pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : String(payload.voiceSessionId || payload.voice_session_id || "").trim();
+	}
+	function clearPluginVoiceInputProvisionalSession() {
+		state.pluginVoiceInputProvisional = null;
+	}
+	function restorePluginVoiceInputProvisionalBase(payload = {}) {
+		const session = state.pluginVoiceInputProvisional;
+		const voiceSessionId = pluginVoiceInputSessionIdFromPayload(payload);
+		if (!session || !voiceSessionId || session.voiceSessionId !== voiceSessionId) return false;
+		if (session.draftKey && session.draftKey !== currentPluginVoiceInputDraftKey()) return false;
+		if (composerText() !== session.currentText) {
+			clearPluginVoiceInputProvisionalSession();
+			return false;
+		}
+		setComposerText(session.baseText || "");
+		clearPluginVoiceInputProvisionalSession();
+		return true;
+	}
+	function applyPluginVoiceInputProvisionalText(payload = {}, text = "") {
+		const voiceSessionId = pluginVoiceInputSessionIdFromPayload(payload);
+		if (!voiceSessionId) return false;
+		const draftKey = currentPluginVoiceInputDraftKey();
+		if (!draftKey) return false;
+		if (!pluginVoiceInputEnsureComposerWritableForDraft()) return false;
+		const currentText = composerText();
+		let session = state.pluginVoiceInputProvisional;
+		if (!session || session.voiceSessionId !== voiceSessionId || session.draftKey !== draftKey) session = {
+			voiceSessionId,
+			draftKey,
+			baseText: currentText,
+			currentText
+		};
+		else if (currentText !== session.currentText) {
+			clearPluginVoiceInputProvisionalSession();
+			return false;
+		}
+		const nextText = pluginVoiceInputAppendText(session.baseText, text);
+		setComposerText(nextText);
+		persistPluginVoiceInputDraft(draftKey);
+		updateComposerControls();
+		focusMessageInput({
+			moveCaretToEnd: true,
+			retry: true
+		});
+		state.pluginVoiceInputProvisional = Object.assign({}, session, {
+			currentText: nextText,
+			text: String(text || "").slice(0, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12e3) || 12e3),
+			updatedAtMs: Date.now()
+		});
+		return true;
+	}
+	function rejectPluginVoiceInputInsert(payload, code, message) {
+		const action = pluginVoiceInputApi.actionFromMessageType ? pluginVoiceInputApi.actionFromMessageType(payload.type) : "";
+		postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
+			requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
+			voiceSessionId: pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : payload.voiceSessionId,
+			composerId: payload.composerId || payload.composer_id || pluginVoiceInputComposerId(),
+			draftId: pluginVoiceInputSafeDraftId(),
+			action,
+			ok: false,
+			error: message || code || "composer_not_writable"
+		}));
+		postClientEvent("plugin_voice_input_insert_rejected", {
+			code: String(code || "insert_rejected").slice(0, 80),
+			writable: pluginVoiceInputCanReceiveText(),
+			threadId: state.currentThreadId || ""
+		});
+	}
+	function applyPluginVoiceInputTextMessage(payload = {}) {
+		const action = pluginVoiceInputApi.actionFromMessageType ? pluginVoiceInputApi.actionFromMessageType(payload.type) : "";
+		if (!action || action === "submit") {
+			postPluginVoiceInputMessage(pluginVoiceInputApi.errorMessage({
+				requestId: payload.requestId,
+				voiceSessionId: payload.voiceSessionId,
+				composerId: payload.composerId || pluginVoiceInputComposerId(),
+				code: "unsupported_voice_input_action",
+				error: "Unsupported voice input action."
+			}));
+			return true;
+		}
+		const capability = pluginVoiceInputCapabilityPayload();
+		if (!capability.writable) {
+			rejectPluginVoiceInputInsert(payload, "composer_not_writable", "Composer is not writable.");
+			return true;
+		}
+		if (!pluginVoiceInputEnsureComposerWritableForDraft()) {
+			rejectPluginVoiceInputInsert(payload, "composer_dom_unavailable", "Composer is not available.");
+			return true;
+		}
+		const text = pluginVoiceInputApi.textFromMessage ? pluginVoiceInputApi.textFromMessage(payload, capability.maxChars) : String(payload.text || "").trim().slice(0, capability.maxChars);
+		if (!text) {
+			rejectPluginVoiceInputInsert(payload, "empty_voice_input_text", "Voice input text is empty.");
+			return true;
+		}
+		if (action === "provisional_text") {
+			if (!applyPluginVoiceInputProvisionalText(payload, text)) {
+				rejectPluginVoiceInputInsert(payload, "provisional_voice_input_rejected", "Voice input draft changed.");
+				return true;
+			}
+			postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
+				requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
+				voiceSessionId: pluginVoiceInputSessionIdFromPayload(payload),
+				composerId: capability.composerId,
+				draftId: capability.draftId,
+				action,
+				ok: true
+			}));
+			publishPluginVoiceInputCapability({ force: true });
+			return true;
+		}
+		restorePluginVoiceInputProvisionalBase(payload);
+		const nextText = action === "replace_draft" ? text : pluginVoiceInputAppendText(composerText(), text);
+		setComposerText(nextText);
+		persistPluginVoiceInputDraft();
+		updateComposerControls();
+		focusMessageInput({
+			moveCaretToEnd: true,
+			retry: true
+		});
+		rememberPluginVoiceInputSession(payload, text);
+		postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
+			requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
+			voiceSessionId: pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : payload.voiceSessionId,
+			composerId: capability.composerId,
+			draftId: capability.draftId,
+			action,
+			ok: true
+		}));
+		publishPluginVoiceInputCapability({ force: true });
+		return true;
+	}
+	function handlePluginVoiceInputMessage(event) {
+		const payload = event && event.data;
+		if (!pluginVoiceInputApi.isVoiceInputMessage || !pluginVoiceInputApi.isVoiceInputMessage(payload)) return false;
+		if (!pluginVoiceInputParentOriginAllowed(event)) return true;
+		if (payload.pluginId && String(payload.pluginId) !== "codex-mobile") return true;
+		if (payload.version && Number(payload.version) !== 1) return true;
+		if (payload.type === pluginVoiceInputApi.TYPES.CAPABILITY_QUERY || payload.type === "voice_input.capability_query") {
+			publishPluginVoiceInputCapability({
+				force: true,
+				requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId
+			});
+			return true;
+		}
+		if (payload.type === pluginVoiceInputApi.TYPES.APPEND_TEXT || payload.type === pluginVoiceInputApi.TYPES.INSERT_TEXT || payload.type === pluginVoiceInputApi.TYPES.REPLACE_DRAFT || payload.type === pluginVoiceInputApi.TYPES.PROVISIONAL_TEXT || payload.type === pluginVoiceInputApi.TYPES.SUBMIT) return applyPluginVoiceInputTextMessage(payload);
+		return false;
+	}
+	function clearPluginVoiceInputPress(options = {}) {
+		const press = state.pluginVoiceInputPress;
+		if (press && press.timer) clearTimeout(press.timer);
+		const button = $("sendMessage");
+		if (button) button.classList.remove("plugin-voice-input-recording");
+		state.pluginVoiceInputPress = options.keepSuppress && press ? Object.assign({}, press, {
+			timer: 0,
+			started: false
+		}) : null;
+	}
+	function handlePluginVoiceInputSendPointerDown(event) {
+		if (!pluginVoiceInputGestureAvailable()) return;
+		if (event.pointerType === "mouse" && event.button !== 0) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const button = event.currentTarget;
+		clearPluginVoiceInputPress();
+		const press = {
+			pointerId: event.pointerId,
+			started: false,
+			suppressClick: false,
+			timer: 0
+		};
+		state.pluginVoiceInputPress = press;
+		try {
+			button.setPointerCapture?.(event.pointerId);
+		} catch (_) {}
+		press.timer = setTimeout(() => {
+			press.timer = 0;
+			press.started = true;
+			press.suppressClick = true;
+			clearTextSelection();
+			if (button) button.classList.add("plugin-voice-input-recording");
+			const capability = pluginVoiceInputCapabilityPayload({ writable: true });
+			if (!postPluginVoiceInputMessage(pluginVoiceInputApi.startRequestMessage(capability))) postClientEvent("plugin_voice_input_start_failed", { reason: "post_to_parent_failed" });
+		}, PLUGIN_VOICE_INPUT_LONG_PRESS_MS);
+	}
+	function handlePluginVoiceInputSendPointerUp(event) {
+		const press = state.pluginVoiceInputPress;
+		if (!press) return;
+		if (press.pointerId && event.pointerId !== press.pointerId) return;
+		if (press.timer) {
+			clearPluginVoiceInputPress();
+			return;
+		}
+		try {
+			event.currentTarget?.releasePointerCapture?.(event.pointerId);
+		} catch (_) {}
+		if (!press.started) {
+			clearPluginVoiceInputPress();
+			return;
+		}
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		postPluginVoiceInputMessage(pluginVoiceInputApi.stopRequestMessage(pluginVoiceInputCapabilityPayload()));
+		clearPluginVoiceInputPress({ keepSuppress: true });
+		window.setTimeout(() => {
+			if (state.pluginVoiceInputPress && state.pluginVoiceInputPress.suppressClick) state.pluginVoiceInputPress = null;
+		}, 1200);
+	}
+	function handlePluginVoiceInputSendPointerCancel(event) {
+		const press = state.pluginVoiceInputPress;
+		if (!press) return;
+		if (press.started) postPluginVoiceInputMessage(pluginVoiceInputApi.cancelRequestMessage(pluginVoiceInputCapabilityPayload()));
+		if (event && typeof event.preventDefault === "function") event.preventDefault();
+		clearPluginVoiceInputPress();
+	}
+	function handlePluginVoiceInputSendClick(event) {
+		const press = state.pluginVoiceInputPress;
+		if (!press || !press.suppressClick) return;
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		state.pluginVoiceInputPress = null;
+	}
+	function setComposerActionButtonLabel(button, label, options = {}) {
+		if (!button) return;
+		const text = String(label || "");
+		const useProxy = Boolean(options.proxy);
+		button.classList.toggle("plugin-voice-input-label-proxy", useProxy);
+		if (useProxy) {
+			button.textContent = "";
+			button.dataset.visualLabel = text;
+			button.setAttribute("aria-label", text);
+		} else {
+			button.textContent = text;
+			delete button.dataset.visualLabel;
+		}
+	}
+	function boundedPluginRefreshValue(value, maxLength) {
+		const text = String(value || "").trim();
+		return text ? text.slice(0, Math.max(0, Number(maxLength) || 0)) : "";
+	}
+	function pluginRefreshReasonForApiError(details = {}) {
+		const status = Number(details && details.status || 0);
+		const path = String(details && details.path || "").trim();
+		const message = String(details && details.message || "").trim().toLowerCase();
+		if (!(status === 401 || status === 403)) return "";
+		if (path === "/api/v1/hermes/plugin/session") return "plugin_launch_invalid";
+		if (message.includes("plugin_launch_invalid_or_expired")) return "plugin_launch_invalid";
+		if (message.includes("invalid launch") || message.includes("invalid session")) return "plugin_session_invalid";
+		if (message.includes("session is unauthorized") || message.includes("session expired")) return "plugin_session_invalid";
+		if (message.includes("unauthorized") || message.includes("forbidden")) return "auth_state_changed";
+		return "";
+	}
+	function currentHermesRefreshRoute(options = {}) {
+		const explicit = options && typeof options.route === "object" ? options.route : null;
+		const hinted = normalizePluginRouteHint(state.pendingPluginRouteHint) || normalizePluginRouteHint(state.queuedPluginRouteHint);
+		const route = {};
+		const name = boundedPluginRefreshValue(explicit && explicit.name ? explicit.name : state.currentThreadId || hinted && hinted.threadId ? "thread" : "root", 48);
+		const threadId = boundedPluginRefreshValue(explicit && explicit.threadId ? explicit.threadId : state.currentThreadId || hinted && hinted.threadId || state.pluginLaunchTarget && state.pluginLaunchTarget.threadId || "", 160);
+		const itemId = boundedPluginRefreshValue(explicit && explicit.itemId ? explicit.itemId : hinted && (hinted.itemId || hinted.taskId) || "", 160);
+		const pluginRoute = boundedPluginRefreshValue(explicit && explicit.pluginRoute ? explicit.pluginRoute : hinted && hinted.route || "", 80);
+		const pluginThreadId = boundedPluginRefreshValue(explicit && explicit.pluginThreadId ? explicit.pluginThreadId : threadId, 160);
+		const pluginTaskId = boundedPluginRefreshValue(explicit && explicit.pluginTaskId ? explicit.pluginTaskId : hinted && hinted.taskId || "", 160);
+		const pluginItemId = boundedPluginRefreshValue(explicit && explicit.pluginItemId ? explicit.pluginItemId : itemId, 160);
+		if (name) route.name = name;
+		if (threadId) route.threadId = threadId;
+		if (itemId) route.itemId = itemId;
+		if (pluginRoute) route.pluginRoute = pluginRoute;
+		if (pluginThreadId) route.pluginThreadId = pluginThreadId;
+		if (pluginTaskId) route.pluginTaskId = pluginTaskId;
+		if (pluginItemId) route.pluginItemId = pluginItemId;
+		return route;
+	}
+	function requestHermesPluginRefresh(reason, options = {}) {
+		if (!isHermesEmbedMode() || !pluginEmbedApi.postRefreshRequired) return false;
+		const normalizedReason = boundedPluginRefreshValue(reason || "refresh_required", 80) || "refresh_required";
+		const route = currentHermesRefreshRoute(options);
+		const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
+		const signature = JSON.stringify({
+			reason: normalizedReason,
+			targetOrigin: targetOrigin || "*",
+			route,
+			appearance: currentPluginAppearanceForHost()
+		});
+		if (!options.force && signature === state.pluginRefreshRequestSignature) return false;
+		state.pluginRefreshRequestSignature = signature;
+		if (targetOrigin) state.pluginParentOrigin = targetOrigin;
+		if (state.pluginRefreshPendingTimer) {
+			clearTimeout(state.pluginRefreshPendingTimer);
+			state.pluginRefreshPendingTimer = null;
+		}
+		state.pluginRefreshPendingNotice = pluginRefreshPendingMessage(normalizedReason);
+		state.pluginRefreshPendingTimer = window.setTimeout(() => {
+			state.pluginRefreshPendingTimer = null;
+			clearPluginRefreshPendingNotice();
+		}, 1e4);
+		if (state.currentThreadId || state.currentThread) renderCurrentThread();
+		else if (state.newThreadDraft) renderNewThreadDraft();
+		if ($("connectionState")) $("connectionState").textContent = state.pluginRefreshPendingNotice || "Requesting plugin refresh...";
+		pluginEmbedApi.postRefreshRequired(window.parent, {
+			reason: normalizedReason,
+			route,
+			appearance: currentPluginAppearanceForHost()
+		}, { targetOrigin: targetOrigin || "*" });
+		postClientEvent("plugin_refresh_required", {
+			reason: normalizedReason,
+			targetOrigin: targetOrigin || "*",
+			hasThreadId: Boolean(route.threadId),
+			hasItemId: Boolean(route.itemId),
+			usedWildcardFallback: !targetOrigin
+		});
+		return true;
+	}
+	function pluginRefreshPendingMessage(reason) {
+		const normalized = boundedPluginRefreshValue(reason || "refresh_required", 80) || "refresh_required";
+		if (normalized === "server_build_changed") return "Refreshing plugin page for a new Mobile Web build...";
+		if (normalized === "plugin_session_missing" || normalized === "plugin_launch_invalid") return "Refreshing plugin page because the Hermes launch session is no longer valid...";
+		if (normalized === "auth_state_changed") return "Refreshing plugin page because the Codex auth/session state changed...";
+		return "Refreshing plugin page from Hermes Mobile...";
+	}
+	function clearPluginRefreshPendingNotice() {
+		if (state.pluginRefreshPendingTimer) {
+			clearTimeout(state.pluginRefreshPendingTimer);
+			state.pluginRefreshPendingTimer = null;
+		}
+		if (!state.pluginRefreshPendingNotice) return;
+		state.pluginRefreshPendingNotice = "";
+		if (state.currentThreadId || state.currentThread) renderCurrentThread();
+		else if (state.newThreadDraft) renderNewThreadDraft();
+	}
+	function boundedViewportNumber(value, max = 4096) {
+		const numeric = Number(value);
+		if (!Number.isFinite(numeric)) return 0;
+		return Math.max(0, Math.min(Math.round(numeric), Math.max(0, Number(max) || 0)));
+	}
+	function normalizeHermesPluginViewportRect(rect) {
+		if (!rect || typeof rect !== "object") return null;
+		return {
+			top: boundedViewportNumber(rect.top),
+			right: boundedViewportNumber(rect.right),
+			bottom: boundedViewportNumber(rect.bottom),
+			left: boundedViewportNumber(rect.left),
+			width: boundedViewportNumber(rect.width),
+			height: boundedViewportNumber(rect.height)
+		};
+	}
+	function normalizeHermesPluginViewportMessage(data) {
+		if (!data || data.type !== "hermes.plugin.viewport" || data.version !== 1) return null;
+		const pluginId = String(data.pluginId || "").trim();
+		if (pluginId && pluginId !== "codex-mobile") return null;
+		const viewport = data.viewport && typeof data.viewport === "object" ? data.viewport : {};
+		const keyboard = data.keyboard && typeof data.keyboard === "object" ? data.keyboard : {};
+		const host = data.host && typeof data.host === "object" ? data.host : {};
+		const footer = data.footer && typeof data.footer === "object" ? data.footer : {};
+		const topSafeArea = viewport.safeAreaTop || viewport.hostTopSafeArea || host.safeAreaTop || host.topSafeArea || host.hostTopSafeArea || footer.safeAreaTop || footer.topSafeArea || footer.hostTopSafeArea;
+		const footerSafeArea = footer.safeAreaBottom || footer.bottomSafeArea || footer.hostBottomSafeArea || footer.safeAreaInsetBottom;
+		return {
+			receivedAtMs: Date.now(),
+			reason: String(data.reason || "").trim().slice(0, 60),
+			hostTopSafeArea: boundedViewportNumber(topSafeArea, 512),
+			viewport: {
+				width: boundedViewportNumber(viewport.width),
+				height: boundedViewportNumber(viewport.height),
+				offsetTop: boundedViewportNumber(viewport.offsetTop),
+				offsetLeft: boundedViewportNumber(viewport.offsetLeft),
+				layoutWidth: boundedViewportNumber(viewport.layoutWidth),
+				layoutHeight: boundedViewportNumber(viewport.layoutHeight)
+			},
+			keyboard: {
+				visible: Boolean(keyboard.visible),
+				bottomInset: boundedViewportNumber(keyboard.bottomInset || keyboard.height, 1024),
+				offsetTop: boundedViewportNumber(keyboard.offsetTop),
+				height: boundedViewportNumber(keyboard.height || keyboard.bottomInset, 1024)
+			},
+			footer: { safeAreaBottom: boundedViewportNumber(footerSafeArea, 512) },
+			iframe: normalizeHermesPluginViewportRect(data.iframe),
+			host: normalizeHermesPluginViewportRect(data.host)
+		};
+	}
+	function handleHermesPluginViewportMessage(data) {
+		const normalized = normalizeHermesPluginViewportMessage(data);
+		if (!normalized) return false;
+		state.pluginHostViewport = normalized;
+		syncThreadDetailLayoutState();
+		updateViewportVars();
+		updateComposerHeightVar();
+		requestAnimationFrame(ensureSideChatDraftVisible);
+		if (!isHermesKeyboardInputActive()) scheduleVisualRecovery("hermes-plugin-viewport", 40, {
+			render: false,
+			heavy: false,
+			delays: [40, 180]
+		});
+		return true;
+	}
+	function renderPluginRefreshPendingNotice(previousKeys = /* @__PURE__ */ new Set()) {
+		if (!isHermesEmbedMode()) return "";
+		const message = String(state.pluginRefreshPendingNotice || "").trim();
+		if (!message) return "";
+		const key = `plugin-refresh-pending|${message}`;
+		return `<div class="history-note plugin-refresh-pending${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">${escapeHtml(message)}</div>`;
+	}
+	function scrubPluginLaunchUrl() {
+		if (!isHermesEmbedMode()) return;
+		try {
+			const scrubbed = pluginEmbedApi.scrubRouteHintPath(window.location.href, {
+				workspaceId: state.pluginEmbed.workspaceId,
+				appearance: currentPluginAppearanceForHost()
+			});
+			if (scrubbed) window.history.replaceState({}, "", scrubbed);
+		} catch (_) {}
+	}
+	function pluginRootPath() {
+		if (!isHermesEmbedMode()) return window.location.pathname || "/";
+		return pluginEmbedApi.scrubRouteHintPath("/", { workspaceId: state.pluginEmbed && state.pluginEmbed.workspaceId }) || "/?embed=hermes";
+	}
+	function showPluginEmbedAuthError(message = "") {
+		hidePluginStartupLoading();
+		const app = $("app");
+		const login = $("login");
+		const panel = document.querySelector("#login .login-panel");
+		if (app) app.classList.add("hidden");
+		if (login) login.classList.remove("hidden");
+		if (panel) panel.classList.add("plugin-embed-login-panel");
+		const brand = document.querySelector("#login .brand");
+		if (brand) brand.textContent = "Codex Mobile";
+		const input = $("loginKey");
+		const submit = document.querySelector("#loginForm button[type='submit']");
+		if (input) input.classList.add("hidden");
+		if (submit) submit.classList.add("hidden");
+		$("loginError").textContent = message || "Codex Mobile plugin launch is invalid or expired.";
+		publishPluginNavigationState();
+	}
+	function showPluginEmbedRecovering(message = "") {
+		showApp();
+		hidePluginStartupLoading();
+		clearPluginRefreshPendingNotice();
+		state.newThreadDraft = false;
+		state.startupThreadOpenPending = false;
+		state.currentThread = null;
+		state.currentThreadId = "";
+		state.activeTurnId = "";
+		clearInterval(state.tickTimer);
+		state.tickTimer = null;
+		updateSubagentPanelUi();
+		updateTurnTimer();
+		$("threadTitle").textContent = "Refreshing plugin";
+		$("threadMeta").textContent = "Waiting for Hermes Mobile to relaunch Codex";
+		$("conversation").innerHTML = `<div class="empty-state entry-animate">${escapeHtml(message || "Refreshing Codex Mobile plugin session...")}</div>`;
+		state.renderedConversationSignature = `plugin-recovering|${String(message || "").slice(0, 120)}`;
+		state.renderedConversationPatchShellSignature = "";
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = message || "Refreshing Codex Mobile plugin session...";
+		publishPluginNavigationState({ force: true });
+	}
+	function showLogin(message = "") {
+		if (isHermesEmbedMode()) {
+			showPluginEmbedAuthError(message);
+			return;
+		}
+		$("app").classList.add("hidden");
+		$("login").classList.remove("hidden");
+		$("loginError").textContent = message;
+	}
+	function turnDisplaySortPhase(turn) {
+		if (isRunningStatus(turn && turn.status) && !isTurnComplete(turn)) return 2;
+		if (isTurnComplete(turn)) return 1;
+		return 0;
+	}
+	function turnDisplaySortTimestampMs(value) {
+		if (value === null || value === void 0 || value === "") return 0;
+		const numberValue = Number(value);
+		if (Number.isFinite(numberValue) && numberValue > 0) return numberValue > 0xe8d4a51000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1e3);
+		const parsed = Date.parse(String(value));
+		return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+	}
+	function turnDisplayItemTimestampMs(item) {
+		if (!item || typeof item !== "object") return 0;
+		for (const field of [
+			"createdAtMs",
+			"createdAt",
+			"created_at_ms",
+			"created_at",
+			"startedAtMs",
+			"startedAt",
+			"started_at_ms",
+			"started_at",
+			"updatedAtMs",
+			"updatedAt",
+			"updated_at_ms",
+			"updated_at",
+			"timestampMs",
+			"timestamp",
+			"mobileDisplayTimestampMs",
+			"mobileDisplayTimestamp",
+			"completedAtMs",
+			"completedAt",
+			"completed_at_ms",
+			"completed_at"
+		]) {
+			const timestamp = turnDisplaySortTimestampMs(item[field]);
+			if (timestamp) return timestamp;
+		}
+		return 0;
+	}
+	function turnDisplayItemTimestampRange(turn) {
+		const timestamps = (Array.isArray(turn && turn.items) ? turn.items : []).map(turnDisplayItemTimestampMs).filter((timestamp) => timestamp > 0);
+		return {
+			first: timestamps.length ? Math.min(...timestamps) : 0,
+			last: timestamps.length ? Math.max(...timestamps) : 0
+		};
+	}
+	function turnDisplayStartMs(turn) {
+		if (!turn || typeof turn !== "object") return 0;
+		for (const field of [
+			"startedAtMs",
+			"startedAt",
+			"started_at_ms",
+			"started_at",
+			"createdAtMs",
+			"createdAt",
+			"created_at_ms",
+			"created_at",
+			"mobileDisplayTimestampMs",
+			"mobileDisplayTimestamp",
+			"updatedAtMs",
+			"updatedAt",
+			"updated_at_ms",
+			"updated_at",
+			"completedAtMs",
+			"completedAt",
+			"completed_at_ms",
+			"completed_at"
+		]) {
+			const timestamp = turnDisplaySortTimestampMs(turn[field]);
+			if (timestamp) return timestamp;
+		}
+		return 0;
+	}
+	function turnDisplayActivityMs(turn) {
+		const orderMs = turnDisplayStartMs(turn) || turnOrderMs(turn);
+		const range = turnDisplayItemTimestampRange(turn);
+		if (isTurnComplete(turn)) return orderMs || range.first || range.last;
+		return Math.max(orderMs, range.last, range.first);
+	}
+	function sortTurnsForDisplay(turns) {
+		return (turns || []).slice().sort((leftTurn, rightTurn) => {
+			const leftActivity = turnDisplayActivityMs(leftTurn);
+			const rightActivity = turnDisplayActivityMs(rightTurn);
+			if (leftActivity !== rightActivity) return leftActivity - rightActivity;
+			const leftPhase = turnDisplaySortPhase(leftTurn);
+			const rightPhase = turnDisplaySortPhase(rightTurn);
+			if (leftPhase !== rightPhase) return leftPhase - rightPhase;
+			const left = turnOrderMs(leftTurn);
+			const right = turnOrderMs(rightTurn);
+			if (left !== right) return left - right;
+			const leftRange = turnDisplayItemTimestampRange(leftTurn);
+			const rightRange = turnDisplayItemTimestampRange(rightTurn);
+			if (leftRange.first !== rightRange.first) return leftRange.first - rightRange.first;
+			if (leftRange.last !== rightRange.last) return leftRange.last - rightRange.last;
+			return String(leftTurn && leftTurn.id || "").localeCompare(String(rightTurn && rightTurn.id || ""));
+		});
+	}
+	function maxVisibleTurnsForThread(thread) {
+		if (isRawThreadReadMode(thread) && !thread.mobileHistoryExpanded) return MAX_RAW_THREAD_VISIBLE_TURNS;
+		return thread && thread.mobileHistoryExpanded ? MAX_EXPANDED_VISIBLE_TURNS : MAX_VISIBLE_TURNS;
+	}
+	function threadTurnsCursorSignature(cursor) {
+		if (!cursor) return "";
+		try {
+			return JSON.stringify(cursor);
+		} catch (_) {
+			return String(cursor || "");
+		}
+	}
+	function pluginStartupLoadingText(message = "") {
+		return String(message || "").trim() || "正在加载 Codex...";
+	}
+	function showPluginStartupLoading(message = "") {
+		if (!isHermesEmbedMode()) return;
+		state.pluginStartupLoading = true;
+		state.pluginStartupMessage = pluginStartupLoadingText(message);
+		document.documentElement.classList.add("plugin-startup-loading");
+		const loading = $("pluginStartupLoading");
+		if (loading) {
+			loading.classList.remove("hidden");
+			const title = loading.querySelector("[data-plugin-startup-title]");
+			if (title) title.textContent = state.pluginStartupMessage;
+		}
+	}
+	function hidePluginStartupLoading() {
+		if (!isHermesEmbedMode()) return;
+		state.pluginStartupLoading = false;
+		state.pluginStartupMessage = "";
+		document.documentElement.classList.remove("plugin-startup-loading");
+		const loading = $("pluginStartupLoading");
+		if (loading) loading.classList.add("hidden");
+	}
+	function showApp() {
+		updateViewportVars();
+		if (isHermesEmbedMode()) {
+			document.documentElement.classList.add("embed-hermes");
+			if (state.pluginStartupLoading) showPluginStartupLoading();
+		}
+		$("login").classList.add("hidden");
+		$("app").classList.remove("hidden");
+		updateComposerHeightVar();
+		ensureAndroidBackToSidebarSentinel();
+		publishPluginNavigationState();
+	}
+	async function login(key) {
+		await fetch("/api/login", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ key })
+		}).then(async (res) => {
+			if (!res.ok) throw new Error("Access key is not valid");
+		});
+		setAuthKey(key);
+		state.pluginLaunchSession = false;
+		state.pluginSessionActive = false;
+		localStorage.setItem("codexMobileKey", key);
+		showApp();
+		await bootstrap();
+	}
+	async function exchangePluginLaunchSession() {
+		if (!isHermesEmbedMode() || !state.pluginLaunchSession || !state.key) return;
+		const result = await api("/api/v1/hermes/plugin/session", {
+			method: "POST",
+			body: JSON.stringify({ codexPluginLaunch: state.key }),
+			timeoutMs: 12e3
+		});
+		if (!result || !result.session_key) throw new Error("Plugin session exchange failed");
+		setAuthKey(result.session_key);
+		const hermesOrigin = normalizePluginParentOrigin(result && result.hermes_origin);
+		if (hermesOrigin) state.pluginParentOrigin = hermesOrigin;
+		state.pluginLaunchTarget = result && result.target && typeof result.target === "object" ? result.target : null;
+		applyPluginAppearancePreference(result && result.appearance);
+		if (state.pluginLaunchTarget && state.pluginLaunchTarget.cwd && !state.currentThreadId) state.selectedCwd = String(state.pluginLaunchTarget.cwd || "").trim();
+		state.pluginLaunchSession = false;
+		state.pluginSessionActive = true;
+		scrubPluginLaunchUrl();
+	}
+	async function applyPluginLaunchTarget() {
+		const target = state.pluginLaunchTarget && typeof state.pluginLaunchTarget === "object" ? state.pluginLaunchTarget : null;
+		if (!target) return false;
+		state.pluginLaunchTarget = null;
+		const threadId = String(target.threadId || "").trim();
+		if (threadId) {
+			localStorage.setItem(STORAGE_THREAD_ID, threadId);
+			clearThreadUrl();
+			await loadThread(threadId, { source: "plugin-launch" });
+			return true;
+		}
+		const cwd = String(target.cwd || "").trim();
+		if (!cwd) return false;
+		const workspace = state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(cwd));
+		saveCurrentDraftNow();
+		state.selectedCwd = workspace ? workspace.cwd : cwd;
+		clearCurrentThreadSelection({ saveDraft: false });
+		state.newThreadDraft = true;
+		state.startupThreadOpenPending = false;
+		restoreDraftForCurrentTarget();
+		syncSidebarWorkspaceSelect();
+		updateWorkspacePath();
+		renderThreads();
+		renderCurrentThread();
+		updateComposerControls();
+		return true;
+	}
+	async function bootstrap() {
+		const bootstrapStartedAt = nowPerfMs();
+		if (isHermesEmbedMode()) showPluginStartupLoading();
+		const startupThreadId = applyUrlThreadSelection();
+		const startupPluginRouteHint = applyUrlPluginRouteHint();
+		const savedThreadId = isHermesEmbedMode() ? "" : localStorage.getItem(STORAGE_THREAD_ID) || "";
+		state.startupThreadOpenPending = Boolean(startupThreadId || savedThreadId || startupPluginRouteHint && startupPluginRouteHint.threadId);
+		const startupThreadOpenPending = state.startupThreadOpenPending;
+		postStartupStage("bootstrap_start", bootstrapStartedAt, {
+			hasStartupThreadId: Boolean(startupThreadId),
+			hasSavedThreadId: Boolean(savedThreadId),
+			hasPluginRouteThreadId: Boolean(startupPluginRouteHint && startupPluginRouteHint.threadId)
+		});
+		const earlyRestorePromise = savedThreadId && !startupThreadId ? loadThread(savedThreadId, {
+			source: "restore-startup",
+			suppressLoadFailureDiagnostic: true
+		}).catch((err) => {
+			localStorage.removeItem(STORAGE_THREAD_ID);
+			showError(err);
+			renderCurrentThread();
+			return null;
+		}) : null;
+		if (earlyRestorePromise) postStartupStage("restore_start", bootstrapStartedAt, { threadId: savedThreadId });
+		const statusStartedAt = nowPerfMs();
+		const status = await api("/api/status").catch((err) => {
+			$("connectionState").textContent = err.message;
+			$("connectionState").classList.add("error");
+			return null;
+		});
+		postStartupStage("status_done", bootstrapStartedAt, {
+			durationMs: roundedDurationMs(statusStartedAt),
+			ok: Boolean(status)
+		});
+		if (status) updateConnectionState(status);
+		if (status) rememberRateLimitsFromConfig(status);
+		if (status && status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
+		const workspacesStartedAt = nowPerfMs();
+		await loadWorkspaces();
+		postStartupStage("workspaces_done", bootstrapStartedAt, {
+			durationMs: roundedDurationMs(workspacesStartedAt),
+			workspaceCount: Array.isArray(state.workspaces) ? state.workspaces.length : 0
+		});
+		const threadDisplayStartedAt = nowPerfMs();
+		await loadThreadDisplaySettings({ render: false }).catch(showError);
+		postStartupStage("thread_display_done", bootstrapStartedAt, {
+			durationMs: roundedDurationMs(threadDisplayStartedAt),
+			mode: state.threadTileMode ? "tile" : "single",
+			paneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
+			paneSlotCount: normalizeThreadTilePinnedIds(state.threadTilePinnedIds).length
+		});
+		const threadsStartedAt = nowPerfMs();
+		await loadThreads({
+			silent: startupThreadOpenPending,
+			deferFallback: true
+		});
+		postStartupStage("threads_done", bootstrapStartedAt, {
+			durationMs: roundedDurationMs(threadsStartedAt),
+			threadCount: Array.isArray(state.threads) ? state.threads.length : 0
+		});
+		let appliedPluginLaunchTarget = false;
+		let appliedPluginRouteHint = false;
+		try {
+			appliedPluginLaunchTarget = await applyPluginLaunchTarget();
+			if (!appliedPluginLaunchTarget) appliedPluginRouteHint = await openHermesPluginRouteHint(state.queuedPluginRouteHint);
+		} catch (err) {
+			showError(err);
+		}
+		if (!appliedPluginLaunchTarget && !appliedPluginRouteHint && startupThreadId) try {
+			await openExternalThreadSelection(startupThreadId, { statusMessage: "Opening linked thread" });
+		} catch (err) {
+			showError(err);
+		} finally {
+			state.startupThreadOpenPending = false;
+		}
+		else if (!appliedPluginLaunchTarget && !appliedPluginRouteHint) if (earlyRestorePromise) await earlyRestorePromise;
+		else await restoreThreadSelection();
+		else state.startupThreadOpenPending = false;
+		connectEvents();
+		postStartupStage("bootstrap_done", bootstrapStartedAt, { hasCurrentThread: Boolean(state.currentThread) });
+		scheduleStartupUpdateCheck();
+		scheduleStartupPublicPrCheck();
+		initializePushControls().catch((err) => {
+			state.pushError = err.message || String(err);
+			updatePushButton();
+		});
+		hidePluginStartupLoading();
+	}
+	function threadIdFromUrlValue(value) {
+		try {
+			const url = new URL(value || window.location.href, window.location.origin);
+			return String(url.searchParams.get("thread") || "").trim();
+		} catch (_) {
+			return "";
+		}
+	}
+	function normalizePluginRouteHint(value) {
+		return pluginEmbedApi.normalizeRouteHint(value);
+	}
+	function pluginRouteHintFromUrl(value) {
+		try {
+			return pluginEmbedApi.routeHintFromUrl(value || window.location.href);
+		} catch (_) {
+			return null;
+		}
+	}
+	function pluginRouteHintTargetId(hint) {
+		return pluginEmbedApi.routeHintTargetId(hint);
+	}
+	function setPluginRouteDiagnostic(message, options = {}) {
+		const text = String(message || "").trim().slice(0, 240);
+		if (!text) return;
+		$("connectionState").textContent = text;
+		$("connectionState").classList.toggle("error", options.error !== false);
+	}
+	function clearThreadUrl() {
+		try {
+			window.history.replaceState({}, "", isHermesEmbedMode() ? pluginRootPath() : window.location.pathname || "/");
+		} catch (_) {}
+	}
+	function findPluginRouteTargetNode(hint) {
+		const conversation = $("conversation");
+		if (!conversation) return null;
+		return pluginEmbedApi.findRouteHintTargetNode(conversation, hint, { escapeSelector: escapeSelectorAttr });
+	}
+	function focusPluginRouteTargetNode(hint) {
+		const node = findPluginRouteTargetNode(hint);
+		if (!node) return false;
+		markProgrammaticConversationScroll();
+		if (typeof node.scrollIntoView === "function") node.scrollIntoView({
+			block: "center",
+			inline: "nearest"
+		});
+		scheduleScrollToBottomButtonUpdate();
+		return true;
+	}
+	function applyPendingPluginRouteHintFocus() {
+		const hint = normalizePluginRouteHint(state.pendingPluginRouteHint);
+		if (!hint) return false;
+		const node = findPluginRouteTargetNode(hint);
+		const plan = pluginEmbedApi.routeHintFocusPlan(hint, {
+			currentThreadId: state.currentThreadId,
+			targetFound: Boolean(node)
+		});
+		if (!plan || plan.action === "ignore" || plan.action === "wait") return false;
+		if (plan.action === "clear") {
+			state.pendingPluginRouteHint = null;
+			return false;
+		}
+		if (plan.action === "focused") {
+			focusPluginRouteTargetNode(hint);
+			state.pendingPluginRouteHint = null;
+			if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
+			recordHomeAiDiagnosticSuccess({
+				category: "thread_session_load_failed",
+				diagnostic_type: "route_hint_target_missing",
+				error_code: "route_hint_target_missing",
+				context: {
+					surface: "thread-session",
+					action: "route-hint-focus",
+					route_kind: "plugin-route",
+					thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
+					task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+					item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || "")
+				}
+			});
+			return true;
+		}
+		state.pendingPluginRouteHint = null;
+		showHermesPluginPrimaryPage({
+			force: true,
+			source: "route-hint-target-missing"
+		});
+		if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
+		recordHomeAiDiagnosticFailure({
+			category: "thread_session_load_failed",
+			diagnostic_type: "route_hint_target_missing",
+			severity_hint: "H2",
+			evidence_confidence: .78,
+			error_code: "route_hint_target_missing",
+			context: {
+				surface: "thread-session",
+				action: "route-hint-focus",
+				route_kind: "plugin-route",
+				thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
+				task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+				item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || "")
+			},
+			counts: { missing_count: 1 },
+			breadcrumbs: [{
+				kind: "thread-session",
+				code: "route-hint-focus",
+				status: "failed",
+				fields: {
+					route_kind: "plugin-route",
+					thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
+					task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+					item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || "")
+				}
+			}]
+		});
+		return false;
+	}
+	async function openExternalThreadSelection(threadId, options = {}) {
+		const id = String(threadId || "").trim();
+		if (!id) return;
+		localStorage.setItem(STORAGE_THREAD_ID, id);
+		clearThreadUrl();
+		if (!state.key) return;
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = String(options.statusMessage || "Opening notification thread");
+		if (!state.workspaces.length) try {
+			await loadWorkspaces();
+		} catch (_) {}
+		await loadThread(id, {
+			source: String(options.source || "external").slice(0, 40),
+			suppressLoadFailureDiagnostic: options.suppressLoadFailureDiagnostic === true
+		});
+	}
+	async function openHermesPluginRouteHint(hint) {
+		const plan = pluginEmbedApi.routeHintOpenPlan(hint);
+		if (!plan || plan.action === "ignore") return false;
+		state.queuedPluginRouteHint = null;
+		clearThreadUrl();
+		if (plan.action === "primary") {
+			if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
+			showHermesPluginPrimaryPage({
+				force: true,
+				source: "route-hint-primary"
+			});
+			return true;
+		}
+		try {
+			state.pendingPluginRouteHint = plan.pendingHint || null;
+			await openExternalThreadSelection(plan.threadId, {
+				statusMessage: plan.statusMessage,
+				source: "route-hint",
+				suppressLoadFailureDiagnostic: true
+			});
+			if (!plan.targetId) setPluginRouteDiagnostic("Opened notification thread", { error: false });
+			else applyPendingPluginRouteHintFocus();
+			recordHomeAiDiagnosticSuccess({
+				category: "thread_session_load_failed",
+				diagnostic_type: "route_hint_thread_unavailable",
+				error_code: "route_hint_thread_unavailable",
+				context: {
+					surface: "thread-session",
+					action: "route-hint-open",
+					route_kind: "plugin-route",
+					thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || "")
+				}
+			});
+			return true;
+		} catch (error) {
+			state.pendingPluginRouteHint = null;
+			showHermesPluginPrimaryPage({
+				force: true,
+				source: "route-hint-open-failed"
+			});
+			setPluginRouteDiagnostic(plan.targetId ? "Notification target is unavailable" : "Notification thread is unavailable", { error: true });
+			recordHomeAiDiagnosticFailure({
+				category: "thread_session_load_failed",
+				diagnostic_type: plan.targetId ? "route_hint_target_unavailable" : "route_hint_thread_unavailable",
+				severity_hint: "H2",
+				evidence_confidence: .78,
+				error_code: diagnosticErrorCode(error, plan.targetId ? "route_hint_target_unavailable" : "route_hint_thread_unavailable"),
+				context: {
+					surface: "thread-session",
+					action: "route-hint-open",
+					route_kind: "plugin-route",
+					thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || ""),
+					task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+					item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || "")
+				},
+				counts: { status_code: diagnosticErrorStatus(error) },
+				breadcrumbs: [{
+					kind: "thread-session",
+					code: "route-hint-open",
+					status: "failed",
+					fields: {
+						status_code: diagnosticErrorStatus(error),
+						route_kind: "plugin-route",
+						thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || "")
+					}
+				}]
+			});
+			return true;
+		}
+	}
+	function applyUrlPluginRouteHint(options = {}) {
+		if (!isHermesEmbedMode()) return null;
+		try {
+			const hint = pluginRouteHintFromUrl(window.location.href);
+			if (!hint || hint.pluginId !== "codex-mobile") return null;
+			state.queuedPluginRouteHint = hint;
+			clearThreadUrl();
+			if (options.load) openHermesPluginRouteHint(hint).catch(showError);
+			return hint;
+		} catch (_) {
+			return null;
+		}
+	}
+	function applyUrlThreadSelection(options = {}) {
+		try {
+			const threadId = threadIdFromUrlValue(window.location.href);
+			if (!threadId) return "";
+			localStorage.setItem(STORAGE_THREAD_ID, threadId);
+			clearThreadUrl();
+			if (options.load) if (threadId === state.currentThreadId && state.currentThread && !state.currentThread.mobileLoadError) scheduleCurrentThreadRefresh(250);
+			else openExternalThreadSelection(threadId).catch(showError);
+			return threadId;
+		} catch (_) {}
+		return "";
+	}
+	function handleServiceWorkerMessage(event) {
+		const data = event && event.data ? event.data : {};
+		if (!data || data.type !== "codex-open-thread") return;
+		openExternalThreadSelection(data.threadId || threadIdFromUrlValue(data.url)).catch(showError);
+	}
+	function createNotificationUiRuntime() {
+		return {
+			handlePluginVoiceInputMessage: typeof handlePluginVoiceInputMessage === "function" ? handlePluginVoiceInputMessage : null,
+			requestHermesPluginRefresh: typeof requestHermesPluginRefresh === "function" ? requestHermesPluginRefresh : null,
+			showPluginEmbedRecovering: typeof showPluginEmbedRecovering === "function" ? showPluginEmbedRecovering : null,
+			showLogin: typeof showLogin === "function" ? showLogin : null,
+			showApp: typeof showApp === "function" ? showApp : null,
+			bootstrap: typeof bootstrap === "function" ? bootstrap : null
+		};
+	}
+	(function exposeCodexNotificationUiRuntime(root) {
+		const notificationUiRuntimeApi = { createNotificationUiRuntime };
+		const legacyGlobals = {
+			applyPendingPluginRouteHintFocus,
+			applyPluginLaunchTarget,
+			applyPluginVoiceInputProvisionalText,
+			applyPluginVoiceInputTextMessage,
+			applyUrlPluginRouteHint,
+			applyUrlThreadSelection,
+			bootstrap,
+			boundedPluginRefreshValue,
+			boundedViewportNumber,
+			clearPluginRefreshPendingNotice,
+			clearPluginVoiceInputPress,
+			clearPluginVoiceInputProvisionalSession,
+			clearThreadUrl,
+			commitPluginVoiceInputSessionsAfterSend,
+			currentHermesRefreshRoute,
+			currentPluginParentWindowOrigin,
+			currentPluginVoiceInputDraftKey,
+			exchangePluginLaunchSession,
+			findPluginRouteTargetNode,
+			focusPluginRouteTargetNode,
+			handleHermesPluginViewportMessage,
+			handlePluginVoiceInputMessage,
+			handlePluginVoiceInputSendClick,
+			handlePluginVoiceInputSendPointerCancel,
+			handlePluginVoiceInputSendPointerDown,
+			handlePluginVoiceInputSendPointerUp,
+			handleServiceWorkerMessage,
+			hidePluginStartupLoading,
+			isHermesEmbedMode,
+			login,
+			maxVisibleTurnsForThread,
+			normalizeHermesPluginViewportMessage,
+			normalizeHermesPluginViewportRect,
+			normalizePluginParentOrigin,
+			normalizePluginRouteHint,
+			openExternalThreadSelection,
+			openHermesPluginRouteHint,
+			persistPluginVoiceInputDraft,
+			pluginRefreshPendingMessage,
+			pluginRefreshReasonForApiError,
+			pluginRootPath,
+			pluginRouteHintFromUrl,
+			pluginRouteHintTargetId,
+			pluginStartupLoadingText,
+			pluginVoiceInputActiveTurnHoldAvailable,
+			pluginVoiceInputAppendText,
+			pluginVoiceInputCanReceiveText,
+			pluginVoiceInputCapabilityPayload,
+			pluginVoiceInputComposerId,
+			pluginVoiceInputComposerWritable,
+			pluginVoiceInputEnsureComposerWritableForDraft,
+			pluginVoiceInputGestureAvailable,
+			pluginVoiceInputParentOriginAllowed,
+			pluginVoiceInputSafeDraftId,
+			pluginVoiceInputSessionIdFromPayload,
+			postPluginVoiceInputMessage,
+			publishPluginVoiceInputCapability,
+			rejectPluginVoiceInputInsert,
+			rememberPluginVoiceInputSession,
+			renderPluginRefreshPendingNotice,
+			requestHermesPluginRefresh,
+			restorePluginVoiceInputProvisionalBase,
+			scrubPluginLaunchUrl,
+			setComposerActionButtonLabel,
+			setPluginRouteDiagnostic,
+			showApp,
+			showLogin,
+			showPluginEmbedAuthError,
+			showPluginEmbedRecovering,
+			showPluginStartupLoading,
+			sortTurnsForDisplay,
+			takePluginVoiceInputSessionsForDraft,
+			threadIdFromUrlValue,
+			threadTurnsCursorSignature,
+			turnDisplayActivityMs,
+			turnDisplayItemTimestampMs,
+			turnDisplayItemTimestampRange,
+			turnDisplaySortPhase,
+			turnDisplaySortTimestampMs
+		};
+		if (typeof module === "object" && module.exports) module.exports = notificationUiRuntimeApi;
+		Object.assign(root, legacyGlobals);
+		root.CodexNotificationUiRuntime = notificationUiRuntimeApi;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
 //#region \0virtual:codex-mobile-esm-compatibility/shard/shard-04
 var import_thread_detail_runtime = /* @__PURE__ */ __toESM(require_thread_detail_runtime());
-var import_client_render_stability_guard = /* @__PURE__ */ __toESM(require_client_render_stability_guard());
-var import_live_operation_dock_state = /* @__PURE__ */ __toESM(require_live_operation_dock_state());
+var import_task_card_runtime = /* @__PURE__ */ __toESM(require_task_card_runtime());
+var import_notification_ui_runtime = /* @__PURE__ */ __toESM(require_notification_ui_runtime());
 var moduleDefinitions = [
 	{
 		"id": "thread-detail-runtime",
@@ -1263,40 +3600,28 @@ var moduleDefinitions = [
 		"bytes": 57528
 	},
 	{
-		"id": "client-render-stability-guard",
-		"source": "public/client-render-stability-guard.js",
-		"globalName": "CodexClientRenderStabilityGuard",
-		"expectedFunctions": [
-			"firstSubmittedUserMessageClientSubmissionId",
-			"localSubmissionRenderKey",
-			"markSubmittedTurn",
-			"shortHash",
-			"stableTurnIdentity",
-			"submittedTurnRenderKey",
-			"transferSubmittedTurnIdentity"
-		],
-		"assetPath": "/client-render-stability-guard.js",
+		"id": "task-card-runtime",
+		"source": "public/task-card-runtime.js",
+		"globalName": "CodexTaskCardRuntime",
+		"expectedFunctions": ["createTaskCardRuntime"],
+		"assetPath": "/task-card-runtime.js",
 		"classicLoaderExcluded": true,
-		"bytes": 2528
+		"bytes": 64113
 	},
 	{
-		"id": "live-operation-dock-state",
-		"source": "public/live-operation-dock-state.js",
-		"globalName": "CodexLiveOperationDockState",
-		"expectedFunctions": [
-			"compactBubblePreservation",
-			"operationCardContentPlan",
-			"shouldShowRecall"
-		],
-		"assetPath": "/live-operation-dock-state.js",
+		"id": "notification-ui-runtime",
+		"source": "public/notification-ui-runtime.js",
+		"globalName": "CodexNotificationUiRuntime",
+		"expectedFunctions": ["createNotificationUiRuntime"],
+		"assetPath": "/notification-ui-runtime.js",
 		"classicLoaderExcluded": true,
-		"bytes": 6190
+		"bytes": 55054
 	}
 ];
 var moduleApis = {
 	"thread-detail-runtime": import_thread_detail_runtime.default,
-	"client-render-stability-guard": import_client_render_stability_guard.default,
-	"live-operation-dock-state": import_live_operation_dock_state.default
+	"task-card-runtime": import_task_card_runtime.default,
+	"notification-ui-runtime": import_notification_ui_runtime.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");
