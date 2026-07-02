@@ -1455,6 +1455,182 @@ var require_thread_tile_layout = /* @__PURE__ */ __commonJSMin(((exports, module
 	});
 }));
 //#endregion
+//#region public/thread-tile-actions.js
+var require_thread_tile_actions = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadTileActions = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const TILE_CONTROL_SELECTOR = [
+			"[data-thread-tile-switch-target]",
+			".thread-tile-switch-menu",
+			"[data-thread-tile-bottom]",
+			"[data-thread-tile-operation-toggle]",
+			"[data-thread-tile-pane-count]",
+			"[data-thread-tile-close-pane]"
+		].join(", ");
+		function withinRoot(root, node) {
+			if (!root || !node || typeof root.contains !== "function") return true;
+			return root.contains(node);
+		}
+		function closestWithin(target, selector, root = null) {
+			if (!target || typeof target.closest !== "function") return null;
+			const node = target.closest(selector);
+			if (!node || !withinRoot(root, node)) return null;
+			return node;
+		}
+		function attr(node, name) {
+			if (!node || typeof node.getAttribute !== "function") return "";
+			return String(node.getAttribute(name) || "");
+		}
+		function paneFor(node, root = null) {
+			return closestWithin(node, "[data-thread-tile-pane]", root);
+		}
+		function paneIdFor(node, root = null) {
+			return attr(paneFor(node, root), "data-thread-tile-pane");
+		}
+		function action(type, target, fields = {}) {
+			return Object.assign({
+				action: String(type || "none"),
+				target: target || null,
+				preventDefault: false,
+				stopPropagation: false
+			}, fields);
+		}
+		function resolveThreadTilePointerAction(input = {}) {
+			const target = input.target || null;
+			const root = input.root || null;
+			const title = closestWithin(target, "[data-thread-tile-title]", root);
+			if (title) return action("select-pane", title, {
+				paneId: paneIdFor(title, root),
+				source: "title"
+			});
+			const control = closestWithin(target, TILE_CONTROL_SELECTOR, root);
+			if (control) return action("stop-control", control, { stopPropagation: true });
+			const pane = closestWithin(target, "[data-thread-tile-pane]", root);
+			if (pane) return action("select-pane", pane, {
+				paneId: attr(pane, "data-thread-tile-pane"),
+				source: "pane"
+			});
+			return action("none", null, { reason: "no-match" });
+		}
+		function resolveThreadTileFocusAction(input = {}) {
+			const target = input.target || null;
+			const root = input.root || null;
+			const ignored = closestWithin(target, "[data-thread-tile-title], [data-thread-tile-switch-target], .thread-tile-switch-menu", root);
+			if (ignored) return action("none", ignored, { reason: "ignored-control" });
+			const pane = closestWithin(target, "[data-thread-tile-pane]", root);
+			if (pane) return action("select-pane", pane, {
+				paneId: attr(pane, "data-thread-tile-pane"),
+				source: "focus"
+			});
+			return action("none", null, { reason: "no-match" });
+		}
+		function resolveThreadTileClickAction(input = {}) {
+			const target = input.target || null;
+			const root = input.root || null;
+			let node = closestWithin(target, "[data-thread-tile-title]", root);
+			if (node) return action("toggle-switch-menu", node, {
+				paneId: attr(node, "data-thread-tile-title"),
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-thread-tile-switch-target]", root);
+			if (node) return action("switch-pane-thread", node, {
+				fromId: paneIdFor(node, root),
+				toId: attr(node, "data-thread-tile-switch-target"),
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-thread-tile-pane-count]", root);
+			if (node) return action("change-pane-count", node, {
+				delta: Number(attr(node, "data-thread-tile-pane-count") || 0),
+				disabled: Boolean(node.disabled),
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-thread-tile-close-pane]", root);
+			if (node) return action("close-pane", node, {
+				paneId: attr(node, "data-thread-tile-close-pane"),
+				disabled: Boolean(node.disabled),
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-thread-tile-bottom]", root);
+			if (node) return action("scroll-pane-bottom", node, {
+				paneId: attr(node, "data-thread-tile-bottom"),
+				preventDefault: true
+			});
+			node = closestWithin(target, "[data-thread-tile-operation-toggle]", root);
+			if (node) return action("toggle-operation", node, {
+				paneId: attr(node, "data-thread-tile-operation-toggle"),
+				preventDefault: true,
+				stopPropagation: true
+			});
+			return action("none", null, { reason: "no-match" });
+		}
+		function resolveThreadTileScrollAction(input = {}) {
+			const body = closestWithin(input.target || null, ".thread-tile-pane-body", input.root || null);
+			if (body) return action("pane-scroll", body, { body });
+			return action("none", null, { reason: "no-match" });
+		}
+		function resolveThreadTileDragStartAction(input = {}) {
+			const handle = closestWithin(input.target || null, "[data-thread-tile-drag-handle]", input.root || null);
+			if (!handle) return action("none", null, { reason: "no-handle" });
+			const paneId = attr(handle, "data-thread-tile-drag-handle");
+			if (!paneId) return action("none", handle, { reason: "missing-pane-id" });
+			return action("drag-start", handle, {
+				handle,
+				paneId,
+				pane: paneFor(handle, input.root || null)
+			});
+		}
+		function resolveThreadTileDragOverAction(input = {}) {
+			const root = input.root || null;
+			const pane = closestWithin(input.target || null, "[data-thread-tile-pane]", root);
+			const dragging = String(input.draggingId || "");
+			const targetId = attr(pane, "data-thread-tile-pane");
+			if (!dragging || !targetId || dragging === targetId || !pane) return action("none", pane, { reason: "invalid-drag-target" });
+			return action("drag-over", pane, {
+				pane,
+				targetId,
+				preventDefault: true
+			});
+		}
+		function resolveThreadTileDragLeaveAction(input = {}) {
+			const pane = closestWithin(input.target || null, "[data-thread-tile-pane]", input.root || null);
+			if (pane) return action("drag-leave", pane, { pane });
+			return action("none", null, { reason: "no-match" });
+		}
+		function resolveThreadTileDropAction(input = {}) {
+			const root = input.root || null;
+			const pane = closestWithin(input.target || null, "[data-thread-tile-pane]", root);
+			const dragging = String(input.draggingId || input.transferId || "");
+			const targetId = attr(pane, "data-thread-tile-pane");
+			if (!dragging || !targetId || dragging === targetId || !pane) return action("none", pane, { reason: "invalid-drop-target" });
+			return action("drop-pane", pane, {
+				pane,
+				draggingId: dragging,
+				targetId,
+				preventDefault: true,
+				stopPropagation: true
+			});
+		}
+		return {
+			closestWithin,
+			resolveThreadTilePointerAction,
+			resolveThreadTileFocusAction,
+			resolveThreadTileClickAction,
+			resolveThreadTileScrollAction,
+			resolveThreadTileDragStartAction,
+			resolveThreadTileDragOverAction,
+			resolveThreadTileDragLeaveAction,
+			resolveThreadTileDropAction
+		};
+	});
+}));
+//#endregion
 //#region public/thread-list-load-policy.js
 var require_thread_list_load_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -2336,6 +2512,7 @@ var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings()
 var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics());
 var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
 var import_thread_tile_layout = /* @__PURE__ */ __toESM(require_thread_tile_layout());
+var import_thread_tile_actions = /* @__PURE__ */ __toESM(require_thread_tile_actions());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
 var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
 var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
@@ -2415,6 +2592,24 @@ var moduleDefinitions = [
 			"threadTileColumnGroups"
 		],
 		"assetPath": "/thread-tile-layout.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "thread-tile-actions",
+		"source": "public/thread-tile-actions.js",
+		"globalName": "CodexThreadTileActions",
+		"expectedFunctions": [
+			"closestWithin",
+			"resolveThreadTilePointerAction",
+			"resolveThreadTileFocusAction",
+			"resolveThreadTileClickAction",
+			"resolveThreadTileScrollAction",
+			"resolveThreadTileDragStartAction",
+			"resolveThreadTileDragOverAction",
+			"resolveThreadTileDragLeaveAction",
+			"resolveThreadTileDropAction"
+		],
+		"assetPath": "/thread-tile-actions.js",
 		"classicLoaderExcluded": true
 	},
 	{
@@ -2500,6 +2695,7 @@ var moduleApis = {
 	"viewport-metrics": import_viewport_metrics.default,
 	"draft-store": import_draft_store.default,
 	"thread-tile-layout": import_thread_tile_layout.default,
+	"thread-tile-actions": import_thread_tile_actions.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
 	"thread-list-stable-order": import_thread_list_stable_order.default,
 	"thread-status-hints": import_thread_status_hints.default,
@@ -2730,6 +2926,92 @@ function sampleModule(id, api) {
 			pinnedIds,
 			pairs,
 			groups
+		};
+	}
+	if (id === "thread-tile-actions") {
+		const paneA = {
+			disabled: false,
+			getAttribute(name) {
+				return name === "data-thread-tile-pane" ? "thread-a" : "";
+			},
+			closest() {
+				return null;
+			}
+		};
+		const paneB = {
+			disabled: false,
+			getAttribute(name) {
+				return name === "data-thread-tile-pane" ? "thread-b" : "";
+			},
+			closest() {
+				return null;
+			}
+		};
+		const title = {
+			disabled: false,
+			getAttribute(name) {
+				return name === "data-thread-tile-title" ? "thread-a" : "";
+			},
+			closest(selector) {
+				return selector === "[data-thread-tile-pane]" ? paneA : null;
+			}
+		};
+		const handle = {
+			disabled: false,
+			getAttribute(name) {
+				return name === "data-thread-tile-drag-handle" ? "thread-a" : "";
+			},
+			closest(selector) {
+				return selector === "[data-thread-tile-pane]" ? paneA : null;
+			}
+		};
+		const bottom = {
+			disabled: false,
+			getAttribute(name) {
+				return name === "data-thread-tile-bottom" ? "thread-a" : "";
+			},
+			closest() {
+				return null;
+			}
+		};
+		const root = { contains(node) {
+			return node === paneA || node === paneB || node === title || node === handle || node === bottom;
+		} };
+		const titleTarget = { closest(selector) {
+			return selector === "[data-thread-tile-title]" ? title : selector === "[data-thread-tile-pane]" ? paneA : null;
+		} };
+		const bottomTarget = { closest(selector) {
+			return selector === "[data-thread-tile-bottom]" ? bottom : null;
+		} };
+		const handleTarget = { closest(selector) {
+			return selector === "[data-thread-tile-drag-handle]" ? handle : null;
+		} };
+		const paneBTarget = { closest(selector) {
+			return selector === "[data-thread-tile-pane]" ? paneB : null;
+		} };
+		const pointer = functionReady(api, "resolveThreadTilePointerAction") ? api.resolveThreadTilePointerAction({
+			root,
+			target: titleTarget
+		}) : {};
+		const click = functionReady(api, "resolveThreadTileClickAction") ? api.resolveThreadTileClickAction({
+			root,
+			target: bottomTarget
+		}) : {};
+		const dragStart = functionReady(api, "resolveThreadTileDragStartAction") ? api.resolveThreadTileDragStartAction({
+			root,
+			target: handleTarget
+		}) : {};
+		const drop = functionReady(api, "resolveThreadTileDropAction") ? api.resolveThreadTileDropAction({
+			root,
+			target: paneBTarget,
+			draggingId: "thread-a"
+		}) : {};
+		return {
+			ok: pointer.action === "select-pane" && pointer.paneId === "thread-a" && click.action === "scroll-pane-bottom" && click.preventDefault === true && dragStart.action === "drag-start" && dragStart.paneId === "thread-a" && drop.action === "drop-pane" && drop.draggingId === "thread-a" && drop.targetId === "thread-b",
+			pointerAction: String(pointer.action || ""),
+			clickAction: String(click.action || ""),
+			dragStartAction: String(dragStart.action || ""),
+			dropAction: String(drop.action || "")
 		};
 	}
 	if (id === "thread-list-load-policy") {
@@ -3251,7 +3533,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DjUpQyuv.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-CbDzU0mK.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

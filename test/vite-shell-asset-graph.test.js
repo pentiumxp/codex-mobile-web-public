@@ -128,6 +128,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
       "viewport-metrics",
       "draft-store",
       "thread-tile-layout",
+      "thread-tile-actions",
       "thread-list-load-policy",
       "thread-list-stable-order",
       "thread-status-hints",
@@ -147,6 +148,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(virtualSource, /public\/viewport-metrics\.js/);
   assert.match(virtualSource, /public\/draft-store\.js/);
   assert.match(virtualSource, /public\/thread-tile-layout\.js/);
+  assert.match(virtualSource, /public\/thread-tile-actions\.js/);
   assert.match(virtualSource, /public\/thread-list-load-policy\.js/);
   assert.match(virtualSource, /public\/thread-list-stable-order\.js/);
   assert.match(virtualSource, /public\/thread-status-hints\.js/);
@@ -159,6 +161,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(virtualSource, /stablePixelChanged/);
   assert.match(virtualSource, /createDraftStore/);
   assert.match(virtualSource, /threadTileColumnGroups/);
+  assert.match(virtualSource, /resolveThreadTileDropAction/);
   assert.match(virtualSource, /detail-in-flight/);
   assert.match(virtualSource, /server-newer/);
   assert.match(virtualSource, /planThreadListStableOrder/);
