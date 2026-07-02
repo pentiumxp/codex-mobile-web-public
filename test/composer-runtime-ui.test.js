@@ -8,6 +8,7 @@ const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
 const composerRuntime = require(path.join(root, "public", "composer-runtime.js"));
+const composerBridgeRuntime = require(path.join(root, "public", "composer-bridge-runtime.js"));
 const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
 const composerBridgeRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-bridge-runtime.js"), "utf8");
 const appJs = readFrontendSources(root);
@@ -102,6 +103,28 @@ test("composer runtime receives composer target thread as an explicit dependency
   assert.equal(runtime.effectiveDefaultModel(), "thread-model");
   assert.equal(runtime.effectiveDefaultEffort(), "high");
   assert.equal(runtime.effectiveDefaultPermissionMode(), "ask");
+});
+
+test("composer bridge runtime preserves CommonJS and legacy global entry points", () => {
+  assert.equal(typeof composerBridgeRuntime.createComposerBridgeRuntime, "function");
+  const bridge = composerBridgeRuntime.createComposerBridgeRuntime();
+  for (const name of [
+    "sendMessage",
+    "sendNewThreadMessage",
+    "answerServerRequest",
+    "answerApproval",
+    "declineServerRequest",
+    "mutateThreadTaskCard",
+    "replyTaskCard",
+    "queueThreadTaskCardDraftCreation",
+    "createThreadTaskCardDraft",
+  ]) {
+    assert.equal(typeof bridge[name], "function", `${name} should be exported`);
+    assert.equal(typeof globalThis[name], "function", `${name} should remain a legacy global`);
+  }
+  assert.equal(globalThis.CodexComposerBridgeRuntime, composerBridgeRuntime);
+  assert.match(composerBridgeRuntimeJs, /module\.exports = api/);
+  assert.match(composerBridgeRuntimeJs, /root\.CodexComposerBridgeRuntime = api/);
 });
 
 test("composer runtime is part of the current static shell", () => {

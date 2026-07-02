@@ -18,8 +18,8 @@ var codexMobileViteEntryGroup = {
 	"classicGlobalExportAssetCount": 0,
 	"classicGlobalExportCount": 0,
 	"startupGlobalContracts": [],
-	"shellCacheName": "codex-mobile-shell-v625-ebe657c8cf2c",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-ebe657c8cf2c"
+	"shellCacheName": "codex-mobile-shell-v625-9f6dcab58e23",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-9f6dcab58e23"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

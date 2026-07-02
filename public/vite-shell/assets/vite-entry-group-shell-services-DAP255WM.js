@@ -75,12 +75,12 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/composer-bridge-runtime.js",
 			"sourcePath": "public/composer-bridge-runtime.js",
-			"bytes": 28207,
-			"sha256": "d185a4ac33929ee77ccb181a68992504377e8551985e1f663eb77cb1be094762"
+			"bytes": 32086,
+			"sha256": "457e61d3f27603c7958527d6b945b69652f03ac478d90bdf3e5311cfd19e81ab"
 		}
 	],
 	"classicAssetHashCount": 10,
-	"classicAssetBytes": 681009,
+	"classicAssetBytes": 684888,
 	"classicGlobalExports": [
 		{
 			"asset": "/settings-runtime.js",
@@ -126,8 +126,8 @@ var codexMobileViteEntryGroup = {
 	"classicGlobalExportAssetCount": 10,
 	"classicGlobalExportCount": 10,
 	"startupGlobalContracts": [],
-	"shellCacheName": "codex-mobile-shell-v625-ebe657c8cf2c",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-ebe657c8cf2c"
+	"shellCacheName": "codex-mobile-shell-v625-9f6dcab58e23",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-9f6dcab58e23"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

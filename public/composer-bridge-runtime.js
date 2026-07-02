@@ -1,5 +1,6 @@
 "use strict";
 
+(function attachComposerBridgeRuntime(root) {
 function updateComposerHeightVar(...args) {
   return composerRuntime.updateComposerHeightVar(...args);
 }
@@ -773,17 +774,142 @@ async function createThreadTaskCardDraft(draftKey, options = {}) {
   }
 }
 
-
-(function exposeCodexComposerBridgeRuntime(root) {
-  root.CodexComposerBridgeRuntime = root.CodexComposerBridgeRuntime || {
-    createComposerBridgeRuntime: function createComposerBridgeRuntime() {
-      return {
+function createComposerBridgeRuntime() {
+  return {
       sendMessage: typeof sendMessage === "function" ? sendMessage : null,
       sendNewThreadMessage: typeof sendNewThreadMessage === "function" ? sendNewThreadMessage : null,
       answerServerRequest: typeof answerServerRequest === "function" ? answerServerRequest : null,
+      answerApproval: typeof answerApproval === "function" ? answerApproval : null,
+      declineServerRequest: typeof declineServerRequest === "function" ? declineServerRequest : null,
       mutateThreadTaskCard: typeof mutateThreadTaskCard === "function" ? mutateThreadTaskCard : null,
+      replyTaskCard: typeof replyTaskCard === "function" ? replyTaskCard : null,
+      queueThreadTaskCardDraftCreation: typeof queueThreadTaskCardDraftCreation === "function" ? queueThreadTaskCardDraftCreation : null,
       createThreadTaskCardDraft: typeof createThreadTaskCardDraft === "function" ? createThreadTaskCardDraft : null,
-      };
-    },
   };
-})(window);
+}
+
+const legacyGlobals = {
+  updateComposerHeightVar,
+  showError,
+  clearSendProgressWatchdog,
+  startSendProgressWatchdog,
+  finishSendProgressWatchdog,
+  threadNotificationThrottleKey,
+  shouldThrottleThreadNotification,
+  normalizeClientErrorMessage,
+  rawMessageFallback,
+  composerText,
+  setComposerText,
+  placeMessageInputCaretAtEnd,
+  focusMessageInput,
+  messageInputKeyboardVisible,
+  shouldRecoverMessageInputKeyboard,
+  recoverMessageInputKeyboardFromGesture,
+  messageInputCanEnableForNativeGesture,
+  releaseStaleAndroidMessageInputFocusBeforeNativeTap,
+  prepareMessageInputForNativeGesture,
+  normalizedComposerIntentText,
+  composerIntentOptions,
+  composerIntentOption,
+  composerIntentDraftKey,
+  loadComposerIntentDraft,
+  saveComposerIntentDraft,
+  composerIntentBareTagKind,
+  shouldShowComposerIntentMenu,
+  closeComposerIntentMenu,
+  onComposerIntentOutsidePointer,
+  openComposerIntentMenu,
+  positionComposerIntentMenu,
+  updateComposerIntentMenu,
+  queueComposerIntentMenuUpdate,
+  selectComposerIntent,
+  setComposerIntentDialogStatus,
+  closeComposerIntentDialog,
+  openComposerIntentDialog,
+  submitComposerIntentDialog,
+  saveComposerIntentDialogDraft,
+  shouldKeepAndroidMessageInputEditable,
+  setMessageInputDisabled,
+  messageInputTextLength,
+  messageInputTargetHeight,
+  currentMessageInputHeight,
+  updateMessageInputOverflow,
+  autoSizeMessageInput,
+  formatFileSize,
+  appendLocalAttachmentSummary,
+  localImageInputPartsForAttachments,
+  localUserMessageItem,
+  attachmentId,
+  pendingAttachmentBytes,
+  prepareAttachmentFile,
+  prepareAttachmentFiles,
+  addAttachmentFiles,
+  removeAttachment,
+  clearPendingAttachments,
+  renderAttachmentList,
+  composerHasContent,
+  effectiveDefaultModel,
+  effectiveDefaultEffort,
+  effectiveDefaultPermissionMode,
+  selectedComposerModel,
+  selectedComposerEffort,
+  selectedComposerPermissionMode,
+  resetComposerRuntimeSelection,
+  runtimeOptionValues,
+  runtimeOptionLabel,
+  runtimeSelectedValue,
+  codexFastCommandEnabled,
+  clearLegacyCodexFastModeStorage,
+  setCodexFastCommandEnabled,
+  applyRuntimeSelection,
+  closeComposerRuntimeMenu,
+  onComposerRuntimeOutsidePointer,
+  openComposerRuntimeMenu,
+  composerRuntimeMenuDiagnostics,
+  reportComposerRuntimeMenu,
+  handleComposerRuntimeControl,
+  fitComposerPopupToAnchor,
+  closeQuotaDetails,
+  onQuotaOutsidePointer,
+  toggleQuotaDetails,
+  composerPlaceholderText,
+  composerShowsTargetPlaceholder,
+  applyComposerActionControlPlan,
+  renderComposerSettings,
+  updateComposerControls,
+  hasTransferFiles,
+  goalDialogFormValues,
+  submitThreadGoalMessage,
+  threadGoalActionStatusText,
+  threadGoalActionBusyText,
+  runThreadGoalDialogAction,
+  requestGoalDialogSubmitFromEnter,
+  requestGoalDialogSubmitFromButton,
+  requestGoalDialogSubmit,
+  sendThreadTaskCardCommand,
+  sendMessage,
+  sendNewThreadMessage,
+  requestComposerSubmitFromButton,
+  requestAttachmentPickerFromButton,
+  interruptActiveTurn,
+  answerServerRequest,
+  answerApproval,
+  serverRequestPayload,
+  declineServerRequest,
+  mutateThreadTaskCard,
+  replyTaskCard,
+  findThreadTaskCardDraftByKey,
+  scheduleThreadTaskCardDraftStateRender,
+  setThreadTaskCardDraftState,
+  dismissThreadTaskCardDraft,
+  queueThreadTaskCardDraftCreation,
+  createThreadTaskCardDraft,
+};
+
+const api = { createComposerBridgeRuntime };
+if (typeof module === "object" && module.exports) module.exports = api;
+for (const [name, value] of Object.entries(legacyGlobals)) {
+  if (typeof value === "function") root[name] = value;
+}
+root.CodexComposerBridgeRuntime = api;
+})(typeof globalThis !== "undefined" ? globalThis : window);

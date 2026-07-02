@@ -6135,6 +6135,23 @@ function sampleModule(id, api) {
 			interruptType: typeof (runtime && runtime.interruptActiveTurn)
 		};
 	}
+	if (id === "composer-bridge-runtime") {
+		const runtime = functionReady(api, "createComposerBridgeRuntime") ? api.createComposerBridgeRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.sendMessage === "function" && typeof runtime.sendNewThreadMessage === "function" && typeof runtime.answerServerRequest === "function" && typeof runtime.answerApproval === "function" && typeof runtime.declineServerRequest === "function" && typeof runtime.mutateThreadTaskCard === "function" && typeof runtime.replyTaskCard === "function" && typeof runtime.queueThreadTaskCardDraftCreation === "function" && typeof runtime.createThreadTaskCardDraft === "function" && typeof globalThis.sendMessage === "function" && typeof globalThis.answerApproval === "function" && typeof globalThis.mutateThreadTaskCard === "function" && typeof globalThis.queueThreadTaskCardDraftCreation === "function",
+			factoryType: typeof api.createComposerBridgeRuntime,
+			sendType: typeof (runtime && runtime.sendMessage),
+			answerType: typeof (runtime && runtime.answerServerRequest),
+			approvalType: typeof (runtime && runtime.answerApproval),
+			mutateType: typeof (runtime && runtime.mutateThreadTaskCard),
+			replyType: typeof (runtime && runtime.replyTaskCard),
+			draftType: typeof (runtime && runtime.createThreadTaskCardDraft),
+			globalSendType: typeof globalThis.sendMessage,
+			globalApprovalType: typeof globalThis.answerApproval,
+			globalMutateType: typeof globalThis.mutateThreadTaskCard,
+			globalDraftQueueType: typeof globalThis.queueThreadTaskCardDraftCreation
+		};
+	}
 	if (id === "thread-list-load-policy") {
 		const plan = functionReady(api, "planThreadListLoadRequest") ? api.planThreadListLoadRequest({
 			silent: true,
