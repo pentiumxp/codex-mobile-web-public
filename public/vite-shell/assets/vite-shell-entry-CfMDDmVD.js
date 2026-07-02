@@ -1,8 +1,8 @@
 var shell_asset_manifest_default = {
 	schemaVersion: 4,
 	generatedBy: "generate-frontend-shell-manifest",
-	shellCacheName: "codex-mobile-shell-v625-ea89569d76c8",
-	clientBuildId: "0.1.11|codex-mobile-shell-v625-ea89569d76c8",
+	shellCacheName: "codex-mobile-shell-v625-bb5341ba42f1",
+	clientBuildId: "0.1.11|codex-mobile-shell-v625-bb5341ba42f1",
 	scriptAssets: [
 		"/shell-asset-manifest.js",
 		"/api-client.js",
@@ -875,12 +875,12 @@ var codexMobileViteEntryGroupIds = [
 	"app-entry"
 ];
 var codexMobileViteEntryGroupLoaders = {
-	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-BckFdprP.js"), []),
-	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-YntX-FDz.js"), []),
-	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-DRZP_JKE.js"), []),
-	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-x9QCMf5e.js"), []),
-	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-B35yyBUe.js"), []),
-	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-CrpJPsAR.js"), [])
+	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-DLfB1Hob.js"), []),
+	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-CLjOuJd2.js"), []),
+	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-Dyk02jrS.js"), []),
+	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-ed1lL_bu.js"), []),
+	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-Docz2dmi.js"), []),
+	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-DYR_wdQ0.js"), [])
 };
 function loadCodexMobileViteEntryGroups() {
 	const status = {
@@ -957,7 +957,7 @@ var pendingEsmCompatibility = {
 	loading: true
 };
 var esmCompatibility = pendingEsmCompatibility;
-var esmCompatibilityImportPromise = __vitePreload(() => import("./_virtual_codex-mobile-esm-compatibility-tsmoXOJT.js").then(async (module) => {
+var esmCompatibilityImportPromise = __vitePreload(() => import("./_virtual_codex-mobile-esm-compatibility-C3dhvbr_.js").then(async (module) => {
 	const createCompatibility = module && typeof module.codexMobileViteEsmCompatibility === "function" ? module.codexMobileViteEsmCompatibility : null;
 	if (!createCompatibility) throw new Error("codex_mobile_vite_esm_compatibility_factory_missing");
 	esmCompatibility = await createCompatibility();
@@ -1116,7 +1116,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DI54E6cZ.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DIdQVCtg.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

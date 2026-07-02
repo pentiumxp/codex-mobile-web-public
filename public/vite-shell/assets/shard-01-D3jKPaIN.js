@@ -6808,6 +6808,19 @@ function sampleModule(id, api) {
 			globalFactoryType: typeof (globalThis.CodexThreadDetailRuntime && globalThis.CodexThreadDetailRuntime.createThreadDetailRuntime)
 		};
 	}
+	if (id === "task-card-runtime") {
+		const runtime = functionReady(api, "createTaskCardRuntime") ? api.createTaskCardRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.renderThreadTaskCard === "function" && typeof runtime.renderThreadTaskCards === "function" && typeof runtime.createThreadTaskCardFromCurrent === "function" && typeof runtime.renderApprovalRequest === "function" && typeof globalThis.CodexTaskCardRuntime === "object" && typeof globalThis.CodexTaskCardRuntime.createTaskCardRuntime === "function" && typeof globalThis.threadTaskCardCommandText === "function" && typeof globalThis.renderThreadTaskCards === "function" && typeof globalThis.renderApprovalRequest === "function",
+			factoryType: typeof api.createTaskCardRuntime,
+			renderType: typeof (runtime && runtime.renderThreadTaskCard),
+			renderListType: typeof (runtime && runtime.renderThreadTaskCards),
+			createType: typeof (runtime && runtime.createThreadTaskCardFromCurrent),
+			approvalType: typeof (runtime && runtime.renderApprovalRequest),
+			globalCommandType: typeof globalThis.threadTaskCardCommandText,
+			globalRenderType: typeof globalThis.renderThreadTaskCards
+		};
+	}
 	if (id === "client-render-stability-guard") {
 		const sourceTurn = {
 			id: "local-turn-secret",

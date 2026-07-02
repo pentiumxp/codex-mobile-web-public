@@ -57,8 +57,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/task-card-runtime.js",
 			"sourcePath": "public/task-card-runtime.js",
-			"bytes": 61106,
-			"sha256": "898a793ded3009ebeed21a92d1f05419c0e1460e14b309243d4ed00fbfe5e4ca"
+			"bytes": 64113,
+			"sha256": "b831e411cf6efb6ded34d41d138c6d5e6483a000d7833d388a81d0de84e8c32d"
 		},
 		{
 			"path": "/conversation-render-runtime.js",
@@ -80,7 +80,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 10,
-	"classicAssetBytes": 687061,
+	"classicAssetBytes": 690068,
 	"classicGlobalExports": [
 		{
 			"asset": "/settings-runtime.js",
@@ -126,8 +126,8 @@ var codexMobileViteEntryGroup = {
 	"classicGlobalExportAssetCount": 10,
 	"classicGlobalExportCount": 10,
 	"startupGlobalContracts": [],
-	"shellCacheName": "codex-mobile-shell-v625-ea89569d76c8",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-ea89569d76c8"
+	"shellCacheName": "codex-mobile-shell-v625-bb5341ba42f1",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-bb5341ba42f1"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;
