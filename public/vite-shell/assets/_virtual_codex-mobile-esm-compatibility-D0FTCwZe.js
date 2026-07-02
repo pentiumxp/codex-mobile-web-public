@@ -1,11 +1,11 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-B0YKAtOc.js","assets/vite-shell-entry-Z8acuQFy.js","assets/shard-02-DYtfZHZr.js"])))=>i.map(i=>d[i]);
-import { t as __vitePreload } from "./vite-shell-entry-Z8acuQFy.js";
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-DUNNLUST.js","assets/vite-shell-entry-CQo547DZ.js","assets/shard-02-BF9qeUNN.js"])))=>i.map(i=>d[i]);
+import { t as __vitePreload } from "./vite-shell-entry-CQo547DZ.js";
 //#region \0virtual:codex-mobile-esm-compatibility
 var codexMobileViteEsmCompatibilityShardSources = [{
 	"id": "shard-01",
 	"index": 0,
 	"source": "virtual:codex-mobile-esm-compatibility/shard/shard-01",
-	"moduleCount": 22,
+	"moduleCount": 17,
 	"moduleIds": [
 		"build-refresh-policy",
 		"runtime-settings",
@@ -23,29 +23,31 @@ var codexMobileViteEsmCompatibilityShardSources = [{
 		"thread-tile-layout",
 		"thread-tile-actions",
 		"modal-runtime",
+		"composer-bridge-runtime"
+	],
+	"byteCount": 217761
+}, {
+	"id": "shard-02",
+	"index": 1,
+	"source": "virtual:codex-mobile-esm-compatibility/shard/shard-02",
+	"moduleCount": 10,
+	"moduleIds": [
+		"api-client-runtime",
 		"thread-list-load-policy",
 		"thread-list-stable-order",
 		"thread-status-hints",
 		"thread-detail-patch-plan",
 		"thread-detail-actions",
-		"thread-detail-merge-state"
-	],
-	"byteCount": 223178
-}, {
-	"id": "shard-02",
-	"index": 1,
-	"source": "virtual:codex-mobile-esm-compatibility/shard/shard-02",
-	"moduleCount": 3,
-	"moduleIds": [
+		"thread-detail-merge-state",
 		"thread-detail-v4-merge-state",
 		"client-render-stability-guard",
 		"live-operation-dock-state"
 	],
-	"byteCount": 20789
+	"byteCount": 107306
 }];
 var shardLoaders = {
-	"shard-01": () => __vitePreload(() => import("./shard-01-B0YKAtOc.js"), __vite__mapDeps([0,1])),
-	"shard-02": () => __vitePreload(() => import("./shard-02-DYtfZHZr.js"), __vite__mapDeps([2,1]))
+	"shard-01": () => __vitePreload(() => import("./shard-01-DUNNLUST.js"), __vite__mapDeps([0,1])),
+	"shard-02": () => __vitePreload(() => import("./shard-02-BF9qeUNN.js"), __vite__mapDeps([2,1]))
 };
 var compatibilityPromise = null;
 async function loadCompatibilityShard(descriptor) {

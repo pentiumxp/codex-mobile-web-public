@@ -173,6 +173,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     "thread-tile-layout",
     "thread-tile-actions",
     "modal-runtime",
+    "composer-bridge-runtime",
+    "api-client-runtime",
     "thread-list-load-policy",
     "thread-list-stable-order",
     "thread-status-hints",
@@ -216,6 +218,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/thread-tile-layout\.js/);
   assert.match(shardSources, /public\/thread-tile-actions\.js/);
   assert.match(shardSources, /public\/modal-runtime\.js/);
+  assert.match(shardSources, /public\/composer-bridge-runtime\.js/);
+  assert.match(shardSources, /public\/api-client-runtime\.js/);
   assert.match(shardSources, /public\/thread-list-load-policy\.js/);
   assert.match(shardSources, /public\/thread-list-stable-order\.js/);
   assert.match(shardSources, /public\/thread-status-hints\.js/);
@@ -242,6 +246,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /threadTileColumnGroups/);
   assert.match(shardSources, /resolveThreadTileDropAction/);
   assert.match(shardSources, /createModalRuntime/);
+  assert.match(shardSources, /createComposerBridgeRuntime/);
+  assert.match(shardSources, /createApiClientRuntime/);
   assert.match(shardSources, /server-newer/);
   assert.match(shardSources, /planThreadListStableOrder/);
   assert.match(shardSources, /shouldMarkThreadUnread/);

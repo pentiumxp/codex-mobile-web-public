@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-Z8acuQFy.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CQo547DZ.js";
 //#region public/build-refresh-policy.js
 var require_build_refresh_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -4377,821 +4377,790 @@ var require_modal_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => 
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
-//#region public/thread-list-load-policy.js
-var require_thread_list_load_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadListLoadPolicy = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function bool(value) {
-			return value === true;
+//#region public/composer-bridge-runtime.js
+var require_composer_bridge_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachComposerBridgeRuntime(root) {
+		function updateComposerHeightVar(...args) {
+			return composerRuntime.updateComposerHeightVar(...args);
 		}
-		function text(value) {
-			return String(value || "").trim();
-		}
-		function planThreadListLoadRequest(input = {}) {
-			const silent = bool(input.silent);
-			const selectedCwd = text(input.selectedCwd);
-			const search = text(input.search);
-			const threadDetailOpening = bool(input.threadDetailOpening);
-			const documentHidden = bool(input.documentHidden);
-			const allowDuringDetail = bool(input.allowDuringDetail);
-			const allowHidden = bool(input.allowHidden);
-			const hasLoadedList = Number(input.threadListLoadedAtMs || 0) > 0;
-			const deferFallback = input.deferFallback;
-			const suppressHiddenSilent = silent && documentHidden && !allowHidden;
-			const suppressDetailSilent = silent && threadDetailOpening && !allowDuringDetail;
-			const allowWarmFallbackInitial = deferFallback !== false && !selectedCwd && !search;
-			const shouldDeferFallback = deferFallback === true || silent && deferFallback !== false && threadDetailOpening && !selectedCwd && !search;
-			const shouldUseWarmFallbackInitial = allowWarmFallbackInitial && (shouldDeferFallback || !hasLoadedList);
-			return {
-				action: "thread-list-load-request",
-				selectedCwd,
-				search,
-				silent,
-				threadDetailOpening,
-				documentHidden,
-				shouldLoad: !suppressHiddenSilent && !suppressDetailSilent,
-				skipReason: suppressHiddenSilent ? "hidden-silent" : suppressDetailSilent ? "detail-in-flight" : "",
-				retryDelayMs: suppressDetailSilent ? 700 : 0,
-				shouldDeferFallback,
-				shouldUseWarmFallbackInitial,
-				params: {
-					fallback: shouldDeferFallback ? "defer" : "",
-					initial: shouldUseWarmFallbackInitial ? "warm-fallback" : ""
-				}
-			};
-		}
-		return { planThreadListLoadRequest };
-	});
-}));
-//#endregion
-//#region public/thread-list-stable-order.js
-var require_thread_list_stable_order = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadListStableOrder = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_HOLD_MS = 45e3;
-		function text(value) {
-			return String(value || "").trim();
-		}
-		function boundedHoldMs(value) {
-			const number = Math.trunc(Number(value) || 0);
-			if (number <= 0) return DEFAULT_HOLD_MS;
-			return Math.min(3e5, Math.max(5e3, number));
-		}
-		function threadId(thread) {
-			return text(thread && thread.id);
-		}
-		function threadListOrderScopeKey(input = {}) {
-			const cwd = text(input.selectedCwd);
-			const search = text(input.search).toLowerCase();
-			return JSON.stringify({
-				cwd,
-				search
+		function showError(err) {
+			const raw = err instanceof Error ? err.message : String(err || "");
+			const message = normalizeClientErrorMessage(raw, err) || err && err.message || String(err);
+			$("connectionState").textContent = message;
+			$("connectionState").classList.add("error");
+			postClientEvent("client_error", {
+				message,
+				raw,
+				currentThreadId: state.currentThreadId || "",
+				composerBusy: state.composerBusy,
+				continuationBusy: state.continuationBusy
 			});
 		}
-		function orderedThreadsById(threads, ids) {
-			const byId = /* @__PURE__ */ new Map();
-			for (const thread of threads || []) {
-				const id = threadId(thread);
-				if (id && !byId.has(id)) byId.set(id, thread);
-			}
-			return (ids || []).map((id) => byId.get(id)).filter(Boolean);
+		function clearSendProgressWatchdog(...args) {
+			return composerRuntime.clearSendProgressWatchdog(...args);
 		}
-		function mergeHeldOrder(previousOrder, incomingIds) {
-			const incomingSet = new Set(incomingIds);
-			const rank = new Map(incomingIds.map((id, index) => [id, index]));
-			const ordered = (previousOrder || []).filter((id) => incomingSet.has(id));
-			const orderedSet = new Set(ordered);
-			const additions = incomingIds.filter((id) => !orderedSet.has(id));
-			for (const id of additions) {
-				const idRank = rank.get(id);
-				let insertAt = ordered.length;
-				for (let index = 0; index < ordered.length; index += 1) if ((rank.get(ordered[index]) ?? Number.MAX_SAFE_INTEGER) > idRank) {
-					insertAt = index;
-					break;
-				}
-				ordered.splice(insertAt, 0, id);
-				orderedSet.add(id);
-			}
-			return ordered;
+		function startSendProgressWatchdog(...args) {
+			return composerRuntime.startSendProgressWatchdog(...args);
 		}
-		function planThreadListStableOrder(input = {}) {
-			const threads = Array.isArray(input.threads) ? input.threads : [];
-			const incomingIds = threads.map(threadId).filter(Boolean);
-			const previous = input.previousState && typeof input.previousState === "object" ? input.previousState : {};
-			const previousOrder = Array.isArray(previous.order) ? previous.order.map(text).filter(Boolean) : [];
-			const scopeKey = text(input.scopeKey) || threadListOrderScopeKey(input);
-			const nowMs = Math.max(0, Math.trunc(Number(input.nowMs) || Date.now()));
-			const holdMs = boundedHoldMs(input.holdMs);
-			const previousHoldUntilMs = Math.max(0, Math.trunc(Number(previous.holdUntilMs) || 0));
-			const sameScope = text(previous.scopeKey) === scopeKey;
-			const canHold = !input.forceServerOrder && sameScope && previousOrder.length > 0 && previousHoldUntilMs > nowMs;
-			const order = canHold ? mergeHeldOrder(previousOrder, incomingIds) : incomingIds;
-			const holdUntilMs = canHold ? previousHoldUntilMs : nowMs + holdMs;
-			return {
-				action: "thread-list-stable-order",
-				held: canHold,
-				scopeKey,
-				holdUntilMs,
-				order,
-				threads: orderedThreadsById(threads, order),
-				state: {
-					scopeKey,
-					holdUntilMs,
-					order
-				}
-			};
+		function finishSendProgressWatchdog(...args) {
+			return composerRuntime.finishSendProgressWatchdog(...args);
 		}
-		return {
-			DEFAULT_HOLD_MS,
-			threadListOrderScopeKey,
-			planThreadListStableOrder
-		};
-	});
-}));
-//#endregion
-//#region public/thread-status-hints.js
-var require_thread_status_hints = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadStatusHints = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_RUNNING_HINT_STALE_MS = 1200 * 1e3;
-		const DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS = 60 * 1e3;
-		const DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS = 1e3;
-		function timestampMs(value) {
-			if (value === null || value === void 0 || value === "") return 0;
-			if (typeof value === "number") {
-				if (!Number.isFinite(value) || value <= 0) return 0;
-				return value > 0xe8d4a51000 ? Math.trunc(value) : Math.trunc(value * 1e3);
-			}
-			if (/^\d+(?:\.\d+)?$/.test(String(value))) {
-				const numeric = Number(value);
-				if (Number.isFinite(numeric) && numeric > 0) return numeric > 0xe8d4a51000 ? Math.trunc(numeric) : Math.trunc(numeric * 1e3);
-			}
-			const parsed = Date.parse(String(value));
-			return Number.isFinite(parsed) ? parsed : 0;
+		function threadNotificationThrottleKey(method, params) {
+			if (!params) return "";
+			if (method === "thread/started" && params.thread) return `${method}:${String(params.thread.id || "")}:${String(statusText(params.thread.status) || "")}`;
+			if (method === "thread/status/changed") return `${method}:${String(params.threadId || "")}:${String(statusText(params.status) || "")}`;
+			if (method === "thread/name/updated") return `${method}:${String(params.threadId || "")}:${String(params.threadName || "")}`;
+			if (method === "thread/archived") return `${method}:${String(params.threadId || "")}`;
+			return "";
 		}
-		function statusText(status) {
-			if (!status) return "";
-			if (typeof status === "string") return status;
-			if (status && typeof status === "object" && status.type) return String(status.type);
+		function shouldThrottleThreadNotification(method, params) {
+			const key = threadNotificationThrottleKey(method, params);
+			if (!key) return false;
+			const now = Date.now();
+			if (now - (state.threadNotificationThrottle.get(key) || 0) < 450) return true;
+			state.threadNotificationThrottle.set(key, now);
+			if (state.threadNotificationThrottle.size > 220) {
+				for (const [existingKey, existingAt] of state.threadNotificationThrottle.entries()) if (now - existingAt > 8e3) state.threadNotificationThrottle.delete(existingKey);
+				if (state.threadNotificationThrottle.size > 220) for (const existingKey of Array.from(state.threadNotificationThrottle.keys()).slice(0, 120)) state.threadNotificationThrottle.delete(existingKey);
+			}
+			return false;
+		}
+		function normalizeClientErrorMessage(...args) {
+			return composerRuntime.normalizeClientErrorMessage(...args);
+		}
+		function rawMessageFallback(...args) {
+			return composerRuntime.rawMessageFallback(...args);
+		}
+		function composerText(...args) {
+			return composerRuntime.composerText(...args);
+		}
+		function setComposerText(...args) {
+			return composerRuntime.setComposerText(...args);
+		}
+		function placeMessageInputCaretAtEnd(...args) {
+			return composerRuntime.placeMessageInputCaretAtEnd(...args);
+		}
+		function focusMessageInput(...args) {
+			return composerRuntime.focusMessageInput(...args);
+		}
+		function messageInputKeyboardVisible(...args) {
+			return composerRuntime.messageInputKeyboardVisible(...args);
+		}
+		function shouldRecoverMessageInputKeyboard(...args) {
+			return composerRuntime.shouldRecoverMessageInputKeyboard(...args);
+		}
+		function recoverMessageInputKeyboardFromGesture(...args) {
+			return composerRuntime.recoverMessageInputKeyboardFromGesture(...args);
+		}
+		function messageInputCanEnableForNativeGesture(...args) {
+			return composerRuntime.messageInputCanEnableForNativeGesture(...args);
+		}
+		function releaseStaleAndroidMessageInputFocusBeforeNativeTap(...args) {
+			return composerRuntime.releaseStaleAndroidMessageInputFocusBeforeNativeTap(...args);
+		}
+		function prepareMessageInputForNativeGesture(...args) {
+			return composerRuntime.prepareMessageInputForNativeGesture(...args);
+		}
+		function normalizedComposerIntentText(...args) {
+			return composerRuntime.normalizedComposerIntentText(...args);
+		}
+		function composerIntentOptions(...args) {
+			return composerRuntime.composerIntentOptions(...args);
+		}
+		function composerIntentOption(...args) {
+			return composerRuntime.composerIntentOption(...args);
+		}
+		function composerIntentDraftKey(...args) {
+			return composerRuntime.composerIntentDraftKey(...args);
+		}
+		function loadComposerIntentDraft(...args) {
+			return composerRuntime.loadComposerIntentDraft(...args);
+		}
+		function saveComposerIntentDraft(...args) {
+			return composerRuntime.saveComposerIntentDraft(...args);
+		}
+		function composerIntentBareTagKind(...args) {
+			return composerRuntime.composerIntentBareTagKind(...args);
+		}
+		function shouldShowComposerIntentMenu(...args) {
+			return composerRuntime.shouldShowComposerIntentMenu(...args);
+		}
+		function closeComposerIntentMenu(...args) {
+			return composerRuntime.closeComposerIntentMenu(...args);
+		}
+		function onComposerIntentOutsidePointer(...args) {
+			return composerRuntime.onComposerIntentOutsidePointer(...args);
+		}
+		function openComposerIntentMenu(...args) {
+			return composerRuntime.openComposerIntentMenu(...args);
+		}
+		function positionComposerIntentMenu(...args) {
+			return composerRuntime.positionComposerIntentMenu(...args);
+		}
+		function updateComposerIntentMenu(...args) {
+			return composerRuntime.updateComposerIntentMenu(...args);
+		}
+		function queueComposerIntentMenuUpdate(...args) {
+			return composerRuntime.queueComposerIntentMenuUpdate(...args);
+		}
+		function selectComposerIntent(...args) {
+			return composerRuntime.selectComposerIntent(...args);
+		}
+		function setComposerIntentDialogStatus(...args) {
+			return composerRuntime.setComposerIntentDialogStatus(...args);
+		}
+		function closeComposerIntentDialog(...args) {
+			return composerRuntime.closeComposerIntentDialog(...args);
+		}
+		function openComposerIntentDialog(...args) {
+			return composerRuntime.openComposerIntentDialog(...args);
+		}
+		async function submitComposerIntentDialog(...args) {
+			return composerRuntime.submitComposerIntentDialog(...args);
+		}
+		function saveComposerIntentDialogDraft(...args) {
+			return composerRuntime.saveComposerIntentDialogDraft(...args);
+		}
+		function shouldKeepAndroidMessageInputEditable(...args) {
+			return composerRuntime.shouldKeepAndroidMessageInputEditable(...args);
+		}
+		function setMessageInputDisabled(...args) {
+			return composerRuntime.setMessageInputDisabled(...args);
+		}
+		function messageInputTextLength(...args) {
+			return composerRuntime.messageInputTextLength(...args);
+		}
+		function messageInputTargetHeight(...args) {
+			return composerRuntime.messageInputTargetHeight(...args);
+		}
+		function currentMessageInputHeight(...args) {
+			return composerRuntime.currentMessageInputHeight(...args);
+		}
+		function updateMessageInputOverflow(...args) {
+			return composerRuntime.updateMessageInputOverflow(...args);
+		}
+		function autoSizeMessageInput(...args) {
+			return composerRuntime.autoSizeMessageInput(...args);
+		}
+		function formatFileSize(...args) {
+			return composerRuntime.formatFileSize(...args);
+		}
+		function appendLocalAttachmentSummary(...args) {
+			return composerRuntime.appendLocalAttachmentSummary(...args);
+		}
+		function localImageInputPartsForAttachments(...args) {
+			return composerRuntime.localImageInputPartsForAttachments(...args);
+		}
+		function localUserMessageItem(...args) {
+			return composerRuntime.localUserMessageItem(...args);
+		}
+		function attachmentId(...args) {
+			return composerRuntime.attachmentId(...args);
+		}
+		function pendingAttachmentBytes(...args) {
+			return composerRuntime.pendingAttachmentBytes(...args);
+		}
+		async function prepareAttachmentFile(...args) {
+			return composerRuntime.prepareAttachmentFile(...args);
+		}
+		async function prepareAttachmentFiles(...args) {
+			return composerRuntime.prepareAttachmentFiles(...args);
+		}
+		async function addAttachmentFiles(...args) {
+			return composerRuntime.addAttachmentFiles(...args);
+		}
+		function removeAttachment(...args) {
+			return composerRuntime.removeAttachment(...args);
+		}
+		function clearPendingAttachments(...args) {
+			return composerRuntime.clearPendingAttachments(...args);
+		}
+		function renderAttachmentList(...args) {
+			return composerRuntime.renderAttachmentList(...args);
+		}
+		function composerHasContent(...args) {
+			return composerRuntime.composerHasContent(...args);
+		}
+		function effectiveDefaultModel(...args) {
+			return composerRuntime.effectiveDefaultModel(...args);
+		}
+		function effectiveDefaultEffort(...args) {
+			return composerRuntime.effectiveDefaultEffort(...args);
+		}
+		function effectiveDefaultPermissionMode(...args) {
+			return composerRuntime.effectiveDefaultPermissionMode(...args);
+		}
+		function selectedComposerModel(...args) {
+			return composerRuntime.selectedComposerModel(...args);
+		}
+		function selectedComposerEffort(...args) {
+			return composerRuntime.selectedComposerEffort(...args);
+		}
+		function selectedComposerPermissionMode(...args) {
+			return composerRuntime.selectedComposerPermissionMode(...args);
+		}
+		function resetComposerRuntimeSelection(...args) {
+			return composerRuntime.resetComposerRuntimeSelection(...args);
+		}
+		function runtimeOptionValues(...args) {
+			return composerRuntime.runtimeOptionValues(...args);
+		}
+		function runtimeOptionLabel(...args) {
+			return composerRuntime.runtimeOptionLabel(...args);
+		}
+		function runtimeSelectedValue(...args) {
+			return composerRuntime.runtimeSelectedValue(...args);
+		}
+		function codexFastCommandEnabled(...args) {
+			return composerRuntime.codexFastCommandEnabled(...args);
+		}
+		function clearLegacyCodexFastModeStorage(...args) {
+			return composerRuntime.clearLegacyCodexFastModeStorage(...args);
+		}
+		function setCodexFastCommandEnabled(...args) {
+			return composerRuntime.setCodexFastCommandEnabled(...args);
+		}
+		function applyRuntimeSelection(...args) {
+			return composerRuntime.applyRuntimeSelection(...args);
+		}
+		function closeComposerRuntimeMenu(...args) {
+			return composerRuntime.closeComposerRuntimeMenu(...args);
+		}
+		function onComposerRuntimeOutsidePointer(...args) {
+			return composerRuntime.onComposerRuntimeOutsidePointer(...args);
+		}
+		function openComposerRuntimeMenu(...args) {
+			return composerRuntime.openComposerRuntimeMenu(...args);
+		}
+		function composerRuntimeMenuDiagnostics(...args) {
+			return composerRuntime.composerRuntimeMenuDiagnostics(...args);
+		}
+		function reportComposerRuntimeMenu(...args) {
+			return composerRuntime.reportComposerRuntimeMenu(...args);
+		}
+		function handleComposerRuntimeControl(...args) {
+			return composerRuntime.handleComposerRuntimeControl(...args);
+		}
+		function fitComposerPopupToAnchor(...args) {
+			return composerRuntime.fitComposerPopupToAnchor(...args);
+		}
+		function closeQuotaDetails(...args) {
+			return composerRuntime.closeQuotaDetails(...args);
+		}
+		function onQuotaOutsidePointer(...args) {
+			return composerRuntime.onQuotaOutsidePointer(...args);
+		}
+		function toggleQuotaDetails(...args) {
+			return composerRuntime.toggleQuotaDetails(...args);
+		}
+		function composerPlaceholderText(...args) {
+			return composerRuntime.composerPlaceholderText(...args);
+		}
+		function composerShowsTargetPlaceholder(...args) {
+			return composerRuntime.composerShowsTargetPlaceholder(...args);
+		}
+		function applyComposerActionControlPlan(...args) {
+			return composerRuntime.applyComposerActionControlPlan(...args);
+		}
+		function renderComposerSettings(...args) {
+			return composerRuntime.renderComposerSettings(...args);
+		}
+		function updateComposerControls(...args) {
+			return composerRuntime.updateComposerControls(...args);
+		}
+		function hasTransferFiles(...args) {
+			return composerRuntime.hasTransferFiles(...args);
+		}
+		function goalDialogFormValues(...args) {
+			return composerRuntime.goalDialogFormValues(...args);
+		}
+		async function submitThreadGoalMessage(...args) {
+			return composerRuntime.submitThreadGoalMessage(...args);
+		}
+		function threadGoalActionStatusText(...args) {
+			return composerRuntime.threadGoalActionStatusText(...args);
+		}
+		function threadGoalActionBusyText(...args) {
+			return composerRuntime.threadGoalActionBusyText(...args);
+		}
+		async function runThreadGoalDialogAction(...args) {
+			return composerRuntime.runThreadGoalDialogAction(...args);
+		}
+		function requestGoalDialogSubmitFromEnter(...args) {
+			return composerRuntime.requestGoalDialogSubmitFromEnter(...args);
+		}
+		function requestGoalDialogSubmitFromButton(...args) {
+			return composerRuntime.requestGoalDialogSubmitFromButton(...args);
+		}
+		function requestGoalDialogSubmit(...args) {
+			return composerRuntime.requestGoalDialogSubmit(...args);
+		}
+		async function sendThreadTaskCardCommand(...args) {
+			return composerRuntime.sendThreadTaskCardCommand(...args);
+		}
+		async function sendMessage(...args) {
+			return composerRuntime.sendMessage(...args);
+		}
+		async function sendNewThreadMessage(...args) {
+			return composerRuntime.sendNewThreadMessage(...args);
+		}
+		function requestComposerSubmitFromButton(...args) {
+			return composerRuntime.requestComposerSubmitFromButton(...args);
+		}
+		function requestAttachmentPickerFromButton(...args) {
+			return composerRuntime.requestAttachmentPickerFromButton(...args);
+		}
+		async function interruptActiveTurn(...args) {
+			return composerRuntime.interruptActiveTurn(...args);
+		}
+		async function answerServerRequest(requestId, payload, options = {}) {
+			const key = requestId !== null && requestId !== void 0 ? String(requestId) : "";
+			const request = state.pendingApprovals.get(key);
+			if (!request || request.status !== "waiting") return;
+			const threadId = approvalActionThreadId(request, options.threadId);
+			request.status = "responding";
+			request.decision = payload && (payload.decision || payload.action) || "submitted";
+			markActivity(isUserInputRequest(request) ? "输入发送中" : "批准中");
+			scheduleApprovalThreadRender(threadId);
 			try {
-				return JSON.stringify(status);
-			} catch (_) {
-				return String(status);
+				const result = await api(`/api/approvals/${encodeURIComponent(key)}`, {
+					method: "POST",
+					body: JSON.stringify(payload || {}),
+					timeoutMs: 2e4
+				});
+				if (result && result.request) state.pendingApprovals.set(key, serverRequestWithThreadContext(result.request, threadId));
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = isUserInputRequest(request) ? "Response sent" : "Approval sent";
+				markActivity(isUserInputRequest(request) ? "输入已发送" : "批准发送");
+				scheduleApprovalThreadRender(threadId);
+			} catch (err) {
+				request.status = "waiting";
+				request.decision = null;
+				showError(err);
+				scheduleApprovalThreadRender(threadId);
 			}
 		}
-		function isStaleActiveStatus(status, thread) {
-			return Boolean(status && typeof status === "object" && (status.mobileStaleActiveTurn || status.staleActiveTurn || status.reason === "context-only-active-turn") || thread && thread.mobileStaleActiveTurn);
+		function answerApproval(requestId, decision, options = {}) {
+			return answerServerRequest(requestId, { decision }, options);
 		}
-		function isRunningStatus(status) {
-			return /active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(statusText(status).toLowerCase());
-		}
-		function isSettledStatus(status) {
-			return /^(idle|notloaded|not_loaded|not-loaded|completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(statusText(status).toLowerCase());
-		}
-		function isIdleStatus(status) {
-			return /^(idle|notloaded|not_loaded|not-loaded)$/.test(statusText(status).toLowerCase());
-		}
-		function isTerminalStatus(status) {
-			return /^(completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(statusText(status).toLowerCase());
-		}
-		function threadUpdatedAtMs(thread) {
-			return timestampMs(thread && (thread.updatedAtMs || thread.updatedAt || thread.updated_at_ms || thread.updated_at));
-		}
-		function terminalTurnAtMs(turn) {
-			return timestampMs(turn && turn.completedAtMs) || timestampMs(turn && turn.completedAt) || timestampMs(turn && turn.completed_at_ms) || timestampMs(turn && turn.completed_at) || timestampMs(turn && turn.finishedAt) || timestampMs(turn && turn.finished_at) || timestampMs(turn && turn.updatedAtMs) || timestampMs(turn && turn.updatedAt) || timestampMs(turn && turn.updated_at_ms) || timestampMs(turn && turn.updated_at) || timestampMs(turn && turn.startedAtMs) || timestampMs(turn && turn.startedAt) || timestampMs(turn && turn.started_at_ms) || timestampMs(turn && turn.started_at) || timestampMs(turn && turn.createdAtMs) || timestampMs(turn && turn.createdAt) || timestampMs(turn && turn.created_at_ms) || timestampMs(turn && turn.created_at);
-		}
-		function notificationDurableEventAtMs(params = {}) {
-			return timestampMs(params.eventAtMs) || timestampMs(params.eventAt) || terminalTurnAtMs(params.turn) || timestampMs(params.receivedAtMs) || timestampMs(params.timestampMs) || timestampMs(params.timestamp);
-		}
-		function notificationEventAtMs(params = {}, fallbackMs = 0, options = {}) {
-			const durableAt = notificationDurableEventAtMs(params);
-			if (durableAt) return durableAt;
-			if (options.allowReplayReceivedAt !== false) {
-				const replayAt = timestampMs(params.mobileReplayReceivedAtMs);
-				if (replayAt) return replayAt;
-			}
-			return timestampMs(params.receivedAtMs) || timestampMs(params.timestampMs) || timestampMs(params.timestamp) || timestampMs(fallbackMs);
-		}
-		function latestTerminalTurn(thread) {
-			const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
-			const latest = turns.length ? turns[turns.length - 1] : null;
-			if (!latest) return null;
-			return isTerminalStatus(latest.status) ? latest : null;
-		}
-		function latestTerminalTurnAtMs(thread) {
-			const turn = latestTerminalTurn(thread);
-			return turn ? terminalTurnAtMs(turn) : 0;
-		}
-		function hasFreshSubmittedProcessingHint(submittedProcessingHintedAtMs, nowMs, staleMs = DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS) {
-			const hintedAt = timestampMs(submittedProcessingHintedAtMs);
-			const now = timestampMs(nowMs) || Date.now();
-			return Boolean(hintedAt > 0 && now - hintedAt <= Math.max(0, Number(staleMs) || DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS));
-		}
-		function statusFreshnessAtMs(thread, eventAtMs) {
-			return Math.max(threadUpdatedAtMs(thread) || 0, timestampMs(eventAtMs) || 0);
-		}
-		function settledStatusFreshEnoughForRunningHint(input = {}) {
-			const hintedAt = timestampMs(input.runningHintedAtMs);
-			if (!hintedAt) return true;
-			const statusAt = statusFreshnessAtMs(input.thread, input.eventAtMs);
-			if (!statusAt) return false;
-			if (input.mobileReplay) return statusAt >= hintedAt;
-			return statusAt + Math.max(0, Number(input.freshnessToleranceMs) || DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS) >= hintedAt;
-		}
-		function shouldKeepRunningHintForSettledStatus(input = {}) {
-			const threadId = String(input.threadId || "");
-			if (!threadId || !input.isRunningHinted) return false;
-			const status = input.status || input.thread && input.thread.status;
-			if (isStaleActiveStatus(status, input.thread)) return false;
-			if (!isSettledStatus(status)) return false;
-			if (isIdleStatus(status) && !latestTerminalTurn(input.thread) && !input.eventIsTerminal) return true;
-			if (input.allowLocalProcessing !== false && isIdleStatus(status) && !latestTerminalTurn(input.thread) && hasFreshSubmittedProcessingHint(input.submittedProcessingHintedAtMs, input.nowMs, input.submittedProcessingHintStaleMs)) return true;
-			if (input.currentThreadId && threadId === String(input.currentThreadId) && input.currentThreadSettled) return false;
-			if (input.currentThreadHasLiveTurn) return true;
-			if (!input.mobileReplay && (isTerminalStatus(status) || latestTerminalTurn(input.thread) || input.eventIsTerminal)) return false;
-			return !settledStatusFreshEnoughForRunningHint(input);
-		}
-		function threadUnreadTerminalAtMs(thread, eventAtMs = 0, options = {}) {
-			const eventAt = options.eventIsTerminal ? timestampMs(eventAtMs) : 0;
-			return Math.max(latestTerminalTurnAtMs(thread) || 0, eventAt || 0);
-		}
-		function shouldMarkThreadUnread(input = {}) {
-			const threadId = String(input.threadId || "");
-			if (!threadId || threadId === String(input.currentThreadId || "")) return false;
-			const status = input.status || input.thread && input.thread.status;
-			if (isStaleActiveStatus(status, input.thread)) return false;
-			if (!isSettledStatus(status)) return false;
-			if (isIdleStatus(status) && !latestTerminalTurn(input.thread) && !input.eventIsTerminal) return false;
-			const terminalAt = threadUnreadTerminalAtMs(input.thread, input.eventAtMs, { eventIsTerminal: Boolean(input.eventIsTerminal) });
-			const viewedAt = timestampMs(input.viewedAtMs);
-			if (viewedAt > 0) return terminalAt > viewedAt;
-			const updateAt = terminalAt || (input.wasRunning ? statusFreshnessAtMs(input.thread, input.eventAtMs) : 0);
-			if (input.mobileReplay && !updateAt) return false;
-			const hintedAt = timestampMs(input.runningHintedAtMs);
-			if (!input.wasRunning || hintedAt <= 0) return false;
-			if (!updateAt) return !input.mobileReplay;
-			return updateAt + (input.mobileReplay ? 0 : Math.max(0, Number(input.freshnessToleranceMs) || DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS)) >= hintedAt;
-		}
-		function runningHintAgeMs(input = {}) {
-			const hintedAt = timestampMs(input.runningHintedAtMs);
-			const now = timestampMs(input.nowMs) || Date.now();
-			if (hintedAt > 0) return now - hintedAt;
-			const updatedAt = threadUpdatedAtMs(input.thread);
-			if (updatedAt > 0) return now - updatedAt;
-			return (Number(input.runningHintStaleMs) || DEFAULT_RUNNING_HINT_STALE_MS) + 1;
-		}
-		function shouldExpireRunningThreadHint(input = {}) {
-			if (!input.threadId || !input.isRunningHinted) return false;
-			const status = input.status || input.thread && input.thread.status;
-			if (isStaleActiveStatus(status, input.thread)) return true;
-			if (isRunningStatus(status)) return false;
-			if (isSettledStatus(status) && !shouldKeepRunningHintForSettledStatus(input)) return false;
-			if (input.currentThreadHasLiveTurn) return false;
-			return runningHintAgeMs(input) > (Number(input.runningHintStaleMs) || DEFAULT_RUNNING_HINT_STALE_MS);
-		}
-		return {
-			DEFAULT_RUNNING_HINT_STALE_MS,
-			DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS,
-			DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
-			hasFreshSubmittedProcessingHint,
-			isIdleStatus,
-			isRunningStatus,
-			isSettledStatus,
-			isStaleActiveStatus,
-			isTerminalStatus,
-			latestTerminalTurnAtMs,
-			notificationDurableEventAtMs,
-			notificationEventAtMs,
-			runningHintAgeMs,
-			shouldExpireRunningThreadHint,
-			shouldKeepRunningHintForSettledStatus,
-			shouldMarkThreadUnread,
-			statusFreshnessAtMs,
-			statusText,
-			terminalTurnAtMs,
-			threadUpdatedAtMs,
-			timestampMs
-		};
-	});
-}));
-//#endregion
-//#region public/thread-detail-patch-plan.js
-var require_thread_detail_patch_plan = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDetailPatchPlan = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function normalizePatchEntry(entry) {
-			if (!entry || typeof entry !== "object") return null;
-			const key = String(entry.key || "");
-			if (!key) return null;
-			return Object.assign({}, entry, { key });
-		}
-		function normalizeRefreshTurnPatchEntry(entry) {
-			if (!entry || typeof entry !== "object") return null;
-			const key = String(entry.key || "");
-			if (!key) return null;
+		function serverRequestPayload(request, responseText, questionId) {
+			if (request && request.method === "mcpServer/elicitation/request") return {
+				action: "accept",
+				responseText
+			};
 			return {
-				key,
-				hasPreviousTurn: Boolean(entry.hasPreviousTurn),
-				itemPatchable: Boolean(entry.itemPatchable),
-				articlePresent: Boolean(entry.articlePresent)
+				responseText,
+				questionId
 			};
 		}
-		function normalizedStringList(value) {
-			return Array.isArray(value) ? value.map((entry) => String(entry || "")).filter(Boolean) : [];
+		function declineServerRequest(requestId, options = {}) {
+			const key = requestId !== null && requestId !== void 0 ? String(requestId) : "";
+			const request = state.pendingApprovals.get(key);
+			if (!request) return Promise.resolve();
+			if (request.method === "mcpServer/elicitation/request") return answerServerRequest(key, { action: "decline" }, options);
+			if (request.method === "item/tool/requestUserInput") return answerServerRequest(key, { answers: {} }, options);
+			return answerApproval(key, "deny", options);
 		}
-		function signatureText(signature) {
-			if (signature == null) return "";
-			if (typeof signature === "string") return signature;
+		async function mutateThreadTaskCard(cardId, action, body = {}, options = {}) {
+			const id = String(cardId || "").trim();
+			const threadId = String(options.threadId || body.threadId || state.currentThreadId || "").trim();
+			if (!id || !threadId) return;
+			$("connectionState").classList.remove("error");
+			$("connectionState").textContent = action === "approve" ? "Approving task card" : `${action} task card`;
 			try {
-				return JSON.stringify(signature);
-			} catch (_) {
-				return "";
-			}
-		}
-		function planThreadDetailDomPatchSurface(input = {}) {
-			const threadId = String(input.threadId || "").trim();
-			const threadTileMode = Boolean(input.threadTileMode);
-			const threadTileSurface = Boolean(input.threadTileSurface);
-			const tilePaneVisible = Boolean(input.tilePaneVisible);
-			const conversationPresent = Boolean(input.conversationPresent);
-			if (threadTileMode || threadTileSurface) {
-				if (!threadTileMode) return {
-					canPatch: false,
-					surface: "blocked",
-					reason: "tile-surface-without-tile-mode",
-					threadId
-				};
-				if (!threadTileSurface) return {
-					canPatch: false,
-					surface: "blocked",
-					reason: "tile-mode-surface-mismatch",
-					threadId
-				};
-				if (!threadId) return {
-					canPatch: false,
-					surface: "thread-tile-pane",
-					reason: "missing-thread-id",
-					threadId: ""
-				};
-				if (!tilePaneVisible) return {
-					canPatch: false,
-					surface: "thread-tile-pane",
-					reason: "tile-pane-not-visible",
-					threadId
-				};
-				return {
-					canPatch: true,
-					surface: "thread-tile-pane",
-					reason: "tile-pane-visible",
-					threadId
-				};
-			}
-			if (!conversationPresent) return {
-				canPatch: false,
-				surface: "single-thread",
-				reason: "missing-conversation",
-				threadId
-			};
-			return {
-				canPatch: true,
-				surface: "single-thread",
-				reason: "single-thread-surface",
-				threadId
-			};
-		}
-		function planThreadDetailRefreshLocalPatchPreflight(input = {}) {
-			const conversationPresent = Boolean(input.conversationPresent);
-			const previousThreadPresent = Boolean(input.previousThreadPresent);
-			const nextThreadPresent = Boolean(input.nextThreadPresent);
-			if (!conversationPresent) return {
-				canPatch: false,
-				terminal: false,
-				reason: "missing-conversation-root"
-			};
-			if (!previousThreadPresent || !nextThreadPresent) return {
-				canPatch: false,
-				terminal: false,
-				reason: "missing-thread"
-			};
-			if (String(input.stage || "complete") === "root") return {
-				canPatch: true,
-				terminal: false,
-				reason: "root-ready"
-			};
-			if (input.tilePanePatched) return {
-				canPatch: true,
-				terminal: true,
-				reason: "tile-pane-patched"
-			};
-			if (!input.singleThreadSurfaceAvailable) return {
-				canPatch: false,
-				terminal: false,
-				reason: "single-thread-surface-unavailable"
-			};
-			if (input.previousLoadingOrError || input.nextLoadingOrError) return {
-				canPatch: false,
-				terminal: false,
-				reason: "loading-or-error-state"
-			};
-			const renderedConversationSignature = signatureText(input.renderedConversationSignature);
-			const previousConversationSignature = signatureText(input.previousConversationSignature);
-			const renderedPatchShellSignature = signatureText(input.renderedPatchShellSignature);
-			const previousPatchShellSignature = signatureText(input.previousPatchShellSignature);
-			const nextPatchShellSignature = signatureText(input.nextPatchShellSignature);
-			if (renderedConversationSignature !== previousConversationSignature && (!renderedPatchShellSignature || renderedPatchShellSignature !== previousPatchShellSignature)) return {
-				canPatch: false,
-				terminal: false,
-				reason: "rendered-dom-stale"
-			};
-			if (previousPatchShellSignature !== nextPatchShellSignature) return {
-				canPatch: false,
-				terminal: false,
-				reason: "patch-shell-changed"
-			};
-			return {
-				canPatch: true,
-				terminal: false,
-				reason: "preflight-passed"
-			};
-		}
-		function visibleItemPatchShapePreservesExisting(previousEntries, nextEntries) {
-			if (!Array.isArray(previousEntries) || !Array.isArray(nextEntries)) return false;
-			const previous = previousEntries.map(normalizePatchEntry).filter(Boolean);
-			const next = nextEntries.map(normalizePatchEntry).filter(Boolean);
-			if (previous.length !== previousEntries.length || next.length !== nextEntries.length) return false;
-			if (previous.length > next.length) return false;
-			let previousIndex = 0;
-			for (const nextEntry of next) {
-				const previousEntry = previous[previousIndex];
-				if (previousEntry && previousEntry.key === nextEntry.key) previousIndex += 1;
-			}
-			return previousIndex === previous.length;
-		}
-		function planVisibleItemRefreshPatch(previousEntries, nextEntries) {
-			if (!visibleItemPatchShapePreservesExisting(previousEntries, nextEntries)) return {
-				canPatch: false,
-				reason: "shape-changed",
-				operations: []
-			};
-			const previousByKey = new Map(previousEntries.map(normalizePatchEntry).filter(Boolean).map((entry) => [entry.key, entry]));
-			const operations = [];
-			for (const rawNextEntry of nextEntries) {
-				const nextEntry = normalizePatchEntry(rawNextEntry);
-				if (!nextEntry) return {
-					canPatch: false,
-					reason: "invalid-entry",
-					operations: []
-				};
-				const previousEntry = previousByKey.get(nextEntry.key);
-				if (!previousEntry) {
-					operations.push({
-						type: "insert",
-						key: nextEntry.key,
-						nextEntry
-					});
-					continue;
-				}
-				const previousSignature = signatureText(previousEntry.signature);
-				const nextSignature = signatureText(nextEntry.signature);
-				operations.push({
-					type: previousSignature === nextSignature ? "reuse" : "patch",
-					key: nextEntry.key,
-					previousEntry,
-					nextEntry
+				const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {
+					method: "POST",
+					body: JSON.stringify(Object.assign({}, body, { threadId })),
+					timeoutMs: 3e4
 				});
-			}
-			return {
-				canPatch: true,
-				reason: "shape-preserved",
-				operations
-			};
-		}
-		function planThreadDetailRefreshDomPatch(entries, options = {}) {
-			if (!Array.isArray(entries)) return {
-				canPatch: false,
-				reason: "invalid-turn-entries",
-				operations: []
-			};
-			const operations = [];
-			const nextKeys = /* @__PURE__ */ new Set();
-			for (const rawEntry of entries) {
-				const entry = normalizeRefreshTurnPatchEntry(rawEntry);
-				if (!entry) return {
-					canPatch: false,
-					reason: "invalid-turn-entry",
-					operations: []
-				};
-				nextKeys.add(entry.key);
-				if (entry.hasPreviousTurn && entry.itemPatchable && entry.articlePresent) {
-					operations.push({
-						type: "item-patch",
-						key: entry.key,
-						entry
-					});
-					continue;
-				}
-				operations.push({
-					type: entry.articlePresent ? "replace-turn" : "insert-turn",
-					key: entry.key,
-					entry
-				});
-			}
-			const previousTurnKeys = normalizedStringList(options.previousTurnKeys || options.previousKeys);
-			for (const previousKey of previousTurnKeys) {
-				if (nextKeys.has(previousKey)) continue;
-				operations.push({
-					type: "remove-turn",
-					key: previousKey,
-					entry: {
-						key: previousKey,
-						stale: true
+				if (action === "approve" && result && result.execution && result.execution.turnId) $("connectionState").textContent = "Task card approved; starting target turn";
+				else $("connectionState").textContent = "Task card updated";
+				settleThreadTaskCardForThread(threadId, id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
+				recordHomeAiDiagnosticSuccess({
+					category: "task_card_workflow_failed",
+					diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+					error_code: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+					context: {
+						surface: "task-card",
+						action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+						thread_hash: diagnosticThreadHash(threadId),
+						task_hash: diagnosticTaskHash(id)
 					}
 				});
-			}
-			return {
-				canPatch: true,
-				reason: "planned",
-				operations
-			};
-		}
-		return {
-			normalizePatchEntry,
-			normalizeRefreshTurnPatchEntry,
-			planThreadDetailRefreshDomPatch,
-			planThreadDetailRefreshLocalPatchPreflight,
-			planVisibleItemRefreshPatch,
-			planThreadDetailDomPatchSurface,
-			visibleItemPatchShapePreservesExisting
-		};
-	});
-}));
-//#endregion
-//#region public/thread-detail-actions.js
-var require_thread_detail_actions = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDetailActions = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function withinRoot(root, node) {
-			if (!root || !node || typeof root.contains !== "function") return true;
-			return root.contains(node);
-		}
-		function closestWithin(target, selector, root = null) {
-			if (!target || typeof target.closest !== "function") return null;
-			const node = target.closest(selector);
-			if (!node || !withinRoot(root, node)) return null;
-			return node;
-		}
-		function action(type, target, fields = {}) {
-			return Object.assign({
-				action: String(type || "none"),
-				target: target || null,
-				preventDefault: false,
-				stopPropagation: false
-			}, fields);
-		}
-		function dataValue(node, key) {
-			return String(node && node.dataset && node.dataset[key] || "");
-		}
-		function contextThreadIdFromNode(node, explicitDatasetKey = "") {
-			if (!node) return "";
-			const explicit = explicitDatasetKey ? dataValue(node, explicitDatasetKey) : "";
-			if (explicit) return explicit;
-			if (typeof node.closest !== "function") return "";
-			return dataValue(node.closest("[data-thread-tile-pane]"), "threadTilePane");
-		}
-		function previewableImageFromTarget(target, root = null) {
-			const image = closestWithin(target, ".input-image img, .image-view img, .markdown-image img, .file-preview-image, .attachment-thumb", root);
-			if (!image) return null;
-			if (image.closest && image.closest(".github-link-card")) return null;
-			return image;
-		}
-		function resolveRichContentClickAction(input = {}) {
-			const target = input.target || null;
-			const root = input.root || null;
-			let node = closestWithin(target, "[data-copy-key]", root);
-			if (node) return action("copy", node, {
-				button: node,
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-local-file-path]", root);
-			if (node) return action("local-file-preview", node, {
-				link: node,
-				threadId: contextThreadIdFromNode(node, "localFileThreadId"),
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-mermaid-action]", root);
-			if (node) return action("mermaid", node, {
-				button: node,
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-github-link-preview-expand]", root);
-			if (node) return action("github-preview-toggle", node, {
-				button: node,
-				preventDefault: true,
-				stopPropagation: true
-			});
-			return action("none", null, { reason: "no-match" });
-		}
-		function resolveThreadDetailClickAction(input = {}) {
-			const target = input.target || null;
-			const root = input.root || null;
-			const rich = resolveRichContentClickAction({
-				target,
-				root
-			});
-			if (rich.action !== "none") return rich;
-			let node = closestWithin(target, "[data-approval-action]", root);
-			if (node) return action("approval-answer", node, {
-				button: node,
-				approvalId: dataValue(node, "approvalId"),
-				approvalAction: dataValue(node, "approvalAction"),
-				threadId: dataValue(node, "approvalThreadId")
-			});
-			node = closestWithin(target, "[data-task-card-action]", root);
-			if (node) {
-				const taskCardAction = dataValue(node, "taskCardAction");
-				const cardId = dataValue(node, "taskCardId");
-				const threadId = dataValue(node, "taskCardThreadId");
-				if (taskCardAction === "reply") return action("task-card-reply", node, {
-					button: node,
-					cardId,
-					taskCardAction,
-					threadId
-				});
-				if (taskCardAction === "approve" || taskCardAction === "delete" || taskCardAction === "revoke") return action("task-card-mutate", node, {
-					button: node,
-					cardId,
-					taskCardAction,
-					threadId
-				});
-				return action("task-card-unknown", node, {
-					button: node,
-					cardId,
-					taskCardAction,
-					threadId
-				});
-			}
-			node = closestWithin(target, "[data-task-card-draft-action]", root);
-			if (node) return action("task-card-draft", node, {
-				button: node,
-				draftAction: dataValue(node, "taskCardDraftAction"),
-				draftKey: dataValue(node, "taskCardDraftKey"),
-				threadId: dataValue(node, "taskCardDraftThreadId")
-			});
-			node = closestWithin(target, "[data-server-response-text]", root);
-			if (node) return action("server-response", node, {
-				option: node,
-				requestId: dataValue(node, "serverRequestId"),
-				threadId: dataValue(node, "serverRequestThreadId"),
-				responseText: dataValue(node, "serverResponseText"),
-				questionId: dataValue(node, "serverQuestionId") || "answer"
-			});
-			node = closestWithin(target, "[data-server-request-decline]", root);
-			if (node) return action("server-request-decline", node, {
-				button: node,
-				requestId: dataValue(node, "serverRequestId"),
-				threadId: dataValue(node, "serverRequestThreadId")
-			});
-			return action("none", null, { reason: "no-match" });
-		}
-		return {
-			closestWithin,
-			previewableImageFromTarget,
-			resolveRichContentClickAction,
-			resolveThreadDetailClickAction,
-			contextThreadIdFromNode
-		};
-	});
-}));
-//#endregion
-//#region public/thread-detail-merge-state.js
-var require_thread_detail_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDetailMergeState = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function defaultNormalizeThread(thread) {
-			return thread;
-		}
-		function defaultSortTurns(turns) {
-			return Array.isArray(turns) ? turns.slice() : [];
-		}
-		function createThreadDetailMergePolicy(options = {}) {
-			const isV4ProjectionThread = typeof options.isV4ProjectionThread === "function" ? options.isV4ProjectionThread : () => false;
-			const mergeV4ProjectionThread = typeof options.mergeV4ProjectionThread === "function" ? options.mergeV4ProjectionThread : (existingThread, incomingThread) => incomingThread || existingThread || null;
-			const normalizeThreadVisibleUserMessages = typeof options.normalizeThreadVisibleUserMessages === "function" ? options.normalizeThreadVisibleUserMessages : defaultNormalizeThread;
-			const turnVisibleWeight = typeof options.turnVisibleWeight === "function" ? options.turnVisibleWeight : () => 0;
-			const shouldPreserveExistingTurnVisibleItems = typeof options.shouldPreserveExistingTurnVisibleItems === "function" ? options.shouldPreserveExistingTurnVisibleItems : () => false;
-			const mergeItemsPreservingLocalVisible = typeof options.mergeItemsPreservingLocalVisible === "function" ? options.mergeItemsPreservingLocalVisible : (existingItems, incomingItems) => Array.isArray(incomingItems) ? incomingItems : existingItems;
-			const shouldDropInitialSubmissionEchoTurn = typeof options.shouldDropInitialSubmissionEchoTurn === "function" ? options.shouldDropInitialSubmissionEchoTurn : () => false;
-			const turnIsSupersededBy = typeof options.turnIsSupersededBy === "function" ? options.turnIsSupersededBy : () => false;
-			const isTurnComplete = typeof options.isTurnComplete === "function" ? options.isTurnComplete : () => false;
-			const shouldPreserveMissingExistingTurn = typeof options.shouldPreserveMissingExistingTurn === "function" ? options.shouldPreserveMissingExistingTurn : () => false;
-			const sortTurnsForDisplay = typeof options.sortTurnsForDisplay === "function" ? options.sortTurnsForDisplay : defaultSortTurns;
-			const threadHasInitialSubmissionEcho = typeof options.threadHasInitialSubmissionEcho === "function" ? options.threadHasInitialSubmissionEcho : () => false;
-			const maxExpandedVisibleTurns = Math.max(1, Number(options.maxExpandedVisibleTurns || 200) || 200);
-			function normalizeMergedThread(thread, limit = 0) {
-				const normalized = normalizeThreadVisibleUserMessages(thread);
-				if (normalized && Array.isArray(normalized.turns)) {
-					const sorted = sortTurnsForDisplay(normalized.turns);
-					normalized.turns = limit > 0 ? sorted.slice(-limit) : sorted;
+				if (action === "approve" && result && result.execution && result.execution.turnId) {
+					let injectedVisible = false;
+					if (threadId === String(state.currentThreadId || "")) injectedVisible = await waitForCurrentThreadTurn(result.execution.turnId, {
+						timeoutMs: 1e4,
+						intervalMs: 500
+					});
+					else scheduleComposerTargetRefresh(threadId, 300, "task-card-approved");
+					$("connectionState").textContent = injectedVisible ? "Task card approved and injected" : "Task card approved; waiting for thread refresh";
+					loadThreads({ silent: true }).catch(showError);
+					return;
 				}
-				return normalized;
+				await refreshThreadAfterTaskCard(threadId);
+			} catch (err) {
+				showError(err);
 			}
-			function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
-				return shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight);
-			}
-			function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
-				if (!existingTurn) return incomingTurn;
-				if (!incomingTurn) return existingTurn;
-				const existingItems = Array.isArray(existingTurn.items) ? existingTurn.items : [];
-				const incomingHasItems = Array.isArray(incomingTurn.items);
-				const merged = Object.assign({}, existingTurn, incomingTurn);
-				if (!incomingHasItems) {
-					merged.items = existingItems;
-					return merged;
+		}
+		async function replyTaskCard(cardId, options = {}) {
+			const threadId = String(options.threadId || state.currentThreadId || "").trim();
+			const card = findThreadTaskCard(cardId, threadId);
+			if (!card) return;
+			const body = await requestAppTextInput("输入回复内容。", "", {
+				title: "回复任务卡片",
+				confirmLabel: "发送回复",
+				rows: 6
+			}) || "";
+			if (!String(body).trim()) return;
+			const title = `Reply: ${card.message && card.message.title ? card.message.title : "Task card"}`;
+			return mutateThreadTaskCard(card.id, "reply", {
+				format: "markdown",
+				title,
+				summary: summarizeTaskCardText(body),
+				body: String(body).trim(),
+				idempotencyKey: `task-card-reply:${card.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`
+			}, { threadId });
+		}
+		function findThreadTaskCardDraftByKey(draftKey, thread = renderContextThread()) {
+			const key = String(draftKey || "");
+			const sourceThread = renderContextThread(thread) || state.currentThread;
+			const turns = Array.isArray(sourceThread && sourceThread.turns) ? sourceThread.turns : [];
+			for (const turn of turns) {
+				const items = Array.isArray(turn && turn.items) ? turn.items : [];
+				for (const item of items) {
+					if (!item || item.type !== "agentMessage" && item.type !== "plan") continue;
+					const draft = parseThreadTaskCardDraftText(item.text || "");
+					if (!draft) continue;
+					const itemKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
+					const legacyItemKey = threadTaskCardDraftKey(turn.id, item.id || "");
+					if (itemKey !== key && legacyItemKey !== key) continue;
+					return {
+						key,
+						draft,
+						turn,
+						item,
+						sourceThread
+					};
 				}
-				const incomingWeight = turnVisibleWeight(Object.assign({}, incomingTurn, { items: incomingTurn.items || [] }));
-				const existingWeight = turnVisibleWeight(existingTurn);
-				const preserveLocalVisible = incomingWeight < existingWeight || shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
-				merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible, incomingTurn);
-				return merged;
 			}
-			function mergeThreadPreservingVisibleItems(existingThread, incomingThread, runtime = {}) {
-				if (isV4ProjectionThread(incomingThread)) return mergeV4ProjectionThread(existingThread, incomingThread);
-				if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeMergedThread(incomingThread);
-				const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
-				const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
-				const existingById = new Map(existingTurns.map((turn) => [turn && turn.id, turn]).filter(([id]) => id));
-				const initialSubmissionId = String(existingThread.mobileInitialSubmissionId || "");
-				const merged = Object.assign({}, existingThread, incomingThread);
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
-				if (!incomingTurns) return normalizeMergedThread(merged);
-				const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-				const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-				const incomingHasAuthoritativeVisibleWindow = incomingTurns.length > 0 && incomingVisibleWeight > 0;
-				if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
-					merged.turns = existingTurns;
-					return normalizeMergedThread(merged);
+			return null;
+		}
+		function scheduleThreadTaskCardDraftStateRender(threadId = "") {
+			const id = String(threadId || state.currentThreadId || "").trim();
+			if (!id || id === String(state.currentThreadId || "")) {
+				renderCurrentThread();
+				return true;
+			}
+			if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+				if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) renderCurrentThread();
+				return true;
+			}
+			return false;
+		}
+		function setThreadTaskCardDraftState(draftKey, nextState, options = {}) {
+			const key = String(draftKey || "");
+			if (!key) return;
+			state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}, { updatedAtMs: Date.now() }));
+			saveThreadTaskCardDraftStates();
+			const threadId = String(options.threadId || options.thread && options.thread.id || "").trim();
+			if (options.render !== false) scheduleThreadTaskCardDraftStateRender(threadId);
+		}
+		function dismissThreadTaskCardDraft(draftKey, options = {}) {
+			setThreadTaskCardDraftState(draftKey, {
+				status: "dismissed",
+				error: ""
+			}, options);
+		}
+		function queueThreadTaskCardDraftCreation(draftKey, thread = renderContextThread()) {
+			const key = String(draftKey || "");
+			if (!key || state.scheduledThreadTaskCardDraftCreations.has(key) || state.activeThreadTaskCardDraftCreations.has(key)) return;
+			const sourceThreadId = renderContextThreadId(thread);
+			state.scheduledThreadTaskCardDraftCreations.add(key);
+			const current = threadTaskCardDraftState(key);
+			setThreadTaskCardDraftState(key, {
+				status: "creating",
+				error: "",
+				attempts: Math.max(0, Number(current.attempts || 0)) + 1
+			}, { render: false });
+			window.setTimeout(() => {
+				state.scheduledThreadTaskCardDraftCreations.delete(key);
+				createThreadTaskCardDraft(key, { threadId: sourceThreadId }).catch(showError);
+			}, 0);
+		}
+		async function createThreadTaskCardDraft(draftKey, options = {}) {
+			const activeKey = String(draftKey || "");
+			if (!activeKey || state.activeThreadTaskCardDraftCreations.has(activeKey)) return;
+			state.activeThreadTaskCardDraftCreations.add(activeKey);
+			const requestedThreadId = String(options.threadId || "").trim();
+			try {
+				const requestedThread = taskCardActionThread(requestedThreadId);
+				const resolved = findThreadTaskCardDraftByKey(draftKey, requestedThread);
+				const sourceThread = resolved && (resolved.sourceThread || requestedThread || state.currentThread);
+				const sourceThreadId = String(sourceThread && sourceThread.id || requestedThreadId || "").trim();
+				if (!resolved || !sourceThreadId || !sourceThread) {
+					setThreadTaskCardDraftState(draftKey, {
+						status: "pending",
+						error: ""
+					}, { render: false });
+					return;
 				}
-				merged.turns = incomingTurns.map((incomingTurn) => {
-					const existingTurn = existingById.get(incomingTurn && incomingTurn.id);
-					return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
+				const { draft, turn } = resolved;
+				const targetRefs = threadTaskCardDraftTargetThreads(draft);
+				const targetThreadIds = threadTaskCardDraftTargetIds(draft);
+				if (!targetThreadIds.length) {
+					setThreadTaskCardDraftState(draftKey, {
+						status: "failed",
+						error: draft.error || "Draft did not include a target thread id"
+					}, { threadId: sourceThreadId });
+					return;
+				}
+				if (!draft.title || !draft.body) {
+					setThreadTaskCardDraftState(draftKey, {
+						status: "failed",
+						error: draft.error || "Draft is incomplete"
+					}, { threadId: sourceThreadId });
+					return;
+				}
+				setThreadTaskCardDraftState(draftKey, {
+					status: "creating",
+					error: ""
+				}, { threadId: sourceThreadId });
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = "Creating task card";
+				const body = truncateThreadTaskCardBody(draft.body);
+				const targetWorkspaceIds = {};
+				for (const entry of targetRefs) if (entry.thread) targetWorkspaceIds[entry.threadId] = String(entry.thread.cwd || "");
+				const result = await api("/api/thread-task-cards", {
+					method: "POST",
+					body: JSON.stringify({
+						sourceWorkspaceId: sourceThread.cwd || state.selectedCwd || "",
+						sourceThreadId,
+						sourceTurnId: String(turn && turn.id || ""),
+						sourceThreadTitle: threadTitleForDisplay(sourceThread) || sourceThreadId,
+						targetThreadIds,
+						targetWorkspaceIds,
+						idempotencyKey: `task-card-draft:${sourceThreadId}:${draftKey}`,
+						format: "markdown",
+						title: draft.title,
+						summary: draft.summary || summarizeTaskCardText(body),
+						body,
+						workflowMode: draft.workflowMode || "manual",
+						workflowId: draft.workflowId || ""
+					}),
+					timeoutMs: 3e4
 				});
-				merged.turns = sortTurnsForDisplay(merged.turns);
-				const incomingIds = new Set(merged.turns.map((turn) => turn && turn.id).filter(Boolean));
-				const latestIncoming = merged.turns.length ? merged.turns[merged.turns.length - 1] : null;
-				const preserveExpandedHistory = Boolean(existingThread.mobileHistoryExpanded) && (/turns-list/i.test(String(incomingThread.mobileReadMode || "")) || Boolean(incomingThread.mobileOlderTurnsCursor) || Number(incomingThread.mobileOmittedTurnCount || 0) > 0);
-				let preservedExpandedTurnCount = 0;
-				const activeTurnId = String(runtime.activeTurnId || "");
-				for (const existingTurn of existingTurns) {
-					if (!existingTurn || incomingIds.has(existingTurn.id)) continue;
-					if (shouldDropInitialSubmissionEchoTurn(existingTurn, merged.turns, initialSubmissionId)) continue;
-					if (preserveExpandedHistory) {
-						merged.turns.push(existingTurn);
-						preservedExpandedTurnCount += 1;
-						continue;
+				const createdCards = Array.isArray(result && result.cards) ? result.cards.filter(Boolean) : result && result.card ? [result.card] : [];
+				if (!createdCards.length) throw new Error("Task card creation returned no cards");
+				for (const createdCard of createdCards) {
+					const pending = String(createdCard && createdCard.status || "pending") === "pending";
+					upsertThreadTaskCardOnThread(sourceThread, createdCard);
+					if (pending) {
+						incrementPendingOutgoingTaskCardCount(sourceThreadId, 1);
+						incrementPendingIncomingTaskCardCount(createdCard && createdCard.target && createdCard.target.threadId, 1);
 					}
-					if (incomingHasAuthoritativeVisibleWindow && !shouldPreserveMissingExistingTurn(existingTurn, merged, runtime)) continue;
-					if (turnIsSupersededBy(existingTurn, latestIncoming)) continue;
-					if (String(existingTurn.id || "") === activeTurnId || !isTurnComplete(existingTurn) && turnVisibleWeight(existingTurn) > 0) merged.turns.push(existingTurn);
 				}
-				if (preserveExpandedHistory) {
-					merged.mobileHistoryExpanded = true;
-					if (preservedExpandedTurnCount > 0) merged.mobileOmittedTurnCount = Math.max(0, Number(merged.mobileOmittedTurnCount || 0) - preservedExpandedTurnCount);
-				}
-				const normalized = normalizeMergedThread(merged, preserveExpandedHistory ? maxExpandedVisibleTurns : 0);
-				if (!threadHasInitialSubmissionEcho(normalized, initialSubmissionId)) delete normalized.mobileInitialSubmissionId;
-				return normalized;
+				if (state.threadTileDetails.has(sourceThreadId)) state.threadTileDetails.set(sourceThreadId, sourceThread);
+				setThreadTaskCardDraftState(draftKey, {
+					status: "created",
+					error: "",
+					cardId: String(createdCards[0] && createdCards[0].id || ""),
+					cardIds: createdCards.map((card) => String(card && card.id || "")).filter(Boolean)
+				}, { threadId: sourceThreadId });
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = createdCards.length === 1 ? "Task card created; opening target thread" : `Task cards created: ${createdCards.length}`;
+				state.pendingPluginRouteHint = createdCards.length === 1 ? normalizePluginRouteHint({
+					pluginId: "codex-mobile",
+					route: "thread-task-card",
+					threadId: createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0],
+					taskId: createdCards[0].id
+				}) : null;
+				recordHomeAiDiagnosticSuccess({
+					category: "task_card_workflow_failed",
+					diagnostic_type: "task_card_draft_materialize_failed",
+					error_code: "task_card_draft_materialize_failed",
+					context: {
+						surface: "task-card",
+						action: "draft-materialize",
+						thread_hash: diagnosticThreadHash(sourceThreadId),
+						item_hash: diagnosticItemHash(draftKey)
+					}
+				});
+				renderThreads();
+				loadThreads({ silent: true }).catch(showError);
+				if (createdCards.length === 1) await loadThread(createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0], { source: "task-card-created" });
+				else if (sourceThreadId === String(state.currentThreadId || "")) renderCurrentThread();
+				else if (state.threadTileMode && threadTilePaneIsVisible(sourceThreadId)) scheduleRenderThreadTilePane(sourceThreadId, { preserveScroll: true });
+				else renderCurrentThread();
+			} catch (err) {
+				const diagnosticThreadId = String(options.threadId || state.currentThreadId || "").trim();
+				setThreadTaskCardDraftState(draftKey, {
+					status: "failed",
+					error: normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Task card creation failed"
+				}, { threadId: diagnosticThreadId });
+				recordHomeAiDiagnosticFailure({
+					category: "task_card_workflow_failed",
+					diagnostic_type: "task_card_draft_materialize_failed",
+					severity_hint: "H2",
+					evidence_confidence: .78,
+					error_code: diagnosticErrorCode(err, "task_card_draft_materialize_failed"),
+					context: {
+						surface: "task-card",
+						action: "draft-materialize",
+						thread_hash: diagnosticThreadHash(diagnosticThreadId),
+						item_hash: diagnosticItemHash(draftKey)
+					},
+					counts: { status_code: diagnosticErrorStatus(err) },
+					breadcrumbs: [{
+						kind: "task-card",
+						code: "draft-materialize",
+						status: "failed",
+						fields: {
+							status_code: diagnosticErrorStatus(err),
+							item_hash: diagnosticItemHash(draftKey)
+						}
+					}]
+				});
+				throw err;
+			} finally {
+				state.activeThreadTaskCardDraftCreations.delete(activeKey);
 			}
+		}
+		function createComposerBridgeRuntime() {
 			return {
-				mergeThreadPreservingVisibleItems,
-				mergeTurnPreservingVisibleItems,
-				shouldPreserveLiveTurnLocalVisibleItems
+				sendMessage: typeof sendMessage === "function" ? sendMessage : null,
+				sendNewThreadMessage: typeof sendNewThreadMessage === "function" ? sendNewThreadMessage : null,
+				answerServerRequest: typeof answerServerRequest === "function" ? answerServerRequest : null,
+				answerApproval: typeof answerApproval === "function" ? answerApproval : null,
+				declineServerRequest: typeof declineServerRequest === "function" ? declineServerRequest : null,
+				mutateThreadTaskCard: typeof mutateThreadTaskCard === "function" ? mutateThreadTaskCard : null,
+				replyTaskCard: typeof replyTaskCard === "function" ? replyTaskCard : null,
+				queueThreadTaskCardDraftCreation: typeof queueThreadTaskCardDraftCreation === "function" ? queueThreadTaskCardDraftCreation : null,
+				createThreadTaskCardDraft: typeof createThreadTaskCardDraft === "function" ? createThreadTaskCardDraft : null
 			};
 		}
-		return { createThreadDetailMergePolicy };
-	});
+		const legacyGlobals = {
+			updateComposerHeightVar,
+			showError,
+			clearSendProgressWatchdog,
+			startSendProgressWatchdog,
+			finishSendProgressWatchdog,
+			threadNotificationThrottleKey,
+			shouldThrottleThreadNotification,
+			normalizeClientErrorMessage,
+			rawMessageFallback,
+			composerText,
+			setComposerText,
+			placeMessageInputCaretAtEnd,
+			focusMessageInput,
+			messageInputKeyboardVisible,
+			shouldRecoverMessageInputKeyboard,
+			recoverMessageInputKeyboardFromGesture,
+			messageInputCanEnableForNativeGesture,
+			releaseStaleAndroidMessageInputFocusBeforeNativeTap,
+			prepareMessageInputForNativeGesture,
+			normalizedComposerIntentText,
+			composerIntentOptions,
+			composerIntentOption,
+			composerIntentDraftKey,
+			loadComposerIntentDraft,
+			saveComposerIntentDraft,
+			composerIntentBareTagKind,
+			shouldShowComposerIntentMenu,
+			closeComposerIntentMenu,
+			onComposerIntentOutsidePointer,
+			openComposerIntentMenu,
+			positionComposerIntentMenu,
+			updateComposerIntentMenu,
+			queueComposerIntentMenuUpdate,
+			selectComposerIntent,
+			setComposerIntentDialogStatus,
+			closeComposerIntentDialog,
+			openComposerIntentDialog,
+			submitComposerIntentDialog,
+			saveComposerIntentDialogDraft,
+			shouldKeepAndroidMessageInputEditable,
+			setMessageInputDisabled,
+			messageInputTextLength,
+			messageInputTargetHeight,
+			currentMessageInputHeight,
+			updateMessageInputOverflow,
+			autoSizeMessageInput,
+			formatFileSize,
+			appendLocalAttachmentSummary,
+			localImageInputPartsForAttachments,
+			localUserMessageItem,
+			attachmentId,
+			pendingAttachmentBytes,
+			prepareAttachmentFile,
+			prepareAttachmentFiles,
+			addAttachmentFiles,
+			removeAttachment,
+			clearPendingAttachments,
+			renderAttachmentList,
+			composerHasContent,
+			effectiveDefaultModel,
+			effectiveDefaultEffort,
+			effectiveDefaultPermissionMode,
+			selectedComposerModel,
+			selectedComposerEffort,
+			selectedComposerPermissionMode,
+			resetComposerRuntimeSelection,
+			runtimeOptionValues,
+			runtimeOptionLabel,
+			runtimeSelectedValue,
+			codexFastCommandEnabled,
+			clearLegacyCodexFastModeStorage,
+			setCodexFastCommandEnabled,
+			applyRuntimeSelection,
+			closeComposerRuntimeMenu,
+			onComposerRuntimeOutsidePointer,
+			openComposerRuntimeMenu,
+			composerRuntimeMenuDiagnostics,
+			reportComposerRuntimeMenu,
+			handleComposerRuntimeControl,
+			fitComposerPopupToAnchor,
+			closeQuotaDetails,
+			onQuotaOutsidePointer,
+			toggleQuotaDetails,
+			composerPlaceholderText,
+			composerShowsTargetPlaceholder,
+			applyComposerActionControlPlan,
+			renderComposerSettings,
+			updateComposerControls,
+			hasTransferFiles,
+			goalDialogFormValues,
+			submitThreadGoalMessage,
+			threadGoalActionStatusText,
+			threadGoalActionBusyText,
+			runThreadGoalDialogAction,
+			requestGoalDialogSubmitFromEnter,
+			requestGoalDialogSubmitFromButton,
+			requestGoalDialogSubmit,
+			sendThreadTaskCardCommand,
+			sendMessage,
+			sendNewThreadMessage,
+			requestComposerSubmitFromButton,
+			requestAttachmentPickerFromButton,
+			interruptActiveTurn,
+			answerServerRequest,
+			answerApproval,
+			serverRequestPayload,
+			declineServerRequest,
+			mutateThreadTaskCard,
+			replyTaskCard,
+			findThreadTaskCardDraftByKey,
+			scheduleThreadTaskCardDraftStateRender,
+			setThreadTaskCardDraftState,
+			dismissThreadTaskCardDraft,
+			queueThreadTaskCardDraftCreation,
+			createThreadTaskCardDraft
+		};
+		const api = { createComposerBridgeRuntime };
+		if (typeof module === "object" && module.exports) module.exports = api;
+		for (const [name, value] of Object.entries(legacyGlobals)) if (typeof value === "function") root[name] = value;
+		root.CodexComposerBridgeRuntime = api;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
 //#region \0virtual:codex-mobile-esm-compatibility/shard/shard-01
@@ -5211,12 +5180,7 @@ var import_thread_diagnostic_events = /* @__PURE__ */ __toESM(require_thread_dia
 var import_thread_tile_layout = /* @__PURE__ */ __toESM(require_thread_tile_layout());
 var import_thread_tile_actions = /* @__PURE__ */ __toESM(require_thread_tile_actions());
 var import_modal_runtime = /* @__PURE__ */ __toESM(require_modal_runtime());
-var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
-var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
-var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
-var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_detail_patch_plan());
-var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
-var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
+var import_composer_bridge_runtime = /* @__PURE__ */ __toESM(require_composer_bridge_runtime());
 var moduleDefinitions = [
 	{
 		"id": "build-refresh-policy",
@@ -5480,72 +5444,13 @@ var moduleDefinitions = [
 		"bytes": 12049
 	},
 	{
-		"id": "thread-list-load-policy",
-		"source": "public/thread-list-load-policy.js",
-		"globalName": "CodexThreadListLoadPolicy",
-		"expectedFunctions": ["planThreadListLoadRequest"],
-		"assetPath": "/thread-list-load-policy.js",
+		"id": "composer-bridge-runtime",
+		"source": "public/composer-bridge-runtime.js",
+		"globalName": "CodexComposerBridgeRuntime",
+		"expectedFunctions": ["createComposerBridgeRuntime"],
+		"assetPath": "/composer-bridge-runtime.js",
 		"classicLoaderExcluded": true,
-		"bytes": 2160
-	},
-	{
-		"id": "thread-list-stable-order",
-		"source": "public/thread-list-stable-order.js",
-		"globalName": "CodexThreadListStableOrder",
-		"expectedFunctions": ["threadListOrderScopeKey", "planThreadListStableOrder"],
-		"assetPath": "/thread-list-stable-order.js",
-		"classicLoaderExcluded": true,
-		"bytes": 3327
-	},
-	{
-		"id": "thread-status-hints",
-		"source": "public/thread-status-hints.js",
-		"globalName": "CodexThreadStatusHints",
-		"expectedFunctions": [
-			"isRunningStatus",
-			"shouldExpireRunningThreadHint",
-			"shouldMarkThreadUnread"
-		],
-		"assetPath": "/thread-status-hints.js",
-		"classicLoaderExcluded": true,
-		"bytes": 9883
-	},
-	{
-		"id": "thread-detail-patch-plan",
-		"source": "public/thread-detail-patch-plan.js",
-		"globalName": "CodexThreadDetailPatchPlan",
-		"expectedFunctions": [
-			"planThreadDetailDomPatchSurface",
-			"planThreadDetailRefreshDomPatch",
-			"planVisibleItemRefreshPatch"
-		],
-		"assetPath": "/thread-detail-patch-plan.js",
-		"classicLoaderExcluded": true,
-		"bytes": 8310
-	},
-	{
-		"id": "thread-detail-actions",
-		"source": "public/thread-detail-actions.js",
-		"globalName": "CodexThreadDetailActions",
-		"expectedFunctions": [
-			"closestWithin",
-			"contextThreadIdFromNode",
-			"previewableImageFromTarget",
-			"resolveRichContentClickAction",
-			"resolveThreadDetailClickAction"
-		],
-		"assetPath": "/thread-detail-actions.js",
-		"classicLoaderExcluded": true,
-		"bytes": 5362
-	},
-	{
-		"id": "thread-detail-merge-state",
-		"source": "public/thread-detail-merge-state.js",
-		"globalName": "CodexThreadDetailMergeState",
-		"expectedFunctions": ["createThreadDetailMergePolicy"],
-		"assetPath": "/thread-detail-merge-state.js",
-		"classicLoaderExcluded": true,
-		"bytes": 8461
+		"bytes": 32086
 	}
 ];
 var moduleApis = {
@@ -5565,12 +5470,7 @@ var moduleApis = {
 	"thread-tile-layout": import_thread_tile_layout.default,
 	"thread-tile-actions": import_thread_tile_actions.default,
 	"modal-runtime": import_modal_runtime.default,
-	"thread-list-load-policy": import_thread_list_load_policy.default,
-	"thread-list-stable-order": import_thread_list_stable_order.default,
-	"thread-status-hints": import_thread_status_hints.default,
-	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
-	"thread-detail-actions": import_thread_detail_actions.default,
-	"thread-detail-merge-state": import_thread_detail_merge_state.default
+	"composer-bridge-runtime": import_composer_bridge_runtime.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");
