@@ -25,6 +25,8 @@ test("builds a Hermes embedded-app plugin manifest", () => {
   assert.equal(manifest.id, "codex-mobile");
   assert.equal(manifest.kind, "embedded_app");
   assert.equal(manifest.entry.url, "https://codex.example.test:8443/?embed=hermes");
+  assert.equal(manifest.embedding.refreshOnVersionChange, true);
+  assert.equal(manifest.embed.refreshOnVersionChange, true);
   assert.equal(manifest.program_api.plugin_manifest, "/api/v1/hermes/plugin/manifest");
   assert.equal(manifest.program_api.workspace_registration, "/api/v1/hermes/plugin/workspaces");
   assert.equal(manifest.program_api.callback_registration, "/api/v1/hermes/plugin/callbacks");
@@ -56,6 +58,34 @@ test("builds a Hermes embedded-app plugin manifest", () => {
   assert.deepEqual(manifest.notifications.detail_message_formats, ["markdown", "text"]);
   assert.equal(manifest.notifications.raw_sensitive_material_returned, false);
   assert.deepEqual(manifest.frame_embedding.frame_ancestors, ["'self'"]);
+  assert.doesNotMatch(JSON.stringify(manifest), /access_key_file|config_file|Bearer|secret|push_endpoint|C:\\Users|\.codex-mobile-web[\\/]/i);
+});
+
+test("manifest advertises build identity for host resident-frame refresh", () => {
+  const service = createHermesPluginService({ version: "0.1.11" });
+  const manifest = service.manifest({
+    baseUrl: "https://codex.example.test:8443",
+    buildId: "build-test",
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-a5a3d596240d",
+    shellCacheName: "codex-mobile-shell-v625-a5a3d596240d",
+  });
+
+  assert.equal(
+    manifest.entry.url,
+    "https://codex.example.test:8443/?embed=hermes&codexMobileBuild=0.1.11%7Ccodex-mobile-shell-v625-a5a3d596240d",
+  );
+  assert.equal(manifest.entry.required_query.embed, "hermes");
+  assert.equal(manifest.entry.required_query.codexMobileBuild, "0.1.11|codex-mobile-shell-v625-a5a3d596240d");
+  assert.equal(manifest.buildId, "build-test");
+  assert.equal(manifest.clientBuildId, "0.1.11|codex-mobile-shell-v625-a5a3d596240d");
+  assert.equal(manifest.shellCacheName, "codex-mobile-shell-v625-a5a3d596240d");
+  assert.equal(manifest.build.identity, "0.1.11|codex-mobile-shell-v625-a5a3d596240d");
+  assert.equal(manifest.embedding.refreshOnVersionChange, true);
+  assert.equal(manifest.embedding.version, "0.1.11|codex-mobile-shell-v625-a5a3d596240d");
+  assert.equal(manifest.embedding.entryQueryParam, "codexMobileBuild");
+  assert.equal(manifest.embed.refreshOnVersionChange, true);
+  assert.equal(manifest.embed.version, "0.1.11|codex-mobile-shell-v625-a5a3d596240d");
+  assert.equal(manifest.embed.entryQueryParam, "codexMobileBuild");
   assert.doesNotMatch(JSON.stringify(manifest), /access_key_file|config_file|Bearer|secret|push_endpoint|C:\\Users|\.codex-mobile-web[\\/]/i);
 });
 

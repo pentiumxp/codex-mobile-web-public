@@ -111,6 +111,59 @@ test("core public config route uses injected runtime dependencies", async () => 
   assert.equal(sent.body.threadListFallbackPrewarm.pending, false);
 });
 
+test("core Hermes plugin manifest route forwards runtime build identity", async () => {
+  let capturedManifestInput = null;
+  let sent = null;
+  const service = createCoreApiRouteService({
+    appVersion: "0.1.11",
+    currentPublicBuildConfig: () => ({
+      buildId: "build-route",
+      clientBuildId: "client-route",
+      shellCacheName: "shell-route",
+    }),
+    hermesOriginFromRequest: () => "https://home.example.test",
+    hermesPluginBaseUrl: "https://codex.example.test",
+    hermesPluginService: {
+      manifest: (input) => {
+        capturedManifestInput = input;
+        return {
+          id: "codex-mobile",
+          clientBuildId: input.clientBuildId,
+          entry: {
+            url: `${input.baseUrl}/?embed=hermes&codexMobileBuild=${encodeURIComponent(input.clientBuildId)}`,
+          },
+          embedding: {
+            refreshOnVersionChange: true,
+            version: input.clientBuildId,
+          },
+        };
+      },
+    },
+    requestBaseUrl: () => "http://127.0.0.1:8787",
+  });
+
+  const handled = await service.handlePublicRoute({
+    url: new URL("http://127.0.0.1:8787/api/v1/hermes/plugin/manifest"),
+    req: { method: "GET", headers: {} },
+    res: {},
+    readBody: async () => ({}),
+    sendJson: (status, body) => {
+      sent = { status, body };
+    },
+  });
+
+  assert.deepEqual(handled, { handled: true });
+  assert.equal(sent.status, 200);
+  assert.equal(capturedManifestInput.baseUrl, "https://codex.example.test");
+  assert.equal(capturedManifestInput.hermesOrigin, "https://home.example.test");
+  assert.equal(capturedManifestInput.version, "0.1.11");
+  assert.equal(capturedManifestInput.buildId, "build-route");
+  assert.equal(capturedManifestInput.clientBuildId, "client-route");
+  assert.equal(capturedManifestInput.shellCacheName, "shell-route");
+  assert.equal(sent.body.clientBuildId, "client-route");
+  assert.equal(sent.body.embedding.refreshOnVersionChange, true);
+});
+
 test("core authorized route exposes bounded Vite shell artifact readback", async () => {
   let sent = null;
   const service = createCoreApiRouteService({

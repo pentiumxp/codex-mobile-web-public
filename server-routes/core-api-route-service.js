@@ -92,10 +92,16 @@ function createCoreApiRouteService(deps = {}) {
     const { url, req, res, readBody, sendJson } = context;
     if (!url || !req || !res) return { handled: false };
     if (url.pathname === "/api/v1/hermes/plugin/manifest" && req.method === "GET") {
+      const buildConfig = typeof deps.currentPublicBuildConfig === "function"
+        ? deps.currentPublicBuildConfig()
+        : {};
       sendJson(200, hermesPluginService.manifest({
         baseUrl: hermesPluginBaseUrl || requestBaseUrl(req),
         hermesOrigin: hermesOriginFromRequest(req, url),
         version: appVersion,
+        buildId: buildConfig.buildId,
+        clientBuildId: buildConfig.clientBuildId,
+        shellCacheName: buildConfig.shellCacheName,
       }));
       return { handled: true };
     }

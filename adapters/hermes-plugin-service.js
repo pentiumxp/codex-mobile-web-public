@@ -84,6 +84,27 @@ function joinUrl(baseUrl, targetPath) {
   return new URL(targetPath, `${base}/`).toString();
 }
 
+function appendQueryParam(url, key, value) {
+  const text = stringValue(url);
+  const param = stringValue(key);
+  const paramValue = stringValue(value);
+  if (!text || !param || !paramValue) return text;
+  const joiner = text.includes("?") ? "&" : "?";
+  return `${text}${joiner}${encodeURIComponent(param)}=${encodeURIComponent(paramValue)}`;
+}
+
+function manifestBuildIdentity(input = {}, options = {}) {
+  const buildId = stringValue(input.buildId || options.buildId);
+  const clientBuildId = stringValue(input.clientBuildId || options.clientBuildId);
+  const shellCacheName = stringValue(input.shellCacheName || options.shellCacheName);
+  return {
+    buildId,
+    clientBuildId,
+    shellCacheName,
+    identity: clientBuildId || shellCacheName || buildId,
+  };
+}
+
 function callbackUrlFromBody(body = {}) {
   return body.hermes_callback_url
     || body.hermesCallbackUrl
@@ -314,7 +335,9 @@ function createHermesPluginService(options = {}) {
   function manifest(input = {}) {
     const baseUrl = normalizeBaseUrl(input.baseUrl || options.baseUrl || "");
     const version = stringValue(input.version || options.version);
-    const entryUrl = joinUrl(baseUrl, "/?embed=hermes");
+    const buildIdentity = manifestBuildIdentity(input, options);
+    const entryUrl = appendQueryParam(joinUrl(baseUrl, "/?embed=hermes"), "codexMobileBuild", buildIdentity.identity);
+    const manifestVersion = buildIdentity.identity || version;
     const origins = registeredOrigins();
     return {
       id: pluginId,
@@ -322,11 +345,39 @@ function createHermesPluginService(options = {}) {
       description: "Authenticated Codex Mobile Web embedded in Hermes Mobile as an independent plugin.",
       kind: "embedded_app",
       version,
+      buildId: buildIdentity.buildId,
+      clientBuildId: buildIdentity.clientBuildId,
+      shellCacheName: buildIdentity.shellCacheName,
+      build: {
+        buildId: buildIdentity.buildId,
+        clientBuildId: buildIdentity.clientBuildId,
+        shellCacheName: buildIdentity.shellCacheName,
+        identity: buildIdentity.identity,
+      },
       entry: {
         type: "web",
         url: entryUrl,
         frame_policy: "csp_frame_ancestors",
-        required_query: { embed: "hermes" },
+        required_query: Object.assign(
+          { embed: "hermes" },
+          buildIdentity.identity ? { codexMobileBuild: buildIdentity.identity } : {},
+        ),
+      },
+      embedding: {
+        refreshOnVersionChange: true,
+        version: manifestVersion,
+        buildId: buildIdentity.buildId,
+        clientBuildId: buildIdentity.clientBuildId,
+        shellCacheName: buildIdentity.shellCacheName,
+        entryQueryParam: buildIdentity.identity ? "codexMobileBuild" : "",
+      },
+      embed: {
+        refreshOnVersionChange: true,
+        version: manifestVersion,
+        buildId: buildIdentity.buildId,
+        clientBuildId: buildIdentity.clientBuildId,
+        shellCacheName: buildIdentity.shellCacheName,
+        entryQueryParam: buildIdentity.identity ? "codexMobileBuild" : "",
       },
       program_api: {
         base_url: baseUrl,
