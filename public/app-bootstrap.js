@@ -593,12 +593,22 @@ if (typeof initializeRestartAutoRecoverThreads === "function") {
 var threadDetailRuntime = null;
 var appUpdateRuntime = null;
 
+function appBootstrapGlobalRoot() {
+  return typeof globalThis !== "undefined" ? globalThis : window;
+}
+
 function requireThreadDetailRuntime() {
+  if (!threadDetailRuntime) {
+    const root = appBootstrapGlobalRoot();
+    threadDetailRuntime = root && root.threadDetailRuntime || null;
+  }
   if (!threadDetailRuntime) throw new Error("CodexThreadDetailRuntime is not initialized");
   return threadDetailRuntime;
 }
 
 function requireAppUpdateRuntime() {
+  const root = appBootstrapGlobalRoot();
+  if (!appUpdateRuntime && root && root.appUpdateRuntime) appUpdateRuntime = root.appUpdateRuntime;
   if (!appUpdateRuntime) {
     appUpdateRuntime = appUpdateRuntimeApi.createAppUpdateRuntime({
       state,
@@ -651,6 +661,7 @@ function requireAppUpdateRuntime() {
       stopCodexProfileSwitchProgressPolling,
       publishPluginNavigationState,
     });
+    if (root) root.appUpdateRuntime = appUpdateRuntime;
   }
   return appUpdateRuntime;
 }
@@ -971,6 +982,7 @@ function classicGlobalBindingNamesFromManifest() {
     module.exports = appBootstrapApi;
   }
   Object.assign(root, {
+    "CodexAppBootstrap": appBootstrapApi,
     "readShellManifest": readShellManifest,
     "shellManifestList": shellManifestList,
     "initialPluginLaunchKeyFromUrl": initialPluginLaunchKeyFromUrl,
@@ -1144,6 +1156,10 @@ function classicGlobalBindingNamesFromManifest() {
     "conversationScroll": conversationScroll,
     "imageCompressor": imageCompressor,
     "draftStore": draftStore,
+    "classicGlobalBindingNamesFromManifest": classicGlobalBindingNamesFromManifest,
+    "appBootstrapGlobalRoot": appBootstrapGlobalRoot,
+    "fetchJsonWithTimeout": fetchJsonWithTimeout,
+    "installClassicGlobalBindings": installClassicGlobalBindings,
     "createAppBootstrapRuntime": createAppBootstrapRuntime,
   });
   installClassicGlobalBindings(root, classicGlobalBindingNamesFromManifest().concat([

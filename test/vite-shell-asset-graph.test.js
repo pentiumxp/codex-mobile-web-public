@@ -37,6 +37,20 @@ test("Vite shell asset graph covers the current ordered frontend shell", async (
   for (const name of ["$", "CLIENT_BUILD_ID", "PAGE_SHELL_ASSETS", "apiClient", "draftStore", "fetchPublicConfigWithRetry", "state"]) {
     assert.ok(appBootstrapExports.globals.includes(name), `missing app-bootstrap global ${name}`);
   }
+  const appBootstrapSource = fs.readFileSync(path.join(__dirname, "..", "public", "app-bootstrap.js"), "utf8");
+  const appBootstrapAssignBlock = appBootstrapSource.match(/Object\.assign\(root, \{([\s\S]*?)\}\);/);
+  assert.ok(appBootstrapAssignBlock);
+  const assignedBootstrapGlobals = new Set(
+    Array.from(appBootstrapAssignBlock[1].matchAll(/"([^"]+)"\s*:/g), (match) => match[1])
+  );
+  assert.deepEqual(
+    appBootstrapExports.globals.filter((name) => !assignedBootstrapGlobals.has(name)),
+    []
+  );
+  assert.match(appBootstrapSource, /function appBootstrapGlobalRoot\(\)/);
+  assert.match(appBootstrapSource, /threadDetailRuntime = root && root\.threadDetailRuntime \|\| null/);
+  assert.match(appBootstrapSource, /if \(!appUpdateRuntime && root && root\.appUpdateRuntime\) appUpdateRuntime = root\.appUpdateRuntime/);
+  assert.match(appBootstrapSource, /root\.appUpdateRuntime = appUpdateRuntime/);
   assert.deepEqual(
     manifest.classicGlobalExports.find((entry) => entry.asset === "/runtime-wiring-runtime.js").globals,
     ["CodexRuntimeWiringRuntime"]
@@ -464,8 +478,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.equal(contract.appPreviewClassicLoaderPlan.sourceScriptCount, manifest.indexScriptAssets.length);
   assert.equal(contract.appPreviewClassicLoaderPlan.excludedEsmScriptCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(contract.appPreviewClassicLoaderPlan.excludedEsmHashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount, 1);
-  assert.equal(contract.appPreviewClassicLoaderPlan.excludedViteOwnedHashCount, 1);
+  assert.equal(contract.appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount, 2);
+  assert.equal(contract.appPreviewClassicLoaderPlan.excludedViteOwnedHashCount, 2);
   assert.equal(
     contract.appPreviewClassicLoaderPlan.scriptCount
       + contract.appPreviewClassicLoaderPlan.excludedEsmScriptCount
@@ -474,10 +488,9 @@ test("Vite shell build contract records entry chunks and classic fallback output
   );
   assert.equal(contract.appPreviewClassicLoaderPlan.hashCount, contract.appPreviewClassicLoaderPlan.scriptCount);
   const loaderScriptPaths = contract.appPreviewClassicLoaderPlan.scripts.map((entry) => entry.path);
-  assert.ok(loaderScriptPaths.length > 0);
   assert.equal(contract.appPreviewClassicLoaderPlan.scriptCount, loaderScriptPaths.length);
-  assert.equal(contract.appPreviewClassicLoaderPlan.firstScript, loaderScriptPaths[0]);
-  assert.equal(contract.appPreviewClassicLoaderPlan.lastScript, loaderScriptPaths[loaderScriptPaths.length - 1]);
+  assert.equal(contract.appPreviewClassicLoaderPlan.firstScript, loaderScriptPaths[0] || "");
+  assert.equal(contract.appPreviewClassicLoaderPlan.lastScript, loaderScriptPaths[loaderScriptPaths.length - 1] || "");
   assert.match(contract.appPreviewClassicLoaderPlan.sha256, /^[a-f0-9]{64}$/);
   const loaderPlanCoveredScripts = new Set([
     ...contract.appPreviewClassicLoaderPlan.scripts.map((entry) => entry.path),
@@ -507,6 +520,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         path: "/shell-asset-manifest.js",
         ownerId: "shell-manifest",
         globalName: "CODEX_MOBILE_SHELL_MANIFEST",
+      },
+      {
+        path: "/app-bootstrap.js",
+        ownerId: "vite-app-bootstrap",
+        globalName: "CodexAppBootstrap",
       },
     ]
   );

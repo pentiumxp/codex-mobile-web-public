@@ -284,8 +284,8 @@ var codexMobileViteEntryGroup = {
 			"present": true
 		}
 	],
-	"shellCacheName": "codex-mobile-shell-v625-4413b69774a5",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-4413b69774a5"
+	"shellCacheName": "codex-mobile-shell-v625-2c2f2d0bb4d0",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-2c2f2d0bb4d0"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

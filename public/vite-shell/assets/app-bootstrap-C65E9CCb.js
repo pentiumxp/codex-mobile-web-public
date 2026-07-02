@@ -1,4 +1,4 @@
-import { r as __commonJSMin } from "./vite-shell-entry-Cs-lMKiD.js";
+import { r as __commonJSMin } from "./vite-shell-entry-CKlOYIX3.js";
 //#region public/app-bootstrap.js
 var require_app_bootstrap = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function readShellManifest() {
@@ -558,62 +558,74 @@ var require_app_bootstrap = /* @__PURE__ */ __commonJSMin(((exports, module) => 
 	if (typeof initializeRestartAutoRecoverThreads === "function") initializeRestartAutoRecoverThreads();
 	var threadDetailRuntime = null;
 	var appUpdateRuntime = null;
+	function appBootstrapGlobalRoot() {
+		return typeof globalThis !== "undefined" ? globalThis : window;
+	}
 	function requireThreadDetailRuntime() {
+		if (!threadDetailRuntime) {
+			const root = appBootstrapGlobalRoot();
+			threadDetailRuntime = root && root.threadDetailRuntime || null;
+		}
 		if (!threadDetailRuntime) throw new Error("CodexThreadDetailRuntime is not initialized");
 		return threadDetailRuntime;
 	}
 	function requireAppUpdateRuntime() {
-		if (!appUpdateRuntime) appUpdateRuntime = appUpdateRuntimeApi.createAppUpdateRuntime({
-			state,
-			CLIENT_BUILD_ID,
-			PAGE_REFRESH_CHECK_INTERVAL_MS,
-			PAGE_REFRESH_MIN_CHECK_INTERVAL_MS,
-			PAGE_SHELL_ASSETS,
-			STORAGE_PUBLIC_PR_PROMPT,
-			PUBLIC_PR_REVIEW_THREAD_TITLE,
-			buildRefreshPolicy,
-			$,
-			api,
-			escapeHtml,
-			normalizeFsPath,
-			threadMatchesWorkspaceCwd,
-			loadThreads,
-			loadThread,
-			setComposerText,
-			scheduleCurrentDraftSave,
-			updateComposerControls,
-			composerHasContent,
-			requestAppAlert,
-			requestAppConfirmation,
-			loadWorkspaces,
-			postClientEvent,
-			saveCurrentDraftNow,
-			syncSidebarWorkspaceSelect,
-			updateWorkspacePath,
-			renderWorkspaceTokenUsage,
-			isMenuOverlayMode,
-			closeSidebarMenu,
-			clearCurrentThreadSelection,
-			restoreDraftForCurrentTarget,
-			renderThreads,
-			renderCurrentThread,
-			showError,
-			isRunningStatus,
-			visibleThreads,
-			threadById,
-			shortPath,
-			statusText,
-			saveRestartAutoRecoverThreads,
-			postPerformanceEvent,
-			roundedDurationMs,
-			isHermesEmbedMode,
-			requestHermesPluginRefresh,
-			rememberRateLimitsFromConfig,
-			rememberCodexProfiles,
-			renderCodexProfileSettings,
-			stopCodexProfileSwitchProgressPolling,
-			publishPluginNavigationState
-		});
+		const root = appBootstrapGlobalRoot();
+		if (!appUpdateRuntime && root && root.appUpdateRuntime) appUpdateRuntime = root.appUpdateRuntime;
+		if (!appUpdateRuntime) {
+			appUpdateRuntime = appUpdateRuntimeApi.createAppUpdateRuntime({
+				state,
+				CLIENT_BUILD_ID,
+				PAGE_REFRESH_CHECK_INTERVAL_MS,
+				PAGE_REFRESH_MIN_CHECK_INTERVAL_MS,
+				PAGE_SHELL_ASSETS,
+				STORAGE_PUBLIC_PR_PROMPT,
+				PUBLIC_PR_REVIEW_THREAD_TITLE,
+				buildRefreshPolicy,
+				$,
+				api,
+				escapeHtml,
+				normalizeFsPath,
+				threadMatchesWorkspaceCwd,
+				loadThreads,
+				loadThread,
+				setComposerText,
+				scheduleCurrentDraftSave,
+				updateComposerControls,
+				composerHasContent,
+				requestAppAlert,
+				requestAppConfirmation,
+				loadWorkspaces,
+				postClientEvent,
+				saveCurrentDraftNow,
+				syncSidebarWorkspaceSelect,
+				updateWorkspacePath,
+				renderWorkspaceTokenUsage,
+				isMenuOverlayMode,
+				closeSidebarMenu,
+				clearCurrentThreadSelection,
+				restoreDraftForCurrentTarget,
+				renderThreads,
+				renderCurrentThread,
+				showError,
+				isRunningStatus,
+				visibleThreads,
+				threadById,
+				shortPath,
+				statusText,
+				saveRestartAutoRecoverThreads,
+				postPerformanceEvent,
+				roundedDurationMs,
+				isHermesEmbedMode,
+				requestHermesPluginRefresh,
+				rememberRateLimitsFromConfig,
+				rememberCodexProfiles,
+				renderCodexProfileSettings,
+				stopCodexProfileSwitchProgressPolling,
+				publishPluginNavigationState
+			});
+			if (root) root.appUpdateRuntime = appUpdateRuntime;
+		}
 		return appUpdateRuntime;
 	}
 	var threadListSummaryFromDetailThread = (...args) => requireThreadDetailRuntime().threadListSummaryFromDetailThread(...args);
@@ -954,6 +966,7 @@ var require_app_bootstrap = /* @__PURE__ */ __commonJSMin(((exports, module) => 
 		const appBootstrapApi = { createAppBootstrapRuntime };
 		if (typeof module === "object" && module.exports) module.exports = appBootstrapApi;
 		Object.assign(root, {
+			"CodexAppBootstrap": appBootstrapApi,
 			"readShellManifest": readShellManifest,
 			"shellManifestList": shellManifestList,
 			"initialPluginLaunchKeyFromUrl": initialPluginLaunchKeyFromUrl,
@@ -1127,6 +1140,10 @@ var require_app_bootstrap = /* @__PURE__ */ __commonJSMin(((exports, module) => 
 			"conversationScroll": conversationScroll,
 			"imageCompressor": imageCompressor,
 			"draftStore": draftStore,
+			"classicGlobalBindingNamesFromManifest": classicGlobalBindingNamesFromManifest,
+			"appBootstrapGlobalRoot": appBootstrapGlobalRoot,
+			"fetchJsonWithTimeout": fetchJsonWithTimeout,
+			"installClassicGlobalBindings": installClassicGlobalBindings,
 			"createAppBootstrapRuntime": createAppBootstrapRuntime
 		});
 		installClassicGlobalBindings(root, classicGlobalBindingNamesFromManifest().concat([

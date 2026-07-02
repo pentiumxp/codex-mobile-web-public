@@ -9,11 +9,11 @@ var codexMobileViteEntryGroup = {
 	"classicAssetRecords": [{
 		"path": "/app-bootstrap.js",
 		"sourcePath": "public/app-bootstrap.js",
-		"bytes": 49019,
-		"sha256": "f504b0801b963a03c3b7435924ccc2a6fcd08d4830e10fb4cf9b859341a25840"
+		"bytes": 49762,
+		"sha256": "8b3845b1a3b8232aa987c68ab9469e9a6313edb6d74d9d0e229cdd7d4bc74e5e"
 	}],
 	"classicAssetHashCount": 1,
-	"classicAssetBytes": 49019,
+	"classicAssetBytes": 49762,
 	"classicGlobalExports": [{
 		"asset": "/app-bootstrap.js",
 		"globals": [
@@ -136,6 +136,7 @@ var codexMobileViteEntryGroup = {
 			"THREAD_TILE_USER_MAX_PANES",
 			"USER_INPUT_REQUEST_METHODS",
 			"apiClient",
+			"appBootstrapGlobalRoot",
 			"appUpdateRuntime",
 			"appUpdateRuntimeApi",
 			"buildRefreshPolicy",
@@ -198,7 +199,7 @@ var codexMobileViteEntryGroup = {
 		]
 	}],
 	"classicGlobalExportAssetCount": 1,
-	"classicGlobalExportCount": 178,
+	"classicGlobalExportCount": 179,
 	"startupGlobalContracts": [
 		{
 			"name": "$",
@@ -242,6 +243,14 @@ var codexMobileViteEntryGroup = {
 		},
 		{
 			"name": "apiClient",
+			"asset": "/app-bootstrap.js",
+			"groupId": "bootstrap-state",
+			"startupCritical": true,
+			"source": "app-bootstrap-script-global",
+			"present": true
+		},
+		{
+			"name": "appBootstrapGlobalRoot",
 			"asset": "/app-bootstrap.js",
 			"groupId": "bootstrap-state",
 			"startupCritical": true,
@@ -1617,8 +1626,8 @@ var codexMobileViteEntryGroup = {
 			"present": true
 		}
 	],
-	"shellCacheName": "codex-mobile-shell-v625-4413b69774a5",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-4413b69774a5"
+	"shellCacheName": "codex-mobile-shell-v625-2c2f2d0bb4d0",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-2c2f2d0bb4d0"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

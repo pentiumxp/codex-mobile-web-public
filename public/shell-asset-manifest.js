@@ -4,8 +4,8 @@
   var manifest = {
     "schemaVersion": 4,
     "generatedBy": "generate-frontend-shell-manifest",
-    "shellCacheName": "codex-mobile-shell-v625-4413b69774a5",
-    "clientBuildId": "0.1.11|codex-mobile-shell-v625-4413b69774a5",
+    "shellCacheName": "codex-mobile-shell-v625-2c2f2d0bb4d0",
+    "clientBuildId": "0.1.11|codex-mobile-shell-v625-2c2f2d0bb4d0",
     "scriptAssets": [
       "/shell-asset-manifest.js",
       "/api-client.js",
@@ -499,6 +499,7 @@
           "THREAD_TILE_USER_MAX_PANES",
           "USER_INPUT_REQUEST_METHODS",
           "apiClient",
+          "appBootstrapGlobalRoot",
           "appUpdateRuntime",
           "appUpdateRuntimeApi",
           "buildRefreshPolicy",
@@ -682,6 +683,14 @@
       },
       {
         "name": "apiClient",
+        "asset": "/app-bootstrap.js",
+        "groupId": "bootstrap-state",
+        "startupCritical": true,
+        "source": "app-bootstrap-script-global",
+        "present": true
+      },
+      {
+        "name": "appBootstrapGlobalRoot",
         "asset": "/app-bootstrap.js",
         "groupId": "bootstrap-state",
         "startupCritical": true,
@@ -2500,8 +2509,8 @@
       "scriptAssets": 51,
       "entryGroups": 6,
       "classicGlobalExportAssets": 50,
-      "classicGlobalExports": 227,
-      "startupGlobalContracts": 207,
+      "classicGlobalExports": 228,
+      "startupGlobalContracts": 208,
       "linkAssets": 4,
       "iconAssets": 4,
       "precacheAssets": 60,

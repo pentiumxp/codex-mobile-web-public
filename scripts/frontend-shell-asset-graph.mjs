@@ -24,6 +24,11 @@ const VITE_APP_PREVIEW_OWNED_CLASSIC_SCRIPTS = [
     ownerId: "shell-manifest",
     globalName: "CODEX_MOBILE_SHELL_MANIFEST",
   },
+  {
+    path: "/app-bootstrap.js",
+    ownerId: "vite-app-bootstrap",
+    globalName: "CodexAppBootstrap",
+  },
 ];
 const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
