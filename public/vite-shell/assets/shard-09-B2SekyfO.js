@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-DRYq5NNy.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-Cs-lMKiD.js";
 //#region public/conversation-render-runtime.js
 var require_conversation_render_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function renderLiveOperationDock(thread, previousKeys = /* @__PURE__ */ new Set()) {

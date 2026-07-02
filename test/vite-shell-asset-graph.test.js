@@ -185,6 +185,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     "runtime-wiring-runtime",
     "app-shell-runtime",
     "pane-layout-runtime",
+    "app-entry",
     "thread-list-runtime",
     "side-chat-runtime",
     "media-preview-runtime",
@@ -251,6 +252,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/runtime-wiring-runtime\.js/);
   assert.match(shardSources, /public\/app-shell-runtime\.js/);
   assert.match(shardSources, /public\/pane-layout-runtime\.js/);
+  assert.match(shardSources, /public\/app\.js/);
   assert.match(shardSources, /public\/thread-list-runtime\.js/);
   assert.match(shardSources, /public\/side-chat-runtime\.js/);
   assert.match(shardSources, /public\/media-preview-runtime\.js/);
@@ -300,6 +302,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /createRuntimeWiringRuntime/);
   assert.match(shardSources, /createAppShellRuntime/);
   assert.match(shardSources, /createPaneLayoutRuntime/);
+  assert.match(shardSources, /createCodexMobileAppEntry/);
+  assert.match(shardSources, /startCodexMobileApp/);
   assert.match(shardSources, /createThreadListRuntime/);
   assert.match(shardSources, /createSideChatRuntime/);
   assert.match(shardSources, /createMediaPreviewRuntime/);

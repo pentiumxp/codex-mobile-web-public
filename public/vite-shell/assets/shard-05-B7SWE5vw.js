@@ -1,7 +1,6 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-DRYq5NNy.js";
-//#endregion
-//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-05
-var import_pane_layout_runtime = /* @__PURE__ */ __toESM((/* @__PURE__ */ __commonJSMin(((exports, module) => {
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-Cs-lMKiD.js";
+//#region public/pane-layout-runtime.js
+var require_pane_layout_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function handleLaunchTargetUrl(targetUrl) {
 		const threadId = threadIdFromUrlValue(targetUrl);
 		postClientEvent("launch_target", {
@@ -4683,7 +4682,36 @@ var import_pane_layout_runtime = /* @__PURE__ */ __toESM((/* @__PURE__ */ __comm
 		});
 		root.CodexPaneLayoutRuntime = paneLayoutRuntimeApi;
 	})(typeof globalThis !== "undefined" ? globalThis : window);
-})))());
+}));
+//#endregion
+//#region public/app.js
+var require_app = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	function startCodexMobileApp() {
+		if (!window.CodexRuntimeWiringRuntime || typeof window.CodexRuntimeWiringRuntime.createRuntimeWiringRuntime !== "function") throw new Error("CodexRuntimeWiringRuntime script failed to load");
+		if (!window.CodexAppShellRuntime || typeof window.CodexAppShellRuntime.createAppShellRuntime !== "function") throw new Error("CodexAppShellRuntime script failed to load");
+		window.CodexRuntimeWiringRuntime.createRuntimeWiringRuntime().initialize();
+		return window.CodexAppShellRuntime.createAppShellRuntime().startCodexMobileAppWithRecovery();
+	}
+	function createCodexMobileAppEntry() {
+		return { startCodexMobileApp };
+	}
+	(function exposeCodexMobileAppEntry(root) {
+		const appEntryApi = {
+			createCodexMobileAppEntry,
+			startCodexMobileApp
+		};
+		if (typeof module !== "undefined" && module.exports) module.exports = appEntryApi;
+		root.CodexMobileAppEntry = appEntryApi;
+		const currentScript = root.document && root.document.currentScript;
+		const loadedByClassicAppPreview = Boolean(currentScript && currentScript.dataset && currentScript.dataset.codexViteAppPreviewClassicScript === "true");
+		const shouldAutoStart = !root.__CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__ || loadedByClassicAppPreview;
+		if (!(typeof module !== "undefined" && module.exports) && shouldAutoStart) startCodexMobileApp();
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
+//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-05
+var import_pane_layout_runtime = /* @__PURE__ */ __toESM(require_pane_layout_runtime());
+var import_app = /* @__PURE__ */ __toESM(require_app());
 var moduleDefinitions = [{
 	"id": "pane-layout-runtime",
 	"source": "public/pane-layout-runtime.js",
@@ -4692,8 +4720,19 @@ var moduleDefinitions = [{
 	"assetPath": "/pane-layout-runtime.js",
 	"classicLoaderExcluded": true,
 	"bytes": 210739
+}, {
+	"id": "app-entry",
+	"source": "public/app.js",
+	"globalName": "CodexMobileAppEntry",
+	"expectedFunctions": ["createCodexMobileAppEntry", "startCodexMobileApp"],
+	"assetPath": "/app.js",
+	"classicLoaderExcluded": true,
+	"bytes": 1479
 }];
-var moduleApis = { "pane-layout-runtime": import_pane_layout_runtime.default };
+var moduleApis = {
+	"pane-layout-runtime": import_pane_layout_runtime.default,
+	"app-entry": import_app.default
+};
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");
 }
