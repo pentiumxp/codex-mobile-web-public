@@ -1407,6 +1407,201 @@ var require_image_compressor = /* @__PURE__ */ __commonJSMin(((exports, module) 
 	});
 }));
 //#endregion
+//#region public/plugin-voice-input.js
+var require_plugin_voice_input = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory(root || {});
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexPluginVoiceInput = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function(root) {
+		const PLUGIN_ID = "codex-mobile";
+		const VERSION = 1;
+		const MAX_TEXT_CHARS = 12e3;
+		const TYPES = Object.freeze({
+			CAPABILITY_QUERY: "voice_input.capability_query",
+			CAPABILITY_STATE: "voice_input.capability_state",
+			INSERT_TEXT: "voice_input.insert_text",
+			APPEND_TEXT: "voice_input.append_text",
+			REPLACE_DRAFT: "voice_input.replace_draft",
+			PROVISIONAL_TEXT: "voice_input.provisional_text",
+			SUBMIT: "voice_input.submit",
+			START_REQUEST: "voice_input.start_request",
+			STOP_REQUEST: "voice_input.stop_request",
+			CANCEL_REQUEST: "voice_input.cancel_request",
+			INSERT_RESULT: "voice_input.insert_result",
+			COMMIT_RESULT: "voice_input.commit_result",
+			ERROR: "voice_input.error"
+		});
+		const ACTION_TYPES = Object.freeze({
+			insert_text: TYPES.INSERT_TEXT,
+			append_text: TYPES.APPEND_TEXT,
+			replace_draft: TYPES.REPLACE_DRAFT,
+			provisional_text: TYPES.PROVISIONAL_TEXT,
+			submit: TYPES.SUBMIT
+		});
+		const ACTIONS_BY_TYPE = Object.freeze(Object.fromEntries(Object.entries(ACTION_TYPES).map(([action, type]) => [type, action])));
+		function stringValue(value) {
+			return String(value || "").trim();
+		}
+		function boundedString(value, maxLength) {
+			const text = stringValue(value);
+			const limit = Math.max(0, Number(maxLength) || 0);
+			return text ? text.slice(0, limit) : "";
+		}
+		function boundedText(value, maxLength = MAX_TEXT_CHARS) {
+			const text = String(value || "").replace(/\u00a0/g, " ");
+			const limit = Math.max(1, Number(maxLength) || MAX_TEXT_CHARS);
+			return text.slice(0, limit);
+		}
+		function normalizeAction(action) {
+			const value = stringValue(action).toLowerCase();
+			if (value === "append") return "append_text";
+			if (value === "insert") return "insert_text";
+			if (value === "replace") return "replace_draft";
+			if (value === "provisional") return "provisional_text";
+			return ACTION_TYPES[value] ? value : "";
+		}
+		function normalizeActions(actions) {
+			const normalized = (Array.isArray(actions) ? actions : actions && typeof actions === "object" ? Object.keys(actions).filter((key) => actions[key]) : []).map(normalizeAction).filter(Boolean);
+			return [...new Set(normalized)];
+		}
+		function requestIdFrom(payload = {}) {
+			return boundedString(payload.requestId || payload.request_id, 160);
+		}
+		function voiceSessionIdFrom(payload = {}) {
+			return boundedString(payload.voiceSessionId || payload.voice_session_id, 160);
+		}
+		function pluginIdFrom(payload = {}) {
+			return boundedString(payload.pluginId || payload.plugin_id || PLUGIN_ID, 80) || PLUGIN_ID;
+		}
+		function baseMessage(type, input = {}) {
+			const message = {
+				type,
+				version: VERSION,
+				pluginId: pluginIdFrom(input)
+			};
+			const requestId = requestIdFrom(input);
+			const voiceSessionId = voiceSessionIdFrom(input);
+			if (requestId) message.requestId = requestId;
+			if (voiceSessionId) message.voiceSessionId = voiceSessionId;
+			return message;
+		}
+		function capabilityStateMessage(input = {}) {
+			const actions = normalizeActions(input.actions).filter((action) => action !== "submit");
+			const composerId = boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer";
+			const threadId = boundedString(input.threadId || input.thread_id, 160);
+			const draftId = boundedString(input.draftId || input.draft_id, 220);
+			const maxChars = Math.max(1, Math.min(Number(input.maxChars || input.max_chars || MAX_TEXT_CHARS) || MAX_TEXT_CHARS, MAX_TEXT_CHARS));
+			const message = Object.assign(baseMessage(TYPES.CAPABILITY_STATE, input), {
+				writable: Boolean(input.writable || input.composerWritable),
+				composerId,
+				threadId,
+				draftId,
+				maxChars,
+				actions: actions.length ? actions : ["append_text", "replace_draft"]
+			});
+			message.composer = {
+				writable: message.writable,
+				composerId,
+				threadId,
+				draftId,
+				maxChars
+			};
+			return message;
+		}
+		function startRequestMessage(input = {}) {
+			const capability = capabilityStateMessage(input.capability || input);
+			return Object.assign(baseMessage(TYPES.START_REQUEST, input), {
+				composerId: capability.composerId,
+				threadId: capability.threadId,
+				draftId: capability.draftId,
+				writable: capability.writable,
+				maxChars: capability.maxChars,
+				actions: capability.actions,
+				capability
+			});
+		}
+		function stopRequestMessage(input = {}) {
+			return Object.assign(baseMessage(TYPES.STOP_REQUEST, input), {
+				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
+				threadId: boundedString(input.threadId || input.thread_id, 160)
+			});
+		}
+		function cancelRequestMessage(input = {}) {
+			return Object.assign(baseMessage(TYPES.CANCEL_REQUEST, input), {
+				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
+				threadId: boundedString(input.threadId || input.thread_id, 160)
+			});
+		}
+		function insertResultMessage(input = {}) {
+			return Object.assign(baseMessage(TYPES.INSERT_RESULT, input), {
+				ok: input.ok !== false,
+				action: boundedString(input.action || input.insertAction || input.insert_action, 40),
+				code: input.ok === false ? boundedString(input.code || input.errorCode || input.error_code, 80) : "",
+				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
+				draftId: boundedString(input.draftId || input.draft_id, 220),
+				error: input.ok === false ? boundedString(input.error || input.message, 240) : ""
+			});
+		}
+		function commitResultMessage(input = {}) {
+			return Object.assign(baseMessage(TYPES.COMMIT_RESULT, input), {
+				ok: input.ok !== false,
+				action: boundedString(input.action || "submitted", 40) || "submitted",
+				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
+				threadId: boundedString(input.threadId || input.thread_id, 160),
+				messageId: boundedString(input.messageId || input.message_id, 180),
+				finalText: boundedText(input.finalText || input.final_text || input.text, input.maxChars || MAX_TEXT_CHARS).trim()
+			});
+		}
+		function errorMessage(input = {}) {
+			return Object.assign(baseMessage(TYPES.ERROR, input), {
+				code: boundedString(input.code || "plugin_voice_input_error", 80) || "plugin_voice_input_error",
+				error: boundedString(input.error || input.message || "Plugin voice input error", 240),
+				composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer"
+			});
+		}
+		function isVoiceInputMessage(value) {
+			return Boolean(value && typeof value === "object" && stringValue(value.type).startsWith("voice_input."));
+		}
+		function actionFromMessageType(type) {
+			return ACTIONS_BY_TYPE[stringValue(type)] || "";
+		}
+		function textFromMessage(payload = {}, maxChars = MAX_TEXT_CHARS) {
+			return boundedText(payload.text || payload.finalText || payload.final_text, maxChars).trim();
+		}
+		function postToParent(parentWindow, message, targetOrigin) {
+			if (!parentWindow || parentWindow === root || !message) return false;
+			parentWindow.postMessage(message, targetOrigin || "*");
+			return true;
+		}
+		return {
+			ACTION_TYPES,
+			MAX_TEXT_CHARS,
+			PLUGIN_ID,
+			TYPES,
+			VERSION,
+			actionFromMessageType,
+			boundedString,
+			boundedText,
+			cancelRequestMessage,
+			capabilityStateMessage,
+			commitResultMessage,
+			errorMessage,
+			insertResultMessage,
+			isVoiceInputMessage,
+			normalizeAction,
+			normalizeActions,
+			pluginIdFrom,
+			postToParent,
+			requestIdFrom,
+			startRequestMessage,
+			stopRequestMessage,
+			textFromMessage,
+			voiceSessionIdFrom
+		};
+	});
+}));
+//#endregion
 //#region public/thread-tile-layout.js
 var require_thread_tile_layout = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -2792,6 +2987,7 @@ var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings()
 var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics());
 var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
 var import_image_compressor = /* @__PURE__ */ __toESM(require_image_compressor());
+var import_plugin_voice_input = /* @__PURE__ */ __toESM(require_plugin_voice_input());
 var import_thread_tile_layout = /* @__PURE__ */ __toESM(require_thread_tile_layout());
 var import_thread_tile_actions = /* @__PURE__ */ __toESM(require_thread_tile_actions());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
@@ -2874,6 +3070,23 @@ var moduleDefinitions = [
 			"targetDimensions"
 		],
 		"assetPath": "/image-compressor.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "plugin-voice-input",
+		"source": "public/plugin-voice-input.js",
+		"globalName": "CodexPluginVoiceInput",
+		"expectedFunctions": [
+			"actionFromMessageType",
+			"capabilityStateMessage",
+			"errorMessage",
+			"insertResultMessage",
+			"isVoiceInputMessage",
+			"normalizeAction",
+			"startRequestMessage",
+			"textFromMessage"
+		],
+		"assetPath": "/plugin-voice-input.js",
 		"classicLoaderExcluded": true
 	},
 	{
@@ -3005,6 +3218,7 @@ var moduleApis = {
 	"viewport-metrics": import_viewport_metrics.default,
 	"draft-store": import_draft_store.default,
 	"image-compressor": import_image_compressor.default,
+	"plugin-voice-input": import_plugin_voice_input.default,
 	"thread-tile-layout": import_thread_tile_layout.default,
 	"thread-tile-actions": import_thread_tile_actions.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
@@ -3192,6 +3406,50 @@ function sampleModule(id, api) {
 			name,
 			useful,
 			marginal
+		};
+	}
+	if (id === "plugin-voice-input") {
+		const capability = functionReady(api, "capabilityStateMessage") ? api.capabilityStateMessage({
+			writable: true,
+			threadId: "thread-a",
+			draftId: "draft-a",
+			actions: [
+				"append",
+				"replace",
+				"submit"
+			],
+			maxChars: 100
+		}) : {};
+		const start = functionReady(api, "startRequestMessage") ? api.startRequestMessage({
+			requestId: "req-1",
+			voiceSessionId: "voice-1",
+			capability
+		}) : {};
+		const insert = functionReady(api, "insertResultMessage") ? api.insertResultMessage({
+			ok: false,
+			action: "append_text",
+			code: "composer_not_writable",
+			composerId: "thread-composer"
+		}) : {};
+		const error = functionReady(api, "errorMessage") ? api.errorMessage({
+			code: "voice_error",
+			error: "Voice failed"
+		}) : {};
+		const action = functionReady(api, "normalizeAction") ? api.normalizeAction("append") : "";
+		const actionFromType = functionReady(api, "actionFromMessageType") ? api.actionFromMessageType("voice_input.replace_draft") : "";
+		const text = functionReady(api, "textFromMessage") ? api.textFromMessage({ text: "  hello\xA0world  " }, 20) : "";
+		const voiceMessage = functionReady(api, "isVoiceInputMessage") ? api.isVoiceInputMessage({ type: "voice_input.append_text" }) : false;
+		return {
+			ok: capability.type === "voice_input.capability_state" && capability.writable === true && Array.isArray(capability.actions) && capability.actions.join(",") === "append_text,replace_draft" && start.type === "voice_input.start_request" && start.requestId === "req-1" && insert.ok === false && insert.code === "composer_not_writable" && error.code === "voice_error" && action === "append_text" && actionFromType === "replace_draft" && text === "hello world" && voiceMessage === true,
+			capabilityType: String(capability.type || ""),
+			actions: Array.isArray(capability.actions) ? capability.actions : [],
+			startType: String(start.type || ""),
+			insertCode: String(insert.code || ""),
+			errorCode: String(error.code || ""),
+			action,
+			actionFromType,
+			text,
+			voiceMessage
 		};
 	}
 	if (id === "thread-tile-layout") {
@@ -3909,7 +4167,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-eN7n-Vn0.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DtSAjLoU.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
