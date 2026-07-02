@@ -5,6 +5,7 @@ const { test } = require("node:test");
 
 const {
   createCoreApiRouteService,
+  restartDefaultShellModeFromBody,
 } = require("../server-routes/core-api-route-service");
 
 test("core API route adapter re-exports server-routes service", () => {
@@ -145,4 +146,46 @@ test("core authorized route exposes bounded Vite shell artifact readback", async
   assert.equal(sent.body.preview.fileName, "preview.html");
   assert.equal(sent.body.publishedFileCount, 4);
   assert.deepEqual(sent.body.issueCodes, []);
+});
+
+test("core shared-chain restart route forwards bounded default shell mode", async () => {
+  let restartOptions = null;
+  let sent = null;
+  const service = createCoreApiRouteService({
+    activeProfileRestartOptions: () => ({ profileId: "active", codexHome: "/home/active/.codex" }),
+    sharedChainRestartDelayMs: 1200,
+    sharedChainRestartService: {
+      restart: (options) => {
+        restartOptions = options;
+        return { ok: true, mode: "macos-launchctl" };
+      },
+    },
+  });
+
+  const handled = await service.handleAuthorizedRoute({
+    url: new URL("http://127.0.0.1:8787/api/restart/shared-chain"),
+    req: { method: "POST", headers: {} },
+    res: {},
+    readBody: async () => ({ defaultShellMode: "app-preview" }),
+    sendJson: (status, body) => {
+      sent = { status, body };
+    },
+  });
+
+  assert.deepEqual(handled, { handled: true });
+  assert.equal(sent.status, 202);
+  assert.equal(restartOptions.delayMs, 1200);
+  assert.equal(restartOptions.profileId, "active");
+  assert.equal(restartOptions.codexHome, "/home/active/.codex");
+  assert.equal(restartOptions.defaultShellMode, "vite-app-preview");
+});
+
+test("restart default shell mode body parser is fail closed", () => {
+  assert.equal(restartDefaultShellModeFromBody({}), "");
+  assert.equal(restartDefaultShellModeFromBody({ defaultShell: "classic-script-fallback" }), "classic");
+  assert.equal(restartDefaultShellModeFromBody({ CODEX_MOBILE_DEFAULT_SHELL: "app-preview" }), "vite-app-preview");
+  assert.throws(
+    () => restartDefaultShellModeFromBody({ defaultShellMode: "rollout-next" }),
+    /unsupported_default_shell_mode/,
+  );
 });

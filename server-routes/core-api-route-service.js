@@ -4,6 +4,21 @@ function truthyParam(value) {
   return /^(1|true|yes|on)$/i.test(String(value || ""));
 }
 
+function restartDefaultShellModeFromBody(body = {}) {
+  const raw = String(
+    body.defaultShellMode
+      || body.defaultShell
+      || body.CODEX_MOBILE_DEFAULT_SHELL
+      || "",
+  ).trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "classic" || raw === "classic-script" || raw === "classic-script-fallback") return "classic";
+  if (raw === "vite-app-preview" || raw === "app-preview") return "vite-app-preview";
+  const err = new Error("unsupported_default_shell_mode");
+  err.statusCode = 400;
+  throw err;
+}
+
 function createCoreApiRouteService(deps = {}) {
   const {
     activeProfileRestartOptions,
@@ -512,9 +527,13 @@ function createCoreApiRouteService(deps = {}) {
     }
     if (url.pathname === "/api/restart/shared-chain" && req.method === "POST") {
       try {
-        const result = sharedChainRestartService.restart(Object.assign({
+        const body = await readBody();
+        const defaultShellMode = restartDefaultShellModeFromBody(body);
+        const restartOptions = Object.assign({
           delayMs: sharedChainRestartDelayMs,
-        }, activeProfileRestartOptions()));
+        }, activeProfileRestartOptions());
+        if (defaultShellMode) restartOptions.defaultShellMode = defaultShellMode;
+        const result = sharedChainRestartService.restart(restartOptions);
         sendJson(202, result);
       } catch (err) {
         sendJson(err.statusCode || 500, { error: err.message || String(err) });
@@ -566,5 +585,6 @@ function createCoreApiRouteService(deps = {}) {
 
 module.exports = {
   createCoreApiRouteService,
+  restartDefaultShellModeFromBody,
   truthyParam,
 };

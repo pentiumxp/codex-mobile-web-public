@@ -262,11 +262,15 @@ test("macOS restart command restarts the existing LaunchDaemon when available", 
   assert.match(command, /\*\"codex app-server\"\*/);
   assert.match(command, /rm -f "\$target_mux_endpoint_file"/);
   assert.match(command, /system_launchdaemon_plist_path/);
-  assert.match(command, /sync_system_launchdaemon_profile_env "\$service_plist_path"/);
+  assert.match(command, /sync_system_launchdaemon_restart_env "\$service_plist_path"/);
   assert.match(command, /PlistBuddy -c "Set :EnvironmentVariables:\$\{key\} \$\{value\}"/);
   assert.match(command, /plist_set_env_value "\$plist_path" CODEX_HOME "\$target_codex_home"/);
   assert.match(command, /plist_set_env_value "\$plist_path" CODEX_MOBILE_MUX_ENDPOINT_FILE "\$target_mux_endpoint_file"/);
   assert.match(command, /plist_set_env_value "\$plist_path" CODEX_MOBILE_DEFAULT_SHELL "\$target_default_shell"/);
+  assert.match(command, /reload_system_launchdaemon_service/);
+  assert.match(command, /run_restart_sudo "\$launchctl_path" bootout "\$service_domain"/);
+  assert.match(command, /run_restart_sudo "\$launchctl_path" bootstrap system "\$service_plist_path"/);
+  assert.match(command, /if restart_has_target_env; then exit 1; fi/);
   assert.match(command, /repair_system_launchdaemon_stdio >/);
   assert.match(command, /std\(out\|err\) path = /);
   assert.match(command, /\/usr\/bin\/touch "\$log_path"/);
@@ -284,6 +288,41 @@ test("macOS restart command restarts the existing LaunchDaemon when available", 
   assert.doesNotMatch(command, /AUTH_KEY/);
   assert.doesNotMatch(command, /Codex\.app/);
   assert.doesNotMatch(command, /osascript/);
+});
+
+test("macOS restart command uses explicit default shell over inherited launchd env", () => {
+  let spawnCall = null;
+  const root = path.resolve(__dirname, "..");
+  const service = createSharedChainRestartService({
+    platform: "darwin",
+    env: {
+      HOME: "/Users/xuefusong",
+      XPC_SERVICE_NAME: "com.homeai.plugin.codex-mobile",
+      CODEX_HOME: "/Users/xuefusong/.codex",
+      CODEX_MOBILE_PORT: "8789",
+      CODEX_MOBILE_DEFAULT_SHELL: "classic",
+    },
+    spawn: (exe, args, options) => {
+      spawnCall = { exe, args, options };
+      return { pid: 24682, unref: () => {} };
+    },
+    workspacePath: root,
+    serverPath: path.join(root, "server.js"),
+    nodePath: "/usr/local/bin/node",
+    currentPid: 4321,
+    launchctlPath: "/bin/launchctl",
+    logPath: "/Users/xuefusong/.codex-mobile-web/logs/mobile-web.log",
+  });
+
+  service.restart({
+    delayMs: 900,
+    defaultShellMode: "vite-app-preview",
+  });
+
+  assert.match(spawnCall.args[1], /target_default_shell='vite-app-preview'/);
+  assert.doesNotMatch(spawnCall.args[1], /target_default_shell='classic'/);
+  assert.match(spawnCall.args[1], /plist_set_env_value "\$plist_path" CODEX_MOBILE_DEFAULT_SHELL "\$target_default_shell"/);
+  assert.match(spawnCall.args[1], /reload_system_launchdaemon_service/);
 });
 
 test("macOS restart service uses explicit profile restart arguments over inherited env", () => {
@@ -355,6 +394,33 @@ test("macOS restart command falls back to a one-shot nohup listener without a La
   assert.match(command, /\/usr\/local\/bin\/node/);
   assert.match(command, /server\.js/);
   assert.doesNotMatch(command, /launchctl' submit/);
+});
+
+test("macOS one-shot restart fallback uses explicit default shell mode", () => {
+  const root = path.resolve(__dirname, "..");
+  const command = buildRestartMacShellCommand({
+    delayMs: 900,
+    workspacePath: root,
+    serverPath: path.join(root, "server.js"),
+    nodePath: "/usr/local/bin/node",
+    currentPid: 4321,
+    launchctlPath: "/bin/launchctl",
+    logPath: "/Users/xuefusong/.codex-mobile-web/logs/mobile-web.log",
+    labelPrefix: "com.xuefusong.codex-mobile-web.test",
+    port: 8789,
+    host: "0.0.0.0",
+    codexHome: "/Users/xuefusong/.codex",
+    runtimeDir: "/Users/xuefusong/.codex-mobile-web",
+    defaultShellMode: "vite-app-preview",
+    env: {
+      CODEX_MOBILE_DEFAULT_SHELL: "classic",
+    },
+  });
+
+  assert.match(command, /service_label=''/);
+  assert.match(command, /target_default_shell='vite-app-preview'/);
+  assert.match(command, /CODEX_MOBILE_DEFAULT_SHELL='vite-app-preview'/);
+  assert.doesNotMatch(command, /CODEX_MOBILE_DEFAULT_SHELL='classic'/);
 });
 
 test("restart service spawns a detached macOS launchctl restart command", () => {
