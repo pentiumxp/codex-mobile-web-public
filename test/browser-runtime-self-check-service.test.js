@@ -85,6 +85,22 @@ test("browser runtime self-check preserves bounded default shell mode in public 
   assert.match(scriptSource, /defaultShellMode: String\(config && config\.defaultShellMode \|\| ""\)\.slice\(0, 40\)/);
 });
 
+test("browser runtime self-check samples active thread rows before recent rows", () => {
+  assert.deepEqual(script.selectThreadIdsForSampling([
+    { id: "recent-completed", status: "completed" },
+    { id: "active-old", status: "active" },
+    { id: "running-old", status: { type: "in_progress" } },
+    { id: "active-old", status: "active" },
+    { id: "queued-thread", threadStatus: "queued" },
+    { id: "other-completed", status: "completed" },
+  ], 4), [
+    "active-old",
+    "running-old",
+    "queued-thread",
+    "recent-completed",
+  ]);
+});
+
 test("browser runtime self-check reports API latest turn when it is not the DOM bottom turn", () => {
   const result = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,

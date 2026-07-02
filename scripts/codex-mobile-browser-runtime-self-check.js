@@ -409,6 +409,41 @@ function threadId(row = {}) {
   return String(row && (row.id || row.threadId || row.thread_id) || "").trim();
 }
 
+function isActiveThreadRow(row = {}) {
+  const status = statusText(
+    row.status
+    || row.threadStatus
+    || row.thread_status
+    || row.state
+    || row.lifecycle
+    || row.runtimeStatus
+  );
+  if (!status || completedStatus(status)) return false;
+  return /active|running|in[_-]?progress|working|queued|pending/i.test(status);
+}
+
+function uniqueThreadIds(rows = []) {
+  const ids = [];
+  const seen = new Set();
+  for (const row of rows || []) {
+    const id = threadId(row);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+function selectThreadIdsForSampling(rows = [], sampleThreads = 3) {
+  const limit = readPositiveInt(sampleThreads, 3, 20);
+  const activeIds = uniqueThreadIds((rows || []).filter(isActiveThreadRow));
+  const allIds = uniqueThreadIds(rows || []);
+  return uniqueThreadIds([
+    ...activeIds.map((id) => ({ id })),
+    ...allIds.map((id) => ({ id })),
+  ]).slice(0, limit);
+}
+
 function visibleTurnIds(detail = {}) {
   const thread = detail && (detail.thread || detail.data || detail);
   const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
@@ -2264,7 +2299,7 @@ async function run(options = parseArgs(), deps = {}) {
   const rows = threadRows(list);
   const ids = options.threadIds.length
     ? options.threadIds
-    : rows.map(threadId).filter(Boolean).slice(0, options.sampleThreads);
+    : selectThreadIdsForSampling(rows, options.sampleThreads);
   if (submitAllowed && options.submitThreadId && !ids.includes(options.submitThreadId)) {
     ids.unshift(options.submitThreadId);
   }
@@ -2676,6 +2711,7 @@ module.exports = {
   routeKind,
   run,
   safeConsoleText,
+  selectThreadIdsForSampling,
   snapshotInputForPlanEntry,
   snapshotExpression,
   startupProbeExpression,
