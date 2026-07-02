@@ -1,5 +1,5 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-5ap85Qhd.js","assets/vite-shell-entry-C_fqZHha.js","assets/shard-02-yTXt-NHu.js","assets/shard-03-DKxTxnbN.js","assets/shard-04-0N5ZvOKG.js","assets/shard-05-i_kwla1c.js","assets/shard-06-LkrqoKZj.js","assets/shard-07-Dpt8USGV.js"])))=>i.map(i=>d[i]);
-import { t as __vitePreload } from "./vite-shell-entry-C_fqZHha.js";
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/shard-01-DdIviF0t.js","assets/vite-shell-entry-BI1Wz_bw.js","assets/shard-02-DWCxeBnX.js","assets/shard-03-D_Qyqm-D.js","assets/shard-04-BOxSckjk.js","assets/shard-05-B1DgrF52.js","assets/shard-06-DrCpfUtp.js","assets/shard-07-Dxc64MFm.js"])))=>i.map(i=>d[i]);
+import { t as __vitePreload } from "./vite-shell-entry-BI1Wz_bw.js";
 //#region \0virtual:codex-mobile-esm-compatibility
 var codexMobileViteEsmCompatibilityShardSources = [
 	{
@@ -70,55 +70,56 @@ var codexMobileViteEsmCompatibilityShardSources = [
 		"id": "shard-05",
 		"index": 4,
 		"source": "virtual:codex-mobile-esm-compatibility/shard/shard-05",
-		"moduleCount": 9,
+		"moduleCount": 3,
 		"moduleIds": [
 			"media-preview-runtime",
-			"composer-bridge-runtime",
+			"composer-runtime",
+			"composer-bridge-runtime"
+		],
+		"byteCount": 205426
+	},
+	{
+		"id": "shard-06",
+		"index": 5,
+		"source": "virtual:codex-mobile-esm-compatibility/shard/shard-06",
+		"moduleCount": 10,
+		"moduleIds": [
 			"api-client-runtime",
 			"thread-list-load-policy",
 			"thread-list-stable-order",
 			"thread-status-hints",
 			"thread-detail-patch-plan",
 			"thread-detail-actions",
-			"thread-detail-merge-state"
-		],
-		"byteCount": 213699
-	},
-	{
-		"id": "shard-06",
-		"index": 5,
-		"source": "virtual:codex-mobile-esm-compatibility/shard/shard-06",
-		"moduleCount": 4,
-		"moduleIds": [
+			"thread-detail-merge-state",
 			"thread-detail-v4-merge-state",
 			"thread-detail-runtime",
-			"task-card-runtime",
-			"notification-ui-runtime"
+			"task-card-runtime"
 		],
-		"byteCount": 188766
+		"byteCount": 220229
 	},
 	{
 		"id": "shard-07",
 		"index": 6,
 		"source": "virtual:codex-mobile-esm-compatibility/shard/shard-07",
-		"moduleCount": 4,
+		"moduleCount": 5,
 		"moduleIds": [
+			"notification-ui-runtime",
 			"conversation-render-runtime",
 			"event-stream-runtime",
 			"client-render-stability-guard",
 			"live-operation-dock-state"
 		],
-		"byteCount": 141e3
+		"byteCount": 196054
 	}
 ];
 var shardLoaders = {
-	"shard-01": () => __vitePreload(() => import("./shard-01-5ap85Qhd.js"), __vite__mapDeps([0,1])),
-	"shard-02": () => __vitePreload(() => import("./shard-02-yTXt-NHu.js"), __vite__mapDeps([2,1])),
-	"shard-03": () => __vitePreload(() => import("./shard-03-DKxTxnbN.js"), __vite__mapDeps([3,1])),
-	"shard-04": () => __vitePreload(() => import("./shard-04-0N5ZvOKG.js"), __vite__mapDeps([4,1])),
-	"shard-05": () => __vitePreload(() => import("./shard-05-i_kwla1c.js"), __vite__mapDeps([5,1])),
-	"shard-06": () => __vitePreload(() => import("./shard-06-LkrqoKZj.js"), __vite__mapDeps([6,1])),
-	"shard-07": () => __vitePreload(() => import("./shard-07-Dpt8USGV.js"), __vite__mapDeps([7,1]))
+	"shard-01": () => __vitePreload(() => import("./shard-01-DdIviF0t.js"), __vite__mapDeps([0,1])),
+	"shard-02": () => __vitePreload(() => import("./shard-02-DWCxeBnX.js"), __vite__mapDeps([2,1])),
+	"shard-03": () => __vitePreload(() => import("./shard-03-D_Qyqm-D.js"), __vite__mapDeps([3,1])),
+	"shard-04": () => __vitePreload(() => import("./shard-04-BOxSckjk.js"), __vite__mapDeps([4,1])),
+	"shard-05": () => __vitePreload(() => import("./shard-05-B1DgrF52.js"), __vite__mapDeps([5,1])),
+	"shard-06": () => __vitePreload(() => import("./shard-06-DrCpfUtp.js"), __vite__mapDeps([6,1])),
+	"shard-07": () => __vitePreload(() => import("./shard-07-Dxc64MFm.js"), __vite__mapDeps([7,1]))
 };
 var compatibilityPromise = null;
 async function loadCompatibilityShard(descriptor) {

@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-C_fqZHha.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-BI1Wz_bw.js";
 //#region public/modal-runtime.js
 var require_modal_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function renderAppNativeDialog() {

@@ -1,4 +1,1894 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-C_fqZHha.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-BI1Wz_bw.js";
+//#region public/api-client-runtime.js
+var require_api_client_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachApiClientRuntime(root) {
+		async function api(path, options = {}) {
+			return apiClient.request(path, options);
+		}
+		function postClientEvent(event, details = {}) {
+			if (!state.key) return;
+			const payload = JSON.stringify({
+				event,
+				threadId: state.currentThreadId || "",
+				path: location.pathname || "/",
+				details
+			});
+			const url = `/api/client-events?key=${encodeURIComponent(state.key)}`;
+			fetch(url, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: payload,
+				keepalive: true
+			}).catch(() => {
+				try {
+					if (navigator.sendBeacon) {
+						const blob = new Blob([payload], { type: "application/json" });
+						navigator.sendBeacon(url, blob);
+					}
+				} catch (_) {}
+			});
+		}
+		function nowPerfMs() {
+			return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+		}
+		function roundedDurationMs(startedAt) {
+			return Math.max(0, Math.round(nowPerfMs() - Number(startedAt || 0)));
+		}
+		function postPerformanceEvent(event, details = {}, options = {}) {
+			const now = Date.now();
+			const key = String(options.key || event || "");
+			const minIntervalMs = Math.max(0, Number(options.minIntervalMs || 0));
+			if (key && minIntervalMs > 0) {
+				const last = Number(state.perfEventLastReportedAt[key] || 0);
+				if (!options.force && last && now - last < minIntervalMs) return false;
+				state.perfEventLastReportedAt[key] = now;
+			}
+			postClientEvent(event, Object.assign({
+				pwa: isPwaMode(),
+				embedded: isHermesEmbedMode(),
+				visibility: document.visibilityState || "",
+				clientBuildId: CLIENT_BUILD_ID
+			}, details || {}));
+			return true;
+		}
+		function diagnosticHash(value) {
+			return homeAiDiagnosticReportingApi.hashIdentifier(String(value || ""), "h");
+		}
+		function diagnosticThreadHash(threadId = state.currentThreadId) {
+			const id = String(threadId || "").trim();
+			return id ? diagnosticHash(`thread:${id}`) : "";
+		}
+		function diagnosticTurnHash(turnId) {
+			const id = String(turnId || "").trim();
+			return id ? diagnosticHash(`turn:${id}`) : "";
+		}
+		function diagnosticTaskHash(taskId) {
+			const id = String(taskId || "").trim();
+			return id ? diagnosticHash(`task:${id}`) : "";
+		}
+		function diagnosticItemHash(itemId) {
+			const id = String(itemId || "").trim();
+			return id ? diagnosticHash(`item:${id}`) : "";
+		}
+		function clientSubmissionDiagnosticHash(clientSubmissionId) {
+			const id = String(clientSubmissionId || "").trim();
+			return id ? diagnosticHash(`submission:${id}`) : "";
+		}
+		function clientSubmissionDataAttr(item) {
+			const hash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
+			return hash ? ` data-client-submission-hash="${escapeHtml(hash)}"` : "";
+		}
+		function diagnosticRouteKind() {
+			if (state.newThreadDraft) return "new-thread";
+			if (isHermesEmbedMode() && isHermesPluginPrimaryPage()) return "embedded-primary";
+			if (state.threadTileMode) return "thread-tile";
+			if (state.currentThreadId) return "thread-detail";
+			return isHermesEmbedMode() ? "embedded-root" : "standalone-root";
+		}
+		function diagnosticErrorStatus(err) {
+			let status = Number(err && (err.status || err.statusCode) || 0);
+			if ((!Number.isFinite(status) || status <= 0) && err && /^\d+$/.test(String(err.code || ""))) status = Number(err.code);
+			return Number.isFinite(status) && status > 0 ? status : 0;
+		}
+		function diagnosticErrorCode(err, fallback = "runtime_failed") {
+			const explicit = String(err && err.code || "").trim();
+			if (explicit && !/^\d+$/.test(explicit)) return homeAiDiagnosticReportingApi.boundedToken(explicit, fallback, 100);
+			const status = diagnosticErrorStatus(err);
+			if (status) return `http_${status}`;
+			const message = String(err && err.message || err || "").toLowerCase();
+			if (message.includes("request timed out")) return "request_timeout";
+			if (message.includes("request cancelled")) return "request_cancelled";
+			if (message.includes("failed to fetch")) return "network_fetch_failed";
+			if (message.includes("not visible")) return "target_thread_not_visible";
+			if (message.includes("terminal") && message.includes("return")) return "terminal_card_no_return_required";
+			return fallback;
+		}
+		function diagnosticDurationBucket(ms) {
+			return homeAiDiagnosticReportingApi.durationBucket(ms);
+		}
+		function currentHomeAiDiagnosticContext(extra = {}) {
+			const context = Object.assign({
+				surface: "runtime",
+				action: "unknown",
+				route_kind: diagnosticRouteKind(),
+				build_id: CLIENT_BUILD_ID,
+				shell_cache: CLIENT_BUILD_ID.split("|").pop() || "",
+				thread_hash: diagnosticThreadHash(),
+				embedded: isHermesEmbedMode(),
+				pwa: isPwaMode(),
+				client_visibility: document.visibilityState || ""
+			}, extra || {});
+			if (!context.thread_hash) delete context.thread_hash;
+			return context;
+		}
+		function postHomeAiDiagnosticReport(report, meta = {}) {
+			const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
+			if (targetOrigin) state.pluginParentOrigin = targetOrigin;
+			const result = homeAiDiagnosticReportingApi.postReportToHomeAi({
+				report,
+				embedded: isHermesEmbedMode(),
+				parentWindow: window.parent,
+				selfWindow: window,
+				targetOrigin: targetOrigin || "*"
+			});
+			postClientEvent("home_ai_diagnostic_report_post", {
+				ok: Boolean(result.ok),
+				reason: result.reason || "",
+				category: report && report.category || "",
+				diagnostic_type: report && report.diagnostic_type || "",
+				error_code: report && report.error_code || "",
+				signature: meta.signature || "",
+				repeatedFailures: Number(meta.repeatedFailures || 0)
+			});
+			return result;
+		}
+		function recordHomeAiDiagnosticFailure(input = {}) {
+			const result = state.homeAiDiagnosticReporter.recordFailure(Object.assign({}, input, { context: currentHomeAiDiagnosticContext(input.context || {}) }));
+			postClientEvent("home_ai_diagnostic_failure_recorded", {
+				category: input.category || "",
+				diagnostic_type: input.diagnostic_type || input.diagnosticType || "",
+				error_code: input.error_code || input.errorCode || "",
+				eligible: Boolean(result.eligible),
+				repeatedFailures: Number(result.repeatedFailures || 0),
+				threshold: Number(result.threshold || 0),
+				signature: result.signature || "",
+				observeOnly: Boolean(result.observeOnly),
+				reason: result.reason || ""
+			});
+			if (result.report) postHomeAiDiagnosticReport(result.report, result);
+			return result;
+		}
+		function recordHomeAiDiagnosticSuccess(input = {}) {
+			return state.homeAiDiagnosticReporter.recordSuccess(Object.assign({}, input, { context: currentHomeAiDiagnosticContext(input.context || {}) }));
+		}
+		function applyFrontendRuntimeHealthEffect(effect) {
+			const item = effect && typeof effect === "object" ? effect : {};
+			if (!item.type) return;
+			if (item.type === "diagnostic-failure") {
+				recordHomeAiDiagnosticFailure(item.diagnostic || {});
+				return;
+			}
+			if (item.type === "diagnostic-success") {
+				recordHomeAiDiagnosticSuccess(item.diagnostic || {});
+				return;
+			}
+			throw new Error(`Unknown frontend runtime health effect: ${item.type}`);
+		}
+		function applyFrontendRuntimeHealthEffectsPlan(plan) {
+			const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+			for (const effect of effects) applyFrontendRuntimeHealthEffect(effect);
+		}
+		function threadListRuntimeMetrics() {
+			const list = $("threadList");
+			if (!list || typeof list.getBoundingClientRect !== "function") return {
+				present: false,
+				visible: false,
+				threadListCount: 0,
+				scrollTop: 0,
+				scrollHeight: 0
+			};
+			const rect = list.getBoundingClientRect();
+			const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
+			const viewportHeight = Math.max(0, window.innerHeight || document.documentElement.clientHeight || 0);
+			return {
+				present: true,
+				visible: document.visibilityState !== "hidden" && rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < viewportHeight && rect.left < viewportWidth,
+				threadListCount: list.querySelectorAll("[data-thread]").length,
+				scrollTop: Math.max(0, Math.round(Number(list.scrollTop || 0))),
+				scrollHeight: Math.max(0, Math.round(Number(list.scrollHeight || 0)))
+			};
+		}
+		function recordThreadListRuntimeStall(input = {}) {
+			const now = Date.now();
+			if (now - Number(state.threadListRuntimeLastReportAt || 0) < THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS) return false;
+			const metrics = threadListRuntimeMetrics();
+			const routeKind = diagnosticRouteKind();
+			const threadListMonitorable = metrics.visible || metrics.present && document.visibilityState !== "hidden" && (routeKind === "embedded-primary" || routeKind === "standalone-root");
+			const plan = frontendRuntimeHealthApi.threadListInteractionStallEffects(Object.assign({
+				threadListVisible: metrics.visible,
+				threadListMonitorable,
+				routeKind,
+				minDelayMs: THREAD_LIST_RUNTIME_STALL_MIN_MS,
+				h2ThresholdMs: THREAD_LIST_RUNTIME_STALL_H2_MS,
+				threadListCount: metrics.threadListCount,
+				scrollTop: metrics.scrollTop,
+				scrollHeight: metrics.scrollHeight
+			}, input || {}));
+			if (!plan.effects || !plan.effects.length) return false;
+			state.threadListRuntimeLastReportAt = now;
+			applyFrontendRuntimeHealthEffectsPlan(plan);
+			postPerformanceEvent("thread_list_runtime_stall", {
+				action: input.action || "thread-list-runtime",
+				routeKind,
+				maxRafDelayMs: Math.max(0, Math.round(Number(input.maxRafDelayMs || 0))),
+				maxScrollApplyMs: Math.max(0, Math.round(Number(input.maxScrollApplyMs || 0))),
+				maxLongTaskMs: Math.max(0, Math.round(Number(input.maxLongTaskMs || 0))),
+				longTaskCount: Math.max(0, Math.round(Number(input.longTaskCount || 0))),
+				threadListCount: metrics.threadListCount,
+				threadListVisible: Boolean(metrics.visible),
+				threadListMonitorable: Boolean(threadListMonitorable)
+			}, {
+				key: "thread-list-runtime-stall",
+				minIntervalMs: THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS
+			});
+			return true;
+		}
+		function sampleThreadListInputDelay(action = "thread-list-input") {
+			if (!threadListRuntimeMetrics().visible) return;
+			const list = $("threadList");
+			const startedAt = nowPerfMs();
+			const startScrollTop = list ? Number(list.scrollTop || 0) : 0;
+			requestAnimationFrame(() => {
+				const rafDelayMs = roundedDurationMs(startedAt);
+				requestAnimationFrame(() => {
+					const elapsedMs = roundedDurationMs(startedAt);
+					const scrollApplyMs = (list ? Number(list.scrollTop || 0) : startScrollTop) !== startScrollTop ? elapsedMs : rafDelayMs;
+					recordThreadListRuntimeStall({
+						action,
+						maxRafDelayMs: rafDelayMs,
+						maxScrollApplyMs: scrollApplyMs,
+						elapsedMs
+					});
+				});
+			});
+		}
+		function startThreadListRuntimeHeartbeat() {
+			if (state.threadListRuntimeHeartbeatFrame) return;
+			const tick = (timestamp) => {
+				const previous = Number(state.threadListRuntimeLastFrameAt || 0);
+				if (previous > 0) {
+					const delayMs = Math.max(0, Math.round(Number(timestamp || 0) - previous));
+					if (delayMs >= THREAD_LIST_RUNTIME_STALL_MIN_MS) recordThreadListRuntimeStall({
+						action: "thread-list-heartbeat",
+						maxRafDelayMs: delayMs,
+						elapsedMs: delayMs
+					});
+				}
+				state.threadListRuntimeLastFrameAt = Number(timestamp || nowPerfMs());
+				state.threadListRuntimeHeartbeatFrame = requestAnimationFrame(tick);
+			};
+			state.threadListRuntimeHeartbeatFrame = requestAnimationFrame(tick);
+		}
+		function startThreadListRuntimeLongTaskObserver() {
+			if (state.threadListRuntimeLongTaskObserver || typeof PerformanceObserver !== "function") return;
+			try {
+				const observer = new PerformanceObserver((list) => {
+					let maxLongTaskMs = 0;
+					let longTaskCount = 0;
+					for (const entry of list.getEntries()) {
+						const duration = Math.max(0, Math.round(Number(entry && entry.duration || 0)));
+						if (duration < THREAD_LIST_RUNTIME_STALL_MIN_MS) continue;
+						maxLongTaskMs = Math.max(maxLongTaskMs, duration);
+						longTaskCount += 1;
+					}
+					if (maxLongTaskMs > 0) recordThreadListRuntimeStall({
+						action: "thread-list-longtask",
+						maxLongTaskMs,
+						longTaskCount,
+						elapsedMs: maxLongTaskMs
+					});
+				});
+				observer.observe({
+					type: "longtask",
+					buffered: true
+				});
+				state.threadListRuntimeLongTaskObserver = observer;
+			} catch (_) {
+				state.threadListRuntimeLongTaskObserver = null;
+			}
+		}
+		function startThreadListRuntimeStallMonitoring() {
+			const list = $("threadList");
+			if (list) [
+				"pointerdown",
+				"touchstart",
+				"wheel",
+				"scroll"
+			].forEach((eventName) => {
+				list.addEventListener(eventName, () => sampleThreadListInputDelay(`thread-list-${eventName}`), { passive: true });
+			});
+			document.addEventListener("visibilitychange", () => {
+				if (document.visibilityState === "hidden") state.threadListRuntimeLastFrameAt = 0;
+			});
+			startThreadListRuntimeHeartbeat();
+			startThreadListRuntimeLongTaskObserver();
+		}
+		function conversationHasClientSubmissionHash(submissionHash) {
+			const hash = String(submissionHash || "").trim();
+			const conversation = $("conversation");
+			if (!hash || !conversation) return false;
+			return Array.from(conversation.querySelectorAll("[data-client-submission-hash]")).some((node) => String(node && node.getAttribute && node.getAttribute("data-client-submission-hash") || "") === hash);
+		}
+		function frontendHealthThreadForSubmission(threadId) {
+			const id = String(threadId || "").trim();
+			if (!id) return null;
+			if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+			return state.threadTileDetails && state.threadTileDetails.get(id) || null;
+		}
+		function probeSubmittedMessageDom(threadId, clientSubmissionId, action = "message-submit", startedAtMs = Date.now()) {
+			const id = String(threadId || "").trim();
+			const submissionId = String(clientSubmissionId || "").trim();
+			const submissionHash = clientSubmissionDiagnosticHash(submissionId);
+			if (!id || !submissionId || !submissionHash) return;
+			const thread = frontendHealthThreadForSubmission(id);
+			const domShape = conversationDomShape();
+			const visibleShape = thread ? visibleConversationShape(thread) : { visibleItemCount: 0 };
+			applyFrontendRuntimeHealthEffectsPlan(frontendRuntimeHealthApi.submittedMessageDomProbeEffects({
+				elapsedMs: Date.now() - Number(startedAtMs || Date.now()),
+				action,
+				routeKind: diagnosticRouteKind(),
+				threadHash: diagnosticThreadHash(id),
+				itemHash: submissionHash,
+				currentThreadMatch: !state.threadTileMode && String(state.currentThreadId || "") === id,
+				hasThreadSubmission: threadHasClientSubmission(thread, submissionId),
+				domHasSubmission: conversationHasClientSubmissionHash(submissionHash),
+				visibleCount: visibleShape.visibleItemCount,
+				domCount: domShape.itemCount,
+				composerBusy: state.composerBusy
+			}));
+		}
+		function scheduleSubmittedMessageDomProbe(threadId, clientSubmissionId, action = "message-submit") {
+			const id = String(threadId || "").trim();
+			const submissionId = String(clientSubmissionId || "").trim();
+			if (!id || !submissionId) return;
+			const startedAtMs = Date.now();
+			[
+				350,
+				1200,
+				2800
+			].forEach((delayMs) => {
+				setTimeout(() => probeSubmittedMessageDom(id, submissionId, action, startedAtMs), delayMs);
+			});
+		}
+		function applyThreadDetailResponseDiagnosticEffect(effect) {
+			const item = effect && typeof effect === "object" ? effect : {};
+			if (!item.type) return;
+			if (item.type === "diagnostic-failure") {
+				recordHomeAiDiagnosticFailure(item.diagnostic || {});
+				return;
+			}
+			if (item.type === "diagnostic-success") {
+				recordHomeAiDiagnosticSuccess(item.diagnostic || {});
+				return;
+			}
+			throw new Error(`Unknown thread detail response diagnostic effect: ${item.type}`);
+		}
+		function applyThreadDetailResponseDiagnosticEffectsPlan(plan) {
+			const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+			for (const effect of effects) applyThreadDetailResponseDiagnosticEffect(effect);
+		}
+		function recordThreadDetailResponseDiagnostics(performanceEvent = {}, input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const threadHash = diagnosticThreadHash(String(source.threadId || state.currentThreadId || ""));
+			const action = String(source.action || "thread-detail").slice(0, 80);
+			const durationBucket = source.durationBucket || diagnosticDurationBucket(Number(performanceEvent && performanceEvent.elapsedMs || 0));
+			const slowPlan = threadPerformanceMetrics.planThreadDetailSlowPathDiagnostic(performanceEvent, {
+				action,
+				threadHash,
+				durationBucket
+			});
+			const contractPlan = threadPerformanceMetrics.planThreadDetailResponseContractDiagnostic(performanceEvent, {
+				action,
+				threadHash,
+				durationBucket,
+				thread: source.thread,
+				expectedActiveFullRead: source.expectedActiveFullRead
+			});
+			applyThreadDetailResponseDiagnosticEffectsPlan(threadDiagnosticEventsApi.threadDetailResponseDiagnosticEffects({
+				slowPlan,
+				slowSuccessInput: {
+					action,
+					threadHash,
+					readMode: performanceEvent && performanceEvent.readMode || "",
+					renderMode: performanceEvent && performanceEvent.clientTimings && performanceEvent.clientTimings.detailRenderMode || ""
+				},
+				contractPlan
+			}));
+		}
+		function conversationDomShape() {
+			const conversation = $("conversation");
+			if (!conversation) return {
+				renderKeyCount: 0,
+				duplicateRenderKeyCount: 0,
+				duplicateUserMessageCount: 0,
+				turnCount: 0,
+				itemCount: 0
+			};
+			const seen = /* @__PURE__ */ new Set();
+			let duplicateRenderKeyCount = 0;
+			for (const node of Array.from(conversation.querySelectorAll("[data-render-key]"))) {
+				const key = String(node && node.getAttribute && node.getAttribute("data-render-key") || "");
+				if (!key) continue;
+				if (seen.has(key)) duplicateRenderKeyCount += 1;
+				else seen.add(key);
+			}
+			let duplicateUserMessageCount = 0;
+			const userMessageNodes = [];
+			for (const turnNode of Array.from(conversation.querySelectorAll("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]"))) for (const node of Array.from(turnNode.querySelectorAll(".item.userMessage"))) userMessageNodes.push({
+				turnNode,
+				node
+			});
+			duplicateUserMessageCount = duplicateUserMessageSignatureCount(userMessageNodes, (entry) => domUserMessageEventDuplicateSignature(entry.turnNode, entry.node));
+			return {
+				renderKeyCount: seen.size,
+				duplicateRenderKeyCount,
+				duplicateUserMessageCount,
+				turnCount: conversation.querySelectorAll("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]").length,
+				itemCount: conversation.querySelectorAll("[data-item]").length
+			};
+		}
+		function duplicateUserMessageSignatureCount(entries, signatureForEntry) {
+			const seen = /* @__PURE__ */ new Set();
+			let duplicates = 0;
+			for (const entry of Array.isArray(entries) ? entries : []) {
+				const signature = String(signatureForEntry(entry) || "").trim();
+				if (!signature) continue;
+				if (seen.has(signature)) duplicates += 1;
+				else seen.add(signature);
+			}
+			return duplicates;
+		}
+		function domUserMessageDuplicateSignature(turnNode, node) {
+			if (!node || !node.getAttribute) return "";
+			const turnId = String(turnNode && turnNode.getAttribute && (turnNode.getAttribute("data-turn") || turnNode.getAttribute("data-thread-tile-turn")) || "").trim();
+			const submissionHash = String(node.getAttribute("data-client-submission-hash") || "").trim();
+			if (submissionHash) return `submission:${turnId}:${submissionHash}`;
+			const body = node.querySelector && node.querySelector(".item-body");
+			const text = String((body || node).textContent || "").replace(/\s+/g, " ").trim();
+			return text ? `text:${turnId}:${stableTextHash(text)}` : "";
+		}
+		function domUserMessageEventDuplicateSignature(turnNode, node) {
+			if (!node || !node.getAttribute) return "";
+			const submissionHash = String(node.getAttribute("data-client-submission-hash") || "").trim();
+			if (submissionHash) return `submission:${submissionHash}`;
+			const body = node.querySelector && node.querySelector(".item-body");
+			const text = String((body || node).textContent || "").replace(/\s+/g, " ").trim();
+			if (!text) return "";
+			const timestamp = node.querySelector && node.querySelector(".item-timestamp");
+			const datetime = String(timestamp && timestamp.getAttribute && timestamp.getAttribute("datetime") || "").trim();
+			const timestampMs = datetime ? Date.parse(datetime) : 0;
+			if (Number.isFinite(timestampMs) && timestampMs > 0) return `text-time:${Math.floor(timestampMs / 5e3)}:${stableTextHash(text)}`;
+			return domUserMessageDuplicateSignature(turnNode, node);
+		}
+		function visibleUserMessageDuplicateSignature(turn, item) {
+			if (!item || item.type !== "userMessage") return "";
+			const turnId = String(turn && turn.id || turn && turn.mobileVisibleKey || "").trim();
+			const submissionHash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
+			if (submissionHash) return `submission:${turnId}:${submissionHash}`;
+			const comparable = userMessageComparableParts(item);
+			const text = String(comparable.text || itemTextValue(item && item.text) || itemTextValue(item && item.message) || itemTextValue(item && item.content) || "").replace(/\s+/g, " ").trim();
+			return text ? `text:${turnId}:${stableTextHash(text)}` : "";
+		}
+		function visibleUserMessageEventDuplicateSignature(turn, item) {
+			if (!item || item.type !== "userMessage") return "";
+			const submissionHash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
+			if (submissionHash) return `submission:${submissionHash}`;
+			const comparable = userMessageComparableParts(item);
+			const text = String(comparable.text || itemTextValue(item && item.text) || itemTextValue(item && item.message) || itemTextValue(item && item.content) || "").replace(/\s+/g, " ").trim();
+			if (!text) return "";
+			const timestampMs = userMessageTimestampMs(item) || turnStartedAtMs(turn);
+			if (timestampMs) return `text-time:${Math.floor(timestampMs / 5e3)}:${stableTextHash(text)}`;
+			return visibleUserMessageDuplicateSignature(turn, item);
+		}
+		function turnRendersConversationArticle(turn, thread) {
+			if (!turn || !turn.id) return false;
+			if (visibleItemsForTurn(turn, thread).length > 0) return true;
+			if (typeof visibleItemBudgetSignature === "function" && visibleItemBudgetSignature(turn)) return true;
+			const threadId = typeof renderContextThreadId === "function" ? renderContextThreadId(thread) : String(thread && thread.id || state.currentThreadId || "");
+			if (typeof approvalsForTurn === "function" && approvalsForTurn(threadId, turn.id).length > 0) return true;
+			if (typeof turnHasThreadTaskCardDraftResponse === "function" && turnHasThreadTaskCardDraftResponse(turn)) return true;
+			return Boolean(typeof turnHasThreadTaskCardRequest === "function" && typeof isLatestTurn === "function" && typeof isLiveTurn === "function" && isLatestTurn(turn, thread) && isLiveTurn(turn, thread) && turnHasThreadTaskCardRequest(turn));
+		}
+		function visibleRenderableTurnsForConversation(thread) {
+			return visibleTurnsForConversation(thread).filter((turn) => turnRendersConversationArticle(turn, thread));
+		}
+		function visibleConversationShape(thread) {
+			const turns = visibleRenderableTurnsForConversation(thread);
+			let visibleItemCount = 0;
+			const userMessages = [];
+			for (const turn of turns) {
+				const visibleItems = visibleItemsForTurn(turn, thread);
+				visibleItemCount += visibleItems.length;
+				for (const entry of visibleItems) {
+					const item = entry && entry.item;
+					if (item && item.type === "userMessage") userMessages.push({
+						turn,
+						item
+					});
+				}
+			}
+			const duplicateUserMessageCount = duplicateUserMessageSignatureCount(userMessages, (entry) => visibleUserMessageEventDuplicateSignature(entry.turn, entry.item));
+			return {
+				visibleTurnCount: turns.length,
+				visibleItemCount,
+				duplicateUserMessageCount
+			};
+		}
+		function rememberThreadDetailRenderEvidence(thread, source = "unknown") {
+			if (!thread || thread.mobileLoading || thread.mobileLoadError) return null;
+			const threadId = String(thread.id || state.currentThreadId || "").trim();
+			if (!threadId) return null;
+			const shape = visibleConversationShape(thread);
+			if (!shape.visibleTurnCount && !shape.visibleItemCount) return null;
+			const itemCount = (Array.isArray(thread.turns) ? thread.turns : []).reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
+			const evidence = threadDetailStateApi.buildThreadDetailRenderEvidence({
+				atMs: Date.now(),
+				threadId,
+				threadHash: diagnosticThreadHash(threadId),
+				readMode: thread.mobileReadMode || "",
+				sourceKind: homeAiDiagnosticReportingApi.boundedToken(source, "unknown", 80),
+				turnCount: shape.visibleTurnCount,
+				visibleItemCount: shape.visibleItemCount,
+				itemCount
+			});
+			if (!evidence) return null;
+			state.lastThreadDetailRenderEvidence = evidence;
+			return evidence;
+		}
+		function clearThreadDetailRenderEvidence(reason = "") {
+			if (!state.lastThreadDetailRenderEvidence) return;
+			state.lastThreadDetailRenderEvidence = null;
+			postClientEvent("thread_detail_render_evidence_cleared", { reason: String(reason || "").slice(0, 80) });
+		}
+		function recentThreadDetailRenderEvidence() {
+			return threadDetailStateApi.recentThreadDetailRenderEvidence({
+				evidence: state.lastThreadDetailRenderEvidence,
+				nowMs: Date.now(),
+				maxAgeMs: PRIMARY_SHELL_CONFLICT_EVIDENCE_MS
+			});
+		}
+		function primaryShellSelectionConflictInput(reason, details = {}) {
+			const evidence = recentThreadDetailRenderEvidence() || {};
+			const thread = state.currentThread || null;
+			const shape = thread ? visibleConversationShape(thread) : null;
+			return {
+				reason,
+				action: "primary-shell-selection",
+				routeKind: "embedded-primary",
+				sourceKind: details.source || evidence.sourceKind || "",
+				threadHash: evidence.threadHash || diagnosticThreadHash(state.currentThreadId || thread && thread.id || ""),
+				readMode: evidence.readMode || thread && thread.mobileReadMode || "",
+				renderMode: details.renderMode || "",
+				turns: evidence.turnCount || shape && shape.visibleTurnCount || 0,
+				visibleItems: evidence.visibleItemCount || shape && shape.visibleItemCount || 0,
+				items: evidence.itemCount || 0,
+				domCount: details.domCount,
+				previousCount: details.previousCount,
+				recentDetailAgeMs: evidence.ageMs || 0,
+				hasCurrentThread: Boolean(state.currentThread),
+				hasCurrentThreadId: Boolean(state.currentThreadId),
+				hasThreadLoadController: Boolean(state.threadLoadController),
+				startupThreadOpenPending: Boolean(state.startupThreadOpenPending),
+				mobileLoading: Boolean(state.currentThread && state.currentThread.mobileLoading)
+			};
+		}
+		function recordPrimaryShellSelectionConflict(reason, details = {}) {
+			return recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.primaryShellSelectionConflictDiagnosticEvent(primaryShellSelectionConflictInput(reason, details)));
+		}
+		function recordPrimaryShellSelectionHealthy(source, thread = state.currentThread) {
+			const evidence = rememberThreadDetailRenderEvidence(thread, source);
+			if (!evidence) return null;
+			return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.primaryShellSelectionConflictDiagnosticSuccess({
+				action: "primary-shell-selection",
+				routeKind: "embedded-primary",
+				sourceKind: source,
+				threadHash: evidence.threadHash,
+				readMode: evidence.readMode
+			}));
+		}
+		function emptyVisibleDetailMismatchInput(reason, thread = state.currentThread, details = {}) {
+			const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
+			const evidence = recentThreadDetailRenderEvidence();
+			const sameThreadEvidence = threadDetailStateApi.sameThreadDetailRenderEvidence({
+				evidence,
+				threadId
+			});
+			const shape = thread ? visibleConversationShape(thread) : {
+				visibleTurnCount: 0,
+				visibleItemCount: 0
+			};
+			return {
+				reason,
+				action: details.action || "single-thread-empty-state",
+				routeKind: details.routeKind || "single-thread",
+				sourceKind: details.source || sameThreadEvidence && sameThreadEvidence.sourceKind || "",
+				threadHash: details.threadHash || sameThreadEvidence && sameThreadEvidence.threadHash || diagnosticThreadHash(threadId),
+				readMode: sameThreadEvidence && sameThreadEvidence.readMode || thread && thread.mobileReadMode || "",
+				renderMode: details.renderMode || "",
+				turns: Object.prototype.hasOwnProperty.call(details, "turns") ? details.turns : sameThreadEvidence && sameThreadEvidence.turnCount || 0,
+				visibleItems: Object.prototype.hasOwnProperty.call(details, "visibleItems") ? details.visibleItems : sameThreadEvidence && sameThreadEvidence.visibleItemCount || 0,
+				items: Object.prototype.hasOwnProperty.call(details, "items") ? details.items : sameThreadEvidence && sameThreadEvidence.itemCount || 0,
+				currentTurns: Object.prototype.hasOwnProperty.call(details, "currentTurns") ? details.currentTurns : shape.visibleTurnCount,
+				currentVisibleItems: Object.prototype.hasOwnProperty.call(details, "currentVisibleItems") ? details.currentVisibleItems : shape.visibleItemCount,
+				domCount: details.domCount,
+				previousCount: details.previousCount,
+				detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
+				mobileLoading: Boolean(thread && thread.mobileLoading),
+				recentDetailAgeMs: sameThreadEvidence && sameThreadEvidence.ageMs || 0
+			};
+		}
+		function recordEmptyVisibleDetailMismatch(reason, thread = state.currentThread, details = {}) {
+			return recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.emptyVisibleDetailMismatchDiagnosticEvent(emptyVisibleDetailMismatchInput(reason, thread, details)));
+		}
+		function recordEmptyVisibleDetailHealthy(source, thread = state.currentThread) {
+			if (!thread || thread.mobileLoading || thread.mobileLoadError) return null;
+			const threadId = String(thread.id || state.currentThreadId || "").trim();
+			if (!threadId) return null;
+			const shape = visibleConversationShape(thread);
+			if (!shape.visibleTurnCount && !shape.visibleItemCount) return null;
+			return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.emptyVisibleDetailMismatchDiagnosticSuccess({
+				action: "single-thread-empty-state",
+				routeKind: "single-thread",
+				sourceKind: source,
+				threadHash: diagnosticThreadHash(threadId),
+				readMode: thread.mobileReadMode || ""
+			}));
+		}
+		function maybeRecoverEmptyDetailWithHistoryEvidence(thread, details = {}) {
+			const now = Date.now();
+			const basePlan = threadDetailStateApi.planEmptyDetailHistoryRecovery({
+				thread,
+				currentThreadId: state.currentThreadId,
+				details,
+				nowMs: now,
+				cooldownMs: 0
+			});
+			if (!basePlan.shouldRecover || !basePlan.recoveryKey) return false;
+			const plan = threadDetailStateApi.planEmptyDetailHistoryRecovery({
+				thread,
+				currentThreadId: state.currentThreadId,
+				details,
+				nowMs: now,
+				lastRecoveredAtMs: state.emptyDetailHistoryRecoveryAtByKey.get(basePlan.recoveryKey),
+				cooldownMs: EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS
+			});
+			if (!plan.shouldRecover || !plan.recoveryKey) return false;
+			state.emptyDetailHistoryRecoveryAtByKey.set(plan.recoveryKey, plan.nowMs || now);
+			recordEmptyVisibleDetailMismatch(plan.diagnosticReason || "empty_render_with_history_evidence", thread, details);
+			if (!hasThreadDetailRequestInFlight()) scheduleCurrentThreadRefresh(0, "empty-detail-history-evidence");
+			postClientEvent("empty_detail_history_recovery", plan.event || {});
+			return true;
+		}
+		function emptyCachedDetailReuseInput(reason, thread = state.currentThread, details = {}) {
+			const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
+			const shape = thread ? visibleConversationShape(thread) : {
+				visibleTurnCount: 0,
+				visibleItemCount: 0
+			};
+			const itemCount = (Array.isArray(thread && thread.turns) ? thread.turns : []).reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
+			return {
+				reason,
+				action: "thread-open-cache-reuse",
+				routeKind: "single-thread",
+				sourceKind: details.source || "",
+				threadHash: diagnosticThreadHash(threadId),
+				readMode: thread && thread.mobileReadMode || "",
+				currentTurns: shape.visibleTurnCount,
+				currentVisibleItems: shape.visibleItemCount,
+				items: itemCount,
+				detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
+				reusableDetail: Boolean(details.reusableDetail),
+				mobileLoading: Boolean(thread && thread.mobileLoading),
+				threadTaskCardCount: Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards.length : 0
+			};
+		}
+		function recordEmptyCachedDetailReuseBlocked(reason, thread = state.currentThread, details = {}) {
+			return recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.emptyCachedDetailReuseBlockedDiagnosticEvent(emptyCachedDetailReuseInput(reason, thread, details)));
+		}
+		function recordEmptyCachedDetailReuseHealthy(source, thread = state.currentThread) {
+			const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
+			if (!threadId) return null;
+			return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.emptyCachedDetailReuseDiagnosticSuccess({
+				action: "thread-open-cache-reuse",
+				routeKind: "single-thread",
+				sourceKind: source,
+				threadHash: diagnosticThreadHash(threadId),
+				readMode: thread && thread.mobileReadMode || ""
+			}));
+		}
+		function checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan = {}, metrics = {}) {
+			if (!thread || thread.mobileLoading || thread.mobileLoadError) return;
+			if (shellPlan.hasPrimaryContent || shellPlan.emptyMessage !== "No visible turns.") return;
+			const threadId = String(thread.id || state.currentThreadId || "").trim();
+			const evidence = recentThreadDetailRenderEvidence();
+			const details = {
+				source: metrics.source || "single-thread-render",
+				renderMode: metrics.renderMode || "full-render",
+				domCount: metrics.domCount,
+				previousCount: metrics.previousCount
+			};
+			if (threadDetailStateApi.hasNonemptyThreadDetailRenderEvidence(threadDetailStateApi.sameThreadDetailRenderEvidence({
+				evidence,
+				threadId
+			}))) {
+				recordEmptyVisibleDetailMismatch("empty_render_after_nonempty_detail", thread, details);
+				return;
+			}
+			maybeRecoverEmptyDetailWithHistoryEvidence(thread, details);
+		}
+		function visibleRenderableTurnIds(thread) {
+			return visibleRenderableTurnsForConversation(thread).map((turn) => String(turn.id));
+		}
+		function conversationDomTurnIds(conversation = $("conversation")) {
+			if (!conversation) return [];
+			return Array.from(conversation.querySelectorAll("article.turn[data-turn]")).map((node) => String(node && node.getAttribute && node.getAttribute("data-turn") || "")).filter(Boolean);
+		}
+		function threadTileVisibleShape(ids = state.threadTileActiveIds) {
+			return (Array.isArray(ids) ? ids : []).reduce((shape, id) => {
+				const thread = threadTileDisplayThread(id);
+				visibleTurnsForConversation(thread).forEach((turn) => {
+					const visibleItems = visibleItemsForTurn(turn, thread);
+					const itemCount = visibleItems.length;
+					if (itemCount > 0) {
+						shape.turnCount += 1;
+						shape.visibleItemCount += itemCount;
+						const userMessages = visibleItems.map((entry) => entry && entry.item).filter((item) => item && item.type === "userMessage");
+						shape.duplicateUserMessageCount += duplicateUserMessageSignatureCount(userMessages, (item) => visibleUserMessageDuplicateSignature(turn, item));
+					}
+				});
+				return shape;
+			}, {
+				turnCount: 0,
+				visibleItemCount: 0,
+				duplicateUserMessageCount: 0
+			});
+		}
+		function threadTileVisibleTurnCount(ids = state.threadTileActiveIds) {
+			return threadTileVisibleShape(ids).turnCount;
+		}
+		function threadTileDomTurnCount(conversation = $("conversation")) {
+			if (!conversation) return 0;
+			return conversation.querySelectorAll("article.thread-tile-turn[data-thread-tile-turn]").length;
+		}
+		function conversationTurnOrderDiagnosticSnapshot(source, extra = {}, deps = {}) {
+			const conversation = deps.conversation || $("conversation");
+			const thread = deps.thread || state.currentThread;
+			if (!conversation || !thread) return null;
+			const tileMode = Object.prototype.hasOwnProperty.call(deps, "threadTileMode") ? deps.threadTileMode === true : state.threadTileMode === true;
+			const tileDomActive = Object.prototype.hasOwnProperty.call(deps, "tileDomActive") ? deps.tileDomActive === true : Boolean(conversation.classList && conversation.classList.contains("thread-tile-mode"));
+			if (tileMode || tileDomActive) return null;
+			const expectedIds = Array.isArray(deps.expectedTurnIds) ? deps.expectedTurnIds.map(String).filter(Boolean) : visibleRenderableTurnIds(thread);
+			const domIds = Array.isArray(deps.domTurnIds) ? deps.domTurnIds.map(String).filter(Boolean) : conversationDomTurnIds(conversation);
+			const expectedLatestId = expectedIds[expectedIds.length - 1] || "";
+			return threadDiagnosticEventsApi.turnOrderDiagnosticSnapshot({
+				source,
+				readMode: thread.mobileReadMode || "",
+				renderMode: extra.renderMode || "",
+				threadHash: diagnosticThreadHash(thread.id || state.currentThreadId),
+				turnHash: diagnosticTurnHash(expectedLatestId),
+				expectedTurnIds: expectedIds,
+				domTurnIds: domIds
+			});
+		}
+		function conversationProjectionDiagnosticSnapshot(source, extra = {}, deps = {}) {
+			const conversation = deps.conversation || $("conversation");
+			if (!conversation) return null;
+			const renderedSignature = Object.prototype.hasOwnProperty.call(deps, "renderedConversationSignature") ? String(deps.renderedConversationSignature || "") : String(state.renderedConversationSignature || "");
+			const domShape = deps.domShape || conversationDomShape();
+			const tileMode = Object.prototype.hasOwnProperty.call(deps, "threadTileMode") ? deps.threadTileMode === true : state.threadTileMode === true;
+			const tileDomActive = Object.prototype.hasOwnProperty.call(deps, "tileDomActive") ? deps.tileDomActive === true : Boolean(conversation.classList && conversation.classList.contains("thread-tile-mode"));
+			return threadDiagnosticEventsApi.conversationProjectionDiagnosticSnapshot({
+				source,
+				renderMode: extra.renderMode,
+				renderedSignature,
+				domShape,
+				threadTileMode: tileMode,
+				tileDomActive,
+				tileLayout: deps.tileLayout,
+				tileIds: deps.tileIds,
+				tileDisplayLayout: deps.tileDisplayLayout,
+				tileSignature: deps.tileSignature,
+				currentSignature: deps.currentSignature,
+				thread: deps.thread || state.currentThread
+			}, {
+				singleSignature: conversationRenderSignature,
+				tileLayout: threadTileLayout,
+				tileCandidateIds: threadTileCandidateIds,
+				tileDisplayLayout: threadTileDisplayLayout,
+				tileRenderSignature: threadTileRenderSignature,
+				tileThreadForId: typeof deps.tileThreadForId === "function" ? deps.tileThreadForId : threadTileDisplayThread,
+				visibleShape: visibleConversationShape
+			});
+		}
+		function applyConversationProjectionConsistencyEffect(effect) {
+			const item = effect && typeof effect === "object" ? effect : {};
+			if (!item.type) return;
+			if (item.type === "diagnostic-failure") {
+				recordHomeAiDiagnosticFailure(item.diagnostic || {});
+				return;
+			}
+			if (item.type === "diagnostic-success") {
+				recordHomeAiDiagnosticSuccess(item.diagnostic || {});
+				return;
+			}
+			throw new Error(`Unknown conversation projection consistency effect: ${item.type}`);
+		}
+		function applyConversationProjectionConsistencyEffectsPlan(plan) {
+			const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+			for (const effect of effects) applyConversationProjectionConsistencyEffect(effect);
+		}
+		function checkConversationProjectionConsistency(source, extra = {}) {
+			if (!state.currentThread || state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return;
+			recordPrimaryShellSelectionHealthy(source, state.currentThread);
+			recordEmptyVisibleDetailHealthy(source, state.currentThread);
+			const snapshot = conversationProjectionDiagnosticSnapshot(source, extra);
+			if (!snapshot) return;
+			const orderSnapshot = conversationTurnOrderDiagnosticSnapshot(source, extra);
+			applyConversationProjectionConsistencyEffectsPlan(threadDiagnosticEventsApi.conversationProjectionConsistencyEffects({
+				snapshot,
+				orderSnapshot
+			}));
+		}
+		function startUiWatchdog() {
+			if (state.uiWatchdogTimer) return;
+			state.lastUiWatchdogTickAt = Date.now();
+			state.uiWatchdogTimer = setInterval(() => {
+				const now = Date.now();
+				const lagMs = now - state.lastUiWatchdogTickAt - 1e3;
+				state.lastUiWatchdogTickAt = now;
+				if (document.visibilityState === "hidden" || lagMs < 2500) return;
+				if (now - state.lastUiStallReportedAt < 15e3) return;
+				state.lastUiStallReportedAt = now;
+				postClientEvent("ui_stall", {
+					lagMs: Math.round(lagMs),
+					composerBusy: state.composerBusy,
+					activeTurnId: state.activeTurnId || "",
+					hasContent: composerHasContent()
+				});
+			}, 1e3);
+		}
+		function updatePushButton() {
+			const button = $("pushNotifications");
+			if (!button) return;
+			button.classList.remove("hidden", "ready", "error");
+			const hideButton = () => {
+				button.textContent = "";
+				button.disabled = true;
+				button.classList.add("hidden");
+			};
+			if (state.pushBusy) {
+				button.textContent = "Working...";
+				button.disabled = true;
+				return;
+			}
+			if (!state.pushServerSupported) {
+				hideButton();
+				return;
+			}
+			if (!window.isSecureContext) {
+				hideButton();
+				return;
+			}
+			if (!pushBrowserAvailable()) {
+				hideButton();
+				return;
+			}
+			if (Notification.permission === "denied") {
+				button.textContent = "Notifications blocked";
+				button.disabled = true;
+				button.classList.add("error");
+				return;
+			}
+			if (state.pushSubscribed) {
+				button.textContent = "Send test notification";
+				button.disabled = false;
+				button.classList.add("ready");
+				return;
+			}
+			button.textContent = "Enable notifications";
+			button.disabled = false;
+			if (state.pushError) button.classList.add("error");
+		}
+		async function registerPushServiceWorker() {
+			if (state.serviceWorkerRegistration) return state.serviceWorkerRegistration;
+			state.serviceWorkerRegistration = await navigator.serviceWorker.register("/sw.js");
+			if (state.serviceWorkerRegistration && state.serviceWorkerRegistration.update) state.serviceWorkerRegistration.update().catch(() => {});
+			return state.serviceWorkerRegistration;
+		}
+		async function syncExistingPushSubscription() {
+			if (!state.key || !pushBrowserAvailable()) return;
+			const subscription = await (await registerPushServiceWorker()).pushManager.getSubscription();
+			state.pushSubscribed = Boolean(subscription);
+			if (subscription) await api("/api/push/subscribe", {
+				method: "POST",
+				body: JSON.stringify({ subscription: pushSubscriptionToJson(subscription) })
+			});
+		}
+		async function initializePushControls() {
+			state.pushError = "";
+			updatePushButton();
+			if (!pushBrowserAvailable() || !state.key) return;
+			try {
+				await syncExistingPushSubscription();
+			} catch (err) {
+				state.pushError = err.message || String(err);
+			} finally {
+				updatePushButton();
+			}
+		}
+		async function enablePushNotifications() {
+			if (!pushBrowserAvailable()) return;
+			const permission = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+			if (permission !== "granted") {
+				state.pushSubscribed = false;
+				state.pushError = permission === "denied" ? "Notifications blocked" : "Notification permission not granted";
+				updatePushButton();
+				return;
+			}
+			const registration = await registerPushServiceWorker();
+			let subscription = await registration.pushManager.getSubscription();
+			if (!subscription) {
+				const key = await api("/api/push/vapid-public-key");
+				subscription = await registration.pushManager.subscribe({
+					userVisibleOnly: true,
+					applicationServerKey: base64UrlToUint8Array(key.publicKey)
+				});
+			}
+			await api("/api/push/subscribe", {
+				method: "POST",
+				body: JSON.stringify({ subscription: pushSubscriptionToJson(subscription) })
+			});
+			state.pushSubscribed = true;
+			state.pushError = "";
+			$("connectionState").classList.remove("error");
+			$("connectionState").textContent = "Notifications enabled";
+		}
+		async function sendTestPushNotification() {
+			const result = await api("/api/push/test", {
+				method: "POST",
+				body: "{}"
+			});
+			$("connectionState").classList.remove("error");
+			if (result.sent) {
+				$("connectionState").textContent = "Test notification sent";
+				return;
+			}
+			if (result.failed) {
+				const detail = result.lastError && (result.lastError.reason || result.lastError.statusCode) ? `${result.lastError.statusCode || ""} ${result.lastError.reason || ""}`.trim() : "delivery failed";
+				throw new Error(`Test notification failed: ${detail}`);
+			}
+			$("connectionState").textContent = "No push subscription";
+		}
+		async function handlePushButtonClick() {
+			if (state.pushBusy) return;
+			state.pushBusy = true;
+			updatePushButton();
+			try {
+				if (state.pushSubscribed) await sendTestPushNotification();
+				else await enablePushNotifications();
+			} catch (err) {
+				state.pushError = err.message || String(err);
+				showError(err);
+			} finally {
+				state.pushBusy = false;
+				updatePushButton();
+			}
+		}
+		const legacyGlobals = {
+			api,
+			postClientEvent,
+			nowPerfMs,
+			roundedDurationMs,
+			postPerformanceEvent,
+			diagnosticHash,
+			diagnosticThreadHash,
+			diagnosticTurnHash,
+			diagnosticTaskHash,
+			diagnosticItemHash,
+			clientSubmissionDiagnosticHash,
+			clientSubmissionDataAttr,
+			diagnosticRouteKind,
+			diagnosticErrorStatus,
+			diagnosticErrorCode,
+			diagnosticDurationBucket,
+			currentHomeAiDiagnosticContext,
+			postHomeAiDiagnosticReport,
+			recordHomeAiDiagnosticFailure,
+			recordHomeAiDiagnosticSuccess,
+			applyFrontendRuntimeHealthEffect,
+			applyFrontendRuntimeHealthEffectsPlan,
+			threadListRuntimeMetrics,
+			recordThreadListRuntimeStall,
+			sampleThreadListInputDelay,
+			startThreadListRuntimeHeartbeat,
+			startThreadListRuntimeLongTaskObserver,
+			startThreadListRuntimeStallMonitoring,
+			conversationHasClientSubmissionHash,
+			frontendHealthThreadForSubmission,
+			probeSubmittedMessageDom,
+			scheduleSubmittedMessageDomProbe,
+			applyThreadDetailResponseDiagnosticEffect,
+			applyThreadDetailResponseDiagnosticEffectsPlan,
+			recordThreadDetailResponseDiagnostics,
+			conversationDomShape,
+			duplicateUserMessageSignatureCount,
+			domUserMessageDuplicateSignature,
+			domUserMessageEventDuplicateSignature,
+			visibleUserMessageDuplicateSignature,
+			visibleUserMessageEventDuplicateSignature,
+			turnRendersConversationArticle,
+			visibleRenderableTurnsForConversation,
+			visibleConversationShape,
+			rememberThreadDetailRenderEvidence,
+			clearThreadDetailRenderEvidence,
+			recentThreadDetailRenderEvidence,
+			primaryShellSelectionConflictInput,
+			recordPrimaryShellSelectionConflict,
+			recordPrimaryShellSelectionHealthy,
+			emptyVisibleDetailMismatchInput,
+			recordEmptyVisibleDetailMismatch,
+			recordEmptyVisibleDetailHealthy,
+			maybeRecoverEmptyDetailWithHistoryEvidence,
+			emptyCachedDetailReuseInput,
+			recordEmptyCachedDetailReuseBlocked,
+			recordEmptyCachedDetailReuseHealthy,
+			checkEmptyVisibleDetailMismatchAfterRender,
+			visibleRenderableTurnIds,
+			conversationDomTurnIds,
+			threadTileVisibleShape,
+			threadTileVisibleTurnCount,
+			threadTileDomTurnCount,
+			conversationTurnOrderDiagnosticSnapshot,
+			conversationProjectionDiagnosticSnapshot,
+			applyConversationProjectionConsistencyEffect,
+			applyConversationProjectionConsistencyEffectsPlan,
+			checkConversationProjectionConsistency,
+			startUiWatchdog,
+			updatePushButton,
+			registerPushServiceWorker,
+			syncExistingPushSubscription,
+			initializePushControls,
+			enablePushNotifications,
+			sendTestPushNotification,
+			handlePushButtonClick
+		};
+		function createApiClientRuntime() {
+			return Object.assign({}, legacyGlobals);
+		}
+		const apiClientRuntimeApi = { createApiClientRuntime };
+		if (typeof module === "object" && module.exports) module.exports = apiClientRuntimeApi;
+		for (const [name, value] of Object.entries(legacyGlobals)) if (typeof value === "function") root[name] = value;
+		root.CodexApiClientRuntime = apiClientRuntimeApi;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
+//#region public/thread-list-load-policy.js
+var require_thread_list_load_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadListLoadPolicy = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function bool(value) {
+			return value === true;
+		}
+		function text(value) {
+			return String(value || "").trim();
+		}
+		function planThreadListLoadRequest(input = {}) {
+			const silent = bool(input.silent);
+			const selectedCwd = text(input.selectedCwd);
+			const search = text(input.search);
+			const threadDetailOpening = bool(input.threadDetailOpening);
+			const documentHidden = bool(input.documentHidden);
+			const allowDuringDetail = bool(input.allowDuringDetail);
+			const allowHidden = bool(input.allowHidden);
+			const hasLoadedList = Number(input.threadListLoadedAtMs || 0) > 0;
+			const deferFallback = input.deferFallback;
+			const suppressHiddenSilent = silent && documentHidden && !allowHidden;
+			const suppressDetailSilent = silent && threadDetailOpening && !allowDuringDetail;
+			const allowWarmFallbackInitial = deferFallback !== false && !selectedCwd && !search;
+			const shouldDeferFallback = deferFallback === true || silent && deferFallback !== false && threadDetailOpening && !selectedCwd && !search;
+			const shouldUseWarmFallbackInitial = allowWarmFallbackInitial && (shouldDeferFallback || !hasLoadedList);
+			return {
+				action: "thread-list-load-request",
+				selectedCwd,
+				search,
+				silent,
+				threadDetailOpening,
+				documentHidden,
+				shouldLoad: !suppressHiddenSilent && !suppressDetailSilent,
+				skipReason: suppressHiddenSilent ? "hidden-silent" : suppressDetailSilent ? "detail-in-flight" : "",
+				retryDelayMs: suppressDetailSilent ? 700 : 0,
+				shouldDeferFallback,
+				shouldUseWarmFallbackInitial,
+				params: {
+					fallback: shouldDeferFallback ? "defer" : "",
+					initial: shouldUseWarmFallbackInitial ? "warm-fallback" : ""
+				}
+			};
+		}
+		return { planThreadListLoadRequest };
+	});
+}));
+//#endregion
+//#region public/thread-list-stable-order.js
+var require_thread_list_stable_order = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadListStableOrder = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const DEFAULT_HOLD_MS = 45e3;
+		function text(value) {
+			return String(value || "").trim();
+		}
+		function boundedHoldMs(value) {
+			const number = Math.trunc(Number(value) || 0);
+			if (number <= 0) return DEFAULT_HOLD_MS;
+			return Math.min(3e5, Math.max(5e3, number));
+		}
+		function threadId(thread) {
+			return text(thread && thread.id);
+		}
+		function threadListOrderScopeKey(input = {}) {
+			const cwd = text(input.selectedCwd);
+			const search = text(input.search).toLowerCase();
+			return JSON.stringify({
+				cwd,
+				search
+			});
+		}
+		function orderedThreadsById(threads, ids) {
+			const byId = /* @__PURE__ */ new Map();
+			for (const thread of threads || []) {
+				const id = threadId(thread);
+				if (id && !byId.has(id)) byId.set(id, thread);
+			}
+			return (ids || []).map((id) => byId.get(id)).filter(Boolean);
+		}
+		function mergeHeldOrder(previousOrder, incomingIds) {
+			const incomingSet = new Set(incomingIds);
+			const rank = new Map(incomingIds.map((id, index) => [id, index]));
+			const ordered = (previousOrder || []).filter((id) => incomingSet.has(id));
+			const orderedSet = new Set(ordered);
+			const additions = incomingIds.filter((id) => !orderedSet.has(id));
+			for (const id of additions) {
+				const idRank = rank.get(id);
+				let insertAt = ordered.length;
+				for (let index = 0; index < ordered.length; index += 1) if ((rank.get(ordered[index]) ?? Number.MAX_SAFE_INTEGER) > idRank) {
+					insertAt = index;
+					break;
+				}
+				ordered.splice(insertAt, 0, id);
+				orderedSet.add(id);
+			}
+			return ordered;
+		}
+		function planThreadListStableOrder(input = {}) {
+			const threads = Array.isArray(input.threads) ? input.threads : [];
+			const incomingIds = threads.map(threadId).filter(Boolean);
+			const previous = input.previousState && typeof input.previousState === "object" ? input.previousState : {};
+			const previousOrder = Array.isArray(previous.order) ? previous.order.map(text).filter(Boolean) : [];
+			const scopeKey = text(input.scopeKey) || threadListOrderScopeKey(input);
+			const nowMs = Math.max(0, Math.trunc(Number(input.nowMs) || Date.now()));
+			const holdMs = boundedHoldMs(input.holdMs);
+			const previousHoldUntilMs = Math.max(0, Math.trunc(Number(previous.holdUntilMs) || 0));
+			const sameScope = text(previous.scopeKey) === scopeKey;
+			const canHold = !input.forceServerOrder && sameScope && previousOrder.length > 0 && previousHoldUntilMs > nowMs;
+			const order = canHold ? mergeHeldOrder(previousOrder, incomingIds) : incomingIds;
+			const holdUntilMs = canHold ? previousHoldUntilMs : nowMs + holdMs;
+			return {
+				action: "thread-list-stable-order",
+				held: canHold,
+				scopeKey,
+				holdUntilMs,
+				order,
+				threads: orderedThreadsById(threads, order),
+				state: {
+					scopeKey,
+					holdUntilMs,
+					order
+				}
+			};
+		}
+		return {
+			DEFAULT_HOLD_MS,
+			threadListOrderScopeKey,
+			planThreadListStableOrder
+		};
+	});
+}));
+//#endregion
+//#region public/thread-status-hints.js
+var require_thread_status_hints = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadStatusHints = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const DEFAULT_RUNNING_HINT_STALE_MS = 1200 * 1e3;
+		const DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS = 60 * 1e3;
+		const DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS = 1e3;
+		function timestampMs(value) {
+			if (value === null || value === void 0 || value === "") return 0;
+			if (typeof value === "number") {
+				if (!Number.isFinite(value) || value <= 0) return 0;
+				return value > 0xe8d4a51000 ? Math.trunc(value) : Math.trunc(value * 1e3);
+			}
+			if (/^\d+(?:\.\d+)?$/.test(String(value))) {
+				const numeric = Number(value);
+				if (Number.isFinite(numeric) && numeric > 0) return numeric > 0xe8d4a51000 ? Math.trunc(numeric) : Math.trunc(numeric * 1e3);
+			}
+			const parsed = Date.parse(String(value));
+			return Number.isFinite(parsed) ? parsed : 0;
+		}
+		function statusText(status) {
+			if (!status) return "";
+			if (typeof status === "string") return status;
+			if (status && typeof status === "object" && status.type) return String(status.type);
+			try {
+				return JSON.stringify(status);
+			} catch (_) {
+				return String(status);
+			}
+		}
+		function isStaleActiveStatus(status, thread) {
+			return Boolean(status && typeof status === "object" && (status.mobileStaleActiveTurn || status.staleActiveTurn || status.reason === "context-only-active-turn") || thread && thread.mobileStaleActiveTurn);
+		}
+		function isRunningStatus(status) {
+			return /active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(statusText(status).toLowerCase());
+		}
+		function isSettledStatus(status) {
+			return /^(idle|notloaded|not_loaded|not-loaded|completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(statusText(status).toLowerCase());
+		}
+		function isIdleStatus(status) {
+			return /^(idle|notloaded|not_loaded|not-loaded)$/.test(statusText(status).toLowerCase());
+		}
+		function isTerminalStatus(status) {
+			return /^(completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(statusText(status).toLowerCase());
+		}
+		function threadUpdatedAtMs(thread) {
+			return timestampMs(thread && (thread.updatedAtMs || thread.updatedAt || thread.updated_at_ms || thread.updated_at));
+		}
+		function terminalTurnAtMs(turn) {
+			return timestampMs(turn && turn.completedAtMs) || timestampMs(turn && turn.completedAt) || timestampMs(turn && turn.completed_at_ms) || timestampMs(turn && turn.completed_at) || timestampMs(turn && turn.finishedAt) || timestampMs(turn && turn.finished_at) || timestampMs(turn && turn.updatedAtMs) || timestampMs(turn && turn.updatedAt) || timestampMs(turn && turn.updated_at_ms) || timestampMs(turn && turn.updated_at) || timestampMs(turn && turn.startedAtMs) || timestampMs(turn && turn.startedAt) || timestampMs(turn && turn.started_at_ms) || timestampMs(turn && turn.started_at) || timestampMs(turn && turn.createdAtMs) || timestampMs(turn && turn.createdAt) || timestampMs(turn && turn.created_at_ms) || timestampMs(turn && turn.created_at);
+		}
+		function notificationDurableEventAtMs(params = {}) {
+			return timestampMs(params.eventAtMs) || timestampMs(params.eventAt) || terminalTurnAtMs(params.turn) || timestampMs(params.receivedAtMs) || timestampMs(params.timestampMs) || timestampMs(params.timestamp);
+		}
+		function notificationEventAtMs(params = {}, fallbackMs = 0, options = {}) {
+			const durableAt = notificationDurableEventAtMs(params);
+			if (durableAt) return durableAt;
+			if (options.allowReplayReceivedAt !== false) {
+				const replayAt = timestampMs(params.mobileReplayReceivedAtMs);
+				if (replayAt) return replayAt;
+			}
+			return timestampMs(params.receivedAtMs) || timestampMs(params.timestampMs) || timestampMs(params.timestamp) || timestampMs(fallbackMs);
+		}
+		function latestTerminalTurn(thread) {
+			const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+			const latest = turns.length ? turns[turns.length - 1] : null;
+			if (!latest) return null;
+			return isTerminalStatus(latest.status) ? latest : null;
+		}
+		function latestTerminalTurnAtMs(thread) {
+			const turn = latestTerminalTurn(thread);
+			return turn ? terminalTurnAtMs(turn) : 0;
+		}
+		function hasFreshSubmittedProcessingHint(submittedProcessingHintedAtMs, nowMs, staleMs = DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS) {
+			const hintedAt = timestampMs(submittedProcessingHintedAtMs);
+			const now = timestampMs(nowMs) || Date.now();
+			return Boolean(hintedAt > 0 && now - hintedAt <= Math.max(0, Number(staleMs) || DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS));
+		}
+		function statusFreshnessAtMs(thread, eventAtMs) {
+			return Math.max(threadUpdatedAtMs(thread) || 0, timestampMs(eventAtMs) || 0);
+		}
+		function settledStatusFreshEnoughForRunningHint(input = {}) {
+			const hintedAt = timestampMs(input.runningHintedAtMs);
+			if (!hintedAt) return true;
+			const statusAt = statusFreshnessAtMs(input.thread, input.eventAtMs);
+			if (!statusAt) return false;
+			if (input.mobileReplay) return statusAt >= hintedAt;
+			return statusAt + Math.max(0, Number(input.freshnessToleranceMs) || DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS) >= hintedAt;
+		}
+		function shouldKeepRunningHintForSettledStatus(input = {}) {
+			const threadId = String(input.threadId || "");
+			if (!threadId || !input.isRunningHinted) return false;
+			const status = input.status || input.thread && input.thread.status;
+			if (isStaleActiveStatus(status, input.thread)) return false;
+			if (!isSettledStatus(status)) return false;
+			if (isIdleStatus(status) && !latestTerminalTurn(input.thread) && !input.eventIsTerminal) return true;
+			if (input.allowLocalProcessing !== false && isIdleStatus(status) && !latestTerminalTurn(input.thread) && hasFreshSubmittedProcessingHint(input.submittedProcessingHintedAtMs, input.nowMs, input.submittedProcessingHintStaleMs)) return true;
+			if (input.currentThreadId && threadId === String(input.currentThreadId) && input.currentThreadSettled) return false;
+			if (input.currentThreadHasLiveTurn) return true;
+			if (!input.mobileReplay && (isTerminalStatus(status) || latestTerminalTurn(input.thread) || input.eventIsTerminal)) return false;
+			return !settledStatusFreshEnoughForRunningHint(input);
+		}
+		function threadUnreadTerminalAtMs(thread, eventAtMs = 0, options = {}) {
+			const eventAt = options.eventIsTerminal ? timestampMs(eventAtMs) : 0;
+			return Math.max(latestTerminalTurnAtMs(thread) || 0, eventAt || 0);
+		}
+		function shouldMarkThreadUnread(input = {}) {
+			const threadId = String(input.threadId || "");
+			if (!threadId || threadId === String(input.currentThreadId || "")) return false;
+			const status = input.status || input.thread && input.thread.status;
+			if (isStaleActiveStatus(status, input.thread)) return false;
+			if (!isSettledStatus(status)) return false;
+			if (isIdleStatus(status) && !latestTerminalTurn(input.thread) && !input.eventIsTerminal) return false;
+			const terminalAt = threadUnreadTerminalAtMs(input.thread, input.eventAtMs, { eventIsTerminal: Boolean(input.eventIsTerminal) });
+			const viewedAt = timestampMs(input.viewedAtMs);
+			if (viewedAt > 0) return terminalAt > viewedAt;
+			const updateAt = terminalAt || (input.wasRunning ? statusFreshnessAtMs(input.thread, input.eventAtMs) : 0);
+			if (input.mobileReplay && !updateAt) return false;
+			const hintedAt = timestampMs(input.runningHintedAtMs);
+			if (!input.wasRunning || hintedAt <= 0) return false;
+			if (!updateAt) return !input.mobileReplay;
+			return updateAt + (input.mobileReplay ? 0 : Math.max(0, Number(input.freshnessToleranceMs) || DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS)) >= hintedAt;
+		}
+		function runningHintAgeMs(input = {}) {
+			const hintedAt = timestampMs(input.runningHintedAtMs);
+			const now = timestampMs(input.nowMs) || Date.now();
+			if (hintedAt > 0) return now - hintedAt;
+			const updatedAt = threadUpdatedAtMs(input.thread);
+			if (updatedAt > 0) return now - updatedAt;
+			return (Number(input.runningHintStaleMs) || DEFAULT_RUNNING_HINT_STALE_MS) + 1;
+		}
+		function shouldExpireRunningThreadHint(input = {}) {
+			if (!input.threadId || !input.isRunningHinted) return false;
+			const status = input.status || input.thread && input.thread.status;
+			if (isStaleActiveStatus(status, input.thread)) return true;
+			if (isRunningStatus(status)) return false;
+			if (isSettledStatus(status) && !shouldKeepRunningHintForSettledStatus(input)) return false;
+			if (input.currentThreadHasLiveTurn) return false;
+			return runningHintAgeMs(input) > (Number(input.runningHintStaleMs) || DEFAULT_RUNNING_HINT_STALE_MS);
+		}
+		return {
+			DEFAULT_RUNNING_HINT_STALE_MS,
+			DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS,
+			DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
+			hasFreshSubmittedProcessingHint,
+			isIdleStatus,
+			isRunningStatus,
+			isSettledStatus,
+			isStaleActiveStatus,
+			isTerminalStatus,
+			latestTerminalTurnAtMs,
+			notificationDurableEventAtMs,
+			notificationEventAtMs,
+			runningHintAgeMs,
+			shouldExpireRunningThreadHint,
+			shouldKeepRunningHintForSettledStatus,
+			shouldMarkThreadUnread,
+			statusFreshnessAtMs,
+			statusText,
+			terminalTurnAtMs,
+			threadUpdatedAtMs,
+			timestampMs
+		};
+	});
+}));
+//#endregion
+//#region public/thread-detail-patch-plan.js
+var require_thread_detail_patch_plan = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDetailPatchPlan = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function normalizePatchEntry(entry) {
+			if (!entry || typeof entry !== "object") return null;
+			const key = String(entry.key || "");
+			if (!key) return null;
+			return Object.assign({}, entry, { key });
+		}
+		function normalizeRefreshTurnPatchEntry(entry) {
+			if (!entry || typeof entry !== "object") return null;
+			const key = String(entry.key || "");
+			if (!key) return null;
+			return {
+				key,
+				hasPreviousTurn: Boolean(entry.hasPreviousTurn),
+				itemPatchable: Boolean(entry.itemPatchable),
+				articlePresent: Boolean(entry.articlePresent)
+			};
+		}
+		function normalizedStringList(value) {
+			return Array.isArray(value) ? value.map((entry) => String(entry || "")).filter(Boolean) : [];
+		}
+		function signatureText(signature) {
+			if (signature == null) return "";
+			if (typeof signature === "string") return signature;
+			try {
+				return JSON.stringify(signature);
+			} catch (_) {
+				return "";
+			}
+		}
+		function planThreadDetailDomPatchSurface(input = {}) {
+			const threadId = String(input.threadId || "").trim();
+			const threadTileMode = Boolean(input.threadTileMode);
+			const threadTileSurface = Boolean(input.threadTileSurface);
+			const tilePaneVisible = Boolean(input.tilePaneVisible);
+			const conversationPresent = Boolean(input.conversationPresent);
+			if (threadTileMode || threadTileSurface) {
+				if (!threadTileMode) return {
+					canPatch: false,
+					surface: "blocked",
+					reason: "tile-surface-without-tile-mode",
+					threadId
+				};
+				if (!threadTileSurface) return {
+					canPatch: false,
+					surface: "blocked",
+					reason: "tile-mode-surface-mismatch",
+					threadId
+				};
+				if (!threadId) return {
+					canPatch: false,
+					surface: "thread-tile-pane",
+					reason: "missing-thread-id",
+					threadId: ""
+				};
+				if (!tilePaneVisible) return {
+					canPatch: false,
+					surface: "thread-tile-pane",
+					reason: "tile-pane-not-visible",
+					threadId
+				};
+				return {
+					canPatch: true,
+					surface: "thread-tile-pane",
+					reason: "tile-pane-visible",
+					threadId
+				};
+			}
+			if (!conversationPresent) return {
+				canPatch: false,
+				surface: "single-thread",
+				reason: "missing-conversation",
+				threadId
+			};
+			return {
+				canPatch: true,
+				surface: "single-thread",
+				reason: "single-thread-surface",
+				threadId
+			};
+		}
+		function planThreadDetailRefreshLocalPatchPreflight(input = {}) {
+			const conversationPresent = Boolean(input.conversationPresent);
+			const previousThreadPresent = Boolean(input.previousThreadPresent);
+			const nextThreadPresent = Boolean(input.nextThreadPresent);
+			if (!conversationPresent) return {
+				canPatch: false,
+				terminal: false,
+				reason: "missing-conversation-root"
+			};
+			if (!previousThreadPresent || !nextThreadPresent) return {
+				canPatch: false,
+				terminal: false,
+				reason: "missing-thread"
+			};
+			if (String(input.stage || "complete") === "root") return {
+				canPatch: true,
+				terminal: false,
+				reason: "root-ready"
+			};
+			if (input.tilePanePatched) return {
+				canPatch: true,
+				terminal: true,
+				reason: "tile-pane-patched"
+			};
+			if (!input.singleThreadSurfaceAvailable) return {
+				canPatch: false,
+				terminal: false,
+				reason: "single-thread-surface-unavailable"
+			};
+			if (input.previousLoadingOrError || input.nextLoadingOrError) return {
+				canPatch: false,
+				terminal: false,
+				reason: "loading-or-error-state"
+			};
+			const renderedConversationSignature = signatureText(input.renderedConversationSignature);
+			const previousConversationSignature = signatureText(input.previousConversationSignature);
+			const renderedPatchShellSignature = signatureText(input.renderedPatchShellSignature);
+			const previousPatchShellSignature = signatureText(input.previousPatchShellSignature);
+			const nextPatchShellSignature = signatureText(input.nextPatchShellSignature);
+			if (renderedConversationSignature !== previousConversationSignature && (!renderedPatchShellSignature || renderedPatchShellSignature !== previousPatchShellSignature)) return {
+				canPatch: false,
+				terminal: false,
+				reason: "rendered-dom-stale"
+			};
+			if (previousPatchShellSignature !== nextPatchShellSignature) return {
+				canPatch: false,
+				terminal: false,
+				reason: "patch-shell-changed"
+			};
+			return {
+				canPatch: true,
+				terminal: false,
+				reason: "preflight-passed"
+			};
+		}
+		function visibleItemPatchShapePreservesExisting(previousEntries, nextEntries) {
+			if (!Array.isArray(previousEntries) || !Array.isArray(nextEntries)) return false;
+			const previous = previousEntries.map(normalizePatchEntry).filter(Boolean);
+			const next = nextEntries.map(normalizePatchEntry).filter(Boolean);
+			if (previous.length !== previousEntries.length || next.length !== nextEntries.length) return false;
+			if (previous.length > next.length) return false;
+			let previousIndex = 0;
+			for (const nextEntry of next) {
+				const previousEntry = previous[previousIndex];
+				if (previousEntry && previousEntry.key === nextEntry.key) previousIndex += 1;
+			}
+			return previousIndex === previous.length;
+		}
+		function planVisibleItemRefreshPatch(previousEntries, nextEntries) {
+			if (!visibleItemPatchShapePreservesExisting(previousEntries, nextEntries)) return {
+				canPatch: false,
+				reason: "shape-changed",
+				operations: []
+			};
+			const previousByKey = new Map(previousEntries.map(normalizePatchEntry).filter(Boolean).map((entry) => [entry.key, entry]));
+			const operations = [];
+			for (const rawNextEntry of nextEntries) {
+				const nextEntry = normalizePatchEntry(rawNextEntry);
+				if (!nextEntry) return {
+					canPatch: false,
+					reason: "invalid-entry",
+					operations: []
+				};
+				const previousEntry = previousByKey.get(nextEntry.key);
+				if (!previousEntry) {
+					operations.push({
+						type: "insert",
+						key: nextEntry.key,
+						nextEntry
+					});
+					continue;
+				}
+				const previousSignature = signatureText(previousEntry.signature);
+				const nextSignature = signatureText(nextEntry.signature);
+				operations.push({
+					type: previousSignature === nextSignature ? "reuse" : "patch",
+					key: nextEntry.key,
+					previousEntry,
+					nextEntry
+				});
+			}
+			return {
+				canPatch: true,
+				reason: "shape-preserved",
+				operations
+			};
+		}
+		function planThreadDetailRefreshDomPatch(entries, options = {}) {
+			if (!Array.isArray(entries)) return {
+				canPatch: false,
+				reason: "invalid-turn-entries",
+				operations: []
+			};
+			const operations = [];
+			const nextKeys = /* @__PURE__ */ new Set();
+			for (const rawEntry of entries) {
+				const entry = normalizeRefreshTurnPatchEntry(rawEntry);
+				if (!entry) return {
+					canPatch: false,
+					reason: "invalid-turn-entry",
+					operations: []
+				};
+				nextKeys.add(entry.key);
+				if (entry.hasPreviousTurn && entry.itemPatchable && entry.articlePresent) {
+					operations.push({
+						type: "item-patch",
+						key: entry.key,
+						entry
+					});
+					continue;
+				}
+				operations.push({
+					type: entry.articlePresent ? "replace-turn" : "insert-turn",
+					key: entry.key,
+					entry
+				});
+			}
+			const previousTurnKeys = normalizedStringList(options.previousTurnKeys || options.previousKeys);
+			for (const previousKey of previousTurnKeys) {
+				if (nextKeys.has(previousKey)) continue;
+				operations.push({
+					type: "remove-turn",
+					key: previousKey,
+					entry: {
+						key: previousKey,
+						stale: true
+					}
+				});
+			}
+			return {
+				canPatch: true,
+				reason: "planned",
+				operations
+			};
+		}
+		return {
+			normalizePatchEntry,
+			normalizeRefreshTurnPatchEntry,
+			planThreadDetailRefreshDomPatch,
+			planThreadDetailRefreshLocalPatchPreflight,
+			planVisibleItemRefreshPatch,
+			planThreadDetailDomPatchSurface,
+			visibleItemPatchShapePreservesExisting
+		};
+	});
+}));
+//#endregion
+//#region public/thread-detail-actions.js
+var require_thread_detail_actions = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDetailActions = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function withinRoot(root, node) {
+			if (!root || !node || typeof root.contains !== "function") return true;
+			return root.contains(node);
+		}
+		function closestWithin(target, selector, root = null) {
+			if (!target || typeof target.closest !== "function") return null;
+			const node = target.closest(selector);
+			if (!node || !withinRoot(root, node)) return null;
+			return node;
+		}
+		function action(type, target, fields = {}) {
+			return Object.assign({
+				action: String(type || "none"),
+				target: target || null,
+				preventDefault: false,
+				stopPropagation: false
+			}, fields);
+		}
+		function dataValue(node, key) {
+			return String(node && node.dataset && node.dataset[key] || "");
+		}
+		function contextThreadIdFromNode(node, explicitDatasetKey = "") {
+			if (!node) return "";
+			const explicit = explicitDatasetKey ? dataValue(node, explicitDatasetKey) : "";
+			if (explicit) return explicit;
+			if (typeof node.closest !== "function") return "";
+			return dataValue(node.closest("[data-thread-tile-pane]"), "threadTilePane");
+		}
+		function previewableImageFromTarget(target, root = null) {
+			const image = closestWithin(target, ".input-image img, .image-view img, .markdown-image img, .file-preview-image, .attachment-thumb", root);
+			if (!image) return null;
+			if (image.closest && image.closest(".github-link-card")) return null;
+			return image;
+		}
+		function resolveRichContentClickAction(input = {}) {
+			const target = input.target || null;
+			const root = input.root || null;
+			let node = closestWithin(target, "[data-copy-key]", root);
+			if (node) return action("copy", node, {
+				button: node,
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-local-file-path]", root);
+			if (node) return action("local-file-preview", node, {
+				link: node,
+				threadId: contextThreadIdFromNode(node, "localFileThreadId"),
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-mermaid-action]", root);
+			if (node) return action("mermaid", node, {
+				button: node,
+				preventDefault: true,
+				stopPropagation: true
+			});
+			node = closestWithin(target, "[data-github-link-preview-expand]", root);
+			if (node) return action("github-preview-toggle", node, {
+				button: node,
+				preventDefault: true,
+				stopPropagation: true
+			});
+			return action("none", null, { reason: "no-match" });
+		}
+		function resolveThreadDetailClickAction(input = {}) {
+			const target = input.target || null;
+			const root = input.root || null;
+			const rich = resolveRichContentClickAction({
+				target,
+				root
+			});
+			if (rich.action !== "none") return rich;
+			let node = closestWithin(target, "[data-approval-action]", root);
+			if (node) return action("approval-answer", node, {
+				button: node,
+				approvalId: dataValue(node, "approvalId"),
+				approvalAction: dataValue(node, "approvalAction"),
+				threadId: dataValue(node, "approvalThreadId")
+			});
+			node = closestWithin(target, "[data-task-card-action]", root);
+			if (node) {
+				const taskCardAction = dataValue(node, "taskCardAction");
+				const cardId = dataValue(node, "taskCardId");
+				const threadId = dataValue(node, "taskCardThreadId");
+				if (taskCardAction === "reply") return action("task-card-reply", node, {
+					button: node,
+					cardId,
+					taskCardAction,
+					threadId
+				});
+				if (taskCardAction === "approve" || taskCardAction === "delete" || taskCardAction === "revoke") return action("task-card-mutate", node, {
+					button: node,
+					cardId,
+					taskCardAction,
+					threadId
+				});
+				return action("task-card-unknown", node, {
+					button: node,
+					cardId,
+					taskCardAction,
+					threadId
+				});
+			}
+			node = closestWithin(target, "[data-task-card-draft-action]", root);
+			if (node) return action("task-card-draft", node, {
+				button: node,
+				draftAction: dataValue(node, "taskCardDraftAction"),
+				draftKey: dataValue(node, "taskCardDraftKey"),
+				threadId: dataValue(node, "taskCardDraftThreadId")
+			});
+			node = closestWithin(target, "[data-server-response-text]", root);
+			if (node) return action("server-response", node, {
+				option: node,
+				requestId: dataValue(node, "serverRequestId"),
+				threadId: dataValue(node, "serverRequestThreadId"),
+				responseText: dataValue(node, "serverResponseText"),
+				questionId: dataValue(node, "serverQuestionId") || "answer"
+			});
+			node = closestWithin(target, "[data-server-request-decline]", root);
+			if (node) return action("server-request-decline", node, {
+				button: node,
+				requestId: dataValue(node, "serverRequestId"),
+				threadId: dataValue(node, "serverRequestThreadId")
+			});
+			return action("none", null, { reason: "no-match" });
+		}
+		return {
+			closestWithin,
+			previewableImageFromTarget,
+			resolveRichContentClickAction,
+			resolveThreadDetailClickAction,
+			contextThreadIdFromNode
+		};
+	});
+}));
+//#endregion
+//#region public/thread-detail-merge-state.js
+var require_thread_detail_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDetailMergeState = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		function defaultNormalizeThread(thread) {
+			return thread;
+		}
+		function defaultSortTurns(turns) {
+			return Array.isArray(turns) ? turns.slice() : [];
+		}
+		function createThreadDetailMergePolicy(options = {}) {
+			const isV4ProjectionThread = typeof options.isV4ProjectionThread === "function" ? options.isV4ProjectionThread : () => false;
+			const mergeV4ProjectionThread = typeof options.mergeV4ProjectionThread === "function" ? options.mergeV4ProjectionThread : (existingThread, incomingThread) => incomingThread || existingThread || null;
+			const normalizeThreadVisibleUserMessages = typeof options.normalizeThreadVisibleUserMessages === "function" ? options.normalizeThreadVisibleUserMessages : defaultNormalizeThread;
+			const turnVisibleWeight = typeof options.turnVisibleWeight === "function" ? options.turnVisibleWeight : () => 0;
+			const shouldPreserveExistingTurnVisibleItems = typeof options.shouldPreserveExistingTurnVisibleItems === "function" ? options.shouldPreserveExistingTurnVisibleItems : () => false;
+			const mergeItemsPreservingLocalVisible = typeof options.mergeItemsPreservingLocalVisible === "function" ? options.mergeItemsPreservingLocalVisible : (existingItems, incomingItems) => Array.isArray(incomingItems) ? incomingItems : existingItems;
+			const shouldDropInitialSubmissionEchoTurn = typeof options.shouldDropInitialSubmissionEchoTurn === "function" ? options.shouldDropInitialSubmissionEchoTurn : () => false;
+			const turnIsSupersededBy = typeof options.turnIsSupersededBy === "function" ? options.turnIsSupersededBy : () => false;
+			const isTurnComplete = typeof options.isTurnComplete === "function" ? options.isTurnComplete : () => false;
+			const shouldPreserveMissingExistingTurn = typeof options.shouldPreserveMissingExistingTurn === "function" ? options.shouldPreserveMissingExistingTurn : () => false;
+			const sortTurnsForDisplay = typeof options.sortTurnsForDisplay === "function" ? options.sortTurnsForDisplay : defaultSortTurns;
+			const threadHasInitialSubmissionEcho = typeof options.threadHasInitialSubmissionEcho === "function" ? options.threadHasInitialSubmissionEcho : () => false;
+			const maxExpandedVisibleTurns = Math.max(1, Number(options.maxExpandedVisibleTurns || 200) || 200);
+			function normalizeMergedThread(thread, limit = 0) {
+				const normalized = normalizeThreadVisibleUserMessages(thread);
+				if (normalized && Array.isArray(normalized.turns)) {
+					const sorted = sortTurnsForDisplay(normalized.turns);
+					normalized.turns = limit > 0 ? sorted.slice(-limit) : sorted;
+				}
+				return normalized;
+			}
+			function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
+				return shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight);
+			}
+			function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
+				if (!existingTurn) return incomingTurn;
+				if (!incomingTurn) return existingTurn;
+				const existingItems = Array.isArray(existingTurn.items) ? existingTurn.items : [];
+				const incomingHasItems = Array.isArray(incomingTurn.items);
+				const merged = Object.assign({}, existingTurn, incomingTurn);
+				if (!incomingHasItems) {
+					merged.items = existingItems;
+					return merged;
+				}
+				const incomingWeight = turnVisibleWeight(Object.assign({}, incomingTurn, { items: incomingTurn.items || [] }));
+				const existingWeight = turnVisibleWeight(existingTurn);
+				const preserveLocalVisible = incomingWeight < existingWeight || shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
+				merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible, incomingTurn);
+				return merged;
+			}
+			function mergeThreadPreservingVisibleItems(existingThread, incomingThread, runtime = {}) {
+				if (isV4ProjectionThread(incomingThread)) return mergeV4ProjectionThread(existingThread, incomingThread);
+				if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeMergedThread(incomingThread);
+				const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
+				const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
+				const existingById = new Map(existingTurns.map((turn) => [turn && turn.id, turn]).filter(([id]) => id));
+				const initialSubmissionId = String(existingThread.mobileInitialSubmissionId || "");
+				const merged = Object.assign({}, existingThread, incomingThread);
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
+				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
+				if (!incomingTurns) return normalizeMergedThread(merged);
+				const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+				const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+				const incomingHasAuthoritativeVisibleWindow = incomingTurns.length > 0 && incomingVisibleWeight > 0;
+				if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
+					merged.turns = existingTurns;
+					return normalizeMergedThread(merged);
+				}
+				merged.turns = incomingTurns.map((incomingTurn) => {
+					const existingTurn = existingById.get(incomingTurn && incomingTurn.id);
+					return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
+				});
+				merged.turns = sortTurnsForDisplay(merged.turns);
+				const incomingIds = new Set(merged.turns.map((turn) => turn && turn.id).filter(Boolean));
+				const latestIncoming = merged.turns.length ? merged.turns[merged.turns.length - 1] : null;
+				const preserveExpandedHistory = Boolean(existingThread.mobileHistoryExpanded) && (/turns-list/i.test(String(incomingThread.mobileReadMode || "")) || Boolean(incomingThread.mobileOlderTurnsCursor) || Number(incomingThread.mobileOmittedTurnCount || 0) > 0);
+				let preservedExpandedTurnCount = 0;
+				const activeTurnId = String(runtime.activeTurnId || "");
+				for (const existingTurn of existingTurns) {
+					if (!existingTurn || incomingIds.has(existingTurn.id)) continue;
+					if (shouldDropInitialSubmissionEchoTurn(existingTurn, merged.turns, initialSubmissionId)) continue;
+					if (preserveExpandedHistory) {
+						merged.turns.push(existingTurn);
+						preservedExpandedTurnCount += 1;
+						continue;
+					}
+					if (incomingHasAuthoritativeVisibleWindow && !shouldPreserveMissingExistingTurn(existingTurn, merged, runtime)) continue;
+					if (turnIsSupersededBy(existingTurn, latestIncoming)) continue;
+					if (String(existingTurn.id || "") === activeTurnId || !isTurnComplete(existingTurn) && turnVisibleWeight(existingTurn) > 0) merged.turns.push(existingTurn);
+				}
+				if (preserveExpandedHistory) {
+					merged.mobileHistoryExpanded = true;
+					if (preservedExpandedTurnCount > 0) merged.mobileOmittedTurnCount = Math.max(0, Number(merged.mobileOmittedTurnCount || 0) - preservedExpandedTurnCount);
+				}
+				const normalized = normalizeMergedThread(merged, preserveExpandedHistory ? maxExpandedVisibleTurns : 0);
+				if (!threadHasInitialSubmissionEcho(normalized, initialSubmissionId)) delete normalized.mobileInitialSubmissionId;
+				return normalized;
+			}
+			return {
+				mergeThreadPreservingVisibleItems,
+				mergeTurnPreservingVisibleItems,
+				shouldPreserveLiveTurnLocalVisibleItems
+			};
+		}
+		return { createThreadDetailMergePolicy };
+	});
+}));
+//#endregion
 //#region public/thread-detail-v4-merge-state.js
 var require_thread_detail_v4_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -2499,1262 +4389,95 @@ var require_task_card_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
-//#region public/notification-ui-runtime.js
-var require_notification_ui_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	function isHermesEmbedMode() {
-		return Boolean(state.pluginEmbed && state.pluginEmbed.embedded);
-	}
-	function currentPluginParentWindowOrigin() {
-		try {
-			if (!window.parent || window.parent === window || !window.parent.location) return "";
-			const origin = String(window.parent.location.origin || "").trim();
-			return origin && origin !== "null" ? origin : "";
-		} catch (_) {
-			return "";
-		}
-	}
-	function normalizePluginParentOrigin(value) {
-		const liveParentOrigin = currentPluginParentWindowOrigin();
-		if (liveParentOrigin) return liveParentOrigin;
-		const origin = String(value || "").trim();
-		if (origin && origin !== "*") return origin;
-		const referrerOrigin = pluginEmbedApi.parentOriginFromReferrer ? pluginEmbedApi.parentOriginFromReferrer(document.referrer) : "";
-		return String(referrerOrigin || "").trim();
-	}
-	function pluginVoiceInputParentOriginAllowed(event) {
-		if (!isHermesEmbedMode()) return false;
-		if (event && event.source && event.source !== window.parent) return false;
-		const origin = String(event && event.origin || "").trim();
-		const expected = normalizePluginParentOrigin(state.pluginParentOrigin);
-		if (expected && origin && origin !== expected) return false;
-		if (!expected && origin && origin !== "null" && (!state.pluginParentOrigin || state.pluginParentOrigin === "*")) state.pluginParentOrigin = origin;
-		return true;
-	}
-	function pluginVoiceInputSafeDraftId() {
-		if (state.newThreadDraft) return "new-thread";
-		return state.currentThreadId ? `thread:${String(state.currentThreadId).slice(0, 160)}` : "";
-	}
-	function pluginVoiceInputComposerId() {
-		return state.newThreadDraft ? "new-thread-composer" : "thread-composer";
-	}
-	function pluginVoiceInputComposerWritable() {
-		if (!isHermesEmbedMode()) return false;
-		if (state.composerBusy || state.attachmentProcessingCount > 0) return false;
-		const input = $("messageInput");
-		if (!input || input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
-		if (state.newThreadDraft) return Boolean(state.selectedCwd);
-		return Boolean(state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError);
-	}
-	function pluginVoiceInputActiveTurnHoldAvailable() {
-		if (!isHermesEmbedMode()) return false;
-		if (!state.activeTurnId || state.attachmentProcessingCount > 0) return false;
-		return Boolean(state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError);
-	}
-	function pluginVoiceInputCanReceiveText() {
-		if (pluginVoiceInputComposerWritable()) return true;
-		return pluginVoiceInputActiveTurnHoldAvailable();
-	}
-	function pluginVoiceInputEnsureComposerWritableForDraft() {
-		if (!isHermesEmbedMode()) return false;
-		const input = $("messageInput");
-		if (!input) return false;
-		if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") setMessageInputDisabled(false);
-		if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
-		focusMessageInput({
-			moveCaretToEnd: true,
-			retry: true
-		});
-		return true;
-	}
-	function persistPluginVoiceInputDraft(draftKey = currentPluginVoiceInputDraftKey()) {
-		const key = String(draftKey || "");
-		if (!key) return false;
-		writeCurrentDraftToKey(key);
-		return true;
-	}
-	function pluginVoiceInputCapabilityPayload(extra = {}) {
-		return Object.assign({
-			pluginId: "codex-mobile",
-			writable: pluginVoiceInputCanReceiveText(),
-			composerId: pluginVoiceInputComposerId(),
-			threadId: String(state.currentThreadId || "").slice(0, 160),
-			draftId: pluginVoiceInputSafeDraftId(),
-			maxChars: Math.max(1, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12e3) || 12e3),
-			actions: [
-				"append_text",
-				"replace_draft",
-				"insert_text",
-				"provisional_text"
-			]
-		}, extra || {});
-	}
-	function pluginVoiceInputGestureAvailable() {
-		if (!isHermesEmbedMode()) return false;
-		if (pluginVoiceInputActiveTurnHoldAvailable()) return true;
-		if (state.activeTurnId && !composerHasContent()) return false;
-		return pluginVoiceInputComposerWritable();
-	}
-	function postPluginVoiceInputMessage(message) {
-		if (!isHermesEmbedMode() || !message) return false;
-		const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
-		if (targetOrigin) state.pluginParentOrigin = targetOrigin;
-		return pluginVoiceInputApi.postToParent ? pluginVoiceInputApi.postToParent(window.parent, message, targetOrigin || "*") : false;
-	}
-	function publishPluginVoiceInputCapability(options = {}) {
-		if (!isHermesEmbedMode()) return false;
-		const payload = pluginVoiceInputCapabilityPayload({ requestId: options.requestId || "" });
-		const signature = JSON.stringify({
-			writable: payload.writable,
-			composerId: payload.composerId,
-			threadId: payload.threadId,
-			draftId: payload.draftId,
-			maxChars: payload.maxChars,
-			actions: payload.actions
-		});
-		if (!options.force && !options.requestId && state.pluginVoiceInputCapabilitySignature === signature) return false;
-		state.pluginVoiceInputCapabilitySignature = signature;
-		return postPluginVoiceInputMessage(pluginVoiceInputApi.capabilityStateMessage(payload));
-	}
-	function currentPluginVoiceInputDraftKey() {
-		return currentDraftKey() || "";
-	}
-	function rememberPluginVoiceInputSession(payload = {}, insertedText = "") {
-		const voiceSessionId = pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : String(payload.voiceSessionId || payload.voice_session_id || "").trim();
-		if (!voiceSessionId) return;
-		const draftKey = currentPluginVoiceInputDraftKey();
-		if (!draftKey) return;
-		const sessions = state.pluginVoiceInputSessionsByDraftKey[draftKey] || [];
-		const existing = sessions.find((entry) => entry.voiceSessionId === voiceSessionId);
-		const next = {
-			voiceSessionId,
-			composerId: pluginVoiceInputComposerId(),
-			threadId: String(state.currentThreadId || "").slice(0, 160),
-			insertedText: String(insertedText || "").slice(0, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12e3) || 12e3),
-			insertedAtMs: Date.now()
-		};
-		if (existing) Object.assign(existing, next);
-		else sessions.push(next);
-		state.pluginVoiceInputSessionsByDraftKey[draftKey] = sessions.slice(-8);
-	}
-	function takePluginVoiceInputSessionsForDraft(draftKey) {
-		const key = String(draftKey || "");
-		if (!key) return [];
-		const sessions = Array.isArray(state.pluginVoiceInputSessionsByDraftKey[key]) ? state.pluginVoiceInputSessionsByDraftKey[key].slice() : [];
-		delete state.pluginVoiceInputSessionsByDraftKey[key];
-		return sessions;
-	}
-	function commitPluginVoiceInputSessionsAfterSend(draftKey, finalText, options = {}) {
-		if (!isHermesEmbedMode()) return;
-		const sessions = takePluginVoiceInputSessionsForDraft(draftKey);
-		const submittedText = String(finalText || "").trim();
-		if (!sessions.length || !submittedText) return;
-		for (const session of sessions) postPluginVoiceInputMessage(pluginVoiceInputApi.commitResultMessage({
-			voiceSessionId: session.voiceSessionId,
-			composerId: options.composerId || session.composerId || pluginVoiceInputComposerId(),
-			threadId: options.threadId || state.currentThreadId || session.threadId || "",
-			messageId: options.messageId || "",
-			finalText: submittedText,
-			action: "submitted"
-		}));
-	}
-	function pluginVoiceInputAppendText(currentText, insertedText) {
-		const current = String(currentText || "").trim();
-		const next = String(insertedText || "").trim();
-		if (!current) return next;
-		if (!next) return current;
-		return `${current}\n${next}`;
-	}
-	function pluginVoiceInputSessionIdFromPayload(payload = {}) {
-		return pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : String(payload.voiceSessionId || payload.voice_session_id || "").trim();
-	}
-	function clearPluginVoiceInputProvisionalSession() {
-		state.pluginVoiceInputProvisional = null;
-	}
-	function restorePluginVoiceInputProvisionalBase(payload = {}) {
-		const session = state.pluginVoiceInputProvisional;
-		const voiceSessionId = pluginVoiceInputSessionIdFromPayload(payload);
-		if (!session || !voiceSessionId || session.voiceSessionId !== voiceSessionId) return false;
-		if (session.draftKey && session.draftKey !== currentPluginVoiceInputDraftKey()) return false;
-		if (composerText() !== session.currentText) {
-			clearPluginVoiceInputProvisionalSession();
-			return false;
-		}
-		setComposerText(session.baseText || "");
-		clearPluginVoiceInputProvisionalSession();
-		return true;
-	}
-	function applyPluginVoiceInputProvisionalText(payload = {}, text = "") {
-		const voiceSessionId = pluginVoiceInputSessionIdFromPayload(payload);
-		if (!voiceSessionId) return false;
-		const draftKey = currentPluginVoiceInputDraftKey();
-		if (!draftKey) return false;
-		if (!pluginVoiceInputEnsureComposerWritableForDraft()) return false;
-		const currentText = composerText();
-		let session = state.pluginVoiceInputProvisional;
-		if (!session || session.voiceSessionId !== voiceSessionId || session.draftKey !== draftKey) session = {
-			voiceSessionId,
-			draftKey,
-			baseText: currentText,
-			currentText
-		};
-		else if (currentText !== session.currentText) {
-			clearPluginVoiceInputProvisionalSession();
-			return false;
-		}
-		const nextText = pluginVoiceInputAppendText(session.baseText, text);
-		setComposerText(nextText);
-		persistPluginVoiceInputDraft(draftKey);
-		updateComposerControls();
-		focusMessageInput({
-			moveCaretToEnd: true,
-			retry: true
-		});
-		state.pluginVoiceInputProvisional = Object.assign({}, session, {
-			currentText: nextText,
-			text: String(text || "").slice(0, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12e3) || 12e3),
-			updatedAtMs: Date.now()
-		});
-		return true;
-	}
-	function rejectPluginVoiceInputInsert(payload, code, message) {
-		const action = pluginVoiceInputApi.actionFromMessageType ? pluginVoiceInputApi.actionFromMessageType(payload.type) : "";
-		postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
-			requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
-			voiceSessionId: pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : payload.voiceSessionId,
-			composerId: payload.composerId || payload.composer_id || pluginVoiceInputComposerId(),
-			draftId: pluginVoiceInputSafeDraftId(),
-			action,
-			ok: false,
-			error: message || code || "composer_not_writable"
-		}));
-		postClientEvent("plugin_voice_input_insert_rejected", {
-			code: String(code || "insert_rejected").slice(0, 80),
-			writable: pluginVoiceInputCanReceiveText(),
-			threadId: state.currentThreadId || ""
-		});
-	}
-	function applyPluginVoiceInputTextMessage(payload = {}) {
-		const action = pluginVoiceInputApi.actionFromMessageType ? pluginVoiceInputApi.actionFromMessageType(payload.type) : "";
-		if (!action || action === "submit") {
-			postPluginVoiceInputMessage(pluginVoiceInputApi.errorMessage({
-				requestId: payload.requestId,
-				voiceSessionId: payload.voiceSessionId,
-				composerId: payload.composerId || pluginVoiceInputComposerId(),
-				code: "unsupported_voice_input_action",
-				error: "Unsupported voice input action."
-			}));
-			return true;
-		}
-		const capability = pluginVoiceInputCapabilityPayload();
-		if (!capability.writable) {
-			rejectPluginVoiceInputInsert(payload, "composer_not_writable", "Composer is not writable.");
-			return true;
-		}
-		if (!pluginVoiceInputEnsureComposerWritableForDraft()) {
-			rejectPluginVoiceInputInsert(payload, "composer_dom_unavailable", "Composer is not available.");
-			return true;
-		}
-		const text = pluginVoiceInputApi.textFromMessage ? pluginVoiceInputApi.textFromMessage(payload, capability.maxChars) : String(payload.text || "").trim().slice(0, capability.maxChars);
-		if (!text) {
-			rejectPluginVoiceInputInsert(payload, "empty_voice_input_text", "Voice input text is empty.");
-			return true;
-		}
-		if (action === "provisional_text") {
-			if (!applyPluginVoiceInputProvisionalText(payload, text)) {
-				rejectPluginVoiceInputInsert(payload, "provisional_voice_input_rejected", "Voice input draft changed.");
-				return true;
-			}
-			postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
-				requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
-				voiceSessionId: pluginVoiceInputSessionIdFromPayload(payload),
-				composerId: capability.composerId,
-				draftId: capability.draftId,
-				action,
-				ok: true
-			}));
-			publishPluginVoiceInputCapability({ force: true });
-			return true;
-		}
-		restorePluginVoiceInputProvisionalBase(payload);
-		const nextText = action === "replace_draft" ? text : pluginVoiceInputAppendText(composerText(), text);
-		setComposerText(nextText);
-		persistPluginVoiceInputDraft();
-		updateComposerControls();
-		focusMessageInput({
-			moveCaretToEnd: true,
-			retry: true
-		});
-		rememberPluginVoiceInputSession(payload, text);
-		postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
-			requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
-			voiceSessionId: pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : payload.voiceSessionId,
-			composerId: capability.composerId,
-			draftId: capability.draftId,
-			action,
-			ok: true
-		}));
-		publishPluginVoiceInputCapability({ force: true });
-		return true;
-	}
-	function handlePluginVoiceInputMessage(event) {
-		const payload = event && event.data;
-		if (!pluginVoiceInputApi.isVoiceInputMessage || !pluginVoiceInputApi.isVoiceInputMessage(payload)) return false;
-		if (!pluginVoiceInputParentOriginAllowed(event)) return true;
-		if (payload.pluginId && String(payload.pluginId) !== "codex-mobile") return true;
-		if (payload.version && Number(payload.version) !== 1) return true;
-		if (payload.type === pluginVoiceInputApi.TYPES.CAPABILITY_QUERY || payload.type === "voice_input.capability_query") {
-			publishPluginVoiceInputCapability({
-				force: true,
-				requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId
-			});
-			return true;
-		}
-		if (payload.type === pluginVoiceInputApi.TYPES.APPEND_TEXT || payload.type === pluginVoiceInputApi.TYPES.INSERT_TEXT || payload.type === pluginVoiceInputApi.TYPES.REPLACE_DRAFT || payload.type === pluginVoiceInputApi.TYPES.PROVISIONAL_TEXT || payload.type === pluginVoiceInputApi.TYPES.SUBMIT) return applyPluginVoiceInputTextMessage(payload);
-		return false;
-	}
-	function clearPluginVoiceInputPress(options = {}) {
-		const press = state.pluginVoiceInputPress;
-		if (press && press.timer) clearTimeout(press.timer);
-		const button = $("sendMessage");
-		if (button) button.classList.remove("plugin-voice-input-recording");
-		state.pluginVoiceInputPress = options.keepSuppress && press ? Object.assign({}, press, {
-			timer: 0,
-			started: false
-		}) : null;
-	}
-	function handlePluginVoiceInputSendPointerDown(event) {
-		if (!pluginVoiceInputGestureAvailable()) return;
-		if (event.pointerType === "mouse" && event.button !== 0) return;
-		event.preventDefault();
-		event.stopPropagation();
-		const button = event.currentTarget;
-		clearPluginVoiceInputPress();
-		const press = {
-			pointerId: event.pointerId,
-			started: false,
-			suppressClick: false,
-			timer: 0
-		};
-		state.pluginVoiceInputPress = press;
-		try {
-			button.setPointerCapture?.(event.pointerId);
-		} catch (_) {}
-		press.timer = setTimeout(() => {
-			press.timer = 0;
-			press.started = true;
-			press.suppressClick = true;
-			clearTextSelection();
-			if (button) button.classList.add("plugin-voice-input-recording");
-			const capability = pluginVoiceInputCapabilityPayload({ writable: true });
-			if (!postPluginVoiceInputMessage(pluginVoiceInputApi.startRequestMessage(capability))) postClientEvent("plugin_voice_input_start_failed", { reason: "post_to_parent_failed" });
-		}, PLUGIN_VOICE_INPUT_LONG_PRESS_MS);
-	}
-	function handlePluginVoiceInputSendPointerUp(event) {
-		const press = state.pluginVoiceInputPress;
-		if (!press) return;
-		if (press.pointerId && event.pointerId !== press.pointerId) return;
-		if (press.timer) {
-			clearPluginVoiceInputPress();
-			return;
-		}
-		try {
-			event.currentTarget?.releasePointerCapture?.(event.pointerId);
-		} catch (_) {}
-		if (!press.started) {
-			clearPluginVoiceInputPress();
-			return;
-		}
-		event.preventDefault();
-		event.stopImmediatePropagation();
-		postPluginVoiceInputMessage(pluginVoiceInputApi.stopRequestMessage(pluginVoiceInputCapabilityPayload()));
-		clearPluginVoiceInputPress({ keepSuppress: true });
-		window.setTimeout(() => {
-			if (state.pluginVoiceInputPress && state.pluginVoiceInputPress.suppressClick) state.pluginVoiceInputPress = null;
-		}, 1200);
-	}
-	function handlePluginVoiceInputSendPointerCancel(event) {
-		const press = state.pluginVoiceInputPress;
-		if (!press) return;
-		if (press.started) postPluginVoiceInputMessage(pluginVoiceInputApi.cancelRequestMessage(pluginVoiceInputCapabilityPayload()));
-		if (event && typeof event.preventDefault === "function") event.preventDefault();
-		clearPluginVoiceInputPress();
-	}
-	function handlePluginVoiceInputSendClick(event) {
-		const press = state.pluginVoiceInputPress;
-		if (!press || !press.suppressClick) return;
-		event.preventDefault();
-		event.stopImmediatePropagation();
-		state.pluginVoiceInputPress = null;
-	}
-	function setComposerActionButtonLabel(button, label, options = {}) {
-		if (!button) return;
-		const text = String(label || "");
-		const useProxy = Boolean(options.proxy);
-		button.classList.toggle("plugin-voice-input-label-proxy", useProxy);
-		if (useProxy) {
-			button.textContent = "";
-			button.dataset.visualLabel = text;
-			button.setAttribute("aria-label", text);
-		} else {
-			button.textContent = text;
-			delete button.dataset.visualLabel;
-		}
-	}
-	function boundedPluginRefreshValue(value, maxLength) {
-		const text = String(value || "").trim();
-		return text ? text.slice(0, Math.max(0, Number(maxLength) || 0)) : "";
-	}
-	function pluginRefreshReasonForApiError(details = {}) {
-		const status = Number(details && details.status || 0);
-		const path = String(details && details.path || "").trim();
-		const message = String(details && details.message || "").trim().toLowerCase();
-		if (!(status === 401 || status === 403)) return "";
-		if (path === "/api/v1/hermes/plugin/session") return "plugin_launch_invalid";
-		if (message.includes("plugin_launch_invalid_or_expired")) return "plugin_launch_invalid";
-		if (message.includes("invalid launch") || message.includes("invalid session")) return "plugin_session_invalid";
-		if (message.includes("session is unauthorized") || message.includes("session expired")) return "plugin_session_invalid";
-		if (message.includes("unauthorized") || message.includes("forbidden")) return "auth_state_changed";
-		return "";
-	}
-	function currentHermesRefreshRoute(options = {}) {
-		const explicit = options && typeof options.route === "object" ? options.route : null;
-		const hinted = normalizePluginRouteHint(state.pendingPluginRouteHint) || normalizePluginRouteHint(state.queuedPluginRouteHint);
-		const route = {};
-		const name = boundedPluginRefreshValue(explicit && explicit.name ? explicit.name : state.currentThreadId || hinted && hinted.threadId ? "thread" : "root", 48);
-		const threadId = boundedPluginRefreshValue(explicit && explicit.threadId ? explicit.threadId : state.currentThreadId || hinted && hinted.threadId || state.pluginLaunchTarget && state.pluginLaunchTarget.threadId || "", 160);
-		const itemId = boundedPluginRefreshValue(explicit && explicit.itemId ? explicit.itemId : hinted && (hinted.itemId || hinted.taskId) || "", 160);
-		const pluginRoute = boundedPluginRefreshValue(explicit && explicit.pluginRoute ? explicit.pluginRoute : hinted && hinted.route || "", 80);
-		const pluginThreadId = boundedPluginRefreshValue(explicit && explicit.pluginThreadId ? explicit.pluginThreadId : threadId, 160);
-		const pluginTaskId = boundedPluginRefreshValue(explicit && explicit.pluginTaskId ? explicit.pluginTaskId : hinted && hinted.taskId || "", 160);
-		const pluginItemId = boundedPluginRefreshValue(explicit && explicit.pluginItemId ? explicit.pluginItemId : itemId, 160);
-		if (name) route.name = name;
-		if (threadId) route.threadId = threadId;
-		if (itemId) route.itemId = itemId;
-		if (pluginRoute) route.pluginRoute = pluginRoute;
-		if (pluginThreadId) route.pluginThreadId = pluginThreadId;
-		if (pluginTaskId) route.pluginTaskId = pluginTaskId;
-		if (pluginItemId) route.pluginItemId = pluginItemId;
-		return route;
-	}
-	function requestHermesPluginRefresh(reason, options = {}) {
-		if (!isHermesEmbedMode() || !pluginEmbedApi.postRefreshRequired) return false;
-		const normalizedReason = boundedPluginRefreshValue(reason || "refresh_required", 80) || "refresh_required";
-		const route = currentHermesRefreshRoute(options);
-		const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
-		const signature = JSON.stringify({
-			reason: normalizedReason,
-			targetOrigin: targetOrigin || "*",
-			route,
-			appearance: currentPluginAppearanceForHost()
-		});
-		if (!options.force && signature === state.pluginRefreshRequestSignature) return false;
-		state.pluginRefreshRequestSignature = signature;
-		if (targetOrigin) state.pluginParentOrigin = targetOrigin;
-		if (state.pluginRefreshPendingTimer) {
-			clearTimeout(state.pluginRefreshPendingTimer);
-			state.pluginRefreshPendingTimer = null;
-		}
-		state.pluginRefreshPendingNotice = pluginRefreshPendingMessage(normalizedReason);
-		state.pluginRefreshPendingTimer = window.setTimeout(() => {
-			state.pluginRefreshPendingTimer = null;
-			clearPluginRefreshPendingNotice();
-		}, 1e4);
-		if (state.currentThreadId || state.currentThread) renderCurrentThread();
-		else if (state.newThreadDraft) renderNewThreadDraft();
-		if ($("connectionState")) $("connectionState").textContent = state.pluginRefreshPendingNotice || "Requesting plugin refresh...";
-		pluginEmbedApi.postRefreshRequired(window.parent, {
-			reason: normalizedReason,
-			route,
-			appearance: currentPluginAppearanceForHost()
-		}, { targetOrigin: targetOrigin || "*" });
-		postClientEvent("plugin_refresh_required", {
-			reason: normalizedReason,
-			targetOrigin: targetOrigin || "*",
-			hasThreadId: Boolean(route.threadId),
-			hasItemId: Boolean(route.itemId),
-			usedWildcardFallback: !targetOrigin
-		});
-		return true;
-	}
-	function pluginRefreshPendingMessage(reason) {
-		const normalized = boundedPluginRefreshValue(reason || "refresh_required", 80) || "refresh_required";
-		if (normalized === "server_build_changed") return "Refreshing plugin page for a new Mobile Web build...";
-		if (normalized === "plugin_session_missing" || normalized === "plugin_launch_invalid") return "Refreshing plugin page because the Hermes launch session is no longer valid...";
-		if (normalized === "auth_state_changed") return "Refreshing plugin page because the Codex auth/session state changed...";
-		return "Refreshing plugin page from Hermes Mobile...";
-	}
-	function clearPluginRefreshPendingNotice() {
-		if (state.pluginRefreshPendingTimer) {
-			clearTimeout(state.pluginRefreshPendingTimer);
-			state.pluginRefreshPendingTimer = null;
-		}
-		if (!state.pluginRefreshPendingNotice) return;
-		state.pluginRefreshPendingNotice = "";
-		if (state.currentThreadId || state.currentThread) renderCurrentThread();
-		else if (state.newThreadDraft) renderNewThreadDraft();
-	}
-	function boundedViewportNumber(value, max = 4096) {
-		const numeric = Number(value);
-		if (!Number.isFinite(numeric)) return 0;
-		return Math.max(0, Math.min(Math.round(numeric), Math.max(0, Number(max) || 0)));
-	}
-	function normalizeHermesPluginViewportRect(rect) {
-		if (!rect || typeof rect !== "object") return null;
-		return {
-			top: boundedViewportNumber(rect.top),
-			right: boundedViewportNumber(rect.right),
-			bottom: boundedViewportNumber(rect.bottom),
-			left: boundedViewportNumber(rect.left),
-			width: boundedViewportNumber(rect.width),
-			height: boundedViewportNumber(rect.height)
-		};
-	}
-	function normalizeHermesPluginViewportMessage(data) {
-		if (!data || data.type !== "hermes.plugin.viewport" || data.version !== 1) return null;
-		const pluginId = String(data.pluginId || "").trim();
-		if (pluginId && pluginId !== "codex-mobile") return null;
-		const viewport = data.viewport && typeof data.viewport === "object" ? data.viewport : {};
-		const keyboard = data.keyboard && typeof data.keyboard === "object" ? data.keyboard : {};
-		const host = data.host && typeof data.host === "object" ? data.host : {};
-		const footer = data.footer && typeof data.footer === "object" ? data.footer : {};
-		const topSafeArea = viewport.safeAreaTop || viewport.hostTopSafeArea || host.safeAreaTop || host.topSafeArea || host.hostTopSafeArea || footer.safeAreaTop || footer.topSafeArea || footer.hostTopSafeArea;
-		const footerSafeArea = footer.safeAreaBottom || footer.bottomSafeArea || footer.hostBottomSafeArea || footer.safeAreaInsetBottom;
-		return {
-			receivedAtMs: Date.now(),
-			reason: String(data.reason || "").trim().slice(0, 60),
-			hostTopSafeArea: boundedViewportNumber(topSafeArea, 512),
-			viewport: {
-				width: boundedViewportNumber(viewport.width),
-				height: boundedViewportNumber(viewport.height),
-				offsetTop: boundedViewportNumber(viewport.offsetTop),
-				offsetLeft: boundedViewportNumber(viewport.offsetLeft),
-				layoutWidth: boundedViewportNumber(viewport.layoutWidth),
-				layoutHeight: boundedViewportNumber(viewport.layoutHeight)
-			},
-			keyboard: {
-				visible: Boolean(keyboard.visible),
-				bottomInset: boundedViewportNumber(keyboard.bottomInset || keyboard.height, 1024),
-				offsetTop: boundedViewportNumber(keyboard.offsetTop),
-				height: boundedViewportNumber(keyboard.height || keyboard.bottomInset, 1024)
-			},
-			footer: { safeAreaBottom: boundedViewportNumber(footerSafeArea, 512) },
-			iframe: normalizeHermesPluginViewportRect(data.iframe),
-			host: normalizeHermesPluginViewportRect(data.host)
-		};
-	}
-	function handleHermesPluginViewportMessage(data) {
-		const normalized = normalizeHermesPluginViewportMessage(data);
-		if (!normalized) return false;
-		state.pluginHostViewport = normalized;
-		syncThreadDetailLayoutState();
-		updateViewportVars();
-		updateComposerHeightVar();
-		requestAnimationFrame(ensureSideChatDraftVisible);
-		if (!isHermesKeyboardInputActive()) scheduleVisualRecovery("hermes-plugin-viewport", 40, {
-			render: false,
-			heavy: false,
-			delays: [40, 180]
-		});
-		return true;
-	}
-	function renderPluginRefreshPendingNotice(previousKeys = /* @__PURE__ */ new Set()) {
-		if (!isHermesEmbedMode()) return "";
-		const message = String(state.pluginRefreshPendingNotice || "").trim();
-		if (!message) return "";
-		const key = `plugin-refresh-pending|${message}`;
-		return `<div class="history-note plugin-refresh-pending${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">${escapeHtml(message)}</div>`;
-	}
-	function scrubPluginLaunchUrl() {
-		if (!isHermesEmbedMode()) return;
-		try {
-			const scrubbed = pluginEmbedApi.scrubRouteHintPath(window.location.href, {
-				workspaceId: state.pluginEmbed.workspaceId,
-				appearance: currentPluginAppearanceForHost()
-			});
-			if (scrubbed) window.history.replaceState({}, "", scrubbed);
-		} catch (_) {}
-	}
-	function pluginRootPath() {
-		if (!isHermesEmbedMode()) return window.location.pathname || "/";
-		return pluginEmbedApi.scrubRouteHintPath("/", { workspaceId: state.pluginEmbed && state.pluginEmbed.workspaceId }) || "/?embed=hermes";
-	}
-	function showPluginEmbedAuthError(message = "") {
-		hidePluginStartupLoading();
-		const app = $("app");
-		const login = $("login");
-		const panel = document.querySelector("#login .login-panel");
-		if (app) app.classList.add("hidden");
-		if (login) login.classList.remove("hidden");
-		if (panel) panel.classList.add("plugin-embed-login-panel");
-		const brand = document.querySelector("#login .brand");
-		if (brand) brand.textContent = "Codex Mobile";
-		const input = $("loginKey");
-		const submit = document.querySelector("#loginForm button[type='submit']");
-		if (input) input.classList.add("hidden");
-		if (submit) submit.classList.add("hidden");
-		$("loginError").textContent = message || "Codex Mobile plugin launch is invalid or expired.";
-		publishPluginNavigationState();
-	}
-	function showPluginEmbedRecovering(message = "") {
-		showApp();
-		hidePluginStartupLoading();
-		clearPluginRefreshPendingNotice();
-		state.newThreadDraft = false;
-		state.startupThreadOpenPending = false;
-		state.currentThread = null;
-		state.currentThreadId = "";
-		state.activeTurnId = "";
-		clearInterval(state.tickTimer);
-		state.tickTimer = null;
-		updateSubagentPanelUi();
-		updateTurnTimer();
-		$("threadTitle").textContent = "Refreshing plugin";
-		$("threadMeta").textContent = "Waiting for Hermes Mobile to relaunch Codex";
-		$("conversation").innerHTML = `<div class="empty-state entry-animate">${escapeHtml(message || "Refreshing Codex Mobile plugin session...")}</div>`;
-		state.renderedConversationSignature = `plugin-recovering|${String(message || "").slice(0, 120)}`;
-		state.renderedConversationPatchShellSignature = "";
-		$("connectionState").classList.remove("error");
-		$("connectionState").textContent = message || "Refreshing Codex Mobile plugin session...";
-		publishPluginNavigationState({ force: true });
-	}
-	function showLogin(message = "") {
-		if (isHermesEmbedMode()) {
-			showPluginEmbedAuthError(message);
-			return;
-		}
-		$("app").classList.add("hidden");
-		$("login").classList.remove("hidden");
-		$("loginError").textContent = message;
-	}
-	function turnDisplaySortPhase(turn) {
-		if (isRunningStatus(turn && turn.status) && !isTurnComplete(turn)) return 2;
-		if (isTurnComplete(turn)) return 1;
-		return 0;
-	}
-	function turnDisplaySortTimestampMs(value) {
-		if (value === null || value === void 0 || value === "") return 0;
-		const numberValue = Number(value);
-		if (Number.isFinite(numberValue) && numberValue > 0) return numberValue > 0xe8d4a51000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1e3);
-		const parsed = Date.parse(String(value));
-		return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-	}
-	function turnDisplayItemTimestampMs(item) {
-		if (!item || typeof item !== "object") return 0;
-		for (const field of [
-			"createdAtMs",
-			"createdAt",
-			"created_at_ms",
-			"created_at",
-			"startedAtMs",
-			"startedAt",
-			"started_at_ms",
-			"started_at",
-			"updatedAtMs",
-			"updatedAt",
-			"updated_at_ms",
-			"updated_at",
-			"timestampMs",
-			"timestamp",
-			"mobileDisplayTimestampMs",
-			"mobileDisplayTimestamp",
-			"completedAtMs",
-			"completedAt",
-			"completed_at_ms",
-			"completed_at"
-		]) {
-			const timestamp = turnDisplaySortTimestampMs(item[field]);
-			if (timestamp) return timestamp;
-		}
-		return 0;
-	}
-	function turnDisplayItemTimestampRange(turn) {
-		const timestamps = (Array.isArray(turn && turn.items) ? turn.items : []).map(turnDisplayItemTimestampMs).filter((timestamp) => timestamp > 0);
-		return {
-			first: timestamps.length ? Math.min(...timestamps) : 0,
-			last: timestamps.length ? Math.max(...timestamps) : 0
-		};
-	}
-	function turnDisplayStartMs(turn) {
-		if (!turn || typeof turn !== "object") return 0;
-		for (const field of [
-			"startedAtMs",
-			"startedAt",
-			"started_at_ms",
-			"started_at",
-			"createdAtMs",
-			"createdAt",
-			"created_at_ms",
-			"created_at",
-			"mobileDisplayTimestampMs",
-			"mobileDisplayTimestamp",
-			"updatedAtMs",
-			"updatedAt",
-			"updated_at_ms",
-			"updated_at",
-			"completedAtMs",
-			"completedAt",
-			"completed_at_ms",
-			"completed_at"
-		]) {
-			const timestamp = turnDisplaySortTimestampMs(turn[field]);
-			if (timestamp) return timestamp;
-		}
-		return 0;
-	}
-	function turnDisplayActivityMs(turn) {
-		const orderMs = turnDisplayStartMs(turn) || turnOrderMs(turn);
-		const range = turnDisplayItemTimestampRange(turn);
-		if (isTurnComplete(turn)) return orderMs || range.first || range.last;
-		return Math.max(orderMs, range.last, range.first);
-	}
-	function sortTurnsForDisplay(turns) {
-		return (turns || []).slice().sort((leftTurn, rightTurn) => {
-			const leftActivity = turnDisplayActivityMs(leftTurn);
-			const rightActivity = turnDisplayActivityMs(rightTurn);
-			if (leftActivity !== rightActivity) return leftActivity - rightActivity;
-			const leftPhase = turnDisplaySortPhase(leftTurn);
-			const rightPhase = turnDisplaySortPhase(rightTurn);
-			if (leftPhase !== rightPhase) return leftPhase - rightPhase;
-			const left = turnOrderMs(leftTurn);
-			const right = turnOrderMs(rightTurn);
-			if (left !== right) return left - right;
-			const leftRange = turnDisplayItemTimestampRange(leftTurn);
-			const rightRange = turnDisplayItemTimestampRange(rightTurn);
-			if (leftRange.first !== rightRange.first) return leftRange.first - rightRange.first;
-			if (leftRange.last !== rightRange.last) return leftRange.last - rightRange.last;
-			return String(leftTurn && leftTurn.id || "").localeCompare(String(rightTurn && rightTurn.id || ""));
-		});
-	}
-	function maxVisibleTurnsForThread(thread) {
-		if (isRawThreadReadMode(thread) && !thread.mobileHistoryExpanded) return MAX_RAW_THREAD_VISIBLE_TURNS;
-		return thread && thread.mobileHistoryExpanded ? MAX_EXPANDED_VISIBLE_TURNS : MAX_VISIBLE_TURNS;
-	}
-	function threadTurnsCursorSignature(cursor) {
-		if (!cursor) return "";
-		try {
-			return JSON.stringify(cursor);
-		} catch (_) {
-			return String(cursor || "");
-		}
-	}
-	function pluginStartupLoadingText(message = "") {
-		return String(message || "").trim() || "正在加载 Codex...";
-	}
-	function showPluginStartupLoading(message = "") {
-		if (!isHermesEmbedMode()) return;
-		state.pluginStartupLoading = true;
-		state.pluginStartupMessage = pluginStartupLoadingText(message);
-		document.documentElement.classList.add("plugin-startup-loading");
-		const loading = $("pluginStartupLoading");
-		if (loading) {
-			loading.classList.remove("hidden");
-			const title = loading.querySelector("[data-plugin-startup-title]");
-			if (title) title.textContent = state.pluginStartupMessage;
-		}
-	}
-	function hidePluginStartupLoading() {
-		if (!isHermesEmbedMode()) return;
-		state.pluginStartupLoading = false;
-		state.pluginStartupMessage = "";
-		document.documentElement.classList.remove("plugin-startup-loading");
-		const loading = $("pluginStartupLoading");
-		if (loading) loading.classList.add("hidden");
-	}
-	function showApp() {
-		updateViewportVars();
-		if (isHermesEmbedMode()) {
-			document.documentElement.classList.add("embed-hermes");
-			if (state.pluginStartupLoading) showPluginStartupLoading();
-		}
-		$("login").classList.add("hidden");
-		$("app").classList.remove("hidden");
-		updateComposerHeightVar();
-		ensureAndroidBackToSidebarSentinel();
-		publishPluginNavigationState();
-	}
-	async function login(key) {
-		await fetch("/api/login", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ key })
-		}).then(async (res) => {
-			if (!res.ok) throw new Error("Access key is not valid");
-		});
-		setAuthKey(key);
-		state.pluginLaunchSession = false;
-		state.pluginSessionActive = false;
-		localStorage.setItem("codexMobileKey", key);
-		showApp();
-		await bootstrap();
-	}
-	async function exchangePluginLaunchSession() {
-		if (!isHermesEmbedMode() || !state.pluginLaunchSession || !state.key) return;
-		const result = await api("/api/v1/hermes/plugin/session", {
-			method: "POST",
-			body: JSON.stringify({ codexPluginLaunch: state.key }),
-			timeoutMs: 12e3
-		});
-		if (!result || !result.session_key) throw new Error("Plugin session exchange failed");
-		setAuthKey(result.session_key);
-		const hermesOrigin = normalizePluginParentOrigin(result && result.hermes_origin);
-		if (hermesOrigin) state.pluginParentOrigin = hermesOrigin;
-		state.pluginLaunchTarget = result && result.target && typeof result.target === "object" ? result.target : null;
-		applyPluginAppearancePreference(result && result.appearance);
-		if (state.pluginLaunchTarget && state.pluginLaunchTarget.cwd && !state.currentThreadId) state.selectedCwd = String(state.pluginLaunchTarget.cwd || "").trim();
-		state.pluginLaunchSession = false;
-		state.pluginSessionActive = true;
-		scrubPluginLaunchUrl();
-	}
-	async function applyPluginLaunchTarget() {
-		const target = state.pluginLaunchTarget && typeof state.pluginLaunchTarget === "object" ? state.pluginLaunchTarget : null;
-		if (!target) return false;
-		state.pluginLaunchTarget = null;
-		const threadId = String(target.threadId || "").trim();
-		if (threadId) {
-			localStorage.setItem(STORAGE_THREAD_ID, threadId);
-			clearThreadUrl();
-			await loadThread(threadId, { source: "plugin-launch" });
-			return true;
-		}
-		const cwd = String(target.cwd || "").trim();
-		if (!cwd) return false;
-		const workspace = state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(cwd));
-		saveCurrentDraftNow();
-		state.selectedCwd = workspace ? workspace.cwd : cwd;
-		clearCurrentThreadSelection({ saveDraft: false });
-		state.newThreadDraft = true;
-		state.startupThreadOpenPending = false;
-		restoreDraftForCurrentTarget();
-		syncSidebarWorkspaceSelect();
-		updateWorkspacePath();
-		renderThreads();
-		renderCurrentThread();
-		updateComposerControls();
-		return true;
-	}
-	async function bootstrap() {
-		const bootstrapStartedAt = nowPerfMs();
-		if (isHermesEmbedMode()) showPluginStartupLoading();
-		const startupThreadId = applyUrlThreadSelection();
-		const startupPluginRouteHint = applyUrlPluginRouteHint();
-		const savedThreadId = isHermesEmbedMode() ? "" : localStorage.getItem(STORAGE_THREAD_ID) || "";
-		state.startupThreadOpenPending = Boolean(startupThreadId || savedThreadId || startupPluginRouteHint && startupPluginRouteHint.threadId);
-		const startupThreadOpenPending = state.startupThreadOpenPending;
-		postStartupStage("bootstrap_start", bootstrapStartedAt, {
-			hasStartupThreadId: Boolean(startupThreadId),
-			hasSavedThreadId: Boolean(savedThreadId),
-			hasPluginRouteThreadId: Boolean(startupPluginRouteHint && startupPluginRouteHint.threadId)
-		});
-		const earlyRestorePromise = savedThreadId && !startupThreadId ? loadThread(savedThreadId, {
-			source: "restore-startup",
-			suppressLoadFailureDiagnostic: true
-		}).catch((err) => {
-			localStorage.removeItem(STORAGE_THREAD_ID);
-			showError(err);
-			renderCurrentThread();
-			return null;
-		}) : null;
-		if (earlyRestorePromise) postStartupStage("restore_start", bootstrapStartedAt, { threadId: savedThreadId });
-		const statusStartedAt = nowPerfMs();
-		const status = await api("/api/status").catch((err) => {
-			$("connectionState").textContent = err.message;
-			$("connectionState").classList.add("error");
-			return null;
-		});
-		postStartupStage("status_done", bootstrapStartedAt, {
-			durationMs: roundedDurationMs(statusStartedAt),
-			ok: Boolean(status)
-		});
-		if (status) updateConnectionState(status);
-		if (status) rememberRateLimitsFromConfig(status);
-		if (status && status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
-		const workspacesStartedAt = nowPerfMs();
-		await loadWorkspaces();
-		postStartupStage("workspaces_done", bootstrapStartedAt, {
-			durationMs: roundedDurationMs(workspacesStartedAt),
-			workspaceCount: Array.isArray(state.workspaces) ? state.workspaces.length : 0
-		});
-		const threadDisplayStartedAt = nowPerfMs();
-		await loadThreadDisplaySettings({ render: false }).catch(showError);
-		postStartupStage("thread_display_done", bootstrapStartedAt, {
-			durationMs: roundedDurationMs(threadDisplayStartedAt),
-			mode: state.threadTileMode ? "tile" : "single",
-			paneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
-			paneSlotCount: normalizeThreadTilePinnedIds(state.threadTilePinnedIds).length
-		});
-		const threadsStartedAt = nowPerfMs();
-		await loadThreads({
-			silent: startupThreadOpenPending,
-			deferFallback: true
-		});
-		postStartupStage("threads_done", bootstrapStartedAt, {
-			durationMs: roundedDurationMs(threadsStartedAt),
-			threadCount: Array.isArray(state.threads) ? state.threads.length : 0
-		});
-		let appliedPluginLaunchTarget = false;
-		let appliedPluginRouteHint = false;
-		try {
-			appliedPluginLaunchTarget = await applyPluginLaunchTarget();
-			if (!appliedPluginLaunchTarget) appliedPluginRouteHint = await openHermesPluginRouteHint(state.queuedPluginRouteHint);
-		} catch (err) {
-			showError(err);
-		}
-		if (!appliedPluginLaunchTarget && !appliedPluginRouteHint && startupThreadId) try {
-			await openExternalThreadSelection(startupThreadId, { statusMessage: "Opening linked thread" });
-		} catch (err) {
-			showError(err);
-		} finally {
-			state.startupThreadOpenPending = false;
-		}
-		else if (!appliedPluginLaunchTarget && !appliedPluginRouteHint) if (earlyRestorePromise) await earlyRestorePromise;
-		else await restoreThreadSelection();
-		else state.startupThreadOpenPending = false;
-		connectEvents();
-		postStartupStage("bootstrap_done", bootstrapStartedAt, { hasCurrentThread: Boolean(state.currentThread) });
-		scheduleStartupUpdateCheck();
-		scheduleStartupPublicPrCheck();
-		initializePushControls().catch((err) => {
-			state.pushError = err.message || String(err);
-			updatePushButton();
-		});
-		hidePluginStartupLoading();
-	}
-	function threadIdFromUrlValue(value) {
-		try {
-			const url = new URL(value || window.location.href, window.location.origin);
-			return String(url.searchParams.get("thread") || "").trim();
-		} catch (_) {
-			return "";
-		}
-	}
-	function normalizePluginRouteHint(value) {
-		return pluginEmbedApi.normalizeRouteHint(value);
-	}
-	function pluginRouteHintFromUrl(value) {
-		try {
-			return pluginEmbedApi.routeHintFromUrl(value || window.location.href);
-		} catch (_) {
-			return null;
-		}
-	}
-	function pluginRouteHintTargetId(hint) {
-		return pluginEmbedApi.routeHintTargetId(hint);
-	}
-	function setPluginRouteDiagnostic(message, options = {}) {
-		const text = String(message || "").trim().slice(0, 240);
-		if (!text) return;
-		$("connectionState").textContent = text;
-		$("connectionState").classList.toggle("error", options.error !== false);
-	}
-	function clearThreadUrl() {
-		try {
-			window.history.replaceState({}, "", isHermesEmbedMode() ? pluginRootPath() : window.location.pathname || "/");
-		} catch (_) {}
-	}
-	function findPluginRouteTargetNode(hint) {
-		const conversation = $("conversation");
-		if (!conversation) return null;
-		return pluginEmbedApi.findRouteHintTargetNode(conversation, hint, { escapeSelector: escapeSelectorAttr });
-	}
-	function focusPluginRouteTargetNode(hint) {
-		const node = findPluginRouteTargetNode(hint);
-		if (!node) return false;
-		markProgrammaticConversationScroll();
-		if (typeof node.scrollIntoView === "function") node.scrollIntoView({
-			block: "center",
-			inline: "nearest"
-		});
-		scheduleScrollToBottomButtonUpdate();
-		return true;
-	}
-	function applyPendingPluginRouteHintFocus() {
-		const hint = normalizePluginRouteHint(state.pendingPluginRouteHint);
-		if (!hint) return false;
-		const node = findPluginRouteTargetNode(hint);
-		const plan = pluginEmbedApi.routeHintFocusPlan(hint, {
-			currentThreadId: state.currentThreadId,
-			targetFound: Boolean(node)
-		});
-		if (!plan || plan.action === "ignore" || plan.action === "wait") return false;
-		if (plan.action === "clear") {
-			state.pendingPluginRouteHint = null;
-			return false;
-		}
-		if (plan.action === "focused") {
-			focusPluginRouteTargetNode(hint);
-			state.pendingPluginRouteHint = null;
-			if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
-			recordHomeAiDiagnosticSuccess({
-				category: "thread_session_load_failed",
-				diagnostic_type: "route_hint_target_missing",
-				error_code: "route_hint_target_missing",
-				context: {
-					surface: "thread-session",
-					action: "route-hint-focus",
-					route_kind: "plugin-route",
-					thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
-					task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
-					item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || "")
-				}
-			});
-			return true;
-		}
-		state.pendingPluginRouteHint = null;
-		showHermesPluginPrimaryPage({
-			force: true,
-			source: "route-hint-target-missing"
-		});
-		if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
-		recordHomeAiDiagnosticFailure({
-			category: "thread_session_load_failed",
-			diagnostic_type: "route_hint_target_missing",
-			severity_hint: "H2",
-			evidence_confidence: .78,
-			error_code: "route_hint_target_missing",
-			context: {
-				surface: "thread-session",
-				action: "route-hint-focus",
-				route_kind: "plugin-route",
-				thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
-				task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
-				item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || "")
-			},
-			counts: { missing_count: 1 },
-			breadcrumbs: [{
-				kind: "thread-session",
-				code: "route-hint-focus",
-				status: "failed",
-				fields: {
-					route_kind: "plugin-route",
-					thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
-					task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
-					item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || "")
-				}
-			}]
-		});
-		return false;
-	}
-	async function openExternalThreadSelection(threadId, options = {}) {
-		const id = String(threadId || "").trim();
-		if (!id) return;
-		localStorage.setItem(STORAGE_THREAD_ID, id);
-		clearThreadUrl();
-		if (!state.key) return;
-		$("connectionState").classList.remove("error");
-		$("connectionState").textContent = String(options.statusMessage || "Opening notification thread");
-		if (!state.workspaces.length) try {
-			await loadWorkspaces();
-		} catch (_) {}
-		await loadThread(id, {
-			source: String(options.source || "external").slice(0, 40),
-			suppressLoadFailureDiagnostic: options.suppressLoadFailureDiagnostic === true
-		});
-	}
-	async function openHermesPluginRouteHint(hint) {
-		const plan = pluginEmbedApi.routeHintOpenPlan(hint);
-		if (!plan || plan.action === "ignore") return false;
-		state.queuedPluginRouteHint = null;
-		clearThreadUrl();
-		if (plan.action === "primary") {
-			if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
-			showHermesPluginPrimaryPage({
-				force: true,
-				source: "route-hint-primary"
-			});
-			return true;
-		}
-		try {
-			state.pendingPluginRouteHint = plan.pendingHint || null;
-			await openExternalThreadSelection(plan.threadId, {
-				statusMessage: plan.statusMessage,
-				source: "route-hint",
-				suppressLoadFailureDiagnostic: true
-			});
-			if (!plan.targetId) setPluginRouteDiagnostic("Opened notification thread", { error: false });
-			else applyPendingPluginRouteHintFocus();
-			recordHomeAiDiagnosticSuccess({
-				category: "thread_session_load_failed",
-				diagnostic_type: "route_hint_thread_unavailable",
-				error_code: "route_hint_thread_unavailable",
-				context: {
-					surface: "thread-session",
-					action: "route-hint-open",
-					route_kind: "plugin-route",
-					thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || "")
-				}
-			});
-			return true;
-		} catch (error) {
-			state.pendingPluginRouteHint = null;
-			showHermesPluginPrimaryPage({
-				force: true,
-				source: "route-hint-open-failed"
-			});
-			setPluginRouteDiagnostic(plan.targetId ? "Notification target is unavailable" : "Notification thread is unavailable", { error: true });
-			recordHomeAiDiagnosticFailure({
-				category: "thread_session_load_failed",
-				diagnostic_type: plan.targetId ? "route_hint_target_unavailable" : "route_hint_thread_unavailable",
-				severity_hint: "H2",
-				evidence_confidence: .78,
-				error_code: diagnosticErrorCode(error, plan.targetId ? "route_hint_target_unavailable" : "route_hint_thread_unavailable"),
-				context: {
-					surface: "thread-session",
-					action: "route-hint-open",
-					route_kind: "plugin-route",
-					thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || ""),
-					task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
-					item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || "")
-				},
-				counts: { status_code: diagnosticErrorStatus(error) },
-				breadcrumbs: [{
-					kind: "thread-session",
-					code: "route-hint-open",
-					status: "failed",
-					fields: {
-						status_code: diagnosticErrorStatus(error),
-						route_kind: "plugin-route",
-						thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || "")
-					}
-				}]
-			});
-			return true;
-		}
-	}
-	function applyUrlPluginRouteHint(options = {}) {
-		if (!isHermesEmbedMode()) return null;
-		try {
-			const hint = pluginRouteHintFromUrl(window.location.href);
-			if (!hint || hint.pluginId !== "codex-mobile") return null;
-			state.queuedPluginRouteHint = hint;
-			clearThreadUrl();
-			if (options.load) openHermesPluginRouteHint(hint).catch(showError);
-			return hint;
-		} catch (_) {
-			return null;
-		}
-	}
-	function applyUrlThreadSelection(options = {}) {
-		try {
-			const threadId = threadIdFromUrlValue(window.location.href);
-			if (!threadId) return "";
-			localStorage.setItem(STORAGE_THREAD_ID, threadId);
-			clearThreadUrl();
-			if (options.load) if (threadId === state.currentThreadId && state.currentThread && !state.currentThread.mobileLoadError) scheduleCurrentThreadRefresh(250);
-			else openExternalThreadSelection(threadId).catch(showError);
-			return threadId;
-		} catch (_) {}
-		return "";
-	}
-	function handleServiceWorkerMessage(event) {
-		const data = event && event.data ? event.data : {};
-		if (!data || data.type !== "codex-open-thread") return;
-		openExternalThreadSelection(data.threadId || threadIdFromUrlValue(data.url)).catch(showError);
-	}
-	function createNotificationUiRuntime() {
-		return {
-			handlePluginVoiceInputMessage: typeof handlePluginVoiceInputMessage === "function" ? handlePluginVoiceInputMessage : null,
-			requestHermesPluginRefresh: typeof requestHermesPluginRefresh === "function" ? requestHermesPluginRefresh : null,
-			showPluginEmbedRecovering: typeof showPluginEmbedRecovering === "function" ? showPluginEmbedRecovering : null,
-			showLogin: typeof showLogin === "function" ? showLogin : null,
-			showApp: typeof showApp === "function" ? showApp : null,
-			bootstrap: typeof bootstrap === "function" ? bootstrap : null
-		};
-	}
-	(function exposeCodexNotificationUiRuntime(root) {
-		const notificationUiRuntimeApi = { createNotificationUiRuntime };
-		const legacyGlobals = {
-			applyPendingPluginRouteHintFocus,
-			applyPluginLaunchTarget,
-			applyPluginVoiceInputProvisionalText,
-			applyPluginVoiceInputTextMessage,
-			applyUrlPluginRouteHint,
-			applyUrlThreadSelection,
-			bootstrap,
-			boundedPluginRefreshValue,
-			boundedViewportNumber,
-			clearPluginRefreshPendingNotice,
-			clearPluginVoiceInputPress,
-			clearPluginVoiceInputProvisionalSession,
-			clearThreadUrl,
-			commitPluginVoiceInputSessionsAfterSend,
-			currentHermesRefreshRoute,
-			currentPluginParentWindowOrigin,
-			currentPluginVoiceInputDraftKey,
-			exchangePluginLaunchSession,
-			findPluginRouteTargetNode,
-			focusPluginRouteTargetNode,
-			handleHermesPluginViewportMessage,
-			handlePluginVoiceInputMessage,
-			handlePluginVoiceInputSendClick,
-			handlePluginVoiceInputSendPointerCancel,
-			handlePluginVoiceInputSendPointerDown,
-			handlePluginVoiceInputSendPointerUp,
-			handleServiceWorkerMessage,
-			hidePluginStartupLoading,
-			isHermesEmbedMode,
-			login,
-			maxVisibleTurnsForThread,
-			normalizeHermesPluginViewportMessage,
-			normalizeHermesPluginViewportRect,
-			normalizePluginParentOrigin,
-			normalizePluginRouteHint,
-			openExternalThreadSelection,
-			openHermesPluginRouteHint,
-			persistPluginVoiceInputDraft,
-			pluginRefreshPendingMessage,
-			pluginRefreshReasonForApiError,
-			pluginRootPath,
-			pluginRouteHintFromUrl,
-			pluginRouteHintTargetId,
-			pluginStartupLoadingText,
-			pluginVoiceInputActiveTurnHoldAvailable,
-			pluginVoiceInputAppendText,
-			pluginVoiceInputCanReceiveText,
-			pluginVoiceInputCapabilityPayload,
-			pluginVoiceInputComposerId,
-			pluginVoiceInputComposerWritable,
-			pluginVoiceInputEnsureComposerWritableForDraft,
-			pluginVoiceInputGestureAvailable,
-			pluginVoiceInputParentOriginAllowed,
-			pluginVoiceInputSafeDraftId,
-			pluginVoiceInputSessionIdFromPayload,
-			postPluginVoiceInputMessage,
-			publishPluginVoiceInputCapability,
-			rejectPluginVoiceInputInsert,
-			rememberPluginVoiceInputSession,
-			renderPluginRefreshPendingNotice,
-			requestHermesPluginRefresh,
-			restorePluginVoiceInputProvisionalBase,
-			scrubPluginLaunchUrl,
-			setComposerActionButtonLabel,
-			setPluginRouteDiagnostic,
-			showApp,
-			showLogin,
-			showPluginEmbedAuthError,
-			showPluginEmbedRecovering,
-			showPluginStartupLoading,
-			sortTurnsForDisplay,
-			takePluginVoiceInputSessionsForDraft,
-			threadIdFromUrlValue,
-			threadTurnsCursorSignature,
-			turnDisplayActivityMs,
-			turnDisplayItemTimestampMs,
-			turnDisplayItemTimestampRange,
-			turnDisplaySortPhase,
-			turnDisplaySortTimestampMs
-		};
-		if (typeof module === "object" && module.exports) module.exports = notificationUiRuntimeApi;
-		Object.assign(root, legacyGlobals);
-		root.CodexNotificationUiRuntime = notificationUiRuntimeApi;
-	})(typeof globalThis !== "undefined" ? globalThis : window);
-}));
-//#endregion
 //#region \0virtual:codex-mobile-esm-compatibility/shard/shard-06
+var import_api_client_runtime = /* @__PURE__ */ __toESM(require_api_client_runtime());
+var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
+var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
+var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
+var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_detail_patch_plan());
+var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
+var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
 var import_thread_detail_v4_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_v4_merge_state());
 var import_thread_detail_runtime = /* @__PURE__ */ __toESM(require_thread_detail_runtime());
 var import_task_card_runtime = /* @__PURE__ */ __toESM(require_task_card_runtime());
-var import_notification_ui_runtime = /* @__PURE__ */ __toESM(require_notification_ui_runtime());
 var moduleDefinitions = [
+	{
+		"id": "api-client-runtime",
+		"source": "public/api-client-runtime.js",
+		"globalName": "CodexApiClientRuntime",
+		"expectedFunctions": ["createApiClientRuntime"],
+		"assetPath": "/api-client-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 49014
+	},
+	{
+		"id": "thread-list-load-policy",
+		"source": "public/thread-list-load-policy.js",
+		"globalName": "CodexThreadListLoadPolicy",
+		"expectedFunctions": ["planThreadListLoadRequest"],
+		"assetPath": "/thread-list-load-policy.js",
+		"classicLoaderExcluded": true,
+		"bytes": 2160
+	},
+	{
+		"id": "thread-list-stable-order",
+		"source": "public/thread-list-stable-order.js",
+		"globalName": "CodexThreadListStableOrder",
+		"expectedFunctions": ["threadListOrderScopeKey", "planThreadListStableOrder"],
+		"assetPath": "/thread-list-stable-order.js",
+		"classicLoaderExcluded": true,
+		"bytes": 3327
+	},
+	{
+		"id": "thread-status-hints",
+		"source": "public/thread-status-hints.js",
+		"globalName": "CodexThreadStatusHints",
+		"expectedFunctions": [
+			"isRunningStatus",
+			"shouldExpireRunningThreadHint",
+			"shouldMarkThreadUnread"
+		],
+		"assetPath": "/thread-status-hints.js",
+		"classicLoaderExcluded": true,
+		"bytes": 9883
+	},
+	{
+		"id": "thread-detail-patch-plan",
+		"source": "public/thread-detail-patch-plan.js",
+		"globalName": "CodexThreadDetailPatchPlan",
+		"expectedFunctions": [
+			"planThreadDetailDomPatchSurface",
+			"planThreadDetailRefreshDomPatch",
+			"planVisibleItemRefreshPatch"
+		],
+		"assetPath": "/thread-detail-patch-plan.js",
+		"classicLoaderExcluded": true,
+		"bytes": 8310
+	},
+	{
+		"id": "thread-detail-actions",
+		"source": "public/thread-detail-actions.js",
+		"globalName": "CodexThreadDetailActions",
+		"expectedFunctions": [
+			"closestWithin",
+			"contextThreadIdFromNode",
+			"previewableImageFromTarget",
+			"resolveRichContentClickAction",
+			"resolveThreadDetailClickAction"
+		],
+		"assetPath": "/thread-detail-actions.js",
+		"classicLoaderExcluded": true,
+		"bytes": 5362
+	},
+	{
+		"id": "thread-detail-merge-state",
+		"source": "public/thread-detail-merge-state.js",
+		"globalName": "CodexThreadDetailMergeState",
+		"expectedFunctions": ["createThreadDetailMergePolicy"],
+		"assetPath": "/thread-detail-merge-state.js",
+		"classicLoaderExcluded": true,
+		"bytes": 8461
+	},
 	{
 		"id": "thread-detail-v4-merge-state",
 		"source": "public/thread-detail-v4-merge-state.js",
@@ -3781,22 +4504,19 @@ var moduleDefinitions = [
 		"assetPath": "/task-card-runtime.js",
 		"classicLoaderExcluded": true,
 		"bytes": 64113
-	},
-	{
-		"id": "notification-ui-runtime",
-		"source": "public/notification-ui-runtime.js",
-		"globalName": "CodexNotificationUiRuntime",
-		"expectedFunctions": ["createNotificationUiRuntime"],
-		"assetPath": "/notification-ui-runtime.js",
-		"classicLoaderExcluded": true,
-		"bytes": 55054
 	}
 ];
 var moduleApis = {
+	"api-client-runtime": import_api_client_runtime.default,
+	"thread-list-load-policy": import_thread_list_load_policy.default,
+	"thread-list-stable-order": import_thread_list_stable_order.default,
+	"thread-status-hints": import_thread_status_hints.default,
+	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
+	"thread-detail-actions": import_thread_detail_actions.default,
+	"thread-detail-merge-state": import_thread_detail_merge_state.default,
 	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default,
 	"thread-detail-runtime": import_thread_detail_runtime.default,
-	"task-card-runtime": import_task_card_runtime.default,
-	"notification-ui-runtime": import_notification_ui_runtime.default
+	"task-card-runtime": import_task_card_runtime.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");

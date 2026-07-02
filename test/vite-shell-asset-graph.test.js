@@ -186,6 +186,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     "thread-list-runtime",
     "side-chat-runtime",
     "media-preview-runtime",
+    "composer-runtime",
     "composer-bridge-runtime",
     "api-client-runtime",
     "thread-list-load-policy",
@@ -249,6 +250,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/thread-list-runtime\.js/);
   assert.match(shardSources, /public\/side-chat-runtime\.js/);
   assert.match(shardSources, /public\/media-preview-runtime\.js/);
+  assert.match(shardSources, /public\/composer-runtime\.js/);
   assert.match(shardSources, /public\/composer-bridge-runtime\.js/);
   assert.match(shardSources, /public\/api-client-runtime\.js/);
   assert.match(shardSources, /public\/thread-list-load-policy\.js/);
@@ -295,6 +297,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /createThreadListRuntime/);
   assert.match(shardSources, /createSideChatRuntime/);
   assert.match(shardSources, /createMediaPreviewRuntime/);
+  assert.match(shardSources, /createComposerRuntime/);
   assert.match(shardSources, /createComposerBridgeRuntime/);
   assert.match(shardSources, /createApiClientRuntime/);
   assert.match(shardSources, /server-newer/);

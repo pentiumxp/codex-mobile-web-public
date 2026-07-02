@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-C_fqZHha.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-BI1Wz_bw.js";
 //#region public/media-preview-runtime.js
 var require_media_preview_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachMediaPreviewRuntime(root) {
@@ -2089,6 +2089,1787 @@ var require_media_preview_runtime = /* @__PURE__ */ __commonJSMin(((exports, mod
 	})(typeof window !== "undefined" ? window : globalThis);
 }));
 //#endregion
+//#region public/composer-runtime.js
+var require_composer_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachComposerRuntime(root) {
+		function createComposerRuntime(deps = {}) {
+			const { $, COMPOSER_INTENT_BODY_MAX_CHARS, MESSAGE_INPUT_MAX_HEIGHT_PX, MESSAGE_INPUT_MIN_HEIGHT_PX, STORAGE_CODEX_FAST_MODE, STORAGE_COMPOSER_INTENT_DRAFTS, THREAD_GOAL_MENTION_PATTERN, THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN, THREAD_TASK_CARD_MENTION_PATTERN, api, clearDraftForKey, clearSubmittedMessageBottomFollow, closeThreadGoalDialog, commitPluginVoiceInputSessionsAfterSend, composerTargetThread = () => null, connectEvents, composerTargetActiveTurnId, createSubmissionId, currentComposerThreadId, currentDraftKey, defaultNewThreadEffort, defaultNewThreadModel, defaultNewThreadPermissionMode, deleteDraftAttachments, diagnosticErrorCode, diagnosticErrorStatus, diagnosticTaskHash, diagnosticThreadHash, document, draftKeyForThread, effectiveComposerPermissionMode, escapeHtml, followSubmittedMessageToBottom, homeAiDiagnosticReportingApi, imageCompressor, insertLocalSubmittedUserMessage, isAndroidBrowser, isChatGptProCommandText, isHermesEmbedMode, isKeyboardEditableElement, isThreadGoalCommandText, isThreadTaskCardCommandText, isThreadTileComposerContext, labelForEffort, labelForModel, labelForPermissionMode, loadJsonStorage, loadThread, loadThreads, localAttachmentPreviewUrl, localStorage, markActivity, markSubmittedUserMessageFailed, markThreadOptimisticallyActive, mergeItemsPreservingLocalVisible, newThreadSelectedEffort, newThreadSelectedModel, newThreadSelectedPermissionMode, normalizeOptionList, normalizeThreadGoal, openThreadGoalDialog, postClientEvent, publishPluginVoiceInputCapability, reconcileSubmittedUserMessageTurn, recordHomeAiDiagnosticFailure, renderCurrentThread, renderQuotaUsage, renderThreads, replacePendingAttachments, restoreThreadStatusSnapshot, saveCurrentDraftNow, saveDraftAttachmentFiles, scheduleComposerTargetRefresh, scheduleCurrentDraftSave, scheduleCurrentThreadRefresh, scheduleLivePollIfNeeded, scheduleScrollToBottomButtonUpdate, scheduleSubmittedMessageDomProbe, selectedQuotaModel, setComposerActionButtonLabel, setSteerFeedback, setThreadGoalDialogBusy, showComposerFastHint, showError, snapshotThreadStatus, startedTurnId, state, submitChatGptProRequest, submittedThreadGoal, threadDisplayName, threadTaskCardCommandText, threadTileStatePolicy, updateThreadGoalState, viewportMetrics, viewportState, window, writeCurrentDraftToKey } = deps;
+			function updateComposerHeightVar(options = {}) {
+				const composer = $("composer");
+				if (!composer) return false;
+				const nextPx = viewportMetrics.cssPixel(composer.getBoundingClientRect().height);
+				if (!nextPx) return false;
+				const previousPx = viewportMetrics.cssPixel(state.composerHeightPx);
+				if (!options.force && !viewportMetrics.stablePixelChanged(previousPx, nextPx)) return false;
+				state.composerHeightPx = nextPx;
+				document.documentElement.style.setProperty("--composer-height", `${nextPx}px`);
+				scheduleScrollToBottomButtonUpdate();
+				return true;
+			}
+			function clearSendProgressWatchdog() {
+				if (state.sendProgressWatchdog) {
+					clearTimeout(state.sendProgressWatchdog);
+					state.sendProgressWatchdog = null;
+				}
+			}
+			function startSendProgressWatchdog(threadId) {
+				clearSendProgressWatchdog();
+				state.sendProgressStartAt = Date.now();
+				state.sendProgressWarned = false;
+				const targetThreadId = String(threadId || "");
+				state.sendProgressWatchdog = setTimeout(() => {
+					if (!state.composerBusy || currentComposerThreadId() !== targetThreadId) return;
+					state.sendProgressWarned = true;
+					const steering = state.steerFeedback && state.steerFeedback.status === "sending";
+					$("connectionState").textContent = steering ? "引导较慢，稍等一下，避免重复提交" : "发送较慢，检查网络后稍等，避免重复提交";
+					$("connectionState").classList.add("error");
+					postClientEvent("message_send_stall", {
+						threadId: targetThreadId,
+						elapsedMs: Date.now() - state.sendProgressStartAt,
+						composerBusy: state.composerBusy,
+						hasContent: composerHasContent()
+					});
+				}, 9500);
+			}
+			function finishSendProgressWatchdog() {
+				clearSendProgressWatchdog();
+				state.sendProgressStartAt = 0;
+				state.sendProgressWarned = false;
+			}
+			function normalizeClientErrorMessage(message, err = null) {
+				if (String(err && err.code || "").trim() === "codex_account_auth_invalid") return "Codex 账号登录已失效，请重新登录该账号，或切换到可用账号后重试。";
+				const text = String(message || "").toLowerCase();
+				if (/token_expired|refresh_token_reused|refresh token|access token/.test(text)) return "Codex 账号登录已失效，请重新登录该账号，或切换到可用账号后重试。";
+				if (text.includes("failed to fetch")) return "网络异常，发送失败：请求未发出，请检查网络后重试";
+				if (/(rate\s*limit|usage\s*limit|quota|limit reached|exhausted|insufficient credits?)/i.test(String(message || ""))) {
+					const model = selectedQuotaModel();
+					return model ? `${labelForModel(model)} 额度不足，请切换模型后重试` : "模型额度不足，请切换模型后重试";
+				}
+				if (text.includes("request timed out")) return "请求超时，服务响应较慢，请稍后再试";
+				if (text.includes("request cancelled")) return "请求被取消，稍后可重试";
+				if (/\bunauthorized\b/.test(text)) return "登录已失效，请重新登录";
+				if (/\brpc timeout\b/.test(text)) return "请求服务端超时，请稍后重试";
+				return rawMessageFallback(message);
+			}
+			function rawMessageFallback(message) {
+				return String(message || "").trim() || "操作失败，请重试";
+			}
+			function composerText() {
+				const el = $("messageInput");
+				return (el ? el.innerText : "").replace(/\u00a0/g, " ").replace(/\n+$/g, "").trim();
+			}
+			function setComposerText(value) {
+				const el = $("messageInput");
+				if (!el) return;
+				el.textContent = String(value || "");
+				if (!value) el.innerHTML = "";
+				autoSizeMessageInput(el, { force: true });
+			}
+			function placeMessageInputCaretAtEnd(input) {
+				if (!input || !window.getSelection || !document.createRange) return false;
+				try {
+					const range = document.createRange();
+					range.selectNodeContents(input);
+					range.collapse(false);
+					const selection = window.getSelection();
+					if (!selection) return false;
+					selection.removeAllRanges();
+					selection.addRange(range);
+					return true;
+				} catch (_) {
+					return false;
+				}
+			}
+			function focusMessageInput(options = {}) {
+				const input = $("messageInput");
+				if (!input) return false;
+				if (options.ensureEnabled !== false && (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true")) setMessageInputDisabled(false);
+				if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
+				if (options.resetActiveFocus && document.activeElement === input && (!isAndroidBrowser() || options.allowAndroidActiveFocusReset)) try {
+					input.blur();
+				} catch (_) {}
+				try {
+					input.focus({ preventScroll: true });
+				} catch (_) {
+					try {
+						input.focus();
+					} catch (err) {
+						return false;
+					}
+				}
+				if (options.moveCaretToEnd) placeMessageInputCaretAtEnd(input);
+				if (options.retry && document.activeElement !== input) window.setTimeout(() => focusMessageInput(Object.assign({}, options, { retry: false })), 30);
+				return true;
+			}
+			function messageInputKeyboardVisible() {
+				if (!isKeyboardEditableElement(document.activeElement)) return false;
+				const viewport = viewportState();
+				return Boolean(viewport && (viewport.keyboardShrunk || viewport.hostKeyboardVisible));
+			}
+			function shouldRecoverMessageInputKeyboard() {
+				const input = $("messageInput");
+				if (!input || document.activeElement !== input) return false;
+				if (!isAndroidBrowser() && !isHermesEmbedMode()) return false;
+				if (state.composerBusy || state.composerComposing) return false;
+				if (messageInputKeyboardVisible()) return false;
+				return Date.now() - Number(state.messageInputKeyboardRecoveryAt || 0) > 450;
+			}
+			function recoverMessageInputKeyboardFromGesture() {
+				const wasFocused = Boolean(state.messageInputPointerWasFocused);
+				state.messageInputPointerWasFocused = false;
+				if (!wasFocused) return false;
+				if (!shouldRecoverMessageInputKeyboard()) return false;
+				state.messageInputKeyboardRecoveryAt = Date.now();
+				return focusMessageInput(isAndroidBrowser() ? {
+					moveCaretToEnd: false,
+					retry: true
+				} : {
+					moveCaretToEnd: false,
+					resetActiveFocus: true,
+					allowAndroidActiveFocusReset: true,
+					retry: true
+				});
+			}
+			function messageInputCanEnableForNativeGesture() {
+				if (state.composerBusy || state.attachmentProcessingCount > 0) return false;
+				if (state.newThreadDraft) return true;
+				return Boolean(state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError);
+			}
+			function releaseStaleAndroidMessageInputFocusBeforeNativeTap(input) {
+				if (!input || !isAndroidBrowser()) return false;
+				if (!state.messageInputPointerWasFocused) return false;
+				if (document.activeElement === input) return false;
+				if (!messageInputCanEnableForNativeGesture()) return false;
+				if (state.composerComposing || messageInputKeyboardVisible()) return false;
+				const now = Date.now();
+				if (now - Number(state.messageInputKeyboardRecoveryAt || 0) <= 450) return false;
+				state.messageInputKeyboardRecoveryAt = now;
+				try {
+					input.blur();
+					return true;
+				} catch (_) {
+					return false;
+				}
+			}
+			function prepareMessageInputForNativeGesture() {
+				const input = $("messageInput");
+				state.messageInputPointerWasFocused = document.activeElement === input;
+				if (!input || !isAndroidBrowser()) return;
+				if (!messageInputCanEnableForNativeGesture()) return;
+				if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") setMessageInputDisabled(false);
+				releaseStaleAndroidMessageInputFocusBeforeNativeTap(input);
+			}
+			function normalizedComposerIntentText(value) {
+				return String(value || "").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\u00a0/g, " ").trim();
+			}
+			function composerIntentOptions() {
+				return [
+					{
+						kind: "goal",
+						tag: "@目标任务",
+						label: "目标任务",
+						detail: "设置当前线程目标、预算和状态",
+						title: "目标任务",
+						subtitle: "打开目标设置框，内容不会作为普通消息发送。",
+						placeholder: "",
+						submitLabel: "打开目标"
+					},
+					{
+						kind: "task-card",
+						tag: "@任务卡片",
+						label: "任务卡片",
+						detail: "发给其他线程，目标侧审批后执行",
+						title: "任务卡片",
+						subtitle: "输入要交给其他线程处理的完整需求；提交后会先生成待审批任务卡片。",
+						placeholder: "写清目标线程、任务背景、期望输出和约束。",
+						submitLabel: "创建任务卡片"
+					},
+					{
+						kind: "task-card-auto",
+						tag: "@自由协作",
+						label: "自由协作",
+						detail: "任务卡片自动回传后续结果",
+						title: "自由协作",
+						subtitle: "输入跨线程协作需求；目标线程首次审批后，后续同源回传可自动继续。",
+						placeholder: "写清协作对象、需要对方完成的步骤，以及完成后回传什么。",
+						submitLabel: "创建协作卡片"
+					},
+					{
+						kind: "chatgpt-pro",
+						tag: "@ChatGPT Pro",
+						label: "ChatGPT Pro",
+						detail: "用专用 Pro 线程生成分析文档",
+						title: "ChatGPT Pro 分析",
+						subtitle: "输入要交给 ChatGPT Pro 分析的问题；内容不会进入当前工作线程。",
+						placeholder: "写清要分析的代码、方案、风险或决策问题。",
+						submitLabel: "提交 Pro 分析"
+					}
+				];
+			}
+			function composerIntentOption(kind) {
+				return composerIntentOptions().find((item) => item.kind === kind) || null;
+			}
+			function composerIntentDraftKey(kind) {
+				return `${currentDraftKey() || (state.currentThreadId ? `thread:${state.currentThreadId}` : "new-thread")}::${String(kind || "").trim()}`;
+			}
+			function loadComposerIntentDraft(kind) {
+				const drafts = loadJsonStorage(STORAGE_COMPOSER_INTENT_DRAFTS, {});
+				const key = composerIntentDraftKey(kind);
+				return String(drafts && drafts[key] || "");
+			}
+			function saveComposerIntentDraft(kind, value) {
+				const key = composerIntentDraftKey(kind);
+				if (!key) return;
+				const drafts = loadJsonStorage(STORAGE_COMPOSER_INTENT_DRAFTS, {});
+				const text = String(value || "").slice(0, COMPOSER_INTENT_BODY_MAX_CHARS);
+				if (text.trim()) drafts[key] = text;
+				else delete drafts[key];
+				try {
+					localStorage.setItem(STORAGE_COMPOSER_INTENT_DRAFTS, JSON.stringify(drafts));
+				} catch (err) {
+					recordHomeAiDiagnosticFailure({
+						category: "task_card_workflow_failed",
+						diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+						severity_hint: "H2",
+						evidence_confidence: .78,
+						error_code: diagnosticErrorCode(err, action === "reply" ? "task_card_return_failed" : "task_card_action_failed"),
+						context: {
+							surface: "task-card",
+							action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+							thread_hash: diagnosticThreadHash(state.currentThreadId),
+							task_hash: diagnosticTaskHash(id)
+						},
+						counts: { status_code: diagnosticErrorStatus(err) },
+						breadcrumbs: [{
+							kind: "task-card",
+							code: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+							status: "failed",
+							fields: {
+								status_code: diagnosticErrorStatus(err),
+								task_hash: diagnosticTaskHash(id)
+							}
+						}]
+					});
+					showError(err);
+				}
+			}
+			function composerIntentBareTagKind(value) {
+				const text = normalizedComposerIntentText(value);
+				if (!text || text === "@") return "";
+				if (THREAD_GOAL_MENTION_PATTERN.test(text)) return "goal";
+				if (/^@(?:ChatGPT\s+Pro|ChatGPTPro|GPT\s+Pro)$/i.test(text)) return "chatgpt-pro";
+				if (THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(text) && !threadTaskCardCommandText(text)) return "task-card-auto";
+				if (THREAD_TASK_CARD_MENTION_PATTERN.test(text) && !threadTaskCardCommandText(text)) return "task-card";
+				return "";
+			}
+			function shouldShowComposerIntentMenu() {
+				return normalizedComposerIntentText(composerText()) === "@";
+			}
+			function closeComposerIntentMenu() {
+				const menu = $("composerIntentMenu");
+				if (menu) {
+					menu.hidden = true;
+					menu.innerHTML = "";
+				}
+				state.composerIntentMenuOpen = false;
+				document.removeEventListener("pointerdown", onComposerIntentOutsidePointer);
+			}
+			function onComposerIntentOutsidePointer(event) {
+				const menu = $("composerIntentMenu");
+				const target = event.target;
+				if (!state.composerIntentMenuOpen || !menu || menu.hidden) return;
+				if (menu.contains(target)) return;
+				if (target && target.closest && target.closest("#messageInput")) return;
+				closeComposerIntentMenu();
+			}
+			function openComposerIntentMenu() {
+				const menu = $("composerIntentMenu");
+				if (!menu) return;
+				closeComposerRuntimeMenu();
+				closeQuotaDetails();
+				menu.innerHTML = composerIntentOptions().map((item) => `
+    <button type="button" class="composer-intent-option" role="option" data-composer-intent="${escapeHtml(item.kind)}">
+      <span class="composer-intent-label">${escapeHtml(item.label)}</span>
+      <span class="composer-intent-tag">${escapeHtml(item.tag)}</span>
+      <span class="composer-intent-detail">${escapeHtml(item.detail)}</span>
+    </button>
+  `).join("");
+				menu.hidden = false;
+				state.composerIntentMenuOpen = true;
+				positionComposerIntentMenu();
+				document.addEventListener("pointerdown", onComposerIntentOutsidePointer);
+			}
+			function positionComposerIntentMenu() {
+				const menu = $("composerIntentMenu");
+				const anchor = $("messageInput") || $("composer");
+				if (!menu || menu.hidden || !anchor) return;
+				fitComposerPopupToAnchor(menu, anchor, {
+					minWidth: 280,
+					maxWidth: 420
+				});
+			}
+			function updateComposerIntentMenu() {
+				if (shouldShowComposerIntentMenu()) if (!state.composerIntentMenuOpen) openComposerIntentMenu();
+				else positionComposerIntentMenu();
+				else closeComposerIntentMenu();
+			}
+			function queueComposerIntentMenuUpdate() {
+				window.setTimeout(updateComposerIntentMenu, 0);
+			}
+			function selectComposerIntent(kind) {
+				const option = composerIntentOption(kind);
+				if (!option) return;
+				setComposerText(option.tag);
+				closeComposerIntentMenu();
+				updateComposerControls();
+				scheduleCurrentDraftSave();
+				const input = $("messageInput");
+				if (input) input.focus();
+			}
+			function setComposerIntentDialogStatus(message, isError = false) {
+				const status = $("composerIntentDialogStatus");
+				if (!status) return;
+				const text = String(message || "").trim();
+				status.textContent = text;
+				status.classList.toggle("hidden", !text);
+				status.classList.toggle("error", Boolean(isError));
+			}
+			function closeComposerIntentDialog(clearState = true) {
+				const dialog = $("composerIntentDialog");
+				if (dialog) dialog.classList.add("hidden");
+				if (clearState) {
+					state.composerIntentDialogKind = "";
+					state.composerIntentDialogBusy = false;
+				}
+				setComposerIntentDialogStatus("");
+				updateComposerControls();
+			}
+			function openComposerIntentDialog(kind, options = {}) {
+				const option = composerIntentOption(kind);
+				if (!option) return false;
+				if (kind !== "chatgpt-pro" && state.newThreadDraft) {
+					showError(/* @__PURE__ */ new Error(`${option.label} is only available in an existing thread`));
+					return false;
+				}
+				if (state.pendingAttachments.length) {
+					showError(/* @__PURE__ */ new Error(`${option.tag} does not support attachments in this entry point`));
+					return false;
+				}
+				state.composerIntentDialogKind = kind;
+				state.composerIntentDialogBusy = false;
+				const title = $("composerIntentDialogTitle");
+				const subtitle = $("composerIntentDialogSubtitle");
+				const label = $("composerIntentBodyLabel");
+				const input = $("composerIntentBodyInput");
+				const submit = $("composerIntentSubmitButton");
+				if (title) title.textContent = option.title;
+				if (subtitle) subtitle.textContent = option.subtitle;
+				if (label) label.textContent = option.label;
+				if (submit) submit.textContent = option.submitLabel;
+				if (input) {
+					input.placeholder = option.placeholder;
+					input.maxLength = COMPOSER_INTENT_BODY_MAX_CHARS;
+					input.value = String(options.initialBody || loadComposerIntentDraft(kind) || "").slice(0, COMPOSER_INTENT_BODY_MAX_CHARS);
+				}
+				setComposerIntentDialogStatus("");
+				const dialog = $("composerIntentDialog");
+				if (dialog) dialog.classList.remove("hidden");
+				window.setTimeout(() => {
+					if (input) input.focus();
+				}, 30);
+				return true;
+			}
+			async function submitComposerIntentDialog(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (state.composerIntentDialogBusy || state.composerBusy) return;
+				const kind = state.composerIntentDialogKind;
+				const option = composerIntentOption(kind);
+				if (!option) return;
+				const input = $("composerIntentBodyInput");
+				const body = String(input && input.value || "").trim();
+				if (!body) {
+					setComposerIntentDialogStatus("请输入内容。", true);
+					return;
+				}
+				state.composerIntentDialogBusy = true;
+				setComposerIntentDialogStatus("提交中…");
+				updateComposerControls();
+				try {
+					if (kind === "chatgpt-pro") await submitChatGptProRequest(`${option.tag} ${body}`, { rethrow: true });
+					else if (kind === "task-card" || kind === "task-card-auto") await sendThreadTaskCardCommand(`${option.tag} ${body}`, { rethrow: true });
+					saveComposerIntentDraft(kind, "");
+					setComposerText("");
+					scheduleCurrentDraftSave();
+					closeComposerIntentDialog();
+				} catch (err) {
+					setComposerIntentDialogStatus(normalizeClientErrorMessage(err && err.message ? err.message : String(err), err), true);
+					showError(err);
+				} finally {
+					state.composerIntentDialogBusy = false;
+					updateComposerControls();
+				}
+			}
+			function saveComposerIntentDialogDraft() {
+				const kind = state.composerIntentDialogKind;
+				if (!composerIntentOption(kind)) return;
+				const input = $("composerIntentBodyInput");
+				saveComposerIntentDraft(kind, input ? input.value : "");
+				setComposerIntentDialogStatus("草稿已保存。");
+			}
+			function shouldKeepAndroidMessageInputEditable(disabled, el) {
+				if (!disabled || !isAndroidBrowser()) return false;
+				if (!el) return false;
+				if (!messageInputCanEnableForNativeGesture()) return false;
+				return Boolean(state.composerComposing || document.activeElement === el);
+			}
+			function setMessageInputDisabled(disabled) {
+				const el = $("messageInput");
+				if (!el) return;
+				const keepAndroidEditorConnection = shouldKeepAndroidMessageInputEditable(disabled, el);
+				const nextContentEditable = disabled && !keepAndroidEditorConnection ? "false" : "true";
+				const nextAriaDisabled = disabled ? "true" : "false";
+				const nextTabIndex = disabled ? -1 : 0;
+				const currentContentEditable = String(el.getAttribute("contenteditable") || el.contentEditable || "").toLowerCase();
+				const currentAriaDisabled = String(el.getAttribute("aria-disabled") || "").toLowerCase();
+				const currentClassDisabled = el.classList.contains("disabled");
+				if (currentContentEditable === nextContentEditable && currentAriaDisabled === nextAriaDisabled && el.tabIndex === nextTabIndex && currentClassDisabled === disabled) return;
+				if (!((state.composerComposing || keepAndroidEditorConnection) && currentContentEditable === "true") && currentContentEditable !== nextContentEditable) el.contentEditable = nextContentEditable;
+				if (currentAriaDisabled !== nextAriaDisabled) el.setAttribute("aria-disabled", nextAriaDisabled);
+				if (el.tabIndex !== nextTabIndex) el.tabIndex = nextTabIndex;
+				if (currentClassDisabled !== disabled) el.classList.toggle("disabled", disabled);
+			}
+			function messageInputTextLength(el) {
+				return String(el && (el.textContent || el.innerText) || "").length;
+			}
+			function messageInputTargetHeight(el) {
+				const scrollHeight = viewportMetrics.cssPixel(el && el.scrollHeight);
+				return Math.min(MESSAGE_INPUT_MAX_HEIGHT_PX, Math.max(MESSAGE_INPUT_MIN_HEIGHT_PX, scrollHeight));
+			}
+			function currentMessageInputHeight(el) {
+				const inlineHeight = Number.parseFloat(el && el.style && el.style.height || "");
+				return viewportMetrics.cssPixel(inlineHeight || el && el.getBoundingClientRect && el.getBoundingClientRect().height || 0);
+			}
+			function updateMessageInputOverflow(el, heightPx) {
+				if (!el || !el.style) return;
+				el.style.overflowY = el.scrollHeight > heightPx + 1 ? "auto" : "hidden";
+			}
+			function autoSizeMessageInput(el, options = {}) {
+				if (!el) return false;
+				const force = options.force === true;
+				const previousTextLength = Number(state.messageInputTextLength || 0);
+				const nextTextLength = messageInputTextLength(el);
+				const currentHeight = currentMessageInputHeight(el);
+				let nextHeight = messageInputTargetHeight(el);
+				if (force || nextTextLength < previousTextLength) {
+					const previousInlineHeight = el.style.height;
+					el.style.height = "auto";
+					nextHeight = messageInputTargetHeight(el);
+					if (!force && currentHeight && !viewportMetrics.stablePixelChanged(currentHeight, nextHeight)) {
+						el.style.height = previousInlineHeight;
+						state.messageInputTextLength = nextTextLength;
+						updateMessageInputOverflow(el, currentHeight);
+						return false;
+					}
+				}
+				state.messageInputTextLength = nextTextLength;
+				if (!force && currentHeight && !viewportMetrics.stablePixelChanged(currentHeight, nextHeight)) {
+					updateMessageInputOverflow(el, currentHeight);
+					return false;
+				}
+				state.messageInputHeightPx = nextHeight;
+				el.style.height = `${nextHeight}px`;
+				updateMessageInputOverflow(el, nextHeight);
+				updateComposerHeightVar();
+				return true;
+			}
+			function formatFileSize(bytes) {
+				if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+				if (bytes < 1024) return `${bytes} B`;
+				if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+				return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+			}
+			function appendLocalAttachmentSummary(text, attachments) {
+				if (!attachments.length) return text;
+				const lines = attachments.map((item) => {
+					const file = item.file;
+					const kind = file.type && file.type.startsWith("image/") ? "image" : "file";
+					return `- ${file.name || "upload"} (${kind}, ${file.type || "file"}, ${formatFileSize(file.size || 0)}): ${file.name || "upload"}`;
+				});
+				return `${text ? `${text}\n\n` : ""}Uploaded attachments:\n${lines.join("\n")}`;
+			}
+			function localImageInputPartsForAttachments(attachments) {
+				return (attachments || []).map((item) => {
+					const file = item && item.file;
+					if (!file) return null;
+					const previewUrl = localAttachmentPreviewUrl(item);
+					if (!previewUrl) return null;
+					const name = String(file.name || "upload");
+					if (!(String(file.type || "").toLowerCase().startsWith("image/") || /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|tiff?|webp)$/i.test(name))) return null;
+					return {
+						type: "input_image",
+						image_url: { url: previewUrl },
+						fileName: name
+					};
+				}).filter(Boolean);
+			}
+			function localUserMessageItem(text, attachments, clientSubmissionId) {
+				const content = [{
+					type: "text",
+					text: appendLocalAttachmentSummary(text, attachments),
+					text_elements: []
+				}];
+				content.push(...localImageInputPartsForAttachments(attachments));
+				return {
+					id: `local-user-${clientSubmissionId || Date.now()}`,
+					type: "userMessage",
+					mobilePendingSubmission: true,
+					clientSubmissionId: clientSubmissionId || "",
+					startedAtMs: Date.now(),
+					content
+				};
+			}
+			function attachmentId() {
+				if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+				return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+			}
+			function pendingAttachmentBytes(extra = []) {
+				return state.pendingAttachments.reduce((total, item) => total + item.file.size, 0) + extra.reduce((total, file) => total + file.size, 0);
+			}
+			async function prepareAttachmentFile(file) {
+				if (!imageCompressor || typeof imageCompressor.compressImageFile !== "function") return file;
+				try {
+					return await imageCompressor.compressImageFile(file);
+				} catch (err) {
+					postClientEvent("attachment_image_compression_failed", {
+						name: file && file.name ? String(file.name).slice(0, 120) : "",
+						type: file && file.type ? String(file.type).slice(0, 80) : "",
+						size: file && Number.isFinite(file.size) ? Number(file.size) : 0,
+						message: err && err.message ? err.message : String(err)
+					});
+					return file;
+				}
+			}
+			async function prepareAttachmentFiles(files) {
+				const prepared = [];
+				for (const file of files) prepared.push(await prepareAttachmentFile(file));
+				return prepared;
+			}
+			async function addAttachmentFiles(fileList) {
+				const files = Array.from(fileList || []).filter(Boolean);
+				if (!files.length) return;
+				state.attachmentProcessingCount += 1;
+				updateComposerControls();
+				let preparedFiles = files;
+				try {
+					preparedFiles = await prepareAttachmentFiles(files);
+				} finally {
+					state.attachmentProcessingCount = Math.max(0, state.attachmentProcessingCount - 1);
+					updateComposerControls();
+				}
+				const draftKey = currentDraftKey();
+				const startIndex = state.pendingAttachments.length;
+				const accepted = [];
+				for (const file of preparedFiles) {
+					if (state.pendingAttachments.length + accepted.length >= state.maxUploadFiles) {
+						showError(/* @__PURE__ */ new Error(`Too many attachments; max ${state.maxUploadFiles}`));
+						break;
+					}
+					if (pendingAttachmentBytes(accepted.concat(file)) > state.maxUploadBytes) {
+						showError(/* @__PURE__ */ new Error(`Attachments are too large; max ${formatFileSize(state.maxUploadBytes)}`));
+						break;
+					}
+					accepted.push(file);
+				}
+				for (const file of accepted) {
+					const previewUrl = file.type && file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
+					state.pendingAttachments.push({
+						id: attachmentId(),
+						file,
+						previewUrl
+					});
+				}
+				renderAttachmentList();
+				const addedItems = state.pendingAttachments.slice(startIndex);
+				if (draftKey) saveDraftAttachmentFiles(draftKey, addedItems);
+				scheduleCurrentDraftSave();
+			}
+			function removeAttachment(id) {
+				const draftKey = currentDraftKey();
+				const index = state.pendingAttachments.findIndex((item) => item.id === id);
+				if (index < 0) return;
+				const [item] = state.pendingAttachments.splice(index, 1);
+				if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+				renderAttachmentList();
+				if (draftKey) deleteDraftAttachments(draftKey, [id]).catch((err) => {
+					postClientEvent("draft_attachment_remove_failed", { message: err.message || String(err) });
+				});
+				scheduleCurrentDraftSave();
+			}
+			function clearPendingAttachments(options = {}) {
+				const draftKey = currentDraftKey();
+				const attachmentsToReleaseLater = options.revokePreviewUrls === false ? state.pendingAttachments.slice() : [];
+				replacePendingAttachments([], {
+					saveDraft: false,
+					revokePreviewUrls: options.revokePreviewUrls
+				});
+				if (attachmentsToReleaseLater.length) scheduleAttachmentPreviewUrlRevoke(attachmentsToReleaseLater);
+				if (options.deleteDraft !== false && draftKey) deleteDraftAttachments(draftKey).catch((err) => {
+					postClientEvent("draft_attachment_clear_failed", { message: err.message || String(err) });
+				});
+			}
+			function renderAttachmentList() {
+				const list = $("attachmentList");
+				if (!state.pendingAttachments.length) {
+					list.classList.add("hidden");
+					list.innerHTML = "";
+					updateComposerControls();
+					updateComposerHeightVar();
+					return;
+				}
+				list.classList.remove("hidden");
+				list.innerHTML = state.pendingAttachments.map((item) => {
+					const file = item.file;
+					const thumb = item.previewUrl ? `<img class="attachment-thumb" src="${escapeHtml(item.previewUrl)}" alt="">` : `<div class="attachment-file-icon" aria-hidden="true"></div>`;
+					return `<div class="attachment-chip" data-attachment="${escapeHtml(item.id)}">
+      ${thumb}
+      <div class="attachment-meta">
+        <div class="attachment-name">${escapeHtml(file.name || "upload")}</div>
+        <div class="attachment-size">${escapeHtml(`${file.type || "file"} - ${formatFileSize(file.size)}`)}</div>
+      </div>
+      <button class="attachment-remove" type="button" title="Remove attachment" data-remove-attachment="${escapeHtml(item.id)}">x</button>
+    </div>`;
+				}).join("");
+				updateComposerControls();
+				updateComposerHeightVar();
+			}
+			function composerHasContent() {
+				return Boolean(composerText() || state.pendingAttachments.length);
+			}
+			function effectiveDefaultModel(thread = composerTargetThread()) {
+				return thread && thread.model || state.defaultModel || "";
+			}
+			function effectiveDefaultEffort(thread = composerTargetThread()) {
+				return thread && thread.effort || state.defaultReasoningEffort || "";
+			}
+			function effectiveDefaultPermissionMode(thread = composerTargetThread()) {
+				const settings = thread && thread.runtimeSettings;
+				if (String(settings && settings.sandboxPolicyType || "").replace(/[-_]/g, "").toLowerCase() === "dangerfullaccess") return "full";
+				return effectiveComposerPermissionMode(settings && settings.permissionMode || "");
+			}
+			function selectedComposerModel() {
+				if (state.newThreadDraft) return newThreadSelectedModel();
+				return state.composerModel || effectiveDefaultModel();
+			}
+			function selectedComposerEffort() {
+				if (state.newThreadDraft) return newThreadSelectedEffort();
+				return state.composerEffort || effectiveDefaultEffort();
+			}
+			function selectedComposerPermissionMode() {
+				if (state.newThreadDraft) return newThreadSelectedPermissionMode();
+				return effectiveComposerPermissionMode(state.composerPermissionMode || effectiveDefaultPermissionMode()) || defaultNewThreadPermissionMode();
+			}
+			function resetComposerRuntimeSelection() {
+				state.composerModel = "";
+				state.composerEffort = "";
+				state.composerPermissionMode = "";
+				state.codexFastMode = false;
+				closeComposerRuntimeMenu();
+				closeComposerIntentMenu();
+				state.quotaDetailsOpen = false;
+			}
+			function runtimeOptionValues(kind) {
+				if (kind === "model") return normalizeOptionList([
+					selectedComposerModel(),
+					state.defaultModel,
+					...state.modelOptions
+				]);
+				if (kind === "effort") return normalizeOptionList([
+					selectedComposerEffort(),
+					state.defaultReasoningEffort,
+					...state.reasoningEffortOptions
+				]);
+				if (kind === "permission") return normalizeOptionList([
+					selectedComposerPermissionMode(),
+					defaultNewThreadPermissionMode(),
+					...state.permissionModeOptions
+				]);
+				return [];
+			}
+			function runtimeOptionLabel(kind, value) {
+				if (kind === "model") return labelForModel(value);
+				if (kind === "effort") return labelForEffort(value);
+				if (kind === "permission") return labelForPermissionMode(value);
+				return value;
+			}
+			function runtimeSelectedValue(kind) {
+				if (kind === "model") return selectedComposerModel();
+				if (kind === "effort") return selectedComposerEffort();
+				if (kind === "permission") return selectedComposerPermissionMode();
+				return "";
+			}
+			function codexFastCommandEnabled() {
+				return Boolean(state.codexFastMode);
+			}
+			function clearLegacyCodexFastModeStorage() {
+				try {
+					localStorage.removeItem(STORAGE_CODEX_FAST_MODE);
+				} catch (_) {}
+			}
+			function setCodexFastCommandEnabled(enabled) {
+				state.codexFastMode = Boolean(enabled);
+				clearLegacyCodexFastModeStorage();
+				renderComposerSettings();
+				updateComposerControls();
+				saveCurrentDraftNow();
+				showComposerFastHint(state.codexFastMode);
+			}
+			function applyRuntimeSelection(kind, value) {
+				const selected = String(value || "").trim();
+				if (!selected) return;
+				if (state.newThreadDraft) {
+					if (kind === "model") state.newThreadModel = selected;
+					if (kind === "effort") state.newThreadEffort = selected;
+					if (kind === "permission") state.newThreadPermissionMode = effectiveComposerPermissionMode(selected) || defaultNewThreadPermissionMode();
+				} else {
+					if (kind === "model") state.composerModel = selected;
+					if (kind === "effort") state.composerEffort = selected;
+					if (kind === "permission") state.composerPermissionMode = effectiveComposerPermissionMode(selected) || defaultNewThreadPermissionMode();
+				}
+				closeComposerRuntimeMenu();
+				renderComposerSettings();
+				updateComposerControls();
+				saveCurrentDraftNow();
+			}
+			function closeComposerRuntimeMenu() {
+				const menu = $("composerRuntimeMenu");
+				if (menu) {
+					menu.hidden = true;
+					menu.innerHTML = "";
+				}
+				for (const id of [
+					"composerModelControl",
+					"composerEffortControl",
+					"composerPermissionControl"
+				]) {
+					const button = $(id);
+					if (button) button.setAttribute("aria-expanded", "false");
+				}
+				state.composerMenuKind = "";
+				document.removeEventListener("pointerdown", onComposerRuntimeOutsidePointer);
+			}
+			function onComposerRuntimeOutsidePointer(event) {
+				const menu = $("composerRuntimeMenu");
+				const target = event.target;
+				if (!menu || menu.hidden) return;
+				if (menu.contains(target)) return;
+				if (target && target.closest && target.closest("[data-composer-runtime]")) return;
+				closeComposerRuntimeMenu();
+			}
+			function openComposerRuntimeMenu(kind, anchor) {
+				const menu = $("composerRuntimeMenu");
+				if (!menu || !anchor) return;
+				closeComposerIntentMenu();
+				state.quotaDetailsOpen = false;
+				const selected = runtimeSelectedValue(kind);
+				menu.innerHTML = runtimeOptionValues(kind).map((value) => {
+					return `<button type="button" class="composer-runtime-option${value === selected ? " is-selected" : ""}" role="option" aria-selected="${value === selected ? "true" : "false"}" data-runtime-kind="${escapeHtml(kind)}" data-runtime-value="${escapeHtml(value)}">${escapeHtml(runtimeOptionLabel(kind, value))}</button>`;
+				}).join("");
+				menu.hidden = false;
+				state.composerMenuKind = kind;
+				for (const id of [
+					"composerModelControl",
+					"composerEffortControl",
+					"composerPermissionControl"
+				]) {
+					const button = $(id);
+					if (button) button.setAttribute("aria-expanded", button === anchor ? "true" : "false");
+				}
+				fitComposerPopupToAnchor(menu, anchor);
+				document.addEventListener("pointerdown", onComposerRuntimeOutsidePointer);
+			}
+			function composerRuntimeMenuDiagnostics(kind, triggerType) {
+				const menu = $("composerRuntimeMenu");
+				const rect = menu && !menu.hidden ? menu.getBoundingClientRect() : null;
+				const visualViewport = window.visualViewport;
+				const viewportWidth = Math.round(visualViewport && visualViewport.width || window.innerWidth || 0);
+				const viewportHeight = Math.round(visualViewport && visualViewport.height || window.innerHeight || 0);
+				return {
+					kind,
+					triggerType,
+					menuHidden: !menu || menu.hidden,
+					optionCount: menu ? menu.querySelectorAll("[data-runtime-kind][data-runtime-value]").length : 0,
+					top: rect ? Math.round(rect.top) : null,
+					bottom: rect ? Math.round(rect.bottom) : null,
+					left: rect ? Math.round(rect.left) : null,
+					right: rect ? Math.round(rect.right) : null,
+					viewportWidth,
+					viewportHeight,
+					visible: Boolean(rect && rect.bottom > 0 && rect.top < viewportHeight && rect.right > 0 && rect.left < viewportWidth)
+				};
+			}
+			function reportComposerRuntimeMenu(kind, triggerType) {
+				(typeof window.requestAnimationFrame === "function" ? window.requestAnimationFrame.bind(window) : (callback) => window.setTimeout(callback, 0))(() => postClientEvent("composer_runtime_menu_opened", composerRuntimeMenuDiagnostics(kind, triggerType)));
+			}
+			function handleComposerRuntimeControl(event, kind, button) {
+				event.preventDefault();
+				event.stopPropagation();
+				if (button.disabled) {
+					postClientEvent("composer_runtime_control_ignored", {
+						kind,
+						triggerType: event.type,
+						reason: "disabled"
+					});
+					return;
+				}
+				if (state.composerMenuKind === kind) {
+					closeComposerRuntimeMenu();
+					postClientEvent("composer_runtime_menu_closed", {
+						kind,
+						triggerType: event.type
+					});
+				} else {
+					openComposerRuntimeMenu(kind, button);
+					reportComposerRuntimeMenu(kind, event.type);
+				}
+			}
+			function fitComposerPopupToAnchor(panel, anchor, options = {}) {
+				const rect = anchor.getBoundingClientRect();
+				const minWidth = Number(options.minWidth || 180);
+				const maxWidth = Number(options.maxWidth || 280);
+				const visualViewport = window.visualViewport;
+				const viewportLeft = visualViewport ? Number(visualViewport.offsetLeft || 0) : 0;
+				const viewportTop = visualViewport ? Number(visualViewport.offsetTop || 0) : 0;
+				const viewportWidth = Math.max(1, Math.floor(visualViewport && visualViewport.width || window.innerWidth || document.documentElement.clientWidth || maxWidth));
+				const viewportHeight = Math.max(1, Math.floor(visualViewport && visualViewport.height || window.innerHeight || document.documentElement.clientHeight || 360));
+				const width = Math.max(minWidth, Math.min(maxWidth, viewportWidth - 16, Math.max(rect.width, minWidth)));
+				const left = Math.max(viewportLeft + 8, Math.min(viewportLeft + viewportWidth - width - 8, rect.left));
+				const anchorTop = Math.max(viewportTop + 8, Math.min(viewportTop + viewportHeight - 8, rect.top));
+				const availableAbove = Math.max(96, anchorTop - viewportTop - 12);
+				const bottom = Math.max(8, viewportTop + viewportHeight - anchorTop + 6);
+				panel.style.setProperty("--composer-popup-left", `${Math.round(left)}px`);
+				panel.style.setProperty("--composer-popup-bottom", `${Math.round(bottom)}px`);
+				panel.style.setProperty("--composer-popup-width", `${Math.round(width)}px`);
+				panel.style.setProperty("--composer-popup-max-height", `${Math.round(Math.min(360, availableAbove))}px`);
+			}
+			function closeQuotaDetails() {
+				state.quotaDetailsOpen = false;
+				const panel = $("quotaDetailPanel");
+				if (panel) {
+					panel.hidden = true;
+					panel.innerHTML = "";
+				}
+				const quota = $("quotaUsage");
+				if (quota) quota.setAttribute("aria-expanded", "false");
+				document.removeEventListener("pointerdown", onQuotaOutsidePointer);
+			}
+			function onQuotaOutsidePointer(event) {
+				const panel = $("quotaDetailPanel");
+				const quota = $("quotaUsage");
+				const target = event.target;
+				if (!state.quotaDetailsOpen) return;
+				if (panel && panel.contains(target) || quota && quota.contains(target)) return;
+				closeQuotaDetails();
+			}
+			function toggleQuotaDetails(anchor) {
+				closeComposerRuntimeMenu();
+				state.quotaDetailsOpen = !state.quotaDetailsOpen;
+				renderQuotaUsage();
+				const panel = $("quotaDetailPanel");
+				if (state.quotaDetailsOpen && panel && anchor) {
+					fitComposerPopupToAnchor(panel, anchor, {
+						minWidth: 320,
+						maxWidth: 390
+					});
+					document.addEventListener("pointerdown", onQuotaOutsidePointer);
+				} else document.removeEventListener("pointerdown", onQuotaOutsidePointer);
+			}
+			function composerPlaceholderText() {
+				const targetThreadId = currentComposerThreadId();
+				const targetThread = composerTargetThread();
+				return threadTileStatePolicy.composerTargetPlaceholderPlan({
+					newThreadDraft: state.newThreadDraft,
+					tileContext: isThreadTileComposerContext(),
+					targetThreadId,
+					hasTargetThread: Boolean(targetThread),
+					targetTitle: targetThread ? threadDisplayName(targetThread) : "",
+					newThreadPlaceholder: "输入第一条消息",
+					defaultPlaceholder: "Message Codex"
+				}).text;
+			}
+			function composerShowsTargetPlaceholder() {
+				const targetThreadId = currentComposerThreadId();
+				const targetThread = composerTargetThread();
+				return threadTileStatePolicy.composerTargetPlaceholderPlan({
+					newThreadDraft: state.newThreadDraft,
+					tileContext: isThreadTileComposerContext(),
+					targetThreadId,
+					hasTargetThread: Boolean(targetThread)
+				}).showTargetPlaceholder === true;
+			}
+			function applyComposerActionControlPlan(sendButton, plan) {
+				if (!sendButton || !plan) return;
+				setComposerActionButtonLabel(sendButton, plan.label || "Send", { proxy: plan.labelProxy === true });
+				sendButton.title = plan.title || "";
+				const classState = plan.classState || {};
+				sendButton.classList.toggle("interrupt-mode", classState.interruptMode === true);
+				sendButton.classList.toggle("sending", classState.sending === true);
+				sendButton.classList.toggle("send-failed", classState.sendFailed === true);
+				sendButton.classList.toggle("steer-mode", classState.steerMode === true);
+				sendButton.classList.toggle("plugin-voice-input-gesture", classState.pluginVoiceInputGesture === true);
+				if (plan.ariaLabel) sendButton.setAttribute("aria-label", plan.ariaLabel);
+				else sendButton.removeAttribute("aria-label");
+				sendButton.disabled = plan.sendButtonDisabled === true;
+			}
+			function renderComposerSettings() {
+				const commandControl = $("composerCommandControl");
+				const modelControl = $("composerModelControl");
+				const effortControl = $("composerEffortControl");
+				const permissionControl = $("composerPermissionControl");
+				if (!commandControl || !modelControl || !effortControl || !permissionControl) return;
+				const selectedModel = selectedComposerModel();
+				const selectedEffort = selectedComposerEffort();
+				const selectedPermission = selectedComposerPermissionMode();
+				const fastEnabled = codexFastCommandEnabled();
+				const fastScopeLabel = state.newThreadDraft ? "this new thread" : "this thread";
+				commandControl.classList.toggle("is-fast", fastEnabled);
+				commandControl.setAttribute("aria-pressed", fastEnabled ? "true" : "false");
+				commandControl.title = fastEnabled ? `Fast tag on for ${fastScopeLabel}` : `Fast tag off for ${fastScopeLabel}`;
+				commandControl.setAttribute("aria-label", fastEnabled ? `Fast tag on for ${fastScopeLabel}` : `Fast tag off for ${fastScopeLabel}`);
+				commandControl.disabled = state.composerBusy;
+				const controls = [
+					[
+						modelControl,
+						selectedModel ? labelForModel(selectedModel) : "--",
+						state.newThreadDraft || state.composerModel ? "下一轮使用" : "当前记录"
+					],
+					[
+						effortControl,
+						selectedEffort ? labelForEffort(selectedEffort) : "--",
+						state.newThreadDraft || state.composerEffort ? "下一轮使用" : "当前记录"
+					],
+					[
+						permissionControl,
+						selectedPermission ? labelForPermissionMode(selectedPermission).replace(/权限$/, "") : "--",
+						state.newThreadDraft || state.composerPermissionMode ? "下一轮使用" : "当前记录"
+					]
+				];
+				for (const [button, value, mode] of controls) {
+					const valueEl = button.querySelector(".composer-chip-value");
+					if (valueEl) valueEl.textContent = value;
+					button.title = `${button.querySelector(".composer-chip-label")?.textContent || ""}：${value}（${mode}）`;
+					button.classList.toggle("has-pending-value", mode === "下一轮使用");
+					button.disabled = state.composerBusy;
+				}
+				renderQuotaUsage();
+			}
+			function updateComposerControls() {
+				const targetThreadId = currentComposerThreadId();
+				const targetThread = composerTargetThread();
+				const targetActiveTurnId = composerTargetActiveTurnId();
+				const hasThread = Boolean(targetThreadId && targetThread && !targetThread.mobileLoading && !targetThread.mobileLoadError);
+				const hasNewThreadDraft = Boolean(state.newThreadDraft);
+				const hasContent = composerHasContent();
+				const bareIntentKind = composerIntentBareTagKind(composerText());
+				const goalCommandMode = Boolean(!hasNewThreadDraft && isThreadGoalCommandText(composerText()));
+				const commandMode = Boolean(!hasNewThreadDraft && isThreadTaskCardCommandText(composerText()));
+				const voiceGestureAvailable = pluginVoiceInputGestureAvailable();
+				const bareIntentOption = bareIntentKind ? composerIntentOption(bareIntentKind) : null;
+				const composerActionPlan = threadTileStatePolicy.composerActionControlPlan({
+					hasThread,
+					hasNewThreadDraft,
+					composerBusy: state.composerBusy,
+					attachmentProcessingCount: state.attachmentProcessingCount,
+					hasContent,
+					targetActiveTurnId,
+					bareIntentKind,
+					bareIntentTitle: bareIntentOption ? `Open ${bareIntentOption.label}` : "Open composer action",
+					goalCommandMode,
+					commandMode,
+					sendButtonHint: state.sendButtonHint,
+					steeringBusy: Boolean(state.steerFeedback && state.steerFeedback.status === "sending"),
+					voiceGestureAvailable,
+					hermesEmbedMode: isHermesEmbedMode()
+				});
+				const disabled = composerActionPlan.disabled === true;
+				const sendButton = $("sendMessage");
+				const attachButton = $("attachFiles");
+				const messageInput = $("messageInput");
+				for (const id of [
+					"composerIntentBodyInput",
+					"composerIntentSubmitButton",
+					"composerIntentSaveButton"
+				]) {
+					const el = $(id);
+					if (el) el.disabled = state.composerIntentDialogBusy || state.composerBusy;
+				}
+				if (messageInput) {
+					messageInput.dataset.placeholder = composerPlaceholderText();
+					messageInput.classList.toggle("has-target-placeholder", composerShowsTargetPlaceholder());
+				}
+				setMessageInputDisabled(disabled);
+				$("fileInput").disabled = disabled;
+				attachButton.disabled = disabled;
+				attachButton.classList.toggle("disabled", disabled);
+				attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
+				attachButton.tabIndex = disabled ? -1 : 0;
+				for (const id of [
+					"composerCommandControl",
+					"composerModelControl",
+					"composerEffortControl",
+					"composerPermissionControl",
+					"quotaUsage"
+				]) {
+					const button = $(id);
+					if (button) button.disabled = disabled;
+				}
+				applyComposerActionControlPlan(sendButton, composerActionPlan);
+				publishPluginVoiceInputCapability();
+			}
+			function hasTransferFiles(event) {
+				return Array.from(event.dataTransfer && event.dataTransfer.types || []).includes("Files");
+			}
+			function goalDialogFormValues(options = {}) {
+				const requireObjective = options.requireObjective !== false;
+				const thread = currentGoalDialogThread();
+				const threadId = String(thread && thread.id || state.goalDialogThreadId || "").trim();
+				const objectiveInput = $("goalObjectiveInput");
+				const budgetInput = $("goalTokenBudgetInput");
+				const objective = String(objectiveInput && objectiveInput.value || "").trim();
+				const rawBudget = String(budgetInput && budgetInput.value || "").trim();
+				if (!threadId) {
+					showError(/* @__PURE__ */ new Error("No thread is selected"));
+					return null;
+				}
+				if (requireObjective && !objective) {
+					showError(/* @__PURE__ */ new Error("Goal objective is required"));
+					if (objectiveInput) objectiveInput.focus();
+					return null;
+				}
+				let tokenBudget = 0;
+				if (rawBudget) {
+					tokenBudget = Number(rawBudget);
+					if (!Number.isFinite(tokenBudget) || tokenBudget <= 0) {
+						showError(/* @__PURE__ */ new Error("Token budget must be a positive number"));
+						if (budgetInput) budgetInput.focus();
+						return null;
+					}
+					tokenBudget = Math.trunc(tokenBudget);
+				}
+				return {
+					thread,
+					threadId,
+					objective,
+					tokenBudget: tokenBudget > 0 ? tokenBudget : null
+				};
+			}
+			async function submitThreadGoalMessage(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (state.goalSubmitBusy || state.composerBusy) {
+					if (state.composerBusy) showError(/* @__PURE__ */ new Error("A message is already sending"));
+					return;
+				}
+				const values = goalDialogFormValues();
+				if (!values) return;
+				const { threadId, objective, tokenBudget } = values;
+				state.composerBusy = true;
+				state.sendButtonHint = "";
+				setThreadGoalDialogBusy(true, "Saving...");
+				markActivity("Goal set");
+				updateComposerControls();
+				try {
+					postClientEvent("goal_request_start", { threadId });
+					const result = await api(`/api/threads/${encodeURIComponent(threadId)}/goal`, {
+						method: "POST",
+						body: JSON.stringify({
+							objective,
+							tokenBudget
+						}),
+						timeoutMs: 3e4
+					});
+					const responseGoal = normalizeThreadGoal(result && result.goal, threadId);
+					const visibleGoal = responseGoal || submittedThreadGoal(threadId, objective, tokenBudget);
+					if (visibleGoal) updateThreadGoalState(threadId, visibleGoal);
+					closeThreadGoalDialog(true);
+					$("connectionState").classList.remove("error");
+					$("connectionState").textContent = "Goal set";
+					markActivity("Goal set");
+					postClientEvent("goal_request_success", {
+						threadId,
+						hasResponseGoal: Boolean(responseGoal)
+					});
+					if (threadId === state.currentThreadId) scheduleCurrentThreadRefresh(600);
+					loadThreads({ silent: true }).catch(showError);
+				} catch (err) {
+					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Goal set failed";
+					$("connectionState").classList.add("error");
+					$("connectionState").textContent = message;
+					postClientEvent("goal_request_failure", {
+						threadId,
+						message
+					});
+					showError(new Error(message));
+				} finally {
+					state.composerBusy = false;
+					setThreadGoalDialogBusy(false);
+					updateComposerControls();
+				}
+			}
+			function threadGoalActionStatusText(action) {
+				if (action === "continue") return "Goal continued";
+				if (action === "pause") return "Goal paused";
+				if (action === "cancel") return "Goal cancelled";
+				return "Goal updated";
+			}
+			function threadGoalActionBusyText(action) {
+				if (action === "continue") return "Continuing...";
+				if (action === "pause") return "Pausing...";
+				if (action === "cancel") return "Cancelling...";
+				return "Sending...";
+			}
+			async function runThreadGoalDialogAction(action, event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+				if (state.goalSubmitBusy || state.composerBusy) {
+					if (state.composerBusy) showError(/* @__PURE__ */ new Error("A message is already sending"));
+					return;
+				}
+				const normalizedAction = String(action || "").trim().toLowerCase();
+				const values = goalDialogFormValues({ requireObjective: normalizedAction !== "cancel" });
+				if (!values) return;
+				const { threadId, objective, tokenBudget } = values;
+				state.composerBusy = true;
+				state.sendButtonHint = "";
+				setThreadGoalDialogBusy(true, threadGoalActionBusyText(normalizedAction));
+				markActivity("Goal action");
+				updateComposerControls();
+				try {
+					postClientEvent("goal_action_start", {
+						threadId,
+						action: normalizedAction
+					});
+					const result = await api(`/api/threads/${encodeURIComponent(threadId)}/goal/actions`, {
+						method: "POST",
+						body: JSON.stringify({
+							action: normalizedAction,
+							objective: objective || void 0,
+							tokenBudget
+						}),
+						timeoutMs: 3e4
+					});
+					const responseGoal = normalizeThreadGoal(result && result.goal, threadId);
+					if (normalizedAction === "cancel") updateThreadGoalState(threadId, null);
+					else if (responseGoal) updateThreadGoalState(threadId, responseGoal);
+					else if (objective) updateThreadGoalState(threadId, submittedThreadGoal(threadId, objective, tokenBudget));
+					closeThreadGoalDialog(true);
+					$("connectionState").classList.remove("error");
+					$("connectionState").textContent = threadGoalActionStatusText(normalizedAction);
+					markActivity(threadGoalActionStatusText(normalizedAction));
+					postClientEvent("goal_action_success", {
+						threadId,
+						action: normalizedAction,
+						hasResponseGoal: Boolean(responseGoal)
+					});
+					if (threadId === state.currentThreadId) scheduleCurrentThreadRefresh(600);
+					loadThreads({ silent: true }).catch(showError);
+				} catch (err) {
+					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Goal action failed";
+					$("connectionState").classList.add("error");
+					$("connectionState").textContent = message;
+					postClientEvent("goal_action_failure", {
+						threadId,
+						action: normalizedAction,
+						message
+					});
+					showError(new Error(message));
+				} finally {
+					state.composerBusy = false;
+					setThreadGoalDialogBusy(false);
+					updateComposerControls();
+				}
+			}
+			function requestGoalDialogSubmitFromEnter(event) {
+				if (!event || event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+				if (state.goalSubmitBusy || state.composerBusy) return;
+				event.preventDefault();
+				event.stopPropagation();
+				requestGoalDialogSubmit();
+			}
+			function requestGoalDialogSubmitFromButton(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+				const now = Date.now();
+				if (now - state.lastGoalButtonSubmitAt < 650) return;
+				state.lastGoalButtonSubmitAt = now;
+				const button = $("goalSubmitButton");
+				if (button && button.disabled) return;
+				postClientEvent("goal_button_pressed", {
+					threadId: state.goalDialogThreadId || state.currentThreadId || "",
+					eventType: event && event.type || ""
+				});
+				requestGoalDialogSubmit();
+			}
+			function requestGoalDialogSubmit() {
+				const form = $("goalForm");
+				if (form && typeof form.requestSubmit === "function") form.requestSubmit();
+				else submitThreadGoalMessage().catch(showError);
+			}
+			async function sendThreadTaskCardCommand(commandText, options = {}) {
+				const text = String(commandText || "").trim();
+				const targetThreadId = currentComposerThreadId();
+				const targetThread = composerTargetThread();
+				if (!text || !targetThreadId) return false;
+				if (state.pendingAttachments.length) {
+					const err = /* @__PURE__ */ new Error("Task-card commands do not support attachments yet");
+					showError(err);
+					if (options.rethrow) throw err;
+					return false;
+				}
+				const submittedDraftKey = currentDraftKey();
+				const clientSubmissionId = createSubmissionId();
+				const outboundText = buildThreadTaskCardDraftRequestText(text, targetThread);
+				state.composerBusy = true;
+				state.sendButtonHint = "";
+				startSendProgressWatchdog(targetThreadId);
+				markActivity("任务卡片");
+				updateComposerControls();
+				if (state.sendProgressWarned) {
+					$("connectionState").textContent = "Task card draft request";
+					$("connectionState").classList.remove("error");
+				}
+				try {
+					const body = new FormData();
+					body.append("clientSubmissionId", clientSubmissionId);
+					body.append("text", outboundText);
+					if (targetThread && targetThread.cwd) body.append("cwd", targetThread.cwd);
+					body.append("model", selectedComposerModel());
+					body.append("effort", selectedComposerEffort());
+					body.append("permissionMode", selectedComposerPermissionMode());
+					if (codexFastCommandEnabled()) body.append("fastMode", "1");
+					registerSubmittedUserMessage(targetThreadId, outboundText, [], clientSubmissionId);
+					const insertedLocalMessage = insertLocalSubmittedUserMessage(targetThreadId, outboundText, [], clientSubmissionId);
+					markThreadOptimisticallyActive(targetThreadId);
+					renderThreads();
+					if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
+					scheduleSubmittedMessageDomProbe(targetThreadId, clientSubmissionId, "task-card-submit");
+					followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
+					const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
+						method: "POST",
+						body,
+						timeoutMs: 18e4
+					});
+					const serverTurnId = startedTurnId(result);
+					if (serverTurnId && reconcileSubmittedUserMessageTurn(targetThreadId, clientSubmissionId, serverTurnId)) renderCurrentThread({ stickToBottom: true });
+					commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
+						threadId: targetThreadId,
+						messageId: clientSubmissionId,
+						composerId: "thread-composer"
+					});
+					setComposerText("");
+					writeCurrentDraftToKey(submittedDraftKey);
+					$("connectionState").classList.remove("error");
+					$("connectionState").textContent = "Task card draft requested";
+					markActivity("草案已请求");
+					recordHomeAiDiagnosticSuccess({
+						category: "task_card_workflow_failed",
+						diagnostic_type: "task_card_draft_request_failed",
+						error_code: "task_card_draft_request_failed",
+						context: {
+							surface: "task-card",
+							action: "draft-request",
+							thread_hash: diagnosticThreadHash(targetThreadId)
+						}
+					});
+					scheduleComposerTargetRefresh(targetThreadId, 600, "task-card-submit");
+					scheduleLivePollIfNeeded(1200);
+					loadThreads({ silent: true }).catch(showError);
+					return true;
+				} catch (err) {
+					clearSubmittedMessageBottomFollow();
+					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err) || "任务卡片提交失败，请重试";
+					state.sendButtonHint = "重试";
+					markSubmittedUserMessageFailed(targetThreadId, outboundText, [], clientSubmissionId, message);
+					$("connectionState").classList.remove("error");
+					$("connectionState").textContent = "发送失败，详情见消息回执";
+					postClientEvent("send_failure", {
+						threadId: targetThreadId || "",
+						message,
+						steering: false,
+						taskCardCommand: true
+					});
+					recordHomeAiDiagnosticFailure({
+						category: "task_card_workflow_failed",
+						diagnostic_type: "task_card_draft_request_failed",
+						severity_hint: "H2",
+						evidence_confidence: .76,
+						error_code: diagnosticErrorCode(err, "task_card_draft_request_failed"),
+						context: {
+							surface: "task-card",
+							action: "draft-request",
+							thread_hash: diagnosticThreadHash(targetThreadId)
+						},
+						counts: { status_code: diagnosticErrorStatus(err) },
+						breadcrumbs: [{
+							kind: "task-card",
+							code: "draft-request",
+							status: "failed",
+							fields: {
+								status_code: diagnosticErrorStatus(err),
+								thread_hash: diagnosticThreadHash(targetThreadId)
+							}
+						}]
+					});
+					if (options.rethrow) throw new Error(message);
+					return false;
+				} finally {
+					finishSendProgressWatchdog();
+					state.composerBusy = false;
+					updateComposerControls();
+				}
+			}
+			async function sendMessage(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (state.composerBusy) return;
+				state.lastSendSubmitStartedAt = Date.now();
+				const input = $("messageInput");
+				const text = composerText();
+				const normalizedIntentText = normalizedComposerIntentText(text);
+				const hasContent = Boolean(text || state.pendingAttachments.length);
+				const targetThreadId = currentComposerThreadId();
+				const targetThread = composerTargetThread();
+				const targetActiveTurnId = composerTargetActiveTurnId();
+				if (normalizedIntentText === "@") {
+					openComposerIntentMenu();
+					return;
+				}
+				const bareIntentKind = composerIntentBareTagKind(text);
+				if (bareIntentKind && bareIntentKind !== "goal") {
+					openComposerIntentDialog(bareIntentKind);
+					return;
+				}
+				if (isThreadGoalCommandText(text)) {
+					if (state.newThreadDraft) {
+						showError(/* @__PURE__ */ new Error("Goal is only available in an existing thread"));
+						return;
+					}
+					if (state.pendingAttachments.length) {
+						showError(/* @__PURE__ */ new Error("Goal commands do not support attachments"));
+						return;
+					}
+					if (!targetThreadId) return;
+					setComposerText("");
+					scheduleCurrentDraftSave();
+					openThreadGoalDialog(targetThreadId);
+					return;
+				}
+				if (isChatGptProCommandText(text)) {
+					await submitChatGptProRequest(text);
+					return;
+				}
+				if (state.newThreadDraft) {
+					await sendNewThreadMessage(text, hasContent, input);
+					return;
+				}
+				if (targetActiveTurnId && !hasContent) {
+					await interruptActiveTurn(targetThreadId, targetActiveTurnId);
+					return;
+				}
+				if (!text && !state.pendingAttachments.length || !targetThreadId) return;
+				const threadTaskCardCommand = isThreadTaskCardCommandText(text);
+				if (threadTaskCardCommand && state.pendingAttachments.length) {
+					showError(/* @__PURE__ */ new Error("# task-card commands do not support attachments yet"));
+					return;
+				}
+				if (threadTaskCardCommand) {
+					await sendThreadTaskCardCommand(text);
+					return;
+				}
+				const outboundText = text;
+				const steering = Boolean(targetActiveTurnId && hasContent);
+				const steerTurnId = steering ? String(targetActiveTurnId) : "";
+				const submittedDraftKey = currentDraftKey();
+				const clientSubmissionId = createSubmissionId();
+				const submittedAttachments = state.pendingAttachments.slice();
+				const previousThreadStatus = snapshotThreadStatus(targetThreadId);
+				state.composerBusy = true;
+				state.sendButtonHint = "";
+				startSendProgressWatchdog(targetThreadId);
+				if (steering) setSteerFeedback("sending", {
+					threadId: targetThreadId,
+					turnId: steerTurnId,
+					clientSubmissionId
+				});
+				else markActivity("发送");
+				updateComposerControls();
+				if (state.sendProgressWarned) {
+					$("connectionState").textContent = steering ? "引导中…" : "发送中…";
+					$("connectionState").classList.remove("error");
+				}
+				try {
+					const body = new FormData();
+					body.append("clientSubmissionId", clientSubmissionId);
+					body.append("text", outboundText);
+					if (targetThread && targetThread.cwd) body.append("cwd", targetThread.cwd);
+					if (steerTurnId) body.append("activeTurnId", steerTurnId);
+					body.append("model", selectedComposerModel());
+					body.append("effort", selectedComposerEffort());
+					body.append("permissionMode", selectedComposerPermissionMode());
+					if (codexFastCommandEnabled()) body.append("fastMode", "1");
+					for (const item of state.pendingAttachments) body.append("attachments", item.file, item.file.name || "upload");
+					registerSubmittedUserMessage(targetThreadId, outboundText, submittedAttachments, clientSubmissionId);
+					const insertedLocalMessage = insertLocalSubmittedUserMessage(targetThreadId, outboundText, submittedAttachments, clientSubmissionId, { turnId: steering ? steerTurnId : "" });
+					if (!steering) {
+						markThreadOptimisticallyActive(targetThreadId);
+						renderThreads();
+					}
+					if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
+					scheduleSubmittedMessageDomProbe(targetThreadId, clientSubmissionId, steering ? "message-steer" : "message-submit");
+					followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
+					const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
+						method: "POST",
+						body,
+						timeoutMs: 18e4
+					});
+					const serverTurnId = startedTurnId(result);
+					if (!steering && serverTurnId && reconcileSubmittedUserMessageTurn(targetThreadId, clientSubmissionId, serverTurnId)) renderCurrentThread({ stickToBottom: true });
+					commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
+						threadId: targetThreadId,
+						messageId: clientSubmissionId,
+						composerId: "thread-composer"
+					});
+					setComposerText("");
+					clearPendingAttachments({ revokePreviewUrls: false });
+					writeCurrentDraftToKey(submittedDraftKey);
+					if (!steering) renderComposerSettings();
+					input.blur();
+					$("connectionState").classList.remove("error");
+					if (steering) setSteerFeedback("delivered", {
+						threadId: targetThreadId,
+						turnId: steerTurnId,
+						clientSubmissionId
+					});
+					else {
+						$("connectionState").textContent = "Sent";
+						markActivity("已发送");
+					}
+					scheduleComposerTargetRefresh(targetThreadId, 600, "message-submit");
+					scheduleLivePollIfNeeded(1200);
+					loadThreads({ silent: true }).catch(showError);
+				} catch (err) {
+					clearSubmittedMessageBottomFollow();
+					if (!steering) {
+						restoreThreadStatusSnapshot(previousThreadStatus);
+						renderThreads();
+					}
+					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err) || "发送失败，请重试";
+					state.sendButtonHint = "重试";
+					markSubmittedUserMessageFailed(targetThreadId, outboundText, submittedAttachments, clientSubmissionId, message);
+					if (steering) setSteerFeedback("failed", {
+						threadId: targetThreadId,
+						turnId: steerTurnId,
+						clientSubmissionId
+					});
+					else {
+						$("connectionState").classList.remove("error");
+						$("connectionState").textContent = "发送失败，详情见消息回执";
+					}
+					postClientEvent("send_failure", {
+						threadId: targetThreadId || "",
+						message,
+						steering
+					});
+				} finally {
+					finishSendProgressWatchdog();
+					state.composerBusy = false;
+					updateComposerControls();
+				}
+			}
+			async function sendNewThreadMessage(text, hasContent, input) {
+				if (!hasContent) return;
+				const submittedDraftKey = currentDraftKey();
+				const clientSubmissionId = createSubmissionId();
+				const submittedModel = newThreadSelectedModel();
+				const submittedEffort = newThreadSelectedEffort();
+				const submittedPermissionMode = newThreadSelectedPermissionMode();
+				const submittedTitle = String(state.newThreadTitle || "").trim();
+				state.composerBusy = true;
+				state.sendButtonHint = "";
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = "正在创建新对话";
+				markActivity("创建新对话");
+				updateComposerControls();
+				try {
+					const submittedAttachments = state.pendingAttachments.slice();
+					const body = new FormData();
+					body.append("clientSubmissionId", clientSubmissionId);
+					body.append("text", text);
+					if (state.selectedCwd) body.append("cwd", state.selectedCwd);
+					body.append("model", submittedModel);
+					body.append("effort", submittedEffort);
+					body.append("permissionMode", submittedPermissionMode);
+					if (submittedTitle) body.append("title", submittedTitle);
+					if (codexFastCommandEnabled()) body.append("fastMode", "1");
+					for (const item of state.pendingAttachments) body.append("attachments", item.file, item.file.name || "upload");
+					const result = await api("/api/threads/new-message", {
+						method: "POST",
+						body,
+						timeoutMs: 18e4
+					});
+					const threadId = String(result && result.threadId || result && result.thread && result.thread.id || "");
+					if (!threadId) throw new Error("新对话创建失败：未返回 threadId");
+					commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
+						threadId,
+						messageId: clientSubmissionId,
+						composerId: "new-thread-composer"
+					});
+					registerSubmittedUserMessage(threadId, text, submittedAttachments, clientSubmissionId);
+					const turnId = startedTurnId(result);
+					const userItem = localUserMessageItem(text, submittedAttachments, clientSubmissionId);
+					const thread = Object.assign({
+						id: threadId,
+						name: submittedTitle || "",
+						preview: submittedTitle || text || "新建对话",
+						cwd: result && result.thread && result.thread.cwd || state.selectedCwd || "",
+						status: { type: "active" },
+						turns: [],
+						mobileInitialSubmissionId: clientSubmissionId
+					}, result.thread || {});
+					if (submittedTitle) {
+						thread.name = submittedTitle;
+						thread.preview = submittedTitle;
+					}
+					if (!thread.model && submittedModel) thread.model = submittedModel;
+					if (!thread.effort && submittedEffort) thread.effort = submittedEffort;
+					if (turnId) {
+						const existingTurn = (thread.turns || []).find((turn) => turn && turn.id === turnId);
+						if (existingTurn) existingTurn.items = mergeItemsPreservingLocalVisible([userItem], existingTurn.items || [], true);
+						else thread.turns = (thread.turns || []).concat([{
+							id: turnId,
+							status: { type: "active" },
+							startedAt: Math.floor(Date.now() / 1e3),
+							completedAt: null,
+							durationMs: null,
+							items: [userItem]
+						}]);
+					}
+					state.threads = [thread, ...state.threads.filter((entry) => entry.id !== threadId)];
+					state.newThreadDraft = false;
+					state.newThreadTitle = "";
+					state.currentThreadId = threadId;
+					state.currentThread = thread;
+					state.activeTurnId = turnId || state.activeTurnId;
+					state.composerModel = submittedModel || "";
+					state.composerEffort = submittedEffort || "";
+					state.composerPermissionMode = submittedPermissionMode || "";
+					if (state.events) connectEvents();
+					setComposerText("");
+					clearPendingAttachments({ revokePreviewUrls: false });
+					clearDraftForKey(submittedDraftKey);
+					writeCurrentDraftToKey(draftKeyForThread(threadId));
+					if (input) input.blur();
+					renderComposerSettings();
+					renderThreads();
+					renderCurrentThread({ stickToBottom: true });
+					scheduleSubmittedMessageDomProbe(threadId, clientSubmissionId, "new-thread-submit");
+					try {
+						await loadThread(threadId, { source: "new-thread" });
+					} catch (err) {
+						showError(err);
+						renderThreads();
+						renderCurrentThread({ stickToBottom: true });
+					}
+					$("connectionState").textContent = "新对话已创建";
+					markActivity("新对话已创建");
+					renderComposerSettings();
+					updateComposerControls();
+					scheduleCurrentThreadRefresh(900);
+					scheduleLivePollIfNeeded(1200);
+					loadThreads({ silent: true }).catch(showError);
+				} catch (err) {
+					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err) || "新对话创建失败，请重试";
+					state.sendButtonHint = "重试";
+					$("connectionState").classList.add("error");
+					$("connectionState").textContent = message;
+					postClientEvent("new_thread_send_failure", {
+						cwd: state.selectedCwd || "",
+						message
+					});
+				} finally {
+					state.composerBusy = false;
+					updateComposerControls();
+				}
+			}
+			function requestComposerSubmitFromButton(event) {
+				event.preventDefault();
+				event.stopPropagation();
+				const now = Date.now();
+				if (now - state.lastSendButtonSubmitAt < 650) return;
+				state.lastSendButtonSubmitAt = now;
+				const button = $("sendMessage");
+				if (!button || button.disabled || state.composerBusy) return;
+				const composerForm = $("composer");
+				try {
+					if (composerForm && typeof composerForm.requestSubmit === "function") composerForm.requestSubmit();
+					else sendMessage(event);
+				} catch (err) {
+					postClientEvent("send_button_submit_exception", {
+						activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",
+						hasContent: composerHasContent(),
+						buttonDisabled: button.disabled,
+						error: String(err && err.message || "")
+					});
+					showError(/* @__PURE__ */ new Error("发送按钮点击异常，请改用回车发送"));
+				}
+				setTimeout(() => {
+					if (state.lastSendSubmitStartedAt >= now) return;
+					postClientEvent("send_button_no_submit", {
+						activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",
+						hasContent: composerHasContent(),
+						buttonDisabled: button.disabled,
+						composerBusy: state.composerBusy
+					});
+					if (composerHasContent()) showError(/* @__PURE__ */ new Error("发送没触发，建议重试或按回车发送"));
+				}, 1200);
+			}
+			function requestAttachmentPickerFromButton(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+				const now = Date.now();
+				if (now - Number(state.lastAttachmentPickerAt || 0) < 650) return;
+				const button = $("attachFiles");
+				const input = $("fileInput");
+				if (!button || !input || button.disabled || input.disabled || state.composerBusy) return;
+				state.lastAttachmentPickerAt = now;
+				try {
+					if (!isAndroidBrowser() && typeof input.showPicker === "function") input.showPicker();
+					else input.click();
+				} catch (err) {
+					postClientEvent("attachment_picker_click_exception", {
+						activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",
+						buttonDisabled: Boolean(button.disabled),
+						inputDisabled: Boolean(input.disabled),
+						error: String(err && err.message || "")
+					});
+					showError(/* @__PURE__ */ new Error("附件选择器打开失败，请重试"));
+				}
+			}
+			async function interruptActiveTurn(threadId = currentComposerThreadId(), activeTurnId = composerTargetActiveTurnId()) {
+				const targetThreadId = String(threadId || "").trim();
+				const targetActiveTurnId = String(activeTurnId || "").trim();
+				if (!targetThreadId || !targetActiveTurnId) return;
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = "Interrupt requested";
+				markActivity("中断");
+				await api(`/api/threads/${encodeURIComponent(targetThreadId)}/turns/${encodeURIComponent(targetActiveTurnId)}/interrupt`, { method: "POST" }).then(() => scheduleComposerTargetRefresh(targetThreadId, 900)).catch(showError);
+			}
+			return {
+				updateComposerHeightVar,
+				clearSendProgressWatchdog,
+				startSendProgressWatchdog,
+				finishSendProgressWatchdog,
+				normalizeClientErrorMessage,
+				rawMessageFallback,
+				composerText,
+				setComposerText,
+				placeMessageInputCaretAtEnd,
+				focusMessageInput,
+				messageInputKeyboardVisible,
+				shouldRecoverMessageInputKeyboard,
+				recoverMessageInputKeyboardFromGesture,
+				messageInputCanEnableForNativeGesture,
+				releaseStaleAndroidMessageInputFocusBeforeNativeTap,
+				prepareMessageInputForNativeGesture,
+				normalizedComposerIntentText,
+				composerIntentOptions,
+				composerIntentOption,
+				composerIntentDraftKey,
+				loadComposerIntentDraft,
+				saveComposerIntentDraft,
+				composerIntentBareTagKind,
+				shouldShowComposerIntentMenu,
+				closeComposerIntentMenu,
+				onComposerIntentOutsidePointer,
+				openComposerIntentMenu,
+				positionComposerIntentMenu,
+				updateComposerIntentMenu,
+				queueComposerIntentMenuUpdate,
+				selectComposerIntent,
+				setComposerIntentDialogStatus,
+				closeComposerIntentDialog,
+				openComposerIntentDialog,
+				submitComposerIntentDialog,
+				saveComposerIntentDialogDraft,
+				shouldKeepAndroidMessageInputEditable,
+				setMessageInputDisabled,
+				messageInputTextLength,
+				messageInputTargetHeight,
+				currentMessageInputHeight,
+				updateMessageInputOverflow,
+				autoSizeMessageInput,
+				formatFileSize,
+				appendLocalAttachmentSummary,
+				localImageInputPartsForAttachments,
+				localUserMessageItem,
+				attachmentId,
+				pendingAttachmentBytes,
+				prepareAttachmentFile,
+				prepareAttachmentFiles,
+				addAttachmentFiles,
+				removeAttachment,
+				clearPendingAttachments,
+				renderAttachmentList,
+				composerHasContent,
+				effectiveDefaultModel,
+				effectiveDefaultEffort,
+				effectiveDefaultPermissionMode,
+				selectedComposerModel,
+				selectedComposerEffort,
+				selectedComposerPermissionMode,
+				resetComposerRuntimeSelection,
+				runtimeOptionValues,
+				runtimeOptionLabel,
+				runtimeSelectedValue,
+				codexFastCommandEnabled,
+				clearLegacyCodexFastModeStorage,
+				setCodexFastCommandEnabled,
+				applyRuntimeSelection,
+				closeComposerRuntimeMenu,
+				onComposerRuntimeOutsidePointer,
+				openComposerRuntimeMenu,
+				composerRuntimeMenuDiagnostics,
+				reportComposerRuntimeMenu,
+				handleComposerRuntimeControl,
+				fitComposerPopupToAnchor,
+				closeQuotaDetails,
+				onQuotaOutsidePointer,
+				toggleQuotaDetails,
+				composerPlaceholderText,
+				composerShowsTargetPlaceholder,
+				applyComposerActionControlPlan,
+				renderComposerSettings,
+				updateComposerControls,
+				hasTransferFiles,
+				goalDialogFormValues,
+				submitThreadGoalMessage,
+				threadGoalActionStatusText,
+				threadGoalActionBusyText,
+				runThreadGoalDialogAction,
+				requestGoalDialogSubmitFromEnter,
+				requestGoalDialogSubmitFromButton,
+				requestGoalDialogSubmit,
+				sendThreadTaskCardCommand,
+				sendMessage,
+				sendNewThreadMessage,
+				requestComposerSubmitFromButton,
+				requestAttachmentPickerFromButton,
+				interruptActiveTurn
+			};
+		}
+		const api = { createComposerRuntime };
+		if (typeof module === "object" && module.exports) module.exports = api;
+		root.CodexComposerRuntime = api;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
 //#region public/composer-bridge-runtime.js
 var require_composer_bridge_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachComposerBridgeRuntime(root) {
@@ -2875,1906 +4656,10 @@ var require_composer_bridge_runtime = /* @__PURE__ */ __commonJSMin(((exports, m
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
-//#region public/api-client-runtime.js
-var require_api_client_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function attachApiClientRuntime(root) {
-		async function api(path, options = {}) {
-			return apiClient.request(path, options);
-		}
-		function postClientEvent(event, details = {}) {
-			if (!state.key) return;
-			const payload = JSON.stringify({
-				event,
-				threadId: state.currentThreadId || "",
-				path: location.pathname || "/",
-				details
-			});
-			const url = `/api/client-events?key=${encodeURIComponent(state.key)}`;
-			fetch(url, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: payload,
-				keepalive: true
-			}).catch(() => {
-				try {
-					if (navigator.sendBeacon) {
-						const blob = new Blob([payload], { type: "application/json" });
-						navigator.sendBeacon(url, blob);
-					}
-				} catch (_) {}
-			});
-		}
-		function nowPerfMs() {
-			return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
-		}
-		function roundedDurationMs(startedAt) {
-			return Math.max(0, Math.round(nowPerfMs() - Number(startedAt || 0)));
-		}
-		function postPerformanceEvent(event, details = {}, options = {}) {
-			const now = Date.now();
-			const key = String(options.key || event || "");
-			const minIntervalMs = Math.max(0, Number(options.minIntervalMs || 0));
-			if (key && minIntervalMs > 0) {
-				const last = Number(state.perfEventLastReportedAt[key] || 0);
-				if (!options.force && last && now - last < minIntervalMs) return false;
-				state.perfEventLastReportedAt[key] = now;
-			}
-			postClientEvent(event, Object.assign({
-				pwa: isPwaMode(),
-				embedded: isHermesEmbedMode(),
-				visibility: document.visibilityState || "",
-				clientBuildId: CLIENT_BUILD_ID
-			}, details || {}));
-			return true;
-		}
-		function diagnosticHash(value) {
-			return homeAiDiagnosticReportingApi.hashIdentifier(String(value || ""), "h");
-		}
-		function diagnosticThreadHash(threadId = state.currentThreadId) {
-			const id = String(threadId || "").trim();
-			return id ? diagnosticHash(`thread:${id}`) : "";
-		}
-		function diagnosticTurnHash(turnId) {
-			const id = String(turnId || "").trim();
-			return id ? diagnosticHash(`turn:${id}`) : "";
-		}
-		function diagnosticTaskHash(taskId) {
-			const id = String(taskId || "").trim();
-			return id ? diagnosticHash(`task:${id}`) : "";
-		}
-		function diagnosticItemHash(itemId) {
-			const id = String(itemId || "").trim();
-			return id ? diagnosticHash(`item:${id}`) : "";
-		}
-		function clientSubmissionDiagnosticHash(clientSubmissionId) {
-			const id = String(clientSubmissionId || "").trim();
-			return id ? diagnosticHash(`submission:${id}`) : "";
-		}
-		function clientSubmissionDataAttr(item) {
-			const hash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
-			return hash ? ` data-client-submission-hash="${escapeHtml(hash)}"` : "";
-		}
-		function diagnosticRouteKind() {
-			if (state.newThreadDraft) return "new-thread";
-			if (isHermesEmbedMode() && isHermesPluginPrimaryPage()) return "embedded-primary";
-			if (state.threadTileMode) return "thread-tile";
-			if (state.currentThreadId) return "thread-detail";
-			return isHermesEmbedMode() ? "embedded-root" : "standalone-root";
-		}
-		function diagnosticErrorStatus(err) {
-			let status = Number(err && (err.status || err.statusCode) || 0);
-			if ((!Number.isFinite(status) || status <= 0) && err && /^\d+$/.test(String(err.code || ""))) status = Number(err.code);
-			return Number.isFinite(status) && status > 0 ? status : 0;
-		}
-		function diagnosticErrorCode(err, fallback = "runtime_failed") {
-			const explicit = String(err && err.code || "").trim();
-			if (explicit && !/^\d+$/.test(explicit)) return homeAiDiagnosticReportingApi.boundedToken(explicit, fallback, 100);
-			const status = diagnosticErrorStatus(err);
-			if (status) return `http_${status}`;
-			const message = String(err && err.message || err || "").toLowerCase();
-			if (message.includes("request timed out")) return "request_timeout";
-			if (message.includes("request cancelled")) return "request_cancelled";
-			if (message.includes("failed to fetch")) return "network_fetch_failed";
-			if (message.includes("not visible")) return "target_thread_not_visible";
-			if (message.includes("terminal") && message.includes("return")) return "terminal_card_no_return_required";
-			return fallback;
-		}
-		function diagnosticDurationBucket(ms) {
-			return homeAiDiagnosticReportingApi.durationBucket(ms);
-		}
-		function currentHomeAiDiagnosticContext(extra = {}) {
-			const context = Object.assign({
-				surface: "runtime",
-				action: "unknown",
-				route_kind: diagnosticRouteKind(),
-				build_id: CLIENT_BUILD_ID,
-				shell_cache: CLIENT_BUILD_ID.split("|").pop() || "",
-				thread_hash: diagnosticThreadHash(),
-				embedded: isHermesEmbedMode(),
-				pwa: isPwaMode(),
-				client_visibility: document.visibilityState || ""
-			}, extra || {});
-			if (!context.thread_hash) delete context.thread_hash;
-			return context;
-		}
-		function postHomeAiDiagnosticReport(report, meta = {}) {
-			const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
-			if (targetOrigin) state.pluginParentOrigin = targetOrigin;
-			const result = homeAiDiagnosticReportingApi.postReportToHomeAi({
-				report,
-				embedded: isHermesEmbedMode(),
-				parentWindow: window.parent,
-				selfWindow: window,
-				targetOrigin: targetOrigin || "*"
-			});
-			postClientEvent("home_ai_diagnostic_report_post", {
-				ok: Boolean(result.ok),
-				reason: result.reason || "",
-				category: report && report.category || "",
-				diagnostic_type: report && report.diagnostic_type || "",
-				error_code: report && report.error_code || "",
-				signature: meta.signature || "",
-				repeatedFailures: Number(meta.repeatedFailures || 0)
-			});
-			return result;
-		}
-		function recordHomeAiDiagnosticFailure(input = {}) {
-			const result = state.homeAiDiagnosticReporter.recordFailure(Object.assign({}, input, { context: currentHomeAiDiagnosticContext(input.context || {}) }));
-			postClientEvent("home_ai_diagnostic_failure_recorded", {
-				category: input.category || "",
-				diagnostic_type: input.diagnostic_type || input.diagnosticType || "",
-				error_code: input.error_code || input.errorCode || "",
-				eligible: Boolean(result.eligible),
-				repeatedFailures: Number(result.repeatedFailures || 0),
-				threshold: Number(result.threshold || 0),
-				signature: result.signature || "",
-				observeOnly: Boolean(result.observeOnly),
-				reason: result.reason || ""
-			});
-			if (result.report) postHomeAiDiagnosticReport(result.report, result);
-			return result;
-		}
-		function recordHomeAiDiagnosticSuccess(input = {}) {
-			return state.homeAiDiagnosticReporter.recordSuccess(Object.assign({}, input, { context: currentHomeAiDiagnosticContext(input.context || {}) }));
-		}
-		function applyFrontendRuntimeHealthEffect(effect) {
-			const item = effect && typeof effect === "object" ? effect : {};
-			if (!item.type) return;
-			if (item.type === "diagnostic-failure") {
-				recordHomeAiDiagnosticFailure(item.diagnostic || {});
-				return;
-			}
-			if (item.type === "diagnostic-success") {
-				recordHomeAiDiagnosticSuccess(item.diagnostic || {});
-				return;
-			}
-			throw new Error(`Unknown frontend runtime health effect: ${item.type}`);
-		}
-		function applyFrontendRuntimeHealthEffectsPlan(plan) {
-			const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
-			for (const effect of effects) applyFrontendRuntimeHealthEffect(effect);
-		}
-		function threadListRuntimeMetrics() {
-			const list = $("threadList");
-			if (!list || typeof list.getBoundingClientRect !== "function") return {
-				present: false,
-				visible: false,
-				threadListCount: 0,
-				scrollTop: 0,
-				scrollHeight: 0
-			};
-			const rect = list.getBoundingClientRect();
-			const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
-			const viewportHeight = Math.max(0, window.innerHeight || document.documentElement.clientHeight || 0);
-			return {
-				present: true,
-				visible: document.visibilityState !== "hidden" && rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < viewportHeight && rect.left < viewportWidth,
-				threadListCount: list.querySelectorAll("[data-thread]").length,
-				scrollTop: Math.max(0, Math.round(Number(list.scrollTop || 0))),
-				scrollHeight: Math.max(0, Math.round(Number(list.scrollHeight || 0)))
-			};
-		}
-		function recordThreadListRuntimeStall(input = {}) {
-			const now = Date.now();
-			if (now - Number(state.threadListRuntimeLastReportAt || 0) < THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS) return false;
-			const metrics = threadListRuntimeMetrics();
-			const routeKind = diagnosticRouteKind();
-			const threadListMonitorable = metrics.visible || metrics.present && document.visibilityState !== "hidden" && (routeKind === "embedded-primary" || routeKind === "standalone-root");
-			const plan = frontendRuntimeHealthApi.threadListInteractionStallEffects(Object.assign({
-				threadListVisible: metrics.visible,
-				threadListMonitorable,
-				routeKind,
-				minDelayMs: THREAD_LIST_RUNTIME_STALL_MIN_MS,
-				h2ThresholdMs: THREAD_LIST_RUNTIME_STALL_H2_MS,
-				threadListCount: metrics.threadListCount,
-				scrollTop: metrics.scrollTop,
-				scrollHeight: metrics.scrollHeight
-			}, input || {}));
-			if (!plan.effects || !plan.effects.length) return false;
-			state.threadListRuntimeLastReportAt = now;
-			applyFrontendRuntimeHealthEffectsPlan(plan);
-			postPerformanceEvent("thread_list_runtime_stall", {
-				action: input.action || "thread-list-runtime",
-				routeKind,
-				maxRafDelayMs: Math.max(0, Math.round(Number(input.maxRafDelayMs || 0))),
-				maxScrollApplyMs: Math.max(0, Math.round(Number(input.maxScrollApplyMs || 0))),
-				maxLongTaskMs: Math.max(0, Math.round(Number(input.maxLongTaskMs || 0))),
-				longTaskCount: Math.max(0, Math.round(Number(input.longTaskCount || 0))),
-				threadListCount: metrics.threadListCount,
-				threadListVisible: Boolean(metrics.visible),
-				threadListMonitorable: Boolean(threadListMonitorable)
-			}, {
-				key: "thread-list-runtime-stall",
-				minIntervalMs: THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS
-			});
-			return true;
-		}
-		function sampleThreadListInputDelay(action = "thread-list-input") {
-			if (!threadListRuntimeMetrics().visible) return;
-			const list = $("threadList");
-			const startedAt = nowPerfMs();
-			const startScrollTop = list ? Number(list.scrollTop || 0) : 0;
-			requestAnimationFrame(() => {
-				const rafDelayMs = roundedDurationMs(startedAt);
-				requestAnimationFrame(() => {
-					const elapsedMs = roundedDurationMs(startedAt);
-					const scrollApplyMs = (list ? Number(list.scrollTop || 0) : startScrollTop) !== startScrollTop ? elapsedMs : rafDelayMs;
-					recordThreadListRuntimeStall({
-						action,
-						maxRafDelayMs: rafDelayMs,
-						maxScrollApplyMs: scrollApplyMs,
-						elapsedMs
-					});
-				});
-			});
-		}
-		function startThreadListRuntimeHeartbeat() {
-			if (state.threadListRuntimeHeartbeatFrame) return;
-			const tick = (timestamp) => {
-				const previous = Number(state.threadListRuntimeLastFrameAt || 0);
-				if (previous > 0) {
-					const delayMs = Math.max(0, Math.round(Number(timestamp || 0) - previous));
-					if (delayMs >= THREAD_LIST_RUNTIME_STALL_MIN_MS) recordThreadListRuntimeStall({
-						action: "thread-list-heartbeat",
-						maxRafDelayMs: delayMs,
-						elapsedMs: delayMs
-					});
-				}
-				state.threadListRuntimeLastFrameAt = Number(timestamp || nowPerfMs());
-				state.threadListRuntimeHeartbeatFrame = requestAnimationFrame(tick);
-			};
-			state.threadListRuntimeHeartbeatFrame = requestAnimationFrame(tick);
-		}
-		function startThreadListRuntimeLongTaskObserver() {
-			if (state.threadListRuntimeLongTaskObserver || typeof PerformanceObserver !== "function") return;
-			try {
-				const observer = new PerformanceObserver((list) => {
-					let maxLongTaskMs = 0;
-					let longTaskCount = 0;
-					for (const entry of list.getEntries()) {
-						const duration = Math.max(0, Math.round(Number(entry && entry.duration || 0)));
-						if (duration < THREAD_LIST_RUNTIME_STALL_MIN_MS) continue;
-						maxLongTaskMs = Math.max(maxLongTaskMs, duration);
-						longTaskCount += 1;
-					}
-					if (maxLongTaskMs > 0) recordThreadListRuntimeStall({
-						action: "thread-list-longtask",
-						maxLongTaskMs,
-						longTaskCount,
-						elapsedMs: maxLongTaskMs
-					});
-				});
-				observer.observe({
-					type: "longtask",
-					buffered: true
-				});
-				state.threadListRuntimeLongTaskObserver = observer;
-			} catch (_) {
-				state.threadListRuntimeLongTaskObserver = null;
-			}
-		}
-		function startThreadListRuntimeStallMonitoring() {
-			const list = $("threadList");
-			if (list) [
-				"pointerdown",
-				"touchstart",
-				"wheel",
-				"scroll"
-			].forEach((eventName) => {
-				list.addEventListener(eventName, () => sampleThreadListInputDelay(`thread-list-${eventName}`), { passive: true });
-			});
-			document.addEventListener("visibilitychange", () => {
-				if (document.visibilityState === "hidden") state.threadListRuntimeLastFrameAt = 0;
-			});
-			startThreadListRuntimeHeartbeat();
-			startThreadListRuntimeLongTaskObserver();
-		}
-		function conversationHasClientSubmissionHash(submissionHash) {
-			const hash = String(submissionHash || "").trim();
-			const conversation = $("conversation");
-			if (!hash || !conversation) return false;
-			return Array.from(conversation.querySelectorAll("[data-client-submission-hash]")).some((node) => String(node && node.getAttribute && node.getAttribute("data-client-submission-hash") || "") === hash);
-		}
-		function frontendHealthThreadForSubmission(threadId) {
-			const id = String(threadId || "").trim();
-			if (!id) return null;
-			if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
-			return state.threadTileDetails && state.threadTileDetails.get(id) || null;
-		}
-		function probeSubmittedMessageDom(threadId, clientSubmissionId, action = "message-submit", startedAtMs = Date.now()) {
-			const id = String(threadId || "").trim();
-			const submissionId = String(clientSubmissionId || "").trim();
-			const submissionHash = clientSubmissionDiagnosticHash(submissionId);
-			if (!id || !submissionId || !submissionHash) return;
-			const thread = frontendHealthThreadForSubmission(id);
-			const domShape = conversationDomShape();
-			const visibleShape = thread ? visibleConversationShape(thread) : { visibleItemCount: 0 };
-			applyFrontendRuntimeHealthEffectsPlan(frontendRuntimeHealthApi.submittedMessageDomProbeEffects({
-				elapsedMs: Date.now() - Number(startedAtMs || Date.now()),
-				action,
-				routeKind: diagnosticRouteKind(),
-				threadHash: diagnosticThreadHash(id),
-				itemHash: submissionHash,
-				currentThreadMatch: !state.threadTileMode && String(state.currentThreadId || "") === id,
-				hasThreadSubmission: threadHasClientSubmission(thread, submissionId),
-				domHasSubmission: conversationHasClientSubmissionHash(submissionHash),
-				visibleCount: visibleShape.visibleItemCount,
-				domCount: domShape.itemCount,
-				composerBusy: state.composerBusy
-			}));
-		}
-		function scheduleSubmittedMessageDomProbe(threadId, clientSubmissionId, action = "message-submit") {
-			const id = String(threadId || "").trim();
-			const submissionId = String(clientSubmissionId || "").trim();
-			if (!id || !submissionId) return;
-			const startedAtMs = Date.now();
-			[
-				350,
-				1200,
-				2800
-			].forEach((delayMs) => {
-				setTimeout(() => probeSubmittedMessageDom(id, submissionId, action, startedAtMs), delayMs);
-			});
-		}
-		function applyThreadDetailResponseDiagnosticEffect(effect) {
-			const item = effect && typeof effect === "object" ? effect : {};
-			if (!item.type) return;
-			if (item.type === "diagnostic-failure") {
-				recordHomeAiDiagnosticFailure(item.diagnostic || {});
-				return;
-			}
-			if (item.type === "diagnostic-success") {
-				recordHomeAiDiagnosticSuccess(item.diagnostic || {});
-				return;
-			}
-			throw new Error(`Unknown thread detail response diagnostic effect: ${item.type}`);
-		}
-		function applyThreadDetailResponseDiagnosticEffectsPlan(plan) {
-			const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
-			for (const effect of effects) applyThreadDetailResponseDiagnosticEffect(effect);
-		}
-		function recordThreadDetailResponseDiagnostics(performanceEvent = {}, input = {}) {
-			const source = input && typeof input === "object" ? input : {};
-			const threadHash = diagnosticThreadHash(String(source.threadId || state.currentThreadId || ""));
-			const action = String(source.action || "thread-detail").slice(0, 80);
-			const durationBucket = source.durationBucket || diagnosticDurationBucket(Number(performanceEvent && performanceEvent.elapsedMs || 0));
-			const slowPlan = threadPerformanceMetrics.planThreadDetailSlowPathDiagnostic(performanceEvent, {
-				action,
-				threadHash,
-				durationBucket
-			});
-			const contractPlan = threadPerformanceMetrics.planThreadDetailResponseContractDiagnostic(performanceEvent, {
-				action,
-				threadHash,
-				durationBucket,
-				thread: source.thread,
-				expectedActiveFullRead: source.expectedActiveFullRead
-			});
-			applyThreadDetailResponseDiagnosticEffectsPlan(threadDiagnosticEventsApi.threadDetailResponseDiagnosticEffects({
-				slowPlan,
-				slowSuccessInput: {
-					action,
-					threadHash,
-					readMode: performanceEvent && performanceEvent.readMode || "",
-					renderMode: performanceEvent && performanceEvent.clientTimings && performanceEvent.clientTimings.detailRenderMode || ""
-				},
-				contractPlan
-			}));
-		}
-		function conversationDomShape() {
-			const conversation = $("conversation");
-			if (!conversation) return {
-				renderKeyCount: 0,
-				duplicateRenderKeyCount: 0,
-				duplicateUserMessageCount: 0,
-				turnCount: 0,
-				itemCount: 0
-			};
-			const seen = /* @__PURE__ */ new Set();
-			let duplicateRenderKeyCount = 0;
-			for (const node of Array.from(conversation.querySelectorAll("[data-render-key]"))) {
-				const key = String(node && node.getAttribute && node.getAttribute("data-render-key") || "");
-				if (!key) continue;
-				if (seen.has(key)) duplicateRenderKeyCount += 1;
-				else seen.add(key);
-			}
-			let duplicateUserMessageCount = 0;
-			const userMessageNodes = [];
-			for (const turnNode of Array.from(conversation.querySelectorAll("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]"))) for (const node of Array.from(turnNode.querySelectorAll(".item.userMessage"))) userMessageNodes.push({
-				turnNode,
-				node
-			});
-			duplicateUserMessageCount = duplicateUserMessageSignatureCount(userMessageNodes, (entry) => domUserMessageEventDuplicateSignature(entry.turnNode, entry.node));
-			return {
-				renderKeyCount: seen.size,
-				duplicateRenderKeyCount,
-				duplicateUserMessageCount,
-				turnCount: conversation.querySelectorAll("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]").length,
-				itemCount: conversation.querySelectorAll("[data-item]").length
-			};
-		}
-		function duplicateUserMessageSignatureCount(entries, signatureForEntry) {
-			const seen = /* @__PURE__ */ new Set();
-			let duplicates = 0;
-			for (const entry of Array.isArray(entries) ? entries : []) {
-				const signature = String(signatureForEntry(entry) || "").trim();
-				if (!signature) continue;
-				if (seen.has(signature)) duplicates += 1;
-				else seen.add(signature);
-			}
-			return duplicates;
-		}
-		function domUserMessageDuplicateSignature(turnNode, node) {
-			if (!node || !node.getAttribute) return "";
-			const turnId = String(turnNode && turnNode.getAttribute && (turnNode.getAttribute("data-turn") || turnNode.getAttribute("data-thread-tile-turn")) || "").trim();
-			const submissionHash = String(node.getAttribute("data-client-submission-hash") || "").trim();
-			if (submissionHash) return `submission:${turnId}:${submissionHash}`;
-			const body = node.querySelector && node.querySelector(".item-body");
-			const text = String((body || node).textContent || "").replace(/\s+/g, " ").trim();
-			return text ? `text:${turnId}:${stableTextHash(text)}` : "";
-		}
-		function domUserMessageEventDuplicateSignature(turnNode, node) {
-			if (!node || !node.getAttribute) return "";
-			const submissionHash = String(node.getAttribute("data-client-submission-hash") || "").trim();
-			if (submissionHash) return `submission:${submissionHash}`;
-			const body = node.querySelector && node.querySelector(".item-body");
-			const text = String((body || node).textContent || "").replace(/\s+/g, " ").trim();
-			if (!text) return "";
-			const timestamp = node.querySelector && node.querySelector(".item-timestamp");
-			const datetime = String(timestamp && timestamp.getAttribute && timestamp.getAttribute("datetime") || "").trim();
-			const timestampMs = datetime ? Date.parse(datetime) : 0;
-			if (Number.isFinite(timestampMs) && timestampMs > 0) return `text-time:${Math.floor(timestampMs / 5e3)}:${stableTextHash(text)}`;
-			return domUserMessageDuplicateSignature(turnNode, node);
-		}
-		function visibleUserMessageDuplicateSignature(turn, item) {
-			if (!item || item.type !== "userMessage") return "";
-			const turnId = String(turn && turn.id || turn && turn.mobileVisibleKey || "").trim();
-			const submissionHash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
-			if (submissionHash) return `submission:${turnId}:${submissionHash}`;
-			const comparable = userMessageComparableParts(item);
-			const text = String(comparable.text || itemTextValue(item && item.text) || itemTextValue(item && item.message) || itemTextValue(item && item.content) || "").replace(/\s+/g, " ").trim();
-			return text ? `text:${turnId}:${stableTextHash(text)}` : "";
-		}
-		function visibleUserMessageEventDuplicateSignature(turn, item) {
-			if (!item || item.type !== "userMessage") return "";
-			const submissionHash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
-			if (submissionHash) return `submission:${submissionHash}`;
-			const comparable = userMessageComparableParts(item);
-			const text = String(comparable.text || itemTextValue(item && item.text) || itemTextValue(item && item.message) || itemTextValue(item && item.content) || "").replace(/\s+/g, " ").trim();
-			if (!text) return "";
-			const timestampMs = userMessageTimestampMs(item) || turnStartedAtMs(turn);
-			if (timestampMs) return `text-time:${Math.floor(timestampMs / 5e3)}:${stableTextHash(text)}`;
-			return visibleUserMessageDuplicateSignature(turn, item);
-		}
-		function turnRendersConversationArticle(turn, thread) {
-			if (!turn || !turn.id) return false;
-			if (visibleItemsForTurn(turn, thread).length > 0) return true;
-			if (typeof visibleItemBudgetSignature === "function" && visibleItemBudgetSignature(turn)) return true;
-			const threadId = typeof renderContextThreadId === "function" ? renderContextThreadId(thread) : String(thread && thread.id || state.currentThreadId || "");
-			if (typeof approvalsForTurn === "function" && approvalsForTurn(threadId, turn.id).length > 0) return true;
-			if (typeof turnHasThreadTaskCardDraftResponse === "function" && turnHasThreadTaskCardDraftResponse(turn)) return true;
-			return Boolean(typeof turnHasThreadTaskCardRequest === "function" && typeof isLatestTurn === "function" && typeof isLiveTurn === "function" && isLatestTurn(turn, thread) && isLiveTurn(turn, thread) && turnHasThreadTaskCardRequest(turn));
-		}
-		function visibleRenderableTurnsForConversation(thread) {
-			return visibleTurnsForConversation(thread).filter((turn) => turnRendersConversationArticle(turn, thread));
-		}
-		function visibleConversationShape(thread) {
-			const turns = visibleRenderableTurnsForConversation(thread);
-			let visibleItemCount = 0;
-			const userMessages = [];
-			for (const turn of turns) {
-				const visibleItems = visibleItemsForTurn(turn, thread);
-				visibleItemCount += visibleItems.length;
-				for (const entry of visibleItems) {
-					const item = entry && entry.item;
-					if (item && item.type === "userMessage") userMessages.push({
-						turn,
-						item
-					});
-				}
-			}
-			const duplicateUserMessageCount = duplicateUserMessageSignatureCount(userMessages, (entry) => visibleUserMessageEventDuplicateSignature(entry.turn, entry.item));
-			return {
-				visibleTurnCount: turns.length,
-				visibleItemCount,
-				duplicateUserMessageCount
-			};
-		}
-		function rememberThreadDetailRenderEvidence(thread, source = "unknown") {
-			if (!thread || thread.mobileLoading || thread.mobileLoadError) return null;
-			const threadId = String(thread.id || state.currentThreadId || "").trim();
-			if (!threadId) return null;
-			const shape = visibleConversationShape(thread);
-			if (!shape.visibleTurnCount && !shape.visibleItemCount) return null;
-			const itemCount = (Array.isArray(thread.turns) ? thread.turns : []).reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
-			const evidence = threadDetailStateApi.buildThreadDetailRenderEvidence({
-				atMs: Date.now(),
-				threadId,
-				threadHash: diagnosticThreadHash(threadId),
-				readMode: thread.mobileReadMode || "",
-				sourceKind: homeAiDiagnosticReportingApi.boundedToken(source, "unknown", 80),
-				turnCount: shape.visibleTurnCount,
-				visibleItemCount: shape.visibleItemCount,
-				itemCount
-			});
-			if (!evidence) return null;
-			state.lastThreadDetailRenderEvidence = evidence;
-			return evidence;
-		}
-		function clearThreadDetailRenderEvidence(reason = "") {
-			if (!state.lastThreadDetailRenderEvidence) return;
-			state.lastThreadDetailRenderEvidence = null;
-			postClientEvent("thread_detail_render_evidence_cleared", { reason: String(reason || "").slice(0, 80) });
-		}
-		function recentThreadDetailRenderEvidence() {
-			return threadDetailStateApi.recentThreadDetailRenderEvidence({
-				evidence: state.lastThreadDetailRenderEvidence,
-				nowMs: Date.now(),
-				maxAgeMs: PRIMARY_SHELL_CONFLICT_EVIDENCE_MS
-			});
-		}
-		function primaryShellSelectionConflictInput(reason, details = {}) {
-			const evidence = recentThreadDetailRenderEvidence() || {};
-			const thread = state.currentThread || null;
-			const shape = thread ? visibleConversationShape(thread) : null;
-			return {
-				reason,
-				action: "primary-shell-selection",
-				routeKind: "embedded-primary",
-				sourceKind: details.source || evidence.sourceKind || "",
-				threadHash: evidence.threadHash || diagnosticThreadHash(state.currentThreadId || thread && thread.id || ""),
-				readMode: evidence.readMode || thread && thread.mobileReadMode || "",
-				renderMode: details.renderMode || "",
-				turns: evidence.turnCount || shape && shape.visibleTurnCount || 0,
-				visibleItems: evidence.visibleItemCount || shape && shape.visibleItemCount || 0,
-				items: evidence.itemCount || 0,
-				domCount: details.domCount,
-				previousCount: details.previousCount,
-				recentDetailAgeMs: evidence.ageMs || 0,
-				hasCurrentThread: Boolean(state.currentThread),
-				hasCurrentThreadId: Boolean(state.currentThreadId),
-				hasThreadLoadController: Boolean(state.threadLoadController),
-				startupThreadOpenPending: Boolean(state.startupThreadOpenPending),
-				mobileLoading: Boolean(state.currentThread && state.currentThread.mobileLoading)
-			};
-		}
-		function recordPrimaryShellSelectionConflict(reason, details = {}) {
-			return recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.primaryShellSelectionConflictDiagnosticEvent(primaryShellSelectionConflictInput(reason, details)));
-		}
-		function recordPrimaryShellSelectionHealthy(source, thread = state.currentThread) {
-			const evidence = rememberThreadDetailRenderEvidence(thread, source);
-			if (!evidence) return null;
-			return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.primaryShellSelectionConflictDiagnosticSuccess({
-				action: "primary-shell-selection",
-				routeKind: "embedded-primary",
-				sourceKind: source,
-				threadHash: evidence.threadHash,
-				readMode: evidence.readMode
-			}));
-		}
-		function emptyVisibleDetailMismatchInput(reason, thread = state.currentThread, details = {}) {
-			const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
-			const evidence = recentThreadDetailRenderEvidence();
-			const sameThreadEvidence = threadDetailStateApi.sameThreadDetailRenderEvidence({
-				evidence,
-				threadId
-			});
-			const shape = thread ? visibleConversationShape(thread) : {
-				visibleTurnCount: 0,
-				visibleItemCount: 0
-			};
-			return {
-				reason,
-				action: details.action || "single-thread-empty-state",
-				routeKind: details.routeKind || "single-thread",
-				sourceKind: details.source || sameThreadEvidence && sameThreadEvidence.sourceKind || "",
-				threadHash: details.threadHash || sameThreadEvidence && sameThreadEvidence.threadHash || diagnosticThreadHash(threadId),
-				readMode: sameThreadEvidence && sameThreadEvidence.readMode || thread && thread.mobileReadMode || "",
-				renderMode: details.renderMode || "",
-				turns: Object.prototype.hasOwnProperty.call(details, "turns") ? details.turns : sameThreadEvidence && sameThreadEvidence.turnCount || 0,
-				visibleItems: Object.prototype.hasOwnProperty.call(details, "visibleItems") ? details.visibleItems : sameThreadEvidence && sameThreadEvidence.visibleItemCount || 0,
-				items: Object.prototype.hasOwnProperty.call(details, "items") ? details.items : sameThreadEvidence && sameThreadEvidence.itemCount || 0,
-				currentTurns: Object.prototype.hasOwnProperty.call(details, "currentTurns") ? details.currentTurns : shape.visibleTurnCount,
-				currentVisibleItems: Object.prototype.hasOwnProperty.call(details, "currentVisibleItems") ? details.currentVisibleItems : shape.visibleItemCount,
-				domCount: details.domCount,
-				previousCount: details.previousCount,
-				detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
-				mobileLoading: Boolean(thread && thread.mobileLoading),
-				recentDetailAgeMs: sameThreadEvidence && sameThreadEvidence.ageMs || 0
-			};
-		}
-		function recordEmptyVisibleDetailMismatch(reason, thread = state.currentThread, details = {}) {
-			return recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.emptyVisibleDetailMismatchDiagnosticEvent(emptyVisibleDetailMismatchInput(reason, thread, details)));
-		}
-		function recordEmptyVisibleDetailHealthy(source, thread = state.currentThread) {
-			if (!thread || thread.mobileLoading || thread.mobileLoadError) return null;
-			const threadId = String(thread.id || state.currentThreadId || "").trim();
-			if (!threadId) return null;
-			const shape = visibleConversationShape(thread);
-			if (!shape.visibleTurnCount && !shape.visibleItemCount) return null;
-			return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.emptyVisibleDetailMismatchDiagnosticSuccess({
-				action: "single-thread-empty-state",
-				routeKind: "single-thread",
-				sourceKind: source,
-				threadHash: diagnosticThreadHash(threadId),
-				readMode: thread.mobileReadMode || ""
-			}));
-		}
-		function maybeRecoverEmptyDetailWithHistoryEvidence(thread, details = {}) {
-			const now = Date.now();
-			const basePlan = threadDetailStateApi.planEmptyDetailHistoryRecovery({
-				thread,
-				currentThreadId: state.currentThreadId,
-				details,
-				nowMs: now,
-				cooldownMs: 0
-			});
-			if (!basePlan.shouldRecover || !basePlan.recoveryKey) return false;
-			const plan = threadDetailStateApi.planEmptyDetailHistoryRecovery({
-				thread,
-				currentThreadId: state.currentThreadId,
-				details,
-				nowMs: now,
-				lastRecoveredAtMs: state.emptyDetailHistoryRecoveryAtByKey.get(basePlan.recoveryKey),
-				cooldownMs: EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS
-			});
-			if (!plan.shouldRecover || !plan.recoveryKey) return false;
-			state.emptyDetailHistoryRecoveryAtByKey.set(plan.recoveryKey, plan.nowMs || now);
-			recordEmptyVisibleDetailMismatch(plan.diagnosticReason || "empty_render_with_history_evidence", thread, details);
-			if (!hasThreadDetailRequestInFlight()) scheduleCurrentThreadRefresh(0, "empty-detail-history-evidence");
-			postClientEvent("empty_detail_history_recovery", plan.event || {});
-			return true;
-		}
-		function emptyCachedDetailReuseInput(reason, thread = state.currentThread, details = {}) {
-			const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
-			const shape = thread ? visibleConversationShape(thread) : {
-				visibleTurnCount: 0,
-				visibleItemCount: 0
-			};
-			const itemCount = (Array.isArray(thread && thread.turns) ? thread.turns : []).reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
-			return {
-				reason,
-				action: "thread-open-cache-reuse",
-				routeKind: "single-thread",
-				sourceKind: details.source || "",
-				threadHash: diagnosticThreadHash(threadId),
-				readMode: thread && thread.mobileReadMode || "",
-				currentTurns: shape.visibleTurnCount,
-				currentVisibleItems: shape.visibleItemCount,
-				items: itemCount,
-				detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
-				reusableDetail: Boolean(details.reusableDetail),
-				mobileLoading: Boolean(thread && thread.mobileLoading),
-				threadTaskCardCount: Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards.length : 0
-			};
-		}
-		function recordEmptyCachedDetailReuseBlocked(reason, thread = state.currentThread, details = {}) {
-			return recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.emptyCachedDetailReuseBlockedDiagnosticEvent(emptyCachedDetailReuseInput(reason, thread, details)));
-		}
-		function recordEmptyCachedDetailReuseHealthy(source, thread = state.currentThread) {
-			const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
-			if (!threadId) return null;
-			return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.emptyCachedDetailReuseDiagnosticSuccess({
-				action: "thread-open-cache-reuse",
-				routeKind: "single-thread",
-				sourceKind: source,
-				threadHash: diagnosticThreadHash(threadId),
-				readMode: thread && thread.mobileReadMode || ""
-			}));
-		}
-		function checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan = {}, metrics = {}) {
-			if (!thread || thread.mobileLoading || thread.mobileLoadError) return;
-			if (shellPlan.hasPrimaryContent || shellPlan.emptyMessage !== "No visible turns.") return;
-			const threadId = String(thread.id || state.currentThreadId || "").trim();
-			const evidence = recentThreadDetailRenderEvidence();
-			const details = {
-				source: metrics.source || "single-thread-render",
-				renderMode: metrics.renderMode || "full-render",
-				domCount: metrics.domCount,
-				previousCount: metrics.previousCount
-			};
-			if (threadDetailStateApi.hasNonemptyThreadDetailRenderEvidence(threadDetailStateApi.sameThreadDetailRenderEvidence({
-				evidence,
-				threadId
-			}))) {
-				recordEmptyVisibleDetailMismatch("empty_render_after_nonempty_detail", thread, details);
-				return;
-			}
-			maybeRecoverEmptyDetailWithHistoryEvidence(thread, details);
-		}
-		function visibleRenderableTurnIds(thread) {
-			return visibleRenderableTurnsForConversation(thread).map((turn) => String(turn.id));
-		}
-		function conversationDomTurnIds(conversation = $("conversation")) {
-			if (!conversation) return [];
-			return Array.from(conversation.querySelectorAll("article.turn[data-turn]")).map((node) => String(node && node.getAttribute && node.getAttribute("data-turn") || "")).filter(Boolean);
-		}
-		function threadTileVisibleShape(ids = state.threadTileActiveIds) {
-			return (Array.isArray(ids) ? ids : []).reduce((shape, id) => {
-				const thread = threadTileDisplayThread(id);
-				visibleTurnsForConversation(thread).forEach((turn) => {
-					const visibleItems = visibleItemsForTurn(turn, thread);
-					const itemCount = visibleItems.length;
-					if (itemCount > 0) {
-						shape.turnCount += 1;
-						shape.visibleItemCount += itemCount;
-						const userMessages = visibleItems.map((entry) => entry && entry.item).filter((item) => item && item.type === "userMessage");
-						shape.duplicateUserMessageCount += duplicateUserMessageSignatureCount(userMessages, (item) => visibleUserMessageDuplicateSignature(turn, item));
-					}
-				});
-				return shape;
-			}, {
-				turnCount: 0,
-				visibleItemCount: 0,
-				duplicateUserMessageCount: 0
-			});
-		}
-		function threadTileVisibleTurnCount(ids = state.threadTileActiveIds) {
-			return threadTileVisibleShape(ids).turnCount;
-		}
-		function threadTileDomTurnCount(conversation = $("conversation")) {
-			if (!conversation) return 0;
-			return conversation.querySelectorAll("article.thread-tile-turn[data-thread-tile-turn]").length;
-		}
-		function conversationTurnOrderDiagnosticSnapshot(source, extra = {}, deps = {}) {
-			const conversation = deps.conversation || $("conversation");
-			const thread = deps.thread || state.currentThread;
-			if (!conversation || !thread) return null;
-			const tileMode = Object.prototype.hasOwnProperty.call(deps, "threadTileMode") ? deps.threadTileMode === true : state.threadTileMode === true;
-			const tileDomActive = Object.prototype.hasOwnProperty.call(deps, "tileDomActive") ? deps.tileDomActive === true : Boolean(conversation.classList && conversation.classList.contains("thread-tile-mode"));
-			if (tileMode || tileDomActive) return null;
-			const expectedIds = Array.isArray(deps.expectedTurnIds) ? deps.expectedTurnIds.map(String).filter(Boolean) : visibleRenderableTurnIds(thread);
-			const domIds = Array.isArray(deps.domTurnIds) ? deps.domTurnIds.map(String).filter(Boolean) : conversationDomTurnIds(conversation);
-			const expectedLatestId = expectedIds[expectedIds.length - 1] || "";
-			return threadDiagnosticEventsApi.turnOrderDiagnosticSnapshot({
-				source,
-				readMode: thread.mobileReadMode || "",
-				renderMode: extra.renderMode || "",
-				threadHash: diagnosticThreadHash(thread.id || state.currentThreadId),
-				turnHash: diagnosticTurnHash(expectedLatestId),
-				expectedTurnIds: expectedIds,
-				domTurnIds: domIds
-			});
-		}
-		function conversationProjectionDiagnosticSnapshot(source, extra = {}, deps = {}) {
-			const conversation = deps.conversation || $("conversation");
-			if (!conversation) return null;
-			const renderedSignature = Object.prototype.hasOwnProperty.call(deps, "renderedConversationSignature") ? String(deps.renderedConversationSignature || "") : String(state.renderedConversationSignature || "");
-			const domShape = deps.domShape || conversationDomShape();
-			const tileMode = Object.prototype.hasOwnProperty.call(deps, "threadTileMode") ? deps.threadTileMode === true : state.threadTileMode === true;
-			const tileDomActive = Object.prototype.hasOwnProperty.call(deps, "tileDomActive") ? deps.tileDomActive === true : Boolean(conversation.classList && conversation.classList.contains("thread-tile-mode"));
-			return threadDiagnosticEventsApi.conversationProjectionDiagnosticSnapshot({
-				source,
-				renderMode: extra.renderMode,
-				renderedSignature,
-				domShape,
-				threadTileMode: tileMode,
-				tileDomActive,
-				tileLayout: deps.tileLayout,
-				tileIds: deps.tileIds,
-				tileDisplayLayout: deps.tileDisplayLayout,
-				tileSignature: deps.tileSignature,
-				currentSignature: deps.currentSignature,
-				thread: deps.thread || state.currentThread
-			}, {
-				singleSignature: conversationRenderSignature,
-				tileLayout: threadTileLayout,
-				tileCandidateIds: threadTileCandidateIds,
-				tileDisplayLayout: threadTileDisplayLayout,
-				tileRenderSignature: threadTileRenderSignature,
-				tileThreadForId: typeof deps.tileThreadForId === "function" ? deps.tileThreadForId : threadTileDisplayThread,
-				visibleShape: visibleConversationShape
-			});
-		}
-		function applyConversationProjectionConsistencyEffect(effect) {
-			const item = effect && typeof effect === "object" ? effect : {};
-			if (!item.type) return;
-			if (item.type === "diagnostic-failure") {
-				recordHomeAiDiagnosticFailure(item.diagnostic || {});
-				return;
-			}
-			if (item.type === "diagnostic-success") {
-				recordHomeAiDiagnosticSuccess(item.diagnostic || {});
-				return;
-			}
-			throw new Error(`Unknown conversation projection consistency effect: ${item.type}`);
-		}
-		function applyConversationProjectionConsistencyEffectsPlan(plan) {
-			const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
-			for (const effect of effects) applyConversationProjectionConsistencyEffect(effect);
-		}
-		function checkConversationProjectionConsistency(source, extra = {}) {
-			if (!state.currentThread || state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return;
-			recordPrimaryShellSelectionHealthy(source, state.currentThread);
-			recordEmptyVisibleDetailHealthy(source, state.currentThread);
-			const snapshot = conversationProjectionDiagnosticSnapshot(source, extra);
-			if (!snapshot) return;
-			const orderSnapshot = conversationTurnOrderDiagnosticSnapshot(source, extra);
-			applyConversationProjectionConsistencyEffectsPlan(threadDiagnosticEventsApi.conversationProjectionConsistencyEffects({
-				snapshot,
-				orderSnapshot
-			}));
-		}
-		function startUiWatchdog() {
-			if (state.uiWatchdogTimer) return;
-			state.lastUiWatchdogTickAt = Date.now();
-			state.uiWatchdogTimer = setInterval(() => {
-				const now = Date.now();
-				const lagMs = now - state.lastUiWatchdogTickAt - 1e3;
-				state.lastUiWatchdogTickAt = now;
-				if (document.visibilityState === "hidden" || lagMs < 2500) return;
-				if (now - state.lastUiStallReportedAt < 15e3) return;
-				state.lastUiStallReportedAt = now;
-				postClientEvent("ui_stall", {
-					lagMs: Math.round(lagMs),
-					composerBusy: state.composerBusy,
-					activeTurnId: state.activeTurnId || "",
-					hasContent: composerHasContent()
-				});
-			}, 1e3);
-		}
-		function updatePushButton() {
-			const button = $("pushNotifications");
-			if (!button) return;
-			button.classList.remove("hidden", "ready", "error");
-			const hideButton = () => {
-				button.textContent = "";
-				button.disabled = true;
-				button.classList.add("hidden");
-			};
-			if (state.pushBusy) {
-				button.textContent = "Working...";
-				button.disabled = true;
-				return;
-			}
-			if (!state.pushServerSupported) {
-				hideButton();
-				return;
-			}
-			if (!window.isSecureContext) {
-				hideButton();
-				return;
-			}
-			if (!pushBrowserAvailable()) {
-				hideButton();
-				return;
-			}
-			if (Notification.permission === "denied") {
-				button.textContent = "Notifications blocked";
-				button.disabled = true;
-				button.classList.add("error");
-				return;
-			}
-			if (state.pushSubscribed) {
-				button.textContent = "Send test notification";
-				button.disabled = false;
-				button.classList.add("ready");
-				return;
-			}
-			button.textContent = "Enable notifications";
-			button.disabled = false;
-			if (state.pushError) button.classList.add("error");
-		}
-		async function registerPushServiceWorker() {
-			if (state.serviceWorkerRegistration) return state.serviceWorkerRegistration;
-			state.serviceWorkerRegistration = await navigator.serviceWorker.register("/sw.js");
-			if (state.serviceWorkerRegistration && state.serviceWorkerRegistration.update) state.serviceWorkerRegistration.update().catch(() => {});
-			return state.serviceWorkerRegistration;
-		}
-		async function syncExistingPushSubscription() {
-			if (!state.key || !pushBrowserAvailable()) return;
-			const subscription = await (await registerPushServiceWorker()).pushManager.getSubscription();
-			state.pushSubscribed = Boolean(subscription);
-			if (subscription) await api("/api/push/subscribe", {
-				method: "POST",
-				body: JSON.stringify({ subscription: pushSubscriptionToJson(subscription) })
-			});
-		}
-		async function initializePushControls() {
-			state.pushError = "";
-			updatePushButton();
-			if (!pushBrowserAvailable() || !state.key) return;
-			try {
-				await syncExistingPushSubscription();
-			} catch (err) {
-				state.pushError = err.message || String(err);
-			} finally {
-				updatePushButton();
-			}
-		}
-		async function enablePushNotifications() {
-			if (!pushBrowserAvailable()) return;
-			const permission = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
-			if (permission !== "granted") {
-				state.pushSubscribed = false;
-				state.pushError = permission === "denied" ? "Notifications blocked" : "Notification permission not granted";
-				updatePushButton();
-				return;
-			}
-			const registration = await registerPushServiceWorker();
-			let subscription = await registration.pushManager.getSubscription();
-			if (!subscription) {
-				const key = await api("/api/push/vapid-public-key");
-				subscription = await registration.pushManager.subscribe({
-					userVisibleOnly: true,
-					applicationServerKey: base64UrlToUint8Array(key.publicKey)
-				});
-			}
-			await api("/api/push/subscribe", {
-				method: "POST",
-				body: JSON.stringify({ subscription: pushSubscriptionToJson(subscription) })
-			});
-			state.pushSubscribed = true;
-			state.pushError = "";
-			$("connectionState").classList.remove("error");
-			$("connectionState").textContent = "Notifications enabled";
-		}
-		async function sendTestPushNotification() {
-			const result = await api("/api/push/test", {
-				method: "POST",
-				body: "{}"
-			});
-			$("connectionState").classList.remove("error");
-			if (result.sent) {
-				$("connectionState").textContent = "Test notification sent";
-				return;
-			}
-			if (result.failed) {
-				const detail = result.lastError && (result.lastError.reason || result.lastError.statusCode) ? `${result.lastError.statusCode || ""} ${result.lastError.reason || ""}`.trim() : "delivery failed";
-				throw new Error(`Test notification failed: ${detail}`);
-			}
-			$("connectionState").textContent = "No push subscription";
-		}
-		async function handlePushButtonClick() {
-			if (state.pushBusy) return;
-			state.pushBusy = true;
-			updatePushButton();
-			try {
-				if (state.pushSubscribed) await sendTestPushNotification();
-				else await enablePushNotifications();
-			} catch (err) {
-				state.pushError = err.message || String(err);
-				showError(err);
-			} finally {
-				state.pushBusy = false;
-				updatePushButton();
-			}
-		}
-		const legacyGlobals = {
-			api,
-			postClientEvent,
-			nowPerfMs,
-			roundedDurationMs,
-			postPerformanceEvent,
-			diagnosticHash,
-			diagnosticThreadHash,
-			diagnosticTurnHash,
-			diagnosticTaskHash,
-			diagnosticItemHash,
-			clientSubmissionDiagnosticHash,
-			clientSubmissionDataAttr,
-			diagnosticRouteKind,
-			diagnosticErrorStatus,
-			diagnosticErrorCode,
-			diagnosticDurationBucket,
-			currentHomeAiDiagnosticContext,
-			postHomeAiDiagnosticReport,
-			recordHomeAiDiagnosticFailure,
-			recordHomeAiDiagnosticSuccess,
-			applyFrontendRuntimeHealthEffect,
-			applyFrontendRuntimeHealthEffectsPlan,
-			threadListRuntimeMetrics,
-			recordThreadListRuntimeStall,
-			sampleThreadListInputDelay,
-			startThreadListRuntimeHeartbeat,
-			startThreadListRuntimeLongTaskObserver,
-			startThreadListRuntimeStallMonitoring,
-			conversationHasClientSubmissionHash,
-			frontendHealthThreadForSubmission,
-			probeSubmittedMessageDom,
-			scheduleSubmittedMessageDomProbe,
-			applyThreadDetailResponseDiagnosticEffect,
-			applyThreadDetailResponseDiagnosticEffectsPlan,
-			recordThreadDetailResponseDiagnostics,
-			conversationDomShape,
-			duplicateUserMessageSignatureCount,
-			domUserMessageDuplicateSignature,
-			domUserMessageEventDuplicateSignature,
-			visibleUserMessageDuplicateSignature,
-			visibleUserMessageEventDuplicateSignature,
-			turnRendersConversationArticle,
-			visibleRenderableTurnsForConversation,
-			visibleConversationShape,
-			rememberThreadDetailRenderEvidence,
-			clearThreadDetailRenderEvidence,
-			recentThreadDetailRenderEvidence,
-			primaryShellSelectionConflictInput,
-			recordPrimaryShellSelectionConflict,
-			recordPrimaryShellSelectionHealthy,
-			emptyVisibleDetailMismatchInput,
-			recordEmptyVisibleDetailMismatch,
-			recordEmptyVisibleDetailHealthy,
-			maybeRecoverEmptyDetailWithHistoryEvidence,
-			emptyCachedDetailReuseInput,
-			recordEmptyCachedDetailReuseBlocked,
-			recordEmptyCachedDetailReuseHealthy,
-			checkEmptyVisibleDetailMismatchAfterRender,
-			visibleRenderableTurnIds,
-			conversationDomTurnIds,
-			threadTileVisibleShape,
-			threadTileVisibleTurnCount,
-			threadTileDomTurnCount,
-			conversationTurnOrderDiagnosticSnapshot,
-			conversationProjectionDiagnosticSnapshot,
-			applyConversationProjectionConsistencyEffect,
-			applyConversationProjectionConsistencyEffectsPlan,
-			checkConversationProjectionConsistency,
-			startUiWatchdog,
-			updatePushButton,
-			registerPushServiceWorker,
-			syncExistingPushSubscription,
-			initializePushControls,
-			enablePushNotifications,
-			sendTestPushNotification,
-			handlePushButtonClick
-		};
-		function createApiClientRuntime() {
-			return Object.assign({}, legacyGlobals);
-		}
-		const apiClientRuntimeApi = { createApiClientRuntime };
-		if (typeof module === "object" && module.exports) module.exports = apiClientRuntimeApi;
-		for (const [name, value] of Object.entries(legacyGlobals)) if (typeof value === "function") root[name] = value;
-		root.CodexApiClientRuntime = apiClientRuntimeApi;
-	})(typeof globalThis !== "undefined" ? globalThis : window);
-}));
-//#endregion
-//#region public/thread-list-load-policy.js
-var require_thread_list_load_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadListLoadPolicy = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function bool(value) {
-			return value === true;
-		}
-		function text(value) {
-			return String(value || "").trim();
-		}
-		function planThreadListLoadRequest(input = {}) {
-			const silent = bool(input.silent);
-			const selectedCwd = text(input.selectedCwd);
-			const search = text(input.search);
-			const threadDetailOpening = bool(input.threadDetailOpening);
-			const documentHidden = bool(input.documentHidden);
-			const allowDuringDetail = bool(input.allowDuringDetail);
-			const allowHidden = bool(input.allowHidden);
-			const hasLoadedList = Number(input.threadListLoadedAtMs || 0) > 0;
-			const deferFallback = input.deferFallback;
-			const suppressHiddenSilent = silent && documentHidden && !allowHidden;
-			const suppressDetailSilent = silent && threadDetailOpening && !allowDuringDetail;
-			const allowWarmFallbackInitial = deferFallback !== false && !selectedCwd && !search;
-			const shouldDeferFallback = deferFallback === true || silent && deferFallback !== false && threadDetailOpening && !selectedCwd && !search;
-			const shouldUseWarmFallbackInitial = allowWarmFallbackInitial && (shouldDeferFallback || !hasLoadedList);
-			return {
-				action: "thread-list-load-request",
-				selectedCwd,
-				search,
-				silent,
-				threadDetailOpening,
-				documentHidden,
-				shouldLoad: !suppressHiddenSilent && !suppressDetailSilent,
-				skipReason: suppressHiddenSilent ? "hidden-silent" : suppressDetailSilent ? "detail-in-flight" : "",
-				retryDelayMs: suppressDetailSilent ? 700 : 0,
-				shouldDeferFallback,
-				shouldUseWarmFallbackInitial,
-				params: {
-					fallback: shouldDeferFallback ? "defer" : "",
-					initial: shouldUseWarmFallbackInitial ? "warm-fallback" : ""
-				}
-			};
-		}
-		return { planThreadListLoadRequest };
-	});
-}));
-//#endregion
-//#region public/thread-list-stable-order.js
-var require_thread_list_stable_order = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadListStableOrder = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_HOLD_MS = 45e3;
-		function text(value) {
-			return String(value || "").trim();
-		}
-		function boundedHoldMs(value) {
-			const number = Math.trunc(Number(value) || 0);
-			if (number <= 0) return DEFAULT_HOLD_MS;
-			return Math.min(3e5, Math.max(5e3, number));
-		}
-		function threadId(thread) {
-			return text(thread && thread.id);
-		}
-		function threadListOrderScopeKey(input = {}) {
-			const cwd = text(input.selectedCwd);
-			const search = text(input.search).toLowerCase();
-			return JSON.stringify({
-				cwd,
-				search
-			});
-		}
-		function orderedThreadsById(threads, ids) {
-			const byId = /* @__PURE__ */ new Map();
-			for (const thread of threads || []) {
-				const id = threadId(thread);
-				if (id && !byId.has(id)) byId.set(id, thread);
-			}
-			return (ids || []).map((id) => byId.get(id)).filter(Boolean);
-		}
-		function mergeHeldOrder(previousOrder, incomingIds) {
-			const incomingSet = new Set(incomingIds);
-			const rank = new Map(incomingIds.map((id, index) => [id, index]));
-			const ordered = (previousOrder || []).filter((id) => incomingSet.has(id));
-			const orderedSet = new Set(ordered);
-			const additions = incomingIds.filter((id) => !orderedSet.has(id));
-			for (const id of additions) {
-				const idRank = rank.get(id);
-				let insertAt = ordered.length;
-				for (let index = 0; index < ordered.length; index += 1) if ((rank.get(ordered[index]) ?? Number.MAX_SAFE_INTEGER) > idRank) {
-					insertAt = index;
-					break;
-				}
-				ordered.splice(insertAt, 0, id);
-				orderedSet.add(id);
-			}
-			return ordered;
-		}
-		function planThreadListStableOrder(input = {}) {
-			const threads = Array.isArray(input.threads) ? input.threads : [];
-			const incomingIds = threads.map(threadId).filter(Boolean);
-			const previous = input.previousState && typeof input.previousState === "object" ? input.previousState : {};
-			const previousOrder = Array.isArray(previous.order) ? previous.order.map(text).filter(Boolean) : [];
-			const scopeKey = text(input.scopeKey) || threadListOrderScopeKey(input);
-			const nowMs = Math.max(0, Math.trunc(Number(input.nowMs) || Date.now()));
-			const holdMs = boundedHoldMs(input.holdMs);
-			const previousHoldUntilMs = Math.max(0, Math.trunc(Number(previous.holdUntilMs) || 0));
-			const sameScope = text(previous.scopeKey) === scopeKey;
-			const canHold = !input.forceServerOrder && sameScope && previousOrder.length > 0 && previousHoldUntilMs > nowMs;
-			const order = canHold ? mergeHeldOrder(previousOrder, incomingIds) : incomingIds;
-			const holdUntilMs = canHold ? previousHoldUntilMs : nowMs + holdMs;
-			return {
-				action: "thread-list-stable-order",
-				held: canHold,
-				scopeKey,
-				holdUntilMs,
-				order,
-				threads: orderedThreadsById(threads, order),
-				state: {
-					scopeKey,
-					holdUntilMs,
-					order
-				}
-			};
-		}
-		return {
-			DEFAULT_HOLD_MS,
-			threadListOrderScopeKey,
-			planThreadListStableOrder
-		};
-	});
-}));
-//#endregion
-//#region public/thread-status-hints.js
-var require_thread_status_hints = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadStatusHints = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		const DEFAULT_RUNNING_HINT_STALE_MS = 1200 * 1e3;
-		const DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS = 60 * 1e3;
-		const DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS = 1e3;
-		function timestampMs(value) {
-			if (value === null || value === void 0 || value === "") return 0;
-			if (typeof value === "number") {
-				if (!Number.isFinite(value) || value <= 0) return 0;
-				return value > 0xe8d4a51000 ? Math.trunc(value) : Math.trunc(value * 1e3);
-			}
-			if (/^\d+(?:\.\d+)?$/.test(String(value))) {
-				const numeric = Number(value);
-				if (Number.isFinite(numeric) && numeric > 0) return numeric > 0xe8d4a51000 ? Math.trunc(numeric) : Math.trunc(numeric * 1e3);
-			}
-			const parsed = Date.parse(String(value));
-			return Number.isFinite(parsed) ? parsed : 0;
-		}
-		function statusText(status) {
-			if (!status) return "";
-			if (typeof status === "string") return status;
-			if (status && typeof status === "object" && status.type) return String(status.type);
-			try {
-				return JSON.stringify(status);
-			} catch (_) {
-				return String(status);
-			}
-		}
-		function isStaleActiveStatus(status, thread) {
-			return Boolean(status && typeof status === "object" && (status.mobileStaleActiveTurn || status.staleActiveTurn || status.reason === "context-only-active-turn") || thread && thread.mobileStaleActiveTurn);
-		}
-		function isRunningStatus(status) {
-			return /active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(statusText(status).toLowerCase());
-		}
-		function isSettledStatus(status) {
-			return /^(idle|notloaded|not_loaded|not-loaded|completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(statusText(status).toLowerCase());
-		}
-		function isIdleStatus(status) {
-			return /^(idle|notloaded|not_loaded|not-loaded)$/.test(statusText(status).toLowerCase());
-		}
-		function isTerminalStatus(status) {
-			return /^(completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(statusText(status).toLowerCase());
-		}
-		function threadUpdatedAtMs(thread) {
-			return timestampMs(thread && (thread.updatedAtMs || thread.updatedAt || thread.updated_at_ms || thread.updated_at));
-		}
-		function terminalTurnAtMs(turn) {
-			return timestampMs(turn && turn.completedAtMs) || timestampMs(turn && turn.completedAt) || timestampMs(turn && turn.completed_at_ms) || timestampMs(turn && turn.completed_at) || timestampMs(turn && turn.finishedAt) || timestampMs(turn && turn.finished_at) || timestampMs(turn && turn.updatedAtMs) || timestampMs(turn && turn.updatedAt) || timestampMs(turn && turn.updated_at_ms) || timestampMs(turn && turn.updated_at) || timestampMs(turn && turn.startedAtMs) || timestampMs(turn && turn.startedAt) || timestampMs(turn && turn.started_at_ms) || timestampMs(turn && turn.started_at) || timestampMs(turn && turn.createdAtMs) || timestampMs(turn && turn.createdAt) || timestampMs(turn && turn.created_at_ms) || timestampMs(turn && turn.created_at);
-		}
-		function notificationDurableEventAtMs(params = {}) {
-			return timestampMs(params.eventAtMs) || timestampMs(params.eventAt) || terminalTurnAtMs(params.turn) || timestampMs(params.receivedAtMs) || timestampMs(params.timestampMs) || timestampMs(params.timestamp);
-		}
-		function notificationEventAtMs(params = {}, fallbackMs = 0, options = {}) {
-			const durableAt = notificationDurableEventAtMs(params);
-			if (durableAt) return durableAt;
-			if (options.allowReplayReceivedAt !== false) {
-				const replayAt = timestampMs(params.mobileReplayReceivedAtMs);
-				if (replayAt) return replayAt;
-			}
-			return timestampMs(params.receivedAtMs) || timestampMs(params.timestampMs) || timestampMs(params.timestamp) || timestampMs(fallbackMs);
-		}
-		function latestTerminalTurn(thread) {
-			const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
-			const latest = turns.length ? turns[turns.length - 1] : null;
-			if (!latest) return null;
-			return isTerminalStatus(latest.status) ? latest : null;
-		}
-		function latestTerminalTurnAtMs(thread) {
-			const turn = latestTerminalTurn(thread);
-			return turn ? terminalTurnAtMs(turn) : 0;
-		}
-		function hasFreshSubmittedProcessingHint(submittedProcessingHintedAtMs, nowMs, staleMs = DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS) {
-			const hintedAt = timestampMs(submittedProcessingHintedAtMs);
-			const now = timestampMs(nowMs) || Date.now();
-			return Boolean(hintedAt > 0 && now - hintedAt <= Math.max(0, Number(staleMs) || DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS));
-		}
-		function statusFreshnessAtMs(thread, eventAtMs) {
-			return Math.max(threadUpdatedAtMs(thread) || 0, timestampMs(eventAtMs) || 0);
-		}
-		function settledStatusFreshEnoughForRunningHint(input = {}) {
-			const hintedAt = timestampMs(input.runningHintedAtMs);
-			if (!hintedAt) return true;
-			const statusAt = statusFreshnessAtMs(input.thread, input.eventAtMs);
-			if (!statusAt) return false;
-			if (input.mobileReplay) return statusAt >= hintedAt;
-			return statusAt + Math.max(0, Number(input.freshnessToleranceMs) || DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS) >= hintedAt;
-		}
-		function shouldKeepRunningHintForSettledStatus(input = {}) {
-			const threadId = String(input.threadId || "");
-			if (!threadId || !input.isRunningHinted) return false;
-			const status = input.status || input.thread && input.thread.status;
-			if (isStaleActiveStatus(status, input.thread)) return false;
-			if (!isSettledStatus(status)) return false;
-			if (isIdleStatus(status) && !latestTerminalTurn(input.thread) && !input.eventIsTerminal) return true;
-			if (input.allowLocalProcessing !== false && isIdleStatus(status) && !latestTerminalTurn(input.thread) && hasFreshSubmittedProcessingHint(input.submittedProcessingHintedAtMs, input.nowMs, input.submittedProcessingHintStaleMs)) return true;
-			if (input.currentThreadId && threadId === String(input.currentThreadId) && input.currentThreadSettled) return false;
-			if (input.currentThreadHasLiveTurn) return true;
-			if (!input.mobileReplay && (isTerminalStatus(status) || latestTerminalTurn(input.thread) || input.eventIsTerminal)) return false;
-			return !settledStatusFreshEnoughForRunningHint(input);
-		}
-		function threadUnreadTerminalAtMs(thread, eventAtMs = 0, options = {}) {
-			const eventAt = options.eventIsTerminal ? timestampMs(eventAtMs) : 0;
-			return Math.max(latestTerminalTurnAtMs(thread) || 0, eventAt || 0);
-		}
-		function shouldMarkThreadUnread(input = {}) {
-			const threadId = String(input.threadId || "");
-			if (!threadId || threadId === String(input.currentThreadId || "")) return false;
-			const status = input.status || input.thread && input.thread.status;
-			if (isStaleActiveStatus(status, input.thread)) return false;
-			if (!isSettledStatus(status)) return false;
-			if (isIdleStatus(status) && !latestTerminalTurn(input.thread) && !input.eventIsTerminal) return false;
-			const terminalAt = threadUnreadTerminalAtMs(input.thread, input.eventAtMs, { eventIsTerminal: Boolean(input.eventIsTerminal) });
-			const viewedAt = timestampMs(input.viewedAtMs);
-			if (viewedAt > 0) return terminalAt > viewedAt;
-			const updateAt = terminalAt || (input.wasRunning ? statusFreshnessAtMs(input.thread, input.eventAtMs) : 0);
-			if (input.mobileReplay && !updateAt) return false;
-			const hintedAt = timestampMs(input.runningHintedAtMs);
-			if (!input.wasRunning || hintedAt <= 0) return false;
-			if (!updateAt) return !input.mobileReplay;
-			return updateAt + (input.mobileReplay ? 0 : Math.max(0, Number(input.freshnessToleranceMs) || DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS)) >= hintedAt;
-		}
-		function runningHintAgeMs(input = {}) {
-			const hintedAt = timestampMs(input.runningHintedAtMs);
-			const now = timestampMs(input.nowMs) || Date.now();
-			if (hintedAt > 0) return now - hintedAt;
-			const updatedAt = threadUpdatedAtMs(input.thread);
-			if (updatedAt > 0) return now - updatedAt;
-			return (Number(input.runningHintStaleMs) || DEFAULT_RUNNING_HINT_STALE_MS) + 1;
-		}
-		function shouldExpireRunningThreadHint(input = {}) {
-			if (!input.threadId || !input.isRunningHinted) return false;
-			const status = input.status || input.thread && input.thread.status;
-			if (isStaleActiveStatus(status, input.thread)) return true;
-			if (isRunningStatus(status)) return false;
-			if (isSettledStatus(status) && !shouldKeepRunningHintForSettledStatus(input)) return false;
-			if (input.currentThreadHasLiveTurn) return false;
-			return runningHintAgeMs(input) > (Number(input.runningHintStaleMs) || DEFAULT_RUNNING_HINT_STALE_MS);
-		}
-		return {
-			DEFAULT_RUNNING_HINT_STALE_MS,
-			DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS,
-			DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
-			hasFreshSubmittedProcessingHint,
-			isIdleStatus,
-			isRunningStatus,
-			isSettledStatus,
-			isStaleActiveStatus,
-			isTerminalStatus,
-			latestTerminalTurnAtMs,
-			notificationDurableEventAtMs,
-			notificationEventAtMs,
-			runningHintAgeMs,
-			shouldExpireRunningThreadHint,
-			shouldKeepRunningHintForSettledStatus,
-			shouldMarkThreadUnread,
-			statusFreshnessAtMs,
-			statusText,
-			terminalTurnAtMs,
-			threadUpdatedAtMs,
-			timestampMs
-		};
-	});
-}));
-//#endregion
-//#region public/thread-detail-patch-plan.js
-var require_thread_detail_patch_plan = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDetailPatchPlan = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function normalizePatchEntry(entry) {
-			if (!entry || typeof entry !== "object") return null;
-			const key = String(entry.key || "");
-			if (!key) return null;
-			return Object.assign({}, entry, { key });
-		}
-		function normalizeRefreshTurnPatchEntry(entry) {
-			if (!entry || typeof entry !== "object") return null;
-			const key = String(entry.key || "");
-			if (!key) return null;
-			return {
-				key,
-				hasPreviousTurn: Boolean(entry.hasPreviousTurn),
-				itemPatchable: Boolean(entry.itemPatchable),
-				articlePresent: Boolean(entry.articlePresent)
-			};
-		}
-		function normalizedStringList(value) {
-			return Array.isArray(value) ? value.map((entry) => String(entry || "")).filter(Boolean) : [];
-		}
-		function signatureText(signature) {
-			if (signature == null) return "";
-			if (typeof signature === "string") return signature;
-			try {
-				return JSON.stringify(signature);
-			} catch (_) {
-				return "";
-			}
-		}
-		function planThreadDetailDomPatchSurface(input = {}) {
-			const threadId = String(input.threadId || "").trim();
-			const threadTileMode = Boolean(input.threadTileMode);
-			const threadTileSurface = Boolean(input.threadTileSurface);
-			const tilePaneVisible = Boolean(input.tilePaneVisible);
-			const conversationPresent = Boolean(input.conversationPresent);
-			if (threadTileMode || threadTileSurface) {
-				if (!threadTileMode) return {
-					canPatch: false,
-					surface: "blocked",
-					reason: "tile-surface-without-tile-mode",
-					threadId
-				};
-				if (!threadTileSurface) return {
-					canPatch: false,
-					surface: "blocked",
-					reason: "tile-mode-surface-mismatch",
-					threadId
-				};
-				if (!threadId) return {
-					canPatch: false,
-					surface: "thread-tile-pane",
-					reason: "missing-thread-id",
-					threadId: ""
-				};
-				if (!tilePaneVisible) return {
-					canPatch: false,
-					surface: "thread-tile-pane",
-					reason: "tile-pane-not-visible",
-					threadId
-				};
-				return {
-					canPatch: true,
-					surface: "thread-tile-pane",
-					reason: "tile-pane-visible",
-					threadId
-				};
-			}
-			if (!conversationPresent) return {
-				canPatch: false,
-				surface: "single-thread",
-				reason: "missing-conversation",
-				threadId
-			};
-			return {
-				canPatch: true,
-				surface: "single-thread",
-				reason: "single-thread-surface",
-				threadId
-			};
-		}
-		function planThreadDetailRefreshLocalPatchPreflight(input = {}) {
-			const conversationPresent = Boolean(input.conversationPresent);
-			const previousThreadPresent = Boolean(input.previousThreadPresent);
-			const nextThreadPresent = Boolean(input.nextThreadPresent);
-			if (!conversationPresent) return {
-				canPatch: false,
-				terminal: false,
-				reason: "missing-conversation-root"
-			};
-			if (!previousThreadPresent || !nextThreadPresent) return {
-				canPatch: false,
-				terminal: false,
-				reason: "missing-thread"
-			};
-			if (String(input.stage || "complete") === "root") return {
-				canPatch: true,
-				terminal: false,
-				reason: "root-ready"
-			};
-			if (input.tilePanePatched) return {
-				canPatch: true,
-				terminal: true,
-				reason: "tile-pane-patched"
-			};
-			if (!input.singleThreadSurfaceAvailable) return {
-				canPatch: false,
-				terminal: false,
-				reason: "single-thread-surface-unavailable"
-			};
-			if (input.previousLoadingOrError || input.nextLoadingOrError) return {
-				canPatch: false,
-				terminal: false,
-				reason: "loading-or-error-state"
-			};
-			const renderedConversationSignature = signatureText(input.renderedConversationSignature);
-			const previousConversationSignature = signatureText(input.previousConversationSignature);
-			const renderedPatchShellSignature = signatureText(input.renderedPatchShellSignature);
-			const previousPatchShellSignature = signatureText(input.previousPatchShellSignature);
-			const nextPatchShellSignature = signatureText(input.nextPatchShellSignature);
-			if (renderedConversationSignature !== previousConversationSignature && (!renderedPatchShellSignature || renderedPatchShellSignature !== previousPatchShellSignature)) return {
-				canPatch: false,
-				terminal: false,
-				reason: "rendered-dom-stale"
-			};
-			if (previousPatchShellSignature !== nextPatchShellSignature) return {
-				canPatch: false,
-				terminal: false,
-				reason: "patch-shell-changed"
-			};
-			return {
-				canPatch: true,
-				terminal: false,
-				reason: "preflight-passed"
-			};
-		}
-		function visibleItemPatchShapePreservesExisting(previousEntries, nextEntries) {
-			if (!Array.isArray(previousEntries) || !Array.isArray(nextEntries)) return false;
-			const previous = previousEntries.map(normalizePatchEntry).filter(Boolean);
-			const next = nextEntries.map(normalizePatchEntry).filter(Boolean);
-			if (previous.length !== previousEntries.length || next.length !== nextEntries.length) return false;
-			if (previous.length > next.length) return false;
-			let previousIndex = 0;
-			for (const nextEntry of next) {
-				const previousEntry = previous[previousIndex];
-				if (previousEntry && previousEntry.key === nextEntry.key) previousIndex += 1;
-			}
-			return previousIndex === previous.length;
-		}
-		function planVisibleItemRefreshPatch(previousEntries, nextEntries) {
-			if (!visibleItemPatchShapePreservesExisting(previousEntries, nextEntries)) return {
-				canPatch: false,
-				reason: "shape-changed",
-				operations: []
-			};
-			const previousByKey = new Map(previousEntries.map(normalizePatchEntry).filter(Boolean).map((entry) => [entry.key, entry]));
-			const operations = [];
-			for (const rawNextEntry of nextEntries) {
-				const nextEntry = normalizePatchEntry(rawNextEntry);
-				if (!nextEntry) return {
-					canPatch: false,
-					reason: "invalid-entry",
-					operations: []
-				};
-				const previousEntry = previousByKey.get(nextEntry.key);
-				if (!previousEntry) {
-					operations.push({
-						type: "insert",
-						key: nextEntry.key,
-						nextEntry
-					});
-					continue;
-				}
-				const previousSignature = signatureText(previousEntry.signature);
-				const nextSignature = signatureText(nextEntry.signature);
-				operations.push({
-					type: previousSignature === nextSignature ? "reuse" : "patch",
-					key: nextEntry.key,
-					previousEntry,
-					nextEntry
-				});
-			}
-			return {
-				canPatch: true,
-				reason: "shape-preserved",
-				operations
-			};
-		}
-		function planThreadDetailRefreshDomPatch(entries, options = {}) {
-			if (!Array.isArray(entries)) return {
-				canPatch: false,
-				reason: "invalid-turn-entries",
-				operations: []
-			};
-			const operations = [];
-			const nextKeys = /* @__PURE__ */ new Set();
-			for (const rawEntry of entries) {
-				const entry = normalizeRefreshTurnPatchEntry(rawEntry);
-				if (!entry) return {
-					canPatch: false,
-					reason: "invalid-turn-entry",
-					operations: []
-				};
-				nextKeys.add(entry.key);
-				if (entry.hasPreviousTurn && entry.itemPatchable && entry.articlePresent) {
-					operations.push({
-						type: "item-patch",
-						key: entry.key,
-						entry
-					});
-					continue;
-				}
-				operations.push({
-					type: entry.articlePresent ? "replace-turn" : "insert-turn",
-					key: entry.key,
-					entry
-				});
-			}
-			const previousTurnKeys = normalizedStringList(options.previousTurnKeys || options.previousKeys);
-			for (const previousKey of previousTurnKeys) {
-				if (nextKeys.has(previousKey)) continue;
-				operations.push({
-					type: "remove-turn",
-					key: previousKey,
-					entry: {
-						key: previousKey,
-						stale: true
-					}
-				});
-			}
-			return {
-				canPatch: true,
-				reason: "planned",
-				operations
-			};
-		}
-		return {
-			normalizePatchEntry,
-			normalizeRefreshTurnPatchEntry,
-			planThreadDetailRefreshDomPatch,
-			planThreadDetailRefreshLocalPatchPreflight,
-			planVisibleItemRefreshPatch,
-			planThreadDetailDomPatchSurface,
-			visibleItemPatchShapePreservesExisting
-		};
-	});
-}));
-//#endregion
-//#region public/thread-detail-actions.js
-var require_thread_detail_actions = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDetailActions = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function withinRoot(root, node) {
-			if (!root || !node || typeof root.contains !== "function") return true;
-			return root.contains(node);
-		}
-		function closestWithin(target, selector, root = null) {
-			if (!target || typeof target.closest !== "function") return null;
-			const node = target.closest(selector);
-			if (!node || !withinRoot(root, node)) return null;
-			return node;
-		}
-		function action(type, target, fields = {}) {
-			return Object.assign({
-				action: String(type || "none"),
-				target: target || null,
-				preventDefault: false,
-				stopPropagation: false
-			}, fields);
-		}
-		function dataValue(node, key) {
-			return String(node && node.dataset && node.dataset[key] || "");
-		}
-		function contextThreadIdFromNode(node, explicitDatasetKey = "") {
-			if (!node) return "";
-			const explicit = explicitDatasetKey ? dataValue(node, explicitDatasetKey) : "";
-			if (explicit) return explicit;
-			if (typeof node.closest !== "function") return "";
-			return dataValue(node.closest("[data-thread-tile-pane]"), "threadTilePane");
-		}
-		function previewableImageFromTarget(target, root = null) {
-			const image = closestWithin(target, ".input-image img, .image-view img, .markdown-image img, .file-preview-image, .attachment-thumb", root);
-			if (!image) return null;
-			if (image.closest && image.closest(".github-link-card")) return null;
-			return image;
-		}
-		function resolveRichContentClickAction(input = {}) {
-			const target = input.target || null;
-			const root = input.root || null;
-			let node = closestWithin(target, "[data-copy-key]", root);
-			if (node) return action("copy", node, {
-				button: node,
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-local-file-path]", root);
-			if (node) return action("local-file-preview", node, {
-				link: node,
-				threadId: contextThreadIdFromNode(node, "localFileThreadId"),
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-mermaid-action]", root);
-			if (node) return action("mermaid", node, {
-				button: node,
-				preventDefault: true,
-				stopPropagation: true
-			});
-			node = closestWithin(target, "[data-github-link-preview-expand]", root);
-			if (node) return action("github-preview-toggle", node, {
-				button: node,
-				preventDefault: true,
-				stopPropagation: true
-			});
-			return action("none", null, { reason: "no-match" });
-		}
-		function resolveThreadDetailClickAction(input = {}) {
-			const target = input.target || null;
-			const root = input.root || null;
-			const rich = resolveRichContentClickAction({
-				target,
-				root
-			});
-			if (rich.action !== "none") return rich;
-			let node = closestWithin(target, "[data-approval-action]", root);
-			if (node) return action("approval-answer", node, {
-				button: node,
-				approvalId: dataValue(node, "approvalId"),
-				approvalAction: dataValue(node, "approvalAction"),
-				threadId: dataValue(node, "approvalThreadId")
-			});
-			node = closestWithin(target, "[data-task-card-action]", root);
-			if (node) {
-				const taskCardAction = dataValue(node, "taskCardAction");
-				const cardId = dataValue(node, "taskCardId");
-				const threadId = dataValue(node, "taskCardThreadId");
-				if (taskCardAction === "reply") return action("task-card-reply", node, {
-					button: node,
-					cardId,
-					taskCardAction,
-					threadId
-				});
-				if (taskCardAction === "approve" || taskCardAction === "delete" || taskCardAction === "revoke") return action("task-card-mutate", node, {
-					button: node,
-					cardId,
-					taskCardAction,
-					threadId
-				});
-				return action("task-card-unknown", node, {
-					button: node,
-					cardId,
-					taskCardAction,
-					threadId
-				});
-			}
-			node = closestWithin(target, "[data-task-card-draft-action]", root);
-			if (node) return action("task-card-draft", node, {
-				button: node,
-				draftAction: dataValue(node, "taskCardDraftAction"),
-				draftKey: dataValue(node, "taskCardDraftKey"),
-				threadId: dataValue(node, "taskCardDraftThreadId")
-			});
-			node = closestWithin(target, "[data-server-response-text]", root);
-			if (node) return action("server-response", node, {
-				option: node,
-				requestId: dataValue(node, "serverRequestId"),
-				threadId: dataValue(node, "serverRequestThreadId"),
-				responseText: dataValue(node, "serverResponseText"),
-				questionId: dataValue(node, "serverQuestionId") || "answer"
-			});
-			node = closestWithin(target, "[data-server-request-decline]", root);
-			if (node) return action("server-request-decline", node, {
-				button: node,
-				requestId: dataValue(node, "serverRequestId"),
-				threadId: dataValue(node, "serverRequestThreadId")
-			});
-			return action("none", null, { reason: "no-match" });
-		}
-		return {
-			closestWithin,
-			previewableImageFromTarget,
-			resolveRichContentClickAction,
-			resolveThreadDetailClickAction,
-			contextThreadIdFromNode
-		};
-	});
-}));
-//#endregion
-//#region public/thread-detail-merge-state.js
-var require_thread_detail_merge_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function(root, factory) {
-		const api = factory();
-		if (typeof module === "object" && module.exports) module.exports = api;
-		else if (root) root.CodexThreadDetailMergeState = api;
-	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
-		function defaultNormalizeThread(thread) {
-			return thread;
-		}
-		function defaultSortTurns(turns) {
-			return Array.isArray(turns) ? turns.slice() : [];
-		}
-		function createThreadDetailMergePolicy(options = {}) {
-			const isV4ProjectionThread = typeof options.isV4ProjectionThread === "function" ? options.isV4ProjectionThread : () => false;
-			const mergeV4ProjectionThread = typeof options.mergeV4ProjectionThread === "function" ? options.mergeV4ProjectionThread : (existingThread, incomingThread) => incomingThread || existingThread || null;
-			const normalizeThreadVisibleUserMessages = typeof options.normalizeThreadVisibleUserMessages === "function" ? options.normalizeThreadVisibleUserMessages : defaultNormalizeThread;
-			const turnVisibleWeight = typeof options.turnVisibleWeight === "function" ? options.turnVisibleWeight : () => 0;
-			const shouldPreserveExistingTurnVisibleItems = typeof options.shouldPreserveExistingTurnVisibleItems === "function" ? options.shouldPreserveExistingTurnVisibleItems : () => false;
-			const mergeItemsPreservingLocalVisible = typeof options.mergeItemsPreservingLocalVisible === "function" ? options.mergeItemsPreservingLocalVisible : (existingItems, incomingItems) => Array.isArray(incomingItems) ? incomingItems : existingItems;
-			const shouldDropInitialSubmissionEchoTurn = typeof options.shouldDropInitialSubmissionEchoTurn === "function" ? options.shouldDropInitialSubmissionEchoTurn : () => false;
-			const turnIsSupersededBy = typeof options.turnIsSupersededBy === "function" ? options.turnIsSupersededBy : () => false;
-			const isTurnComplete = typeof options.isTurnComplete === "function" ? options.isTurnComplete : () => false;
-			const shouldPreserveMissingExistingTurn = typeof options.shouldPreserveMissingExistingTurn === "function" ? options.shouldPreserveMissingExistingTurn : () => false;
-			const sortTurnsForDisplay = typeof options.sortTurnsForDisplay === "function" ? options.sortTurnsForDisplay : defaultSortTurns;
-			const threadHasInitialSubmissionEcho = typeof options.threadHasInitialSubmissionEcho === "function" ? options.threadHasInitialSubmissionEcho : () => false;
-			const maxExpandedVisibleTurns = Math.max(1, Number(options.maxExpandedVisibleTurns || 200) || 200);
-			function normalizeMergedThread(thread, limit = 0) {
-				const normalized = normalizeThreadVisibleUserMessages(thread);
-				if (normalized && Array.isArray(normalized.turns)) {
-					const sorted = sortTurnsForDisplay(normalized.turns);
-					normalized.turns = limit > 0 ? sorted.slice(-limit) : sorted;
-				}
-				return normalized;
-			}
-			function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
-				return shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight);
-			}
-			function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
-				if (!existingTurn) return incomingTurn;
-				if (!incomingTurn) return existingTurn;
-				const existingItems = Array.isArray(existingTurn.items) ? existingTurn.items : [];
-				const incomingHasItems = Array.isArray(incomingTurn.items);
-				const merged = Object.assign({}, existingTurn, incomingTurn);
-				if (!incomingHasItems) {
-					merged.items = existingItems;
-					return merged;
-				}
-				const incomingWeight = turnVisibleWeight(Object.assign({}, incomingTurn, { items: incomingTurn.items || [] }));
-				const existingWeight = turnVisibleWeight(existingTurn);
-				const preserveLocalVisible = incomingWeight < existingWeight || shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
-				merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible, incomingTurn);
-				return merged;
-			}
-			function mergeThreadPreservingVisibleItems(existingThread, incomingThread, runtime = {}) {
-				if (isV4ProjectionThread(incomingThread)) return mergeV4ProjectionThread(existingThread, incomingThread);
-				if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeMergedThread(incomingThread);
-				const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
-				const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
-				const existingById = new Map(existingTurns.map((turn) => [turn && turn.id, turn]).filter(([id]) => id));
-				const initialSubmissionId = String(existingThread.mobileInitialSubmissionId || "");
-				const merged = Object.assign({}, existingThread, incomingThread);
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
-				if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
-				if (!incomingTurns) return normalizeMergedThread(merged);
-				const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-				const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-				const incomingHasAuthoritativeVisibleWindow = incomingTurns.length > 0 && incomingVisibleWeight > 0;
-				if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
-					merged.turns = existingTurns;
-					return normalizeMergedThread(merged);
-				}
-				merged.turns = incomingTurns.map((incomingTurn) => {
-					const existingTurn = existingById.get(incomingTurn && incomingTurn.id);
-					return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
-				});
-				merged.turns = sortTurnsForDisplay(merged.turns);
-				const incomingIds = new Set(merged.turns.map((turn) => turn && turn.id).filter(Boolean));
-				const latestIncoming = merged.turns.length ? merged.turns[merged.turns.length - 1] : null;
-				const preserveExpandedHistory = Boolean(existingThread.mobileHistoryExpanded) && (/turns-list/i.test(String(incomingThread.mobileReadMode || "")) || Boolean(incomingThread.mobileOlderTurnsCursor) || Number(incomingThread.mobileOmittedTurnCount || 0) > 0);
-				let preservedExpandedTurnCount = 0;
-				const activeTurnId = String(runtime.activeTurnId || "");
-				for (const existingTurn of existingTurns) {
-					if (!existingTurn || incomingIds.has(existingTurn.id)) continue;
-					if (shouldDropInitialSubmissionEchoTurn(existingTurn, merged.turns, initialSubmissionId)) continue;
-					if (preserveExpandedHistory) {
-						merged.turns.push(existingTurn);
-						preservedExpandedTurnCount += 1;
-						continue;
-					}
-					if (incomingHasAuthoritativeVisibleWindow && !shouldPreserveMissingExistingTurn(existingTurn, merged, runtime)) continue;
-					if (turnIsSupersededBy(existingTurn, latestIncoming)) continue;
-					if (String(existingTurn.id || "") === activeTurnId || !isTurnComplete(existingTurn) && turnVisibleWeight(existingTurn) > 0) merged.turns.push(existingTurn);
-				}
-				if (preserveExpandedHistory) {
-					merged.mobileHistoryExpanded = true;
-					if (preservedExpandedTurnCount > 0) merged.mobileOmittedTurnCount = Math.max(0, Number(merged.mobileOmittedTurnCount || 0) - preservedExpandedTurnCount);
-				}
-				const normalized = normalizeMergedThread(merged, preserveExpandedHistory ? maxExpandedVisibleTurns : 0);
-				if (!threadHasInitialSubmissionEcho(normalized, initialSubmissionId)) delete normalized.mobileInitialSubmissionId;
-				return normalized;
-			}
-			return {
-				mergeThreadPreservingVisibleItems,
-				mergeTurnPreservingVisibleItems,
-				shouldPreserveLiveTurnLocalVisibleItems
-			};
-		}
-		return { createThreadDetailMergePolicy };
-	});
-}));
-//#endregion
 //#region \0virtual:codex-mobile-esm-compatibility/shard/shard-05
 var import_media_preview_runtime = /* @__PURE__ */ __toESM(require_media_preview_runtime());
+var import_composer_runtime = /* @__PURE__ */ __toESM(require_composer_runtime());
 var import_composer_bridge_runtime = /* @__PURE__ */ __toESM(require_composer_bridge_runtime());
-var import_api_client_runtime = /* @__PURE__ */ __toESM(require_api_client_runtime());
-var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
-var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
-var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
-var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_detail_patch_plan());
-var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
-var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
 var moduleDefinitions = [
 	{
 		"id": "media-preview-runtime",
@@ -4786,6 +4671,15 @@ var moduleDefinitions = [
 		"bytes": 95096
 	},
 	{
+		"id": "composer-runtime",
+		"source": "public/composer-runtime.js",
+		"globalName": "CodexComposerRuntime",
+		"expectedFunctions": ["createComposerRuntime"],
+		"assetPath": "/composer-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 78244
+	},
+	{
 		"id": "composer-bridge-runtime",
 		"source": "public/composer-bridge-runtime.js",
 		"globalName": "CodexComposerBridgeRuntime",
@@ -4793,95 +4687,12 @@ var moduleDefinitions = [
 		"assetPath": "/composer-bridge-runtime.js",
 		"classicLoaderExcluded": true,
 		"bytes": 32086
-	},
-	{
-		"id": "api-client-runtime",
-		"source": "public/api-client-runtime.js",
-		"globalName": "CodexApiClientRuntime",
-		"expectedFunctions": ["createApiClientRuntime"],
-		"assetPath": "/api-client-runtime.js",
-		"classicLoaderExcluded": true,
-		"bytes": 49014
-	},
-	{
-		"id": "thread-list-load-policy",
-		"source": "public/thread-list-load-policy.js",
-		"globalName": "CodexThreadListLoadPolicy",
-		"expectedFunctions": ["planThreadListLoadRequest"],
-		"assetPath": "/thread-list-load-policy.js",
-		"classicLoaderExcluded": true,
-		"bytes": 2160
-	},
-	{
-		"id": "thread-list-stable-order",
-		"source": "public/thread-list-stable-order.js",
-		"globalName": "CodexThreadListStableOrder",
-		"expectedFunctions": ["threadListOrderScopeKey", "planThreadListStableOrder"],
-		"assetPath": "/thread-list-stable-order.js",
-		"classicLoaderExcluded": true,
-		"bytes": 3327
-	},
-	{
-		"id": "thread-status-hints",
-		"source": "public/thread-status-hints.js",
-		"globalName": "CodexThreadStatusHints",
-		"expectedFunctions": [
-			"isRunningStatus",
-			"shouldExpireRunningThreadHint",
-			"shouldMarkThreadUnread"
-		],
-		"assetPath": "/thread-status-hints.js",
-		"classicLoaderExcluded": true,
-		"bytes": 9883
-	},
-	{
-		"id": "thread-detail-patch-plan",
-		"source": "public/thread-detail-patch-plan.js",
-		"globalName": "CodexThreadDetailPatchPlan",
-		"expectedFunctions": [
-			"planThreadDetailDomPatchSurface",
-			"planThreadDetailRefreshDomPatch",
-			"planVisibleItemRefreshPatch"
-		],
-		"assetPath": "/thread-detail-patch-plan.js",
-		"classicLoaderExcluded": true,
-		"bytes": 8310
-	},
-	{
-		"id": "thread-detail-actions",
-		"source": "public/thread-detail-actions.js",
-		"globalName": "CodexThreadDetailActions",
-		"expectedFunctions": [
-			"closestWithin",
-			"contextThreadIdFromNode",
-			"previewableImageFromTarget",
-			"resolveRichContentClickAction",
-			"resolveThreadDetailClickAction"
-		],
-		"assetPath": "/thread-detail-actions.js",
-		"classicLoaderExcluded": true,
-		"bytes": 5362
-	},
-	{
-		"id": "thread-detail-merge-state",
-		"source": "public/thread-detail-merge-state.js",
-		"globalName": "CodexThreadDetailMergeState",
-		"expectedFunctions": ["createThreadDetailMergePolicy"],
-		"assetPath": "/thread-detail-merge-state.js",
-		"classicLoaderExcluded": true,
-		"bytes": 8461
 	}
 ];
 var moduleApis = {
 	"media-preview-runtime": import_media_preview_runtime.default,
-	"composer-bridge-runtime": import_composer_bridge_runtime.default,
-	"api-client-runtime": import_api_client_runtime.default,
-	"thread-list-load-policy": import_thread_list_load_policy.default,
-	"thread-list-stable-order": import_thread_list_stable_order.default,
-	"thread-status-hints": import_thread_status_hints.default,
-	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
-	"thread-detail-actions": import_thread_detail_actions.default,
-	"thread-detail-merge-state": import_thread_detail_merge_state.default
+	"composer-runtime": import_composer_runtime.default,
+	"composer-bridge-runtime": import_composer_bridge_runtime.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");

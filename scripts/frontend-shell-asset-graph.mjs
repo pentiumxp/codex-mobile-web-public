@@ -755,6 +755,7 @@ const VITE_APP_PREVIEW_CLASSIC_LOADER_EXCLUDED_MODULE_IDS = new Set([
   "thread-list-runtime",
   "side-chat-runtime",
   "media-preview-runtime",
+  "composer-runtime",
   "composer-bridge-runtime",
   "api-client-runtime",
   "thread-list-load-policy",
