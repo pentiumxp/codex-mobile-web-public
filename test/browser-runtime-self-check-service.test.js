@@ -1321,6 +1321,7 @@ test("browser runtime self-check blocks repeated dynamic API plan mismatches", (
     appVisible: true,
     targetConfirmed: true,
     contentConfirmed: true,
+    delayMs: 1200,
     dynamicThreadPlan: true,
     expectedTurnShapes: [{
       index: 0,
@@ -2137,6 +2138,7 @@ test("browser runtime self-check catches latest turn items below API expectation
       appVisible: true,
       targetConfirmed: true,
       contentConfirmed: true,
+      delayMs: 1200,
       latestTurnMatchesTarget: true,
       expectedLatestItemCount: 12,
       latestTurnItemCount: 11,
@@ -2151,6 +2153,65 @@ test("browser runtime self-check catches latest turn items below API expectation
   assert.equal(issue && issue.severity, "H2");
   assert.equal(issue && issue.expectedLatestItemCount, 12);
   assert.equal(issue && issue.latestTurnItemCount, 11);
+  assert.equal(report.sampleSummary.maxExpectedLatestItems, 12);
+});
+
+test("browser runtime self-check ignores pre-settled latest turn item fill-in", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "api-dom-latest-item-gap-early",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      delayMs: 900,
+      dynamicThreadPlan: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "latest-turn-hash",
+      expectedLatestItemCount: 12,
+      latestTurnItemCount: 11,
+      turns: 3,
+      items: 20,
+      renderKeys: 20,
+      expectedTurnShapes: [{
+        turnHash: "latest-turn-hash",
+        completed: false,
+        expectedItemCount: 12,
+      }],
+      domTurnShapes: [{
+        turnHash: "latest-turn-hash",
+        itemCount: 11,
+      }],
+    }, {
+      label: "api-dom-latest-item-gap-filled",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      delayMs: 1200,
+      dynamicThreadPlan: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "latest-turn-hash",
+      expectedLatestItemCount: 12,
+      latestTurnItemCount: 12,
+      turns: 3,
+      items: 21,
+      renderKeys: 21,
+      expectedTurnShapes: [{
+        turnHash: "latest-turn-hash",
+        completed: false,
+        expectedItemCount: 12,
+      }],
+      domTurnShapes: [{
+        turnHash: "latest-turn-hash",
+        itemCount: 12,
+      }],
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.issues.some((issue) => issue.code === "browser_latest_turn_item_below_api_expectation"), false);
   assert.equal(report.sampleSummary.maxExpectedLatestItems, 12);
 });
 
@@ -2218,6 +2279,7 @@ test("browser runtime self-check blocks repeated dynamic latest user gaps", () =
     appVisible: true,
     targetConfirmed: true,
     contentConfirmed: true,
+    delayMs: 1200,
     dynamicThreadPlan: true,
     latestTurnMatchesTarget: true,
     latestTurnHash: "latest-turn-hash",
@@ -2255,6 +2317,7 @@ test("browser runtime self-check blocks repeated dynamic latest item gaps", () =
     appVisible: true,
     targetConfirmed: true,
     contentConfirmed: true,
+    delayMs: 1200,
     dynamicThreadPlan: true,
     latestTurnMatchesTarget: true,
     latestTurnHash: "latest-turn-hash",

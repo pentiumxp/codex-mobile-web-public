@@ -444,10 +444,10 @@ test("thread detail state plans open-thread cache reuse without accepting empty 
       mobileDetailLoaded: true,
     },
   }), {
-    shouldUseCachedCurrent: true,
-    shouldRefreshCurrent: true,
+    shouldUseCachedCurrent: false,
+    shouldUseActivePreview: true,
     shouldReportEmptyCachedDetail: false,
-    reason: "active-loaded-detail-summary-newer-refresh-baseline",
+    reason: "active-detail-summary-newer-preview",
   });
 
   assert.deepEqual(planThreadOpenCacheReuse({
@@ -517,6 +517,36 @@ test("thread detail state builds active loading preview without stale assistant 
   assert.equal(preview.turns[1].mobileLoading, true);
   assert.deepEqual(preview.turns[1].items.map((item) => item.id), ["active-user"]);
   assert.notEqual(preview.turns[1].items[0], source.turns[1].items[0]);
+});
+
+test("thread detail state uses active preview instead of stale active cache when summary is newer", () => {
+  const cached = {
+    id: "thread-1",
+    updatedAt: "2026-06-30T02:00:00.000Z",
+    status: { type: "active" },
+    activeTurnId: "turn-active",
+    mobileDetailLoaded: true,
+    turns: [{
+      id: "turn-active",
+      status: "running",
+      items: [
+        { id: "active-user", type: "userMessage", content: [{ type: "text", text: "new request" }] },
+        { id: "old-assistant", type: "agentMessage", text: "old receipt" },
+      ],
+    }],
+  };
+  const plan = planThreadOpenCacheReuse({
+    requestedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    summaryThread: { id: "thread-1", updatedAt: "2026-06-30T02:05:00.000Z" },
+    currentThread: cached,
+  });
+  const preview = activeDetailLoadingPreviewThread(cached);
+
+  assert.equal(plan.shouldUseCachedCurrent, false);
+  assert.equal(plan.shouldUseActivePreview, true);
+  assert.equal(plan.reason, "active-detail-summary-newer-preview");
+  assert.deepEqual(preview.turns[0].items.map((item) => item.id), ["active-user"]);
 });
 
 test("thread detail state drops active preview optimistic user echoes matched by durable input", () => {

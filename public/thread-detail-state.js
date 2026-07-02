@@ -443,21 +443,28 @@
         reason: "current-thread-load-error",
       };
     }
+    const summaryNewerThanCachedDetail = summaryIsNewerThanCachedDetail(summaryThread, thread);
+    if (summaryNewerThanCachedDetail) {
+      if (threadHasLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread)) {
+        return {
+          shouldUseCachedCurrent: false,
+          shouldUseActivePreview: true,
+          shouldReportEmptyCachedDetail: false,
+          reason: "active-detail-summary-newer-preview",
+        };
+      }
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "summary-newer-than-cached-detail",
+      };
+    }
     if (threadHasVisualBaselineLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread)) {
       return {
         shouldUseCachedCurrent: true,
         shouldRefreshCurrent: true,
         shouldReportEmptyCachedDetail: false,
-        reason: summaryIsNewerThanCachedDetail(summaryThread, thread)
-          ? "active-loaded-detail-summary-newer-refresh-baseline"
-          : "active-loaded-detail-refresh-baseline",
-      };
-    }
-    if (summaryIsNewerThanCachedDetail(summaryThread, thread)) {
-      return {
-        shouldUseCachedCurrent: false,
-        shouldReportEmptyCachedDetail: false,
-        reason: "summary-newer-than-cached-detail",
+        reason: "active-loaded-detail-refresh-baseline",
       };
     }
     if (threadHasReusableLoadedDetailState(thread)) {

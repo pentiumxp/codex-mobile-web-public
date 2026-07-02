@@ -1906,7 +1906,7 @@ var codexMobileViteEntryGroupIds = [
 var codexMobileViteEntryGroupLoaders = {
 	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-CIB80LK9.js"), []),
 	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-DksiWGDq.js"), []),
-	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-eG031VX0.js"), []),
+	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-BiJ-NUKL.js"), []),
 	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-DieReWP_.js"), []),
 	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-BNRB29H_.js"), []),
 	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-BoKkKh0s.js"), [])
@@ -2116,7 +2116,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-D7W86GET.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DobBLlw8.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

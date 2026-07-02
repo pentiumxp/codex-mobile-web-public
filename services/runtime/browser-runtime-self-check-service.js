@@ -357,6 +357,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       }
     }
     if (sample.latestTurnMatchesTarget
+      && toNumber(sample.delayMs) >= minSettledDelayMs
       && toNumber(sample.expectedLatestItemCount) > 0
       && toNumber(sample.latestTurnItemCount) < toNumber(sample.expectedLatestItemCount)) {
       incrementMapCount(
@@ -636,6 +637,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     }
     if (sampleIsConfirmed(sample)
       && sample.latestTurnMatchesTarget
+      && toNumber(sample.delayMs) >= minSettledDelayMs
       && toNumber(sample.expectedLatestItemCount) > 0
       && toNumber(sample.latestTurnItemCount) < toNumber(sample.expectedLatestItemCount)) {
       const code = "browser_latest_turn_item_below_api_expectation";
