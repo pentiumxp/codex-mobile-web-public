@@ -6478,6 +6478,19 @@ function sampleModule(id, api) {
 			globalImageUrlType: typeof globalThis.imageUrlValue
 		};
 	}
+	if (id === "event-stream-runtime") {
+		const runtime = functionReady(api, "createEventStreamRuntime") ? api.createEventStreamRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.connectEvents === "function" && typeof runtime.applyNotification === "function" && typeof runtime.resumeMobileSession === "function" && typeof runtime.scrollConversationToBottom === "function" && typeof runtime.updateScrollToBottomButton === "function" && typeof globalThis.CodexEventStreamRuntime === "object" && typeof globalThis.CodexEventStreamRuntime.createEventStreamRuntime === "function" && typeof globalThis.upsertItem === "function" && typeof globalThis.connectEvents === "function" && typeof globalThis.ensureEventConnection === "function" && typeof globalThis.resumeMobileSession === "function" && typeof globalThis.followThreadOpenToBottom === "function" && typeof globalThis.scheduleBottomFollowScroll === "function" && typeof globalThis.updateScrollToBottomButton === "function",
+			factoryType: typeof api.createEventStreamRuntime,
+			connectType: typeof (runtime && runtime.connectEvents),
+			notificationType: typeof (runtime && runtime.applyNotification),
+			resumeType: typeof (runtime && runtime.resumeMobileSession),
+			scrollType: typeof (runtime && runtime.scrollConversationToBottom),
+			globalConnectType: typeof globalThis.connectEvents,
+			globalFollowType: typeof globalThis.followThreadOpenToBottom
+		};
+	}
 	if (id === "client-render-stability-guard") {
 		const sourceTurn = {
 			id: "local-turn-secret",
