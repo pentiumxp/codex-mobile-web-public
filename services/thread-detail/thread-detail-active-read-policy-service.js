@@ -41,10 +41,10 @@ function activeFullThreadReadReason(summary) {
 function planActiveThreadDetailReadPolicy(input = {}) {
   const preferRecentTurns = input.preferRecentTurns === true;
   const activeFullReadReason = activeFullThreadReadReason(input.summary);
-  const activeFullReadRequired = activeFullReadReason === "active-turn-id";
+  const activeFullReadRequired = Boolean(activeFullReadReason);
   return {
     activeFullReadRequired,
-    activeFullReadReason: activeFullReadRequired ? activeFullReadReason : "",
+    activeFullReadReason,
     allowPartialProjection: preferRecentTurns && !activeFullReadRequired,
     shouldUseInitialTurnsList: preferRecentTurns && !activeFullReadRequired,
     initialTurnsListSkipReason: preferRecentTurns && activeFullReadRequired

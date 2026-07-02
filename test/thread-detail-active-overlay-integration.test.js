@@ -293,13 +293,13 @@ test("read orchestration uses projection-inferred active turn when summary lacks
   assert.equal(calls.includes("turns-list"), true);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
   assert.equal(timings.activeFullReadRequired, true);
-  assert.equal(timings.activeFullReadReason, "initial-window-active-turn");
+  assert.equal(timings.activeFullReadReason, "status-active");
   assert.equal(timings.activeOverlayAction, "use-projection-overlay");
   assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
   assert.equal(timings.activeOverlaySource, "projection-live");
 });
 
-test("read orchestration uses active overlay window despite active summary staleness", async () => {
+test("read orchestration skips stale partial projection lookup for active summary staleness", async () => {
   const { calls, service } = createActiveOverlayHarness({
     summary: {
       activeTurnId: "",
@@ -315,9 +315,7 @@ test("read orchestration uses active overlay window despite active summary stale
 
   assert.equal(response.status, 200);
   assert.equal(response.mode, "projection-active-overlay");
-  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
-    "projection-lookup:partial:hit",
-  ]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), []);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
     "active-overlay-window-lookup:hit",
   ]);
@@ -325,7 +323,7 @@ test("read orchestration uses active overlay window despite active summary stale
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
   assert.equal(timings.projectionMissReason, "");
-  assert.equal(timings.activeFullReadReason, "initial-window-active-turn");
+  assert.equal(timings.activeFullReadReason, "status-active");
   assert.equal(timings.activeOverlayAction, "use-projection-overlay");
   assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
   assert.equal(timings.activeOverlayWindowFirst, true);

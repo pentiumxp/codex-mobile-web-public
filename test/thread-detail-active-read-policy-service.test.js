@@ -71,10 +71,11 @@ test("active detail read policy recognizes bounded active status sources", () =>
     preferRecentTurns: true,
     summary: { status: { type: "running" } },
   });
-  assert.equal(policy.activeFullReadRequired, false);
-  assert.equal(policy.activeFullReadReason, "");
-  assert.equal(policy.allowPartialProjection, true);
-  assert.equal(policy.shouldUseInitialTurnsList, true);
+  assert.equal(policy.activeFullReadRequired, true);
+  assert.equal(policy.activeFullReadReason, "status-active");
+  assert.equal(policy.allowPartialProjection, false);
+  assert.equal(policy.shouldUseInitialTurnsList, false);
+  assert.equal(policy.initialTurnsListSkipReason, "active-thread-requires-full-read");
 });
 
 test("active detail read policy only allows partial projection in recent mode", () => {
@@ -91,7 +92,7 @@ test("active detail read policy only allows partial projection in recent mode", 
   assert.equal(policy.shouldUseInitialTurnsList, false);
 });
 
-test("active detail read policy keeps bounded reads for active summaries without turn ids", () => {
+test("active detail read policy suppresses bounded reads for active summaries without turn ids", () => {
   const activePolicy = planActiveThreadDetailReadPolicy({
     preferRecentTurns: true,
     summary: { status: { type: "active" } },
@@ -103,7 +104,14 @@ test("active detail read policy keeps bounded reads for active summaries without
     source: "summary",
     reason: "large-rollout",
   };
-  assert.equal(applyActiveThreadPolicyToBoundedReadDecision(original, activePolicy), original);
+  const suppressedActive = applyActiveThreadPolicyToBoundedReadDecision(original, activePolicy);
+  assert.deepEqual(suppressedActive, {
+    prefer: false,
+    rolloutSizeBytes: 12_000_000,
+    thresholdBytes: 8_000_000,
+    source: "summary",
+    reason: "active-thread-requires-full-read",
+  });
 
   const activeTurnPolicy = planActiveThreadDetailReadPolicy({
     preferRecentTurns: true,

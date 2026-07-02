@@ -1303,22 +1303,16 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         timer.mark("turnsListInitialMs", turnsStartedAtMs);
         const initialActiveTurnId = activeTurnIdFromThread(result && result.thread);
         if (initialActiveTurnId && !activeReadPolicy.activeFullReadRequired) {
-          const previousActiveReadPolicy = activeReadPolicy;
           activeReadPolicy = promoteActiveReadPolicy(activeReadPolicy, "initial-window-active-turn");
           applyActivePolicyContext(context, activeReadPolicy);
           context.activeOverlayWindowFirst = true;
           context.projectionSeedStatus = "skipped";
           context.projectionSeedSource = "initial-active-window";
           threadLog("turns_list_initial_active_turn_detected", {
-            action: projection && resolveActiveWindowOverlay ? "try-active-overlay" : "require-full-read",
+            action: "require-full-read",
           });
-          const overlayResponse = await tryActiveOverlayFromInitialWindow(result);
-          if (overlayResponse) return overlayResponse;
-          activeReadPolicy = previousActiveReadPolicy;
-          applyActivePolicyContext(context, activeReadPolicy);
-          threadLog("turns_list_initial_active_window_first_paint", {
-            action: context.activeOverlayAction || "",
-            reason: context.activeOverlayReason || "active-overlay-unavailable",
+          threadLog("turns_list_initial_active_window_full_read_required", {
+            reason: "initial-window-active-turn",
             projectionSeedStatus: context.projectionSeedStatus || "",
             projectionSeedSource: context.projectionSeedSource || "",
           });
