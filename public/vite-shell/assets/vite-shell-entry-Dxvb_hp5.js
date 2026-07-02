@@ -1602,6 +1602,1759 @@ var require_plugin_voice_input = /* @__PURE__ */ __commonJSMin(((exports, module
 	});
 }));
 //#endregion
+//#region public/frontend-runtime-health.js
+var require_frontend_runtime_health = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexFrontendRuntimeHealth = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const DEFAULT_WINDOW_MS = 5e3;
+		const DEFAULT_SUBMISSION_PROBE_MIN_MS = 250;
+		const MAX_COUNT = 1e5;
+		function compactToken(value, fallback = "", maxLength = 80) {
+			return String(value || "").trim().replace(/[^a-zA-Z0-9_.:-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, maxLength) || fallback;
+		}
+		function boundedCount(value) {
+			const number = Number(value);
+			if (!Number.isFinite(number) || number < 0) return 0;
+			return Math.min(MAX_COUNT, Math.trunc(number));
+		}
+		function boolCount(value) {
+			return value ? 1 : 0;
+		}
+		function boundedConfidence(value, fallback = .74) {
+			const number = Number(value);
+			if (!Number.isFinite(number)) return fallback;
+			return Math.max(0, Math.min(1, number));
+		}
+		function baseContext(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const context = {
+				surface: compactToken(source.surface, "frontend-runtime", 80),
+				action: compactToken(source.action, "render", 80)
+			};
+			const routeKind = compactToken(source.routeKind || source.route_kind, "", 80);
+			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+			const itemHash = compactToken(source.itemHash || source.item_hash, "", 80);
+			const renderPlanReason = compactToken(source.renderPlanReason || source.render_plan_reason, "", 80);
+			const patchRejectReason = compactToken(source.patchRejectReason || source.patch_reject_reason, "", 80);
+			if (routeKind) context.route_kind = routeKind;
+			if (readMode) context.read_mode = readMode;
+			if (renderMode) context.render_mode = renderMode;
+			if (threadHash) context.thread_hash = threadHash;
+			if (itemHash) context.item_hash = itemHash;
+			if (renderPlanReason) context.render_plan_reason = renderPlanReason;
+			if (patchRejectReason) context.patch_reject_reason = patchRejectReason;
+			return context;
+		}
+		function runtimeEvent(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			return {
+				category: "frontend_runtime_mismatch",
+				diagnostic_type: compactToken(source.diagnosticType || source.diagnostic_type, "frontend_runtime_mismatch", 80),
+				severity_hint: compactToken(source.severityHint || source.severity_hint, "H2", 8),
+				evidence_confidence: boundedConfidence(source.evidenceConfidence || source.evidence_confidence, .74),
+				error_code: compactToken(source.errorCode || source.error_code, "frontend_runtime_mismatch", 100),
+				context: baseContext(source.context || source),
+				counts: source.counts && typeof source.counts === "object" ? source.counts : {},
+				breadcrumbs: Array.isArray(source.breadcrumbs) ? source.breadcrumbs.slice(0, 6) : []
+			};
+		}
+		function runtimeSuccess(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			return {
+				category: "frontend_runtime_mismatch",
+				diagnostic_type: compactToken(source.diagnosticType || source.diagnostic_type, "frontend_runtime_mismatch", 80),
+				error_code: compactToken(source.errorCode || source.error_code || source.diagnosticType || source.diagnostic_type, "frontend_runtime_mismatch", 100),
+				context: baseContext(source.context || source)
+			};
+		}
+		function submittedMessageDomMissingEvent(input = {}) {
+			const elapsedMs = boundedCount(input.elapsedMs || input.elapsed_ms);
+			const domCount = boundedCount(input.domCount || input.dom_count);
+			const visibleCount = boundedCount(input.visibleCount || input.visible_count);
+			const context = baseContext(Object.assign({}, input, {
+				surface: "user-operation",
+				action: input.action || "message-submit"
+			}));
+			return runtimeEvent({
+				diagnosticType: "submitted_message_dom_missing",
+				severityHint: "H2",
+				evidenceConfidence: .82,
+				errorCode: "submitted_message_dom_missing",
+				context,
+				counts: {
+					elapsed_ms: elapsedMs,
+					dom_count: domCount,
+					visible_count: visibleCount,
+					current_thread_match: boolCount(input.currentThreadMatch),
+					has_thread_submission: boolCount(input.hasThreadSubmission),
+					dom_has_submission: boolCount(input.domHasSubmission),
+					composer_busy: boolCount(input.composerBusy)
+				},
+				breadcrumbs: [{
+					kind: "user-operation",
+					code: "submitted-message-dom-probe",
+					status: "failed",
+					fields: {
+						elapsed_ms: elapsedMs,
+						dom_count: domCount,
+						visible_count: visibleCount,
+						thread_hash: context.thread_hash || "",
+						item_hash: context.item_hash || ""
+					}
+				}]
+			});
+		}
+		function submittedMessageDomSuccess(input = {}) {
+			return runtimeSuccess(Object.assign({}, input, {
+				diagnosticType: "submitted_message_dom_missing",
+				errorCode: "submitted_message_dom_missing",
+				surface: "user-operation",
+				action: input.action || "message-submit"
+			}));
+		}
+		function submittedMessageDomProbeEffects(input = {}) {
+			if (boundedCount(input.elapsedMs || input.elapsed_ms) < boundedCount(input.minElapsedMs || input.min_elapsed_ms || DEFAULT_SUBMISSION_PROBE_MIN_MS)) return {
+				effects: [],
+				reason: "too-early"
+			};
+			if (!input.currentThreadMatch) return {
+				effects: [],
+				reason: "different-thread"
+			};
+			if (!input.hasThreadSubmission) return {
+				effects: [],
+				reason: "no-thread-submission"
+			};
+			const missing = !input.domHasSubmission;
+			return {
+				effects: [{
+					type: missing ? "diagnostic-failure" : "diagnostic-success",
+					diagnostic: missing ? submittedMessageDomMissingEvent(input) : submittedMessageDomSuccess(input),
+					diagnosticType: "submitted_message_dom_missing",
+					reason: missing ? "submitted-message-dom-missing" : "submitted-message-dom-present"
+				}],
+				reason: missing ? "submitted-message-dom-missing" : "submitted-message-dom-present"
+			};
+		}
+		function renderChurnEvent(input = {}) {
+			const context = baseContext(Object.assign({}, input, {
+				surface: "conversation-render",
+				action: input.action || "render"
+			}));
+			const fullRenderCount = boundedCount(input.fullRenderCount || input.full_render_count);
+			const fallbackCount = boundedCount(input.fallbackCount || input.fallback_count);
+			const renderCount = boundedCount(input.renderCount || input.render_count);
+			const domCount = boundedCount(input.domCount || input.dom_count);
+			const visibleCount = boundedCount(input.visibleCount || input.visible_count);
+			const previousCount = boundedCount(input.previousCount || input.previous_count);
+			return runtimeEvent({
+				diagnosticType: "render_churn",
+				severityHint: "H3",
+				evidenceConfidence: .72,
+				errorCode: fallbackCount ? "render_patch_fallback_churn" : "render_full_render_churn",
+				context,
+				counts: {
+					render_count: renderCount,
+					full_render_count: fullRenderCount,
+					fallback_count: fallbackCount,
+					previous_count: previousCount,
+					dom_count: domCount,
+					visible_count: visibleCount,
+					render_elapsed_ms: boundedCount(input.renderElapsedMs || input.render_elapsed_ms),
+					duplicate_count: boundedCount(input.duplicateCount || input.duplicate_count)
+				},
+				breadcrumbs: [{
+					kind: "conversation-render",
+					code: fallbackCount ? "patch-fallback-churn" : "full-render-churn",
+					status: "unstable",
+					fields: {
+						render_mode: context.render_mode || "",
+						render_plan_reason: context.render_plan_reason || "",
+						patch_reject_reason: context.patch_reject_reason || "",
+						previous_count: previousCount,
+						dom_count: domCount,
+						visible_count: visibleCount
+					}
+				}]
+			});
+		}
+		function domDropEvent(input = {}) {
+			const context = baseContext(Object.assign({}, input, {
+				surface: "conversation-render",
+				action: input.action || "render"
+			}));
+			return runtimeEvent({
+				diagnosticType: "render_dom_drop",
+				severityHint: "H2",
+				evidenceConfidence: .8,
+				errorCode: "render_dom_drop",
+				context,
+				counts: {
+					previous_count: boundedCount(input.previousCount || input.previous_count),
+					dom_count: boundedCount(input.domCount || input.dom_count),
+					visible_count: boundedCount(input.visibleCount || input.visible_count),
+					duplicate_count: boundedCount(input.duplicateCount || input.duplicate_count),
+					render_elapsed_ms: boundedCount(input.renderElapsedMs || input.render_elapsed_ms)
+				},
+				breadcrumbs: [{
+					kind: "conversation-render",
+					code: "dom-drop",
+					status: "failed",
+					fields: {
+						previous_count: boundedCount(input.previousCount || input.previous_count),
+						dom_count: boundedCount(input.domCount || input.dom_count),
+						visible_count: boundedCount(input.visibleCount || input.visible_count),
+						render_mode: context.render_mode || ""
+					}
+				}]
+			});
+		}
+		function renderSuccess(input = {}, diagnosticType = "render_churn") {
+			return runtimeSuccess(Object.assign({}, input, {
+				diagnosticType,
+				errorCode: diagnosticType,
+				surface: "conversation-render",
+				action: input.action || "render"
+			}));
+		}
+		function threadListInteractionStallEvent(input = {}) {
+			const maxRafDelayMs = boundedCount(input.maxRafDelayMs || input.max_raf_delay_ms);
+			const maxScrollApplyMs = boundedCount(input.maxScrollApplyMs || input.max_scroll_apply_ms);
+			const maxLongTaskMs = boundedCount(input.maxLongTaskMs || input.max_long_task_ms);
+			const elapsedMs = boundedCount(input.elapsedMs || input.elapsed_ms);
+			const maxDelayMs = Math.max(maxRafDelayMs, maxScrollApplyMs, maxLongTaskMs, elapsedMs);
+			const context = baseContext(Object.assign({}, input, {
+				surface: "thread-list-runtime",
+				action: input.action || "thread-list-interaction"
+			}));
+			const errorCode = maxLongTaskMs >= Math.max(maxRafDelayMs, maxScrollApplyMs) ? "browser_main_thread_long_task" : "browser_thread_list_interaction_blocked";
+			return runtimeEvent({
+				diagnosticType: "thread_list_interaction_stall",
+				severityHint: maxDelayMs >= boundedCount(input.h2ThresholdMs || input.h2_threshold_ms || 3e3) ? "H2" : "H3",
+				evidenceConfidence: maxDelayMs >= 3e3 ? .86 : .74,
+				errorCode,
+				context,
+				counts: {
+					elapsed_ms: elapsedMs,
+					raf_delay_ms: maxRafDelayMs,
+					scroll_apply_ms: maxScrollApplyMs,
+					long_task_ms: maxLongTaskMs,
+					long_task_count: boundedCount(input.longTaskCount || input.long_task_count),
+					thread_list_count: boundedCount(input.threadListCount || input.thread_list_count),
+					thread_list_visible: boolCount(input.threadListVisible || input.thread_list_visible),
+					thread_list_monitorable: boolCount(input.threadListMonitorable || input.thread_list_monitorable),
+					scroll_top: boundedCount(input.scrollTop || input.scroll_top),
+					scroll_height: boundedCount(input.scrollHeight || input.scroll_height)
+				},
+				breadcrumbs: [{
+					kind: "thread-list-runtime",
+					code: errorCode,
+					status: "blocked",
+					fields: {
+						elapsed_ms: elapsedMs,
+						raf_delay_ms: maxRafDelayMs,
+						scroll_apply_ms: maxScrollApplyMs,
+						long_task_ms: maxLongTaskMs,
+						long_task_count: boundedCount(input.longTaskCount || input.long_task_count),
+						thread_list_count: boundedCount(input.threadListCount || input.thread_list_count)
+					}
+				}]
+			});
+		}
+		function threadListInteractionStallEffects(input = {}) {
+			const minDelayMs = boundedCount(input.minDelayMs || input.min_delay_ms || 1e3) || 1e3;
+			const maxDelayMs = Math.max(boundedCount(input.maxRafDelayMs || input.max_raf_delay_ms), boundedCount(input.maxScrollApplyMs || input.max_scroll_apply_ms), boundedCount(input.maxLongTaskMs || input.max_long_task_ms), boundedCount(input.elapsedMs || input.elapsed_ms));
+			if (!input.threadListVisible && !input.threadListMonitorable) return {
+				effects: [],
+				reason: "thread-list-not-visible"
+			};
+			if (maxDelayMs < minDelayMs) return {
+				effects: [],
+				reason: "below-threshold"
+			};
+			return {
+				effects: [{
+					type: "diagnostic-failure",
+					diagnostic: threadListInteractionStallEvent(input),
+					diagnosticType: "thread_list_interaction_stall",
+					reason: "thread-list-interaction-stall"
+				}],
+				reason: "thread-list-interaction-stall"
+			};
+		}
+		function createMonitor(options = {}) {
+			const now = typeof options.now === "function" ? options.now : () => Date.now();
+			const windowMs = boundedCount(options.windowMs || DEFAULT_WINDOW_MS) || DEFAULT_WINDOW_MS;
+			const fullRenderThreshold = boundedCount(options.fullRenderThreshold || 3) || 3;
+			const fallbackThreshold = boundedCount(options.fallbackThreshold || 2) || 2;
+			let samples = [];
+			function trim(currentTime) {
+				samples = samples.filter((entry) => currentTime - entry.at <= windowMs);
+				return samples;
+			}
+			function recordRender(input = {}) {
+				const currentTime = now();
+				const source = input && typeof input === "object" ? input : {};
+				const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+				const finalAction = compactToken(source.finalAction || source.final_action || renderMode, "", 80);
+				const sample = {
+					at: currentTime,
+					fullRender: Boolean(source.fullRender || finalAction === "set-inner-html" || finalAction === "full-render"),
+					fallbackApplied: Boolean(source.fallbackApplied || source.fallback_applied)
+				};
+				samples.push(sample);
+				trim(currentTime);
+				const renderCount = samples.length;
+				const fullRenderCount = samples.filter((entry) => entry.fullRender).length;
+				const fallbackCount = samples.filter((entry) => entry.fallbackApplied).length;
+				const previousCount = boundedCount(source.previousCount || source.previous_count);
+				const domCount = boundedCount(source.domCount || source.dom_count);
+				const visibleCount = boundedCount(source.visibleCount || source.visible_count);
+				const duplicateCount = boundedCount(source.duplicateCount || source.duplicate_count);
+				const effects = [];
+				if (previousCount >= 2 && visibleCount >= 2 && domCount <= 1 && domCount < previousCount) effects.push({
+					type: "diagnostic-failure",
+					diagnostic: domDropEvent(Object.assign({}, source, {
+						renderCount,
+						fullRenderCount,
+						fallbackCount
+					})),
+					diagnosticType: "render_dom_drop",
+					reason: "render-dom-drop"
+				});
+				else if (domCount >= Math.min(visibleCount || domCount, 2)) effects.push({
+					type: "diagnostic-success",
+					diagnostic: renderSuccess(source, "render_dom_drop"),
+					diagnosticType: "render_dom_drop",
+					reason: "render-dom-stable"
+				});
+				if (fullRenderCount >= fullRenderThreshold || fallbackCount >= fallbackThreshold) effects.push({
+					type: "diagnostic-failure",
+					diagnostic: renderChurnEvent(Object.assign({}, source, {
+						renderCount,
+						fullRenderCount,
+						fallbackCount,
+						previousCount,
+						domCount,
+						visibleCount,
+						duplicateCount
+					})),
+					diagnosticType: "render_churn",
+					reason: "render-churn"
+				});
+				else if (!sample.fullRender && !sample.fallbackApplied && duplicateCount === 0) effects.push({
+					type: "diagnostic-success",
+					diagnostic: renderSuccess(source, "render_churn"),
+					diagnosticType: "render_churn",
+					reason: "render-churn-stable"
+				});
+				return {
+					effects,
+					reason: effects.length ? "frontend-render-health-effects" : "render-observed",
+					renderCount,
+					fullRenderCount,
+					fallbackCount
+				};
+			}
+			function reset() {
+				samples = [];
+			}
+			return {
+				recordRender,
+				reset,
+				windowMs
+			};
+		}
+		return {
+			compactToken,
+			createMonitor,
+			submittedMessageDomMissingEvent,
+			submittedMessageDomProbeEffects,
+			submittedMessageDomSuccess,
+			threadListInteractionStallEvent,
+			threadListInteractionStallEffects,
+			renderChurnEvent,
+			domDropEvent,
+			runtimeSuccess
+		};
+	});
+}));
+//#endregion
+//#region public/home-ai-diagnostic-reporting.js
+var require_home_ai_diagnostic_reporting = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexHomeAiDiagnosticReporting = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const DEFAULT_THRESHOLD = 3;
+		const DEFAULT_THROTTLE_MS = 300 * 1e3;
+		const DEFAULT_SLOW_PATH_REPORT_MODE = "observe";
+		const MAX_BREADCRUMBS = 6;
+		const PLUGIN_ID = "codex-mobile";
+		const SAFE_CONTEXT_KEYS = /* @__PURE__ */ new Set([
+			"action",
+			"app_server_deferred_reason",
+			"app_server_request_reason",
+			"build_id",
+			"cache_id",
+			"client_visibility",
+			"cold_path_owner",
+			"cold_path_reason",
+			"diagnostic_source",
+			"embedded",
+			"fallback_cache_decision",
+			"fallback_deferred_reason",
+			"item_hash",
+			"pluginId",
+			"pwa",
+			"read_mode",
+			"render_mode",
+			"render_plan_reason",
+			"route_kind",
+			"shell_cache",
+			"sourceSurface",
+			"source_kind",
+			"patch_reject_reason",
+			"performance_phase",
+			"projection_partial_kind",
+			"projection_source",
+			"surface",
+			"task_hash",
+			"thread_hash",
+			"turn_hash",
+			"workspaceId"
+		]);
+		const SAFE_FIELD_KEYS = /* @__PURE__ */ new Set([
+			"action",
+			"app_server_deferred_reason",
+			"app_server_request_reason",
+			"api_status",
+			"cold_path_owner",
+			"cold_path_reason",
+			"dom_count",
+			"duplicate_count",
+			"elapsed_ms",
+			"api_elapsed_ms",
+			"active_turn_count",
+			"completed_turn_count",
+			"raf_delay_ms",
+			"item_hash",
+			"item_kind",
+			"item_count",
+			"latest_mismatch_count",
+			"long_task_count",
+			"long_task_ms",
+			"missing_count",
+			"order_mismatch_count",
+			"patch_reject_reason",
+			"previous_count",
+			"projection_partial",
+			"projection_partial_kind",
+			"projection_source",
+			"read_mode",
+			"render_elapsed_ms",
+			"render_mode",
+			"render_plan_reason",
+			"fallback_cache_decision",
+			"fallback_deferred_reason",
+			"repeated_failures",
+			"route_kind",
+			"server_count",
+			"source_kind",
+			"status_code",
+			"scroll_apply_ms",
+			"scroll_height",
+			"scroll_top",
+			"task_hash",
+			"threshold_ms",
+			"thread_list_count",
+			"thread_hash",
+			"turn_count",
+			"turn_hash",
+			"older_cursor",
+			"newer_cursor",
+			"omitted_turns",
+			"visible_count"
+		]);
+		const SAFE_PATH_LABEL_KEYS = /* @__PURE__ */ new Set(["cold_path_owner", "cold_path_reason"]);
+		const UNSAFE_KEY_PATTERN = /(body|content|cookie|file|href|key|launch|log|message|path|payload|prompt|raw|secret|text|title|token|url)/i;
+		function stableTextHash(value) {
+			const text = String(value || "");
+			let hash = 2166136261;
+			for (let index = 0; index < text.length; index += 1) {
+				hash ^= text.charCodeAt(index);
+				hash = Math.imul(hash, 16777619);
+			}
+			return (hash >>> 0).toString(36);
+		}
+		function hashIdentifier(value, prefix = "h") {
+			const text = String(value || "").trim();
+			return text ? `${prefix}_${stableTextHash(text)}` : "";
+		}
+		function boundedToken(value, fallback = "unknown", maxLength = 80) {
+			return String(value || "").trim().replace(/[^a-zA-Z0-9_.:-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, maxLength) || fallback;
+		}
+		function boundedNumber(value, fallback = 0) {
+			const number = Number(value);
+			if (!Number.isFinite(number)) return fallback;
+			return Math.max(0, Math.round(number));
+		}
+		function durationBucket(value) {
+			const ms = Number(value || 0);
+			if (!Number.isFinite(ms) || ms <= 0) return "";
+			if (ms < 1e3) return "lt_1s";
+			if (ms < 3e3) return "1_3s";
+			if (ms < 1e4) return "3_10s";
+			if (ms < 3e4) return "10_30s";
+			return "30s_plus";
+		}
+		function safeCounts(counts) {
+			const out = {};
+			if (!counts || typeof counts !== "object" || Array.isArray(counts)) return out;
+			for (const [key, value] of Object.entries(counts)) {
+				if (UNSAFE_KEY_PATTERN.test(key)) continue;
+				const safeKey = boundedToken(key, "", 60);
+				if (!safeKey) continue;
+				if (typeof value === "boolean") out[safeKey] = value ? 1 : 0;
+				else if (Number.isFinite(Number(value))) out[safeKey] = boundedNumber(value);
+			}
+			return out;
+		}
+		function safeFields(fields, allowedKeys = SAFE_FIELD_KEYS) {
+			const out = {};
+			if (!fields || typeof fields !== "object" || Array.isArray(fields)) return out;
+			for (const [key, value] of Object.entries(fields)) {
+				if (!allowedKeys.has(key) || UNSAFE_KEY_PATTERN.test(key) && !SAFE_PATH_LABEL_KEYS.has(key)) continue;
+				if (typeof value === "boolean") out[key] = value;
+				else if (Number.isFinite(Number(value)) && !/_hash$/.test(key)) out[key] = boundedNumber(value);
+				else {
+					const safe = boundedToken(value, "", 120);
+					if (safe) out[key] = safe;
+				}
+			}
+			return out;
+		}
+		function safeContext(context) {
+			const out = Object.assign({}, {
+				pluginId: PLUGIN_ID,
+				sourceSurface: "embedded-plugin"
+			});
+			const input = context && typeof context === "object" && !Array.isArray(context) ? context : {};
+			for (const [key, value] of Object.entries(input)) {
+				if (!SAFE_CONTEXT_KEYS.has(key) || UNSAFE_KEY_PATTERN.test(key) && !SAFE_PATH_LABEL_KEYS.has(key)) continue;
+				if (typeof value === "boolean") out[key] = value;
+				else if (Number.isFinite(Number(value)) && !/_hash$/.test(key)) out[key] = boundedNumber(value);
+				else {
+					const safe = boundedToken(value, "", 160);
+					if (safe) out[key] = safe;
+				}
+			}
+			out.pluginId = PLUGIN_ID;
+			out.sourceSurface = "embedded-plugin";
+			return out;
+		}
+		function safeBreadcrumbs(breadcrumbs) {
+			if (!Array.isArray(breadcrumbs)) return [];
+			return breadcrumbs.slice(0, MAX_BREADCRUMBS).map((entry) => {
+				const input = entry && typeof entry === "object" ? entry : {};
+				const out = {
+					kind: boundedToken(input.kind, "runtime", 80),
+					code: boundedToken(input.code, "unknown", 80),
+					status: boundedToken(input.status, "failed", 40)
+				};
+				const bucket = boundedToken(input.duration_bucket || input.durationBucket || "", "", 40);
+				if (bucket) out.duration_bucket = bucket;
+				const fields = safeFields(input.fields || {});
+				if (Object.keys(fields).length) out.fields = fields;
+				return out;
+			});
+		}
+		function safeSeverity(value) {
+			const text = String(value || "").trim().toUpperCase();
+			return text === "H1" || text === "H2" || text === "H3" ? text : "H2";
+		}
+		function safeConfidence(value) {
+			const number = Number(value);
+			if (!Number.isFinite(number)) return .7;
+			return Math.max(0, Math.min(1, Math.round(number * 100) / 100));
+		}
+		function sanitizeInput(input = {}) {
+			const category = boundedToken(input.category, "codex_runtime_failure", 80);
+			const diagnosticType = boundedToken(input.diagnostic_type || input.diagnosticType, category, 80);
+			const errorCode = boundedToken(input.error_code || input.errorCode, `${diagnosticType}_failed`, 100);
+			const context = safeContext(input.context || {});
+			const counts = safeCounts(input.counts || {});
+			const breadcrumbs = safeBreadcrumbs(input.breadcrumbs || []);
+			const bucket = boundedToken(input.duration_bucket || input.durationBucket || durationBucket(input.durationMs), "", 40);
+			return {
+				category,
+				diagnostic_type: diagnosticType,
+				severity_hint: safeSeverity(input.severity_hint || input.severityHint),
+				evidence_confidence: safeConfidence(input.evidence_confidence || input.evidenceConfidence),
+				error_code: errorCode,
+				duration_bucket: bucket,
+				counts,
+				context,
+				breadcrumbs
+			};
+		}
+		function isSlowPathEvent(event) {
+			return event && event.category === "thread_session_slow_path" && /_slow_path$/.test(event.diagnostic_type || "");
+		}
+		function clearKeyFor(event) {
+			if (isSlowPathEvent(event)) return [
+				event.category,
+				event.diagnostic_type,
+				event.context.surface || "",
+				event.context.route_kind || ""
+			].join("|");
+			return [
+				event.category,
+				event.diagnostic_type,
+				event.context.surface || "",
+				event.context.action || "",
+				event.context.route_kind || "",
+				event.context.thread_hash || "",
+				event.context.task_hash || "",
+				event.context.item_hash || ""
+			].join("|");
+		}
+		function signatureFor(event) {
+			if (isSlowPathEvent(event)) return [clearKeyFor(event), event.error_code].join("|");
+			return [
+				clearKeyFor(event),
+				event.error_code,
+				event.context.build_id || "",
+				event.context.read_mode || "",
+				event.context.render_mode || "",
+				event.context.source_kind || ""
+			].join("|");
+		}
+		function reportFor(event, repeatedFailures) {
+			const counts = Object.assign({}, event.counts, { repeated_failures: boundedNumber(repeatedFailures, 1) });
+			const breadcrumbs = event.breadcrumbs.length ? event.breadcrumbs : [{
+				kind: event.context.surface || event.category,
+				code: event.error_code,
+				status: "failed",
+				fields: safeFields({
+					repeated_failures: repeatedFailures,
+					thread_hash: event.context.thread_hash || "",
+					task_hash: event.context.task_hash || "",
+					item_hash: event.context.item_hash || ""
+				})
+			}];
+			return {
+				type: "homeai.diagnostic.report",
+				version: 1,
+				pluginId: PLUGIN_ID,
+				category: event.category,
+				diagnostic_type: event.diagnostic_type,
+				severity_hint: event.severity_hint,
+				evidence_confidence: event.evidence_confidence,
+				error_code: event.error_code,
+				duration_bucket: event.duration_bucket || void 0,
+				counts,
+				context: event.context,
+				breadcrumbs
+			};
+		}
+		function normalizeSlowPathReportMode(options = {}) {
+			const mode = String(options.slowPathReportMode || "").trim().toLowerCase();
+			if (mode === "report" || mode === "post") return "report";
+			if (mode === "observe" || mode === "local" || mode === "off") return "observe";
+			if (options.reportSlowPath === true || options.allowSlowPathReports === true) return "report";
+			return DEFAULT_SLOW_PATH_REPORT_MODE;
+		}
+		function createDiagnosticReporter(options = {}) {
+			const threshold = Math.max(1, Number(options.threshold || DEFAULT_THRESHOLD) || DEFAULT_THRESHOLD);
+			const throttleMs = Math.max(0, Number(options.throttleMs || DEFAULT_THROTTLE_MS) || DEFAULT_THROTTLE_MS);
+			const slowPathReportMode = normalizeSlowPathReportMode(options);
+			const now = typeof options.now === "function" ? options.now : () => Date.now();
+			const failures = /* @__PURE__ */ new Map();
+			const lastReportedAt = /* @__PURE__ */ new Map();
+			function recordFailure(input) {
+				const event = sanitizeInput(input || {});
+				const signature = signatureFor(event);
+				const clearKey = clearKeyFor(event);
+				const previous = failures.get(signature);
+				const count = (previous && previous.count ? previous.count : 0) + 1;
+				failures.set(signature, {
+					count,
+					clearKey,
+					lastAt: now()
+				});
+				if (isSlowPathEvent(event) && slowPathReportMode !== "report") return {
+					eligible: false,
+					report: null,
+					repeatedFailures: count,
+					signature,
+					clearKey,
+					threshold,
+					observeOnly: true,
+					reason: "slow_path_observe_only"
+				};
+				const lastReportAt = Number(lastReportedAt.get(signature) || 0);
+				if (!(count >= threshold && (!lastReportAt || now() - lastReportAt >= throttleMs))) return {
+					eligible: false,
+					report: null,
+					repeatedFailures: count,
+					signature,
+					clearKey,
+					threshold,
+					observeOnly: false,
+					reason: "below_threshold_or_throttled"
+				};
+				lastReportedAt.set(signature, now());
+				return {
+					eligible: true,
+					report: reportFor(event, count),
+					repeatedFailures: count,
+					signature,
+					clearKey,
+					threshold,
+					observeOnly: false,
+					reason: "eligible"
+				};
+			}
+			function recordSuccess(input) {
+				const event = sanitizeInput(input || {});
+				if (isSlowPathEvent(event)) return {
+					cleared: 0,
+					clearKey: clearKeyFor(event),
+					reason: "slow-path-rolling-window"
+				};
+				const clearKey = clearKeyFor(event);
+				let cleared = 0;
+				for (const [signature, entry] of failures.entries()) if (entry && entry.clearKey === clearKey) {
+					failures.delete(signature);
+					cleared += 1;
+				}
+				return {
+					cleared,
+					clearKey
+				};
+			}
+			function failureCount(input) {
+				const signature = signatureFor(sanitizeInput(input || {}));
+				const entry = failures.get(signature);
+				return entry ? entry.count : 0;
+			}
+			return {
+				failureCount,
+				recordFailure,
+				recordSuccess,
+				threshold,
+				throttleMs,
+				slowPathReportMode
+			};
+		}
+		function postReportToHomeAi(options = {}) {
+			const report = options.report;
+			const parentWindow = options.parentWindow;
+			const selfWindow = options.selfWindow || null;
+			if (!options.embedded) return {
+				ok: false,
+				reason: "not_embedded"
+			};
+			if (!report || report.type !== "homeai.diagnostic.report") return {
+				ok: false,
+				reason: "invalid_report"
+			};
+			if (!parentWindow || selfWindow && parentWindow === selfWindow) return {
+				ok: false,
+				reason: "missing_parent"
+			};
+			try {
+				parentWindow.postMessage(report, options.targetOrigin || "*");
+				return {
+					ok: true,
+					reason: "posted"
+				};
+			} catch (_) {
+				return {
+					ok: false,
+					reason: "post_failed"
+				};
+			}
+		}
+		return {
+			DEFAULT_THRESHOLD,
+			DEFAULT_THROTTLE_MS,
+			DEFAULT_SLOW_PATH_REPORT_MODE,
+			boundedToken,
+			createDiagnosticReporter,
+			durationBucket,
+			hashIdentifier,
+			postReportToHomeAi,
+			sanitizeInput,
+			stableTextHash
+		};
+	});
+}));
+//#endregion
+//#region public/thread-diagnostic-events.js
+var require_thread_diagnostic_events = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadDiagnosticEvents = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const MAX_COUNT = 1e5;
+		function compactToken(value, fallback = "", maxLength = 80) {
+			return String(value || "").trim().replace(/[^a-zA-Z0-9_.:-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, maxLength) || fallback;
+		}
+		function boundedCount(value) {
+			const number = Number(value);
+			if (!Number.isFinite(number) || number < 0) return 0;
+			return Math.min(MAX_COUNT, Math.trunc(number));
+		}
+		function boundedRolloutMb(value) {
+			const number = Number(value);
+			if (!Number.isFinite(number) || number <= 0) return 0;
+			return boundedCount(Math.ceil(number / (1024 * 1024)));
+		}
+		function boundedPayloadKb(value) {
+			const number = Number(value);
+			if (!Number.isFinite(number) || number <= 0) return 0;
+			return boundedCount(Math.ceil(number / 1024));
+		}
+		function projectionDiagnosticContext(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const out = {
+				surface: compactToken(source.surface, "conversation-render", 80),
+				action: compactToken(source.action, "render", 80)
+			};
+			const routeKind = compactToken(source.route_kind || source.routeKind, "", 80);
+			const readMode = compactToken(source.read_mode || source.readMode, "", 80);
+			const renderMode = compactToken(source.render_mode || source.renderMode, "", 80);
+			const threadHash = compactToken(source.thread_hash || source.threadHash, "", 80);
+			const turnHash = compactToken(source.turn_hash || source.turnHash, "", 80);
+			if (routeKind) out.route_kind = routeKind;
+			if (readMode) out.read_mode = readMode;
+			if (renderMode) out.render_mode = renderMode;
+			if (threadHash) out.thread_hash = threadHash;
+			if (turnHash) out.turn_hash = turnHash;
+			return out;
+		}
+		function projectionDiagnosticCounts(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const out = {
+				dom_count: boundedCount(source.dom_count || source.domCount),
+				duplicate_count: boundedCount(source.duplicate_count || source.duplicateCount),
+				visible_count: boundedCount(source.visible_count || source.visibleCount),
+				turn_count: boundedCount(source.turn_count || source.turnCount)
+			};
+			const paneCount = boundedCount(source.pane_count || source.paneCount);
+			if (paneCount) out.pane_count = paneCount;
+			const orderMismatchCount = boundedCount(source.order_mismatch_count || source.orderMismatchCount);
+			if (orderMismatchCount) out.order_mismatch_count = orderMismatchCount;
+			const latestMismatchCount = boundedCount(source.latest_mismatch_count || source.latestMismatchCount);
+			if (latestMismatchCount) out.latest_mismatch_count = latestMismatchCount;
+			const missingDomTurnCount = boundedCount(source.missing_dom_turn_count || source.missingDomTurnCount);
+			if (missingDomTurnCount) out.missing_dom_turn_count = missingDomTurnCount;
+			return out;
+		}
+		function projectionDiagnosticSnapshot(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			return {
+				renderedSignature: String(source.renderedSignature || ""),
+				currentSignature: String(source.currentSignature || ""),
+				context: projectionDiagnosticContext(source.context || {}),
+				counts: projectionDiagnosticCounts(source.counts || {})
+			};
+		}
+		function visibleShapeFrom(deps, thread) {
+			if (typeof deps.visibleShape === "function") {
+				const shape = deps.visibleShape(thread);
+				if (shape && typeof shape === "object") return shape;
+			}
+			return {
+				visibleTurnCount: 0,
+				visibleItemCount: 0
+			};
+		}
+		function domCountsFromShape(domShape = {}) {
+			return {
+				dom_count: domShape.renderKeyCount || domShape.dom_count || domShape.domCount,
+				duplicate_count: domShape.duplicateRenderKeyCount || domShape.duplicate_count || domShape.duplicateCount
+			};
+		}
+		function conversationProjectionDiagnosticSnapshot(input = {}, deps = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const action = compactToken(source.source || source.action, "render", 80);
+			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+			const renderedSignature = String(source.renderedConversationSignature || source.renderedSignature || "");
+			const baseCounts = domCountsFromShape(source.domShape && typeof source.domShape === "object" ? source.domShape : {});
+			const tileMode = source.threadTileMode === true;
+			const tileDomActive = source.tileDomActive === true;
+			if (tileMode) {
+				if (!tileDomActive) return null;
+				const layout = source.tileLayout || (typeof deps.tileLayout === "function" ? deps.tileLayout() : null);
+				if (!layout || !layout.enabled) return null;
+				const ids = Array.isArray(source.tileIds) ? source.tileIds : typeof deps.tileCandidateIds === "function" ? deps.tileCandidateIds(layout) : [];
+				if (!ids.length) return null;
+				const displayLayout = source.tileDisplayLayout || (typeof deps.tileDisplayLayout === "function" ? deps.tileDisplayLayout(layout, ids) : layout);
+				const currentSignature = source.tileSignature || source.currentSignature || (typeof deps.tileRenderSignature === "function" ? deps.tileRenderSignature(displayLayout, ids) : "");
+				const visibleShape = ids.reduce((acc, id) => {
+					const shape = visibleShapeFrom(deps, typeof deps.tileThreadForId === "function" ? deps.tileThreadForId(id) : null);
+					acc.visibleTurnCount += boundedCount(shape.visibleTurnCount);
+					acc.visibleItemCount += boundedCount(shape.visibleItemCount);
+					return acc;
+				}, {
+					visibleTurnCount: 0,
+					visibleItemCount: 0
+				});
+				return projectionDiagnosticSnapshot({
+					renderedSignature,
+					currentSignature,
+					context: {
+						surface: "conversation-render",
+						action,
+						route_kind: "thread-tile",
+						read_mode: "mixed",
+						render_mode: renderMode
+					},
+					counts: Object.assign({}, baseCounts, {
+						visible_count: visibleShape.visibleItemCount,
+						turn_count: visibleShape.visibleTurnCount,
+						pane_count: ids.length
+					})
+				});
+			}
+			if (tileDomActive) return null;
+			const thread = source.thread || null;
+			const visibleShape = visibleShapeFrom(deps, thread);
+			return projectionDiagnosticSnapshot({
+				renderedSignature,
+				currentSignature: source.currentSignature || (typeof deps.singleSignature === "function" ? deps.singleSignature(thread) : ""),
+				context: {
+					surface: "conversation-render",
+					action,
+					read_mode: thread && thread.mobileReadMode || "",
+					render_mode: renderMode
+				},
+				counts: Object.assign({}, baseCounts, {
+					visible_count: visibleShape.visibleItemCount,
+					turn_count: visibleShape.visibleTurnCount
+				})
+			});
+		}
+		function turnOrderDiagnosticSnapshot(input = {}, deps = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const expectedIds = Array.isArray(source.expectedTurnIds) ? source.expectedTurnIds.map((id) => String(id || "")).filter(Boolean) : [];
+			const domIds = Array.isArray(source.domTurnIds) ? source.domTurnIds.map((id) => String(id || "")).filter(Boolean) : [];
+			if (!expectedIds.length) return null;
+			const comparableCount = Math.min(expectedIds.length, domIds.length);
+			let orderMismatchCount = Math.abs(expectedIds.length - domIds.length);
+			for (let index = 0; index < comparableCount; index += 1) if (expectedIds[index] !== domIds[index]) orderMismatchCount += 1;
+			const expectedLatestId = expectedIds[expectedIds.length - 1] || "";
+			const domLatestId = domIds[domIds.length - 1] || "";
+			const latestMismatch = Boolean(expectedLatestId && (!domLatestId || expectedLatestId !== domLatestId));
+			const turnHash = compactToken(source.turnHash || (typeof deps.turnHash === "function" ? deps.turnHash(expectedLatestId) : ""), "", 80);
+			return projectionDiagnosticSnapshot({
+				context: {
+					surface: "conversation-render",
+					action: source.source || source.action,
+					read_mode: source.readMode || source.read_mode,
+					render_mode: source.renderMode || source.render_mode,
+					thread_hash: source.threadHash || source.thread_hash,
+					turn_hash: turnHash
+				},
+				counts: {
+					dom_count: domIds.length,
+					visible_count: expectedIds.length,
+					turn_count: expectedIds.length,
+					order_mismatch_count: orderMismatchCount,
+					latest_mismatch_count: latestMismatch ? 1 : 0,
+					missing_dom_turn_count: !domIds.length ? expectedIds.length : 0
+				}
+			});
+		}
+		function hasRenderSignatureMismatch(snapshot) {
+			const normalized = projectionDiagnosticSnapshot(snapshot);
+			return Boolean(normalized.renderedSignature && normalized.renderedSignature !== normalized.currentSignature);
+		}
+		function hasDuplicateRenderKeys(snapshot) {
+			return projectionDiagnosticSnapshot(snapshot).counts.duplicate_count > 0;
+		}
+		function hasTurnOrderMismatch(snapshot) {
+			const counts = projectionDiagnosticSnapshot(snapshot).counts;
+			return counts.order_mismatch_count > 0 || counts.latest_mismatch_count > 0 || counts.missing_dom_turn_count > 0;
+		}
+		function renderSignatureMismatchDiagnosticEvent(snapshot = {}) {
+			const normalized = projectionDiagnosticSnapshot(snapshot);
+			const context = normalized.context;
+			const counts = normalized.counts;
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "render_signature_mismatch",
+				severity_hint: "H2",
+				evidence_confidence: .74,
+				error_code: "render_signature_mismatch",
+				context,
+				counts,
+				breadcrumbs: [{
+					kind: "conversation-render",
+					code: "signature-check",
+					status: "failed",
+					fields: {
+						read_mode: context.read_mode || "",
+						render_mode: context.render_mode || "",
+						dom_count: counts.dom_count,
+						visible_count: counts.visible_count
+					}
+				}]
+			};
+		}
+		function renderSignatureMismatchDiagnosticSuccess(snapshot = {}) {
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "render_signature_mismatch",
+				error_code: "render_signature_mismatch",
+				context: projectionDiagnosticSnapshot(snapshot).context
+			};
+		}
+		function duplicateRenderKeysDiagnosticEvent(snapshot = {}) {
+			const normalized = projectionDiagnosticSnapshot(snapshot);
+			const counts = normalized.counts;
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "duplicate_render_keys",
+				severity_hint: "H2",
+				evidence_confidence: .78,
+				error_code: "duplicate_render_keys",
+				context: normalized.context,
+				counts,
+				breadcrumbs: [{
+					kind: "conversation-render",
+					code: "render-key-check",
+					status: "failed",
+					fields: {
+						duplicate_count: counts.duplicate_count,
+						dom_count: counts.dom_count,
+						visible_count: counts.visible_count
+					}
+				}]
+			};
+		}
+		function duplicateRenderKeysDiagnosticSuccess(snapshot = {}) {
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "duplicate_render_keys",
+				error_code: "duplicate_render_keys",
+				context: projectionDiagnosticSnapshot(snapshot).context
+			};
+		}
+		function turnOrderMismatchDiagnosticEvent(snapshot = {}) {
+			const normalized = projectionDiagnosticSnapshot(snapshot);
+			const counts = normalized.counts;
+			const context = normalized.context;
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "turn_order_mismatch",
+				severity_hint: "H2",
+				evidence_confidence: .82,
+				error_code: "turn_order_mismatch",
+				context,
+				counts,
+				breadcrumbs: [{
+					kind: "conversation-render",
+					code: "turn-order-check",
+					status: "failed",
+					fields: {
+						read_mode: context.read_mode || "",
+						render_mode: context.render_mode || "",
+						dom_count: counts.dom_count,
+						visible_count: counts.visible_count,
+						turn_hash: context.turn_hash || "",
+						order_mismatch_count: counts.order_mismatch_count || 0,
+						latest_mismatch_count: counts.latest_mismatch_count || 0,
+						missing_dom_turn_count: counts.missing_dom_turn_count || 0
+					}
+				}]
+			};
+		}
+		function turnOrderMismatchDiagnosticSuccess(snapshot = {}) {
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "turn_order_mismatch",
+				error_code: "turn_order_mismatch",
+				context: projectionDiagnosticSnapshot(snapshot).context
+			};
+		}
+		function conversationProjectionConsistencyEffects(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const snapshot = source.snapshot || null;
+			const orderSnapshot = source.orderSnapshot || null;
+			const effects = [];
+			if (snapshot) {
+				const normalized = projectionDiagnosticSnapshot(snapshot);
+				const signatureMismatch = hasRenderSignatureMismatch(normalized);
+				effects.push({
+					type: signatureMismatch ? "diagnostic-failure" : "diagnostic-success",
+					diagnostic: signatureMismatch ? renderSignatureMismatchDiagnosticEvent(normalized) : renderSignatureMismatchDiagnosticSuccess(normalized),
+					diagnosticType: "render_signature_mismatch",
+					reason: signatureMismatch ? "render-signature-mismatch" : "render-signature-match"
+				});
+				const duplicateKeys = hasDuplicateRenderKeys(normalized);
+				effects.push({
+					type: duplicateKeys ? "diagnostic-failure" : "diagnostic-success",
+					diagnostic: duplicateKeys ? duplicateRenderKeysDiagnosticEvent(normalized) : duplicateRenderKeysDiagnosticSuccess(normalized),
+					diagnosticType: "duplicate_render_keys",
+					reason: duplicateKeys ? "duplicate-render-keys" : "no-duplicate-render-keys"
+				});
+			}
+			if (orderSnapshot) {
+				const normalizedOrder = projectionDiagnosticSnapshot(orderSnapshot);
+				const turnOrderMismatch = hasTurnOrderMismatch(normalizedOrder);
+				effects.push({
+					type: turnOrderMismatch ? "diagnostic-failure" : "diagnostic-success",
+					diagnostic: turnOrderMismatch ? turnOrderMismatchDiagnosticEvent(normalizedOrder) : turnOrderMismatchDiagnosticSuccess(normalizedOrder),
+					diagnosticType: "turn_order_mismatch",
+					reason: turnOrderMismatch ? "turn-order-mismatch" : "turn-order-match"
+				});
+			}
+			return {
+				effects,
+				reason: effects.length ? "projection-consistency-effects" : "no-snapshot"
+			};
+		}
+		function primaryShellSelectionConflictContext(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const context = {
+				surface: "conversation-render",
+				action: compactToken(source.action, "primary-shell-selection", 80),
+				route_kind: compactToken(source.routeKind || source.route_kind, "embedded-primary", 80)
+			};
+			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+			const sourceKind = compactToken(source.sourceKind || source.source_kind, "", 80);
+			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+			if (readMode) context.read_mode = readMode;
+			if (renderMode) context.render_mode = renderMode;
+			if (sourceKind) context.source_kind = sourceKind;
+			if (threadHash) context.thread_hash = threadHash;
+			return context;
+		}
+		function primaryShellSelectionConflictCounts(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			return {
+				visible_count: boundedCount(source.visibleItems || source.visible_count),
+				turn_count: boundedCount(source.turns || source.turn_count),
+				item_count: boundedCount(source.items || source.item_count),
+				dom_count: boundedCount(source.domCount || source.dom_count),
+				previous_count: boundedCount(source.previousCount || source.previous_count),
+				has_current_thread: source.hasCurrentThread || source.has_current_thread ? 1 : 0,
+				has_current_thread_id: source.hasCurrentThreadId || source.has_current_thread_id ? 1 : 0,
+				has_thread_load_controller: source.hasThreadLoadController || source.has_thread_load_controller ? 1 : 0,
+				startup_thread_open_pending: source.startupThreadOpenPending || source.startup_thread_open_pending ? 1 : 0,
+				mobile_loading: source.mobileLoading || source.mobile_loading ? 1 : 0,
+				recent_detail_age_ms: boundedCount(source.recentDetailAgeMs || source.recent_detail_age_ms)
+			};
+		}
+		function primaryShellSelectionConflictDiagnosticEvent(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const context = primaryShellSelectionConflictContext(source);
+			const counts = primaryShellSelectionConflictCounts(source);
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "primary_shell_selection_conflict",
+				severity_hint: "H2",
+				evidence_confidence: .82,
+				error_code: compactToken(source.reason, "primary_shell_selection_conflict", 80),
+				context,
+				counts,
+				breadcrumbs: [{
+					kind: "conversation-render",
+					code: "primary-shell-selection",
+					status: "failed",
+					fields: {
+						read_mode: context.read_mode || "",
+						render_mode: context.render_mode || "",
+						source_kind: context.source_kind || "",
+						thread_hash: context.thread_hash || "",
+						dom_count: counts.dom_count,
+						visible_count: counts.visible_count,
+						turn_count: counts.turn_count,
+						item_count: counts.item_count,
+						previous_count: counts.previous_count
+					}
+				}]
+			};
+		}
+		function primaryShellSelectionConflictDiagnosticSuccess(input = {}) {
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "primary_shell_selection_conflict",
+				error_code: "primary_shell_selection_conflict",
+				context: primaryShellSelectionConflictContext(input)
+			};
+		}
+		function emptyVisibleDetailMismatchContext(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const context = {
+				surface: "conversation-render",
+				action: compactToken(source.action, "single-thread-empty-state", 80),
+				route_kind: compactToken(source.routeKind || source.route_kind, "single-thread", 80)
+			};
+			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+			const sourceKind = compactToken(source.sourceKind || source.source_kind, "", 80);
+			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+			if (readMode) context.read_mode = readMode;
+			if (renderMode) context.render_mode = renderMode;
+			if (sourceKind) context.source_kind = sourceKind;
+			if (threadHash) context.thread_hash = threadHash;
+			return context;
+		}
+		function emptyVisibleDetailMismatchCounts(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			return {
+				visible_count: boundedCount(source.visibleItems || source.visible_count),
+				turn_count: boundedCount(source.turns || source.turn_count),
+				item_count: boundedCount(source.items || source.item_count),
+				current_visible_count: boundedCount(source.currentVisibleItems || source.current_visible_count),
+				current_turn_count: boundedCount(source.currentTurns || source.current_turn_count),
+				dom_count: boundedCount(source.domCount || source.dom_count),
+				previous_count: boundedCount(source.previousCount || source.previous_count),
+				detail_loaded: source.detailLoaded || source.detail_loaded ? 1 : 0,
+				mobile_loading: source.mobileLoading || source.mobile_loading ? 1 : 0,
+				recent_detail_age_ms: boundedCount(source.recentDetailAgeMs || source.recent_detail_age_ms)
+			};
+		}
+		function emptyVisibleDetailMismatchDiagnosticEvent(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const context = emptyVisibleDetailMismatchContext(source);
+			const counts = emptyVisibleDetailMismatchCounts(source);
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "empty_visible_detail_mismatch",
+				severity_hint: "H2",
+				evidence_confidence: .84,
+				error_code: compactToken(source.reason, "empty_visible_detail_mismatch", 80),
+				context,
+				counts,
+				breadcrumbs: [{
+					kind: "conversation-render",
+					code: "empty-state-contract",
+					status: "failed",
+					fields: {
+						read_mode: context.read_mode || "",
+						render_mode: context.render_mode || "",
+						source_kind: context.source_kind || "",
+						thread_hash: context.thread_hash || "",
+						visible_count: counts.visible_count,
+						turn_count: counts.turn_count,
+						item_count: counts.item_count,
+						dom_count: counts.dom_count,
+						previous_count: counts.previous_count
+					}
+				}]
+			};
+		}
+		function emptyVisibleDetailMismatchDiagnosticSuccess(input = {}) {
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "empty_visible_detail_mismatch",
+				error_code: "empty_visible_detail_mismatch",
+				context: emptyVisibleDetailMismatchContext(input)
+			};
+		}
+		function emptyCachedDetailReuseContext(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const context = {
+				surface: "thread-session",
+				action: compactToken(source.action, "thread-open-cache-reuse", 80),
+				route_kind: compactToken(source.routeKind || source.route_kind, "single-thread", 80)
+			};
+			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+			const sourceKind = compactToken(source.sourceKind || source.source_kind, "", 80);
+			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+			if (readMode) context.read_mode = readMode;
+			if (sourceKind) context.source_kind = sourceKind;
+			if (threadHash) context.thread_hash = threadHash;
+			return context;
+		}
+		function emptyCachedDetailReuseCounts(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			return {
+				current_turn_count: boundedCount(source.currentTurns || source.current_turn_count),
+				current_visible_count: boundedCount(source.currentVisibleItems || source.current_visible_count),
+				item_count: boundedCount(source.items || source.item_count),
+				detail_loaded: source.detailLoaded || source.detail_loaded ? 1 : 0,
+				reusable_detail: source.reusableDetail || source.reusable_detail ? 1 : 0,
+				mobile_loading: source.mobileLoading || source.mobile_loading ? 1 : 0,
+				thread_task_card_count: boundedCount(source.threadTaskCardCount || source.thread_task_card_count)
+			};
+		}
+		function emptyCachedDetailReuseBlockedDiagnosticEvent(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const context = emptyCachedDetailReuseContext(source);
+			const counts = emptyCachedDetailReuseCounts(source);
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "empty_cached_detail_reuse_blocked",
+				severity_hint: "H2",
+				evidence_confidence: .8,
+				error_code: compactToken(source.reason, "empty_cached_detail_reuse_blocked", 80),
+				context,
+				counts,
+				breadcrumbs: [{
+					kind: "thread-session",
+					code: "thread-open-cache-reuse",
+					status: "blocked",
+					fields: {
+						read_mode: context.read_mode || "",
+						source_kind: context.source_kind || "",
+						thread_hash: context.thread_hash || "",
+						current_turn_count: counts.current_turn_count,
+						current_visible_count: counts.current_visible_count,
+						item_count: counts.item_count,
+						detail_loaded: counts.detail_loaded,
+						reusable_detail: counts.reusable_detail
+					}
+				}]
+			};
+		}
+		function emptyCachedDetailReuseDiagnosticSuccess(input = {}) {
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "empty_cached_detail_reuse_blocked",
+				error_code: "empty_cached_detail_reuse_blocked",
+				context: emptyCachedDetailReuseContext(input)
+			};
+		}
+		function detailPatchRejectedDiagnosticEvent(input = {}) {
+			const readMode = compactToken(input.readMode, "", 80);
+			const renderMode = compactToken(input.renderMode, "", 80);
+			const renderPlanReason = compactToken(input.renderPlanReason, "", 80);
+			const patchRejectReason = compactToken(input.patchRejectReason, "unknown", 80);
+			const previousCount = boundedCount(input.previousVisibleItemCount);
+			const visibleCount = boundedCount(input.visibleItemCount);
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "detail_patch_rejected",
+				severity_hint: "H3",
+				evidence_confidence: .7,
+				error_code: "detail_patch_rejected",
+				context: {
+					surface: "conversation-render",
+					action: "thread-detail-refresh",
+					read_mode: readMode,
+					render_mode: renderMode,
+					render_plan_reason: renderPlanReason,
+					patch_reject_reason: patchRejectReason
+				},
+				counts: {
+					previous_count: previousCount,
+					visible_count: visibleCount
+				},
+				breadcrumbs: [{
+					kind: "conversation-render",
+					code: "detail-patch",
+					status: "rejected",
+					fields: {
+						read_mode: readMode,
+						render_mode: renderMode,
+						render_plan_reason: renderPlanReason,
+						patch_reject_reason: patchRejectReason,
+						visible_count: visibleCount
+					}
+				}]
+			};
+		}
+		function threadDetailRefreshFailedDiagnosticEvent(input = {}) {
+			const threadHash = compactToken(input.threadHash, "", 80);
+			const errorCode = compactToken(input.errorCode, "thread_detail_refresh_failed", 80);
+			const durationBucket = compactToken(input.durationBucket, "", 80);
+			const statusCode = boundedCount(input.statusCode);
+			return {
+				category: "thread_session_load_failed",
+				diagnostic_type: "thread_detail_refresh_failed",
+				severity_hint: "H2",
+				evidence_confidence: .74,
+				error_code: errorCode,
+				duration_bucket: durationBucket,
+				context: {
+					surface: "thread-session",
+					action: "thread-detail-refresh",
+					thread_hash: threadHash
+				},
+				counts: { status_code: statusCode },
+				breadcrumbs: [{
+					kind: "thread-session",
+					code: "thread-detail-refresh",
+					status: "failed",
+					duration_bucket: durationBucket,
+					fields: {
+						status_code: statusCode,
+						thread_hash: threadHash
+					}
+				}]
+			};
+		}
+		function threadDetailLoadFailedDiagnosticEvent(input = {}) {
+			const threadHash = compactToken(input.threadHash, "", 80);
+			const errorCode = compactToken(input.errorCode, "thread_detail_load_failed", 80);
+			const durationBucket = compactToken(input.durationBucket, "", 80);
+			const statusCode = boundedCount(input.statusCode);
+			return {
+				category: "thread_session_load_failed",
+				diagnostic_type: "thread_detail_load_failed",
+				severity_hint: "H2",
+				evidence_confidence: .76,
+				error_code: errorCode,
+				duration_bucket: durationBucket,
+				context: {
+					surface: "thread-session",
+					action: "thread-detail-load",
+					thread_hash: threadHash
+				},
+				counts: { status_code: statusCode },
+				breadcrumbs: [{
+					kind: "thread-session",
+					code: "thread-detail-load",
+					status: "failed",
+					duration_bucket: durationBucket,
+					fields: {
+						status_code: statusCode,
+						thread_hash: threadHash
+					}
+				}]
+			};
+		}
+		function threadDetailSlowPathDiagnosticEvent(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const action = compactToken(source.action, "thread-detail", 80);
+			const reason = compactToken(source.reason, "elapsed-slow", 80);
+			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+			const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
+			const coldPathOwner = compactToken(source.coldPathOwner || source.cold_path_owner, "", 80);
+			const coldPathReason = compactToken(source.coldPathReason || source.cold_path_reason, "", 80);
+			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+			const durationBucket = compactToken(source.durationBucket || source.duration_bucket, "", 80);
+			const counts = {
+				elapsed_ms: boundedCount(source.elapsedMs || source.elapsed_ms),
+				api_elapsed_ms: boundedCount(source.apiElapsedMs || source.api_elapsed_ms),
+				render_elapsed_ms: boundedCount(source.renderElapsedMs || source.render_elapsed_ms),
+				threshold_ms: boundedCount(source.thresholdMs || source.threshold_ms),
+				turn_count: boundedCount(source.turns || source.turn_count),
+				visible_count: boundedCount(source.visibleItems || source.visible_count),
+				omitted_turns: boundedCount(source.omittedTurns || source.omitted_turns)
+			};
+			const rolloutMb = boundedRolloutMb(source.rolloutSizeBytes || source.rollout_size_bytes);
+			if (rolloutMb) counts.rollout_mb = rolloutMb;
+			const context = {
+				surface: "thread-session",
+				action
+			};
+			if (threadHash) context.thread_hash = threadHash;
+			if (readMode) context.read_mode = readMode;
+			if (renderMode) context.render_mode = renderMode;
+			if (performancePhase) context.performance_phase = performancePhase;
+			if (coldPathOwner) context.cold_path_owner = coldPathOwner;
+			if (coldPathReason) context.cold_path_reason = coldPathReason;
+			return {
+				category: "thread_session_slow_path",
+				diagnostic_type: "thread_detail_slow_path",
+				severity_hint: compactToken(source.severityHint || source.severity_hint, "H3", 8),
+				evidence_confidence: .7,
+				error_code: reason,
+				duration_bucket: durationBucket,
+				context,
+				counts,
+				breadcrumbs: [{
+					kind: "thread-session",
+					code: "thread-detail-slow-path",
+					status: "slow",
+					duration_bucket: durationBucket,
+					fields: {
+						read_mode: readMode,
+						render_mode: renderMode,
+						performance_phase: performancePhase,
+						cold_path_owner: coldPathOwner,
+						cold_path_reason: coldPathReason,
+						elapsed_ms: counts.elapsed_ms,
+						api_elapsed_ms: counts.api_elapsed_ms,
+						render_elapsed_ms: counts.render_elapsed_ms,
+						threshold_ms: counts.threshold_ms,
+						thread_hash: threadHash
+					}
+				}]
+			};
+		}
+		function threadDetailSlowPathDiagnosticSuccess(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const context = {
+				surface: "thread-session",
+				action: compactToken(source.action, "thread-detail", 80)
+			};
+			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+			if (threadHash) context.thread_hash = threadHash;
+			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+			if (readMode) context.read_mode = readMode;
+			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+			if (renderMode) context.render_mode = renderMode;
+			return {
+				category: "thread_session_slow_path",
+				diagnostic_type: "thread_detail_slow_path",
+				error_code: "thread_detail_slow_path",
+				context
+			};
+		}
+		function threadListSlowPathDiagnosticEvent(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const action = compactToken(source.action, "thread-list-load", 80);
+			const reason = compactToken(source.reason, "elapsed-slow", 80);
+			const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
+			const coldPathOwner = compactToken(source.coldPathOwner || source.cold_path_owner, "", 80);
+			const coldPathReason = compactToken(source.coldPathReason || source.cold_path_reason, "", 80);
+			const fallbackCacheDecision = compactToken(source.fallbackCacheDecision || source.fallback_cache_decision, "", 80);
+			const fallbackDeferredReason = compactToken(source.fallbackDeferredReason || source.fallback_deferred_reason, "", 80);
+			const appServerDeferredReason = compactToken(source.appServerDeferredReason || source.app_server_deferred_reason, "", 80);
+			const appServerRequestReason = compactToken(source.appServerRequestReason || source.app_server_request_reason, "", 80);
+			const durationBucket = compactToken(source.durationBucket || source.duration_bucket, "", 80);
+			const counts = {
+				elapsed_ms: boundedCount(source.elapsedMs || source.elapsed_ms),
+				api_elapsed_ms: boundedCount(source.apiElapsedMs || source.api_elapsed_ms),
+				render_elapsed_ms: boundedCount(source.renderElapsedMs || source.render_elapsed_ms),
+				threshold_ms: boundedCount(source.thresholdMs || source.threshold_ms),
+				result_count: boundedCount(source.count || source.result_count),
+				server_total_ms: boundedCount(source.totalMs || source.total_ms),
+				app_server_ms: boundedCount(source.appServerMs || source.app_server_ms),
+				app_server_rpc_ms: boundedCount(source.appServerRpcMs || source.app_server_rpc_ms),
+				app_server_unattributed_ms: boundedCount(source.appServerUnattributedMs || source.app_server_unattributed_ms),
+				fallback_ms: boundedCount(source.fallbackMs || source.fallback_ms),
+				merge_ms: boundedCount(source.mergeMs || source.merge_ms),
+				summary_merge_ms: boundedCount(source.summaryMergeTotalMs || source.summary_merge_ms),
+				fallback_snapshot_age_ms: boundedCount(source.fallbackSourceSnapshotAgeMs || source.fallback_snapshot_age_ms),
+				fallback_rollout_stat_count: boundedCount(source.fallbackRolloutFileStatCount || source.fallback_rollout_stat_count),
+				fallback_rollout_head_read_count: boundedCount(source.fallbackRolloutHeadReadCount || source.fallback_rollout_head_read_count),
+				fallback_rollout_summary_read_count: boundedCount(source.fallbackRolloutSummaryReadCount || source.fallback_rollout_summary_read_count),
+				app_server_request_limit: boundedCount(source.appServerRequestLimit || source.app_server_request_limit),
+				app_server_response_kb: boundedCount(source.appServerResponsePayloadKb || source.app_server_response_kb) || boundedPayloadKb(source.appServerResponsePayloadBytes || source.app_server_response_bytes),
+				silent: source.silent || source.is_silent ? 1 : 0,
+				has_search: source.hasSearch || source.has_search ? 1 : 0,
+				has_workspace: source.hasWorkspace || source.has_workspace ? 1 : 0,
+				mobile_fallback: source.mobileFallback || source.mobile_fallback ? 1 : 0
+			};
+			const context = {
+				surface: "thread-session",
+				action
+			};
+			if (performancePhase) context.performance_phase = performancePhase;
+			if (coldPathOwner) context.cold_path_owner = coldPathOwner;
+			if (coldPathReason) context.cold_path_reason = coldPathReason;
+			if (fallbackCacheDecision) context.fallback_cache_decision = fallbackCacheDecision;
+			if (fallbackDeferredReason) context.fallback_deferred_reason = fallbackDeferredReason;
+			if (appServerDeferredReason) context.app_server_deferred_reason = appServerDeferredReason;
+			if (appServerRequestReason) context.app_server_request_reason = appServerRequestReason;
+			return {
+				category: "thread_session_slow_path",
+				diagnostic_type: "thread_list_slow_path",
+				severity_hint: compactToken(source.severityHint || source.severity_hint, "H3", 8),
+				evidence_confidence: .7,
+				error_code: reason,
+				duration_bucket: durationBucket,
+				context,
+				counts,
+				breadcrumbs: [{
+					kind: "thread-session",
+					code: "thread-list-slow-path",
+					status: "slow",
+					duration_bucket: durationBucket,
+					fields: {
+						performance_phase: performancePhase,
+						cold_path_owner: coldPathOwner,
+						cold_path_reason: coldPathReason,
+						fallback_cache_decision: fallbackCacheDecision,
+						app_server_request_reason: appServerRequestReason,
+						elapsed_ms: counts.elapsed_ms,
+						api_elapsed_ms: counts.api_elapsed_ms,
+						render_elapsed_ms: counts.render_elapsed_ms,
+						threshold_ms: counts.threshold_ms,
+						result_count: counts.result_count
+					}
+				}]
+			};
+		}
+		function threadListSlowPathDiagnosticSuccess(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const context = {
+				surface: "thread-session",
+				action: compactToken(source.action, "thread-list-load", 80)
+			};
+			const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
+			if (performancePhase) context.performance_phase = performancePhase;
+			return {
+				category: "thread_session_slow_path",
+				diagnostic_type: "thread_list_slow_path",
+				error_code: "thread_list_slow_path",
+				context
+			};
+		}
+		function threadDetailResponseContractDiagnosticContext(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const context = {
+				surface: "thread-session",
+				action: compactToken(source.action, "thread-detail", 80)
+			};
+			const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+			const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+			const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+			const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
+			const projectionSource = compactToken(source.projectionSource || source.projection_source, "", 80);
+			const projectionPartialKind = compactToken(source.projectionPartialKind || source.projection_partial_kind, "", 80);
+			if (threadHash) context.thread_hash = threadHash;
+			if (readMode) context.read_mode = readMode;
+			if (renderMode) context.render_mode = renderMode;
+			if (performancePhase) context.performance_phase = performancePhase;
+			if (projectionSource) context.projection_source = projectionSource;
+			if (projectionPartialKind) context.projection_partial_kind = projectionPartialKind;
+			return context;
+		}
+		function threadDetailResponseContractCounts(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const out = {
+				turn_count: boundedCount(source.turns || source.turn_count),
+				item_count: boundedCount(source.items || source.item_count),
+				visible_count: boundedCount(source.visibleItems || source.visible_count),
+				active_turn_count: boundedCount(source.activeTurns || source.active_turn_count),
+				completed_turn_count: boundedCount(source.completedTurns || source.completed_turn_count),
+				omitted_turns: boundedCount(source.omittedTurns || source.omitted_turns),
+				older_cursor: source.olderCursor || source.older_cursor ? 1 : 0,
+				newer_cursor: source.newerCursor || source.newer_cursor ? 1 : 0,
+				projection_partial: source.projectionPartial || source.projection_partial ? 1 : 0,
+				response_budget_applied: source.responseBudgetApplied || source.response_budget_applied ? 1 : 0,
+				response_budget_progressive_active: source.responseBudgetProgressiveActiveApplied || source.response_budget_progressive_active ? 1 : 0,
+				response_budget_active_turn_count: boundedCount(source.responseBudgetActiveTurnCount || source.response_budget_active_turn_count),
+				response_budget_retained_item_count: boundedCount(source.responseBudgetRetainedItemCount || source.response_budget_retained_item_count)
+			};
+			const rolloutMb = boundedRolloutMb(source.rolloutSizeBytes || source.rollout_size_bytes);
+			if (rolloutMb) out.rollout_mb = rolloutMb;
+			return out;
+		}
+		function threadDetailResponseContractDiagnosticEvent(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const reason = compactToken(source.reason, "thread-detail-response-contract", 80);
+			const context = threadDetailResponseContractDiagnosticContext(source);
+			const counts = threadDetailResponseContractCounts(source);
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "thread_detail_response_contract_mismatch",
+				severity_hint: compactToken(source.severityHint || source.severity_hint, "H2", 8),
+				evidence_confidence: .82,
+				error_code: reason,
+				duration_bucket: compactToken(source.durationBucket || source.duration_bucket, "", 80),
+				context,
+				counts,
+				breadcrumbs: [{
+					kind: "thread-session",
+					code: "thread-detail-response-contract",
+					status: "failed",
+					fields: {
+						read_mode: context.read_mode || "",
+						render_mode: context.render_mode || "",
+						performance_phase: context.performance_phase || "",
+						projection_source: context.projection_source || "",
+						projection_partial_kind: context.projection_partial_kind || "",
+						turn_count: counts.turn_count,
+						item_count: counts.item_count,
+						visible_count: counts.visible_count,
+						active_turn_count: counts.active_turn_count,
+						older_cursor: counts.older_cursor,
+						newer_cursor: counts.newer_cursor,
+						projection_partial: counts.projection_partial,
+						response_budget_applied: counts.response_budget_applied,
+						response_budget_progressive_active: counts.response_budget_progressive_active,
+						response_budget_active_turn_count: counts.response_budget_active_turn_count,
+						response_budget_retained_item_count: counts.response_budget_retained_item_count,
+						thread_hash: context.thread_hash || ""
+					}
+				}]
+			};
+		}
+		function threadDetailResponseContractDiagnosticSuccess(input = {}) {
+			return {
+				category: "conversation_projection_mismatch",
+				diagnostic_type: "thread_detail_response_contract_mismatch",
+				error_code: "thread_detail_response_contract_mismatch",
+				context: threadDetailResponseContractDiagnosticContext(input)
+			};
+		}
+		function threadDetailResponseDiagnosticEffects(input = {}) {
+			const source = input && typeof input === "object" ? input : {};
+			const effects = [];
+			const slowPlan = source.slowPlan && typeof source.slowPlan === "object" ? source.slowPlan : null;
+			if (slowPlan) {
+				const shouldReport = slowPlan.shouldReport === true;
+				effects.push({
+					type: shouldReport ? "diagnostic-failure" : "diagnostic-success",
+					diagnostic: shouldReport ? threadDetailSlowPathDiagnosticEvent(slowPlan) : threadDetailSlowPathDiagnosticSuccess(source.slowSuccessInput || {}),
+					diagnosticType: "thread_detail_slow_path",
+					reason: shouldReport ? compactToken(slowPlan.reason, "thread-detail-slow-path", 80) : "thread-detail-slow-path-ok"
+				});
+			}
+			const contractPlan = source.contractPlan && typeof source.contractPlan === "object" ? source.contractPlan : null;
+			if (contractPlan) {
+				const shouldReport = contractPlan.shouldReport === true;
+				effects.push({
+					type: shouldReport ? "diagnostic-failure" : "diagnostic-success",
+					diagnostic: shouldReport ? threadDetailResponseContractDiagnosticEvent(contractPlan) : threadDetailResponseContractDiagnosticSuccess(contractPlan),
+					diagnosticType: "thread_detail_response_contract_mismatch",
+					reason: shouldReport ? compactToken(contractPlan.reason, "thread-detail-response-contract", 80) : "thread-detail-response-contract-ok"
+				});
+			}
+			return {
+				effects,
+				reason: effects.length ? "thread-detail-response-diagnostic-effects" : "no-diagnostic-plans"
+			};
+		}
+		return {
+			boundedCount,
+			compactToken,
+			detailPatchRejectedDiagnosticEvent,
+			duplicateRenderKeysDiagnosticEvent,
+			duplicateRenderKeysDiagnosticSuccess,
+			emptyCachedDetailReuseBlockedDiagnosticEvent,
+			emptyCachedDetailReuseDiagnosticSuccess,
+			emptyVisibleDetailMismatchDiagnosticEvent,
+			emptyVisibleDetailMismatchDiagnosticSuccess,
+			hasDuplicateRenderKeys,
+			hasRenderSignatureMismatch,
+			hasTurnOrderMismatch,
+			conversationProjectionDiagnosticSnapshot,
+			conversationProjectionConsistencyEffects,
+			primaryShellSelectionConflictDiagnosticEvent,
+			primaryShellSelectionConflictDiagnosticSuccess,
+			projectionDiagnosticContext,
+			projectionDiagnosticCounts,
+			projectionDiagnosticSnapshot,
+			renderSignatureMismatchDiagnosticEvent,
+			renderSignatureMismatchDiagnosticSuccess,
+			threadDetailResponseContractDiagnosticEvent,
+			threadDetailResponseDiagnosticEffects,
+			threadDetailResponseContractDiagnosticSuccess,
+			threadDetailLoadFailedDiagnosticEvent,
+			threadDetailSlowPathDiagnosticEvent,
+			threadDetailSlowPathDiagnosticSuccess,
+			threadListSlowPathDiagnosticEvent,
+			threadListSlowPathDiagnosticSuccess,
+			turnOrderDiagnosticSnapshot,
+			threadDetailRefreshFailedDiagnosticEvent,
+			turnOrderMismatchDiagnosticEvent,
+			turnOrderMismatchDiagnosticSuccess
+		};
+	});
+}));
+//#endregion
 //#region public/thread-tile-layout.js
 var require_thread_tile_layout = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -2988,6 +4741,9 @@ var import_viewport_metrics = /* @__PURE__ */ __toESM(require_viewport_metrics()
 var import_draft_store = /* @__PURE__ */ __toESM(require_draft_store());
 var import_image_compressor = /* @__PURE__ */ __toESM(require_image_compressor());
 var import_plugin_voice_input = /* @__PURE__ */ __toESM(require_plugin_voice_input());
+var import_frontend_runtime_health = /* @__PURE__ */ __toESM(require_frontend_runtime_health());
+var import_home_ai_diagnostic_reporting = /* @__PURE__ */ __toESM(require_home_ai_diagnostic_reporting());
+var import_thread_diagnostic_events = /* @__PURE__ */ __toESM(require_thread_diagnostic_events());
 var import_thread_tile_layout = /* @__PURE__ */ __toESM(require_thread_tile_layout());
 var import_thread_tile_actions = /* @__PURE__ */ __toESM(require_thread_tile_actions());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
@@ -3087,6 +4843,55 @@ var moduleDefinitions = [
 			"textFromMessage"
 		],
 		"assetPath": "/plugin-voice-input.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "frontend-runtime-health",
+		"source": "public/frontend-runtime-health.js",
+		"globalName": "CodexFrontendRuntimeHealth",
+		"expectedFunctions": [
+			"compactToken",
+			"createMonitor",
+			"submittedMessageDomProbeEffects",
+			"threadListInteractionStallEffects",
+			"renderChurnEvent",
+			"domDropEvent",
+			"runtimeSuccess"
+		],
+		"assetPath": "/frontend-runtime-health.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "home-ai-diagnostic-reporting",
+		"source": "public/home-ai-diagnostic-reporting.js",
+		"globalName": "CodexHomeAiDiagnosticReporting",
+		"expectedFunctions": [
+			"boundedToken",
+			"createDiagnosticReporter",
+			"durationBucket",
+			"hashIdentifier",
+			"postReportToHomeAi",
+			"sanitizeInput",
+			"stableTextHash"
+		],
+		"assetPath": "/home-ai-diagnostic-reporting.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "thread-diagnostic-events",
+		"source": "public/thread-diagnostic-events.js",
+		"globalName": "CodexThreadDiagnosticEvents",
+		"expectedFunctions": [
+			"boundedCount",
+			"compactToken",
+			"conversationProjectionDiagnosticSnapshot",
+			"conversationProjectionConsistencyEffects",
+			"projectionDiagnosticSnapshot",
+			"renderSignatureMismatchDiagnosticEvent",
+			"threadDetailResponseDiagnosticEffects",
+			"turnOrderDiagnosticSnapshot"
+		],
+		"assetPath": "/thread-diagnostic-events.js",
 		"classicLoaderExcluded": true
 	},
 	{
@@ -3219,6 +5024,9 @@ var moduleApis = {
 	"draft-store": import_draft_store.default,
 	"image-compressor": import_image_compressor.default,
 	"plugin-voice-input": import_plugin_voice_input.default,
+	"frontend-runtime-health": import_frontend_runtime_health.default,
+	"home-ai-diagnostic-reporting": import_home_ai_diagnostic_reporting.default,
+	"thread-diagnostic-events": import_thread_diagnostic_events.default,
 	"thread-tile-layout": import_thread_tile_layout.default,
 	"thread-tile-actions": import_thread_tile_actions.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
@@ -3450,6 +5258,140 @@ function sampleModule(id, api) {
 			actionFromType,
 			text,
 			voiceMessage
+		};
+	}
+	if (id === "frontend-runtime-health") {
+		const token = functionReady(api, "compactToken") ? api.compactToken(" Home AI / Thread Detail ", "fallback", 20) : "";
+		const missingEffects = functionReady(api, "submittedMessageDomProbeEffects") ? api.submittedMessageDomProbeEffects({
+			elapsedMs: 300,
+			currentThreadMatch: true,
+			hasThreadSubmission: true,
+			domHasSubmission: false,
+			threadHash: "abc"
+		}) : {};
+		const stallEffects = functionReady(api, "threadListInteractionStallEffects") ? api.threadListInteractionStallEffects({
+			threadListVisible: true,
+			threadListMonitorable: true,
+			maxRafDelayMs: 640,
+			minDelayMs: 500
+		}) : {};
+		const monitor = functionReady(api, "createMonitor") ? api.createMonitor({ now: () => 1e3 }) : null;
+		const monitorResult = monitor && typeof monitor.recordRender === "function" ? monitor.recordRender({
+			fullRender: false,
+			fallbackApplied: false,
+			previousCount: 2,
+			domCount: 2,
+			visibleCount: 2,
+			duplicateCount: 0
+		}) : {};
+		const dropEvent = functionReady(api, "domDropEvent") ? api.domDropEvent({
+			previousCount: 3,
+			domCount: 1,
+			visibleCount: 3
+		}) : {};
+		const success = functionReady(api, "runtimeSuccess") ? api.runtimeSuccess({
+			diagnosticType: "render_dom_drop",
+			errorCode: "render_dom_drop"
+		}) : {};
+		return {
+			ok: token === "Home_AI_Thread_Detai" && missingEffects.reason === "submitted-message-dom-missing" && Array.isArray(missingEffects.effects) && missingEffects.effects[0] && missingEffects.effects[0].type === "diagnostic-failure" && stallEffects.reason === "thread-list-interaction-stall" && monitorResult.renderCount === 1 && Array.isArray(monitorResult.effects) && monitorResult.effects.length === 2 && dropEvent.diagnostic_type === "render_dom_drop" && success.error_code === "render_dom_drop",
+			token,
+			missingReason: String(missingEffects.reason || ""),
+			stallReason: String(stallEffects.reason || ""),
+			monitorRenderCount: Number(monitorResult.renderCount) || 0,
+			dropDiagnosticType: String(dropEvent.diagnostic_type || ""),
+			successErrorCode: String(success.error_code || "")
+		};
+	}
+	if (id === "home-ai-diagnostic-reporting") {
+		const token = functionReady(api, "boundedToken") ? api.boundedToken(" Home AI / Codex Mobile ", "fallback", 16) : "";
+		const duration = functionReady(api, "durationBucket") ? api.durationBucket(4200) : "";
+		const hash = functionReady(api, "hashIdentifier") ? api.hashIdentifier("thread-title", "t") : "";
+		const sanitized = functionReady(api, "sanitizeInput") ? api.sanitizeInput({
+			diagnostic_type: "render_lag",
+			error_code: "lag",
+			counts: {
+				ok_count: 3,
+				raw_body: 4
+			},
+			context: {
+				thread_hash: "abc",
+				title: "unsafe"
+			}
+		}) : {};
+		const reporter = functionReady(api, "createDiagnosticReporter") ? api.createDiagnosticReporter({
+			threshold: 2,
+			throttleMs: 0,
+			now: () => 1e3
+		}) : null;
+		const first = reporter && typeof reporter.recordFailure === "function" ? reporter.recordFailure({
+			diagnostic_type: "render_lag",
+			error_code: "lag"
+		}) : {};
+		const second = reporter && typeof reporter.recordFailure === "function" ? reporter.recordFailure({
+			diagnostic_type: "render_lag",
+			error_code: "lag"
+		}) : {};
+		const post = functionReady(api, "postReportToHomeAi") ? api.postReportToHomeAi({
+			embedded: false,
+			report: second.report
+		}) : {};
+		const textHash = functionReady(api, "stableTextHash") ? api.stableTextHash("diagnostic") : "";
+		return {
+			ok: token === "Home_AI_Codex_Mo" && duration === "3_10s" && /^t_/.test(hash) && sanitized.category === "codex_runtime_failure" && sanitized.counts && sanitized.counts.ok_count === 3 && !Object.prototype.hasOwnProperty.call(sanitized.counts || {}, "raw_body") && first.eligible === false && second.eligible === true && post.reason === "not_embedded" && textHash.length > 0,
+			token,
+			duration,
+			hashPrefix: String(hash || "").slice(0, 2),
+			sanitizedCategory: String(sanitized.category || ""),
+			secondEligible: Boolean(second.eligible),
+			postReason: String(post.reason || ""),
+			textHash
+		};
+	}
+	if (id === "thread-diagnostic-events") {
+		const snapshot = functionReady(api, "conversationProjectionDiagnosticSnapshot") ? api.conversationProjectionDiagnosticSnapshot({
+			renderedConversationSignature: "old",
+			currentSignature: "new",
+			domShape: {
+				renderKeyCount: 1,
+				duplicateRenderKeyCount: 1
+			},
+			thread: { mobileReadMode: "thread-read" }
+		}, { visibleShape: () => ({
+			visibleTurnCount: 2,
+			visibleItemCount: 3
+		}) }) : {};
+		const order = functionReady(api, "turnOrderDiagnosticSnapshot") ? api.turnOrderDiagnosticSnapshot({
+			expectedTurnIds: ["a", "b"],
+			domTurnIds: ["a"],
+			threadHash: "thread"
+		}) : {};
+		const effects = functionReady(api, "conversationProjectionConsistencyEffects") ? api.conversationProjectionConsistencyEffects({
+			snapshot,
+			orderSnapshot: order
+		}) : {};
+		const renderEvent = functionReady(api, "renderSignatureMismatchDiagnosticEvent") ? api.renderSignatureMismatchDiagnosticEvent(snapshot) : {};
+		const responseEffects = functionReady(api, "threadDetailResponseDiagnosticEffects") ? api.threadDetailResponseDiagnosticEffects({ contractPlan: {
+			shouldReport: true,
+			reason: "contract",
+			turns: 2,
+			items: 3,
+			visibleItems: 3,
+			readMode: "thread-read"
+		} }) : {};
+		const normalized = functionReady(api, "projectionDiagnosticSnapshot") ? api.projectionDiagnosticSnapshot(snapshot) : {};
+		const count = functionReady(api, "boundedCount") ? api.boundedCount(100001) : 0;
+		const token = functionReady(api, "compactToken") ? api.compactToken(" Detail / Render ", "fallback", 20) : "";
+		return {
+			ok: snapshot.renderedSignature === "old" && normalized.counts && normalized.counts.visible_count === 3 && order.counts && order.counts.latest_mismatch_count === 1 && Array.isArray(effects.effects) && effects.effects.length === 3 && renderEvent.diagnostic_type === "render_signature_mismatch" && Array.isArray(responseEffects.effects) && responseEffects.effects[0] && responseEffects.effects[0].type === "diagnostic-failure" && count === 1e5 && token === "Detail_Render",
+			renderedSignature: String(snapshot.renderedSignature || ""),
+			visibleCount: Number(normalized.counts && normalized.counts.visible_count) || 0,
+			latestMismatch: Number(order.counts && order.counts.latest_mismatch_count) || 0,
+			effectCount: Array.isArray(effects.effects) ? effects.effects.length : 0,
+			renderDiagnosticType: String(renderEvent.diagnostic_type || ""),
+			responseEffectCount: Array.isArray(responseEffects.effects) ? responseEffects.effects.length : 0,
+			count,
+			token
 		};
 	}
 	if (id === "thread-tile-layout") {
@@ -4167,7 +6109,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DtSAjLoU.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-CC3eOZuU.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",
