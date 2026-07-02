@@ -739,7 +739,7 @@ test("projection hit active window upgrades to full read when summary missed act
   assert.equal(timings.activeFullReadRequired, true);
   assert.equal(timings.activeFullReadReason, "projection-window-active-turn");
   assert.equal(timings.activeOverlayAction, "require-full-read");
-  assert.equal(timings.activeOverlayReason, "overlay-provider-unavailable");
+  assert.equal(timings.activeOverlayReason, "active-full-read-not-overlay-closable");
   assert.equal(timings.readDecision, "full-thread-read");
   assert.equal(timings.projectionSeedStatus, "seeded");
   assert.equal(timings.projectionSeedSource, "active-thread-read");
@@ -2231,7 +2231,7 @@ test("active ordinary projection hits still pass through active overlay proof ga
   assert.equal(timings.activeOverlayReceiptItems, 1);
 });
 
-test("active overlay can build a bounded projection window before full thread/read", async () => {
+test("status-only active summary cannot close with a bounded overlay window", async () => {
   const { service, calls } = createHarness({
     summary: {
       id: "thread-1",
@@ -2300,27 +2300,22 @@ test("active overlay can build a bounded projection window before full thread/re
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.mode, "projection-active-overlay");
-  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
-  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(response.mode, "thread-read");
+  assert.equal(calls.includes("thread-read"), true);
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
     "projection-lookup:ordinary",
-    "projection-lookup:active-overlay",
   ]);
+  assert.deepEqual(calls.filter((call) => call === "projection-lookup:active-overlay"), []);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
-  assert.equal(timings.readDecision, "projection-active-overlay");
-  assert.equal(timings.projectionState, "hit");
-  assert.equal(timings.projectionMissReason, "");
-  assert.equal(timings.projectionSeedStatus, "seeded-partial");
-  assert.equal(timings.projectionSeedSource, "turns-list-active-overlay-window");
-  assert.equal(timings.activeOverlayAction, "use-projection-overlay");
-  assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
-  assert.equal(timings.activeOverlayOperationItems, 1);
-  assert.equal(timings.activeOverlayAssistantItems, 2);
-  assert.equal(timings.activeOverlayReceiptItems, 1);
+  assert.equal(timings.readDecision, "full-thread-read");
+  assert.equal(timings.projectionState, "miss");
+  assert.equal(timings.projectionSeedStatus, "seeded");
+  assert.equal(timings.projectionSeedSource, "active-thread-read");
+  assert.equal(timings.activeOverlayAction, "require-full-read");
+  assert.equal(timings.activeOverlayReason, "active-full-read-not-overlay-closable");
   assert.equal(timings.activeOverlayWindowFirst, false);
-  assert.ok(timings.timings.activeOverlayMs >= 0);
+  assert.equal(Object.prototype.hasOwnProperty.call(timings.timings, "activeOverlayMs"), false);
 });
 
 test("notification active overlay seeds bounded window so repeated reads avoid turns-list", async () => {

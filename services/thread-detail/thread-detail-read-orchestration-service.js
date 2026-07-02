@@ -192,6 +192,12 @@ function promoteActiveReadPolicy(policy, reason) {
   });
 }
 
+function activeFullReadCanCloseWithOverlay(policy) {
+  if (!policy || policy.activeFullReadRequired !== true) return false;
+  const reason = nonEmptyText(policy.activeFullReadReason);
+  return reason === "active-turn-id" || reason === "projection-live-active-turn";
+}
+
 function applyActivePolicyContext(context, policy) {
   context.activeFullReadRequired = policy && policy.activeFullReadRequired === true;
   context.activeFullReadReason = policy && policy.activeFullReadReason || "";
@@ -670,6 +676,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     const allowPartialProjection = activeReadPolicy.allowPartialProjection;
     const shouldUseActiveOverlayWindowFirst = Boolean(
       activeReadPolicy.activeFullReadRequired
+        && activeFullReadCanCloseWithOverlay(activeReadPolicy)
         && resolveActiveWindowOverlay
         && activeOverlayProjectionWindowLookup,
     );
@@ -756,7 +763,10 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       if (!context.projectionMissReason) context.projectionMissReason = "result-missing";
     }
 
-    if (activeReadPolicy.activeFullReadRequired && projection && resolveActiveWindowOverlay) {
+    if (activeReadPolicy.activeFullReadRequired
+      && activeFullReadCanCloseWithOverlay(activeReadPolicy)
+      && projection
+      && resolveActiveWindowOverlay) {
       const activeOverlayStartedAtMs = now();
       let overlayProjectionLookup = projectionLookup;
       let overlayProjected = projected && projected.thread ? projected : null;
@@ -1157,7 +1167,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       }
     } else if (activeReadPolicy.activeFullReadRequired) {
       context.activeOverlayAction = "require-full-read";
-      context.activeOverlayReason = resolveActiveWindowOverlay ? "projection-input-unavailable" : "overlay-provider-unavailable";
+      context.activeOverlayReason = activeFullReadCanCloseWithOverlay(activeReadPolicy)
+        ? resolveActiveWindowOverlay ? "projection-input-unavailable" : "overlay-provider-unavailable"
+        : "active-full-read-not-overlay-closable";
     }
 
     if (!activeReadPolicy.activeFullReadRequired
