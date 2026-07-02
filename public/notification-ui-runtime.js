@@ -809,8 +809,17 @@ function turnDisplayItemTimestampRange(turn) {
   };
 }
 
+function turnDisplayActivityMs(turn) {
+  const orderMs = turnOrderMs(turn);
+  const range = turnDisplayItemTimestampRange(turn);
+  return Math.max(orderMs, range.last, range.first);
+}
+
 function sortTurnsForDisplay(turns) {
   return (turns || []).slice().sort((leftTurn, rightTurn) => {
+    const leftActivity = turnDisplayActivityMs(leftTurn);
+    const rightActivity = turnDisplayActivityMs(rightTurn);
+    if (leftActivity !== rightActivity) return leftActivity - rightActivity;
     const leftPhase = turnDisplaySortPhase(leftTurn);
     const rightPhase = turnDisplaySortPhase(rightTurn);
     if (leftPhase !== rightPhase) return leftPhase - rightPhase;

@@ -26,6 +26,10 @@ const viewportMetricsJs = fs.readFileSync(path.resolve(__dirname, "..", "public"
 const platformPointer = fs.readFileSync(path.resolve(__dirname, "..", "docs", "HOME_AI_PLATFORM_CONTRACT.md"), "utf8");
 
 function sourceFunctionBody(source, name) {
+  return sourceFunction(source, name).body;
+}
+
+function sourceFunction(source, name) {
   if (source === appJs) {
     if (paneLayoutRuntimeJs.includes(`function ${name}(`)) source = paneLayoutRuntimeJs;
     else if (appShellRuntimeJs.includes(`function ${name}(`)) source = appShellRuntimeJs;
@@ -40,7 +44,12 @@ function sourceFunctionBody(source, name) {
     const char = source[index];
     if (char === "{") depth += 1;
     if (char === "}") depth -= 1;
-    if (depth === 0) return source.slice(bodyStart + 1, index);
+    if (depth === 0) {
+      return {
+        source: source.slice(start, index + 1),
+        body: source.slice(bodyStart + 1, index),
+      };
+    }
   }
   throw new Error(`could not parse function ${name}`);
 }
@@ -61,6 +70,35 @@ function threadTileRuntimeFunctionBody(name) {
   return sourceFunctionBody(threadTileRuntimeJs, name);
 }
 
+function evaluatedSortTurnsForDisplay() {
+  const sources = [
+    "turnDisplaySortTimestampMs",
+    "turnDisplayItemTimestampMs",
+    "turnDisplayItemTimestampRange",
+    "turnDisplayActivityMs",
+    "turnDisplaySortPhase",
+    "sortTurnsForDisplay",
+  ].map((name) => sourceFunction(appJs, name).source).join("\n");
+  return Function("turnOrderMs", "isRunningStatus", "isTurnComplete", `
+${sources}
+return sortTurnsForDisplay;
+  `)(
+    (turn) => {
+      const completed = /completed|failed|cancel/i.test(String(turn && (turn.status && turn.status.type || turn.status) || ""));
+      const fields = completed
+        ? ["completedAtMs", "updatedAtMs", "startedAtMs", "createdAtMs"]
+        : ["startedAtMs", "createdAtMs", "updatedAtMs", "completedAtMs"];
+      for (const field of fields) {
+        const value = Number(turn && turn[field]);
+        if (Number.isFinite(value) && value > 0) return value;
+      }
+      return 0;
+    },
+    (status) => /active|running|queued|processing/i.test(String(status && status.type || status || "")),
+    (turn) => /completed|failed|cancel/i.test(String(turn && (turn.status && turn.status.type || turn.status) || "")),
+  );
+}
+
 test("client turn ordering keeps active turns stable and completed turns completion-ordered", () => {
   const body = sourceFunctionBody(threadDetailRuntimeJs, "turnOrderMs");
   const completedBranchStart = body.indexOf("if (isTurnComplete(turn))");
@@ -74,10 +112,13 @@ test("client turn ordering keeps active turns stable and completed turns complet
   assert.match(sourceFunctionBody(threadDetailRuntimeJs, "firstTurnTimestampMs"), /numericTimestampMs\(turn && turn\[field\]\)/);
   assert.match(functionBody("turnDisplaySortPhase"), /isRunningStatus\(turn && turn\.status\) && !isTurnComplete\(turn\)[\s\S]*return 2/);
   assert.match(functionBody("turnDisplaySortPhase"), /if \(isTurnComplete\(turn\)\) return 1/);
+  assert.match(functionBody("turnDisplayActivityMs"), /return Math\.max\(orderMs, range\.last, range\.first\);/);
   const sortBody = functionBody("sortTurnsForDisplay");
+  assert.match(sortBody, /const leftActivity = turnDisplayActivityMs\(leftTurn\);/);
+  assert.match(sortBody, /if \(leftActivity !== rightActivity\) return leftActivity - rightActivity;/);
   assert.match(sortBody, /const leftPhase = turnDisplaySortPhase\(leftTurn\);/);
   assert.match(sortBody, /if \(leftPhase !== rightPhase\) return leftPhase - rightPhase;/);
-  assert.ok(sortBody.indexOf("leftPhase") < sortBody.indexOf("turnOrderMs(leftTurn)"), "turn state phase must sort before timestamp fallback");
+  assert.ok(sortBody.indexOf("leftActivity") < sortBody.indexOf("leftPhase"), "turn activity timestamp must sort before state phase tie-breaker");
   assert.match(functionBody("turnDisplayItemTimestampRange"), /Array\.isArray\(turn && turn\.items\) \? turn\.items : \[\]/);
   assert.match(functionBody("turnDisplayItemTimestampMs"), /"mobileDisplayTimestampMs"[\s\S]*"completedAtMs"/);
   assert.match(sortBody, /const leftRange = turnDisplayItemTimestampRange\(leftTurn\);/);
@@ -91,6 +132,49 @@ test("client turn ordering keeps active turns stable and completed turns complet
   assert.doesNotMatch(consistencyBody, /hasTurnOrderMismatch\(orderSnapshot\)/);
   assert.doesNotMatch(consistencyBody, /turnOrderMismatchDiagnosticEvent\(orderSnapshot\)/);
   assert.doesNotMatch(consistencyBody, /turnOrderMismatchDiagnosticSuccess\(orderSnapshot\)/);
+});
+
+test("client turn display sorting does not pin older active turns below newer completed receipts", () => {
+  const sortTurnsForDisplay = evaluatedSortTurnsForDisplay();
+  const base = 1_780_000_000_000;
+  const olderActive = {
+    id: "older-active",
+    status: { type: "running" },
+    startedAtMs: base + 1000,
+    items: [{ id: "old-progress", type: "agentMessage", createdAtMs: base + 1500 }],
+  };
+  const newerCompleted = {
+    id: "newer-completed",
+    status: "completed",
+    startedAtMs: base + 2000,
+    completedAtMs: base + 5000,
+    items: [{ id: "new-receipt", type: "agentMessage", completedAtMs: base + 5000 }],
+  };
+  const latestActive = {
+    id: "latest-active",
+    status: { type: "running" },
+    startedAtMs: base + 1000,
+    items: [{ id: "latest-progress", type: "agentMessage", createdAtMs: base + 6000 }],
+  };
+  const sameTimeActive = {
+    id: "same-time-active",
+    status: { type: "running" },
+    startedAtMs: base + 5000,
+    items: [],
+  };
+
+  assert.deepEqual(sortTurnsForDisplay([newerCompleted, olderActive]).map((turn) => turn.id), [
+    "older-active",
+    "newer-completed",
+  ]);
+  assert.deepEqual(sortTurnsForDisplay([latestActive, newerCompleted]).map((turn) => turn.id), [
+    "newer-completed",
+    "latest-active",
+  ]);
+  assert.deepEqual(sortTurnsForDisplay([sameTimeActive, newerCompleted]).map((turn) => turn.id), [
+    "newer-completed",
+    "same-time-active",
+  ]);
 });
 
 test("thread detail response diagnostics are planned before Home AI reporting", () => {
