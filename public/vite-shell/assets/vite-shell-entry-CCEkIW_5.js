@@ -1195,6 +1195,9 @@ var require_thread_detail_patch_plan = /* @__PURE__ */ __commonJSMin(((exports, 
 				articlePresent: Boolean(entry.articlePresent)
 			};
 		}
+		function normalizedStringList(value) {
+			return Array.isArray(value) ? value.map((entry) => String(entry || "")).filter(Boolean) : [];
+		}
 		function signatureText(signature) {
 			if (signature == null) return "";
 			if (typeof signature === "string") return signature;
@@ -1362,13 +1365,14 @@ var require_thread_detail_patch_plan = /* @__PURE__ */ __commonJSMin(((exports, 
 				operations
 			};
 		}
-		function planThreadDetailRefreshDomPatch(entries) {
+		function planThreadDetailRefreshDomPatch(entries, options = {}) {
 			if (!Array.isArray(entries)) return {
 				canPatch: false,
 				reason: "invalid-turn-entries",
 				operations: []
 			};
 			const operations = [];
+			const nextKeys = /* @__PURE__ */ new Set();
 			for (const rawEntry of entries) {
 				const entry = normalizeRefreshTurnPatchEntry(rawEntry);
 				if (!entry) return {
@@ -1376,6 +1380,7 @@ var require_thread_detail_patch_plan = /* @__PURE__ */ __commonJSMin(((exports, 
 					reason: "invalid-turn-entry",
 					operations: []
 				};
+				nextKeys.add(entry.key);
 				if (entry.hasPreviousTurn && entry.itemPatchable && entry.articlePresent) {
 					operations.push({
 						type: "item-patch",
@@ -1388,6 +1393,18 @@ var require_thread_detail_patch_plan = /* @__PURE__ */ __commonJSMin(((exports, 
 					type: entry.articlePresent ? "replace-turn" : "insert-turn",
 					key: entry.key,
 					entry
+				});
+			}
+			const previousTurnKeys = normalizedStringList(options.previousTurnKeys || options.previousKeys);
+			for (const previousKey of previousTurnKeys) {
+				if (nextKeys.has(previousKey)) continue;
+				operations.push({
+					type: "remove-turn",
+					key: previousKey,
+					entry: {
+						key: previousKey,
+						stale: true
+					}
 				});
 			}
 			return {
@@ -1889,9 +1906,9 @@ var codexMobileViteEntryGroupIds = [
 var codexMobileViteEntryGroupLoaders = {
 	"manifest": () => __vitePreload(() => import("./vite-entry-group-manifest-CIB80LK9.js"), []),
 	"foundation": () => __vitePreload(() => import("./vite-entry-group-foundation-DksiWGDq.js"), []),
-	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-BVPZH6RC.js"), []),
+	"feature-runtimes": () => __vitePreload(() => import("./vite-entry-group-feature-runtimes-CA9JZv6y.js"), []),
 	"bootstrap-state": () => __vitePreload(() => import("./vite-entry-group-bootstrap-state-DieReWP_.js"), []),
-	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-CClXXlMh.js"), []),
+	"shell-services": () => __vitePreload(() => import("./vite-entry-group-shell-services-CO4Y2HN5.js"), []),
 	"app-entry": () => __vitePreload(() => import("./vite-entry-group-app-entry-BoKkKh0s.js"), [])
 };
 function loadCodexMobileViteEntryGroups() {
@@ -2099,7 +2116,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-D-dcnLzx.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-Ap2V8Wcp.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

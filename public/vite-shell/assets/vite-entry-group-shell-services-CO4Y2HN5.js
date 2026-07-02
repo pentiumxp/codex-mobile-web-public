@@ -45,14 +45,14 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/notification-ui-runtime.js",
 			"sourcePath": "public/notification-ui-runtime.js",
-			"bytes": 49013,
-			"sha256": "a90508e5f07c63fd66742d46a20a46dd2836e8f50658792a1cbcdd2844d6d9f2"
+			"bytes": 49341,
+			"sha256": "bce46db50c727401153287dfdecb0e3785eddb2601087de13a93b8f2c7d8f9eb"
 		},
 		{
 			"path": "/pane-layout-runtime.js",
 			"sourcePath": "public/pane-layout-runtime.js",
-			"bytes": 199922,
-			"sha256": "62f4f299345b2d1a46969c9412f7f08e29a6ae07de40146f6b572fa4717bacfc"
+			"bytes": 201214,
+			"sha256": "e28d8a898be301095103f442fc360011b293b346562aa6615ff824905b37679a"
 		},
 		{
 			"path": "/task-card-runtime.js",
@@ -80,7 +80,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 10,
-	"classicAssetBytes": 674477,
+	"classicAssetBytes": 676097,
 	"classicGlobalExports": [
 		{
 			"asset": "/settings-runtime.js",

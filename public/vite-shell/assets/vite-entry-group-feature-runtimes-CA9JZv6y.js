@@ -78,14 +78,14 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/thread-detail-patch-plan.js",
 			"sourcePath": "public/thread-detail-patch-plan.js",
-			"bytes": 7717,
-			"sha256": "e6324db973e487acd0072b0bef3a13ea35ff1a94561dbede9b59734d1c6469e4"
+			"bytes": 8310,
+			"sha256": "7953e47d8c7e18e6deb865bb33969529e289618010e7813c986898aff22f67b4"
 		},
 		{
 			"path": "/thread-detail-dom-patch.js",
 			"sourcePath": "public/thread-detail-dom-patch.js",
-			"bytes": 46882,
-			"sha256": "59667cf5be12506e10ee555da156cfad788f15cad08eac2ed574f2c99805c2b7"
+			"bytes": 49597,
+			"sha256": "05ec3638f47ee25740161fb908c47e7d182d3bf340d954984e29faa61de02118"
 		},
 		{
 			"path": "/thread-detail-actions.js",
@@ -143,7 +143,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 19,
-	"classicAssetBytes": 648183,
+	"classicAssetBytes": 651491,
 	"classicGlobalExports": [
 		{
 			"asset": "/thread-list-runtime.js",

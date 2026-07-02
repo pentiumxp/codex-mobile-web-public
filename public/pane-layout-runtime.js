@@ -4280,6 +4280,9 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   const previousTurnById = new Map(visibleTurnsForConversation(previousThread)
     .map((turn) => [String(turn && turn.id || ""), turn])
     .filter(([id]) => id));
+  const previousDomTurnKeys = Array.from(conversation.querySelectorAll("article.turn[data-render-key]"))
+    .map((node) => String(node && node.getAttribute && node.getAttribute("data-render-key") || ""))
+    .filter(Boolean);
   const nextTurns = visibleTurnsForConversation(nextThread);
   const turnByKey = new Map();
   const itemPatchPlanByTurnKey = new Map();
@@ -4296,7 +4299,9 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
       articlePresent: Boolean(turnArticleNode(turn)),
     };
   });
-  const turnPatchPlan = threadDetailPatchPlanApi.planThreadDetailRefreshDomPatch(turnPatchEntries);
+  const turnPatchPlan = threadDetailPatchPlanApi.planThreadDetailRefreshDomPatch(turnPatchEntries, {
+    previousTurnKeys: previousDomTurnKeys,
+  });
   if (!turnPatchPlan.canPatch) return rejectThreadDetailPatch(turnPatchPlan.reason || "turn-patch-plan-rejected");
   const transactionEffectsPlan = threadDetailDomPatchApi.planThreadDetailRefreshLocalPatchTransactionEffects({
     completionSnapshot,
@@ -4315,11 +4320,19 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   const applyResult = threadDetailDomPatchApi.applyThreadDetailPatchTransaction({
     applyPatch: () => threadDetailDomPatchApi.applyThreadTurnRefreshDomPatch({
       patchPlan: turnPatchPlan,
+      conversation,
       findTurnByKey: (key) => turnByKey.get(String(key || "")),
+      findTurnElementByKey: (key) => {
+        const renderKey = String(key || "");
+        if (!renderKey) return null;
+        return conversation.querySelector(`article.turn[data-render-key="${escapeSelectorAttr(renderKey)}"]`);
+      },
+      firstTurnElement: () => conversation.querySelector("article.turn"),
       applyItemPatch: (turn, operation) => {
         const patchPlan = itemPatchPlanByTurnKey.get(operation.key);
+        const article = turnArticleNode(turn);
         return applyVisibleItemsOnlyRefreshPatch(turn, patchPlan, previousKeys)
-          ? { ok: true }
+          ? { ok: true, target: article }
           : { ok: false, reason: "item-patch-failed" };
       },
       renderTurnElement: (turn) => threadDetailDomPatchApi.createTurnArticleElement({
@@ -4329,12 +4342,21 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
         renderTurnHtml: (candidate, keys) => renderTurn(candidate, keys),
       }),
       insertTurnElement: (source, turn) => insertTurnArticleElementDom(turn, source)
-        ? { ok: true }
+        ? { ok: true, target: source }
         : { ok: false, reason: "insert-turn-failed" },
       replaceTurnElement: (source, turn) => {
         const article = turnArticleNode(turn);
         if (!article) return { ok: false, reason: "replace-turn-missing-article" };
-        patchNode(article, source);
+        const target = patchNode(article, source);
+        return { ok: true, target: target || article };
+      },
+      removeTurnElement: (operation) => {
+        const key = String(operation && operation.key || "");
+        if (!key) return { ok: false, reason: "remove-turn-missing-key" };
+        const article = conversation.querySelector(`article.turn[data-render-key="${escapeSelectorAttr(key)}"]`);
+        if (!article) return { ok: true, reason: "remove-turn-already-absent" };
+        if (typeof article.remove === "function") article.remove();
+        else if (article.parentNode) article.parentNode.removeChild(article);
         return { ok: true };
       },
     }),

@@ -194,9 +194,27 @@
     return fallback;
   }
 
+  function callbackTarget(value) {
+    if (!value || typeof value !== "object") return null;
+    return value.target || value.node || value.element || null;
+  }
+
   function firstTurnElementFrom(input) {
     if (typeof input.firstTurnElement === "function") return input.firstTurnElement() || null;
     return input.firstTurnElement || null;
+  }
+
+  function placeTurnNode(conversation, node, lastPlacedNode, firstTurnElement) {
+    if (!conversation || typeof conversation.insertBefore !== "function") {
+      return result(false, "missing-turn-order-root");
+    }
+    if (!node) return result(false, "place-turn-missing-element");
+    const anchor = lastPlacedNode
+      ? lastPlacedNode.nextSibling || null
+      : firstTurnElement || conversation.firstChild || null;
+    if (node === anchor) return result(true, "turn-already-placed", { target: node, moved: false });
+    conversation.insertBefore(node, anchor || null);
+    return result(true, "turn-placed", { target: node, moved: true });
   }
 
   function documentFrom(input = {}) {
@@ -959,21 +977,46 @@
     const renderTurnElement = typeof input.renderTurnElement === "function" ? input.renderTurnElement : null;
     const insertTurnElement = typeof input.insertTurnElement === "function" ? input.insertTurnElement : null;
     const replaceTurnElement = typeof input.replaceTurnElement === "function" ? input.replaceTurnElement : null;
+    const removeTurnElement = typeof input.removeTurnElement === "function" ? input.removeTurnElement : null;
+    const findTurnElementByKey = typeof input.findTurnElementByKey === "function" ? input.findTurnElementByKey : null;
+    const conversation = input.conversation || input.root || null;
+    const firstTurnElement = firstTurnElementFrom(input);
     if (!findTurnByKey) return result(false, "missing-find-turn", { itemPatched: 0, replaced: 0 });
     if (!applyItemPatch) return result(false, "missing-apply-item-patch", { itemPatched: 0, replaced: 0 });
     if (!renderTurnElement) return result(false, "missing-render-turn", { itemPatched: 0, replaced: 0 });
     if (!insertTurnElement) return result(false, "missing-insert-turn", { itemPatched: 0, replaced: 0 });
     if (!replaceTurnElement) return result(false, "missing-replace-turn", { itemPatched: 0, replaced: 0 });
 
-    const counts = { reused: 0, patched: 0, inserted: 0, itemPatched: 0, replaced: 0 };
+    const counts = { reused: 0, patched: 0, inserted: 0, itemPatched: 0, replaced: 0, removed: 0, reordered: 0 };
+    let lastPlacedTurnElement = null;
+    function placeAppliedTurn(operation, callbackValue, fallbackNode = null) {
+      const target = callbackTarget(callbackValue)
+        || fallbackNode
+        || (findTurnElementByKey ? findTurnElementByKey(operation.key, operation) : null);
+      if (!target) return result(false, findTurnElementByKey ? "place-turn-missing-element" : "missing-find-turn-element", counts);
+      const placeResult = placeTurnNode(conversation, target, lastPlacedTurnElement, firstTurnElement);
+      if (!placeResult.ok) return result(false, placeResult.reason || "place-turn-failed", counts);
+      lastPlacedTurnElement = callbackTarget(placeResult) || target;
+      if (placeResult.moved) counts.reordered += 1;
+      return null;
+    }
     for (const rawOperation of patchPlan.operations) {
       const operation = normalizeTurnOperation(rawOperation);
       if (!operation) return result(false, "invalid-turn-operation", counts);
+      if (operation.type === "remove-turn") {
+        if (!removeTurnElement) return result(false, "missing-remove-turn", counts);
+        const removeResult = removeTurnElement(operation);
+        if (!callbackOk(removeResult)) return result(false, callbackReason(removeResult, "remove-turn-failed"), counts);
+        counts.removed += 1;
+        continue;
+      }
       const turn = findTurnByKey(operation.key, operation);
       if (!turn) return result(false, "turn-patch-operation-missing-turn", counts);
       if (operation.type === "item-patch") {
         const itemPatchResult = applyItemPatch(turn, operation);
         if (!callbackOk(itemPatchResult)) return result(false, callbackReason(itemPatchResult, "item-patch-failed"), counts);
+        const placeFailure = placeAppliedTurn(operation, itemPatchResult);
+        if (placeFailure) return placeFailure;
         counts.itemPatched += 1;
         counts.patched += 1;
         continue;
@@ -986,11 +1029,15 @@
       if (operation.type === "insert-turn") {
         const insertResult = insertTurnElement(source, turn, operation);
         if (!callbackOk(insertResult)) return result(false, callbackReason(insertResult, "insert-turn-failed"), counts);
+        const placeFailure = placeAppliedTurn(operation, insertResult, source);
+        if (placeFailure) return placeFailure;
         counts.inserted += 1;
         continue;
       }
       const replaceResult = replaceTurnElement(source, turn, operation);
       if (!callbackOk(replaceResult)) return result(false, callbackReason(replaceResult, "replace-turn-failed"), counts);
+      const placeFailure = placeAppliedTurn(operation, replaceResult);
+      if (placeFailure) return placeFailure;
       counts.replaced += 1;
       counts.patched += 1;
     }
@@ -999,7 +1046,7 @@
 
   function resultCounts(source = {}) {
     const counts = {};
-    for (const key of ["reused", "patched", "inserted", "itemPatched", "replaced"]) {
+    for (const key of ["reused", "patched", "inserted", "itemPatched", "replaced", "removed", "reordered"]) {
       if (Number.isFinite(Number(source[key]))) counts[key] = Number(source[key]);
     }
     return counts;

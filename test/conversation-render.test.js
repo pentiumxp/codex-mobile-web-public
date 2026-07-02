@@ -2653,7 +2653,9 @@ test("live detail refresh can patch changed visible items without replacing the 
   assert.match(functionBody("applyVisibleItemsOnlyRefreshPatch"), /patchElement:/);
   assert.doesNotMatch(functionBody("applyVisibleItemsOnlyRefreshPatch"), /for \(const operation of patchPlan\.operations\)/);
   assert.doesNotMatch(functionBody("applyVisibleItemsOnlyRefreshPatch"), /article\.insertBefore\(source, lastPatchedNode/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailPatchPlanApi\.planThreadDetailRefreshDomPatch\(turnPatchEntries\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /previousDomTurnKeys/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /querySelectorAll\("article\.turn\[data-render-key\]"\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailPatchPlanApi\.planThreadDetailRefreshDomPatch\(turnPatchEntries,\s*\{\s*previousTurnKeys:\s*previousDomTurnKeys,\s*\}\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailDomPatchApi\.applyThreadDetailPatchTransaction\(\{/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /applyPatch: \(\) => threadDetailDomPatchApi\.applyThreadTurnRefreshDomPatch\(\{/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const transactionEffectsPlan = threadDetailDomPatchApi\.planThreadDetailRefreshLocalPatchTransactionEffects\(\{/);
@@ -2667,6 +2669,8 @@ test("live detail refresh can patch changed visible items without replacing the 
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /applyItemPatch:/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /insertTurnElement:/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /replaceTurnElement:/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /removeTurnElement:/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /remove-turn-already-absent/);
   assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /for \(const operation of turnPatchPlan\.operations\)/);
   assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /operation\.type === "item-patch"/);
 });

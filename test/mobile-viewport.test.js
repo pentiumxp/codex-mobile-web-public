@@ -72,6 +72,12 @@ test("client turn ordering keeps active turns stable and completed turns complet
   assert.match(body, /if \(isTurnComplete\(turn\)\) \{[\s\S]*"completedAtMs"[\s\S]*"updatedAtMs"[\s\S]*"startedAtMs"[\s\S]*"createdAtMs"/);
   assert.match(body, /return firstTurnTimestampMs\(turn, \[[\s\S]*"startedAtMs"[\s\S]*"createdAtMs"[\s\S]*"updatedAtMs"[\s\S]*"completedAtMs"/);
   assert.match(sourceFunctionBody(threadDetailRuntimeJs, "firstTurnTimestampMs"), /numericTimestampMs\(turn && turn\[field\]\)/);
+  assert.match(functionBody("turnDisplaySortPhase"), /isRunningStatus\(turn && turn\.status\) && !isTurnComplete\(turn\)[\s\S]*return 2/);
+  assert.match(functionBody("turnDisplaySortPhase"), /if \(isTurnComplete\(turn\)\) return 1/);
+  const sortBody = functionBody("sortTurnsForDisplay");
+  assert.match(sortBody, /const leftPhase = turnDisplaySortPhase\(leftTurn\);/);
+  assert.match(sortBody, /if \(leftPhase !== rightPhase\) return leftPhase - rightPhase;/);
+  assert.ok(sortBody.indexOf("leftPhase") < sortBody.indexOf("turnOrderMs(leftTurn)"), "turn state phase must sort before timestamp fallback");
 
   const consistencyBody = functionBody("checkConversationProjectionConsistency");
   assert.match(consistencyBody, /const orderSnapshot = conversationTurnOrderDiagnosticSnapshot\(source, extra\);/);

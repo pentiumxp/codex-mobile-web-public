@@ -205,6 +205,7 @@ function runSingleThreadLocalPatchTransaction() {
   const article = createElement("article", { "data-render-key": "turn-a" }, [
     createElement("div", { "data-render-key": "item-agent" }, [createTextNode("old")]),
   ]);
+  const conversation = createElement("div", {}, [article]);
   const itemPatchPlan = patchPlan.planVisibleItemRefreshPatch(
     [{ key: "item-agent", signature: { type: "agentMessage", text: "old" } }],
     [{ key: "item-agent", signature: { type: "agentMessage", text: "new" } }],
@@ -221,7 +222,10 @@ function runSingleThreadLocalPatchTransaction() {
   const transaction = domPatch.applyThreadDetailPatchTransaction({
     applyPatch: () => domPatch.applyThreadTurnRefreshDomPatch({
       patchPlan: turnPatchPlan,
+      conversation,
       findTurnByKey: () => ({ id: "turn-a" }),
+      findTurnElementByKey: () => article,
+      firstTurnElement: () => article,
       applyItemPatch: () => domPatch.applyVisibleItemRefreshDomPatch({
         article,
         patchPlan: itemPatchPlan,
@@ -238,7 +242,7 @@ function runSingleThreadLocalPatchTransaction() {
       }),
       renderTurnElement: () => createElement("article", { "data-render-key": "turn-a" }),
       insertTurnElement: () => ({ ok: true }),
-      replaceTurnElement: () => ({ ok: true }),
+      replaceTurnElement: () => ({ ok: true, target: article }),
     }),
     commitEffects: [
       {

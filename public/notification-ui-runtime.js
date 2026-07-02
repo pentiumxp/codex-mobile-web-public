@@ -752,11 +752,20 @@ function showLogin(message = "") {
   $("loginError").textContent = message;
 }
 
+function turnDisplaySortPhase(turn) {
+  if (isRunningStatus(turn && turn.status) && !isTurnComplete(turn)) return 2;
+  if (isTurnComplete(turn)) return 1;
+  return 0;
+}
+
 function sortTurnsForDisplay(turns) {
   return (turns || []).slice().sort((leftTurn, rightTurn) => {
+    const leftPhase = turnDisplaySortPhase(leftTurn);
+    const rightPhase = turnDisplaySortPhase(rightTurn);
+    if (leftPhase !== rightPhase) return leftPhase - rightPhase;
     const left = turnOrderMs(leftTurn);
     const right = turnOrderMs(rightTurn);
-    if (left && right && left !== right) return left - right;
+    if (left !== right) return left - right;
     return String(leftTurn && leftTurn.id || "").localeCompare(String(rightTurn && rightTurn.id || ""));
   });
 }

@@ -27,6 +27,10 @@
     };
   }
 
+  function normalizedStringList(value) {
+    return Array.isArray(value) ? value.map((entry) => String(entry || "")).filter(Boolean) : [];
+  }
+
   function signatureText(signature) {
     if (signature == null) return "";
     if (typeof signature === "string") return signature;
@@ -150,7 +154,7 @@
     };
   }
 
-  function planThreadDetailRefreshDomPatch(entries) {
+  function planThreadDetailRefreshDomPatch(entries, options = {}) {
     if (!Array.isArray(entries)) {
       return {
         canPatch: false,
@@ -159,6 +163,7 @@
       };
     }
     const operations = [];
+    const nextKeys = new Set();
     for (const rawEntry of entries) {
       const entry = normalizeRefreshTurnPatchEntry(rawEntry);
       if (!entry) {
@@ -168,6 +173,7 @@
           operations: [],
         };
       }
+      nextKeys.add(entry.key);
       if (entry.hasPreviousTurn && entry.itemPatchable && entry.articlePresent) {
         operations.push({
           type: "item-patch",
@@ -180,6 +186,18 @@
         type: entry.articlePresent ? "replace-turn" : "insert-turn",
         key: entry.key,
         entry,
+      });
+    }
+    const previousTurnKeys = normalizedStringList(options.previousTurnKeys || options.previousKeys);
+    for (const previousKey of previousTurnKeys) {
+      if (nextKeys.has(previousKey)) continue;
+      operations.push({
+        type: "remove-turn",
+        key: previousKey,
+        entry: {
+          key: previousKey,
+          stale: true,
+        },
       });
     }
     return {
