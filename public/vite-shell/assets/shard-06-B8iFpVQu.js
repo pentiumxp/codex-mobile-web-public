@@ -1,2571 +1,4 @@
 import { n as __toESM, t as __commonJSMin } from "./rolldown-runtime-FDOR9p9I.js";
-//#region public/composer-runtime.js
-var require_composer_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function attachComposerRuntime(root) {
-		function createComposerRuntime(deps = {}) {
-			const { $, COMPOSER_INTENT_BODY_MAX_CHARS, MESSAGE_INPUT_MAX_HEIGHT_PX, MESSAGE_INPUT_MIN_HEIGHT_PX, STORAGE_CODEX_FAST_MODE, STORAGE_COMPOSER_INTENT_DRAFTS, THREAD_GOAL_MENTION_PATTERN, THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN, THREAD_TASK_CARD_MENTION_PATTERN, api, clearDraftForKey, clearSubmittedMessageBottomFollow, closeThreadGoalDialog, commitPluginVoiceInputSessionsAfterSend, composerTargetThread = () => null, connectEvents, composerTargetActiveTurnId, createSubmissionId, currentComposerThreadId, currentDraftKey, defaultNewThreadEffort, defaultNewThreadModel, defaultNewThreadPermissionMode, deleteDraftAttachments, diagnosticErrorCode, diagnosticErrorStatus, diagnosticTaskHash, diagnosticThreadHash, document, draftKeyForThread, effectiveComposerPermissionMode, escapeHtml, followSubmittedMessageToBottom, homeAiDiagnosticReportingApi, imageCompressor, insertLocalSubmittedUserMessage, isAndroidBrowser, isChatGptProCommandText, isHermesEmbedMode, isKeyboardEditableElement, isThreadGoalCommandText, isThreadTaskCardCommandText, isThreadTileComposerContext, labelForEffort, labelForModel, labelForPermissionMode, loadJsonStorage, loadThread, loadThreads, localAttachmentPreviewUrl, localStorage, markActivity, markSubmittedUserMessageFailed, markThreadOptimisticallyActive, mergeItemsPreservingLocalVisible, newThreadSelectedEffort, newThreadSelectedModel, newThreadSelectedPermissionMode, normalizeOptionList, normalizeThreadGoal, openThreadGoalDialog, postClientEvent, publishPluginVoiceInputCapability, reconcileSubmittedUserMessageTurn, recordHomeAiDiagnosticFailure, renderCurrentThread, renderQuotaUsage, renderThreads, replacePendingAttachments, restoreThreadStatusSnapshot, saveCurrentDraftNow, saveDraftAttachmentFiles, scheduleComposerTargetRefresh, scheduleCurrentDraftSave, scheduleCurrentThreadRefresh, scheduleLivePollIfNeeded, scheduleScrollToBottomButtonUpdate, scheduleSubmittedMessageDomProbe, selectedQuotaModel, setComposerActionButtonLabel, setSteerFeedback, setThreadGoalDialogBusy, showComposerFastHint, showError, snapshotThreadStatus, startedTurnId, state, submitChatGptProRequest, submittedThreadGoal, threadDisplayName, threadTaskCardCommandText, threadTileStatePolicy, updateThreadGoalState, viewportMetrics, viewportState, window, writeCurrentDraftToKey } = deps;
-			function updateComposerHeightVar(options = {}) {
-				const composer = $("composer");
-				if (!composer) return false;
-				const nextPx = viewportMetrics.cssPixel(composer.getBoundingClientRect().height);
-				if (!nextPx) return false;
-				const previousPx = viewportMetrics.cssPixel(state.composerHeightPx);
-				if (!options.force && !viewportMetrics.stablePixelChanged(previousPx, nextPx)) return false;
-				state.composerHeightPx = nextPx;
-				document.documentElement.style.setProperty("--composer-height", `${nextPx}px`);
-				scheduleScrollToBottomButtonUpdate();
-				return true;
-			}
-			function clearSendProgressWatchdog() {
-				if (state.sendProgressWatchdog) {
-					clearTimeout(state.sendProgressWatchdog);
-					state.sendProgressWatchdog = null;
-				}
-			}
-			function startSendProgressWatchdog(threadId) {
-				clearSendProgressWatchdog();
-				state.sendProgressStartAt = Date.now();
-				state.sendProgressWarned = false;
-				const targetThreadId = String(threadId || "");
-				state.sendProgressWatchdog = setTimeout(() => {
-					if (!state.composerBusy || currentComposerThreadId() !== targetThreadId) return;
-					state.sendProgressWarned = true;
-					const steering = state.steerFeedback && state.steerFeedback.status === "sending";
-					$("connectionState").textContent = steering ? "引导较慢，稍等一下，避免重复提交" : "发送较慢，检查网络后稍等，避免重复提交";
-					$("connectionState").classList.add("error");
-					postClientEvent("message_send_stall", {
-						threadId: targetThreadId,
-						elapsedMs: Date.now() - state.sendProgressStartAt,
-						composerBusy: state.composerBusy,
-						hasContent: composerHasContent()
-					});
-				}, 9500);
-			}
-			function finishSendProgressWatchdog() {
-				clearSendProgressWatchdog();
-				state.sendProgressStartAt = 0;
-				state.sendProgressWarned = false;
-			}
-			function normalizeClientErrorMessage(message, err = null) {
-				if (String(err && err.code || "").trim() === "codex_account_auth_invalid") return "Codex 账号登录已失效，请重新登录该账号，或切换到可用账号后重试。";
-				const text = String(message || "").toLowerCase();
-				if (/token_expired|refresh_token_reused|refresh token|access token/.test(text)) return "Codex 账号登录已失效，请重新登录该账号，或切换到可用账号后重试。";
-				if (text.includes("failed to fetch")) return "网络异常，发送失败：请求未发出，请检查网络后重试";
-				if (/(rate\s*limit|usage\s*limit|quota|limit reached|exhausted|insufficient credits?)/i.test(String(message || ""))) {
-					const model = selectedQuotaModel();
-					return model ? `${labelForModel(model)} 额度不足，请切换模型后重试` : "模型额度不足，请切换模型后重试";
-				}
-				if (text.includes("request timed out")) return "请求超时，服务响应较慢，请稍后再试";
-				if (text.includes("request cancelled")) return "请求被取消，稍后可重试";
-				if (/\bunauthorized\b/.test(text)) return "登录已失效，请重新登录";
-				if (/\brpc timeout\b/.test(text)) return "请求服务端超时，请稍后重试";
-				return rawMessageFallback(message);
-			}
-			function rawMessageFallback(message) {
-				return String(message || "").trim() || "操作失败，请重试";
-			}
-			function composerText() {
-				const el = $("messageInput");
-				return (el ? el.innerText : "").replace(/\u00a0/g, " ").replace(/\n+$/g, "").trim();
-			}
-			function setComposerText(value) {
-				const el = $("messageInput");
-				if (!el) return;
-				el.textContent = String(value || "");
-				if (!value) el.innerHTML = "";
-				autoSizeMessageInput(el, { force: true });
-			}
-			function placeMessageInputCaretAtEnd(input) {
-				if (!input || !window.getSelection || !document.createRange) return false;
-				try {
-					const range = document.createRange();
-					range.selectNodeContents(input);
-					range.collapse(false);
-					const selection = window.getSelection();
-					if (!selection) return false;
-					selection.removeAllRanges();
-					selection.addRange(range);
-					return true;
-				} catch (_) {
-					return false;
-				}
-			}
-			function focusMessageInput(options = {}) {
-				const input = $("messageInput");
-				if (!input) return false;
-				if (options.ensureEnabled !== false && (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true")) setMessageInputDisabled(false);
-				if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
-				if (options.resetActiveFocus && document.activeElement === input && (!isAndroidBrowser() || options.allowAndroidActiveFocusReset)) try {
-					input.blur();
-				} catch (_) {}
-				try {
-					input.focus({ preventScroll: true });
-				} catch (_) {
-					try {
-						input.focus();
-					} catch (err) {
-						return false;
-					}
-				}
-				if (options.moveCaretToEnd) placeMessageInputCaretAtEnd(input);
-				if (options.retry && document.activeElement !== input) window.setTimeout(() => focusMessageInput(Object.assign({}, options, { retry: false })), 30);
-				return true;
-			}
-			function messageInputKeyboardVisible() {
-				if (!isKeyboardEditableElement(document.activeElement)) return false;
-				const viewport = viewportState();
-				return Boolean(viewport && (viewport.keyboardShrunk || viewport.hostKeyboardVisible));
-			}
-			function shouldRecoverMessageInputKeyboard() {
-				const input = $("messageInput");
-				if (!input || document.activeElement !== input) return false;
-				if (!isAndroidBrowser() && !isHermesEmbedMode()) return false;
-				if (state.composerBusy || state.composerComposing) return false;
-				if (messageInputKeyboardVisible()) return false;
-				return Date.now() - Number(state.messageInputKeyboardRecoveryAt || 0) > 450;
-			}
-			function recoverMessageInputKeyboardFromGesture() {
-				const wasFocused = Boolean(state.messageInputPointerWasFocused);
-				state.messageInputPointerWasFocused = false;
-				if (!wasFocused) return false;
-				if (!shouldRecoverMessageInputKeyboard()) return false;
-				state.messageInputKeyboardRecoveryAt = Date.now();
-				return focusMessageInput(isAndroidBrowser() ? {
-					moveCaretToEnd: false,
-					retry: true
-				} : {
-					moveCaretToEnd: false,
-					resetActiveFocus: true,
-					allowAndroidActiveFocusReset: true,
-					retry: true
-				});
-			}
-			function messageInputCanEnableForNativeGesture() {
-				if (state.composerBusy || state.attachmentProcessingCount > 0) return false;
-				if (state.newThreadDraft) return true;
-				return Boolean(state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError);
-			}
-			function releaseStaleAndroidMessageInputFocusBeforeNativeTap(input) {
-				if (!input || !isAndroidBrowser()) return false;
-				if (!state.messageInputPointerWasFocused) return false;
-				if (document.activeElement === input) return false;
-				if (!messageInputCanEnableForNativeGesture()) return false;
-				if (state.composerComposing || messageInputKeyboardVisible()) return false;
-				const now = Date.now();
-				if (now - Number(state.messageInputKeyboardRecoveryAt || 0) <= 450) return false;
-				state.messageInputKeyboardRecoveryAt = now;
-				try {
-					input.blur();
-					return true;
-				} catch (_) {
-					return false;
-				}
-			}
-			function prepareMessageInputForNativeGesture() {
-				const input = $("messageInput");
-				state.messageInputPointerWasFocused = document.activeElement === input;
-				if (!input || !isAndroidBrowser()) return;
-				if (!messageInputCanEnableForNativeGesture()) return;
-				if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") setMessageInputDisabled(false);
-				releaseStaleAndroidMessageInputFocusBeforeNativeTap(input);
-			}
-			function normalizedComposerIntentText(value) {
-				return String(value || "").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\u00a0/g, " ").trim();
-			}
-			function composerIntentOptions() {
-				return [
-					{
-						kind: "goal",
-						tag: "@目标任务",
-						label: "目标任务",
-						detail: "设置当前线程目标、预算和状态",
-						title: "目标任务",
-						subtitle: "打开目标设置框，内容不会作为普通消息发送。",
-						placeholder: "",
-						submitLabel: "打开目标"
-					},
-					{
-						kind: "task-card",
-						tag: "@任务卡片",
-						label: "任务卡片",
-						detail: "发给其他线程，目标侧审批后执行",
-						title: "任务卡片",
-						subtitle: "输入要交给其他线程处理的完整需求；提交后会先生成待审批任务卡片。",
-						placeholder: "写清目标线程、任务背景、期望输出和约束。",
-						submitLabel: "创建任务卡片"
-					},
-					{
-						kind: "task-card-auto",
-						tag: "@自由协作",
-						label: "自由协作",
-						detail: "任务卡片自动回传后续结果",
-						title: "自由协作",
-						subtitle: "输入跨线程协作需求；目标线程首次审批后，后续同源回传可自动继续。",
-						placeholder: "写清协作对象、需要对方完成的步骤，以及完成后回传什么。",
-						submitLabel: "创建协作卡片"
-					},
-					{
-						kind: "chatgpt-pro",
-						tag: "@ChatGPT Pro",
-						label: "ChatGPT Pro",
-						detail: "用专用 Pro 线程生成分析文档",
-						title: "ChatGPT Pro 分析",
-						subtitle: "输入要交给 ChatGPT Pro 分析的问题；内容不会进入当前工作线程。",
-						placeholder: "写清要分析的代码、方案、风险或决策问题。",
-						submitLabel: "提交 Pro 分析"
-					}
-				];
-			}
-			function composerIntentOption(kind) {
-				return composerIntentOptions().find((item) => item.kind === kind) || null;
-			}
-			function composerIntentDraftKey(kind) {
-				return `${currentDraftKey() || (state.currentThreadId ? `thread:${state.currentThreadId}` : "new-thread")}::${String(kind || "").trim()}`;
-			}
-			function loadComposerIntentDraft(kind) {
-				const drafts = loadJsonStorage(STORAGE_COMPOSER_INTENT_DRAFTS, {});
-				const key = composerIntentDraftKey(kind);
-				return String(drafts && drafts[key] || "");
-			}
-			function saveComposerIntentDraft(kind, value) {
-				const key = composerIntentDraftKey(kind);
-				if (!key) return;
-				const drafts = loadJsonStorage(STORAGE_COMPOSER_INTENT_DRAFTS, {});
-				const text = String(value || "").slice(0, COMPOSER_INTENT_BODY_MAX_CHARS);
-				if (text.trim()) drafts[key] = text;
-				else delete drafts[key];
-				try {
-					localStorage.setItem(STORAGE_COMPOSER_INTENT_DRAFTS, JSON.stringify(drafts));
-				} catch (err) {
-					recordHomeAiDiagnosticFailure({
-						category: "task_card_workflow_failed",
-						diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
-						severity_hint: "H2",
-						evidence_confidence: .78,
-						error_code: diagnosticErrorCode(err, action === "reply" ? "task_card_return_failed" : "task_card_action_failed"),
-						context: {
-							surface: "task-card",
-							action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
-							thread_hash: diagnosticThreadHash(state.currentThreadId),
-							task_hash: diagnosticTaskHash(id)
-						},
-						counts: { status_code: diagnosticErrorStatus(err) },
-						breadcrumbs: [{
-							kind: "task-card",
-							code: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
-							status: "failed",
-							fields: {
-								status_code: diagnosticErrorStatus(err),
-								task_hash: diagnosticTaskHash(id)
-							}
-						}]
-					});
-					showError(err);
-				}
-			}
-			function composerIntentBareTagKind(value) {
-				const text = normalizedComposerIntentText(value);
-				if (!text || text === "@") return "";
-				if (THREAD_GOAL_MENTION_PATTERN.test(text)) return "goal";
-				if (/^@(?:ChatGPT\s+Pro|ChatGPTPro|GPT\s+Pro)$/i.test(text)) return "chatgpt-pro";
-				if (THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(text) && !threadTaskCardCommandText(text)) return "task-card-auto";
-				if (THREAD_TASK_CARD_MENTION_PATTERN.test(text) && !threadTaskCardCommandText(text)) return "task-card";
-				return "";
-			}
-			function shouldShowComposerIntentMenu() {
-				return normalizedComposerIntentText(composerText()) === "@";
-			}
-			function closeComposerIntentMenu() {
-				const menu = $("composerIntentMenu");
-				if (menu) {
-					menu.hidden = true;
-					menu.innerHTML = "";
-				}
-				state.composerIntentMenuOpen = false;
-				document.removeEventListener("pointerdown", onComposerIntentOutsidePointer);
-			}
-			function onComposerIntentOutsidePointer(event) {
-				const menu = $("composerIntentMenu");
-				const target = event.target;
-				if (!state.composerIntentMenuOpen || !menu || menu.hidden) return;
-				if (menu.contains(target)) return;
-				if (target && target.closest && target.closest("#messageInput")) return;
-				closeComposerIntentMenu();
-			}
-			function openComposerIntentMenu() {
-				const menu = $("composerIntentMenu");
-				if (!menu) return;
-				closeComposerRuntimeMenu();
-				closeQuotaDetails();
-				menu.innerHTML = composerIntentOptions().map((item) => `
-    <button type="button" class="composer-intent-option" role="option" data-composer-intent="${escapeHtml(item.kind)}">
-      <span class="composer-intent-label">${escapeHtml(item.label)}</span>
-      <span class="composer-intent-tag">${escapeHtml(item.tag)}</span>
-      <span class="composer-intent-detail">${escapeHtml(item.detail)}</span>
-    </button>
-  `).join("");
-				menu.hidden = false;
-				state.composerIntentMenuOpen = true;
-				positionComposerIntentMenu();
-				document.addEventListener("pointerdown", onComposerIntentOutsidePointer);
-			}
-			function positionComposerIntentMenu() {
-				const menu = $("composerIntentMenu");
-				const anchor = $("messageInput") || $("composer");
-				if (!menu || menu.hidden || !anchor) return;
-				fitComposerPopupToAnchor(menu, anchor, {
-					minWidth: 280,
-					maxWidth: 420
-				});
-			}
-			function updateComposerIntentMenu() {
-				if (shouldShowComposerIntentMenu()) if (!state.composerIntentMenuOpen) openComposerIntentMenu();
-				else positionComposerIntentMenu();
-				else closeComposerIntentMenu();
-			}
-			function queueComposerIntentMenuUpdate() {
-				window.setTimeout(updateComposerIntentMenu, 0);
-			}
-			function selectComposerIntent(kind) {
-				const option = composerIntentOption(kind);
-				if (!option) return;
-				setComposerText(option.tag);
-				closeComposerIntentMenu();
-				updateComposerControls();
-				scheduleCurrentDraftSave();
-				const input = $("messageInput");
-				if (input) input.focus();
-			}
-			function setComposerIntentDialogStatus(message, isError = false) {
-				const status = $("composerIntentDialogStatus");
-				if (!status) return;
-				const text = String(message || "").trim();
-				status.textContent = text;
-				status.classList.toggle("hidden", !text);
-				status.classList.toggle("error", Boolean(isError));
-			}
-			function closeComposerIntentDialog(clearState = true) {
-				const dialog = $("composerIntentDialog");
-				if (dialog) dialog.classList.add("hidden");
-				if (clearState) {
-					state.composerIntentDialogKind = "";
-					state.composerIntentDialogBusy = false;
-				}
-				setComposerIntentDialogStatus("");
-				updateComposerControls();
-			}
-			function openComposerIntentDialog(kind, options = {}) {
-				const option = composerIntentOption(kind);
-				if (!option) return false;
-				if (kind !== "chatgpt-pro" && state.newThreadDraft) {
-					showError(/* @__PURE__ */ new Error(`${option.label} is only available in an existing thread`));
-					return false;
-				}
-				if (state.pendingAttachments.length) {
-					showError(/* @__PURE__ */ new Error(`${option.tag} does not support attachments in this entry point`));
-					return false;
-				}
-				state.composerIntentDialogKind = kind;
-				state.composerIntentDialogBusy = false;
-				const title = $("composerIntentDialogTitle");
-				const subtitle = $("composerIntentDialogSubtitle");
-				const label = $("composerIntentBodyLabel");
-				const input = $("composerIntentBodyInput");
-				const submit = $("composerIntentSubmitButton");
-				if (title) title.textContent = option.title;
-				if (subtitle) subtitle.textContent = option.subtitle;
-				if (label) label.textContent = option.label;
-				if (submit) submit.textContent = option.submitLabel;
-				if (input) {
-					input.placeholder = option.placeholder;
-					input.maxLength = COMPOSER_INTENT_BODY_MAX_CHARS;
-					input.value = String(options.initialBody || loadComposerIntentDraft(kind) || "").slice(0, COMPOSER_INTENT_BODY_MAX_CHARS);
-				}
-				setComposerIntentDialogStatus("");
-				const dialog = $("composerIntentDialog");
-				if (dialog) dialog.classList.remove("hidden");
-				window.setTimeout(() => {
-					if (input) input.focus();
-				}, 30);
-				return true;
-			}
-			async function submitComposerIntentDialog(event) {
-				if (event && typeof event.preventDefault === "function") event.preventDefault();
-				if (state.composerIntentDialogBusy || state.composerBusy) return;
-				const kind = state.composerIntentDialogKind;
-				const option = composerIntentOption(kind);
-				if (!option) return;
-				const input = $("composerIntentBodyInput");
-				const body = String(input && input.value || "").trim();
-				if (!body) {
-					setComposerIntentDialogStatus("请输入内容。", true);
-					return;
-				}
-				state.composerIntentDialogBusy = true;
-				setComposerIntentDialogStatus("提交中…");
-				updateComposerControls();
-				try {
-					if (kind === "chatgpt-pro") await submitChatGptProRequest(`${option.tag} ${body}`, { rethrow: true });
-					else if (kind === "task-card" || kind === "task-card-auto") await sendThreadTaskCardCommand(`${option.tag} ${body}`, { rethrow: true });
-					saveComposerIntentDraft(kind, "");
-					setComposerText("");
-					scheduleCurrentDraftSave();
-					closeComposerIntentDialog();
-				} catch (err) {
-					setComposerIntentDialogStatus(normalizeClientErrorMessage(err && err.message ? err.message : String(err), err), true);
-					showError(err);
-				} finally {
-					state.composerIntentDialogBusy = false;
-					updateComposerControls();
-				}
-			}
-			function saveComposerIntentDialogDraft() {
-				const kind = state.composerIntentDialogKind;
-				if (!composerIntentOption(kind)) return;
-				const input = $("composerIntentBodyInput");
-				saveComposerIntentDraft(kind, input ? input.value : "");
-				setComposerIntentDialogStatus("草稿已保存。");
-			}
-			function shouldKeepAndroidMessageInputEditable(disabled, el) {
-				if (!disabled || !isAndroidBrowser()) return false;
-				if (!el) return false;
-				if (!messageInputCanEnableForNativeGesture()) return false;
-				return Boolean(state.composerComposing || document.activeElement === el);
-			}
-			function setMessageInputDisabled(disabled) {
-				const el = $("messageInput");
-				if (!el) return;
-				const keepAndroidEditorConnection = shouldKeepAndroidMessageInputEditable(disabled, el);
-				const nextContentEditable = disabled && !keepAndroidEditorConnection ? "false" : "true";
-				const nextAriaDisabled = disabled ? "true" : "false";
-				const nextTabIndex = disabled ? -1 : 0;
-				const currentContentEditable = String(el.getAttribute("contenteditable") || el.contentEditable || "").toLowerCase();
-				const currentAriaDisabled = String(el.getAttribute("aria-disabled") || "").toLowerCase();
-				const currentClassDisabled = el.classList.contains("disabled");
-				if (currentContentEditable === nextContentEditable && currentAriaDisabled === nextAriaDisabled && el.tabIndex === nextTabIndex && currentClassDisabled === disabled) return;
-				if (!((state.composerComposing || keepAndroidEditorConnection) && currentContentEditable === "true") && currentContentEditable !== nextContentEditable) el.contentEditable = nextContentEditable;
-				if (currentAriaDisabled !== nextAriaDisabled) el.setAttribute("aria-disabled", nextAriaDisabled);
-				if (el.tabIndex !== nextTabIndex) el.tabIndex = nextTabIndex;
-				if (currentClassDisabled !== disabled) el.classList.toggle("disabled", disabled);
-			}
-			function messageInputTextLength(el) {
-				return String(el && (el.textContent || el.innerText) || "").length;
-			}
-			function messageInputTargetHeight(el) {
-				const scrollHeight = viewportMetrics.cssPixel(el && el.scrollHeight);
-				return Math.min(MESSAGE_INPUT_MAX_HEIGHT_PX, Math.max(MESSAGE_INPUT_MIN_HEIGHT_PX, scrollHeight));
-			}
-			function currentMessageInputHeight(el) {
-				const inlineHeight = Number.parseFloat(el && el.style && el.style.height || "");
-				return viewportMetrics.cssPixel(inlineHeight || el && el.getBoundingClientRect && el.getBoundingClientRect().height || 0);
-			}
-			function updateMessageInputOverflow(el, heightPx) {
-				if (!el || !el.style) return;
-				el.style.overflowY = el.scrollHeight > heightPx + 1 ? "auto" : "hidden";
-			}
-			function autoSizeMessageInput(el, options = {}) {
-				if (!el) return false;
-				const force = options.force === true;
-				const previousTextLength = Number(state.messageInputTextLength || 0);
-				const nextTextLength = messageInputTextLength(el);
-				const currentHeight = currentMessageInputHeight(el);
-				let nextHeight = messageInputTargetHeight(el);
-				if (force || nextTextLength < previousTextLength) {
-					const previousInlineHeight = el.style.height;
-					el.style.height = "auto";
-					nextHeight = messageInputTargetHeight(el);
-					if (!force && currentHeight && !viewportMetrics.stablePixelChanged(currentHeight, nextHeight)) {
-						el.style.height = previousInlineHeight;
-						state.messageInputTextLength = nextTextLength;
-						updateMessageInputOverflow(el, currentHeight);
-						return false;
-					}
-				}
-				state.messageInputTextLength = nextTextLength;
-				if (!force && currentHeight && !viewportMetrics.stablePixelChanged(currentHeight, nextHeight)) {
-					updateMessageInputOverflow(el, currentHeight);
-					return false;
-				}
-				state.messageInputHeightPx = nextHeight;
-				el.style.height = `${nextHeight}px`;
-				updateMessageInputOverflow(el, nextHeight);
-				updateComposerHeightVar();
-				return true;
-			}
-			function formatFileSize(bytes) {
-				if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
-				if (bytes < 1024) return `${bytes} B`;
-				if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-				return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-			}
-			function appendLocalAttachmentSummary(text, attachments) {
-				if (!attachments.length) return text;
-				const lines = attachments.map((item) => {
-					const file = item.file;
-					const kind = file.type && file.type.startsWith("image/") ? "image" : "file";
-					return `- ${file.name || "upload"} (${kind}, ${file.type || "file"}, ${formatFileSize(file.size || 0)}): ${file.name || "upload"}`;
-				});
-				return `${text ? `${text}\n\n` : ""}Uploaded attachments:\n${lines.join("\n")}`;
-			}
-			function localImageInputPartsForAttachments(attachments) {
-				return (attachments || []).map((item) => {
-					const file = item && item.file;
-					if (!file) return null;
-					const previewUrl = localAttachmentPreviewUrl(item);
-					if (!previewUrl) return null;
-					const name = String(file.name || "upload");
-					if (!(String(file.type || "").toLowerCase().startsWith("image/") || /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|tiff?|webp)$/i.test(name))) return null;
-					return {
-						type: "input_image",
-						image_url: { url: previewUrl },
-						fileName: name
-					};
-				}).filter(Boolean);
-			}
-			function localUserMessageItem(text, attachments, clientSubmissionId) {
-				const content = [{
-					type: "text",
-					text: appendLocalAttachmentSummary(text, attachments),
-					text_elements: []
-				}];
-				content.push(...localImageInputPartsForAttachments(attachments));
-				return {
-					id: `local-user-${clientSubmissionId || Date.now()}`,
-					type: "userMessage",
-					mobilePendingSubmission: true,
-					clientSubmissionId: clientSubmissionId || "",
-					startedAtMs: Date.now(),
-					content
-				};
-			}
-			function attachmentId() {
-				if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
-				return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-			}
-			function pendingAttachmentBytes(extra = []) {
-				return state.pendingAttachments.reduce((total, item) => total + item.file.size, 0) + extra.reduce((total, file) => total + file.size, 0);
-			}
-			async function prepareAttachmentFile(file) {
-				if (!imageCompressor || typeof imageCompressor.compressImageFile !== "function") return file;
-				try {
-					return await imageCompressor.compressImageFile(file);
-				} catch (err) {
-					postClientEvent("attachment_image_compression_failed", {
-						name: file && file.name ? String(file.name).slice(0, 120) : "",
-						type: file && file.type ? String(file.type).slice(0, 80) : "",
-						size: file && Number.isFinite(file.size) ? Number(file.size) : 0,
-						message: err && err.message ? err.message : String(err)
-					});
-					return file;
-				}
-			}
-			async function prepareAttachmentFiles(files) {
-				const prepared = [];
-				for (const file of files) prepared.push(await prepareAttachmentFile(file));
-				return prepared;
-			}
-			async function addAttachmentFiles(fileList) {
-				const files = Array.from(fileList || []).filter(Boolean);
-				if (!files.length) return;
-				state.attachmentProcessingCount += 1;
-				updateComposerControls();
-				let preparedFiles = files;
-				try {
-					preparedFiles = await prepareAttachmentFiles(files);
-				} finally {
-					state.attachmentProcessingCount = Math.max(0, state.attachmentProcessingCount - 1);
-					updateComposerControls();
-				}
-				const draftKey = currentDraftKey();
-				const startIndex = state.pendingAttachments.length;
-				const accepted = [];
-				for (const file of preparedFiles) {
-					if (state.pendingAttachments.length + accepted.length >= state.maxUploadFiles) {
-						showError(/* @__PURE__ */ new Error(`Too many attachments; max ${state.maxUploadFiles}`));
-						break;
-					}
-					if (pendingAttachmentBytes(accepted.concat(file)) > state.maxUploadBytes) {
-						showError(/* @__PURE__ */ new Error(`Attachments are too large; max ${formatFileSize(state.maxUploadBytes)}`));
-						break;
-					}
-					accepted.push(file);
-				}
-				for (const file of accepted) {
-					const previewUrl = file.type && file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
-					state.pendingAttachments.push({
-						id: attachmentId(),
-						file,
-						previewUrl
-					});
-				}
-				renderAttachmentList();
-				const addedItems = state.pendingAttachments.slice(startIndex);
-				if (draftKey) saveDraftAttachmentFiles(draftKey, addedItems);
-				scheduleCurrentDraftSave();
-			}
-			function removeAttachment(id) {
-				const draftKey = currentDraftKey();
-				const index = state.pendingAttachments.findIndex((item) => item.id === id);
-				if (index < 0) return;
-				const [item] = state.pendingAttachments.splice(index, 1);
-				if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-				renderAttachmentList();
-				if (draftKey) deleteDraftAttachments(draftKey, [id]).catch((err) => {
-					postClientEvent("draft_attachment_remove_failed", { message: err.message || String(err) });
-				});
-				scheduleCurrentDraftSave();
-			}
-			function clearPendingAttachments(options = {}) {
-				const draftKey = currentDraftKey();
-				const attachmentsToReleaseLater = options.revokePreviewUrls === false ? state.pendingAttachments.slice() : [];
-				replacePendingAttachments([], {
-					saveDraft: false,
-					revokePreviewUrls: options.revokePreviewUrls
-				});
-				if (attachmentsToReleaseLater.length) scheduleAttachmentPreviewUrlRevoke(attachmentsToReleaseLater);
-				if (options.deleteDraft !== false && draftKey) deleteDraftAttachments(draftKey).catch((err) => {
-					postClientEvent("draft_attachment_clear_failed", { message: err.message || String(err) });
-				});
-			}
-			function renderAttachmentList() {
-				const list = $("attachmentList");
-				if (!state.pendingAttachments.length) {
-					list.classList.add("hidden");
-					list.innerHTML = "";
-					updateComposerControls();
-					updateComposerHeightVar();
-					return;
-				}
-				list.classList.remove("hidden");
-				list.innerHTML = state.pendingAttachments.map((item) => {
-					const file = item.file;
-					const thumb = item.previewUrl ? `<img class="attachment-thumb" src="${escapeHtml(item.previewUrl)}" alt="">` : `<div class="attachment-file-icon" aria-hidden="true"></div>`;
-					return `<div class="attachment-chip" data-attachment="${escapeHtml(item.id)}">
-      ${thumb}
-      <div class="attachment-meta">
-        <div class="attachment-name">${escapeHtml(file.name || "upload")}</div>
-        <div class="attachment-size">${escapeHtml(`${file.type || "file"} - ${formatFileSize(file.size)}`)}</div>
-      </div>
-      <button class="attachment-remove" type="button" title="Remove attachment" data-remove-attachment="${escapeHtml(item.id)}">x</button>
-    </div>`;
-				}).join("");
-				updateComposerControls();
-				updateComposerHeightVar();
-			}
-			function composerHasContent() {
-				return Boolean(composerText() || state.pendingAttachments.length);
-			}
-			function effectiveDefaultModel(thread = composerTargetThread()) {
-				return thread && thread.model || state.defaultModel || "";
-			}
-			function effectiveDefaultEffort(thread = composerTargetThread()) {
-				return thread && thread.effort || state.defaultReasoningEffort || "";
-			}
-			function effectiveDefaultPermissionMode(thread = composerTargetThread()) {
-				const settings = thread && thread.runtimeSettings;
-				if (String(settings && settings.sandboxPolicyType || "").replace(/[-_]/g, "").toLowerCase() === "dangerfullaccess") return "full";
-				return effectiveComposerPermissionMode(settings && settings.permissionMode || "");
-			}
-			function selectedComposerModel() {
-				if (state.newThreadDraft) return newThreadSelectedModel();
-				return state.composerModel || effectiveDefaultModel();
-			}
-			function selectedComposerEffort() {
-				if (state.newThreadDraft) return newThreadSelectedEffort();
-				return state.composerEffort || effectiveDefaultEffort();
-			}
-			function selectedComposerPermissionMode() {
-				if (state.newThreadDraft) return newThreadSelectedPermissionMode();
-				return effectiveComposerPermissionMode(state.composerPermissionMode || effectiveDefaultPermissionMode()) || defaultNewThreadPermissionMode();
-			}
-			function resetComposerRuntimeSelection() {
-				state.composerModel = "";
-				state.composerEffort = "";
-				state.composerPermissionMode = "";
-				state.codexFastMode = false;
-				closeComposerRuntimeMenu();
-				closeComposerIntentMenu();
-				state.quotaDetailsOpen = false;
-			}
-			function runtimeOptionValues(kind) {
-				if (kind === "model") return normalizeOptionList([
-					selectedComposerModel(),
-					state.defaultModel,
-					...state.modelOptions
-				]);
-				if (kind === "effort") return normalizeOptionList([
-					selectedComposerEffort(),
-					state.defaultReasoningEffort,
-					...state.reasoningEffortOptions
-				]);
-				if (kind === "permission") return normalizeOptionList([
-					selectedComposerPermissionMode(),
-					defaultNewThreadPermissionMode(),
-					...state.permissionModeOptions
-				]);
-				return [];
-			}
-			function runtimeOptionLabel(kind, value) {
-				if (kind === "model") return labelForModel(value);
-				if (kind === "effort") return labelForEffort(value);
-				if (kind === "permission") return labelForPermissionMode(value);
-				return value;
-			}
-			function runtimeSelectedValue(kind) {
-				if (kind === "model") return selectedComposerModel();
-				if (kind === "effort") return selectedComposerEffort();
-				if (kind === "permission") return selectedComposerPermissionMode();
-				return "";
-			}
-			function codexFastCommandEnabled() {
-				return Boolean(state.codexFastMode);
-			}
-			function clearLegacyCodexFastModeStorage() {
-				try {
-					localStorage.removeItem(STORAGE_CODEX_FAST_MODE);
-				} catch (_) {}
-			}
-			function setCodexFastCommandEnabled(enabled) {
-				state.codexFastMode = Boolean(enabled);
-				clearLegacyCodexFastModeStorage();
-				renderComposerSettings();
-				updateComposerControls();
-				saveCurrentDraftNow();
-				showComposerFastHint(state.codexFastMode);
-			}
-			function applyRuntimeSelection(kind, value) {
-				const selected = String(value || "").trim();
-				if (!selected) return;
-				if (state.newThreadDraft) {
-					if (kind === "model") state.newThreadModel = selected;
-					if (kind === "effort") state.newThreadEffort = selected;
-					if (kind === "permission") state.newThreadPermissionMode = effectiveComposerPermissionMode(selected) || defaultNewThreadPermissionMode();
-				} else {
-					if (kind === "model") state.composerModel = selected;
-					if (kind === "effort") state.composerEffort = selected;
-					if (kind === "permission") state.composerPermissionMode = effectiveComposerPermissionMode(selected) || defaultNewThreadPermissionMode();
-				}
-				closeComposerRuntimeMenu();
-				renderComposerSettings();
-				updateComposerControls();
-				saveCurrentDraftNow();
-			}
-			function closeComposerRuntimeMenu() {
-				const menu = $("composerRuntimeMenu");
-				if (menu) {
-					menu.hidden = true;
-					menu.innerHTML = "";
-				}
-				for (const id of [
-					"composerModelControl",
-					"composerEffortControl",
-					"composerPermissionControl"
-				]) {
-					const button = $(id);
-					if (button) button.setAttribute("aria-expanded", "false");
-				}
-				state.composerMenuKind = "";
-				document.removeEventListener("pointerdown", onComposerRuntimeOutsidePointer);
-			}
-			function onComposerRuntimeOutsidePointer(event) {
-				const menu = $("composerRuntimeMenu");
-				const target = event.target;
-				if (!menu || menu.hidden) return;
-				if (menu.contains(target)) return;
-				if (target && target.closest && target.closest("[data-composer-runtime]")) return;
-				closeComposerRuntimeMenu();
-			}
-			function openComposerRuntimeMenu(kind, anchor) {
-				const menu = $("composerRuntimeMenu");
-				if (!menu || !anchor) return;
-				closeComposerIntentMenu();
-				state.quotaDetailsOpen = false;
-				const selected = runtimeSelectedValue(kind);
-				menu.innerHTML = runtimeOptionValues(kind).map((value) => {
-					return `<button type="button" class="composer-runtime-option${value === selected ? " is-selected" : ""}" role="option" aria-selected="${value === selected ? "true" : "false"}" data-runtime-kind="${escapeHtml(kind)}" data-runtime-value="${escapeHtml(value)}">${escapeHtml(runtimeOptionLabel(kind, value))}</button>`;
-				}).join("");
-				menu.hidden = false;
-				state.composerMenuKind = kind;
-				for (const id of [
-					"composerModelControl",
-					"composerEffortControl",
-					"composerPermissionControl"
-				]) {
-					const button = $(id);
-					if (button) button.setAttribute("aria-expanded", button === anchor ? "true" : "false");
-				}
-				fitComposerPopupToAnchor(menu, anchor);
-				document.addEventListener("pointerdown", onComposerRuntimeOutsidePointer);
-			}
-			function composerRuntimeMenuDiagnostics(kind, triggerType) {
-				const menu = $("composerRuntimeMenu");
-				const rect = menu && !menu.hidden ? menu.getBoundingClientRect() : null;
-				const visualViewport = window.visualViewport;
-				const viewportWidth = Math.round(visualViewport && visualViewport.width || window.innerWidth || 0);
-				const viewportHeight = Math.round(visualViewport && visualViewport.height || window.innerHeight || 0);
-				return {
-					kind,
-					triggerType,
-					menuHidden: !menu || menu.hidden,
-					optionCount: menu ? menu.querySelectorAll("[data-runtime-kind][data-runtime-value]").length : 0,
-					top: rect ? Math.round(rect.top) : null,
-					bottom: rect ? Math.round(rect.bottom) : null,
-					left: rect ? Math.round(rect.left) : null,
-					right: rect ? Math.round(rect.right) : null,
-					viewportWidth,
-					viewportHeight,
-					visible: Boolean(rect && rect.bottom > 0 && rect.top < viewportHeight && rect.right > 0 && rect.left < viewportWidth)
-				};
-			}
-			function reportComposerRuntimeMenu(kind, triggerType) {
-				(typeof window.requestAnimationFrame === "function" ? window.requestAnimationFrame.bind(window) : (callback) => window.setTimeout(callback, 0))(() => postClientEvent("composer_runtime_menu_opened", composerRuntimeMenuDiagnostics(kind, triggerType)));
-			}
-			function handleComposerRuntimeControl(event, kind, button) {
-				event.preventDefault();
-				event.stopPropagation();
-				if (button.disabled) {
-					postClientEvent("composer_runtime_control_ignored", {
-						kind,
-						triggerType: event.type,
-						reason: "disabled"
-					});
-					return;
-				}
-				if (state.composerMenuKind === kind) {
-					closeComposerRuntimeMenu();
-					postClientEvent("composer_runtime_menu_closed", {
-						kind,
-						triggerType: event.type
-					});
-				} else {
-					openComposerRuntimeMenu(kind, button);
-					reportComposerRuntimeMenu(kind, event.type);
-				}
-			}
-			function fitComposerPopupToAnchor(panel, anchor, options = {}) {
-				const rect = anchor.getBoundingClientRect();
-				const minWidth = Number(options.minWidth || 180);
-				const maxWidth = Number(options.maxWidth || 280);
-				const visualViewport = window.visualViewport;
-				const viewportLeft = visualViewport ? Number(visualViewport.offsetLeft || 0) : 0;
-				const viewportTop = visualViewport ? Number(visualViewport.offsetTop || 0) : 0;
-				const viewportWidth = Math.max(1, Math.floor(visualViewport && visualViewport.width || window.innerWidth || document.documentElement.clientWidth || maxWidth));
-				const viewportHeight = Math.max(1, Math.floor(visualViewport && visualViewport.height || window.innerHeight || document.documentElement.clientHeight || 360));
-				const width = Math.max(minWidth, Math.min(maxWidth, viewportWidth - 16, Math.max(rect.width, minWidth)));
-				const left = Math.max(viewportLeft + 8, Math.min(viewportLeft + viewportWidth - width - 8, rect.left));
-				const anchorTop = Math.max(viewportTop + 8, Math.min(viewportTop + viewportHeight - 8, rect.top));
-				const availableAbove = Math.max(96, anchorTop - viewportTop - 12);
-				const bottom = Math.max(8, viewportTop + viewportHeight - anchorTop + 6);
-				panel.style.setProperty("--composer-popup-left", `${Math.round(left)}px`);
-				panel.style.setProperty("--composer-popup-bottom", `${Math.round(bottom)}px`);
-				panel.style.setProperty("--composer-popup-width", `${Math.round(width)}px`);
-				panel.style.setProperty("--composer-popup-max-height", `${Math.round(Math.min(360, availableAbove))}px`);
-			}
-			function closeQuotaDetails() {
-				state.quotaDetailsOpen = false;
-				const panel = $("quotaDetailPanel");
-				if (panel) {
-					panel.hidden = true;
-					panel.innerHTML = "";
-				}
-				const quota = $("quotaUsage");
-				if (quota) quota.setAttribute("aria-expanded", "false");
-				document.removeEventListener("pointerdown", onQuotaOutsidePointer);
-			}
-			function onQuotaOutsidePointer(event) {
-				const panel = $("quotaDetailPanel");
-				const quota = $("quotaUsage");
-				const target = event.target;
-				if (!state.quotaDetailsOpen) return;
-				if (panel && panel.contains(target) || quota && quota.contains(target)) return;
-				closeQuotaDetails();
-			}
-			function toggleQuotaDetails(anchor) {
-				closeComposerRuntimeMenu();
-				state.quotaDetailsOpen = !state.quotaDetailsOpen;
-				renderQuotaUsage();
-				const panel = $("quotaDetailPanel");
-				if (state.quotaDetailsOpen && panel && anchor) {
-					fitComposerPopupToAnchor(panel, anchor, {
-						minWidth: 320,
-						maxWidth: 390
-					});
-					document.addEventListener("pointerdown", onQuotaOutsidePointer);
-				} else document.removeEventListener("pointerdown", onQuotaOutsidePointer);
-			}
-			function composerPlaceholderText() {
-				const targetThreadId = currentComposerThreadId();
-				const targetThread = composerTargetThread();
-				return threadTileStatePolicy.composerTargetPlaceholderPlan({
-					newThreadDraft: state.newThreadDraft,
-					tileContext: isThreadTileComposerContext(),
-					targetThreadId,
-					hasTargetThread: Boolean(targetThread),
-					targetTitle: targetThread ? threadDisplayName(targetThread) : "",
-					newThreadPlaceholder: "输入第一条消息",
-					defaultPlaceholder: "Message Codex"
-				}).text;
-			}
-			function composerShowsTargetPlaceholder() {
-				const targetThreadId = currentComposerThreadId();
-				const targetThread = composerTargetThread();
-				return threadTileStatePolicy.composerTargetPlaceholderPlan({
-					newThreadDraft: state.newThreadDraft,
-					tileContext: isThreadTileComposerContext(),
-					targetThreadId,
-					hasTargetThread: Boolean(targetThread)
-				}).showTargetPlaceholder === true;
-			}
-			function applyComposerActionControlPlan(sendButton, plan) {
-				if (!sendButton || !plan) return;
-				setComposerActionButtonLabel(sendButton, plan.label || "Send", { proxy: plan.labelProxy === true });
-				sendButton.title = plan.title || "";
-				const classState = plan.classState || {};
-				sendButton.classList.toggle("interrupt-mode", classState.interruptMode === true);
-				sendButton.classList.toggle("sending", classState.sending === true);
-				sendButton.classList.toggle("send-failed", classState.sendFailed === true);
-				sendButton.classList.toggle("steer-mode", classState.steerMode === true);
-				sendButton.classList.toggle("plugin-voice-input-gesture", classState.pluginVoiceInputGesture === true);
-				if (plan.ariaLabel) sendButton.setAttribute("aria-label", plan.ariaLabel);
-				else sendButton.removeAttribute("aria-label");
-				sendButton.disabled = plan.sendButtonDisabled === true;
-			}
-			function renderComposerSettings() {
-				const commandControl = $("composerCommandControl");
-				const modelControl = $("composerModelControl");
-				const effortControl = $("composerEffortControl");
-				const permissionControl = $("composerPermissionControl");
-				if (!commandControl || !modelControl || !effortControl || !permissionControl) return;
-				const selectedModel = selectedComposerModel();
-				const selectedEffort = selectedComposerEffort();
-				const selectedPermission = selectedComposerPermissionMode();
-				const fastEnabled = codexFastCommandEnabled();
-				const fastScopeLabel = state.newThreadDraft ? "this new thread" : "this thread";
-				commandControl.classList.toggle("is-fast", fastEnabled);
-				commandControl.setAttribute("aria-pressed", fastEnabled ? "true" : "false");
-				commandControl.title = fastEnabled ? `Fast tag on for ${fastScopeLabel}` : `Fast tag off for ${fastScopeLabel}`;
-				commandControl.setAttribute("aria-label", fastEnabled ? `Fast tag on for ${fastScopeLabel}` : `Fast tag off for ${fastScopeLabel}`);
-				commandControl.disabled = state.composerBusy;
-				const controls = [
-					[
-						modelControl,
-						selectedModel ? labelForModel(selectedModel) : "--",
-						state.newThreadDraft || state.composerModel ? "下一轮使用" : "当前记录"
-					],
-					[
-						effortControl,
-						selectedEffort ? labelForEffort(selectedEffort) : "--",
-						state.newThreadDraft || state.composerEffort ? "下一轮使用" : "当前记录"
-					],
-					[
-						permissionControl,
-						selectedPermission ? labelForPermissionMode(selectedPermission).replace(/权限$/, "") : "--",
-						state.newThreadDraft || state.composerPermissionMode ? "下一轮使用" : "当前记录"
-					]
-				];
-				for (const [button, value, mode] of controls) {
-					const valueEl = button.querySelector(".composer-chip-value");
-					if (valueEl) valueEl.textContent = value;
-					button.title = `${button.querySelector(".composer-chip-label")?.textContent || ""}：${value}（${mode}）`;
-					button.classList.toggle("has-pending-value", mode === "下一轮使用");
-					button.disabled = state.composerBusy;
-				}
-				renderQuotaUsage();
-			}
-			function updateComposerControls() {
-				const targetThreadId = currentComposerThreadId();
-				const targetThread = composerTargetThread();
-				const targetActiveTurnId = composerTargetActiveTurnId();
-				const hasThread = Boolean(targetThreadId && targetThread && !targetThread.mobileLoading && !targetThread.mobileLoadError);
-				const hasNewThreadDraft = Boolean(state.newThreadDraft);
-				const hasContent = composerHasContent();
-				const bareIntentKind = composerIntentBareTagKind(composerText());
-				const goalCommandMode = Boolean(!hasNewThreadDraft && isThreadGoalCommandText(composerText()));
-				const commandMode = Boolean(!hasNewThreadDraft && isThreadTaskCardCommandText(composerText()));
-				const voiceGestureAvailable = pluginVoiceInputGestureAvailable();
-				const bareIntentOption = bareIntentKind ? composerIntentOption(bareIntentKind) : null;
-				const composerActionPlan = threadTileStatePolicy.composerActionControlPlan({
-					hasThread,
-					hasNewThreadDraft,
-					composerBusy: state.composerBusy,
-					attachmentProcessingCount: state.attachmentProcessingCount,
-					hasContent,
-					targetActiveTurnId,
-					bareIntentKind,
-					bareIntentTitle: bareIntentOption ? `Open ${bareIntentOption.label}` : "Open composer action",
-					goalCommandMode,
-					commandMode,
-					sendButtonHint: state.sendButtonHint,
-					steeringBusy: Boolean(state.steerFeedback && state.steerFeedback.status === "sending"),
-					voiceGestureAvailable,
-					hermesEmbedMode: isHermesEmbedMode()
-				});
-				const disabled = composerActionPlan.disabled === true;
-				const sendButton = $("sendMessage");
-				const attachButton = $("attachFiles");
-				const messageInput = $("messageInput");
-				for (const id of [
-					"composerIntentBodyInput",
-					"composerIntentSubmitButton",
-					"composerIntentSaveButton"
-				]) {
-					const el = $(id);
-					if (el) el.disabled = state.composerIntentDialogBusy || state.composerBusy;
-				}
-				if (messageInput) {
-					messageInput.dataset.placeholder = composerPlaceholderText();
-					messageInput.classList.toggle("has-target-placeholder", composerShowsTargetPlaceholder());
-				}
-				setMessageInputDisabled(disabled);
-				$("fileInput").disabled = disabled;
-				attachButton.disabled = disabled;
-				attachButton.classList.toggle("disabled", disabled);
-				attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
-				attachButton.tabIndex = disabled ? -1 : 0;
-				for (const id of [
-					"composerCommandControl",
-					"composerModelControl",
-					"composerEffortControl",
-					"composerPermissionControl",
-					"quotaUsage"
-				]) {
-					const button = $(id);
-					if (button) button.disabled = disabled;
-				}
-				applyComposerActionControlPlan(sendButton, composerActionPlan);
-				publishPluginVoiceInputCapability();
-			}
-			function hasTransferFiles(event) {
-				return Array.from(event.dataTransfer && event.dataTransfer.types || []).includes("Files");
-			}
-			function goalDialogFormValues(options = {}) {
-				const requireObjective = options.requireObjective !== false;
-				const thread = currentGoalDialogThread();
-				const threadId = String(thread && thread.id || state.goalDialogThreadId || "").trim();
-				const objectiveInput = $("goalObjectiveInput");
-				const budgetInput = $("goalTokenBudgetInput");
-				const objective = String(objectiveInput && objectiveInput.value || "").trim();
-				const rawBudget = String(budgetInput && budgetInput.value || "").trim();
-				if (!threadId) {
-					showError(/* @__PURE__ */ new Error("No thread is selected"));
-					return null;
-				}
-				if (requireObjective && !objective) {
-					showError(/* @__PURE__ */ new Error("Goal objective is required"));
-					if (objectiveInput) objectiveInput.focus();
-					return null;
-				}
-				let tokenBudget = 0;
-				if (rawBudget) {
-					tokenBudget = Number(rawBudget);
-					if (!Number.isFinite(tokenBudget) || tokenBudget <= 0) {
-						showError(/* @__PURE__ */ new Error("Token budget must be a positive number"));
-						if (budgetInput) budgetInput.focus();
-						return null;
-					}
-					tokenBudget = Math.trunc(tokenBudget);
-				}
-				return {
-					thread,
-					threadId,
-					objective,
-					tokenBudget: tokenBudget > 0 ? tokenBudget : null
-				};
-			}
-			async function submitThreadGoalMessage(event) {
-				if (event && typeof event.preventDefault === "function") event.preventDefault();
-				if (state.goalSubmitBusy || state.composerBusy) {
-					if (state.composerBusy) showError(/* @__PURE__ */ new Error("A message is already sending"));
-					return;
-				}
-				const values = goalDialogFormValues();
-				if (!values) return;
-				const { threadId, objective, tokenBudget } = values;
-				state.composerBusy = true;
-				state.sendButtonHint = "";
-				setThreadGoalDialogBusy(true, "Saving...");
-				markActivity("Goal set");
-				updateComposerControls();
-				try {
-					postClientEvent("goal_request_start", { threadId });
-					const result = await api(`/api/threads/${encodeURIComponent(threadId)}/goal`, {
-						method: "POST",
-						body: JSON.stringify({
-							objective,
-							tokenBudget
-						}),
-						timeoutMs: 3e4
-					});
-					const responseGoal = normalizeThreadGoal(result && result.goal, threadId);
-					const visibleGoal = responseGoal || submittedThreadGoal(threadId, objective, tokenBudget);
-					if (visibleGoal) updateThreadGoalState(threadId, visibleGoal);
-					closeThreadGoalDialog(true);
-					$("connectionState").classList.remove("error");
-					$("connectionState").textContent = "Goal set";
-					markActivity("Goal set");
-					postClientEvent("goal_request_success", {
-						threadId,
-						hasResponseGoal: Boolean(responseGoal)
-					});
-					if (threadId === state.currentThreadId) scheduleCurrentThreadRefresh(600);
-					loadThreads({ silent: true }).catch(showError);
-				} catch (err) {
-					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Goal set failed";
-					$("connectionState").classList.add("error");
-					$("connectionState").textContent = message;
-					postClientEvent("goal_request_failure", {
-						threadId,
-						message
-					});
-					showError(new Error(message));
-				} finally {
-					state.composerBusy = false;
-					setThreadGoalDialogBusy(false);
-					updateComposerControls();
-				}
-			}
-			function threadGoalActionStatusText(action) {
-				if (action === "continue") return "Goal continued";
-				if (action === "pause") return "Goal paused";
-				if (action === "cancel") return "Goal cancelled";
-				return "Goal updated";
-			}
-			function threadGoalActionBusyText(action) {
-				if (action === "continue") return "Continuing...";
-				if (action === "pause") return "Pausing...";
-				if (action === "cancel") return "Cancelling...";
-				return "Sending...";
-			}
-			async function runThreadGoalDialogAction(action, event) {
-				if (event && typeof event.preventDefault === "function") event.preventDefault();
-				if (event && typeof event.stopPropagation === "function") event.stopPropagation();
-				if (state.goalSubmitBusy || state.composerBusy) {
-					if (state.composerBusy) showError(/* @__PURE__ */ new Error("A message is already sending"));
-					return;
-				}
-				const normalizedAction = String(action || "").trim().toLowerCase();
-				const values = goalDialogFormValues({ requireObjective: normalizedAction !== "cancel" });
-				if (!values) return;
-				const { threadId, objective, tokenBudget } = values;
-				state.composerBusy = true;
-				state.sendButtonHint = "";
-				setThreadGoalDialogBusy(true, threadGoalActionBusyText(normalizedAction));
-				markActivity("Goal action");
-				updateComposerControls();
-				try {
-					postClientEvent("goal_action_start", {
-						threadId,
-						action: normalizedAction
-					});
-					const result = await api(`/api/threads/${encodeURIComponent(threadId)}/goal/actions`, {
-						method: "POST",
-						body: JSON.stringify({
-							action: normalizedAction,
-							objective: objective || void 0,
-							tokenBudget
-						}),
-						timeoutMs: 3e4
-					});
-					const responseGoal = normalizeThreadGoal(result && result.goal, threadId);
-					if (normalizedAction === "cancel") updateThreadGoalState(threadId, null);
-					else if (responseGoal) updateThreadGoalState(threadId, responseGoal);
-					else if (objective) updateThreadGoalState(threadId, submittedThreadGoal(threadId, objective, tokenBudget));
-					closeThreadGoalDialog(true);
-					$("connectionState").classList.remove("error");
-					$("connectionState").textContent = threadGoalActionStatusText(normalizedAction);
-					markActivity(threadGoalActionStatusText(normalizedAction));
-					postClientEvent("goal_action_success", {
-						threadId,
-						action: normalizedAction,
-						hasResponseGoal: Boolean(responseGoal)
-					});
-					if (threadId === state.currentThreadId) scheduleCurrentThreadRefresh(600);
-					loadThreads({ silent: true }).catch(showError);
-				} catch (err) {
-					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Goal action failed";
-					$("connectionState").classList.add("error");
-					$("connectionState").textContent = message;
-					postClientEvent("goal_action_failure", {
-						threadId,
-						action: normalizedAction,
-						message
-					});
-					showError(new Error(message));
-				} finally {
-					state.composerBusy = false;
-					setThreadGoalDialogBusy(false);
-					updateComposerControls();
-				}
-			}
-			function requestGoalDialogSubmitFromEnter(event) {
-				if (!event || event.key !== "Enter" || event.shiftKey || event.isComposing) return;
-				if (state.goalSubmitBusy || state.composerBusy) return;
-				event.preventDefault();
-				event.stopPropagation();
-				requestGoalDialogSubmit();
-			}
-			function requestGoalDialogSubmitFromButton(event) {
-				if (event && typeof event.preventDefault === "function") event.preventDefault();
-				if (event && typeof event.stopPropagation === "function") event.stopPropagation();
-				const now = Date.now();
-				if (now - state.lastGoalButtonSubmitAt < 650) return;
-				state.lastGoalButtonSubmitAt = now;
-				const button = $("goalSubmitButton");
-				if (button && button.disabled) return;
-				postClientEvent("goal_button_pressed", {
-					threadId: state.goalDialogThreadId || state.currentThreadId || "",
-					eventType: event && event.type || ""
-				});
-				requestGoalDialogSubmit();
-			}
-			function requestGoalDialogSubmit() {
-				const form = $("goalForm");
-				if (form && typeof form.requestSubmit === "function") form.requestSubmit();
-				else submitThreadGoalMessage().catch(showError);
-			}
-			async function sendThreadTaskCardCommand(commandText, options = {}) {
-				const text = String(commandText || "").trim();
-				const targetThreadId = currentComposerThreadId();
-				const targetThread = composerTargetThread();
-				if (!text || !targetThreadId) return false;
-				if (state.pendingAttachments.length) {
-					const err = /* @__PURE__ */ new Error("Task-card commands do not support attachments yet");
-					showError(err);
-					if (options.rethrow) throw err;
-					return false;
-				}
-				const submittedDraftKey = currentDraftKey();
-				const clientSubmissionId = createSubmissionId();
-				const outboundText = buildThreadTaskCardDraftRequestText(text, targetThread);
-				state.composerBusy = true;
-				state.sendButtonHint = "";
-				startSendProgressWatchdog(targetThreadId);
-				markActivity("任务卡片");
-				updateComposerControls();
-				if (state.sendProgressWarned) {
-					$("connectionState").textContent = "Task card draft request";
-					$("connectionState").classList.remove("error");
-				}
-				try {
-					const body = new FormData();
-					body.append("clientSubmissionId", clientSubmissionId);
-					body.append("text", outboundText);
-					if (targetThread && targetThread.cwd) body.append("cwd", targetThread.cwd);
-					body.append("model", selectedComposerModel());
-					body.append("effort", selectedComposerEffort());
-					body.append("permissionMode", selectedComposerPermissionMode());
-					if (codexFastCommandEnabled()) body.append("fastMode", "1");
-					registerSubmittedUserMessage(targetThreadId, outboundText, [], clientSubmissionId);
-					const insertedLocalMessage = insertLocalSubmittedUserMessage(targetThreadId, outboundText, [], clientSubmissionId);
-					markThreadOptimisticallyActive(targetThreadId);
-					renderThreads();
-					if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
-					scheduleSubmittedMessageDomProbe(targetThreadId, clientSubmissionId, "task-card-submit");
-					followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
-					const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
-						method: "POST",
-						body,
-						timeoutMs: 18e4
-					});
-					const serverTurnId = startedTurnId(result);
-					if (serverTurnId && reconcileSubmittedUserMessageTurn(targetThreadId, clientSubmissionId, serverTurnId)) renderCurrentThread({ stickToBottom: true });
-					commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
-						threadId: targetThreadId,
-						messageId: clientSubmissionId,
-						composerId: "thread-composer"
-					});
-					setComposerText("");
-					writeCurrentDraftToKey(submittedDraftKey);
-					$("connectionState").classList.remove("error");
-					$("connectionState").textContent = "Task card draft requested";
-					markActivity("草案已请求");
-					recordHomeAiDiagnosticSuccess({
-						category: "task_card_workflow_failed",
-						diagnostic_type: "task_card_draft_request_failed",
-						error_code: "task_card_draft_request_failed",
-						context: {
-							surface: "task-card",
-							action: "draft-request",
-							thread_hash: diagnosticThreadHash(targetThreadId)
-						}
-					});
-					scheduleComposerTargetRefresh(targetThreadId, 600, "task-card-submit");
-					scheduleLivePollIfNeeded(1200);
-					loadThreads({ silent: true }).catch(showError);
-					return true;
-				} catch (err) {
-					clearSubmittedMessageBottomFollow();
-					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err) || "任务卡片提交失败，请重试";
-					state.sendButtonHint = "重试";
-					markSubmittedUserMessageFailed(targetThreadId, outboundText, [], clientSubmissionId, message);
-					$("connectionState").classList.remove("error");
-					$("connectionState").textContent = "发送失败，详情见消息回执";
-					postClientEvent("send_failure", {
-						threadId: targetThreadId || "",
-						message,
-						steering: false,
-						taskCardCommand: true
-					});
-					recordHomeAiDiagnosticFailure({
-						category: "task_card_workflow_failed",
-						diagnostic_type: "task_card_draft_request_failed",
-						severity_hint: "H2",
-						evidence_confidence: .76,
-						error_code: diagnosticErrorCode(err, "task_card_draft_request_failed"),
-						context: {
-							surface: "task-card",
-							action: "draft-request",
-							thread_hash: diagnosticThreadHash(targetThreadId)
-						},
-						counts: { status_code: diagnosticErrorStatus(err) },
-						breadcrumbs: [{
-							kind: "task-card",
-							code: "draft-request",
-							status: "failed",
-							fields: {
-								status_code: diagnosticErrorStatus(err),
-								thread_hash: diagnosticThreadHash(targetThreadId)
-							}
-						}]
-					});
-					if (options.rethrow) throw new Error(message);
-					return false;
-				} finally {
-					finishSendProgressWatchdog();
-					state.composerBusy = false;
-					updateComposerControls();
-				}
-			}
-			async function sendMessage(event) {
-				if (event && typeof event.preventDefault === "function") event.preventDefault();
-				if (state.composerBusy) return;
-				state.lastSendSubmitStartedAt = Date.now();
-				const input = $("messageInput");
-				const text = composerText();
-				const normalizedIntentText = normalizedComposerIntentText(text);
-				const hasContent = Boolean(text || state.pendingAttachments.length);
-				const targetThreadId = currentComposerThreadId();
-				const targetThread = composerTargetThread();
-				const targetActiveTurnId = composerTargetActiveTurnId();
-				if (normalizedIntentText === "@") {
-					openComposerIntentMenu();
-					return;
-				}
-				const bareIntentKind = composerIntentBareTagKind(text);
-				if (bareIntentKind && bareIntentKind !== "goal") {
-					openComposerIntentDialog(bareIntentKind);
-					return;
-				}
-				if (isThreadGoalCommandText(text)) {
-					if (state.newThreadDraft) {
-						showError(/* @__PURE__ */ new Error("Goal is only available in an existing thread"));
-						return;
-					}
-					if (state.pendingAttachments.length) {
-						showError(/* @__PURE__ */ new Error("Goal commands do not support attachments"));
-						return;
-					}
-					if (!targetThreadId) return;
-					setComposerText("");
-					scheduleCurrentDraftSave();
-					openThreadGoalDialog(targetThreadId);
-					return;
-				}
-				if (isChatGptProCommandText(text)) {
-					await submitChatGptProRequest(text);
-					return;
-				}
-				if (state.newThreadDraft) {
-					await sendNewThreadMessage(text, hasContent, input);
-					return;
-				}
-				if (targetActiveTurnId && !hasContent) {
-					await interruptActiveTurn(targetThreadId, targetActiveTurnId);
-					return;
-				}
-				if (!text && !state.pendingAttachments.length || !targetThreadId) return;
-				const threadTaskCardCommand = isThreadTaskCardCommandText(text);
-				if (threadTaskCardCommand && state.pendingAttachments.length) {
-					showError(/* @__PURE__ */ new Error("# task-card commands do not support attachments yet"));
-					return;
-				}
-				if (threadTaskCardCommand) {
-					await sendThreadTaskCardCommand(text);
-					return;
-				}
-				const outboundText = text;
-				const steering = Boolean(targetActiveTurnId && hasContent);
-				const steerTurnId = steering ? String(targetActiveTurnId) : "";
-				const submittedDraftKey = currentDraftKey();
-				const clientSubmissionId = createSubmissionId();
-				const submittedAttachments = state.pendingAttachments.slice();
-				const previousThreadStatus = snapshotThreadStatus(targetThreadId);
-				state.composerBusy = true;
-				state.sendButtonHint = "";
-				startSendProgressWatchdog(targetThreadId);
-				if (steering) setSteerFeedback("sending", {
-					threadId: targetThreadId,
-					turnId: steerTurnId,
-					clientSubmissionId
-				});
-				else markActivity("发送");
-				updateComposerControls();
-				if (state.sendProgressWarned) {
-					$("connectionState").textContent = steering ? "引导中…" : "发送中…";
-					$("connectionState").classList.remove("error");
-				}
-				try {
-					const body = new FormData();
-					body.append("clientSubmissionId", clientSubmissionId);
-					body.append("text", outboundText);
-					if (targetThread && targetThread.cwd) body.append("cwd", targetThread.cwd);
-					if (steerTurnId) body.append("activeTurnId", steerTurnId);
-					body.append("model", selectedComposerModel());
-					body.append("effort", selectedComposerEffort());
-					body.append("permissionMode", selectedComposerPermissionMode());
-					if (codexFastCommandEnabled()) body.append("fastMode", "1");
-					for (const item of state.pendingAttachments) body.append("attachments", item.file, item.file.name || "upload");
-					registerSubmittedUserMessage(targetThreadId, outboundText, submittedAttachments, clientSubmissionId);
-					const insertedLocalMessage = insertLocalSubmittedUserMessage(targetThreadId, outboundText, submittedAttachments, clientSubmissionId, { turnId: steering ? steerTurnId : "" });
-					if (!steering) {
-						markThreadOptimisticallyActive(targetThreadId);
-						renderThreads();
-					}
-					if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
-					scheduleSubmittedMessageDomProbe(targetThreadId, clientSubmissionId, steering ? "message-steer" : "message-submit");
-					followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
-					const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
-						method: "POST",
-						body,
-						timeoutMs: 18e4
-					});
-					const serverTurnId = startedTurnId(result);
-					if (!steering && serverTurnId && reconcileSubmittedUserMessageTurn(targetThreadId, clientSubmissionId, serverTurnId)) renderCurrentThread({ stickToBottom: true });
-					commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
-						threadId: targetThreadId,
-						messageId: clientSubmissionId,
-						composerId: "thread-composer"
-					});
-					setComposerText("");
-					clearPendingAttachments({ revokePreviewUrls: false });
-					writeCurrentDraftToKey(submittedDraftKey);
-					if (!steering) renderComposerSettings();
-					input.blur();
-					$("connectionState").classList.remove("error");
-					if (steering) setSteerFeedback("delivered", {
-						threadId: targetThreadId,
-						turnId: steerTurnId,
-						clientSubmissionId
-					});
-					else {
-						$("connectionState").textContent = "Sent";
-						markActivity("已发送");
-					}
-					scheduleComposerTargetRefresh(targetThreadId, 600, "message-submit");
-					scheduleLivePollIfNeeded(1200);
-					loadThreads({ silent: true }).catch(showError);
-				} catch (err) {
-					clearSubmittedMessageBottomFollow();
-					if (!steering) {
-						restoreThreadStatusSnapshot(previousThreadStatus);
-						renderThreads();
-					}
-					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err) || "发送失败，请重试";
-					state.sendButtonHint = "重试";
-					markSubmittedUserMessageFailed(targetThreadId, outboundText, submittedAttachments, clientSubmissionId, message);
-					if (steering) setSteerFeedback("failed", {
-						threadId: targetThreadId,
-						turnId: steerTurnId,
-						clientSubmissionId
-					});
-					else {
-						$("connectionState").classList.remove("error");
-						$("connectionState").textContent = "发送失败，详情见消息回执";
-					}
-					postClientEvent("send_failure", {
-						threadId: targetThreadId || "",
-						message,
-						steering
-					});
-				} finally {
-					finishSendProgressWatchdog();
-					state.composerBusy = false;
-					updateComposerControls();
-				}
-			}
-			async function sendNewThreadMessage(text, hasContent, input) {
-				if (!hasContent) return;
-				const submittedDraftKey = currentDraftKey();
-				const clientSubmissionId = createSubmissionId();
-				const submittedModel = newThreadSelectedModel();
-				const submittedEffort = newThreadSelectedEffort();
-				const submittedPermissionMode = newThreadSelectedPermissionMode();
-				const submittedTitle = String(state.newThreadTitle || "").trim();
-				state.composerBusy = true;
-				state.sendButtonHint = "";
-				$("connectionState").classList.remove("error");
-				$("connectionState").textContent = "正在创建新对话";
-				markActivity("创建新对话");
-				updateComposerControls();
-				try {
-					const submittedAttachments = state.pendingAttachments.slice();
-					const body = new FormData();
-					body.append("clientSubmissionId", clientSubmissionId);
-					body.append("text", text);
-					if (state.selectedCwd) body.append("cwd", state.selectedCwd);
-					body.append("model", submittedModel);
-					body.append("effort", submittedEffort);
-					body.append("permissionMode", submittedPermissionMode);
-					if (submittedTitle) body.append("title", submittedTitle);
-					if (codexFastCommandEnabled()) body.append("fastMode", "1");
-					for (const item of state.pendingAttachments) body.append("attachments", item.file, item.file.name || "upload");
-					const result = await api("/api/threads/new-message", {
-						method: "POST",
-						body,
-						timeoutMs: 18e4
-					});
-					const threadId = String(result && result.threadId || result && result.thread && result.thread.id || "");
-					if (!threadId) throw new Error("新对话创建失败：未返回 threadId");
-					commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
-						threadId,
-						messageId: clientSubmissionId,
-						composerId: "new-thread-composer"
-					});
-					registerSubmittedUserMessage(threadId, text, submittedAttachments, clientSubmissionId);
-					const turnId = startedTurnId(result);
-					const userItem = localUserMessageItem(text, submittedAttachments, clientSubmissionId);
-					const thread = Object.assign({
-						id: threadId,
-						name: submittedTitle || "",
-						preview: submittedTitle || text || "新建对话",
-						cwd: result && result.thread && result.thread.cwd || state.selectedCwd || "",
-						status: { type: "active" },
-						turns: [],
-						mobileInitialSubmissionId: clientSubmissionId
-					}, result.thread || {});
-					if (submittedTitle) {
-						thread.name = submittedTitle;
-						thread.preview = submittedTitle;
-					}
-					if (!thread.model && submittedModel) thread.model = submittedModel;
-					if (!thread.effort && submittedEffort) thread.effort = submittedEffort;
-					if (turnId) {
-						const existingTurn = (thread.turns || []).find((turn) => turn && turn.id === turnId);
-						if (existingTurn) existingTurn.items = mergeItemsPreservingLocalVisible([userItem], existingTurn.items || [], true);
-						else thread.turns = (thread.turns || []).concat([{
-							id: turnId,
-							status: { type: "active" },
-							startedAt: Math.floor(Date.now() / 1e3),
-							completedAt: null,
-							durationMs: null,
-							items: [userItem]
-						}]);
-					}
-					state.threads = [thread, ...state.threads.filter((entry) => entry.id !== threadId)];
-					state.newThreadDraft = false;
-					state.newThreadTitle = "";
-					state.currentThreadId = threadId;
-					state.currentThread = thread;
-					state.activeTurnId = turnId || state.activeTurnId;
-					state.composerModel = submittedModel || "";
-					state.composerEffort = submittedEffort || "";
-					state.composerPermissionMode = submittedPermissionMode || "";
-					if (state.events) connectEvents();
-					setComposerText("");
-					clearPendingAttachments({ revokePreviewUrls: false });
-					clearDraftForKey(submittedDraftKey);
-					writeCurrentDraftToKey(draftKeyForThread(threadId));
-					if (input) input.blur();
-					renderComposerSettings();
-					renderThreads();
-					renderCurrentThread({ stickToBottom: true });
-					scheduleSubmittedMessageDomProbe(threadId, clientSubmissionId, "new-thread-submit");
-					try {
-						await loadThread(threadId, { source: "new-thread" });
-					} catch (err) {
-						showError(err);
-						renderThreads();
-						renderCurrentThread({ stickToBottom: true });
-					}
-					$("connectionState").textContent = "新对话已创建";
-					markActivity("新对话已创建");
-					renderComposerSettings();
-					updateComposerControls();
-					scheduleCurrentThreadRefresh(900);
-					scheduleLivePollIfNeeded(1200);
-					loadThreads({ silent: true }).catch(showError);
-				} catch (err) {
-					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err) || "新对话创建失败，请重试";
-					state.sendButtonHint = "重试";
-					$("connectionState").classList.add("error");
-					$("connectionState").textContent = message;
-					postClientEvent("new_thread_send_failure", {
-						cwd: state.selectedCwd || "",
-						message
-					});
-				} finally {
-					state.composerBusy = false;
-					updateComposerControls();
-				}
-			}
-			function requestComposerSubmitFromButton(event) {
-				event.preventDefault();
-				event.stopPropagation();
-				const now = Date.now();
-				if (now - state.lastSendButtonSubmitAt < 650) return;
-				state.lastSendButtonSubmitAt = now;
-				const button = $("sendMessage");
-				if (!button || button.disabled || state.composerBusy) return;
-				const composerForm = $("composer");
-				try {
-					if (composerForm && typeof composerForm.requestSubmit === "function") composerForm.requestSubmit();
-					else sendMessage(event);
-				} catch (err) {
-					postClientEvent("send_button_submit_exception", {
-						activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",
-						hasContent: composerHasContent(),
-						buttonDisabled: button.disabled,
-						error: String(err && err.message || "")
-					});
-					showError(/* @__PURE__ */ new Error("发送按钮点击异常，请改用回车发送"));
-				}
-				setTimeout(() => {
-					if (state.lastSendSubmitStartedAt >= now) return;
-					postClientEvent("send_button_no_submit", {
-						activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",
-						hasContent: composerHasContent(),
-						buttonDisabled: button.disabled,
-						composerBusy: state.composerBusy
-					});
-					if (composerHasContent()) showError(/* @__PURE__ */ new Error("发送没触发，建议重试或按回车发送"));
-				}, 1200);
-			}
-			function requestAttachmentPickerFromButton(event) {
-				if (event && typeof event.preventDefault === "function") event.preventDefault();
-				if (event && typeof event.stopPropagation === "function") event.stopPropagation();
-				const now = Date.now();
-				if (now - Number(state.lastAttachmentPickerAt || 0) < 650) return;
-				const button = $("attachFiles");
-				const input = $("fileInput");
-				if (!button || !input || button.disabled || input.disabled || state.composerBusy) return;
-				state.lastAttachmentPickerAt = now;
-				try {
-					if (!isAndroidBrowser() && typeof input.showPicker === "function") input.showPicker();
-					else input.click();
-				} catch (err) {
-					postClientEvent("attachment_picker_click_exception", {
-						activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",
-						buttonDisabled: Boolean(button.disabled),
-						inputDisabled: Boolean(input.disabled),
-						error: String(err && err.message || "")
-					});
-					showError(/* @__PURE__ */ new Error("附件选择器打开失败，请重试"));
-				}
-			}
-			async function interruptActiveTurn(threadId = currentComposerThreadId(), activeTurnId = composerTargetActiveTurnId()) {
-				const targetThreadId = String(threadId || "").trim();
-				const targetActiveTurnId = String(activeTurnId || "").trim();
-				if (!targetThreadId || !targetActiveTurnId) return;
-				$("connectionState").classList.remove("error");
-				$("connectionState").textContent = "Interrupt requested";
-				markActivity("中断");
-				await api(`/api/threads/${encodeURIComponent(targetThreadId)}/turns/${encodeURIComponent(targetActiveTurnId)}/interrupt`, { method: "POST" }).then(() => scheduleComposerTargetRefresh(targetThreadId, 900)).catch(showError);
-			}
-			return {
-				updateComposerHeightVar,
-				clearSendProgressWatchdog,
-				startSendProgressWatchdog,
-				finishSendProgressWatchdog,
-				normalizeClientErrorMessage,
-				rawMessageFallback,
-				composerText,
-				setComposerText,
-				placeMessageInputCaretAtEnd,
-				focusMessageInput,
-				messageInputKeyboardVisible,
-				shouldRecoverMessageInputKeyboard,
-				recoverMessageInputKeyboardFromGesture,
-				messageInputCanEnableForNativeGesture,
-				releaseStaleAndroidMessageInputFocusBeforeNativeTap,
-				prepareMessageInputForNativeGesture,
-				normalizedComposerIntentText,
-				composerIntentOptions,
-				composerIntentOption,
-				composerIntentDraftKey,
-				loadComposerIntentDraft,
-				saveComposerIntentDraft,
-				composerIntentBareTagKind,
-				shouldShowComposerIntentMenu,
-				closeComposerIntentMenu,
-				onComposerIntentOutsidePointer,
-				openComposerIntentMenu,
-				positionComposerIntentMenu,
-				updateComposerIntentMenu,
-				queueComposerIntentMenuUpdate,
-				selectComposerIntent,
-				setComposerIntentDialogStatus,
-				closeComposerIntentDialog,
-				openComposerIntentDialog,
-				submitComposerIntentDialog,
-				saveComposerIntentDialogDraft,
-				shouldKeepAndroidMessageInputEditable,
-				setMessageInputDisabled,
-				messageInputTextLength,
-				messageInputTargetHeight,
-				currentMessageInputHeight,
-				updateMessageInputOverflow,
-				autoSizeMessageInput,
-				formatFileSize,
-				appendLocalAttachmentSummary,
-				localImageInputPartsForAttachments,
-				localUserMessageItem,
-				attachmentId,
-				pendingAttachmentBytes,
-				prepareAttachmentFile,
-				prepareAttachmentFiles,
-				addAttachmentFiles,
-				removeAttachment,
-				clearPendingAttachments,
-				renderAttachmentList,
-				composerHasContent,
-				effectiveDefaultModel,
-				effectiveDefaultEffort,
-				effectiveDefaultPermissionMode,
-				selectedComposerModel,
-				selectedComposerEffort,
-				selectedComposerPermissionMode,
-				resetComposerRuntimeSelection,
-				runtimeOptionValues,
-				runtimeOptionLabel,
-				runtimeSelectedValue,
-				codexFastCommandEnabled,
-				clearLegacyCodexFastModeStorage,
-				setCodexFastCommandEnabled,
-				applyRuntimeSelection,
-				closeComposerRuntimeMenu,
-				onComposerRuntimeOutsidePointer,
-				openComposerRuntimeMenu,
-				composerRuntimeMenuDiagnostics,
-				reportComposerRuntimeMenu,
-				handleComposerRuntimeControl,
-				fitComposerPopupToAnchor,
-				closeQuotaDetails,
-				onQuotaOutsidePointer,
-				toggleQuotaDetails,
-				composerPlaceholderText,
-				composerShowsTargetPlaceholder,
-				applyComposerActionControlPlan,
-				renderComposerSettings,
-				updateComposerControls,
-				hasTransferFiles,
-				goalDialogFormValues,
-				submitThreadGoalMessage,
-				threadGoalActionStatusText,
-				threadGoalActionBusyText,
-				runThreadGoalDialogAction,
-				requestGoalDialogSubmitFromEnter,
-				requestGoalDialogSubmitFromButton,
-				requestGoalDialogSubmit,
-				sendThreadTaskCardCommand,
-				sendMessage,
-				sendNewThreadMessage,
-				requestComposerSubmitFromButton,
-				requestAttachmentPickerFromButton,
-				interruptActiveTurn
-			};
-		}
-		const api = { createComposerRuntime };
-		if (typeof module === "object" && module.exports) module.exports = api;
-		root.CodexComposerRuntime = api;
-	})(typeof globalThis !== "undefined" ? globalThis : window);
-}));
-//#endregion
-//#region public/composer-bridge-runtime.js
-var require_composer_bridge_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function attachComposerBridgeRuntime(root) {
-		function updateComposerHeightVar(...args) {
-			return composerRuntime.updateComposerHeightVar(...args);
-		}
-		function showError(err) {
-			const raw = err instanceof Error ? err.message : String(err || "");
-			const message = normalizeClientErrorMessage(raw, err) || err && err.message || String(err);
-			$("connectionState").textContent = message;
-			$("connectionState").classList.add("error");
-			postClientEvent("client_error", {
-				message,
-				raw,
-				currentThreadId: state.currentThreadId || "",
-				composerBusy: state.composerBusy,
-				continuationBusy: state.continuationBusy
-			});
-		}
-		function clearSendProgressWatchdog(...args) {
-			return composerRuntime.clearSendProgressWatchdog(...args);
-		}
-		function startSendProgressWatchdog(...args) {
-			return composerRuntime.startSendProgressWatchdog(...args);
-		}
-		function finishSendProgressWatchdog(...args) {
-			return composerRuntime.finishSendProgressWatchdog(...args);
-		}
-		function threadNotificationThrottleKey(method, params) {
-			if (!params) return "";
-			if (method === "thread/started" && params.thread) return `${method}:${String(params.thread.id || "")}:${String(statusText(params.thread.status) || "")}`;
-			if (method === "thread/status/changed") return `${method}:${String(params.threadId || "")}:${String(statusText(params.status) || "")}`;
-			if (method === "thread/name/updated") return `${method}:${String(params.threadId || "")}:${String(params.threadName || "")}`;
-			if (method === "thread/archived") return `${method}:${String(params.threadId || "")}`;
-			return "";
-		}
-		function shouldThrottleThreadNotification(method, params) {
-			const key = threadNotificationThrottleKey(method, params);
-			if (!key) return false;
-			const now = Date.now();
-			if (now - (state.threadNotificationThrottle.get(key) || 0) < 450) return true;
-			state.threadNotificationThrottle.set(key, now);
-			if (state.threadNotificationThrottle.size > 220) {
-				for (const [existingKey, existingAt] of state.threadNotificationThrottle.entries()) if (now - existingAt > 8e3) state.threadNotificationThrottle.delete(existingKey);
-				if (state.threadNotificationThrottle.size > 220) for (const existingKey of Array.from(state.threadNotificationThrottle.keys()).slice(0, 120)) state.threadNotificationThrottle.delete(existingKey);
-			}
-			return false;
-		}
-		function normalizeClientErrorMessage(...args) {
-			return composerRuntime.normalizeClientErrorMessage(...args);
-		}
-		function rawMessageFallback(...args) {
-			return composerRuntime.rawMessageFallback(...args);
-		}
-		function composerText(...args) {
-			return composerRuntime.composerText(...args);
-		}
-		function setComposerText(...args) {
-			return composerRuntime.setComposerText(...args);
-		}
-		function placeMessageInputCaretAtEnd(...args) {
-			return composerRuntime.placeMessageInputCaretAtEnd(...args);
-		}
-		function focusMessageInput(...args) {
-			return composerRuntime.focusMessageInput(...args);
-		}
-		function messageInputKeyboardVisible(...args) {
-			return composerRuntime.messageInputKeyboardVisible(...args);
-		}
-		function shouldRecoverMessageInputKeyboard(...args) {
-			return composerRuntime.shouldRecoverMessageInputKeyboard(...args);
-		}
-		function recoverMessageInputKeyboardFromGesture(...args) {
-			return composerRuntime.recoverMessageInputKeyboardFromGesture(...args);
-		}
-		function messageInputCanEnableForNativeGesture(...args) {
-			return composerRuntime.messageInputCanEnableForNativeGesture(...args);
-		}
-		function releaseStaleAndroidMessageInputFocusBeforeNativeTap(...args) {
-			return composerRuntime.releaseStaleAndroidMessageInputFocusBeforeNativeTap(...args);
-		}
-		function prepareMessageInputForNativeGesture(...args) {
-			return composerRuntime.prepareMessageInputForNativeGesture(...args);
-		}
-		function normalizedComposerIntentText(...args) {
-			return composerRuntime.normalizedComposerIntentText(...args);
-		}
-		function composerIntentOptions(...args) {
-			return composerRuntime.composerIntentOptions(...args);
-		}
-		function composerIntentOption(...args) {
-			return composerRuntime.composerIntentOption(...args);
-		}
-		function composerIntentDraftKey(...args) {
-			return composerRuntime.composerIntentDraftKey(...args);
-		}
-		function loadComposerIntentDraft(...args) {
-			return composerRuntime.loadComposerIntentDraft(...args);
-		}
-		function saveComposerIntentDraft(...args) {
-			return composerRuntime.saveComposerIntentDraft(...args);
-		}
-		function composerIntentBareTagKind(...args) {
-			return composerRuntime.composerIntentBareTagKind(...args);
-		}
-		function shouldShowComposerIntentMenu(...args) {
-			return composerRuntime.shouldShowComposerIntentMenu(...args);
-		}
-		function closeComposerIntentMenu(...args) {
-			return composerRuntime.closeComposerIntentMenu(...args);
-		}
-		function onComposerIntentOutsidePointer(...args) {
-			return composerRuntime.onComposerIntentOutsidePointer(...args);
-		}
-		function openComposerIntentMenu(...args) {
-			return composerRuntime.openComposerIntentMenu(...args);
-		}
-		function positionComposerIntentMenu(...args) {
-			return composerRuntime.positionComposerIntentMenu(...args);
-		}
-		function updateComposerIntentMenu(...args) {
-			return composerRuntime.updateComposerIntentMenu(...args);
-		}
-		function queueComposerIntentMenuUpdate(...args) {
-			return composerRuntime.queueComposerIntentMenuUpdate(...args);
-		}
-		function selectComposerIntent(...args) {
-			return composerRuntime.selectComposerIntent(...args);
-		}
-		function setComposerIntentDialogStatus(...args) {
-			return composerRuntime.setComposerIntentDialogStatus(...args);
-		}
-		function closeComposerIntentDialog(...args) {
-			return composerRuntime.closeComposerIntentDialog(...args);
-		}
-		function openComposerIntentDialog(...args) {
-			return composerRuntime.openComposerIntentDialog(...args);
-		}
-		async function submitComposerIntentDialog(...args) {
-			return composerRuntime.submitComposerIntentDialog(...args);
-		}
-		function saveComposerIntentDialogDraft(...args) {
-			return composerRuntime.saveComposerIntentDialogDraft(...args);
-		}
-		function shouldKeepAndroidMessageInputEditable(...args) {
-			return composerRuntime.shouldKeepAndroidMessageInputEditable(...args);
-		}
-		function setMessageInputDisabled(...args) {
-			return composerRuntime.setMessageInputDisabled(...args);
-		}
-		function messageInputTextLength(...args) {
-			return composerRuntime.messageInputTextLength(...args);
-		}
-		function messageInputTargetHeight(...args) {
-			return composerRuntime.messageInputTargetHeight(...args);
-		}
-		function currentMessageInputHeight(...args) {
-			return composerRuntime.currentMessageInputHeight(...args);
-		}
-		function updateMessageInputOverflow(...args) {
-			return composerRuntime.updateMessageInputOverflow(...args);
-		}
-		function autoSizeMessageInput(...args) {
-			return composerRuntime.autoSizeMessageInput(...args);
-		}
-		function formatFileSize(...args) {
-			return composerRuntime.formatFileSize(...args);
-		}
-		function appendLocalAttachmentSummary(...args) {
-			return composerRuntime.appendLocalAttachmentSummary(...args);
-		}
-		function localImageInputPartsForAttachments(...args) {
-			return composerRuntime.localImageInputPartsForAttachments(...args);
-		}
-		function localUserMessageItem(...args) {
-			return composerRuntime.localUserMessageItem(...args);
-		}
-		function attachmentId(...args) {
-			return composerRuntime.attachmentId(...args);
-		}
-		function pendingAttachmentBytes(...args) {
-			return composerRuntime.pendingAttachmentBytes(...args);
-		}
-		async function prepareAttachmentFile(...args) {
-			return composerRuntime.prepareAttachmentFile(...args);
-		}
-		async function prepareAttachmentFiles(...args) {
-			return composerRuntime.prepareAttachmentFiles(...args);
-		}
-		async function addAttachmentFiles(...args) {
-			return composerRuntime.addAttachmentFiles(...args);
-		}
-		function removeAttachment(...args) {
-			return composerRuntime.removeAttachment(...args);
-		}
-		function clearPendingAttachments(...args) {
-			return composerRuntime.clearPendingAttachments(...args);
-		}
-		function renderAttachmentList(...args) {
-			return composerRuntime.renderAttachmentList(...args);
-		}
-		function composerHasContent(...args) {
-			return composerRuntime.composerHasContent(...args);
-		}
-		function effectiveDefaultModel(...args) {
-			return composerRuntime.effectiveDefaultModel(...args);
-		}
-		function effectiveDefaultEffort(...args) {
-			return composerRuntime.effectiveDefaultEffort(...args);
-		}
-		function effectiveDefaultPermissionMode(...args) {
-			return composerRuntime.effectiveDefaultPermissionMode(...args);
-		}
-		function selectedComposerModel(...args) {
-			return composerRuntime.selectedComposerModel(...args);
-		}
-		function selectedComposerEffort(...args) {
-			return composerRuntime.selectedComposerEffort(...args);
-		}
-		function selectedComposerPermissionMode(...args) {
-			return composerRuntime.selectedComposerPermissionMode(...args);
-		}
-		function resetComposerRuntimeSelection(...args) {
-			return composerRuntime.resetComposerRuntimeSelection(...args);
-		}
-		function runtimeOptionValues(...args) {
-			return composerRuntime.runtimeOptionValues(...args);
-		}
-		function runtimeOptionLabel(...args) {
-			return composerRuntime.runtimeOptionLabel(...args);
-		}
-		function runtimeSelectedValue(...args) {
-			return composerRuntime.runtimeSelectedValue(...args);
-		}
-		function codexFastCommandEnabled(...args) {
-			return composerRuntime.codexFastCommandEnabled(...args);
-		}
-		function clearLegacyCodexFastModeStorage(...args) {
-			return composerRuntime.clearLegacyCodexFastModeStorage(...args);
-		}
-		function setCodexFastCommandEnabled(...args) {
-			return composerRuntime.setCodexFastCommandEnabled(...args);
-		}
-		function applyRuntimeSelection(...args) {
-			return composerRuntime.applyRuntimeSelection(...args);
-		}
-		function closeComposerRuntimeMenu(...args) {
-			return composerRuntime.closeComposerRuntimeMenu(...args);
-		}
-		function onComposerRuntimeOutsidePointer(...args) {
-			return composerRuntime.onComposerRuntimeOutsidePointer(...args);
-		}
-		function openComposerRuntimeMenu(...args) {
-			return composerRuntime.openComposerRuntimeMenu(...args);
-		}
-		function composerRuntimeMenuDiagnostics(...args) {
-			return composerRuntime.composerRuntimeMenuDiagnostics(...args);
-		}
-		function reportComposerRuntimeMenu(...args) {
-			return composerRuntime.reportComposerRuntimeMenu(...args);
-		}
-		function handleComposerRuntimeControl(...args) {
-			return composerRuntime.handleComposerRuntimeControl(...args);
-		}
-		function fitComposerPopupToAnchor(...args) {
-			return composerRuntime.fitComposerPopupToAnchor(...args);
-		}
-		function closeQuotaDetails(...args) {
-			return composerRuntime.closeQuotaDetails(...args);
-		}
-		function onQuotaOutsidePointer(...args) {
-			return composerRuntime.onQuotaOutsidePointer(...args);
-		}
-		function toggleQuotaDetails(...args) {
-			return composerRuntime.toggleQuotaDetails(...args);
-		}
-		function composerPlaceholderText(...args) {
-			return composerRuntime.composerPlaceholderText(...args);
-		}
-		function composerShowsTargetPlaceholder(...args) {
-			return composerRuntime.composerShowsTargetPlaceholder(...args);
-		}
-		function applyComposerActionControlPlan(...args) {
-			return composerRuntime.applyComposerActionControlPlan(...args);
-		}
-		function renderComposerSettings(...args) {
-			return composerRuntime.renderComposerSettings(...args);
-		}
-		function updateComposerControls(...args) {
-			return composerRuntime.updateComposerControls(...args);
-		}
-		function hasTransferFiles(...args) {
-			return composerRuntime.hasTransferFiles(...args);
-		}
-		function goalDialogFormValues(...args) {
-			return composerRuntime.goalDialogFormValues(...args);
-		}
-		async function submitThreadGoalMessage(...args) {
-			return composerRuntime.submitThreadGoalMessage(...args);
-		}
-		function threadGoalActionStatusText(...args) {
-			return composerRuntime.threadGoalActionStatusText(...args);
-		}
-		function threadGoalActionBusyText(...args) {
-			return composerRuntime.threadGoalActionBusyText(...args);
-		}
-		async function runThreadGoalDialogAction(...args) {
-			return composerRuntime.runThreadGoalDialogAction(...args);
-		}
-		function requestGoalDialogSubmitFromEnter(...args) {
-			return composerRuntime.requestGoalDialogSubmitFromEnter(...args);
-		}
-		function requestGoalDialogSubmitFromButton(...args) {
-			return composerRuntime.requestGoalDialogSubmitFromButton(...args);
-		}
-		function requestGoalDialogSubmit(...args) {
-			return composerRuntime.requestGoalDialogSubmit(...args);
-		}
-		async function sendThreadTaskCardCommand(...args) {
-			return composerRuntime.sendThreadTaskCardCommand(...args);
-		}
-		async function sendMessage(...args) {
-			return composerRuntime.sendMessage(...args);
-		}
-		async function sendNewThreadMessage(...args) {
-			return composerRuntime.sendNewThreadMessage(...args);
-		}
-		function requestComposerSubmitFromButton(...args) {
-			return composerRuntime.requestComposerSubmitFromButton(...args);
-		}
-		function requestAttachmentPickerFromButton(...args) {
-			return composerRuntime.requestAttachmentPickerFromButton(...args);
-		}
-		async function interruptActiveTurn(...args) {
-			return composerRuntime.interruptActiveTurn(...args);
-		}
-		async function answerServerRequest(requestId, payload, options = {}) {
-			const key = requestId !== null && requestId !== void 0 ? String(requestId) : "";
-			const request = state.pendingApprovals.get(key);
-			if (!request || request.status !== "waiting") return;
-			const threadId = approvalActionThreadId(request, options.threadId);
-			request.status = "responding";
-			request.decision = payload && (payload.decision || payload.action) || "submitted";
-			markActivity(isUserInputRequest(request) ? "输入发送中" : "批准中");
-			scheduleApprovalThreadRender(threadId);
-			try {
-				const result = await api(`/api/approvals/${encodeURIComponent(key)}`, {
-					method: "POST",
-					body: JSON.stringify(payload || {}),
-					timeoutMs: 2e4
-				});
-				if (result && result.request) state.pendingApprovals.set(key, serverRequestWithThreadContext(result.request, threadId));
-				$("connectionState").classList.remove("error");
-				$("connectionState").textContent = isUserInputRequest(request) ? "Response sent" : "Approval sent";
-				markActivity(isUserInputRequest(request) ? "输入已发送" : "批准发送");
-				scheduleApprovalThreadRender(threadId);
-			} catch (err) {
-				request.status = "waiting";
-				request.decision = null;
-				showError(err);
-				scheduleApprovalThreadRender(threadId);
-			}
-		}
-		function answerApproval(requestId, decision, options = {}) {
-			return answerServerRequest(requestId, { decision }, options);
-		}
-		function serverRequestPayload(request, responseText, questionId) {
-			if (request && request.method === "mcpServer/elicitation/request") return {
-				action: "accept",
-				responseText
-			};
-			return {
-				responseText,
-				questionId
-			};
-		}
-		function declineServerRequest(requestId, options = {}) {
-			const key = requestId !== null && requestId !== void 0 ? String(requestId) : "";
-			const request = state.pendingApprovals.get(key);
-			if (!request) return Promise.resolve();
-			if (request.method === "mcpServer/elicitation/request") return answerServerRequest(key, { action: "decline" }, options);
-			if (request.method === "item/tool/requestUserInput") return answerServerRequest(key, { answers: {} }, options);
-			return answerApproval(key, "deny", options);
-		}
-		async function mutateThreadTaskCard(cardId, action, body = {}, options = {}) {
-			const id = String(cardId || "").trim();
-			const threadId = String(options.threadId || body.threadId || state.currentThreadId || "").trim();
-			if (!id || !threadId) return;
-			$("connectionState").classList.remove("error");
-			$("connectionState").textContent = action === "approve" ? "Approving task card" : `${action} task card`;
-			try {
-				const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {
-					method: "POST",
-					body: JSON.stringify(Object.assign({}, body, { threadId })),
-					timeoutMs: 3e4
-				});
-				if (action === "approve" && result && result.execution && result.execution.turnId) $("connectionState").textContent = "Task card approved; starting target turn";
-				else $("connectionState").textContent = "Task card updated";
-				settleThreadTaskCardForThread(threadId, id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
-				recordHomeAiDiagnosticSuccess({
-					category: "task_card_workflow_failed",
-					diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
-					error_code: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
-					context: {
-						surface: "task-card",
-						action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
-						thread_hash: diagnosticThreadHash(threadId),
-						task_hash: diagnosticTaskHash(id)
-					}
-				});
-				if (action === "approve" && result && result.execution && result.execution.turnId) {
-					let injectedVisible = false;
-					if (threadId === String(state.currentThreadId || "")) injectedVisible = await waitForCurrentThreadTurn(result.execution.turnId, {
-						timeoutMs: 1e4,
-						intervalMs: 500
-					});
-					else scheduleComposerTargetRefresh(threadId, 300, "task-card-approved");
-					$("connectionState").textContent = injectedVisible ? "Task card approved and injected" : "Task card approved; waiting for thread refresh";
-					loadThreads({ silent: true }).catch(showError);
-					return;
-				}
-				await refreshThreadAfterTaskCard(threadId);
-			} catch (err) {
-				showError(err);
-			}
-		}
-		async function replyTaskCard(cardId, options = {}) {
-			const threadId = String(options.threadId || state.currentThreadId || "").trim();
-			const card = findThreadTaskCard(cardId, threadId);
-			if (!card) return;
-			const body = await requestAppTextInput("输入回复内容。", "", {
-				title: "回复任务卡片",
-				confirmLabel: "发送回复",
-				rows: 6
-			}) || "";
-			if (!String(body).trim()) return;
-			const title = `Reply: ${card.message && card.message.title ? card.message.title : "Task card"}`;
-			return mutateThreadTaskCard(card.id, "reply", {
-				format: "markdown",
-				title,
-				summary: summarizeTaskCardText(body),
-				body: String(body).trim(),
-				idempotencyKey: `task-card-reply:${card.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`
-			}, { threadId });
-		}
-		function findThreadTaskCardDraftByKey(draftKey, thread = renderContextThread()) {
-			const key = String(draftKey || "");
-			const sourceThread = renderContextThread(thread) || state.currentThread;
-			const turns = Array.isArray(sourceThread && sourceThread.turns) ? sourceThread.turns : [];
-			for (const turn of turns) {
-				const items = Array.isArray(turn && turn.items) ? turn.items : [];
-				for (const item of items) {
-					if (!item || item.type !== "agentMessage" && item.type !== "plan") continue;
-					const draft = parseThreadTaskCardDraftText(item.text || "");
-					if (!draft) continue;
-					const itemKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
-					const legacyItemKey = threadTaskCardDraftKey(turn.id, item.id || "");
-					if (itemKey !== key && legacyItemKey !== key) continue;
-					return {
-						key,
-						draft,
-						turn,
-						item,
-						sourceThread
-					};
-				}
-			}
-			return null;
-		}
-		function scheduleThreadTaskCardDraftStateRender(threadId = "") {
-			const id = String(threadId || state.currentThreadId || "").trim();
-			if (!id || id === String(state.currentThreadId || "")) {
-				renderCurrentThread();
-				return true;
-			}
-			if (state.threadTileMode && threadTilePaneIsVisible(id)) {
-				if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) renderCurrentThread();
-				return true;
-			}
-			return false;
-		}
-		function setThreadTaskCardDraftState(draftKey, nextState, options = {}) {
-			const key = String(draftKey || "");
-			if (!key) return;
-			state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}, { updatedAtMs: Date.now() }));
-			saveThreadTaskCardDraftStates();
-			const threadId = String(options.threadId || options.thread && options.thread.id || "").trim();
-			if (options.render !== false) scheduleThreadTaskCardDraftStateRender(threadId);
-		}
-		function dismissThreadTaskCardDraft(draftKey, options = {}) {
-			setThreadTaskCardDraftState(draftKey, {
-				status: "dismissed",
-				error: ""
-			}, options);
-		}
-		function queueThreadTaskCardDraftCreation(draftKey, thread = renderContextThread()) {
-			const key = String(draftKey || "");
-			if (!key || state.scheduledThreadTaskCardDraftCreations.has(key) || state.activeThreadTaskCardDraftCreations.has(key)) return;
-			const sourceThreadId = renderContextThreadId(thread);
-			state.scheduledThreadTaskCardDraftCreations.add(key);
-			const current = threadTaskCardDraftState(key);
-			setThreadTaskCardDraftState(key, {
-				status: "creating",
-				error: "",
-				attempts: Math.max(0, Number(current.attempts || 0)) + 1
-			}, { render: false });
-			window.setTimeout(() => {
-				state.scheduledThreadTaskCardDraftCreations.delete(key);
-				createThreadTaskCardDraft(key, { threadId: sourceThreadId }).catch(showError);
-			}, 0);
-		}
-		async function createThreadTaskCardDraft(draftKey, options = {}) {
-			const activeKey = String(draftKey || "");
-			if (!activeKey || state.activeThreadTaskCardDraftCreations.has(activeKey)) return;
-			state.activeThreadTaskCardDraftCreations.add(activeKey);
-			const requestedThreadId = String(options.threadId || "").trim();
-			try {
-				const requestedThread = taskCardActionThread(requestedThreadId);
-				const resolved = findThreadTaskCardDraftByKey(draftKey, requestedThread);
-				const sourceThread = resolved && (resolved.sourceThread || requestedThread || state.currentThread);
-				const sourceThreadId = String(sourceThread && sourceThread.id || requestedThreadId || "").trim();
-				if (!resolved || !sourceThreadId || !sourceThread) {
-					setThreadTaskCardDraftState(draftKey, {
-						status: "pending",
-						error: ""
-					}, { render: false });
-					return;
-				}
-				const { draft, turn } = resolved;
-				const targetRefs = threadTaskCardDraftTargetThreads(draft);
-				const targetThreadIds = threadTaskCardDraftTargetIds(draft);
-				if (!targetThreadIds.length) {
-					setThreadTaskCardDraftState(draftKey, {
-						status: "failed",
-						error: draft.error || "Draft did not include a target thread id"
-					}, { threadId: sourceThreadId });
-					return;
-				}
-				if (!draft.title || !draft.body) {
-					setThreadTaskCardDraftState(draftKey, {
-						status: "failed",
-						error: draft.error || "Draft is incomplete"
-					}, { threadId: sourceThreadId });
-					return;
-				}
-				setThreadTaskCardDraftState(draftKey, {
-					status: "creating",
-					error: ""
-				}, { threadId: sourceThreadId });
-				$("connectionState").classList.remove("error");
-				$("connectionState").textContent = "Creating task card";
-				const body = truncateThreadTaskCardBody(draft.body);
-				const targetWorkspaceIds = {};
-				for (const entry of targetRefs) if (entry.thread) targetWorkspaceIds[entry.threadId] = String(entry.thread.cwd || "");
-				const result = await api("/api/thread-task-cards", {
-					method: "POST",
-					body: JSON.stringify({
-						sourceWorkspaceId: sourceThread.cwd || state.selectedCwd || "",
-						sourceThreadId,
-						sourceTurnId: String(turn && turn.id || ""),
-						sourceThreadTitle: threadTitleForDisplay(sourceThread) || sourceThreadId,
-						targetThreadIds,
-						targetWorkspaceIds,
-						idempotencyKey: `task-card-draft:${sourceThreadId}:${draftKey}`,
-						format: "markdown",
-						title: draft.title,
-						summary: draft.summary || summarizeTaskCardText(body),
-						body,
-						workflowMode: draft.workflowMode || "manual",
-						workflowId: draft.workflowId || ""
-					}),
-					timeoutMs: 3e4
-				});
-				const createdCards = Array.isArray(result && result.cards) ? result.cards.filter(Boolean) : result && result.card ? [result.card] : [];
-				if (!createdCards.length) throw new Error("Task card creation returned no cards");
-				for (const createdCard of createdCards) {
-					const pending = String(createdCard && createdCard.status || "pending") === "pending";
-					upsertThreadTaskCardOnThread(sourceThread, createdCard);
-					if (pending) {
-						incrementPendingOutgoingTaskCardCount(sourceThreadId, 1);
-						incrementPendingIncomingTaskCardCount(createdCard && createdCard.target && createdCard.target.threadId, 1);
-					}
-				}
-				if (state.threadTileDetails.has(sourceThreadId)) state.threadTileDetails.set(sourceThreadId, sourceThread);
-				setThreadTaskCardDraftState(draftKey, {
-					status: "created",
-					error: "",
-					cardId: String(createdCards[0] && createdCards[0].id || ""),
-					cardIds: createdCards.map((card) => String(card && card.id || "")).filter(Boolean)
-				}, { threadId: sourceThreadId });
-				$("connectionState").classList.remove("error");
-				$("connectionState").textContent = createdCards.length === 1 ? "Task card created; opening target thread" : `Task cards created: ${createdCards.length}`;
-				state.pendingPluginRouteHint = createdCards.length === 1 ? normalizePluginRouteHint({
-					pluginId: "codex-mobile",
-					route: "thread-task-card",
-					threadId: createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0],
-					taskId: createdCards[0].id
-				}) : null;
-				recordHomeAiDiagnosticSuccess({
-					category: "task_card_workflow_failed",
-					diagnostic_type: "task_card_draft_materialize_failed",
-					error_code: "task_card_draft_materialize_failed",
-					context: {
-						surface: "task-card",
-						action: "draft-materialize",
-						thread_hash: diagnosticThreadHash(sourceThreadId),
-						item_hash: diagnosticItemHash(draftKey)
-					}
-				});
-				renderThreads();
-				loadThreads({ silent: true }).catch(showError);
-				if (createdCards.length === 1) await loadThread(createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0], { source: "task-card-created" });
-				else if (sourceThreadId === String(state.currentThreadId || "")) renderCurrentThread();
-				else if (state.threadTileMode && threadTilePaneIsVisible(sourceThreadId)) scheduleRenderThreadTilePane(sourceThreadId, { preserveScroll: true });
-				else renderCurrentThread();
-			} catch (err) {
-				const diagnosticThreadId = String(options.threadId || state.currentThreadId || "").trim();
-				setThreadTaskCardDraftState(draftKey, {
-					status: "failed",
-					error: normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Task card creation failed"
-				}, { threadId: diagnosticThreadId });
-				recordHomeAiDiagnosticFailure({
-					category: "task_card_workflow_failed",
-					diagnostic_type: "task_card_draft_materialize_failed",
-					severity_hint: "H2",
-					evidence_confidence: .78,
-					error_code: diagnosticErrorCode(err, "task_card_draft_materialize_failed"),
-					context: {
-						surface: "task-card",
-						action: "draft-materialize",
-						thread_hash: diagnosticThreadHash(diagnosticThreadId),
-						item_hash: diagnosticItemHash(draftKey)
-					},
-					counts: { status_code: diagnosticErrorStatus(err) },
-					breadcrumbs: [{
-						kind: "task-card",
-						code: "draft-materialize",
-						status: "failed",
-						fields: {
-							status_code: diagnosticErrorStatus(err),
-							item_hash: diagnosticItemHash(draftKey)
-						}
-					}]
-				});
-				throw err;
-			} finally {
-				state.activeThreadTaskCardDraftCreations.delete(activeKey);
-			}
-		}
-		function createComposerBridgeRuntime() {
-			return {
-				sendMessage: typeof sendMessage === "function" ? sendMessage : null,
-				sendNewThreadMessage: typeof sendNewThreadMessage === "function" ? sendNewThreadMessage : null,
-				answerServerRequest: typeof answerServerRequest === "function" ? answerServerRequest : null,
-				answerApproval: typeof answerApproval === "function" ? answerApproval : null,
-				declineServerRequest: typeof declineServerRequest === "function" ? declineServerRequest : null,
-				mutateThreadTaskCard: typeof mutateThreadTaskCard === "function" ? mutateThreadTaskCard : null,
-				replyTaskCard: typeof replyTaskCard === "function" ? replyTaskCard : null,
-				queueThreadTaskCardDraftCreation: typeof queueThreadTaskCardDraftCreation === "function" ? queueThreadTaskCardDraftCreation : null,
-				createThreadTaskCardDraft: typeof createThreadTaskCardDraft === "function" ? createThreadTaskCardDraft : null
-			};
-		}
-		const legacyGlobals = {
-			updateComposerHeightVar,
-			showError,
-			clearSendProgressWatchdog,
-			startSendProgressWatchdog,
-			finishSendProgressWatchdog,
-			threadNotificationThrottleKey,
-			shouldThrottleThreadNotification,
-			normalizeClientErrorMessage,
-			rawMessageFallback,
-			composerText,
-			setComposerText,
-			placeMessageInputCaretAtEnd,
-			focusMessageInput,
-			messageInputKeyboardVisible,
-			shouldRecoverMessageInputKeyboard,
-			recoverMessageInputKeyboardFromGesture,
-			messageInputCanEnableForNativeGesture,
-			releaseStaleAndroidMessageInputFocusBeforeNativeTap,
-			prepareMessageInputForNativeGesture,
-			normalizedComposerIntentText,
-			composerIntentOptions,
-			composerIntentOption,
-			composerIntentDraftKey,
-			loadComposerIntentDraft,
-			saveComposerIntentDraft,
-			composerIntentBareTagKind,
-			shouldShowComposerIntentMenu,
-			closeComposerIntentMenu,
-			onComposerIntentOutsidePointer,
-			openComposerIntentMenu,
-			positionComposerIntentMenu,
-			updateComposerIntentMenu,
-			queueComposerIntentMenuUpdate,
-			selectComposerIntent,
-			setComposerIntentDialogStatus,
-			closeComposerIntentDialog,
-			openComposerIntentDialog,
-			submitComposerIntentDialog,
-			saveComposerIntentDialogDraft,
-			shouldKeepAndroidMessageInputEditable,
-			setMessageInputDisabled,
-			messageInputTextLength,
-			messageInputTargetHeight,
-			currentMessageInputHeight,
-			updateMessageInputOverflow,
-			autoSizeMessageInput,
-			formatFileSize,
-			appendLocalAttachmentSummary,
-			localImageInputPartsForAttachments,
-			localUserMessageItem,
-			attachmentId,
-			pendingAttachmentBytes,
-			prepareAttachmentFile,
-			prepareAttachmentFiles,
-			addAttachmentFiles,
-			removeAttachment,
-			clearPendingAttachments,
-			renderAttachmentList,
-			composerHasContent,
-			effectiveDefaultModel,
-			effectiveDefaultEffort,
-			effectiveDefaultPermissionMode,
-			selectedComposerModel,
-			selectedComposerEffort,
-			selectedComposerPermissionMode,
-			resetComposerRuntimeSelection,
-			runtimeOptionValues,
-			runtimeOptionLabel,
-			runtimeSelectedValue,
-			codexFastCommandEnabled,
-			clearLegacyCodexFastModeStorage,
-			setCodexFastCommandEnabled,
-			applyRuntimeSelection,
-			closeComposerRuntimeMenu,
-			onComposerRuntimeOutsidePointer,
-			openComposerRuntimeMenu,
-			composerRuntimeMenuDiagnostics,
-			reportComposerRuntimeMenu,
-			handleComposerRuntimeControl,
-			fitComposerPopupToAnchor,
-			closeQuotaDetails,
-			onQuotaOutsidePointer,
-			toggleQuotaDetails,
-			composerPlaceholderText,
-			composerShowsTargetPlaceholder,
-			applyComposerActionControlPlan,
-			renderComposerSettings,
-			updateComposerControls,
-			hasTransferFiles,
-			goalDialogFormValues,
-			submitThreadGoalMessage,
-			threadGoalActionStatusText,
-			threadGoalActionBusyText,
-			runThreadGoalDialogAction,
-			requestGoalDialogSubmitFromEnter,
-			requestGoalDialogSubmitFromButton,
-			requestGoalDialogSubmit,
-			sendThreadTaskCardCommand,
-			sendMessage,
-			sendNewThreadMessage,
-			requestComposerSubmitFromButton,
-			requestAttachmentPickerFromButton,
-			interruptActiveTurn,
-			answerServerRequest,
-			answerApproval,
-			serverRequestPayload,
-			declineServerRequest,
-			mutateThreadTaskCard,
-			replyTaskCard,
-			findThreadTaskCardDraftByKey,
-			scheduleThreadTaskCardDraftStateRender,
-			setThreadTaskCardDraftState,
-			dismissThreadTaskCardDraft,
-			queueThreadTaskCardDraftCreation,
-			createThreadTaskCardDraft
-		};
-		const api = { createComposerBridgeRuntime };
-		if (typeof module === "object" && module.exports) module.exports = api;
-		for (const [name, value] of Object.entries(legacyGlobals)) if (typeof value === "function") root[name] = value;
-		root.CodexComposerBridgeRuntime = api;
-	})(typeof globalThis !== "undefined" ? globalThis : window);
-}));
-//#endregion
 //#region public/api-client-runtime.js
 var require_api_client_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachApiClientRuntime(root) {
@@ -4620,9 +2053,2343 @@ var require_thread_detail_v4_merge_state = /* @__PURE__ */ __commonJSMin(((expor
 	});
 }));
 //#endregion
-//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-05
-var import_composer_runtime = /* @__PURE__ */ __toESM(require_composer_runtime());
-var import_composer_bridge_runtime = /* @__PURE__ */ __toESM(require_composer_bridge_runtime());
+//#region public/thread-detail-runtime.js
+var require_thread_detail_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachThreadDetailRuntime(root) {
+		function noopString() {
+			return "";
+		}
+		function noopFalse() {
+			return false;
+		}
+		function identityArray(value) {
+			return Array.isArray(value) ? value : [];
+		}
+		function createThreadDetailRuntime(deps = {}) {
+			const { state = {}, MAX_EXPANDED_VISIBLE_TURNS = 200, MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24, threadDetailStateApi = root.CodexThreadDetailState, threadDetailMergeStateApi = root.CodexThreadDetailMergeState, threadDetailV4MergeStateApi = root.CodexThreadDetailV4MergeState, statusText = noopString, normalizeFsPath = (value) => String(value || ""), imageUrlValue = noopString, isInputTextPart = noopFalse, inputTextValue = noopString, isInputImagePart = noopFalse, splitAttachmentSummaryText = (value) => ({
+				text: String(value || ""),
+				attachments: []
+			}), canRenderImageAttachment = noopFalse, truncateMiddle = (value) => String(value || ""), isLiveTurn = noopFalse, isLatestTurn = noopFalse, latestTurnForThread = (thread) => {
+				const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+				return turns.length ? turns[turns.length - 1] : null;
+			}, isLiveTurnForThread = (thread, turn) => isLiveTurn(turn, thread), isActiveOperationalItem = noopFalse, isReasoningItem = noopFalse, isOperationalItem = noopFalse, isContextCompactionItem = noopFalse, contextCompactionNotice = () => null, operationCommandText = noopString, operationDetailText = noopString, imageViewPath = noopString, imageViewContentUrl = noopString, imageViewUrl = noopString, isTurnComplete = noopFalse, isRunningStatus = noopFalse, isIncompleteInterruptedTurn = noopFalse, turnHasActiveLiveItems = noopFalse, isRecentlySubmittedUserMessage = noopFalse, sortTurnsForDisplay = identityArray, maxVisibleTurnsForThread = () => 10, numericTimestampMs = (value) => {
+				const numberValue = Number(value);
+				return Number.isFinite(numberValue) ? numberValue : 0;
+			}, renderContextThread = (thread = null) => thread || state.currentThread || null } = deps;
+			if (!threadDetailStateApi || typeof threadDetailStateApi.createThreadDetailStatePolicy !== "function") throw new Error("CodexThreadDetailState policy script failed to load");
+			if (!threadDetailMergeStateApi || typeof threadDetailMergeStateApi.createThreadDetailMergePolicy !== "function") throw new Error("CodexThreadDetailMergeState script failed to load");
+			if (!threadDetailV4MergeStateApi || typeof threadDetailV4MergeStateApi.createThreadDetailV4MergePolicy !== "function") throw new Error("CodexThreadDetailV4MergeState script failed to load");
+			function liveTurnHasNonUserProgress(turn, thread = null) {
+				if (!turn || !isLiveTurn(turn, thread)) return false;
+				return (turn.items || []).some((item) => item && item.type !== "userMessage" && (isReasoningItem(item) || isOperationalItem(item) || isContextCompactionItem(item) || item.type === "agentMessage" || item.type === "plan" || item.type === "turnDiagnostic" || item.type === "turnUsageSummary"));
+			}
+			function isVisibleNonUserProgressItem(item) {
+				return Boolean(item && item.type !== "userMessage" && (isReasoningItem(item) || isOperationalItem(item) || isContextCompactionItem(item) || item.type === "agentMessage" || item.type === "plan" || item.type === "turnDiagnostic" || item.type === "turnUsageSummary"));
+			}
+			function liveTurnHasNonUserProgressBefore(turn, index, thread = null) {
+				if (!turn || !isLiveTurn(turn, thread)) return false;
+				const items = Array.isArray(turn.items) ? turn.items : [];
+				for (let pos = 0; pos < Math.min(index, items.length); pos += 1) if (isVisibleNonUserProgressItem(items[pos])) return true;
+				return false;
+			}
+			function liveTurnHasNonUserProgressAfter(turn, index, thread = null) {
+				if (!turn || !isLiveTurn(turn, thread)) return false;
+				const items = Array.isArray(turn.items) ? turn.items : [];
+				for (let pos = Math.max(0, index + 1); pos < items.length; pos += 1) if (isVisibleNonUserProgressItem(items[pos])) return true;
+				return false;
+			}
+			function isUserVisibleTextReplyItem(item) {
+				return Boolean(item && item.type !== "userMessage" && (item.type === "agentMessage" || item.type === "plan" || item.type === "turnUsageSummary"));
+			}
+			function liveTurnHasUserVisibleTextReplyAfter(turn, index, thread = null) {
+				if (!turn || !isLiveTurn(turn, thread)) return false;
+				const items = Array.isArray(turn.items) ? turn.items : [];
+				for (let pos = Math.max(0, index + 1); pos < items.length; pos += 1) if (isUserVisibleTextReplyItem(items[pos])) return true;
+				return false;
+			}
+			function userMessageHasVisualAttachment(item) {
+				if (!item || item.type !== "userMessage") return false;
+				const textValues = [];
+				if (typeof item.text === "string") textValues.push(item.text);
+				if (typeof item.message === "string") textValues.push(item.message);
+				const content = Array.isArray(item.content) ? item.content : [];
+				for (const part of content) {
+					if (!part || typeof part !== "object") continue;
+					if (isInputImagePart(part)) return true;
+					if (isInputTextPart(part)) textValues.push(inputTextValue(part));
+					if (part.path && /\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(String(part.path))) return true;
+					const url = imageUrlValue(part);
+					if (url && /\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(String(url))) return true;
+				}
+				return textValues.some((text) => splitAttachmentSummaryText(text).attachments.some((attachment) => attachment.isImage && canRenderImageAttachment(attachment)));
+			}
+			function shouldHideDurableLiveUserMessage(turn, item, index = 0, thread = null) {
+				return false;
+			}
+			function durableUserMessageMatchesOptimisticEcho(durableItem, optimisticItem) {
+				if (!durableItem || !optimisticItem) return false;
+				if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
+				if (isOptimisticUserMessage(durableItem) || !isOptimisticUserMessage(optimisticItem)) return false;
+				return userMessagesShareSubmissionId(durableItem, optimisticItem) || userMessagesLikelySame(durableItem, optimisticItem);
+			}
+			function threadHasDurableUserMessageWithSubmissionId(thread, optimisticItem) {
+				const submissionIds = userMessageSubmissionIdCandidates(optimisticItem);
+				if (!submissionIds.length || !thread || !Array.isArray(thread.turns)) return false;
+				return thread.turns.some((candidateTurn) => (Array.isArray(candidateTurn && candidateTurn.items) ? candidateTurn.items : []).some((candidate) => candidate && candidate.type === "userMessage" && !isOptimisticUserMessage(candidate) && submissionIds.some((submissionId) => userMessageHasSubmissionId(candidate, submissionId))));
+			}
+			function threadHasDurableUserMessageMatchingOptimisticEcho(thread, optimisticItem) {
+				if (!thread || !Array.isArray(thread.turns) || !isOptimisticUserMessage(optimisticItem)) return false;
+				return thread.turns.some((candidateTurn) => (Array.isArray(candidateTurn && candidateTurn.items) ? candidateTurn.items : []).some((candidate) => candidate && candidate.type === "userMessage" && !isOptimisticUserMessage(candidate) && optimisticEchoCanMatchEarlierDurable(candidate, optimisticItem)));
+			}
+			function shouldHideOptimisticUserMessageEcho(turn, item, index = 0, thread = null) {
+				if (!item || item.type !== "userMessage" || !isOptimisticUserMessage(item)) return false;
+				if ((Array.isArray(turn && turn.items) ? turn.items : []).some((candidate, candidateIndex) => candidateIndex !== index && durableUserMessageMatchesOptimisticEcho(candidate, item))) return true;
+				const contextThread = renderContextThread(thread);
+				return threadHasDurableUserMessageWithSubmissionId(contextThread, item) || threadHasDurableUserMessageMatchingOptimisticEcho(contextThread, item);
+			}
+			function isSupersededLiveTurn(turn) {
+				return Boolean(turn && (turn.mobileSupersededLive || turn.status && turn.status.mobileSupersededLive));
+			}
+			function shouldHideSupersededLiveUserMessage(turn, item) {
+				return Boolean(isSupersededLiveTurn(turn) && item && item.type === "userMessage" && !userMessageHasVisualAttachment(item));
+			}
+			function isRawThreadReadMode(thread) {
+				return Boolean(thread && (thread.mobileRawThreadRead || String(thread.mobileReadMode || "") === "thread-read-raw"));
+			}
+			function shouldPreserveRawThreadVisibleEntry(entry) {
+				const item = entry && entry.item;
+				if (!item) return false;
+				return item.type === "userMessage" || item.type === "imageView" || item.type === "imageGeneration" || item.type === "turnUsageSummary" || isContextCompactionItem(item);
+			}
+			function itemTextValue(value) {
+				if (typeof value === "string") return value;
+				if (Array.isArray(value)) return value.map(itemTextValue).join("");
+				return "";
+			}
+			function reasoningItemHasVisibleText(item) {
+				return Boolean(itemTextValue(item && item.text).trim() || itemTextValue(item && item.content).trim() || itemTextValue(item && item.summary).trim());
+			}
+			function isLatestCompletedProcessTurn(turn, thread = null) {
+				if (!turn || !isTurnComplete(turn)) return false;
+				const contextThread = renderContextThread(thread);
+				const turns = Array.isArray(contextThread && contextThread.turns) ? contextThread.turns : [];
+				for (let index = turns.length - 1; index >= 0; index -= 1) {
+					const candidate = turns[index];
+					if (!candidate || isLiveTurn(candidate, contextThread)) continue;
+					if (!isTurnComplete(candidate)) continue;
+					return candidate === turn;
+				}
+				return isLatestTurn(turn, contextThread);
+			}
+			function limitRawThreadVisibleEntries(entries, thread = null) {
+				if (!isRawThreadReadMode(renderContextThread(thread))) return entries;
+				if (!Array.isArray(entries) || entries.length <= MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN) return entries;
+				const keep = /* @__PURE__ */ new Set();
+				entries.forEach((entry, index) => {
+					if (shouldPreserveRawThreadVisibleEntry(entry)) keep.add(index);
+				});
+				for (let index = Math.max(0, entries.length - MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN); index < entries.length; index += 1) keep.add(index);
+				return entries.filter((_, index) => keep.has(index));
+			}
+			function visibleItemsForTurn(turn, thread = null) {
+				const visible = [];
+				const contextEntryByKey = /* @__PURE__ */ new Map();
+				const contextThread = renderContextThread(thread);
+				(turn.items || []).forEach((item, index) => {
+					if (!item) return;
+					if (isReasoningItem(item)) return;
+					if (shouldHideSupersededLiveUserMessage(turn, item)) return;
+					if (shouldHideOptimisticUserMessageEcho(turn, item, index, contextThread)) return;
+					if (shouldHideDurableLiveUserMessage(turn, item, index, contextThread)) return;
+					if (isContextCompactionItem(item)) {
+						if (!contextCompactionNotice(item, turn, contextThread)) return;
+						const groupKey = "context-compaction";
+						const existing = contextEntryByKey.get(groupKey);
+						if (existing) visible[existing.visibleIndex] = null;
+						contextEntryByKey.set(groupKey, { visibleIndex: visible.length });
+						visible.push({
+							item,
+							sourceIndex: index
+						});
+						return;
+					}
+					if (isOperationalItem(item)) return;
+					visible.push({
+						item,
+						sourceIndex: index
+					});
+				});
+				const filtered = visible.filter(Boolean);
+				if (isSupersededLiveTurn(turn) && filtered.length && filtered.every((entry) => isTurnUsageSummaryItem(entry.item))) return [];
+				return limitRawThreadVisibleEntries(filtered, thread);
+			}
+			function currentLiveOperationEntry(thread) {
+				if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return null;
+				let turn = null;
+				for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
+					const candidate = thread.turns[index];
+					if (isSupersededLiveTurn(candidate)) continue;
+					if (isLiveTurnForThread(thread, candidate)) {
+						turn = candidate;
+						break;
+					}
+				}
+				if (!turn) return null;
+				const items = Array.isArray(turn.items) ? turn.items : [];
+				for (let index = items.length - 1; index >= 0; index -= 1) {
+					const item = items[index];
+					if (isActiveOperationalItem(item)) return {
+						turn,
+						item,
+						sourceIndex: index
+					};
+				}
+				return {
+					turn,
+					item: liveTurnStatusDockItem(turn),
+					sourceIndex: -1
+				};
+			}
+			function liveTurnStatusDockItem(turn) {
+				return {
+					id: `live-turn-status-${turn && (turn.id || turn.startedAt || "active")}`,
+					type: "liveTurnStatus",
+					status: "",
+					title: "Command"
+				};
+			}
+			function visibleItemSignature(item, turn = null, thread = null) {
+				if (!item || isReasoningItem(item)) return null;
+				const projection = {
+					mobileVisibleKey: item.mobileVisibleKey || "",
+					mobileVisibleKind: item.mobileVisibleKind || ""
+				};
+				if (isContextCompactionItem(item)) {
+					const notice = contextCompactionNotice(item, turn, thread);
+					if (!notice) return null;
+					return {
+						...projection,
+						id: item.id || "",
+						type: item.type || "",
+						status: statusText(item.status),
+						mobileCompactionStatus: item.mobileCompactionStatus || "",
+						mobileNotice: item.mobileNotice || "",
+						notice
+					};
+				}
+				if (isOperationalItem(item)) return {
+					...projection,
+					id: item.id || "",
+					type: item.type || "",
+					status: statusText(item.status),
+					startedAtMs: item.startedAtMs || item.startedAt || item.started_at_ms || item.started_at || "",
+					completedAtMs: item.completedAtMs || item.completedAt || item.completed_at_ms || item.completed_at || "",
+					durationMs: item.durationMs || item.duration_ms || item.elapsedMs || item.elapsed_ms || "",
+					command: operationCommandText(item),
+					fileNames: Array.isArray(item.fileNames) ? item.fileNames : [],
+					tool: item.tool || "",
+					server: item.server || "",
+					namespace: item.namespace || "",
+					detail: operationDetailText(item)
+				};
+				if (item.type === "turnUsageSummary") return {
+					...projection,
+					id: item.id || "",
+					type: item.type || "",
+					status: statusText(item.status),
+					mobileUsageSummary: item.mobileUsageSummary || {}
+				};
+				if (item.type === "turnDiagnostic") return {
+					...projection,
+					id: item.id || "",
+					type: item.type || "",
+					status: statusText(item.status),
+					code: item.code || "",
+					severity: item.severity || "",
+					title: item.title || "",
+					message: item.message || "",
+					source: item.source || "",
+					mobileRuntimeDiagnostic: Boolean(item.mobileRuntimeDiagnostic)
+				};
+				if (item.type === "imageView") return {
+					...projection,
+					id: item.id || "",
+					type: item.type || "",
+					status: statusText(item.status),
+					path: imageViewPath(item),
+					contentUrl: imageSourceSignature(imageViewContentUrl(item)),
+					url: imageSourceSignature(imageViewUrl(item))
+				};
+				return {
+					...projection,
+					id: item.id || "",
+					type: item.type || "",
+					status: statusText(item.status),
+					text: item.text || "",
+					content: Array.isArray(item.content) ? inputContentSignature(item.content) : [],
+					summary: Array.isArray(item.summary) ? item.summary : [],
+					mobileNotice: item.mobileNotice || ""
+				};
+			}
+			function visibleItemBudgetForTurn(turn) {
+				if (!turn || typeof turn !== "object") return null;
+				const budget = turn.mobileVisibleItemBudget && typeof turn.mobileVisibleItemBudget === "object" ? turn.mobileVisibleItemBudget : {};
+				const omitted = Math.max(0, Math.trunc(Number(turn.mobileOmittedVisibleItemCount || budget.omitted || 0)));
+				if (!omitted) return null;
+				return {
+					omitted,
+					retained: Math.max(0, Math.trunc(Number(budget.retained || 0))),
+					original: Math.max(0, Math.trunc(Number(budget.original || 0))),
+					ceiling: Math.max(0, Math.trunc(Number(budget.ceiling || 0))),
+					reason: String(budget.reason || "response-budget")
+				};
+			}
+			function visibleItemBudgetSignature(turn) {
+				const budget = visibleItemBudgetForTurn(turn);
+				if (!budget) return null;
+				return budget;
+			}
+			function inputContentSignature(content) {
+				return (content || []).map((part) => {
+					if (!part || typeof part !== "object") return String(part || "");
+					if (isInputTextPart(part)) return {
+						type: "text",
+						text: inputTextValue(part)
+					};
+					if (isInputImagePart(part)) return {
+						type: part.type || "image",
+						path: part.path || "",
+						url: imageSourceSignature(imageUrlValue(part))
+					};
+					return compactStructuredForSignature(part);
+				});
+			}
+			function imageSourceSignature(value) {
+				const text = String(value || "");
+				if (/^data:image\//i.test(text)) return `${text.slice(0, 48)}...${text.length}`;
+				return text;
+			}
+			function compactStructuredForSignature(value) {
+				try {
+					return truncateMiddle(JSON.stringify(value), 600, "payload");
+				} catch (_) {
+					return String(value || "");
+				}
+			}
+			function itemVisibleWeight(item) {
+				const signature = visibleItemSignature(item);
+				return signature ? JSON.stringify(signature).length : 0;
+			}
+			function turnVisibleWeight(turn) {
+				return (turn && Array.isArray(turn.items) ? turn.items : []).reduce((total, item) => total + itemVisibleWeight(item), 0);
+			}
+			function isAssistantReceiptLikeItem(item) {
+				return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
+			}
+			function completedIncomingTurnHasAuthoritativeReceipt(incomingTurn) {
+				return threadDetailStatePolicy.completedIncomingTurnHasAuthoritativeReceipt(incomingTurn);
+			}
+			function shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn = null) {
+				return threadDetailStatePolicy.shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn);
+			}
+			function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false, suppressedVisualReceiptKeys = null, incomingTurn = null) {
+				return threadDetailStatePolicy.shouldPreserveLocalOnlyItem(item, preserveLocalVisible, suppressedVisualReceiptKeys, incomingTurn);
+			}
+			function isMuxUserMessage(item) {
+				return Boolean(item && item.type === "userMessage" && /^mux-user-/.test(String(item.id || "")));
+			}
+			function isOptimisticUserMessage(item) {
+				return Boolean(item && item.type === "userMessage" && (item.mobilePendingSubmission || /^local-user-/.test(String(item.id || "")) || isMuxUserMessage(item)));
+			}
+			function userMessageSubmissionIdCandidates(item) {
+				if (!item || item.type !== "userMessage") return [];
+				const values = [];
+				const explicit = String(item.clientSubmissionId || "").trim();
+				if (explicit) values.push(explicit);
+				const local = String(item.id || "").match(/^local-user-(.+)$/);
+				if (local && local[1]) values.push(local[1]);
+				return [...new Set(values)];
+			}
+			function userMessageHasSubmissionId(item, submissionId) {
+				const value = String(submissionId || "").trim();
+				if (!value || !item || item.type !== "userMessage") return false;
+				if (userMessageSubmissionIdCandidates(item).includes(value)) return true;
+				const id = String(item.id || "");
+				return Boolean(id && id.endsWith(`-${value}`));
+			}
+			function userMessagesShareSubmissionId(left, right) {
+				const leftValues = userMessageSubmissionIdCandidates(left);
+				const rightValues = userMessageSubmissionIdCandidates(right);
+				return leftValues.some((value) => userMessageHasSubmissionId(right, value)) || rightValues.some((value) => userMessageHasSubmissionId(left, value));
+			}
+			function isTurnUsageSummaryItem(item) {
+				return Boolean(item && item.type === "turnUsageSummary");
+			}
+			function isTurnDiagnosticItem(item) {
+				return Boolean(item && item.type === "turnDiagnostic");
+			}
+			function dedupeTurnUsageSummaryItems(items) {
+				if (!Array.isArray(items)) return [];
+				let lastSummaryIndex = -1;
+				items.forEach((item, index) => {
+					if (isTurnUsageSummaryItem(item)) lastSummaryIndex = index;
+				});
+				if (lastSummaryIndex < 0) return items;
+				return items.filter((item, index) => !isTurnUsageSummaryItem(item) || index === lastSummaryIndex);
+			}
+			function normalizeComparableText(value) {
+				return String(value || "").replace(/\s+/g, " ").trim();
+			}
+			function userMessageComparableParts(item) {
+				const result = {
+					text: "",
+					paths: []
+				};
+				if (!item || item.type !== "userMessage") return result;
+				const textParts = [];
+				const paths = [];
+				if (typeof item.text === "string") textParts.push(item.text);
+				if (typeof item.message === "string") textParts.push(item.message);
+				const contentParts = Array.isArray(item.content) ? item.content : typeof item.content === "string" ? [{
+					type: "text",
+					text: item.content
+				}] : [];
+				for (const part of contentParts) {
+					if (!part || typeof part !== "object") continue;
+					if (isInputTextPart(part)) {
+						const split = splitAttachmentSummaryText(inputTextValue(part));
+						if (split.text) textParts.push(split.text);
+						for (const attachment of split.attachments) if (attachment.path) paths.push(normalizeFsPath(attachment.path));
+						continue;
+					}
+					if (part.path) paths.push(normalizeFsPath(part.path));
+					else if (isInputImagePart(part)) {
+						const url = imageUrlValue(part);
+						if (url && !/^data:image\//i.test(url)) paths.push(normalizeFsPath(url));
+					}
+				}
+				result.text = normalizeComparableText(textParts.join("\n"));
+				result.paths = [...new Set(paths.filter(Boolean))].sort();
+				return result;
+			}
+			function userMessagePathOverlap(left, right) {
+				return left.paths.length > 0 && right.paths.length > 0 && left.paths.some((pathValue) => right.paths.includes(pathValue));
+			}
+			function comparablePathName(pathValue) {
+				const text = String(pathValue || "").split(/[?#]/)[0];
+				const parts = normalizeFsPath(text).split("\\").filter(Boolean);
+				return parts[parts.length - 1] || "";
+			}
+			function userMessagePathNameOverlap(left, right) {
+				if (!left.paths.length || !right.paths.length) return false;
+				const leftNames = new Set(left.paths.map(comparablePathName).filter(Boolean));
+				if (!leftNames.size) return false;
+				return right.paths.some((pathValue) => {
+					const rightName = comparablePathName(pathValue);
+					return rightName && Array.from(leftNames).some((leftName) => comparablePathNamesLikelySame(leftName, rightName));
+				});
+			}
+			function comparablePathNamesLikelySame(leftName, rightName) {
+				const left = String(leftName || "");
+				const right = String(rightName || "");
+				if (!left || !right) return false;
+				if (left === right) return true;
+				return left.endsWith(`-${right}`) || right.endsWith(`-${left}`);
+			}
+			function isVisualReceiptItem(item) {
+				return Boolean(item && (item.type === "imageView" || item.type === "imageGeneration"));
+			}
+			function visualReceiptComparableNames(item) {
+				if (!isVisualReceiptItem(item)) return [];
+				const values = [
+					imageViewPath(item),
+					imageViewContentUrl(item),
+					imageViewUrl(item),
+					item.fileName,
+					item.file_name,
+					item.label,
+					item.caption,
+					item.name
+				];
+				return [...new Set(values.map(comparablePathName).filter(Boolean))];
+			}
+			function visualReceiptCallId(item) {
+				return String(item && (item.callId || item.call_id || item.toolCallId || item.tool_call_id || item.arguments && (item.arguments.callId || item.arguments.call_id || item.arguments.toolCallId || item.arguments.tool_call_id) || item.result && (item.result.callId || item.result.call_id || item.result.toolCallId || item.result.tool_call_id)) || "").trim();
+			}
+			function visualReceiptSuppressionKeys(item) {
+				if (!isVisualReceiptItem(item)) return [];
+				const keys = /* @__PURE__ */ new Set();
+				const id = String(item && item.id || "").trim();
+				const callId = visualReceiptCallId(item);
+				if (id) keys.add(`id:${id}`);
+				if (callId) keys.add(`call:${callId}`);
+				for (const name of visualReceiptComparableNames(item)) keys.add(`name:${name}`);
+				return [...keys];
+			}
+			function suppressedVisualReceiptKeySet(turn) {
+				const values = Array.isArray(turn && turn.mobileSuppressedVisualReceiptKeys) ? turn.mobileSuppressedVisualReceiptKeys : [];
+				return new Set(values.map((entry) => String(entry || "").trim()).filter(Boolean));
+			}
+			function visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys) {
+				if (!isVisualReceiptItem(item) || !suppressedVisualReceiptKeys || !suppressedVisualReceiptKeys.size) return false;
+				return visualReceiptSuppressionKeys(item).some((key) => suppressedVisualReceiptKeys.has(key));
+			}
+			function userMessageSpecificity(item) {
+				const parts = userMessageComparableParts(item);
+				return parts.text.length + parts.paths.length * 240;
+			}
+			function userMessagesLikelySame(left, right) {
+				if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
+				const a = userMessageComparableParts(left);
+				const b = userMessageComparableParts(right);
+				if (a.text && b.text && a.text === b.text) {
+					if (isOptimisticUserMessage(left) || isOptimisticUserMessage(right)) return true;
+					if (!a.paths.length && !b.paths.length) return true;
+					return userMessagePathOverlap(a, b);
+				}
+				if ((isOptimisticUserMessage(left) || isOptimisticUserMessage(right)) && userMessagePathNameOverlap(a, b) && (!a.text || !b.text || a.text === b.text)) return true;
+				return userMessagePathOverlap(a, b) && (!a.text || !b.text || a.text === b.text);
+			}
+			function userMessagesCanShadow(left, right) {
+				const leftSubmittedEcho = Boolean(String(left && left.clientSubmissionId || "").trim() && !(left && left.mobileSendError));
+				const rightSubmittedEcho = Boolean(String(right && right.clientSubmissionId || "").trim() && !(right && right.mobileSendError));
+				const projectionIndexId = (item) => String(item && (item.id || item.itemId || item.item_id) || "").trim().match(/^item-(\d+)$/i);
+				const leftProjectionIndex = Boolean(projectionIndexId(left));
+				const rightProjectionIndex = Boolean(projectionIndexId(right));
+				const itemTimeMs = (item) => {
+					const value = item && (item.startedAtMs || item.startedAt || item.createdAtMs || item.createdAt || item.timestampMs || item.timestamp || item.updatedAtMs || item.updatedAt);
+					if (value === null || value === void 0 || value === "") return 0;
+					const numberValue = Number(value);
+					if (Number.isFinite(numberValue) && numberValue > 0) return numberValue > 0xe8d4a51000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1e3);
+					const parsed = Date.parse(String(value));
+					return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+				};
+				const leftProjectionTime = itemTimeMs(left);
+				const rightProjectionTime = itemTimeMs(right);
+				const projectionIndexEcho = Boolean(leftProjectionIndex && rightProjectionIndex && leftProjectionTime && rightProjectionTime && Math.abs(leftProjectionTime - rightProjectionTime) <= 5e3);
+				return Boolean(left && right && left.type === "userMessage" && right.type === "userMessage" && (isOptimisticUserMessage(left) || isOptimisticUserMessage(right) || leftSubmittedEcho || rightSubmittedEcho || projectionIndexEcho) && userMessagesLikelySame(left, right));
+			}
+			function userMessageTimestampMs(item) {
+				const value = item && (item.startedAtMs || item.startedAt || item.createdAtMs || item.createdAt || item.timestampMs || item.timestamp || item.updatedAtMs || item.updatedAt || item.mobileDisplayTimestampMs);
+				if (value === null || value === void 0 || value === "") return 0;
+				const numberValue = Number(value);
+				if (Number.isFinite(numberValue) && numberValue > 0) return numberValue > 0xe8d4a51000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1e3);
+				const parsed = Date.parse(String(value));
+				return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+			}
+			function userMessagesHaveNearbyTimestamps(left, right, windowMs = 600 * 1e3) {
+				const leftMs = userMessageTimestampMs(left);
+				const rightMs = userMessageTimestampMs(right);
+				return Boolean(leftMs && rightMs && Math.abs(leftMs - rightMs) <= windowMs);
+			}
+			function isProjectionIndexUserMessage(item) {
+				return Boolean(String(item && (item.id || item.itemId || item.item_id) || "").trim().match(/^item-\d+$/i));
+			}
+			function userMessagesAreSameEventAcrossTurns(left, right) {
+				if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
+				if (!userMessagesLikelySame(left, right)) return false;
+				if (userMessagesShareSubmissionId(left, right)) return true;
+				if (userMessagesCanShadow(left, right)) return true;
+				const leftTime = userMessageTimestampMs(left);
+				const rightTime = userMessageTimestampMs(right);
+				if (!leftTime || !rightTime || Math.abs(leftTime - rightTime) > 5e3) return false;
+				return Boolean(isOptimisticUserMessage(left) || isOptimisticUserMessage(right) || isProjectionIndexUserMessage(left) || isProjectionIndexUserMessage(right));
+			}
+			function durableTurnCanReceivePendingEcho(turn) {
+				if (!turn) return false;
+				const status = turn.status;
+				const statusType = status && typeof status === "object" ? String(status.type || status.status || status.state || "") : String(status || "");
+				if (/completed|failed|cancel|error|interrupted/i.test(statusType)) return false;
+				if (/running|active|queued|processing|inprogress|in_progress|in-progress|pending|started/i.test(statusType)) return true;
+				return Boolean(turn.live || turn.mobileLive || turn.mobileActiveLiveTurn || turn.mobilePendingOverlay);
+			}
+			function optimisticEchoCanMatchEarlierDurable(durableItem, optimisticItem, durableTurn = null) {
+				if (!durableItem || !optimisticItem) return false;
+				if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
+				if (isOptimisticUserMessage(durableItem) || !isOptimisticUserMessage(optimisticItem)) return false;
+				if (userMessagesShareSubmissionId(durableItem, optimisticItem)) return true;
+				const likelySameNearby = userMessagesLikelySame(durableItem, optimisticItem) && userMessagesHaveNearbyTimestamps(durableItem, optimisticItem);
+				if (optimisticItem.mobileSendError) return likelySameNearby;
+				if (!Boolean(optimisticItem.mobilePendingSubmission && String(optimisticItem.clientSubmissionId || "").trim() && /^local-user-/.test(String(optimisticItem.id || ""))) || !durableTurnCanReceivePendingEcho(durableTurn)) return false;
+				return likelySameNearby;
+			}
+			function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
+				if (!existingItem || existingItem.type !== "userMessage") return false;
+				return (incomingItems || []).some((incomingItem) => incomingItem && incomingItem.id !== existingItem.id && incomingItem.type === "userMessage" && userMessagesCanShadow(existingItem, incomingItem));
+			}
+			function hasMatchingRealUserMessage(item, items) {
+				if (!isMuxUserMessage(item)) return false;
+				return (items || []).some((candidate) => candidate && candidate.id !== item.id && candidate.type === "userMessage" && !isMuxUserMessage(candidate) && userMessagesCanShadow(candidate, item));
+			}
+			function removeShadowedMuxUserMessages(items) {
+				return (items || []).filter((item) => !hasMatchingRealUserMessage(item, items));
+			}
+			function userMessageShadowPriority(item) {
+				if (!item || item.type !== "userMessage") return 0;
+				if (/^local-user-/.test(String(item.id || ""))) return 1;
+				if (isMuxUserMessage(item) || item.mobilePendingSubmission || String(item.clientSubmissionId || "").trim()) return 2;
+				const projectionMatch = String(item.id || item.itemId || item.item_id || "").trim().match(/^item-(\d+)$/i);
+				if (projectionMatch) return 2 + Math.max(0, Math.min(999999, Number(projectionMatch[1]) || 0)) / 1e6;
+				return 3;
+			}
+			function mergeLikelySameUserMessage(existingItem, incomingItem) {
+				const existingPriority = userMessageShadowPriority(existingItem);
+				const incomingPriority = userMessageShadowPriority(incomingItem);
+				const merged = mergeItemPreservingVisibleFields(existingItem, incomingItem);
+				const preferred = incomingPriority >= existingPriority ? incomingItem : existingItem;
+				if (preferred && preferred.id) merged.id = preferred.id;
+				if (preferred && preferred.clientSubmissionId) merged.clientSubmissionId = preferred.clientSubmissionId;
+				else if (existingItem && existingItem.clientSubmissionId) merged.clientSubmissionId = existingItem.clientSubmissionId;
+				else if (incomingItem && incomingItem.clientSubmissionId) merged.clientSubmissionId = incomingItem.clientSubmissionId;
+				if (preferred && preferred.startedAtMs && !merged.startedAtMs) merged.startedAtMs = preferred.startedAtMs;
+				if (preferred && !isOptimisticUserMessage(preferred)) {
+					delete merged.mobilePendingSubmission;
+					delete merged.mobileSendError;
+				}
+				if (incomingItem && !isOptimisticUserMessage(incomingItem) && isOptimisticUserMessage(existingItem) || incomingPriority > existingPriority && incomingPriority >= 3) {
+					if (Array.isArray(incomingItem.content)) merged.content = incomingItem.content;
+					if (typeof incomingItem.text === "string") merged.text = incomingItem.text;
+					if (typeof incomingItem.message === "string") merged.message = incomingItem.message;
+				}
+				return merged;
+			}
+			function dedupeLikelySameUserMessages(items) {
+				const out = [];
+				for (const item of items || []) {
+					if (item && item.type === "userMessage") {
+						const existingIndex = out.findIndex((candidate) => userMessagesCanShadow(candidate, item));
+						if (existingIndex >= 0) {
+							out[existingIndex] = mergeLikelySameUserMessage(out[existingIndex], item);
+							continue;
+						}
+					}
+					out.push(item);
+				}
+				return out;
+			}
+			function normalizeThreadVisibleUserMessages(thread) {
+				if (!thread || !Array.isArray(thread.turns)) return thread;
+				for (const turn of thread.turns) {
+					if (!turn || !Array.isArray(turn.items)) continue;
+					turn.items = removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(turn.items));
+				}
+				const userMessages = threadUserMessageEntries(thread.turns);
+				const durableUserMessages = [];
+				for (const entry of userMessages) if (entry && entry.item && !isOptimisticUserMessage(entry.item)) durableUserMessages.push(entry);
+				if (!durableUserMessages.length && userMessages.length < 2) return thread;
+				for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
+					const turn = thread.turns[turnIndex];
+					if (!turn || !Array.isArray(turn.items)) continue;
+					turn.items = turn.items.filter((item, itemIndex) => !shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages) && !shouldDropOptimisticUserMessageForHigherPriorityEcho(item, turnIndex, itemIndex, userMessages) && !shouldDropDuplicateUserMessageEvent(item, turnIndex, itemIndex, userMessages));
+				}
+				return thread;
+			}
+			function threadUserMessageEntries(turns) {
+				const entries = [];
+				for (let turnIndex = 0; turnIndex < (turns || []).length; turnIndex += 1) {
+					const turn = turns[turnIndex];
+					const items = Array.isArray(turn && turn.items) ? turn.items : [];
+					for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+						const item = items[itemIndex];
+						if (item && item.type === "userMessage") entries.push({
+							item,
+							turn,
+							turnIndex,
+							itemIndex
+						});
+					}
+				}
+				return entries;
+			}
+			function shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages) {
+				if (!isOptimisticUserMessage(item) || !Array.isArray(durableUserMessages)) return false;
+				return durableUserMessages.some((real) => {
+					if (!real || !real.item || real.item.id === item.id) return false;
+					if (!userMessagesCanShadow(real.item, item)) return false;
+					if (real.turnIndex >= turnIndex) return true;
+					if (optimisticEchoCanMatchEarlierDurable(real.item, item, real.turn)) return true;
+					return userMessageHasVisualAttachment(real.item) && userMessageHasVisualAttachment(item);
+				});
+			}
+			function shouldDropOptimisticUserMessageForHigherPriorityEcho(item, turnIndex, itemIndex, userMessages) {
+				if (!isOptimisticUserMessage(item) || item.mobileSendError || !Array.isArray(userMessages)) return false;
+				const itemPriority = userMessageShadowPriority(item);
+				if (itemPriority <= 0 || itemPriority >= 3) return false;
+				return userMessages.some((candidate) => {
+					if (!candidate || !candidate.item || candidate.item === item || candidate.item.id === item.id) return false;
+					if (userMessageShadowPriority(candidate.item) <= itemPriority) return false;
+					if (!userMessagesShareSubmissionId(candidate.item, item)) {
+						if (candidate.turnIndex < turnIndex) return false;
+						if (candidate.turnIndex === turnIndex && candidate.itemIndex <= itemIndex) return false;
+					}
+					return userMessagesCanShadow(candidate.item, item);
+				});
+			}
+			function shouldDropDuplicateUserMessageEvent(item, turnIndex, itemIndex, userMessages) {
+				if (!item || item.type !== "userMessage" || !Array.isArray(userMessages)) return false;
+				const itemHasVisualAttachment = userMessageHasVisualAttachment(item);
+				const itemPriority = userMessageShadowPriority(item);
+				return userMessages.some((candidate) => {
+					if (!candidate || !candidate.item || candidate.item === item || candidate.item.id === item.id) return false;
+					if (candidate.turnIndex < turnIndex) return false;
+					if (candidate.turnIndex === turnIndex && candidate.itemIndex <= itemIndex) return false;
+					const sameSubmission = userMessagesShareSubmissionId(candidate.item, item);
+					if ((itemHasVisualAttachment || userMessageHasVisualAttachment(candidate.item)) && !sameSubmission) return false;
+					if (!userMessagesAreSameEventAcrossTurns(candidate.item, item)) return false;
+					const candidatePriority = userMessageShadowPriority(candidate.item);
+					if (candidatePriority > itemPriority) return true;
+					if (candidatePriority === itemPriority) return true;
+					return false;
+				});
+			}
+			function threadDurableUserMessages(turns) {
+				const messages = [];
+				for (const turn of turns || []) {
+					const items = Array.isArray(turn && turn.items) ? turn.items : [];
+					for (const item of items) if (item && item.type === "userMessage" && !isOptimisticUserMessage(item)) messages.push(item);
+				}
+				return messages;
+			}
+			function shouldDropInitialSubmissionEchoTurn(existingTurn, incomingTurns, initialSubmissionId) {
+				const submissionId = String(initialSubmissionId || "").trim();
+				if (!submissionId || !existingTurn || !Array.isArray(existingTurn.items)) return false;
+				const visibleItems = existingTurn.items.filter((item) => item && itemVisibleWeight(item) > 0 && !isReasoningItem(item));
+				const submittedEchoes = visibleItems.filter((item) => item && item.type === "userMessage" && isOptimisticUserMessage(item) && String(item.clientSubmissionId || "") === submissionId);
+				if (!submittedEchoes.length || submittedEchoes.length !== visibleItems.length) return false;
+				const durableMessages = threadDurableUserMessages(incomingTurns);
+				return submittedEchoes.every((echo) => durableMessages.some((real) => userMessagesCanShadow(real, echo)));
+			}
+			function threadHasInitialSubmissionEcho(thread, initialSubmissionId) {
+				const submissionId = String(initialSubmissionId || "").trim();
+				if (!submissionId || !thread || !Array.isArray(thread.turns)) return false;
+				return thread.turns.some((turn) => {
+					return (Array.isArray(turn && turn.items) ? turn.items : []).some((item) => item && item.type === "userMessage" && isOptimisticUserMessage(item) && String(item.clientSubmissionId || "") === submissionId);
+				});
+			}
+			function shouldPreserveMissingExistingTurn(existingTurn) {
+				if (!existingTurn || isTurnComplete(existingTurn)) return false;
+				const visibleItems = (Array.isArray(existingTurn.items) ? existingTurn.items : []).filter((item) => item && itemVisibleWeight(item) > 0 && !isReasoningItem(item));
+				return Boolean(visibleItems.length && visibleItems.every((item) => item.type === "userMessage" && isOptimisticUserMessage(item)));
+			}
+			function comparableVisibleTextItem(item) {
+				return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
+			}
+			function comparableVisibleText(item) {
+				if (!comparableVisibleTextItem(item)) return "";
+				return normalizeComparableText(item.text || "");
+			}
+			function visibleTextItemsLikelySame(existingItem, incomingItem) {
+				if (!comparableVisibleTextItem(existingItem) || !comparableVisibleTextItem(incomingItem)) return false;
+				if (existingItem.type !== incomingItem.type) return false;
+				const existingText = comparableVisibleText(existingItem);
+				const incomingText = comparableVisibleText(incomingItem);
+				if (!existingText || !incomingText) return false;
+				return incomingText === existingText || incomingText.length >= existingText.length && incomingText.startsWith(existingText);
+			}
+			function visibleTextItemsHaveStableSharedPrefix(existingItem, incomingItem) {
+				if (!comparableVisibleTextItem(existingItem) || !comparableVisibleTextItem(incomingItem)) return false;
+				if (existingItem.type !== incomingItem.type) return false;
+				const existingText = comparableVisibleText(existingItem);
+				const incomingText = comparableVisibleText(incomingItem);
+				if (!existingText || !incomingText) return false;
+				if (existingText === incomingText) return true;
+				const shorterText = existingText.length <= incomingText.length ? existingText : incomingText;
+				const longerText = existingText.length <= incomingText.length ? incomingText : existingText;
+				if (shorterText.length < 16) return false;
+				if (!longerText.startsWith(shorterText)) return false;
+				return shorterText.length / Math.max(1, longerText.length) >= .5;
+			}
+			function completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn = null) {
+				if (!completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)) return false;
+				if (!isAssistantReceiptLikeItem(existingItem) || !isAssistantReceiptLikeItem(incomingItem)) return false;
+				return visibleTextItemsLikelySame(existingItem, incomingItem) || visibleTextItemsHaveStableSharedPrefix(existingItem, incomingItem);
+			}
+			function visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
+				return threadDetailStatePolicy.visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn);
+			}
+			function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, usedExistingIndexes, incomingTurn = null) {
+				if (!incomingItem) return -1;
+				const used = usedExistingIndexes || /* @__PURE__ */ new Set();
+				if (incomingItem.id) {
+					const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem && !used.has(candidateIndex) && existingItem.id === incomingItem.id);
+					if (index >= 0) return index;
+				}
+				if (incomingItem.type === "userMessage") {
+					const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem && !used.has(candidateIndex) && existingItem.type === "userMessage" && userMessagesCanShadow(existingItem, incomingItem));
+					if (index >= 0) return index;
+				}
+				if (comparableVisibleTextItem(incomingItem)) {
+					const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem && !used.has(candidateIndex) && visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn));
+					if (index >= 0) return index;
+				}
+				return -1;
+			}
+			function mergeIncomingOrderedItem(existingItem, incomingItem, incomingTurn = null) {
+				if (!existingItem) return incomingItem;
+				if (!incomingItem) return existingItem;
+				if (incomingItem.type === "userMessage" && existingItem.type === "userMessage") return mergeLikelySameUserMessage(existingItem, incomingItem);
+				if (visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn)) return mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn);
+				return mergeItemPreservingVisibleFields(existingItem, incomingItem);
+			}
+			function insertLocalOnlyItemByExistingOrder(merged, item, existingIndex, existingIndexToMergedIndex) {
+				if (!item) return;
+				let insertAt = -1;
+				for (let index = existingIndex - 1; index >= 0; index -= 1) if (existingIndexToMergedIndex.has(index)) {
+					insertAt = existingIndexToMergedIndex.get(index) + 1;
+					break;
+				}
+				if (insertAt < 0) {
+					for (const [index, mergedIndex] of existingIndexToMergedIndex.entries()) if (index > existingIndex && (insertAt < 0 || mergedIndex < insertAt)) insertAt = mergedIndex;
+				}
+				if (insertAt < 0 || insertAt > merged.length) insertAt = merged.length;
+				merged.splice(insertAt, 0, item);
+				for (const [index, mergedIndex] of existingIndexToMergedIndex.entries()) if (mergedIndex >= insertAt) existingIndexToMergedIndex.set(index, mergedIndex + 1);
+				existingIndexToMergedIndex.set(existingIndex, insertAt);
+			}
+			function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
+				return threadDetailStatePolicy.mergeItemPreservingVisibleFields(existingItem, incomingItem);
+			}
+			function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
+				return threadDetailStatePolicy.mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn);
+			}
+			function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false, incomingTurn = null) {
+				const added = /* @__PURE__ */ new Set();
+				const usedExistingIndexes = /* @__PURE__ */ new Set();
+				const existingIndexToMergedIndex = /* @__PURE__ */ new Map();
+				const merged = [];
+				const suppressedVisualReceiptKeys = suppressedVisualReceiptKeySet(incomingTurn);
+				for (const incomingItem of incomingItems || []) {
+					if (!incomingItem) continue;
+					if (incomingItem.id && added.has(incomingItem.id)) continue;
+					if (hasMatchingRealUserMessage(incomingItem, merged) || hasMatchingRealUserMessage(incomingItem, incomingItems)) continue;
+					const existingIndex = findUnusedExistingItemIndexForIncoming(incomingItem, existingItems || [], usedExistingIndexes, incomingTurn);
+					const existingItem = existingIndex >= 0 ? existingItems[existingIndex] : null;
+					const mergedItem = mergeIncomingOrderedItem(existingItem, incomingItem, incomingTurn);
+					merged.push(mergedItem);
+					if (incomingItem.id) added.add(incomingItem.id);
+					if (mergedItem && mergedItem.id) added.add(mergedItem.id);
+					if (existingItem && existingItem.id) added.add(existingItem.id);
+					if (existingIndex >= 0) {
+						usedExistingIndexes.add(existingIndex);
+						existingIndexToMergedIndex.set(existingIndex, merged.length - 1);
+					}
+				}
+				(existingItems || []).forEach((existingItem, existingIndex) => {
+					if (!existingItem || usedExistingIndexes.has(existingIndex)) return;
+					if (!shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible, suppressedVisualReceiptKeys, incomingTurn)) return;
+					if (existingItem.id && added.has(existingItem.id)) return;
+					insertLocalOnlyItemByExistingOrder(merged, existingItem, existingIndex, existingIndexToMergedIndex);
+					if (existingItem.id) added.add(existingItem.id);
+				});
+				return dedupeTurnUsageSummaryItems(removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(merged)));
+			}
+			function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
+				return threadDetailMergePolicy.mergeTurnPreservingVisibleItems(existingTurn, incomingTurn);
+			}
+			function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
+				return threadDetailMergePolicy.shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
+			}
+			function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
+				return threadDetailMergePolicy.mergeThreadPreservingVisibleItems(existingThread, incomingThread, { activeTurnId: state.activeTurnId });
+			}
+			function firstTurnTimestampMs(turn, fields = []) {
+				for (const field of fields) {
+					const timestamp = numericTimestampMs(turn && turn[field]);
+					if (timestamp) return timestamp;
+				}
+				return 0;
+			}
+			function turnOrderMs(turn) {
+				if (!turn) return 0;
+				if (isTurnComplete(turn)) return firstTurnTimestampMs(turn, [
+					"completedAtMs",
+					"completedAt",
+					"completed_at_ms",
+					"completed_at",
+					"updatedAtMs",
+					"updatedAt",
+					"updated_at_ms",
+					"updated_at",
+					"startedAtMs",
+					"startedAt",
+					"started_at_ms",
+					"started_at",
+					"createdAtMs",
+					"createdAt",
+					"created_at_ms",
+					"created_at"
+				]);
+				return firstTurnTimestampMs(turn, [
+					"startedAtMs",
+					"startedAt",
+					"started_at_ms",
+					"started_at",
+					"createdAtMs",
+					"createdAt",
+					"created_at_ms",
+					"created_at",
+					"updatedAtMs",
+					"updatedAt",
+					"updated_at_ms",
+					"updated_at",
+					"completedAtMs",
+					"completedAt",
+					"completed_at_ms",
+					"completed_at"
+				]);
+			}
+			function turnIsSupersededBy(turn, newerTurn) {
+				if (!turn || !newerTurn || turn.id === newerTurn.id) return false;
+				const left = turnOrderMs(turn);
+				const right = turnOrderMs(newerTurn);
+				if (left && right) return right > left;
+				return isTurnComplete(newerTurn) && !isTurnComplete(turn);
+			}
+			const threadDetailStatePolicy = threadDetailStateApi.createThreadDetailStatePolicy({
+				itemVisibleWeight,
+				isContextCompactionItem,
+				isOperationalItem,
+				isAssistantReceiptLikeItem,
+				isTurnComplete,
+				isReasoningItem,
+				visualReceiptMatchesSuppressionKeys,
+				comparableVisibleText,
+				visibleTextItemsLikelySame,
+				completedReceiptItemsLikelySame
+			});
+			const threadListSummaryFromDetailThread = threadDetailStateApi.threadListSummaryFromDetailThread;
+			const planThreadOpenCacheReuse = threadDetailStateApi.planThreadOpenCacheReuse;
+			const threadHasReusableLoadedDetailState = threadDetailStateApi.threadHasReusableLoadedDetailState;
+			const threadDetailV4MergePolicy = threadDetailV4MergeStateApi.createThreadDetailV4MergePolicy({
+				normalizeThreadVisibleUserMessages,
+				turnVisibleWeight,
+				isOptimisticUserMessage,
+				isRecentlySubmittedUserMessage,
+				isReasoningItem,
+				userMessageHasSubmissionId,
+				userMessagesCanShadow,
+				isTurnComplete,
+				isRunningStatus,
+				isIncompleteInterruptedTurn,
+				turnHasActiveLiveItems,
+				turnOrderMs,
+				mergeTurnPreservingVisibleItems,
+				sortTurnsForDisplay,
+				maxVisibleTurnsForThread
+			});
+			const threadDetailMergePolicy = threadDetailMergeStateApi.createThreadDetailMergePolicy({
+				isV4ProjectionThread: threadDetailV4MergePolicy.isV4ProjectionThread,
+				mergeV4ProjectionThread: threadDetailV4MergePolicy.mergeV4ProjectionThread,
+				normalizeThreadVisibleUserMessages,
+				turnVisibleWeight,
+				shouldPreserveExistingTurnVisibleItems: (existingTurn, incomingTurn, existingWeight) => threadDetailStatePolicy.shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight),
+				mergeItemsPreservingLocalVisible,
+				shouldDropInitialSubmissionEchoTurn,
+				shouldPreserveMissingExistingTurn,
+				turnIsSupersededBy,
+				isTurnComplete,
+				sortTurnsForDisplay,
+				threadHasInitialSubmissionEcho,
+				maxExpandedVisibleTurns: MAX_EXPANDED_VISIBLE_TURNS
+			});
+			return {
+				threadDetailStatePolicy,
+				threadDetailV4MergePolicy,
+				threadDetailMergePolicy,
+				threadListSummaryFromDetailThread,
+				planThreadOpenCacheReuse,
+				threadHasReusableLoadedDetailState,
+				liveTurnHasNonUserProgress,
+				isVisibleNonUserProgressItem,
+				liveTurnHasNonUserProgressBefore,
+				liveTurnHasNonUserProgressAfter,
+				isUserVisibleTextReplyItem,
+				liveTurnHasUserVisibleTextReplyAfter,
+				userMessageHasVisualAttachment,
+				shouldHideDurableLiveUserMessage,
+				durableUserMessageMatchesOptimisticEcho,
+				threadHasDurableUserMessageWithSubmissionId,
+				threadHasDurableUserMessageMatchingOptimisticEcho,
+				shouldHideOptimisticUserMessageEcho,
+				isSupersededLiveTurn,
+				shouldHideSupersededLiveUserMessage,
+				isRawThreadReadMode,
+				shouldPreserveRawThreadVisibleEntry,
+				itemTextValue,
+				reasoningItemHasVisibleText,
+				isLatestCompletedProcessTurn,
+				limitRawThreadVisibleEntries,
+				visibleItemsForTurn,
+				currentLiveOperationEntry,
+				liveTurnStatusDockItem,
+				visibleItemSignature,
+				visibleItemBudgetForTurn,
+				visibleItemBudgetSignature,
+				inputContentSignature,
+				imageSourceSignature,
+				compactStructuredForSignature,
+				itemVisibleWeight,
+				turnVisibleWeight,
+				isAssistantReceiptLikeItem,
+				completedIncomingTurnHasAuthoritativeReceipt,
+				shouldDropLocalOnlyReceiptForIncomingTurn,
+				shouldPreserveLocalOnlyItem,
+				isMuxUserMessage,
+				isOptimisticUserMessage,
+				userMessageSubmissionIdCandidates,
+				userMessageHasSubmissionId,
+				userMessagesShareSubmissionId,
+				isTurnUsageSummaryItem,
+				isTurnDiagnosticItem,
+				dedupeTurnUsageSummaryItems,
+				normalizeComparableText,
+				userMessageComparableParts,
+				userMessagePathOverlap,
+				comparablePathName,
+				userMessagePathNameOverlap,
+				comparablePathNamesLikelySame,
+				isVisualReceiptItem,
+				visualReceiptComparableNames,
+				visualReceiptCallId,
+				visualReceiptSuppressionKeys,
+				suppressedVisualReceiptKeySet,
+				visualReceiptMatchesSuppressionKeys,
+				userMessageSpecificity,
+				userMessagesLikelySame,
+				userMessagesCanShadow,
+				userMessageTimestampMs,
+				userMessagesHaveNearbyTimestamps,
+				isProjectionIndexUserMessage,
+				userMessagesAreSameEventAcrossTurns,
+				durableTurnCanReceivePendingEcho,
+				optimisticEchoCanMatchEarlierDurable,
+				hasMatchingIncomingUserMessage,
+				hasMatchingRealUserMessage,
+				removeShadowedMuxUserMessages,
+				userMessageShadowPriority,
+				mergeLikelySameUserMessage,
+				dedupeLikelySameUserMessages,
+				normalizeThreadVisibleUserMessages,
+				threadUserMessageEntries,
+				shouldDropOptimisticUserMessageForDurable,
+				shouldDropOptimisticUserMessageForHigherPriorityEcho,
+				shouldDropDuplicateUserMessageEvent,
+				threadDurableUserMessages,
+				shouldDropInitialSubmissionEchoTurn,
+				threadHasInitialSubmissionEcho,
+				comparableVisibleTextItem,
+				comparableVisibleText,
+				visibleTextItemsLikelySame,
+				visibleTextItemsHaveStableSharedPrefix,
+				completedReceiptItemsLikelySame,
+				visibleTextItemsCanShareRenderIdentity,
+				findUnusedExistingItemIndexForIncoming,
+				mergeIncomingOrderedItem,
+				insertLocalOnlyItemByExistingOrder,
+				mergeItemPreservingVisibleFields,
+				mergeVisibleTextItemPreservingRenderIdentity,
+				mergeItemsPreservingLocalVisible,
+				mergeTurnPreservingVisibleItems,
+				shouldPreserveLiveTurnLocalVisibleItems,
+				mergeThreadPreservingVisibleItems,
+				turnOrderMs,
+				turnIsSupersededBy
+			};
+		}
+		root.CodexThreadDetailRuntime = { createThreadDetailRuntime };
+		if (typeof module !== "undefined" && module.exports) module.exports = { createThreadDetailRuntime };
+	})(typeof globalThis !== "undefined" ? globalThis : exports);
+}));
+//#endregion
+//#region public/task-card-runtime.js
+var require_task_card_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	function taskCardActionThread(threadId) {
+		const id = String(threadId || "").trim();
+		if (id && state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+		if (id && state.threadTileDetails.has(id)) return state.threadTileDetails.get(id);
+		if (!id) return state.currentThread || null;
+		return null;
+	}
+	function findThreadTaskCard(cardId, threadId = "") {
+		const thread = taskCardActionThread(threadId);
+		return threadTaskCardsForThread(thread || {}).find((card) => card.id === String(cardId || "")) || null;
+	}
+	function summarizeTaskCardText(value) {
+		return truncateSingleLine(String(value || "").replace(/\s+/g, " ").trim(), 280);
+	}
+	function truncateThreadTaskCardBody(value, maxChars = THREAD_TASK_CARD_BODY_MAX_CHARS) {
+		const text = String(value || "").trim();
+		const limit = Math.max(0, Number(maxChars) || 0);
+		if (!limit || text.length <= limit) return text;
+		const marker = `\n\n[Task card body truncated: ${text.length} chars total]\n\n`;
+		const available = Math.max(0, limit - marker.length);
+		if (available <= 0) return text.slice(0, limit);
+		const head = Math.ceil(available * .6);
+		const tail = Math.max(0, available - head);
+		return `${text.slice(0, head).trimEnd()}${marker}${text.slice(-tail).trimStart()}`.slice(0, limit);
+	}
+	function isThreadTaskCardCommandText(value) {
+		const text = String(value || "").trim();
+		return (text.startsWith(THREAD_TASK_CARD_COMMAND_PREFIX) || THREAD_TASK_CARD_MENTION_PATTERN.test(text) || THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(text)) && threadTaskCardCommandText(text).length > 0;
+	}
+	function isThreadGoalCommandText(value) {
+		const text = String(value || "").trim();
+		return text.toLowerCase() === THREAD_GOAL_COMMAND_PREFIX || THREAD_GOAL_MENTION_PATTERN.test(text);
+	}
+	function isChatGptProCommandText(value) {
+		return /(?:^|\s)@(?:ChatGPT\s+Pro|ChatGPTPro|GPT\s+Pro)\b/i.test(String(value || ""));
+	}
+	async function submitChatGptProRequest(text, options = {}) {
+		if (!String(text || "").trim()) return false;
+		if (state.pendingAttachments.length) {
+			showError(/* @__PURE__ */ new Error("@ChatGPT Pro does not support attachments in this entry point"));
+			return true;
+		}
+		const sourceThreadId = currentComposerThreadId() || state.currentThreadId || "";
+		const sourceThread = composerTargetThread() || state.currentThread || null;
+		const cwd = state.newThreadDraft ? state.selectedCwd || "" : sourceThread && sourceThread.cwd || "";
+		state.composerBusy = true;
+		state.sendButtonHint = "";
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = "正在提交 ChatGPT Pro 分析";
+		markActivity("Pro 分析");
+		updateComposerControls();
+		try {
+			const result = await api("/api/chatgpt-pro/generate", {
+				method: "POST",
+				body: JSON.stringify({
+					prompt: text,
+					sourceThreadId,
+					sourceThreadTitle: sourceThread ? threadDisplayName(sourceThread) : "",
+					cwd,
+					language: "zh-CN",
+					outputFormat: "markdown",
+					bridgeMode: isHermesEmbedMode() ? "embedded" : "standalone"
+				}),
+				timeoutMs: 18e4
+			});
+			setComposerText("");
+			clearPendingAttachments();
+			scheduleCurrentDraftSave();
+			const proThreadId = String(result && result.proThreadId || "");
+			$("connectionState").textContent = proThreadId ? `ChatGPT Pro 分析已提交：${proThreadId.slice(0, 8)}` : "ChatGPT Pro 分析已提交";
+			markActivity("Pro 已提交");
+			await loadThreads({ silent: true }).catch(showError);
+			if (state.newThreadDraft && proThreadId) {
+				state.newThreadDraft = false;
+				await loadThread(proThreadId, { source: "chatgpt-pro" }).catch(showError);
+			}
+			return true;
+		} catch (err) {
+			$("connectionState").classList.add("error");
+			$("connectionState").textContent = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err) || "ChatGPT Pro 提交失败";
+			showError(err);
+			if (options.rethrow) throw err;
+			return true;
+		} finally {
+			state.composerBusy = false;
+			updateComposerControls();
+		}
+	}
+	function threadTaskCardCommandText(value) {
+		const text = String(value || "").trim();
+		if (text.startsWith(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX)) return text.slice(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX.length).trim();
+		if (THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(text)) return text.replace(THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN, "").trim();
+		if (THREAD_TASK_CARD_MENTION_PATTERN.test(text)) return text.replace(THREAD_TASK_CARD_MENTION_PATTERN, "").trim();
+		return text.startsWith(THREAD_TASK_CARD_COMMAND_PREFIX) ? text.slice(THREAD_TASK_CARD_COMMAND_PREFIX.length).trim() : "";
+	}
+	function threadTaskCardVisibleTargets() {
+		const sourceThreadId = currentComposerThreadId() || state.currentThreadId;
+		return (state.threads || []).filter((thread) => thread && thread.id && thread.id !== sourceThreadId).slice(0, 40).map((thread) => ({
+			threadId: String(thread.id || ""),
+			title: threadTitleForDisplay(thread) || String(thread.id || ""),
+			cwd: String(thread.cwd || "")
+		}));
+	}
+	function buildThreadTaskCardDraftRequestText(commandText, sourceThread = composerTargetThread()) {
+		const original = String(commandText || "").trim();
+		if (!threadTaskCardCommandText(original)) throw new Error("Task-card command is empty");
+		const legacyAutonomousCommand = original.startsWith(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX) || THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(original);
+		const source = sourceThread || {};
+		const sourceThreadId = currentComposerThreadId() || state.currentThreadId || "";
+		const envelope = {
+			version: 1,
+			sourceThreadId: String(sourceThreadId),
+			sourceThreadTitle: threadTitleForDisplay(source) || String(sourceThreadId),
+			availableTargets: threadTaskCardVisibleTargets()
+		};
+		return [
+			original,
+			"",
+			`<${THREAD_TASK_CARD_REQUEST_TAG}>`,
+			JSON.stringify(envelope, null, 2),
+			`</${THREAD_TASK_CARD_REQUEST_TAG}>`,
+			"",
+			"Interpret the command above as a cross-thread pending task card request.",
+			"Return only one XML block in exactly this format:",
+			`<${THREAD_TASK_CARD_DRAFT_TAG}>`,
+			"{\"targetThreadIds\":[\"one or more exact threadId values from availableTargets\"],\"workflowMode\":\"manual|autonomous\",\"workflowId\":\"optional existing workflow id\",\"title\":\"short title\",\"summary\":\"one-line summary\",\"body\":\"full markdown body\",\"error\":\"\"}",
+			`</${THREAD_TASK_CARD_DRAFT_TAG}>`,
+			"Rules:",
+			"- Choose one or more targetThreadIds only from availableTargets.threadId.",
+			"- Do not invent a thread id; when the request names multiple clear targets, include all of them.",
+			"- Default workflowMode to manual for plain # or @任务卡片 single-card commands.",
+			"- Use autonomous only when the command uses #自由协作, @自由协作, or explicitly asks for autonomous/free collaboration/auto-return workflow.",
+			legacyAutonomousCommand ? "- This command used #自由协作 or @自由协作, so default workflowMode to autonomous unless it explicitly asks for manual." : "- This command used a manual task-card entry, so default workflowMode to manual unless it explicitly asks for autonomous/free collaboration.",
+			"- Autonomous workflow means the target approves the first card once; after the target turn completes, Mobile Web sends the return card back automatically without another approval.",
+			"- For a new autonomous workflow, leave workflowId empty. Reuse workflowId only when the command or visible context provides an existing id.",
+			"- If the command is unclear or no target fits, set targetThreadIds to an empty array and explain the problem in error.",
+			"- Keep title under 120 chars and summary under 280 chars.",
+			"- Keep body under 7600 chars and put the actual requested work there.",
+			"- Do not add any explanation outside the XML block."
+		].join("\n");
+	}
+	function threadTaskCardRequestMarkerMatch(value) {
+		const text = String(value || "");
+		return new RegExp(`\\n\\s*<${THREAD_TASK_CARD_REQUEST_TAG}>[\\s\\S]*?<\\/${THREAD_TASK_CARD_REQUEST_TAG}>[\\s\\S]*$`, "i").exec(text);
+	}
+	function uniqueThreadTaskCardTargetIds(values, fallbackValue = "") {
+		const raw = Array.isArray(values) && values.length ? values : [fallbackValue];
+		const seen = /* @__PURE__ */ new Set();
+		const ids = [];
+		for (const value of raw) {
+			const id = String(value || "").trim();
+			if (!id || seen.has(id)) continue;
+			seen.add(id);
+			ids.push(id);
+			if (ids.length >= 12) break;
+		}
+		return ids;
+	}
+	function normalizeThreadTaskCardWorkflowMode(value) {
+		const mode = String(value || "manual").trim().toLowerCase();
+		if (mode === "autonomous" || mode === "auto" || mode === "automatic") return "autonomous";
+		return "manual";
+	}
+	function visibleThreadTaskCardCommandText(value) {
+		const text = String(value || "");
+		const match = threadTaskCardRequestMarkerMatch(text);
+		return match ? text.slice(0, match.index).trimEnd() : text;
+	}
+	function parseThreadTaskCardDraftText(value) {
+		const text = String(value || "");
+		const match = new RegExp(`<${THREAD_TASK_CARD_DRAFT_TAG}>\\s*([\\s\\S]*?)\\s*<\\/${THREAD_TASK_CARD_DRAFT_TAG}>`, "i").exec(text);
+		if (!match) return null;
+		let parsed;
+		try {
+			parsed = JSON.parse(match[1]);
+		} catch (_) {
+			return null;
+		}
+		if (!parsed || typeof parsed !== "object") return null;
+		const targetThreadIds = uniqueThreadTaskCardTargetIds(parsed.targetThreadIds, parsed.targetThreadId);
+		return {
+			rawText: text,
+			targetThreadId: targetThreadIds[0] || "",
+			targetThreadIds,
+			workflowMode: normalizeThreadTaskCardWorkflowMode(parsed.workflowMode),
+			workflowId: truncateSingleLine(String(parsed.workflowId || "").trim(), 220),
+			title: truncateSingleLine(String(parsed.title || "").trim(), 120),
+			summary: truncateSingleLine(String(parsed.summary || "").trim(), 280),
+			body: String(parsed.body || "").trim(),
+			error: truncateSingleLine(String(parsed.error || "").trim(), 280)
+		};
+	}
+	function hasThreadTaskCardDraftTag(value) {
+		return String(value || "").includes(`<${THREAD_TASK_CARD_DRAFT_TAG}>`);
+	}
+	function turnHasThreadTaskCardRequest(turn) {
+		return (Array.isArray(turn && turn.items) ? turn.items : []).some((item) => {
+			if (!item || item.type !== "userMessage") return false;
+			return (Array.isArray(item.content) ? item.content : []).some((part) => isInputTextPart(part) && Boolean(threadTaskCardRequestMarkerMatch(inputTextValue(part))));
+		});
+	}
+	function turnHasThreadTaskCardDraftResponse(turn) {
+		return (Array.isArray(turn && turn.items) ? turn.items : []).some((item) => item && (item.type === "agentMessage" || item.type === "plan") && hasThreadTaskCardDraftTag(item.text || ""));
+	}
+	function renderTurnThreadTaskCardDraft(turn, previousKeys = /* @__PURE__ */ new Set(), thread = renderContextThread()) {
+		const contextThread = renderContextThread(thread);
+		const items = Array.isArray(turn && turn.items) ? turn.items : [];
+		for (const item of items) {
+			if (!item || item.type !== "agentMessage" && item.type !== "plan") continue;
+			const text = String(item.text || "");
+			const draft = parseThreadTaskCardDraftText(text);
+			if (draft) {
+				const draftKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
+				let draftState = threadTaskCardDraftState(draftKey);
+				if (draftState.status === "pending") {
+					const existing = matchingThreadTaskCardsForDraft(draft, turn, contextThread);
+					if (existing.length) {
+						setThreadTaskCardDraftState(draftKey, {
+							status: "created",
+							error: "",
+							cardId: String(existing[0] && existing[0].id || ""),
+							cardIds: existing.map((card) => String(card && card.id || "")).filter(Boolean)
+						}, { render: false });
+						draftState = threadTaskCardDraftState(draftKey);
+					}
+				}
+				if (canRecoverFailedThreadTaskCardDraft(draft, draftState)) {
+					setThreadTaskCardDraftState(draftKey, {
+						status: "pending",
+						error: ""
+					}, { render: false });
+					queueThreadTaskCardDraftCreation(draftKey, contextThread);
+					draftState = Object.assign({}, draftState, { status: "creating" });
+				}
+				if (draftState.status === "created" || draftState.status === "dismissed") return "";
+				if (draftState.status === "creating" && isThreadTaskCardDraftCreationStale(draftKey, draftState)) {
+					const attempts = Math.max(1, Number(draftState.attempts || 1));
+					if (attempts < THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS) {
+						setThreadTaskCardDraftState(draftKey, {
+							status: "pending",
+							error: "",
+							attempts
+						}, { render: false });
+						queueThreadTaskCardDraftCreation(draftKey, contextThread);
+						draftState = Object.assign({}, draftState, {
+							status: "creating",
+							attempts: attempts + 1
+						});
+					} else {
+						setThreadTaskCardDraftState(draftKey, {
+							status: "failed",
+							error: "Task card creation timed out before the server stored a card"
+						}, { render: false });
+						draftState = threadTaskCardDraftState(draftKey);
+					}
+				}
+				if (draftState.status === "pending") {
+					queueThreadTaskCardDraftCreation(draftKey, contextThread);
+					draftState = Object.assign({}, draftState, { status: "creating" });
+				}
+				if (draftState.status === "creating") return "";
+				return renderThreadTaskCardDraft(draft, item, turn, previousKeys, draftKey, draftState, contextThread);
+			}
+			if (hasThreadTaskCardDraftTag(text)) return renderPendingThreadTaskCardDraft("Generating cross-thread task card draft...", "Generating");
+		}
+		return "";
+	}
+	function renderPendingThreadTaskCardDraft(message, status = "Generating") {
+		const detail = escapeHtml(String(message || "Generating cross-thread task card draft..."));
+		return `<section class="approval-card thread-task-card-draft pending synthetic">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">Cross-thread task card draft</div>
+        <div class="approval-method">Pending</div>
+      </div>
+      <span class="approval-status">${escapeHtml(String(status || "Generating"))}</span>
+    </div>
+    <div class="approval-summary-line">${detail}</div>
+  </section>`;
+	}
+	function threadTaskCardDraftKey(turnId, itemId) {
+		return `task-card-draft|${String(turnId || "")}|${String(itemId || "")}`;
+	}
+	function isThreadTaskCardDraftCreationStale(draftKey, draftState) {
+		if (!draftKey || !draftState || draftState.status !== "creating") return false;
+		const updatedAtMs = Number(draftState.updatedAtMs || 0);
+		if (!updatedAtMs) return false;
+		if (Date.now() - updatedAtMs < THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS) return false;
+		state.scheduledThreadTaskCardDraftCreations.delete(String(draftKey));
+		state.activeThreadTaskCardDraftCreations.delete(String(draftKey));
+		return true;
+	}
+	function threadTaskCardDraftPayloadKey(draft) {
+		const targetThreadIds = threadTaskCardDraftTargetIds(draft).sort();
+		return stableTextHash(JSON.stringify({
+			targetThreadIds,
+			workflowMode: normalizeThreadTaskCardWorkflowMode(draft && draft.workflowMode),
+			workflowId: String(draft && draft.workflowId || "").trim(),
+			title: String(draft && draft.title || "").trim(),
+			summary: String(draft && draft.summary || "").trim(),
+			body: String(draft && draft.body || "").trim()
+		}));
+	}
+	function threadTaskCardDraftKeyForDraft(turn, draft, item = null) {
+		const turnId = String(turn && turn.id || "");
+		const payloadKey = threadTaskCardDraftPayloadKey(draft);
+		if (turnId && payloadKey) return threadTaskCardDraftKey(turnId, `draft-${payloadKey}`);
+		return threadTaskCardDraftKey(turnId, item && item.id || "");
+	}
+	function findThreadById(threadId) {
+		const id = String(threadId || "").trim();
+		return (state.threads || []).find((thread) => String(thread && thread.id || "") === id) || null;
+	}
+	function threadTaskCardDraftTargetIds(draft) {
+		return uniqueThreadTaskCardTargetIds(draft && draft.targetThreadIds, draft && draft.targetThreadId);
+	}
+	function commonPrefixLength(a, b) {
+		const left = String(a || "");
+		const right = String(b || "");
+		const max = Math.min(left.length, right.length);
+		let index = 0;
+		while (index < max && left[index] === right[index]) index += 1;
+		return index;
+	}
+	function recoverVisibleThreadForDraftTargetId(threadId) {
+		const id = String(threadId || "").trim();
+		if (!id || id.length < 12) return null;
+		if (findThreadById(id)) return null;
+		const candidates = (state.threads || []).filter((thread) => thread && thread.id && thread.id !== state.currentThreadId).map((thread) => ({
+			thread,
+			prefix: commonPrefixLength(id, thread.id)
+		})).filter((entry) => entry.prefix >= 14).sort((a, b) => b.prefix - a.prefix);
+		if (!candidates.length) return null;
+		const bestPrefix = candidates[0].prefix;
+		const best = candidates.filter((entry) => entry.prefix === bestPrefix);
+		return best.length === 1 ? best[0].thread : null;
+	}
+	function threadTaskCardDraftTargetThreads(draft) {
+		return threadTaskCardDraftTargetIds(draft).map((threadId) => ({
+			threadId,
+			thread: findThreadById(threadId) || recoverVisibleThreadForDraftTargetId(threadId)
+		}));
+	}
+	function canRecoverFailedThreadTaskCardDraft(draft, draftState) {
+		if (!draft || !draftState || draftState.status !== "failed") return false;
+		const error = String(draftState.error || "");
+		if (!/Target thread is missing from the visible thread list/i.test(error)) return false;
+		return threadTaskCardDraftTargetIds(draft).length > 0;
+	}
+	function matchingThreadTaskCardsForDraft(draft, turn, thread = renderContextThread()) {
+		const contextThread = renderContextThread(thread);
+		const sourceThread = contextThread || state.currentThread;
+		const cards = Array.isArray(sourceThread && sourceThread.threadTaskCards) ? sourceThread.threadTaskCards : [];
+		const targetIds = new Set(threadTaskCardDraftTargetIds(draft));
+		const sourceThreadId = String(sourceThread && sourceThread.id || renderContextThreadId(contextThread) || "");
+		const sourceTurnId = String(turn && turn.id || "");
+		const title = String(draft && draft.title || "").trim();
+		const body = String(draft && draft.body || "").trim();
+		return cards.filter((card) => {
+			if (!card) return false;
+			if (sourceThreadId && String(card.source && card.source.threadId || "") !== sourceThreadId) return false;
+			if (sourceTurnId && String(card.source && card.source.turnId || "") !== sourceTurnId) return false;
+			if (targetIds.size && !targetIds.has(String(card.target && card.target.threadId || ""))) return false;
+			if (title && String(card.message && card.message.title || "").trim() !== title) return false;
+			if (body && String(card.message && card.message.body || "").trim() !== body) return false;
+			return true;
+		});
+	}
+	function upsertThreadTaskCardOnThread(thread, card) {
+		if (!thread || !card) return;
+		thread.threadTaskCards = [card, ...(Array.isArray(thread.threadTaskCards) ? thread.threadTaskCards : []).filter((entry) => String(entry && entry.id || "") !== String(card.id || ""))];
+	}
+	function replaceTaskCardBodyPlaceholder(details, card) {
+		if (!details || !card || !card.message || typeof card.message.body !== "string") return false;
+		const placeholder = details.querySelector("[data-task-card-body-placeholder]");
+		if (!placeholder) return false;
+		const pre = document.createElement("pre");
+		pre.className = "approval-detail";
+		pre.textContent = card.message.body;
+		placeholder.replaceWith(pre);
+		return true;
+	}
+	async function loadThreadTaskCardBody(cardId, threadId = "", details = null) {
+		const id = String(cardId || "").trim();
+		const ownerThreadId = String(threadId || state.currentThreadId || "").trim();
+		if (!id || !ownerThreadId) return null;
+		const loadKey = `${ownerThreadId}:${id}`;
+		if (state.threadTaskCardBodyLoads.has(loadKey)) return null;
+		const currentCard = findThreadTaskCard(id, ownerThreadId);
+		if (currentCard && currentCard.message && typeof currentCard.message.body === "string") {
+			replaceTaskCardBodyPlaceholder(details, currentCard);
+			return currentCard;
+		}
+		state.threadTaskCardBodyLoads.add(loadKey);
+		const placeholder = details && details.querySelector("[data-task-card-body-placeholder]");
+		if (placeholder) placeholder.textContent = "Loading task card body...";
+		try {
+			const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}?threadId=${encodeURIComponent(ownerThreadId)}`, { timeoutMs: 15e3 });
+			const card = result && result.card;
+			if (!card) throw new Error("task_card_body_missing");
+			const thread = taskCardActionThread(ownerThreadId);
+			if (thread) upsertThreadTaskCardOnThread(thread, card);
+			if (!replaceTaskCardBodyPlaceholder(details, card) && thread) {
+				if (ownerThreadId === String(state.currentThreadId || "")) renderCurrentThread();
+				else if (!scheduleRenderThreadTilePane(ownerThreadId, { preserveScroll: true })) renderCurrentThread();
+			}
+			return card;
+		} catch (err) {
+			if (placeholder) placeholder.textContent = "Failed to load task card body.";
+			throw err;
+		} finally {
+			state.threadTaskCardBodyLoads.delete(loadKey);
+		}
+	}
+	function handleThreadTaskCardDetailsToggle(event) {
+		const details = event && event.target && event.target.closest ? event.target.closest("[data-task-card-details]") : null;
+		if (!details || !details.open) return;
+		const cardId = details.dataset.taskCardId || "";
+		const threadId = details.dataset.taskCardThreadId || "";
+		if (!details.querySelector("[data-task-card-body-placeholder]")) return;
+		loadThreadTaskCardBody(cardId, threadId, details).catch(showError);
+	}
+	function taskCardCountThreadsForId(threadId) {
+		const id = String(threadId || "").trim();
+		if (!id) return [];
+		const threads = [];
+		const add = (thread) => {
+			if (!thread || String(thread.id || "") !== id || threads.includes(thread)) return;
+			threads.push(thread);
+		};
+		add(state.currentThread);
+		add(state.threadTileDetails && state.threadTileDetails.get(id));
+		add(findThreadById(id));
+		return threads;
+	}
+	function incrementPendingIncomingTaskCardCount(threadId, delta = 1) {
+		const threads = taskCardCountThreadsForId(threadId);
+		const base = threads[0] || null;
+		if (!base) return;
+		const current = Math.max(0, Number(base.pendingIncomingTaskCardCount) || 0);
+		const next = Math.max(0, current + Number(delta || 0));
+		const outgoing = Math.max(0, Number(base.pendingOutgoingTaskCardCount) || 0);
+		for (const thread of threads) {
+			thread.pendingIncomingTaskCardCount = next;
+			thread.pendingOutgoingTaskCardCount = outgoing;
+			thread.pendingTaskCardCount = next + outgoing;
+		}
+	}
+	function incrementPendingOutgoingTaskCardCount(threadId, delta = 1) {
+		const threads = taskCardCountThreadsForId(threadId);
+		const base = threads[0] || null;
+		if (!base) return;
+		const current = Math.max(0, Number(base.pendingOutgoingTaskCardCount) || 0);
+		const next = Math.max(0, current + Number(delta || 0));
+		const incoming = Math.max(0, Number(base.pendingIncomingTaskCardCount) || 0);
+		for (const thread of threads) {
+			thread.pendingIncomingTaskCardCount = incoming;
+			thread.pendingOutgoingTaskCardCount = next;
+			thread.pendingTaskCardCount = incoming + next;
+		}
+	}
+	function settleThreadTaskCardForThread(threadId, cardId, nextStatus, nextCard = null) {
+		const thread = taskCardActionThread(String(threadId || "").trim() || String(state.currentThreadId || "").trim());
+		if (!thread || !Array.isArray(thread.threadTaskCards)) return;
+		const id = String(cardId || "").trim();
+		if (!id) return;
+		let settledCard = null;
+		thread.threadTaskCards = thread.threadTaskCards.map((entry) => {
+			if (String(entry && entry.id || "") !== id) return entry;
+			settledCard = Object.assign({}, entry || {}, nextCard || {}, { status: nextStatus || nextCard && nextCard.status || entry.status });
+			return settledCard;
+		});
+		if (!settledCard) return;
+		if (settledCard.threadRole === "target") incrementPendingIncomingTaskCardCount(thread.id, -1);
+		if (settledCard.threadRole === "source") incrementPendingOutgoingTaskCardCount(thread.id, -1);
+		if (state.threadTileDetails.has(String(thread.id || ""))) state.threadTileDetails.set(String(thread.id || ""), thread);
+		renderThreads();
+		if (String(thread.id || "") === String(state.currentThreadId || "")) renderCurrentThread();
+		else if (state.threadTileMode && threadTilePaneIsVisible(thread.id) && !scheduleRenderThreadTilePane(thread.id, { preserveScroll: true })) scheduleRenderCurrentThread();
+	}
+	function settleCurrentThreadTaskCard(cardId, nextStatus, nextCard = null) {
+		settleThreadTaskCardForThread(state.currentThreadId, cardId, nextStatus, nextCard);
+	}
+	function resolveTargetThreadReference(input) {
+		const raw = String(input || "").trim();
+		if (!raw) return null;
+		const lowered = raw.toLowerCase();
+		return state.threads.find((thread) => thread && thread.id !== state.currentThreadId && (String(thread.id || "").toLowerCase() === lowered || String(threadTitleForDisplay(thread) || "").trim().toLowerCase() === lowered)) || null;
+	}
+	function resolveTargetThreadReferences(input) {
+		const parts = String(input || "").split(/[\n,;，；]+/u).map((part) => part.trim()).filter(Boolean);
+		const seen = /* @__PURE__ */ new Set();
+		const targets = [];
+		for (const part of parts) {
+			const thread = resolveTargetThreadReference(part);
+			const id = String(thread && thread.id || part || "").trim();
+			if (!id || id === state.currentThreadId || seen.has(id)) continue;
+			seen.add(id);
+			targets.push({
+				threadId: id,
+				thread
+			});
+			if (targets.length >= 12) break;
+		}
+		return targets;
+	}
+	async function refreshThreadAfterTaskCard(threadId = "") {
+		const id = String(threadId || state.currentThreadId || "").trim();
+		if (!id) return;
+		if (id === String(state.currentThreadId || "")) await refreshCurrentThread({ source: "task-card" });
+		else if (state.threadTileMode && threadTilePaneIsVisible(id)) await loadThreadTileDetail(id, {
+			force: true,
+			background: true,
+			source: "task-card"
+		});
+		loadThreads({ silent: true }).catch(showError);
+	}
+	async function refreshCurrentThreadAfterTaskCard() {
+		await refreshThreadAfterTaskCard(state.currentThreadId);
+	}
+	function currentThreadHasTurn(turnId) {
+		const targetTurnId = String(turnId || "").trim();
+		if (!targetTurnId || !state.currentThread) return false;
+		return (Array.isArray(state.currentThread.turns) ? state.currentThread.turns : []).some((turn) => String(turn && turn.id || "") === targetTurnId);
+	}
+	async function waitForCurrentThreadTurn(turnId, options = {}) {
+		const targetTurnId = String(turnId || "").trim();
+		if (!targetTurnId || !state.currentThreadId) return false;
+		const timeoutMs = Math.max(500, Number(options.timeoutMs) || 1e4);
+		const intervalMs = Math.max(150, Number(options.intervalMs) || 500);
+		const deadline = Date.now() + timeoutMs;
+		while (state.currentThreadId && Date.now() <= deadline) {
+			await refreshCurrentThread({ source: "wait-turn" });
+			if (!state.currentThreadId) return false;
+			if (currentThreadHasTurn(targetTurnId)) {
+				state.pendingPluginRouteHint = normalizePluginRouteHint({
+					pluginId: "codex-mobile",
+					route: "thread-turn",
+					threadId: state.currentThreadId,
+					itemId: targetTurnId
+				});
+				renderCurrentThread();
+				return true;
+			}
+			await sleep(intervalMs);
+		}
+		return currentThreadHasTurn(targetTurnId);
+	}
+	async function createThreadTaskCardFromThread(sourceThread, event) {
+		if (event) {
+			event.preventDefault();
+			event.stopPropagation();
+		}
+		const thread = sourceThread || state.currentThread;
+		if (!thread || !thread.id) return;
+		const targetInput = await requestAppTextInput("输入目标 thread id 或精确标题；多个目标用英文逗号分隔。", "", {
+			title: "任务卡片目标",
+			confirmLabel: "下一步",
+			placeholder: "thread id 或标题",
+			rows: 3
+		});
+		if (targetInput == null) return;
+		const targets = resolveTargetThreadReferences(targetInput);
+		if (!targets.length) {
+			showError(/* @__PURE__ */ new Error("At least one different target thread is required"));
+			return;
+		}
+		const title = await requestAppTextInput("输入任务卡片标题。", `Need response from ${threadTitleForDisplay(thread) || thread.id}`, {
+			title: "任务卡片标题",
+			confirmLabel: "下一步",
+			rows: 2
+		}) || "";
+		if (!String(title).trim()) return;
+		const body = await requestAppTextInput("输入任务卡片正文。", "", {
+			title: "任务卡片正文",
+			confirmLabel: "创建",
+			rows: 7
+		}) || "";
+		if (!String(body).trim()) return;
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = "Creating task card";
+		try {
+			const targetWorkspaceIds = {};
+			for (const target of targets) if (target.thread) targetWorkspaceIds[target.threadId] = String(target.thread.cwd || "");
+			await api("/api/thread-task-cards", {
+				method: "POST",
+				body: JSON.stringify({
+					sourceWorkspaceId: thread.cwd || state.selectedCwd || "",
+					sourceThreadId: thread.id,
+					sourceTurnId: activeTurnIdForThread(thread),
+					sourceThreadTitle: threadTitleForDisplay(thread) || thread.id,
+					targetThreadIds: targets.map((target) => target.threadId),
+					targetWorkspaceIds,
+					idempotencyKey: `task-card:${thread.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`,
+					format: "markdown",
+					title: String(title).trim(),
+					summary: summarizeTaskCardText(body),
+					body: String(body).trim()
+				}),
+				timeoutMs: 3e4
+			});
+			$("connectionState").textContent = "Task card created";
+			recordHomeAiDiagnosticSuccess({
+				category: "task_card_workflow_failed",
+				diagnostic_type: "task_card_creation_failed",
+				error_code: "task_card_create_failed",
+				context: {
+					surface: "task-card",
+					action: "manual-create",
+					thread_hash: diagnosticThreadHash(thread.id)
+				}
+			});
+			await refreshThreadAfterTaskCard(thread.id);
+		} catch (err) {
+			recordHomeAiDiagnosticFailure({
+				category: "task_card_workflow_failed",
+				diagnostic_type: "task_card_creation_failed",
+				severity_hint: "H2",
+				evidence_confidence: .78,
+				error_code: diagnosticErrorCode(err, "task_card_create_failed"),
+				context: {
+					surface: "task-card",
+					action: "manual-create",
+					thread_hash: diagnosticThreadHash(thread.id)
+				},
+				counts: {
+					target_count: targets.length,
+					status_code: diagnosticErrorStatus(err)
+				},
+				breadcrumbs: [{
+					kind: "task-card",
+					code: "manual-create",
+					status: "failed",
+					fields: {
+						status_code: diagnosticErrorStatus(err),
+						thread_hash: diagnosticThreadHash(thread.id)
+					}
+				}]
+			});
+			showError(err);
+		}
+	}
+	async function createThreadTaskCardFromCurrent(event) {
+		await createThreadTaskCardFromThread(state.currentThread, event);
+	}
+	function startThreadRequestBody(sourceThread = null, options = {}) {
+		const thread = sourceThread || state.currentThread || {};
+		const pluginMode = isHermesEmbedMode() ? "hermes" : "";
+		return {
+			cwd: thread.cwd || state.selectedCwd || "",
+			sourceThreadId: thread.id || "",
+			sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
+			archiveSourceThread: Boolean(options.archiveSourceThread && thread.id),
+			pluginMode,
+			hermesPluginMode: Boolean(pluginMode),
+			pluginId: pluginMode ? "codex-mobile" : ""
+		};
+	}
+	function threadActionTargetRow(target) {
+		if (!target || !target.closest) return null;
+		return target.closest("[data-thread-row]");
+	}
+	function primaryTouch(event) {
+		return event.touches && event.touches[0] || event.changedTouches && event.changedTouches[0] || null;
+	}
+	function startedThreadId(result) {
+		return String(result && result.threadId || result && result.thread && result.thread.id || result && result.result && result.result.thread && result.result.thread.id || result && result.result && result.result.threadId || "");
+	}
+	function startedTurnId(result) {
+		return String(result && result.turnId || result && result.turn && result.turn.id || result && result.result && result.result.turnId || result && result.result && result.result.turn && result.result.turn.id || "");
+	}
+	function continuationJobStatusText(job) {
+		const status = String(job && job.status || "");
+		const message = String(job && job.message || "").trim();
+		if (message) return message;
+		return {
+			queued: "续接任务已排队",
+			running: "正在生成交接并续接",
+			done: "续接线程已就绪",
+			failed: "续接任务失败"
+		}[status] || "正在生成交接并续接";
+	}
+	function rememberContinuationJob(jobId) {
+		const id = String(jobId || "").trim();
+		if (!id) return;
+		state.continuationJobId = id;
+		localStorage.setItem(STORAGE_CONTINUATION_JOB, id);
+	}
+	function clearRememberedContinuationJob(jobId = "") {
+		const id = String(jobId || "").trim();
+		if (!id || localStorage.getItem(STORAGE_CONTINUATION_JOB) === id) localStorage.removeItem(STORAGE_CONTINUATION_JOB);
+		if (!id || state.continuationJobId === id) state.continuationJobId = "";
+	}
+	async function openContinuationResult(result) {
+		const threadId = startedThreadId(result);
+		if (!threadId) throw new Error("Continuation thread was created without a thread id");
+		state.continuationNewThreadId = threadId;
+		const archivedSourceThreadId = result.sourceArchive && result.sourceArchive.archived ? result.sourceArchive.threadId : "";
+		if (archivedSourceThreadId) state.threads = state.threads.filter((entry) => entry.id !== archivedSourceThreadId);
+		if (result.thread) {
+			state.threads = [result.thread, ...state.threads.filter((thread) => thread.id !== result.thread.id)];
+			renderThreads();
+		}
+		$("connectionState").classList.remove("error");
+		if (result.sourceArchive && result.sourceArchive.error && !result.sourceArchive.archived) {
+			$("connectionState").classList.add("error");
+			$("connectionState").textContent = `续接线程已就绪；归档失败：${result.sourceArchive.error}`;
+		} else if (result.sourceArchive && result.sourceArchive.error) $("connectionState").textContent = "交接已生成；旧线程已在 Mobile 隐藏";
+		else $("connectionState").textContent = "交接已生成；正在打开续接线程";
+		await loadThread(threadId, { source: "continuation" });
+		loadThreads().catch(showError);
+	}
+	async function waitForContinuationJob(jobId) {
+		const id = String(jobId || "").trim();
+		if (!id) throw new Error("Continuation job was created without a job id");
+		rememberContinuationJob(id);
+		let delayMs = 800;
+		while (state.continuationJobId === id) {
+			const job = await api(`/api/thread-continuations/${encodeURIComponent(id)}`, { timeoutMs: 3e4 });
+			$("connectionState").classList.toggle("error", job.status === "failed");
+			$("connectionState").textContent = continuationJobStatusText(job);
+			setContinuationDialogStatus(continuationJobStatusText(job), { error: job.status === "failed" });
+			postClientEvent("continuation_job_poll", {
+				jobId: id,
+				status: String(job.status || ""),
+				step: String(job.step || "")
+			});
+			markActivity(job.step || "续接任务");
+			if (job.status === "done") {
+				clearRememberedContinuationJob(id);
+				postClientEvent("continuation_job_done", { jobId: id });
+				return job.result || job;
+			}
+			if (job.status === "failed") {
+				clearRememberedContinuationJob(id);
+				postClientEvent("continuation_job_failed", {
+					jobId: id,
+					message: String(job.error || job.message || "Continuation job failed")
+				});
+				throw new Error(job.error || job.message || "Continuation job failed");
+			}
+			await sleep(delayMs);
+			delayMs = Math.min(1800, Math.round(delayMs * 1.25));
+		}
+		throw new Error("Continuation job was cancelled");
+	}
+	async function resumeRememberedContinuationJob() {
+		const jobId = String(localStorage.getItem(STORAGE_CONTINUATION_JOB) || "").trim();
+		if (!jobId || state.continuationBusy) return;
+		state.continuationBusy = true;
+		state.continuationJobId = jobId;
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = "正在恢复续接任务";
+		try {
+			await openContinuationResult(await waitForContinuationJob(jobId));
+		} catch (err) {
+			clearRememberedContinuationJob(jobId);
+			if (!/Continuation job not found/i.test(err.message || "")) showError(err);
+		} finally {
+			state.continuationBusy = false;
+		}
+	}
+	async function startNewThreadFromThread(sourceThread, event) {
+		if (event) event.preventDefault();
+		if (event) event.stopPropagation();
+		if (state.continuationBusy) {
+			setContinuationDialogStatus("续接任务已经在运行，请稍等。");
+			$("connectionState").textContent = "续接任务已经在运行";
+			postClientEvent("continuation_start_ignored_busy", {
+				jobId: state.continuationJobId || "",
+				sourceThreadId: state.continuationSourceThreadId || ""
+			});
+			return;
+		}
+		const thread = sourceThread || state.currentThread || {};
+		if (!continuationDialogOpen()) {
+			openContinuationDialog(thread);
+			return;
+		}
+		const button = event && event.currentTarget;
+		const cwd = thread.cwd ? String(thread.cwd).trim() : String(state.selectedCwd || "").trim();
+		const sourceThreadId = thread.id || state.currentThreadId || "";
+		const body = {
+			cwd,
+			sourceThreadId: thread.id || "",
+			sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
+			archiveSourceThread: Boolean(thread.id),
+			pluginMode: isHermesEmbedMode() ? "hermes" : "",
+			hermesPluginMode: isHermesEmbedMode(),
+			pluginId: isHermesEmbedMode() ? "codex-mobile" : ""
+		};
+		if (!body.cwd) {
+			showError(/* @__PURE__ */ new Error("Thread has no workspace path"));
+			return;
+		}
+		if (sourceThreadId) {
+			state.continuationSourceThreadId = sourceThreadId;
+			state.continuationNewThreadId = "";
+			clearRememberedContinuationJob();
+		}
+		state.continuationBusy = true;
+		if (button) button.disabled = true;
+		setContinuationDialogBusy(true, "正在创建续接任务。");
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = "正在创建续接任务";
+		markActivity("创建续接任务");
+		let completed = false;
+		let failed = false;
+		postClientEvent("continuation_start_requested", {
+			sourceThreadId,
+			hasWorkspace: Boolean(body.cwd),
+			hermesPluginMode: Boolean(body.hermesPluginMode)
+		});
+		try {
+			const job = await api("/api/thread-continuations", {
+				method: "POST",
+				body: JSON.stringify(body),
+				timeoutMs: 3e4
+			});
+			$("connectionState").textContent = continuationJobStatusText(job);
+			setContinuationDialogStatus(continuationJobStatusText(job));
+			postClientEvent("continuation_job_created", {
+				jobId: String(job.jobId || ""),
+				status: String(job.status || ""),
+				pluginMode: String(job.pluginMode || "")
+			});
+			const result = await waitForContinuationJob(job.jobId);
+			closeContinuationDialog({ force: true });
+			completed = true;
+			await openContinuationResult(result);
+		} catch (err) {
+			failed = true;
+			setContinuationDialogBusy(false, err && err.message ? err.message : String(err), { error: true });
+			postClientEvent("continuation_start_failed", {
+				sourceThreadId,
+				message: err && err.message ? err.message : String(err)
+			});
+			showError(err);
+		} finally {
+			clearRememberedContinuationJob();
+			state.continuationBusy = false;
+			if (!failed) setContinuationDialogBusy(false, completed || !continuationDialogOpen() ? "" : "续接任务未完成，可以重试。");
+			if (button) button.disabled = false;
+		}
+	}
+	async function startNewThreadFromCurrent(event) {
+		await startNewThreadFromThread(state.currentThread, event);
+	}
+	function renderThreadArchiveDialog() {
+		const dialog = $("threadArchiveConfirmDialog");
+		const subtitle = $("threadArchiveConfirmSubtitle");
+		if (!dialog || !subtitle) return;
+		dialog.classList.toggle("hidden", !state.threadArchiveConfirmOpen);
+		subtitle.textContent = state.threadArchiveConfirmOpen ? `目标会话：${state.threadArchiveConfirmTitle || state.threadArchiveConfirmTargetId || "--"}` : "";
+	}
+	function closeThreadArchiveDialog(confirmed = false) {
+		const resolve = state.threadArchiveConfirmResolve;
+		state.threadArchiveConfirmOpen = false;
+		state.threadArchiveConfirmTargetId = "";
+		state.threadArchiveConfirmTitle = "";
+		state.threadArchiveConfirmResolve = null;
+		renderThreadArchiveDialog();
+		if (resolve) resolve(Boolean(confirmed));
+	}
+	function requestThreadArchiveConfirmation(threadId, title) {
+		const label = String(title || "会话");
+		if (state.threadArchiveConfirmResolve) closeThreadArchiveDialog(false);
+		state.threadArchiveConfirmOpen = true;
+		state.threadArchiveConfirmTargetId = String(threadId || "");
+		state.threadArchiveConfirmTitle = label;
+		renderThreadArchiveDialog();
+		return new Promise((resolve) => {
+			state.threadArchiveConfirmResolve = resolve;
+		});
+	}
+	async function archiveThread(threadId, button = null) {
+		const id = String(threadId || "");
+		const thread = state.threads.find((entry) => entry.id === id);
+		if (!thread) {
+			showError(/* @__PURE__ */ new Error("Thread is no longer in the current list"));
+			return;
+		}
+		const title = threadTitleForDisplay(thread) || "会话";
+		if (!await requestThreadArchiveConfirmation(thread.id, title)) return;
+		if (button) button.disabled = true;
+		$("connectionState").classList.remove("error");
+		$("connectionState").textContent = "正在归档会话";
+		markActivity("归档会话");
+		try {
+			await api(`/api/threads/${encodeURIComponent(thread.id)}/archive`, {
+				method: "POST",
+				timeoutMs: 3e4
+			});
+			state.threads = state.threads.filter((entry) => entry.id !== thread.id);
+			if (state.currentThreadId === thread.id) {
+				clearCurrentThreadSelection();
+				renderCurrentThread();
+			}
+			renderThreads();
+			loadThreads().catch(showError);
+		} catch (err) {
+			showError(err);
+		} finally {
+			if (button) button.disabled = false;
+		}
+	}
+	function taskCardStatusLabel(status) {
+		const text = String(status || "pending");
+		return {
+			pending: "Pending",
+			approving: "Approving",
+			approved: "Approved",
+			deleted: "Deleted",
+			revoked: "Revoked",
+			replied: "Replied"
+		}[text] || text;
+	}
+	function taskCardDirectionLabel(card) {
+		if (!card) return "Task card";
+		if (card.threadRole === "target") return `Task card from ${card.source && (card.source.title || card.source.threadId || card.source.workspaceId || "source thread")}`;
+		if (card.threadRole === "source") return `Task card to ${card.target && (card.target.threadId || card.target.workspaceId || "target thread")}`;
+		return "Task card";
+	}
+	function taskCardDetailLines(card) {
+		if (!card) return [];
+		const workflow = card.workflow && card.workflow.mode === "autonomous" ? card.workflow : null;
+		return [
+			card.target && card.threadRole === "source" ? `Target thread: ${card.target.threadId}` : "",
+			card.source && card.threadRole === "target" ? `Source workspace: ${card.source.workspaceId}` : "",
+			workflow ? `Workflow: autonomous${workflow.authorized ? " (authorized)" : " (first approval required)"}` : "",
+			workflow && workflow.id ? `Workflow id: ${workflow.id}` : "",
+			card.injectedTurnId ? `Injected turn: ${card.injectedTurnId}` : ""
+		].filter(Boolean);
+	}
+	function threadTaskCardSummaryLine(text) {
+		return truncateSingleLine(String(text || "").trim(), 220);
+	}
+	function renderThreadTaskCardExpandable(preview, sections, attributes = "") {
+		const blocks = (Array.isArray(sections) ? sections : []).filter(Boolean);
+		if (!blocks.length) return "";
+		const attr = String(attributes || "").trim();
+		return `<details class="approval-details"${attr ? ` ${attr}` : ""}>
+    <summary><span>${escapeHtml(threadTaskCardSummaryLine(preview) || "Show details")}</span></summary>
+    ${blocks.join("")}
+  </details>`;
+	}
+	function renderThreadTaskCardActions(card, threadId = "") {
+		if (!card) return "";
+		const ownerThreadId = String(threadId || "").trim();
+		const ownerAttribute = ownerThreadId ? ` data-task-card-thread-id="${escapeHtml(ownerThreadId)}"` : "";
+		if (card.canApprove || card.canDelete || card.canReply || card.canRevoke) {
+			const buttons = [];
+			const approveLabel = card.workflow && card.workflow.mode === "autonomous" ? "Approve workflow" : "Approve";
+			if (card.canApprove) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="approve" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>${escapeHtml(approveLabel)}</button>`);
+			if (card.canReply) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="reply" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Reply</button>`);
+			if (card.canDelete) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="delete" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Delete</button>`);
+			if (card.canRevoke) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="revoke" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Revoke</button>`);
+			return `<div class="approval-actions">${buttons.join("")}</div>`;
+		}
+		return "";
+	}
+	function renderThreadTaskCard(card, previousKeys = /* @__PURE__ */ new Set(), threadId = "") {
+		const key = `task-card|${card.id}`;
+		const status = String(card.status || "pending");
+		const detail = taskCardDetailLines(card).join("\n");
+		const summary = threadTaskCardSummaryLine(card.message && card.message.summary ? card.message.summary : "");
+		const body = card.message && card.message.body ? `<pre class="approval-detail">${escapeHtml(card.message.body)}</pre>` : card.message && card.message.bodyOmitted ? `<div class="approval-detail" data-task-card-body-placeholder data-task-card-id="${escapeHtml(card.id)}" data-task-card-thread-id="${escapeHtml(threadId)}">Task card body loads when opened.</div>` : "";
+		const compact = status !== "pending" ? " compact" : "";
+		const detailBlocks = [detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : "", body];
+		return `<section class="approval-card thread-task-card${compact}${entryAnimationClass(key, previousKeys)} ${escapeHtml(status)}" data-render-key="${escapeHtml(key)}" data-task-card="${escapeHtml(card.id)}">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">${escapeHtml(taskCardDirectionLabel(card))}</div>
+        <div class="approval-method">${escapeHtml(card.message && card.message.title || "Task card")}</div>
+      </div>
+      <span class="approval-status">${escapeHtml(taskCardStatusLabel(status))}</span>
+    </div>
+    ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
+    ${renderThreadTaskCardExpandable(summary || detail || card.message && card.message.title || "Task card details", detailBlocks, `data-task-card-details data-task-card-id="${escapeHtml(card.id)}" data-task-card-thread-id="${escapeHtml(threadId)}"`)}
+    ${renderThreadTaskCardActions(card, threadId)}
+  </section>`;
+	}
+	function renderThreadTaskCards(thread, previousKeys = /* @__PURE__ */ new Set()) {
+		const cards = threadTaskCardsForThread(thread);
+		if (!cards.length) return "";
+		const threadId = String(thread && thread.id || "").trim();
+		return `<div class="approval-stack thread-task-card-stack">
+    ${cards.map((card) => renderThreadTaskCard(card, previousKeys, threadId)).join("")}
+  </div>`;
+	}
+	function threadTaskCardDraftState(key) {
+		return state.threadTaskCardDraftStates.get(String(key || "")) || {
+			status: "pending",
+			error: "",
+			cardId: ""
+		};
+	}
+	function threadTaskCardDraftStatusLabel(status) {
+		return {
+			pending: "Draft",
+			creating: "Creating",
+			created: "Created",
+			dismissed: "Dismissed",
+			failed: "Failed"
+		}[status] || "Draft";
+	}
+	function threadTaskCardDraftDetailLines(draft, targetRefs, draftState) {
+		const refs = Array.isArray(targetRefs) ? targetRefs : [];
+		const targetLine = refs.length ? `Target threads: ${refs.map((entry) => {
+			const thread = entry && entry.thread;
+			return thread ? thread.title || thread.id || entry.threadId : entry && entry.threadId || "";
+		}).filter(Boolean).join(", ")}` : "";
+		const missing = refs.filter((entry) => entry && !entry.thread).map((entry) => entry.threadId).filter(Boolean);
+		return [
+			targetLine,
+			draft && draft.workflowMode === "autonomous" ? `Workflow: autonomous${draft.workflowId ? ` (${draft.workflowId})` : " (new)"}` : "",
+			missing.length ? `Missing targets: ${missing.join(", ")}` : "",
+			draft.error ? `Model note: ${draft.error}` : "",
+			draftState.error ? `Last error: ${draftState.error}` : ""
+		].filter(Boolean);
+	}
+	function renderThreadTaskCardDraftActions(draftKey, draft, draftState, thread = renderContextThread()) {
+		if (!draft || draftState.status === "pending" || draftState.status === "creating" || draftState.status === "created" || draftState.status === "dismissed") return "";
+		const threadId = renderContextThreadId(thread);
+		const threadAttr = threadId ? ` data-task-card-draft-thread-id="${escapeHtml(threadId)}"` : "";
+		if (draftState.status === "failed") return `<div class="approval-actions">
+      <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}"${threadAttr}>Dismiss</button>
+    </div>`;
+		return `<div class="approval-actions">
+    <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}"${threadAttr}>Dismiss</button>
+  </div>`;
+	}
+	function renderThreadTaskCardDraft(draft, item, turn, previousKeys = /* @__PURE__ */ new Set(), draftKey = "", draftState = null, thread = renderContextThread()) {
+		if (!draft || !item || !turn) return "";
+		const contextThread = renderContextThread(thread);
+		const resolvedDraftKey = draftKey || threadTaskCardDraftKeyForDraft(turn, draft, item);
+		const resolvedDraftState = draftState || threadTaskCardDraftState(resolvedDraftKey);
+		const targetRefs = threadTaskCardDraftTargetThreads(draft);
+		const compact = resolvedDraftState.status === "created" || resolvedDraftState.status === "dismissed" ? " compact" : "";
+		const detail = threadTaskCardDraftDetailLines(draft, targetRefs, resolvedDraftState).join("\n");
+		const summary = threadTaskCardSummaryLine(draft.summary || draft.error || "");
+		const detailBlocks = [detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : "", draft.body ? `<pre class="approval-detail">${escapeHtml(draft.body)}</pre>` : ""];
+		return `<section class="approval-card thread-task-card-draft${compact}${entryAnimationClass(draftKey, previousKeys)} ${escapeHtml(draftState.status)}" data-render-key="${escapeHtml(draftKey)}" data-task-card-draft="${escapeHtml(draftKey)}">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">Cross-thread task card draft</div>
+        <div class="approval-method">${escapeHtml(draft.title || "Task card draft")}</div>
+      </div>
+      <span class="approval-status">${escapeHtml(threadTaskCardDraftStatusLabel(resolvedDraftState.status))}</span>
+    </div>
+    ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
+    ${renderThreadTaskCardExpandable(summary || detail || draft.title || "Task card draft details", detailBlocks)}
+    ${renderThreadTaskCardDraftActions(resolvedDraftKey, draft, resolvedDraftState, contextThread)}
+  </section>`;
+	}
+	function approvalTitle(method) {
+		return {
+			"item/commandExecution/requestApproval": "命令需要批准",
+			"execCommandApproval": "命令需要批准",
+			"item/fileChange/requestApproval": "文件改动需要批准",
+			"applyPatchApproval": "文件改动需要批准",
+			"item/permissions/requestApproval": "权限需要批准",
+			"item/tool/requestUserInput": "需要你补充信息",
+			"mcpServer/elicitation/request": "MCP 需要输入",
+			"item/tool/call": "工具请求",
+			"account/chatgptAuthTokens/refresh": "账号授权"
+		}[method] || "待处理请求";
+	}
+	function approvalStatusLabel(status) {
+		const text = String(status || "waiting");
+		if (text === "waiting") return "等待中";
+		if (text === "responding") return "发送中";
+		if (text === "responded" || text === "resolved") return "已处理";
+		if (text === "connectionClosed") return "已关闭";
+		return text.charAt(0).toUpperCase() + text.slice(1);
+	}
+	function permissionSummary(permissions) {
+		if (!permissions || typeof permissions !== "object") return "";
+		const parts = [];
+		if (permissions.network) parts.push(`Network: ${JSON.stringify(permissions.network)}`);
+		if (permissions.fileSystem) parts.push(`File system: ${JSON.stringify(permissions.fileSystem)}`);
+		return parts.join("\n");
+	}
+	function approvalDetailLines(request) {
+		const params = request.params || {};
+		const questions = Array.isArray(params.questions) ? params.questions : [];
+		return [
+			params.reason ? `原因: ${params.reason}` : "",
+			params.command ? `命令:\n${params.command}` : "",
+			params.cwd ? `工作目录:\n${params.cwd}` : "",
+			params.grantRoot ? `授权目录:\n${params.grantRoot}` : "",
+			Array.isArray(params.fileNames) && params.fileNames.length ? `文件:\n${params.fileNames.join("\n")}` : "",
+			params.permissions ? `权限:\n${permissionSummary(params.permissions) || JSON.stringify(params.permissions, null, 2)}` : "",
+			params.networkApprovalContext ? `网络:\n${JSON.stringify(params.networkApprovalContext, null, 2)}` : "",
+			questions.length ? questions.map((question, index) => {
+				return [
+					question.header ? `${question.header}` : `问题 ${index + 1}`,
+					question.question || "",
+					Array.isArray(question.options) && question.options.length ? question.options.map((option) => `- ${option.label}${option.description ? `: ${option.description}` : ""}`).join("\n") : ""
+				].filter(Boolean).join("\n");
+			}).join("\n\n") : "",
+			params.title ? `标题:\n${params.title}` : "",
+			params.message ? `说明:\n${params.message}` : "",
+			params.schema ? `结构:\n${JSON.stringify(params.schema, null, 2)}` : "",
+			params.elicitation ? `请求:\n${JSON.stringify(params.elicitation, null, 2)}` : ""
+		].filter(Boolean);
+	}
+	function isUserInputRequest(request) {
+		return USER_INPUT_REQUEST_METHODS.has(request && request.method);
+	}
+	function renderUserInputOptions(request, fallbackThreadId = "") {
+		const params = request.params || {};
+		const questions = Array.isArray(params.questions) ? params.questions : [];
+		const question = questions.find((entry) => Array.isArray(entry.options) && entry.options.length) || questions[0] || null;
+		if (!question || !Array.isArray(question.options) || !question.options.length) return "";
+		const threadId = approvalActionThreadId(request, fallbackThreadId);
+		return `<div class="approval-option-grid">
+    ${question.options.map((option) => `<button class="approval-option" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-question-id="${escapeHtml(question.id || "answer")}" data-server-response-text="${escapeHtml(option.label || "")}">
+      <span>${escapeHtml(option.label || "选项")}</span>
+      ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
+    </button>`).join("")}
+  </div>`;
+	}
+	function renderUserInputActions(request, fallbackThreadId = "") {
+		const params = request.params || {};
+		const question = (Array.isArray(params.questions) ? params.questions : [])[0] || {};
+		const threadId = approvalActionThreadId(request, fallbackThreadId);
+		return `<form class="approval-response-form" data-server-request-form data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-question-id="${escapeHtml(question.id || "answer")}">
+    ${renderUserInputOptions(request, threadId)}
+    <textarea class="approval-response-input" name="responseText" rows="3" placeholder="输入回复内容"></textarea>
+    <div class="approval-actions request-actions">
+      <button class="approval-button allow" type="submit">提交</button>
+      <button class="approval-button deny" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-request-decline>取消</button>
+    </div>
+  </form>`;
+	}
+	function renderApprovalActions(request, fallbackThreadId = "") {
+		const waiting = request.status === "waiting";
+		if (!request.actionable || !waiting) return "";
+		if (isUserInputRequest(request)) return renderUserInputActions(request, fallbackThreadId);
+		const threadId = approvalActionThreadId(request, fallbackThreadId);
+		return `<div class="approval-actions">
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="allow_once">允许一次</button>
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="allow_session">本会话允许</button>
+    <button class="approval-button deny" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="deny">拒绝</button>
+  </div>`;
+	}
+	function renderApprovalRequest(request, previousKeys = /* @__PURE__ */ new Set(), fallbackThreadId = "") {
+		const key = `approval|${request.id}`;
+		const status = String(request.status || "waiting");
+		if (isApprovalSettled(request)) return `<section class="approval-card compact${entryAnimationClass(key, previousKeys)} ${escapeHtml(status)}" data-render-key="${escapeHtml(key)}" data-approval-card="${escapeHtml(request.id)}">
+      <div class="approval-line">
+        <span>${escapeHtml(approvalTitle(request.method))}</span>
+        <span>${escapeHtml(approvalStatusLabel(request.status))}</span>
+      </div>
+    </section>`;
+		const detail = approvalDetailLines(request).join("\n");
+		return `<section class="approval-card${entryAnimationClass(key, previousKeys)} ${escapeHtml(status)}" data-render-key="${escapeHtml(key)}" data-approval-card="${escapeHtml(request.id)}">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">${escapeHtml(approvalTitle(request.method))}</div>
+        <div class="approval-method">${escapeHtml(request.method)}</div>
+      </div>
+      <span class="approval-status">${escapeHtml(approvalStatusLabel(request.status))}</span>
+    </div>
+    ${detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : ""}
+    ${renderApprovalActions(request, fallbackThreadId)}
+  </section>`;
+	}
+	function renderPendingApprovals(thread, previousKeys = /* @__PURE__ */ new Set(), filter = null) {
+		const threadId = String(thread && (thread.id || state.currentThreadId) || "").trim();
+		const requests = pendingApprovalsForThread(threadId).filter((request) => !filter || filter(request));
+		if (!requests.length) return "";
+		return `<div class="approval-stack">
+    ${requests.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}
+  </div>`;
+	}
+	function createTaskCardRuntime() {
+		return {
+			renderThreadTaskCard: typeof renderThreadTaskCard === "function" ? renderThreadTaskCard : null,
+			renderThreadTaskCards: typeof renderThreadTaskCards === "function" ? renderThreadTaskCards : null,
+			createThreadTaskCardFromCurrent: typeof createThreadTaskCardFromCurrent === "function" ? createThreadTaskCardFromCurrent : null,
+			mutateThreadTaskCard: typeof mutateThreadTaskCard === "function" ? mutateThreadTaskCard : null,
+			replyTaskCard: typeof replyTaskCard === "function" ? replyTaskCard : null,
+			renderApprovalRequest: typeof renderApprovalRequest === "function" ? renderApprovalRequest : null
+		};
+	}
+	(function exposeCodexTaskCardRuntime(root) {
+		const taskCardRuntimeApi = { createTaskCardRuntime };
+		const legacyGlobals = {
+			approvalDetailLines,
+			approvalStatusLabel,
+			approvalTitle,
+			archiveThread,
+			buildThreadTaskCardDraftRequestText,
+			canRecoverFailedThreadTaskCardDraft,
+			clearRememberedContinuationJob,
+			closeThreadArchiveDialog,
+			commonPrefixLength,
+			continuationJobStatusText,
+			createThreadTaskCardFromCurrent,
+			createThreadTaskCardFromThread,
+			currentThreadHasTurn,
+			findThreadById,
+			findThreadTaskCard,
+			handleThreadTaskCardDetailsToggle,
+			hasThreadTaskCardDraftTag,
+			incrementPendingIncomingTaskCardCount,
+			incrementPendingOutgoingTaskCardCount,
+			isChatGptProCommandText,
+			isThreadGoalCommandText,
+			isThreadTaskCardCommandText,
+			isThreadTaskCardDraftCreationStale,
+			isUserInputRequest,
+			loadThreadTaskCardBody,
+			matchingThreadTaskCardsForDraft,
+			normalizeThreadTaskCardWorkflowMode,
+			openContinuationResult,
+			parseThreadTaskCardDraftText,
+			permissionSummary,
+			primaryTouch,
+			recoverVisibleThreadForDraftTargetId,
+			rememberContinuationJob,
+			renderApprovalActions,
+			renderApprovalRequest,
+			renderPendingApprovals,
+			renderPendingThreadTaskCardDraft,
+			renderThreadArchiveDialog,
+			renderThreadTaskCard,
+			renderThreadTaskCardActions,
+			renderThreadTaskCardDraft,
+			renderThreadTaskCardDraftActions,
+			renderThreadTaskCardExpandable,
+			renderThreadTaskCards,
+			renderTurnThreadTaskCardDraft,
+			renderUserInputActions,
+			renderUserInputOptions,
+			replaceTaskCardBodyPlaceholder,
+			requestThreadArchiveConfirmation,
+			resolveTargetThreadReference,
+			resolveTargetThreadReferences,
+			resumeRememberedContinuationJob,
+			refreshCurrentThreadAfterTaskCard,
+			refreshThreadAfterTaskCard,
+			settleCurrentThreadTaskCard,
+			settleThreadTaskCardForThread,
+			startNewThreadFromCurrent,
+			startNewThreadFromThread,
+			startThreadRequestBody,
+			startedThreadId,
+			startedTurnId,
+			submitChatGptProRequest,
+			summarizeTaskCardText,
+			taskCardActionThread,
+			taskCardCountThreadsForId,
+			taskCardDetailLines,
+			taskCardDirectionLabel,
+			taskCardStatusLabel,
+			threadActionTargetRow,
+			threadTaskCardCommandText,
+			threadTaskCardDraftDetailLines,
+			threadTaskCardDraftKey,
+			threadTaskCardDraftKeyForDraft,
+			threadTaskCardDraftPayloadKey,
+			threadTaskCardDraftState,
+			threadTaskCardDraftStatusLabel,
+			threadTaskCardDraftTargetIds,
+			threadTaskCardDraftTargetThreads,
+			threadTaskCardRequestMarkerMatch,
+			threadTaskCardSummaryLine,
+			threadTaskCardVisibleTargets,
+			truncateThreadTaskCardBody,
+			turnHasThreadTaskCardDraftResponse,
+			turnHasThreadTaskCardRequest,
+			uniqueThreadTaskCardTargetIds,
+			upsertThreadTaskCardOnThread,
+			visibleThreadTaskCardCommandText,
+			waitForContinuationJob,
+			waitForCurrentThreadTurn
+		};
+		if (typeof module === "object" && module.exports) module.exports = taskCardRuntimeApi;
+		Object.assign(root, legacyGlobals);
+		root.CodexTaskCardRuntime = taskCardRuntimeApi;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
+//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-06
 var import_api_client_runtime = /* @__PURE__ */ __toESM(require_api_client_runtime());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
 var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
@@ -4631,25 +4398,9 @@ var import_thread_detail_patch_plan = /* @__PURE__ */ __toESM(require_thread_det
 var import_thread_detail_actions = /* @__PURE__ */ __toESM(require_thread_detail_actions());
 var import_thread_detail_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_merge_state());
 var import_thread_detail_v4_merge_state = /* @__PURE__ */ __toESM(require_thread_detail_v4_merge_state());
+var import_thread_detail_runtime = /* @__PURE__ */ __toESM(require_thread_detail_runtime());
+var import_task_card_runtime = /* @__PURE__ */ __toESM(require_task_card_runtime());
 var moduleDefinitions = [
-	{
-		"id": "composer-runtime",
-		"source": "public/composer-runtime.js",
-		"globalName": "CodexComposerRuntime",
-		"expectedFunctions": ["createComposerRuntime"],
-		"assetPath": "/composer-runtime.js",
-		"classicLoaderExcluded": true,
-		"bytes": 78244
-	},
-	{
-		"id": "composer-bridge-runtime",
-		"source": "public/composer-bridge-runtime.js",
-		"globalName": "CodexComposerBridgeRuntime",
-		"expectedFunctions": ["createComposerBridgeRuntime"],
-		"assetPath": "/composer-bridge-runtime.js",
-		"classicLoaderExcluded": true,
-		"bytes": 32086
-	},
 	{
 		"id": "api-client-runtime",
 		"source": "public/api-client-runtime.js",
@@ -4735,11 +4486,27 @@ var moduleDefinitions = [
 		"assetPath": "/thread-detail-v4-merge-state.js",
 		"classicLoaderExcluded": true,
 		"bytes": 12071
+	},
+	{
+		"id": "thread-detail-runtime",
+		"source": "public/thread-detail-runtime.js",
+		"globalName": "CodexThreadDetailRuntime",
+		"expectedFunctions": ["createThreadDetailRuntime"],
+		"assetPath": "/thread-detail-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 57528
+	},
+	{
+		"id": "task-card-runtime",
+		"source": "public/task-card-runtime.js",
+		"globalName": "CodexTaskCardRuntime",
+		"expectedFunctions": ["createTaskCardRuntime"],
+		"assetPath": "/task-card-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 64113
 	}
 ];
 var moduleApis = {
-	"composer-runtime": import_composer_runtime.default,
-	"composer-bridge-runtime": import_composer_bridge_runtime.default,
 	"api-client-runtime": import_api_client_runtime.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
 	"thread-list-stable-order": import_thread_list_stable_order.default,
@@ -4747,7 +4514,9 @@ var moduleApis = {
 	"thread-detail-patch-plan": import_thread_detail_patch_plan.default,
 	"thread-detail-actions": import_thread_detail_actions.default,
 	"thread-detail-merge-state": import_thread_detail_merge_state.default,
-	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default
+	"thread-detail-v4-merge-state": import_thread_detail_v4_merge_state.default,
+	"thread-detail-runtime": import_thread_detail_runtime.default,
+	"task-card-runtime": import_task_card_runtime.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");
@@ -6363,6 +6132,20 @@ function sampleModule(id, api) {
 			approvalType: typeof (runtime && runtime.renderApprovalRequest),
 			globalCommandType: typeof globalThis.threadTaskCardCommandText,
 			globalRenderType: typeof globalThis.renderThreadTaskCards
+		};
+	}
+	if (id === "settings-runtime") {
+		const runtime = functionReady(api, "createSettingsRuntime") ? api.createSettingsRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.renderFontSizeControl === "function" && typeof runtime.renderQuotaUsage === "function" && typeof runtime.renderCodexProfileSettings === "function" && typeof runtime.renderWorkspaceDelegationSettings === "function" && typeof runtime.rememberRateLimitsFromConfig === "function" && typeof runtime.rememberCodexProfiles === "function" && typeof globalThis.CodexSettingsRuntime === "object" && typeof globalThis.CodexSettingsRuntime.createSettingsRuntime === "function",
+			factoryType: typeof api.createSettingsRuntime,
+			fontSizeType: typeof (runtime && runtime.renderFontSizeControl),
+			quotaType: typeof (runtime && runtime.renderQuotaUsage),
+			profileType: typeof (runtime && runtime.renderCodexProfileSettings),
+			workspaceDelegationType: typeof (runtime && runtime.renderWorkspaceDelegationSettings),
+			rateLimitsType: typeof (runtime && runtime.rememberRateLimitsFromConfig),
+			profilesType: typeof (runtime && runtime.rememberCodexProfiles),
+			globalFactoryType: typeof (globalThis.CodexSettingsRuntime && globalThis.CodexSettingsRuntime.createSettingsRuntime)
 		};
 	}
 	if (id === "notification-ui-runtime") {

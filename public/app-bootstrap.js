@@ -586,6 +586,10 @@ var state = {
   shellLoadedReported: false,
 };
 
+if (typeof initializeRestartAutoRecoverThreads === "function") {
+  initializeRestartAutoRecoverThreads();
+}
+
 var threadDetailRuntime = null;
 var appUpdateRuntime = null;
 

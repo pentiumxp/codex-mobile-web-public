@@ -21,8 +21,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/settings-runtime.js",
 			"sourcePath": "public/settings-runtime.js",
-			"bytes": 86893,
-			"sha256": "6ce5e6c21dcb2178658dab1d6a0101da0878bae8269dc194f7dac6e054e68ded"
+			"bytes": 94397,
+			"sha256": "0cb82d2ead732f61e8b92969796ffdb8b3c1c422d4a76748e54f9f4a34d5c285"
 		},
 		{
 			"path": "/modal-runtime.js",
@@ -80,7 +80,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 10,
-	"classicAssetBytes": 704503,
+	"classicAssetBytes": 712007,
 	"classicGlobalExports": [
 		{
 			"asset": "/settings-runtime.js",
@@ -126,8 +126,8 @@ var codexMobileViteEntryGroup = {
 	"classicGlobalExportAssetCount": 10,
 	"classicGlobalExportCount": 10,
 	"startupGlobalContracts": [],
-	"shellCacheName": "codex-mobile-shell-v625-39e8c70ec510",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-39e8c70ec510"
+	"shellCacheName": "codex-mobile-shell-v625-e80b19b8fe61",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-e80b19b8fe61"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

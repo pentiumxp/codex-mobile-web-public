@@ -1,2614 +1,4 @@
 import { n as __toESM, t as __commonJSMin } from "./rolldown-runtime-FDOR9p9I.js";
-//#region public/thread-tile-runtime.js
-var require_thread_tile_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function attachThreadTileRuntime(root) {
-		function createThreadTileRuntime(deps = {}) {
-			const { state, $, api, document, window, localStorage, setTimeout, clearTimeout, AbortController, THREAD_TILE_USER_MAX_PANES, THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS, THREAD_TILE_REFRESH_INTERVAL_MS, THREAD_TILE_REFRESH_MIN_INTERVAL_MS, THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS, STORAGE_THREAD_DISPLAY_MODE, STORAGE_LEGACY_THREAD_TILE_MODE, LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS, threadTileActionsApi, threadTileStatePolicy, threadTileLayoutPolicy, threadDetailPatchPlanApi, isKeyboardEditableElement, splitPaneSidebarVisible, isMenuOverlayMode, visibleThreads, isRunningStatus, saveCurrentDraftNow, restoreDraftForCurrentTarget, renderComposerSettings, updateComposerControls, scheduleRenderCurrentThread, renderCurrentThread, showError, threadById, threadDisplayName, shortPath, formatTime, statusIconHtml, threadDetailApiPath, mergeThreadPreservingVisibleItems, mergeThreadIntoThreadList, withRenderContextThread, visibleItemsForTurn, renderVisibleItemPatchHtml, renderTurnVisibleItemBudgetNotice, approvalsForTurn, renderApprovalRequest, approvalTurnId, isApprovalActive, currentLiveOperationEntry, latestLiveTurnForThread, renderMobileOperationStack, visibleItemSignature, threadTitleForDisplay, turnTimerStateHtml, threadTilePaneTimerState, threadHasVisibleConversationTurns, threadReadWarningMessage, visibleTurnsForConversation, renderThreadHistoryNote, renderPendingApprovals, effectiveThreadTileSelectedThreadId, conversationRenderSignature, existingConversationRenderKeys, patchNode, hydrateThreadDetailSurface, clearGlobalLiveOperationDockForThreadTiles, updateConversationHtml, threadTileVisibleShape, threadTileDomTurnCount, conversationDomShape, diagnosticHash, publishPluginNavigationState, escapeHtml } = Object.assign({
-				document: root.document || {},
-				window: root.window || root,
-				localStorage: root.localStorage || {
-					getItem: () => null,
-					setItem: () => {},
-					removeItem: () => {}
-				},
-				setTimeout: typeof root.setTimeout === "function" ? root.setTimeout.bind(root) : () => 0,
-				clearTimeout: typeof root.clearTimeout === "function" ? root.clearTimeout.bind(root) : () => {},
-				AbortController: root.AbortController
-			}, deps);
-			function updateThreadTileGlobalHeader(layout = null, ids = []) {
-				const titleEl = $("threadTitle");
-				const metaEl = $("threadMeta");
-				if (titleEl) titleEl.textContent = "";
-				if (metaEl) metaEl.textContent = "";
-			}
-			function viewportPixelSize(options = {}) {
-				const visualViewport = window.visualViewport;
-				const visualWidth = Math.round(visualViewport && visualViewport.width || 0);
-				const visualHeight = Math.round(visualViewport && visualViewport.height || 0);
-				const layoutWidth = Math.round(window.innerWidth || document.documentElement.clientWidth || 0);
-				const layoutHeight = Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
-				if (options.preferLayoutViewport) return {
-					width: Math.max(layoutWidth, visualWidth),
-					height: Math.max(layoutHeight, visualHeight)
-				};
-				return {
-					width: Math.round(visualWidth || layoutWidth || 0),
-					height: Math.round(visualHeight || layoutHeight || 0)
-				};
-			}
-			function isCoarsePointerViewport() {
-				return Boolean(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
-			}
-			function isThreadTileKeyboardFocusActive() {
-				return Boolean(state.threadTileMode && isKeyboardEditableElement(document.activeElement));
-			}
-			function threadTileViewportSize() {
-				const layoutViewport = viewportPixelSize({ preferLayoutViewport: true });
-				const plan = threadTileStatePolicy.threadTileViewportBaselinePlan({
-					keyboardActive: isThreadTileKeyboardFocusActive(),
-					layoutViewport,
-					baseline: state.threadTileViewportBaseline
-				});
-				if (plan.updateBaseline) state.threadTileViewportBaseline = plan.nextBaseline;
-				return plan.viewport;
-			}
-			function threadTileVerticalChromePx() {
-				const plan = threadTileStatePolicy.threadTileVerticalChromePlan({
-					keyboardActive: isThreadTileKeyboardFocusActive(),
-					composerHeightPx: state.composerHeightPx,
-					baselineComposerHeightPx: state.threadTileComposerHeightBaselinePx
-				});
-				if (plan.updateBaseline) state.threadTileComposerHeightBaselinePx = plan.nextComposerHeightBaselinePx;
-				return plan.verticalChromePx;
-			}
-			function threadTileLayout(options = {}) {
-				const viewport = threadTileViewportSize();
-				const sidebar = $("sidebar");
-				const sidebarSplitVisible = splitPaneSidebarVisible();
-				const menuOverlay = isMenuOverlayMode() || !sidebarSplitVisible;
-				const sidebarWidth = sidebar && sidebarSplitVisible ? Math.round(sidebar.getBoundingClientRect().width || 0) : 0;
-				return threadTileLayoutPolicy.layoutForViewport({
-					enabled: Object.prototype.hasOwnProperty.call(options, "enabled") ? options.enabled === true : state.threadTileMode,
-					viewportWidth: viewport.width,
-					viewportHeight: viewport.height,
-					sidebarWidth,
-					coarsePointer: isCoarsePointerViewport(),
-					menuOverlay,
-					maxPanes: THREAD_TILE_USER_MAX_PANES,
-					recommendedMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
-					desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
-					verticalChromePx: threadTileVerticalChromePx()
-				});
-			}
-			function normalizeThreadTilePaneCount(value, fallback = 0) {
-				return threadTileStatePolicy.normalizePaneCount(value, {
-					fallback,
-					maxPanes: THREAD_TILE_USER_MAX_PANES
-				});
-			}
-			function threadTileLayoutCapacity(layout = threadTileLayout()) {
-				return threadTileStatePolicy.layoutCapacity(layout, {
-					capacityMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
-					maxPanes: THREAD_TILE_USER_MAX_PANES
-				});
-			}
-			function defaultThreadTileCandidateIds(layout = threadTileLayout(), options = {}) {
-				const maxPanes = Math.max(1, Math.min(THREAD_TILE_USER_MAX_PANES, Math.floor(Number(options.maxPanes || layout && layout.maxPanes || 1)) || 1));
-				const threadIds = visibleThreads(state.threads).map((thread) => thread && thread.id).filter(Boolean);
-				return threadTileLayoutPolicy.selectThreadTileIds({
-					currentThreadId: state.currentThreadId,
-					threadIds,
-					maxPanes
-				});
-			}
-			function threadTileRunningPaneIds() {
-				const runningIds = [];
-				visibleThreads(state.threads).forEach((thread) => {
-					const id = String(thread && thread.id || "");
-					if (id && isRunningStatus(thread && thread.status)) runningIds.push(id);
-				});
-				if (state.currentThreadId) runningIds.push(String(state.currentThreadId));
-				return threadTileStatePolicy.uniqueIds(runningIds);
-			}
-			function threadTilePaneCountState(layout = threadTileLayout()) {
-				const capacity = threadTileLayoutCapacity(layout);
-				return threadTileStatePolicy.paneCountStatePlan({
-					capacity,
-					candidateIds: defaultThreadTileCandidateIds(layout, { maxPanes: capacity }),
-					maxCandidateIds: defaultThreadTileCandidateIds(layout, { maxPanes: THREAD_TILE_USER_MAX_PANES }),
-					runningIds: threadTileRunningPaneIds(),
-					currentThreadId: state.currentThreadId,
-					explicitPaneCount: state.threadTilePaneCount
-				}, { maxPanes: THREAD_TILE_USER_MAX_PANES });
-			}
-			function autoThreadTilePaneCount(layout = threadTileLayout()) {
-				return threadTilePaneCountState(layout).autoPaneCount;
-			}
-			function effectiveThreadTilePaneCount(layout = threadTileLayout()) {
-				return threadTilePaneCountState(layout).effectivePaneCount;
-			}
-			function threadTileDisplayLayout(layout = threadTileLayout(), ids = []) {
-				return threadTileStatePolicy.paneDisplayLayoutPlan({
-					layout,
-					ids,
-					effectivePaneCount: effectiveThreadTilePaneCount(layout),
-					splitPairs: threadTilePrunedSplitPairs(ids)
-				}, {
-					capacityMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
-					maxPanes: THREAD_TILE_USER_MAX_PANES,
-					threadTileColumnGroups: threadTileLayoutPolicy.threadTileColumnGroups
-				}).displayLayout;
-			}
-			function normalizeThreadTilePinnedIds(values = []) {
-				return threadTileStatePolicy.normalizePinnedIds(values, { maxPanes: THREAD_TILE_USER_MAX_PANES });
-			}
-			function normalizeThreadTileSplitPairs(values = [], ids = []) {
-				return threadTileStatePolicy.normalizeSplitPairs(values, ids, {
-					maxPanes: THREAD_TILE_USER_MAX_PANES,
-					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
-				});
-			}
-			function threadTilePrunedSplitPairs(ids = threadTileCandidateIds()) {
-				return normalizeThreadTileSplitPairs(state.threadTileSplitPairs, ids);
-			}
-			function threadTileVisibleIdSet() {
-				const visibleIds = new Set(visibleThreads(state.threads).map((thread) => String(thread && thread.id || "")).filter(Boolean));
-				if (state.currentThreadId) visibleIds.add(String(state.currentThreadId));
-				return visibleIds;
-			}
-			function threadTileIdsEqual(a = [], b = []) {
-				return threadTileStatePolicy.idsEqual(a, b);
-			}
-			function threadTileCandidateIds(layout = threadTileLayout()) {
-				const maxPanes = effectiveThreadTilePaneCount(layout);
-				return threadTileStatePolicy.candidatePaneIdsPlan({
-					pinnedIds: state.threadTilePinnedIds,
-					defaultIds: defaultThreadTileCandidateIds(layout, { maxPanes }),
-					visibleIds: Array.from(threadTileVisibleIdSet()),
-					currentThreadId: state.currentThreadId,
-					maxPanes
-				}, {
-					maxPanes: THREAD_TILE_USER_MAX_PANES,
-					selectPinnedThreadTileIds: threadTileLayoutPolicy.selectPinnedThreadTileIds
-				}).ids;
-			}
-			function threadDisplaySettingsPayload() {
-				return threadTileStatePolicy.displaySettingsPayload({
-					threadTileMode: state.threadTileMode,
-					threadTilePinnedIds: state.threadTilePinnedIds,
-					threadTilePaneCount: state.threadTilePaneCount,
-					threadTileSplitPairs: state.threadTileSplitPairs,
-					threadTileSelectedThreadId: state.threadTileSelectedThreadId
-				}, {
-					maxPanes: THREAD_TILE_USER_MAX_PANES,
-					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
-				});
-			}
-			function localThreadDisplayMode() {
-				try {
-					return localStorage.getItem(STORAGE_THREAD_DISPLAY_MODE) === "tile" || localStorage.getItem(STORAGE_LEGACY_THREAD_TILE_MODE) === "true" ? "tile" : "single";
-				} catch (_) {
-					return "single";
-				}
-			}
-			function mirrorThreadDisplayModeToLocalStorage() {
-				try {
-					localStorage.removeItem(STORAGE_LEGACY_THREAD_TILE_MODE);
-					if (state.threadTileMode) localStorage.setItem(STORAGE_THREAD_DISPLAY_MODE, "tile");
-					else localStorage.removeItem(STORAGE_THREAD_DISPLAY_MODE);
-				} catch (_) {}
-			}
-			function applyThreadDisplaySettings(settings = {}, options = {}) {
-				const normalized = threadTileStatePolicy.normalizeDisplaySettings(settings, {
-					maxPanes: THREAD_TILE_USER_MAX_PANES,
-					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
-				});
-				state.threadTileMode = normalized.threadTileMode;
-				state.threadTilePinnedIds = normalized.paneThreadIds;
-				state.threadTileSplitPairs = normalized.paneSplitPairs;
-				state.threadTilePaneCount = normalized.paneCount;
-				state.threadTileSelectedThreadId = normalized.selectedThreadId;
-				mirrorThreadDisplayModeToLocalStorage();
-				syncThreadTileToggle();
-				if (options.render === true) renderCurrentThread({ stickToBottom: true });
-			}
-			async function loadThreadDisplaySettings(options = {}) {
-				try {
-					const result = await api("/api/settings/thread-display");
-					const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : {};
-					state.threadDisplaySettingsLoaded = true;
-					const plan = threadTileStatePolicy.displaySettingsLoadPlan({
-						settings,
-						localDisplayMode: localThreadDisplayMode()
-					});
-					if (plan.action === "apply-display-settings") applyThreadDisplaySettings(plan.settings || {}, { render: options.render === true });
-					if (plan.saveAfterApply) await saveThreadDisplaySettingsNow();
-				} catch (err) {
-					state.threadDisplaySettingsLoaded = true;
-					const plan = threadTileStatePolicy.displaySettingsLoadPlan({
-						loadFailed: true,
-						localDisplayMode: localThreadDisplayMode()
-					});
-					if (plan.action === "apply-display-settings") applyThreadDisplaySettings(plan.settings || {}, { render: options.render === true });
-					if (plan.rethrow) throw err;
-				}
-			}
-			async function saveThreadDisplaySettingsNow() {
-				if (state.threadDisplaySettingsSaveTimer) {
-					clearTimeout(state.threadDisplaySettingsSaveTimer);
-					state.threadDisplaySettingsSaveTimer = null;
-				}
-				if (state.threadDisplaySettingsSaveInFlight) return null;
-				state.threadDisplaySettingsSaveInFlight = true;
-				try {
-					const result = await api("/api/settings/thread-display", {
-						method: "POST",
-						body: JSON.stringify(threadDisplaySettingsPayload())
-					});
-					const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : null;
-					if (settings) applyThreadDisplaySettings(settings, { render: false });
-					return result;
-				} finally {
-					state.threadDisplaySettingsSaveInFlight = false;
-				}
-			}
-			function scheduleThreadDisplaySettingsSave() {
-				if (!state.threadDisplaySettingsLoaded) return;
-				if (state.threadDisplaySettingsSaveTimer) clearTimeout(state.threadDisplaySettingsSaveTimer);
-				state.threadDisplaySettingsSaveTimer = setTimeout(() => {
-					state.threadDisplaySettingsSaveTimer = null;
-					saveThreadDisplaySettingsNow().catch(showError);
-				}, THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS);
-			}
-			function syncThreadTileActivePaneState(activeIds = []) {
-				const plan = threadTileStatePolicy.activePaneSyncPlan({
-					enabled: state.threadTileMode,
-					activeIds,
-					pinnedIds: state.threadTilePinnedIds,
-					visibleIds: Array.from(threadTileVisibleIdSet()),
-					splitPairs: state.threadTileSplitPairs,
-					selectedThreadId: state.threadTileSelectedThreadId,
-					currentThreadId: state.currentThreadId
-				}, {
-					maxPanes: THREAD_TILE_USER_MAX_PANES,
-					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
-				});
-				state.threadTileActiveIds = plan.activeIds;
-				if (plan.pinnedChanged) {
-					state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
-					state.threadTileSplitPairs = normalizeThreadTileSplitPairs(plan.paneSplitPairs, state.threadTilePinnedIds);
-				}
-				if (plan.selectedChanged) state.threadTileSelectedThreadId = plan.selectedThreadId;
-				if (plan.settingsChanged) scheduleThreadDisplaySettingsSave();
-				return Boolean(plan.changed);
-			}
-			function threadTileSummary(threadId) {
-				return threadById(threadId) || (state.currentThread && String(state.currentThread.id || "") === String(threadId || "") ? state.currentThread : null);
-			}
-			function threadTileDisplayThread(threadId) {
-				const id = String(threadId || "");
-				if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
-				return state.threadTileDetails.get(id) || threadTileSummary(id) || {
-					id,
-					name: id,
-					preview: id,
-					turns: []
-				};
-			}
-			function setThreadTileSelectedThread(threadId, options = {}) {
-				const plan = threadTileStatePolicy.selectPanePlan({
-					enabled: state.threadTileMode,
-					threadId,
-					activeIds: state.threadTileActiveIds,
-					selectedThreadId: state.threadTileSelectedThreadId
-				});
-				if (plan.action !== "select-pane") return false;
-				return applyThreadTileSelectedPaneEffects(threadTileStatePolicy.selectedPaneEffectsPlan(plan, { render: options.render !== false }));
-			}
-			function applyThreadTileSelectedPaneEffects(effect) {
-				if (!effect || effect.action !== "selected-pane-effects") return false;
-				if (effect.saveDraft) saveCurrentDraftNow();
-				state.threadTileSelectedThreadId = effect.selectedThreadId;
-				if (effect.restoreDraft) restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-				if (effect.updateComposer) {
-					renderComposerSettings();
-					updateComposerControls();
-				}
-				if (effect.renderMode === "patch-panes") {
-					let patchedAll = true;
-					(Array.isArray(effect.patchThreadIds) ? effect.patchThreadIds : []).filter(Boolean).forEach((id) => {
-						patchedAll = patchThreadTilePane(id, { preserveScroll: effect.patchPreserveScroll !== false }) && patchedAll;
-					});
-					if (!patchedAll && effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
-				}
-				return true;
-			}
-			function threadTileVisibleThreadOptions(currentId = "") {
-				const visible = visibleThreads(state.threads);
-				const runningIds = visible.filter((thread) => thread && isRunningStatus(thread.status)).map((thread) => String(thread.id || "")).filter(Boolean);
-				return threadTileStatePolicy.switchMenuOptionsPlan({
-					currentId,
-					activeIds: state.threadTileActiveIds,
-					runningIds,
-					visibleIds: visible.map((thread) => String(thread && thread.id || "")).filter(Boolean)
-				});
-			}
-			function renderThreadTileSwitchMenu(currentId) {
-				const current = String(currentId || "");
-				const options = threadTileVisibleThreadOptions(current);
-				const layout = threadTileLayout({ enabled: true });
-				const activeIds = threadTileCandidateIds(layout);
-				const count = activeIds.length || effectiveThreadTilePaneCount(layout);
-				const minCount = threadTileMinimumPaneCount(layout);
-				const maxCount = threadTileMaximumPaneCount(layout);
-				const plan = threadTileStatePolicy.switchMenuPlan({
-					currentId: current,
-					switchMenuPaneId: state.threadTileSwitchMenuPaneId,
-					options,
-					activeIds,
-					count,
-					minCount,
-					maxCount
-				});
-				if (plan.action !== "render-switch-menu") return "";
-				return `<div class="thread-tile-switch-menu" role="listbox" aria-label="切换此窗口线程">
-    <div class="thread-tile-switch-actions">
-      <button class="thread-tile-switch-action" type="button" data-thread-tile-close-pane="${escapeHtml(plan.currentId)}"${plan.canClose ? "" : " disabled"}>关闭窗口</button>
-      <span class="thread-tile-switch-count">${escapeHtml(String(plan.count))}/${escapeHtml(String(plan.maxCount))}</span>
-      <button class="thread-tile-switch-action" type="button" data-thread-tile-pane-count="1"${plan.canAdd ? "" : " disabled"}>新增窗口</button>
-    </div>
-    ${plan.options.map((threadId) => {
-					const thread = threadTileDisplayThread(threadId);
-					const title = threadDisplayName(thread) || threadId;
-					const summary = threadTileSummary(threadId) || thread;
-					const pathText = shortPath(thread && thread.cwd || summary && summary.cwd || "") || "聊天";
-					const timeText = formatTime(thread && thread.updatedAt || summary && summary.updatedAt, state.nowMs);
-					const status = statusIconHtml(thread && thread.status, "thread-tile-switch-status", threadId);
-					const selected = threadId === plan.currentId;
-					return `<button class="thread-tile-switch-option${selected ? " selected" : ""}" type="button" role="option" aria-selected="${selected ? "true" : "false"}" data-thread-tile-switch-target="${escapeHtml(threadId)}">
-        <span class="thread-tile-switch-main"><span class="thread-tile-switch-title">${escapeHtml(title)}</span><span class="thread-tile-switch-meta">${escapeHtml([pathText, timeText].filter(Boolean).join(" | "))}</span></span>
-        ${status}
-      </button>`;
-				}).join("")}
-  </div>`;
-			}
-			function applyThreadTilePaneSlotEffects(effect, layout = threadTileLayout()) {
-				if (!effect || effect.action !== "pane-slot-effects") return false;
-				const sourcePane = effect.patchSourceThreadId ? threadTilePaneElement(effect.patchSourceThreadId) : null;
-				if (effect.saveDraft) saveCurrentDraftNow();
-				if (Array.isArray(effect.paneThreadIds)) state.threadTilePinnedIds = normalizeThreadTilePinnedIds(effect.paneThreadIds);
-				if (Array.isArray(effect.paneSplitPairs)) state.threadTileSplitPairs = normalizeThreadTileSplitPairs(effect.paneSplitPairs, state.threadTilePinnedIds);
-				if (effect.paneCount !== null && effect.paneCount !== void 0) state.threadTilePaneCount = effect.paneCount;
-				if (effect.refreshActiveIds) state.threadTileActiveIds = threadTileCandidateIds(layout);
-				if (effect.selectedThreadId) state.threadTileSelectedThreadId = effect.selectedThreadId;
-				if (effect.selectionPolicy === "pane-selection") state.threadTileSelectedThreadId = threadTileStatePolicy.paneSelectionPlan({
-					selectedThreadId: state.threadTileSelectedThreadId,
-					ids: threadTileCandidateIds(layout),
-					emptyFallback: effect.selectionEmptyFallback === true
-				}).selectedThreadId;
-				state.threadTileSwitchMenuPaneId = effect.switchMenuPaneId || "";
-				(effect.scrollResetIds || []).forEach((id) => state.threadTilePaneScrollHoldById.delete(id));
-				if (effect.scheduleSettingsSave) scheduleThreadDisplaySettingsSave();
-				if (effect.restoreDraft) restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-				if (effect.updateComposer) {
-					renderComposerSettings();
-					updateComposerControls();
-				}
-				if (effect.loadThreadId) loadThreadTileDetail(effect.loadThreadId, {
-					force: true,
-					source: effect.loadSource || "tile-switch"
-				}).catch(showError);
-				if (effect.renderMode === "schedule-full") scheduleRenderCurrentThread();
-				else if (effect.renderMode === "full") renderCurrentThread({ stickToBottom: Boolean(effect.renderStickToBottom) });
-				else if (effect.renderMode === "patch-pane" && effect.patchThreadId) {
-					if (!patchThreadTilePane(effect.patchThreadId, {
-						paneElement: sourcePane,
-						stickToBottom: Boolean(effect.patchStickToBottom)
-					}) && effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
-				}
-				return true;
-			}
-			function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
-				const from = String(fromThreadId || "").trim();
-				const to = String(toThreadId || "").trim();
-				if (!from || !to || !state.threadTileMode) return false;
-				const layout = threadTileLayout();
-				const ids = threadTileCandidateIds(layout);
-				const plan = threadTileStatePolicy.replacePaneThreadPlan({
-					enabled: state.threadTileMode,
-					fromThreadId: from,
-					toThreadId: to,
-					ids,
-					pinnedIds: state.threadTilePinnedIds
-				}, { maxPanes: THREAD_TILE_USER_MAX_PANES });
-				if (plan.action === "skip") return false;
-				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, { maxPanes: THREAD_TILE_USER_MAX_PANES }), layout);
-			}
-			function moveThreadTilePaneRelative(fromThreadId, toThreadId, placement = "after") {
-				const from = String(fromThreadId || "").trim();
-				const to = String(toThreadId || "").trim();
-				if (!from || !to || from === to || !state.threadTileMode) return false;
-				const layout = threadTileLayout();
-				const ids = threadTileCandidateIds(layout);
-				const plan = threadTileStatePolicy.movePaneRelativePlan({
-					enabled: state.threadTileMode,
-					fromThreadId: from,
-					toThreadId: to,
-					placement,
-					ids,
-					splitPairs: state.threadTileSplitPairs
-				}, {
-					maxPanes: THREAD_TILE_USER_MAX_PANES,
-					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
-				});
-				if (plan.action !== "move") return false;
-				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, { maxPanes: THREAD_TILE_USER_MAX_PANES }), layout);
-			}
-			function splitThreadTilePaneWithTarget(fromThreadId, toThreadId, placement = "below") {
-				const from = String(fromThreadId || "").trim();
-				const to = String(toThreadId || "").trim();
-				if (!from || !to || from === to || !state.threadTileMode) return false;
-				const layout = threadTileLayout();
-				const ids = threadTileCandidateIds(layout);
-				const plan = threadTileStatePolicy.splitPaneWithTargetPlan({
-					enabled: state.threadTileMode,
-					fromThreadId: from,
-					toThreadId: to,
-					placement,
-					ids,
-					splitPairs: state.threadTileSplitPairs
-				}, {
-					maxPanes: THREAD_TILE_USER_MAX_PANES,
-					normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs
-				});
-				if (plan.action !== "split") return false;
-				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, { maxPanes: THREAD_TILE_USER_MAX_PANES }), layout);
-			}
-			function dropThreadTilePane(fromThreadId, toThreadId, event) {
-				const from = String(fromThreadId || "").trim();
-				const to = String(toThreadId || "").trim();
-				const pane = event && event.target && event.target.closest ? event.target.closest("[data-thread-tile-pane]") : null;
-				if (!from || !to || from === to || !pane) return false;
-				const rect = pane.getBoundingClientRect();
-				const plan = threadTileStatePolicy.dropPaneIntent({
-					fromThreadId: from,
-					toThreadId: to,
-					left: rect.left,
-					top: rect.top,
-					width: rect.width,
-					height: rect.height,
-					clientX: event.clientX,
-					clientY: event.clientY
-				});
-				if (plan.action === "move-relative") return moveThreadTilePaneRelative(from, to, plan.placement);
-				if (plan.action === "split-with-target") return splitThreadTilePaneWithTarget(from, to, plan.placement);
-				return false;
-			}
-			function replaceLastThreadTilePaneForThreadListOpen(threadId, options = {}) {
-				const id = String(threadId || "").trim();
-				const source = String(options.source || "").trim();
-				if (!id || source !== "thread-list" || !state.threadTileMode) return false;
-				const layout = threadTileLayout({ enabled: true });
-				if (!layout || !layout.enabled) return false;
-				const ids = threadTileCandidateIds(layout);
-				const plan = threadTileStatePolicy.replaceLastPaneForThreadListOpenPlan({
-					enabled: state.threadTileMode,
-					source,
-					threadId: id,
-					ids,
-					pinnedIds: state.threadTilePinnedIds
-				}, { maxPanes: THREAD_TILE_USER_MAX_PANES });
-				if (plan.action !== "replace-last") return false;
-				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, { maxPanes: THREAD_TILE_USER_MAX_PANES }), layout);
-			}
-			function toggleThreadTileSwitchMenu(threadId) {
-				const id = String(threadId || "").trim();
-				if (!id || !state.threadTileMode) return false;
-				setThreadTileSelectedThread(id, { render: false });
-				state.threadTileSwitchMenuPaneId = state.threadTileSwitchMenuPaneId === id ? "" : id;
-				if (!patchThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
-				return true;
-			}
-			function threadTileHasLiveThread() {
-				if (!state.threadTileMode || !state.threadTileActiveIds.length) return false;
-				return state.threadTileActiveIds.some((id) => {
-					const thread = threadTileDisplayThread(id);
-					return Boolean(latestLiveTurnForThread(thread) || isRunningStatus(thread && thread.status));
-				});
-			}
-			function updateThreadTilePaneStatusBadges() {
-				if (!state.threadTileMode) return;
-				document.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
-					const id = pane.getAttribute("data-thread-tile-pane") || "";
-					const container = pane.querySelector("[data-thread-tile-pane-state]");
-					if (!container) return;
-					const html = turnTimerStateHtml(threadTilePaneTimerState(threadTileDisplayThread(id)));
-					if (container.innerHTML !== html) container.innerHTML = html;
-				});
-			}
-			function threadTileError(threadId) {
-				return state.threadTileErrors.get(String(threadId || "")) || "";
-			}
-			function threadTilePaneIsVisible(threadId) {
-				const id = String(threadId || "");
-				return Boolean(id && state.threadTileActiveIds.includes(id));
-			}
-			function setThreadTileConversationMode(active, layout = null) {
-				const conversation = $("conversation");
-				const main = document.querySelector(".main");
-				document.documentElement.classList.toggle("thread-tile-open", Boolean(active));
-				if (main) main.classList.toggle("thread-tile-main", Boolean(active));
-				if (!conversation) return;
-				conversation.classList.toggle("thread-tile-mode", Boolean(active));
-				if (active && layout && layout.columns) conversation.style.setProperty("--thread-tile-columns", String(layout.columns));
-				else {
-					conversation.style.removeProperty("--thread-tile-columns");
-					state.threadTileActiveIds = [];
-					state.threadTileSelectedThreadId = "";
-					state.threadTileSwitchMenuPaneId = "";
-					state.threadTileViewportBaseline = null;
-					state.threadTileComposerHeightBaselinePx = 0;
-					for (const frame of state.threadTilePaneRenderFramesById.values()) if (window.cancelAnimationFrame) window.cancelAnimationFrame(frame);
-					else clearTimeout(frame);
-					state.threadTilePaneRenderFramesById.clear();
-					state.threadTilePaneScrollHoldById.clear();
-					clearThreadTileRefreshTimer();
-					if (state.threadTileOperationRefreshTimer) {
-						clearTimeout(state.threadTileOperationRefreshTimer);
-						state.threadTileOperationRefreshTimer = null;
-					}
-				}
-				updateComposerControls();
-			}
-			function captureThreadTilePaneScrollState() {
-				const conversation = $("conversation");
-				const states = /* @__PURE__ */ new Map();
-				if (!conversation) return states;
-				conversation.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
-					const id = pane.getAttribute("data-thread-tile-pane") || "";
-					const body = pane.querySelector(".thread-tile-pane-body");
-					if (!id || !body) return;
-					states.set(id, threadTileStatePolicy.paneScrollMetrics({
-						scrollHeight: body.scrollHeight,
-						clientHeight: body.clientHeight,
-						scrollTop: body.scrollTop,
-						hold: state.threadTilePaneScrollHoldById.get(id) === true
-					}));
-				});
-				return states;
-			}
-			function captureThreadTilePaneElementScrollState(pane) {
-				const id = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "");
-				const body = pane && pane.querySelector(".thread-tile-pane-body");
-				if (!body) return null;
-				return threadTileStatePolicy.paneScrollMetrics({
-					scrollHeight: body.scrollHeight,
-					clientHeight: body.clientHeight,
-					scrollTop: body.scrollTop,
-					hold: id ? state.threadTilePaneScrollHoldById.get(id) === true : false
-				});
-			}
-			function scrollThreadTilePaneBodyToBottom(body, options = {}) {
-				if (!body) return;
-				const top = Math.max(0, Number(body.scrollHeight || 0));
-				if (options.smooth && typeof body.scrollTo === "function") {
-					body.scrollTo({
-						top,
-						behavior: "smooth"
-					});
-					setTimeout(() => updateThreadTileBottomButtonForBody(body), 220);
-					return;
-				}
-				body.scrollTop = top;
-				updateThreadTileBottomButtonForBody(body);
-			}
-			function isThreadTilePaneNearBottom(body) {
-				if (!body) return true;
-				return threadTileStatePolicy.paneScrollMetrics({
-					scrollHeight: body.scrollHeight,
-					clientHeight: body.clientHeight,
-					scrollTop: body.scrollTop
-				}).nearBottom;
-			}
-			function applyThreadTilePaneScrollHoldPlan(id, plan) {
-				const threadId = String(id || "");
-				if (!threadId || !plan || plan.action !== "pane-scroll-hold") return;
-				if (plan.clearHold) state.threadTilePaneScrollHoldById.delete(threadId);
-				else if (plan.rememberHold) state.threadTilePaneScrollHoldById.set(threadId, true);
-			}
-			function rememberThreadTilePaneScrollPosition(body) {
-				const pane = body && body.closest && body.closest("[data-thread-tile-pane]");
-				const id = String(pane && pane.getAttribute("data-thread-tile-pane") || "");
-				if (!id || !body) return;
-				applyThreadTilePaneScrollHoldPlan(id, threadTileStatePolicy.paneScrollHoldPlan({
-					scrollHeight: body.scrollHeight,
-					clientHeight: body.clientHeight,
-					scrollTop: body.scrollTop
-				}));
-			}
-			function updateThreadTileBottomButtonForBody(body) {
-				const pane = body && body.closest && body.closest("[data-thread-tile-pane]");
-				const button = pane && pane.querySelector("[data-thread-tile-bottom]");
-				if (!button || !body) return;
-				const metrics = threadTileStatePolicy.paneScrollMetrics({
-					scrollHeight: body.scrollHeight,
-					clientHeight: body.clientHeight,
-					scrollTop: body.scrollTop
-				});
-				applyThreadTilePaneScrollHoldPlan(pane.getAttribute("data-thread-tile-pane") || "", threadTileStatePolicy.paneScrollHoldPlan(metrics));
-				const plan = threadTileStatePolicy.paneBottomButtonPlan({ metrics });
-				const shouldShow = Boolean(plan.shouldShow);
-				button.classList.toggle("hidden", !shouldShow);
-				button.setAttribute("aria-hidden", shouldShow ? "false" : "true");
-				button.tabIndex = shouldShow ? 0 : -1;
-			}
-			function updateThreadTileBottomButtons() {
-				const conversation = $("conversation");
-				if (!conversation) return;
-				conversation.querySelectorAll(".thread-tile-pane-body").forEach(updateThreadTileBottomButtonForBody);
-			}
-			function restoreThreadTilePaneScrollState(scrollState = /* @__PURE__ */ new Map()) {
-				const conversation = $("conversation");
-				if (!conversation) return;
-				conversation.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
-					const id = pane.getAttribute("data-thread-tile-pane") || "";
-					const body = pane.querySelector(".thread-tile-pane-body");
-					if (!id || !body) return;
-					const previous = scrollState.get(id);
-					const plan = threadTileStatePolicy.paneScrollRestorePlan({
-						previous,
-						scrollHeight: body.scrollHeight,
-						clientHeight: body.clientHeight
-					});
-					if (plan.mode === "restore-distance") {
-						body.scrollTop = plan.top;
-						updateThreadTileBottomButtonForBody(body);
-						return;
-					}
-					scrollThreadTilePaneBodyToBottom(body);
-				});
-			}
-			function restoreThreadTilePaneElementScrollState(pane, previous, options = {}) {
-				const body = pane && pane.querySelector(".thread-tile-pane-body");
-				if (!body) return;
-				const id = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "");
-				const plan = threadTileStatePolicy.paneScrollRestorePlan({
-					previous,
-					rememberedHold: Boolean(id && state.threadTilePaneScrollHoldById.get(id) === true),
-					stickToBottom: options.stickToBottom === true,
-					scrollHeight: body.scrollHeight,
-					clientHeight: body.clientHeight
-				});
-				if (plan.mode !== "restore-distance") {
-					scrollThreadTilePaneBodyToBottom(body);
-					return;
-				}
-				body.scrollTop = plan.top;
-				updateThreadTileBottomButtonForBody(body);
-			}
-			function scrollThreadTilePaneToBottom(threadId, options = {}) {
-				const id = String(threadId || "");
-				if (!id) return;
-				const pane = Array.from(document.querySelectorAll("[data-thread-tile-pane]")).find((entry) => String(entry.getAttribute("data-thread-tile-pane") || "") === id);
-				scrollThreadTilePaneBodyToBottom(pane && pane.querySelector(".thread-tile-pane-body"), options);
-			}
-			function clearThreadTileRefreshTimer() {
-				clearTimeout(state.threadTileRefreshTimer);
-				state.threadTileRefreshTimer = null;
-			}
-			function clearThreadTileDetailLoadQueueTimer() {
-				clearTimeout(state.threadTileDetailLoadQueueTimer);
-				state.threadTileDetailLoadQueueTimer = null;
-			}
-			function scheduleThreadTileDetailLoadQueueDrain(options = {}) {
-				const plan = threadTileStatePolicy.detailLoadQueueDrainPlan({
-					enabled: state.threadTileMode,
-					activeIds: state.threadTileActiveIds,
-					hasTimer: Boolean(state.threadTileDetailLoadQueueTimer),
-					pending: options.pending === true,
-					force: options.force === true,
-					delayMs: options.delayMs
-				}, { defaultDelayMs: THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS });
-				if (plan.clearTimer) {
-					clearThreadTileDetailLoadQueueTimer();
-					return false;
-				}
-				if (!plan.schedule) return false;
-				state.threadTileDetailLoadQueueTimer = setTimeout(() => {
-					state.threadTileDetailLoadQueueTimer = null;
-					if (!state.threadTileMode) return;
-					ensureThreadTileDetails(state.threadTileActiveIds);
-				}, plan.delayMs);
-				return true;
-			}
-			function scheduleThreadTileRefresh(delayMs = THREAD_TILE_REFRESH_INTERVAL_MS) {
-				const plan = threadTileStatePolicy.refreshSchedulePlan({
-					enabled: state.threadTileMode,
-					visibilityState: document.visibilityState,
-					activeIds: state.threadTileActiveIds,
-					hasTimer: Boolean(state.threadTileRefreshTimer),
-					delayMs
-				}, {
-					defaultDelayMs: THREAD_TILE_REFRESH_INTERVAL_MS,
-					minDelayMs: 500
-				});
-				if (plan.clearTimer) {
-					clearThreadTileRefreshTimer();
-					return;
-				}
-				if (!plan.schedule) return;
-				state.threadTileRefreshTimer = setTimeout(() => {
-					state.threadTileRefreshTimer = null;
-					if (!state.threadTileMode || document.visibilityState === "hidden") return;
-					refreshThreadTileDetails(state.threadTileActiveIds, { source: "tile-refresh" }).catch(showError);
-					scheduleThreadTileRefresh();
-				}, plan.delayMs);
-			}
-			async function refreshThreadTileDetails(ids = [], options = {}) {
-				const uniqueIds = threadTileStatePolicy.uniqueIds(ids);
-				const visibleIds = uniqueIds.filter((id) => threadTilePaneIsVisible(id));
-				const targetIds = threadTileStatePolicy.refreshTargetIds({
-					enabled: state.threadTileMode,
-					ids: uniqueIds,
-					visibleIds,
-					currentThreadId: state.currentThread && state.currentThread.id
-				});
-				if (!targetIds.length) return;
-				await Promise.all(targetIds.map((id) => {
-					return loadThreadTileDetail(id, {
-						force: true,
-						background: true,
-						source: options.source || "tile-refresh"
-					});
-				}));
-			}
-			function abortThreadTileLoads() {
-				clearThreadTileRefreshTimer();
-				clearThreadTileDetailLoadQueueTimer();
-				state.threadTileActiveIds = [];
-				for (const frame of state.threadTilePaneRenderFramesById.values()) if (window.cancelAnimationFrame) window.cancelAnimationFrame(frame);
-				else clearTimeout(frame);
-				state.threadTilePaneRenderFramesById.clear();
-				state.threadTilePaneScrollHoldById.clear();
-				for (const controller of state.threadTileControllers.values()) try {
-					controller.abort();
-				} catch (_) {}
-				state.threadTileControllers.clear();
-				state.threadTileLoadingIds.clear();
-			}
-			async function loadThreadTileDetail(threadId, options = {}) {
-				const id = String(threadId || "");
-				const cached = state.threadTileDetails.get(id);
-				const currentThreadId = state.currentThread && String(state.currentThread.id || "");
-				const plan = threadTileStatePolicy.detailLoadPlan({
-					threadId: id,
-					currentThreadId,
-					currentThreadLoaded: Boolean(currentThreadId === id && state.currentThread && !state.currentThread.mobileLoading),
-					controllerActive: state.threadTileControllers.has(id),
-					loadingActive: state.threadTileLoadingIds.has(id),
-					cachedReady: Boolean(cached && !cached.mobileLoading && !cached.mobileLoadError),
-					force: options.force === true,
-					backgroundRequested: options.background === true,
-					lastLoadedAt: Number(state.threadTileLoadedAtById.get(id) || 0),
-					nowMs: Date.now(),
-					minIntervalMs: THREAD_TILE_REFRESH_MIN_INTERVAL_MS
-				});
-				if (plan.action !== "load") return;
-				const background = plan.background;
-				const controller = new AbortController();
-				applyThreadTileDetailLoadStartEffects(threadTileStatePolicy.detailLoadStartEffectsPlan(plan), controller);
-				try {
-					const result = await api(threadDetailApiPath(id, { mode: "recent" }), {
-						timeoutMs: 2e4,
-						signal: controller.signal
-					});
-					if (controller.signal.aborted) return;
-					if (result && result.thread) applyThreadTileDetailLoadSuccessEffects(threadTileStatePolicy.detailLoadSuccessEffectsPlan({
-						id,
-						hasThread: true,
-						nowMs: Date.now()
-					}), result.thread);
-				} catch (err) {
-					applyThreadTileDetailLoadErrorEffects(threadTileStatePolicy.detailLoadErrorEffectsPlan({
-						id,
-						aborted: controller.signal.aborted,
-						background,
-						errorMessage: err && err.message ? err.message : String(err)
-					}));
-				} finally {
-					applyThreadTileDetailLoadFinallyEffects(threadTileStatePolicy.detailLoadFinallyEffectsPlan({
-						id,
-						controllerMatches: state.threadTileControllers.get(id) === controller,
-						visible: threadTilePaneIsVisible(id)
-					}));
-				}
-			}
-			function applyThreadTileDetailLoadStartEffects(effect, controller) {
-				if (!effect || effect.action !== "detail-load-start-effects") return false;
-				const id = String(effect.id || "");
-				if (!id) return false;
-				if (effect.setController) state.threadTileControllers.set(id, controller);
-				if (effect.markLoading) {
-					state.threadTileLoadingIds.add(id);
-					if (effect.renderPane && !scheduleRenderThreadTilePane(id, { preserveScroll: effect.preserveScroll !== false })) scheduleRenderCurrentThread();
-				}
-				if (effect.clearError) state.threadTileErrors.delete(id);
-				return true;
-			}
-			function applyThreadTileDetailLoadSuccessEffects(effect, thread) {
-				if (!effect || effect.action !== "detail-load-success-effects" || !thread) return false;
-				const id = String(effect.id || "");
-				if (!id) return false;
-				if (effect.setDetail) {
-					const existing = state.threadTileDetails.get(id);
-					state.threadTileDetails.set(id, mergeThreadPreservingVisibleItems(existing, thread));
-				}
-				if (effect.setLoadedAt) state.threadTileLoadedAtById.set(id, Number(effect.loadedAtMs || Date.now()));
-				if (effect.clearError) state.threadTileErrors.delete(id);
-				if (effect.mergeThread) mergeThreadIntoThreadList(thread);
-				return true;
-			}
-			function applyThreadTileDetailLoadErrorEffects(effect) {
-				if (!effect || effect.action !== "detail-load-error-effects") return false;
-				const id = String(effect.id || "");
-				if (!id) return false;
-				state.threadTileErrors.set(id, effect.errorMessage || "Thread load failed");
-				return true;
-			}
-			function applyThreadTileDetailLoadFinallyEffects(effect) {
-				if (!effect || effect.action !== "detail-load-finally-effects") return false;
-				const id = String(effect.id || "");
-				if (!id) return false;
-				if (effect.clearController) state.threadTileControllers.delete(id);
-				if (effect.clearLoading) state.threadTileLoadingIds.delete(id);
-				if (effect.renderPane && !scheduleRenderThreadTilePane(id, { preserveScroll: effect.preserveScroll !== false })) scheduleRenderCurrentThread();
-				if (effect.scheduleQueueDrain) scheduleThreadTileDetailLoadQueueDrain({ force: true });
-				return true;
-			}
-			function applyThreadTileDetailLoadQueuePlan(plan) {
-				if (!plan || plan.action !== "detail-load-queue") return false;
-				for (const id of Array.isArray(plan.abortIds) ? plan.abortIds : []) {
-					const controller = state.threadTileControllers.get(id);
-					if (controller && typeof controller.abort === "function") try {
-						controller.abort();
-					} catch (_) {}
-					state.threadTileControllers.delete(id);
-					state.threadTileLoadingIds.delete(id);
-				}
-				for (const id of Array.isArray(plan.loadIds) ? plan.loadIds : []) loadThreadTileDetail(id).catch(showError);
-				if (plan.scheduleDrainAfterLoad) scheduleThreadTileDetailLoadQueueDrain({ pending: true });
-				return true;
-			}
-			function ensureThreadTileDetails(ids = []) {
-				if (!state.threadTileMode) return;
-				syncThreadTileActivePaneState(ids);
-				const currentThreadId = state.currentThread && String(state.currentThread.id || "");
-				const readyIds = state.threadTileActiveIds.filter((id) => {
-					if (currentThreadId && currentThreadId === id && state.currentThread && !state.currentThread.mobileLoading) return true;
-					const cached = state.threadTileDetails.get(id);
-					return Boolean(cached && !cached.mobileLoading && !cached.mobileLoadError);
-				});
-				const concurrency = threadTileStatePolicy.detailLoadConcurrencyPlan({
-					activeIds: state.threadTileActiveIds,
-					maxPanes: THREAD_TILE_USER_MAX_PANES
-				});
-				applyThreadTileDetailLoadQueuePlan(threadTileStatePolicy.detailLoadQueuePlan({
-					enabled: state.threadTileMode,
-					activeIds: state.threadTileActiveIds,
-					controllerIds: Array.from(state.threadTileControllers.keys()),
-					loadingIds: Array.from(state.threadTileLoadingIds),
-					readyIds,
-					maxConcurrentLoads: concurrency.maxConcurrentLoads
-				}));
-				scheduleThreadTileRefresh();
-			}
-			function renderThreadTileTurn(thread, turn, previousKeys = /* @__PURE__ */ new Set()) {
-				return withRenderContextThread(thread, () => {
-					const threadId = String(thread && thread.id || "");
-					const renderedItems = visibleItemsForTurn(turn, thread).map((entry, index) => {
-						const item = entry && entry.item;
-						const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
-						return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
-					}).filter(Boolean).join("");
-					const budgetNoticeHtml = renderTurnVisibleItemBudgetNotice(turn, previousKeys);
-					const turnApprovals = approvalsForTurn(threadId, turn && turn.id);
-					const approvalsHtml = turnApprovals.length ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}</div>` : "";
-					if (!budgetNoticeHtml.trim() && !renderedItems.trim() && !approvalsHtml.trim()) return "";
-					const turnId = String(turn && (turn.id || turn.startedAt || "turn") || "turn");
-					return `<article class="turn thread-tile-turn" data-thread-tile-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(`tile-turn|${threadId}|${turnId}`)}">
-      ${budgetNoticeHtml}${renderedItems}${approvalsHtml}
-    </article>`;
-				});
-			}
-			function scheduleThreadTileOperationMinimumRefresh(delayMs = LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS) {
-				if (state.threadTileOperationRefreshTimer) clearTimeout(state.threadTileOperationRefreshTimer);
-				state.threadTileOperationRefreshTimer = setTimeout(() => {
-					state.threadTileOperationRefreshTimer = null;
-					const plan = threadTileStatePolicy.operationMinimumRefreshPlan({
-						enabled: state.threadTileMode,
-						activeIds: state.threadTileActiveIds
-					});
-					if (plan.action === "operation-minimum-refresh") {
-						let patchedAny = false;
-						for (const id of plan.patchThreadIds || []) patchedAny = scheduleRenderThreadTilePane(id, { preserveScroll: true }) || patchedAny;
-						if (plan.fullRenderOnPatchMiss && !patchedAny) scheduleRenderCurrentThread();
-					}
-				}, Math.max(0, Number(delayMs) || 0) + 16);
-			}
-			function rememberThreadTileOperationBubble(threadId, html = "") {
-				const id = String(threadId || "");
-				const record = threadTileStatePolicy.operationBubbleRecord({
-					threadId: id,
-					html,
-					minVisibleMs: LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
-					nowMs: Date.now()
-				});
-				if (!record) return;
-				state.threadTileOperationBubblesById.set(id, record);
-			}
-			function clearThreadTileOperationBubble(threadId) {
-				const id = String(threadId || "");
-				if (!id) return;
-				state.threadTileOperationBubblesById.delete(id);
-			}
-			function renderThreadTileOperationDock(thread, previousKeys = /* @__PURE__ */ new Set()) {
-				const id = String(thread && thread.id || "");
-				if (!id) return "";
-				const entry = currentLiveOperationEntry(thread);
-				const mode = threadTileStatePolicy.normalizeOperationMode(state.threadTileOperationModesById.get(id) || "compact");
-				const plan = threadTileStatePolicy.operationDockPlan({
-					threadId: id,
-					mode,
-					entryType: entry && entry.item && entry.item.type,
-					hasOperation: Boolean(entry && entry.item && entry.item.type !== "liveTurnStatus"),
-					hasLiveTurn: Boolean(latestLiveTurnForThread(thread)),
-					remembered: state.threadTileOperationBubblesById.get(id),
-					nowMs: Date.now()
-				});
-				if (plan.action === "render-remembered-operation") {
-					if (plan.scheduleMinimumRefresh) scheduleThreadTileOperationMinimumRefresh(plan.remainingMs);
-					return plan.html || "";
-				}
-				if (plan.action === "clear-remembered-operation") {
-					if (plan.clearRemembered) state.threadTileOperationBubblesById.delete(id);
-					return "";
-				}
-				if (plan.action !== "render-live-operation" || !entry || !entry.item) return "";
-				const html = `<div class="thread-tile-operation-dock" data-thread-tile-operation-dock="${escapeHtml(id)}" data-mode="${escapeHtml(mode)}">
-    <div class="live-operation-dock-inner">
-      ${renderMobileOperationStack(entry.item, entry.turn, previousKeys, entry.sourceIndex, plan.expanded, {
-					toggleAttribute: "data-thread-tile-operation-toggle",
-					toggleValue: id
-				})}
-    </div>
-  </div>`;
-				rememberThreadTileOperationBubble(id, html);
-				return html;
-			}
-			function threadTileOperationSignature(threadId) {
-				const id = String(threadId || "");
-				const thread = threadTileDisplayThread(id);
-				const entry = currentLiveOperationEntry(thread);
-				return threadTileStatePolicy.operationSignature({
-					mode: state.threadTileOperationModesById.get(id) || "compact",
-					remembered: state.threadTileOperationBubblesById.get(id),
-					nowMs: Date.now(),
-					entrySignature: entry && entry.item && entry.item.type !== "liveTurnStatus" ? visibleItemSignature(entry.item, entry.turn, thread) : null
-				});
-			}
-			function applyThreadTileOperationModeTogglePlan(effect) {
-				if (!effect || effect.action !== "operation-mode-toggle-effects") return false;
-				const id = String(effect.id || "");
-				if (!id) return false;
-				state.threadTileOperationModesById.set(id, threadTileStatePolicy.normalizeOperationMode(effect.mode));
-				if (effect.selectPane) setThreadTileSelectedThread(id, { render: effect.selectPaneRender !== false });
-				if (effect.patchThreadId && !patchThreadTilePane(effect.patchThreadId, { preserveScroll: effect.patchPreserveScroll !== false })) {
-					if (effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
-				}
-				return true;
-			}
-			function threadTileMinimumPaneCount(layout = threadTileLayout()) {
-				return threadTilePaneCountState(layout).minPaneCount;
-			}
-			function threadTileMaximumPaneCount(layout = threadTileLayout()) {
-				return threadTilePaneCountState(layout).maxPaneCount;
-			}
-			function setThreadTilePaneCount(nextCount, options = {}) {
-				if (!state.threadTileMode) return false;
-				const layout = threadTileLayout({ enabled: true });
-				if (!layout || !layout.enabled) return false;
-				const minCount = threadTileMinimumPaneCount(layout);
-				const maxCount = threadTileMaximumPaneCount(layout);
-				const current = effectiveThreadTilePaneCount(layout);
-				const plan = threadTileStatePolicy.paneCountChangePlan({
-					enabled: state.threadTileMode,
-					layoutEnabled: layout.enabled,
-					nextCount,
-					currentCount: current,
-					storedPaneCount: state.threadTilePaneCount,
-					minCount,
-					maxCount
-				}, { maxPanes: THREAD_TILE_USER_MAX_PANES });
-				if (plan.action !== "set-pane-count") return false;
-				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
-					maxPanes: THREAD_TILE_USER_MAX_PANES,
-					render: options.render !== false
-				}), layout);
-			}
-			function changeThreadTilePaneCount(delta) {
-				const layout = threadTileLayout({ enabled: true });
-				if (!layout || !layout.enabled) return false;
-				return setThreadTilePaneCount(effectiveThreadTilePaneCount(layout) + (Number(delta) || 0));
-			}
-			function closeThreadTilePane(threadId) {
-				const id = String(threadId || "").trim();
-				if (!id || !state.threadTileMode) return false;
-				const layout = threadTileLayout({ enabled: true });
-				if (!layout || !layout.enabled) return false;
-				const ids = threadTileCandidateIds(layout);
-				const minCount = threadTileMinimumPaneCount(layout);
-				const plan = threadTileStatePolicy.closePanePlan({
-					enabled: state.threadTileMode,
-					layoutEnabled: layout.enabled,
-					threadId: id,
-					ids,
-					pinnedIds: state.threadTilePinnedIds,
-					defaultIds: defaultThreadTileCandidateIds(layout, { maxPanes: threadTileMaximumPaneCount(layout) }),
-					minCount
-				}, { maxPanes: THREAD_TILE_USER_MAX_PANES });
-				if (plan.action !== "close-pane") return false;
-				return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, { maxPanes: THREAD_TILE_USER_MAX_PANES }), layout);
-			}
-			function renderThreadTilePane(threadId, layout, previousKeys = /* @__PURE__ */ new Set()) {
-				const thread = threadTileDisplayThread(threadId);
-				const id = String(threadId || thread && thread.id || "");
-				const title = threadTitleForDisplay(thread) || id;
-				const summary = threadTileSummary(id);
-				const paneStateHtml = turnTimerStateHtml(threadTilePaneTimerState(thread || summary));
-				const error = threadTileError(id);
-				const loading = state.threadTileLoadingIds.has(id) || thread && thread.mobileLoading && !threadHasVisibleConversationTurns(thread);
-				const readWarning = threadReadWarningMessage(thread);
-				const turns = visibleTurnsForConversation(thread);
-				const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
-				const omitted = Number(thread && thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread && thread.turns || []).length - turns.length);
-				const historyNote = renderThreadHistoryNote(thread, omitted, previousKeys);
-				const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
-					const turnId = approvalTurnId(request);
-					if (turnId && visibleTurnIds.has(turnId)) return false;
-					return isApprovalActive(request);
-				});
-				const body = error ? `<div class="thread-tile-empty error">Thread failed: ${escapeHtml(error)}</div>` : loading ? `<div class="thread-tile-empty">Loading thread...</div>` : [
-					historyNote,
-					readWarning ? `<div class="history-note">${escapeHtml(readWarning)}</div>` : "",
-					turns.map((turn) => renderThreadTileTurn(thread, turn, previousKeys)).join("") || `<div class="thread-tile-empty">No visible turns.</div>`,
-					approvalsHtml
-				].join("");
-				const active = id && id === effectiveThreadTileSelectedThreadId() ? " active" : "";
-				const operationDock = renderThreadTileOperationDock(thread, previousKeys);
-				const switchMenu = renderThreadTileSwitchMenu(id);
-				return `<section class="thread-tile-pane${active}" data-thread-tile-pane="${escapeHtml(id)}" data-render-key="${escapeHtml(`thread-tile|${id}`)}">
-    <header class="thread-tile-pane-header">
-      <div class="thread-tile-pane-title-wrap">
-        <button class="thread-tile-pane-title-button" type="button" draggable="true" data-thread-tile-drag-handle="${escapeHtml(id)}" data-thread-tile-title="${escapeHtml(id)}" aria-haspopup="listbox" aria-expanded="${state.threadTileSwitchMenuPaneId === id ? "true" : "false"}">
-          <span class="thread-tile-pane-title">${escapeHtml(title)}</span>
-        </button>
-        ${switchMenu}
-      </div>
-      <div class="thread-tile-pane-state-slot" data-thread-tile-pane-state>${paneStateHtml}</div>
-    </header>
-    <div class="thread-tile-pane-body"><div class="thread-tile-pane-content">${body}</div></div>
-    ${operationDock}
-    <button class="thread-tile-bottom-button hidden" type="button" data-thread-tile-bottom="${escapeHtml(id)}" aria-label="跳到此线程底部" title="跳到底部" aria-hidden="true" tabindex="-1">↓</button>
-  </section>`;
-			}
-			function threadTilePaneElement(threadId) {
-				const id = String(threadId || "");
-				if (!id) return null;
-				return Array.from(document.querySelectorAll("[data-thread-tile-pane]")).find((entry) => String(entry.getAttribute("data-thread-tile-pane") || "") === id) || null;
-			}
-			function threadTileRenderSignature(layout, ids) {
-				return threadTileStatePolicy.paneRenderSignaturePlan({
-					layout,
-					ids,
-					desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
-					splitPairs: threadTilePrunedSplitPairs(ids),
-					selectedThreadId: effectiveThreadTileSelectedThreadId(ids),
-					loadingIds: ids.filter((id) => state.threadTileLoadingIds.has(id)),
-					switchMenuPaneId: state.threadTileSwitchMenuPaneId || "",
-					errors: ids.map((id) => [id, threadTileError(id)]),
-					operations: ids.map((id) => [id, threadTileOperationSignature(id)]),
-					threadSignatures: ids.map((id) => conversationRenderSignature(threadTileDisplayThread(id)))
-				}, { maxPanes: THREAD_TILE_USER_MAX_PANES }).signature;
-			}
-			function patchThreadTilePane(threadId, options = {}) {
-				const id = String(threadId || "").trim();
-				let preflight = threadTileStatePolicy.panePatchPreflightPlan({
-					threadId: id,
-					enabled: state.threadTileMode,
-					visible: id ? threadTilePaneIsVisible(id) : false
-				});
-				if (!preflight.shouldContinue) return false;
-				const conversation = $("conversation");
-				preflight = threadTileStatePolicy.panePatchPreflightPlan({
-					threadId: id,
-					enabled: state.threadTileMode,
-					visible: true,
-					conversationPresent: Boolean(conversation),
-					tileSurface: Boolean(conversation && conversation.classList.contains("thread-tile-mode"))
-				});
-				if (!preflight.shouldContinue) return false;
-				const board = conversation.querySelector("[data-thread-tile-board]");
-				preflight = threadTileStatePolicy.panePatchPreflightPlan({
-					threadId: id,
-					enabled: state.threadTileMode,
-					visible: true,
-					conversationPresent: true,
-					tileSurface: true,
-					boardPresent: Boolean(board)
-				});
-				if (!preflight.shouldContinue) return false;
-				const layout = threadTileLayout();
-				preflight = threadTileStatePolicy.panePatchPreflightPlan({
-					threadId: id,
-					enabled: state.threadTileMode,
-					visible: true,
-					conversationPresent: true,
-					tileSurface: true,
-					boardPresent: true,
-					layoutEnabled: Boolean(layout && layout.enabled)
-				});
-				if (!preflight.shouldContinue) return false;
-				const ids = threadTileCandidateIds(layout);
-				preflight = threadTileStatePolicy.panePatchPreflightPlan({
-					threadId: id,
-					enabled: state.threadTileMode,
-					visible: true,
-					conversationPresent: true,
-					tileSurface: true,
-					boardPresent: true,
-					layoutEnabled: true,
-					ids
-				});
-				if (!preflight.shouldContinue) return false;
-				const displayLayout = threadTileDisplayLayout(layout, ids);
-				const pane = options.paneElement || threadTilePaneElement(id);
-				preflight = threadTileStatePolicy.panePatchPreflightPlan({
-					threadId: id,
-					enabled: state.threadTileMode,
-					visible: true,
-					conversationPresent: true,
-					tileSurface: true,
-					boardPresent: true,
-					layoutEnabled: true,
-					ids,
-					panePresent: Boolean(pane)
-				});
-				if (!preflight.canPatch) return false;
-				const previousScroll = captureThreadTilePaneElementScrollState(pane);
-				const previousKeys = existingConversationRenderKeys();
-				const template = document.createElement("template");
-				template.innerHTML = renderThreadTilePane(id, displayLayout, previousKeys);
-				const sourcePane = template.content.firstElementChild;
-				let completion = threadTileStatePolicy.panePatchCompletionPlan({
-					threadId: id,
-					sourcePanePresent: Boolean(sourcePane)
-				});
-				if (!completion.returnValue) return false;
-				const patchedPane = patchNode(pane, sourcePane);
-				completion = threadTileStatePolicy.panePatchCompletionPlan({
-					threadId: id,
-					sourcePanePresent: true,
-					patchedPanePresent: Boolean(patchedPane),
-					requestAnimationFrameAvailable: typeof window.requestAnimationFrame === "function"
-				});
-				if (!completion.returnValue) return false;
-				if (completion.hydrate) hydrateThreadDetailSurface(patchedPane, { imageScanDelays: [0, 180] });
-				if (completion.restoreScroll) restoreThreadTilePaneElementScrollState(patchedPane, previousScroll, options);
-				if (completion.updateBottomButton) {
-					const updateBottomButton = () => updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body"));
-					if (completion.updateBottomButtonMode === "animation-frame" && typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(updateBottomButton);
-					else updateBottomButton();
-				}
-				if (completion.writeRenderSignature) state.renderedConversationSignature = threadTileRenderSignature(displayLayout, ids);
-				if (completion.clearPatchShellSignature) state.renderedConversationPatchShellSignature = "";
-				if (completion.bindActions) bindThreadTileActions();
-				else return false;
-				return completion.returnValue;
-			}
-			function isThreadTileConversationSurface() {
-				const conversation = $("conversation");
-				return Boolean(state.threadTileMode && conversation && conversation.classList && conversation.classList.contains("thread-tile-mode"));
-			}
-			function threadDetailDomPatchSurface(options = {}) {
-				const id = String(options.threadId || state.currentThreadId || state.currentThread && state.currentThread.id || "").trim();
-				return threadDetailPatchPlanApi.planThreadDetailDomPatchSurface({
-					threadId: id,
-					threadTileMode: state.threadTileMode,
-					threadTileSurface: isThreadTileConversationSurface(),
-					tilePaneVisible: id ? threadTilePaneIsVisible(id) : false,
-					conversationPresent: Boolean($("conversation"))
-				});
-			}
-			function canPatchSingleThreadConversationDom(options = {}) {
-				const plan = threadDetailDomPatchSurface(options);
-				return Boolean(plan && plan.canPatch && plan.surface === "single-thread");
-			}
-			function patchCurrentThreadTilePaneFromState(options = {}) {
-				const plan = threadDetailDomPatchSurface(options);
-				if (!plan || !plan.canPatch || plan.surface !== "thread-tile-pane") return false;
-				clearGlobalLiveOperationDockForThreadTiles();
-				return patchThreadTilePane(plan.threadId, Object.assign({ preserveScroll: true }, options));
-			}
-			function scheduleRenderThreadTilePane(threadId, options = {}) {
-				const id = String(threadId || "").trim();
-				const plan = threadTileStatePolicy.paneRenderFramePlan({
-					threadId: id,
-					enabled: state.threadTileMode,
-					visible: id ? threadTilePaneIsVisible(id) : false,
-					hasFrame: id ? state.threadTilePaneRenderFramesById.has(id) : false
-				});
-				if (plan.action === "skip" || !plan.returnValue) return false;
-				if (!plan.scheduleFrame) return true;
-				const render = () => {
-					state.threadTilePaneRenderFramesById.delete(id);
-					if (!patchThreadTilePane(id, options) && plan.fullRenderOnPatchMiss) scheduleRenderCurrentThread();
-				};
-				const frame = window.requestAnimationFrame ? window.requestAnimationFrame(render) : setTimeout(render, 33);
-				state.threadTilePaneRenderFramesById.set(id, frame);
-				return true;
-			}
-			function renderThreadTileLayout(layout, options = {}) {
-				const ids = threadTileCandidateIds(layout);
-				if (!ids.length) return false;
-				const displayLayout = threadTileDisplayLayout(layout, ids);
-				const scrollState = captureThreadTilePaneScrollState();
-				ensureThreadTileDetails(ids);
-				updateThreadTileGlobalHeader(displayLayout, ids);
-				state.nowMs = Date.now();
-				const previousKeys = existingConversationRenderKeys();
-				const html = `<div class="thread-tile-board" data-thread-tile-board data-render-key="thread-tile-board">
-    ${(Array.isArray(displayLayout.columnGroups) && displayLayout.columnGroups.length ? displayLayout.columnGroups : ids.map((id) => [id])).map((group, index) => `<div class="thread-tile-column" data-thread-tile-column="${escapeHtml(String(index))}" style="--thread-tile-column-rows: ${escapeHtml(String(Math.max(1, group.length)))}">
-      ${group.map((id) => renderThreadTilePane(id, displayLayout, previousKeys)).join("")}
-    </div>`).join("")}
-  </div>`;
-				const signature = threadTileRenderSignature(displayLayout, ids);
-				const visibleShape = threadTileVisibleShape(ids);
-				const expectedVisibleTurnCount = visibleShape.turnCount;
-				const renderedDomTurnCount = threadTileDomTurnCount();
-				const renderedDomShape = conversationDomShape();
-				setThreadTileConversationMode(true, displayLayout);
-				updateConversationHtml(html, signature, {
-					stickToBottom: options.stickToBottom === true,
-					patchShellSignature: "",
-					expectedVisibleTurnCount,
-					renderedDomTurnCount,
-					expectedVisibleItemCount: visibleShape.visibleItemCount,
-					renderedDomItemCount: renderedDomShape.itemCount,
-					duplicateRenderKeyCount: renderedDomShape.duplicateRenderKeyCount,
-					duplicateUserMessageCount: renderedDomShape.duplicateUserMessageCount,
-					expectedDuplicateUserMessageCount: visibleShape.duplicateUserMessageCount,
-					action: "thread-tile-empty-state",
-					routeKind: "thread-tile",
-					threadHash: diagnosticHash(`thread-tile:${ids.join("|")}`),
-					currentTurns: expectedVisibleTurnCount,
-					currentVisibleItems: visibleShape.visibleItemCount,
-					source: "thread-tile-render",
-					checkProjectionConsistency: true
-				});
-				bindThreadTileActions();
-				restoreThreadTilePaneScrollState(scrollState);
-				if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(() => {
-					restoreThreadTilePaneScrollState(scrollState);
-					updateThreadTileBottomButtons();
-				});
-				return true;
-			}
-			function bindThreadTileActions() {
-				const conversation = $("conversation");
-				if (!conversation) return;
-				if (conversation.dataset.threadTileActionsBound === "true") return;
-				conversation.dataset.threadTileActionsBound = "true";
-				conversation.addEventListener("pointerdown", (event) => {
-					const plan = threadTileActionsApi.resolveThreadTilePointerAction({
-						target: event.target,
-						root: conversation
-					});
-					if (plan.action === "select-pane") {
-						setThreadTileSelectedThread(plan.paneId || "");
-						return;
-					}
-					if (plan.stopPropagation) {
-						event.stopPropagation();
-						return;
-					}
-				});
-				conversation.addEventListener("focusin", (event) => {
-					const plan = threadTileActionsApi.resolveThreadTileFocusAction({
-						target: event.target,
-						root: conversation
-					});
-					if (plan.action === "select-pane") setThreadTileSelectedThread(plan.paneId || "");
-				});
-				conversation.addEventListener("click", (event) => {
-					const plan = threadTileActionsApi.resolveThreadTileClickAction({
-						target: event.target,
-						root: conversation
-					});
-					if (plan.preventDefault) event.preventDefault();
-					if (plan.stopPropagation) event.stopPropagation();
-					if (plan.action === "toggle-switch-menu") {
-						toggleThreadTileSwitchMenu(plan.paneId || "");
-						return;
-					}
-					if (plan.action === "switch-pane-thread") {
-						replaceThreadTilePaneThread(plan.fromId || "", plan.toId || "");
-						return;
-					}
-					if (plan.action === "change-pane-count") {
-						if (!plan.disabled) changeThreadTilePaneCount(Number(plan.delta || 0));
-						return;
-					}
-					if (plan.action === "close-pane") {
-						if (!plan.disabled) closeThreadTilePane(plan.paneId || "");
-						return;
-					}
-					if (plan.action === "scroll-pane-bottom") {
-						scrollThreadTilePaneToBottom(plan.paneId || "", { smooth: true });
-						return;
-					}
-					if (plan.action === "toggle-operation") {
-						const id = plan.paneId || "";
-						applyThreadTileOperationModeTogglePlan(threadTileStatePolicy.operationModeTogglePlan({
-							enabled: state.threadTileMode,
-							threadId: id,
-							mode: state.threadTileOperationModesById.get(id) || "compact"
-						}));
-					}
-				});
-				conversation.addEventListener("scroll", (event) => {
-					const plan = threadTileActionsApi.resolveThreadTileScrollAction({
-						target: event.target,
-						root: conversation
-					});
-					if (plan.action === "pane-scroll") updateThreadTileBottomButtonForBody(plan.body);
-				}, {
-					passive: true,
-					capture: true
-				});
-				conversation.addEventListener("dragstart", (event) => {
-					const plan = threadTileActionsApi.resolveThreadTileDragStartAction({
-						target: event.target,
-						root: conversation
-					});
-					if (plan.action !== "drag-start") return;
-					const id = plan.paneId || "";
-					if (!id) return;
-					state.threadTileDraggingThreadId = id;
-					state.threadTileSwitchMenuPaneId = "";
-					if (event.dataTransfer) {
-						event.dataTransfer.effectAllowed = "move";
-						event.dataTransfer.setData("text/plain", id);
-					}
-					const pane = plan.pane;
-					if (pane) pane.classList.add("dragging");
-				});
-				conversation.addEventListener("dragover", (event) => {
-					const plan = threadTileActionsApi.resolveThreadTileDragOverAction({
-						target: event.target,
-						root: conversation,
-						draggingId: state.threadTileDraggingThreadId || ""
-					});
-					if (plan.action !== "drag-over") return;
-					if (plan.preventDefault) event.preventDefault();
-					if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-					plan.pane.classList.add("drag-over");
-				});
-				conversation.addEventListener("dragleave", (event) => {
-					const plan = threadTileActionsApi.resolveThreadTileDragLeaveAction({
-						target: event.target,
-						root: conversation
-					});
-					if (plan.action === "drag-leave") plan.pane.classList.remove("drag-over");
-				});
-				conversation.addEventListener("drop", (event) => {
-					const plan = threadTileActionsApi.resolveThreadTileDropAction({
-						target: event.target,
-						root: conversation,
-						draggingId: state.threadTileDraggingThreadId || "",
-						transferId: event.dataTransfer && event.dataTransfer.getData("text/plain") || ""
-					});
-					if (plan.action !== "drop-pane") return;
-					if (plan.preventDefault) event.preventDefault();
-					if (plan.stopPropagation) event.stopPropagation();
-					document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
-					state.threadTileDraggingThreadId = "";
-					dropThreadTilePane(plan.draggingId, plan.targetId, event);
-				});
-				conversation.addEventListener("dragend", () => {
-					state.threadTileDraggingThreadId = "";
-					document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
-				});
-			}
-			function threadTileLayoutStatusText(layout) {
-				if (!state.threadTileMode) return "当前视口：单线程";
-				if (layout && layout.enabled) {
-					const count = effectiveThreadTilePaneCount(layout);
-					const maxCount = threadTileMaximumPaneCount(layout);
-					return maxCount > 1 ? `当前视口：平铺 ${count}/${maxCount} 窗` : "当前视口：平铺可用";
-				}
-				const reason = String(layout && layout.reason || "");
-				if (reason === "tablet-portrait") return "当前视口：竖屏单线程";
-				if (reason === "insufficient-width" || reason === "narrow") return "当前视口：宽度不足";
-				if (reason === "disabled") return "当前视口：单线程";
-				return "当前视口：暂不可平铺";
-			}
-			function syncThreadTileToggle() {
-				const layout = threadTileLayout({ enabled: true });
-				document.querySelectorAll("[data-thread-display-choice]").forEach((button) => {
-					const isTile = (button.getAttribute("data-thread-display-choice") || "single") === "tile";
-					const isSelected = isTile ? state.threadTileMode : !state.threadTileMode;
-					button.classList.toggle("selected", isSelected);
-					button.setAttribute("aria-pressed", isSelected ? "true" : "false");
-					if (isTile && !layout.enabled && !state.threadTileMode) button.setAttribute("title", "平铺会在 iPad 横屏或宽屏可用时生效");
-					else button.removeAttribute("title");
-				});
-				const status = $("threadDisplaySettingsStatus");
-				if (status) status.textContent = threadTileLayoutStatusText(layout);
-			}
-			function setThreadTileMode(enabled) {
-				state.threadTileMode = enabled === true;
-				mirrorThreadDisplayModeToLocalStorage();
-				if (!state.threadTileMode) {
-					abortThreadTileLoads();
-					state.threadTileSelectedThreadId = "";
-					setThreadTileConversationMode(false);
-				}
-				scheduleThreadDisplaySettingsSave();
-				syncThreadTileToggle();
-				renderCurrentThread({ stickToBottom: true });
-			}
-			function handleThreadTileModeChoice(event) {
-				const button = event.target.closest("[data-thread-display-choice]");
-				if (!button) return;
-				event.preventDefault();
-				setThreadTileMode(button.getAttribute("data-thread-display-choice") === "tile");
-			}
-			return {
-				updateThreadTileGlobalHeader,
-				viewportPixelSize,
-				isCoarsePointerViewport,
-				isThreadTileKeyboardFocusActive,
-				threadTileViewportSize,
-				threadTileVerticalChromePx,
-				threadTileLayout,
-				normalizeThreadTilePaneCount,
-				threadTileLayoutCapacity,
-				defaultThreadTileCandidateIds,
-				threadTileRunningPaneIds,
-				threadTilePaneCountState,
-				autoThreadTilePaneCount,
-				effectiveThreadTilePaneCount,
-				threadTileDisplayLayout,
-				normalizeThreadTilePinnedIds,
-				normalizeThreadTileSplitPairs,
-				threadTilePrunedSplitPairs,
-				threadTileVisibleIdSet,
-				threadTileIdsEqual,
-				threadTileCandidateIds,
-				threadDisplaySettingsPayload,
-				localThreadDisplayMode,
-				mirrorThreadDisplayModeToLocalStorage,
-				applyThreadDisplaySettings,
-				loadThreadDisplaySettings,
-				saveThreadDisplaySettingsNow,
-				scheduleThreadDisplaySettingsSave,
-				syncThreadTileActivePaneState,
-				threadTileSummary,
-				threadTileDisplayThread,
-				setThreadTileSelectedThread,
-				applyThreadTileSelectedPaneEffects,
-				threadTileVisibleThreadOptions,
-				renderThreadTileSwitchMenu,
-				applyThreadTilePaneSlotEffects,
-				replaceThreadTilePaneThread,
-				moveThreadTilePaneRelative,
-				splitThreadTilePaneWithTarget,
-				dropThreadTilePane,
-				replaceLastThreadTilePaneForThreadListOpen,
-				toggleThreadTileSwitchMenu,
-				threadTileHasLiveThread,
-				updateThreadTilePaneStatusBadges,
-				threadTileError,
-				threadTilePaneIsVisible,
-				setThreadTileConversationMode,
-				captureThreadTilePaneScrollState,
-				captureThreadTilePaneElementScrollState,
-				scrollThreadTilePaneBodyToBottom,
-				isThreadTilePaneNearBottom,
-				applyThreadTilePaneScrollHoldPlan,
-				rememberThreadTilePaneScrollPosition,
-				updateThreadTileBottomButtonForBody,
-				updateThreadTileBottomButtons,
-				restoreThreadTilePaneScrollState,
-				restoreThreadTilePaneElementScrollState,
-				scrollThreadTilePaneToBottom,
-				clearThreadTileRefreshTimer,
-				clearThreadTileDetailLoadQueueTimer,
-				scheduleThreadTileDetailLoadQueueDrain,
-				scheduleThreadTileRefresh,
-				refreshThreadTileDetails,
-				abortThreadTileLoads,
-				loadThreadTileDetail,
-				applyThreadTileDetailLoadStartEffects,
-				applyThreadTileDetailLoadSuccessEffects,
-				applyThreadTileDetailLoadErrorEffects,
-				applyThreadTileDetailLoadFinallyEffects,
-				applyThreadTileDetailLoadQueuePlan,
-				ensureThreadTileDetails,
-				renderThreadTileTurn,
-				scheduleThreadTileOperationMinimumRefresh,
-				rememberThreadTileOperationBubble,
-				clearThreadTileOperationBubble,
-				renderThreadTileOperationDock,
-				threadTileOperationSignature,
-				applyThreadTileOperationModeTogglePlan,
-				threadTileMinimumPaneCount,
-				threadTileMaximumPaneCount,
-				setThreadTilePaneCount,
-				changeThreadTilePaneCount,
-				closeThreadTilePane,
-				renderThreadTilePane,
-				threadTilePaneElement,
-				threadTileRenderSignature,
-				patchThreadTilePane,
-				isThreadTileConversationSurface,
-				threadDetailDomPatchSurface,
-				canPatchSingleThreadConversationDom,
-				patchCurrentThreadTilePaneFromState,
-				scheduleRenderThreadTilePane,
-				renderThreadTileLayout,
-				bindThreadTileActions,
-				threadTileLayoutStatusText,
-				syncThreadTileToggle,
-				setThreadTileMode,
-				handleThreadTileModeChoice
-			};
-		}
-		const api = { createThreadTileRuntime };
-		if (typeof module === "object" && module.exports) module.exports = api;
-		root.CodexThreadTileRuntime = api;
-	})(typeof globalThis !== "undefined" ? globalThis : window);
-}));
-//#endregion
-//#region public/app-update-runtime.js
-var require_app_update_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function attachAppUpdateRuntime(root) {
-		function createAppUpdateRuntime(deps = {}) {
-			const { state = {}, CLIENT_BUILD_ID = "", PAGE_REFRESH_CHECK_INTERVAL_MS = 6e4, PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12e3, PAGE_SHELL_ASSETS = [], STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey", PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR", buildRefreshPolicy = null, $ = () => null, api = async () => ({}), escapeHtml = (value) => String(value == null ? "" : value), normalizeFsPath = (value) => String(value || ""), threadMatchesWorkspaceCwd = () => false, loadThreads = async () => {}, loadThread = async () => {}, setComposerText = () => {}, scheduleCurrentDraftSave = () => {}, updateComposerControls = () => {}, composerHasContent = () => false, requestAppAlert = async () => {}, requestAppConfirmation = async () => false, loadWorkspaces = async () => {}, postClientEvent = () => {}, saveCurrentDraftNow = () => {}, syncSidebarWorkspaceSelect = () => {}, updateWorkspacePath = () => {}, renderWorkspaceTokenUsage = () => {}, isMenuOverlayMode = () => false, closeSidebarMenu = () => {}, clearCurrentThreadSelection = () => {}, restoreDraftForCurrentTarget = () => {}, renderThreads = () => {}, renderCurrentThread = () => {}, showError = () => {}, isRunningStatus = () => false, visibleThreads = (threads) => Array.isArray(threads) ? threads : [], threadById = () => null, shortPath = (value) => String(value || ""), statusText = (status) => String(status && status.type || status || ""), saveRestartAutoRecoverThreads = () => {}, postPerformanceEvent = () => {}, roundedDurationMs = (startedAt) => Math.max(0, Date.now() - Number(startedAt || Date.now())), isHermesEmbedMode = () => false, requestHermesPluginRefresh = () => {}, rememberRateLimitsFromConfig = () => {}, rememberCodexProfiles = () => {}, renderCodexProfileSettings = () => {}, stopCodexProfileSwitchProgressPolling = () => {}, publishPluginNavigationState = () => {} } = deps;
-			function appVersionText(status = state.appUpdateStatus) {
-				const version = String(status && status.version || state.appVersion || "").trim();
-				const client = clientBuildVersionText();
-				return version ? `v${version} · ${client}` : client;
-			}
-			function clientBuildVersionText(buildId = CLIENT_BUILD_ID) {
-				const text = String(buildId || "").trim();
-				const match = text.match(/\bcodex-mobile-shell-v([0-9]+)\b/);
-				if (match) return `客户端 v${match[1]}`;
-				return text ? `客户端 ${text}` : "客户端未知";
-			}
-			function renderAppUpdateStatus() {
-				const el = $("appUpdateStatus");
-				if (!el) return;
-				const status = state.appUpdateStatus || {};
-				const supported = status.supported !== false;
-				const checking = state.appUpdateBusy && !state.appUpdateRestarting;
-				const applying = Boolean(status.applying) || state.appUpdateRestarting;
-				const blocked = Boolean(status.updateAvailable && !status.canFastForward);
-				let label = appVersionText(status);
-				let title = `Check for GitHub updates；当前客户端 ${CLIENT_BUILD_ID}`;
-				if (state.appUpdateRestarting) {
-					label = "等待重启…";
-					title = "更新已应用。服务会退出并等待启动任务或守护脚本拉起；手动启动的部署需要在服务停止后手动重启。";
-				} else if (applying) {
-					label = "更新中…";
-					title = "正在拉取更新";
-				} else if (checking) {
-					label = "检查更新…";
-					title = "正在检查 GitHub 更新";
-				} else if (status.updateAvailable && status.canFastForward) {
-					label = `有更新 ${status.remoteShort || ""}`.trim();
-					title = `发现 ${status.remote || "origin"}/${status.branch || "main"} 更新，点击后确认拉取；更新后服务会退出并依赖启动任务或守护脚本重启`;
-				} else if (blocked) {
-					label = "更新受阻";
-					title = status.reason || status.error || "检测到更新，但当前工作区不能安全 fast-forward";
-				} else if (status.error) {
-					label = "更新检查失败";
-					title = status.error;
-				} else if (!supported) title = status.reason || "当前安装方式不支持 Git 自动更新";
-				else if (status.localShort) title = `${appVersionText(status)} (${status.localShort})，点击重新检查更新；当前客户端 ${CLIENT_BUILD_ID}`;
-				el.textContent = label;
-				el.title = title;
-				el.classList.toggle("hidden", !state.appVersion && !state.appUpdateStatus);
-				el.classList.toggle("available", Boolean(status.updateAvailable && status.canFastForward));
-				el.classList.toggle("blocked", blocked || Boolean(status.error));
-				el.classList.toggle("checking", checking || applying);
-				el.disabled = state.appUpdateBusy || state.appUpdateRestarting;
-			}
-			async function refreshAppUpdateStatus(options = {}) {
-				if (!state.key) return null;
-				if (state.appUpdateBusy && !options.force) return state.appUpdateStatus;
-				state.appUpdateBusy = true;
-				if (!options.silent) renderAppUpdateStatus();
-				try {
-					const params = new URLSearchParams();
-					if (options.fetch) params.set("fetch", "1");
-					if (options.force) params.set("force", "1");
-					const status = await api(`/api/app-update/status${params.toString() ? `?${params.toString()}` : ""}`, { timeoutMs: options.fetch ? 25e3 : 12e3 });
-					state.appUpdateStatus = status;
-					state.appUpdateError = status && status.error ? status.error : "";
-					return status;
-				} catch (err) {
-					state.appUpdateError = err.message || String(err);
-					state.appUpdateStatus = Object.assign({}, state.appUpdateStatus || {}, {
-						version: state.appVersion,
-						error: state.appUpdateError
-					});
-					return state.appUpdateStatus;
-				} finally {
-					state.appUpdateBusy = false;
-					renderAppUpdateStatus();
-					renderUpdatePanel();
-				}
-			}
-			function currentUpdateUsesPublicRelease(status = state.appUpdateStatus) {
-				const remoteUrl = String(status && status.remoteUrl || "").toLowerCase();
-				const repository = String(state.publicReleaseRepository || state.publicPrRepository || "").toLowerCase();
-				if (!remoteUrl || !repository) return false;
-				return remoteUrl.includes(`github.com/${repository}`) || remoteUrl.endsWith(`/${repository}.git`) || remoteUrl.endsWith(`/${repository}`);
-			}
-			function updateStatusLine(status) {
-				if (!status) return "Not checked";
-				if (state.appUpdateRestarting || status.restartScheduled) return "Restart pending";
-				if (state.appUpdateBusy || status.checking) return "Checking";
-				if (status.applying) return "Updating";
-				if (status.error) return `Error: ${status.error}`;
-				if (status.supported === false) return status.reason || "Not supported";
-				if (status.updateAvailable && status.canFastForward) return `Update available: ${status.remoteShort || status.remoteCommit || ""}`.trim();
-				if (status.updateAvailable) return `Update blocked: ${status.reason || "cannot fast-forward"}`;
-				return "Up to date";
-			}
-			function publicReleaseStatusLine(status) {
-				if (!state.publicReleaseEnabled) return "Public release check disabled";
-				if (!status) return "Not checked";
-				if (state.publicReleaseBusy || status.checking) return "Checking";
-				if (status.error) return `Error: ${status.error}`;
-				if (status.supported === false) return status.reason || "Not supported";
-				if (status.updateAvailable) return `Public latest: ${status.publicShort || ""}`.trim();
-				return "Matches Public latest";
-			}
-			function updateActionButton(action, label, options = {}) {
-				const classes = ["update-action-button"];
-				if (options.primary) classes.push("primary");
-				return `<button type="button" class="${escapeHtml(classes.join(" "))}" data-update-action="${escapeHtml(action)}" ${options.disabled ? "disabled" : ""}>${escapeHtml(label)}</button>`;
-			}
-			function publicPrHasOpenPullRequests(status) {
-				return Boolean(status && status.hasOpenPullRequests);
-			}
-			function renderUpdatePanel() {
-				const dialog = $("updateDialog");
-				const content = $("updatePanelContent");
-				if (!dialog || !content) return;
-				dialog.classList.toggle("hidden", !state.updatePanelOpen);
-				if (!state.updatePanelOpen) return;
-				const current = state.appUpdateStatus || {};
-				const release = state.publicReleaseStatus || {};
-				const publicCheckout = currentUpdateUsesPublicRelease(current) || Boolean(release.currentCheckoutUsesPublicRelease);
-				const canApplyCurrent = Boolean(current.updateAvailable && current.canFastForward && !state.appUpdateBusy && !state.appUpdateRestarting);
-				const hasPublicPrs = publicPrHasOpenPullRequests(state.publicPrStatus);
-				const publicPrActionLabel = state.publicPrBusy ? "Checking PR..." : hasPublicPrs ? "Review Public PR" : "Check PR";
-				const currentButtons = [updateActionButton("refresh-current", state.appUpdateBusy ? "Checking..." : "Check current", { disabled: state.appUpdateBusy }), updateActionButton("apply-current", publicCheckout ? "Update from Public" : "Apply current update", {
-					primary: canApplyCurrent,
-					disabled: !canApplyCurrent
-				})].join("");
-				const publicButtons = [updateActionButton("refresh-public", state.publicReleaseBusy ? "Checking..." : "Check Public", { disabled: state.publicReleaseBusy || !state.publicReleaseEnabled }), updateActionButton("public-pr", publicPrActionLabel, {
-					disabled: state.publicPrBusy || !state.publicPrEnabled,
-					primary: hasPublicPrs
-				})].join("");
-				content.innerHTML = `
-      <section class="update-card">
-        <div class="update-card-title">Current checkout</div>
-        <div class="update-row">
-          <strong>${escapeHtml(updateStatusLine(current))}</strong>
-          <span class="update-row-meta">${escapeHtml(current.remote || "origin")}/${escapeHtml(current.branch || "main")} ${escapeHtml(current.localShort || "")}${current.remoteShort ? ` -> ${escapeHtml(current.remoteShort)}` : ""}</span>
-          <span class="update-row-detail">${escapeHtml(current.reason || current.remoteUrl || "Checks the Git remote configured for this running checkout.")}</span>
-        </div>
-        <div class="update-actions">${currentButtons}</div>
-      </section>
-      <section class="update-card">
-        <div class="update-card-title">Public release</div>
-        <div class="update-row">
-          <strong>${escapeHtml(publicReleaseStatusLine(release))}</strong>
-          <span class="update-row-meta">${escapeHtml(release.repository || state.publicReleaseRepository || "")}/${escapeHtml(release.branch || state.publicReleaseBranch || "main")} ${escapeHtml(release.publicShort || "")}</span>
-          <span class="update-row-detail">${escapeHtml(publicCheckout ? "This checkout tracks Public, so the current update button applies Public fast-forward updates." : "This checkout does not track Public; Public latest is shown for reference here.")}</span>
-        </div>
-        <div class="update-actions">${publicButtons}</div>
-      </section>`;
-			}
-			async function refreshPublicReleaseStatus(options = {}) {
-				if (!state.key || !state.publicReleaseEnabled) return null;
-				if (state.publicReleaseBusy && !options.force) return state.publicReleaseStatus;
-				state.publicReleaseBusy = true;
-				renderUpdatePanel();
-				try {
-					const params = new URLSearchParams();
-					if (options.force) params.set("force", "1");
-					const status = await api(`/api/public-release/status${params.toString() ? `?${params.toString()}` : ""}`, { timeoutMs: 18e3 });
-					state.publicReleaseStatus = status;
-					return status;
-				} catch (err) {
-					state.publicReleaseStatus = Object.assign({}, state.publicReleaseStatus || {}, {
-						enabled: state.publicReleaseEnabled,
-						repository: state.publicReleaseRepository,
-						branch: state.publicReleaseBranch,
-						error: err.message || String(err)
-					});
-					return state.publicReleaseStatus;
-				} finally {
-					state.publicReleaseBusy = false;
-					renderUpdatePanel();
-				}
-			}
-			function openUpdatePanel() {
-				state.updatePanelOpen = true;
-				renderUpdatePanel();
-				publishPluginNavigationState({ force: true });
-				refreshAppUpdateStatus({
-					fetch: true,
-					force: true,
-					silent: true
-				}).then(renderUpdatePanel).catch(() => renderUpdatePanel());
-				refreshPublicReleaseStatus({ force: true }).catch(() => renderUpdatePanel());
-			}
-			function closeUpdatePanel() {
-				state.updatePanelOpen = false;
-				renderUpdatePanel();
-				publishPluginNavigationState({ force: true });
-			}
-			function handleUpdatePanelClick(event) {
-				const button = event.target && event.target.closest("[data-update-action]");
-				if (!button) return;
-				const action = button.dataset.updateAction;
-				if (action === "refresh-current") refreshAppUpdateStatus({
-					fetch: true,
-					force: true,
-					silent: true
-				}).then(renderUpdatePanel).catch(showError);
-				else if (action === "apply-current") handleAppUpdateClick().then(renderUpdatePanel).catch(showError);
-				else if (action === "refresh-public") refreshPublicReleaseStatus({ force: true }).catch(showError);
-				else if (action === "public-pr") handlePublicPrStatusClick().catch(showError);
-			}
-			function scheduleStartupUpdateCheck() {
-				if (!state.key) return;
-				window.setTimeout(() => {
-					refreshAppUpdateStatus({
-						fetch: true,
-						force: true,
-						silent: true
-					}).catch(() => {});
-				}, 900);
-			}
-			function publicPrPromptKey(status) {
-				if (!publicPrHasOpenPullRequests(status)) return "";
-				const pullRequests = Array.isArray(status.pullRequests) ? status.pullRequests : [];
-				const marker = pullRequests.map((pr) => `#${pr.number || ""}:${pr.updatedAt || ""}`).filter(Boolean).join("|");
-				return `${status.repository || ""}|${status.openPullRequestCount || pullRequests.length}|${marker}`;
-			}
-			function publicPrSummaryText(status) {
-				const pullRequests = Array.isArray(status && status.pullRequests) ? status.pullRequests : [];
-				if (!pullRequests.length) return "";
-				return pullRequests.map((pr) => `#${pr.number} ${pr.title || ""}`.trim()).join("; ");
-			}
-			function normalizedPublicPrReviewTitle(value) {
-				return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
-			}
-			function publicPrReviewThreadTitle() {
-				return PUBLIC_PR_REVIEW_THREAD_TITLE;
-			}
-			function findPublicPrReviewThread(workspacePath = "") {
-				const titleKey = normalizedPublicPrReviewTitle(publicPrReviewThreadTitle());
-				const workspace = String(workspacePath || "").trim();
-				return state.threads.find((thread) => {
-					if (!thread || !thread.id) return false;
-					if (normalizedPublicPrReviewTitle(thread.name || thread.title || thread.preview || "") !== titleKey) return false;
-					return !workspace || threadMatchesWorkspaceCwd(thread.cwd || "", workspace);
-				}) || null;
-			}
-			function workspacePathBaseName(value) {
-				const text = String(value || "").trim().replace(/[\\/]+$/, "");
-				if (!text) return "";
-				const parts = text.split(/[\\/]+/).filter(Boolean);
-				return parts[parts.length - 1] || "";
-			}
-			function workspacePathIsVisible(value) {
-				const key = normalizeFsPath(value);
-				if (!key) return false;
-				return (state.workspaces || []).some((workspace) => normalizeFsPath(workspace && workspace.cwd) === key);
-			}
-			function visibleWorkspaceWithBaseName(value) {
-				const baseName = workspacePathBaseName(value).toLowerCase();
-				if (!baseName) return "";
-				const match = (state.workspaces || []).find((workspace) => workspace && workspace.cwd && workspacePathBaseName(workspace.cwd).toLowerCase() === baseName);
-				return match ? String(match.cwd || "").trim() : "";
-			}
-			function publicPrReviewWorkspacePath() {
-				const appWorkspace = String(state.appWorkspacePath || "").trim();
-				if (workspacePathIsVisible(appWorkspace)) return appWorkspace;
-				const sameNameWorkspace = visibleWorkspaceWithBaseName(appWorkspace);
-				if (sameNameWorkspace) return sameNameWorkspace;
-				const selectedWorkspace = String(state.selectedCwd || "").trim();
-				if (workspacePathIsVisible(selectedWorkspace)) return selectedWorkspace;
-				const currentWorkspace = String(state.currentThread && state.currentThread.cwd || "").trim();
-				if (workspacePathIsVisible(currentWorkspace)) return currentWorkspace;
-				return appWorkspace || selectedWorkspace || currentWorkspace;
-			}
-			async function openPublicPrReviewThreadIfAvailable(workspacePath, text) {
-				let target = findPublicPrReviewThread(workspacePath);
-				if (!target) {
-					try {
-						await loadThreads({ silent: true });
-					} catch (err) {
-						postClientEvent("public_pr_reuse_lookup_failed", { message: err.message || String(err) });
-					}
-					target = findPublicPrReviewThread(workspacePath);
-				}
-				if (!target || !target.id) return false;
-				await loadThread(target.id, { source: "public-pr" });
-				setComposerText(text);
-				scheduleCurrentDraftSave();
-				updateComposerControls();
-				return true;
-			}
-			function renderPublicPrStatus() {
-				const el = $("publicPrStatus");
-				if (!el) return;
-				const status = state.publicPrStatus || {};
-				const enabled = state.publicPrEnabled && status.enabled !== false;
-				const checking = state.publicPrBusy || Boolean(status.checking);
-				const hasPrs = publicPrHasOpenPullRequests(status);
-				const blocked = Boolean(status.error || status.supported === false);
-				let label = "Public PR";
-				let title = state.publicPrRepository ? `Check ${state.publicPrRepository} pull requests` : "Check public pull requests";
-				if (checking) {
-					label = "PR...";
-					title = "Checking public pull requests";
-				} else if (hasPrs) {
-					label = `PR ${status.openPullRequestCount || (status.pullRequests || []).length}`;
-					title = `Open public PRs: ${publicPrSummaryText(status) || label}`;
-				} else if (status.checkedAt && enabled) {
-					label = "No PR";
-					title = `No open public PRs in ${status.repository || state.publicPrRepository || "public repo"}`;
-				} else if (blocked) {
-					label = "PR ?";
-					title = status.error || status.reason || "Public PR check is unavailable";
-				}
-				el.textContent = label;
-				el.title = title;
-				el.classList.toggle("hidden", !checking && !hasPrs && !blocked);
-				el.classList.toggle("available", hasPrs);
-				el.classList.toggle("blocked", blocked);
-				el.classList.toggle("checking", checking);
-				el.disabled = state.publicPrBusy;
-			}
-			async function refreshPublicPrStatus(options = {}) {
-				if (!state.key || !state.publicPrEnabled) return null;
-				if (state.publicPrBusy && !options.force) return state.publicPrStatus;
-				state.publicPrBusy = true;
-				if (!options.silent) renderPublicPrStatus();
-				try {
-					const params = new URLSearchParams();
-					if (options.force) params.set("force", "1");
-					const status = await api(`/api/public-pull-requests/status${params.toString() ? `?${params.toString()}` : ""}`, { timeoutMs: 18e3 });
-					state.publicPrStatus = status;
-					state.publicPrError = status && status.error ? status.error : "";
-					if (!options.skipPrompt) maybePromptPublicPrMerge(status);
-					return status;
-				} catch (err) {
-					state.publicPrError = err.message || String(err);
-					state.publicPrStatus = Object.assign({}, state.publicPrStatus || {}, {
-						enabled: state.publicPrEnabled,
-						repository: state.publicPrRepository,
-						hasOpenPullRequests: false,
-						openPullRequestCount: 0,
-						pullRequests: [],
-						error: state.publicPrError
-					});
-					return state.publicPrStatus;
-				} finally {
-					state.publicPrBusy = false;
-					renderPublicPrStatus();
-					renderUpdatePanel();
-				}
-			}
-			function scheduleStartupPublicPrCheck() {
-				if (!state.key || !state.publicPrEnabled) return;
-				window.setTimeout(() => {
-					refreshPublicPrStatus({
-						force: true,
-						silent: true
-					}).catch(() => {});
-				}, 1600);
-			}
-			function publicPrMergeInstruction(status) {
-				const summary = publicPrSummaryText(status);
-				return [
-					`请检查 public 仓库 ${status && status.repository || state.publicPrRepository || "pentiumxp/codex-mobile-web-public"} 的开放 PR${summary ? `：${summary}` : ""}。`,
-					"按当前项目规则先评估 PR 是否可合并；如要合并，更新 public README 的中文发布说明，运行验证和隐私扫描，再提交并推送 public。",
-					"不要复制 .agent-context、runtime state、本地密钥、上传内容或机器特定诊断。完成 public 后再同步回 private 并重新验证。"
-				].join("\n");
-			}
-			function publicPrMergeConfirmationMessage(status) {
-				return [
-					`检测到 public 仓库有 ${status.openPullRequestCount || (status.pullRequests || []).length} 个开放 PR。`,
-					publicPrSummaryText(status),
-					"",
-					"是否准备一条合并/发布检查任务？"
-				].filter(Boolean).join("\n");
-			}
-			async function preparePublicPrMergePrompt(status) {
-				const text = publicPrMergeInstruction(status);
-				if (composerHasContent()) {
-					await requestAppAlert("检测到 public 开放 PR，但输入框已有内容。请处理当前草稿后点击 Public PR 按钮。", { title: "Public PR" });
-					return;
-				}
-				if (!state.workspaces.length) await loadWorkspaces().catch((err) => {
-					postClientEvent("public_pr_workspace_lookup_failed", { message: err.message || String(err) });
-				});
-				const workspacePath = publicPrReviewWorkspacePath();
-				if (!workspacePath) {
-					setComposerText(text);
-					scheduleCurrentDraftSave();
-					updateComposerControls();
-					return;
-				}
-				saveCurrentDraftNow();
-				state.selectedCwd = workspacePath;
-				syncSidebarWorkspaceSelect();
-				updateWorkspacePath();
-				renderWorkspaceTokenUsage();
-				if (await openPublicPrReviewThreadIfAvailable(workspacePath, text)) {
-					if (isMenuOverlayMode()) closeSidebarMenu();
-					return;
-				}
-				clearCurrentThreadSelection({ saveDraft: false });
-				state.selectedCwd = workspacePath;
-				state.newThreadDraft = true;
-				state.newThreadTitle = publicPrReviewThreadTitle();
-				state.sendButtonHint = "";
-				restoreDraftForCurrentTarget();
-				state.newThreadTitle = publicPrReviewThreadTitle();
-				setComposerText(text);
-				syncSidebarWorkspaceSelect();
-				updateWorkspacePath();
-				renderWorkspaceTokenUsage();
-				renderThreads();
-				renderCurrentThread();
-				updateComposerControls();
-				scheduleCurrentDraftSave();
-				if (isMenuOverlayMode()) closeSidebarMenu();
-			}
-			function rememberPublicPrPrompt(status) {
-				const key = publicPrPromptKey(status);
-				if (!key) return;
-				state.publicPrPromptedKey = key;
-				localStorage.setItem(STORAGE_PUBLIC_PR_PROMPT, key);
-			}
-			function maybePromptPublicPrMerge(status) {
-				if (!publicPrHasOpenPullRequests(status)) return;
-				const key = publicPrPromptKey(status);
-				if (!key || key === state.publicPrPromptedKey) return;
-				rememberPublicPrPrompt(status);
-				requestAppConfirmation(publicPrMergeConfirmationMessage(status), {
-					title: "Public PR",
-					confirmLabel: "准备任务",
-					cancelLabel: "稍后"
-				}).then((confirmed) => {
-					if (confirmed) preparePublicPrMergePrompt(status).catch(showError);
-				}).catch(showError);
-			}
-			async function handlePublicPrStatusClick() {
-				if (state.publicPrBusy) return;
-				const status = await refreshPublicPrStatus({
-					force: true,
-					skipPrompt: true
-				});
-				if (!status) return;
-				if (status.error && !publicPrHasOpenPullRequests(status)) {
-					await requestAppAlert(`public PR 检查失败：${status.error}`, { title: "Public PR" });
-					return;
-				}
-				if (!publicPrHasOpenPullRequests(status)) {
-					await requestAppAlert("当前未检测到 public 开放 PR。", { title: "Public PR" });
-					return;
-				}
-				const confirmed = await requestAppConfirmation(publicPrMergeConfirmationMessage(status), {
-					title: "Public PR",
-					confirmLabel: "准备任务",
-					cancelLabel: "稍后"
-				});
-				rememberPublicPrPrompt(status);
-				if (confirmed) await preparePublicPrMergePrompt(status);
-			}
-			async function handleAppUpdateClick() {
-				if (state.appUpdateBusy || state.appUpdateRestarting) return;
-				let status = state.appUpdateStatus;
-				if (!status || !status.updateAvailable && !status.error) status = await refreshAppUpdateStatus({
-					fetch: true,
-					force: true
-				});
-				if (!status) return;
-				if (status.supported === false) {
-					await requestAppAlert(`当前安装方式不支持自动更新：${status.reason || "没有可用的 Git 远程分支"}`, { title: "更新检查" });
-					return;
-				}
-				if (status.error && !status.updateAvailable) {
-					await requestAppAlert(`更新检查失败：${status.error}`, { title: "更新检查" });
-					return;
-				}
-				if (!status.updateAvailable) {
-					await requestAppAlert("当前已经是最新版本。", { title: "更新检查" });
-					return;
-				}
-				if (!status.canFastForward) {
-					await requestAppAlert(`检测到更新，但不能自动应用：${status.reason || status.error || "当前工作区不是干净的 fast-forward 状态"}`, { title: "更新检查" });
-					return;
-				}
-				if (!await requestAppConfirmation([
-					"发现 GitHub 更新。是否拉取并重启 Mobile Web？",
-					"",
-					"仅在当前仓库干净、可 fast-forward 时执行；运行时数据和 Access Key 不会被覆盖。",
-					"更新完成后当前 Node 服务会退出。只有通过 Windows 启动任务、windowless supervisor 或 macOS shared launcher 运行时才会自动拉起；手动运行 node/npm start 的部署需要手动重启。"
-				].join("\n"), {
-					title: "应用更新",
-					confirmLabel: "更新并重启",
-					cancelLabel: "取消"
-				})) return;
-				state.appUpdateBusy = true;
-				renderAppUpdateStatus();
-				try {
-					const result = await api("/api/app-update/apply", {
-						method: "POST",
-						body: "{}",
-						timeoutMs: 15e4
-					});
-					state.appUpdateStatus = result.after || result.status || status;
-					if (result.updated) {
-						state.appUpdateRestarting = true;
-						$("connectionState").textContent = "更新已应用；如连接断开且未自动恢复，请在部署机手动重启";
-						renderAppUpdateStatus();
-						window.setTimeout(() => window.location.reload(), Math.max(1800, Number(result.restartInMs || 1200) + 900));
-					} else await requestAppAlert("当前已经是最新版本。", { title: "更新检查" });
-				} catch (err) {
-					state.appUpdateError = err.message || String(err);
-					state.appUpdateStatus = Object.assign({}, status || {}, { error: state.appUpdateError });
-					showError(err);
-				} finally {
-					state.appUpdateBusy = false;
-					renderAppUpdateStatus();
-					renderUpdatePanel();
-				}
-			}
-			function renderSharedRestartButton() {
-				const el = $("sharedRestartButton");
-				if (!el) return;
-				const restarting = state.sharedRestarting;
-				el.textContent = restarting ? "Restarting" : "Restart";
-				el.title = restarting ? "Mobile Web is restarting" : "Restart Mobile Web shared chain";
-				el.disabled = state.sharedRestartBusy || restarting;
-				el.classList.toggle("checking", state.sharedRestartBusy || restarting);
-			}
-			function renderHardRefreshButton() {
-				const el = $("hardRefreshButton");
-				if (!el) return;
-				const reloading = state.pageRefreshReloading;
-				el.textContent = reloading ? "刷新中" : "硬刷新";
-				el.title = reloading ? "Refreshing the current PWA page shell" : "Fetch current page assets, update the service worker, and reload this PWA page";
-				el.disabled = reloading;
-				el.classList.toggle("checking", reloading);
-			}
-			function markBootReady() {
-				const boot = window.codexMobileBoot;
-				if (boot && typeof boot.ready === "function") boot.ready();
-			}
-			function reportShellLoaded(startedAt, details = {}) {
-				if (state.shellLoadedReported) return;
-				state.shellLoadedReported = true;
-				postPerformanceEvent("shell_loaded", Object.assign({
-					elapsedMs: roundedDurationMs(startedAt),
-					buildId: CLIENT_BUILD_ID,
-					hasThreadOpenIntent: Boolean(state.startupThreadOpenPending)
-				}, details || {}), { force: true });
-			}
-			function sharedRestartScopeLines() {
-				return state.serverPlatform === "darwin" ? ["这会短暂断开当前页面连接，并重启这台 Mac 上的 Mobile Web 服务。", "不会重启 Codex Desktop、shared mux 或其它本机服务。"] : ["这会短暂断开当前页面连接，并重启 Mobile Web、shared mux 和本地 app-server。", "不会重启 WSL、Codex Desktop 或其它本机服务。"];
-			}
-			function restartRiskThreads(threads) {
-				const seen = /* @__PURE__ */ new Set();
-				const result = [];
-				for (const thread of threads || []) {
-					const id = String(thread && thread.id || "");
-					if (!id || seen.has(id) || !isRunningStatus(thread.status)) continue;
-					seen.add(id);
-					result.push(thread);
-				}
-				if (state.currentThreadId && state.activeTurnId && !seen.has(String(state.currentThreadId))) {
-					const current = state.currentThread || threadById(state.currentThreadId) || {
-						id: state.currentThreadId,
-						name: "Current session",
-						status: { type: "active" }
-					};
-					result.unshift(current);
-				}
-				return result;
-			}
-			async function fetchRestartRiskThreads() {
-				const params = new URLSearchParams({
-					limit: "200",
-					archived: "false"
-				});
-				const result = await api(`/api/threads?${params}`, { timeoutMs: 45e3 });
-				return restartRiskThreads(visibleThreads(result.data || []));
-			}
-			function restartRiskThreadTitle(thread) {
-				return String(thread && (thread.name || thread.preview || thread.id) || "Untitled session").trim();
-			}
-			function restartRiskThreadMeta(thread) {
-				const parts = [];
-				const cwd = shortPath(thread && thread.cwd);
-				if (cwd) parts.push(cwd);
-				const status = statusText(thread && thread.status);
-				if (status) parts.push(status);
-				return parts.join(" | ");
-			}
-			function renderSharedRestartDialog() {
-				const dialog = $("restartConfirmDialog");
-				const subtitle = $("restartConfirmSubtitle");
-				const content = $("restartConfirmContent");
-				const proceed = $("restartConfirmProceed");
-				if (!dialog || !content || !subtitle || !proceed) return;
-				dialog.classList.toggle("hidden", !state.sharedRestartDialogOpen);
-				if (!state.sharedRestartDialogOpen) {
-					content.innerHTML = "";
-					return;
-				}
-				const riskThreads = state.sharedRestartRiskThreads || [];
-				const hasRisk = riskThreads.length > 0;
-				subtitle.textContent = hasRisk ? `${riskThreads.length} running session${riskThreads.length === 1 ? "" : "s"} may be interrupted` : "No running sessions were found";
-				proceed.textContent = hasRisk ? "仍然重启" : "Restart";
-				proceed.classList.toggle("danger", hasRisk);
-				const scopeHtml = (state.sharedRestartScopeLines || []).map((line) => `<div class="restart-confirm-line">${escapeHtml(line)}</div>`).join("");
-				const riskHtml = hasRisk ? `<div class="restart-risk-block">
-          <div class="restart-risk-title">Running sessions</div>
-          <div class="restart-risk-list">
-            ${riskThreads.slice(0, 6).map((thread) => {
-					const meta = restartRiskThreadMeta(thread);
-					return `<div class="restart-risk-item">
-                <div class="restart-risk-item-title">${escapeHtml(restartRiskThreadTitle(thread))}</div>
-                ${meta ? `<div class="restart-risk-item-meta">${escapeHtml(meta)}</div>` : ""}
-              </div>`;
-				}).join("")}
-            ${riskThreads.length > 6 ? `<div class="restart-risk-more">另有 ${escapeHtml(String(riskThreads.length - 6))} 个 running session</div>` : ""}
-          </div>
-        </div>` : `<div class="restart-safe-block">当前没有检测到 running session。重启仍会短暂断开本页面连接。</div>`;
-				content.innerHTML = `
-      <div class="restart-confirm-message">
-        ${hasRisk ? "重启可能会打断正在通过 Codex Mobile 同步或运行的 session。建议等它们结束后再重启。" : "确认重启 Codex Mobile Web？"}
-      </div>
-      ${riskHtml}
-      <div class="restart-confirm-scope">${scopeHtml}</div>
-    `;
-			}
-			function closeSharedRestartDialog(confirmed = false) {
-				const resolve = state.sharedRestartConfirmResolve;
-				state.sharedRestartDialogOpen = false;
-				state.sharedRestartRiskThreads = [];
-				state.sharedRestartScopeLines = [];
-				state.sharedRestartConfirmResolve = null;
-				renderSharedRestartDialog();
-				if (resolve) resolve(Boolean(confirmed));
-			}
-			function requestSharedRestartConfirmation(riskThreads, scopeLines) {
-				if (state.sharedRestartConfirmResolve) closeSharedRestartDialog(false);
-				state.sharedRestartRiskThreads = riskThreads || [];
-				state.sharedRestartScopeLines = scopeLines || [];
-				state.sharedRestartDialogOpen = true;
-				renderSharedRestartDialog();
-				return new Promise((resolve) => {
-					state.sharedRestartConfirmResolve = resolve;
-				});
-			}
-			async function handleSharedRestartClick() {
-				if (state.sharedRestartBusy || state.sharedRestarting) return;
-				state.sharedRestartBusy = true;
-				renderSharedRestartButton();
-				try {
-					const riskThreads = await fetchRestartRiskThreads();
-					if (!await requestSharedRestartConfirmation(riskThreads, sharedRestartScopeLines())) return;
-					saveRestartAutoRecoverThreads(riskThreads);
-					state.appServerWasUnavailable = true;
-					await api("/api/restart/shared-chain", {
-						method: "POST",
-						body: "{}",
-						timeoutMs: 12e3
-					});
-					state.sharedRestarting = true;
-					state.sharedRestartBusy = false;
-					showReconnectRefreshPrompt("restart");
-					const connection = $("connectionState");
-					if (connection) connection.textContent = "Restarting";
-					renderSharedRestartButton();
-				} catch (err) {
-					showError(err);
-				} finally {
-					if (!state.sharedRestarting) {
-						state.sharedRestartBusy = false;
-						renderSharedRestartButton();
-					}
-				}
-			}
-			function serverBuildIdFromConfig(config) {
-				return String(config && (config.clientBuildId || config.shellCacheName || config.buildId) || "").trim();
-			}
-			function shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
-				if (buildRefreshPolicy && typeof buildRefreshPolicy.shouldPromptForServerBuildChange === "function") return buildRefreshPolicy.shouldPromptForServerBuildChange(serverBuildId, clientBuildId);
-				return Boolean(serverBuildId && clientBuildId && serverBuildId !== clientBuildId);
-			}
-			function pageShellAssetUrl(asset, buildId) {
-				const url = new URL(asset, window.location.origin);
-				url.searchParams.set("shellBuild", buildId || "current");
-				url.searchParams.set("shellCheck", String(Date.now()));
-				return url.href;
-			}
-			function validatePageShellAsset(asset, text, config) {
-				const buildId = serverBuildIdFromConfig(config);
-				const shellCacheName = String(config && config.shellCacheName || "").trim();
-				if (asset === "/" || asset === "/index.html") return text.includes("href=\"/styles.css\"") && text.includes("src=\"/app.js\"");
-				if (asset === "/styles.css") return text.includes(".app") && text.includes(".composer");
-				if (asset === "/app.js") return !buildId || text.includes(buildId) || text.includes(shellCacheName);
-				if (asset === "/sw.js") return text.includes("shell-asset-manifest.js");
-				return true;
-			}
-			async function fetchPageShellAsset(asset, config) {
-				const response = await fetch(pageShellAssetUrl(asset, serverBuildIdFromConfig(config)), {
-					cache: "no-store",
-					credentials: "same-origin"
-				});
-				if (!response.ok) throw new Error(`page shell asset unavailable: ${asset}`);
-				if (asset === "/" || asset.endsWith(".html") || asset.endsWith(".css") || asset.endsWith(".js") || asset.endsWith(".json") || asset.endsWith(".svg")) {
-					if (!validatePageShellAsset(asset, await response.clone().text(), config)) throw new Error(`page shell asset stale: ${asset}`);
-				}
-				return response;
-			}
-			async function preparePageShellAssets(config, options = {}) {
-				const populateCache = Boolean(options.populateCache);
-				const shellCacheName = String(config && config.shellCacheName || "").trim();
-				const cache = populateCache && shellCacheName && "caches" in window ? await window.caches.open(shellCacheName) : null;
-				for (const asset of PAGE_SHELL_ASSETS) {
-					const response = await fetchPageShellAsset(asset, config);
-					if (cache) await cache.put(asset, response.clone());
-				}
-			}
-			async function fetchPageBuildConfig() {
-				const response = await fetch(`/api/public-config?buildCheck=${Date.now()}`, {
-					cache: "no-store",
-					credentials: "same-origin"
-				});
-				if (!response.ok) return null;
-				return response.json();
-			}
-			async function pruneOldShellCaches(expectedCacheName) {
-				if (!expectedCacheName || !("caches" in window)) return;
-				const keys = await window.caches.keys();
-				await Promise.all(keys.filter((key) => String(key || "").startsWith("codex-mobile-shell-") && key !== expectedCacheName).map((key) => window.caches.delete(key)));
-			}
-			async function clearAllShellCaches() {
-				if (!("caches" in window)) return;
-				const keys = await window.caches.keys();
-				await Promise.all(keys.filter((key) => String(key || "").startsWith("codex-mobile-shell-")).map((key) => window.caches.delete(key)));
-			}
-			async function resetPageShellServiceWorker() {
-				if (!("serviceWorker" in navigator)) return null;
-				const registrations = await navigator.serviceWorker.getRegistrations();
-				await Promise.all(registrations.map((registration) => registration.unregister().catch(() => false)));
-				state.serviceWorkerRegistration = null;
-				const registration = await navigator.serviceWorker.register("/sw.js");
-				if (registration && registration.update) await registration.update().catch(() => {});
-				state.serviceWorkerRegistration = registration || null;
-				return registration || null;
-			}
-			function pageReloadUrlWithBust() {
-				const url = new URL(window.location.href, window.location.origin);
-				url.searchParams.set("shellReload", String(Date.now()));
-				return url.href;
-			}
-			function initializePageBuildState(config) {
-				state.serverBuildId = CLIENT_BUILD_ID || serverBuildIdFromConfig(config);
-				state.serverAssetBuildId = String(config && config.buildId || "").trim();
-				const currentServerBuildId = serverBuildIdFromConfig(config);
-				if (shouldPromptForServerBuildChange(currentServerBuildId, state.serverBuildId)) {
-					state.pageRefreshBuildId = currentServerBuildId;
-					state.pageRefreshReason = "build";
-					state.pageRefreshAvailable = true;
-					state.pageRefreshPreparedConfig = config || null;
-					if (isHermesEmbedMode()) {
-						requestHermesPluginRefresh("server_build_changed", { force: true });
-						return;
-					}
-				}
-				renderPageRefreshPrompt();
-			}
-			function renderPageRefreshPrompt() {
-				const el = $("pageRefreshPrompt");
-				if (!el) return;
-				const restarting = state.pageRefreshReason === "restart";
-				const reconnecting = state.pageRefreshReason === "reconnect" || restarting;
-				el.classList.toggle("hidden", !state.pageRefreshAvailable && !state.pageRefreshReloading);
-				el.disabled = state.pageRefreshReloading;
-				if (state.pageRefreshReloading) el.textContent = restarting ? "Waiting for service, then refreshing..." : reconnecting ? "Refreshing and reconnecting..." : "Refreshing page...";
-				else el.textContent = restarting ? "Service restarted. Tap to refresh." : reconnecting ? "Connection changed. Tap to refresh." : "New version available. Tap to refresh.";
-				el.title = restarting || reconnecting ? "Manual refresh only; the page will not reload until this button is tapped." : state.pageRefreshBuildId ? `Server version is ${state.pageRefreshBuildId}. Tap to refresh manually.` : "Server page assets changed. Tap to refresh manually.";
-				renderHardRefreshButton();
-			}
-			async function handleHardRefreshClick() {
-				if (state.pageRefreshReloading) return;
-				state.pageRefreshPreparedConfig = null;
-				state.pageRefreshReason = "build";
-				state.pageRefreshAvailable = true;
-				await refreshPageForNewBuild();
-			}
-			function showReconnectRefreshPrompt(reason = "reconnect") {
-				if (state.pageRefreshReloading) return;
-				if (isHermesEmbedMode() && reason !== "restart") return;
-				state.pageRefreshAvailable = true;
-				state.pageRefreshReason = reason === "restart" ? "restart" : "reconnect";
-				state.pageRefreshPreparedConfig = null;
-				renderPageRefreshPrompt();
-			}
-			function codexProfileHasQuotaSnapshot(profile) {
-				const quota = profile && typeof profile === "object" ? profile.quota : null;
-				if (!quota || typeof quota !== "object") return false;
-				if (quota.rateLimits && typeof quota.rateLimits === "object") return true;
-				const byModel = quota.rateLimitsByModel;
-				return Boolean(byModel && typeof byModel === "object" && Object.keys(byModel).length);
-			}
-			function codexProfileRestartReadyForCompletion() {
-				const targetId = String(state.codexProfileSwitchTargetId || "");
-				if (!state.codexProfileRestarting || !targetId) return true;
-				if (!state.activeCodexProfileId || targetId !== state.activeCodexProfileId) return false;
-				const activeProfile = (Array.isArray(state.codexProfiles) ? state.codexProfiles : []).find((profile) => String(profile && profile.id || "") === targetId);
-				if (!activeProfile || !codexProfileHasQuotaSnapshot(activeProfile)) {
-					state.codexProfileSwitchStage = "服务已恢复，正在等待目标账号额度刷新...";
-					const connection = $("connectionState");
-					if (connection) connection.textContent = state.codexProfileSwitchStage;
-					renderCodexProfileSettings();
-					return false;
-				}
-				return true;
-			}
-			function finishRestartingUiIfReady() {
-				if (!codexProfileRestartReadyForCompletion()) return false;
-				const changed = Boolean(state.codexProfileRestarting || state.sharedRestarting || state.codexProfileSwitchTargetId || state.codexProfileSwitchStage);
-				stopCodexProfileSwitchProgressPolling();
-				state.codexProfileRestarting = false;
-				state.codexProfileSwitchTargetId = "";
-				state.codexProfileSwitchStage = "";
-				state.codexProfileSwitchRequestId = "";
-				state.sharedRestarting = false;
-				state.sharedRestartBusy = false;
-				if (changed) {
-					renderCodexProfileSettings();
-					renderSharedRestartButton();
-				}
-				return changed;
-			}
-			function clearReconnectRefreshPrompt() {
-				if (!(state.pageRefreshReason === "reconnect" || state.pageRefreshReason === "restart") || state.pageRefreshReloading) return;
-				state.pageRefreshAvailable = false;
-				state.pageRefreshReason = "";
-				state.pageRefreshPreparedConfig = null;
-				finishRestartingUiIfReady();
-				renderPageRefreshPrompt();
-			}
-			async function checkPageRefreshAvailability(options = {}) {
-				if (state.pageRefreshReloading) return;
-				const now = Date.now();
-				if (state.pageRefreshBusy) return;
-				if (!options.force && now - state.pageRefreshLastCheckAt < PAGE_REFRESH_MIN_CHECK_INTERVAL_MS) return;
-				state.pageRefreshBusy = true;
-				state.pageRefreshLastCheckAt = now;
-				try {
-					const config = await fetchPageBuildConfig();
-					if (!config) return;
-					const nextBuildId = serverBuildIdFromConfig(config);
-					const nextAssetBuildId = String(config && config.buildId || "").trim();
-					if (!state.serverBuildId) {
-						state.serverBuildId = CLIENT_BUILD_ID || nextBuildId;
-						state.serverAssetBuildId = nextAssetBuildId;
-						return;
-					}
-					const serverBuildNeedsRefresh = Boolean(nextBuildId && nextBuildId !== state.serverBuildId) && shouldPromptForServerBuildChange(nextBuildId, state.serverBuildId);
-					if (Boolean(nextAssetBuildId && state.serverAssetBuildId && nextAssetBuildId !== state.serverAssetBuildId) && !serverBuildNeedsRefresh) {
-						state.serverAssetBuildId = nextAssetBuildId;
-						return;
-					}
-					if (serverBuildNeedsRefresh) {
-						if (isHermesEmbedMode()) {
-							state.pageRefreshBuildId = nextBuildId;
-							state.pageRefreshPreparedConfig = config;
-							requestHermesPluginRefresh("server_build_changed");
-							return;
-						}
-						state.pageRefreshAvailable = true;
-						state.pageRefreshReason = "build";
-						state.pageRefreshBuildId = nextBuildId;
-						state.pageRefreshPreparedConfig = config;
-						renderPageRefreshPrompt();
-					}
-				} catch (_) {} finally {
-					state.pageRefreshBusy = false;
-				}
-			}
-			function schedulePageRefreshCheck(delayMs = 0, options = {}) {
-				window.setTimeout(() => {
-					checkPageRefreshAvailability(options).catch(() => {});
-				}, Math.max(0, Number(delayMs || 0)));
-			}
-			function scheduleVisiblePageRefreshCheck(delayMs = 0, options = {}) {
-				if (document.visibilityState === "hidden") return;
-				schedulePageRefreshCheck(delayMs, options);
-			}
-			function startPageRefreshChecks() {
-				if (state.pageRefreshTimer) clearInterval(state.pageRefreshTimer);
-				state.pageRefreshTimer = window.setInterval(() => {
-					if (document.visibilityState === "hidden") return;
-					checkPageRefreshAvailability({ silent: true }).catch(() => {});
-				}, PAGE_REFRESH_CHECK_INTERVAL_MS);
-			}
-			async function waitForPageBuildConfig(timeoutMs = 18e3) {
-				const startedAt = Date.now();
-				let lastError = null;
-				while (Date.now() - startedAt < timeoutMs) {
-					try {
-						const config = await fetchPageBuildConfig();
-						if (config) return config;
-					} catch (err) {
-						lastError = err;
-					}
-					await new Promise((resolve) => setTimeout(resolve, 900));
-				}
-				throw lastError || /* @__PURE__ */ new Error("Mobile Web is still unavailable");
-			}
-			async function refreshPageForNewBuild() {
-				if (state.pageRefreshReloading) return;
-				state.pageRefreshReloading = true;
-				renderPageRefreshPrompt();
-				saveCurrentDraftNow();
-				let config = state.pageRefreshPreparedConfig;
-				try {
-					const reconnectRefresh = state.pageRefreshReason === "reconnect" || state.pageRefreshReason === "restart";
-					const latestConfig = reconnectRefresh ? await waitForPageBuildConfig() : await fetchPageBuildConfig();
-					if (latestConfig) config = latestConfig;
-					if (!config) throw new Error("page refresh build config unavailable");
-					const nextBuildId = serverBuildIdFromConfig(config);
-					const currentBuildId = state.serverBuildId || CLIENT_BUILD_ID || nextBuildId;
-					if (reconnectRefresh && !shouldPromptForServerBuildChange(nextBuildId, currentBuildId)) {
-						state.serverBuildId = currentBuildId || nextBuildId;
-						state.serverAssetBuildId = String(config && config.buildId || state.serverAssetBuildId || "").trim();
-						rememberRateLimitsFromConfig(config);
-						rememberCodexProfiles(config && config.codexProfiles || null);
-						const restartFinished = finishRestartingUiIfReady();
-						state.pageRefreshReloading = false;
-						state.pageRefreshAvailable = !restartFinished && state.codexProfileRestarting;
-						state.pageRefreshReason = state.pageRefreshAvailable ? "restart" : "";
-						state.pageRefreshPreparedConfig = null;
-						renderPageRefreshPrompt();
-						return;
-					}
-					rememberRateLimitsFromConfig(config);
-					rememberCodexProfiles(config && config.codexProfiles || null);
-					await clearAllShellCaches();
-					if (config) await preparePageShellAssets(config, { populateCache: true });
-					await resetPageShellServiceWorker();
-					await pruneOldShellCaches(String(config && config.shellCacheName || "").trim());
-					window.location.replace(pageReloadUrlWithBust());
-				} catch (_) {
-					state.pageRefreshReloading = false;
-					state.pageRefreshPreparedConfig = null;
-					if (state.pageRefreshReason !== "reconnect" && state.pageRefreshReason !== "restart") {
-						state.pageRefreshAvailable = false;
-						state.pageRefreshReason = "";
-					}
-					renderPageRefreshPrompt();
-				}
-			}
-			return Object.freeze({
-				appVersionText,
-				clientBuildVersionText,
-				renderAppUpdateStatus,
-				refreshAppUpdateStatus,
-				currentUpdateUsesPublicRelease,
-				updateStatusLine,
-				publicReleaseStatusLine,
-				updateActionButton,
-				publicPrHasOpenPullRequests,
-				renderUpdatePanel,
-				refreshPublicReleaseStatus,
-				openUpdatePanel,
-				closeUpdatePanel,
-				handleUpdatePanelClick,
-				scheduleStartupUpdateCheck,
-				publicPrPromptKey,
-				publicPrSummaryText,
-				normalizedPublicPrReviewTitle,
-				publicPrReviewThreadTitle,
-				findPublicPrReviewThread,
-				workspacePathBaseName,
-				workspacePathIsVisible,
-				visibleWorkspaceWithBaseName,
-				publicPrReviewWorkspacePath,
-				openPublicPrReviewThreadIfAvailable,
-				renderPublicPrStatus,
-				refreshPublicPrStatus,
-				scheduleStartupPublicPrCheck,
-				publicPrMergeInstruction,
-				publicPrMergeConfirmationMessage,
-				preparePublicPrMergePrompt,
-				rememberPublicPrPrompt,
-				maybePromptPublicPrMerge,
-				handlePublicPrStatusClick,
-				handleAppUpdateClick,
-				renderSharedRestartButton,
-				renderHardRefreshButton,
-				markBootReady,
-				reportShellLoaded,
-				sharedRestartScopeLines,
-				restartRiskThreads,
-				fetchRestartRiskThreads,
-				restartRiskThreadTitle,
-				restartRiskThreadMeta,
-				renderSharedRestartDialog,
-				closeSharedRestartDialog,
-				requestSharedRestartConfirmation,
-				handleSharedRestartClick,
-				serverBuildIdFromConfig,
-				shouldPromptForServerBuildChange,
-				pageShellAssetUrl,
-				validatePageShellAsset,
-				fetchPageShellAsset,
-				preparePageShellAssets,
-				fetchPageBuildConfig,
-				pruneOldShellCaches,
-				clearAllShellCaches,
-				resetPageShellServiceWorker,
-				pageReloadUrlWithBust,
-				initializePageBuildState,
-				renderPageRefreshPrompt,
-				handleHardRefreshClick,
-				showReconnectRefreshPrompt,
-				finishRestartingUiIfReady,
-				clearReconnectRefreshPrompt,
-				checkPageRefreshAvailability,
-				schedulePageRefreshCheck,
-				scheduleVisiblePageRefreshCheck,
-				startPageRefreshChecks,
-				waitForPageBuildConfig,
-				refreshPageForNewBuild
-			});
-		}
-		root.CodexAppUpdateRuntime = Object.freeze({ createAppUpdateRuntime });
-		if (typeof module !== "undefined" && module.exports) module.exports = { createAppUpdateRuntime };
-	})(typeof window !== "undefined" ? window : globalThis);
-}));
-//#endregion
 //#region public/modal-runtime.js
 var require_modal_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function renderAppNativeDialog() {
@@ -4764,32 +2154,1185 @@ var require_thread_list_runtime = /* @__PURE__ */ __commonJSMin(((exports, modul
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
-//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-03
-var import_thread_tile_runtime = /* @__PURE__ */ __toESM(require_thread_tile_runtime());
-var import_app_update_runtime = /* @__PURE__ */ __toESM(require_app_update_runtime());
+//#region public/side-chat-runtime.js
+var require_side_chat_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachSideChatRuntime(root) {
+		function noop() {}
+		function noopFalse() {
+			return false;
+		}
+		function noopString() {
+			return "";
+		}
+		function defaultRequestAnimationFrame(callback) {
+			return typeof root.setTimeout === "function" ? root.setTimeout(callback, 16) : 0;
+		}
+		function createSideChatRuntime(deps = {}) {
+			const state = deps.state || {};
+			const $ = typeof deps.$ === "function" ? deps.$ : () => null;
+			const document = deps.document || root.document || {};
+			const window = deps.window || root.window || root;
+			const requestAnimationFrame = typeof deps.requestAnimationFrame === "function" ? deps.requestAnimationFrame : typeof root.requestAnimationFrame === "function" ? root.requestAnimationFrame.bind(root) : defaultRequestAnimationFrame;
+			const setTimeout = typeof deps.setTimeout === "function" ? deps.setTimeout : typeof root.setTimeout === "function" ? root.setTimeout.bind(root) : () => 0;
+			const clearTimeout = typeof deps.clearTimeout === "function" ? deps.clearTimeout : typeof root.clearTimeout === "function" ? root.clearTimeout.bind(root) : noop;
+			const SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS = Math.max(0, Number(deps.SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS || 450) || 450);
+			const SIDE_CHAT_DRAFT_MAX_CHARS = Math.max(1, Number(deps.SIDE_CHAT_DRAFT_MAX_CHARS || 8e3) || 8e3);
+			const SUBAGENT_EDGE_SWIPE_PX = Math.max(1, Number(deps.SUBAGENT_EDGE_SWIPE_PX || 56) || 56);
+			const SUBAGENT_EDGE_SWIPE_MAX_PX = Math.max(SUBAGENT_EDGE_SWIPE_PX, Number(deps.SUBAGENT_EDGE_SWIPE_MAX_PX || 88) || 88);
+			const SUBAGENT_EDGE_SWIPE_RATIO = Math.max(0, Number(deps.SUBAGENT_EDGE_SWIPE_RATIO || .08) || .08);
+			const SUBAGENT_SWIPE_MIN_PX = Math.max(1, Number(deps.SUBAGENT_SWIPE_MIN_PX || 70) || 70);
+			const SUBAGENT_WHEEL_SWIPE_MIN_PX = Math.max(1, Number(deps.SUBAGENT_WHEEL_SWIPE_MIN_PX || 48) || 48);
+			const CLIENT_BUILD_ID = String(deps.CLIENT_BUILD_ID || "");
+			const { api, collabAgentNameText = noopString, collabAgentTaskText = noopString, collabAgentThreadText = noopString, conversationDomTurnIds = () => [], conversationPatchShellSignature = noopString, conversationRenderSignature = noopString, createSubmissionId = () => "sidechat-" + Date.now(), currentLiveTurn = () => null, diagnosticThreadHash = noopString, escapeHtml = (value) => String(value || ""), escapeSelectorAttr = (value) => String(value || ""), formatTime = noopString, homeAiDiagnosticReportingApi = { boundedToken: (value) => String(value || "") }, isInteractiveGestureTarget = noopFalse, latestTurn = () => null, loadThread = async () => null, loadThreads = async () => null, markActivity = noop, normalizeClientErrorMessage = (value) => String(value || ""), primaryTouch = () => null, renderCurrentThread = noop, requestAppConfirmation = async () => false, scheduleCurrentThreadRefresh = noop, scheduleLivePollIfNeeded = noop, showError = noop, statusText = noopString, truncateMiddle = (value) => String(value || ""), visibleConversationShape = () => ({}) } = deps;
+			function isSubagentItem(item) {
+				return Boolean(item && item.type === "collabAgentToolCall");
+			}
+			function turnSubagentItems(turn) {
+				return (Array.isArray(turn && turn.items) ? turn.items : []).filter(isSubagentItem);
+			}
+			function activeSubagentItems(turn) {
+				return turnSubagentItems(turn).filter(isActiveSubagentItem);
+			}
+			function currentSubagentTurn() {
+				if (!state.currentThread) return null;
+				const live = currentLiveTurn();
+				if (turnSubagentItems(live).length) return live;
+				const latest = latestTurn();
+				return activeSubagentItems(latest).length ? latest : null;
+			}
+			function currentSubagentItems() {
+				const turn = currentSubagentTurn();
+				if (turn && currentLiveTurn() === turn) return turnSubagentItems(turn);
+				return activeSubagentItems(turn);
+			}
+			function subagentStatusKind(status) {
+				const text = statusText(status).toLowerCase();
+				if (/fail|error|denied|reject|cancel|interrupt|stop/.test(text)) return "failed";
+				if (/complete|success|succeeded|done|finished|closed/.test(text)) return "completed";
+				if (/queue|pending|waiting|wait/.test(text)) return "queued";
+				if (/running|active|started|processing|inprogress|in_progress|in-progress|working|open|spawned|starting/.test(text)) return "running";
+				return "unknown";
+			}
+			function isActiveSubagentItem(item) {
+				const kind = subagentStatusKind(item && item.status);
+				return kind === "running" || kind === "queued";
+			}
+			function currentSubagentStatusKind(item, turn) {
+				const kind = subagentStatusKind(item && item.status);
+				if (turn && currentLiveTurn() === turn && (kind === "completed" || kind === "unknown")) return "running";
+				return kind;
+			}
+			function subagentStatusLabel(kind) {
+				return {
+					running: "运行中",
+					queued: "等待",
+					completed: "完成",
+					failed: "失败",
+					unknown: "未知"
+				}[kind] || "未知";
+			}
+			function subagentSwipeAvailable() {
+				return Boolean(state.currentThread);
+			}
+			function sideChatThreadId() {
+				return String(state.currentThreadId || state.currentThread && state.currentThread.id || "");
+			}
+			function defaultSideChatState(threadId) {
+				return {
+					threadId: String(threadId || ""),
+					version: 0,
+					messages: [],
+					draft: {
+						text: "",
+						updatedAt: ""
+					},
+					candidates: [],
+					queue: null,
+					sidecar: {
+						status: "idle",
+						pendingUserMessageId: "",
+						updatedAt: "",
+						error: ""
+					},
+					audit: {
+						createdAt: "",
+						updatedAt: ""
+					},
+					persistence: "server"
+				};
+			}
+			function normalizeSideChatSidecar(input) {
+				const source = input && typeof input === "object" ? input : {};
+				const status = String(source.status || "idle").toLowerCase();
+				return {
+					status: [
+						"idle",
+						"pending",
+						"failed"
+					].includes(status) ? status : "idle",
+					pendingUserMessageId: String(source.pendingUserMessageId || ""),
+					updatedAt: String(source.updatedAt || ""),
+					error: String(source.error || "")
+				};
+			}
+			function normalizeSideChatState(input, threadId = "") {
+				const source = input && typeof input === "object" ? input : {};
+				return {
+					threadId: String(source.threadId || threadId || ""),
+					version: Math.max(0, Number(source.version) || 0),
+					messages: Array.isArray(source.messages) ? source.messages.filter(Boolean) : [],
+					draft: {
+						text: String(source.draft && source.draft.text || ""),
+						updatedAt: String(source.draft && source.draft.updatedAt || "")
+					},
+					candidates: Array.isArray(source.candidates) ? source.candidates.filter(Boolean) : [],
+					queue: source.queue && typeof source.queue === "object" ? source.queue : null,
+					sidecar: normalizeSideChatSidecar(source.sidecar),
+					audit: {
+						createdAt: String(source.audit && source.audit.createdAt || ""),
+						updatedAt: String(source.audit && source.audit.updatedAt || "")
+					},
+					persistence: "server"
+				};
+			}
+			function setSideChatState(threadId, sideChat) {
+				const id = String(threadId || sideChat && sideChat.threadId || "");
+				if (!id) return defaultSideChatState("");
+				const normalized = normalizeSideChatState(sideChat, id);
+				state.threadSideChats.set(id, normalized);
+				return normalized;
+			}
+			function sideChatStateForThread(threadId = sideChatThreadId()) {
+				const id = String(threadId || "");
+				if (!id) return defaultSideChatState("");
+				return state.threadSideChats.get(id) || defaultSideChatState(id);
+			}
+			function sideChatApiPath(threadId, suffix = "") {
+				return `/api/threads/${encodeURIComponent(threadId)}/side-chat${suffix}`;
+			}
+			function sideChatDraftTextarea() {
+				const panel = $("subagentPanel");
+				if (!panel) return null;
+				const textarea = panel.querySelector("[data-side-chat-draft]");
+				return textarea && textarea.tagName === "TEXTAREA" ? textarea : null;
+			}
+			function ensureSideChatDraftVisible() {
+				const textarea = sideChatDraftTextarea();
+				if (!textarea || document.activeElement !== textarea) return;
+				const form = textarea.closest("[data-side-chat-form]");
+				const panel = $("subagentPanel");
+				try {
+					if (form) form.scrollIntoView({
+						block: "nearest",
+						inline: "nearest"
+					});
+					else textarea.scrollIntoView({
+						block: "nearest",
+						inline: "nearest"
+					});
+				} catch (_) {}
+				if (!panel || !form) return;
+				const panelRect = panel.getBoundingClientRect();
+				const formRect = form.getBoundingClientRect();
+				const overflow = Math.ceil(formRect.bottom - panelRect.bottom + 8);
+				if (overflow > 0) panel.scrollTop = Math.max(0, Number(panel.scrollTop || 0) + overflow);
+			}
+			function autoSizeSideChatDraftTextarea(textarea = sideChatDraftTextarea()) {
+				if (!textarea) return;
+				textarea.style.height = "auto";
+				const style = window.getComputedStyle ? window.getComputedStyle(textarea) : null;
+				const maxHeight = style ? Number.parseFloat(style.maxHeight) : 160;
+				const minHeight = style ? Number.parseFloat(style.minHeight) : 44;
+				const nextHeight = Math.min(Number.isFinite(maxHeight) && maxHeight > 0 ? maxHeight : 160, Math.max(Number.isFinite(minHeight) && minHeight > 0 ? minHeight : 44, textarea.scrollHeight));
+				textarea.style.height = `${nextHeight}px`;
+				textarea.style.overflowY = textarea.scrollHeight > nextHeight + 1 ? "auto" : "hidden";
+			}
+			function sideChatScrollContainer() {
+				const panel = $("subagentPanel");
+				return panel ? panel.querySelector(".side-chat-scroll") : null;
+			}
+			function scrollSideChatToBottom() {
+				const scroller = sideChatScrollContainer();
+				if (!scroller) return false;
+				scroller.scrollTop = scroller.scrollHeight;
+				return true;
+			}
+			function scheduleSideChatToBottom() {
+				requestAnimationFrame(() => {
+					scrollSideChatToBottom();
+					requestAnimationFrame(scrollSideChatToBottom);
+				});
+			}
+			function openSideChatCandidate(candidateId = "") {
+				const scroller = sideChatScrollContainer();
+				if (!scroller) return false;
+				const id = String(candidateId || "");
+				const target = id ? scroller.querySelector(`[data-side-chat-candidate="${escapeSelectorAttr(id)}"]`) : scroller.querySelector(".side-chat-candidate");
+				if (!target) {
+					scrollSideChatToBottom();
+					return false;
+				}
+				target.scrollIntoView({
+					block: "center",
+					inline: "nearest"
+				});
+				target.classList.add("side-chat-focus");
+				setTimeout(() => target.classList.remove("side-chat-focus"), 1200);
+				return true;
+			}
+			function currentSideChatDraftText(threadId = sideChatThreadId()) {
+				const textarea = sideChatDraftTextarea();
+				if (textarea && String(textarea.dataset.threadId || "") === String(threadId || "")) return textarea.value;
+				return sideChatStateForThread(threadId).draft.text || "";
+			}
+			function truncateSideChatText(text) {
+				const value = String(text || "");
+				if (value.length <= SIDE_CHAT_DRAFT_MAX_CHARS) return value;
+				return value.slice(0, SIDE_CHAT_DRAFT_MAX_CHARS);
+			}
+			async function loadSideChat(threadId = sideChatThreadId(), options = {}) {
+				const id = String(threadId || "");
+				if (!id) return null;
+				const silent = options.silent === true;
+				if (!silent) state.sideChatError = "";
+				state.sideChatLoadingThreadId = id;
+				if (state.subagentPanelOpen && !silent) updateSubagentPanelUi({ force: true });
+				try {
+					const result = await api(sideChatApiPath(id), { timeoutMs: 2e4 });
+					const sideChat = setSideChatState(id, result && result.sideChat || null);
+					if (state.sideChatLoadingThreadId === id) state.sideChatLoadingThreadId = "";
+					if (state.sideChatError && sideChatThreadId() === id) state.sideChatError = "";
+					if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({
+						force: true,
+						scrollSideChatToBottom: true
+					});
+					if (sideChatReplyPending(id)) scheduleSideChatPoll(id);
+					return sideChat;
+				} catch (err) {
+					if (state.sideChatLoadingThreadId === id) state.sideChatLoadingThreadId = "";
+					if (sideChatThreadId() === id) state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({
+						force: true,
+						scrollSideChatToBottom: true
+					});
+					throw err;
+				}
+			}
+			function sideChatReplyPending(threadId = sideChatThreadId()) {
+				const sideChat = sideChatStateForThread(threadId);
+				return String(sideChat.sidecar && sideChat.sidecar.status || "") === "pending";
+			}
+			function scheduleSideChatPoll(threadId = sideChatThreadId(), delayMs = 1600) {
+				const id = String(threadId || "");
+				clearTimeout(state.sideChatPollTimer);
+				state.sideChatPollTimer = null;
+				if (!id || !state.subagentPanelOpen || sideChatThreadId() !== id || !sideChatReplyPending(id)) return;
+				state.sideChatPollTimer = setTimeout(() => {
+					state.sideChatPollTimer = null;
+					loadSideChat(id, { silent: true }).then(() => {
+						if (sideChatReplyPending(id)) scheduleSideChatPoll(id, 1800);
+					}).catch(() => {
+						if (sideChatThreadId() === id) scheduleSideChatPoll(id, 2600);
+					});
+				}, Math.max(500, Number(delayMs) || 1600));
+			}
+			async function saveSideChatDraft(threadId, text, options = {}) {
+				const id = String(threadId || "");
+				if (!id) return null;
+				const nextText = truncateSideChatText(text);
+				const result = await api(sideChatApiPath(id, "/draft"), {
+					method: "PUT",
+					body: JSON.stringify({ text: nextText }),
+					timeoutMs: 2e4
+				});
+				const sideChat = setSideChatState(id, result && result.sideChat || null);
+				if (state.sideChatError && sideChatThreadId() === id) state.sideChatError = "";
+				if (options.render !== false && state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({ force: true });
+				return sideChat;
+			}
+			function scheduleSideChatDraftSave(threadId = sideChatThreadId(), text = currentSideChatDraftText(threadId)) {
+				const id = String(threadId || "");
+				if (!id) return;
+				const sideChat = sideChatStateForThread(id);
+				sideChat.draft = Object.assign({}, sideChat.draft || {}, { text: truncateSideChatText(text) });
+				state.threadSideChats.set(id, sideChat);
+				clearTimeout(state.sideChatDraftSaveTimer);
+				const seq = state.sideChatDraftSaveSeq + 1;
+				state.sideChatDraftSaveSeq = seq;
+				state.sideChatDraftSaveTimer = setTimeout(() => {
+					state.sideChatDraftSaveTimer = null;
+					saveSideChatDraft(id, sideChatStateForThread(id).draft.text, { render: false }).catch((err) => {
+						if (seq !== state.sideChatDraftSaveSeq) return;
+						if (sideChatThreadId() === id) {
+							state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+							updateSubagentPanelUi({ force: true });
+						}
+					});
+				}, SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS);
+			}
+			function flushSideChatDraftNow() {
+				const id = sideChatThreadId();
+				if (!id) return Promise.resolve(null);
+				const text = currentSideChatDraftText(id);
+				clearTimeout(state.sideChatDraftSaveTimer);
+				state.sideChatDraftSaveTimer = null;
+				return saveSideChatDraft(id, text, { render: false }).catch((err) => {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					return null;
+				});
+			}
+			function sideChatStatusLabel(status) {
+				return {
+					draft: "草稿",
+					queued: "已排队",
+					applied: "已发送",
+					cancelled: "已取消",
+					sending: "发送中",
+					sent: "已发送",
+					failed: "失败"
+				}[String(status || "").toLowerCase()] || "草稿";
+			}
+			function sideChatQueueSummary(queue) {
+				if (!queue) return "";
+				return `${sideChatStatusLabel(queue.status)} · ${queue.mode === "autoSendWhenIdle" ? "完成后自动发送" : "等待确认"}`;
+			}
+			function sideChatTimeLabel(value) {
+				const text = String(value || "");
+				const ms = Date.parse(text);
+				if (!Number.isFinite(ms)) return "";
+				return formatTime(Math.floor(ms / 1e3), state.nowMs);
+			}
+			function sideChatBusy(key) {
+				return Boolean(key && state.sideChatBusyKey === key);
+			}
+			function setSideChatNotice(kind, message, options = {}) {
+				const threadId = sideChatThreadId();
+				state.sideChatNotice = {
+					threadId,
+					kind: String(kind || "info"),
+					message: String(message || ""),
+					actionLabel: String(options.actionLabel || ""),
+					candidateId: String(options.candidateId || ""),
+					createdAtMs: Date.now()
+				};
+			}
+			function clearSideChatNotice() {
+				state.sideChatNotice = null;
+			}
+			function sideChatNoticeForThread(threadId = sideChatThreadId()) {
+				const notice = state.sideChatNotice;
+				if (!notice || String(notice.threadId || "") !== String(threadId || "")) return null;
+				return notice;
+			}
+			function sideChatPanelRenderSignature() {
+				const threadId = sideChatThreadId();
+				const sideChat = sideChatStateForThread(threadId);
+				const notice = sideChatNoticeForThread(threadId);
+				const messages = sideChat.messages.map((message) => [
+					message.id,
+					message.role,
+					String(message.text || "").length,
+					message.createdAt
+				].join(":")).join(",");
+				const candidates = sideChat.candidates.map((candidate) => [
+					candidate.id,
+					candidate.status,
+					candidate.updatedAt,
+					String(candidate.body || "").length,
+					candidate.appliedTurnId || ""
+				].join(":")).join(",");
+				const queue = sideChat.queue ? [
+					sideChat.queue.candidateId,
+					sideChat.queue.mode,
+					sideChat.queue.status,
+					sideChat.queue.updatedAt,
+					String(sideChat.queue.error || "").length
+				].join(":") : "";
+				const sidecar = sideChat.sidecar ? [
+					sideChat.sidecar.status,
+					sideChat.sidecar.pendingUserMessageId,
+					sideChat.sidecar.updatedAt,
+					String(sideChat.sidecar.error || "").length
+				].join(":") : "";
+				const turn = currentSubagentTurn();
+				const subagents = currentSubagentItems().map((item) => [
+					item.id || item.itemId || "",
+					item.tool || item.name || "",
+					statusText(item.status),
+					collabAgentThreadText(item),
+					String(collabAgentTaskText(item) || "").length
+				].join(":")).join(",");
+				return [
+					threadId,
+					state.activeTurnId || "",
+					state.sideChatLoadingThreadId === threadId ? "loading" : "",
+					state.sideChatError || "",
+					state.sideChatBusyKey || "",
+					notice ? [
+						notice.kind,
+						notice.message,
+						notice.actionLabel,
+						notice.candidateId
+					].join(":") : "",
+					messages,
+					candidates,
+					queue,
+					sidecar,
+					turn && turn.id || "",
+					subagents
+				].join("|");
+			}
+			function renderSideChatNotice(threadId = sideChatThreadId()) {
+				const notice = sideChatNoticeForThread(threadId);
+				if (!notice || !notice.message) return "";
+				const action = notice.actionLabel ? `<button type="button" data-side-chat-action="open-notice" data-candidate-id="${escapeHtml(notice.candidateId || "")}">${escapeHtml(notice.actionLabel)}</button>` : "";
+				return `<div class="side-chat-notice ${escapeHtml(notice.kind || "info")}">
+    <span>${escapeHtml(notice.message)}</span>
+    <span class="side-chat-notice-actions">${action}<button type="button" data-side-chat-action="dismiss-notice" aria-label="关闭提示">×</button></span>
+  </div>`;
+			}
+			function renderSubagentStatusWindow() {
+				const turn = currentSubagentTurn();
+				const items = currentSubagentItems();
+				if (!items.length) return "";
+				const rows = items.map((item, index) => {
+					const kind = currentSubagentStatusKind(item, turn);
+					const label = collabAgentNameText(item) || collabAgentThreadText(item) || (item.tool === "spawnAgent" ? "Subagent" : item.tool || item.name || `Subagent ${index + 1}`);
+					const task = collabAgentTaskText(item);
+					const thread = collabAgentThreadText(item);
+					const meta = [
+						subagentStatusLabel(kind),
+						thread ? truncateMiddle(thread, 32, "thread") : "",
+						item.tool && item.tool !== "collabAgentToolCall" ? item.tool : ""
+					].filter(Boolean).join(" | ");
+					return `<article class="subagent-status-row ${escapeHtml(kind)}">
+      <div class="subagent-status-main">
+        <div class="subagent-status-title"><span class="subagent-status-dot ${escapeHtml(kind)}"></span>${escapeHtml(label)}</div>
+        ${task ? `<div class="subagent-status-task">${escapeHtml(truncateMiddle(task, 180, "task"))}</div>` : ""}
+      </div>
+      <div class="subagent-status-meta">${escapeHtml(meta)}</div>
+    </article>`;
+				}).join("");
+				return `<section class="subagent-status-window" aria-label="Subagent 状态">
+    <div class="subagent-status-header">
+      <div>
+        <div class="subagent-status-heading">Subagent 状态</div>
+        <div class="subagent-status-summary">当前进行中 · ${items.length.toLocaleString()} 个</div>
+      </div>
+      <button class="subagent-window-close" type="button" data-subagent-panel-close aria-label="关闭 Subagent 状态">×</button>
+    </div>
+    <div class="subagent-status-list">${rows}</div>
+  </section>`;
+			}
+			function latestAssistantSideChatMessageIndex(sideChat) {
+				const messages = Array.isArray(sideChat && sideChat.messages) ? sideChat.messages : [];
+				for (let index = messages.length - 1; index >= 0; index -= 1) if (String(messages[index] && messages[index].role || "").toLowerCase() === "assistant") return index;
+				return -1;
+			}
+			function renderSideChatMessage(message, index, sideChat) {
+				const role = String(message && message.role || "user").toLowerCase();
+				const text = String(message && message.text || "");
+				const time = sideChatTimeLabel(message && message.createdAt);
+				const latestAssistant = role === "assistant" && index === latestAssistantSideChatMessageIndex(sideChat);
+				const running = Boolean(state.activeTurnId);
+				const busy = sideChatBusy(`message:${index}`) || sideChatBusy(`message-candidate:${index}`);
+				const actions = latestAssistant && text.trim() ? `<div class="side-chat-message-actions">
+        <button type="button" data-side-chat-action="message-apply" data-message-index="${index}"${busy ? " disabled" : ""}>发送主线程</button>
+        <button type="button" data-side-chat-action="message-queue" data-message-index="${index}"${busy ? " disabled" : ""}>${running ? "完成后发送" : "排队"}</button>
+        <button type="button" data-side-chat-action="message-candidate" data-message-index="${index}"${busy ? " disabled" : ""}>存为候选</button>
+      </div>` : "";
+				return `<article class="side-chat-message ${escapeHtml(role)}">
+    <div class="side-chat-message-meta">
+      <span>${escapeHtml(role === "assistant" ? "侧聊" : "我")}</span>
+      ${time ? `<time>${escapeHtml(time)}</time>` : ""}
+    </div>
+    <div class="side-chat-message-text">${escapeHtml(text)}</div>
+    ${actions}
+  </article>`;
+			}
+			function renderSideChatCandidate(candidate, sideChat) {
+				const id = String(candidate && candidate.id || "");
+				const status = String(candidate && candidate.status || "draft").toLowerCase();
+				const body = String(candidate && candidate.body || "");
+				const queue = sideChat.queue && sideChat.queue.candidateId === id ? sideChat.queue : null;
+				const busy = sideChatBusy(`candidate:${id}`) || sideChatBusy(`apply:${id}`) || sideChatBusy(`queue:${id}`) || sideChatBusy(`cancel:${id}`);
+				const running = Boolean(state.activeTurnId);
+				const canApply = (status === "draft" || status === "queued") && !running;
+				const canQueue = status === "draft";
+				const canCancel = status === "draft" || status === "queued";
+				const appliedTurn = String(candidate && candidate.appliedTurnId || "");
+				const queueSummary = queue ? sideChatQueueSummary(queue) : sideChatStatusLabel(status);
+				const error = queue && queue.status === "failed" && queue.error ? `<div class="side-chat-candidate-error">${escapeHtml(queue.error)}</div>` : "";
+				return `<article class="side-chat-candidate ${escapeHtml(status)}" data-side-chat-candidate="${escapeHtml(id)}">
+    <div class="side-chat-candidate-main">
+      <div class="side-chat-candidate-title">${escapeHtml(candidate && candidate.title || "候选指令")}</div>
+      <div class="side-chat-candidate-status">${escapeHtml(queueSummary)}${appliedTurn ? ` · ${escapeHtml(truncateMiddle(appliedTurn, 24, "turn"))}` : ""}</div>
+      <div class="side-chat-candidate-body">${escapeHtml(truncateMiddle(body, 420, "candidate"))}</div>
+      ${error}
+    </div>
+    <div class="side-chat-candidate-actions">
+      ${canApply ? `<button type="button" data-side-chat-action="apply" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>发送主线程</button>` : ""}
+      ${running && status === "draft" ? `<button type="button" data-side-chat-action="queue" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>完成后发送</button>` : ""}
+      ${!running && canQueue && status !== "queued" ? `<button type="button" data-side-chat-action="queue" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>排队</button>` : ""}
+      ${canCancel ? `<button type="button" data-side-chat-action="cancel" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>取消</button>` : ""}
+    </div>
+  </article>`;
+			}
+			function renderSideChatPanel() {
+				const threadId = sideChatThreadId();
+				const sideChat = sideChatStateForThread(threadId);
+				const loading = state.sideChatLoadingThreadId === threadId;
+				const messages = sideChat.messages.map((message, index) => renderSideChatMessage(message, index, sideChat)).join("");
+				const candidates = sideChat.candidates.slice().reverse().map((candidate) => renderSideChatCandidate(candidate, sideChat)).join("");
+				const queue = sideChat.queue && sideChat.queue.status !== "sent" && sideChat.queue.status !== "cancelled" ? `<div class="side-chat-queue ${escapeHtml(sideChat.queue.status || "queued")}">${escapeHtml(sideChatQueueSummary(sideChat.queue))}</div>` : "";
+				const sidecar = normalizeSideChatSidecar(sideChat.sidecar);
+				const replyStatus = sidecar.status === "pending" ? `<div class="side-chat-queue pending">侧聊正在回复...</div>` : sidecar.status === "failed" && sidecar.error ? `<div class="side-chat-error">侧聊回复失败：${escapeHtml(sidecar.error)}</div>` : "";
+				const error = state.sideChatError ? `<div class="side-chat-error">${escapeHtml(state.sideChatError)}</div>` : "";
+				const notice = renderSideChatNotice(threadId);
+				const transcript = `${messages}${sidecar.status === "pending" ? `<article class="side-chat-message assistant pending">
+    <div class="side-chat-message-meta"><span>侧聊</span></div>
+    <div class="side-chat-message-text">正在整理回复...</div>
+  </article>` : ""}` || `<div class="side-chat-empty">暂无侧聊内容。</div>`;
+				const candidateList = candidates ? `<div class="side-chat-candidates">${candidates}</div>` : "";
+				const draftText = sideChat.draft && sideChat.draft.text || "";
+				const draftEmpty = !String(draftText || "").trim();
+				const busy = Boolean(state.sideChatBusyKey);
+				const loadingLabel = loading ? `<span class="side-chat-saving">同步中</span>` : "";
+				const clearDisabled = busy || !sideChat.messages.length && !sideChat.candidates.length && draftEmpty;
+				return `<section class="side-chat-section" aria-label="侧边聊天">
+    <div class="side-chat-header">
+      <div>
+        <div class="side-chat-heading">侧边聊天</div>
+        <div class="side-chat-summary">服务器保存 · ${sideChat.messages.length.toLocaleString()} 条</div>
+      </div>
+      ${loadingLabel}
+      <button class="side-chat-clear side-chat-header-clear" type="button" data-side-chat-action="clear" aria-label="清空侧聊"${clearDisabled ? " disabled" : ""}>清空</button>
+      <button class="subagent-window-close side-chat-close" type="button" data-subagent-panel-close aria-label="关闭侧边聊天">×</button>
+    </div>
+    ${queue}
+    ${replyStatus}
+    ${error}
+    ${notice}
+    <div class="side-chat-scroll">
+      <div class="side-chat-transcript">${transcript}</div>
+      ${candidateList}
+    </div>
+    <form class="side-chat-form" data-side-chat-form>
+      <div class="side-chat-composer-row">
+        <button class="side-chat-tool-button" type="button" data-side-chat-action="tools" aria-label="侧聊工具">+</button>
+        <textarea data-side-chat-draft data-thread-id="${escapeHtml(threadId)}" rows="1" maxlength="${SIDE_CHAT_DRAFT_MAX_CHARS}" placeholder="整理想法，不进入主线程">${escapeHtml(draftText)}</textarea>
+        <button class="side-chat-send" type="submit" data-side-chat-action="message"${busy || draftEmpty ? " disabled" : ""}>Send</button>
+      </div>
+      <div class="side-chat-tool-row" hidden>
+        <button type="button" data-side-chat-action="candidate"${busy || draftEmpty ? " disabled" : ""}>存为候选</button>
+      </div>
+    </form>
+  </section>`;
+			}
+			function renderSubagentPanel() {
+				const subagentWindow = renderSubagentStatusWindow();
+				return `<div class="thread-side-panel${subagentWindow ? "" : " no-subagents"}">
+    ${subagentWindow}
+    ${renderSideChatPanel()}
+  </div>`;
+			}
+			function updateSubagentPanelUi(options = {}) {
+				const panel = $("subagentPanel");
+				if (!panel) return;
+				if (!state.subagentPanelOpen || !subagentSwipeAvailable()) {
+					state.subagentPanelOpen = false;
+					panel.classList.add("hidden");
+					panel.innerHTML = "";
+					panel.dataset.renderSignature = "";
+					state.sideChatRenderSignature = "";
+					clearTimeout(state.sideChatPollTimer);
+					state.sideChatPollTimer = null;
+					return;
+				}
+				const signature = sideChatPanelRenderSignature();
+				if (options.force !== true && panel.dataset.renderSignature === signature) return;
+				panel.classList.remove("hidden");
+				panel.innerHTML = renderSubagentPanel();
+				panel.dataset.renderSignature = signature;
+				state.sideChatRenderSignature = signature;
+				panel.querySelectorAll("[data-subagent-panel-close]").forEach((button) => {
+					button.addEventListener("click", () => {
+						state.subagentPanelOpen = false;
+						updateSubagentPanelUi();
+					});
+				});
+				const form = panel.querySelector("[data-side-chat-form]");
+				if (form) form.addEventListener("submit", submitSideChatMessage);
+				const textarea = sideChatDraftTextarea();
+				if (textarea) {
+					textarea.addEventListener("input", handleSideChatDraftInput);
+					textarea.addEventListener("focus", () => requestAnimationFrame(ensureSideChatDraftVisible));
+					autoSizeSideChatDraftTextarea(textarea);
+					requestAnimationFrame(() => autoSizeSideChatDraftTextarea(textarea));
+				}
+				panel.querySelectorAll("[data-side-chat-action]").forEach((button) => {
+					if (button.closest("[data-side-chat-form]") && button.type === "submit") return;
+					button.addEventListener("click", handleSideChatActionClick);
+				});
+				if (options.scrollSideChatToBottom) scheduleSideChatToBottom();
+			}
+			function visualHarnessThreadShape(thread) {
+				const shape = visibleConversationShape(thread);
+				const itemCount = (Array.isArray(thread && thread.turns) ? thread.turns : []).reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
+				return {
+					visibleTurnCount: Number(shape.visibleTurnCount || 0),
+					visibleItemCount: Number(shape.visibleItemCount || 0),
+					itemCount,
+					detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
+					loading: Boolean(thread && thread.mobileLoading),
+					loadError: Boolean(thread && thread.mobileLoadError),
+					readMode: homeAiDiagnosticReportingApi.boundedToken(thread && thread.mobileReadMode || "", "", 80)
+				};
+			}
+			async function simulateEmptyCachedDetailOpenForHarness(threadId) {
+				const id = String(threadId || state.currentThreadId || "").trim();
+				const threadHash = diagnosticThreadHash(id);
+				const before = {
+					visibleTurnCount: 0,
+					visibleItemCount: 0,
+					itemCount: 0,
+					detailLoaded: true,
+					loading: false,
+					loadError: false,
+					readMode: "visual-harness-empty-cache"
+				};
+				if (!id) return {
+					ok: false,
+					error: "missing_thread_id",
+					clientBuildId: CLIENT_BUILD_ID,
+					thread_hash: "",
+					before,
+					after: null
+				};
+				state.currentThreadId = id;
+				state.currentThread = {
+					id,
+					turns: [],
+					mobileDetailLoaded: true,
+					mobileLoading: false,
+					mobileLoadError: "",
+					mobileReadMode: "visual-harness-empty-cache"
+				};
+				await loadThread(id, { source: "visual-harness-empty-cache" });
+				const after = visualHarnessThreadShape(state.currentThread);
+				return {
+					ok: Boolean(after.visibleTurnCount || after.visibleItemCount),
+					error: after.loadError ? "thread_detail_load_error" : "",
+					clientBuildId: CLIENT_BUILD_ID,
+					thread_hash: threadHash,
+					before,
+					after
+				};
+			}
+			async function simulateStableSignatureEmptyDomForHarness(threadId) {
+				const id = String(threadId || state.currentThreadId || "").trim();
+				const threadHash = diagnosticThreadHash(id);
+				if (!id) return {
+					ok: false,
+					error: "missing_thread_id",
+					clientBuildId: CLIENT_BUILD_ID,
+					thread_hash: "",
+					before: null,
+					after: null,
+					domBefore: null,
+					domAfter: null
+				};
+				await loadThread(id, { source: "visual-harness-stable-signature-seed" });
+				const before = visualHarnessThreadShape(state.currentThread);
+				const signature = conversationRenderSignature(state.currentThread);
+				const patchShellSignature = conversationPatchShellSignature(state.currentThread);
+				const conversation = $("conversation");
+				const domBefore = {
+					turnCount: conversationDomTurnIds(conversation).length,
+					itemCount: conversation ? conversation.querySelectorAll(".item[data-item]").length : 0
+				};
+				state.renderedConversationSignature = signature;
+				state.renderedConversationPatchShellSignature = patchShellSignature;
+				if (conversation) conversation.innerHTML = "<div class=\"empty-state\">No visible turns.</div>";
+				renderCurrentThread({
+					stickToBottom: true,
+					source: "visual-harness-stable-signature-empty-dom"
+				});
+				const afterConversation = $("conversation");
+				const hasEmptyState = afterConversation ? Boolean(afterConversation.querySelector(".empty-state")) : false;
+				const domAfter = {
+					turnCount: conversationDomTurnIds(afterConversation).length,
+					itemCount: afterConversation ? afterConversation.querySelectorAll(".item[data-item]").length : 0,
+					emptyState: hasEmptyState ? "empty-state" : ""
+				};
+				const after = visualHarnessThreadShape(state.currentThread);
+				return {
+					ok: Boolean(before.visibleTurnCount && after.visibleTurnCount && domAfter.turnCount > 0 && !hasEmptyState),
+					error: after.loadError ? "thread_detail_load_error" : "",
+					clientBuildId: CLIENT_BUILD_ID,
+					thread_hash: threadHash,
+					before,
+					after,
+					domBefore,
+					domAfter
+				};
+			}
+			function refreshSideChatFormButtons() {
+				const textarea = sideChatDraftTextarea();
+				if (!textarea) return;
+				const form = textarea.closest("[data-side-chat-form]");
+				if (!form) return;
+				const panel = $("subagentPanel");
+				const sideChat = sideChatStateForThread(String(textarea.dataset.threadId || sideChatThreadId()));
+				const draftEmpty = !textarea.value.trim();
+				form.querySelectorAll("[data-side-chat-action='message'], [data-side-chat-action='candidate']").forEach((button) => {
+					button.disabled = Boolean(state.sideChatBusyKey) || draftEmpty;
+				});
+				if (panel) panel.querySelectorAll("[data-side-chat-action='clear']").forEach((button) => {
+					button.disabled = Boolean(state.sideChatBusyKey) || draftEmpty && !sideChat.messages.length && !sideChat.candidates.length;
+				});
+			}
+			function setSideChatBusy(key) {
+				state.sideChatBusyKey = String(key || "");
+				updateSubagentPanelUi({ force: true });
+			}
+			function applySideChatResult(threadId, result) {
+				if (result && result.state) return setSideChatState(threadId, result.state);
+				if (result && result.sideChat) return setSideChatState(threadId, result.sideChat);
+				return sideChatStateForThread(threadId);
+			}
+			function handleSideChatDraftInput(event) {
+				const textarea = event && event.currentTarget;
+				if (!textarea) return;
+				const threadId = String(textarea.dataset.threadId || sideChatThreadId());
+				const text = truncateSideChatText(textarea.value);
+				if (text !== textarea.value) textarea.value = text;
+				autoSizeSideChatDraftTextarea(textarea);
+				scheduleSideChatDraftSave(threadId, text);
+				refreshSideChatFormButtons();
+				ensureSideChatDraftVisible();
+			}
+			function installCodexMobileVisualHarnessFacade() {
+				if (!isHermesEmbedMode() || window.__codexMobileVisualHarness) return;
+				Object.defineProperty(window, "__codexMobileVisualHarness", {
+					configurable: false,
+					enumerable: false,
+					value: Object.freeze({
+						clientBuildId: () => CLIENT_BUILD_ID,
+						currentThreadId: () => String(state.currentThreadId || ""),
+						hostViewport: () => state.pluginHostViewport || null,
+						sideChatPanelOpen: () => Boolean(state.subagentPanelOpen),
+						setSideChatPanelOpen: (open) => {
+							state.subagentPanelOpen = Boolean(open);
+							updateSubagentPanelUi({
+								force: true,
+								scrollSideChatToBottom: Boolean(open)
+							});
+							return Boolean(state.subagentPanelOpen);
+						},
+						openThread: (threadId) => loadThread(String(threadId || ""), { source: "visual-harness" }),
+						simulateEmptyCachedDetailOpen: (threadId) => simulateEmptyCachedDetailOpenForHarness(threadId),
+						simulateStableSignatureEmptyDom: (threadId) => simulateStableSignatureEmptyDomForHarness(threadId),
+						loadSideChat: (threadId) => loadSideChat(String(threadId || sideChatThreadId()), { silent: true }),
+						ensureSideChatDraftVisible,
+						autoSizeSideChatDraftTextarea
+					})
+				});
+			}
+			async function submitSideChatMessage(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				const threadId = sideChatThreadId();
+				const text = currentSideChatDraftText(threadId).trim();
+				if (!threadId || !text || state.sideChatBusyKey) return;
+				setSideChatBusy("message");
+				try {
+					clearTimeout(state.sideChatDraftSaveTimer);
+					state.sideChatDraftSaveTimer = null;
+					applySideChatResult(threadId, await api(sideChatApiPath(threadId, "/messages"), {
+						method: "POST",
+						body: JSON.stringify({
+							role: "user",
+							text,
+							idempotencyKey: createSubmissionId()
+						}),
+						timeoutMs: 2e4
+					}));
+					state.sideChatError = "";
+					if (sideChatReplyPending(threadId)) scheduleSideChatPoll(threadId, 900);
+					markActivity("侧聊已发送");
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({
+						force: true,
+						scrollSideChatToBottom: true
+					});
+				}
+			}
+			async function createSideChatCandidateFromText(text, options = {}) {
+				const threadId = sideChatThreadId();
+				const body = String(text || "").trim();
+				if (!threadId || !body || state.sideChatBusyKey) return null;
+				setSideChatBusy(options.busyKey || "candidate");
+				try {
+					clearTimeout(state.sideChatDraftSaveTimer);
+					state.sideChatDraftSaveTimer = null;
+					const sideChat = applySideChatResult(threadId, await api(sideChatApiPath(threadId, "/candidates"), {
+						method: "POST",
+						body: JSON.stringify({
+							body,
+							idempotencyKey: createSubmissionId()
+						}),
+						timeoutMs: 2e4
+					}));
+					if (options.clearDraft) await saveSideChatDraft(threadId, "", { render: false });
+					state.sideChatError = "";
+					markActivity("候选已保存");
+					const candidates = Array.isArray(sideChat && sideChat.candidates) ? sideChat.candidates : [];
+					const candidate = candidates[candidates.length - 1] || null;
+					if (candidate && candidate.id) setSideChatNotice("success", "候选已保存，可以稍后发送到主线程。", {
+						actionLabel: "打开候选",
+						candidateId: candidate.id
+					});
+					return candidate;
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+					return null;
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({
+						force: true,
+						scrollSideChatToBottom: true
+					});
+				}
+			}
+			async function createSideChatCandidateFromDraft() {
+				const threadId = sideChatThreadId();
+				const text = currentSideChatDraftText(threadId).trim();
+				if (!threadId || !text || state.sideChatBusyKey) return;
+				await createSideChatCandidateFromText(text, {
+					clearDraft: true,
+					busyKey: "candidate"
+				});
+			}
+			function sideChatMessageTextByIndex(index) {
+				const message = sideChatStateForThread(sideChatThreadId()).messages[Number(index)];
+				return String(message && message.text || "").trim();
+			}
+			async function createSideChatCandidateFromMessage(index, nextAction = "") {
+				const text = sideChatMessageTextByIndex(index);
+				if (!text || state.sideChatBusyKey) return;
+				const candidate = await createSideChatCandidateFromText(text, { busyKey: `message-candidate:${index}` });
+				const id = String(candidate && candidate.id || "");
+				if (!id) return;
+				if (nextAction === "apply") await applySideChatCandidate(id);
+				else if (nextAction === "queue") await queueSideChatCandidate(id, state.activeTurnId ? "autoSendWhenIdle" : "confirmWhenIdle");
+			}
+			async function queueSideChatCandidate(candidateId, mode = "autoSendWhenIdle") {
+				const threadId = sideChatThreadId();
+				const id = String(candidateId || "");
+				if (!threadId || !id || state.sideChatBusyKey) return;
+				setSideChatBusy(`queue:${id}`);
+				try {
+					applySideChatResult(threadId, await api(sideChatApiPath(threadId, `/candidates/${encodeURIComponent(id)}/queue`), {
+						method: "POST",
+						body: JSON.stringify({
+							mode,
+							idempotencyKey: `sidechat:${threadId}:${id}:${mode}`
+						}),
+						timeoutMs: 2e4
+					}));
+					state.sideChatError = "";
+					setSideChatNotice("success", mode === "autoSendWhenIdle" ? "已排队，当前任务完成后会发送到主线程。" : "候选已排队，空闲后可从队列继续。", {
+						actionLabel: "打开队列",
+						candidateId: id
+					});
+					markActivity(mode === "autoSendWhenIdle" ? "侧聊已排队" : "候选已排队");
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({
+						force: true,
+						scrollSideChatToBottom: true
+					});
+				}
+			}
+			async function applySideChatCandidate(candidateId) {
+				const threadId = sideChatThreadId();
+				const id = String(candidateId || "");
+				if (!threadId || !id || state.sideChatBusyKey) return;
+				if (state.activeTurnId) {
+					await queueSideChatCandidate(id, "autoSendWhenIdle");
+					return;
+				}
+				setSideChatBusy(`apply:${id}`);
+				try {
+					applySideChatResult(threadId, await api(sideChatApiPath(threadId, `/candidates/${encodeURIComponent(id)}/apply`), {
+						method: "POST",
+						body: JSON.stringify({
+							mode: "confirmWhenIdle",
+							idempotencyKey: `sidechat:${threadId}:${id}:apply`
+						}),
+						timeoutMs: 18e4
+					}));
+					state.sideChatError = "";
+					clearSideChatNotice();
+					markActivity("侧聊已发送");
+					scheduleCurrentThreadRefresh(600);
+					scheduleLivePollIfNeeded(1200);
+					loadThreads({ silent: true }).catch(showError);
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({ force: true });
+				}
+			}
+			async function cancelSideChatCandidate(candidateId) {
+				const threadId = sideChatThreadId();
+				const id = String(candidateId || "");
+				if (!threadId || !id || state.sideChatBusyKey) return;
+				setSideChatBusy(`cancel:${id}`);
+				try {
+					applySideChatResult(threadId, await api(sideChatApiPath(threadId, `/candidates/${encodeURIComponent(id)}/cancel`), {
+						method: "POST",
+						body: JSON.stringify({}),
+						timeoutMs: 2e4
+					}));
+					state.sideChatError = "";
+					clearSideChatNotice();
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({ force: true });
+				}
+			}
+			async function clearSideChat() {
+				const threadId = sideChatThreadId();
+				if (!threadId || state.sideChatBusyKey) return;
+				if (!await requestAppConfirmation("清空这个线程的侧聊内容？", {
+					title: "清空侧聊",
+					confirmLabel: "清空",
+					cancelLabel: "取消"
+				})) return;
+				setSideChatBusy("clear");
+				try {
+					clearTimeout(state.sideChatDraftSaveTimer);
+					state.sideChatDraftSaveTimer = null;
+					applySideChatResult(threadId, await api(sideChatApiPath(threadId, "/clear"), {
+						method: "POST",
+						body: JSON.stringify({}),
+						timeoutMs: 2e4
+					}));
+					state.sideChatError = "";
+					clearSideChatNotice();
+				} catch (err) {
+					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
+					showError(err);
+				} finally {
+					setSideChatBusy("");
+					updateSubagentPanelUi({ force: true });
+				}
+			}
+			function handleSideChatActionClick(event) {
+				const button = event && event.currentTarget || event && event.target && event.target.closest("[data-side-chat-action]");
+				if (!button) return;
+				const action = String(button.dataset.sideChatAction || "");
+				const candidateId = String(button.dataset.candidateId || "");
+				const messageIndex = String(button.dataset.messageIndex || "");
+				if (action === "candidate") createSideChatCandidateFromDraft();
+				else if (action === "tools") {
+					const row = button.closest("[data-side-chat-form]") && button.closest("[data-side-chat-form]").querySelector(".side-chat-tool-row");
+					if (row) row.hidden = !row.hidden;
+				} else if (action === "message-candidate") createSideChatCandidateFromMessage(messageIndex);
+				else if (action === "message-apply") createSideChatCandidateFromMessage(messageIndex, "apply");
+				else if (action === "message-queue") createSideChatCandidateFromMessage(messageIndex, "queue");
+				else if (action === "apply") applySideChatCandidate(candidateId);
+				else if (action === "queue") queueSideChatCandidate(candidateId, state.activeTurnId ? "autoSendWhenIdle" : "confirmWhenIdle");
+				else if (action === "cancel") cancelSideChatCandidate(candidateId);
+				else if (action === "clear") clearSideChat();
+				else if (action === "open-notice") openSideChatCandidate(candidateId);
+				else if (action === "dismiss-notice") {
+					clearSideChatNotice();
+					updateSubagentPanelUi({ force: true });
+				}
+			}
+			function openSubagentPanelFromGesture() {
+				if (!state.currentThread) return;
+				state.subagentPanelOpen = true;
+				updateSubagentPanelUi({
+					force: true,
+					scrollSideChatToBottom: true
+				});
+				if (!state.threadSideChats.has(sideChatThreadId())) loadSideChat(sideChatThreadId(), { silent: true }).catch(showError);
+			}
+			function isHorizontalScrollableGestureTarget(target) {
+				return Boolean(target && target.closest && target.closest(".markdown-mermaid-viewer, .markdown-mermaid-canvas, .markdown-mermaid-artboard, .markdown-table-wrap, .markdown-code-table-preview, .markdown-code-block pre"));
+			}
+			function subagentSwipeEdgeLimitPx() {
+				const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
+				if (!viewportWidth) return SUBAGENT_EDGE_SWIPE_PX;
+				const responsiveLimit = Math.round(viewportWidth * SUBAGENT_EDGE_SWIPE_RATIO);
+				return Math.min(SUBAGENT_EDGE_SWIPE_MAX_PX, Math.max(SUBAGENT_EDGE_SWIPE_PX, responsiveLimit));
+			}
+			function subagentSwipeStartsNearEdge(clientX) {
+				const x = Number(clientX);
+				const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
+				if (!Number.isFinite(x) || !viewportWidth) return false;
+				return viewportWidth - x <= subagentSwipeEdgeLimitPx();
+			}
+			function beginSubagentSwipe(event) {
+				if (!subagentSwipeAvailable()) return;
+				if (event.touches && event.touches.length > 1) return;
+				if (isInteractiveGestureTarget(event.target)) return;
+				if (isHorizontalScrollableGestureTarget(event.target)) return;
+				const touch = primaryTouch(event);
+				if (!touch) return;
+				if (!subagentSwipeStartsNearEdge(touch.clientX)) return;
+				state.subagentSwipe = {
+					startX: touch.clientX,
+					startY: touch.clientY,
+					currentX: touch.clientX,
+					currentY: touch.clientY,
+					moved: false
+				};
+			}
+			function moveSubagentSwipe(event) {
+				const swipe = state.subagentSwipe;
+				if (!swipe) return;
+				const touch = primaryTouch(event);
+				if (!touch) return;
+				const dx = touch.clientX - swipe.startX;
+				const dy = touch.clientY - swipe.startY;
+				if (!swipe.moved) {
+					if (Math.abs(dx) < 10 && Math.abs(dy) < 12) return;
+					if (dx >= 0 || Math.abs(dy) > Math.abs(dx)) {
+						cancelSubagentSwipe();
+						return;
+					}
+				}
+				swipe.moved = true;
+				swipe.currentX = touch.clientX;
+				swipe.currentY = touch.clientY;
+				if (event.cancelable !== false) event.preventDefault();
+			}
+			function finishSubagentSwipe() {
+				const swipe = state.subagentSwipe;
+				state.subagentSwipe = null;
+				if (!swipe || !swipe.moved) return;
+				const dx = Number(swipe.currentX || swipe.startX) - swipe.startX;
+				const dy = Number(swipe.currentY || swipe.startY) - swipe.startY;
+				if (dx <= -SUBAGENT_SWIPE_MIN_PX && Math.abs(dy) <= Math.abs(dx) * .85) openSubagentPanelFromGesture();
+			}
+			function cancelSubagentSwipe() {
+				state.subagentSwipe = null;
+			}
+			function handleSubagentWheelSwipe(event) {
+				if (state.subagentPanelOpen || !subagentSwipeAvailable()) return;
+				if (isHorizontalScrollableGestureTarget(event.target)) return;
+				if (!subagentSwipeStartsNearEdge(event.clientX)) return;
+				const dx = Number(event.deltaX || 0);
+				const dy = Number(event.deltaY || 0);
+				if (dx >= SUBAGENT_WHEEL_SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.2) openSubagentPanelFromGesture();
+			}
+			return Object.freeze({
+				isSubagentItem,
+				turnSubagentItems,
+				activeSubagentItems,
+				currentSubagentTurn,
+				currentSubagentItems,
+				subagentStatusKind,
+				isActiveSubagentItem,
+				currentSubagentStatusKind,
+				subagentStatusLabel,
+				subagentSwipeAvailable,
+				sideChatThreadId,
+				defaultSideChatState,
+				normalizeSideChatSidecar,
+				normalizeSideChatState,
+				setSideChatState,
+				sideChatStateForThread,
+				sideChatApiPath,
+				sideChatDraftTextarea,
+				ensureSideChatDraftVisible,
+				autoSizeSideChatDraftTextarea,
+				sideChatScrollContainer,
+				scrollSideChatToBottom,
+				scheduleSideChatToBottom,
+				openSideChatCandidate,
+				currentSideChatDraftText,
+				truncateSideChatText,
+				loadSideChat,
+				sideChatReplyPending,
+				scheduleSideChatPoll,
+				saveSideChatDraft,
+				scheduleSideChatDraftSave,
+				flushSideChatDraftNow,
+				sideChatStatusLabel,
+				sideChatQueueSummary,
+				sideChatTimeLabel,
+				sideChatBusy,
+				setSideChatNotice,
+				clearSideChatNotice,
+				sideChatNoticeForThread,
+				sideChatPanelRenderSignature,
+				renderSideChatNotice,
+				renderSubagentStatusWindow,
+				latestAssistantSideChatMessageIndex,
+				renderSideChatMessage,
+				renderSideChatCandidate,
+				renderSideChatPanel,
+				renderSubagentPanel,
+				updateSubagentPanelUi,
+				visualHarnessThreadShape,
+				simulateEmptyCachedDetailOpenForHarness,
+				simulateStableSignatureEmptyDomForHarness,
+				refreshSideChatFormButtons,
+				setSideChatBusy,
+				applySideChatResult,
+				handleSideChatDraftInput,
+				installCodexMobileVisualHarnessFacade,
+				submitSideChatMessage,
+				createSideChatCandidateFromText,
+				createSideChatCandidateFromDraft,
+				sideChatMessageTextByIndex,
+				createSideChatCandidateFromMessage,
+				queueSideChatCandidate,
+				applySideChatCandidate,
+				cancelSideChatCandidate,
+				clearSideChat,
+				handleSideChatActionClick,
+				openSubagentPanelFromGesture,
+				isHorizontalScrollableGestureTarget,
+				subagentSwipeEdgeLimitPx,
+				subagentSwipeStartsNearEdge,
+				beginSubagentSwipe,
+				moveSubagentSwipe,
+				finishSubagentSwipe,
+				cancelSubagentSwipe,
+				handleSubagentWheelSwipe
+			});
+		}
+		root.CodexSideChatRuntime = Object.freeze({ createSideChatRuntime });
+		if (typeof module !== "undefined" && module.exports) module.exports = { createSideChatRuntime };
+	})(typeof window !== "undefined" ? window : globalThis);
+}));
+//#endregion
+//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-04
 var import_modal_runtime = /* @__PURE__ */ __toESM(require_modal_runtime());
 var import_runtime_wiring_runtime = /* @__PURE__ */ __toESM(require_runtime_wiring_runtime());
 var import_app_shell_runtime = /* @__PURE__ */ __toESM(require_app_shell_runtime());
 var import_thread_list_runtime = /* @__PURE__ */ __toESM(require_thread_list_runtime());
+var import_side_chat_runtime = /* @__PURE__ */ __toESM(require_side_chat_runtime());
 var moduleDefinitions = [
-	{
-		"id": "thread-tile-runtime",
-		"source": "public/thread-tile-runtime.js",
-		"globalName": "CodexThreadTileRuntime",
-		"expectedFunctions": ["createThreadTileRuntime"],
-		"assetPath": "/thread-tile-runtime.js",
-		"classicLoaderExcluded": true,
-		"bytes": 74569
-	},
-	{
-		"id": "app-update-runtime",
-		"source": "public/app-update-runtime.js",
-		"globalName": "CodexAppUpdateRuntime",
-		"expectedFunctions": ["createAppUpdateRuntime"],
-		"assetPath": "/app-update-runtime.js",
-		"classicLoaderExcluded": true,
-		"bytes": 51619
-	},
 	{
 		"id": "modal-runtime",
 		"source": "public/modal-runtime.js",
@@ -4825,15 +3368,23 @@ var moduleDefinitions = [
 		"assetPath": "/thread-list-runtime.js",
 		"classicLoaderExcluded": true,
 		"bytes": 37167
+	},
+	{
+		"id": "side-chat-runtime",
+		"source": "public/side-chat-runtime.js",
+		"globalName": "CodexSideChatRuntime",
+		"expectedFunctions": ["createSideChatRuntime"],
+		"assetPath": "/side-chat-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 51946
 	}
 ];
 var moduleApis = {
-	"thread-tile-runtime": import_thread_tile_runtime.default,
-	"app-update-runtime": import_app_update_runtime.default,
 	"modal-runtime": import_modal_runtime.default,
 	"runtime-wiring-runtime": import_runtime_wiring_runtime.default,
 	"app-shell-runtime": import_app_shell_runtime.default,
-	"thread-list-runtime": import_thread_list_runtime.default
+	"thread-list-runtime": import_thread_list_runtime.default,
+	"side-chat-runtime": import_side_chat_runtime.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");
@@ -6449,6 +5000,20 @@ function sampleModule(id, api) {
 			approvalType: typeof (runtime && runtime.renderApprovalRequest),
 			globalCommandType: typeof globalThis.threadTaskCardCommandText,
 			globalRenderType: typeof globalThis.renderThreadTaskCards
+		};
+	}
+	if (id === "settings-runtime") {
+		const runtime = functionReady(api, "createSettingsRuntime") ? api.createSettingsRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.renderFontSizeControl === "function" && typeof runtime.renderQuotaUsage === "function" && typeof runtime.renderCodexProfileSettings === "function" && typeof runtime.renderWorkspaceDelegationSettings === "function" && typeof runtime.rememberRateLimitsFromConfig === "function" && typeof runtime.rememberCodexProfiles === "function" && typeof globalThis.CodexSettingsRuntime === "object" && typeof globalThis.CodexSettingsRuntime.createSettingsRuntime === "function",
+			factoryType: typeof api.createSettingsRuntime,
+			fontSizeType: typeof (runtime && runtime.renderFontSizeControl),
+			quotaType: typeof (runtime && runtime.renderQuotaUsage),
+			profileType: typeof (runtime && runtime.renderCodexProfileSettings),
+			workspaceDelegationType: typeof (runtime && runtime.renderWorkspaceDelegationSettings),
+			rateLimitsType: typeof (runtime && runtime.rememberRateLimitsFromConfig),
+			profilesType: typeof (runtime && runtime.rememberCodexProfiles),
+			globalFactoryType: typeof (globalThis.CodexSettingsRuntime && globalThis.CodexSettingsRuntime.createSettingsRuntime)
 		};
 	}
 	if (id === "notification-ui-runtime") {

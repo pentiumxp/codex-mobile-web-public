@@ -1,1176 +1,4 @@
 import { n as __toESM, t as __commonJSMin } from "./rolldown-runtime-FDOR9p9I.js";
-//#region public/side-chat-runtime.js
-var require_side_chat_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
-	(function attachSideChatRuntime(root) {
-		function noop() {}
-		function noopFalse() {
-			return false;
-		}
-		function noopString() {
-			return "";
-		}
-		function defaultRequestAnimationFrame(callback) {
-			return typeof root.setTimeout === "function" ? root.setTimeout(callback, 16) : 0;
-		}
-		function createSideChatRuntime(deps = {}) {
-			const state = deps.state || {};
-			const $ = typeof deps.$ === "function" ? deps.$ : () => null;
-			const document = deps.document || root.document || {};
-			const window = deps.window || root.window || root;
-			const requestAnimationFrame = typeof deps.requestAnimationFrame === "function" ? deps.requestAnimationFrame : typeof root.requestAnimationFrame === "function" ? root.requestAnimationFrame.bind(root) : defaultRequestAnimationFrame;
-			const setTimeout = typeof deps.setTimeout === "function" ? deps.setTimeout : typeof root.setTimeout === "function" ? root.setTimeout.bind(root) : () => 0;
-			const clearTimeout = typeof deps.clearTimeout === "function" ? deps.clearTimeout : typeof root.clearTimeout === "function" ? root.clearTimeout.bind(root) : noop;
-			const SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS = Math.max(0, Number(deps.SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS || 450) || 450);
-			const SIDE_CHAT_DRAFT_MAX_CHARS = Math.max(1, Number(deps.SIDE_CHAT_DRAFT_MAX_CHARS || 8e3) || 8e3);
-			const SUBAGENT_EDGE_SWIPE_PX = Math.max(1, Number(deps.SUBAGENT_EDGE_SWIPE_PX || 56) || 56);
-			const SUBAGENT_EDGE_SWIPE_MAX_PX = Math.max(SUBAGENT_EDGE_SWIPE_PX, Number(deps.SUBAGENT_EDGE_SWIPE_MAX_PX || 88) || 88);
-			const SUBAGENT_EDGE_SWIPE_RATIO = Math.max(0, Number(deps.SUBAGENT_EDGE_SWIPE_RATIO || .08) || .08);
-			const SUBAGENT_SWIPE_MIN_PX = Math.max(1, Number(deps.SUBAGENT_SWIPE_MIN_PX || 70) || 70);
-			const SUBAGENT_WHEEL_SWIPE_MIN_PX = Math.max(1, Number(deps.SUBAGENT_WHEEL_SWIPE_MIN_PX || 48) || 48);
-			const CLIENT_BUILD_ID = String(deps.CLIENT_BUILD_ID || "");
-			const { api, collabAgentNameText = noopString, collabAgentTaskText = noopString, collabAgentThreadText = noopString, conversationDomTurnIds = () => [], conversationPatchShellSignature = noopString, conversationRenderSignature = noopString, createSubmissionId = () => "sidechat-" + Date.now(), currentLiveTurn = () => null, diagnosticThreadHash = noopString, escapeHtml = (value) => String(value || ""), escapeSelectorAttr = (value) => String(value || ""), formatTime = noopString, homeAiDiagnosticReportingApi = { boundedToken: (value) => String(value || "") }, isInteractiveGestureTarget = noopFalse, latestTurn = () => null, loadThread = async () => null, loadThreads = async () => null, markActivity = noop, normalizeClientErrorMessage = (value) => String(value || ""), primaryTouch = () => null, renderCurrentThread = noop, requestAppConfirmation = async () => false, scheduleCurrentThreadRefresh = noop, scheduleLivePollIfNeeded = noop, showError = noop, statusText = noopString, truncateMiddle = (value) => String(value || ""), visibleConversationShape = () => ({}) } = deps;
-			function isSubagentItem(item) {
-				return Boolean(item && item.type === "collabAgentToolCall");
-			}
-			function turnSubagentItems(turn) {
-				return (Array.isArray(turn && turn.items) ? turn.items : []).filter(isSubagentItem);
-			}
-			function activeSubagentItems(turn) {
-				return turnSubagentItems(turn).filter(isActiveSubagentItem);
-			}
-			function currentSubagentTurn() {
-				if (!state.currentThread) return null;
-				const live = currentLiveTurn();
-				if (turnSubagentItems(live).length) return live;
-				const latest = latestTurn();
-				return activeSubagentItems(latest).length ? latest : null;
-			}
-			function currentSubagentItems() {
-				const turn = currentSubagentTurn();
-				if (turn && currentLiveTurn() === turn) return turnSubagentItems(turn);
-				return activeSubagentItems(turn);
-			}
-			function subagentStatusKind(status) {
-				const text = statusText(status).toLowerCase();
-				if (/fail|error|denied|reject|cancel|interrupt|stop/.test(text)) return "failed";
-				if (/complete|success|succeeded|done|finished|closed/.test(text)) return "completed";
-				if (/queue|pending|waiting|wait/.test(text)) return "queued";
-				if (/running|active|started|processing|inprogress|in_progress|in-progress|working|open|spawned|starting/.test(text)) return "running";
-				return "unknown";
-			}
-			function isActiveSubagentItem(item) {
-				const kind = subagentStatusKind(item && item.status);
-				return kind === "running" || kind === "queued";
-			}
-			function currentSubagentStatusKind(item, turn) {
-				const kind = subagentStatusKind(item && item.status);
-				if (turn && currentLiveTurn() === turn && (kind === "completed" || kind === "unknown")) return "running";
-				return kind;
-			}
-			function subagentStatusLabel(kind) {
-				return {
-					running: "运行中",
-					queued: "等待",
-					completed: "完成",
-					failed: "失败",
-					unknown: "未知"
-				}[kind] || "未知";
-			}
-			function subagentSwipeAvailable() {
-				return Boolean(state.currentThread);
-			}
-			function sideChatThreadId() {
-				return String(state.currentThreadId || state.currentThread && state.currentThread.id || "");
-			}
-			function defaultSideChatState(threadId) {
-				return {
-					threadId: String(threadId || ""),
-					version: 0,
-					messages: [],
-					draft: {
-						text: "",
-						updatedAt: ""
-					},
-					candidates: [],
-					queue: null,
-					sidecar: {
-						status: "idle",
-						pendingUserMessageId: "",
-						updatedAt: "",
-						error: ""
-					},
-					audit: {
-						createdAt: "",
-						updatedAt: ""
-					},
-					persistence: "server"
-				};
-			}
-			function normalizeSideChatSidecar(input) {
-				const source = input && typeof input === "object" ? input : {};
-				const status = String(source.status || "idle").toLowerCase();
-				return {
-					status: [
-						"idle",
-						"pending",
-						"failed"
-					].includes(status) ? status : "idle",
-					pendingUserMessageId: String(source.pendingUserMessageId || ""),
-					updatedAt: String(source.updatedAt || ""),
-					error: String(source.error || "")
-				};
-			}
-			function normalizeSideChatState(input, threadId = "") {
-				const source = input && typeof input === "object" ? input : {};
-				return {
-					threadId: String(source.threadId || threadId || ""),
-					version: Math.max(0, Number(source.version) || 0),
-					messages: Array.isArray(source.messages) ? source.messages.filter(Boolean) : [],
-					draft: {
-						text: String(source.draft && source.draft.text || ""),
-						updatedAt: String(source.draft && source.draft.updatedAt || "")
-					},
-					candidates: Array.isArray(source.candidates) ? source.candidates.filter(Boolean) : [],
-					queue: source.queue && typeof source.queue === "object" ? source.queue : null,
-					sidecar: normalizeSideChatSidecar(source.sidecar),
-					audit: {
-						createdAt: String(source.audit && source.audit.createdAt || ""),
-						updatedAt: String(source.audit && source.audit.updatedAt || "")
-					},
-					persistence: "server"
-				};
-			}
-			function setSideChatState(threadId, sideChat) {
-				const id = String(threadId || sideChat && sideChat.threadId || "");
-				if (!id) return defaultSideChatState("");
-				const normalized = normalizeSideChatState(sideChat, id);
-				state.threadSideChats.set(id, normalized);
-				return normalized;
-			}
-			function sideChatStateForThread(threadId = sideChatThreadId()) {
-				const id = String(threadId || "");
-				if (!id) return defaultSideChatState("");
-				return state.threadSideChats.get(id) || defaultSideChatState(id);
-			}
-			function sideChatApiPath(threadId, suffix = "") {
-				return `/api/threads/${encodeURIComponent(threadId)}/side-chat${suffix}`;
-			}
-			function sideChatDraftTextarea() {
-				const panel = $("subagentPanel");
-				if (!panel) return null;
-				const textarea = panel.querySelector("[data-side-chat-draft]");
-				return textarea && textarea.tagName === "TEXTAREA" ? textarea : null;
-			}
-			function ensureSideChatDraftVisible() {
-				const textarea = sideChatDraftTextarea();
-				if (!textarea || document.activeElement !== textarea) return;
-				const form = textarea.closest("[data-side-chat-form]");
-				const panel = $("subagentPanel");
-				try {
-					if (form) form.scrollIntoView({
-						block: "nearest",
-						inline: "nearest"
-					});
-					else textarea.scrollIntoView({
-						block: "nearest",
-						inline: "nearest"
-					});
-				} catch (_) {}
-				if (!panel || !form) return;
-				const panelRect = panel.getBoundingClientRect();
-				const formRect = form.getBoundingClientRect();
-				const overflow = Math.ceil(formRect.bottom - panelRect.bottom + 8);
-				if (overflow > 0) panel.scrollTop = Math.max(0, Number(panel.scrollTop || 0) + overflow);
-			}
-			function autoSizeSideChatDraftTextarea(textarea = sideChatDraftTextarea()) {
-				if (!textarea) return;
-				textarea.style.height = "auto";
-				const style = window.getComputedStyle ? window.getComputedStyle(textarea) : null;
-				const maxHeight = style ? Number.parseFloat(style.maxHeight) : 160;
-				const minHeight = style ? Number.parseFloat(style.minHeight) : 44;
-				const nextHeight = Math.min(Number.isFinite(maxHeight) && maxHeight > 0 ? maxHeight : 160, Math.max(Number.isFinite(minHeight) && minHeight > 0 ? minHeight : 44, textarea.scrollHeight));
-				textarea.style.height = `${nextHeight}px`;
-				textarea.style.overflowY = textarea.scrollHeight > nextHeight + 1 ? "auto" : "hidden";
-			}
-			function sideChatScrollContainer() {
-				const panel = $("subagentPanel");
-				return panel ? panel.querySelector(".side-chat-scroll") : null;
-			}
-			function scrollSideChatToBottom() {
-				const scroller = sideChatScrollContainer();
-				if (!scroller) return false;
-				scroller.scrollTop = scroller.scrollHeight;
-				return true;
-			}
-			function scheduleSideChatToBottom() {
-				requestAnimationFrame(() => {
-					scrollSideChatToBottom();
-					requestAnimationFrame(scrollSideChatToBottom);
-				});
-			}
-			function openSideChatCandidate(candidateId = "") {
-				const scroller = sideChatScrollContainer();
-				if (!scroller) return false;
-				const id = String(candidateId || "");
-				const target = id ? scroller.querySelector(`[data-side-chat-candidate="${escapeSelectorAttr(id)}"]`) : scroller.querySelector(".side-chat-candidate");
-				if (!target) {
-					scrollSideChatToBottom();
-					return false;
-				}
-				target.scrollIntoView({
-					block: "center",
-					inline: "nearest"
-				});
-				target.classList.add("side-chat-focus");
-				setTimeout(() => target.classList.remove("side-chat-focus"), 1200);
-				return true;
-			}
-			function currentSideChatDraftText(threadId = sideChatThreadId()) {
-				const textarea = sideChatDraftTextarea();
-				if (textarea && String(textarea.dataset.threadId || "") === String(threadId || "")) return textarea.value;
-				return sideChatStateForThread(threadId).draft.text || "";
-			}
-			function truncateSideChatText(text) {
-				const value = String(text || "");
-				if (value.length <= SIDE_CHAT_DRAFT_MAX_CHARS) return value;
-				return value.slice(0, SIDE_CHAT_DRAFT_MAX_CHARS);
-			}
-			async function loadSideChat(threadId = sideChatThreadId(), options = {}) {
-				const id = String(threadId || "");
-				if (!id) return null;
-				const silent = options.silent === true;
-				if (!silent) state.sideChatError = "";
-				state.sideChatLoadingThreadId = id;
-				if (state.subagentPanelOpen && !silent) updateSubagentPanelUi({ force: true });
-				try {
-					const result = await api(sideChatApiPath(id), { timeoutMs: 2e4 });
-					const sideChat = setSideChatState(id, result && result.sideChat || null);
-					if (state.sideChatLoadingThreadId === id) state.sideChatLoadingThreadId = "";
-					if (state.sideChatError && sideChatThreadId() === id) state.sideChatError = "";
-					if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({
-						force: true,
-						scrollSideChatToBottom: true
-					});
-					if (sideChatReplyPending(id)) scheduleSideChatPoll(id);
-					return sideChat;
-				} catch (err) {
-					if (state.sideChatLoadingThreadId === id) state.sideChatLoadingThreadId = "";
-					if (sideChatThreadId() === id) state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
-					if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({
-						force: true,
-						scrollSideChatToBottom: true
-					});
-					throw err;
-				}
-			}
-			function sideChatReplyPending(threadId = sideChatThreadId()) {
-				const sideChat = sideChatStateForThread(threadId);
-				return String(sideChat.sidecar && sideChat.sidecar.status || "") === "pending";
-			}
-			function scheduleSideChatPoll(threadId = sideChatThreadId(), delayMs = 1600) {
-				const id = String(threadId || "");
-				clearTimeout(state.sideChatPollTimer);
-				state.sideChatPollTimer = null;
-				if (!id || !state.subagentPanelOpen || sideChatThreadId() !== id || !sideChatReplyPending(id)) return;
-				state.sideChatPollTimer = setTimeout(() => {
-					state.sideChatPollTimer = null;
-					loadSideChat(id, { silent: true }).then(() => {
-						if (sideChatReplyPending(id)) scheduleSideChatPoll(id, 1800);
-					}).catch(() => {
-						if (sideChatThreadId() === id) scheduleSideChatPoll(id, 2600);
-					});
-				}, Math.max(500, Number(delayMs) || 1600));
-			}
-			async function saveSideChatDraft(threadId, text, options = {}) {
-				const id = String(threadId || "");
-				if (!id) return null;
-				const nextText = truncateSideChatText(text);
-				const result = await api(sideChatApiPath(id, "/draft"), {
-					method: "PUT",
-					body: JSON.stringify({ text: nextText }),
-					timeoutMs: 2e4
-				});
-				const sideChat = setSideChatState(id, result && result.sideChat || null);
-				if (state.sideChatError && sideChatThreadId() === id) state.sideChatError = "";
-				if (options.render !== false && state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({ force: true });
-				return sideChat;
-			}
-			function scheduleSideChatDraftSave(threadId = sideChatThreadId(), text = currentSideChatDraftText(threadId)) {
-				const id = String(threadId || "");
-				if (!id) return;
-				const sideChat = sideChatStateForThread(id);
-				sideChat.draft = Object.assign({}, sideChat.draft || {}, { text: truncateSideChatText(text) });
-				state.threadSideChats.set(id, sideChat);
-				clearTimeout(state.sideChatDraftSaveTimer);
-				const seq = state.sideChatDraftSaveSeq + 1;
-				state.sideChatDraftSaveSeq = seq;
-				state.sideChatDraftSaveTimer = setTimeout(() => {
-					state.sideChatDraftSaveTimer = null;
-					saveSideChatDraft(id, sideChatStateForThread(id).draft.text, { render: false }).catch((err) => {
-						if (seq !== state.sideChatDraftSaveSeq) return;
-						if (sideChatThreadId() === id) {
-							state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
-							updateSubagentPanelUi({ force: true });
-						}
-					});
-				}, SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS);
-			}
-			function flushSideChatDraftNow() {
-				const id = sideChatThreadId();
-				if (!id) return Promise.resolve(null);
-				const text = currentSideChatDraftText(id);
-				clearTimeout(state.sideChatDraftSaveTimer);
-				state.sideChatDraftSaveTimer = null;
-				return saveSideChatDraft(id, text, { render: false }).catch((err) => {
-					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
-					return null;
-				});
-			}
-			function sideChatStatusLabel(status) {
-				return {
-					draft: "草稿",
-					queued: "已排队",
-					applied: "已发送",
-					cancelled: "已取消",
-					sending: "发送中",
-					sent: "已发送",
-					failed: "失败"
-				}[String(status || "").toLowerCase()] || "草稿";
-			}
-			function sideChatQueueSummary(queue) {
-				if (!queue) return "";
-				return `${sideChatStatusLabel(queue.status)} · ${queue.mode === "autoSendWhenIdle" ? "完成后自动发送" : "等待确认"}`;
-			}
-			function sideChatTimeLabel(value) {
-				const text = String(value || "");
-				const ms = Date.parse(text);
-				if (!Number.isFinite(ms)) return "";
-				return formatTime(Math.floor(ms / 1e3), state.nowMs);
-			}
-			function sideChatBusy(key) {
-				return Boolean(key && state.sideChatBusyKey === key);
-			}
-			function setSideChatNotice(kind, message, options = {}) {
-				const threadId = sideChatThreadId();
-				state.sideChatNotice = {
-					threadId,
-					kind: String(kind || "info"),
-					message: String(message || ""),
-					actionLabel: String(options.actionLabel || ""),
-					candidateId: String(options.candidateId || ""),
-					createdAtMs: Date.now()
-				};
-			}
-			function clearSideChatNotice() {
-				state.sideChatNotice = null;
-			}
-			function sideChatNoticeForThread(threadId = sideChatThreadId()) {
-				const notice = state.sideChatNotice;
-				if (!notice || String(notice.threadId || "") !== String(threadId || "")) return null;
-				return notice;
-			}
-			function sideChatPanelRenderSignature() {
-				const threadId = sideChatThreadId();
-				const sideChat = sideChatStateForThread(threadId);
-				const notice = sideChatNoticeForThread(threadId);
-				const messages = sideChat.messages.map((message) => [
-					message.id,
-					message.role,
-					String(message.text || "").length,
-					message.createdAt
-				].join(":")).join(",");
-				const candidates = sideChat.candidates.map((candidate) => [
-					candidate.id,
-					candidate.status,
-					candidate.updatedAt,
-					String(candidate.body || "").length,
-					candidate.appliedTurnId || ""
-				].join(":")).join(",");
-				const queue = sideChat.queue ? [
-					sideChat.queue.candidateId,
-					sideChat.queue.mode,
-					sideChat.queue.status,
-					sideChat.queue.updatedAt,
-					String(sideChat.queue.error || "").length
-				].join(":") : "";
-				const sidecar = sideChat.sidecar ? [
-					sideChat.sidecar.status,
-					sideChat.sidecar.pendingUserMessageId,
-					sideChat.sidecar.updatedAt,
-					String(sideChat.sidecar.error || "").length
-				].join(":") : "";
-				const turn = currentSubagentTurn();
-				const subagents = currentSubagentItems().map((item) => [
-					item.id || item.itemId || "",
-					item.tool || item.name || "",
-					statusText(item.status),
-					collabAgentThreadText(item),
-					String(collabAgentTaskText(item) || "").length
-				].join(":")).join(",");
-				return [
-					threadId,
-					state.activeTurnId || "",
-					state.sideChatLoadingThreadId === threadId ? "loading" : "",
-					state.sideChatError || "",
-					state.sideChatBusyKey || "",
-					notice ? [
-						notice.kind,
-						notice.message,
-						notice.actionLabel,
-						notice.candidateId
-					].join(":") : "",
-					messages,
-					candidates,
-					queue,
-					sidecar,
-					turn && turn.id || "",
-					subagents
-				].join("|");
-			}
-			function renderSideChatNotice(threadId = sideChatThreadId()) {
-				const notice = sideChatNoticeForThread(threadId);
-				if (!notice || !notice.message) return "";
-				const action = notice.actionLabel ? `<button type="button" data-side-chat-action="open-notice" data-candidate-id="${escapeHtml(notice.candidateId || "")}">${escapeHtml(notice.actionLabel)}</button>` : "";
-				return `<div class="side-chat-notice ${escapeHtml(notice.kind || "info")}">
-    <span>${escapeHtml(notice.message)}</span>
-    <span class="side-chat-notice-actions">${action}<button type="button" data-side-chat-action="dismiss-notice" aria-label="关闭提示">×</button></span>
-  </div>`;
-			}
-			function renderSubagentStatusWindow() {
-				const turn = currentSubagentTurn();
-				const items = currentSubagentItems();
-				if (!items.length) return "";
-				const rows = items.map((item, index) => {
-					const kind = currentSubagentStatusKind(item, turn);
-					const label = collabAgentNameText(item) || collabAgentThreadText(item) || (item.tool === "spawnAgent" ? "Subagent" : item.tool || item.name || `Subagent ${index + 1}`);
-					const task = collabAgentTaskText(item);
-					const thread = collabAgentThreadText(item);
-					const meta = [
-						subagentStatusLabel(kind),
-						thread ? truncateMiddle(thread, 32, "thread") : "",
-						item.tool && item.tool !== "collabAgentToolCall" ? item.tool : ""
-					].filter(Boolean).join(" | ");
-					return `<article class="subagent-status-row ${escapeHtml(kind)}">
-      <div class="subagent-status-main">
-        <div class="subagent-status-title"><span class="subagent-status-dot ${escapeHtml(kind)}"></span>${escapeHtml(label)}</div>
-        ${task ? `<div class="subagent-status-task">${escapeHtml(truncateMiddle(task, 180, "task"))}</div>` : ""}
-      </div>
-      <div class="subagent-status-meta">${escapeHtml(meta)}</div>
-    </article>`;
-				}).join("");
-				return `<section class="subagent-status-window" aria-label="Subagent 状态">
-    <div class="subagent-status-header">
-      <div>
-        <div class="subagent-status-heading">Subagent 状态</div>
-        <div class="subagent-status-summary">当前进行中 · ${items.length.toLocaleString()} 个</div>
-      </div>
-      <button class="subagent-window-close" type="button" data-subagent-panel-close aria-label="关闭 Subagent 状态">×</button>
-    </div>
-    <div class="subagent-status-list">${rows}</div>
-  </section>`;
-			}
-			function latestAssistantSideChatMessageIndex(sideChat) {
-				const messages = Array.isArray(sideChat && sideChat.messages) ? sideChat.messages : [];
-				for (let index = messages.length - 1; index >= 0; index -= 1) if (String(messages[index] && messages[index].role || "").toLowerCase() === "assistant") return index;
-				return -1;
-			}
-			function renderSideChatMessage(message, index, sideChat) {
-				const role = String(message && message.role || "user").toLowerCase();
-				const text = String(message && message.text || "");
-				const time = sideChatTimeLabel(message && message.createdAt);
-				const latestAssistant = role === "assistant" && index === latestAssistantSideChatMessageIndex(sideChat);
-				const running = Boolean(state.activeTurnId);
-				const busy = sideChatBusy(`message:${index}`) || sideChatBusy(`message-candidate:${index}`);
-				const actions = latestAssistant && text.trim() ? `<div class="side-chat-message-actions">
-        <button type="button" data-side-chat-action="message-apply" data-message-index="${index}"${busy ? " disabled" : ""}>发送主线程</button>
-        <button type="button" data-side-chat-action="message-queue" data-message-index="${index}"${busy ? " disabled" : ""}>${running ? "完成后发送" : "排队"}</button>
-        <button type="button" data-side-chat-action="message-candidate" data-message-index="${index}"${busy ? " disabled" : ""}>存为候选</button>
-      </div>` : "";
-				return `<article class="side-chat-message ${escapeHtml(role)}">
-    <div class="side-chat-message-meta">
-      <span>${escapeHtml(role === "assistant" ? "侧聊" : "我")}</span>
-      ${time ? `<time>${escapeHtml(time)}</time>` : ""}
-    </div>
-    <div class="side-chat-message-text">${escapeHtml(text)}</div>
-    ${actions}
-  </article>`;
-			}
-			function renderSideChatCandidate(candidate, sideChat) {
-				const id = String(candidate && candidate.id || "");
-				const status = String(candidate && candidate.status || "draft").toLowerCase();
-				const body = String(candidate && candidate.body || "");
-				const queue = sideChat.queue && sideChat.queue.candidateId === id ? sideChat.queue : null;
-				const busy = sideChatBusy(`candidate:${id}`) || sideChatBusy(`apply:${id}`) || sideChatBusy(`queue:${id}`) || sideChatBusy(`cancel:${id}`);
-				const running = Boolean(state.activeTurnId);
-				const canApply = (status === "draft" || status === "queued") && !running;
-				const canQueue = status === "draft";
-				const canCancel = status === "draft" || status === "queued";
-				const appliedTurn = String(candidate && candidate.appliedTurnId || "");
-				const queueSummary = queue ? sideChatQueueSummary(queue) : sideChatStatusLabel(status);
-				const error = queue && queue.status === "failed" && queue.error ? `<div class="side-chat-candidate-error">${escapeHtml(queue.error)}</div>` : "";
-				return `<article class="side-chat-candidate ${escapeHtml(status)}" data-side-chat-candidate="${escapeHtml(id)}">
-    <div class="side-chat-candidate-main">
-      <div class="side-chat-candidate-title">${escapeHtml(candidate && candidate.title || "候选指令")}</div>
-      <div class="side-chat-candidate-status">${escapeHtml(queueSummary)}${appliedTurn ? ` · ${escapeHtml(truncateMiddle(appliedTurn, 24, "turn"))}` : ""}</div>
-      <div class="side-chat-candidate-body">${escapeHtml(truncateMiddle(body, 420, "candidate"))}</div>
-      ${error}
-    </div>
-    <div class="side-chat-candidate-actions">
-      ${canApply ? `<button type="button" data-side-chat-action="apply" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>发送主线程</button>` : ""}
-      ${running && status === "draft" ? `<button type="button" data-side-chat-action="queue" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>完成后发送</button>` : ""}
-      ${!running && canQueue && status !== "queued" ? `<button type="button" data-side-chat-action="queue" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>排队</button>` : ""}
-      ${canCancel ? `<button type="button" data-side-chat-action="cancel" data-candidate-id="${escapeHtml(id)}"${busy ? " disabled" : ""}>取消</button>` : ""}
-    </div>
-  </article>`;
-			}
-			function renderSideChatPanel() {
-				const threadId = sideChatThreadId();
-				const sideChat = sideChatStateForThread(threadId);
-				const loading = state.sideChatLoadingThreadId === threadId;
-				const messages = sideChat.messages.map((message, index) => renderSideChatMessage(message, index, sideChat)).join("");
-				const candidates = sideChat.candidates.slice().reverse().map((candidate) => renderSideChatCandidate(candidate, sideChat)).join("");
-				const queue = sideChat.queue && sideChat.queue.status !== "sent" && sideChat.queue.status !== "cancelled" ? `<div class="side-chat-queue ${escapeHtml(sideChat.queue.status || "queued")}">${escapeHtml(sideChatQueueSummary(sideChat.queue))}</div>` : "";
-				const sidecar = normalizeSideChatSidecar(sideChat.sidecar);
-				const replyStatus = sidecar.status === "pending" ? `<div class="side-chat-queue pending">侧聊正在回复...</div>` : sidecar.status === "failed" && sidecar.error ? `<div class="side-chat-error">侧聊回复失败：${escapeHtml(sidecar.error)}</div>` : "";
-				const error = state.sideChatError ? `<div class="side-chat-error">${escapeHtml(state.sideChatError)}</div>` : "";
-				const notice = renderSideChatNotice(threadId);
-				const transcript = `${messages}${sidecar.status === "pending" ? `<article class="side-chat-message assistant pending">
-    <div class="side-chat-message-meta"><span>侧聊</span></div>
-    <div class="side-chat-message-text">正在整理回复...</div>
-  </article>` : ""}` || `<div class="side-chat-empty">暂无侧聊内容。</div>`;
-				const candidateList = candidates ? `<div class="side-chat-candidates">${candidates}</div>` : "";
-				const draftText = sideChat.draft && sideChat.draft.text || "";
-				const draftEmpty = !String(draftText || "").trim();
-				const busy = Boolean(state.sideChatBusyKey);
-				const loadingLabel = loading ? `<span class="side-chat-saving">同步中</span>` : "";
-				const clearDisabled = busy || !sideChat.messages.length && !sideChat.candidates.length && draftEmpty;
-				return `<section class="side-chat-section" aria-label="侧边聊天">
-    <div class="side-chat-header">
-      <div>
-        <div class="side-chat-heading">侧边聊天</div>
-        <div class="side-chat-summary">服务器保存 · ${sideChat.messages.length.toLocaleString()} 条</div>
-      </div>
-      ${loadingLabel}
-      <button class="side-chat-clear side-chat-header-clear" type="button" data-side-chat-action="clear" aria-label="清空侧聊"${clearDisabled ? " disabled" : ""}>清空</button>
-      <button class="subagent-window-close side-chat-close" type="button" data-subagent-panel-close aria-label="关闭侧边聊天">×</button>
-    </div>
-    ${queue}
-    ${replyStatus}
-    ${error}
-    ${notice}
-    <div class="side-chat-scroll">
-      <div class="side-chat-transcript">${transcript}</div>
-      ${candidateList}
-    </div>
-    <form class="side-chat-form" data-side-chat-form>
-      <div class="side-chat-composer-row">
-        <button class="side-chat-tool-button" type="button" data-side-chat-action="tools" aria-label="侧聊工具">+</button>
-        <textarea data-side-chat-draft data-thread-id="${escapeHtml(threadId)}" rows="1" maxlength="${SIDE_CHAT_DRAFT_MAX_CHARS}" placeholder="整理想法，不进入主线程">${escapeHtml(draftText)}</textarea>
-        <button class="side-chat-send" type="submit" data-side-chat-action="message"${busy || draftEmpty ? " disabled" : ""}>Send</button>
-      </div>
-      <div class="side-chat-tool-row" hidden>
-        <button type="button" data-side-chat-action="candidate"${busy || draftEmpty ? " disabled" : ""}>存为候选</button>
-      </div>
-    </form>
-  </section>`;
-			}
-			function renderSubagentPanel() {
-				const subagentWindow = renderSubagentStatusWindow();
-				return `<div class="thread-side-panel${subagentWindow ? "" : " no-subagents"}">
-    ${subagentWindow}
-    ${renderSideChatPanel()}
-  </div>`;
-			}
-			function updateSubagentPanelUi(options = {}) {
-				const panel = $("subagentPanel");
-				if (!panel) return;
-				if (!state.subagentPanelOpen || !subagentSwipeAvailable()) {
-					state.subagentPanelOpen = false;
-					panel.classList.add("hidden");
-					panel.innerHTML = "";
-					panel.dataset.renderSignature = "";
-					state.sideChatRenderSignature = "";
-					clearTimeout(state.sideChatPollTimer);
-					state.sideChatPollTimer = null;
-					return;
-				}
-				const signature = sideChatPanelRenderSignature();
-				if (options.force !== true && panel.dataset.renderSignature === signature) return;
-				panel.classList.remove("hidden");
-				panel.innerHTML = renderSubagentPanel();
-				panel.dataset.renderSignature = signature;
-				state.sideChatRenderSignature = signature;
-				panel.querySelectorAll("[data-subagent-panel-close]").forEach((button) => {
-					button.addEventListener("click", () => {
-						state.subagentPanelOpen = false;
-						updateSubagentPanelUi();
-					});
-				});
-				const form = panel.querySelector("[data-side-chat-form]");
-				if (form) form.addEventListener("submit", submitSideChatMessage);
-				const textarea = sideChatDraftTextarea();
-				if (textarea) {
-					textarea.addEventListener("input", handleSideChatDraftInput);
-					textarea.addEventListener("focus", () => requestAnimationFrame(ensureSideChatDraftVisible));
-					autoSizeSideChatDraftTextarea(textarea);
-					requestAnimationFrame(() => autoSizeSideChatDraftTextarea(textarea));
-				}
-				panel.querySelectorAll("[data-side-chat-action]").forEach((button) => {
-					if (button.closest("[data-side-chat-form]") && button.type === "submit") return;
-					button.addEventListener("click", handleSideChatActionClick);
-				});
-				if (options.scrollSideChatToBottom) scheduleSideChatToBottom();
-			}
-			function visualHarnessThreadShape(thread) {
-				const shape = visibleConversationShape(thread);
-				const itemCount = (Array.isArray(thread && thread.turns) ? thread.turns : []).reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
-				return {
-					visibleTurnCount: Number(shape.visibleTurnCount || 0),
-					visibleItemCount: Number(shape.visibleItemCount || 0),
-					itemCount,
-					detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
-					loading: Boolean(thread && thread.mobileLoading),
-					loadError: Boolean(thread && thread.mobileLoadError),
-					readMode: homeAiDiagnosticReportingApi.boundedToken(thread && thread.mobileReadMode || "", "", 80)
-				};
-			}
-			async function simulateEmptyCachedDetailOpenForHarness(threadId) {
-				const id = String(threadId || state.currentThreadId || "").trim();
-				const threadHash = diagnosticThreadHash(id);
-				const before = {
-					visibleTurnCount: 0,
-					visibleItemCount: 0,
-					itemCount: 0,
-					detailLoaded: true,
-					loading: false,
-					loadError: false,
-					readMode: "visual-harness-empty-cache"
-				};
-				if (!id) return {
-					ok: false,
-					error: "missing_thread_id",
-					clientBuildId: CLIENT_BUILD_ID,
-					thread_hash: "",
-					before,
-					after: null
-				};
-				state.currentThreadId = id;
-				state.currentThread = {
-					id,
-					turns: [],
-					mobileDetailLoaded: true,
-					mobileLoading: false,
-					mobileLoadError: "",
-					mobileReadMode: "visual-harness-empty-cache"
-				};
-				await loadThread(id, { source: "visual-harness-empty-cache" });
-				const after = visualHarnessThreadShape(state.currentThread);
-				return {
-					ok: Boolean(after.visibleTurnCount || after.visibleItemCount),
-					error: after.loadError ? "thread_detail_load_error" : "",
-					clientBuildId: CLIENT_BUILD_ID,
-					thread_hash: threadHash,
-					before,
-					after
-				};
-			}
-			async function simulateStableSignatureEmptyDomForHarness(threadId) {
-				const id = String(threadId || state.currentThreadId || "").trim();
-				const threadHash = diagnosticThreadHash(id);
-				if (!id) return {
-					ok: false,
-					error: "missing_thread_id",
-					clientBuildId: CLIENT_BUILD_ID,
-					thread_hash: "",
-					before: null,
-					after: null,
-					domBefore: null,
-					domAfter: null
-				};
-				await loadThread(id, { source: "visual-harness-stable-signature-seed" });
-				const before = visualHarnessThreadShape(state.currentThread);
-				const signature = conversationRenderSignature(state.currentThread);
-				const patchShellSignature = conversationPatchShellSignature(state.currentThread);
-				const conversation = $("conversation");
-				const domBefore = {
-					turnCount: conversationDomTurnIds(conversation).length,
-					itemCount: conversation ? conversation.querySelectorAll(".item[data-item]").length : 0
-				};
-				state.renderedConversationSignature = signature;
-				state.renderedConversationPatchShellSignature = patchShellSignature;
-				if (conversation) conversation.innerHTML = "<div class=\"empty-state\">No visible turns.</div>";
-				renderCurrentThread({
-					stickToBottom: true,
-					source: "visual-harness-stable-signature-empty-dom"
-				});
-				const afterConversation = $("conversation");
-				const hasEmptyState = afterConversation ? Boolean(afterConversation.querySelector(".empty-state")) : false;
-				const domAfter = {
-					turnCount: conversationDomTurnIds(afterConversation).length,
-					itemCount: afterConversation ? afterConversation.querySelectorAll(".item[data-item]").length : 0,
-					emptyState: hasEmptyState ? "empty-state" : ""
-				};
-				const after = visualHarnessThreadShape(state.currentThread);
-				return {
-					ok: Boolean(before.visibleTurnCount && after.visibleTurnCount && domAfter.turnCount > 0 && !hasEmptyState),
-					error: after.loadError ? "thread_detail_load_error" : "",
-					clientBuildId: CLIENT_BUILD_ID,
-					thread_hash: threadHash,
-					before,
-					after,
-					domBefore,
-					domAfter
-				};
-			}
-			function refreshSideChatFormButtons() {
-				const textarea = sideChatDraftTextarea();
-				if (!textarea) return;
-				const form = textarea.closest("[data-side-chat-form]");
-				if (!form) return;
-				const panel = $("subagentPanel");
-				const sideChat = sideChatStateForThread(String(textarea.dataset.threadId || sideChatThreadId()));
-				const draftEmpty = !textarea.value.trim();
-				form.querySelectorAll("[data-side-chat-action='message'], [data-side-chat-action='candidate']").forEach((button) => {
-					button.disabled = Boolean(state.sideChatBusyKey) || draftEmpty;
-				});
-				if (panel) panel.querySelectorAll("[data-side-chat-action='clear']").forEach((button) => {
-					button.disabled = Boolean(state.sideChatBusyKey) || draftEmpty && !sideChat.messages.length && !sideChat.candidates.length;
-				});
-			}
-			function setSideChatBusy(key) {
-				state.sideChatBusyKey = String(key || "");
-				updateSubagentPanelUi({ force: true });
-			}
-			function applySideChatResult(threadId, result) {
-				if (result && result.state) return setSideChatState(threadId, result.state);
-				if (result && result.sideChat) return setSideChatState(threadId, result.sideChat);
-				return sideChatStateForThread(threadId);
-			}
-			function handleSideChatDraftInput(event) {
-				const textarea = event && event.currentTarget;
-				if (!textarea) return;
-				const threadId = String(textarea.dataset.threadId || sideChatThreadId());
-				const text = truncateSideChatText(textarea.value);
-				if (text !== textarea.value) textarea.value = text;
-				autoSizeSideChatDraftTextarea(textarea);
-				scheduleSideChatDraftSave(threadId, text);
-				refreshSideChatFormButtons();
-				ensureSideChatDraftVisible();
-			}
-			function installCodexMobileVisualHarnessFacade() {
-				if (!isHermesEmbedMode() || window.__codexMobileVisualHarness) return;
-				Object.defineProperty(window, "__codexMobileVisualHarness", {
-					configurable: false,
-					enumerable: false,
-					value: Object.freeze({
-						clientBuildId: () => CLIENT_BUILD_ID,
-						currentThreadId: () => String(state.currentThreadId || ""),
-						hostViewport: () => state.pluginHostViewport || null,
-						sideChatPanelOpen: () => Boolean(state.subagentPanelOpen),
-						setSideChatPanelOpen: (open) => {
-							state.subagentPanelOpen = Boolean(open);
-							updateSubagentPanelUi({
-								force: true,
-								scrollSideChatToBottom: Boolean(open)
-							});
-							return Boolean(state.subagentPanelOpen);
-						},
-						openThread: (threadId) => loadThread(String(threadId || ""), { source: "visual-harness" }),
-						simulateEmptyCachedDetailOpen: (threadId) => simulateEmptyCachedDetailOpenForHarness(threadId),
-						simulateStableSignatureEmptyDom: (threadId) => simulateStableSignatureEmptyDomForHarness(threadId),
-						loadSideChat: (threadId) => loadSideChat(String(threadId || sideChatThreadId()), { silent: true }),
-						ensureSideChatDraftVisible,
-						autoSizeSideChatDraftTextarea
-					})
-				});
-			}
-			async function submitSideChatMessage(event) {
-				if (event && typeof event.preventDefault === "function") event.preventDefault();
-				const threadId = sideChatThreadId();
-				const text = currentSideChatDraftText(threadId).trim();
-				if (!threadId || !text || state.sideChatBusyKey) return;
-				setSideChatBusy("message");
-				try {
-					clearTimeout(state.sideChatDraftSaveTimer);
-					state.sideChatDraftSaveTimer = null;
-					applySideChatResult(threadId, await api(sideChatApiPath(threadId, "/messages"), {
-						method: "POST",
-						body: JSON.stringify({
-							role: "user",
-							text,
-							idempotencyKey: createSubmissionId()
-						}),
-						timeoutMs: 2e4
-					}));
-					state.sideChatError = "";
-					if (sideChatReplyPending(threadId)) scheduleSideChatPoll(threadId, 900);
-					markActivity("侧聊已发送");
-				} catch (err) {
-					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
-					showError(err);
-				} finally {
-					setSideChatBusy("");
-					updateSubagentPanelUi({
-						force: true,
-						scrollSideChatToBottom: true
-					});
-				}
-			}
-			async function createSideChatCandidateFromText(text, options = {}) {
-				const threadId = sideChatThreadId();
-				const body = String(text || "").trim();
-				if (!threadId || !body || state.sideChatBusyKey) return null;
-				setSideChatBusy(options.busyKey || "candidate");
-				try {
-					clearTimeout(state.sideChatDraftSaveTimer);
-					state.sideChatDraftSaveTimer = null;
-					const sideChat = applySideChatResult(threadId, await api(sideChatApiPath(threadId, "/candidates"), {
-						method: "POST",
-						body: JSON.stringify({
-							body,
-							idempotencyKey: createSubmissionId()
-						}),
-						timeoutMs: 2e4
-					}));
-					if (options.clearDraft) await saveSideChatDraft(threadId, "", { render: false });
-					state.sideChatError = "";
-					markActivity("候选已保存");
-					const candidates = Array.isArray(sideChat && sideChat.candidates) ? sideChat.candidates : [];
-					const candidate = candidates[candidates.length - 1] || null;
-					if (candidate && candidate.id) setSideChatNotice("success", "候选已保存，可以稍后发送到主线程。", {
-						actionLabel: "打开候选",
-						candidateId: candidate.id
-					});
-					return candidate;
-				} catch (err) {
-					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
-					showError(err);
-					return null;
-				} finally {
-					setSideChatBusy("");
-					updateSubagentPanelUi({
-						force: true,
-						scrollSideChatToBottom: true
-					});
-				}
-			}
-			async function createSideChatCandidateFromDraft() {
-				const threadId = sideChatThreadId();
-				const text = currentSideChatDraftText(threadId).trim();
-				if (!threadId || !text || state.sideChatBusyKey) return;
-				await createSideChatCandidateFromText(text, {
-					clearDraft: true,
-					busyKey: "candidate"
-				});
-			}
-			function sideChatMessageTextByIndex(index) {
-				const message = sideChatStateForThread(sideChatThreadId()).messages[Number(index)];
-				return String(message && message.text || "").trim();
-			}
-			async function createSideChatCandidateFromMessage(index, nextAction = "") {
-				const text = sideChatMessageTextByIndex(index);
-				if (!text || state.sideChatBusyKey) return;
-				const candidate = await createSideChatCandidateFromText(text, { busyKey: `message-candidate:${index}` });
-				const id = String(candidate && candidate.id || "");
-				if (!id) return;
-				if (nextAction === "apply") await applySideChatCandidate(id);
-				else if (nextAction === "queue") await queueSideChatCandidate(id, state.activeTurnId ? "autoSendWhenIdle" : "confirmWhenIdle");
-			}
-			async function queueSideChatCandidate(candidateId, mode = "autoSendWhenIdle") {
-				const threadId = sideChatThreadId();
-				const id = String(candidateId || "");
-				if (!threadId || !id || state.sideChatBusyKey) return;
-				setSideChatBusy(`queue:${id}`);
-				try {
-					applySideChatResult(threadId, await api(sideChatApiPath(threadId, `/candidates/${encodeURIComponent(id)}/queue`), {
-						method: "POST",
-						body: JSON.stringify({
-							mode,
-							idempotencyKey: `sidechat:${threadId}:${id}:${mode}`
-						}),
-						timeoutMs: 2e4
-					}));
-					state.sideChatError = "";
-					setSideChatNotice("success", mode === "autoSendWhenIdle" ? "已排队，当前任务完成后会发送到主线程。" : "候选已排队，空闲后可从队列继续。", {
-						actionLabel: "打开队列",
-						candidateId: id
-					});
-					markActivity(mode === "autoSendWhenIdle" ? "侧聊已排队" : "候选已排队");
-				} catch (err) {
-					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
-					showError(err);
-				} finally {
-					setSideChatBusy("");
-					updateSubagentPanelUi({
-						force: true,
-						scrollSideChatToBottom: true
-					});
-				}
-			}
-			async function applySideChatCandidate(candidateId) {
-				const threadId = sideChatThreadId();
-				const id = String(candidateId || "");
-				if (!threadId || !id || state.sideChatBusyKey) return;
-				if (state.activeTurnId) {
-					await queueSideChatCandidate(id, "autoSendWhenIdle");
-					return;
-				}
-				setSideChatBusy(`apply:${id}`);
-				try {
-					applySideChatResult(threadId, await api(sideChatApiPath(threadId, `/candidates/${encodeURIComponent(id)}/apply`), {
-						method: "POST",
-						body: JSON.stringify({
-							mode: "confirmWhenIdle",
-							idempotencyKey: `sidechat:${threadId}:${id}:apply`
-						}),
-						timeoutMs: 18e4
-					}));
-					state.sideChatError = "";
-					clearSideChatNotice();
-					markActivity("侧聊已发送");
-					scheduleCurrentThreadRefresh(600);
-					scheduleLivePollIfNeeded(1200);
-					loadThreads({ silent: true }).catch(showError);
-				} catch (err) {
-					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
-					showError(err);
-				} finally {
-					setSideChatBusy("");
-					updateSubagentPanelUi({ force: true });
-				}
-			}
-			async function cancelSideChatCandidate(candidateId) {
-				const threadId = sideChatThreadId();
-				const id = String(candidateId || "");
-				if (!threadId || !id || state.sideChatBusyKey) return;
-				setSideChatBusy(`cancel:${id}`);
-				try {
-					applySideChatResult(threadId, await api(sideChatApiPath(threadId, `/candidates/${encodeURIComponent(id)}/cancel`), {
-						method: "POST",
-						body: JSON.stringify({}),
-						timeoutMs: 2e4
-					}));
-					state.sideChatError = "";
-					clearSideChatNotice();
-				} catch (err) {
-					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
-					showError(err);
-				} finally {
-					setSideChatBusy("");
-					updateSubagentPanelUi({ force: true });
-				}
-			}
-			async function clearSideChat() {
-				const threadId = sideChatThreadId();
-				if (!threadId || state.sideChatBusyKey) return;
-				if (!await requestAppConfirmation("清空这个线程的侧聊内容？", {
-					title: "清空侧聊",
-					confirmLabel: "清空",
-					cancelLabel: "取消"
-				})) return;
-				setSideChatBusy("clear");
-				try {
-					clearTimeout(state.sideChatDraftSaveTimer);
-					state.sideChatDraftSaveTimer = null;
-					applySideChatResult(threadId, await api(sideChatApiPath(threadId, "/clear"), {
-						method: "POST",
-						body: JSON.stringify({}),
-						timeoutMs: 2e4
-					}));
-					state.sideChatError = "";
-					clearSideChatNotice();
-				} catch (err) {
-					state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
-					showError(err);
-				} finally {
-					setSideChatBusy("");
-					updateSubagentPanelUi({ force: true });
-				}
-			}
-			function handleSideChatActionClick(event) {
-				const button = event && event.currentTarget || event && event.target && event.target.closest("[data-side-chat-action]");
-				if (!button) return;
-				const action = String(button.dataset.sideChatAction || "");
-				const candidateId = String(button.dataset.candidateId || "");
-				const messageIndex = String(button.dataset.messageIndex || "");
-				if (action === "candidate") createSideChatCandidateFromDraft();
-				else if (action === "tools") {
-					const row = button.closest("[data-side-chat-form]") && button.closest("[data-side-chat-form]").querySelector(".side-chat-tool-row");
-					if (row) row.hidden = !row.hidden;
-				} else if (action === "message-candidate") createSideChatCandidateFromMessage(messageIndex);
-				else if (action === "message-apply") createSideChatCandidateFromMessage(messageIndex, "apply");
-				else if (action === "message-queue") createSideChatCandidateFromMessage(messageIndex, "queue");
-				else if (action === "apply") applySideChatCandidate(candidateId);
-				else if (action === "queue") queueSideChatCandidate(candidateId, state.activeTurnId ? "autoSendWhenIdle" : "confirmWhenIdle");
-				else if (action === "cancel") cancelSideChatCandidate(candidateId);
-				else if (action === "clear") clearSideChat();
-				else if (action === "open-notice") openSideChatCandidate(candidateId);
-				else if (action === "dismiss-notice") {
-					clearSideChatNotice();
-					updateSubagentPanelUi({ force: true });
-				}
-			}
-			function openSubagentPanelFromGesture() {
-				if (!state.currentThread) return;
-				state.subagentPanelOpen = true;
-				updateSubagentPanelUi({
-					force: true,
-					scrollSideChatToBottom: true
-				});
-				if (!state.threadSideChats.has(sideChatThreadId())) loadSideChat(sideChatThreadId(), { silent: true }).catch(showError);
-			}
-			function isHorizontalScrollableGestureTarget(target) {
-				return Boolean(target && target.closest && target.closest(".markdown-mermaid-viewer, .markdown-mermaid-canvas, .markdown-mermaid-artboard, .markdown-table-wrap, .markdown-code-table-preview, .markdown-code-block pre"));
-			}
-			function subagentSwipeEdgeLimitPx() {
-				const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
-				if (!viewportWidth) return SUBAGENT_EDGE_SWIPE_PX;
-				const responsiveLimit = Math.round(viewportWidth * SUBAGENT_EDGE_SWIPE_RATIO);
-				return Math.min(SUBAGENT_EDGE_SWIPE_MAX_PX, Math.max(SUBAGENT_EDGE_SWIPE_PX, responsiveLimit));
-			}
-			function subagentSwipeStartsNearEdge(clientX) {
-				const x = Number(clientX);
-				const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
-				if (!Number.isFinite(x) || !viewportWidth) return false;
-				return viewportWidth - x <= subagentSwipeEdgeLimitPx();
-			}
-			function beginSubagentSwipe(event) {
-				if (!subagentSwipeAvailable()) return;
-				if (event.touches && event.touches.length > 1) return;
-				if (isInteractiveGestureTarget(event.target)) return;
-				if (isHorizontalScrollableGestureTarget(event.target)) return;
-				const touch = primaryTouch(event);
-				if (!touch) return;
-				if (!subagentSwipeStartsNearEdge(touch.clientX)) return;
-				state.subagentSwipe = {
-					startX: touch.clientX,
-					startY: touch.clientY,
-					currentX: touch.clientX,
-					currentY: touch.clientY,
-					moved: false
-				};
-			}
-			function moveSubagentSwipe(event) {
-				const swipe = state.subagentSwipe;
-				if (!swipe) return;
-				const touch = primaryTouch(event);
-				if (!touch) return;
-				const dx = touch.clientX - swipe.startX;
-				const dy = touch.clientY - swipe.startY;
-				if (!swipe.moved) {
-					if (Math.abs(dx) < 10 && Math.abs(dy) < 12) return;
-					if (dx >= 0 || Math.abs(dy) > Math.abs(dx)) {
-						cancelSubagentSwipe();
-						return;
-					}
-				}
-				swipe.moved = true;
-				swipe.currentX = touch.clientX;
-				swipe.currentY = touch.clientY;
-				if (event.cancelable !== false) event.preventDefault();
-			}
-			function finishSubagentSwipe() {
-				const swipe = state.subagentSwipe;
-				state.subagentSwipe = null;
-				if (!swipe || !swipe.moved) return;
-				const dx = Number(swipe.currentX || swipe.startX) - swipe.startX;
-				const dy = Number(swipe.currentY || swipe.startY) - swipe.startY;
-				if (dx <= -SUBAGENT_SWIPE_MIN_PX && Math.abs(dy) <= Math.abs(dx) * .85) openSubagentPanelFromGesture();
-			}
-			function cancelSubagentSwipe() {
-				state.subagentSwipe = null;
-			}
-			function handleSubagentWheelSwipe(event) {
-				if (state.subagentPanelOpen || !subagentSwipeAvailable()) return;
-				if (isHorizontalScrollableGestureTarget(event.target)) return;
-				if (!subagentSwipeStartsNearEdge(event.clientX)) return;
-				const dx = Number(event.deltaX || 0);
-				const dy = Number(event.deltaY || 0);
-				if (dx >= SUBAGENT_WHEEL_SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.2) openSubagentPanelFromGesture();
-			}
-			return Object.freeze({
-				isSubagentItem,
-				turnSubagentItems,
-				activeSubagentItems,
-				currentSubagentTurn,
-				currentSubagentItems,
-				subagentStatusKind,
-				isActiveSubagentItem,
-				currentSubagentStatusKind,
-				subagentStatusLabel,
-				subagentSwipeAvailable,
-				sideChatThreadId,
-				defaultSideChatState,
-				normalizeSideChatSidecar,
-				normalizeSideChatState,
-				setSideChatState,
-				sideChatStateForThread,
-				sideChatApiPath,
-				sideChatDraftTextarea,
-				ensureSideChatDraftVisible,
-				autoSizeSideChatDraftTextarea,
-				sideChatScrollContainer,
-				scrollSideChatToBottom,
-				scheduleSideChatToBottom,
-				openSideChatCandidate,
-				currentSideChatDraftText,
-				truncateSideChatText,
-				loadSideChat,
-				sideChatReplyPending,
-				scheduleSideChatPoll,
-				saveSideChatDraft,
-				scheduleSideChatDraftSave,
-				flushSideChatDraftNow,
-				sideChatStatusLabel,
-				sideChatQueueSummary,
-				sideChatTimeLabel,
-				sideChatBusy,
-				setSideChatNotice,
-				clearSideChatNotice,
-				sideChatNoticeForThread,
-				sideChatPanelRenderSignature,
-				renderSideChatNotice,
-				renderSubagentStatusWindow,
-				latestAssistantSideChatMessageIndex,
-				renderSideChatMessage,
-				renderSideChatCandidate,
-				renderSideChatPanel,
-				renderSubagentPanel,
-				updateSubagentPanelUi,
-				visualHarnessThreadShape,
-				simulateEmptyCachedDetailOpenForHarness,
-				simulateStableSignatureEmptyDomForHarness,
-				refreshSideChatFormButtons,
-				setSideChatBusy,
-				applySideChatResult,
-				handleSideChatDraftInput,
-				installCodexMobileVisualHarnessFacade,
-				submitSideChatMessage,
-				createSideChatCandidateFromText,
-				createSideChatCandidateFromDraft,
-				sideChatMessageTextByIndex,
-				createSideChatCandidateFromMessage,
-				queueSideChatCandidate,
-				applySideChatCandidate,
-				cancelSideChatCandidate,
-				clearSideChat,
-				handleSideChatActionClick,
-				openSubagentPanelFromGesture,
-				isHorizontalScrollableGestureTarget,
-				subagentSwipeEdgeLimitPx,
-				subagentSwipeStartsNearEdge,
-				beginSubagentSwipe,
-				moveSubagentSwipe,
-				finishSubagentSwipe,
-				cancelSubagentSwipe,
-				handleSubagentWheelSwipe
-			});
-		}
-		root.CodexSideChatRuntime = Object.freeze({ createSideChatRuntime });
-		if (typeof module !== "undefined" && module.exports) module.exports = { createSideChatRuntime };
-	})(typeof window !== "undefined" ? window : globalThis);
-}));
-//#endregion
 //#region public/media-preview-runtime.js
 var require_media_preview_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachMediaPreviewRuntime(root) {
@@ -3261,29 +2089,2610 @@ var require_media_preview_runtime = /* @__PURE__ */ __commonJSMin(((exports, mod
 	})(typeof window !== "undefined" ? window : globalThis);
 }));
 //#endregion
-//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-04
-var import_side_chat_runtime = /* @__PURE__ */ __toESM(require_side_chat_runtime());
+//#region public/composer-runtime.js
+var require_composer_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachComposerRuntime(root) {
+		function createComposerRuntime(deps = {}) {
+			const { $, COMPOSER_INTENT_BODY_MAX_CHARS, MESSAGE_INPUT_MAX_HEIGHT_PX, MESSAGE_INPUT_MIN_HEIGHT_PX, STORAGE_CODEX_FAST_MODE, STORAGE_COMPOSER_INTENT_DRAFTS, THREAD_GOAL_MENTION_PATTERN, THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN, THREAD_TASK_CARD_MENTION_PATTERN, api, clearDraftForKey, clearSubmittedMessageBottomFollow, closeThreadGoalDialog, commitPluginVoiceInputSessionsAfterSend, composerTargetThread = () => null, connectEvents, composerTargetActiveTurnId, createSubmissionId, currentComposerThreadId, currentDraftKey, defaultNewThreadEffort, defaultNewThreadModel, defaultNewThreadPermissionMode, deleteDraftAttachments, diagnosticErrorCode, diagnosticErrorStatus, diagnosticTaskHash, diagnosticThreadHash, document, draftKeyForThread, effectiveComposerPermissionMode, escapeHtml, followSubmittedMessageToBottom, homeAiDiagnosticReportingApi, imageCompressor, insertLocalSubmittedUserMessage, isAndroidBrowser, isChatGptProCommandText, isHermesEmbedMode, isKeyboardEditableElement, isThreadGoalCommandText, isThreadTaskCardCommandText, isThreadTileComposerContext, labelForEffort, labelForModel, labelForPermissionMode, loadJsonStorage, loadThread, loadThreads, localAttachmentPreviewUrl, localStorage, markActivity, markSubmittedUserMessageFailed, markThreadOptimisticallyActive, mergeItemsPreservingLocalVisible, newThreadSelectedEffort, newThreadSelectedModel, newThreadSelectedPermissionMode, normalizeOptionList, normalizeThreadGoal, openThreadGoalDialog, postClientEvent, publishPluginVoiceInputCapability, reconcileSubmittedUserMessageTurn, recordHomeAiDiagnosticFailure, renderCurrentThread, renderQuotaUsage, renderThreads, replacePendingAttachments, restoreThreadStatusSnapshot, saveCurrentDraftNow, saveDraftAttachmentFiles, scheduleComposerTargetRefresh, scheduleCurrentDraftSave, scheduleCurrentThreadRefresh, scheduleLivePollIfNeeded, scheduleScrollToBottomButtonUpdate, scheduleSubmittedMessageDomProbe, selectedQuotaModel, setComposerActionButtonLabel, setSteerFeedback, setThreadGoalDialogBusy, showComposerFastHint, showError, snapshotThreadStatus, startedTurnId, state, submitChatGptProRequest, submittedThreadGoal, threadDisplayName, threadTaskCardCommandText, threadTileStatePolicy, updateThreadGoalState, viewportMetrics, viewportState, window, writeCurrentDraftToKey } = deps;
+			function updateComposerHeightVar(options = {}) {
+				const composer = $("composer");
+				if (!composer) return false;
+				const nextPx = viewportMetrics.cssPixel(composer.getBoundingClientRect().height);
+				if (!nextPx) return false;
+				const previousPx = viewportMetrics.cssPixel(state.composerHeightPx);
+				if (!options.force && !viewportMetrics.stablePixelChanged(previousPx, nextPx)) return false;
+				state.composerHeightPx = nextPx;
+				document.documentElement.style.setProperty("--composer-height", `${nextPx}px`);
+				scheduleScrollToBottomButtonUpdate();
+				return true;
+			}
+			function clearSendProgressWatchdog() {
+				if (state.sendProgressWatchdog) {
+					clearTimeout(state.sendProgressWatchdog);
+					state.sendProgressWatchdog = null;
+				}
+			}
+			function startSendProgressWatchdog(threadId) {
+				clearSendProgressWatchdog();
+				state.sendProgressStartAt = Date.now();
+				state.sendProgressWarned = false;
+				const targetThreadId = String(threadId || "");
+				state.sendProgressWatchdog = setTimeout(() => {
+					if (!state.composerBusy || currentComposerThreadId() !== targetThreadId) return;
+					state.sendProgressWarned = true;
+					const steering = state.steerFeedback && state.steerFeedback.status === "sending";
+					$("connectionState").textContent = steering ? "引导较慢，稍等一下，避免重复提交" : "发送较慢，检查网络后稍等，避免重复提交";
+					$("connectionState").classList.add("error");
+					postClientEvent("message_send_stall", {
+						threadId: targetThreadId,
+						elapsedMs: Date.now() - state.sendProgressStartAt,
+						composerBusy: state.composerBusy,
+						hasContent: composerHasContent()
+					});
+				}, 9500);
+			}
+			function finishSendProgressWatchdog() {
+				clearSendProgressWatchdog();
+				state.sendProgressStartAt = 0;
+				state.sendProgressWarned = false;
+			}
+			function normalizeClientErrorMessage(message, err = null) {
+				if (String(err && err.code || "").trim() === "codex_account_auth_invalid") return "Codex 账号登录已失效，请重新登录该账号，或切换到可用账号后重试。";
+				const text = String(message || "").toLowerCase();
+				if (/token_expired|refresh_token_reused|refresh token|access token/.test(text)) return "Codex 账号登录已失效，请重新登录该账号，或切换到可用账号后重试。";
+				if (text.includes("failed to fetch")) return "网络异常，发送失败：请求未发出，请检查网络后重试";
+				if (/(rate\s*limit|usage\s*limit|quota|limit reached|exhausted|insufficient credits?)/i.test(String(message || ""))) {
+					const model = selectedQuotaModel();
+					return model ? `${labelForModel(model)} 额度不足，请切换模型后重试` : "模型额度不足，请切换模型后重试";
+				}
+				if (text.includes("request timed out")) return "请求超时，服务响应较慢，请稍后再试";
+				if (text.includes("request cancelled")) return "请求被取消，稍后可重试";
+				if (/\bunauthorized\b/.test(text)) return "登录已失效，请重新登录";
+				if (/\brpc timeout\b/.test(text)) return "请求服务端超时，请稍后重试";
+				return rawMessageFallback(message);
+			}
+			function rawMessageFallback(message) {
+				return String(message || "").trim() || "操作失败，请重试";
+			}
+			function composerText() {
+				const el = $("messageInput");
+				return (el ? el.innerText : "").replace(/\u00a0/g, " ").replace(/\n+$/g, "").trim();
+			}
+			function setComposerText(value) {
+				const el = $("messageInput");
+				if (!el) return;
+				el.textContent = String(value || "");
+				if (!value) el.innerHTML = "";
+				autoSizeMessageInput(el, { force: true });
+			}
+			function placeMessageInputCaretAtEnd(input) {
+				if (!input || !window.getSelection || !document.createRange) return false;
+				try {
+					const range = document.createRange();
+					range.selectNodeContents(input);
+					range.collapse(false);
+					const selection = window.getSelection();
+					if (!selection) return false;
+					selection.removeAllRanges();
+					selection.addRange(range);
+					return true;
+				} catch (_) {
+					return false;
+				}
+			}
+			function focusMessageInput(options = {}) {
+				const input = $("messageInput");
+				if (!input) return false;
+				if (options.ensureEnabled !== false && (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true")) setMessageInputDisabled(false);
+				if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
+				if (options.resetActiveFocus && document.activeElement === input && (!isAndroidBrowser() || options.allowAndroidActiveFocusReset)) try {
+					input.blur();
+				} catch (_) {}
+				try {
+					input.focus({ preventScroll: true });
+				} catch (_) {
+					try {
+						input.focus();
+					} catch (err) {
+						return false;
+					}
+				}
+				if (options.moveCaretToEnd) placeMessageInputCaretAtEnd(input);
+				if (options.retry && document.activeElement !== input) window.setTimeout(() => focusMessageInput(Object.assign({}, options, { retry: false })), 30);
+				return true;
+			}
+			function messageInputKeyboardVisible() {
+				if (!isKeyboardEditableElement(document.activeElement)) return false;
+				const viewport = viewportState();
+				return Boolean(viewport && (viewport.keyboardShrunk || viewport.hostKeyboardVisible));
+			}
+			function shouldRecoverMessageInputKeyboard() {
+				const input = $("messageInput");
+				if (!input || document.activeElement !== input) return false;
+				if (!isAndroidBrowser() && !isHermesEmbedMode()) return false;
+				if (state.composerBusy || state.composerComposing) return false;
+				if (messageInputKeyboardVisible()) return false;
+				return Date.now() - Number(state.messageInputKeyboardRecoveryAt || 0) > 450;
+			}
+			function recoverMessageInputKeyboardFromGesture() {
+				const wasFocused = Boolean(state.messageInputPointerWasFocused);
+				state.messageInputPointerWasFocused = false;
+				if (!wasFocused) return false;
+				if (!shouldRecoverMessageInputKeyboard()) return false;
+				state.messageInputKeyboardRecoveryAt = Date.now();
+				return focusMessageInput(isAndroidBrowser() ? {
+					moveCaretToEnd: false,
+					retry: true
+				} : {
+					moveCaretToEnd: false,
+					resetActiveFocus: true,
+					allowAndroidActiveFocusReset: true,
+					retry: true
+				});
+			}
+			function messageInputCanEnableForNativeGesture() {
+				if (state.composerBusy || state.attachmentProcessingCount > 0) return false;
+				if (state.newThreadDraft) return true;
+				return Boolean(state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError);
+			}
+			function releaseStaleAndroidMessageInputFocusBeforeNativeTap(input) {
+				if (!input || !isAndroidBrowser()) return false;
+				if (!state.messageInputPointerWasFocused) return false;
+				if (document.activeElement === input) return false;
+				if (!messageInputCanEnableForNativeGesture()) return false;
+				if (state.composerComposing || messageInputKeyboardVisible()) return false;
+				const now = Date.now();
+				if (now - Number(state.messageInputKeyboardRecoveryAt || 0) <= 450) return false;
+				state.messageInputKeyboardRecoveryAt = now;
+				try {
+					input.blur();
+					return true;
+				} catch (_) {
+					return false;
+				}
+			}
+			function prepareMessageInputForNativeGesture() {
+				const input = $("messageInput");
+				state.messageInputPointerWasFocused = document.activeElement === input;
+				if (!input || !isAndroidBrowser()) return;
+				if (!messageInputCanEnableForNativeGesture()) return;
+				if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") setMessageInputDisabled(false);
+				releaseStaleAndroidMessageInputFocusBeforeNativeTap(input);
+			}
+			function normalizedComposerIntentText(value) {
+				return String(value || "").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\u00a0/g, " ").trim();
+			}
+			function composerIntentOptions() {
+				return [
+					{
+						kind: "goal",
+						tag: "@目标任务",
+						label: "目标任务",
+						detail: "设置当前线程目标、预算和状态",
+						title: "目标任务",
+						subtitle: "打开目标设置框，内容不会作为普通消息发送。",
+						placeholder: "",
+						submitLabel: "打开目标"
+					},
+					{
+						kind: "task-card",
+						tag: "@任务卡片",
+						label: "任务卡片",
+						detail: "发给其他线程，目标侧审批后执行",
+						title: "任务卡片",
+						subtitle: "输入要交给其他线程处理的完整需求；提交后会先生成待审批任务卡片。",
+						placeholder: "写清目标线程、任务背景、期望输出和约束。",
+						submitLabel: "创建任务卡片"
+					},
+					{
+						kind: "task-card-auto",
+						tag: "@自由协作",
+						label: "自由协作",
+						detail: "任务卡片自动回传后续结果",
+						title: "自由协作",
+						subtitle: "输入跨线程协作需求；目标线程首次审批后，后续同源回传可自动继续。",
+						placeholder: "写清协作对象、需要对方完成的步骤，以及完成后回传什么。",
+						submitLabel: "创建协作卡片"
+					},
+					{
+						kind: "chatgpt-pro",
+						tag: "@ChatGPT Pro",
+						label: "ChatGPT Pro",
+						detail: "用专用 Pro 线程生成分析文档",
+						title: "ChatGPT Pro 分析",
+						subtitle: "输入要交给 ChatGPT Pro 分析的问题；内容不会进入当前工作线程。",
+						placeholder: "写清要分析的代码、方案、风险或决策问题。",
+						submitLabel: "提交 Pro 分析"
+					}
+				];
+			}
+			function composerIntentOption(kind) {
+				return composerIntentOptions().find((item) => item.kind === kind) || null;
+			}
+			function composerIntentDraftKey(kind) {
+				return `${currentDraftKey() || (state.currentThreadId ? `thread:${state.currentThreadId}` : "new-thread")}::${String(kind || "").trim()}`;
+			}
+			function loadComposerIntentDraft(kind) {
+				const drafts = loadJsonStorage(STORAGE_COMPOSER_INTENT_DRAFTS, {});
+				const key = composerIntentDraftKey(kind);
+				return String(drafts && drafts[key] || "");
+			}
+			function saveComposerIntentDraft(kind, value) {
+				const key = composerIntentDraftKey(kind);
+				if (!key) return;
+				const drafts = loadJsonStorage(STORAGE_COMPOSER_INTENT_DRAFTS, {});
+				const text = String(value || "").slice(0, COMPOSER_INTENT_BODY_MAX_CHARS);
+				if (text.trim()) drafts[key] = text;
+				else delete drafts[key];
+				try {
+					localStorage.setItem(STORAGE_COMPOSER_INTENT_DRAFTS, JSON.stringify(drafts));
+				} catch (err) {
+					recordHomeAiDiagnosticFailure({
+						category: "task_card_workflow_failed",
+						diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+						severity_hint: "H2",
+						evidence_confidence: .78,
+						error_code: diagnosticErrorCode(err, action === "reply" ? "task_card_return_failed" : "task_card_action_failed"),
+						context: {
+							surface: "task-card",
+							action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+							thread_hash: diagnosticThreadHash(state.currentThreadId),
+							task_hash: diagnosticTaskHash(id)
+						},
+						counts: { status_code: diagnosticErrorStatus(err) },
+						breadcrumbs: [{
+							kind: "task-card",
+							code: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+							status: "failed",
+							fields: {
+								status_code: diagnosticErrorStatus(err),
+								task_hash: diagnosticTaskHash(id)
+							}
+						}]
+					});
+					showError(err);
+				}
+			}
+			function composerIntentBareTagKind(value) {
+				const text = normalizedComposerIntentText(value);
+				if (!text || text === "@") return "";
+				if (THREAD_GOAL_MENTION_PATTERN.test(text)) return "goal";
+				if (/^@(?:ChatGPT\s+Pro|ChatGPTPro|GPT\s+Pro)$/i.test(text)) return "chatgpt-pro";
+				if (THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(text) && !threadTaskCardCommandText(text)) return "task-card-auto";
+				if (THREAD_TASK_CARD_MENTION_PATTERN.test(text) && !threadTaskCardCommandText(text)) return "task-card";
+				return "";
+			}
+			function shouldShowComposerIntentMenu() {
+				return normalizedComposerIntentText(composerText()) === "@";
+			}
+			function closeComposerIntentMenu() {
+				const menu = $("composerIntentMenu");
+				if (menu) {
+					menu.hidden = true;
+					menu.innerHTML = "";
+				}
+				state.composerIntentMenuOpen = false;
+				document.removeEventListener("pointerdown", onComposerIntentOutsidePointer);
+			}
+			function onComposerIntentOutsidePointer(event) {
+				const menu = $("composerIntentMenu");
+				const target = event.target;
+				if (!state.composerIntentMenuOpen || !menu || menu.hidden) return;
+				if (menu.contains(target)) return;
+				if (target && target.closest && target.closest("#messageInput")) return;
+				closeComposerIntentMenu();
+			}
+			function openComposerIntentMenu() {
+				const menu = $("composerIntentMenu");
+				if (!menu) return;
+				closeComposerRuntimeMenu();
+				closeQuotaDetails();
+				menu.innerHTML = composerIntentOptions().map((item) => `
+    <button type="button" class="composer-intent-option" role="option" data-composer-intent="${escapeHtml(item.kind)}">
+      <span class="composer-intent-label">${escapeHtml(item.label)}</span>
+      <span class="composer-intent-tag">${escapeHtml(item.tag)}</span>
+      <span class="composer-intent-detail">${escapeHtml(item.detail)}</span>
+    </button>
+  `).join("");
+				menu.hidden = false;
+				state.composerIntentMenuOpen = true;
+				positionComposerIntentMenu();
+				document.addEventListener("pointerdown", onComposerIntentOutsidePointer);
+			}
+			function positionComposerIntentMenu() {
+				const menu = $("composerIntentMenu");
+				const anchor = $("messageInput") || $("composer");
+				if (!menu || menu.hidden || !anchor) return;
+				fitComposerPopupToAnchor(menu, anchor, {
+					minWidth: 280,
+					maxWidth: 420
+				});
+			}
+			function updateComposerIntentMenu() {
+				if (shouldShowComposerIntentMenu()) if (!state.composerIntentMenuOpen) openComposerIntentMenu();
+				else positionComposerIntentMenu();
+				else closeComposerIntentMenu();
+			}
+			function queueComposerIntentMenuUpdate() {
+				window.setTimeout(updateComposerIntentMenu, 0);
+			}
+			function selectComposerIntent(kind) {
+				const option = composerIntentOption(kind);
+				if (!option) return;
+				setComposerText(option.tag);
+				closeComposerIntentMenu();
+				updateComposerControls();
+				scheduleCurrentDraftSave();
+				const input = $("messageInput");
+				if (input) input.focus();
+			}
+			function setComposerIntentDialogStatus(message, isError = false) {
+				const status = $("composerIntentDialogStatus");
+				if (!status) return;
+				const text = String(message || "").trim();
+				status.textContent = text;
+				status.classList.toggle("hidden", !text);
+				status.classList.toggle("error", Boolean(isError));
+			}
+			function closeComposerIntentDialog(clearState = true) {
+				const dialog = $("composerIntentDialog");
+				if (dialog) dialog.classList.add("hidden");
+				if (clearState) {
+					state.composerIntentDialogKind = "";
+					state.composerIntentDialogBusy = false;
+				}
+				setComposerIntentDialogStatus("");
+				updateComposerControls();
+			}
+			function openComposerIntentDialog(kind, options = {}) {
+				const option = composerIntentOption(kind);
+				if (!option) return false;
+				if (kind !== "chatgpt-pro" && state.newThreadDraft) {
+					showError(/* @__PURE__ */ new Error(`${option.label} is only available in an existing thread`));
+					return false;
+				}
+				if (state.pendingAttachments.length) {
+					showError(/* @__PURE__ */ new Error(`${option.tag} does not support attachments in this entry point`));
+					return false;
+				}
+				state.composerIntentDialogKind = kind;
+				state.composerIntentDialogBusy = false;
+				const title = $("composerIntentDialogTitle");
+				const subtitle = $("composerIntentDialogSubtitle");
+				const label = $("composerIntentBodyLabel");
+				const input = $("composerIntentBodyInput");
+				const submit = $("composerIntentSubmitButton");
+				if (title) title.textContent = option.title;
+				if (subtitle) subtitle.textContent = option.subtitle;
+				if (label) label.textContent = option.label;
+				if (submit) submit.textContent = option.submitLabel;
+				if (input) {
+					input.placeholder = option.placeholder;
+					input.maxLength = COMPOSER_INTENT_BODY_MAX_CHARS;
+					input.value = String(options.initialBody || loadComposerIntentDraft(kind) || "").slice(0, COMPOSER_INTENT_BODY_MAX_CHARS);
+				}
+				setComposerIntentDialogStatus("");
+				const dialog = $("composerIntentDialog");
+				if (dialog) dialog.classList.remove("hidden");
+				window.setTimeout(() => {
+					if (input) input.focus();
+				}, 30);
+				return true;
+			}
+			async function submitComposerIntentDialog(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (state.composerIntentDialogBusy || state.composerBusy) return;
+				const kind = state.composerIntentDialogKind;
+				const option = composerIntentOption(kind);
+				if (!option) return;
+				const input = $("composerIntentBodyInput");
+				const body = String(input && input.value || "").trim();
+				if (!body) {
+					setComposerIntentDialogStatus("请输入内容。", true);
+					return;
+				}
+				state.composerIntentDialogBusy = true;
+				setComposerIntentDialogStatus("提交中…");
+				updateComposerControls();
+				try {
+					if (kind === "chatgpt-pro") await submitChatGptProRequest(`${option.tag} ${body}`, { rethrow: true });
+					else if (kind === "task-card" || kind === "task-card-auto") await sendThreadTaskCardCommand(`${option.tag} ${body}`, { rethrow: true });
+					saveComposerIntentDraft(kind, "");
+					setComposerText("");
+					scheduleCurrentDraftSave();
+					closeComposerIntentDialog();
+				} catch (err) {
+					setComposerIntentDialogStatus(normalizeClientErrorMessage(err && err.message ? err.message : String(err), err), true);
+					showError(err);
+				} finally {
+					state.composerIntentDialogBusy = false;
+					updateComposerControls();
+				}
+			}
+			function saveComposerIntentDialogDraft() {
+				const kind = state.composerIntentDialogKind;
+				if (!composerIntentOption(kind)) return;
+				const input = $("composerIntentBodyInput");
+				saveComposerIntentDraft(kind, input ? input.value : "");
+				setComposerIntentDialogStatus("草稿已保存。");
+			}
+			function shouldKeepAndroidMessageInputEditable(disabled, el) {
+				if (!disabled || !isAndroidBrowser()) return false;
+				if (!el) return false;
+				if (!messageInputCanEnableForNativeGesture()) return false;
+				return Boolean(state.composerComposing || document.activeElement === el);
+			}
+			function setMessageInputDisabled(disabled) {
+				const el = $("messageInput");
+				if (!el) return;
+				const keepAndroidEditorConnection = shouldKeepAndroidMessageInputEditable(disabled, el);
+				const nextContentEditable = disabled && !keepAndroidEditorConnection ? "false" : "true";
+				const nextAriaDisabled = disabled ? "true" : "false";
+				const nextTabIndex = disabled ? -1 : 0;
+				const currentContentEditable = String(el.getAttribute("contenteditable") || el.contentEditable || "").toLowerCase();
+				const currentAriaDisabled = String(el.getAttribute("aria-disabled") || "").toLowerCase();
+				const currentClassDisabled = el.classList.contains("disabled");
+				if (currentContentEditable === nextContentEditable && currentAriaDisabled === nextAriaDisabled && el.tabIndex === nextTabIndex && currentClassDisabled === disabled) return;
+				if (!((state.composerComposing || keepAndroidEditorConnection) && currentContentEditable === "true") && currentContentEditable !== nextContentEditable) el.contentEditable = nextContentEditable;
+				if (currentAriaDisabled !== nextAriaDisabled) el.setAttribute("aria-disabled", nextAriaDisabled);
+				if (el.tabIndex !== nextTabIndex) el.tabIndex = nextTabIndex;
+				if (currentClassDisabled !== disabled) el.classList.toggle("disabled", disabled);
+			}
+			function messageInputTextLength(el) {
+				return String(el && (el.textContent || el.innerText) || "").length;
+			}
+			function messageInputTargetHeight(el) {
+				const scrollHeight = viewportMetrics.cssPixel(el && el.scrollHeight);
+				return Math.min(MESSAGE_INPUT_MAX_HEIGHT_PX, Math.max(MESSAGE_INPUT_MIN_HEIGHT_PX, scrollHeight));
+			}
+			function currentMessageInputHeight(el) {
+				const inlineHeight = Number.parseFloat(el && el.style && el.style.height || "");
+				return viewportMetrics.cssPixel(inlineHeight || el && el.getBoundingClientRect && el.getBoundingClientRect().height || 0);
+			}
+			function updateMessageInputOverflow(el, heightPx) {
+				if (!el || !el.style) return;
+				el.style.overflowY = el.scrollHeight > heightPx + 1 ? "auto" : "hidden";
+			}
+			function autoSizeMessageInput(el, options = {}) {
+				if (!el) return false;
+				const force = options.force === true;
+				const previousTextLength = Number(state.messageInputTextLength || 0);
+				const nextTextLength = messageInputTextLength(el);
+				const currentHeight = currentMessageInputHeight(el);
+				let nextHeight = messageInputTargetHeight(el);
+				if (force || nextTextLength < previousTextLength) {
+					const previousInlineHeight = el.style.height;
+					el.style.height = "auto";
+					nextHeight = messageInputTargetHeight(el);
+					if (!force && currentHeight && !viewportMetrics.stablePixelChanged(currentHeight, nextHeight)) {
+						el.style.height = previousInlineHeight;
+						state.messageInputTextLength = nextTextLength;
+						updateMessageInputOverflow(el, currentHeight);
+						return false;
+					}
+				}
+				state.messageInputTextLength = nextTextLength;
+				if (!force && currentHeight && !viewportMetrics.stablePixelChanged(currentHeight, nextHeight)) {
+					updateMessageInputOverflow(el, currentHeight);
+					return false;
+				}
+				state.messageInputHeightPx = nextHeight;
+				el.style.height = `${nextHeight}px`;
+				updateMessageInputOverflow(el, nextHeight);
+				updateComposerHeightVar();
+				return true;
+			}
+			function formatFileSize(bytes) {
+				if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+				if (bytes < 1024) return `${bytes} B`;
+				if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+				return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+			}
+			function appendLocalAttachmentSummary(text, attachments) {
+				if (!attachments.length) return text;
+				const lines = attachments.map((item) => {
+					const file = item.file;
+					const kind = file.type && file.type.startsWith("image/") ? "image" : "file";
+					return `- ${file.name || "upload"} (${kind}, ${file.type || "file"}, ${formatFileSize(file.size || 0)}): ${file.name || "upload"}`;
+				});
+				return `${text ? `${text}\n\n` : ""}Uploaded attachments:\n${lines.join("\n")}`;
+			}
+			function localImageInputPartsForAttachments(attachments) {
+				return (attachments || []).map((item) => {
+					const file = item && item.file;
+					if (!file) return null;
+					const previewUrl = localAttachmentPreviewUrl(item);
+					if (!previewUrl) return null;
+					const name = String(file.name || "upload");
+					if (!(String(file.type || "").toLowerCase().startsWith("image/") || /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|tiff?|webp)$/i.test(name))) return null;
+					return {
+						type: "input_image",
+						image_url: { url: previewUrl },
+						fileName: name
+					};
+				}).filter(Boolean);
+			}
+			function localUserMessageItem(text, attachments, clientSubmissionId) {
+				const content = [{
+					type: "text",
+					text: appendLocalAttachmentSummary(text, attachments),
+					text_elements: []
+				}];
+				content.push(...localImageInputPartsForAttachments(attachments));
+				return {
+					id: `local-user-${clientSubmissionId || Date.now()}`,
+					type: "userMessage",
+					mobilePendingSubmission: true,
+					clientSubmissionId: clientSubmissionId || "",
+					startedAtMs: Date.now(),
+					content
+				};
+			}
+			function attachmentId() {
+				if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+				return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+			}
+			function pendingAttachmentBytes(extra = []) {
+				return state.pendingAttachments.reduce((total, item) => total + item.file.size, 0) + extra.reduce((total, file) => total + file.size, 0);
+			}
+			async function prepareAttachmentFile(file) {
+				if (!imageCompressor || typeof imageCompressor.compressImageFile !== "function") return file;
+				try {
+					return await imageCompressor.compressImageFile(file);
+				} catch (err) {
+					postClientEvent("attachment_image_compression_failed", {
+						name: file && file.name ? String(file.name).slice(0, 120) : "",
+						type: file && file.type ? String(file.type).slice(0, 80) : "",
+						size: file && Number.isFinite(file.size) ? Number(file.size) : 0,
+						message: err && err.message ? err.message : String(err)
+					});
+					return file;
+				}
+			}
+			async function prepareAttachmentFiles(files) {
+				const prepared = [];
+				for (const file of files) prepared.push(await prepareAttachmentFile(file));
+				return prepared;
+			}
+			async function addAttachmentFiles(fileList) {
+				const files = Array.from(fileList || []).filter(Boolean);
+				if (!files.length) return;
+				state.attachmentProcessingCount += 1;
+				updateComposerControls();
+				let preparedFiles = files;
+				try {
+					preparedFiles = await prepareAttachmentFiles(files);
+				} finally {
+					state.attachmentProcessingCount = Math.max(0, state.attachmentProcessingCount - 1);
+					updateComposerControls();
+				}
+				const draftKey = currentDraftKey();
+				const startIndex = state.pendingAttachments.length;
+				const accepted = [];
+				for (const file of preparedFiles) {
+					if (state.pendingAttachments.length + accepted.length >= state.maxUploadFiles) {
+						showError(/* @__PURE__ */ new Error(`Too many attachments; max ${state.maxUploadFiles}`));
+						break;
+					}
+					if (pendingAttachmentBytes(accepted.concat(file)) > state.maxUploadBytes) {
+						showError(/* @__PURE__ */ new Error(`Attachments are too large; max ${formatFileSize(state.maxUploadBytes)}`));
+						break;
+					}
+					accepted.push(file);
+				}
+				for (const file of accepted) {
+					const previewUrl = file.type && file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
+					state.pendingAttachments.push({
+						id: attachmentId(),
+						file,
+						previewUrl
+					});
+				}
+				renderAttachmentList();
+				const addedItems = state.pendingAttachments.slice(startIndex);
+				if (draftKey) saveDraftAttachmentFiles(draftKey, addedItems);
+				scheduleCurrentDraftSave();
+			}
+			function removeAttachment(id) {
+				const draftKey = currentDraftKey();
+				const index = state.pendingAttachments.findIndex((item) => item.id === id);
+				if (index < 0) return;
+				const [item] = state.pendingAttachments.splice(index, 1);
+				if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+				renderAttachmentList();
+				if (draftKey) deleteDraftAttachments(draftKey, [id]).catch((err) => {
+					postClientEvent("draft_attachment_remove_failed", { message: err.message || String(err) });
+				});
+				scheduleCurrentDraftSave();
+			}
+			function clearPendingAttachments(options = {}) {
+				const draftKey = currentDraftKey();
+				const attachmentsToReleaseLater = options.revokePreviewUrls === false ? state.pendingAttachments.slice() : [];
+				replacePendingAttachments([], {
+					saveDraft: false,
+					revokePreviewUrls: options.revokePreviewUrls
+				});
+				if (attachmentsToReleaseLater.length) scheduleAttachmentPreviewUrlRevoke(attachmentsToReleaseLater);
+				if (options.deleteDraft !== false && draftKey) deleteDraftAttachments(draftKey).catch((err) => {
+					postClientEvent("draft_attachment_clear_failed", { message: err.message || String(err) });
+				});
+			}
+			function renderAttachmentList() {
+				const list = $("attachmentList");
+				if (!state.pendingAttachments.length) {
+					list.classList.add("hidden");
+					list.innerHTML = "";
+					updateComposerControls();
+					updateComposerHeightVar();
+					return;
+				}
+				list.classList.remove("hidden");
+				list.innerHTML = state.pendingAttachments.map((item) => {
+					const file = item.file;
+					const thumb = item.previewUrl ? `<img class="attachment-thumb" src="${escapeHtml(item.previewUrl)}" alt="">` : `<div class="attachment-file-icon" aria-hidden="true"></div>`;
+					return `<div class="attachment-chip" data-attachment="${escapeHtml(item.id)}">
+      ${thumb}
+      <div class="attachment-meta">
+        <div class="attachment-name">${escapeHtml(file.name || "upload")}</div>
+        <div class="attachment-size">${escapeHtml(`${file.type || "file"} - ${formatFileSize(file.size)}`)}</div>
+      </div>
+      <button class="attachment-remove" type="button" title="Remove attachment" data-remove-attachment="${escapeHtml(item.id)}">x</button>
+    </div>`;
+				}).join("");
+				updateComposerControls();
+				updateComposerHeightVar();
+			}
+			function composerHasContent() {
+				return Boolean(composerText() || state.pendingAttachments.length);
+			}
+			function effectiveDefaultModel(thread = composerTargetThread()) {
+				return thread && thread.model || state.defaultModel || "";
+			}
+			function effectiveDefaultEffort(thread = composerTargetThread()) {
+				return thread && thread.effort || state.defaultReasoningEffort || "";
+			}
+			function effectiveDefaultPermissionMode(thread = composerTargetThread()) {
+				const settings = thread && thread.runtimeSettings;
+				if (String(settings && settings.sandboxPolicyType || "").replace(/[-_]/g, "").toLowerCase() === "dangerfullaccess") return "full";
+				return effectiveComposerPermissionMode(settings && settings.permissionMode || "");
+			}
+			function selectedComposerModel() {
+				if (state.newThreadDraft) return newThreadSelectedModel();
+				return state.composerModel || effectiveDefaultModel();
+			}
+			function selectedComposerEffort() {
+				if (state.newThreadDraft) return newThreadSelectedEffort();
+				return state.composerEffort || effectiveDefaultEffort();
+			}
+			function selectedComposerPermissionMode() {
+				if (state.newThreadDraft) return newThreadSelectedPermissionMode();
+				return effectiveComposerPermissionMode(state.composerPermissionMode || effectiveDefaultPermissionMode()) || defaultNewThreadPermissionMode();
+			}
+			function resetComposerRuntimeSelection() {
+				state.composerModel = "";
+				state.composerEffort = "";
+				state.composerPermissionMode = "";
+				state.codexFastMode = false;
+				closeComposerRuntimeMenu();
+				closeComposerIntentMenu();
+				state.quotaDetailsOpen = false;
+			}
+			function runtimeOptionValues(kind) {
+				if (kind === "model") return normalizeOptionList([
+					selectedComposerModel(),
+					state.defaultModel,
+					...state.modelOptions
+				]);
+				if (kind === "effort") return normalizeOptionList([
+					selectedComposerEffort(),
+					state.defaultReasoningEffort,
+					...state.reasoningEffortOptions
+				]);
+				if (kind === "permission") return normalizeOptionList([
+					selectedComposerPermissionMode(),
+					defaultNewThreadPermissionMode(),
+					...state.permissionModeOptions
+				]);
+				return [];
+			}
+			function runtimeOptionLabel(kind, value) {
+				if (kind === "model") return labelForModel(value);
+				if (kind === "effort") return labelForEffort(value);
+				if (kind === "permission") return labelForPermissionMode(value);
+				return value;
+			}
+			function runtimeSelectedValue(kind) {
+				if (kind === "model") return selectedComposerModel();
+				if (kind === "effort") return selectedComposerEffort();
+				if (kind === "permission") return selectedComposerPermissionMode();
+				return "";
+			}
+			function codexFastCommandEnabled() {
+				return Boolean(state.codexFastMode);
+			}
+			function clearLegacyCodexFastModeStorage() {
+				try {
+					localStorage.removeItem(STORAGE_CODEX_FAST_MODE);
+				} catch (_) {}
+			}
+			function setCodexFastCommandEnabled(enabled) {
+				state.codexFastMode = Boolean(enabled);
+				clearLegacyCodexFastModeStorage();
+				renderComposerSettings();
+				updateComposerControls();
+				saveCurrentDraftNow();
+				showComposerFastHint(state.codexFastMode);
+			}
+			function applyRuntimeSelection(kind, value) {
+				const selected = String(value || "").trim();
+				if (!selected) return;
+				if (state.newThreadDraft) {
+					if (kind === "model") state.newThreadModel = selected;
+					if (kind === "effort") state.newThreadEffort = selected;
+					if (kind === "permission") state.newThreadPermissionMode = effectiveComposerPermissionMode(selected) || defaultNewThreadPermissionMode();
+				} else {
+					if (kind === "model") state.composerModel = selected;
+					if (kind === "effort") state.composerEffort = selected;
+					if (kind === "permission") state.composerPermissionMode = effectiveComposerPermissionMode(selected) || defaultNewThreadPermissionMode();
+				}
+				closeComposerRuntimeMenu();
+				renderComposerSettings();
+				updateComposerControls();
+				saveCurrentDraftNow();
+			}
+			function closeComposerRuntimeMenu() {
+				const menu = $("composerRuntimeMenu");
+				if (menu) {
+					menu.hidden = true;
+					menu.innerHTML = "";
+				}
+				for (const id of [
+					"composerModelControl",
+					"composerEffortControl",
+					"composerPermissionControl"
+				]) {
+					const button = $(id);
+					if (button) button.setAttribute("aria-expanded", "false");
+				}
+				state.composerMenuKind = "";
+				document.removeEventListener("pointerdown", onComposerRuntimeOutsidePointer);
+			}
+			function onComposerRuntimeOutsidePointer(event) {
+				const menu = $("composerRuntimeMenu");
+				const target = event.target;
+				if (!menu || menu.hidden) return;
+				if (menu.contains(target)) return;
+				if (target && target.closest && target.closest("[data-composer-runtime]")) return;
+				closeComposerRuntimeMenu();
+			}
+			function openComposerRuntimeMenu(kind, anchor) {
+				const menu = $("composerRuntimeMenu");
+				if (!menu || !anchor) return;
+				closeComposerIntentMenu();
+				state.quotaDetailsOpen = false;
+				const selected = runtimeSelectedValue(kind);
+				menu.innerHTML = runtimeOptionValues(kind).map((value) => {
+					return `<button type="button" class="composer-runtime-option${value === selected ? " is-selected" : ""}" role="option" aria-selected="${value === selected ? "true" : "false"}" data-runtime-kind="${escapeHtml(kind)}" data-runtime-value="${escapeHtml(value)}">${escapeHtml(runtimeOptionLabel(kind, value))}</button>`;
+				}).join("");
+				menu.hidden = false;
+				state.composerMenuKind = kind;
+				for (const id of [
+					"composerModelControl",
+					"composerEffortControl",
+					"composerPermissionControl"
+				]) {
+					const button = $(id);
+					if (button) button.setAttribute("aria-expanded", button === anchor ? "true" : "false");
+				}
+				fitComposerPopupToAnchor(menu, anchor);
+				document.addEventListener("pointerdown", onComposerRuntimeOutsidePointer);
+			}
+			function composerRuntimeMenuDiagnostics(kind, triggerType) {
+				const menu = $("composerRuntimeMenu");
+				const rect = menu && !menu.hidden ? menu.getBoundingClientRect() : null;
+				const visualViewport = window.visualViewport;
+				const viewportWidth = Math.round(visualViewport && visualViewport.width || window.innerWidth || 0);
+				const viewportHeight = Math.round(visualViewport && visualViewport.height || window.innerHeight || 0);
+				return {
+					kind,
+					triggerType,
+					menuHidden: !menu || menu.hidden,
+					optionCount: menu ? menu.querySelectorAll("[data-runtime-kind][data-runtime-value]").length : 0,
+					top: rect ? Math.round(rect.top) : null,
+					bottom: rect ? Math.round(rect.bottom) : null,
+					left: rect ? Math.round(rect.left) : null,
+					right: rect ? Math.round(rect.right) : null,
+					viewportWidth,
+					viewportHeight,
+					visible: Boolean(rect && rect.bottom > 0 && rect.top < viewportHeight && rect.right > 0 && rect.left < viewportWidth)
+				};
+			}
+			function reportComposerRuntimeMenu(kind, triggerType) {
+				(typeof window.requestAnimationFrame === "function" ? window.requestAnimationFrame.bind(window) : (callback) => window.setTimeout(callback, 0))(() => postClientEvent("composer_runtime_menu_opened", composerRuntimeMenuDiagnostics(kind, triggerType)));
+			}
+			function handleComposerRuntimeControl(event, kind, button) {
+				event.preventDefault();
+				event.stopPropagation();
+				if (button.disabled) {
+					postClientEvent("composer_runtime_control_ignored", {
+						kind,
+						triggerType: event.type,
+						reason: "disabled"
+					});
+					return;
+				}
+				if (state.composerMenuKind === kind) {
+					closeComposerRuntimeMenu();
+					postClientEvent("composer_runtime_menu_closed", {
+						kind,
+						triggerType: event.type
+					});
+				} else {
+					openComposerRuntimeMenu(kind, button);
+					reportComposerRuntimeMenu(kind, event.type);
+				}
+			}
+			function fitComposerPopupToAnchor(panel, anchor, options = {}) {
+				const rect = anchor.getBoundingClientRect();
+				const minWidth = Number(options.minWidth || 180);
+				const maxWidth = Number(options.maxWidth || 280);
+				const visualViewport = window.visualViewport;
+				const viewportLeft = visualViewport ? Number(visualViewport.offsetLeft || 0) : 0;
+				const viewportTop = visualViewport ? Number(visualViewport.offsetTop || 0) : 0;
+				const viewportWidth = Math.max(1, Math.floor(visualViewport && visualViewport.width || window.innerWidth || document.documentElement.clientWidth || maxWidth));
+				const viewportHeight = Math.max(1, Math.floor(visualViewport && visualViewport.height || window.innerHeight || document.documentElement.clientHeight || 360));
+				const width = Math.max(minWidth, Math.min(maxWidth, viewportWidth - 16, Math.max(rect.width, minWidth)));
+				const left = Math.max(viewportLeft + 8, Math.min(viewportLeft + viewportWidth - width - 8, rect.left));
+				const anchorTop = Math.max(viewportTop + 8, Math.min(viewportTop + viewportHeight - 8, rect.top));
+				const availableAbove = Math.max(96, anchorTop - viewportTop - 12);
+				const bottom = Math.max(8, viewportTop + viewportHeight - anchorTop + 6);
+				panel.style.setProperty("--composer-popup-left", `${Math.round(left)}px`);
+				panel.style.setProperty("--composer-popup-bottom", `${Math.round(bottom)}px`);
+				panel.style.setProperty("--composer-popup-width", `${Math.round(width)}px`);
+				panel.style.setProperty("--composer-popup-max-height", `${Math.round(Math.min(360, availableAbove))}px`);
+			}
+			function closeQuotaDetails() {
+				state.quotaDetailsOpen = false;
+				const panel = $("quotaDetailPanel");
+				if (panel) {
+					panel.hidden = true;
+					panel.innerHTML = "";
+				}
+				const quota = $("quotaUsage");
+				if (quota) quota.setAttribute("aria-expanded", "false");
+				document.removeEventListener("pointerdown", onQuotaOutsidePointer);
+			}
+			function onQuotaOutsidePointer(event) {
+				const panel = $("quotaDetailPanel");
+				const quota = $("quotaUsage");
+				const target = event.target;
+				if (!state.quotaDetailsOpen) return;
+				if (panel && panel.contains(target) || quota && quota.contains(target)) return;
+				closeQuotaDetails();
+			}
+			function toggleQuotaDetails(anchor) {
+				closeComposerRuntimeMenu();
+				state.quotaDetailsOpen = !state.quotaDetailsOpen;
+				renderQuotaUsage();
+				const panel = $("quotaDetailPanel");
+				if (state.quotaDetailsOpen && panel && anchor) {
+					fitComposerPopupToAnchor(panel, anchor, {
+						minWidth: 320,
+						maxWidth: 390
+					});
+					document.addEventListener("pointerdown", onQuotaOutsidePointer);
+				} else document.removeEventListener("pointerdown", onQuotaOutsidePointer);
+			}
+			function composerPlaceholderText() {
+				const targetThreadId = currentComposerThreadId();
+				const targetThread = composerTargetThread();
+				return threadTileStatePolicy.composerTargetPlaceholderPlan({
+					newThreadDraft: state.newThreadDraft,
+					tileContext: isThreadTileComposerContext(),
+					targetThreadId,
+					hasTargetThread: Boolean(targetThread),
+					targetTitle: targetThread ? threadDisplayName(targetThread) : "",
+					newThreadPlaceholder: "输入第一条消息",
+					defaultPlaceholder: "Message Codex"
+				}).text;
+			}
+			function composerShowsTargetPlaceholder() {
+				const targetThreadId = currentComposerThreadId();
+				const targetThread = composerTargetThread();
+				return threadTileStatePolicy.composerTargetPlaceholderPlan({
+					newThreadDraft: state.newThreadDraft,
+					tileContext: isThreadTileComposerContext(),
+					targetThreadId,
+					hasTargetThread: Boolean(targetThread)
+				}).showTargetPlaceholder === true;
+			}
+			function applyComposerActionControlPlan(sendButton, plan) {
+				if (!sendButton || !plan) return;
+				setComposerActionButtonLabel(sendButton, plan.label || "Send", { proxy: plan.labelProxy === true });
+				sendButton.title = plan.title || "";
+				const classState = plan.classState || {};
+				sendButton.classList.toggle("interrupt-mode", classState.interruptMode === true);
+				sendButton.classList.toggle("sending", classState.sending === true);
+				sendButton.classList.toggle("send-failed", classState.sendFailed === true);
+				sendButton.classList.toggle("steer-mode", classState.steerMode === true);
+				sendButton.classList.toggle("plugin-voice-input-gesture", classState.pluginVoiceInputGesture === true);
+				if (plan.ariaLabel) sendButton.setAttribute("aria-label", plan.ariaLabel);
+				else sendButton.removeAttribute("aria-label");
+				sendButton.disabled = plan.sendButtonDisabled === true;
+			}
+			function renderComposerSettings() {
+				const commandControl = $("composerCommandControl");
+				const modelControl = $("composerModelControl");
+				const effortControl = $("composerEffortControl");
+				const permissionControl = $("composerPermissionControl");
+				if (!commandControl || !modelControl || !effortControl || !permissionControl) return;
+				const selectedModel = selectedComposerModel();
+				const selectedEffort = selectedComposerEffort();
+				const selectedPermission = selectedComposerPermissionMode();
+				const fastEnabled = codexFastCommandEnabled();
+				const fastScopeLabel = state.newThreadDraft ? "this new thread" : "this thread";
+				commandControl.classList.toggle("is-fast", fastEnabled);
+				commandControl.setAttribute("aria-pressed", fastEnabled ? "true" : "false");
+				commandControl.title = fastEnabled ? `Fast tag on for ${fastScopeLabel}` : `Fast tag off for ${fastScopeLabel}`;
+				commandControl.setAttribute("aria-label", fastEnabled ? `Fast tag on for ${fastScopeLabel}` : `Fast tag off for ${fastScopeLabel}`);
+				commandControl.disabled = state.composerBusy;
+				const controls = [
+					[
+						modelControl,
+						selectedModel ? labelForModel(selectedModel) : "--",
+						state.newThreadDraft || state.composerModel ? "下一轮使用" : "当前记录"
+					],
+					[
+						effortControl,
+						selectedEffort ? labelForEffort(selectedEffort) : "--",
+						state.newThreadDraft || state.composerEffort ? "下一轮使用" : "当前记录"
+					],
+					[
+						permissionControl,
+						selectedPermission ? labelForPermissionMode(selectedPermission).replace(/权限$/, "") : "--",
+						state.newThreadDraft || state.composerPermissionMode ? "下一轮使用" : "当前记录"
+					]
+				];
+				for (const [button, value, mode] of controls) {
+					const valueEl = button.querySelector(".composer-chip-value");
+					if (valueEl) valueEl.textContent = value;
+					button.title = `${button.querySelector(".composer-chip-label")?.textContent || ""}：${value}（${mode}）`;
+					button.classList.toggle("has-pending-value", mode === "下一轮使用");
+					button.disabled = state.composerBusy;
+				}
+				renderQuotaUsage();
+			}
+			function updateComposerControls() {
+				const targetThreadId = currentComposerThreadId();
+				const targetThread = composerTargetThread();
+				const targetActiveTurnId = composerTargetActiveTurnId();
+				const hasThread = Boolean(targetThreadId && targetThread && !targetThread.mobileLoading && !targetThread.mobileLoadError);
+				const hasNewThreadDraft = Boolean(state.newThreadDraft);
+				const hasContent = composerHasContent();
+				const bareIntentKind = composerIntentBareTagKind(composerText());
+				const goalCommandMode = Boolean(!hasNewThreadDraft && isThreadGoalCommandText(composerText()));
+				const commandMode = Boolean(!hasNewThreadDraft && isThreadTaskCardCommandText(composerText()));
+				const voiceGestureAvailable = pluginVoiceInputGestureAvailable();
+				const bareIntentOption = bareIntentKind ? composerIntentOption(bareIntentKind) : null;
+				const composerActionPlan = threadTileStatePolicy.composerActionControlPlan({
+					hasThread,
+					hasNewThreadDraft,
+					composerBusy: state.composerBusy,
+					attachmentProcessingCount: state.attachmentProcessingCount,
+					hasContent,
+					targetActiveTurnId,
+					bareIntentKind,
+					bareIntentTitle: bareIntentOption ? `Open ${bareIntentOption.label}` : "Open composer action",
+					goalCommandMode,
+					commandMode,
+					sendButtonHint: state.sendButtonHint,
+					steeringBusy: Boolean(state.steerFeedback && state.steerFeedback.status === "sending"),
+					voiceGestureAvailable,
+					hermesEmbedMode: isHermesEmbedMode()
+				});
+				const disabled = composerActionPlan.disabled === true;
+				const sendButton = $("sendMessage");
+				const attachButton = $("attachFiles");
+				const messageInput = $("messageInput");
+				for (const id of [
+					"composerIntentBodyInput",
+					"composerIntentSubmitButton",
+					"composerIntentSaveButton"
+				]) {
+					const el = $(id);
+					if (el) el.disabled = state.composerIntentDialogBusy || state.composerBusy;
+				}
+				if (messageInput) {
+					messageInput.dataset.placeholder = composerPlaceholderText();
+					messageInput.classList.toggle("has-target-placeholder", composerShowsTargetPlaceholder());
+				}
+				setMessageInputDisabled(disabled);
+				$("fileInput").disabled = disabled;
+				attachButton.disabled = disabled;
+				attachButton.classList.toggle("disabled", disabled);
+				attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
+				attachButton.tabIndex = disabled ? -1 : 0;
+				for (const id of [
+					"composerCommandControl",
+					"composerModelControl",
+					"composerEffortControl",
+					"composerPermissionControl",
+					"quotaUsage"
+				]) {
+					const button = $(id);
+					if (button) button.disabled = disabled;
+				}
+				applyComposerActionControlPlan(sendButton, composerActionPlan);
+				publishPluginVoiceInputCapability();
+			}
+			function hasTransferFiles(event) {
+				return Array.from(event.dataTransfer && event.dataTransfer.types || []).includes("Files");
+			}
+			function goalDialogFormValues(options = {}) {
+				const requireObjective = options.requireObjective !== false;
+				const thread = currentGoalDialogThread();
+				const threadId = String(thread && thread.id || state.goalDialogThreadId || "").trim();
+				const objectiveInput = $("goalObjectiveInput");
+				const budgetInput = $("goalTokenBudgetInput");
+				const objective = String(objectiveInput && objectiveInput.value || "").trim();
+				const rawBudget = String(budgetInput && budgetInput.value || "").trim();
+				if (!threadId) {
+					showError(/* @__PURE__ */ new Error("No thread is selected"));
+					return null;
+				}
+				if (requireObjective && !objective) {
+					showError(/* @__PURE__ */ new Error("Goal objective is required"));
+					if (objectiveInput) objectiveInput.focus();
+					return null;
+				}
+				let tokenBudget = 0;
+				if (rawBudget) {
+					tokenBudget = Number(rawBudget);
+					if (!Number.isFinite(tokenBudget) || tokenBudget <= 0) {
+						showError(/* @__PURE__ */ new Error("Token budget must be a positive number"));
+						if (budgetInput) budgetInput.focus();
+						return null;
+					}
+					tokenBudget = Math.trunc(tokenBudget);
+				}
+				return {
+					thread,
+					threadId,
+					objective,
+					tokenBudget: tokenBudget > 0 ? tokenBudget : null
+				};
+			}
+			async function submitThreadGoalMessage(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (state.goalSubmitBusy || state.composerBusy) {
+					if (state.composerBusy) showError(/* @__PURE__ */ new Error("A message is already sending"));
+					return;
+				}
+				const values = goalDialogFormValues();
+				if (!values) return;
+				const { threadId, objective, tokenBudget } = values;
+				state.composerBusy = true;
+				state.sendButtonHint = "";
+				setThreadGoalDialogBusy(true, "Saving...");
+				markActivity("Goal set");
+				updateComposerControls();
+				try {
+					postClientEvent("goal_request_start", { threadId });
+					const result = await api(`/api/threads/${encodeURIComponent(threadId)}/goal`, {
+						method: "POST",
+						body: JSON.stringify({
+							objective,
+							tokenBudget
+						}),
+						timeoutMs: 3e4
+					});
+					const responseGoal = normalizeThreadGoal(result && result.goal, threadId);
+					const visibleGoal = responseGoal || submittedThreadGoal(threadId, objective, tokenBudget);
+					if (visibleGoal) updateThreadGoalState(threadId, visibleGoal);
+					closeThreadGoalDialog(true);
+					$("connectionState").classList.remove("error");
+					$("connectionState").textContent = "Goal set";
+					markActivity("Goal set");
+					postClientEvent("goal_request_success", {
+						threadId,
+						hasResponseGoal: Boolean(responseGoal)
+					});
+					if (threadId === state.currentThreadId) scheduleCurrentThreadRefresh(600);
+					loadThreads({ silent: true }).catch(showError);
+				} catch (err) {
+					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Goal set failed";
+					$("connectionState").classList.add("error");
+					$("connectionState").textContent = message;
+					postClientEvent("goal_request_failure", {
+						threadId,
+						message
+					});
+					showError(new Error(message));
+				} finally {
+					state.composerBusy = false;
+					setThreadGoalDialogBusy(false);
+					updateComposerControls();
+				}
+			}
+			function threadGoalActionStatusText(action) {
+				if (action === "continue") return "Goal continued";
+				if (action === "pause") return "Goal paused";
+				if (action === "cancel") return "Goal cancelled";
+				return "Goal updated";
+			}
+			function threadGoalActionBusyText(action) {
+				if (action === "continue") return "Continuing...";
+				if (action === "pause") return "Pausing...";
+				if (action === "cancel") return "Cancelling...";
+				return "Sending...";
+			}
+			async function runThreadGoalDialogAction(action, event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+				if (state.goalSubmitBusy || state.composerBusy) {
+					if (state.composerBusy) showError(/* @__PURE__ */ new Error("A message is already sending"));
+					return;
+				}
+				const normalizedAction = String(action || "").trim().toLowerCase();
+				const values = goalDialogFormValues({ requireObjective: normalizedAction !== "cancel" });
+				if (!values) return;
+				const { threadId, objective, tokenBudget } = values;
+				state.composerBusy = true;
+				state.sendButtonHint = "";
+				setThreadGoalDialogBusy(true, threadGoalActionBusyText(normalizedAction));
+				markActivity("Goal action");
+				updateComposerControls();
+				try {
+					postClientEvent("goal_action_start", {
+						threadId,
+						action: normalizedAction
+					});
+					const result = await api(`/api/threads/${encodeURIComponent(threadId)}/goal/actions`, {
+						method: "POST",
+						body: JSON.stringify({
+							action: normalizedAction,
+							objective: objective || void 0,
+							tokenBudget
+						}),
+						timeoutMs: 3e4
+					});
+					const responseGoal = normalizeThreadGoal(result && result.goal, threadId);
+					if (normalizedAction === "cancel") updateThreadGoalState(threadId, null);
+					else if (responseGoal) updateThreadGoalState(threadId, responseGoal);
+					else if (objective) updateThreadGoalState(threadId, submittedThreadGoal(threadId, objective, tokenBudget));
+					closeThreadGoalDialog(true);
+					$("connectionState").classList.remove("error");
+					$("connectionState").textContent = threadGoalActionStatusText(normalizedAction);
+					markActivity(threadGoalActionStatusText(normalizedAction));
+					postClientEvent("goal_action_success", {
+						threadId,
+						action: normalizedAction,
+						hasResponseGoal: Boolean(responseGoal)
+					});
+					if (threadId === state.currentThreadId) scheduleCurrentThreadRefresh(600);
+					loadThreads({ silent: true }).catch(showError);
+				} catch (err) {
+					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Goal action failed";
+					$("connectionState").classList.add("error");
+					$("connectionState").textContent = message;
+					postClientEvent("goal_action_failure", {
+						threadId,
+						action: normalizedAction,
+						message
+					});
+					showError(new Error(message));
+				} finally {
+					state.composerBusy = false;
+					setThreadGoalDialogBusy(false);
+					updateComposerControls();
+				}
+			}
+			function requestGoalDialogSubmitFromEnter(event) {
+				if (!event || event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+				if (state.goalSubmitBusy || state.composerBusy) return;
+				event.preventDefault();
+				event.stopPropagation();
+				requestGoalDialogSubmit();
+			}
+			function requestGoalDialogSubmitFromButton(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+				const now = Date.now();
+				if (now - state.lastGoalButtonSubmitAt < 650) return;
+				state.lastGoalButtonSubmitAt = now;
+				const button = $("goalSubmitButton");
+				if (button && button.disabled) return;
+				postClientEvent("goal_button_pressed", {
+					threadId: state.goalDialogThreadId || state.currentThreadId || "",
+					eventType: event && event.type || ""
+				});
+				requestGoalDialogSubmit();
+			}
+			function requestGoalDialogSubmit() {
+				const form = $("goalForm");
+				if (form && typeof form.requestSubmit === "function") form.requestSubmit();
+				else submitThreadGoalMessage().catch(showError);
+			}
+			async function sendThreadTaskCardCommand(commandText, options = {}) {
+				const text = String(commandText || "").trim();
+				const targetThreadId = currentComposerThreadId();
+				const targetThread = composerTargetThread();
+				if (!text || !targetThreadId) return false;
+				if (state.pendingAttachments.length) {
+					const err = /* @__PURE__ */ new Error("Task-card commands do not support attachments yet");
+					showError(err);
+					if (options.rethrow) throw err;
+					return false;
+				}
+				const submittedDraftKey = currentDraftKey();
+				const clientSubmissionId = createSubmissionId();
+				const outboundText = buildThreadTaskCardDraftRequestText(text, targetThread);
+				state.composerBusy = true;
+				state.sendButtonHint = "";
+				startSendProgressWatchdog(targetThreadId);
+				markActivity("任务卡片");
+				updateComposerControls();
+				if (state.sendProgressWarned) {
+					$("connectionState").textContent = "Task card draft request";
+					$("connectionState").classList.remove("error");
+				}
+				try {
+					const body = new FormData();
+					body.append("clientSubmissionId", clientSubmissionId);
+					body.append("text", outboundText);
+					if (targetThread && targetThread.cwd) body.append("cwd", targetThread.cwd);
+					body.append("model", selectedComposerModel());
+					body.append("effort", selectedComposerEffort());
+					body.append("permissionMode", selectedComposerPermissionMode());
+					if (codexFastCommandEnabled()) body.append("fastMode", "1");
+					registerSubmittedUserMessage(targetThreadId, outboundText, [], clientSubmissionId);
+					const insertedLocalMessage = insertLocalSubmittedUserMessage(targetThreadId, outboundText, [], clientSubmissionId);
+					markThreadOptimisticallyActive(targetThreadId);
+					renderThreads();
+					if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
+					scheduleSubmittedMessageDomProbe(targetThreadId, clientSubmissionId, "task-card-submit");
+					followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
+					const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
+						method: "POST",
+						body,
+						timeoutMs: 18e4
+					});
+					const serverTurnId = startedTurnId(result);
+					if (serverTurnId && reconcileSubmittedUserMessageTurn(targetThreadId, clientSubmissionId, serverTurnId)) renderCurrentThread({ stickToBottom: true });
+					commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
+						threadId: targetThreadId,
+						messageId: clientSubmissionId,
+						composerId: "thread-composer"
+					});
+					setComposerText("");
+					writeCurrentDraftToKey(submittedDraftKey);
+					$("connectionState").classList.remove("error");
+					$("connectionState").textContent = "Task card draft requested";
+					markActivity("草案已请求");
+					recordHomeAiDiagnosticSuccess({
+						category: "task_card_workflow_failed",
+						diagnostic_type: "task_card_draft_request_failed",
+						error_code: "task_card_draft_request_failed",
+						context: {
+							surface: "task-card",
+							action: "draft-request",
+							thread_hash: diagnosticThreadHash(targetThreadId)
+						}
+					});
+					scheduleComposerTargetRefresh(targetThreadId, 600, "task-card-submit");
+					scheduleLivePollIfNeeded(1200);
+					loadThreads({ silent: true }).catch(showError);
+					return true;
+				} catch (err) {
+					clearSubmittedMessageBottomFollow();
+					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err) || "任务卡片提交失败，请重试";
+					state.sendButtonHint = "重试";
+					markSubmittedUserMessageFailed(targetThreadId, outboundText, [], clientSubmissionId, message);
+					$("connectionState").classList.remove("error");
+					$("connectionState").textContent = "发送失败，详情见消息回执";
+					postClientEvent("send_failure", {
+						threadId: targetThreadId || "",
+						message,
+						steering: false,
+						taskCardCommand: true
+					});
+					recordHomeAiDiagnosticFailure({
+						category: "task_card_workflow_failed",
+						diagnostic_type: "task_card_draft_request_failed",
+						severity_hint: "H2",
+						evidence_confidence: .76,
+						error_code: diagnosticErrorCode(err, "task_card_draft_request_failed"),
+						context: {
+							surface: "task-card",
+							action: "draft-request",
+							thread_hash: diagnosticThreadHash(targetThreadId)
+						},
+						counts: { status_code: diagnosticErrorStatus(err) },
+						breadcrumbs: [{
+							kind: "task-card",
+							code: "draft-request",
+							status: "failed",
+							fields: {
+								status_code: diagnosticErrorStatus(err),
+								thread_hash: diagnosticThreadHash(targetThreadId)
+							}
+						}]
+					});
+					if (options.rethrow) throw new Error(message);
+					return false;
+				} finally {
+					finishSendProgressWatchdog();
+					state.composerBusy = false;
+					updateComposerControls();
+				}
+			}
+			async function sendMessage(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (state.composerBusy) return;
+				state.lastSendSubmitStartedAt = Date.now();
+				const input = $("messageInput");
+				const text = composerText();
+				const normalizedIntentText = normalizedComposerIntentText(text);
+				const hasContent = Boolean(text || state.pendingAttachments.length);
+				const targetThreadId = currentComposerThreadId();
+				const targetThread = composerTargetThread();
+				const targetActiveTurnId = composerTargetActiveTurnId();
+				if (normalizedIntentText === "@") {
+					openComposerIntentMenu();
+					return;
+				}
+				const bareIntentKind = composerIntentBareTagKind(text);
+				if (bareIntentKind && bareIntentKind !== "goal") {
+					openComposerIntentDialog(bareIntentKind);
+					return;
+				}
+				if (isThreadGoalCommandText(text)) {
+					if (state.newThreadDraft) {
+						showError(/* @__PURE__ */ new Error("Goal is only available in an existing thread"));
+						return;
+					}
+					if (state.pendingAttachments.length) {
+						showError(/* @__PURE__ */ new Error("Goal commands do not support attachments"));
+						return;
+					}
+					if (!targetThreadId) return;
+					setComposerText("");
+					scheduleCurrentDraftSave();
+					openThreadGoalDialog(targetThreadId);
+					return;
+				}
+				if (isChatGptProCommandText(text)) {
+					await submitChatGptProRequest(text);
+					return;
+				}
+				if (state.newThreadDraft) {
+					await sendNewThreadMessage(text, hasContent, input);
+					return;
+				}
+				if (targetActiveTurnId && !hasContent) {
+					await interruptActiveTurn(targetThreadId, targetActiveTurnId);
+					return;
+				}
+				if (!text && !state.pendingAttachments.length || !targetThreadId) return;
+				const threadTaskCardCommand = isThreadTaskCardCommandText(text);
+				if (threadTaskCardCommand && state.pendingAttachments.length) {
+					showError(/* @__PURE__ */ new Error("# task-card commands do not support attachments yet"));
+					return;
+				}
+				if (threadTaskCardCommand) {
+					await sendThreadTaskCardCommand(text);
+					return;
+				}
+				const outboundText = text;
+				const steering = Boolean(targetActiveTurnId && hasContent);
+				const steerTurnId = steering ? String(targetActiveTurnId) : "";
+				const submittedDraftKey = currentDraftKey();
+				const clientSubmissionId = createSubmissionId();
+				const submittedAttachments = state.pendingAttachments.slice();
+				const previousThreadStatus = snapshotThreadStatus(targetThreadId);
+				state.composerBusy = true;
+				state.sendButtonHint = "";
+				startSendProgressWatchdog(targetThreadId);
+				if (steering) setSteerFeedback("sending", {
+					threadId: targetThreadId,
+					turnId: steerTurnId,
+					clientSubmissionId
+				});
+				else markActivity("发送");
+				updateComposerControls();
+				if (state.sendProgressWarned) {
+					$("connectionState").textContent = steering ? "引导中…" : "发送中…";
+					$("connectionState").classList.remove("error");
+				}
+				try {
+					const body = new FormData();
+					body.append("clientSubmissionId", clientSubmissionId);
+					body.append("text", outboundText);
+					if (targetThread && targetThread.cwd) body.append("cwd", targetThread.cwd);
+					if (steerTurnId) body.append("activeTurnId", steerTurnId);
+					body.append("model", selectedComposerModel());
+					body.append("effort", selectedComposerEffort());
+					body.append("permissionMode", selectedComposerPermissionMode());
+					if (codexFastCommandEnabled()) body.append("fastMode", "1");
+					for (const item of state.pendingAttachments) body.append("attachments", item.file, item.file.name || "upload");
+					registerSubmittedUserMessage(targetThreadId, outboundText, submittedAttachments, clientSubmissionId);
+					const insertedLocalMessage = insertLocalSubmittedUserMessage(targetThreadId, outboundText, submittedAttachments, clientSubmissionId, { turnId: steering ? steerTurnId : "" });
+					if (!steering) {
+						markThreadOptimisticallyActive(targetThreadId);
+						renderThreads();
+					}
+					if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
+					scheduleSubmittedMessageDomProbe(targetThreadId, clientSubmissionId, steering ? "message-steer" : "message-submit");
+					followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
+					const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
+						method: "POST",
+						body,
+						timeoutMs: 18e4
+					});
+					const serverTurnId = startedTurnId(result);
+					if (!steering && serverTurnId && reconcileSubmittedUserMessageTurn(targetThreadId, clientSubmissionId, serverTurnId)) renderCurrentThread({ stickToBottom: true });
+					commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
+						threadId: targetThreadId,
+						messageId: clientSubmissionId,
+						composerId: "thread-composer"
+					});
+					setComposerText("");
+					clearPendingAttachments({ revokePreviewUrls: false });
+					writeCurrentDraftToKey(submittedDraftKey);
+					if (!steering) renderComposerSettings();
+					input.blur();
+					$("connectionState").classList.remove("error");
+					if (steering) setSteerFeedback("delivered", {
+						threadId: targetThreadId,
+						turnId: steerTurnId,
+						clientSubmissionId
+					});
+					else {
+						$("connectionState").textContent = "Sent";
+						markActivity("已发送");
+					}
+					scheduleComposerTargetRefresh(targetThreadId, 600, "message-submit");
+					scheduleLivePollIfNeeded(1200);
+					loadThreads({ silent: true }).catch(showError);
+				} catch (err) {
+					clearSubmittedMessageBottomFollow();
+					if (!steering) {
+						restoreThreadStatusSnapshot(previousThreadStatus);
+						renderThreads();
+					}
+					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err) || "发送失败，请重试";
+					state.sendButtonHint = "重试";
+					markSubmittedUserMessageFailed(targetThreadId, outboundText, submittedAttachments, clientSubmissionId, message);
+					if (steering) setSteerFeedback("failed", {
+						threadId: targetThreadId,
+						turnId: steerTurnId,
+						clientSubmissionId
+					});
+					else {
+						$("connectionState").classList.remove("error");
+						$("connectionState").textContent = "发送失败，详情见消息回执";
+					}
+					postClientEvent("send_failure", {
+						threadId: targetThreadId || "",
+						message,
+						steering
+					});
+				} finally {
+					finishSendProgressWatchdog();
+					state.composerBusy = false;
+					updateComposerControls();
+				}
+			}
+			async function sendNewThreadMessage(text, hasContent, input) {
+				if (!hasContent) return;
+				const submittedDraftKey = currentDraftKey();
+				const clientSubmissionId = createSubmissionId();
+				const submittedModel = newThreadSelectedModel();
+				const submittedEffort = newThreadSelectedEffort();
+				const submittedPermissionMode = newThreadSelectedPermissionMode();
+				const submittedTitle = String(state.newThreadTitle || "").trim();
+				state.composerBusy = true;
+				state.sendButtonHint = "";
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = "正在创建新对话";
+				markActivity("创建新对话");
+				updateComposerControls();
+				try {
+					const submittedAttachments = state.pendingAttachments.slice();
+					const body = new FormData();
+					body.append("clientSubmissionId", clientSubmissionId);
+					body.append("text", text);
+					if (state.selectedCwd) body.append("cwd", state.selectedCwd);
+					body.append("model", submittedModel);
+					body.append("effort", submittedEffort);
+					body.append("permissionMode", submittedPermissionMode);
+					if (submittedTitle) body.append("title", submittedTitle);
+					if (codexFastCommandEnabled()) body.append("fastMode", "1");
+					for (const item of state.pendingAttachments) body.append("attachments", item.file, item.file.name || "upload");
+					const result = await api("/api/threads/new-message", {
+						method: "POST",
+						body,
+						timeoutMs: 18e4
+					});
+					const threadId = String(result && result.threadId || result && result.thread && result.thread.id || "");
+					if (!threadId) throw new Error("新对话创建失败：未返回 threadId");
+					commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
+						threadId,
+						messageId: clientSubmissionId,
+						composerId: "new-thread-composer"
+					});
+					registerSubmittedUserMessage(threadId, text, submittedAttachments, clientSubmissionId);
+					const turnId = startedTurnId(result);
+					const userItem = localUserMessageItem(text, submittedAttachments, clientSubmissionId);
+					const thread = Object.assign({
+						id: threadId,
+						name: submittedTitle || "",
+						preview: submittedTitle || text || "新建对话",
+						cwd: result && result.thread && result.thread.cwd || state.selectedCwd || "",
+						status: { type: "active" },
+						turns: [],
+						mobileInitialSubmissionId: clientSubmissionId
+					}, result.thread || {});
+					if (submittedTitle) {
+						thread.name = submittedTitle;
+						thread.preview = submittedTitle;
+					}
+					if (!thread.model && submittedModel) thread.model = submittedModel;
+					if (!thread.effort && submittedEffort) thread.effort = submittedEffort;
+					if (turnId) {
+						const existingTurn = (thread.turns || []).find((turn) => turn && turn.id === turnId);
+						if (existingTurn) existingTurn.items = mergeItemsPreservingLocalVisible([userItem], existingTurn.items || [], true);
+						else thread.turns = (thread.turns || []).concat([{
+							id: turnId,
+							status: { type: "active" },
+							startedAt: Math.floor(Date.now() / 1e3),
+							completedAt: null,
+							durationMs: null,
+							items: [userItem]
+						}]);
+					}
+					state.threads = [thread, ...state.threads.filter((entry) => entry.id !== threadId)];
+					state.newThreadDraft = false;
+					state.newThreadTitle = "";
+					state.currentThreadId = threadId;
+					state.currentThread = thread;
+					state.activeTurnId = turnId || state.activeTurnId;
+					state.composerModel = submittedModel || "";
+					state.composerEffort = submittedEffort || "";
+					state.composerPermissionMode = submittedPermissionMode || "";
+					if (state.events) connectEvents();
+					setComposerText("");
+					clearPendingAttachments({ revokePreviewUrls: false });
+					clearDraftForKey(submittedDraftKey);
+					writeCurrentDraftToKey(draftKeyForThread(threadId));
+					if (input) input.blur();
+					renderComposerSettings();
+					renderThreads();
+					renderCurrentThread({ stickToBottom: true });
+					scheduleSubmittedMessageDomProbe(threadId, clientSubmissionId, "new-thread-submit");
+					try {
+						await loadThread(threadId, { source: "new-thread" });
+					} catch (err) {
+						showError(err);
+						renderThreads();
+						renderCurrentThread({ stickToBottom: true });
+					}
+					$("connectionState").textContent = "新对话已创建";
+					markActivity("新对话已创建");
+					renderComposerSettings();
+					updateComposerControls();
+					scheduleCurrentThreadRefresh(900);
+					scheduleLivePollIfNeeded(1200);
+					loadThreads({ silent: true }).catch(showError);
+				} catch (err) {
+					const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err) || "新对话创建失败，请重试";
+					state.sendButtonHint = "重试";
+					$("connectionState").classList.add("error");
+					$("connectionState").textContent = message;
+					postClientEvent("new_thread_send_failure", {
+						cwd: state.selectedCwd || "",
+						message
+					});
+				} finally {
+					state.composerBusy = false;
+					updateComposerControls();
+				}
+			}
+			function requestComposerSubmitFromButton(event) {
+				event.preventDefault();
+				event.stopPropagation();
+				const now = Date.now();
+				if (now - state.lastSendButtonSubmitAt < 650) return;
+				state.lastSendButtonSubmitAt = now;
+				const button = $("sendMessage");
+				if (!button || button.disabled || state.composerBusy) return;
+				const composerForm = $("composer");
+				try {
+					if (composerForm && typeof composerForm.requestSubmit === "function") composerForm.requestSubmit();
+					else sendMessage(event);
+				} catch (err) {
+					postClientEvent("send_button_submit_exception", {
+						activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",
+						hasContent: composerHasContent(),
+						buttonDisabled: button.disabled,
+						error: String(err && err.message || "")
+					});
+					showError(/* @__PURE__ */ new Error("发送按钮点击异常，请改用回车发送"));
+				}
+				setTimeout(() => {
+					if (state.lastSendSubmitStartedAt >= now) return;
+					postClientEvent("send_button_no_submit", {
+						activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",
+						hasContent: composerHasContent(),
+						buttonDisabled: button.disabled,
+						composerBusy: state.composerBusy
+					});
+					if (composerHasContent()) showError(/* @__PURE__ */ new Error("发送没触发，建议重试或按回车发送"));
+				}, 1200);
+			}
+			function requestAttachmentPickerFromButton(event) {
+				if (event && typeof event.preventDefault === "function") event.preventDefault();
+				if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+				const now = Date.now();
+				if (now - Number(state.lastAttachmentPickerAt || 0) < 650) return;
+				const button = $("attachFiles");
+				const input = $("fileInput");
+				if (!button || !input || button.disabled || input.disabled || state.composerBusy) return;
+				state.lastAttachmentPickerAt = now;
+				try {
+					if (!isAndroidBrowser() && typeof input.showPicker === "function") input.showPicker();
+					else input.click();
+				} catch (err) {
+					postClientEvent("attachment_picker_click_exception", {
+						activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",
+						buttonDisabled: Boolean(button.disabled),
+						inputDisabled: Boolean(input.disabled),
+						error: String(err && err.message || "")
+					});
+					showError(/* @__PURE__ */ new Error("附件选择器打开失败，请重试"));
+				}
+			}
+			async function interruptActiveTurn(threadId = currentComposerThreadId(), activeTurnId = composerTargetActiveTurnId()) {
+				const targetThreadId = String(threadId || "").trim();
+				const targetActiveTurnId = String(activeTurnId || "").trim();
+				if (!targetThreadId || !targetActiveTurnId) return;
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = "Interrupt requested";
+				markActivity("中断");
+				await api(`/api/threads/${encodeURIComponent(targetThreadId)}/turns/${encodeURIComponent(targetActiveTurnId)}/interrupt`, { method: "POST" }).then(() => scheduleComposerTargetRefresh(targetThreadId, 900)).catch(showError);
+			}
+			return {
+				updateComposerHeightVar,
+				clearSendProgressWatchdog,
+				startSendProgressWatchdog,
+				finishSendProgressWatchdog,
+				normalizeClientErrorMessage,
+				rawMessageFallback,
+				composerText,
+				setComposerText,
+				placeMessageInputCaretAtEnd,
+				focusMessageInput,
+				messageInputKeyboardVisible,
+				shouldRecoverMessageInputKeyboard,
+				recoverMessageInputKeyboardFromGesture,
+				messageInputCanEnableForNativeGesture,
+				releaseStaleAndroidMessageInputFocusBeforeNativeTap,
+				prepareMessageInputForNativeGesture,
+				normalizedComposerIntentText,
+				composerIntentOptions,
+				composerIntentOption,
+				composerIntentDraftKey,
+				loadComposerIntentDraft,
+				saveComposerIntentDraft,
+				composerIntentBareTagKind,
+				shouldShowComposerIntentMenu,
+				closeComposerIntentMenu,
+				onComposerIntentOutsidePointer,
+				openComposerIntentMenu,
+				positionComposerIntentMenu,
+				updateComposerIntentMenu,
+				queueComposerIntentMenuUpdate,
+				selectComposerIntent,
+				setComposerIntentDialogStatus,
+				closeComposerIntentDialog,
+				openComposerIntentDialog,
+				submitComposerIntentDialog,
+				saveComposerIntentDialogDraft,
+				shouldKeepAndroidMessageInputEditable,
+				setMessageInputDisabled,
+				messageInputTextLength,
+				messageInputTargetHeight,
+				currentMessageInputHeight,
+				updateMessageInputOverflow,
+				autoSizeMessageInput,
+				formatFileSize,
+				appendLocalAttachmentSummary,
+				localImageInputPartsForAttachments,
+				localUserMessageItem,
+				attachmentId,
+				pendingAttachmentBytes,
+				prepareAttachmentFile,
+				prepareAttachmentFiles,
+				addAttachmentFiles,
+				removeAttachment,
+				clearPendingAttachments,
+				renderAttachmentList,
+				composerHasContent,
+				effectiveDefaultModel,
+				effectiveDefaultEffort,
+				effectiveDefaultPermissionMode,
+				selectedComposerModel,
+				selectedComposerEffort,
+				selectedComposerPermissionMode,
+				resetComposerRuntimeSelection,
+				runtimeOptionValues,
+				runtimeOptionLabel,
+				runtimeSelectedValue,
+				codexFastCommandEnabled,
+				clearLegacyCodexFastModeStorage,
+				setCodexFastCommandEnabled,
+				applyRuntimeSelection,
+				closeComposerRuntimeMenu,
+				onComposerRuntimeOutsidePointer,
+				openComposerRuntimeMenu,
+				composerRuntimeMenuDiagnostics,
+				reportComposerRuntimeMenu,
+				handleComposerRuntimeControl,
+				fitComposerPopupToAnchor,
+				closeQuotaDetails,
+				onQuotaOutsidePointer,
+				toggleQuotaDetails,
+				composerPlaceholderText,
+				composerShowsTargetPlaceholder,
+				applyComposerActionControlPlan,
+				renderComposerSettings,
+				updateComposerControls,
+				hasTransferFiles,
+				goalDialogFormValues,
+				submitThreadGoalMessage,
+				threadGoalActionStatusText,
+				threadGoalActionBusyText,
+				runThreadGoalDialogAction,
+				requestGoalDialogSubmitFromEnter,
+				requestGoalDialogSubmitFromButton,
+				requestGoalDialogSubmit,
+				sendThreadTaskCardCommand,
+				sendMessage,
+				sendNewThreadMessage,
+				requestComposerSubmitFromButton,
+				requestAttachmentPickerFromButton,
+				interruptActiveTurn
+			};
+		}
+		const api = { createComposerRuntime };
+		if (typeof module === "object" && module.exports) module.exports = api;
+		root.CodexComposerRuntime = api;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
+//#region public/composer-bridge-runtime.js
+var require_composer_bridge_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachComposerBridgeRuntime(root) {
+		function updateComposerHeightVar(...args) {
+			return composerRuntime.updateComposerHeightVar(...args);
+		}
+		function showError(err) {
+			const raw = err instanceof Error ? err.message : String(err || "");
+			const message = normalizeClientErrorMessage(raw, err) || err && err.message || String(err);
+			$("connectionState").textContent = message;
+			$("connectionState").classList.add("error");
+			postClientEvent("client_error", {
+				message,
+				raw,
+				currentThreadId: state.currentThreadId || "",
+				composerBusy: state.composerBusy,
+				continuationBusy: state.continuationBusy
+			});
+		}
+		function clearSendProgressWatchdog(...args) {
+			return composerRuntime.clearSendProgressWatchdog(...args);
+		}
+		function startSendProgressWatchdog(...args) {
+			return composerRuntime.startSendProgressWatchdog(...args);
+		}
+		function finishSendProgressWatchdog(...args) {
+			return composerRuntime.finishSendProgressWatchdog(...args);
+		}
+		function threadNotificationThrottleKey(method, params) {
+			if (!params) return "";
+			if (method === "thread/started" && params.thread) return `${method}:${String(params.thread.id || "")}:${String(statusText(params.thread.status) || "")}`;
+			if (method === "thread/status/changed") return `${method}:${String(params.threadId || "")}:${String(statusText(params.status) || "")}`;
+			if (method === "thread/name/updated") return `${method}:${String(params.threadId || "")}:${String(params.threadName || "")}`;
+			if (method === "thread/archived") return `${method}:${String(params.threadId || "")}`;
+			return "";
+		}
+		function shouldThrottleThreadNotification(method, params) {
+			const key = threadNotificationThrottleKey(method, params);
+			if (!key) return false;
+			const now = Date.now();
+			if (now - (state.threadNotificationThrottle.get(key) || 0) < 450) return true;
+			state.threadNotificationThrottle.set(key, now);
+			if (state.threadNotificationThrottle.size > 220) {
+				for (const [existingKey, existingAt] of state.threadNotificationThrottle.entries()) if (now - existingAt > 8e3) state.threadNotificationThrottle.delete(existingKey);
+				if (state.threadNotificationThrottle.size > 220) for (const existingKey of Array.from(state.threadNotificationThrottle.keys()).slice(0, 120)) state.threadNotificationThrottle.delete(existingKey);
+			}
+			return false;
+		}
+		function normalizeClientErrorMessage(...args) {
+			return composerRuntime.normalizeClientErrorMessage(...args);
+		}
+		function rawMessageFallback(...args) {
+			return composerRuntime.rawMessageFallback(...args);
+		}
+		function composerText(...args) {
+			return composerRuntime.composerText(...args);
+		}
+		function setComposerText(...args) {
+			return composerRuntime.setComposerText(...args);
+		}
+		function placeMessageInputCaretAtEnd(...args) {
+			return composerRuntime.placeMessageInputCaretAtEnd(...args);
+		}
+		function focusMessageInput(...args) {
+			return composerRuntime.focusMessageInput(...args);
+		}
+		function messageInputKeyboardVisible(...args) {
+			return composerRuntime.messageInputKeyboardVisible(...args);
+		}
+		function shouldRecoverMessageInputKeyboard(...args) {
+			return composerRuntime.shouldRecoverMessageInputKeyboard(...args);
+		}
+		function recoverMessageInputKeyboardFromGesture(...args) {
+			return composerRuntime.recoverMessageInputKeyboardFromGesture(...args);
+		}
+		function messageInputCanEnableForNativeGesture(...args) {
+			return composerRuntime.messageInputCanEnableForNativeGesture(...args);
+		}
+		function releaseStaleAndroidMessageInputFocusBeforeNativeTap(...args) {
+			return composerRuntime.releaseStaleAndroidMessageInputFocusBeforeNativeTap(...args);
+		}
+		function prepareMessageInputForNativeGesture(...args) {
+			return composerRuntime.prepareMessageInputForNativeGesture(...args);
+		}
+		function normalizedComposerIntentText(...args) {
+			return composerRuntime.normalizedComposerIntentText(...args);
+		}
+		function composerIntentOptions(...args) {
+			return composerRuntime.composerIntentOptions(...args);
+		}
+		function composerIntentOption(...args) {
+			return composerRuntime.composerIntentOption(...args);
+		}
+		function composerIntentDraftKey(...args) {
+			return composerRuntime.composerIntentDraftKey(...args);
+		}
+		function loadComposerIntentDraft(...args) {
+			return composerRuntime.loadComposerIntentDraft(...args);
+		}
+		function saveComposerIntentDraft(...args) {
+			return composerRuntime.saveComposerIntentDraft(...args);
+		}
+		function composerIntentBareTagKind(...args) {
+			return composerRuntime.composerIntentBareTagKind(...args);
+		}
+		function shouldShowComposerIntentMenu(...args) {
+			return composerRuntime.shouldShowComposerIntentMenu(...args);
+		}
+		function closeComposerIntentMenu(...args) {
+			return composerRuntime.closeComposerIntentMenu(...args);
+		}
+		function onComposerIntentOutsidePointer(...args) {
+			return composerRuntime.onComposerIntentOutsidePointer(...args);
+		}
+		function openComposerIntentMenu(...args) {
+			return composerRuntime.openComposerIntentMenu(...args);
+		}
+		function positionComposerIntentMenu(...args) {
+			return composerRuntime.positionComposerIntentMenu(...args);
+		}
+		function updateComposerIntentMenu(...args) {
+			return composerRuntime.updateComposerIntentMenu(...args);
+		}
+		function queueComposerIntentMenuUpdate(...args) {
+			return composerRuntime.queueComposerIntentMenuUpdate(...args);
+		}
+		function selectComposerIntent(...args) {
+			return composerRuntime.selectComposerIntent(...args);
+		}
+		function setComposerIntentDialogStatus(...args) {
+			return composerRuntime.setComposerIntentDialogStatus(...args);
+		}
+		function closeComposerIntentDialog(...args) {
+			return composerRuntime.closeComposerIntentDialog(...args);
+		}
+		function openComposerIntentDialog(...args) {
+			return composerRuntime.openComposerIntentDialog(...args);
+		}
+		async function submitComposerIntentDialog(...args) {
+			return composerRuntime.submitComposerIntentDialog(...args);
+		}
+		function saveComposerIntentDialogDraft(...args) {
+			return composerRuntime.saveComposerIntentDialogDraft(...args);
+		}
+		function shouldKeepAndroidMessageInputEditable(...args) {
+			return composerRuntime.shouldKeepAndroidMessageInputEditable(...args);
+		}
+		function setMessageInputDisabled(...args) {
+			return composerRuntime.setMessageInputDisabled(...args);
+		}
+		function messageInputTextLength(...args) {
+			return composerRuntime.messageInputTextLength(...args);
+		}
+		function messageInputTargetHeight(...args) {
+			return composerRuntime.messageInputTargetHeight(...args);
+		}
+		function currentMessageInputHeight(...args) {
+			return composerRuntime.currentMessageInputHeight(...args);
+		}
+		function updateMessageInputOverflow(...args) {
+			return composerRuntime.updateMessageInputOverflow(...args);
+		}
+		function autoSizeMessageInput(...args) {
+			return composerRuntime.autoSizeMessageInput(...args);
+		}
+		function formatFileSize(...args) {
+			return composerRuntime.formatFileSize(...args);
+		}
+		function appendLocalAttachmentSummary(...args) {
+			return composerRuntime.appendLocalAttachmentSummary(...args);
+		}
+		function localImageInputPartsForAttachments(...args) {
+			return composerRuntime.localImageInputPartsForAttachments(...args);
+		}
+		function localUserMessageItem(...args) {
+			return composerRuntime.localUserMessageItem(...args);
+		}
+		function attachmentId(...args) {
+			return composerRuntime.attachmentId(...args);
+		}
+		function pendingAttachmentBytes(...args) {
+			return composerRuntime.pendingAttachmentBytes(...args);
+		}
+		async function prepareAttachmentFile(...args) {
+			return composerRuntime.prepareAttachmentFile(...args);
+		}
+		async function prepareAttachmentFiles(...args) {
+			return composerRuntime.prepareAttachmentFiles(...args);
+		}
+		async function addAttachmentFiles(...args) {
+			return composerRuntime.addAttachmentFiles(...args);
+		}
+		function removeAttachment(...args) {
+			return composerRuntime.removeAttachment(...args);
+		}
+		function clearPendingAttachments(...args) {
+			return composerRuntime.clearPendingAttachments(...args);
+		}
+		function renderAttachmentList(...args) {
+			return composerRuntime.renderAttachmentList(...args);
+		}
+		function composerHasContent(...args) {
+			return composerRuntime.composerHasContent(...args);
+		}
+		function effectiveDefaultModel(...args) {
+			return composerRuntime.effectiveDefaultModel(...args);
+		}
+		function effectiveDefaultEffort(...args) {
+			return composerRuntime.effectiveDefaultEffort(...args);
+		}
+		function effectiveDefaultPermissionMode(...args) {
+			return composerRuntime.effectiveDefaultPermissionMode(...args);
+		}
+		function selectedComposerModel(...args) {
+			return composerRuntime.selectedComposerModel(...args);
+		}
+		function selectedComposerEffort(...args) {
+			return composerRuntime.selectedComposerEffort(...args);
+		}
+		function selectedComposerPermissionMode(...args) {
+			return composerRuntime.selectedComposerPermissionMode(...args);
+		}
+		function resetComposerRuntimeSelection(...args) {
+			return composerRuntime.resetComposerRuntimeSelection(...args);
+		}
+		function runtimeOptionValues(...args) {
+			return composerRuntime.runtimeOptionValues(...args);
+		}
+		function runtimeOptionLabel(...args) {
+			return composerRuntime.runtimeOptionLabel(...args);
+		}
+		function runtimeSelectedValue(...args) {
+			return composerRuntime.runtimeSelectedValue(...args);
+		}
+		function codexFastCommandEnabled(...args) {
+			return composerRuntime.codexFastCommandEnabled(...args);
+		}
+		function clearLegacyCodexFastModeStorage(...args) {
+			return composerRuntime.clearLegacyCodexFastModeStorage(...args);
+		}
+		function setCodexFastCommandEnabled(...args) {
+			return composerRuntime.setCodexFastCommandEnabled(...args);
+		}
+		function applyRuntimeSelection(...args) {
+			return composerRuntime.applyRuntimeSelection(...args);
+		}
+		function closeComposerRuntimeMenu(...args) {
+			return composerRuntime.closeComposerRuntimeMenu(...args);
+		}
+		function onComposerRuntimeOutsidePointer(...args) {
+			return composerRuntime.onComposerRuntimeOutsidePointer(...args);
+		}
+		function openComposerRuntimeMenu(...args) {
+			return composerRuntime.openComposerRuntimeMenu(...args);
+		}
+		function composerRuntimeMenuDiagnostics(...args) {
+			return composerRuntime.composerRuntimeMenuDiagnostics(...args);
+		}
+		function reportComposerRuntimeMenu(...args) {
+			return composerRuntime.reportComposerRuntimeMenu(...args);
+		}
+		function handleComposerRuntimeControl(...args) {
+			return composerRuntime.handleComposerRuntimeControl(...args);
+		}
+		function fitComposerPopupToAnchor(...args) {
+			return composerRuntime.fitComposerPopupToAnchor(...args);
+		}
+		function closeQuotaDetails(...args) {
+			return composerRuntime.closeQuotaDetails(...args);
+		}
+		function onQuotaOutsidePointer(...args) {
+			return composerRuntime.onQuotaOutsidePointer(...args);
+		}
+		function toggleQuotaDetails(...args) {
+			return composerRuntime.toggleQuotaDetails(...args);
+		}
+		function composerPlaceholderText(...args) {
+			return composerRuntime.composerPlaceholderText(...args);
+		}
+		function composerShowsTargetPlaceholder(...args) {
+			return composerRuntime.composerShowsTargetPlaceholder(...args);
+		}
+		function applyComposerActionControlPlan(...args) {
+			return composerRuntime.applyComposerActionControlPlan(...args);
+		}
+		function renderComposerSettings(...args) {
+			return composerRuntime.renderComposerSettings(...args);
+		}
+		function updateComposerControls(...args) {
+			return composerRuntime.updateComposerControls(...args);
+		}
+		function hasTransferFiles(...args) {
+			return composerRuntime.hasTransferFiles(...args);
+		}
+		function goalDialogFormValues(...args) {
+			return composerRuntime.goalDialogFormValues(...args);
+		}
+		async function submitThreadGoalMessage(...args) {
+			return composerRuntime.submitThreadGoalMessage(...args);
+		}
+		function threadGoalActionStatusText(...args) {
+			return composerRuntime.threadGoalActionStatusText(...args);
+		}
+		function threadGoalActionBusyText(...args) {
+			return composerRuntime.threadGoalActionBusyText(...args);
+		}
+		async function runThreadGoalDialogAction(...args) {
+			return composerRuntime.runThreadGoalDialogAction(...args);
+		}
+		function requestGoalDialogSubmitFromEnter(...args) {
+			return composerRuntime.requestGoalDialogSubmitFromEnter(...args);
+		}
+		function requestGoalDialogSubmitFromButton(...args) {
+			return composerRuntime.requestGoalDialogSubmitFromButton(...args);
+		}
+		function requestGoalDialogSubmit(...args) {
+			return composerRuntime.requestGoalDialogSubmit(...args);
+		}
+		async function sendThreadTaskCardCommand(...args) {
+			return composerRuntime.sendThreadTaskCardCommand(...args);
+		}
+		async function sendMessage(...args) {
+			return composerRuntime.sendMessage(...args);
+		}
+		async function sendNewThreadMessage(...args) {
+			return composerRuntime.sendNewThreadMessage(...args);
+		}
+		function requestComposerSubmitFromButton(...args) {
+			return composerRuntime.requestComposerSubmitFromButton(...args);
+		}
+		function requestAttachmentPickerFromButton(...args) {
+			return composerRuntime.requestAttachmentPickerFromButton(...args);
+		}
+		async function interruptActiveTurn(...args) {
+			return composerRuntime.interruptActiveTurn(...args);
+		}
+		async function answerServerRequest(requestId, payload, options = {}) {
+			const key = requestId !== null && requestId !== void 0 ? String(requestId) : "";
+			const request = state.pendingApprovals.get(key);
+			if (!request || request.status !== "waiting") return;
+			const threadId = approvalActionThreadId(request, options.threadId);
+			request.status = "responding";
+			request.decision = payload && (payload.decision || payload.action) || "submitted";
+			markActivity(isUserInputRequest(request) ? "输入发送中" : "批准中");
+			scheduleApprovalThreadRender(threadId);
+			try {
+				const result = await api(`/api/approvals/${encodeURIComponent(key)}`, {
+					method: "POST",
+					body: JSON.stringify(payload || {}),
+					timeoutMs: 2e4
+				});
+				if (result && result.request) state.pendingApprovals.set(key, serverRequestWithThreadContext(result.request, threadId));
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = isUserInputRequest(request) ? "Response sent" : "Approval sent";
+				markActivity(isUserInputRequest(request) ? "输入已发送" : "批准发送");
+				scheduleApprovalThreadRender(threadId);
+			} catch (err) {
+				request.status = "waiting";
+				request.decision = null;
+				showError(err);
+				scheduleApprovalThreadRender(threadId);
+			}
+		}
+		function answerApproval(requestId, decision, options = {}) {
+			return answerServerRequest(requestId, { decision }, options);
+		}
+		function serverRequestPayload(request, responseText, questionId) {
+			if (request && request.method === "mcpServer/elicitation/request") return {
+				action: "accept",
+				responseText
+			};
+			return {
+				responseText,
+				questionId
+			};
+		}
+		function declineServerRequest(requestId, options = {}) {
+			const key = requestId !== null && requestId !== void 0 ? String(requestId) : "";
+			const request = state.pendingApprovals.get(key);
+			if (!request) return Promise.resolve();
+			if (request.method === "mcpServer/elicitation/request") return answerServerRequest(key, { action: "decline" }, options);
+			if (request.method === "item/tool/requestUserInput") return answerServerRequest(key, { answers: {} }, options);
+			return answerApproval(key, "deny", options);
+		}
+		async function mutateThreadTaskCard(cardId, action, body = {}, options = {}) {
+			const id = String(cardId || "").trim();
+			const threadId = String(options.threadId || body.threadId || state.currentThreadId || "").trim();
+			if (!id || !threadId) return;
+			$("connectionState").classList.remove("error");
+			$("connectionState").textContent = action === "approve" ? "Approving task card" : `${action} task card`;
+			try {
+				const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {
+					method: "POST",
+					body: JSON.stringify(Object.assign({}, body, { threadId })),
+					timeoutMs: 3e4
+				});
+				if (action === "approve" && result && result.execution && result.execution.turnId) $("connectionState").textContent = "Task card approved; starting target turn";
+				else $("connectionState").textContent = "Task card updated";
+				settleThreadTaskCardForThread(threadId, id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
+				recordHomeAiDiagnosticSuccess({
+					category: "task_card_workflow_failed",
+					diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+					error_code: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+					context: {
+						surface: "task-card",
+						action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+						thread_hash: diagnosticThreadHash(threadId),
+						task_hash: diagnosticTaskHash(id)
+					}
+				});
+				if (action === "approve" && result && result.execution && result.execution.turnId) {
+					let injectedVisible = false;
+					if (threadId === String(state.currentThreadId || "")) injectedVisible = await waitForCurrentThreadTurn(result.execution.turnId, {
+						timeoutMs: 1e4,
+						intervalMs: 500
+					});
+					else scheduleComposerTargetRefresh(threadId, 300, "task-card-approved");
+					$("connectionState").textContent = injectedVisible ? "Task card approved and injected" : "Task card approved; waiting for thread refresh";
+					loadThreads({ silent: true }).catch(showError);
+					return;
+				}
+				await refreshThreadAfterTaskCard(threadId);
+			} catch (err) {
+				showError(err);
+			}
+		}
+		async function replyTaskCard(cardId, options = {}) {
+			const threadId = String(options.threadId || state.currentThreadId || "").trim();
+			const card = findThreadTaskCard(cardId, threadId);
+			if (!card) return;
+			const body = await requestAppTextInput("输入回复内容。", "", {
+				title: "回复任务卡片",
+				confirmLabel: "发送回复",
+				rows: 6
+			}) || "";
+			if (!String(body).trim()) return;
+			const title = `Reply: ${card.message && card.message.title ? card.message.title : "Task card"}`;
+			return mutateThreadTaskCard(card.id, "reply", {
+				format: "markdown",
+				title,
+				summary: summarizeTaskCardText(body),
+				body: String(body).trim(),
+				idempotencyKey: `task-card-reply:${card.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`
+			}, { threadId });
+		}
+		function findThreadTaskCardDraftByKey(draftKey, thread = renderContextThread()) {
+			const key = String(draftKey || "");
+			const sourceThread = renderContextThread(thread) || state.currentThread;
+			const turns = Array.isArray(sourceThread && sourceThread.turns) ? sourceThread.turns : [];
+			for (const turn of turns) {
+				const items = Array.isArray(turn && turn.items) ? turn.items : [];
+				for (const item of items) {
+					if (!item || item.type !== "agentMessage" && item.type !== "plan") continue;
+					const draft = parseThreadTaskCardDraftText(item.text || "");
+					if (!draft) continue;
+					const itemKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
+					const legacyItemKey = threadTaskCardDraftKey(turn.id, item.id || "");
+					if (itemKey !== key && legacyItemKey !== key) continue;
+					return {
+						key,
+						draft,
+						turn,
+						item,
+						sourceThread
+					};
+				}
+			}
+			return null;
+		}
+		function scheduleThreadTaskCardDraftStateRender(threadId = "") {
+			const id = String(threadId || state.currentThreadId || "").trim();
+			if (!id || id === String(state.currentThreadId || "")) {
+				renderCurrentThread();
+				return true;
+			}
+			if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+				if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) renderCurrentThread();
+				return true;
+			}
+			return false;
+		}
+		function setThreadTaskCardDraftState(draftKey, nextState, options = {}) {
+			const key = String(draftKey || "");
+			if (!key) return;
+			state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}, { updatedAtMs: Date.now() }));
+			saveThreadTaskCardDraftStates();
+			const threadId = String(options.threadId || options.thread && options.thread.id || "").trim();
+			if (options.render !== false) scheduleThreadTaskCardDraftStateRender(threadId);
+		}
+		function dismissThreadTaskCardDraft(draftKey, options = {}) {
+			setThreadTaskCardDraftState(draftKey, {
+				status: "dismissed",
+				error: ""
+			}, options);
+		}
+		function queueThreadTaskCardDraftCreation(draftKey, thread = renderContextThread()) {
+			const key = String(draftKey || "");
+			if (!key || state.scheduledThreadTaskCardDraftCreations.has(key) || state.activeThreadTaskCardDraftCreations.has(key)) return;
+			const sourceThreadId = renderContextThreadId(thread);
+			state.scheduledThreadTaskCardDraftCreations.add(key);
+			const current = threadTaskCardDraftState(key);
+			setThreadTaskCardDraftState(key, {
+				status: "creating",
+				error: "",
+				attempts: Math.max(0, Number(current.attempts || 0)) + 1
+			}, { render: false });
+			window.setTimeout(() => {
+				state.scheduledThreadTaskCardDraftCreations.delete(key);
+				createThreadTaskCardDraft(key, { threadId: sourceThreadId }).catch(showError);
+			}, 0);
+		}
+		async function createThreadTaskCardDraft(draftKey, options = {}) {
+			const activeKey = String(draftKey || "");
+			if (!activeKey || state.activeThreadTaskCardDraftCreations.has(activeKey)) return;
+			state.activeThreadTaskCardDraftCreations.add(activeKey);
+			const requestedThreadId = String(options.threadId || "").trim();
+			try {
+				const requestedThread = taskCardActionThread(requestedThreadId);
+				const resolved = findThreadTaskCardDraftByKey(draftKey, requestedThread);
+				const sourceThread = resolved && (resolved.sourceThread || requestedThread || state.currentThread);
+				const sourceThreadId = String(sourceThread && sourceThread.id || requestedThreadId || "").trim();
+				if (!resolved || !sourceThreadId || !sourceThread) {
+					setThreadTaskCardDraftState(draftKey, {
+						status: "pending",
+						error: ""
+					}, { render: false });
+					return;
+				}
+				const { draft, turn } = resolved;
+				const targetRefs = threadTaskCardDraftTargetThreads(draft);
+				const targetThreadIds = threadTaskCardDraftTargetIds(draft);
+				if (!targetThreadIds.length) {
+					setThreadTaskCardDraftState(draftKey, {
+						status: "failed",
+						error: draft.error || "Draft did not include a target thread id"
+					}, { threadId: sourceThreadId });
+					return;
+				}
+				if (!draft.title || !draft.body) {
+					setThreadTaskCardDraftState(draftKey, {
+						status: "failed",
+						error: draft.error || "Draft is incomplete"
+					}, { threadId: sourceThreadId });
+					return;
+				}
+				setThreadTaskCardDraftState(draftKey, {
+					status: "creating",
+					error: ""
+				}, { threadId: sourceThreadId });
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = "Creating task card";
+				const body = truncateThreadTaskCardBody(draft.body);
+				const targetWorkspaceIds = {};
+				for (const entry of targetRefs) if (entry.thread) targetWorkspaceIds[entry.threadId] = String(entry.thread.cwd || "");
+				const result = await api("/api/thread-task-cards", {
+					method: "POST",
+					body: JSON.stringify({
+						sourceWorkspaceId: sourceThread.cwd || state.selectedCwd || "",
+						sourceThreadId,
+						sourceTurnId: String(turn && turn.id || ""),
+						sourceThreadTitle: threadTitleForDisplay(sourceThread) || sourceThreadId,
+						targetThreadIds,
+						targetWorkspaceIds,
+						idempotencyKey: `task-card-draft:${sourceThreadId}:${draftKey}`,
+						format: "markdown",
+						title: draft.title,
+						summary: draft.summary || summarizeTaskCardText(body),
+						body,
+						workflowMode: draft.workflowMode || "manual",
+						workflowId: draft.workflowId || ""
+					}),
+					timeoutMs: 3e4
+				});
+				const createdCards = Array.isArray(result && result.cards) ? result.cards.filter(Boolean) : result && result.card ? [result.card] : [];
+				if (!createdCards.length) throw new Error("Task card creation returned no cards");
+				for (const createdCard of createdCards) {
+					const pending = String(createdCard && createdCard.status || "pending") === "pending";
+					upsertThreadTaskCardOnThread(sourceThread, createdCard);
+					if (pending) {
+						incrementPendingOutgoingTaskCardCount(sourceThreadId, 1);
+						incrementPendingIncomingTaskCardCount(createdCard && createdCard.target && createdCard.target.threadId, 1);
+					}
+				}
+				if (state.threadTileDetails.has(sourceThreadId)) state.threadTileDetails.set(sourceThreadId, sourceThread);
+				setThreadTaskCardDraftState(draftKey, {
+					status: "created",
+					error: "",
+					cardId: String(createdCards[0] && createdCards[0].id || ""),
+					cardIds: createdCards.map((card) => String(card && card.id || "")).filter(Boolean)
+				}, { threadId: sourceThreadId });
+				$("connectionState").classList.remove("error");
+				$("connectionState").textContent = createdCards.length === 1 ? "Task card created; opening target thread" : `Task cards created: ${createdCards.length}`;
+				state.pendingPluginRouteHint = createdCards.length === 1 ? normalizePluginRouteHint({
+					pluginId: "codex-mobile",
+					route: "thread-task-card",
+					threadId: createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0],
+					taskId: createdCards[0].id
+				}) : null;
+				recordHomeAiDiagnosticSuccess({
+					category: "task_card_workflow_failed",
+					diagnostic_type: "task_card_draft_materialize_failed",
+					error_code: "task_card_draft_materialize_failed",
+					context: {
+						surface: "task-card",
+						action: "draft-materialize",
+						thread_hash: diagnosticThreadHash(sourceThreadId),
+						item_hash: diagnosticItemHash(draftKey)
+					}
+				});
+				renderThreads();
+				loadThreads({ silent: true }).catch(showError);
+				if (createdCards.length === 1) await loadThread(createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0], { source: "task-card-created" });
+				else if (sourceThreadId === String(state.currentThreadId || "")) renderCurrentThread();
+				else if (state.threadTileMode && threadTilePaneIsVisible(sourceThreadId)) scheduleRenderThreadTilePane(sourceThreadId, { preserveScroll: true });
+				else renderCurrentThread();
+			} catch (err) {
+				const diagnosticThreadId = String(options.threadId || state.currentThreadId || "").trim();
+				setThreadTaskCardDraftState(draftKey, {
+					status: "failed",
+					error: normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Task card creation failed"
+				}, { threadId: diagnosticThreadId });
+				recordHomeAiDiagnosticFailure({
+					category: "task_card_workflow_failed",
+					diagnostic_type: "task_card_draft_materialize_failed",
+					severity_hint: "H2",
+					evidence_confidence: .78,
+					error_code: diagnosticErrorCode(err, "task_card_draft_materialize_failed"),
+					context: {
+						surface: "task-card",
+						action: "draft-materialize",
+						thread_hash: diagnosticThreadHash(diagnosticThreadId),
+						item_hash: diagnosticItemHash(draftKey)
+					},
+					counts: { status_code: diagnosticErrorStatus(err) },
+					breadcrumbs: [{
+						kind: "task-card",
+						code: "draft-materialize",
+						status: "failed",
+						fields: {
+							status_code: diagnosticErrorStatus(err),
+							item_hash: diagnosticItemHash(draftKey)
+						}
+					}]
+				});
+				throw err;
+			} finally {
+				state.activeThreadTaskCardDraftCreations.delete(activeKey);
+			}
+		}
+		function createComposerBridgeRuntime() {
+			return {
+				sendMessage: typeof sendMessage === "function" ? sendMessage : null,
+				sendNewThreadMessage: typeof sendNewThreadMessage === "function" ? sendNewThreadMessage : null,
+				answerServerRequest: typeof answerServerRequest === "function" ? answerServerRequest : null,
+				answerApproval: typeof answerApproval === "function" ? answerApproval : null,
+				declineServerRequest: typeof declineServerRequest === "function" ? declineServerRequest : null,
+				mutateThreadTaskCard: typeof mutateThreadTaskCard === "function" ? mutateThreadTaskCard : null,
+				replyTaskCard: typeof replyTaskCard === "function" ? replyTaskCard : null,
+				queueThreadTaskCardDraftCreation: typeof queueThreadTaskCardDraftCreation === "function" ? queueThreadTaskCardDraftCreation : null,
+				createThreadTaskCardDraft: typeof createThreadTaskCardDraft === "function" ? createThreadTaskCardDraft : null
+			};
+		}
+		const legacyGlobals = {
+			updateComposerHeightVar,
+			showError,
+			clearSendProgressWatchdog,
+			startSendProgressWatchdog,
+			finishSendProgressWatchdog,
+			threadNotificationThrottleKey,
+			shouldThrottleThreadNotification,
+			normalizeClientErrorMessage,
+			rawMessageFallback,
+			composerText,
+			setComposerText,
+			placeMessageInputCaretAtEnd,
+			focusMessageInput,
+			messageInputKeyboardVisible,
+			shouldRecoverMessageInputKeyboard,
+			recoverMessageInputKeyboardFromGesture,
+			messageInputCanEnableForNativeGesture,
+			releaseStaleAndroidMessageInputFocusBeforeNativeTap,
+			prepareMessageInputForNativeGesture,
+			normalizedComposerIntentText,
+			composerIntentOptions,
+			composerIntentOption,
+			composerIntentDraftKey,
+			loadComposerIntentDraft,
+			saveComposerIntentDraft,
+			composerIntentBareTagKind,
+			shouldShowComposerIntentMenu,
+			closeComposerIntentMenu,
+			onComposerIntentOutsidePointer,
+			openComposerIntentMenu,
+			positionComposerIntentMenu,
+			updateComposerIntentMenu,
+			queueComposerIntentMenuUpdate,
+			selectComposerIntent,
+			setComposerIntentDialogStatus,
+			closeComposerIntentDialog,
+			openComposerIntentDialog,
+			submitComposerIntentDialog,
+			saveComposerIntentDialogDraft,
+			shouldKeepAndroidMessageInputEditable,
+			setMessageInputDisabled,
+			messageInputTextLength,
+			messageInputTargetHeight,
+			currentMessageInputHeight,
+			updateMessageInputOverflow,
+			autoSizeMessageInput,
+			formatFileSize,
+			appendLocalAttachmentSummary,
+			localImageInputPartsForAttachments,
+			localUserMessageItem,
+			attachmentId,
+			pendingAttachmentBytes,
+			prepareAttachmentFile,
+			prepareAttachmentFiles,
+			addAttachmentFiles,
+			removeAttachment,
+			clearPendingAttachments,
+			renderAttachmentList,
+			composerHasContent,
+			effectiveDefaultModel,
+			effectiveDefaultEffort,
+			effectiveDefaultPermissionMode,
+			selectedComposerModel,
+			selectedComposerEffort,
+			selectedComposerPermissionMode,
+			resetComposerRuntimeSelection,
+			runtimeOptionValues,
+			runtimeOptionLabel,
+			runtimeSelectedValue,
+			codexFastCommandEnabled,
+			clearLegacyCodexFastModeStorage,
+			setCodexFastCommandEnabled,
+			applyRuntimeSelection,
+			closeComposerRuntimeMenu,
+			onComposerRuntimeOutsidePointer,
+			openComposerRuntimeMenu,
+			composerRuntimeMenuDiagnostics,
+			reportComposerRuntimeMenu,
+			handleComposerRuntimeControl,
+			fitComposerPopupToAnchor,
+			closeQuotaDetails,
+			onQuotaOutsidePointer,
+			toggleQuotaDetails,
+			composerPlaceholderText,
+			composerShowsTargetPlaceholder,
+			applyComposerActionControlPlan,
+			renderComposerSettings,
+			updateComposerControls,
+			hasTransferFiles,
+			goalDialogFormValues,
+			submitThreadGoalMessage,
+			threadGoalActionStatusText,
+			threadGoalActionBusyText,
+			runThreadGoalDialogAction,
+			requestGoalDialogSubmitFromEnter,
+			requestGoalDialogSubmitFromButton,
+			requestGoalDialogSubmit,
+			sendThreadTaskCardCommand,
+			sendMessage,
+			sendNewThreadMessage,
+			requestComposerSubmitFromButton,
+			requestAttachmentPickerFromButton,
+			interruptActiveTurn,
+			answerServerRequest,
+			answerApproval,
+			serverRequestPayload,
+			declineServerRequest,
+			mutateThreadTaskCard,
+			replyTaskCard,
+			findThreadTaskCardDraftByKey,
+			scheduleThreadTaskCardDraftStateRender,
+			setThreadTaskCardDraftState,
+			dismissThreadTaskCardDraft,
+			queueThreadTaskCardDraftCreation,
+			createThreadTaskCardDraft
+		};
+		const api = { createComposerBridgeRuntime };
+		if (typeof module === "object" && module.exports) module.exports = api;
+		for (const [name, value] of Object.entries(legacyGlobals)) if (typeof value === "function") root[name] = value;
+		root.CodexComposerBridgeRuntime = api;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
+//#region \0virtual:codex-mobile-esm-compatibility/shard/shard-05
 var import_media_preview_runtime = /* @__PURE__ */ __toESM(require_media_preview_runtime());
-var moduleDefinitions = [{
-	"id": "side-chat-runtime",
-	"source": "public/side-chat-runtime.js",
-	"globalName": "CodexSideChatRuntime",
-	"expectedFunctions": ["createSideChatRuntime"],
-	"assetPath": "/side-chat-runtime.js",
-	"classicLoaderExcluded": true,
-	"bytes": 51946
-}, {
-	"id": "media-preview-runtime",
-	"source": "public/media-preview-runtime.js",
-	"globalName": "CodexMediaPreviewRuntime",
-	"expectedFunctions": ["createMediaPreviewRuntime"],
-	"assetPath": "/media-preview-runtime.js",
-	"classicLoaderExcluded": true,
-	"bytes": 95096
-}];
+var import_composer_runtime = /* @__PURE__ */ __toESM(require_composer_runtime());
+var import_composer_bridge_runtime = /* @__PURE__ */ __toESM(require_composer_bridge_runtime());
+var moduleDefinitions = [
+	{
+		"id": "media-preview-runtime",
+		"source": "public/media-preview-runtime.js",
+		"globalName": "CodexMediaPreviewRuntime",
+		"expectedFunctions": ["createMediaPreviewRuntime"],
+		"assetPath": "/media-preview-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 95096
+	},
+	{
+		"id": "composer-runtime",
+		"source": "public/composer-runtime.js",
+		"globalName": "CodexComposerRuntime",
+		"expectedFunctions": ["createComposerRuntime"],
+		"assetPath": "/composer-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 78244
+	},
+	{
+		"id": "composer-bridge-runtime",
+		"source": "public/composer-bridge-runtime.js",
+		"globalName": "CodexComposerBridgeRuntime",
+		"expectedFunctions": ["createComposerBridgeRuntime"],
+		"assetPath": "/composer-bridge-runtime.js",
+		"classicLoaderExcluded": true,
+		"bytes": 32086
+	}
+];
 var moduleApis = {
-	"side-chat-runtime": import_side_chat_runtime.default,
-	"media-preview-runtime": import_media_preview_runtime.default
+	"media-preview-runtime": import_media_preview_runtime.default,
+	"composer-runtime": import_composer_runtime.default,
+	"composer-bridge-runtime": import_composer_bridge_runtime.default
 };
 function functionReady(api, name) {
 	return Boolean(api && typeof api[name] === "function");
@@ -4899,6 +6308,20 @@ function sampleModule(id, api) {
 			approvalType: typeof (runtime && runtime.renderApprovalRequest),
 			globalCommandType: typeof globalThis.threadTaskCardCommandText,
 			globalRenderType: typeof globalThis.renderThreadTaskCards
+		};
+	}
+	if (id === "settings-runtime") {
+		const runtime = functionReady(api, "createSettingsRuntime") ? api.createSettingsRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.renderFontSizeControl === "function" && typeof runtime.renderQuotaUsage === "function" && typeof runtime.renderCodexProfileSettings === "function" && typeof runtime.renderWorkspaceDelegationSettings === "function" && typeof runtime.rememberRateLimitsFromConfig === "function" && typeof runtime.rememberCodexProfiles === "function" && typeof globalThis.CodexSettingsRuntime === "object" && typeof globalThis.CodexSettingsRuntime.createSettingsRuntime === "function",
+			factoryType: typeof api.createSettingsRuntime,
+			fontSizeType: typeof (runtime && runtime.renderFontSizeControl),
+			quotaType: typeof (runtime && runtime.renderQuotaUsage),
+			profileType: typeof (runtime && runtime.renderCodexProfileSettings),
+			workspaceDelegationType: typeof (runtime && runtime.renderWorkspaceDelegationSettings),
+			rateLimitsType: typeof (runtime && runtime.rememberRateLimitsFromConfig),
+			profilesType: typeof (runtime && runtime.rememberCodexProfiles),
+			globalFactoryType: typeof (globalThis.CodexSettingsRuntime && globalThis.CodexSettingsRuntime.createSettingsRuntime)
 		};
 	}
 	if (id === "notification-ui-runtime") {

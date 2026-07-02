@@ -6896,6 +6896,20 @@ function sampleModule(id, api) {
 			globalRenderType: typeof globalThis.renderThreadTaskCards
 		};
 	}
+	if (id === "settings-runtime") {
+		const runtime = functionReady(api, "createSettingsRuntime") ? api.createSettingsRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.renderFontSizeControl === "function" && typeof runtime.renderQuotaUsage === "function" && typeof runtime.renderCodexProfileSettings === "function" && typeof runtime.renderWorkspaceDelegationSettings === "function" && typeof runtime.rememberRateLimitsFromConfig === "function" && typeof runtime.rememberCodexProfiles === "function" && typeof globalThis.CodexSettingsRuntime === "object" && typeof globalThis.CodexSettingsRuntime.createSettingsRuntime === "function",
+			factoryType: typeof api.createSettingsRuntime,
+			fontSizeType: typeof (runtime && runtime.renderFontSizeControl),
+			quotaType: typeof (runtime && runtime.renderQuotaUsage),
+			profileType: typeof (runtime && runtime.renderCodexProfileSettings),
+			workspaceDelegationType: typeof (runtime && runtime.renderWorkspaceDelegationSettings),
+			rateLimitsType: typeof (runtime && runtime.rememberRateLimitsFromConfig),
+			profilesType: typeof (runtime && runtime.rememberCodexProfiles),
+			globalFactoryType: typeof (globalThis.CodexSettingsRuntime && globalThis.CodexSettingsRuntime.createSettingsRuntime)
+		};
+	}
 	if (id === "notification-ui-runtime") {
 		const runtime = functionReady(api, "createNotificationUiRuntime") ? api.createNotificationUiRuntime() : {};
 		return {
