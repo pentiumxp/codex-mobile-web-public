@@ -156,6 +156,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
       "app-update-runtime",
       "settings-runtime",
       "modal-runtime",
+      "navigation-runtime",
       "runtime-wiring-runtime",
       "app-shell-runtime",
       "app-entry",
@@ -221,6 +222,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/app-update-runtime\.js/);
   assert.match(shardSources, /public\/settings-runtime\.js/);
   assert.match(shardSources, /public\/modal-runtime\.js/);
+  assert.match(shardSources, /public\/navigation-runtime\.js/);
   assert.match(shardSources, /public\/runtime-wiring-runtime\.js/);
   assert.match(shardSources, /public\/app-shell-runtime\.js/);
   assert.match(shardSources, /public\/app\.js/);

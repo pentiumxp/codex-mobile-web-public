@@ -5825,6 +5825,23 @@ function sampleModule(id, api) {
 			switchType: typeof globalThis.performCodexProfileSwitch
 		};
 	}
+	if (id === "navigation-runtime") {
+		const runtime = functionReady(api, "createNavigationRuntime") ? api.createNavigationRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.updateConnectionState === "function" && typeof runtime.restoreConnectionState === "function" && typeof runtime.markActivity === "function" && typeof runtime.composerTargetPlan === "function" && typeof runtime.visibleTurnsForConversation === "function" && typeof runtime.conversationRenderSignature === "function" && typeof runtime.updateTurnTimer === "function" && typeof globalThis.updateConnectionState === "function" && typeof globalThis.composerTargetPlan === "function" && typeof globalThis.visibleTurnsForConversation === "function",
+			factoryType: typeof api.createNavigationRuntime,
+			updateType: typeof (runtime && runtime.updateConnectionState),
+			restoreType: typeof (runtime && runtime.restoreConnectionState),
+			activityType: typeof (runtime && runtime.markActivity),
+			composerPlanType: typeof (runtime && runtime.composerTargetPlan),
+			visibleTurnsType: typeof (runtime && runtime.visibleTurnsForConversation),
+			signatureType: typeof (runtime && runtime.conversationRenderSignature),
+			timerType: typeof (runtime && runtime.updateTurnTimer),
+			globalUpdateType: typeof globalThis.updateConnectionState,
+			globalComposerPlanType: typeof globalThis.composerTargetPlan,
+			globalVisibleTurnsType: typeof globalThis.visibleTurnsForConversation
+		};
+	}
 	if (id === "runtime-wiring-runtime") {
 		const runtime = functionReady(api, "createRuntimeWiringRuntime") ? api.createRuntimeWiringRuntime() : {};
 		return {
