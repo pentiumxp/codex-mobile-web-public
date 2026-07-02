@@ -864,6 +864,110 @@ var require_build_refresh_policy = /* @__PURE__ */ __commonJSMin(((exports, modu
 	});
 }));
 //#endregion
+//#region public/runtime-settings.js
+var require_runtime_settings = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexRuntimeSettings = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const MODEL_LABELS = {
+			"gpt-5.5": "GPT-5.5",
+			"gpt-5.4": "GPT-5.4",
+			"gpt-5.4-mini": "GPT-5.4 Mini",
+			"gpt-5.3-codex": "GPT-5.3 Codex",
+			"gpt-5.3-codex-spark": "GPT-5.3 Codex Spark",
+			"gpt-5.2": "GPT-5.2"
+		};
+		const COMPACT_MODEL_LABELS = {
+			"gpt-5.5": "5.5",
+			"gpt-5.4": "5.4",
+			"gpt-5.4-mini": "5.4 Mini",
+			"gpt-5.3-codex": "5.3 Codex",
+			"gpt-5.3-codex-spark": "5.3 Spark",
+			"gpt-5.2": "5.2"
+		};
+		const EFFORT_LABELS = {
+			low: "Low",
+			medium: "Medium",
+			high: "High",
+			xhigh: "XHigh"
+		};
+		const PERMISSION_LABELS = {
+			default: "默认权限",
+			auto: "自动审查",
+			full: "完全访问权限",
+			custom: "自定义 (config.toml)"
+		};
+		const PERMISSION_ALIASES = {
+			"full-access": "full",
+			"workspace-write": "auto",
+			"read-only": "auto",
+			"auto-review": "auto",
+			"auto-reviewing": "auto",
+			config: "custom",
+			"config.toml": "custom",
+			"custom-config": "custom"
+		};
+		function normalizeOptionList(values) {
+			return [...new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean))];
+		}
+		function labelForModel(value) {
+			return MODEL_LABELS[value] || value;
+		}
+		function compactLabelForModel(value) {
+			return COMPACT_MODEL_LABELS[value] || labelForModel(value).replace(/^GPT-/, "");
+		}
+		function labelForEffort(value) {
+			return EFFORT_LABELS[value] || value;
+		}
+		function labelForPermissionMode(value) {
+			return PERMISSION_LABELS[value] || value || "Perm";
+		}
+		function titleForPermissionMode(value) {
+			return PERMISSION_LABELS[value] || "Thread permission";
+		}
+		function normalizePermissionModeValue(value) {
+			const text = String(value || "").trim().toLowerCase();
+			return PERMISSION_ALIASES[text] || text;
+		}
+		function firstRuntimeValue(values) {
+			return normalizeOptionList(values)[0] || "";
+		}
+		function selectedNewThreadModel(settings) {
+			return firstRuntimeValue([
+				settings && settings.selected,
+				settings && settings.defaultValue,
+				...settings && settings.options || []
+			]);
+		}
+		function selectedNewThreadEffort(settings) {
+			return firstRuntimeValue([
+				settings && settings.selected,
+				settings && settings.defaultValue,
+				...settings && settings.options || []
+			]);
+		}
+		function selectedNewThreadPermission(settings) {
+			const normalized = normalizePermissionModeValue(settings && settings.selected);
+			if (normalized) return normalized;
+			return normalizePermissionModeValue(settings && settings.defaultValue) || normalizePermissionModeValue((settings && settings.options || [])[0]) || "full";
+		}
+		return {
+			normalizeOptionList,
+			labelForModel,
+			compactLabelForModel,
+			labelForEffort,
+			labelForPermissionMode,
+			titleForPermissionMode,
+			normalizePermissionModeValue,
+			selectedNewThreadModel,
+			selectedNewThreadEffort,
+			selectedNewThreadPermission
+		};
+	});
+}));
+//#endregion
 //#region public/thread-list-load-policy.js
 var require_thread_list_load_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -1741,6 +1845,7 @@ var require_live_operation_dock_state = /* @__PURE__ */ __commonJSMin(((exports,
 //#endregion
 //#region \0virtual:codex-mobile-esm-compatibility
 var import_build_refresh_policy = /* @__PURE__ */ __toESM(require_build_refresh_policy());
+var import_runtime_settings = /* @__PURE__ */ __toESM(require_runtime_settings());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
 var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
 var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
@@ -1759,6 +1864,25 @@ var moduleDefinitions = [
 			"shouldPromptForServerBuildChange"
 		],
 		"assetPath": "/build-refresh-policy.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "runtime-settings",
+		"source": "public/runtime-settings.js",
+		"globalName": "CodexRuntimeSettings",
+		"expectedFunctions": [
+			"normalizeOptionList",
+			"labelForModel",
+			"compactLabelForModel",
+			"labelForEffort",
+			"labelForPermissionMode",
+			"titleForPermissionMode",
+			"normalizePermissionModeValue",
+			"selectedNewThreadModel",
+			"selectedNewThreadEffort",
+			"selectedNewThreadPermission"
+		],
+		"assetPath": "/runtime-settings.js",
 		"classicLoaderExcluded": true
 	},
 	{
@@ -1840,6 +1964,7 @@ var moduleDefinitions = [
 ];
 var moduleApis = {
 	"build-refresh-policy": import_build_refresh_policy.default,
+	"runtime-settings": import_runtime_settings.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
 	"thread-list-stable-order": import_thread_list_stable_order.default,
 	"thread-status-hints": import_thread_status_hints.default,
@@ -1865,6 +1990,48 @@ function sampleModule(id, api) {
 			ok: classification === "server-newer" && prompt === true,
 			classification,
 			prompt
+		};
+	}
+	if (id === "runtime-settings") {
+		const normalizedOptions = functionReady(api, "normalizeOptionList") ? api.normalizeOptionList([
+			"",
+			"gpt-5.5",
+			" gpt-5.5 ",
+			"gpt-5.4"
+		]) : [];
+		const modelLabel = functionReady(api, "labelForModel") ? api.labelForModel("gpt-5.3-codex-spark") : "";
+		const compactModelLabel = functionReady(api, "compactLabelForModel") ? api.compactLabelForModel("gpt-5.3-codex-spark") : "";
+		const effortLabel = functionReady(api, "labelForEffort") ? api.labelForEffort("xhigh") : "";
+		const permissionLabel = functionReady(api, "labelForPermissionMode") ? api.labelForPermissionMode("full") : "";
+		const permissionTitle = functionReady(api, "titleForPermissionMode") ? api.titleForPermissionMode("custom") : "";
+		const permissionAlias = functionReady(api, "normalizePermissionModeValue") ? api.normalizePermissionModeValue("full-access") : "";
+		const selectedModel = functionReady(api, "selectedNewThreadModel") ? api.selectedNewThreadModel({
+			selected: "",
+			defaultValue: "gpt-5.5",
+			options: ["gpt-5.4"]
+		}) : "";
+		const selectedEffort = functionReady(api, "selectedNewThreadEffort") ? api.selectedNewThreadEffort({
+			selected: " high ",
+			defaultValue: "medium",
+			options: ["low"]
+		}) : "";
+		const selectedPermission = functionReady(api, "selectedNewThreadPermission") ? api.selectedNewThreadPermission({
+			selected: "workspace-write",
+			defaultValue: "full",
+			options: ["auto"]
+		}) : "";
+		return {
+			ok: Array.isArray(normalizedOptions) && normalizedOptions.join(",") === "gpt-5.5,gpt-5.4" && modelLabel === "GPT-5.3 Codex Spark" && compactModelLabel === "5.3 Spark" && effortLabel === "XHigh" && permissionLabel === "完全访问权限" && permissionTitle === "自定义 (config.toml)" && permissionAlias === "full" && selectedModel === "gpt-5.5" && selectedEffort === "high" && selectedPermission === "auto",
+			normalizedOptions,
+			modelLabel,
+			compactModelLabel,
+			effortLabel,
+			permissionLabel,
+			permissionTitle,
+			permissionAlias,
+			selectedModel,
+			selectedEffort,
+			selectedPermission
 		};
 	}
 	if (id === "thread-list-load-policy") {
@@ -2386,7 +2553,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-D9qE0dO0.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-DSfZ6X6P.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

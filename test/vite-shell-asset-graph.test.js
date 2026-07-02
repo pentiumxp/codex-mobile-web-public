@@ -124,6 +124,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     VITE_ESM_COMPATIBILITY_MODULES.map((entry) => entry.id),
     [
       "build-refresh-policy",
+      "runtime-settings",
       "thread-list-load-policy",
       "thread-list-stable-order",
       "thread-status-hints",
@@ -139,6 +140,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   const virtualSource = plugin.load(resolved);
   assert.match(virtualSource, /codexMobileViteEsmCompatibility/);
   assert.match(virtualSource, /public\/build-refresh-policy\.js/);
+  assert.match(virtualSource, /public\/runtime-settings\.js/);
   assert.match(virtualSource, /public\/thread-list-load-policy\.js/);
   assert.match(virtualSource, /public\/thread-list-stable-order\.js/);
   assert.match(virtualSource, /public\/thread-status-hints\.js/);
@@ -147,6 +149,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(virtualSource, /public\/client-render-stability-guard\.js/);
   assert.match(virtualSource, /public\/live-operation-dock-state\.js/);
   assert.match(virtualSource, /planThreadListLoadRequest/);
+  assert.match(virtualSource, /selectedNewThreadPermission/);
   assert.match(virtualSource, /detail-in-flight/);
   assert.match(virtualSource, /server-newer/);
   assert.match(virtualSource, /planThreadListStableOrder/);
