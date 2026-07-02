@@ -12852,6 +12852,340 @@ var require_modal_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => 
 	})(typeof globalThis !== "undefined" ? globalThis : window);
 }));
 //#endregion
+//#region public/runtime-wiring-runtime.js
+var require_runtime_wiring_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	function initializeThreadDetailRuntimeWiring() {
+		if (threadDetailRuntime) return threadDetailRuntime;
+		threadDetailRuntime = threadDetailRuntimeApi.createThreadDetailRuntime({
+			state,
+			MAX_EXPANDED_VISIBLE_TURNS,
+			MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN,
+			threadDetailStateApi,
+			threadDetailMergeStateApi,
+			threadDetailV4MergeStateApi,
+			statusText,
+			normalizeFsPath,
+			imageUrlValue,
+			isInputTextPart,
+			inputTextValue,
+			isInputImagePart,
+			splitAttachmentSummaryText,
+			canRenderImageAttachment,
+			truncateMiddle,
+			isLiveTurn,
+			isLatestTurn,
+			latestTurnForThread,
+			isLiveTurnForThread,
+			isActiveOperationalItem,
+			isReasoningItem,
+			isOperationalItem,
+			isContextCompactionItem,
+			contextCompactionNotice,
+			operationCommandText,
+			operationDetailText,
+			imageViewPath,
+			imageViewContentUrl,
+			imageViewUrl,
+			isTurnComplete,
+			isRunningStatus,
+			isIncompleteInterruptedTurn,
+			turnHasActiveLiveItems,
+			isRecentlySubmittedUserMessage,
+			sortTurnsForDisplay,
+			maxVisibleTurnsForThread,
+			numericTimestampMs,
+			renderContextThread
+		});
+		return threadDetailRuntime;
+	}
+	function initializeComposerRuntimeWiring() {
+		if (composerRuntime) return composerRuntime;
+		composerRuntime = composerRuntimeApi.createComposerRuntime({
+			$,
+			COMPOSER_INTENT_BODY_MAX_CHARS,
+			MESSAGE_INPUT_MAX_HEIGHT_PX,
+			MESSAGE_INPUT_MIN_HEIGHT_PX,
+			STORAGE_CODEX_FAST_MODE,
+			STORAGE_COMPOSER_INTENT_DRAFTS,
+			THREAD_GOAL_MENTION_PATTERN,
+			THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN,
+			THREAD_TASK_CARD_MENTION_PATTERN,
+			api,
+			clearDraftForKey,
+			clearSubmittedMessageBottomFollow,
+			closeThreadGoalDialog,
+			commitPluginVoiceInputSessionsAfterSend,
+			composerTargetActiveTurnId,
+			connectEvents,
+			createSubmissionId,
+			currentComposerThreadId,
+			currentDraftKey,
+			defaultNewThreadEffort,
+			defaultNewThreadModel,
+			defaultNewThreadPermissionMode,
+			deleteDraftAttachments,
+			diagnosticErrorCode,
+			diagnosticErrorStatus,
+			diagnosticTaskHash,
+			diagnosticThreadHash,
+			document,
+			draftKeyForThread,
+			effectiveComposerPermissionMode,
+			escapeHtml,
+			followSubmittedMessageToBottom,
+			homeAiDiagnosticReportingApi,
+			imageCompressor,
+			insertLocalSubmittedUserMessage,
+			isAndroidBrowser,
+			isChatGptProCommandText,
+			isHermesEmbedMode,
+			isKeyboardEditableElement,
+			isThreadGoalCommandText,
+			isThreadTaskCardCommandText,
+			isThreadTileComposerContext,
+			labelForEffort,
+			labelForModel,
+			labelForPermissionMode,
+			loadJsonStorage,
+			loadThread,
+			loadThreads,
+			localAttachmentPreviewUrl,
+			localStorage,
+			markActivity,
+			markSubmittedUserMessageFailed,
+			markThreadOptimisticallyActive,
+			mergeItemsPreservingLocalVisible,
+			newThreadSelectedEffort,
+			newThreadSelectedModel,
+			newThreadSelectedPermissionMode,
+			normalizeOptionList,
+			normalizeThreadGoal,
+			openThreadGoalDialog,
+			postClientEvent,
+			publishPluginVoiceInputCapability,
+			reconcileSubmittedUserMessageTurn,
+			recordHomeAiDiagnosticFailure,
+			renderCurrentThread,
+			renderQuotaUsage,
+			renderThreads,
+			replacePendingAttachments,
+			restoreThreadStatusSnapshot,
+			saveCurrentDraftNow,
+			saveDraftAttachmentFiles,
+			scheduleComposerTargetRefresh,
+			scheduleCurrentDraftSave,
+			scheduleCurrentThreadRefresh,
+			scheduleLivePollIfNeeded,
+			scheduleScrollToBottomButtonUpdate,
+			scheduleSubmittedMessageDomProbe,
+			selectedQuotaModel,
+			setComposerActionButtonLabel,
+			setSteerFeedback,
+			setThreadGoalDialogBusy,
+			showComposerFastHint,
+			showError,
+			snapshotThreadStatus,
+			startedTurnId,
+			state,
+			submitChatGptProRequest,
+			submittedThreadGoal,
+			threadDisplayName,
+			threadTaskCardCommandText,
+			threadTileStatePolicy,
+			updateThreadGoalState,
+			viewportMetrics,
+			viewportState,
+			window,
+			writeCurrentDraftToKey
+		});
+		return composerRuntime;
+	}
+	function initializeThreadListRuntimeWiring() {
+		if (threadListRuntime) return threadListRuntime;
+		threadListRuntime = window.CodexThreadListRuntime.createThreadListRuntime({
+			state,
+			$,
+			api,
+			document,
+			window,
+			localStorage,
+			setTimeout,
+			clearTimeout,
+			THREAD_LIST_PAGE_LIMIT,
+			THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS,
+			THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS,
+			THREAD_LIST_SLOW_PATH_MS,
+			STORAGE_THREAD_ID,
+			normalizeFsPath,
+			escapeHtml,
+			shortPath,
+			isMobileViewport,
+			tokenCountValue,
+			formatTokenMillion,
+			displayInputTokensExcludingCached,
+			saveCurrentDraftNow,
+			flushSideChatDraftNow,
+			resetComposerRuntimeSelection,
+			abortCurrentThreadRefresh,
+			clearRecentCompletedReplyAnchor,
+			clearConversationAutoScrollHold,
+			setComposerText,
+			replacePendingAttachments,
+			syncActiveTurnFromThread,
+			connectEvents,
+			threadListLoadPolicy,
+			nowPerfMs,
+			roundedDurationMs,
+			threadListSummaryFromDetailThread,
+			threadListStableOrderPolicy,
+			reconcileThreadStatusHints,
+			renderCurrentThread,
+			threadTileLayout,
+			isThreadTileKeyboardFocusActive,
+			threadTileCandidateIds,
+			threadTileIdsEqual,
+			restoreConnectionState,
+			scheduleVisiblePageRefreshCheck,
+			threadPerformanceMetrics,
+			postPerformanceEvent,
+			diagnosticDurationBucket,
+			recordHomeAiDiagnosticFailure,
+			recordHomeAiDiagnosticSuccess,
+			threadDiagnosticEventsApi,
+			renderThreadLoadError,
+			diagnosticErrorCode,
+			diagnosticErrorStatus,
+			showError,
+			visibleWorkspaceKeys,
+			codexWorktreeRepoName,
+			basenameForFsPath,
+			visibleWorkspaceNames,
+			statusText,
+			scheduleRenderCurrentThread,
+			threadTilePaneIsVisible,
+			scheduleRenderThreadTilePane,
+			updateThreadStatusHints,
+			normalizeThreadGoal,
+			updateThreadGoalDialogState,
+			draftStore,
+			readDraftMap,
+			draftHasContent,
+			restoreDraftForCurrentTarget,
+			updateComposerControls,
+			showHermesPluginPrimaryPage,
+			isHermesEmbedMode,
+			loadThread,
+			isRunningStatus,
+			rolloutSizeText,
+			isRolloutOverThreshold,
+			formatAbsoluteTime,
+			formatTime,
+			statusIconHtml,
+			statusIconInfo,
+			threadGoalForThread,
+			renderThreadGoalBadge,
+			handleThreadCardClick,
+			threadGoalSignature,
+			rolloutSizeBytes
+		});
+		return threadListRuntime;
+	}
+	function initializeThreadTileRuntimeWiring() {
+		if (threadTileRuntime) return threadTileRuntime;
+		threadTileRuntime = threadTileRuntimeApi.createThreadTileRuntime({
+			state,
+			$,
+			api,
+			document,
+			window,
+			localStorage,
+			setTimeout,
+			clearTimeout,
+			AbortController,
+			THREAD_TILE_USER_MAX_PANES,
+			THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS,
+			THREAD_TILE_REFRESH_INTERVAL_MS,
+			THREAD_TILE_REFRESH_MIN_INTERVAL_MS,
+			THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS,
+			STORAGE_THREAD_DISPLAY_MODE,
+			STORAGE_LEGACY_THREAD_TILE_MODE,
+			LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+			threadTileActionsApi,
+			threadTileStatePolicy,
+			threadTileLayoutPolicy,
+			threadDetailPatchPlanApi,
+			isKeyboardEditableElement,
+			splitPaneSidebarVisible,
+			isMenuOverlayMode,
+			visibleThreads,
+			isRunningStatus,
+			saveCurrentDraftNow,
+			restoreDraftForCurrentTarget,
+			renderComposerSettings,
+			updateComposerControls,
+			scheduleRenderCurrentThread,
+			renderCurrentThread,
+			showError,
+			threadById,
+			threadDisplayName,
+			shortPath,
+			formatTime,
+			statusIconHtml,
+			threadDetailApiPath,
+			mergeThreadPreservingVisibleItems,
+			mergeThreadIntoThreadList,
+			withRenderContextThread,
+			visibleItemsForTurn,
+			renderVisibleItemPatchHtml,
+			renderTurnVisibleItemBudgetNotice,
+			approvalsForTurn,
+			renderApprovalRequest,
+			approvalTurnId,
+			isApprovalActive,
+			currentLiveOperationEntry,
+			latestLiveTurnForThread,
+			renderMobileOperationStack,
+			visibleItemSignature,
+			threadTitleForDisplay,
+			turnTimerStateHtml,
+			threadTilePaneTimerState,
+			threadHasVisibleConversationTurns,
+			threadReadWarningMessage,
+			visibleTurnsForConversation,
+			renderThreadHistoryNote,
+			renderPendingApprovals,
+			effectiveThreadTileSelectedThreadId,
+			conversationRenderSignature,
+			existingConversationRenderKeys,
+			patchNode,
+			hydrateThreadDetailSurface,
+			clearGlobalLiveOperationDockForThreadTiles,
+			updateConversationHtml,
+			threadTileVisibleShape,
+			threadTileDomTurnCount,
+			conversationDomShape,
+			diagnosticHash,
+			publishPluginNavigationState,
+			escapeHtml
+		});
+		return threadTileRuntime;
+	}
+	function initializeCodexMobileRuntimeWiring() {
+		initializeThreadDetailRuntimeWiring();
+		initializeComposerRuntimeWiring();
+		initializeThreadListRuntimeWiring();
+		initializeThreadTileRuntimeWiring();
+	}
+	function createRuntimeWiringRuntime() {
+		return { initialize: initializeCodexMobileRuntimeWiring };
+	}
+	(function exposeCodexRuntimeWiringRuntime(root) {
+		const runtimeWiringApi = { createRuntimeWiringRuntime };
+		if (typeof module === "object" && module.exports) module.exports = runtimeWiringApi;
+		root.CodexRuntimeWiringRuntime = runtimeWiringApi;
+	})(typeof globalThis !== "undefined" ? globalThis : window);
+}));
+//#endregion
 //#region public/thread-list-runtime.js
 var require_thread_list_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachThreadListRuntime(root) {
@@ -15952,6 +16286,7 @@ var import_thread_tile_state = /* @__PURE__ */ __toESM(require_thread_tile_state
 var import_thread_tile_runtime = /* @__PURE__ */ __toESM(require_thread_tile_runtime());
 var import_app_update_runtime = /* @__PURE__ */ __toESM(require_app_update_runtime());
 var import_modal_runtime = /* @__PURE__ */ __toESM(require_modal_runtime());
+var import_runtime_wiring_runtime = /* @__PURE__ */ __toESM(require_runtime_wiring_runtime());
 var import_thread_list_runtime = /* @__PURE__ */ __toESM(require_thread_list_runtime());
 var import_side_chat_runtime = /* @__PURE__ */ __toESM(require_side_chat_runtime());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
@@ -16474,6 +16809,14 @@ var moduleDefinitions = [
 		"classicLoaderExcluded": true
 	},
 	{
+		"id": "runtime-wiring-runtime",
+		"source": "public/runtime-wiring-runtime.js",
+		"globalName": "CodexRuntimeWiringRuntime",
+		"expectedFunctions": ["createRuntimeWiringRuntime"],
+		"assetPath": "/runtime-wiring-runtime.js",
+		"classicLoaderExcluded": true
+	},
+	{
 		"id": "thread-list-runtime",
 		"source": "public/thread-list-runtime.js",
 		"globalName": "CodexThreadListRuntime",
@@ -16612,6 +16955,7 @@ var moduleApis = {
 	"thread-tile-runtime": import_thread_tile_runtime.default,
 	"app-update-runtime": import_app_update_runtime.default,
 	"modal-runtime": import_modal_runtime.default,
+	"runtime-wiring-runtime": import_runtime_wiring_runtime.default,
 	"thread-list-runtime": import_thread_list_runtime.default,
 	"side-chat-runtime": import_side_chat_runtime.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
@@ -17611,6 +17955,15 @@ function sampleModule(id, api) {
 			keydownType: typeof globalThis.handleAppNativeDialogKeydown,
 			closeType: typeof globalThis.closeAppNativeDialog,
 			switchType: typeof globalThis.performCodexProfileSwitch
+		};
+	}
+	if (id === "runtime-wiring-runtime") {
+		const runtime = functionReady(api, "createRuntimeWiringRuntime") ? api.createRuntimeWiringRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.initialize === "function",
+			factoryType: typeof api.createRuntimeWiringRuntime,
+			initializeType: typeof (runtime && runtime.initialize),
+			globalType: typeof globalThis.CodexRuntimeWiringRuntime
 		};
 	}
 	if (id === "thread-list-runtime") {

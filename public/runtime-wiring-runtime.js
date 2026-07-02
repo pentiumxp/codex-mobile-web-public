@@ -327,10 +327,14 @@ function initializeCodexMobileRuntimeWiring() {
   initializeThreadTileRuntimeWiring();
 }
 
+function createRuntimeWiringRuntime() {
+  return { initialize: initializeCodexMobileRuntimeWiring };
+}
+
 (function exposeCodexRuntimeWiringRuntime(root) {
-  root.CodexRuntimeWiringRuntime = root.CodexRuntimeWiringRuntime || {
-    createRuntimeWiringRuntime: function createRuntimeWiringRuntime() {
-      return { initialize: initializeCodexMobileRuntimeWiring };
-    },
-  };
-})(window);
+  const runtimeWiringApi = { createRuntimeWiringRuntime };
+  if (typeof module === "object" && module.exports) {
+    module.exports = runtimeWiringApi;
+  }
+  root.CodexRuntimeWiringRuntime = runtimeWiringApi;
+})(typeof globalThis !== "undefined" ? globalThis : window);
