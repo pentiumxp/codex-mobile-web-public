@@ -195,11 +195,18 @@ function normalizeAppPreviewClassicLoaderPlan(plan) {
       globalName: String(entry && entry.globalName || ""),
     }))
     .filter((entry) => entry.path);
+  const excludedViteOwnedScripts = (Array.isArray(plan.excludedViteOwnedScripts) ? plan.excludedViteOwnedScripts : [])
+    .map((entry) => ({
+      ...normalizeScript(entry),
+      ownerId: String(entry && entry.ownerId || ""),
+      globalName: String(entry && entry.globalName || ""),
+    }))
+    .filter((entry) => entry.path);
   return {
     schemaVersion: Number(plan.schemaVersion) || 1,
     source: String(plan.source || "generated-vite-app-preview-classic-loader-plan"),
     owner: String(plan.owner || ""),
-    sourceScriptCount: Number.isFinite(Number(plan.sourceScriptCount)) ? Number(plan.sourceScriptCount) : scripts.length + excludedEsmScripts.length,
+    sourceScriptCount: Number.isFinite(Number(plan.sourceScriptCount)) ? Number(plan.sourceScriptCount) : scripts.length + excludedEsmScripts.length + excludedViteOwnedScripts.length,
     scriptCount: Number.isFinite(Number(plan.scriptCount)) ? Number(plan.scriptCount) : scripts.length,
     firstScript: String(plan.firstScript || ""),
     lastScript: String(plan.lastScript || ""),
@@ -208,7 +215,11 @@ function normalizeAppPreviewClassicLoaderPlan(plan) {
     excludedEsmScriptCount: Number.isFinite(Number(plan.excludedEsmScriptCount)) ? Number(plan.excludedEsmScriptCount) : excludedEsmScripts.length,
     excludedEsmHashCount: Number.isFinite(Number(plan.excludedEsmHashCount)) ? Number(plan.excludedEsmHashCount) : excludedEsmScripts.filter((entry) => entry.sha256).length,
     excludedEsmByteCount: Number.isFinite(Number(plan.excludedEsmByteCount)) ? Number(plan.excludedEsmByteCount) : excludedEsmScripts.reduce((total, entry) => total + entry.bytes, 0),
+    excludedViteOwnedScriptCount: Number.isFinite(Number(plan.excludedViteOwnedScriptCount)) ? Number(plan.excludedViteOwnedScriptCount) : excludedViteOwnedScripts.length,
+    excludedViteOwnedHashCount: Number.isFinite(Number(plan.excludedViteOwnedHashCount)) ? Number(plan.excludedViteOwnedHashCount) : excludedViteOwnedScripts.filter((entry) => entry.sha256).length,
+    excludedViteOwnedByteCount: Number.isFinite(Number(plan.excludedViteOwnedByteCount)) ? Number(plan.excludedViteOwnedByteCount) : excludedViteOwnedScripts.reduce((total, entry) => total + entry.bytes, 0),
     excludedEsmScripts,
+    excludedViteOwnedScripts,
     sha256: String(plan.sha256 || ""),
     scripts,
   };
@@ -371,7 +382,8 @@ export function buildViteShellPublicReadback(options = {}) {
     const scriptAssets = scriptAssetsFromManifest(manifest);
     const loaderPaths = appPreviewClassicLoaderPlan.scripts.map((entry) => entry.path);
     const excludedPaths = appPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.path);
-    const coveredPaths = new Set([...loaderPaths, ...excludedPaths]);
+    const excludedViteOwnedPaths = appPreviewClassicLoaderPlan.excludedViteOwnedScripts.map((entry) => entry.path);
+    const coveredPaths = new Set([...loaderPaths, ...excludedPaths, ...excludedViteOwnedPaths]);
     const reconstructedPaths = scriptAssets.filter((asset) => coveredPaths.has(asset));
     if (appPreviewClassicLoaderPlan.owner !== "vite-shell-entry") {
       issues.push({ code: "vite_app_preview_classic_loader_plan_owner_mismatch" });
@@ -384,11 +396,16 @@ export function buildViteShellPublicReadback(options = {}) {
       || Number(appPreviewClassicLoaderPlan.scriptCount) !== loaderPaths.length
       || Number(appPreviewClassicLoaderPlan.hashCount) !== loaderPaths.length
       || Number(appPreviewClassicLoaderPlan.excludedEsmScriptCount) !== excludedPaths.length
-      || Number(appPreviewClassicLoaderPlan.excludedEsmHashCount) !== excludedPaths.length) {
+      || Number(appPreviewClassicLoaderPlan.excludedEsmHashCount) !== excludedPaths.length
+      || Number(appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount) !== excludedViteOwnedPaths.length
+      || Number(appPreviewClassicLoaderPlan.excludedViteOwnedHashCount) !== excludedViteOwnedPaths.length) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_count_mismatch" });
     }
     if (appPreviewClassicLoaderPlan.excludedEsmScripts.some((entry) => !entry.esmModuleId || !entry.globalName || !entry.sha256 || !Number(entry.bytes))) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_exclusion_record_missing" });
+    }
+    if (appPreviewClassicLoaderPlan.excludedViteOwnedScripts.some((entry) => !entry.ownerId || !entry.globalName || !entry.sha256 || !Number(entry.bytes))) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_vite_owned_record_missing" });
     }
     if (!appPreviewClassicLoaderPlan.sha256) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_hash_missing" });
@@ -488,6 +505,8 @@ export function buildViteShellPublicReadback(options = {}) {
       appPreviewClassicLoaderScripts: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.scriptCount : 0,
       appPreviewClassicLoaderHashes: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.hashCount : 0,
       appPreviewClassicLoaderBytes: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.byteCount : 0,
+      appPreviewClassicLoaderExcludedEsmScripts: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.excludedEsmScriptCount : 0,
+      appPreviewClassicLoaderExcludedViteOwnedScripts: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount : 0,
       esmCompatibilityModules: esmCompatibility ? esmCompatibility.moduleCount : 0,
       esmCompatibilityHashes: esmCompatibility ? esmCompatibility.hashCount : 0,
       esmCompatibilityExpectedFunctions: esmCompatibility ? esmCompatibility.expectedFunctionCount : 0,

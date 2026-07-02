@@ -120,15 +120,23 @@ if (!fs.existsSync(manifestPath)) {
       && Array.isArray(appPreviewClassicLoaderPlan.excludedEsmScripts)
       ? appPreviewClassicLoaderPlan.excludedEsmScripts
       : [];
+    const appPreviewClassicLoaderExcludedViteOwnedScripts = appPreviewClassicLoaderPlan
+      && Array.isArray(appPreviewClassicLoaderPlan.excludedViteOwnedScripts)
+      ? appPreviewClassicLoaderPlan.excludedViteOwnedScripts
+      : [];
     const appPreviewClassicLoaderPaths = appPreviewClassicLoaderScripts
       .map((entry) => entry && entry.path)
       .filter(Boolean);
     const appPreviewClassicLoaderExcludedPaths = appPreviewClassicLoaderExcludedEsmScripts
       .map((entry) => entry && entry.path)
       .filter(Boolean);
+    const appPreviewClassicLoaderExcludedViteOwnedPaths = appPreviewClassicLoaderExcludedViteOwnedScripts
+      .map((entry) => entry && entry.path)
+      .filter(Boolean);
     const appPreviewClassicLoaderCoveredPaths = new Set([
       ...appPreviewClassicLoaderPaths,
       ...appPreviewClassicLoaderExcludedPaths,
+      ...appPreviewClassicLoaderExcludedViteOwnedPaths,
     ]);
     const indexScriptAssets = current.indexScriptAssets || [];
     const appPreviewClassicLoaderReconstructedPaths = indexScriptAssets
@@ -140,6 +148,8 @@ if (!fs.existsSync(manifestPath)) {
       || Number(appPreviewClassicLoaderPlan.hashCount) !== appPreviewClassicLoaderPaths.length
       || Number(appPreviewClassicLoaderPlan.excludedEsmScriptCount) !== appPreviewClassicLoaderExcludedPaths.length
       || Number(appPreviewClassicLoaderPlan.excludedEsmHashCount) !== appPreviewClassicLoaderExcludedPaths.length
+      || Number(appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount) !== appPreviewClassicLoaderExcludedViteOwnedPaths.length
+      || Number(appPreviewClassicLoaderPlan.excludedViteOwnedHashCount) !== appPreviewClassicLoaderExcludedViteOwnedPaths.length
       || !appPreviewClassicLoaderPlan.sha256) {
       mismatch.push("viteBuildAppPreviewClassicLoaderPlanCount");
     } else if (JSON.stringify(appPreviewClassicLoaderReconstructedPaths) !== JSON.stringify(indexScriptAssets)
@@ -272,6 +282,9 @@ if (!fs.existsSync(manifestPath)) {
         : 0,
       appPreviewClassicLoaderExcludedEsmScripts: built.viteBuild.appPreviewClassicLoaderPlan
         ? built.viteBuild.appPreviewClassicLoaderPlan.excludedEsmScriptCount
+        : 0,
+      appPreviewClassicLoaderExcludedViteOwnedScripts: built.viteBuild.appPreviewClassicLoaderPlan
+        ? built.viteBuild.appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount
         : 0,
       esmCompatibilityModules: built.viteBuild.esmCompatibility
         ? built.viteBuild.esmCompatibility.moduleCount

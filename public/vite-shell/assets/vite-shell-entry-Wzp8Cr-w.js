@@ -914,6 +914,7 @@ function loadCodexMobileViteEntryGroups() {
 }
 //#endregion
 //#region frontend/vite-shell-entry.mjs
+globalThis.CODEX_MOBILE_SHELL_MANIFEST = shell_asset_manifest_default;
 function compactEntryGroup(group) {
 	return {
 		id: group.id,
@@ -963,7 +964,7 @@ var pendingEsmCompatibility = {
 var esmCompatibility = pendingEsmCompatibility;
 var viteAppPreviewPage = isAppPreviewPage();
 globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__ = viteAppPreviewPage;
-var esmCompatibilityImportPromise = __vitePreload(() => import("./_virtual_codex-mobile-esm-compatibility-VMwhlhvC.js").then(async (module) => {
+var esmCompatibilityImportPromise = __vitePreload(() => import("./_virtual_codex-mobile-esm-compatibility-DiZmGbyy.js").then(async (module) => {
 	const createCompatibility = module && typeof module.codexMobileViteEsmCompatibility === "function" ? module.codexMobileViteEsmCompatibility : null;
 	if (!createCompatibility) throw new Error("codex_mobile_vite_esm_compatibility_factory_missing");
 	esmCompatibility = await createCompatibility();
@@ -1009,6 +1010,9 @@ function readAppPreviewClassicLoaderPlan() {
 			excludedEsmScriptCount: Number(plan.excludedEsmScriptCount) || 0,
 			excludedEsmHashCount: Number(plan.excludedEsmHashCount) || 0,
 			excludedEsmByteCount: Number(plan.excludedEsmByteCount) || 0,
+			excludedViteOwnedScriptCount: Number(plan.excludedViteOwnedScriptCount) || 0,
+			excludedViteOwnedHashCount: Number(plan.excludedViteOwnedHashCount) || 0,
+			excludedViteOwnedByteCount: Number(plan.excludedViteOwnedByteCount) || 0,
 			excludedEsmScripts: (Array.isArray(plan.excludedEsmScripts) ? plan.excludedEsmScripts : []).map((entry) => ({
 				index: Number(entry && entry.index) || 0,
 				sourceIndex: Number(entry && entry.sourceIndex) || 0,
@@ -1021,6 +1025,20 @@ function readAppPreviewClassicLoaderPlan() {
 				bytes: Number(entry && entry.bytes) || 0,
 				sha256: String(entry && entry.sha256 || ""),
 				esmModuleId: String(entry && entry.esmModuleId || ""),
+				globalName: String(entry && entry.globalName || "")
+			})).filter((entry) => entry.path.startsWith("/")),
+			excludedViteOwnedScripts: (Array.isArray(plan.excludedViteOwnedScripts) ? plan.excludedViteOwnedScripts : []).map((entry) => ({
+				index: Number(entry && entry.index) || 0,
+				sourceIndex: Number(entry && entry.sourceIndex) || 0,
+				path: String(entry && entry.path || ""),
+				groupId: String(entry && entry.groupId || ""),
+				phase: String(entry && entry.phase || ""),
+				startupCritical: Boolean(entry && entry.startupCritical),
+				chunkTarget: String(entry && entry.chunkTarget || ""),
+				sourcePath: String(entry && entry.sourcePath || ""),
+				bytes: Number(entry && entry.bytes) || 0,
+				sha256: String(entry && entry.sha256 || ""),
+				ownerId: String(entry && entry.ownerId || ""),
 				globalName: String(entry && entry.globalName || "")
 			})).filter((entry) => entry.path.startsWith("/")),
 			sha256: String(plan.sha256 || ""),
@@ -1057,7 +1075,12 @@ async function startCodexMobileViteAppPreview() {
 	const manifestAssets = shellManifestScriptAssets();
 	const assets = loaderPlan && Array.isArray(loaderPlan.scripts) ? loaderPlan.scripts.map((entry) => entry.path) : [];
 	const excludedEsmAssets = loaderPlan && Array.isArray(loaderPlan.excludedEsmScripts) ? loaderPlan.excludedEsmScripts.map((entry) => entry.path) : [];
-	const coveredAssets = /* @__PURE__ */ new Set([...assets, ...excludedEsmAssets]);
+	const excludedViteOwnedAssets = loaderPlan && Array.isArray(loaderPlan.excludedViteOwnedScripts) ? loaderPlan.excludedViteOwnedScripts.map((entry) => entry.path) : [];
+	const coveredAssets = /* @__PURE__ */ new Set([
+		...assets,
+		...excludedEsmAssets,
+		...excludedViteOwnedAssets
+	]);
 	const manifestCoverageMatches = manifestAssets.length > 0 && coveredAssets.size === manifestAssets.length && JSON.stringify(manifestAssets.filter((asset) => coveredAssets.has(asset))) === JSON.stringify(manifestAssets);
 	const status = {
 		ok: false,
@@ -1071,10 +1094,13 @@ async function startCodexMobileViteAppPreview() {
 		loaderPlanSourceScriptCount: loaderPlan ? loaderPlan.sourceScriptCount : 0,
 		loaderPlanExcludedEsmScriptCount: loaderPlan ? loaderPlan.excludedEsmScriptCount : 0,
 		loaderPlanExcludedEsmHashCount: loaderPlan ? loaderPlan.excludedEsmHashCount : 0,
+		loaderPlanExcludedViteOwnedScriptCount: loaderPlan ? loaderPlan.excludedViteOwnedScriptCount : 0,
+		loaderPlanExcludedViteOwnedHashCount: loaderPlan ? loaderPlan.excludedViteOwnedHashCount : 0,
 		loaderPlanSha256: loaderPlan ? loaderPlan.sha256 : "",
 		loaderPlanMatchesShellManifest: Boolean(loaderPlan) && manifestCoverageMatches,
 		esmCompatibilityReady: false,
 		excludedEsmGlobalMissing: [],
+		excludedViteOwnedGlobalMissing: [],
 		scriptCount: assets.length,
 		loaded: [],
 		failed: [],
@@ -1085,12 +1111,15 @@ async function startCodexMobileViteAppPreview() {
 	globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_LOADER_PLAN__ = loaderPlan;
 	try {
 		if (!loaderPlan) throw new Error("codex_mobile_vite_app_preview_loader_plan_missing");
-		if (loaderPlan.owner !== "vite-shell-entry" || !loaderPlan.sha256 || Number(loaderPlan.sourceScriptCount) !== manifestAssets.length || Number(loaderPlan.scriptCount) !== assets.length || Number(loaderPlan.hashCount) !== assets.length || Number(loaderPlan.excludedEsmScriptCount) !== excludedEsmAssets.length || Number(loaderPlan.excludedEsmHashCount) !== excludedEsmAssets.length || !manifestCoverageMatches) throw new Error("codex_mobile_vite_app_preview_loader_plan_invalid");
+		if (loaderPlan.owner !== "vite-shell-entry" || !loaderPlan.sha256 || Number(loaderPlan.sourceScriptCount) !== manifestAssets.length || Number(loaderPlan.scriptCount) !== assets.length || Number(loaderPlan.hashCount) !== assets.length || Number(loaderPlan.excludedEsmScriptCount) !== excludedEsmAssets.length || Number(loaderPlan.excludedEsmHashCount) !== excludedEsmAssets.length || Number(loaderPlan.excludedViteOwnedScriptCount || 0) !== excludedViteOwnedAssets.length || Number(loaderPlan.excludedViteOwnedHashCount || 0) !== excludedViteOwnedAssets.length || !manifestCoverageMatches) throw new Error("codex_mobile_vite_app_preview_loader_plan_invalid");
 		const loadedEsmCompatibility = await esmCompatibilityImportPromise;
 		status.esmCompatibilityReady = Boolean(loadedEsmCompatibility) && loadedEsmCompatibility.owner === "vite-shell-entry" && Number(loadedEsmCompatibility.moduleCount) === Number(loadedEsmCompatibility.readyCount);
 		const missingExcludedGlobals = loaderPlan && Array.isArray(loaderPlan.excludedEsmScripts) ? loaderPlan.excludedEsmScripts.filter((entry) => !entry.globalName || !globalThis[entry.globalName]).map((entry) => entry.globalName || entry.path) : [];
 		status.excludedEsmGlobalMissing = missingExcludedGlobals;
 		if (missingExcludedGlobals.length) throw new Error("codex_mobile_vite_app_preview_esm_globals_missing");
+		const missingExcludedViteOwnedGlobals = loaderPlan && Array.isArray(loaderPlan.excludedViteOwnedScripts) ? loaderPlan.excludedViteOwnedScripts.filter((entry) => !entry.globalName || !globalThis[entry.globalName]).map((entry) => entry.globalName || entry.path) : [];
+		status.excludedViteOwnedGlobalMissing = missingExcludedViteOwnedGlobals;
+		if (missingExcludedViteOwnedGlobals.length) throw new Error("codex_mobile_vite_app_preview_vite_owned_globals_missing");
 		for (const asset of assets) {
 			await loadClassicScript(asset);
 			status.loaded.push(asset);
@@ -1118,16 +1147,19 @@ async function startCodexMobileViteAppPreview() {
 		loaderPlanSourceScriptCount: status.loaderPlanSourceScriptCount,
 		loaderPlanExcludedEsmScriptCount: status.loaderPlanExcludedEsmScriptCount,
 		loaderPlanExcludedEsmHashCount: status.loaderPlanExcludedEsmHashCount,
+		loaderPlanExcludedViteOwnedScriptCount: status.loaderPlanExcludedViteOwnedScriptCount,
+		loaderPlanExcludedViteOwnedHashCount: status.loaderPlanExcludedViteOwnedHashCount,
 		loaderPlanSha256: status.loaderPlanSha256,
 		loaderPlanMatchesShellManifest: status.loaderPlanMatchesShellManifest,
 		esmCompatibilityReady: status.esmCompatibilityReady,
 		excludedEsmGlobalMissingCount: status.excludedEsmGlobalMissing.length,
+		excludedViteOwnedGlobalMissingCount: status.excludedViteOwnedGlobalMissing.length,
 		scriptCount: status.scriptCount,
 		loadedCount: status.loaded.length,
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-CA6PeyyN.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-CaIGHHgk.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

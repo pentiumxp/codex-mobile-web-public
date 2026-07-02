@@ -18,6 +18,13 @@ export const VITE_ENTRY_GROUP_LOADER_SOURCE = "virtual:codex-mobile-shell-entry-
 export const VITE_ESM_COMPATIBILITY_SOURCE = "virtual:codex-mobile-esm-compatibility";
 export const VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX = `${VITE_ESM_COMPATIBILITY_SOURCE}/shard/`;
 const VITE_ESM_COMPATIBILITY_SHARD_TARGET_BYTES = 220 * 1024;
+const VITE_APP_PREVIEW_OWNED_CLASSIC_SCRIPTS = [
+  {
+    path: "/shell-asset-manifest.js",
+    ownerId: "shell-manifest",
+    globalName: "CODEX_MOBILE_SHELL_MANIFEST",
+  },
+];
 export const VITE_ESM_COMPATIBILITY_MODULES = [
   {
     id: "build-refresh-policy",
@@ -3359,6 +3366,8 @@ function appPreviewClassicLoaderPlanContract(manifest) {
   const esmModuleByAssetPath = new Map(esmCompatibilityModuleDefinitions()
     .filter((entry) => entry.classicLoaderExcluded && entry.assetPath)
     .map((entry) => [entry.assetPath, entry]));
+  const viteOwnedByAssetPath = new Map(VITE_APP_PREVIEW_OWNED_CLASSIC_SCRIPTS
+    .map((entry) => [entry.path, entry]));
   const groupByAsset = new Map();
   for (const group of Array.isArray(manifest && manifest.entryGroups) ? manifest.entryGroups : []) {
     for (const asset of Array.isArray(group && group.assets) ? group.assets : []) {
@@ -3388,6 +3397,7 @@ function appPreviewClassicLoaderPlanContract(manifest) {
   }
   const scripts = [];
   const excludedEsmScripts = [];
+  const excludedViteOwnedScripts = [];
   scriptAssets.forEach((assetPath, sourceIndex) => {
     const esmModule = esmModuleByAssetPath.get(assetPath);
     if (esmModule) {
@@ -3395,6 +3405,15 @@ function appPreviewClassicLoaderPlanContract(manifest) {
         ...scriptRecord(assetPath, sourceIndex, sourceIndex),
         esmModuleId: String(esmModule.id || ""),
         globalName: String(esmModule.globalName || ""),
+      });
+      return;
+    }
+    const viteOwnedScript = viteOwnedByAssetPath.get(assetPath);
+    if (viteOwnedScript) {
+      excludedViteOwnedScripts.push({
+        ...scriptRecord(assetPath, sourceIndex, sourceIndex),
+        ownerId: String(viteOwnedScript.ownerId || ""),
+        globalName: String(viteOwnedScript.globalName || ""),
       });
       return;
     }
@@ -3414,6 +3433,10 @@ function appPreviewClassicLoaderPlanContract(manifest) {
     excludedEsmHashCount: excludedEsmScripts.filter((entry) => entry.sha256).length,
     excludedEsmByteCount: excludedEsmScripts.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
     excludedEsmScripts,
+    excludedViteOwnedScriptCount: excludedViteOwnedScripts.length,
+    excludedViteOwnedHashCount: excludedViteOwnedScripts.filter((entry) => entry.sha256).length,
+    excludedViteOwnedByteCount: excludedViteOwnedScripts.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
+    excludedViteOwnedScripts,
     scripts,
   };
   return {
@@ -3589,10 +3612,14 @@ function validateViteShellBuildContract(contract, manifest) {
     const excludedEsmScripts = Array.isArray(appPreviewClassicLoaderPlan.excludedEsmScripts)
       ? appPreviewClassicLoaderPlan.excludedEsmScripts
       : [];
+    const excludedViteOwnedScripts = Array.isArray(appPreviewClassicLoaderPlan.excludedViteOwnedScripts)
+      ? appPreviewClassicLoaderPlan.excludedViteOwnedScripts
+      : [];
     const planPaths = planScripts.map((entry) => entry && entry.path).filter(Boolean);
     const excludedPaths = excludedEsmScripts.map((entry) => entry && entry.path).filter(Boolean);
+    const excludedViteOwnedPaths = excludedViteOwnedScripts.map((entry) => entry && entry.path).filter(Boolean);
     const sourceScriptAssets = Array.isArray(manifest.indexScriptAssets) ? manifest.indexScriptAssets : [];
-    const coveredPaths = new Set([...planPaths, ...excludedPaths]);
+    const coveredPaths = new Set([...planPaths, ...excludedPaths, ...excludedViteOwnedPaths]);
     const reconstructedSourcePaths = sourceScriptAssets.filter((asset) => coveredPaths.has(asset));
     if (appPreviewClassicLoaderPlan.owner !== "vite-shell-entry") {
       issues.push({ code: "vite_app_preview_classic_loader_plan_owner_mismatch" });
@@ -3605,7 +3632,9 @@ function validateViteShellBuildContract(contract, manifest) {
       || Number(appPreviewClassicLoaderPlan.hashCount) !== expectedAppPreviewClassicLoaderPlan.hashCount
       || Number(appPreviewClassicLoaderPlan.hashCount) !== Number(appPreviewClassicLoaderPlan.scriptCount)
       || Number(appPreviewClassicLoaderPlan.excludedEsmScriptCount) !== expectedAppPreviewClassicLoaderPlan.excludedEsmScriptCount
-      || Number(appPreviewClassicLoaderPlan.excludedEsmHashCount) !== expectedAppPreviewClassicLoaderPlan.excludedEsmHashCount) {
+      || Number(appPreviewClassicLoaderPlan.excludedEsmHashCount) !== expectedAppPreviewClassicLoaderPlan.excludedEsmHashCount
+      || Number(appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount || 0) !== expectedAppPreviewClassicLoaderPlan.excludedViteOwnedScriptCount
+      || Number(appPreviewClassicLoaderPlan.excludedViteOwnedHashCount || 0) !== expectedAppPreviewClassicLoaderPlan.excludedViteOwnedHashCount) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_count_mismatch" });
     }
     if (String(appPreviewClassicLoaderPlan.firstScript || "") !== expectedAppPreviewClassicLoaderPlan.firstScript
@@ -3614,6 +3643,7 @@ function validateViteShellBuildContract(contract, manifest) {
     }
     if (JSON.stringify(planPaths) !== JSON.stringify(expectedAppPreviewClassicLoaderPlan.scripts.map((entry) => entry.path))
       || JSON.stringify(excludedPaths) !== JSON.stringify(expectedAppPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.path))
+      || JSON.stringify(excludedViteOwnedPaths) !== JSON.stringify(expectedAppPreviewClassicLoaderPlan.excludedViteOwnedScripts.map((entry) => entry.path))
       || JSON.stringify(reconstructedSourcePaths) !== JSON.stringify(sourceScriptAssets)
       || coveredPaths.size !== sourceScriptAssets.length) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_order_mismatch" });
@@ -3623,6 +3653,9 @@ function validateViteShellBuildContract(contract, manifest) {
     }
     if (excludedEsmScripts.some((entry) => !entry || !entry.groupId || !entry.esmModuleId || !entry.globalName || !entry.sha256 || !Number(entry.bytes))) {
       issues.push({ code: "vite_app_preview_classic_loader_plan_exclusion_record_missing" });
+    }
+    if (excludedViteOwnedScripts.some((entry) => !entry || !entry.groupId || !entry.ownerId || !entry.globalName || !entry.sha256 || !Number(entry.bytes))) {
+      issues.push({ code: "vite_app_preview_classic_loader_plan_vite_owned_record_missing" });
     }
   }
   if (!esmCompatibility) {

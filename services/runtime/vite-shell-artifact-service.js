@@ -167,11 +167,18 @@ function appPreviewClassicLoaderPlan(source) {
       globalName: String(entry && entry.globalName || ""),
     }))
     .filter((entry) => entry.path);
+  const excludedViteOwnedScripts = (Array.isArray(plan.excludedViteOwnedScripts) ? plan.excludedViteOwnedScripts : [])
+    .map((entry) => ({
+      ...normalizeScript(entry),
+      ownerId: String(entry && entry.ownerId || ""),
+      globalName: String(entry && entry.globalName || ""),
+    }))
+    .filter((entry) => entry.path);
   return {
     schemaVersion: Number(plan.schemaVersion) || 1,
     source: String(plan.source || ""),
     owner: String(plan.owner || ""),
-    sourceScriptCount: Number.isFinite(Number(plan.sourceScriptCount)) ? Number(plan.sourceScriptCount) : scripts.length + excludedEsmScripts.length,
+    sourceScriptCount: Number.isFinite(Number(plan.sourceScriptCount)) ? Number(plan.sourceScriptCount) : scripts.length + excludedEsmScripts.length + excludedViteOwnedScripts.length,
     scriptCount: Number.isFinite(Number(plan.scriptCount)) ? Number(plan.scriptCount) : scripts.length,
     firstScript: String(plan.firstScript || ""),
     lastScript: String(plan.lastScript || ""),
@@ -180,7 +187,11 @@ function appPreviewClassicLoaderPlan(source) {
     excludedEsmScriptCount: Number.isFinite(Number(plan.excludedEsmScriptCount)) ? Number(plan.excludedEsmScriptCount) : excludedEsmScripts.length,
     excludedEsmHashCount: Number.isFinite(Number(plan.excludedEsmHashCount)) ? Number(plan.excludedEsmHashCount) : excludedEsmScripts.filter((entry) => entry.sha256).length,
     excludedEsmByteCount: Number.isFinite(Number(plan.excludedEsmByteCount)) ? Number(plan.excludedEsmByteCount) : excludedEsmScripts.reduce((total, entry) => total + entry.bytes, 0),
+    excludedViteOwnedScriptCount: Number.isFinite(Number(plan.excludedViteOwnedScriptCount)) ? Number(plan.excludedViteOwnedScriptCount) : excludedViteOwnedScripts.length,
+    excludedViteOwnedHashCount: Number.isFinite(Number(plan.excludedViteOwnedHashCount)) ? Number(plan.excludedViteOwnedHashCount) : excludedViteOwnedScripts.filter((entry) => entry.sha256).length,
+    excludedViteOwnedByteCount: Number.isFinite(Number(plan.excludedViteOwnedByteCount)) ? Number(plan.excludedViteOwnedByteCount) : excludedViteOwnedScripts.reduce((total, entry) => total + entry.bytes, 0),
     excludedEsmScripts,
+    excludedViteOwnedScripts,
     sha256: String(plan.sha256 || ""),
     scripts,
   };
@@ -456,7 +467,8 @@ function createViteShellArtifactService(dependencies = {}) {
     } else {
       const loaderPlanPaths = readbackAppPreviewClassicLoaderPlan.scripts.map((entry) => entry.path);
       const excludedEsmPaths = readbackAppPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.path);
-      const coveredPaths = new Set([...loaderPlanPaths, ...excludedEsmPaths]);
+      const excludedViteOwnedPaths = readbackAppPreviewClassicLoaderPlan.excludedViteOwnedScripts.map((entry) => entry.path);
+      const coveredPaths = new Set([...loaderPlanPaths, ...excludedEsmPaths, ...excludedViteOwnedPaths]);
       const sourceScriptAssets = actualClassicScriptBlock.scriptAssets;
       const reconstructedPaths = sourceScriptAssets.filter((asset) => coveredPaths.has(asset));
       if (readbackAppPreviewClassicLoaderPlan.owner !== EXPECTED_ENTRY_GROUP_IMPORT_OWNER) {
@@ -472,11 +484,16 @@ function createViteShellArtifactService(dependencies = {}) {
         || Number(readbackAppPreviewClassicLoaderPlan.hashCount) !== loaderPlanPaths.length
         || Number(readbackAppPreviewClassicLoaderPlan.excludedEsmScriptCount) !== excludedEsmPaths.length
         || Number(readbackAppPreviewClassicLoaderPlan.excludedEsmHashCount) !== excludedEsmPaths.length
+        || Number(readbackAppPreviewClassicLoaderPlan.excludedViteOwnedScriptCount) !== excludedViteOwnedPaths.length
+        || Number(readbackAppPreviewClassicLoaderPlan.excludedViteOwnedHashCount) !== excludedViteOwnedPaths.length
         || !readbackAppPreviewClassicLoaderPlan.sha256) {
         issues.push({ code: "vite_shell_app_preview_classic_loader_plan_count_mismatch" });
       }
       if (readbackAppPreviewClassicLoaderPlan.excludedEsmScripts.some((entry) => !entry.esmModuleId || !entry.globalName || !entry.sha256 || !Number(entry.bytes))) {
         issues.push({ code: "vite_shell_app_preview_classic_loader_plan_exclusion_record_missing" });
+      }
+      if (readbackAppPreviewClassicLoaderPlan.excludedViteOwnedScripts.some((entry) => !entry.ownerId || !entry.globalName || !entry.sha256 || !Number(entry.bytes))) {
+        issues.push({ code: "vite_shell_app_preview_classic_loader_plan_vite_owned_record_missing" });
       }
     }
     const entryGroupImportOwner = String(readback.entryGroupImportOwner || "");
@@ -651,6 +668,7 @@ function createViteShellArtifactService(dependencies = {}) {
         const loaderRecords = [
           ...readbackAppPreviewClassicLoaderPlan.scripts,
           ...readbackAppPreviewClassicLoaderPlan.excludedEsmScripts,
+          ...readbackAppPreviewClassicLoaderPlan.excludedViteOwnedScripts,
         ];
         for (const record of loaderRecords) {
           const assetPath = String(record && record.path || "");
@@ -831,13 +849,21 @@ function createViteShellArtifactService(dependencies = {}) {
     const loaderPlanExcludedEsmPaths = readbackAppPreviewClassicLoaderPlan
       ? readbackAppPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.path)
       : [];
-    const loaderPlanCoveredPaths = new Set([...loaderPlanScriptPaths, ...loaderPlanExcludedEsmPaths]);
+    const loaderPlanExcludedViteOwnedPaths = readbackAppPreviewClassicLoaderPlan
+      ? readbackAppPreviewClassicLoaderPlan.excludedViteOwnedScripts.map((entry) => entry.path)
+      : [];
+    const loaderPlanCoveredPaths = new Set([
+      ...loaderPlanScriptPaths,
+      ...loaderPlanExcludedEsmPaths,
+      ...loaderPlanExcludedViteOwnedPaths,
+    ]);
     const loaderPlanReconstructedSourcePaths = actualClassicScriptBlock.scriptAssets
       .filter((asset) => loaderPlanCoveredPaths.has(asset));
     const loaderPlanCurrentAssetsMatch = readbackAppPreviewClassicLoaderPlan
       ? [
           ...readbackAppPreviewClassicLoaderPlan.scripts,
           ...readbackAppPreviewClassicLoaderPlan.excludedEsmScripts,
+          ...readbackAppPreviewClassicLoaderPlan.excludedViteOwnedScripts,
         ].every((entry) => {
           const currentAsset = publicAssetStatus(appRoot, entry.path);
           return currentAsset.exists
@@ -918,6 +944,8 @@ function createViteShellArtifactService(dependencies = {}) {
           && Number(readbackAppPreviewClassicLoaderPlan.hashCount) === loaderPlanScriptPaths.length
           && Number(readbackAppPreviewClassicLoaderPlan.excludedEsmScriptCount) === loaderPlanExcludedEsmPaths.length
           && Number(readbackAppPreviewClassicLoaderPlan.excludedEsmHashCount) === loaderPlanExcludedEsmPaths.length
+          && Number(readbackAppPreviewClassicLoaderPlan.excludedViteOwnedScriptCount) === loaderPlanExcludedViteOwnedPaths.length
+          && Number(readbackAppPreviewClassicLoaderPlan.excludedViteOwnedHashCount) === loaderPlanExcludedViteOwnedPaths.length
           && Boolean(readbackAppPreviewClassicLoaderPlan.sha256)
           && loaderPlanCurrentAssetsMatch),
         owner: readbackAppPreviewClassicLoaderPlan.owner,
@@ -929,6 +957,10 @@ function createViteShellArtifactService(dependencies = {}) {
         excludedEsmHashCount: readbackAppPreviewClassicLoaderPlan.excludedEsmHashCount,
         excludedEsmByteCount: readbackAppPreviewClassicLoaderPlan.excludedEsmByteCount,
         excludedEsmModuleIds: readbackAppPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.esmModuleId),
+        excludedViteOwnedScriptCount: readbackAppPreviewClassicLoaderPlan.excludedViteOwnedScriptCount,
+        excludedViteOwnedHashCount: readbackAppPreviewClassicLoaderPlan.excludedViteOwnedHashCount,
+        excludedViteOwnedByteCount: readbackAppPreviewClassicLoaderPlan.excludedViteOwnedByteCount,
+        excludedViteOwnedOwnerIds: readbackAppPreviewClassicLoaderPlan.excludedViteOwnedScripts.map((entry) => entry.ownerId),
         firstScript: readbackAppPreviewClassicLoaderPlan.firstScript,
         lastScript: readbackAppPreviewClassicLoaderPlan.lastScript,
         sha256: readbackAppPreviewClassicLoaderPlan.sha256,
@@ -943,6 +975,10 @@ function createViteShellArtifactService(dependencies = {}) {
         excludedEsmHashCount: 0,
         excludedEsmByteCount: 0,
         excludedEsmModuleIds: [],
+        excludedViteOwnedScriptCount: 0,
+        excludedViteOwnedHashCount: 0,
+        excludedViteOwnedByteCount: 0,
+        excludedViteOwnedOwnerIds: [],
         firstScript: "",
         lastScript: "",
         sha256: "",

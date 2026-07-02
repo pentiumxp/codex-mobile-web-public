@@ -415,17 +415,22 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.equal(contract.appPreviewClassicLoaderPlan.sourceScriptCount, manifest.indexScriptAssets.length);
   assert.equal(contract.appPreviewClassicLoaderPlan.excludedEsmScriptCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(contract.appPreviewClassicLoaderPlan.excludedEsmHashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
+  assert.equal(contract.appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount, 1);
+  assert.equal(contract.appPreviewClassicLoaderPlan.excludedViteOwnedHashCount, 1);
   assert.equal(
-    contract.appPreviewClassicLoaderPlan.scriptCount + contract.appPreviewClassicLoaderPlan.excludedEsmScriptCount,
+    contract.appPreviewClassicLoaderPlan.scriptCount
+      + contract.appPreviewClassicLoaderPlan.excludedEsmScriptCount
+      + contract.appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount,
     manifest.indexScriptAssets.length
   );
   assert.equal(contract.appPreviewClassicLoaderPlan.hashCount, contract.appPreviewClassicLoaderPlan.scriptCount);
-  assert.equal(contract.appPreviewClassicLoaderPlan.firstScript, "/shell-asset-manifest.js");
+  assert.equal(contract.appPreviewClassicLoaderPlan.firstScript, "/app-bootstrap.js");
   assert.equal(contract.appPreviewClassicLoaderPlan.lastScript, "/pane-layout-runtime.js");
   assert.match(contract.appPreviewClassicLoaderPlan.sha256, /^[a-f0-9]{64}$/);
   const loaderPlanCoveredScripts = new Set([
     ...contract.appPreviewClassicLoaderPlan.scripts.map((entry) => entry.path),
     ...contract.appPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.path),
+    ...contract.appPreviewClassicLoaderPlan.excludedViteOwnedScripts.map((entry) => entry.path),
   ]);
   assert.deepEqual(manifest.indexScriptAssets.filter((entry) => loaderPlanCoveredScripts.has(entry)), manifest.indexScriptAssets);
   const esmModuleIdByAssetPath = new Map(VITE_ESM_COMPATIBILITY_MODULES.map((entry) => [
@@ -439,9 +444,22 @@ test("Vite shell build contract records entry chunks and classic fallback output
     contract.appPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.esmModuleId),
     expectedExcludedEsmIds
   );
+  assert.deepEqual(
+    contract.appPreviewClassicLoaderPlan.excludedViteOwnedScripts.map((entry) => ({
+      path: entry.path,
+      ownerId: entry.ownerId,
+      globalName: entry.globalName,
+    })),
+    [{
+      path: "/shell-asset-manifest.js",
+      ownerId: "shell-manifest",
+      globalName: "CODEX_MOBILE_SHELL_MANIFEST",
+    }]
+  );
   assert.ok(contract.appPreviewClassicLoaderPlan.scripts.every((entry) => entry.groupId && entry.bytes > 0));
   assert.ok(contract.appPreviewClassicLoaderPlan.scripts.every((entry) => /^[a-f0-9]{64}$/.test(entry.sha256)));
   assert.ok(contract.appPreviewClassicLoaderPlan.excludedEsmScripts.every((entry) => entry.globalName && /^[a-f0-9]{64}$/.test(entry.sha256)));
+  assert.ok(contract.appPreviewClassicLoaderPlan.excludedViteOwnedScripts.every((entry) => entry.ownerId && entry.globalName && /^[a-f0-9]{64}$/.test(entry.sha256)));
   assert.equal(contract.esmCompatibility.owner, "vite-shell-entry");
   assert.equal(contract.esmCompatibility.virtualModuleSource, VITE_ESM_COMPATIBILITY_SOURCE);
   assert.equal(contract.esmCompatibility.shardCount, compatibilityShards.length);

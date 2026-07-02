@@ -13,6 +13,7 @@ const service = require("../services/runtime/vite-shell-artifact-service");
 const CLASSIC_SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
 const CLASSIC_SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
 const SHELL_MANIFEST_JS_FIXTURE = Buffer.from("window.CODEX_MOBILE_SHELL_MANIFEST = {};\n");
+const APP_BOOTSTRAP_JS_FIXTURE = Buffer.from("window.CodexAppBootstrap = true;\n");
 const APP_JS_FIXTURE = Buffer.from("window.CodexAppShellRuntime = { createAppShellRuntime: function () {} };\n");
 
 function sha256Hex(buffer) {
@@ -67,7 +68,16 @@ function appPreviewClassicLoaderPlanContract(shellManifest) {
   }
   const scripts = [];
   const excludedEsmScripts = [];
+  const excludedViteOwnedScripts = [];
   for (const [sourceIndex, asset] of (shellManifest.indexScriptAssets || []).entries()) {
+    if (asset === "/shell-asset-manifest.js") {
+      excludedViteOwnedScripts.push({
+        ...scriptRecord(asset, sourceIndex, sourceIndex),
+        ownerId: "shell-manifest",
+        globalName: "CODEX_MOBILE_SHELL_MANIFEST",
+      });
+      continue;
+    }
     if (asset === "/app.js") {
       excludedEsmScripts.push({
         ...scriptRecord(asset, sourceIndex, sourceIndex),
@@ -91,7 +101,11 @@ function appPreviewClassicLoaderPlanContract(shellManifest) {
     excludedEsmScriptCount: excludedEsmScripts.length,
     excludedEsmHashCount: excludedEsmScripts.filter((entry) => entry.sha256).length,
     excludedEsmByteCount: excludedEsmScripts.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
+    excludedViteOwnedScriptCount: excludedViteOwnedScripts.length,
+    excludedViteOwnedHashCount: excludedViteOwnedScripts.filter((entry) => entry.sha256).length,
+    excludedViteOwnedByteCount: excludedViteOwnedScripts.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
     excludedEsmScripts,
+    excludedViteOwnedScripts,
     scripts,
   };
   return {
@@ -149,14 +163,15 @@ function writeArtifact(root, options = {}) {
   const stage = options.stage || "vite-shell-preview-html-v1";
   fs.mkdirSync(path.join(root, "public"), { recursive: true });
   fs.writeFileSync(path.join(root, "public", "shell-asset-manifest.js"), SHELL_MANIFEST_JS_FIXTURE);
+  fs.writeFileSync(path.join(root, "public", "app-bootstrap.js"), APP_BOOTSTRAP_JS_FIXTURE);
   fs.writeFileSync(path.join(root, "public", "app.js"), APP_JS_FIXTURE);
   const shellManifest = options.shellManifest || {
     shellCacheName: "codex-mobile-shell-test",
     clientBuildId: "0.1.11|codex-mobile-shell-test",
-    indexScriptAssets: ["/shell-asset-manifest.js", "/app.js"],
-    swStaticAssets: ["/", "/index.html", "/shell-asset-manifest.js", "/app.js", "/shell-asset-manifest.json"],
-    pageShellAssets: ["/", "/index.html", "/shell-asset-manifest.js", "/app.js", "/shell-asset-manifest.json", "/sw.js"],
-    hashAssets: ["/index.html", "/shell-asset-manifest.js", "/app.js", "/shell-asset-manifest.json", "/sw.js"],
+    indexScriptAssets: ["/shell-asset-manifest.js", "/app-bootstrap.js", "/app.js"],
+    swStaticAssets: ["/", "/index.html", "/shell-asset-manifest.js", "/app-bootstrap.js", "/app.js", "/shell-asset-manifest.json"],
+    pageShellAssets: ["/", "/index.html", "/shell-asset-manifest.js", "/app-bootstrap.js", "/app.js", "/shell-asset-manifest.json", "/sw.js"],
+    hashAssets: ["/index.html", "/shell-asset-manifest.js", "/app-bootstrap.js", "/app.js", "/shell-asset-manifest.json", "/sw.js"],
     entryGroups: [{
       id: "app-entry",
       phase: "startup-critical",
@@ -182,6 +197,12 @@ function writeArtifact(root, options = {}) {
       exists: true,
       bytes: SHELL_MANIFEST_JS_FIXTURE.length,
       sha256: sha256Hex(SHELL_MANIFEST_JS_FIXTURE),
+    }, {
+      path: "/app-bootstrap.js",
+      sourcePath: "public/app-bootstrap.js",
+      exists: true,
+      bytes: APP_BOOTSTRAP_JS_FIXTURE.length,
+      sha256: sha256Hex(APP_BOOTSTRAP_JS_FIXTURE),
     }, {
       path: "/app.js",
       sourcePath: "public/app.js",
@@ -409,7 +430,7 @@ test("Vite shell artifact status validates the guarded public preview files", ()
   assert.equal(status.artifactRoot, "public/vite-shell");
   assert.deepEqual(status.classicShellScriptBlock, {
     match: true,
-    scriptCount: 2,
+    scriptCount: 3,
     firstScript: "/shell-asset-manifest.js",
     lastScript: "/app.js",
     sha256: status.classicShellScriptBlock.sha256,
@@ -440,16 +461,20 @@ test("Vite shell artifact status validates the guarded public preview files", ()
   assert.deepEqual(status.appPreviewClassicLoaderPlan, {
     match: true,
     owner: "vite-shell-entry",
-    sourceScriptCount: 2,
+    sourceScriptCount: 3,
     scriptCount: 1,
     hashCount: 1,
-    byteCount: SHELL_MANIFEST_JS_FIXTURE.length,
+    byteCount: APP_BOOTSTRAP_JS_FIXTURE.length,
     excludedEsmScriptCount: 1,
     excludedEsmHashCount: 1,
     excludedEsmByteCount: APP_JS_FIXTURE.length,
     excludedEsmModuleIds: ["app-shell-runtime"],
-    firstScript: "/shell-asset-manifest.js",
-    lastScript: "/shell-asset-manifest.js",
+    excludedViteOwnedScriptCount: 1,
+    excludedViteOwnedHashCount: 1,
+    excludedViteOwnedByteCount: SHELL_MANIFEST_JS_FIXTURE.length,
+    excludedViteOwnedOwnerIds: ["shell-manifest"],
+    firstScript: "/app-bootstrap.js",
+    lastScript: "/app-bootstrap.js",
     sha256: status.appPreviewClassicLoaderPlan.sha256,
   });
   assert.match(status.appPreviewClassicLoaderPlan.sha256, /^[a-f0-9]{64}$/);
@@ -466,7 +491,7 @@ test("Vite shell artifact status validates the guarded public preview files", ()
   assert.deepEqual(status.artifactManifest, {
     shellCacheName: "codex-mobile-shell-test",
     clientBuildId: "0.1.11|codex-mobile-shell-test",
-    indexScriptCount: 2,
+    indexScriptCount: 3,
     entryGroupCount: 1,
     entryGroupChunkCount: 1,
     startupCriticalAssetCount: 1,
@@ -474,8 +499,8 @@ test("Vite shell artifact status validates the guarded public preview files", ()
     classicGlobalExportCount: 1,
     startupGlobalContractCount: 1,
     esmCompatibilityModuleCount: 1,
-    pageShellAssetCount: 6,
-    hashAssetCount: 5,
+    pageShellAssetCount: 7,
+    hashAssetCount: 6,
   });
   assert.deepEqual(status.issueCodes, []);
   assert.deepEqual(status.entryGroupChunks, [{
@@ -594,7 +619,7 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
     "<html>",
     "<head><title>Codex Mobile</title></head>",
     "<body>",
-    renderClassicShellScriptBlock(["/shell-asset-manifest.js", "/app.js"]),
+    renderClassicShellScriptBlock(["/shell-asset-manifest.js", "/app-bootstrap.js", "/app.js"]),
     "</body>",
     "</html>",
     "",
@@ -607,11 +632,12 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   fs.writeFileSync(path.join(buildRoot, "assets", "vite-entry-group-app-entry-test.js"), "export const group = true;\n");
   fs.writeFileSync(path.join(buildRoot, "shell-extra.js"), "should not publish\n");
   fs.writeFileSync(path.join(root, "public", "shell-asset-manifest.js"), SHELL_MANIFEST_JS_FIXTURE);
+  fs.writeFileSync(path.join(root, "public", "app-bootstrap.js"), APP_BOOTSTRAP_JS_FIXTURE);
   fs.writeFileSync(path.join(root, "public", "app.js"), APP_JS_FIXTURE);
   const buildShellManifest = {
     shellCacheName: "codex-mobile-shell-test",
     clientBuildId: "0.1.11|codex-mobile-shell-test",
-    indexScriptAssets: ["/shell-asset-manifest.js", "/app.js"],
+    indexScriptAssets: ["/shell-asset-manifest.js", "/app-bootstrap.js", "/app.js"],
     entryGroups: [{
       id: "manifest",
       phase: "startup-manifest",
@@ -644,6 +670,12 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
       bytes: SHELL_MANIFEST_JS_FIXTURE.length,
       sha256: sha256Hex(SHELL_MANIFEST_JS_FIXTURE),
     }, {
+      path: "/app-bootstrap.js",
+      sourcePath: "public/app-bootstrap.js",
+      exists: true,
+      bytes: APP_BOOTSTRAP_JS_FIXTURE.length,
+      sha256: sha256Hex(APP_BOOTSTRAP_JS_FIXTURE),
+    }, {
       path: "/app.js",
       sourcePath: "public/app.js",
       exists: true,
@@ -662,7 +694,7 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
       appPreviewClassicLoaderPlan: buildAppPreviewClassicLoaderPlan,
       esmCompatibility: buildEsmCompatibility,
       classicFallback: {
-        scriptBlock: classicShellScriptBlockContract(["/shell-asset-manifest.js", "/app.js"]),
+        scriptBlock: classicShellScriptBlockContract(["/shell-asset-manifest.js", "/app-bootstrap.js", "/app.js"]),
       },
       entryDynamicImportGraph: {
         owner: "vite-shell-entry",
@@ -762,7 +794,7 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.match(previewHtml, /data-startup-critical-asset-count="2"/);
   assert.match(previewHtml, /data-entry-group-chunk-count="1"/);
   assert.match(previewHtml, /data-startup-global-contract-count="1"/);
-  assert.match(previewHtml, /data-classic-shell-script-count="2"/);
+  assert.match(previewHtml, /data-classic-shell-script-count="3"/);
   assert.match(previewHtml, /data-classic-shell-script-block-sha256="[a-f0-9]{64}"/);
   assert.match(previewHtml, /data-entry-group-import-owner="vite-shell-entry"/);
   assert.match(previewHtml, /data-esm-compatibility-module-count="1"/);
@@ -847,19 +879,22 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
     bytes: APP_JS_FIXTURE.length,
     sha256: sha256Hex(APP_JS_FIXTURE),
   }]);
-  assert.equal(readback.classicShellScriptBlock.scriptCount, 2);
+  assert.equal(readback.classicShellScriptBlock.scriptCount, 3);
   assert.equal(readback.classicShellScriptBlock.firstScript, "/shell-asset-manifest.js");
   assert.equal(readback.classicShellScriptBlock.lastScript, "/app.js");
   assert.match(readback.classicShellScriptBlock.sha256, /^[a-f0-9]{64}$/);
   assert.equal(readback.appPreviewClassicLoaderPlan.owner, "vite-shell-entry");
-  assert.equal(readback.appPreviewClassicLoaderPlan.sourceScriptCount, 2);
+  assert.equal(readback.appPreviewClassicLoaderPlan.sourceScriptCount, 3);
   assert.equal(readback.appPreviewClassicLoaderPlan.scriptCount, 1);
   assert.equal(readback.appPreviewClassicLoaderPlan.hashCount, 1);
   assert.equal(readback.appPreviewClassicLoaderPlan.excludedEsmScriptCount, 1);
   assert.equal(readback.appPreviewClassicLoaderPlan.excludedEsmHashCount, 1);
   assert.deepEqual(readback.appPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.esmModuleId), ["app-shell-runtime"]);
-  assert.equal(readback.appPreviewClassicLoaderPlan.firstScript, "/shell-asset-manifest.js");
-  assert.equal(readback.appPreviewClassicLoaderPlan.lastScript, "/shell-asset-manifest.js");
+  assert.equal(readback.appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount, 1);
+  assert.equal(readback.appPreviewClassicLoaderPlan.excludedViteOwnedHashCount, 1);
+  assert.deepEqual(readback.appPreviewClassicLoaderPlan.excludedViteOwnedScripts.map((entry) => entry.ownerId), ["shell-manifest"]);
+  assert.equal(readback.appPreviewClassicLoaderPlan.firstScript, "/app-bootstrap.js");
+  assert.equal(readback.appPreviewClassicLoaderPlan.lastScript, "/app-bootstrap.js");
   assert.match(readback.appPreviewClassicLoaderPlan.sha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(readback.esmCompatibility, buildEsmCompatibility);
   assert.equal(readback.counts.startupCriticalAssets, 2);
@@ -867,10 +902,12 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.equal(readback.counts.startupGlobalContractAssets, 1);
   assert.equal(readback.counts.startupGlobalContractHashes, 1);
   assert.equal(readback.counts.startupGlobalContractBytes, APP_JS_FIXTURE.length);
-  assert.equal(readback.counts.classicShellScriptBlockScripts, 2);
+  assert.equal(readback.counts.classicShellScriptBlockScripts, 3);
   assert.equal(readback.counts.appPreviewClassicLoaderScripts, 1);
   assert.equal(readback.counts.appPreviewClassicLoaderHashes, 1);
-  assert.equal(readback.counts.appPreviewClassicLoaderBytes, SHELL_MANIFEST_JS_FIXTURE.length);
+  assert.equal(readback.counts.appPreviewClassicLoaderBytes, APP_BOOTSTRAP_JS_FIXTURE.length);
+  assert.equal(readback.counts.appPreviewClassicLoaderExcludedEsmScripts, 1);
+  assert.equal(readback.counts.appPreviewClassicLoaderExcludedViteOwnedScripts, 1);
   assert.equal(readback.counts.esmCompatibilityModules, 1);
   assert.equal(readback.counts.esmCompatibilityChunks, 2);
   assert.equal(readback.counts.sharedChunks, 1);

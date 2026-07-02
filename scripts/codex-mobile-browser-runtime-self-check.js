@@ -1663,6 +1663,14 @@ function viteAppPreviewProbeExpression(input = {}) {
       const loaderPlanExcludedEsmIds = loaderPlanExcludedEsmScripts
         .map((entry) => String(entry && entry.esmModuleId || ""))
         .filter(Boolean);
+      const loaderPlanExcludedViteOwnedScripts = loaderPlan && Array.isArray(loaderPlan.excludedViteOwnedScripts)
+        ? loaderPlan.excludedViteOwnedScripts.map((entry) => ({
+          path: String(entry && entry.path || ""),
+          ownerId: String(entry && entry.ownerId || ""),
+          globalName: String(entry && entry.globalName || ""),
+        })).filter((entry) => entry.path)
+        : [];
+      const loaderPlanExcludedViteOwnedPaths = loaderPlanExcludedViteOwnedScripts.map((entry) => entry.path);
       const expectedEsmCompatibilityIds = loaderPlanExcludedEsmIds.length
         ? loaderPlanExcludedEsmIds
         : declaredEsmCompatibilityIds;
@@ -1682,10 +1690,14 @@ function viteAppPreviewProbeExpression(input = {}) {
       const loaderPlanCoveredShellScriptSet = new Set([
         ...loaderPlanScripts,
         ...loaderPlanExcludedEsmPaths,
+        ...loaderPlanExcludedViteOwnedPaths,
       ]);
       const loaderPlanCoveredShellScripts = shellScripts.filter((path) => loaderPlanCoveredShellScriptSet.has(path));
       const expectedInjectedScripts = loaderPlanScripts.length ? loaderPlanScripts : shellScripts;
       const excludedEsmGlobalsReady = loaderPlanExcludedEsmScripts.every((entry) => (
+        entry.globalName && Boolean(window[entry.globalName])
+      ));
+      const excludedViteOwnedGlobalsReady = loaderPlanExcludedViteOwnedScripts.every((entry) => (
         entry.globalName && Boolean(window[entry.globalName])
       ));
       const esmCompatibilityGlobalsPublished = esmCompatibilityModules.every((entry) => (
@@ -1726,6 +1738,9 @@ function viteAppPreviewProbeExpression(input = {}) {
         loaderPlanExcludedEsmScriptCount: Number(loaderPlan && loaderPlan.excludedEsmScriptCount || 0) || 0,
         loaderPlanExcludedEsmHashCount: Number(loaderPlan && loaderPlan.excludedEsmHashCount || 0) || 0,
         loaderPlanExcludedEsmGlobalsReady: excludedEsmGlobalsReady,
+        loaderPlanExcludedViteOwnedScriptCount: Number(loaderPlan && loaderPlan.excludedViteOwnedScriptCount || 0) || 0,
+        loaderPlanExcludedViteOwnedHashCount: Number(loaderPlan && loaderPlan.excludedViteOwnedHashCount || 0) || 0,
+        loaderPlanExcludedViteOwnedGlobalsReady: excludedViteOwnedGlobalsReady,
         loaderPlanHashPresent: Boolean(loaderPlan && loaderPlan.sha256),
         loaderPlanMatchesShellScripts: JSON.stringify(loaderPlanCoveredShellScripts) === JSON.stringify(shellScripts)
           && loaderPlanCoveredShellScriptSet.size === shellScripts.length,
@@ -1810,6 +1825,7 @@ function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}, options = 
     || (Number(sample.loaderPlanSourceScriptCount) > 0
       && Number(sample.loaderPlanSourceScriptCount) !== Number(sample.shellScriptCount || sample.expectedClassicScriptCount))
     || Number(sample.loaderPlanExcludedEsmScriptCount || 0) !== Number(sample.loaderPlanExcludedEsmHashCount || 0)
+    || Number(sample.loaderPlanExcludedViteOwnedScriptCount || 0) !== Number(sample.loaderPlanExcludedViteOwnedHashCount || 0)
     || sample.loaderPlanMatchesShellScripts !== true)) {
     append("vite_app_preview_classic_loader_plan_mismatch", "H2", {
       loaderPlanScriptCount: Number(sample.loaderPlanScriptCount) || 0,
@@ -1827,6 +1843,12 @@ function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}, options = 
     && sample.loaderPlanExcludedEsmGlobalsReady !== true) {
     append("vite_app_preview_esm_loader_exclusion_global_missing", "H2", {
       excludedCount: Number(sample.loaderPlanExcludedEsmScriptCount) || 0,
+    });
+  }
+  if (sample && Number(sample.loaderPlanExcludedViteOwnedScriptCount || 0) > 0
+    && sample.loaderPlanExcludedViteOwnedGlobalsReady !== true) {
+    append("vite_app_preview_vite_owned_loader_exclusion_global_missing", "H2", {
+      excludedCount: Number(sample.loaderPlanExcludedViteOwnedScriptCount) || 0,
     });
   }
   if (sample && sample.loaderOk !== true) append("vite_app_preview_loader_failed", "H2", {
