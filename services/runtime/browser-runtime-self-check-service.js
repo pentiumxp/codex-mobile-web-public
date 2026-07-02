@@ -77,6 +77,8 @@ function summarizeSamples(samples = []) {
   const visualAnchorShiftPixels = normalized.map((sample) => toNumber(sample.visualAnchorShiftPx));
   const submittedMessageShiftCounts = normalized.map((sample) => toNumber(sample.submittedMessageSmallJitterCount));
   const submittedMessageShiftPixels = normalized.map((sample) => toNumber(sample.submittedMessageShiftPx));
+  const bottomFollowJitterCounts = normalized.map((sample) => toNumber(sample.bottomFollowJitterCount));
+  const bottomFollowDistancePixels = normalized.map((sample) => toNumber(sample.bottomDistancePx));
   const longTaskCounts = normalized.map((sample) => toNumber(sample.longTaskCount));
   const longTaskMaxDurations = normalized.map((sample) => toNumber(sample.longTaskMaxDurationMs));
   const longTaskTotalDurations = normalized.map((sample) => toNumber(sample.longTaskTotalDurationMs));
@@ -111,6 +113,8 @@ function summarizeSamples(samples = []) {
     maxVisualAnchorShiftPx: normalized.length ? Math.max(...visualAnchorShiftPixels) : 0,
     maxSubmittedMessageSmallJitterCount: normalized.length ? Math.max(...submittedMessageShiftCounts) : 0,
     maxSubmittedMessageShiftPx: normalized.length ? Math.max(...submittedMessageShiftPixels) : 0,
+    maxBottomFollowJitterCount: normalized.length ? Math.max(...bottomFollowJitterCounts) : 0,
+    maxBottomDistancePx: normalized.length ? Math.max(...bottomFollowDistancePixels) : 0,
     maxLongTaskCount: normalized.length ? Math.max(...longTaskCounts) : 0,
     maxLongTaskDurationMs: normalized.length ? Math.max(...longTaskMaxDurations) : 0,
     maxLongTaskTotalDurationMs: normalized.length ? Math.max(...longTaskTotalDurations) : 0,
@@ -531,6 +535,10 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     let submittedMessageSmallJitterCount = 0;
     let submittedMessageMaxShiftPx = 0;
     let submittedMessageIssueSample = null;
+    let previousBottomFollow = null;
+    let bottomFollowJitterCount = 0;
+    let bottomFollowMaxDistancePx = 0;
+    let bottomFollowIssueSample = null;
     for (const sample of rows) {
       const turns = toNumber(sample.turns);
       const items = toNumber(sample.items);
@@ -544,6 +552,10 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       const visualFrameHash = String(sample.visualFrameHash || "").slice(0, 32);
       const visualAnchorTopPx = toNumber(sample.visualAnchorTopPx, Number.NaN);
       const scrollHeight = toNumber(sample.scrollHeight);
+      const clientHeight = toNumber(sample.clientHeight);
+      const scrollTop = toNumber(sample.scrollTop);
+      const bottomDistancePx = Math.max(0, Math.round(scrollHeight - scrollTop - clientHeight));
+      sample.bottomDistancePx = bottomDistancePx;
       const visualAnchorComparable = sampleIsConfirmed(sample)
         && sample.contentConfirmed !== false
         && visualAnchorKey
@@ -591,6 +603,32 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         previousSubmittedMessage = {
           key: submittedKey,
           topPx: submittedTopPx,
+        };
+      }
+      const bottomFollowComparable = sampleIsConfirmed(sample)
+        && sample.contentConfirmed !== false
+        && turns > 0
+        && items > 0
+        && scrollHeight > 0
+        && clientHeight > 0;
+      if (bottomFollowComparable) {
+        if (previousBottomFollow
+          && previousBottomFollow.turns <= turns
+          && previousBottomFollow.items <= items
+          && scrollHeight >= previousBottomFollow.scrollHeight
+          && previousBottomFollow.distancePx <= 24
+          && bottomDistancePx >= 48) {
+          bottomFollowJitterCount += 1;
+          bottomFollowMaxDistancePx = Math.max(bottomFollowMaxDistancePx, bottomDistancePx);
+          bottomFollowIssueSample = sample;
+          sample.bottomFollowJitterCount = bottomFollowJitterCount;
+          sample.bottomFollowMaxDistancePx = bottomFollowMaxDistancePx;
+        }
+        previousBottomFollow = {
+          turns,
+          items,
+          scrollHeight,
+          distancePx: bottomDistancePx,
         };
       }
       if (isNonEmptySample(sample)) {
@@ -729,6 +767,13 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         threadHash,
         jitterCount: submittedMessageSmallJitterCount,
         maxShiftPx: submittedMessageMaxShiftPx,
+      }));
+    }
+    if (bottomFollowJitterCount >= 1 && bottomFollowIssueSample) {
+      issues.push(issue("H3", "browser_bottom_follow_jitter", bottomFollowIssueSample, {
+        threadHash,
+        jitterCount: bottomFollowJitterCount,
+        maxDistancePx: bottomFollowMaxDistancePx,
       }));
     }
     const final = rows[rows.length - 1];

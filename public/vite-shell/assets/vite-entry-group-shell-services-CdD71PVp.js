@@ -69,8 +69,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/event-stream-runtime.js",
 			"sourcePath": "public/event-stream-runtime.js",
-			"bytes": 58934,
-			"sha256": "fa54062f1aeedf6e4a9a617d3bdf5cad3b90f4d89a352e8b456bb429991ef1a8"
+			"bytes": 59038,
+			"sha256": "d431424d4dc0d28e8ae55ea6893797bccad005d76f64e0bd0e4f14bc13e064e6"
 		},
 		{
 			"path": "/composer-bridge-runtime.js",
@@ -80,7 +80,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 10,
-	"classicAssetBytes": 674235,
+	"classicAssetBytes": 674339,
 	"classicGlobalExports": [
 		{
 			"asset": "/settings-runtime.js",

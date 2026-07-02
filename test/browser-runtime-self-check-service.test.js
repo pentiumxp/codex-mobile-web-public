@@ -1877,6 +1877,41 @@ test("browser runtime self-check catches submitted message card jitter", () => {
   assert.equal(report.sampleSummary.maxSubmittedMessageShiftPx, 8);
 });
 
+test("browser runtime self-check catches bottom follow jitter while content grows", () => {
+  const base = {
+    threadHash: "thread-hash",
+    appVisible: true,
+    targetConfirmed: true,
+    contentConfirmed: true,
+    turns: 6,
+    renderKeys: 30,
+    clientHeight: 700,
+    delayMs: 1200,
+  };
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      Object.assign({}, base, {
+        label: "bottom-stable",
+        items: 24,
+        scrollHeight: 2400,
+        scrollTop: 1700,
+      }),
+      Object.assign({}, base, {
+        label: "receipt-inserted-not-followed",
+        items: 28,
+        scrollHeight: 2640,
+        scrollTop: 1700,
+      }),
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_bottom_follow_jitter" && issue.severity === "H3"));
+  assert.equal(report.sampleSummary.maxBottomFollowJitterCount, 1);
+  assert.equal(report.sampleSummary.maxBottomDistancePx, 240);
+});
+
 test("browser runtime self-check catches blocked thread list interaction", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{

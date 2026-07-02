@@ -250,6 +250,10 @@ test("successful message submit follows the new turn to the bottom", () => {
   assert.match(appJs, /bottomScrollFrame: null/);
   assert.match(appJs, /bottomFollowTimers: \[\]/);
   assert.match(appJs, /function scheduleConversationToBottom\(\)/);
+  assertInOrder(functionBody("scheduleConversationToBottom"), [
+    /scrollConversationToBottom\(\);/,
+    /if \(state\.bottomScrollFrame\) return;/,
+  ]);
   assert.match(functionBody("scheduleConversationToBottom"), /if \(state\.bottomScrollFrame\) return/);
   assert.match(functionBody("scheduleConversationToBottom"), /scrollConversationToBottom\(\)/);
   assert.match(functionBody("scheduleBottomFollowScroll"), /const plan = conversationScroll\.planBottomFollowScrollSchedule\(\);/);

@@ -861,6 +861,8 @@ function restoreConversationViewportAnchor(anchor) {
 }
 
 function scheduleConversationToBottom() {
+  // Keep bottom-follow stable during DOM growth before the next paint.
+  scrollConversationToBottom();
   if (state.bottomScrollFrame) return;
   const scroll = () => {
     state.bottomScrollFrame = null;
