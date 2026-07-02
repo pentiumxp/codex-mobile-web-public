@@ -8905,6 +8905,2864 @@ var require_thread_tile_actions = /* @__PURE__ */ __commonJSMin(((exports, modul
 	});
 }));
 //#endregion
+//#region public/thread-tile-state.js
+var require_thread_tile_state = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function(root, factory) {
+		const api = factory();
+		if (typeof module === "object" && module.exports) module.exports = api;
+		else if (root) root.CodexThreadTileState = api;
+	})(typeof globalThis !== "undefined" ? globalThis : null, function() {
+		const DEFAULT_USER_MAX_PANES = 12;
+		const DEFAULT_DETAIL_LOAD_MAX_CONCURRENT = 4;
+		const DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
+		const DEFAULT_PANE_NEAR_BOTTOM_PX = 48;
+		const DEFAULT_PANE_SCROLLABLE_DELTA_PX = 96;
+		function text(value) {
+			return String(value || "");
+		}
+		function nowValue(value) {
+			const parsed = Number(value);
+			return Number.isFinite(parsed) ? parsed : Date.now();
+		}
+		function nonNegativeNumber(value, fallback = 0) {
+			const parsed = Number(value);
+			return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+		}
+		function maxPaneLimit(maxPanes = DEFAULT_USER_MAX_PANES) {
+			const parsed = Math.floor(Number(maxPanes));
+			return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_USER_MAX_PANES;
+		}
+		function normalizePaneCount(value, options = {}) {
+			const fallback = Number.isFinite(Number(options.fallback)) ? Math.floor(Number(options.fallback)) : 0;
+			const parsed = Math.floor(Number(value));
+			if (!Number.isFinite(parsed)) return fallback;
+			return Math.max(0, Math.min(maxPaneLimit(options.maxPanes), parsed));
+		}
+		function normalizePinnedIds(values = [], options = {}) {
+			const seen = /* @__PURE__ */ new Set();
+			const ids = [];
+			const limit = Math.max(1, maxPaneLimit(options.maxPanes) * Math.max(1, Number(options.overflowMultiplier || 2) || 2));
+			for (const value of Array.isArray(values) ? values : []) {
+				const id = String(value || "").trim();
+				if (!id || seen.has(id)) continue;
+				seen.add(id);
+				ids.push(id);
+				if (ids.length >= limit) break;
+			}
+			return ids;
+		}
+		function uniqueIds(values = []) {
+			const seen = /* @__PURE__ */ new Set();
+			const ids = [];
+			for (const value of Array.isArray(values) ? values : []) {
+				const id = text(value).trim();
+				if (!id || seen.has(id)) continue;
+				seen.add(id);
+				ids.push(id);
+			}
+			return ids;
+		}
+		function idsEqual(a = [], b = []) {
+			if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+			return a.every((id, index) => String(id || "") === String(b[index] || ""));
+		}
+		function candidatePaneIdsPlan(input = {}, options = {}) {
+			const maxPanes = Math.max(1, normalizePaneCount(input.maxPanes, {
+				fallback: 1,
+				maxPanes: options.maxPanes || DEFAULT_USER_MAX_PANES
+			}) || 1);
+			const defaultIds = uniqueIds(input.defaultIds || input.threadIds || []).slice(0, maxPanes);
+			const visibleIds = new Set(uniqueIds(input.visibleIds || []));
+			const pinnedIds = normalizePinnedIds(input.pinnedIds || input.threadTilePinnedIds || [], { maxPanes: options.maxPanes || DEFAULT_USER_MAX_PANES }).filter((id) => visibleIds.has(id));
+			const currentThreadId = text(input.currentThreadId).trim();
+			if (!pinnedIds.length) return {
+				action: "candidate-pane-ids",
+				reason: "defaults",
+				ids: defaultIds,
+				pinnedIds,
+				defaultIds,
+				maxPanes
+			};
+			if (typeof options.selectPinnedThreadTileIds === "function") return {
+				action: "candidate-pane-ids",
+				reason: "selector",
+				ids: uniqueIds(options.selectPinnedThreadTileIds({
+					currentThreadId,
+					pinnedThreadIds: pinnedIds,
+					threadIds: defaultIds,
+					maxPanes
+				})).slice(0, maxPanes),
+				pinnedIds,
+				defaultIds,
+				maxPanes
+			};
+			const ids = uniqueIds([...pinnedIds, ...defaultIds]).slice(0, maxPanes);
+			if (currentThreadId && !ids.includes(currentThreadId)) ids[Math.max(0, ids.length - 1)] = currentThreadId;
+			return {
+				action: "candidate-pane-ids",
+				reason: "fallback",
+				ids: uniqueIds(ids).slice(0, maxPanes),
+				pinnedIds,
+				defaultIds,
+				maxPanes
+			};
+		}
+		function paneCountStatePlan(input = {}, options = {}) {
+			const maxPanes = maxPaneLimit(options.maxPanes || input.maxPanes || DEFAULT_USER_MAX_PANES);
+			const capacity = Math.max(1, normalizePaneCount(input.capacity || input.layoutCapacity, {
+				fallback: 1,
+				maxPanes
+			}) || 1);
+			const candidateIds = uniqueIds(input.candidateIds || input.defaultIds || []).slice(0, capacity);
+			const candidateCount = candidateIds.length;
+			const maxCandidateIds = uniqueIds(input.maxCandidateIds || input.maximumCandidateIds || input.allCandidateIds || candidateIds);
+			const maxCandidateCount = Math.max(1, Math.min(maxPanes, maxCandidateIds.length || candidateCount || 1));
+			const runningSet = new Set(uniqueIds(input.runningIds || []));
+			const currentThreadId = text(input.currentThreadId).trim();
+			if (currentThreadId) runningSet.add(currentThreadId);
+			const runningCount = runningSet.size;
+			const explicitPaneCount = normalizePaneCount(Object.prototype.hasOwnProperty.call(input, "explicitPaneCount") ? input.explicitPaneCount : Object.prototype.hasOwnProperty.call(input, "paneCount") ? input.paneCount : input.threadTilePaneCount, {
+				fallback: 0,
+				maxPanes
+			});
+			let autoPaneCount = 1;
+			if (candidateCount > 0) autoPaneCount = Math.max(1, Math.min(capacity, candidateCount, Math.max(capacity > 1 ? Math.min(2, candidateCount, capacity) : 1, runningCount)));
+			return {
+				action: "pane-count-state",
+				reason: explicitPaneCount > 0 ? "explicit" : "auto",
+				capacity,
+				candidateIds,
+				candidateCount,
+				maxCandidateIds,
+				maxCandidateCount,
+				runningCount,
+				explicitPaneCount,
+				autoPaneCount,
+				effectivePaneCount: explicitPaneCount > 0 ? Math.max(1, Math.min(maxCandidateCount, explicitPaneCount)) : Math.max(1, Math.min(capacity, candidateCount || 1, autoPaneCount)),
+				minPaneCount: Math.min(capacity, candidateCount || 1) >= 2 ? 2 : 1,
+				maxPaneCount: maxCandidateCount
+			};
+		}
+		function layoutCapacity(input = {}, options = {}) {
+			const maxPanes = maxPaneLimit(options.capacityMaxPanes || options.maxPanes || DEFAULT_USER_MAX_PANES);
+			const value = Object.prototype.hasOwnProperty.call(input, "recommendedMaxPanes") ? input.recommendedMaxPanes : input.maxPanes;
+			const parsed = Math.floor(Number(value || 1));
+			return Math.max(1, Math.min(maxPanes, Number.isFinite(parsed) && parsed > 0 ? parsed : 1));
+		}
+		function viewportSize(value = {}) {
+			return {
+				width: Math.round(nonNegativeNumber(value && value.width, 0)),
+				height: Math.round(nonNegativeNumber(value && value.height, 0))
+			};
+		}
+		function threadTileViewportBaselinePlan(input = {}) {
+			const layoutViewport = viewportSize(input.layoutViewport || input.viewport || {});
+			const baseline = viewportSize(input.baseline || input.previousBaseline || {});
+			const keyboardActive = input.keyboardActive === true;
+			const hasBaseline = baseline.width > 0 && baseline.height > 0;
+			if (!keyboardActive) return {
+				action: "thread-tile-viewport-baseline",
+				reason: "layout-viewport",
+				keyboardActive,
+				viewport: layoutViewport,
+				nextBaseline: layoutViewport,
+				updateBaseline: true
+			};
+			return {
+				action: "thread-tile-viewport-baseline",
+				reason: hasBaseline ? "keyboard-baseline" : "keyboard-layout-viewport",
+				keyboardActive,
+				viewport: hasBaseline ? baseline : layoutViewport,
+				nextBaseline: hasBaseline ? baseline : layoutViewport,
+				updateBaseline: false
+			};
+		}
+		function threadTileVerticalChromePlan(input = {}, options = {}) {
+			const keyboardActive = input.keyboardActive === true;
+			const composerHeightPx = nonNegativeNumber(input.composerHeightPx, 0);
+			const baselineComposerHeightPx = nonNegativeNumber(input.baselineComposerHeightPx, 0);
+			const minChromePx = nonNegativeNumber(Object.prototype.hasOwnProperty.call(options, "minChromePx") ? options.minChromePx : input.minChromePx, 120);
+			const extraChromePx = nonNegativeNumber(Object.prototype.hasOwnProperty.call(options, "extraChromePx") ? options.extraChromePx : input.extraChromePx, 64);
+			const effectiveComposerHeightPx = keyboardActive && baselineComposerHeightPx ? baselineComposerHeightPx : composerHeightPx;
+			return {
+				action: "thread-tile-vertical-chrome",
+				reason: keyboardActive ? baselineComposerHeightPx ? "keyboard-baseline" : "keyboard-composer" : "composer-baseline",
+				keyboardActive,
+				composerHeightPx: effectiveComposerHeightPx,
+				nextComposerHeightBaselinePx: keyboardActive ? baselineComposerHeightPx : composerHeightPx || baselineComposerHeightPx || 0,
+				updateBaseline: !keyboardActive,
+				verticalChromePx: Math.max(minChromePx, effectiveComposerHeightPx + extraChromePx)
+			};
+		}
+		function normalizeColumnGroups(values = []) {
+			return (Array.isArray(values) ? values : []).map((group) => uniqueIds(Array.isArray(group) ? group : [])).filter((group) => group.length);
+		}
+		function paneDisplayLayoutPlan(input = {}, options = {}) {
+			const layout = input.layout && typeof input.layout === "object" ? input.layout : input;
+			const ids = uniqueIds(input.ids || input.threadIds || []);
+			const effectivePaneCount = normalizePaneCount(Object.prototype.hasOwnProperty.call(input, "effectivePaneCount") ? input.effectivePaneCount : input.count, {
+				fallback: 0,
+				maxPanes: options.maxPanes
+			});
+			const count = Math.max(1, ids.length ? ids.length : effectivePaneCount || 1);
+			const capacityColumns = Math.max(1, Math.floor(Number(layout && layout.columns || 1)) || 1);
+			const columns = Math.max(1, Math.min(capacityColumns, count));
+			const splitPairs = Array.isArray(input.splitPairs || input.paneSplitPairs) ? input.splitPairs || input.paneSplitPairs : [];
+			const groupFn = typeof options.threadTileColumnGroups === "function" ? options.threadTileColumnGroups : null;
+			const columnGroups = normalizeColumnGroups(groupFn ? groupFn({
+				ids,
+				columns,
+				splitPairs
+			}) : ids.slice(0, count).map((id) => [id]));
+			const rows = Math.max(1, ...columnGroups.map((group) => group.length || 1));
+			const displayLayout = Object.assign({}, layout, {
+				capacityPanes: layoutCapacity(layout, options),
+				visiblePanes: count,
+				columns: Math.max(1, columnGroups.length || columns),
+				rows,
+				columnGroups
+			});
+			return {
+				action: "pane-display-layout",
+				reason: ids.length ? "thread-ids" : "count-only",
+				count,
+				capacityColumns,
+				columns,
+				rows,
+				columnGroups,
+				displayLayout
+			};
+		}
+		function normalizeIdValuePairs(values = [], ids = []) {
+			const idSet = new Set(uniqueIds(ids));
+			return (Array.isArray(values) ? values : []).map((entry) => {
+				if (Array.isArray(entry)) return [text(entry[0]).trim(), entry.length > 1 ? entry[1] : ""];
+				if (entry && typeof entry === "object") return [text(entry.id || entry.threadId || entry.paneId).trim(), Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : Object.prototype.hasOwnProperty.call(entry, "signature") ? entry.signature : Object.prototype.hasOwnProperty.call(entry, "error") ? entry.error : ""];
+				return ["", ""];
+			}).filter((entry) => entry[0] && (!idSet.size || idSet.has(entry[0])));
+		}
+		function paneRenderSignaturePlan(input = {}, options = {}) {
+			const layout = input.layout && typeof input.layout === "object" ? input.layout : {};
+			const ids = uniqueIds(input.ids || input.threadIds || []);
+			const idSet = new Set(ids);
+			const signatureObject = {
+				view: "thread-tiles",
+				columns: layout.columns,
+				rows: layout.rows,
+				visiblePanes: layout.visiblePanes || ids.length,
+				capacityPanes: layout.capacityPanes || layout.maxPanes,
+				desiredPaneCount: normalizePaneCount(Object.prototype.hasOwnProperty.call(input, "desiredPaneCount") ? input.desiredPaneCount : input.paneCount, {
+					fallback: 0,
+					maxPanes: options.maxPanes
+				}),
+				columnGroups: normalizeColumnGroups(input.columnGroups || layout.columnGroups || []),
+				splitPairs: Array.isArray(input.splitPairs || input.paneSplitPairs) ? input.splitPairs || input.paneSplitPairs : [],
+				ids,
+				selected: text(input.selectedThreadId || input.selected).trim(),
+				loading: uniqueIds(input.loadingIds || input.loading || []).filter((id) => !idSet.size || idSet.has(id)),
+				switchMenuPaneId: text(input.switchMenuPaneId).trim(),
+				errors: normalizeIdValuePairs(input.errors || input.errorPairs || [], ids),
+				operations: normalizeIdValuePairs(input.operations || input.operationSignatures || [], ids),
+				threads: (Array.isArray(input.threadSignatures || input.threads) ? input.threadSignatures || input.threads : []).map((value) => String(value || ""))
+			};
+			return {
+				action: "pane-render-signature",
+				reason: ids.length ? "thread-ids" : "empty",
+				ids,
+				signatureObject,
+				signature: JSON.stringify(signatureObject)
+			};
+		}
+		function paneScrollMetrics(input = {}, options = {}) {
+			const scrollHeight = nonNegativeNumber(input.scrollHeight);
+			const clientHeight = nonNegativeNumber(input.clientHeight);
+			const scrollTop = nonNegativeNumber(input.scrollTop);
+			const nearBottomPx = nonNegativeNumber(options.nearBottomPx || input.nearBottomPx, DEFAULT_PANE_NEAR_BOTTOM_PX);
+			const distanceFromBottom = Math.max(0, scrollHeight - clientHeight - scrollTop);
+			return {
+				action: "pane-scroll-metrics",
+				distanceFromBottom,
+				nearBottom: distanceFromBottom <= nearBottomPx,
+				hold: input.hold === true,
+				scrollHeight,
+				clientHeight,
+				scrollTop,
+				nearBottomPx
+			};
+		}
+		function paneScrollHoldPlan(input = {}, options = {}) {
+			const metrics = input.action === "pane-scroll-metrics" ? input : paneScrollMetrics(input, options);
+			return {
+				action: "pane-scroll-hold",
+				reason: metrics.nearBottom ? "near-bottom" : "away-from-bottom",
+				rememberHold: metrics.nearBottom !== true,
+				clearHold: metrics.nearBottom === true,
+				metrics
+			};
+		}
+		function paneBottomButtonPlan(input = {}, options = {}) {
+			const metrics = input.metrics && input.metrics.action === "pane-scroll-metrics" ? input.metrics : paneScrollMetrics(input, options);
+			const scrollableDeltaPx = nonNegativeNumber(options.scrollableDeltaPx || input.scrollableDeltaPx, DEFAULT_PANE_SCROLLABLE_DELTA_PX);
+			const scrollable = Math.max(0, metrics.scrollHeight - metrics.clientHeight) > scrollableDeltaPx;
+			const shouldShow = Boolean(scrollable && !metrics.nearBottom);
+			return {
+				action: "pane-bottom-button",
+				reason: shouldShow ? "show" : scrollable ? "near-bottom" : "not-scrollable",
+				shouldShow,
+				scrollable,
+				scrollableDeltaPx,
+				metrics
+			};
+		}
+		function paneScrollRestorePlan(input = {}, options = {}) {
+			const previous = input.previous && typeof input.previous === "object" ? input.previous : null;
+			const rememberedHold = input.rememberedHold === true;
+			const hold = Boolean(previous && previous.hold === true) || rememberedHold;
+			const scrollHeight = nonNegativeNumber(input.scrollHeight);
+			const clientHeight = nonNegativeNumber(input.clientHeight);
+			const distanceFromBottom = nonNegativeNumber(previous && previous.distanceFromBottom);
+			if (input.stickToBottom === true || !previous || !hold || previous.nearBottom === true) return {
+				action: "pane-scroll-restore",
+				reason: input.stickToBottom === true ? "stick-to-bottom" : !previous ? "missing-previous" : !hold ? "no-hold" : "previous-near-bottom",
+				mode: "bottom",
+				top: Math.max(0, scrollHeight),
+				hold
+			};
+			return {
+				action: "pane-scroll-restore",
+				reason: "restore-distance",
+				mode: "restore-distance",
+				top: Math.max(0, scrollHeight - clientHeight - distanceFromBottom),
+				hold
+			};
+		}
+		function switchMenuOptionsPlan(input = {}) {
+			return uniqueIds([
+				text(input.currentId || input.currentThreadId || input.threadId).trim(),
+				...Array.isArray(input.activeIds) ? input.activeIds : [],
+				...Array.isArray(input.runningIds) ? input.runningIds : [],
+				...Array.isArray(input.visibleIds) ? input.visibleIds : []
+			]);
+		}
+		function switchMenuPlan(input = {}) {
+			const currentId = text(input.currentId || input.threadId).trim();
+			const switchMenuPaneId = text(input.switchMenuPaneId || input.openPaneId).trim();
+			const options = uniqueIds(input.options || switchMenuOptionsPlan(input));
+			const activeIds = uniqueIds(input.activeIds || []);
+			const countInput = Number(input.count);
+			const count = Math.max(0, Math.floor(Number.isFinite(countInput) ? countInput : activeIds.length));
+			const minCount = Math.max(0, Math.floor(Number(input.minCount || 0)) || 0);
+			const maxCount = Math.max(minCount, Math.floor(Number(input.maxCount || 0)) || 0);
+			if (!currentId) return {
+				action: "skip",
+				reason: "missing-id",
+				currentId,
+				options,
+				activeIds,
+				count,
+				minCount,
+				maxCount,
+				canClose: false,
+				canAdd: false
+			};
+			if (switchMenuPaneId !== currentId) return {
+				action: "skip",
+				reason: "closed",
+				currentId,
+				options,
+				activeIds,
+				count,
+				minCount,
+				maxCount,
+				canClose: false,
+				canAdd: false
+			};
+			if (!options.length) return {
+				action: "skip",
+				reason: "no-options",
+				currentId,
+				options,
+				activeIds,
+				count,
+				minCount,
+				maxCount,
+				canClose: false,
+				canAdd: false
+			};
+			return {
+				action: "render-switch-menu",
+				reason: "open",
+				currentId,
+				options,
+				activeIds,
+				count,
+				minCount,
+				maxCount,
+				canClose: activeIds.includes(currentId) && count > minCount,
+				canAdd: count < maxCount
+			};
+		}
+		function normalizeSplitPairs(values = [], ids = [], options = {}) {
+			const visibleIds = normalizePinnedIds(ids, { maxPanes: options.maxPanes });
+			const normalize = typeof options.normalizeSplitPairs === "function" ? options.normalizeSplitPairs : null;
+			return (normalize ? normalize(values, visibleIds) : []).map((pair) => ({
+				anchorId: String(pair && pair.anchorId || ""),
+				childId: String(pair && pair.childId || "")
+			})).filter((pair) => pair.anchorId && pair.childId);
+		}
+		function removeSplitPairsForIds(splitPairs = [], ids = []) {
+			const remove = new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean));
+			if (!remove.size) return {
+				changed: false,
+				splitPairs: Array.isArray(splitPairs) ? splitPairs : []
+			};
+			const current = Array.isArray(splitPairs) ? splitPairs : [];
+			const next = current.filter((pair) => pair && !remove.has(String(pair.anchorId || "")) && !remove.has(String(pair.childId || "")));
+			return {
+				changed: JSON.stringify(next) !== JSON.stringify(current),
+				splitPairs: next
+			};
+		}
+		function prependSplitPair(splitPairs = [], anchorId, childId, options = {}) {
+			const anchor = String(anchorId || "").trim();
+			const child = String(childId || "").trim();
+			if (!anchor || !child || anchor === child) return {
+				changed: false,
+				splitPairs: Array.isArray(splitPairs) ? splitPairs : []
+			};
+			const next = (Array.isArray(splitPairs) ? splitPairs : []).filter((pair) => pair && ![anchor, child].includes(String(pair.anchorId || "")) && ![anchor, child].includes(String(pair.childId || "")));
+			next.unshift({
+				anchorId: anchor,
+				childId: child
+			});
+			return {
+				changed: true,
+				splitPairs: normalizeSplitPairs(next, options.ids || [], options)
+			};
+		}
+		function paneSlotBase(input = {}, options = {}) {
+			return {
+				ids: uniqueIds(input.ids || input.activeIds || []),
+				pinnedIds: normalizePinnedIds(input.pinnedIds || input.threadTilePinnedIds || [], options),
+				splitPairs: Array.isArray(input.splitPairs || input.threadTileSplitPairs) ? input.splitPairs || input.threadTileSplitPairs : []
+			};
+		}
+		function fillPaneSlotIds(pinnedIds = [], ids = []) {
+			const nextIds = Array.isArray(pinnedIds) && pinnedIds.length ? pinnedIds.slice() : (ids || []).slice();
+			while (nextIds.length < ids.length) {
+				const fillId = ids[nextIds.length];
+				if (!fillId) break;
+				nextIds.push(fillId);
+			}
+			return nextIds;
+		}
+		function skipPaneSlot(reason, extra = {}) {
+			return Object.assign({
+				action: "skip",
+				reason
+			}, extra);
+		}
+		function replacePaneThreadPlan(input = {}, options = {}) {
+			const from = text(input.fromThreadId || input.fromId).trim();
+			const to = text(input.toThreadId || input.toId || input.threadId).trim();
+			const { ids, pinnedIds } = paneSlotBase(input, options);
+			if (input.enabled !== true) return skipPaneSlot("disabled", {
+				from,
+				to,
+				ids
+			});
+			if (!from || !to) return skipPaneSlot("missing-id", {
+				from,
+				to,
+				ids
+			});
+			const index = ids.indexOf(from);
+			if (index < 0) return skipPaneSlot("source-not-visible", {
+				from,
+				to,
+				ids
+			});
+			if (from === to) return {
+				action: "select",
+				reason: "same-thread",
+				from,
+				to,
+				index,
+				duplicateIndex: index,
+				paneThreadIds: pinnedIds.length ? pinnedIds : ids,
+				selectedThreadId: to,
+				switchMenuPaneId: "",
+				scrollResetIds: [],
+				renderMode: "patch",
+				loadThreadId: ""
+			};
+			const nextIds = fillPaneSlotIds(pinnedIds, ids);
+			const duplicateIndex = nextIds.indexOf(to);
+			if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
+			nextIds[index] = to;
+			return {
+				action: "replace",
+				reason: "replace-pane-thread",
+				from,
+				to,
+				index,
+				duplicateIndex,
+				paneThreadIds: normalizePinnedIds(nextIds, options),
+				selectedThreadId: to,
+				switchMenuPaneId: "",
+				scrollResetIds: [from, to],
+				renderMode: duplicateIndex >= 0 && duplicateIndex !== index ? "full" : "patch-source-pane",
+				loadThreadId: to
+			};
+		}
+		function movePaneRelativePlan(input = {}, options = {}) {
+			const from = text(input.fromThreadId || input.fromId).trim();
+			const to = text(input.toThreadId || input.toId).trim();
+			const placement = text(input.placement) === "before" ? "before" : "after";
+			const { ids, splitPairs } = paneSlotBase(input, options);
+			if (input.enabled !== true) return skipPaneSlot("disabled", {
+				from,
+				to,
+				ids,
+				placement
+			});
+			if (!from || !to) return skipPaneSlot("missing-id", {
+				from,
+				to,
+				ids,
+				placement
+			});
+			if (from === to) return skipPaneSlot("same-thread", {
+				from,
+				to,
+				ids,
+				placement
+			});
+			if (!ids.includes(from) || !ids.includes(to)) return skipPaneSlot("pane-not-visible", {
+				from,
+				to,
+				ids,
+				placement
+			});
+			const withoutFrom = ids.filter((id) => id !== from);
+			const targetIndex = withoutFrom.indexOf(to);
+			if (targetIndex < 0) return skipPaneSlot("target-not-visible", {
+				from,
+				to,
+				ids,
+				placement
+			});
+			withoutFrom.splice(placement === "before" ? targetIndex : targetIndex + 1, 0, from);
+			const paneThreadIds = normalizePinnedIds(withoutFrom, options);
+			const withoutSplit = removeSplitPairsForIds(splitPairs, [from]).splitPairs;
+			return {
+				action: "move",
+				reason: "move-pane",
+				from,
+				to,
+				placement,
+				paneThreadIds,
+				paneSplitPairs: normalizeSplitPairs(withoutSplit, paneThreadIds, options),
+				selectedThreadId: from,
+				switchMenuPaneId: ""
+			};
+		}
+		function splitPaneWithTargetPlan(input = {}, options = {}) {
+			const from = text(input.fromThreadId || input.fromId).trim();
+			const to = text(input.toThreadId || input.toId).trim();
+			const placement = text(input.placement) === "above" ? "above" : "below";
+			const { ids, splitPairs } = paneSlotBase(input, options);
+			if (input.enabled !== true) return skipPaneSlot("disabled", {
+				from,
+				to,
+				ids,
+				placement
+			});
+			if (!from || !to) return skipPaneSlot("missing-id", {
+				from,
+				to,
+				ids,
+				placement
+			});
+			if (from === to) return skipPaneSlot("same-thread", {
+				from,
+				to,
+				ids,
+				placement
+			});
+			if (!ids.includes(from) || !ids.includes(to)) return skipPaneSlot("pane-not-visible", {
+				from,
+				to,
+				ids,
+				placement
+			});
+			const targetIndex = ids.indexOf(to);
+			const nextIds = ids.filter((id) => id !== from && id !== to);
+			nextIds.splice(Math.max(0, targetIndex), 0, ...placement === "above" ? [from, to] : [to, from]);
+			const paneThreadIds = normalizePinnedIds(nextIds, options);
+			const pair = placement === "above" ? {
+				anchorId: from,
+				childId: to
+			} : {
+				anchorId: to,
+				childId: from
+			};
+			return {
+				action: "split",
+				reason: "split-pane",
+				from,
+				to,
+				placement,
+				paneThreadIds,
+				paneSplitPairs: prependSplitPair(splitPairs, pair.anchorId, pair.childId, Object.assign({}, options, { ids: paneThreadIds })).splitPairs,
+				selectedThreadId: from,
+				switchMenuPaneId: ""
+			};
+		}
+		function replaceLastPaneForThreadListOpenPlan(input = {}, options = {}) {
+			const id = text(input.threadId || input.toThreadId || input.toId).trim();
+			const source = text(input.source).trim();
+			const { ids, pinnedIds } = paneSlotBase(input, options);
+			if (input.enabled !== true) return skipPaneSlot("disabled", {
+				id,
+				ids,
+				source
+			});
+			if (source !== "thread-list") return skipPaneSlot("unsupported-source", {
+				id,
+				ids,
+				source
+			});
+			if (!id) return skipPaneSlot("missing-id", {
+				id,
+				ids,
+				source
+			});
+			if (!ids.length) return skipPaneSlot("no-panes", {
+				id,
+				ids,
+				source
+			});
+			if (ids.includes(id)) return skipPaneSlot("already-visible", {
+				id,
+				ids,
+				source
+			});
+			const index = ids.length - 1;
+			const from = ids[index] || "";
+			if (!from || from === id) return skipPaneSlot("missing-source-pane", {
+				id,
+				ids,
+				source
+			});
+			const nextIds = fillPaneSlotIds(pinnedIds, ids);
+			const duplicateIndex = nextIds.indexOf(id);
+			if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
+			nextIds[index] = id;
+			const paneThreadIds = normalizePinnedIds(nextIds, options);
+			if (idsEqual(pinnedIds, paneThreadIds)) return skipPaneSlot("unchanged", {
+				id,
+				ids,
+				source
+			});
+			return {
+				action: "replace-last",
+				reason: "thread-list-open",
+				from,
+				to: id,
+				index,
+				duplicateIndex,
+				paneThreadIds,
+				selectedThreadId: id,
+				switchMenuPaneId: "",
+				scrollResetIds: [from, id]
+			};
+		}
+		function paneSlotMutationEffectsPlan(plan = {}, options = {}) {
+			const sourceAction = text(plan.action).trim();
+			if (!sourceAction || sourceAction === "skip") return skipPaneSlot("no-mutation-plan", { sourceAction });
+			const paneThreadIds = Array.isArray(plan.paneThreadIds) ? normalizePinnedIds(plan.paneThreadIds, options) : null;
+			const base = {
+				action: "pane-slot-effects",
+				reason: text(plan.reason || sourceAction).trim() || sourceAction,
+				sourceAction,
+				paneThreadIds,
+				paneSplitPairs: Array.isArray(plan.paneSplitPairs) ? plan.paneSplitPairs : null,
+				paneCount: Number.isFinite(Number(plan.paneCount)) ? Math.max(0, Math.floor(Number(plan.paneCount))) : null,
+				selectedThreadId: text(plan.selectedThreadId).trim(),
+				switchMenuPaneId: text(plan.switchMenuPaneId).trim(),
+				scrollResetIds: uniqueIds(plan.scrollResetIds || []),
+				saveDraft: false,
+				restoreDraft: false,
+				updateComposer: false,
+				scheduleSettingsSave: true,
+				refreshActiveIds: false,
+				selectionPolicy: "none",
+				selectionEmptyFallback: false,
+				loadThreadId: text(plan.loadThreadId).trim(),
+				loadSource: "tile-switch",
+				renderMode: "none",
+				renderStickToBottom: false,
+				patchThreadId: "",
+				patchSourceThreadId: "",
+				patchStickToBottom: false,
+				scheduleFullRenderOnPatchMiss: false
+			};
+			if (sourceAction === "select" || sourceAction === "replace") return Object.assign(base, {
+				saveDraft: true,
+				restoreDraft: true,
+				updateComposer: true,
+				refreshActiveIds: true,
+				renderMode: text(plan.renderMode) === "full" ? "schedule-full" : "patch-pane",
+				patchThreadId: text(plan.to || plan.threadId).trim(),
+				patchSourceThreadId: text(plan.from || plan.threadId).trim(),
+				patchStickToBottom: true,
+				scheduleFullRenderOnPatchMiss: true
+			});
+			if (sourceAction === "move" || sourceAction === "split") return Object.assign(base, {
+				saveDraft: true,
+				restoreDraft: true,
+				updateComposer: true,
+				renderMode: "full",
+				renderStickToBottom: true
+			});
+			if (sourceAction === "replace-last") return Object.assign(base, { refreshActiveIds: true });
+			if (sourceAction === "set-pane-count") return Object.assign(base, {
+				selectionPolicy: "pane-selection",
+				selectionEmptyFallback: false,
+				renderMode: options.render === false ? "none" : "full",
+				renderStickToBottom: options.render !== false
+			});
+			if (sourceAction === "close-pane") return Object.assign(base, {
+				saveDraft: true,
+				restoreDraft: true,
+				updateComposer: true,
+				selectionPolicy: "pane-selection",
+				selectionEmptyFallback: true,
+				renderMode: "full",
+				renderStickToBottom: true
+			});
+			return skipPaneSlot("unsupported-mutation-plan", { sourceAction });
+		}
+		function dropPaneIntent(input = {}, options = {}) {
+			const from = text(input.fromThreadId || input.fromId || input.draggingId).trim();
+			const to = text(input.toThreadId || input.toId || input.targetId).trim();
+			if (!from || !to) return skipPaneSlot("missing-id", {
+				from,
+				to
+			});
+			if (from === to) return skipPaneSlot("same-thread", {
+				from,
+				to
+			});
+			const left = Number(input.left || 0);
+			const top = Number(input.top || 0);
+			const width = Math.max(1, Number(input.width || 1));
+			const height = Math.max(1, Number(input.height || 1));
+			const x = (Number(input.clientX || 0) - left) / width;
+			const y = (Number(input.clientY || 0) - top) / height;
+			const beforeThreshold = Number.isFinite(Number(options.beforeThreshold)) ? Number(options.beforeThreshold) : .24;
+			const afterThreshold = Number.isFinite(Number(options.afterThreshold)) ? Number(options.afterThreshold) : .76;
+			return x < beforeThreshold ? {
+				action: "move-relative",
+				from,
+				to,
+				placement: "before",
+				x,
+				y
+			} : x > afterThreshold ? {
+				action: "move-relative",
+				from,
+				to,
+				placement: "after",
+				x,
+				y
+			} : {
+				action: "split-with-target",
+				from,
+				to,
+				placement: y < .5 ? "above" : "below",
+				x,
+				y
+			};
+		}
+		function paneSelectionPlan(input = {}) {
+			const ids = uniqueIds(input.ids || input.activeIds || []);
+			const selectedThreadId = text(input.selectedThreadId).trim();
+			if (selectedThreadId && ids.includes(selectedThreadId)) return {
+				selectedThreadId,
+				changed: false,
+				reason: "selected-visible"
+			};
+			if (!selectedThreadId && input.emptyFallback !== true) return {
+				selectedThreadId: "",
+				changed: false,
+				reason: "empty-selection"
+			};
+			return {
+				selectedThreadId: ids[0] || "",
+				changed: selectedThreadId !== (ids[0] || ""),
+				reason: selectedThreadId ? "selected-missing" : "empty-fallback"
+			};
+		}
+		function selectPanePlan(input = {}) {
+			const id = text(input.threadId || input.paneId).trim();
+			const activeIds = uniqueIds(input.activeIds || input.ids || []);
+			const selectedThreadId = text(input.selectedThreadId).trim();
+			if (input.enabled !== true) return skipPaneSlot("disabled", {
+				id,
+				activeIds
+			});
+			if (!id) return skipPaneSlot("missing-id", {
+				id,
+				activeIds
+			});
+			if (!activeIds.includes(id)) return skipPaneSlot("pane-not-active", {
+				id,
+				activeIds
+			});
+			if (selectedThreadId === id) return skipPaneSlot("unchanged", {
+				id,
+				activeIds,
+				selectedThreadId
+			});
+			return {
+				action: "select-pane",
+				reason: "select-pane",
+				threadId: id,
+				previousThreadId: selectedThreadId,
+				selectedThreadId: id,
+				patchThreadIds: uniqueIds([id, selectedThreadId])
+			};
+		}
+		function selectedPaneEffectsPlan(plan = {}, options = {}) {
+			const sourceAction = text(plan.action).trim();
+			if (sourceAction !== "select-pane") return skipPaneSlot("unsupported-select-pane-plan", { sourceAction });
+			const selectedThreadId = text(plan.selectedThreadId || plan.threadId).trim();
+			if (!selectedThreadId) return skipPaneSlot("missing-id", { selectedThreadId });
+			return {
+				action: "selected-pane-effects",
+				reason: text(plan.reason || sourceAction).trim() || sourceAction,
+				sourceAction,
+				selectedThreadId,
+				patchThreadIds: uniqueIds(plan.patchThreadIds || [selectedThreadId]),
+				saveDraft: true,
+				restoreDraft: true,
+				updateComposer: true,
+				renderMode: options.render === false ? "none" : "patch-panes",
+				patchPreserveScroll: true,
+				scheduleFullRenderOnPatchMiss: true
+			};
+		}
+		function paneCountChangePlan(input = {}, options = {}) {
+			if (input.enabled !== true) return skipPaneSlot("disabled");
+			if (input.layoutEnabled !== true) return skipPaneSlot("layout-disabled");
+			const minCount = Math.max(1, Math.floor(Number(input.minCount || 1)) || 1);
+			const maxCount = Math.max(minCount, Math.floor(Number(input.maxCount || minCount)) || minCount);
+			const currentCount = Math.max(minCount, Math.floor(Number(input.currentCount || minCount)) || minCount);
+			const storedPaneCount = normalizePaneCount(input.storedPaneCount, {
+				fallback: 0,
+				maxPanes: options.maxPanes
+			});
+			const requested = normalizePaneCount(input.nextCount, {
+				fallback: currentCount,
+				maxPanes: options.maxPanes
+			});
+			const paneCount = Math.max(minCount, Math.min(maxCount, requested));
+			if (paneCount === currentCount && storedPaneCount === paneCount) return skipPaneSlot("unchanged", {
+				paneCount,
+				currentCount,
+				minCount,
+				maxCount
+			});
+			return {
+				action: "set-pane-count",
+				reason: "set-pane-count",
+				paneCount,
+				currentCount,
+				minCount,
+				maxCount,
+				switchMenuPaneId: ""
+			};
+		}
+		function closePanePlan(input = {}, options = {}) {
+			const id = text(input.threadId || input.paneId).trim();
+			const ids = uniqueIds(input.ids || input.activeIds || []);
+			if (input.enabled !== true) return skipPaneSlot("disabled", {
+				id,
+				ids
+			});
+			if (input.layoutEnabled !== true) return skipPaneSlot("layout-disabled", {
+				id,
+				ids
+			});
+			if (!id) return skipPaneSlot("missing-id", {
+				id,
+				ids
+			});
+			if (!ids.includes(id)) return skipPaneSlot("pane-not-visible", {
+				id,
+				ids
+			});
+			const minCount = Math.max(1, Math.floor(Number(input.minCount || 1)) || 1);
+			if (ids.length <= minCount) return skipPaneSlot("min-pane-count", {
+				id,
+				ids,
+				minCount
+			});
+			const nextCount = Math.max(minCount, ids.length - 1);
+			const pinnedIds = normalizePinnedIds(input.pinnedIds || [], options);
+			const sourceIds = pinnedIds.length ? pinnedIds : ids;
+			const defaultIds = uniqueIds(input.defaultIds || input.fillIds || []);
+			const remaining = sourceIds.filter((candidateId) => candidateId !== id);
+			const fillIds = defaultIds.filter((candidateId) => candidateId !== id);
+			return {
+				action: "close-pane",
+				reason: "close-pane",
+				threadId: id,
+				paneCount: nextCount,
+				paneThreadIds: normalizePinnedIds([...remaining, ...fillIds], options),
+				switchMenuPaneId: "",
+				scrollResetIds: [id]
+			};
+		}
+		function effectiveSelectedThreadId(input = {}) {
+			const activeIds = normalizePinnedIds(input.activeIds || input.ids || [], { maxPanes: input.maxPanes });
+			if (input.enabled === false || !activeIds.length) return "";
+			const selected = String(input.selectedThreadId || "").trim();
+			if (selected && activeIds.includes(selected)) return selected;
+			const current = String(input.currentThreadId || "").trim();
+			if (current && activeIds.includes(current)) return current;
+			return activeIds[0] || "";
+		}
+		function composerTargetPlan(input = {}, options = {}) {
+			const newThreadDraft = input.newThreadDraft === true;
+			const activeIds = normalizePinnedIds(input.activeIds || input.ids || [], { maxPanes: options.maxPanes || input.maxPanes });
+			const tileContext = Boolean(input.threadTileMode === true && input.tileSurfaceActive === true && activeIds.length);
+			const selectedThreadId = effectiveSelectedThreadId({
+				enabled: input.threadTileMode === true,
+				activeIds,
+				selectedThreadId: input.selectedThreadId,
+				currentThreadId: input.currentThreadId,
+				maxPanes: options.maxPanes || input.maxPanes
+			});
+			const currentThreadId = text(input.currentThreadId).trim();
+			return {
+				action: "composer-target",
+				reason: newThreadDraft ? "new-thread" : selectedThreadId ? "selected-pane" : currentThreadId ? "current-thread" : "missing-thread",
+				mode: newThreadDraft ? "new-thread" : "thread",
+				newThreadDraft,
+				tileContext,
+				activeIds,
+				selectedThreadId,
+				currentThreadId,
+				targetThreadId: newThreadDraft ? "" : selectedThreadId || currentThreadId || ""
+			};
+		}
+		function composerTargetPlaceholderPlan(input = {}) {
+			if (input.newThreadDraft === true || String(input.mode || "") === "new-thread") return {
+				action: "composer-target-placeholder",
+				reason: "new-thread",
+				showTargetPlaceholder: false,
+				text: text(input.newThreadPlaceholder || "输入第一条消息")
+			};
+			const targetThreadId = text(input.targetThreadId).trim();
+			const targetTitle = text(input.targetTitle || targetThreadId).trim();
+			const showTargetPlaceholder = Boolean(input.tileContext === true && targetThreadId && input.hasTargetThread === true);
+			return {
+				action: "composer-target-placeholder",
+				reason: showTargetPlaceholder ? "tile-target" : "default",
+				showTargetPlaceholder,
+				text: showTargetPlaceholder ? `发送到：${targetTitle || targetThreadId}` : text(input.defaultPlaceholder || "Message Codex")
+			};
+		}
+		function composerActionControlPlan(input = {}) {
+			const newThreadDraft = input.newThreadDraft === true || input.hasNewThreadDraft === true;
+			const hasThread = input.hasThread === true;
+			const composerBusy = input.composerBusy === true;
+			const attachmentProcessingCount = Math.max(0, Math.floor(Number(input.attachmentProcessingCount || 0)) || 0);
+			const hasContent = input.hasContent === true;
+			const hasActiveTurn = Boolean(!newThreadDraft && text(input.targetActiveTurnId || input.activeTurnId).trim());
+			const disabled = !(hasThread || newThreadDraft) || composerBusy || attachmentProcessingCount > 0;
+			const interruptMode = hasActiveTurn && !hasContent;
+			const steerMode = hasActiveTurn && hasContent;
+			const retryMode = Boolean(text(input.sendButtonHint).trim() || input.showRetryHint === true);
+			const goalCommandMode = input.goalCommandMode === true;
+			const bareIntentKind = text(input.bareIntentKind).trim();
+			const commandMode = input.commandMode === true;
+			const steeringBusy = Boolean(input.steeringBusy === true || input.steering === true);
+			const voiceGestureAvailable = input.voiceGestureAvailable === true;
+			const hermesEmbedMode = input.hermesEmbedMode === true;
+			const bareIntentTitle = text(input.bareIntentTitle || input.intentTitle).trim();
+			let mode = "send";
+			let reason = "send";
+			let label = "Send";
+			let title = newThreadDraft ? "Create new chat" : "Send message";
+			let labelProxy = false;
+			if (interruptMode) {
+				mode = "interrupt";
+				reason = "active-turn-interrupt";
+				label = "Stop";
+				title = "Interrupt current turn";
+				labelProxy = hermesEmbedMode;
+			} else if (composerBusy) {
+				mode = "busy";
+				reason = steeringBusy ? "steering-sending" : "message-sending";
+				label = steeringBusy ? "引导中…" : "发送中…";
+				title = steeringBusy ? "Steering current turn" : "Message is sending";
+			} else if (retryMode) {
+				mode = "retry";
+				reason = "retry";
+				label = "重试";
+				title = "Retry sending message";
+			} else if (goalCommandMode) {
+				mode = "goal";
+				reason = "goal-command";
+				label = "Goal";
+				title = "Open goal dialog";
+			} else if (bareIntentKind) {
+				mode = "intent";
+				reason = "bare-intent";
+				label = "Open";
+				title = bareIntentTitle || "Open composer action";
+			} else if (commandMode) {
+				mode = "task-card";
+				reason = "task-card-command";
+				label = "Task card";
+				title = "Ask Codex to draft a cross-thread task card";
+			} else if (steerMode) {
+				mode = "steer";
+				reason = "active-turn-steer";
+				label = "引导";
+				title = "Guide the current running turn";
+			}
+			if (voiceGestureAvailable && !composerBusy && !interruptMode) title = `${title || "Send"}；按住录音，松开转写`;
+			const ariaLabel = voiceGestureAvailable && !composerBusy && !interruptMode ? `${label || "Send"}。按住可语音输入` : interruptMode && hermesEmbedMode ? "Stop。按住可语音输入，轻点可中断当前任务" : "";
+			return {
+				action: "composer-action-control",
+				reason,
+				mode,
+				disabled,
+				sendButtonDisabled: disabled || !interruptMode && !hasContent && !voiceGestureAvailable,
+				interruptMode,
+				steerMode,
+				hasContent,
+				voiceGestureAvailable,
+				label,
+				labelProxy,
+				title,
+				ariaLabel,
+				classState: {
+					interruptMode,
+					sending: mode === "busy",
+					sendFailed: mode === "retry",
+					steerMode: mode === "steer" || mode === "busy" && steeringBusy,
+					pluginVoiceInputGesture: voiceGestureAvailable
+				}
+			};
+		}
+		function composerDraftRuntimeSelectionPlan(input = {}) {
+			const draft = input.draft && typeof input.draft === "object" ? input.draft : null;
+			const hasDraft = Boolean(draft);
+			const newThreadDraft = input.newThreadDraft === true;
+			const model = text(draft && draft.model).trim();
+			const effort = text(draft && draft.effort).trim();
+			const permissionMode = text(input.effectivePermissionMode || input.permissionMode).trim();
+			const modelOptions = new Set((Array.isArray(input.modelOptions) ? input.modelOptions : []).map((value) => text(value).trim()).filter(Boolean));
+			const effortOptions = new Set((Array.isArray(input.reasoningEffortOptions || input.effortOptions) ? input.reasoningEffortOptions || input.effortOptions : []).map((value) => text(value).trim()).filter(Boolean));
+			const permissionOptions = new Set((Array.isArray(input.permissionModeOptions) ? input.permissionModeOptions : []).map((value) => text(value).trim()).filter(Boolean));
+			const resetRuntimeWhenMissingDraft = input.resetRuntimeWhenMissingDraft === true;
+			const defaultNewThreadModel = text(input.defaultNewThreadModel).trim();
+			const defaultNewThreadEffort = text(input.defaultNewThreadEffort).trim();
+			const defaultNewThreadPermissionMode = text(input.defaultNewThreadPermissionMode).trim();
+			const plan = {
+				action: "composer-draft-runtime-selection",
+				reason: newThreadDraft ? hasDraft ? "new-thread-draft" : "new-thread-defaults" : hasDraft ? "thread-draft" : resetRuntimeWhenMissingDraft ? "missing-draft-reset" : "missing-draft-keep",
+				mode: newThreadDraft ? "new-thread" : "thread",
+				hasDraft,
+				newThreadDraft,
+				fastMode: Boolean(draft && draft.fastMode === true),
+				clearNewThreadTitle: !newThreadDraft,
+				setNewThreadRuntime: newThreadDraft,
+				setThreadRuntime: !newThreadDraft && (hasDraft || resetRuntimeWhenMissingDraft),
+				newThreadTitle: "",
+				newThreadModel: "",
+				newThreadEffort: "",
+				newThreadPermissionMode: "",
+				composerModel: "",
+				composerEffort: "",
+				composerPermissionMode: ""
+			};
+			if (newThreadDraft) {
+				plan.newThreadTitle = text(draft && draft.threadTitle).trim();
+				plan.newThreadModel = model && modelOptions.has(model) ? model : defaultNewThreadModel;
+				plan.newThreadEffort = effort && effortOptions.has(effort) ? effort : defaultNewThreadEffort;
+				plan.newThreadPermissionMode = permissionMode || defaultNewThreadPermissionMode;
+				return plan;
+			}
+			if (!hasDraft && !resetRuntimeWhenMissingDraft) return plan;
+			plan.composerModel = model && modelOptions.has(model) ? model : "";
+			plan.composerEffort = effort && effortOptions.has(effort) ? effort : "";
+			plan.composerPermissionMode = permissionMode && permissionOptions.has(permissionMode) ? permissionMode : "";
+			return plan;
+		}
+		function displaySettingsPayload(input = {}, options = {}) {
+			const paneThreadIds = normalizePinnedIds(input.paneThreadIds || input.threadTilePinnedIds || [], options);
+			const paneCountInput = Object.prototype.hasOwnProperty.call(input, "paneCount") ? input.paneCount : input.threadTilePaneCount;
+			return {
+				displayMode: Boolean(input.threadTileMode) || String(input.displayMode || "").toLowerCase() === "tile" ? "tile" : "single",
+				paneThreadIds,
+				paneCount: normalizePaneCount(paneCountInput, {
+					fallback: 0,
+					maxPanes: options.maxPanes
+				}),
+				paneSplitPairs: normalizeSplitPairs(input.paneSplitPairs || input.threadTileSplitPairs || [], paneThreadIds, options),
+				selectedThreadId: String(input.selectedThreadId || input.threadTileSelectedThreadId || "")
+			};
+		}
+		function normalizeDisplaySettings(settings = {}, options = {}) {
+			const displayMode = String(settings.displayMode || (settings.threadTileMode ? "tile" : "single")).toLowerCase() === "tile" ? "tile" : "single";
+			const paneThreadIds = normalizePinnedIds(settings.paneThreadIds || settings.threadTilePinnedIds || [], options);
+			const paneSplitPairs = normalizeSplitPairs(settings.paneSplitPairs || settings.threadTileSplitPairs || settings.splitPairs || [], paneThreadIds, options);
+			const paneCountInput = Object.prototype.hasOwnProperty.call(settings, "paneCount") ? settings.paneCount : Object.prototype.hasOwnProperty.call(settings, "threadTilePaneCount") ? settings.threadTilePaneCount : settings.tilePaneCount;
+			const selected = String(settings.selectedThreadId || "").trim();
+			return {
+				displayMode,
+				threadTileMode: displayMode === "tile",
+				paneThreadIds,
+				paneSplitPairs,
+				paneCount: normalizePaneCount(paneCountInput, {
+					fallback: 0,
+					maxPanes: options.maxPanes
+				}),
+				selectedThreadId: selected && paneThreadIds.includes(selected) ? selected : ""
+			};
+		}
+		function displaySettingsLoadPlan(input = {}) {
+			const localDisplayMode = text(input.localDisplayMode).trim().toLowerCase() === "tile" ? "tile" : "single";
+			const settings = input.settings && typeof input.settings === "object" ? input.settings : {};
+			if (input.loadFailed === true) return {
+				action: localDisplayMode === "tile" ? "apply-display-settings" : "skip",
+				reason: localDisplayMode === "tile" ? "load-error-local-tile" : "load-error-no-local-tile",
+				settings: localDisplayMode === "tile" ? { displayMode: "tile" } : null,
+				saveAfterApply: false,
+				rethrow: true
+			};
+			const source = text(settings.source || input.source).trim();
+			if (source !== "runtime" && localDisplayMode === "tile") return {
+				action: "apply-display-settings",
+				reason: "legacy-local-tile-migration",
+				settings: {
+					displayMode: "tile",
+					paneThreadIds: [],
+					selectedThreadId: ""
+				},
+				saveAfterApply: true,
+				rethrow: false
+			};
+			return {
+				action: "apply-display-settings",
+				reason: source === "runtime" ? "runtime-settings" : "default-settings",
+				settings,
+				saveAfterApply: false,
+				rethrow: false
+			};
+		}
+		function syncPinnedIdsFromActiveIds(input = {}, options = {}) {
+			const activeIds = normalizePinnedIds(input.activeIds || [], options);
+			const currentPinnedIds = normalizePinnedIds(input.pinnedIds || input.threadTilePinnedIds || [], options);
+			if (input.enabled === false || !activeIds.length) return {
+				changed: false,
+				paneThreadIds: currentPinnedIds,
+				paneSplitPairs: input.splitPairs || []
+			};
+			const visibleIds = new Set((input.visibleIds || []).map((id) => String(id || "").trim()).filter(Boolean));
+			if (idsEqual(currentPinnedIds.filter((id) => visibleIds.has(id)).slice(0, activeIds.length), activeIds)) return {
+				changed: false,
+				paneThreadIds: currentPinnedIds,
+				paneSplitPairs: input.splitPairs || []
+			};
+			const remaining = currentPinnedIds.filter((id) => !activeIds.includes(id));
+			const paneThreadIds = normalizePinnedIds([...activeIds, ...remaining], options);
+			return {
+				changed: true,
+				paneThreadIds,
+				paneSplitPairs: normalizeSplitPairs(input.splitPairs || [], paneThreadIds, options)
+			};
+		}
+		function activePaneSyncPlan(input = {}, options = {}) {
+			const activeIds = normalizePinnedIds(input.activeIds || [], options);
+			const selectedThreadId = text(input.selectedThreadId).trim();
+			const currentPinnedIds = normalizePinnedIds(input.pinnedIds || input.threadTilePinnedIds || [], options);
+			const splitPairs = Array.isArray(input.splitPairs || input.threadTileSplitPairs) ? input.splitPairs || input.threadTileSplitPairs : [];
+			if (input.enabled !== true || !activeIds.length) return {
+				action: "sync-active-panes",
+				reason: input.enabled === true ? "no-active-panes" : "disabled",
+				changed: Boolean(selectedThreadId),
+				settingsChanged: false,
+				pinnedChanged: false,
+				selectedChanged: Boolean(selectedThreadId),
+				activeIds,
+				paneThreadIds: currentPinnedIds,
+				paneSplitPairs: splitPairs,
+				selectedThreadId: ""
+			};
+			const pinned = syncPinnedIdsFromActiveIds({
+				enabled: true,
+				activeIds,
+				pinnedIds: currentPinnedIds,
+				visibleIds: input.visibleIds,
+				splitPairs
+			}, options);
+			const nextSelectedThreadId = effectiveSelectedThreadId({
+				enabled: true,
+				activeIds,
+				selectedThreadId,
+				currentThreadId: input.currentThreadId,
+				maxPanes: options.maxPanes
+			});
+			const selectedChanged = selectedThreadId !== nextSelectedThreadId;
+			return {
+				action: "sync-active-panes",
+				reason: pinned.changed || selectedChanged ? "sync" : "unchanged",
+				changed: pinned.changed || selectedChanged,
+				settingsChanged: pinned.changed,
+				pinnedChanged: pinned.changed,
+				selectedChanged,
+				activeIds,
+				paneThreadIds: pinned.paneThreadIds,
+				paneSplitPairs: pinned.paneSplitPairs,
+				selectedThreadId: nextSelectedThreadId
+			};
+		}
+		function normalizeOperationMode(mode) {
+			return text(mode) === "expanded" ? "expanded" : "compact";
+		}
+		function toggleOperationMode(mode) {
+			return normalizeOperationMode(mode) === "expanded" ? "compact" : "expanded";
+		}
+		function operationModeTogglePlan(input = {}) {
+			const id = text(input.threadId || input.paneId).trim();
+			if (input.enabled !== true) return skipPaneSlot("disabled", { id });
+			if (!id) return skipPaneSlot("missing-id", { id });
+			const previousMode = normalizeOperationMode(input.mode || input.currentMode);
+			return {
+				action: "operation-mode-toggle-effects",
+				reason: "toggle-operation-mode",
+				id,
+				previousMode,
+				mode: toggleOperationMode(previousMode),
+				selectPane: true,
+				selectPaneRender: false,
+				patchThreadId: id,
+				patchPreserveScroll: true,
+				scheduleFullRenderOnPatchMiss: true
+			};
+		}
+		function operationBubbleRecord(input = {}) {
+			const id = text(input.threadId).trim();
+			const html = text(input.html);
+			const marker = text(input.bubbleMarker || "mobile-operation-bubble");
+			if (!id || !html || !html.includes(marker)) return null;
+			const minVisibleMs = Math.max(0, Number(input.minVisibleMs || DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS));
+			return {
+				html,
+				visibleUntilMs: nowValue(input.nowMs) + minVisibleMs
+			};
+		}
+		function operationBubbleSnapshot(record, input = {}) {
+			if (!record) return {
+				visible: false,
+				html: "",
+				remainingMs: 0,
+				expired: false
+			};
+			const remainingMs = Number(record.visibleUntilMs || 0) - nowValue(input.nowMs);
+			if (remainingMs <= 0) return {
+				visible: false,
+				html: "",
+				remainingMs: 0,
+				expired: true
+			};
+			return {
+				visible: true,
+				html: text(record.html),
+				remainingMs,
+				expired: false
+			};
+		}
+		function operationDockPlan(input = {}) {
+			const id = text(input.threadId || input.id).trim();
+			const mode = normalizeOperationMode(input.mode);
+			const expanded = mode === "expanded";
+			if (!id) return {
+				action: "none",
+				reason: "missing-id",
+				id: "",
+				mode,
+				expanded
+			};
+			const entryType = text(input.entryType || input.operationType);
+			if (input.hasOperation === true || Boolean(entryType && entryType !== "liveTurnStatus")) return {
+				action: "render-live-operation",
+				reason: "active-operation",
+				id,
+				mode,
+				expanded,
+				remember: true
+			};
+			if (input.hasLiveTurn !== true) return {
+				action: "none",
+				reason: "no-live-turn",
+				id,
+				mode,
+				expanded
+			};
+			const remembered = operationBubbleSnapshot(input.remembered, { nowMs: input.nowMs });
+			if (remembered.visible) return {
+				action: "render-remembered-operation",
+				reason: "remembered-visible",
+				id,
+				mode,
+				expanded,
+				html: remembered.html,
+				remainingMs: remembered.remainingMs,
+				scheduleMinimumRefresh: true
+			};
+			if (remembered.expired) return {
+				action: "clear-remembered-operation",
+				reason: "remembered-expired",
+				id,
+				mode,
+				expanded,
+				clearRemembered: true
+			};
+			return {
+				action: "none",
+				reason: "no-remembered-operation",
+				id,
+				mode,
+				expanded
+			};
+		}
+		function operationSignature(input = {}) {
+			const remembered = operationBubbleSnapshot(input.remembered, { nowMs: input.nowMs });
+			return {
+				mode: normalizeOperationMode(input.mode),
+				rememberedVisible: remembered.visible,
+				entry: input.entrySignature || null
+			};
+		}
+		function operationMinimumRefreshPlan(input = {}) {
+			const activeIds = uniqueIds(input.activeIds || input.ids || []);
+			if (input.enabled !== true) return {
+				action: "operation-minimum-refresh",
+				reason: "disabled",
+				patchThreadIds: [],
+				fullRenderOnPatchMiss: false
+			};
+			return {
+				action: "operation-minimum-refresh",
+				reason: activeIds.length ? "patch-active-panes" : "no-active-panes",
+				patchThreadIds: activeIds,
+				fullRenderOnPatchMiss: true
+			};
+		}
+		function paneRenderFramePlan(input = {}) {
+			const id = text(input.threadId || input.paneId).trim();
+			if (!id) return {
+				action: "skip",
+				reason: "missing-id",
+				id: "",
+				scheduleFrame: false,
+				returnValue: false,
+				fullRenderOnPatchMiss: false
+			};
+			if (input.enabled !== true) return {
+				action: "skip",
+				reason: "disabled",
+				id,
+				scheduleFrame: false,
+				returnValue: false,
+				fullRenderOnPatchMiss: false
+			};
+			if (input.visible !== true) return {
+				action: "skip",
+				reason: "pane-not-visible",
+				id,
+				scheduleFrame: false,
+				returnValue: false,
+				fullRenderOnPatchMiss: false
+			};
+			if (input.hasFrame === true) return {
+				action: "already-scheduled",
+				reason: "frame-active",
+				id,
+				scheduleFrame: false,
+				returnValue: true,
+				fullRenderOnPatchMiss: false
+			};
+			return {
+				action: "schedule-pane-render",
+				reason: "ready",
+				id,
+				scheduleFrame: true,
+				returnValue: true,
+				fullRenderOnPatchMiss: input.fullRenderOnPatchMiss !== false
+			};
+		}
+		function booleanFact(input = {}, key) {
+			return Object.prototype.hasOwnProperty.call(input, key) ? input[key] === true : null;
+		}
+		function panePatchPreflightSkip(reason, details = {}) {
+			return Object.assign({
+				action: "skip",
+				reason,
+				canPatch: false,
+				shouldContinue: false,
+				id: "",
+				ids: []
+			}, details);
+		}
+		function panePatchPreflightPlan(input = {}) {
+			const id = text(input.threadId || input.paneId).trim();
+			const hasIds = Array.isArray(input.ids || input.activeIds);
+			const ids = uniqueIds(input.ids || input.activeIds || []);
+			if (!id) return panePatchPreflightSkip("missing-id", {
+				id: "",
+				ids
+			});
+			if (input.enabled !== true) return panePatchPreflightSkip("disabled", {
+				id,
+				ids
+			});
+			if (input.visible !== true) return panePatchPreflightSkip("pane-not-visible", {
+				id,
+				ids
+			});
+			const conversationPresent = booleanFact(input, "conversationPresent");
+			if (conversationPresent === false) return panePatchPreflightSkip("missing-conversation", {
+				id,
+				ids
+			});
+			const tileSurface = booleanFact(input, "tileSurface");
+			if (tileSurface === false) return panePatchPreflightSkip("not-tile-surface", {
+				id,
+				ids
+			});
+			const boardPresent = booleanFact(input, "boardPresent");
+			if (boardPresent === false) return panePatchPreflightSkip("missing-board", {
+				id,
+				ids
+			});
+			const layoutEnabled = booleanFact(input, "layoutEnabled");
+			if (layoutEnabled === false) return panePatchPreflightSkip("layout-disabled", {
+				id,
+				ids
+			});
+			if (hasIds && !ids.includes(id)) return panePatchPreflightSkip("pane-not-candidate", {
+				id,
+				ids
+			});
+			const panePresent = booleanFact(input, "panePresent");
+			if (panePresent === false) return panePatchPreflightSkip("missing-pane", {
+				id,
+				ids
+			});
+			const factsComplete = conversationPresent === true && tileSurface === true && boardPresent === true && layoutEnabled === true && panePresent === true && hasIds;
+			return {
+				action: factsComplete ? "patch-pane" : "continue",
+				reason: factsComplete ? "ready" : "pending-facts",
+				canPatch: factsComplete,
+				shouldContinue: true,
+				id,
+				ids
+			};
+		}
+		function panePatchCompletionSkip(reason, details = {}) {
+			return Object.assign({
+				action: "skip",
+				reason,
+				id: "",
+				returnValue: false,
+				hydrate: false,
+				restoreScroll: false,
+				updateBottomButton: false,
+				updateBottomButtonMode: "none",
+				writeRenderSignature: false,
+				clearPatchShellSignature: false,
+				bindActions: false
+			}, details);
+		}
+		function panePatchCompletionPlan(input = {}) {
+			const id = text(input.threadId || input.paneId).trim();
+			if (!id) return panePatchCompletionSkip("missing-id");
+			if (input.sourcePanePresent !== true) return panePatchCompletionSkip("missing-source-pane", { id });
+			if (!Object.prototype.hasOwnProperty.call(input, "patchedPanePresent")) return Object.assign(panePatchCompletionSkip("source-pane-ready", { id }), {
+				action: "continue",
+				returnValue: true
+			});
+			if (input.patchedPanePresent === false) return panePatchCompletionSkip("missing-patched-pane", { id });
+			return {
+				action: "complete-pane-patch",
+				reason: "ready",
+				id,
+				returnValue: true,
+				hydrate: true,
+				restoreScroll: true,
+				updateBottomButton: true,
+				updateBottomButtonMode: input.requestAnimationFrameAvailable === true ? "animation-frame" : "sync",
+				writeRenderSignature: true,
+				clearPatchShellSignature: true,
+				bindActions: true
+			};
+		}
+		function refreshDelayMs(value, options = {}) {
+			const defaultDelayMs = Math.max(0, Number(options.defaultDelayMs || 0));
+			const minDelayMs = Math.max(0, Number(options.minDelayMs || 500));
+			const parsed = Number(value);
+			return Math.max(minDelayMs, Number.isFinite(parsed) ? parsed : defaultDelayMs);
+		}
+		function refreshSchedulePlan(input = {}, options = {}) {
+			const activeIds = uniqueIds(input.activeIds || []);
+			const hiddenValue = text(options.hiddenVisibilityState || "hidden");
+			if (input.enabled !== true) return {
+				schedule: false,
+				clearTimer: true,
+				reason: "disabled",
+				activeIds,
+				delayMs: 0
+			};
+			if (text(input.visibilityState) === hiddenValue) return {
+				schedule: false,
+				clearTimer: true,
+				reason: "hidden",
+				activeIds,
+				delayMs: 0
+			};
+			if (!activeIds.length) return {
+				schedule: false,
+				clearTimer: false,
+				reason: "no-active-panes",
+				activeIds,
+				delayMs: 0
+			};
+			if (input.hasTimer === true) return {
+				schedule: false,
+				clearTimer: false,
+				reason: "timer-active",
+				activeIds,
+				delayMs: 0
+			};
+			return {
+				schedule: true,
+				clearTimer: false,
+				reason: "schedule",
+				activeIds,
+				delayMs: refreshDelayMs(input.delayMs, options)
+			};
+		}
+		function refreshTargetIds(input = {}) {
+			if (input.enabled !== true) return [];
+			const ids = uniqueIds(input.ids || input.activeIds || []);
+			const visibleInput = input.visibleIds;
+			const visibleIds = Array.isArray(visibleInput) ? new Set(uniqueIds(visibleInput)) : null;
+			const currentThreadId = text(input.currentThreadId).trim();
+			return ids.filter((id) => {
+				if (visibleIds && !visibleIds.has(id)) return false;
+				return !currentThreadId || id !== currentThreadId;
+			});
+		}
+		function detailLoadQueuePlan(input = {}) {
+			const activeIds = uniqueIds(input.activeIds || input.ids || []);
+			const controllerIds = uniqueIds(input.controllerIds || []);
+			const loadingIds = uniqueIds(input.loadingIds || []);
+			const readyIds = uniqueIds(input.readyIds || []);
+			if (input.enabled !== true) return {
+				action: "skip",
+				reason: "disabled",
+				activeIds,
+				controllerIds,
+				loadingIds,
+				readyIds,
+				abortIds: [],
+				loadIds: [],
+				deferredIds: [],
+				busyIds: [],
+				maxConcurrentLoads: 0,
+				availableSlots: 0,
+				scheduleDrainAfterLoad: false
+			};
+			const activeSet = new Set(activeIds);
+			const controllerSet = new Set(controllerIds);
+			const loadingSet = new Set(loadingIds);
+			const readySet = new Set(readyIds);
+			const abortIds = controllerIds.filter((id) => !activeSet.has(id));
+			const busyIds = uniqueIds([...controllerIds.filter((id) => activeSet.has(id)), ...loadingIds.filter((id) => activeSet.has(id))]);
+			const parsedMax = Math.floor(Number(input.maxConcurrentLoads));
+			const maxConcurrentLoads = Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : Math.max(1, activeIds.length || DEFAULT_USER_MAX_PANES);
+			const availableSlots = Math.max(0, maxConcurrentLoads - busyIds.length);
+			const candidates = activeIds.filter((id) => !controllerSet.has(id) && !loadingSet.has(id) && !readySet.has(id));
+			const loadIds = candidates.slice(0, availableSlots);
+			const deferredIds = candidates.slice(availableSlots);
+			const scheduleDrainAfterLoad = deferredIds.length > 0 && loadIds.length > 0;
+			return {
+				action: "detail-load-queue",
+				reason: !activeIds.length ? "no-active-panes" : deferredIds.length ? "max-concurrency" : "queue",
+				activeIds,
+				controllerIds,
+				loadingIds,
+				readyIds,
+				abortIds,
+				loadIds,
+				deferredIds,
+				busyIds,
+				maxConcurrentLoads,
+				availableSlots,
+				scheduleDrainAfterLoad
+			};
+		}
+		function detailLoadConcurrencyPlan(input = {}, options = {}) {
+			const activeIds = uniqueIds(input.activeIds || input.ids || []);
+			const maxPanes = maxPaneLimit(input.maxPanes || options.maxPanes || DEFAULT_USER_MAX_PANES);
+			const configuredInput = Object.prototype.hasOwnProperty.call(input, "maxConcurrentLoads") ? input.maxConcurrentLoads : Object.prototype.hasOwnProperty.call(input, "configuredMaxConcurrentLoads") ? input.configuredMaxConcurrentLoads : options.defaultMaxConcurrentLoads;
+			const parsed = Math.floor(Number(configuredInput));
+			const boundedConfiguredMax = Math.max(1, Math.min(maxPanes, Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_DETAIL_LOAD_MAX_CONCURRENT));
+			const maxConcurrentLoads = activeIds.length ? Math.max(1, Math.min(activeIds.length, boundedConfiguredMax)) : boundedConfiguredMax;
+			return {
+				action: "detail-load-concurrency",
+				reason: activeIds.length ? "active-panes" : "no-active-panes",
+				activeIds,
+				activeCount: activeIds.length,
+				configuredMaxConcurrentLoads: boundedConfiguredMax,
+				maxConcurrentLoads
+			};
+		}
+		function detailLoadQueueDrainPlan(input = {}, options = {}) {
+			const activeIds = uniqueIds(input.activeIds || input.ids || []);
+			const delayMs = Math.max(0, Number(input.delayMs || options.defaultDelayMs || 0));
+			if (input.enabled !== true) return {
+				schedule: false,
+				clearTimer: true,
+				reason: "disabled",
+				activeIds,
+				delayMs: 0
+			};
+			if (!activeIds.length) return {
+				schedule: false,
+				clearTimer: true,
+				reason: "no-active-panes",
+				activeIds,
+				delayMs: 0
+			};
+			if (input.hasTimer === true) return {
+				schedule: false,
+				clearTimer: false,
+				reason: "timer-active",
+				activeIds,
+				delayMs: 0
+			};
+			if (input.pending !== true && input.force !== true) return {
+				schedule: false,
+				clearTimer: false,
+				reason: "no-pending-loads",
+				activeIds,
+				delayMs: 0
+			};
+			return {
+				schedule: true,
+				clearTimer: false,
+				reason: input.force === true ? "load-settled" : "deferred-loads",
+				activeIds,
+				delayMs
+			};
+		}
+		function detailLoadPlan(input = {}) {
+			const id = text(input.threadId).trim();
+			if (!id) return {
+				action: "skip",
+				reason: "missing-id",
+				id: ""
+			};
+			if (text(input.currentThreadId).trim() === id && input.currentThreadLoaded === true) return {
+				action: "skip",
+				reason: "current-thread-loaded",
+				id
+			};
+			if (input.controllerActive === true) return {
+				action: "skip",
+				reason: "controller-active",
+				id
+			};
+			if (input.loadingActive === true) return {
+				action: "skip",
+				reason: "loading-active",
+				id
+			};
+			const cachedReady = input.cachedReady === true;
+			const force = input.force === true;
+			const nowMs = nowValue(input.nowMs);
+			const lastLoadedAt = Number(input.lastLoadedAt || 0);
+			const minIntervalMs = Math.max(0, Number(input.minIntervalMs || 0));
+			if (!force && cachedReady) return {
+				action: "skip",
+				reason: "cached-ready",
+				id
+			};
+			if (force && lastLoadedAt && nowMs - lastLoadedAt < minIntervalMs) return {
+				action: "skip",
+				reason: "min-refresh-interval",
+				id
+			};
+			const background = Boolean(input.backgroundRequested === true && cachedReady);
+			return {
+				action: "load",
+				reason: background ? "background-refresh" : "load",
+				id,
+				background,
+				markLoading: !background,
+				clearError: !background
+			};
+		}
+		function detailLoadStartEffectsPlan(plan = {}) {
+			const sourceAction = text(plan.action).trim();
+			const id = text(plan.id || plan.threadId).trim();
+			if (sourceAction !== "load") return skipPaneSlot("unsupported-detail-load-plan", {
+				sourceAction,
+				id
+			});
+			if (!id) return skipPaneSlot("missing-id", { id });
+			return {
+				action: "detail-load-start-effects",
+				reason: text(plan.reason || sourceAction).trim() || sourceAction,
+				id,
+				background: plan.background === true,
+				setController: true,
+				markLoading: plan.markLoading === true,
+				clearError: plan.clearError === true,
+				renderPane: plan.markLoading === true,
+				preserveScroll: true
+			};
+		}
+		function detailLoadSuccessEffectsPlan(input = {}) {
+			const id = text(input.id || input.threadId).trim();
+			if (!id) return skipPaneSlot("missing-id", { id });
+			if (input.hasThread !== true) return skipPaneSlot("missing-thread", { id });
+			return {
+				action: "detail-load-success-effects",
+				reason: "thread-loaded",
+				id,
+				setDetail: true,
+				setLoadedAt: true,
+				loadedAtMs: nowValue(input.nowMs),
+				clearError: true,
+				mergeThread: true
+			};
+		}
+		function detailLoadErrorEffectsPlan(input = {}) {
+			const id = text(input.id || input.threadId).trim();
+			if (!id) return skipPaneSlot("missing-id", { id });
+			if (input.aborted === true) return skipPaneSlot("aborted", { id });
+			if (input.background === true) return skipPaneSlot("background-refresh", { id });
+			return {
+				action: "detail-load-error-effects",
+				reason: "foreground-error",
+				id,
+				errorMessage: text(input.errorMessage || input.message || input.error).trim()
+			};
+		}
+		function detailLoadFinallyEffectsPlan(input = {}) {
+			const id = text(input.id || input.threadId).trim();
+			if (!id) return skipPaneSlot("missing-id", { id });
+			return {
+				action: "detail-load-finally-effects",
+				reason: "settle",
+				id,
+				clearController: input.controllerMatches === true,
+				clearLoading: true,
+				renderPane: input.visible === true,
+				preserveScroll: true,
+				scheduleQueueDrain: true
+			};
+		}
+		return {
+			DEFAULT_DETAIL_LOAD_MAX_CONCURRENT,
+			DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+			DEFAULT_USER_MAX_PANES,
+			activePaneSyncPlan,
+			candidatePaneIdsPlan,
+			closePanePlan,
+			composerActionControlPlan,
+			composerDraftRuntimeSelectionPlan,
+			composerTargetPlaceholderPlan,
+			composerTargetPlan,
+			displaySettingsPayload,
+			displaySettingsLoadPlan,
+			dropPaneIntent,
+			effectiveSelectedThreadId,
+			idsEqual,
+			layoutCapacity,
+			normalizeDisplaySettings,
+			normalizeOperationMode,
+			normalizePaneCount,
+			normalizePinnedIds,
+			normalizeSplitPairs,
+			operationModeTogglePlan,
+			operationBubbleRecord,
+			operationBubbleSnapshot,
+			operationDockPlan,
+			operationMinimumRefreshPlan,
+			operationSignature,
+			paneBottomButtonPlan,
+			paneCountChangePlan,
+			paneCountStatePlan,
+			paneDisplayLayoutPlan,
+			panePatchCompletionPlan,
+			panePatchPreflightPlan,
+			paneRenderFramePlan,
+			paneRenderSignaturePlan,
+			paneSelectionPlan,
+			paneSlotMutationEffectsPlan,
+			paneScrollHoldPlan,
+			paneScrollMetrics,
+			paneScrollRestorePlan,
+			prependSplitPair,
+			detailLoadPlan,
+			detailLoadErrorEffectsPlan,
+			detailLoadFinallyEffectsPlan,
+			detailLoadConcurrencyPlan,
+			detailLoadQueueDrainPlan,
+			detailLoadQueuePlan,
+			detailLoadStartEffectsPlan,
+			detailLoadSuccessEffectsPlan,
+			refreshDelayMs,
+			refreshSchedulePlan,
+			refreshTargetIds,
+			replaceLastPaneForThreadListOpenPlan,
+			replacePaneThreadPlan,
+			removeSplitPairsForIds,
+			movePaneRelativePlan,
+			selectPanePlan,
+			selectedPaneEffectsPlan,
+			splitPaneWithTargetPlan,
+			switchMenuOptionsPlan,
+			switchMenuPlan,
+			syncPinnedIdsFromActiveIds,
+			threadTileVerticalChromePlan,
+			threadTileViewportBaselinePlan,
+			toggleOperationMode,
+			uniqueIds
+		};
+	});
+}));
+//#endregion
+//#region public/app-update-runtime.js
+var require_app_update_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	(function attachAppUpdateRuntime(root) {
+		function createAppUpdateRuntime(deps = {}) {
+			const { state = {}, CLIENT_BUILD_ID = "", PAGE_REFRESH_CHECK_INTERVAL_MS = 6e4, PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12e3, PAGE_SHELL_ASSETS = [], STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey", PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR", buildRefreshPolicy = null, $ = () => null, api = async () => ({}), escapeHtml = (value) => String(value == null ? "" : value), normalizeFsPath = (value) => String(value || ""), threadMatchesWorkspaceCwd = () => false, loadThreads = async () => {}, loadThread = async () => {}, setComposerText = () => {}, scheduleCurrentDraftSave = () => {}, updateComposerControls = () => {}, composerHasContent = () => false, requestAppAlert = async () => {}, requestAppConfirmation = async () => false, loadWorkspaces = async () => {}, postClientEvent = () => {}, saveCurrentDraftNow = () => {}, syncSidebarWorkspaceSelect = () => {}, updateWorkspacePath = () => {}, renderWorkspaceTokenUsage = () => {}, isMenuOverlayMode = () => false, closeSidebarMenu = () => {}, clearCurrentThreadSelection = () => {}, restoreDraftForCurrentTarget = () => {}, renderThreads = () => {}, renderCurrentThread = () => {}, showError = () => {}, isRunningStatus = () => false, visibleThreads = (threads) => Array.isArray(threads) ? threads : [], threadById = () => null, shortPath = (value) => String(value || ""), statusText = (status) => String(status && status.type || status || ""), saveRestartAutoRecoverThreads = () => {}, postPerformanceEvent = () => {}, roundedDurationMs = (startedAt) => Math.max(0, Date.now() - Number(startedAt || Date.now())), isHermesEmbedMode = () => false, requestHermesPluginRefresh = () => {}, rememberRateLimitsFromConfig = () => {}, renderCodexProfileSettings = () => {}, stopCodexProfileSwitchProgressPolling = () => {}, publishPluginNavigationState = () => {} } = deps;
+			function appVersionText(status = state.appUpdateStatus) {
+				const version = String(status && status.version || state.appVersion || "").trim();
+				const client = clientBuildVersionText();
+				return version ? `v${version} · ${client}` : client;
+			}
+			function clientBuildVersionText(buildId = CLIENT_BUILD_ID) {
+				const text = String(buildId || "").trim();
+				const match = text.match(/\bcodex-mobile-shell-v([0-9]+)\b/);
+				if (match) return `客户端 v${match[1]}`;
+				return text ? `客户端 ${text}` : "客户端未知";
+			}
+			function renderAppUpdateStatus() {
+				const el = $("appUpdateStatus");
+				if (!el) return;
+				const status = state.appUpdateStatus || {};
+				const supported = status.supported !== false;
+				const checking = state.appUpdateBusy && !state.appUpdateRestarting;
+				const applying = Boolean(status.applying) || state.appUpdateRestarting;
+				const blocked = Boolean(status.updateAvailable && !status.canFastForward);
+				let label = appVersionText(status);
+				let title = `Check for GitHub updates；当前客户端 ${CLIENT_BUILD_ID}`;
+				if (state.appUpdateRestarting) {
+					label = "等待重启…";
+					title = "更新已应用。服务会退出并等待启动任务或守护脚本拉起；手动启动的部署需要在服务停止后手动重启。";
+				} else if (applying) {
+					label = "更新中…";
+					title = "正在拉取更新";
+				} else if (checking) {
+					label = "检查更新…";
+					title = "正在检查 GitHub 更新";
+				} else if (status.updateAvailable && status.canFastForward) {
+					label = `有更新 ${status.remoteShort || ""}`.trim();
+					title = `发现 ${status.remote || "origin"}/${status.branch || "main"} 更新，点击后确认拉取；更新后服务会退出并依赖启动任务或守护脚本重启`;
+				} else if (blocked) {
+					label = "更新受阻";
+					title = status.reason || status.error || "检测到更新，但当前工作区不能安全 fast-forward";
+				} else if (status.error) {
+					label = "更新检查失败";
+					title = status.error;
+				} else if (!supported) title = status.reason || "当前安装方式不支持 Git 自动更新";
+				else if (status.localShort) title = `${appVersionText(status)} (${status.localShort})，点击重新检查更新；当前客户端 ${CLIENT_BUILD_ID}`;
+				el.textContent = label;
+				el.title = title;
+				el.classList.toggle("hidden", !state.appVersion && !state.appUpdateStatus);
+				el.classList.toggle("available", Boolean(status.updateAvailable && status.canFastForward));
+				el.classList.toggle("blocked", blocked || Boolean(status.error));
+				el.classList.toggle("checking", checking || applying);
+				el.disabled = state.appUpdateBusy || state.appUpdateRestarting;
+			}
+			async function refreshAppUpdateStatus(options = {}) {
+				if (!state.key) return null;
+				if (state.appUpdateBusy && !options.force) return state.appUpdateStatus;
+				state.appUpdateBusy = true;
+				if (!options.silent) renderAppUpdateStatus();
+				try {
+					const params = new URLSearchParams();
+					if (options.fetch) params.set("fetch", "1");
+					if (options.force) params.set("force", "1");
+					const status = await api(`/api/app-update/status${params.toString() ? `?${params.toString()}` : ""}`, { timeoutMs: options.fetch ? 25e3 : 12e3 });
+					state.appUpdateStatus = status;
+					state.appUpdateError = status && status.error ? status.error : "";
+					return status;
+				} catch (err) {
+					state.appUpdateError = err.message || String(err);
+					state.appUpdateStatus = Object.assign({}, state.appUpdateStatus || {}, {
+						version: state.appVersion,
+						error: state.appUpdateError
+					});
+					return state.appUpdateStatus;
+				} finally {
+					state.appUpdateBusy = false;
+					renderAppUpdateStatus();
+					renderUpdatePanel();
+				}
+			}
+			function currentUpdateUsesPublicRelease(status = state.appUpdateStatus) {
+				const remoteUrl = String(status && status.remoteUrl || "").toLowerCase();
+				const repository = String(state.publicReleaseRepository || state.publicPrRepository || "").toLowerCase();
+				if (!remoteUrl || !repository) return false;
+				return remoteUrl.includes(`github.com/${repository}`) || remoteUrl.endsWith(`/${repository}.git`) || remoteUrl.endsWith(`/${repository}`);
+			}
+			function updateStatusLine(status) {
+				if (!status) return "Not checked";
+				if (state.appUpdateRestarting || status.restartScheduled) return "Restart pending";
+				if (state.appUpdateBusy || status.checking) return "Checking";
+				if (status.applying) return "Updating";
+				if (status.error) return `Error: ${status.error}`;
+				if (status.supported === false) return status.reason || "Not supported";
+				if (status.updateAvailable && status.canFastForward) return `Update available: ${status.remoteShort || status.remoteCommit || ""}`.trim();
+				if (status.updateAvailable) return `Update blocked: ${status.reason || "cannot fast-forward"}`;
+				return "Up to date";
+			}
+			function publicReleaseStatusLine(status) {
+				if (!state.publicReleaseEnabled) return "Public release check disabled";
+				if (!status) return "Not checked";
+				if (state.publicReleaseBusy || status.checking) return "Checking";
+				if (status.error) return `Error: ${status.error}`;
+				if (status.supported === false) return status.reason || "Not supported";
+				if (status.updateAvailable) return `Public latest: ${status.publicShort || ""}`.trim();
+				return "Matches Public latest";
+			}
+			function updateActionButton(action, label, options = {}) {
+				const classes = ["update-action-button"];
+				if (options.primary) classes.push("primary");
+				return `<button type="button" class="${escapeHtml(classes.join(" "))}" data-update-action="${escapeHtml(action)}" ${options.disabled ? "disabled" : ""}>${escapeHtml(label)}</button>`;
+			}
+			function publicPrHasOpenPullRequests(status) {
+				return Boolean(status && status.hasOpenPullRequests);
+			}
+			function renderUpdatePanel() {
+				const dialog = $("updateDialog");
+				const content = $("updatePanelContent");
+				if (!dialog || !content) return;
+				dialog.classList.toggle("hidden", !state.updatePanelOpen);
+				if (!state.updatePanelOpen) return;
+				const current = state.appUpdateStatus || {};
+				const release = state.publicReleaseStatus || {};
+				const publicCheckout = currentUpdateUsesPublicRelease(current) || Boolean(release.currentCheckoutUsesPublicRelease);
+				const canApplyCurrent = Boolean(current.updateAvailable && current.canFastForward && !state.appUpdateBusy && !state.appUpdateRestarting);
+				const hasPublicPrs = publicPrHasOpenPullRequests(state.publicPrStatus);
+				const publicPrActionLabel = state.publicPrBusy ? "Checking PR..." : hasPublicPrs ? "Review Public PR" : "Check PR";
+				const currentButtons = [updateActionButton("refresh-current", state.appUpdateBusy ? "Checking..." : "Check current", { disabled: state.appUpdateBusy }), updateActionButton("apply-current", publicCheckout ? "Update from Public" : "Apply current update", {
+					primary: canApplyCurrent,
+					disabled: !canApplyCurrent
+				})].join("");
+				const publicButtons = [updateActionButton("refresh-public", state.publicReleaseBusy ? "Checking..." : "Check Public", { disabled: state.publicReleaseBusy || !state.publicReleaseEnabled }), updateActionButton("public-pr", publicPrActionLabel, {
+					disabled: state.publicPrBusy || !state.publicPrEnabled,
+					primary: hasPublicPrs
+				})].join("");
+				content.innerHTML = `
+      <section class="update-card">
+        <div class="update-card-title">Current checkout</div>
+        <div class="update-row">
+          <strong>${escapeHtml(updateStatusLine(current))}</strong>
+          <span class="update-row-meta">${escapeHtml(current.remote || "origin")}/${escapeHtml(current.branch || "main")} ${escapeHtml(current.localShort || "")}${current.remoteShort ? ` -> ${escapeHtml(current.remoteShort)}` : ""}</span>
+          <span class="update-row-detail">${escapeHtml(current.reason || current.remoteUrl || "Checks the Git remote configured for this running checkout.")}</span>
+        </div>
+        <div class="update-actions">${currentButtons}</div>
+      </section>
+      <section class="update-card">
+        <div class="update-card-title">Public release</div>
+        <div class="update-row">
+          <strong>${escapeHtml(publicReleaseStatusLine(release))}</strong>
+          <span class="update-row-meta">${escapeHtml(release.repository || state.publicReleaseRepository || "")}/${escapeHtml(release.branch || state.publicReleaseBranch || "main")} ${escapeHtml(release.publicShort || "")}</span>
+          <span class="update-row-detail">${escapeHtml(publicCheckout ? "This checkout tracks Public, so the current update button applies Public fast-forward updates." : "This checkout does not track Public; Public latest is shown for reference here.")}</span>
+        </div>
+        <div class="update-actions">${publicButtons}</div>
+      </section>`;
+			}
+			async function refreshPublicReleaseStatus(options = {}) {
+				if (!state.key || !state.publicReleaseEnabled) return null;
+				if (state.publicReleaseBusy && !options.force) return state.publicReleaseStatus;
+				state.publicReleaseBusy = true;
+				renderUpdatePanel();
+				try {
+					const params = new URLSearchParams();
+					if (options.force) params.set("force", "1");
+					const status = await api(`/api/public-release/status${params.toString() ? `?${params.toString()}` : ""}`, { timeoutMs: 18e3 });
+					state.publicReleaseStatus = status;
+					return status;
+				} catch (err) {
+					state.publicReleaseStatus = Object.assign({}, state.publicReleaseStatus || {}, {
+						enabled: state.publicReleaseEnabled,
+						repository: state.publicReleaseRepository,
+						branch: state.publicReleaseBranch,
+						error: err.message || String(err)
+					});
+					return state.publicReleaseStatus;
+				} finally {
+					state.publicReleaseBusy = false;
+					renderUpdatePanel();
+				}
+			}
+			function openUpdatePanel() {
+				state.updatePanelOpen = true;
+				renderUpdatePanel();
+				publishPluginNavigationState({ force: true });
+				refreshAppUpdateStatus({
+					fetch: true,
+					force: true,
+					silent: true
+				}).then(renderUpdatePanel).catch(() => renderUpdatePanel());
+				refreshPublicReleaseStatus({ force: true }).catch(() => renderUpdatePanel());
+			}
+			function closeUpdatePanel() {
+				state.updatePanelOpen = false;
+				renderUpdatePanel();
+				publishPluginNavigationState({ force: true });
+			}
+			function handleUpdatePanelClick(event) {
+				const button = event.target && event.target.closest("[data-update-action]");
+				if (!button) return;
+				const action = button.dataset.updateAction;
+				if (action === "refresh-current") refreshAppUpdateStatus({
+					fetch: true,
+					force: true,
+					silent: true
+				}).then(renderUpdatePanel).catch(showError);
+				else if (action === "apply-current") handleAppUpdateClick().then(renderUpdatePanel).catch(showError);
+				else if (action === "refresh-public") refreshPublicReleaseStatus({ force: true }).catch(showError);
+				else if (action === "public-pr") handlePublicPrStatusClick().catch(showError);
+			}
+			function scheduleStartupUpdateCheck() {
+				if (!state.key) return;
+				window.setTimeout(() => {
+					refreshAppUpdateStatus({
+						fetch: true,
+						force: true,
+						silent: true
+					}).catch(() => {});
+				}, 900);
+			}
+			function publicPrPromptKey(status) {
+				if (!publicPrHasOpenPullRequests(status)) return "";
+				const pullRequests = Array.isArray(status.pullRequests) ? status.pullRequests : [];
+				const marker = pullRequests.map((pr) => `#${pr.number || ""}:${pr.updatedAt || ""}`).filter(Boolean).join("|");
+				return `${status.repository || ""}|${status.openPullRequestCount || pullRequests.length}|${marker}`;
+			}
+			function publicPrSummaryText(status) {
+				const pullRequests = Array.isArray(status && status.pullRequests) ? status.pullRequests : [];
+				if (!pullRequests.length) return "";
+				return pullRequests.map((pr) => `#${pr.number} ${pr.title || ""}`.trim()).join("; ");
+			}
+			function normalizedPublicPrReviewTitle(value) {
+				return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+			}
+			function publicPrReviewThreadTitle() {
+				return PUBLIC_PR_REVIEW_THREAD_TITLE;
+			}
+			function findPublicPrReviewThread(workspacePath = "") {
+				const titleKey = normalizedPublicPrReviewTitle(publicPrReviewThreadTitle());
+				const workspace = String(workspacePath || "").trim();
+				return state.threads.find((thread) => {
+					if (!thread || !thread.id) return false;
+					if (normalizedPublicPrReviewTitle(thread.name || thread.title || thread.preview || "") !== titleKey) return false;
+					return !workspace || threadMatchesWorkspaceCwd(thread.cwd || "", workspace);
+				}) || null;
+			}
+			function workspacePathBaseName(value) {
+				const text = String(value || "").trim().replace(/[\\/]+$/, "");
+				if (!text) return "";
+				const parts = text.split(/[\\/]+/).filter(Boolean);
+				return parts[parts.length - 1] || "";
+			}
+			function workspacePathIsVisible(value) {
+				const key = normalizeFsPath(value);
+				if (!key) return false;
+				return (state.workspaces || []).some((workspace) => normalizeFsPath(workspace && workspace.cwd) === key);
+			}
+			function visibleWorkspaceWithBaseName(value) {
+				const baseName = workspacePathBaseName(value).toLowerCase();
+				if (!baseName) return "";
+				const match = (state.workspaces || []).find((workspace) => workspace && workspace.cwd && workspacePathBaseName(workspace.cwd).toLowerCase() === baseName);
+				return match ? String(match.cwd || "").trim() : "";
+			}
+			function publicPrReviewWorkspacePath() {
+				const appWorkspace = String(state.appWorkspacePath || "").trim();
+				if (workspacePathIsVisible(appWorkspace)) return appWorkspace;
+				const sameNameWorkspace = visibleWorkspaceWithBaseName(appWorkspace);
+				if (sameNameWorkspace) return sameNameWorkspace;
+				const selectedWorkspace = String(state.selectedCwd || "").trim();
+				if (workspacePathIsVisible(selectedWorkspace)) return selectedWorkspace;
+				const currentWorkspace = String(state.currentThread && state.currentThread.cwd || "").trim();
+				if (workspacePathIsVisible(currentWorkspace)) return currentWorkspace;
+				return appWorkspace || selectedWorkspace || currentWorkspace;
+			}
+			async function openPublicPrReviewThreadIfAvailable(workspacePath, text) {
+				let target = findPublicPrReviewThread(workspacePath);
+				if (!target) {
+					try {
+						await loadThreads({ silent: true });
+					} catch (err) {
+						postClientEvent("public_pr_reuse_lookup_failed", { message: err.message || String(err) });
+					}
+					target = findPublicPrReviewThread(workspacePath);
+				}
+				if (!target || !target.id) return false;
+				await loadThread(target.id, { source: "public-pr" });
+				setComposerText(text);
+				scheduleCurrentDraftSave();
+				updateComposerControls();
+				return true;
+			}
+			function renderPublicPrStatus() {
+				const el = $("publicPrStatus");
+				if (!el) return;
+				const status = state.publicPrStatus || {};
+				const enabled = state.publicPrEnabled && status.enabled !== false;
+				const checking = state.publicPrBusy || Boolean(status.checking);
+				const hasPrs = publicPrHasOpenPullRequests(status);
+				const blocked = Boolean(status.error || status.supported === false);
+				let label = "Public PR";
+				let title = state.publicPrRepository ? `Check ${state.publicPrRepository} pull requests` : "Check public pull requests";
+				if (checking) {
+					label = "PR...";
+					title = "Checking public pull requests";
+				} else if (hasPrs) {
+					label = `PR ${status.openPullRequestCount || (status.pullRequests || []).length}`;
+					title = `Open public PRs: ${publicPrSummaryText(status) || label}`;
+				} else if (status.checkedAt && enabled) {
+					label = "No PR";
+					title = `No open public PRs in ${status.repository || state.publicPrRepository || "public repo"}`;
+				} else if (blocked) {
+					label = "PR ?";
+					title = status.error || status.reason || "Public PR check is unavailable";
+				}
+				el.textContent = label;
+				el.title = title;
+				el.classList.toggle("hidden", !checking && !hasPrs && !blocked);
+				el.classList.toggle("available", hasPrs);
+				el.classList.toggle("blocked", blocked);
+				el.classList.toggle("checking", checking);
+				el.disabled = state.publicPrBusy;
+			}
+			async function refreshPublicPrStatus(options = {}) {
+				if (!state.key || !state.publicPrEnabled) return null;
+				if (state.publicPrBusy && !options.force) return state.publicPrStatus;
+				state.publicPrBusy = true;
+				if (!options.silent) renderPublicPrStatus();
+				try {
+					const params = new URLSearchParams();
+					if (options.force) params.set("force", "1");
+					const status = await api(`/api/public-pull-requests/status${params.toString() ? `?${params.toString()}` : ""}`, { timeoutMs: 18e3 });
+					state.publicPrStatus = status;
+					state.publicPrError = status && status.error ? status.error : "";
+					if (!options.skipPrompt) maybePromptPublicPrMerge(status);
+					return status;
+				} catch (err) {
+					state.publicPrError = err.message || String(err);
+					state.publicPrStatus = Object.assign({}, state.publicPrStatus || {}, {
+						enabled: state.publicPrEnabled,
+						repository: state.publicPrRepository,
+						hasOpenPullRequests: false,
+						openPullRequestCount: 0,
+						pullRequests: [],
+						error: state.publicPrError
+					});
+					return state.publicPrStatus;
+				} finally {
+					state.publicPrBusy = false;
+					renderPublicPrStatus();
+					renderUpdatePanel();
+				}
+			}
+			function scheduleStartupPublicPrCheck() {
+				if (!state.key || !state.publicPrEnabled) return;
+				window.setTimeout(() => {
+					refreshPublicPrStatus({
+						force: true,
+						silent: true
+					}).catch(() => {});
+				}, 1600);
+			}
+			function publicPrMergeInstruction(status) {
+				const summary = publicPrSummaryText(status);
+				return [
+					`请检查 public 仓库 ${status && status.repository || state.publicPrRepository || "pentiumxp/codex-mobile-web-public"} 的开放 PR${summary ? `：${summary}` : ""}。`,
+					"按当前项目规则先评估 PR 是否可合并；如要合并，更新 public README 的中文发布说明，运行验证和隐私扫描，再提交并推送 public。",
+					"不要复制 .agent-context、runtime state、本地密钥、上传内容或机器特定诊断。完成 public 后再同步回 private 并重新验证。"
+				].join("\n");
+			}
+			function publicPrMergeConfirmationMessage(status) {
+				return [
+					`检测到 public 仓库有 ${status.openPullRequestCount || (status.pullRequests || []).length} 个开放 PR。`,
+					publicPrSummaryText(status),
+					"",
+					"是否准备一条合并/发布检查任务？"
+				].filter(Boolean).join("\n");
+			}
+			async function preparePublicPrMergePrompt(status) {
+				const text = publicPrMergeInstruction(status);
+				if (composerHasContent()) {
+					await requestAppAlert("检测到 public 开放 PR，但输入框已有内容。请处理当前草稿后点击 Public PR 按钮。", { title: "Public PR" });
+					return;
+				}
+				if (!state.workspaces.length) await loadWorkspaces().catch((err) => {
+					postClientEvent("public_pr_workspace_lookup_failed", { message: err.message || String(err) });
+				});
+				const workspacePath = publicPrReviewWorkspacePath();
+				if (!workspacePath) {
+					setComposerText(text);
+					scheduleCurrentDraftSave();
+					updateComposerControls();
+					return;
+				}
+				saveCurrentDraftNow();
+				state.selectedCwd = workspacePath;
+				syncSidebarWorkspaceSelect();
+				updateWorkspacePath();
+				renderWorkspaceTokenUsage();
+				if (await openPublicPrReviewThreadIfAvailable(workspacePath, text)) {
+					if (isMenuOverlayMode()) closeSidebarMenu();
+					return;
+				}
+				clearCurrentThreadSelection({ saveDraft: false });
+				state.selectedCwd = workspacePath;
+				state.newThreadDraft = true;
+				state.newThreadTitle = publicPrReviewThreadTitle();
+				state.sendButtonHint = "";
+				restoreDraftForCurrentTarget();
+				state.newThreadTitle = publicPrReviewThreadTitle();
+				setComposerText(text);
+				syncSidebarWorkspaceSelect();
+				updateWorkspacePath();
+				renderWorkspaceTokenUsage();
+				renderThreads();
+				renderCurrentThread();
+				updateComposerControls();
+				scheduleCurrentDraftSave();
+				if (isMenuOverlayMode()) closeSidebarMenu();
+			}
+			function rememberPublicPrPrompt(status) {
+				const key = publicPrPromptKey(status);
+				if (!key) return;
+				state.publicPrPromptedKey = key;
+				localStorage.setItem(STORAGE_PUBLIC_PR_PROMPT, key);
+			}
+			function maybePromptPublicPrMerge(status) {
+				if (!publicPrHasOpenPullRequests(status)) return;
+				const key = publicPrPromptKey(status);
+				if (!key || key === state.publicPrPromptedKey) return;
+				rememberPublicPrPrompt(status);
+				requestAppConfirmation(publicPrMergeConfirmationMessage(status), {
+					title: "Public PR",
+					confirmLabel: "准备任务",
+					cancelLabel: "稍后"
+				}).then((confirmed) => {
+					if (confirmed) preparePublicPrMergePrompt(status).catch(showError);
+				}).catch(showError);
+			}
+			async function handlePublicPrStatusClick() {
+				if (state.publicPrBusy) return;
+				const status = await refreshPublicPrStatus({
+					force: true,
+					skipPrompt: true
+				});
+				if (!status) return;
+				if (status.error && !publicPrHasOpenPullRequests(status)) {
+					await requestAppAlert(`public PR 检查失败：${status.error}`, { title: "Public PR" });
+					return;
+				}
+				if (!publicPrHasOpenPullRequests(status)) {
+					await requestAppAlert("当前未检测到 public 开放 PR。", { title: "Public PR" });
+					return;
+				}
+				const confirmed = await requestAppConfirmation(publicPrMergeConfirmationMessage(status), {
+					title: "Public PR",
+					confirmLabel: "准备任务",
+					cancelLabel: "稍后"
+				});
+				rememberPublicPrPrompt(status);
+				if (confirmed) await preparePublicPrMergePrompt(status);
+			}
+			async function handleAppUpdateClick() {
+				if (state.appUpdateBusy || state.appUpdateRestarting) return;
+				let status = state.appUpdateStatus;
+				if (!status || !status.updateAvailable && !status.error) status = await refreshAppUpdateStatus({
+					fetch: true,
+					force: true
+				});
+				if (!status) return;
+				if (status.supported === false) {
+					await requestAppAlert(`当前安装方式不支持自动更新：${status.reason || "没有可用的 Git 远程分支"}`, { title: "更新检查" });
+					return;
+				}
+				if (status.error && !status.updateAvailable) {
+					await requestAppAlert(`更新检查失败：${status.error}`, { title: "更新检查" });
+					return;
+				}
+				if (!status.updateAvailable) {
+					await requestAppAlert("当前已经是最新版本。", { title: "更新检查" });
+					return;
+				}
+				if (!status.canFastForward) {
+					await requestAppAlert(`检测到更新，但不能自动应用：${status.reason || status.error || "当前工作区不是干净的 fast-forward 状态"}`, { title: "更新检查" });
+					return;
+				}
+				if (!await requestAppConfirmation([
+					"发现 GitHub 更新。是否拉取并重启 Mobile Web？",
+					"",
+					"仅在当前仓库干净、可 fast-forward 时执行；运行时数据和 Access Key 不会被覆盖。",
+					"更新完成后当前 Node 服务会退出。只有通过 Windows 启动任务、windowless supervisor 或 macOS shared launcher 运行时才会自动拉起；手动运行 node/npm start 的部署需要手动重启。"
+				].join("\n"), {
+					title: "应用更新",
+					confirmLabel: "更新并重启",
+					cancelLabel: "取消"
+				})) return;
+				state.appUpdateBusy = true;
+				renderAppUpdateStatus();
+				try {
+					const result = await api("/api/app-update/apply", {
+						method: "POST",
+						body: "{}",
+						timeoutMs: 15e4
+					});
+					state.appUpdateStatus = result.after || result.status || status;
+					if (result.updated) {
+						state.appUpdateRestarting = true;
+						$("connectionState").textContent = "更新已应用；如连接断开且未自动恢复，请在部署机手动重启";
+						renderAppUpdateStatus();
+						window.setTimeout(() => window.location.reload(), Math.max(1800, Number(result.restartInMs || 1200) + 900));
+					} else await requestAppAlert("当前已经是最新版本。", { title: "更新检查" });
+				} catch (err) {
+					state.appUpdateError = err.message || String(err);
+					state.appUpdateStatus = Object.assign({}, status || {}, { error: state.appUpdateError });
+					showError(err);
+				} finally {
+					state.appUpdateBusy = false;
+					renderAppUpdateStatus();
+					renderUpdatePanel();
+				}
+			}
+			function renderSharedRestartButton() {
+				const el = $("sharedRestartButton");
+				if (!el) return;
+				const restarting = state.sharedRestarting;
+				el.textContent = restarting ? "Restarting" : "Restart";
+				el.title = restarting ? "Mobile Web is restarting" : "Restart Mobile Web shared chain";
+				el.disabled = state.sharedRestartBusy || restarting;
+				el.classList.toggle("checking", state.sharedRestartBusy || restarting);
+			}
+			function renderHardRefreshButton() {
+				const el = $("hardRefreshButton");
+				if (!el) return;
+				const reloading = state.pageRefreshReloading;
+				el.textContent = reloading ? "刷新中" : "硬刷新";
+				el.title = reloading ? "Refreshing the current PWA page shell" : "Fetch current page assets, update the service worker, and reload this PWA page";
+				el.disabled = reloading;
+				el.classList.toggle("checking", reloading);
+			}
+			function markBootReady() {
+				const boot = window.codexMobileBoot;
+				if (boot && typeof boot.ready === "function") boot.ready();
+			}
+			function reportShellLoaded(startedAt, details = {}) {
+				if (state.shellLoadedReported) return;
+				state.shellLoadedReported = true;
+				postPerformanceEvent("shell_loaded", Object.assign({
+					elapsedMs: roundedDurationMs(startedAt),
+					buildId: CLIENT_BUILD_ID,
+					hasThreadOpenIntent: Boolean(state.startupThreadOpenPending)
+				}, details || {}), { force: true });
+			}
+			function sharedRestartScopeLines() {
+				return state.serverPlatform === "darwin" ? ["这会短暂断开当前页面连接，并重启这台 Mac 上的 Mobile Web 服务。", "不会重启 Codex Desktop、shared mux 或其它本机服务。"] : ["这会短暂断开当前页面连接，并重启 Mobile Web、shared mux 和本地 app-server。", "不会重启 WSL、Codex Desktop 或其它本机服务。"];
+			}
+			function restartRiskThreads(threads) {
+				const seen = /* @__PURE__ */ new Set();
+				const result = [];
+				for (const thread of threads || []) {
+					const id = String(thread && thread.id || "");
+					if (!id || seen.has(id) || !isRunningStatus(thread.status)) continue;
+					seen.add(id);
+					result.push(thread);
+				}
+				if (state.currentThreadId && state.activeTurnId && !seen.has(String(state.currentThreadId))) {
+					const current = state.currentThread || threadById(state.currentThreadId) || {
+						id: state.currentThreadId,
+						name: "Current session",
+						status: { type: "active" }
+					};
+					result.unshift(current);
+				}
+				return result;
+			}
+			async function fetchRestartRiskThreads() {
+				const params = new URLSearchParams({
+					limit: "200",
+					archived: "false"
+				});
+				const result = await api(`/api/threads?${params}`, { timeoutMs: 45e3 });
+				return restartRiskThreads(visibleThreads(result.data || []));
+			}
+			function restartRiskThreadTitle(thread) {
+				return String(thread && (thread.name || thread.preview || thread.id) || "Untitled session").trim();
+			}
+			function restartRiskThreadMeta(thread) {
+				const parts = [];
+				const cwd = shortPath(thread && thread.cwd);
+				if (cwd) parts.push(cwd);
+				const status = statusText(thread && thread.status);
+				if (status) parts.push(status);
+				return parts.join(" | ");
+			}
+			function renderSharedRestartDialog() {
+				const dialog = $("restartConfirmDialog");
+				const subtitle = $("restartConfirmSubtitle");
+				const content = $("restartConfirmContent");
+				const proceed = $("restartConfirmProceed");
+				if (!dialog || !content || !subtitle || !proceed) return;
+				dialog.classList.toggle("hidden", !state.sharedRestartDialogOpen);
+				if (!state.sharedRestartDialogOpen) {
+					content.innerHTML = "";
+					return;
+				}
+				const riskThreads = state.sharedRestartRiskThreads || [];
+				const hasRisk = riskThreads.length > 0;
+				subtitle.textContent = hasRisk ? `${riskThreads.length} running session${riskThreads.length === 1 ? "" : "s"} may be interrupted` : "No running sessions were found";
+				proceed.textContent = hasRisk ? "仍然重启" : "Restart";
+				proceed.classList.toggle("danger", hasRisk);
+				const scopeHtml = (state.sharedRestartScopeLines || []).map((line) => `<div class="restart-confirm-line">${escapeHtml(line)}</div>`).join("");
+				const riskHtml = hasRisk ? `<div class="restart-risk-block">
+          <div class="restart-risk-title">Running sessions</div>
+          <div class="restart-risk-list">
+            ${riskThreads.slice(0, 6).map((thread) => {
+					const meta = restartRiskThreadMeta(thread);
+					return `<div class="restart-risk-item">
+                <div class="restart-risk-item-title">${escapeHtml(restartRiskThreadTitle(thread))}</div>
+                ${meta ? `<div class="restart-risk-item-meta">${escapeHtml(meta)}</div>` : ""}
+              </div>`;
+				}).join("")}
+            ${riskThreads.length > 6 ? `<div class="restart-risk-more">另有 ${escapeHtml(String(riskThreads.length - 6))} 个 running session</div>` : ""}
+          </div>
+        </div>` : `<div class="restart-safe-block">当前没有检测到 running session。重启仍会短暂断开本页面连接。</div>`;
+				content.innerHTML = `
+      <div class="restart-confirm-message">
+        ${hasRisk ? "重启可能会打断正在通过 Codex Mobile 同步或运行的 session。建议等它们结束后再重启。" : "确认重启 Codex Mobile Web？"}
+      </div>
+      ${riskHtml}
+      <div class="restart-confirm-scope">${scopeHtml}</div>
+    `;
+			}
+			function closeSharedRestartDialog(confirmed = false) {
+				const resolve = state.sharedRestartConfirmResolve;
+				state.sharedRestartDialogOpen = false;
+				state.sharedRestartRiskThreads = [];
+				state.sharedRestartScopeLines = [];
+				state.sharedRestartConfirmResolve = null;
+				renderSharedRestartDialog();
+				if (resolve) resolve(Boolean(confirmed));
+			}
+			function requestSharedRestartConfirmation(riskThreads, scopeLines) {
+				if (state.sharedRestartConfirmResolve) closeSharedRestartDialog(false);
+				state.sharedRestartRiskThreads = riskThreads || [];
+				state.sharedRestartScopeLines = scopeLines || [];
+				state.sharedRestartDialogOpen = true;
+				renderSharedRestartDialog();
+				return new Promise((resolve) => {
+					state.sharedRestartConfirmResolve = resolve;
+				});
+			}
+			async function handleSharedRestartClick() {
+				if (state.sharedRestartBusy || state.sharedRestarting) return;
+				state.sharedRestartBusy = true;
+				renderSharedRestartButton();
+				try {
+					const riskThreads = await fetchRestartRiskThreads();
+					if (!await requestSharedRestartConfirmation(riskThreads, sharedRestartScopeLines())) return;
+					saveRestartAutoRecoverThreads(riskThreads);
+					state.appServerWasUnavailable = true;
+					await api("/api/restart/shared-chain", {
+						method: "POST",
+						body: "{}",
+						timeoutMs: 12e3
+					});
+					state.sharedRestarting = true;
+					state.sharedRestartBusy = false;
+					showReconnectRefreshPrompt("restart");
+					const connection = $("connectionState");
+					if (connection) connection.textContent = "Restarting";
+					renderSharedRestartButton();
+				} catch (err) {
+					showError(err);
+				} finally {
+					if (!state.sharedRestarting) {
+						state.sharedRestartBusy = false;
+						renderSharedRestartButton();
+					}
+				}
+			}
+			function serverBuildIdFromConfig(config) {
+				return String(config && (config.clientBuildId || config.shellCacheName || config.buildId) || "").trim();
+			}
+			function shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
+				if (buildRefreshPolicy && typeof buildRefreshPolicy.shouldPromptForServerBuildChange === "function") return buildRefreshPolicy.shouldPromptForServerBuildChange(serverBuildId, clientBuildId);
+				return Boolean(serverBuildId && clientBuildId && serverBuildId !== clientBuildId);
+			}
+			function pageShellAssetUrl(asset, buildId) {
+				const url = new URL(asset, window.location.origin);
+				url.searchParams.set("shellBuild", buildId || "current");
+				url.searchParams.set("shellCheck", String(Date.now()));
+				return url.href;
+			}
+			function validatePageShellAsset(asset, text, config) {
+				const buildId = serverBuildIdFromConfig(config);
+				const shellCacheName = String(config && config.shellCacheName || "").trim();
+				if (asset === "/" || asset === "/index.html") return text.includes("href=\"/styles.css\"") && text.includes("src=\"/app.js\"");
+				if (asset === "/styles.css") return text.includes(".app") && text.includes(".composer");
+				if (asset === "/app.js") return !buildId || text.includes(buildId) || text.includes(shellCacheName);
+				if (asset === "/sw.js") return text.includes("shell-asset-manifest.js");
+				return true;
+			}
+			async function fetchPageShellAsset(asset, config) {
+				const response = await fetch(pageShellAssetUrl(asset, serverBuildIdFromConfig(config)), {
+					cache: "no-store",
+					credentials: "same-origin"
+				});
+				if (!response.ok) throw new Error(`page shell asset unavailable: ${asset}`);
+				if (asset === "/" || asset.endsWith(".html") || asset.endsWith(".css") || asset.endsWith(".js") || asset.endsWith(".json") || asset.endsWith(".svg")) {
+					if (!validatePageShellAsset(asset, await response.clone().text(), config)) throw new Error(`page shell asset stale: ${asset}`);
+				}
+				return response;
+			}
+			async function preparePageShellAssets(config, options = {}) {
+				const populateCache = Boolean(options.populateCache);
+				const shellCacheName = String(config && config.shellCacheName || "").trim();
+				const cache = populateCache && shellCacheName && "caches" in window ? await window.caches.open(shellCacheName) : null;
+				for (const asset of PAGE_SHELL_ASSETS) {
+					const response = await fetchPageShellAsset(asset, config);
+					if (cache) await cache.put(asset, response.clone());
+				}
+			}
+			async function fetchPageBuildConfig() {
+				const response = await fetch(`/api/public-config?buildCheck=${Date.now()}`, {
+					cache: "no-store",
+					credentials: "same-origin"
+				});
+				if (!response.ok) return null;
+				return response.json();
+			}
+			async function pruneOldShellCaches(expectedCacheName) {
+				if (!expectedCacheName || !("caches" in window)) return;
+				const keys = await window.caches.keys();
+				await Promise.all(keys.filter((key) => String(key || "").startsWith("codex-mobile-shell-") && key !== expectedCacheName).map((key) => window.caches.delete(key)));
+			}
+			async function clearAllShellCaches() {
+				if (!("caches" in window)) return;
+				const keys = await window.caches.keys();
+				await Promise.all(keys.filter((key) => String(key || "").startsWith("codex-mobile-shell-")).map((key) => window.caches.delete(key)));
+			}
+			async function resetPageShellServiceWorker() {
+				if (!("serviceWorker" in navigator)) return null;
+				const registrations = await navigator.serviceWorker.getRegistrations();
+				await Promise.all(registrations.map((registration) => registration.unregister().catch(() => false)));
+				state.serviceWorkerRegistration = null;
+				const registration = await navigator.serviceWorker.register("/sw.js");
+				if (registration && registration.update) await registration.update().catch(() => {});
+				state.serviceWorkerRegistration = registration || null;
+				return registration || null;
+			}
+			function pageReloadUrlWithBust() {
+				const url = new URL(window.location.href, window.location.origin);
+				url.searchParams.set("shellReload", String(Date.now()));
+				return url.href;
+			}
+			function initializePageBuildState(config) {
+				state.serverBuildId = CLIENT_BUILD_ID || serverBuildIdFromConfig(config);
+				state.serverAssetBuildId = String(config && config.buildId || "").trim();
+				const currentServerBuildId = serverBuildIdFromConfig(config);
+				if (shouldPromptForServerBuildChange(currentServerBuildId, state.serverBuildId)) {
+					state.pageRefreshBuildId = currentServerBuildId;
+					state.pageRefreshReason = "build";
+					state.pageRefreshAvailable = true;
+					state.pageRefreshPreparedConfig = config || null;
+					if (isHermesEmbedMode()) {
+						requestHermesPluginRefresh("server_build_changed", { force: true });
+						return;
+					}
+				}
+				renderPageRefreshPrompt();
+			}
+			function renderPageRefreshPrompt() {
+				const el = $("pageRefreshPrompt");
+				if (!el) return;
+				const restarting = state.pageRefreshReason === "restart";
+				const reconnecting = state.pageRefreshReason === "reconnect" || restarting;
+				el.classList.toggle("hidden", !state.pageRefreshAvailable && !state.pageRefreshReloading);
+				el.disabled = state.pageRefreshReloading;
+				if (state.pageRefreshReloading) el.textContent = restarting ? "Waiting for service, then refreshing..." : reconnecting ? "Refreshing and reconnecting..." : "Refreshing page...";
+				else el.textContent = restarting ? "Service restarted. Tap to refresh." : reconnecting ? "Connection changed. Tap to refresh." : "New version available. Tap to refresh.";
+				el.title = restarting || reconnecting ? "Manual refresh only; the page will not reload until this button is tapped." : state.pageRefreshBuildId ? `Server version is ${state.pageRefreshBuildId}. Tap to refresh manually.` : "Server page assets changed. Tap to refresh manually.";
+				renderHardRefreshButton();
+			}
+			async function handleHardRefreshClick() {
+				if (state.pageRefreshReloading) return;
+				state.pageRefreshPreparedConfig = null;
+				state.pageRefreshReason = "build";
+				state.pageRefreshAvailable = true;
+				await refreshPageForNewBuild();
+			}
+			function showReconnectRefreshPrompt(reason = "reconnect") {
+				if (state.pageRefreshReloading) return;
+				if (isHermesEmbedMode() && reason !== "restart") return;
+				state.pageRefreshAvailable = true;
+				state.pageRefreshReason = reason === "restart" ? "restart" : "reconnect";
+				state.pageRefreshPreparedConfig = null;
+				renderPageRefreshPrompt();
+			}
+			function finishRestartingUiIfReady() {
+				const targetId = String(state.codexProfileSwitchTargetId || "");
+				if (state.codexProfileRestarting && targetId && state.activeCodexProfileId && targetId !== state.activeCodexProfileId) return false;
+				const changed = Boolean(state.codexProfileRestarting || state.sharedRestarting || state.codexProfileSwitchTargetId || state.codexProfileSwitchStage);
+				stopCodexProfileSwitchProgressPolling();
+				state.codexProfileRestarting = false;
+				state.codexProfileSwitchTargetId = "";
+				state.codexProfileSwitchStage = "";
+				state.codexProfileSwitchRequestId = "";
+				state.sharedRestarting = false;
+				state.sharedRestartBusy = false;
+				if (changed) {
+					renderCodexProfileSettings();
+					renderSharedRestartButton();
+				}
+				return changed;
+			}
+			function clearReconnectRefreshPrompt() {
+				if (!(state.pageRefreshReason === "reconnect" || state.pageRefreshReason === "restart") || state.pageRefreshReloading) return;
+				state.pageRefreshAvailable = false;
+				state.pageRefreshReason = "";
+				state.pageRefreshPreparedConfig = null;
+				finishRestartingUiIfReady();
+				renderPageRefreshPrompt();
+			}
+			async function checkPageRefreshAvailability(options = {}) {
+				if (state.pageRefreshReloading) return;
+				const now = Date.now();
+				if (state.pageRefreshBusy) return;
+				if (!options.force && now - state.pageRefreshLastCheckAt < PAGE_REFRESH_MIN_CHECK_INTERVAL_MS) return;
+				state.pageRefreshBusy = true;
+				state.pageRefreshLastCheckAt = now;
+				try {
+					const config = await fetchPageBuildConfig();
+					if (!config) return;
+					const nextBuildId = serverBuildIdFromConfig(config);
+					const nextAssetBuildId = String(config && config.buildId || "").trim();
+					if (!state.serverBuildId) {
+						state.serverBuildId = CLIENT_BUILD_ID || nextBuildId;
+						state.serverAssetBuildId = nextAssetBuildId;
+						return;
+					}
+					const serverBuildNeedsRefresh = Boolean(nextBuildId && nextBuildId !== state.serverBuildId) && shouldPromptForServerBuildChange(nextBuildId, state.serverBuildId);
+					if (Boolean(nextAssetBuildId && state.serverAssetBuildId && nextAssetBuildId !== state.serverAssetBuildId) && !serverBuildNeedsRefresh) {
+						state.serverAssetBuildId = nextAssetBuildId;
+						return;
+					}
+					if (serverBuildNeedsRefresh) {
+						if (isHermesEmbedMode()) {
+							state.pageRefreshBuildId = nextBuildId;
+							state.pageRefreshPreparedConfig = config;
+							requestHermesPluginRefresh("server_build_changed");
+							return;
+						}
+						state.pageRefreshAvailable = true;
+						state.pageRefreshReason = "build";
+						state.pageRefreshBuildId = nextBuildId;
+						state.pageRefreshPreparedConfig = config;
+						renderPageRefreshPrompt();
+					}
+				} catch (_) {} finally {
+					state.pageRefreshBusy = false;
+				}
+			}
+			function schedulePageRefreshCheck(delayMs = 0, options = {}) {
+				window.setTimeout(() => {
+					checkPageRefreshAvailability(options).catch(() => {});
+				}, Math.max(0, Number(delayMs || 0)));
+			}
+			function scheduleVisiblePageRefreshCheck(delayMs = 0, options = {}) {
+				if (document.visibilityState === "hidden") return;
+				schedulePageRefreshCheck(delayMs, options);
+			}
+			function startPageRefreshChecks() {
+				if (state.pageRefreshTimer) clearInterval(state.pageRefreshTimer);
+				state.pageRefreshTimer = window.setInterval(() => {
+					if (document.visibilityState === "hidden") return;
+					checkPageRefreshAvailability({ silent: true }).catch(() => {});
+				}, PAGE_REFRESH_CHECK_INTERVAL_MS);
+			}
+			async function waitForPageBuildConfig(timeoutMs = 18e3) {
+				const startedAt = Date.now();
+				let lastError = null;
+				while (Date.now() - startedAt < timeoutMs) {
+					try {
+						const config = await fetchPageBuildConfig();
+						if (config) return config;
+					} catch (err) {
+						lastError = err;
+					}
+					await new Promise((resolve) => setTimeout(resolve, 900));
+				}
+				throw lastError || /* @__PURE__ */ new Error("Mobile Web is still unavailable");
+			}
+			async function refreshPageForNewBuild() {
+				if (state.pageRefreshReloading) return;
+				state.pageRefreshReloading = true;
+				renderPageRefreshPrompt();
+				saveCurrentDraftNow();
+				let config = state.pageRefreshPreparedConfig;
+				try {
+					const reconnectRefresh = state.pageRefreshReason === "reconnect" || state.pageRefreshReason === "restart";
+					const latestConfig = reconnectRefresh ? await waitForPageBuildConfig() : await fetchPageBuildConfig();
+					if (latestConfig) config = latestConfig;
+					if (!config) throw new Error("page refresh build config unavailable");
+					const nextBuildId = serverBuildIdFromConfig(config);
+					const currentBuildId = state.serverBuildId || CLIENT_BUILD_ID || nextBuildId;
+					if (reconnectRefresh && !shouldPromptForServerBuildChange(nextBuildId, currentBuildId)) {
+						state.serverBuildId = currentBuildId || nextBuildId;
+						state.serverAssetBuildId = String(config && config.buildId || state.serverAssetBuildId || "").trim();
+						rememberRateLimitsFromConfig(config);
+						state.pageRefreshReloading = false;
+						state.pageRefreshAvailable = false;
+						state.pageRefreshReason = "";
+						state.pageRefreshPreparedConfig = null;
+						finishRestartingUiIfReady();
+						renderPageRefreshPrompt();
+						return;
+					}
+					rememberRateLimitsFromConfig(config);
+					await clearAllShellCaches();
+					if (config) await preparePageShellAssets(config, { populateCache: true });
+					await resetPageShellServiceWorker();
+					await pruneOldShellCaches(String(config && config.shellCacheName || "").trim());
+					window.location.replace(pageReloadUrlWithBust());
+				} catch (_) {
+					state.pageRefreshReloading = false;
+					state.pageRefreshPreparedConfig = null;
+					if (state.pageRefreshReason !== "reconnect" && state.pageRefreshReason !== "restart") {
+						state.pageRefreshAvailable = false;
+						state.pageRefreshReason = "";
+					}
+					renderPageRefreshPrompt();
+				}
+			}
+			return Object.freeze({
+				appVersionText,
+				clientBuildVersionText,
+				renderAppUpdateStatus,
+				refreshAppUpdateStatus,
+				currentUpdateUsesPublicRelease,
+				updateStatusLine,
+				publicReleaseStatusLine,
+				updateActionButton,
+				publicPrHasOpenPullRequests,
+				renderUpdatePanel,
+				refreshPublicReleaseStatus,
+				openUpdatePanel,
+				closeUpdatePanel,
+				handleUpdatePanelClick,
+				scheduleStartupUpdateCheck,
+				publicPrPromptKey,
+				publicPrSummaryText,
+				normalizedPublicPrReviewTitle,
+				publicPrReviewThreadTitle,
+				findPublicPrReviewThread,
+				workspacePathBaseName,
+				workspacePathIsVisible,
+				visibleWorkspaceWithBaseName,
+				publicPrReviewWorkspacePath,
+				openPublicPrReviewThreadIfAvailable,
+				renderPublicPrStatus,
+				refreshPublicPrStatus,
+				scheduleStartupPublicPrCheck,
+				publicPrMergeInstruction,
+				publicPrMergeConfirmationMessage,
+				preparePublicPrMergePrompt,
+				rememberPublicPrPrompt,
+				maybePromptPublicPrMerge,
+				handlePublicPrStatusClick,
+				handleAppUpdateClick,
+				renderSharedRestartButton,
+				renderHardRefreshButton,
+				markBootReady,
+				reportShellLoaded,
+				sharedRestartScopeLines,
+				restartRiskThreads,
+				fetchRestartRiskThreads,
+				restartRiskThreadTitle,
+				restartRiskThreadMeta,
+				renderSharedRestartDialog,
+				closeSharedRestartDialog,
+				requestSharedRestartConfirmation,
+				handleSharedRestartClick,
+				serverBuildIdFromConfig,
+				shouldPromptForServerBuildChange,
+				pageShellAssetUrl,
+				validatePageShellAsset,
+				fetchPageShellAsset,
+				preparePageShellAssets,
+				fetchPageBuildConfig,
+				pruneOldShellCaches,
+				clearAllShellCaches,
+				resetPageShellServiceWorker,
+				pageReloadUrlWithBust,
+				initializePageBuildState,
+				renderPageRefreshPrompt,
+				handleHardRefreshClick,
+				showReconnectRefreshPrompt,
+				finishRestartingUiIfReady,
+				clearReconnectRefreshPrompt,
+				checkPageRefreshAvailability,
+				schedulePageRefreshCheck,
+				scheduleVisiblePageRefreshCheck,
+				startPageRefreshChecks,
+				waitForPageBuildConfig,
+				refreshPageForNewBuild
+			});
+		}
+		root.CodexAppUpdateRuntime = Object.freeze({ createAppUpdateRuntime });
+		if (typeof module !== "undefined" && module.exports) module.exports = { createAppUpdateRuntime };
+	})(typeof window !== "undefined" ? window : globalThis);
+}));
+//#endregion
 //#region public/thread-list-load-policy.js
 var require_thread_list_load_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -10107,6 +12965,8 @@ var import_home_ai_diagnostic_reporting = /* @__PURE__ */ __toESM(require_home_a
 var import_thread_diagnostic_events = /* @__PURE__ */ __toESM(require_thread_diagnostic_events());
 var import_thread_tile_layout = /* @__PURE__ */ __toESM(require_thread_tile_layout());
 var import_thread_tile_actions = /* @__PURE__ */ __toESM(require_thread_tile_actions());
+var import_thread_tile_state = /* @__PURE__ */ __toESM(require_thread_tile_state());
+var import_app_update_runtime = /* @__PURE__ */ __toESM(require_app_update_runtime());
 var import_thread_list_load_policy = /* @__PURE__ */ __toESM(require_thread_list_load_policy());
 var import_thread_list_stable_order = /* @__PURE__ */ __toESM(require_thread_list_stable_order());
 var import_thread_status_hints = /* @__PURE__ */ __toESM(require_thread_status_hints());
@@ -10531,6 +13391,86 @@ var moduleDefinitions = [
 		"classicLoaderExcluded": true
 	},
 	{
+		"id": "thread-tile-state",
+		"source": "public/thread-tile-state.js",
+		"globalName": "CodexThreadTileState",
+		"expectedFunctions": [
+			"activePaneSyncPlan",
+			"candidatePaneIdsPlan",
+			"closePanePlan",
+			"composerActionControlPlan",
+			"composerDraftRuntimeSelectionPlan",
+			"composerTargetPlaceholderPlan",
+			"composerTargetPlan",
+			"displaySettingsPayload",
+			"displaySettingsLoadPlan",
+			"dropPaneIntent",
+			"effectiveSelectedThreadId",
+			"idsEqual",
+			"layoutCapacity",
+			"normalizeDisplaySettings",
+			"normalizeOperationMode",
+			"normalizePaneCount",
+			"normalizePinnedIds",
+			"normalizeSplitPairs",
+			"operationModeTogglePlan",
+			"operationBubbleRecord",
+			"operationBubbleSnapshot",
+			"operationDockPlan",
+			"operationMinimumRefreshPlan",
+			"operationSignature",
+			"paneBottomButtonPlan",
+			"paneCountChangePlan",
+			"paneCountStatePlan",
+			"paneDisplayLayoutPlan",
+			"panePatchCompletionPlan",
+			"panePatchPreflightPlan",
+			"paneRenderFramePlan",
+			"paneRenderSignaturePlan",
+			"paneSelectionPlan",
+			"paneSlotMutationEffectsPlan",
+			"paneScrollHoldPlan",
+			"paneScrollMetrics",
+			"paneScrollRestorePlan",
+			"prependSplitPair",
+			"detailLoadPlan",
+			"detailLoadErrorEffectsPlan",
+			"detailLoadFinallyEffectsPlan",
+			"detailLoadConcurrencyPlan",
+			"detailLoadQueueDrainPlan",
+			"detailLoadQueuePlan",
+			"detailLoadStartEffectsPlan",
+			"detailLoadSuccessEffectsPlan",
+			"refreshDelayMs",
+			"refreshSchedulePlan",
+			"refreshTargetIds",
+			"replaceLastPaneForThreadListOpenPlan",
+			"replacePaneThreadPlan",
+			"removeSplitPairsForIds",
+			"movePaneRelativePlan",
+			"selectPanePlan",
+			"selectedPaneEffectsPlan",
+			"splitPaneWithTargetPlan",
+			"switchMenuOptionsPlan",
+			"switchMenuPlan",
+			"syncPinnedIdsFromActiveIds",
+			"threadTileVerticalChromePlan",
+			"threadTileViewportBaselinePlan",
+			"toggleOperationMode",
+			"uniqueIds"
+		],
+		"assetPath": "/thread-tile-state.js",
+		"classicLoaderExcluded": true
+	},
+	{
+		"id": "app-update-runtime",
+		"source": "public/app-update-runtime.js",
+		"globalName": "CodexAppUpdateRuntime",
+		"expectedFunctions": ["createAppUpdateRuntime"],
+		"assetPath": "/app-update-runtime.js",
+		"classicLoaderExcluded": true
+	},
+	{
 		"id": "thread-list-load-policy",
 		"source": "public/thread-list-load-policy.js",
 		"globalName": "CodexThreadListLoadPolicy",
@@ -10649,6 +13589,8 @@ var moduleApis = {
 	"thread-diagnostic-events": import_thread_diagnostic_events.default,
 	"thread-tile-layout": import_thread_tile_layout.default,
 	"thread-tile-actions": import_thread_tile_actions.default,
+	"thread-tile-state": import_thread_tile_state.default,
+	"app-update-runtime": import_app_update_runtime.default,
 	"thread-list-load-policy": import_thread_list_load_policy.default,
 	"thread-list-stable-order": import_thread_list_stable_order.default,
 	"thread-status-hints": import_thread_status_hints.default,
@@ -11473,6 +14415,74 @@ function sampleModule(id, api) {
 			dropAction: String(drop.action || "")
 		};
 	}
+	if (id === "thread-tile-state") {
+		const candidate = functionReady(api, "candidatePaneIdsPlan") ? api.candidatePaneIdsPlan({
+			defaultIds: ["thread-a", "thread-b"],
+			visibleIds: ["thread-a", "thread-b"],
+			pinnedIds: ["thread-b"],
+			currentThreadId: "thread-a",
+			maxPanes: 2
+		}) : {};
+		const paneCount = functionReady(api, "normalizePaneCount") ? api.normalizePaneCount("3", { maxPanes: 12 }) : 0;
+		const refreshDelay = functionReady(api, "refreshDelayMs") ? api.refreshDelayMs({
+			visible: true,
+			active: true
+		}) : 0;
+		const loadSuccess = functionReady(api, "detailLoadSuccessEffectsPlan") ? api.detailLoadSuccessEffectsPlan({
+			threadId: "thread-a",
+			hasThread: true,
+			nowMs: 1234
+		}) : {};
+		const selected = functionReady(api, "effectiveSelectedThreadId") ? api.effectiveSelectedThreadId({
+			ids: ["thread-a", "thread-b"],
+			selectedThreadId: "thread-a",
+			currentThreadId: "thread-b"
+		}) : "";
+		return {
+			ok: candidate.action === "candidate-pane-ids" && candidate.ids && candidate.ids.join(",") === "thread-b,thread-a" && paneCount === 3 && refreshDelay === 500 && loadSuccess.reason === "thread-loaded" && loadSuccess.loadedAtMs === 1234 && selected === "thread-a",
+			candidateIds: Array.isArray(candidate.ids) ? candidate.ids : [],
+			paneCount,
+			refreshDelay,
+			loadSuccessReason: String(loadSuccess.reason || ""),
+			selected
+		};
+	}
+	if (id === "app-update-runtime") {
+		const runtime = functionReady(api, "createAppUpdateRuntime") ? api.createAppUpdateRuntime({
+			CLIENT_BUILD_ID: "0.1.11|codex-mobile-shell-v625-a5a3d596240d",
+			state: {
+				appVersion: "0.1.11",
+				publicReleaseEnabled: true
+			},
+			PAGE_SHELL_ASSETS: ["/app.js", "/sw.js"],
+			escapeHtml: (value) => String(value == null ? "" : value),
+			buildRefreshPolicy: { shouldPromptForServerBuildChange: () => true }
+		}) : null;
+		const client = runtime && typeof runtime.clientBuildVersionText === "function" ? runtime.clientBuildVersionText() : "";
+		const version = runtime && typeof runtime.appVersionText === "function" ? runtime.appVersionText({ version: "0.1.11" }) : "";
+		const updateLine = runtime && typeof runtime.updateStatusLine === "function" ? runtime.updateStatusLine({
+			updateAvailable: true,
+			canFastForward: true,
+			remoteShort: "abc123"
+		}) : "";
+		const publicLine = runtime && typeof runtime.publicReleaseStatusLine === "function" ? runtime.publicReleaseStatusLine({
+			updateAvailable: true,
+			publicShort: "def456"
+		}) : "";
+		const serverBuild = runtime && typeof runtime.serverBuildIdFromConfig === "function" ? runtime.serverBuildIdFromConfig({
+			clientBuildId: "client-a",
+			shellCacheName: "cache-a"
+		}) : "";
+		return {
+			ok: runtime && typeof runtime.refreshPageForNewBuild === "function" && client === "客户端 v625" && version === "v0.1.11 · 客户端 v625" && updateLine === "Update available: abc123" && publicLine === "Public latest: def456" && serverBuild === "client-a",
+			client,
+			version,
+			updateLine,
+			publicLine,
+			serverBuild,
+			refreshReady: Boolean(runtime && typeof runtime.refreshPageForNewBuild === "function")
+		};
+	}
 	if (id === "thread-list-load-policy") {
 		const plan = functionReady(api, "planThreadListLoadRequest") ? api.planThreadListLoadRequest({
 			silent: true,
@@ -12079,7 +15089,7 @@ async function startCodexMobileViteAppPreview() {
 		failedCount: status.failed.length
 	};
 }
-var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-wH-yEfBd.js"), []);
+var deferredEntryTopologyPromise = __vitePreload(() => import("./vite-deferred-entry-topology-BXNa9jlK.js"), []);
 loadCodexMobileViteEntryGroups();
 var entryDynamicImportGraph = {
 	owner: "vite-shell-entry",

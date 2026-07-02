@@ -1,4 +1,4 @@
-import { t as shell_asset_manifest_default } from "./vite-shell-entry-DAJ2_4XA.js";
+import { t as shell_asset_manifest_default } from "./vite-shell-entry-BPk8k29w.js";
 //#region frontend/vite-deferred-entry-topology.mjs
 function deferredEntryGroups() {
 	return (Array.isArray(shell_asset_manifest_default.entryGroups) ? shell_asset_manifest_default.entryGroups : []).filter((group) => group && !group.startupCritical).map((group) => ({
