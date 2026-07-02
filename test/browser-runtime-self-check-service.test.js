@@ -991,6 +991,42 @@ test("browser runtime self-check catches sparse DOM after confirmed nonempty tar
   assert.ok(report.issues.some((issue) => issue.code === "browser_dom_final_sparse_after_nonempty"));
 });
 
+test("browser runtime self-check blocks unmarked empty state after confirmed content", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "confirmed-content",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 8,
+        items: 40,
+        renderKeys: 45,
+      },
+      {
+        label: "early-empty-state",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: false,
+        turns: 0,
+        items: 0,
+        renderKeys: 1,
+        delayMs: 150,
+        emptyState: true,
+        loadingNote: false,
+      },
+    ],
+  });
+
+  const issue = report.issues.find((entry) => entry.code === "browser_dom_sparse_after_nonempty");
+  assert.equal(report.ok, false);
+  assert.equal(issue && issue.severity, "H2");
+  assert.equal(issue && issue.unmarkedEmptyState, true);
+});
+
 test("browser runtime self-check catches unconfirmed sparse downgrade after confirmed target content", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,

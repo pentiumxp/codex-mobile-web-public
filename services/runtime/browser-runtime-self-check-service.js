@@ -822,13 +822,15 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         initialSparseIssueSample = initialSparseIssueSample || sample;
       }
       else if (seenNonEmpty && isSparseSample(sample)) {
-        issues.push(issue(settled ? "H2" : "H3", "browser_dom_sparse_after_nonempty", sample, {
+        const unmarkedEmptyState = Boolean(sample.emptyState) && !sample.loadingNote;
+        issues.push(issue((settled || unmarkedEmptyState) ? "H2" : "H3", "browser_dom_sparse_after_nonempty", sample, {
           threadHash,
           previousMaxTurns: maxConfirmedTurns,
           previousMaxItems: maxConfirmedItems,
           loadingNote: Boolean(sample.loadingNote),
           emptyState: Boolean(sample.emptyState),
           settled,
+          unmarkedEmptyState,
         }));
       }
       const loadingPreviewSample = Boolean(sample.loadingNote) && !sample.emptyState;
