@@ -7,6 +7,7 @@ const {
   createCoreApiRouteService,
   restartDefaultShellModeFromBody,
 } = require("../server-routes/core-api-route-service");
+const { createCodexProfileSwitchService } = require("../adapters/codex-profile-switch-service");
 
 test("core API route adapter re-exports server-routes service", () => {
   const adapter = require("../adapters/core-api-route-service");
@@ -231,6 +232,107 @@ test("core shared-chain restart route forwards bounded default shell mode", asyn
   assert.equal(restartOptions.profileId, "active");
   assert.equal(restartOptions.codexHome, "/home/active/.codex");
   assert.equal(restartOptions.defaultShellMode, "vite-app-preview");
+});
+
+test("core profile switch fails closed when target quota preflight fails", async () => {
+  const progressService = createCodexProfileSwitchService();
+  let setActiveProfileCalled = false;
+  let invalidateProfilesCalled = false;
+  let restartCalled = false;
+  const trustCalls = [];
+  const mcpCalls = [];
+  let sent = null;
+
+  const service = createCoreApiRouteService({
+    activeProfileRestartOptions: () => {
+      throw new Error("restart options should not be derived after failed preflight");
+    },
+    codexProfileService: {
+      profiles: () => ({
+        switchSupported: true,
+        activeProfileId: "current",
+        profiles: [
+          {
+            id: "target",
+            label: "Target",
+            codexHome: "/home/target/.codex",
+            auth: { status: "loggedIn" },
+          },
+        ],
+      }),
+      setActiveProfile: () => {
+        setActiveProfileCalled = true;
+        throw new Error("setActiveProfile should not be called after failed preflight");
+      },
+    },
+    getProfileSwitchProgress: progressService.getProfileSwitchProgress,
+    httpStatusError: (statusCode, message) => {
+      const err = new Error(message);
+      err.statusCode = statusCode;
+      return err;
+    },
+    liveQuotaSnapshotForProfiles: () => ({ rateLimits: null, rateLimitsByModel: {}, source: null }),
+    preflightCodexProfileSwitch: async (_profile, options = {}) => {
+      if (typeof options.onProgress === "function") {
+        options.onProgress({
+          stage: "preflight_rate_limits",
+          status: "failed",
+          message: "目标账号额度读取失败，未切换。请确认目标账号登录和网络可用后重试。",
+          stepIndex: 7,
+          code: "target_profile_rate_limits_unavailable",
+          detail: "bounded quota read failure",
+        });
+      }
+      const err = new Error("目标账号额度读取失败，未切换。请确认目标账号登录和网络可用后重试。");
+      err.statusCode = 409;
+      err.code = "target_profile_rate_limits_unavailable";
+      err.detail = "bounded quota read failure";
+      throw err;
+    },
+    profileSwitchLogDetail: progressService.profileSwitchLogDetail,
+    profileSwitchProgressRequestId: progressService.profileSwitchProgressRequestId,
+    publicConfigRuntimeCache: {
+      invalidateProfiles: () => {
+        invalidateProfilesCalled = true;
+      },
+    },
+    setProfileSwitchProgress: progressService.setProfileSwitchProgress,
+    sharedChainRestartDelayMs: 1200,
+    sharedChainRestartService: {
+      restart: () => {
+        restartCalled = true;
+        return { ok: true };
+      },
+    },
+    syncCodexMobileMcpToolset: (codexHome) => {
+      mcpCalls.push(codexHome);
+    },
+    syncRegisteredWorkspaceTrust: (codexHome) => {
+      trustCalls.push(codexHome);
+    },
+  });
+
+  const handled = await service.handlePublicRoute({
+    url: new URL("http://127.0.0.1:8787/api/codex-profiles/active"),
+    req: { method: "POST", headers: {} },
+    res: {},
+    readBody: async () => ({ profileId: "target", requestId: "switchtest1" }),
+    sendJson: (status, body) => {
+      sent = { status, body };
+    },
+  });
+
+  assert.deepEqual(handled, { handled: true });
+  assert.equal(sent.status, 409);
+  assert.equal(sent.body.ok, false);
+  assert.equal(sent.body.code, "target_profile_rate_limits_unavailable");
+  assert.equal(sent.body.progress.status, "failed");
+  assert.equal(sent.body.progress.failedStage, "preflight_rate_limits");
+  assert.equal(setActiveProfileCalled, false);
+  assert.equal(invalidateProfilesCalled, false);
+  assert.equal(restartCalled, false);
+  assert.deepEqual(trustCalls, ["/home/target/.codex"]);
+  assert.deepEqual(mcpCalls, ["/home/target/.codex"]);
 });
 
 test("restart default shell mode body parser is fail closed", () => {

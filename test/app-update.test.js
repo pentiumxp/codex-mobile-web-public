@@ -208,9 +208,12 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(appUpdateSource, /Connection changed\. Tap to refresh\./);
   assert.match(appUpdateSource, /Refreshing and reconnecting\.\.\./);
   assert.match(functionBody(appUpdateSource, "showReconnectRefreshPrompt"), /if \(isHermesEmbedMode\(\) && reason !== "restart"\) return;/);
+  assert.match(appUpdateSource, /rememberCodexProfiles = \(\) => \{\}/);
+  assert.match(appUpdateSource, /function codexProfileRestartReadyForCompletion\(\)/);
+  assert.match(functionBody(appUpdateSource, "codexProfileRestartReadyForCompletion"), /服务已恢复，正在等待目标账号额度刷新/);
   assert.match(appUpdateSource, /async function waitForPageBuildConfig\(timeoutMs = 18000\)/);
   assert.match(appUpdateSource, /state\.pageRefreshReason === "reconnect" \|\| state\.pageRefreshReason === "restart"[\s\S]*await waitForPageBuildConfig\(\)/);
-  assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /if \(reconnectRefresh && !shouldPromptForServerBuildChange\(nextBuildId, currentBuildId\)\) \{[\s\S]*state\.pageRefreshAvailable = false;[\s\S]*finishRestartingUiIfReady\(\);[\s\S]*return;/);
+  assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /if \(reconnectRefresh && !shouldPromptForServerBuildChange\(nextBuildId, currentBuildId\)\) \{[\s\S]*rememberCodexProfiles\(config && config\.codexProfiles \|\| null\);[\s\S]*const restartFinished = finishRestartingUiIfReady\(\);[\s\S]*state\.pageRefreshAvailable = !restartFinished && state\.codexProfileRestarting;[\s\S]*return;/);
   assert.match(appUpdateSource, /showReconnectRefreshPrompt\("reconnect"\);[\s\S]*if \(!isHermesEmbedMode\(\)\) showError\(err\)/);
   assert.match(appUpdateSource, /showReconnectRefreshPrompt\("restart"\)/);
   assert.match(appUpdateSource, /function shouldRefreshThreadListDuringEventRecovery\(options = \{\}\)/);

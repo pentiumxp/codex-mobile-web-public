@@ -1228,6 +1228,15 @@ function vitePreviewProbeExpression(input = {}) {
         ? topology.startupGroups.flatMap((group) => Array.isArray(group && group.assets) ? group.assets : [])
         : [];
       const compatibility = window.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ || {};
+      try {
+        await Promise.race([
+          window.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY_PROMISE__,
+          new Promise((resolve) => setTimeout(resolve, 3000)),
+        ]);
+      } catch (_) {
+        // The readiness fields below report the compatibility failure without
+        // leaking private browser state or long exception text.
+      }
       const esmCompatibility = window.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__ || {};
       const esmCompatibilityModules = Array.isArray(esmCompatibility.modules)
         ? esmCompatibility.modules
@@ -1547,6 +1556,14 @@ function viteAppPreviewProbeExpression(input = {}) {
         ]);
       } catch (error) {
         appPreviewResult = { ok: false, errorCode: String(error && error.message || error || "vite_app_preview_failed").slice(0, 120) };
+      }
+      try {
+        await Promise.race([
+          window.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY_PROMISE__,
+          new Promise((resolve) => setTimeout(resolve, 3000)),
+        ]);
+      } catch (_) {
+        // Keep this probe fail-closed through esmCompatibilityReady below.
       }
       const visible = (element) => Boolean(element
         && element.getBoundingClientRect

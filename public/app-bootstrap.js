@@ -642,6 +642,7 @@ function requireAppUpdateRuntime() {
       isHermesEmbedMode,
       requestHermesPluginRefresh,
       rememberRateLimitsFromConfig,
+      rememberCodexProfiles,
       renderCodexProfileSettings,
       stopCodexProfileSwitchProgressPolling,
       publishPluginNavigationState,

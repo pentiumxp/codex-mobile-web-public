@@ -185,6 +185,9 @@ if (!fs.existsSync(manifestPath)) {
       if (Number(entryDynamicImportGraph.deferredFileCount) < 1) {
         mismatch.push("viteBuildEntryDynamicImportDeferred");
       }
+      if (Number(entryDynamicImportGraph.esmCompatibilityFileCount) !== 1) {
+        mismatch.push("viteBuildEntryDynamicImportEsmCompatibility");
+      }
       if (Number(entryDynamicImportGraph.entryGroupFileCount) !== entryGroupChunks.length) {
         mismatch.push("viteBuildEntryDynamicImportEntryGroups");
       }

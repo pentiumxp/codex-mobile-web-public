@@ -1,5 +1,4 @@
 import shellManifest from "../public/shell-asset-manifest.json";
-import { codexMobileViteEsmCompatibility } from "virtual:codex-mobile-esm-compatibility";
 import {
   codexMobileViteEntryGroupIds,
   loadCodexMobileViteEntryGroups,
@@ -57,7 +56,38 @@ const classicCompatibility = {
   startupGlobalContracts,
   classicGlobalExports,
 };
-const esmCompatibility = codexMobileViteEsmCompatibility();
+const pendingEsmCompatibility = {
+  schemaVersion: 1,
+  owner: "vite-shell-entry",
+  moduleCount: 0,
+  readyCount: 0,
+  modules: [],
+  loading: true,
+};
+let esmCompatibility = pendingEsmCompatibility;
+
+const esmCompatibilityImportPromise = import("virtual:codex-mobile-esm-compatibility")
+  .then((module) => {
+    const createCompatibility = module && typeof module.codexMobileViteEsmCompatibility === "function"
+      ? module.codexMobileViteEsmCompatibility
+      : null;
+    if (!createCompatibility) {
+      throw new Error("codex_mobile_vite_esm_compatibility_factory_missing");
+    }
+    esmCompatibility = createCompatibility();
+    globalThis.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__ = esmCompatibility;
+    return esmCompatibility;
+  })
+  .catch((error) => {
+    esmCompatibility = {
+      ...pendingEsmCompatibility,
+      loading: false,
+      failed: true,
+      errorCode: String(error && error.message || error || "codex_mobile_vite_esm_compatibility_failed").slice(0, 160),
+    };
+    globalThis.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__ = esmCompatibility;
+    throw error;
+  });
 
 function shellManifestScriptAssets() {
   return entryGroups.flatMap((group) => Array.isArray(group.assets) ? group.assets : [])
@@ -156,11 +186,6 @@ async function startCodexMobileViteAppPreview() {
   const manifestCoverageMatches = manifestAssets.length > 0
     && coveredAssets.size === manifestAssets.length
     && JSON.stringify(manifestAssets.filter((asset) => coveredAssets.has(asset))) === JSON.stringify(manifestAssets);
-  const missingExcludedGlobals = loaderPlan && Array.isArray(loaderPlan.excludedEsmScripts)
-    ? loaderPlan.excludedEsmScripts
-        .filter((entry) => !entry.globalName || !globalThis[entry.globalName])
-        .map((entry) => entry.globalName || entry.path)
-    : [];
   const status = {
     ok: false,
     mode: "vite-app-preview",
@@ -175,7 +200,8 @@ async function startCodexMobileViteAppPreview() {
     loaderPlanExcludedEsmHashCount: loaderPlan ? loaderPlan.excludedEsmHashCount : 0,
     loaderPlanSha256: loaderPlan ? loaderPlan.sha256 : "",
     loaderPlanMatchesShellManifest: Boolean(loaderPlan) && manifestCoverageMatches,
-    excludedEsmGlobalMissing: missingExcludedGlobals,
+    esmCompatibilityReady: false,
+    excludedEsmGlobalMissing: [],
     scriptCount: assets.length,
     loaded: [],
     failed: [],
@@ -198,6 +224,16 @@ async function startCodexMobileViteAppPreview() {
       || !manifestCoverageMatches) {
       throw new Error("codex_mobile_vite_app_preview_loader_plan_invalid");
     }
+    const loadedEsmCompatibility = await esmCompatibilityImportPromise;
+    status.esmCompatibilityReady = Boolean(loadedEsmCompatibility)
+      && loadedEsmCompatibility.owner === "vite-shell-entry"
+      && Number(loadedEsmCompatibility.moduleCount) === Number(loadedEsmCompatibility.readyCount);
+    const missingExcludedGlobals = loaderPlan && Array.isArray(loaderPlan.excludedEsmScripts)
+      ? loaderPlan.excludedEsmScripts
+          .filter((entry) => !entry.globalName || !globalThis[entry.globalName])
+          .map((entry) => entry.globalName || entry.path)
+      : [];
+    status.excludedEsmGlobalMissing = missingExcludedGlobals;
     if (missingExcludedGlobals.length) {
       throw new Error("codex_mobile_vite_app_preview_esm_globals_missing");
     }
@@ -225,6 +261,7 @@ async function startCodexMobileViteAppPreview() {
     loaderPlanExcludedEsmHashCount: status.loaderPlanExcludedEsmHashCount,
     loaderPlanSha256: status.loaderPlanSha256,
     loaderPlanMatchesShellManifest: status.loaderPlanMatchesShellManifest,
+    esmCompatibilityReady: status.esmCompatibilityReady,
     excludedEsmGlobalMissingCount: status.excludedEsmGlobalMissing.length,
     scriptCount: status.scriptCount,
     loadedCount: status.loaded.length,
@@ -236,10 +273,11 @@ const deferredEntryTopologyPromise = import("./vite-deferred-entry-topology.mjs"
 const entryGroupImportPromise = loadCodexMobileViteEntryGroups();
 const entryDynamicImportGraph = {
   owner: "vite-shell-entry",
+  esmCompatibilitySources: ["virtual:codex-mobile-esm-compatibility"],
   deferredSources: ["frontend/vite-deferred-entry-topology.mjs"],
   entryGroupSources: codexMobileViteEntryGroupIds
     .map((groupId) => `virtual:codex-mobile-shell-entry-group/${groupId}`),
-  expectedImportCount: 1 + codexMobileViteEntryGroupIds.length,
+  expectedImportCount: 2 + codexMobileViteEntryGroupIds.length,
 };
 const appPreviewPromise = isAppPreviewPage() ? startCodexMobileViteAppPreview() : Promise.resolve(null);
 
@@ -247,6 +285,7 @@ globalThis.__CODEX_MOBILE_VITE_SHELL_BUILD_STAGE__ = "entry-topology-v1";
 globalThis.__CODEX_MOBILE_VITE_SHELL_ENTRY_TOPOLOGY__ = entryTopology;
 globalThis.__CODEX_MOBILE_VITE_CLASSIC_COMPATIBILITY__ = classicCompatibility;
 globalThis.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__ = esmCompatibility;
+globalThis.__CODEX_MOBILE_VITE_ESM_COMPATIBILITY_PROMISE__ = esmCompatibilityImportPromise;
 globalThis.__CODEX_MOBILE_VITE_DEFERRED_ENTRY_TOPOLOGY__ = deferredEntryTopologyPromise;
 globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_OWNER__ = "vite-shell-entry";
 globalThis.__CODEX_MOBILE_VITE_ENTRY_DYNAMIC_IMPORT_GRAPH__ = entryDynamicImportGraph;
@@ -281,6 +320,7 @@ export function codexMobileEntryGroupImportIds() {
 export function codexMobileEntryDynamicImportGraph() {
   return {
     ...entryDynamicImportGraph,
+    esmCompatibilitySources: entryDynamicImportGraph.esmCompatibilitySources.slice(),
     deferredSources: entryDynamicImportGraph.deferredSources.slice(),
     entryGroupSources: entryDynamicImportGraph.entryGroupSources.slice(),
   };

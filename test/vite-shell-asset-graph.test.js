@@ -117,6 +117,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   const root = path.resolve(__dirname, "..");
   const source = fs.readFileSync(path.join(root, "frontend", "vite-shell-entry.mjs"), "utf8");
   assert.match(source, /virtual:codex-mobile-esm-compatibility/);
+  assert.match(source, /import\("virtual:codex-mobile-esm-compatibility"\)/);
+  assert.doesNotMatch(source, /import\s+\{\s*codexMobileViteEsmCompatibility\s*\}\s+from\s+"virtual:codex-mobile-esm-compatibility"/);
+  assert.match(source, /__CODEX_MOBILE_VITE_ESM_COMPATIBILITY_PROMISE__/);
   assert.doesNotMatch(source, /\.\.\/public\/build-refresh-policy\.js/);
   assert.match(source, /__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__/);
   assert.match(source, /codexMobileEsmCompatibility/);
@@ -230,7 +233,20 @@ test("Vite shell build contract records entry chunks and classic fallback output
       isEntry: true,
       isDynamicEntry: false,
       imports: [],
-      dynamicImports: ["assets/vite-deferred-entry-topology-example.js"],
+      dynamicImports: [
+        "assets/vite-esm-compatibility-example.js",
+        "assets/vite-deferred-entry-topology-example.js",
+      ],
+    },
+    "assets/vite-esm-compatibility-example.js": {
+      type: "chunk",
+      fileName: "assets/vite-esm-compatibility-example.js",
+      name: "codex-mobile-esm-compatibility",
+      facadeModuleId: `\0${VITE_ESM_COMPATIBILITY_SOURCE}`,
+      isEntry: false,
+      isDynamicEntry: true,
+      imports: ["assets/vite-shell-entry-example.js"],
+      dynamicImports: [],
     },
     "assets/vite-deferred-entry-topology-example.js": {
       type: "chunk",
@@ -265,13 +281,17 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.equal(contract.viteEntry.source, "frontend/vite-shell-entry.mjs");
   assert.equal(contract.viteEntry.fileName, "assets/vite-shell-entry-example.js");
   assert.deepEqual(contract.viteEntry.dynamicImports, [
+    "assets/vite-esm-compatibility-example.js",
     "assets/vite-deferred-entry-topology-example.js",
     ...manifest.entryGroups.map((group) => `assets/vite-entry-group-${String(group.id).toLowerCase()}-example.js`),
   ]);
+  assert.equal(contract.viteEsmCompatibilityChunks.length, 1);
+  assert.equal(contract.viteEsmCompatibilityChunks[0].source, VITE_ESM_COMPATIBILITY_SOURCE);
   assert.equal(contract.viteDeferredChunks.length, 1);
   assert.equal(contract.viteDeferredChunks[0].source, "frontend/vite-deferred-entry-topology.mjs");
   assert.equal(contract.viteEntryGroupChunks.length, manifest.entryGroups.length);
   assert.equal(contract.entryDynamicImportGraph.owner, "vite-shell-entry");
+  assert.equal(contract.entryDynamicImportGraph.esmCompatibilityFileCount, 1);
   assert.equal(contract.entryDynamicImportGraph.deferredFileCount, 1);
   assert.equal(contract.entryDynamicImportGraph.entryGroupFileCount, manifest.entryGroups.length);
   assert.equal(contract.startupCompatibility.requiredGlobalCount, 30);

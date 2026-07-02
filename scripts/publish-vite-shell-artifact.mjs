@@ -78,11 +78,13 @@ function publicArtifactUrl(fileName) {
 function requiredArtifactFiles(manifest) {
   const viteBuild = manifest && manifest.viteBuild || {};
   const entryFile = viteBuild.viteEntry && viteBuild.viteEntry.fileName;
+  const esmCompatibilityFiles = (viteBuild.viteEsmCompatibilityChunks || []).map((chunk) => chunk && chunk.fileName);
   const deferredFiles = (viteBuild.viteDeferredChunks || []).map((chunk) => chunk && chunk.fileName);
   const entryGroupFiles = (viteBuild.viteEntryGroupChunks || []).map((chunk) => chunk && chunk.fileName);
   return uniqueValues([
     "codex-mobile-shell-manifest.json",
     entryFile,
+    ...esmCompatibilityFiles,
     ...deferredFiles,
     ...entryGroupFiles,
   ]);
@@ -331,6 +333,11 @@ export function buildViteShellPublicReadback(options = {}) {
       ? Number(chunk.classicGlobalExportCount)
       : 0,
   })).filter((chunk) => chunk.fileName);
+  const esmCompatibilityChunks = (viteBuild.viteEsmCompatibilityChunks || []).map((chunk) => ({
+    source: String(chunk && chunk.source || ""),
+    fileName: normalizeRelativeFileName(chunk && chunk.fileName),
+    entryScript: publicArtifactUrl(chunk && chunk.fileName),
+  })).filter((chunk) => chunk.fileName);
   const startupAssets = startupCriticalAssets(manifest);
   const classicShellScriptBlock = classicShellScriptBlockContract(manifest, viteBuild);
   const appPreviewClassicLoaderPlan = normalizeAppPreviewClassicLoaderPlan(viteBuild.appPreviewClassicLoaderPlan);
@@ -403,6 +410,7 @@ export function buildViteShellPublicReadback(options = {}) {
       source: viteBuild.viteEntry.source || "",
       fileName: normalizeRelativeFileName(viteBuild.viteEntry.fileName),
     } : null,
+    esmCompatibilityChunks,
     entryGroupChunks,
     preview,
     startupCriticalAssets: startupAssets,
@@ -436,6 +444,7 @@ export function buildViteShellPublicReadback(options = {}) {
       source: String(chunk && chunk.source || ""),
       fileName: normalizeRelativeFileName(chunk && chunk.fileName),
     })).filter((chunk) => chunk.fileName),
+    esmCompatibilityChunks,
     entryGroupChunks,
     preview,
     appPreview,
@@ -446,6 +455,7 @@ export function buildViteShellPublicReadback(options = {}) {
     esmCompatibility,
     counts: {
       entryGroups: Array.isArray(manifest.entryGroups) ? manifest.entryGroups.length : 0,
+      esmCompatibilityChunks: esmCompatibilityChunks.length,
       entryGroupChunks: entryGroupChunks.length,
       startupCriticalAssets: startupAssets.length,
       classicShellScriptBlockScripts: classicShellScriptBlock.scriptCount,
@@ -491,6 +501,10 @@ export function renderViteShellPreviewHtml(readback = {}) {
     .map((chunk) => chunk && chunk.entryScript)
     .filter((asset) => String(asset || "").startsWith("/"))
     .map((asset) => `  <link rel=\"modulepreload\" href=\"${escapeHtml(asset)}\" data-codex-vite-entry-group-chunk=\"true\">`);
+  const esmCompatibilityPreloadTags = (Array.isArray(readback.esmCompatibilityChunks) ? readback.esmCompatibilityChunks : [])
+    .map((chunk) => chunk && chunk.entryScript)
+    .filter((asset) => String(asset || "").startsWith("/"))
+    .map((asset) => `  <link rel=\"modulepreload\" href=\"${escapeHtml(asset)}\" data-codex-vite-esm-compatibility-chunk=\"true\">`);
   return [
     "<!doctype html>",
     "<html lang=\"en\">",
@@ -499,6 +513,7 @@ export function renderViteShellPreviewHtml(readback = {}) {
     "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
     "  <meta name=\"robots\" content=\"noindex,nofollow\">",
     ...startupPreloadTags,
+    ...esmCompatibilityPreloadTags,
     ...entryGroupPreloadTags,
     "  <title>Codex Mobile Vite Shell Preview</title>",
     "</head>",
@@ -550,6 +565,10 @@ export function renderViteShellAppPreviewHtml(readback = {}, root = process.cwd(
   );
   const moduleBlock = [
     VITE_APP_PREVIEW_SCRIPT_BLOCK_START,
+    ...(Array.isArray(readback.esmCompatibilityChunks) ? readback.esmCompatibilityChunks : [])
+      .map((chunk) => chunk && chunk.entryScript)
+      .filter((asset) => String(asset || "").startsWith("/"))
+      .map((asset) => `  <link rel="modulepreload" href="${escapeHtml(asset)}" data-codex-vite-esm-compatibility-chunk="true">`),
     "  <script id=\"codex-vite-app-preview-loader-plan\" type=\"application/json\" data-codex-vite-app-preview-loader-plan=\"true\">",
     jsonScriptBody(readback.appPreviewClassicLoaderPlan),
     "  </script>",
@@ -619,6 +638,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         : 0,
       shellCacheName: result.shellCacheName,
       clientBuildId: result.clientBuildId,
+      esmCompatibilityChunks: result.counts.esmCompatibilityChunks,
       entryGroupChunks: result.counts.entryGroupChunks,
       startupCriticalAssets: result.counts.startupCriticalAssets,
       esmCompatibilityModules: result.counts.esmCompatibilityModules,

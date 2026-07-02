@@ -2241,6 +2241,9 @@ function bundleValues(bundle) {
 function sourceForFacadeModule(facadeModuleId, root) {
   const value = normalizePath(facadeModuleId);
   if (!value) return "";
+  if (value.includes(VITE_ESM_COMPATIBILITY_SOURCE)) {
+    return VITE_ESM_COMPATIBILITY_SOURCE;
+  }
   const virtualIndex = value.indexOf(VITE_ENTRY_GROUP_SOURCE_PREFIX);
   if (virtualIndex >= 0) {
     return value.slice(virtualIndex);
@@ -2511,6 +2514,9 @@ function validateViteShellBuildContract(contract, manifest) {
   if (Number(entryDynamicImportGraph.entryGroupFileCount) !== requiredGroupIds.length) {
     issues.push({ code: "vite_entry_dynamic_import_entry_group_count_mismatch" });
   }
+  if (Number(entryDynamicImportGraph.esmCompatibilityFileCount) !== 1) {
+    issues.push({ code: "vite_entry_dynamic_import_esm_compatibility_count_mismatch" });
+  }
   if (Number(entryDynamicImportGraph.deferredFileCount) < 1) {
     issues.push({ code: "vite_entry_dynamic_import_deferred_missing" });
   }
@@ -2653,6 +2659,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     || chunks.find((chunk) => chunk.isEntry && chunk.name === "vite-shell-entry")
     || chunks.find((chunk) => chunk.isEntry);
   const deferredChunks = chunks.filter((chunk) => chunk.source === VITE_DEFERRED_ENTRY_SOURCE);
+  const esmCompatibilityChunks = chunks.filter((chunk) => chunk.source === VITE_ESM_COMPATIBILITY_SOURCE);
   const entryGroupChunks = chunks
     .filter((chunk) => String(chunk.source || "").startsWith(VITE_ENTRY_GROUP_SOURCE_PREFIX))
     .map((chunk) => {
@@ -2685,6 +2692,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     })
     .sort((a, b) => a.groupId.localeCompare(b.groupId));
   const expectedEntryDynamicImportFiles = uniqueValues([
+    ...esmCompatibilityChunks.map((chunk) => chunk.fileName),
     ...deferredChunks.map((chunk) => chunk.fileName),
     ...entryGroupChunks.map((chunk) => chunk.fileName),
   ]);
@@ -2699,6 +2707,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     expectedFiles: expectedEntryDynamicImportFiles,
     missingFiles: expectedEntryDynamicImportFiles.filter((fileName) => !actualDynamicImportSet.has(fileName)),
     extraFiles: actualEntryDynamicImportFiles.filter((fileName) => !expectedDynamicImportSet.has(fileName)),
+    esmCompatibilityFileCount: esmCompatibilityChunks.length,
     deferredFileCount: deferredChunks.length,
     entryGroupFileCount: entryGroupChunks.length,
   };
@@ -2733,6 +2742,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
     appPreviewClassicLoaderPlan,
     esmCompatibility,
     viteEntry: viteEntry || null,
+    viteEsmCompatibilityChunks: esmCompatibilityChunks,
     viteDeferredChunks: deferredChunks,
     viteEntryGroupChunks: entryGroupChunks,
     classicShellAssets,

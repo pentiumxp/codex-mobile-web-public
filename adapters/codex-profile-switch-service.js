@@ -133,9 +133,15 @@ function createCodexProfileSwitchService(options = {}) {
   function profileSwitchRateLimitsWarningForError(err) {
     const classified = profileSwitchPreflightError(err);
     if (classified.code === "target_profile_auth_invalid") return null;
+    return null;
+  }
+
+  function profileSwitchRateLimitsErrorForError(err) {
+    const classified = profileSwitchPreflightError(err);
+    if (classified.code === "target_profile_auth_invalid") return null;
     return {
       code: "target_profile_rate_limits_unavailable",
-      message: "目标账号额度暂时读取失败，已继续切换预检。",
+      message: "目标账号额度读取失败，未切换。请确认目标账号登录和网络可用后重试。",
       detail: boundedProfilePreflightDetail(err),
     };
   }
@@ -320,26 +326,30 @@ function createCodexProfileSwitchService(options = {}) {
           await preflightRpc(ws, 2, "account/rateLimits/read", {}, Math.max(2000, timeoutMs - (Date.now() - startedAt)));
           rateLimitsChecked = true;
         } catch (rateLimitErr) {
-          const warning = profileSwitchRateLimitsWarningForError(rateLimitErr);
-          if (!warning) throw rateLimitErr;
-          warnings.push(warning);
-          logger.error(`[codex-profile-switch] rate_limits_warning ${JSON.stringify({
+          const failure = profileSwitchRateLimitsErrorForError(rateLimitErr);
+          if (!failure) throw rateLimitErr;
+          logger.error(`[codex-profile-switch] rate_limits_failed ${JSON.stringify({
             targetProfileId: String(profile.id || ""),
-            code: warning.code,
-            detail: profileSwitchLogDetail(warning.detail),
+            code: failure.code,
+            detail: profileSwitchLogDetail(failure.detail),
           })}`);
           emitProgress({
             stage: "preflight_rate_limits",
-            status: "warning",
-            message: "目标账号额度暂时读取失败，继续确认切换...",
+            status: "failed",
+            message: failure.message,
             stepIndex: 7,
-            code: warning.code,
-            detail: warning.detail,
+            code: failure.code,
+            detail: failure.detail,
           });
+          const out = new Error(failure.message);
+          out.statusCode = 409;
+          out.code = failure.code;
+          out.detail = failure.detail;
+          throw out;
         }
         emitProgress({
           stage: "preflight_done",
-          message: warnings.length ? "目标账号预检通过，额度读取稍后刷新" : "目标账号预检通过",
+          message: "目标账号预检通过",
           stepIndex: 8,
         });
       } finally {
@@ -354,6 +364,7 @@ function createCodexProfileSwitchService(options = {}) {
         warnings,
       };
     } catch (err) {
+      if (err && err.statusCode && err.code) throw err;
       const classified = profileSwitchPreflightError(err);
       const out = new Error(classified.message);
       out.statusCode = 409;

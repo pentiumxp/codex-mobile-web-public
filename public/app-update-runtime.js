@@ -48,6 +48,7 @@ function createAppUpdateRuntime(deps = {}) {
     isHermesEmbedMode = () => false,
     requestHermesPluginRefresh = () => {},
     rememberRateLimitsFromConfig = () => {},
+    rememberCodexProfiles = () => {},
     renderCodexProfileSettings = () => {},
     stopCodexProfileSwitchProgressPolling = () => {},
     publishPluginNavigationState = () => {},
@@ -969,10 +970,33 @@ function createAppUpdateRuntime(deps = {}) {
     state.pageRefreshPreparedConfig = null;
     renderPageRefreshPrompt();
   }
+
+  function codexProfileHasQuotaSnapshot(profile) {
+    const quota = profile && typeof profile === "object" ? profile.quota : null;
+    if (!quota || typeof quota !== "object") return false;
+    if (quota.rateLimits && typeof quota.rateLimits === "object") return true;
+    const byModel = quota.rateLimitsByModel;
+    return Boolean(byModel && typeof byModel === "object" && Object.keys(byModel).length);
+  }
+
+  function codexProfileRestartReadyForCompletion() {
+    const targetId = String(state.codexProfileSwitchTargetId || "");
+    if (!state.codexProfileRestarting || !targetId) return true;
+    if (!state.activeCodexProfileId || targetId !== state.activeCodexProfileId) return false;
+    const profiles = Array.isArray(state.codexProfiles) ? state.codexProfiles : [];
+    const activeProfile = profiles.find((profile) => String(profile && profile.id || "") === targetId);
+    if (!activeProfile || !codexProfileHasQuotaSnapshot(activeProfile)) {
+      state.codexProfileSwitchStage = "服务已恢复，正在等待目标账号额度刷新...";
+      const connection = $("connectionState");
+      if (connection) connection.textContent = state.codexProfileSwitchStage;
+      renderCodexProfileSettings();
+      return false;
+    }
+    return true;
+  }
   
   function finishRestartingUiIfReady() {
-    const targetId = String(state.codexProfileSwitchTargetId || "");
-    if (state.codexProfileRestarting && targetId && state.activeCodexProfileId && targetId !== state.activeCodexProfileId) return false;
+    if (!codexProfileRestartReadyForCompletion()) return false;
     const changed = Boolean(state.codexProfileRestarting || state.sharedRestarting || state.codexProfileSwitchTargetId || state.codexProfileSwitchStage);
     stopCodexProfileSwitchProgressPolling();
     state.codexProfileRestarting = false;
@@ -1094,15 +1118,17 @@ function createAppUpdateRuntime(deps = {}) {
         state.serverBuildId = currentBuildId || nextBuildId;
         state.serverAssetBuildId = String(config && config.buildId || state.serverAssetBuildId || "").trim();
         rememberRateLimitsFromConfig(config);
+        rememberCodexProfiles(config && config.codexProfiles || null);
+        const restartFinished = finishRestartingUiIfReady();
         state.pageRefreshReloading = false;
-        state.pageRefreshAvailable = false;
-        state.pageRefreshReason = "";
+        state.pageRefreshAvailable = !restartFinished && state.codexProfileRestarting;
+        state.pageRefreshReason = state.pageRefreshAvailable ? "restart" : "";
         state.pageRefreshPreparedConfig = null;
-        finishRestartingUiIfReady();
         renderPageRefreshPrompt();
         return;
       }
       rememberRateLimitsFromConfig(config);
+      rememberCodexProfiles(config && config.codexProfiles || null);
       await clearAllShellCaches();
       if (config) await preparePageShellAssets(config, { populateCache: true });
       await resetPageShellServiceWorker();
