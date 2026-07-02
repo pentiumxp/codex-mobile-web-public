@@ -6834,6 +6834,20 @@ function sampleModule(id, api) {
 			globalSortType: typeof globalThis.sortTurnsForDisplay
 		};
 	}
+	if (id === "conversation-render-runtime") {
+		const runtime = functionReady(api, "createConversationRenderRuntime") ? api.createConversationRenderRuntime() : {};
+		return {
+			ok: runtime && typeof runtime === "object" && typeof runtime.renderTurn === "function" && typeof runtime.renderItem === "function" && typeof runtime.renderItemBody === "function" && typeof runtime.renderUserMessageBody === "function" && typeof runtime.renderLiveOperationDock === "function" && typeof runtime.ensureTurn === "function" && typeof runtime.shouldDeferLiveFinalReceipt === "function" && typeof globalThis.CodexConversationRenderRuntime === "object" && typeof globalThis.CodexConversationRenderRuntime.createConversationRenderRuntime === "function" && typeof globalThis.renderTurn === "function" && typeof globalThis.renderItem === "function" && typeof globalThis.renderLiveOperationDock === "function" && typeof globalThis.ensureTurn === "function" && typeof globalThis.shouldDeferLiveFinalReceipt === "function" && typeof globalThis.imageUrlValue === "function" && typeof globalThis.renderMarkdownWithAttachmentSummary === "function" && typeof globalThis.renderFilePreviewContent === "function" && typeof globalThis.closeImagePreview === "function",
+			factoryType: typeof api.createConversationRenderRuntime,
+			renderTurnType: typeof (runtime && runtime.renderTurn),
+			renderItemType: typeof (runtime && runtime.renderItem),
+			liveDockType: typeof (runtime && runtime.renderLiveOperationDock),
+			ensureTurnType: typeof (runtime && runtime.ensureTurn),
+			globalRenderType: typeof globalThis.renderTurn,
+			globalEnsureTurnType: typeof globalThis.ensureTurn,
+			globalImageUrlType: typeof globalThis.imageUrlValue
+		};
+	}
 	if (id === "client-render-stability-guard") {
 		const sourceTurn = {
 			id: "local-turn-secret",
