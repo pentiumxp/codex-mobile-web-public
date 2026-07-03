@@ -159,6 +159,15 @@ unhandled rejections, and give the main shell a short chance to become visible
 before showing the card. Non-script resource errors should not force the
 recovery UI.
 
+If the phone shows the boot recovery card with "页面启动时间过长" during a Vite
+app-preview cold iframe/PWA launch, check the Vite app-preview status object
+before treating it as a failed boot. Current shells start the timeout at 12s
+for app-preview, continue polling while
+`__CODEX_MOBILE_VITE_APP_PREVIEW__.appStartPending` or an unfinished loader is
+observable, and keep a 30s hard cap so real blank starts still surface the
+recovery card. `script-error` remains a fast failure path; do not suppress real
+`appStartErrorCode` or loader `failed[]` evidence.
+
 Also compare the listener bind address with the plugin base URL advertised to
 Hermes. If `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` is a LAN URL such as
 `http://192.168.x.x:8787`, the listener must bind to `0.0.0.0` or that LAN
@@ -1572,6 +1581,14 @@ child app-server or the active profile home's mux endpoint. The composer quota
 should follow active `/api/public-config` / `/api/status` snapshots for the
 current Mobile Web chain, while profile settings can still use stored or scanned
 snapshots for inactive profile rows.
+
+If clicking the `5小时额度` / `周额度` quota chip no longer opens the detail
+popup after a Vite app-preview deploy, check the frontend app-shell bridge
+boundary before debugging quota data. `public/app-shell-runtime.js` should call
+`CodexComposerBridgeRuntime.createComposerBridgeRuntime().toggleQuotaDetails()`
+for the top-level quota click. Calling the classic bare `toggleQuotaDetails`
+symbol directly can fail after that runtime is ESM-owned and no longer creates a
+script-global lexical binding.
 
 ## Web Push
 

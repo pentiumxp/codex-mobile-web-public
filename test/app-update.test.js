@@ -256,7 +256,14 @@ test("boot recovery UI can clear PWA shell state before app.js starts", () => {
   assert.match(appPreviewHtml, /function isScriptStartupError\(event\)/);
   assert.match(appPreviewHtml, /tagName === "SCRIPT"/);
   assert.match(appPreviewHtml, /function scheduleScriptRecovery\(\)/);
-  assert.match(indexHtml, /setTimeout\(function \(\) \{ showRecovery\("startup-timeout"\); \}, 4500\)/);
+  assert.match(indexHtml, /var APP_PREVIEW_STARTUP_RECOVERY_TIMEOUT_MS = 12000;/);
+  assert.match(indexHtml, /var APP_PREVIEW_STARTUP_RECOVERY_HARD_LIMIT_MS = 30000;/);
+  assert.match(indexHtml, /function appPreviewStartupStillPending\(\)/);
+  assert.match(indexHtml, /status\.appStartPending === true/);
+  assert.match(indexHtml, /scheduleStartupRecovery\(APP_PREVIEW_STARTUP_RECOVERY_POLL_MS\)/);
+  assert.match(indexHtml, /scheduleStartupRecovery\(isViteAppPreviewPage\(\)[\s\S]*APP_PREVIEW_STARTUP_RECOVERY_TIMEOUT_MS[\s\S]*STARTUP_RECOVERY_TIMEOUT_MS\)/);
+  assert.match(appPreviewHtml, /var APP_PREVIEW_STARTUP_RECOVERY_TIMEOUT_MS = 12000;/);
+  assert.match(appPreviewHtml, /function appPreviewStartupStillPending\(\)/);
   assert.match(appUpdateSource, /function markBootReady\(\)/);
   assert.match(appUpdateSource, /window\.codexMobileBoot/);
   assert.match(appUpdateSource, /markBootReady\(\);[\s\S]*if \(state\.startupThreadOpenPending\) renderCurrentThread\(\);/);

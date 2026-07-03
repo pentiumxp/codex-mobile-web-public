@@ -213,6 +213,11 @@
       var showTimer = 0;
       var scriptErrorTimer = 0;
       var recoveryReason = "";
+      var bootWatchStartedAt = Date.now();
+      var STARTUP_RECOVERY_TIMEOUT_MS = 4500;
+      var APP_PREVIEW_STARTUP_RECOVERY_TIMEOUT_MS = 12000;
+      var APP_PREVIEW_STARTUP_RECOVERY_POLL_MS = 2500;
+      var APP_PREVIEW_STARTUP_RECOVERY_HARD_LIMIT_MS = 30000;
       function $(id) { return document.getElementById(id); }
       function setStatus(text) {
         var el = $("bootRecoveryStatus");
@@ -229,8 +234,33 @@
           return el && !el.classList.contains("hidden") && !el.hidden;
         });
       }
+      function isViteAppPreviewPage() {
+        var html = document.documentElement;
+        if (html && html.dataset && html.dataset.codexViteAppPreview === "true") return true;
+        return Boolean(document.querySelector("meta[name='codex-vite-app-preview']"));
+      }
+      function appPreviewStartupStillPending() {
+        if (!isViteAppPreviewPage()) return false;
+        if (Date.now() - bootWatchStartedAt >= APP_PREVIEW_STARTUP_RECOVERY_HARD_LIMIT_MS) return false;
+        var status = window.__CODEX_MOBILE_VITE_APP_PREVIEW__ || null;
+        if (!status || typeof status !== "object") return true;
+        if (String(status.appStartErrorCode || "")) return false;
+        if (Array.isArray(status.failed) && status.failed.length) return false;
+        if (status.appStartPending === true) return true;
+        if (status.appStartAttempted === true && !Number(status.appStartCompletedAt || 0)) return true;
+        if (status.ok !== true && !Number(status.completedAt || 0)) return true;
+        return false;
+      }
+      function scheduleStartupRecovery(delayMs) {
+        if (showTimer) clearTimeout(showTimer);
+        showTimer = window.setTimeout(function () { showRecovery("startup-timeout"); }, delayMs);
+      }
       function showRecovery(reason) {
         if (bootReady || anyMainSurfaceVisible()) return;
+        if (reason !== "script-error" && appPreviewStartupStillPending()) {
+          scheduleStartupRecovery(APP_PREVIEW_STARTUP_RECOVERY_POLL_MS);
+          return;
+        }
         recoveryReason = reason || recoveryReason || "startup-timeout";
         var recovery = $("bootRecovery");
         if (!recovery) return;
@@ -321,7 +351,9 @@
       });
       document.addEventListener("DOMContentLoaded", function () {
         installRecoveryButtons();
-        showTimer = window.setTimeout(function () { showRecovery("startup-timeout"); }, 4500);
+        scheduleStartupRecovery(isViteAppPreviewPage()
+          ? APP_PREVIEW_STARTUP_RECOVERY_TIMEOUT_MS
+          : STARTUP_RECOVERY_TIMEOUT_MS);
       });
     }());
   </script>
@@ -756,16 +788,16 @@
     </div>
   </div>
 <!-- CODEX_MOBILE_VITE_APP_PREVIEW:BEGIN -->
-  <link rel="modulepreload" href="/vite-shell/assets/_virtual_codex-mobile-esm-compatibility-te0ZTQhE.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-01-D5p7Y9yl.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-02-DUNxc7kJ.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-03--0TTD9BC.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-04-B28S-fX-.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-05-BJoVn5EI.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-06-Jekfwbvp.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-07-BFThCyIV.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-08-iIBGZebd.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-09-CLR5_1LW.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/_virtual_codex-mobile-esm-compatibility-C4hoaGF3.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-01-BDDgPZEe.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-02-CEqQdiTq.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-03-aoPI17Uz.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-04-D1-aL1NR.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-05-CX9sH8Ou.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-06-WpPEDDNl.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-07-CQck4GLK.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-08-WOuwDFYq.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-09-DOahAnFK.js" data-codex-vite-esm-compatibility-chunk="true">
   <script id="codex-vite-app-preview-loader-plan" type="application/json" data-codex-vite-app-preview-loader-plan="true">
 {
   "schemaVersion": 1,
@@ -779,7 +811,7 @@
   "byteCount": 0,
   "excludedEsmScriptCount": 49,
   "excludedEsmHashCount": 49,
-  "excludedEsmByteCount": 1713704,
+  "excludedEsmByteCount": 1714400,
   "excludedViteOwnedScriptCount": 2,
   "excludedViteOwnedHashCount": 2,
   "excludedViteOwnedByteCount": 125733,
@@ -1451,8 +1483,8 @@
       "startupCritical": true,
       "chunkTarget": "startup-app-shell",
       "sourcePath": "public/app-shell-runtime.js",
-      "bytes": 42357,
-      "sha256": "402d9da5898c23d456c0f742a5d1ae3b14e5f843d55132b0d68d6bbe83cc0ce7",
+      "bytes": 43053,
+      "sha256": "3a6b9f172646a790476e4ba37c015c241e8fd6a101a1b65951e548415deafcf5",
       "esmModuleId": "app-shell-runtime",
       "globalName": "CodexAppShellRuntime"
     },
@@ -1482,7 +1514,7 @@
       "chunkTarget": "startup-manifest",
       "sourcePath": "public/shell-asset-manifest.js",
       "bytes": 75971,
-      "sha256": "534ac788eea0df1b6f27ca7d2db2f4b3cfd743f4fcdccb4930ebcf7991abe8aa",
+      "sha256": "b534d6a4918a0ebe70799d18c36dca556516aa03a89c75d43af85cbbf190cf03",
       "ownerId": "shell-manifest",
       "globalName": "CODEX_MOBILE_SHELL_MANIFEST"
     },
@@ -1501,11 +1533,11 @@
       "globalName": "CodexAppBootstrap"
     }
   ],
-  "sha256": "f0d8bee7f265d9f1b4603235cdf28e0e2b227461521651a1f5e897b05e73d72d",
+  "sha256": "d49ff67f6e804782faa0de715777d857759880f56f370d630a36d4a1fa4df18d",
   "scripts": []
 }
   </script>
-  <script type="module" src="/vite-shell/assets/vite-shell-entry-Q-1cBquO.js" data-codex-vite-app-preview-entry="true"></script>
+  <script type="module" src="/vite-shell/assets/vite-shell-entry-CDHURfUR.js" data-codex-vite-app-preview-entry="true"></script>
 <!-- CODEX_MOBILE_VITE_APP_PREVIEW:END -->
 
 <script>

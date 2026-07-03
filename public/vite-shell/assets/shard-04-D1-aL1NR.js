@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-Q-1cBquO.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CDHURfUR.js";
 //#region public/modal-runtime.js
 var require_modal_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function renderAppNativeDialog() {
@@ -2391,6 +2391,22 @@ var require_runtime_wiring_runtime = /* @__PURE__ */ __commonJSMin(((exports, mo
 //#endregion
 //#region public/app-shell-runtime.js
 var require_app_shell_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	function toggleQuotaDetailsFromRuntime(anchor) {
+		const root = typeof globalThis !== "undefined" ? globalThis : window;
+		const bridgeApi = root && root.CodexComposerBridgeRuntime;
+		if (bridgeApi && typeof bridgeApi.createComposerBridgeRuntime === "function") {
+			const bridge = bridgeApi.createComposerBridgeRuntime();
+			if (bridge && typeof bridge.toggleQuotaDetails === "function") {
+				bridge.toggleQuotaDetails(anchor);
+				return true;
+			}
+		}
+		if (root && typeof root.toggleQuotaDetails === "function") {
+			root.toggleQuotaDetails(anchor);
+			return true;
+		}
+		return false;
+	}
 	function wireUi() {
 		$("loginForm").addEventListener("submit", (event) => {
 			event.preventDefault();
@@ -2587,7 +2603,7 @@ var require_app_shell_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 		if (quotaUsage) quotaUsage.addEventListener("pointerdown", (event) => {
 			event.preventDefault();
 			event.stopPropagation();
-			toggleQuotaDetails(quotaUsage);
+			if (!toggleQuotaDetailsFromRuntime(quotaUsage)) showError(/* @__PURE__ */ new Error("quota_details_runtime_unavailable"));
 		});
 		document.addEventListener("pointerdown", primeCompletionAudio, { passive: true });
 		document.addEventListener("touchend", primeCompletionAudio, { passive: true });
@@ -3260,7 +3276,7 @@ var moduleDefinitions = [
 		"expectedFunctions": ["createAppShellRuntime"],
 		"assetPath": "/app-shell-runtime.js",
 		"classicLoaderExcluded": true,
-		"bytes": 42357
+		"bytes": 43053
 	}
 ];
 var moduleApis = {

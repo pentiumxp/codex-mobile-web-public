@@ -7,6 +7,7 @@ const { test } = require("node:test");
 const { readFrontendSources } = require("./frontend-source-helper");
 
 const appJs = readFrontendSources(path.resolve(__dirname, ".."));
+const appShellRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app-shell-runtime.js"), "utf8");
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -102,6 +103,15 @@ test("quota card separates inline summary from detail panel", () => {
   assert.match(stylesCss, /\.quota-ok \.quota-detail-value/);
   assert.match(stylesCss, /\.quota-warn \.quota-detail-value/);
   assert.match(stylesCss, /\.quota-danger \.quota-detail-value/);
+});
+
+test("quota card click uses the composer bridge runtime under Vite ESM", () => {
+  assert.match(appShellRuntimeJs, /function toggleQuotaDetailsFromRuntime\(anchor\)/);
+  assert.match(appShellRuntimeJs, /CodexComposerBridgeRuntime/);
+  assert.match(appShellRuntimeJs, /createComposerBridgeRuntime\(\)/);
+  assert.match(appShellRuntimeJs, /bridge\.toggleQuotaDetails\(anchor\)/);
+  assert.match(appShellRuntimeJs, /quota_details_runtime_unavailable/);
+  assert.doesNotMatch(appShellRuntimeJs, /toggleQuotaDetails\(quotaUsage\);/);
 });
 
 test("composer attachment button uses explicit WebView-safe file picker trigger", () => {

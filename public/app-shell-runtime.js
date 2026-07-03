@@ -1,5 +1,22 @@
 "use strict";
 
+function toggleQuotaDetailsFromRuntime(anchor) {
+  const root = typeof globalThis !== "undefined" ? globalThis : window;
+  const bridgeApi = root && root.CodexComposerBridgeRuntime;
+  if (bridgeApi && typeof bridgeApi.createComposerBridgeRuntime === "function") {
+    const bridge = bridgeApi.createComposerBridgeRuntime();
+    if (bridge && typeof bridge.toggleQuotaDetails === "function") {
+      bridge.toggleQuotaDetails(anchor);
+      return true;
+    }
+  }
+  if (root && typeof root.toggleQuotaDetails === "function") {
+    root.toggleQuotaDetails(anchor);
+    return true;
+  }
+  return false;
+}
+
 function wireUi() {
   $("loginForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -216,7 +233,9 @@ function wireUi() {
     quotaUsage.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      toggleQuotaDetails(quotaUsage);
+      if (!toggleQuotaDetailsFromRuntime(quotaUsage)) {
+        showError(new Error("quota_details_runtime_unavailable"));
+      }
     });
   }
   document.addEventListener("pointerdown", primeCompletionAudio, { passive: true });

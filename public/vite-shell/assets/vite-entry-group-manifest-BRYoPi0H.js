@@ -10,7 +10,7 @@ var codexMobileViteEntryGroup = {
 		"path": "/shell-asset-manifest.js",
 		"sourcePath": "public/shell-asset-manifest.js",
 		"bytes": 75971,
-		"sha256": "534ac788eea0df1b6f27ca7d2db2f4b3cfd743f4fcdccb4930ebcf7991abe8aa"
+		"sha256": "b534d6a4918a0ebe70799d18c36dca556516aa03a89c75d43af85cbbf190cf03"
 	}],
 	"classicAssetHashCount": 1,
 	"classicAssetBytes": 75971,
@@ -18,8 +18,8 @@ var codexMobileViteEntryGroup = {
 	"classicGlobalExportAssetCount": 0,
 	"classicGlobalExportCount": 0,
 	"startupGlobalContracts": [],
-	"shellCacheName": "codex-mobile-shell-v625-e16cb3dcddae",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-e16cb3dcddae"
+	"shellCacheName": "codex-mobile-shell-v625-df5c09d568ef",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-df5c09d568ef"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

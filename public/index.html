@@ -211,6 +211,11 @@
       var showTimer = 0;
       var scriptErrorTimer = 0;
       var recoveryReason = "";
+      var bootWatchStartedAt = Date.now();
+      var STARTUP_RECOVERY_TIMEOUT_MS = 4500;
+      var APP_PREVIEW_STARTUP_RECOVERY_TIMEOUT_MS = 12000;
+      var APP_PREVIEW_STARTUP_RECOVERY_POLL_MS = 2500;
+      var APP_PREVIEW_STARTUP_RECOVERY_HARD_LIMIT_MS = 30000;
       function $(id) { return document.getElementById(id); }
       function setStatus(text) {
         var el = $("bootRecoveryStatus");
@@ -227,8 +232,33 @@
           return el && !el.classList.contains("hidden") && !el.hidden;
         });
       }
+      function isViteAppPreviewPage() {
+        var html = document.documentElement;
+        if (html && html.dataset && html.dataset.codexViteAppPreview === "true") return true;
+        return Boolean(document.querySelector("meta[name='codex-vite-app-preview']"));
+      }
+      function appPreviewStartupStillPending() {
+        if (!isViteAppPreviewPage()) return false;
+        if (Date.now() - bootWatchStartedAt >= APP_PREVIEW_STARTUP_RECOVERY_HARD_LIMIT_MS) return false;
+        var status = window.__CODEX_MOBILE_VITE_APP_PREVIEW__ || null;
+        if (!status || typeof status !== "object") return true;
+        if (String(status.appStartErrorCode || "")) return false;
+        if (Array.isArray(status.failed) && status.failed.length) return false;
+        if (status.appStartPending === true) return true;
+        if (status.appStartAttempted === true && !Number(status.appStartCompletedAt || 0)) return true;
+        if (status.ok !== true && !Number(status.completedAt || 0)) return true;
+        return false;
+      }
+      function scheduleStartupRecovery(delayMs) {
+        if (showTimer) clearTimeout(showTimer);
+        showTimer = window.setTimeout(function () { showRecovery("startup-timeout"); }, delayMs);
+      }
       function showRecovery(reason) {
         if (bootReady || anyMainSurfaceVisible()) return;
+        if (reason !== "script-error" && appPreviewStartupStillPending()) {
+          scheduleStartupRecovery(APP_PREVIEW_STARTUP_RECOVERY_POLL_MS);
+          return;
+        }
         recoveryReason = reason || recoveryReason || "startup-timeout";
         var recovery = $("bootRecovery");
         if (!recovery) return;
@@ -319,7 +349,9 @@
       });
       document.addEventListener("DOMContentLoaded", function () {
         installRecoveryButtons();
-        showTimer = window.setTimeout(function () { showRecovery("startup-timeout"); }, 4500);
+        scheduleStartupRecovery(isViteAppPreviewPage()
+          ? APP_PREVIEW_STARTUP_RECOVERY_TIMEOUT_MS
+          : STARTUP_RECOVERY_TIMEOUT_MS);
       });
     }());
   </script>
