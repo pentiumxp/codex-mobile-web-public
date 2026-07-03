@@ -166,6 +166,34 @@ test("thread status hints keep short submitted-processing idle rows running", ()
   }), true);
 });
 
+test("thread status hints clear deploy-lane idle rows without turn details", () => {
+  const thread = {
+    id: "deploy-lane",
+    status: { type: "idle", mobileDeployLane: true, previousType: "idle" },
+    mobileDeployLane: true,
+    updatedAtMs: 2000,
+    turns: [],
+  };
+
+  assert.equal(policy.shouldKeepRunningHintForSettledStatus({
+    threadId: "deploy-lane",
+    thread,
+    status: thread.status,
+    isRunningHinted: true,
+    runningHintedAtMs: 3000,
+    nowMs: 30_000,
+  }), false);
+
+  assert.equal(policy.shouldExpireRunningThreadHint({
+    threadId: "deploy-lane",
+    thread,
+    status: thread.status,
+    isRunningHinted: true,
+    runningHintedAtMs: 3000,
+    nowMs: 30_000,
+  }), false);
+});
+
 test("thread status notification event time ignores replay receive time for settled notifications", () => {
   const params = {
     mobileReplay: true,

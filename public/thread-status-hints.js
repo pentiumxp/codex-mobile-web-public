@@ -57,6 +57,10 @@
     return /^(idle|notloaded|not_loaded|not-loaded)$/.test(statusText(status).toLowerCase());
   }
 
+  function isDeployLaneSettledIdle(thread, status) {
+    return Boolean(thread && thread.mobileDeployLane && isIdleStatus(status || thread.status));
+  }
+
   function isTerminalStatus(status) {
     return /^(completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(statusText(status).toLowerCase());
   }
@@ -146,6 +150,7 @@
     const status = input.status || (input.thread && input.thread.status);
     if (isStaleActiveStatus(status, input.thread)) return false;
     if (!isSettledStatus(status)) return false;
+    if (isDeployLaneSettledIdle(input.thread, status)) return false;
     if (isIdleStatus(status) && !latestTerminalTurn(input.thread) && !input.eventIsTerminal) return true;
     if (input.allowLocalProcessing !== false
       && isIdleStatus(status)
@@ -199,6 +204,7 @@
     const status = input.status || (input.thread && input.thread.status);
     if (isStaleActiveStatus(status, input.thread)) return true;
     if (isRunningStatus(status)) return false;
+    if (isDeployLaneSettledIdle(input.thread, status)) return false;
     if (isSettledStatus(status) && !shouldKeepRunningHintForSettledStatus(input)) return false;
     if (input.currentThreadHasLiveTurn) return false;
     return runningHintAgeMs(input) > (Number(input.runningHintStaleMs) || DEFAULT_RUNNING_HINT_STALE_MS);
@@ -209,6 +215,7 @@
     DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS,
     DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
     hasFreshSubmittedProcessingHint,
+    isDeployLaneSettledIdle,
     isIdleStatus,
     isRunningStatus,
     isSettledStatus,
