@@ -664,7 +664,9 @@ Implementation path:
    route to deploy/readback or repair; blocked/rejected classes stop the loop.
 10. Duplicate blocked triggers must return a visible blocked loop/status, not an
     `ok=true` no-op. Existing same-thread requirements blockers may be recovered
-    by converting requirements to the local role and preparing role lanes.
+    by converting requirements to the local role and preparing role lanes. When
+    stored role-lane ids are no longer visible/current deliverable threads,
+    discard those stale ids and rerun role-lane selection before dispatch.
 11. Product-audit role cards must include a bounded Audit Packet and Delta
     Matrix. Packet sections are `requirements_packet`,
     `design_contract_packet`, `implementation_packet`, `validation_packet`, and

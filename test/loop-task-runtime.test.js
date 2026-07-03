@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -14,10 +15,27 @@ function tempStateFile(name) {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), "codex-at-loop-")), `${name}.json`);
 }
 
+function stableHash(value, length = 16) {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex").slice(0, length);
+}
+
+function testLoopId({ sourceThreadId, targetThreadId, objective, targetAlias = "", domainAdapter = "generic" }) {
+  const seed = [
+    "at-loop-v1",
+    sourceThreadId,
+    targetThreadId,
+    targetAlias,
+    domainAdapter,
+    stableHash(objective, 32),
+  ].join("|");
+  return `loop_${stableHash(seed, 16)}`;
+}
+
 function makeRuntime(options = {}) {
   const cards = [];
   const createdThreads = [];
   let now = options.now || Date.parse("2026-07-03T00:00:00.000Z");
+  const storageFile = tempStateFile(options.name || "state");
   const visibleThreads = options.visibleThreads || [
     {
       id: "source-thread",
@@ -42,7 +60,7 @@ function makeRuntime(options = {}) {
     },
   ];
   const dependencies = {
-    storageFile: tempStateFile(options.name || "state"),
+    storageFile,
     visibleThreads,
     clock: () => now,
     watchdogStaleMs: 1000,
@@ -73,6 +91,7 @@ function makeRuntime(options = {}) {
     cards,
     createdThreads,
     runtime,
+    storageFile,
     visibleThreads,
     setNow: (value) => {
       now = value;
@@ -329,6 +348,124 @@ test("loop runtime does not report blocked duplicate triggers as successful no-o
   assert.notEqual(second.duplicateSuppressed, true);
   assert.equal(second.loop.duplicateSuppressedCount, 1);
   assert.equal(cards.length, 0);
+});
+
+test("loop runtime recovers blocked duplicate by dropping stale role lane target", async () => {
+  const { cards, runtime, storageFile } = makeRuntime({
+    name: "blocked-stale-target-recovery",
+    visibleThreads: [{
+      id: "source-thread",
+      title: "codex mobile 06-30",
+      cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+    }, {
+      id: "implementation-thread",
+      title: "codex mobile implementation",
+      cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+      threadRole: "implementation",
+    }, {
+      id: "audit-thread",
+      title: "Plugin Workspace Audit",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    }],
+    createLoopRoleThread: false,
+  });
+  const loopId = testLoopId({
+    sourceThreadId: "source-thread",
+    targetThreadId: "source-thread",
+    objective: "recover stale lane",
+  });
+  const state = { version: 1, loops: [{
+    loopId,
+    sourceThreadId: "source-thread",
+    targetThreadId: "stale-implementation-thread",
+    requirementsThreadId: "source-thread",
+    implementationThreadId: "stale-implementation-thread",
+    auditThreadId: "audit-thread",
+    targetAlias: "",
+    domainAdapter: "generic",
+    objectiveHash: "hash",
+    objectiveSummary: "recover stale lane",
+    status: "blocked",
+    currentRole: "requirements",
+    iteration: 1,
+    maxIterations: 3,
+    deployReadbackRequired: false,
+    duplicateSuppressedCount: 0,
+    lastAuditVerdict: "",
+    nextRoute: "implementation",
+    blockedReason: "at_loop_dispatch_failed",
+    sourceRequestId: `at-loop:${loopId}:source`,
+    requirementsLocal: true,
+    auditPacket: {},
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    roleSlices: [{
+      role: "requirements",
+      roleSliceId: `${loopId}:requirements:1`,
+      iteration: 1,
+      status: "local",
+      dispatchStatus: "source_thread_local_role",
+      dispatchMode: "source_thread_local_role",
+      taskCardDispatch: false,
+      taskCardId: "",
+      targetThreadId: "source-thread",
+      targetPurpose: "codex_mobile_implementation",
+      sourceRequestId: "",
+      workflowId: "",
+      roleOwnerThreadId: "source-thread",
+      roleThreadCreated: false,
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "implementation",
+      roleSliceId: `${loopId}:implementation:1`,
+      iteration: 1,
+      status: "blocked",
+      dispatchStatus: "failed",
+      taskCardId: "",
+      targetThreadId: "stale-implementation-thread",
+      targetPurpose: "worker_lane",
+      sourceRequestId: "",
+      workflowId: "",
+      roleOwnerThreadId: "",
+      roleThreadCreated: false,
+      routing: null,
+      blockedReason: "Target thread is not visible or is not a current deliverable thread.",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "product_audit",
+      roleSliceId: `${loopId}:product_audit:1`,
+      iteration: 1,
+      status: "pending",
+      dispatchStatus: "",
+      taskCardId: "",
+      targetThreadId: "audit-thread",
+      targetPurpose: "audit_lane",
+      sourceRequestId: "",
+      workflowId: "",
+      roleOwnerThreadId: "",
+      roleThreadCreated: false,
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }],
+  }] };
+  fs.writeFileSync(storageFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const result = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop recover stale lane",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.recovered, true);
+  assert.equal(result.loop.status, "running");
+  assert.equal(result.loop.implementationThreadId, "implementation-thread");
+  const implementation = result.loop.roleSlices.find((slice) => slice.role === "implementation");
+  assert.equal(implementation.status, "dispatched");
+  assert.equal(implementation.targetThreadId, "implementation-thread");
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].payload.targetThreadId, "implementation-thread");
 });
 
 test("loop watchdog marks stale returns without retrying or completing work", async () => {

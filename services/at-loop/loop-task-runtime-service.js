@@ -604,6 +604,16 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return visible || null;
   }
 
+  function readVisibleThreadSummary(threadId) {
+    const id = compactOneLine(threadId);
+    if (!id) return null;
+    if (typeof dependencies.readThreadTaskCardVisibleTargetSummary === "function") {
+      const visible = dependencies.readThreadTaskCardVisibleTargetSummary(id);
+      if (visible) return visible;
+    }
+    return visibleThreads().find((thread) => compactOneLine(thread.id || thread.threadId) === id) || null;
+  }
+
   function aliasTargets() {
     const targets = new Map();
     const configured = dependencies.loopTargetAliases && typeof dependencies.loopTargetAliases === "object"
@@ -929,17 +939,32 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const field = roleThreadField(role);
     const existingId = compactOneLine(slice.targetThreadId || loop[field] || (role === "implementation" || role === "repair" ? loop.targetThreadId : ""));
     if (existingId && !sameThreadId(existingId, loop.sourceThreadId)) {
-      const target = readThreadSummary(existingId) || { id: existingId, threadId: existingId };
-      const check = routingService.assertLoopRoleTarget({ role, thread: target });
-      if (!check.ok) {
-        return setLoopBlocked(loop, slice, check.error, { routing: publicRoutingMetadata(check) });
+      const target = readVisibleThreadSummary(existingId);
+      if (!target) {
+        const timestamp = nowIso(clock);
+        slice.targetThreadId = "";
+        slice.targetPurpose = "";
+        slice.routing = Object.assign({}, slice.routing || {}, {
+          staleTargetThreadId: existingId,
+          staleTargetReason: "not_visible_or_not_current_deliverable",
+        });
+        slice.updatedAt = timestamp;
+        loop[field] = "";
+        if (loop.targetThreadId === existingId) loop.targetThreadId = "";
+        loop.updatedAt = timestamp;
+        saveState();
+      } else {
+        const check = routingService.assertLoopRoleTarget({ role, thread: target });
+        if (!check.ok) {
+          return setLoopBlocked(loop, slice, check.error, { routing: publicRoutingMetadata(check) });
+        }
+        slice.targetThreadId = existingId;
+        slice.targetPurpose = check.classification && check.classification.purpose || "";
+        slice.routing = publicRoutingMetadata(check);
+        loop[field] = existingId;
+        if (role === "implementation") loop.targetThreadId = existingId;
+        return { ok: true, target, slice };
       }
-      slice.targetThreadId = existingId;
-      slice.targetPurpose = check.classification && check.classification.purpose || "";
-      slice.routing = publicRoutingMetadata(check);
-      loop[field] = existingId;
-      if (role === "implementation") loop.targetThreadId = existingId;
-      return { ok: true, target, slice };
     }
 
     let target = selectExistingRoleTarget(loop, role);
