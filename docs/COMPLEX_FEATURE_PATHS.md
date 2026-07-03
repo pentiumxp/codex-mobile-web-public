@@ -647,8 +647,9 @@ Implementation path:
    `source_thread_local_role` and must not send a same-thread requirements card.
    Implementation/audit/repair/deploy roles still require real task cards with
    `sourceThreadId !== targetThreadId`. Select or create those role lanes from
-   explicit role/purpose metadata first, then bounded cwd/title heuristics; if a
-   safe lane is unavailable, keep the loop blocked and visible.
+   explicit role/purpose metadata first, then bounded cwd/title heuristics, and
+   require the same task-card deliverability check used by normal cross-thread
+   dispatch; if a safe lane is unavailable, keep the loop blocked and visible.
 6. Classify target-thread purpose before dispatch. Public PR, deploy lane,
    audit, task intake, and worker threads are special-purpose lanes; mismatched
    roles must fail closed with bounded routing metadata instead of relying on
@@ -668,7 +669,8 @@ Implementation path:
     `ok=true` no-op. Existing same-thread requirements blockers may be recovered
     by converting requirements to the local role and preparing role lanes. When
     stored role-lane ids are no longer visible/current deliverable threads,
-    discard those stale ids and rerun role-lane selection before dispatch.
+    or are rejected by the task-card deliverability boundary, discard those
+    stale ids and rerun role-lane selection before dispatch.
 11. Product-audit role cards must include a bounded Audit Packet and Delta
     Matrix. Packet sections are `requirements_packet`,
     `design_contract_packet`, `implementation_packet`, `validation_packet`, and

@@ -72,6 +72,9 @@ function makeRuntime(options = {}) {
       return { ok: true, cards: [{ id: `ttc_${cards.length}` }] };
     },
   };
+  if (options.assertThreadTaskCardTargetDeliverable !== false) {
+    dependencies.assertThreadTaskCardTargetDeliverable = options.assertThreadTaskCardTargetDeliverable || (() => true);
+  }
   if (options.createLoopRoleThread !== false) {
     dependencies.createLoopRoleThread = options.createLoopRoleThread || (async ({ role, cwd, title, threadRole }) => {
       const id = `${role}-created`;
@@ -471,6 +474,124 @@ test("loop runtime recovers blocked duplicate by dropping stale or ineligible ro
   assert.equal(implementation.targetThreadId, "implementation-thread");
   assert.equal(cards.length, 1);
   assert.equal(cards[0].payload.targetThreadId, "implementation-thread");
+});
+
+test("loop runtime skips visible implementation targets rejected by task-card deliverability", async () => {
+  const { cards, runtime, storageFile } = makeRuntime({
+    name: "blocked-undeliverable-target-recovery",
+    visibleThreads: [{
+      id: "source-thread",
+      title: "Xcode",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+    }, {
+      id: "aaa-visible-but-hidden-target",
+      title: "Xcode implementation",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+      threadRole: "implementation",
+    }, {
+      id: "zzz-implementation-thread",
+      title: "Xcode implementation fallback",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+      threadRole: "implementation",
+    }, {
+      id: "audit-thread",
+      title: "Plugin Workspace Audit",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    }],
+    createLoopRoleThread: false,
+    assertThreadTaskCardTargetDeliverable: (thread) => {
+      if (thread && thread.id === "aaa-visible-but-hidden-target") {
+        const err = new Error("Target thread is not visible or is not a current deliverable thread.");
+        err.code = "target_thread_not_visible";
+        err.statusCode = 404;
+        throw err;
+      }
+      return String(thread && thread.id || "");
+    },
+  });
+  const loopId = testLoopId({
+    sourceThreadId: "source-thread",
+    targetThreadId: "source-thread",
+    objective: "recover undeliverable lane",
+  });
+  fs.writeFileSync(storageFile, `${JSON.stringify({ version: 1, loops: [{
+    loopId,
+    sourceThreadId: "source-thread",
+    targetThreadId: "aaa-visible-but-hidden-target",
+    requirementsThreadId: "source-thread",
+    implementationThreadId: "aaa-visible-but-hidden-target",
+    auditThreadId: "audit-thread",
+    domainAdapter: "generic",
+    objectiveSummary: "recover undeliverable lane",
+    status: "blocked",
+    currentRole: "requirements",
+    iteration: 1,
+    maxIterations: 3,
+    nextRoute: "implementation",
+    blockedReason: "at_loop_dispatch_failed",
+    sourceRequestId: `at-loop:${loopId}:source`,
+    requirementsLocal: true,
+    auditPacket: {},
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    roleSlices: [{
+      role: "requirements",
+      roleSliceId: `${loopId}:requirements:1`,
+      iteration: 1,
+      status: "local",
+      dispatchStatus: "source_thread_local_role",
+      dispatchMode: "source_thread_local_role",
+      taskCardDispatch: false,
+      taskCardId: "",
+      targetThreadId: "source-thread",
+      targetPurpose: "workspace_implementation",
+      roleOwnerThreadId: "source-thread",
+      roleThreadCreated: false,
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "implementation",
+      roleSliceId: `${loopId}:implementation:1`,
+      iteration: 1,
+      status: "blocked",
+      dispatchStatus: "failed",
+      taskCardId: "",
+      targetThreadId: "aaa-visible-but-hidden-target",
+      targetPurpose: "workspace_implementation",
+      roleThreadCreated: false,
+      routing: null,
+      blockedReason: "Target thread is not visible or is not a current deliverable thread.",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "product_audit",
+      roleSliceId: `${loopId}:product_audit:1`,
+      iteration: 1,
+      status: "pending",
+      dispatchStatus: "",
+      taskCardId: "",
+      targetThreadId: "audit-thread",
+      targetPurpose: "audit_lane",
+      roleThreadCreated: false,
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }],
+  }] }, null, 2)}\n`, "utf8");
+
+  const result = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop recover undeliverable lane",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.recovered, true);
+  assert.equal(result.loop.implementationThreadId, "zzz-implementation-thread");
+  const implementation = result.loop.roleSlices.find((slice) => slice.role === "implementation");
+  assert.equal(implementation.status, "dispatched");
+  assert.equal(implementation.targetThreadId, "zzz-implementation-thread");
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].payload.targetThreadId, "zzz-implementation-thread");
 });
 
 test("loop watchdog marks stale returns without retrying or completing work", async () => {

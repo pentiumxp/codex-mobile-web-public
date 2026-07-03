@@ -1435,6 +1435,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     readThreadTaskCardVisibleTargetSummary,
     resolveThreadTaskCardTargetReference,
     resolvedThreadTaskCardTargetIds,
+    assertThreadTaskCardTargetDeliverable,
     summarizeTaskCardText,
     taskCardReturnDynamicToolSpec,
     taskCardReturnScriptFallbackInstruction,

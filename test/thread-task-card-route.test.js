@@ -423,6 +423,11 @@ test("approved task-card visible target summary helper is runtime executable", (
   });
 
   assert.equal(service.readThreadTaskCardVisibleTargetSummary("thread-movie").name, "Movie Deploy Lane");
+  assert.equal(typeof service.assertThreadTaskCardTargetDeliverable, "function");
+  assert.equal(
+    service.assertThreadTaskCardTargetDeliverable(service.readThreadTaskCardVisibleTargetSummary("thread-movie")),
+    "thread-movie",
+  );
 
   const emptyService = createThreadTaskCardRouteService({
     threadTaskCardService: {},

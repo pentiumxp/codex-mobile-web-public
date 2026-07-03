@@ -614,6 +614,57 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return visibleThreads().find((thread) => compactOneLine(thread.id || thread.threadId) === id) || null;
   }
 
+  function taskCardDeliverabilityCheck(loop, role, thread) {
+    if (typeof dependencies.assertThreadTaskCardTargetDeliverable !== "function") {
+      return { ok: true };
+    }
+    const targetThreadId = threadIdOf(thread);
+    try {
+      dependencies.assertThreadTaskCardTargetDeliverable(thread, {
+        reference: targetThreadId,
+        referenceKind: "thread",
+        routeKind: "at_loop_role_slice",
+        sourceThreadId: loop && loop.sourceThreadId || "",
+        targetRole: role,
+        loopId: loop && loop.loopId || "",
+      });
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err && err.code || "target_thread_not_deliverable",
+        message: compactOneLine(err && err.message || err || "target_thread_not_deliverable"),
+        statusCode: Number(err && err.statusCode || 0) || undefined,
+        details: err && err.details || undefined,
+      };
+    }
+  }
+
+  function roleTargetCheck(loop, role, thread) {
+    const loopCheck = routingService.assertLoopRoleTarget({ role, thread });
+    if (!loopCheck.ok) return loopCheck;
+    const deliverability = taskCardDeliverabilityCheck(loop, role, thread);
+    if (deliverability.ok) return Object.assign({}, loopCheck, { deliverability });
+    return Object.assign({}, loopCheck, {
+      ok: false,
+      error: "at_loop_target_not_deliverable",
+      deliverability,
+    });
+  }
+
+  function publicRoleTargetRoutingMetadata(result = {}) {
+    const out = publicRoutingMetadata(result);
+    if (result.deliverability && result.deliverability.ok === false) {
+      out.deliverable = false;
+      out.deliverabilityError = result.deliverability.error || "";
+      out.deliverabilityMessage = result.deliverability.message || "";
+      out.deliverabilityStatusCode = result.deliverability.statusCode || undefined;
+    } else if (result.deliverability) {
+      out.deliverable = true;
+    }
+    return out;
+  }
+
   function aliasTargets() {
     const targets = new Map();
     const configured = dependencies.loopTargetAliases && typeof dependencies.loopTargetAliases === "object"
@@ -881,7 +932,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   function scoreRoleTarget(loop, role, thread) {
     const id = threadIdOf(thread);
     if (!id || sameThreadId(id, loop.sourceThreadId)) return -1;
-    const check = routingService.assertLoopRoleTarget({ role, thread });
+    const check = roleTargetCheck(loop, role, thread);
     if (!check.ok) return -1;
     const source = sourceThread(loop);
     const sourceCwd = normalizeCwd(source.cwd || source.workspace || source.targetWorkspace);
@@ -954,14 +1005,16 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         loop.updatedAt = timestamp;
         saveState();
       } else {
-        const check = routingService.assertLoopRoleTarget({ role, thread: target });
+        const check = roleTargetCheck(loop, role, target);
         if (!check.ok) {
           const timestamp = nowIso(clock);
           slice.targetThreadId = "";
           slice.targetPurpose = "";
-          slice.routing = Object.assign({}, publicRoutingMetadata(check), {
+          slice.routing = Object.assign({}, publicRoleTargetRoutingMetadata(check), {
             staleTargetThreadId: existingId,
-            staleTargetReason: "stored_target_purpose_mismatch",
+            staleTargetReason: check.error === "at_loop_target_not_deliverable"
+              ? "stored_target_not_deliverable"
+              : "stored_target_purpose_mismatch",
           });
           slice.updatedAt = timestamp;
           loop[field] = "";
@@ -971,7 +1024,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         } else {
           slice.targetThreadId = existingId;
           slice.targetPurpose = check.classification && check.classification.purpose || "";
-          slice.routing = publicRoutingMetadata(check);
+          slice.routing = publicRoleTargetRoutingMetadata(check);
           loop[field] = existingId;
           if (role === "implementation") loop.targetThreadId = existingId;
           return { ok: true, target, slice };
@@ -997,9 +1050,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         message: `missing ${role} lane`,
       });
     }
-    const check = routingService.assertLoopRoleTarget({ role, thread: target });
+    const check = roleTargetCheck(loop, role, target);
     if (!check.ok) {
-      return setLoopBlocked(loop, slice, check.error, { routing: publicRoutingMetadata(check) });
+      return setLoopBlocked(loop, slice, check.error, { routing: publicRoleTargetRoutingMetadata(check) });
     }
     const targetThreadId = threadIdOf(target);
     if (sameThreadId(targetThreadId, loop.sourceThreadId)) {
