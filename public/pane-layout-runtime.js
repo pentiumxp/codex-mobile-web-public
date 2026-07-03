@@ -4978,6 +4978,102 @@ function bindCurrentThreadActions() {
   });
 }
 
+function threadRefreshStatusHintSelfCheck(threadId = "") {
+  const firstThread = Array.isArray(state.threads) && state.threads.length ? state.threads[0] : null;
+  const id = String(threadId || state.currentThreadId || firstThread && firstThread.id || "").trim();
+  const threadHash = diagnosticThreadHash(id);
+  if (!id) {
+    return {
+      ok: false,
+      probeKind: "thread-refresh-status-hint",
+      errorCode: "missing_thread_id",
+      threadHash: "",
+    };
+  }
+  if (state.threadLoadController || state.refreshThreadController) {
+    return {
+      ok: true,
+      skipped: true,
+      probeKind: "thread-refresh-status-hint",
+      errorCode: "detail_request_already_in_flight",
+      threadHash,
+    };
+  }
+  const previous = {
+    currentThreadId: state.currentThreadId,
+    currentThread: state.currentThread,
+    threadLoadController: state.threadLoadController,
+    refreshThreadController: state.refreshThreadController,
+    threads: Array.isArray(state.threads) ? state.threads.slice() : [],
+    runningThreadIds: new Set(state.runningThreadIds || []),
+    runningThreadHintedAtById: Object.assign({}, state.runningThreadHintedAtById || {}),
+    submittedProcessingThreadHintedAtById: Object.assign({}, state.submittedProcessingThreadHintedAtById || {}),
+    unreadThreadIds: new Set(state.unreadThreadIds || []),
+    renderedThreadListSignature: state.renderedThreadListSignature,
+  };
+  const existing = previous.threads.find((thread) => String(thread && thread.id || "") === id) || null;
+  const nowMs = Date.now();
+  const testThread = Object.assign({}, existing || {
+    id,
+    name: "thread-refresh-status-hint",
+    preview: "thread-refresh-status-hint",
+  }, {
+    id,
+    status: { type: "idle" },
+    updatedAtMs: nowMs,
+    turns: [
+      {
+        id: "thread-refresh-status-hint-terminal",
+        status: "completed",
+        completedAtMs: nowMs,
+        items: [],
+      },
+    ],
+  });
+  try {
+    state.threads = [
+      testThread,
+      ...previous.threads.filter((thread) => String(thread && thread.id || "") !== id),
+    ];
+    state.currentThreadId = id;
+    state.currentThread = Object.assign({}, testThread, {
+      mobileLoading: true,
+      mobileLoadError: "",
+    });
+    state.threadLoadController = { signal: { aborted: false } };
+    noteRunningThreadHint(id, nowMs);
+    reconcileThreadStatusHints(state.threads);
+    state.renderedThreadListSignature = "";
+    renderThreads();
+    const button = document.querySelector(`[data-thread="${escapeSelectorAttr(id)}"]`);
+    const icon = button ? button.querySelector(".status-icon-running") : null;
+    const info = statusIconInfo(testThread.status, id);
+    return {
+      ok: Boolean(button && icon && info && info.kind === "running" && state.runningThreadIds.has(id)),
+      skipped: false,
+      probeKind: "thread-refresh-status-hint",
+      errorCode: "",
+      threadHash,
+      iconKind: info && info.kind ? String(info.kind || "") : "",
+      iconPresent: Boolean(icon),
+      hinted: state.runningThreadIds.has(id),
+    };
+  } finally {
+    state.currentThreadId = previous.currentThreadId;
+    state.currentThread = previous.currentThread;
+    state.threadLoadController = previous.threadLoadController;
+    state.refreshThreadController = previous.refreshThreadController;
+    state.threads = previous.threads;
+    state.runningThreadIds = previous.runningThreadIds;
+    state.runningThreadHintedAtById = previous.runningThreadHintedAtById;
+    state.submittedProcessingThreadHintedAtById = previous.submittedProcessingThreadHintedAtById;
+    state.unreadThreadIds = previous.unreadThreadIds;
+    state.renderedThreadListSignature = previous.renderedThreadListSignature;
+    saveThreadStatusHints();
+    renderThreads();
+  }
+}
+
 
 function createPaneLayoutRuntime() {
   return {
@@ -4993,6 +5089,7 @@ function createPaneLayoutRuntime() {
       handleThreadCardClick: typeof handleThreadCardClick === "function" ? handleThreadCardClick : null,
       showHermesPluginPrimaryPage: typeof showHermesPluginPrimaryPage === "function" ? showHermesPluginPrimaryPage : null,
       returnToThreadListFromDetail: typeof returnToThreadListFromDetail === "function" ? returnToThreadListFromDetail : null,
+      threadRefreshStatusHintSelfCheck: typeof threadRefreshStatusHintSelfCheck === "function" ? threadRefreshStatusHintSelfCheck : null,
   };
 }
 
@@ -5286,6 +5383,7 @@ function createPaneLayoutRuntime() {
     renderNewThreadDraft,
     enterNewThreadDraft,
     bindCurrentThreadActions,
+    threadRefreshStatusHintSelfCheck,
   });
   root.CodexPaneLayoutRuntime = paneLayoutRuntimeApi;
 })(typeof globalThis !== "undefined" ? globalThis : window);

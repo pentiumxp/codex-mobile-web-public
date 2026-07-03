@@ -92,6 +92,14 @@ test("browser runtime self-check separates Vite loader readiness from app visibi
   assert.match(scriptSource, /vite_app_preview_app_start_recovery_error/);
 });
 
+test("browser runtime self-check gates current-thread refresh status hints", () => {
+  assert.match(scriptSource, /function threadRefreshStatusHintProbeExpression\(/);
+  assert.match(scriptSource, /threadRefreshStatusHintSelfCheck/);
+  assert.match(scriptSource, /browser_thread_refresh_status_hint_dropped/);
+  assert.match(scriptSource, /threadRefreshStatusHint: null/);
+  assert.match(scriptSource, /applyThreadRefreshStatusHintGateIssue\(report\)/);
+});
+
 test("browser runtime self-check samples active thread rows before recent rows", () => {
   assert.deepEqual(script.selectThreadIdsForSampling([
     { id: "recent-completed", status: "completed" },

@@ -1045,6 +1045,15 @@ function currentLiveTurnSupportsThreadStatusHint(threadId = "") {
   return Boolean(id && id === state.currentThreadId && currentThreadAllowsLiveTurn() && currentLiveTurn());
 }
 
+function currentThreadRefreshSupportsThreadStatusHint(threadId = "") {
+  const id = String(threadId || "");
+  if (!id || id !== String(state.currentThreadId || "")) return false;
+  if (state.threadLoadController || state.refreshThreadController) return true;
+  return Boolean(state.currentThread
+    && String(state.currentThread.id || "") === id
+    && state.currentThread.mobileLoading);
+}
+
 function shouldKeepRunningHintForSettledStatus(threadId, thread = null, status = null, options = {}) {
   const id = String(threadId || "");
   const inputThread = threadForStatusHint(id, thread);
@@ -1059,6 +1068,7 @@ function shouldKeepRunningHintForSettledStatus(threadId, thread = null, status =
     currentThreadId: state.currentThreadId,
     currentThreadSettled: !currentThreadAllowsLiveTurn(),
     currentThreadHasLiveTurn: currentLiveTurnSupportsThreadStatusHint(id),
+    currentThreadRefreshing: currentThreadRefreshSupportsThreadStatusHint(id),
     eventAtMs: options.eventAtMs,
     eventIsTerminal: Boolean(options.eventIsTerminal),
     mobileReplay: Boolean(options.mobileReplay),
@@ -1110,6 +1120,7 @@ function shouldExpireRunningThreadHint(threadId, thread, nowMs = Date.now()) {
     currentThreadId: state.currentThreadId,
     currentThreadSettled: !currentThreadAllowsLiveTurn(),
     currentThreadHasLiveTurn: currentLiveTurnSupportsThreadStatusHint(id),
+    currentThreadRefreshing: currentThreadRefreshSupportsThreadStatusHint(id),
     freshnessToleranceMs: STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
     runningHintStaleMs: RUNNING_THREAD_HINT_STALE_MS,
     nowMs,
@@ -1198,6 +1209,10 @@ function reconcileThreadStatusHints(threads) {
       if (clearRunningThreadHint(id)) changed = true;
     } else if (wasRunning && isThreadListSettledStatus(thread.status)) {
       const terminalAtMs = threadLatestTerminalTurnAtMs(thread);
+      if (currentThreadRefreshSupportsThreadStatusHint(id)) {
+        if (noteRunningThreadHint(id, nowMs)) changed = true;
+        continue;
+      }
       if (currentLiveTurnSupportsThreadStatusHint(id)) {
         if (noteRunningThreadHint(id, nowMs)) changed = true;
         continue;
@@ -1246,6 +1261,9 @@ function statusIconInfo(status, threadId = "") {
     return { kind: "running", label: text || "running", symbol: "" };
   }
   const id = String(threadId || "");
+  if (id && currentThreadRefreshSupportsThreadStatusHint(id)) {
+    return { kind: "running", label: "refreshing", symbol: "" };
+  }
   const hintThread = id ? threadForStatusHint(id) : null;
   if (id && state.runningThreadIds.has(id)
     && (!isThreadListSettledStatus(status)
@@ -2362,6 +2380,7 @@ function createSettingsRuntime() {
     threadLatestTerminalTurnAtMs,
     currentThreadAllowsLiveTurn,
     currentLiveTurnSupportsThreadStatusHint,
+    currentThreadRefreshSupportsThreadStatusHint,
     shouldKeepRunningHintForSettledStatus,
     shouldMarkThreadUnread,
     runningThreadHintAgeMs,

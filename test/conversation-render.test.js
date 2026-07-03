@@ -2855,7 +2855,9 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("maybeRecoverEmptyDetailWithHistoryEvidence"), /postClientEvent\("empty_detail_history_recovery", plan\.event \|\| \{\}\)/);
   assert.match(functionBody("renderCurrentThread"), /const loadingNote = thread\.mobileLoading/);
   assert.match(functionBody("reconcileThreadStatusHints"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /currentThreadRefreshSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurnSupportsThreadStatusHint\(id\)/);
+  assert.match(functionBody("statusIconInfo"), /currentThreadRefreshSupportsThreadStatusHint\(id\)/);
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {
@@ -6766,11 +6768,16 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("updateThreadStatusHints"), /const staleActive = isStaleActiveStatus\(nextStatus\)/);
   assert.match(functionBody("updateThreadStatusHints"), /shouldMarkThreadUnread\(id, nextThread, nextStatus/);
   assert.match(functionBody("statusIconInfo"), /if \(isStaleActiveStatus\(status\)\) return null;/);
+  assert.match(appJs, /function currentThreadRefreshSupportsThreadStatusHint\(threadId = ""\)/);
+  assert.match(functionBody("currentThreadRefreshSupportsThreadStatusHint"), /state\.threadLoadController \|\| state\.refreshThreadController/);
+  assert.match(functionBody("currentThreadRefreshSupportsThreadStatusHint"), /state\.currentThread\.mobileLoading/);
   assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurnSupportsThreadStatusHint\(id\)/);
+  assert.match(functionBody("statusIconInfo"), /currentThreadRefreshSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /const staleActive = isStaleActiveStatus\(thread\.status\) \|\| Boolean\(thread\.mobileStaleActiveTurn\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /const isRunning = !staleActive && isRunningStatus\(thread\.status\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && staleActive\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && isThreadListSettledStatus\(thread\.status\)\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /currentThreadRefreshSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /shouldExpireRunningThreadHint\(id, thread, nowMs\)/);
   assert.doesNotMatch(functionBody("reconcileThreadStatusHints"), /else if \(!isRunning && wasRunning\)/);
 
@@ -6872,7 +6879,13 @@ test("thread running hints survive notLoaded list refreshes", () => {
 
   const expireBody = functionBody("shouldExpireRunningThreadHint");
   assert.match(expireBody, /currentThreadHasLiveTurn: currentLiveTurnSupportsThreadStatusHint\(id\)/);
+  assert.match(expireBody, /currentThreadRefreshing: currentThreadRefreshSupportsThreadStatusHint\(id\)/);
   assert.match(expireBody, /runningHintStaleMs: RUNNING_THREAD_HINT_STALE_MS/);
+  assert.match(appJs, /function threadRefreshStatusHintSelfCheck\(threadId = ""\)/);
+  assert.match(functionBody("threadRefreshStatusHintSelfCheck"), /state\.threadLoadController = \{ signal: \{ aborted: false \} \};/);
+  assert.match(functionBody("threadRefreshStatusHintSelfCheck"), /button\.querySelector\("\.status-icon-running"\)/);
+  assert.match(functionBody("threadRefreshStatusHintSelfCheck"), /state\.currentThreadId = previous\.currentThreadId/);
+  assert.match(functionBody("createPaneLayoutRuntime"), /threadRefreshStatusHintSelfCheck/);
 
   const notificationBody = functionBody("applyNotification");
   assert.match(notificationBody, /const runningStatus = \{ type: "active" \};/);

@@ -2660,6 +2660,75 @@ function submitComposerExpression(message) {
   `;
 }
 
+function threadRefreshStatusHintProbeExpression() {
+  return `
+    (async () => {
+      try {
+        const probe = typeof window.threadRefreshStatusHintSelfCheck === "function"
+          ? window.threadRefreshStatusHintSelfCheck
+          : null;
+        if (!probe) {
+          return {
+            label: "thread-refresh-status-hint",
+            probeKind: "thread-refresh-status-hint",
+            ok: false,
+            skipped: false,
+            errorCode: "thread_refresh_status_hint_probe_unavailable",
+            threadHash: "",
+          };
+        }
+        const runProbe = () => Object.assign({
+          label: "thread-refresh-status-hint",
+          probeKind: "thread-refresh-status-hint",
+          ok: false,
+          skipped: false,
+          errorCode: "",
+          threadHash: "",
+          iconKind: "",
+          iconPresent: false,
+          hinted: false,
+        }, probe() || {});
+        let result = runProbe();
+        if (result && result.errorCode === "missing_thread_id" && typeof window.loadThreads === "function") {
+          try {
+            await window.loadThreads({ silent: true, allowDuringDetail: true, allowHidden: true });
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            result = runProbe();
+          } catch (_) {}
+        }
+        for (let index = 0; result && result.errorCode === "detail_request_already_in_flight" && index < 6; index += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          result = runProbe();
+        }
+        if (result && result.errorCode === "missing_thread_id") {
+          result.ok = true;
+          result.skipped = true;
+        }
+        return Object.assign({
+          label: "thread-refresh-status-hint",
+          probeKind: "thread-refresh-status-hint",
+          ok: false,
+          skipped: false,
+          errorCode: "",
+          threadHash: "",
+          iconKind: "",
+          iconPresent: false,
+          hinted: false,
+        }, result && typeof result === "object" ? result : {});
+      } catch (err) {
+        return {
+          label: "thread-refresh-status-hint",
+          probeKind: "thread-refresh-status-hint",
+          ok: false,
+          skipped: false,
+          errorCode: String(err && err.message || "thread_refresh_status_hint_probe_failed").slice(0, 160),
+          threadHash: "",
+        };
+      }
+    })();
+  `;
+}
+
 function appendBrowserIssue(report, item) {
   if (!report || !report.browserReport || !item) return;
   const issues = Array.isArray(report.browserReport.issues) ? report.browserReport.issues : [];
@@ -2668,6 +2737,21 @@ function appendBrowserIssue(report, item) {
   report.browserReport.issueCount = issues.length;
   report.browserReport.blockingIssueCount = issues.filter((issueItem) => issueItem && /^(H1|H2)$/i.test(issueItem.severity || "")).length;
   report.browserReport.ok = report.browserReport.blockingIssueCount === 0;
+}
+
+function applyThreadRefreshStatusHintGateIssue(report) {
+  const sample = report && report.threadRefreshStatusHint;
+  if (!sample || sample.skipped === true || sample.ok === true) return;
+  appendBrowserIssue(report, {
+    severity: "H2",
+    code: "browser_thread_refresh_status_hint_dropped",
+    surface: "browser-runtime",
+    threadHash: String(sample.threadHash || "").slice(0, 32),
+    iconKind: String(sample.iconKind || "").slice(0, 40),
+    iconPresent: sample.iconPresent === true,
+    hinted: sample.hinted === true,
+    reason: boundedToken(sample.errorCode, "thread_refresh_status_hint_failed"),
+  });
 }
 
 function applyStartupGateIssues(report, startupSample = {}, staticShell = {}) {
@@ -2789,6 +2873,7 @@ async function run(options = parseArgs(), deps = {}) {
     viteAppPreview: null,
     viteAppPreviewLaunch: null,
     viteAppPreviewReport: null,
+    threadRefreshStatusHint: null,
     submitExercise: submitAllowed ? {
       attempted: true,
       ok: false,
@@ -2922,6 +3007,25 @@ async function run(options = parseArgs(), deps = {}) {
       errorCode: boundedToken(err && err.message, "startup_probe_failed"),
     }));
     if (startupSample) samples.push(startupSample);
+    if (!options.vitePreviewOnly && !appPreviewOnly) {
+      const refreshStatusHintSample = await evaluate(cdp, threadRefreshStatusHintProbeExpression(), options.timeoutMs).catch((err) => ({
+        label: "thread-refresh-status-hint",
+        probeKind: "thread-refresh-status-hint",
+        ok: false,
+        skipped: false,
+        errorCode: boundedToken(err && err.message, "thread_refresh_status_hint_probe_failed"),
+        threadHash: "",
+      }));
+      report.threadRefreshStatusHint = {
+        ok: refreshStatusHintSample && refreshStatusHintSample.ok === true,
+        skipped: refreshStatusHintSample && refreshStatusHintSample.skipped === true,
+        threadHash: String(refreshStatusHintSample && refreshStatusHintSample.threadHash || "").slice(0, 32),
+        iconKind: String(refreshStatusHintSample && refreshStatusHintSample.iconKind || "").slice(0, 40),
+        iconPresent: refreshStatusHintSample && refreshStatusHintSample.iconPresent === true,
+        hinted: refreshStatusHintSample && refreshStatusHintSample.hinted === true,
+        errorCode: boundedToken(refreshStatusHintSample && refreshStatusHintSample.errorCode, ""),
+      };
+    }
     if (options.startupOnly) {
       report.startup = {
         appVisible: startupSample.appVisible === true,
@@ -3092,6 +3196,7 @@ async function run(options = parseArgs(), deps = {}) {
     minSettledDelayMs: options.minSettledDelayMs,
   });
   applyStartupGateIssues(report, samples.find((sample) => sample && sample.probeKind === "startup") || {}, staticShell);
+  applyThreadRefreshStatusHintGateIssue(report);
   if (appPreviewRuntime) {
     report.viteAppPreviewReport = analyzeViteAppPreviewProbe(report.viteAppPreview, {
       consoleEvents,
