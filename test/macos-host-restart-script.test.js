@@ -33,6 +33,7 @@ test("macOS host restart script is a LaunchDaemon recovery entrypoint", () => {
   assert.match(hostRestartScript, /--profile-id/);
   assert.match(hostRestartScript, /--codex-home/);
   assert.match(hostRestartScript, /--default-shell-mode/);
+  assert.match(hostRestartScript, /--restart-mux/);
   assert.match(hostRestartScript, /codex-mobile-macos-profile-helper\.js/);
   assert.match(hostRestartScript, /plist_set_env CODEX_HOME "\$SELECTED_CODEX_HOME"/);
   assert.match(hostRestartScript, /SELECTED_MUX_ENDPOINT_FILE="\$\{SELECTED_CODEX_HOME\}\/app-server-mux\/endpoint\.json"/);
@@ -40,6 +41,9 @@ test("macOS host restart script is a LaunchDaemon recovery entrypoint", () => {
   assert.match(hostRestartScript, /plist_set_env CODEX_MOBILE_DEFAULT_SHELL "\$DEFAULT_SHELL_MODE"/);
   assert.match(hostRestartScript, /select_args\+=\(--no-write\)/);
   assert.match(hostRestartScript, /stop_selected_mux_endpoint\(\) \{/);
+  assert.match(hostRestartScript, /RESTART_SELECTED_MUX=0/);
+  assert.match(hostRestartScript, /RESTART_SELECTED_MUX=1/);
+  assert.match(hostRestartScript, /listener_restart_preserves_independent_app_server/);
   assert.match(hostRestartScript, /SELECTED_MUX_STOP_JSON="\$\(stop_selected_mux_endpoint/);
   assert.match(hostRestartScript, /process\.kill\(pid, "SIGTERM"\)/);
   assert.match(hostRestartScript, /fs\.rmSync\(endpointFile, \{ force: true \}\)/);
@@ -64,7 +68,12 @@ test("macOS host restart script fails safely around bootstrap and postflight", (
   assert.match(hostRestartScript, /Public config default shell does not match selected mode/);
   assert.match(hostRestartScript, /Running LaunchDaemon default shell does not match selected mode/);
   assert.match(hostRestartScript, /bootstrap_service_with_retry\(\) \{/);
+  assert.match(hostRestartScript, /ensure_service_loaded_on_exit\(\) \{/);
+  assert.match(hostRestartScript, /trap ensure_service_loaded_on_exit EXIT HUP INT TERM/);
+  assert.match(hostRestartScript, /BOOTOUT_PERFORMED=1\s*\nrun_sudo \/bin\/launchctl bootout "system\/\$\{SERVICE_LABEL\}"/);
+  assert.match(hostRestartScript, /BOOTSTRAP_COMPLETED=1/);
   assert.match(hostRestartScript, /"\$status" -eq 5/);
+  assert.match(hostRestartScript, /if service_loaded; then/);
   assert.match(hostRestartScript, /LaunchDaemon bootstrap failed/);
   assert.match(hostRestartScript, /"bootstrap"/);
   assert.match(hostRestartScript, /POSTFLIGHT_JSON/);

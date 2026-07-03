@@ -13,9 +13,13 @@ LIST_HOMES=0
 JSON_OUTPUT=0
 MAX_WAIT_SECONDS=45
 DRY_RUN=0
+RESTART_SELECTED_MUX=0
 POSTFLIGHT_JSON="{}"
 STALE_MUX_JSON="[]"
 SELECTED_MUX_STOP_JSON="{}"
+BOOTOUT_PERFORMED=0
+BOOTSTRAP_COMPLETED=0
+RECOVERY_TRAP_RUNNING=0
 
 usage() {
   cat <<'EOF'
@@ -30,6 +34,7 @@ Options:
   --profile-id <id>         Start with a configured profile id, e.g. default/current/previous.
   --codex-home <path>       Start with an explicit Codex Home path.
   --default-shell-mode <m>   Set CODEX_MOBILE_DEFAULT_SHELL to classic or vite-app-preview.
+  --restart-mux             Also stop the selected app-server mux endpoint. Default preserves it.
   --prompt                  Prompt on stdin/stdout to select a configured profile.
   --label <launchd-label>   LaunchDaemon label, default com.hermesmobile.plugin.codex-mobile.
   --plist <path>            LaunchDaemon plist path.
@@ -85,6 +90,27 @@ console.log(JSON.stringify(payload, null, 2));
   fi
   exit "$status"
 }
+
+service_loaded() {
+  run_sudo /bin/launchctl print "system/${SERVICE_LABEL}" >/dev/null 2>&1
+}
+
+ensure_service_loaded_on_exit() {
+  local exit_status=$?
+  if [[ "$RECOVERY_TRAP_RUNNING" -eq 1 ]]; then
+    exit "$exit_status"
+  fi
+  RECOVERY_TRAP_RUNNING=1
+  if [[ "$BOOTOUT_PERFORMED" -eq 1 && "$BOOTSTRAP_COMPLETED" -ne 1 ]]; then
+    if ! service_loaded; then
+      echo "[recovery] LaunchDaemon was booted out before completion; attempting bootstrap restore for ${SERVICE_LABEL}." >&2
+      run_sudo /bin/launchctl bootstrap system "$PLIST_PATH" >/dev/null 2>&1 || true
+    fi
+  fi
+  exit "$exit_status"
+}
+
+trap ensure_service_loaded_on_exit EXIT HUP INT TERM
 
 plist_get_env() {
   local key="$1"
@@ -402,14 +428,19 @@ bootstrap_service_with_retry() {
   local output
   local status
   if output="$(run_sudo /bin/launchctl bootstrap system "$PLIST_PATH" 2>&1)"; then
+    BOOTSTRAP_COMPLETED=1
     return 0
   fi
   status=$?
   if [[ "$status" -eq 5 ]]; then
     sleep 1
-    if ! run_sudo /bin/launchctl print "system/${SERVICE_LABEL}" >/dev/null 2>&1; then
+    if service_loaded; then
+      BOOTSTRAP_COMPLETED=1
+      return 0
+    else
       local retry_output
       if retry_output="$(run_sudo /bin/launchctl bootstrap system "$PLIST_PATH" 2>&1)"; then
+        BOOTSTRAP_COMPLETED=1
         return 0
       fi
       status=$?
@@ -447,6 +478,10 @@ while [[ $# -gt 0 ]]; do
           ;;
       esac
       shift 2
+      ;;
+    --restart-mux)
+      RESTART_SELECTED_MUX=1
+      shift
       ;;
     --prompt)
       PROMPT=1
@@ -597,7 +632,20 @@ run_sudo /usr/sbin/chown root:wheel "$PLIST_PATH"
 
 validate_preflight_selection
 
-SELECTED_MUX_STOP_JSON="$(stop_selected_mux_endpoint || printf '{"ok":false,"reason":"selected_mux_stop_failed"}')"
+if [[ "$RESTART_SELECTED_MUX" -eq 1 ]]; then
+  SELECTED_MUX_STOP_JSON="$(stop_selected_mux_endpoint || printf '{"ok":false,"reason":"selected_mux_stop_failed"}')"
+else
+  SELECTED_MUX_STOP_JSON="$("$NODE_EXE" -e '
+const payload = {
+  ok: true,
+  endpointFile: process.argv[1],
+  action: "preserved",
+  reason: "listener_restart_preserves_independent_app_server",
+};
+console.log(JSON.stringify(payload));
+' "$SELECTED_MUX_ENDPOINT_FILE")"
+fi
+BOOTOUT_PERFORMED=1
 run_sudo /bin/launchctl bootout "system/${SERVICE_LABEL}" >/dev/null 2>&1 || true
 bootstrap_service_with_retry
 run_sudo /bin/launchctl kickstart -k "system/${SERVICE_LABEL}" >/dev/null 2>&1 || true
