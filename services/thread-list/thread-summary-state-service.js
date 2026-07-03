@@ -270,6 +270,56 @@ function createThreadSummaryStateService(dependencies = {}) {
     return true;
   }
 
+  function statusHasRuntimeActiveEvidence(status) {
+    if (!status || typeof status !== "object") return false;
+    if (status.mobileRuntimeDerived === true || status.mobileLocalActiveStatus === true) return true;
+    return Boolean(statusTurnId(status));
+  }
+
+  function threadHasRuntimeActiveEvidence(thread) {
+    if (!thread || typeof thread !== "object") return false;
+    return Boolean(
+      thread.activeTurnId
+      || thread.active_turn_id
+      || thread.mobileActiveTurnId
+      || thread.mobileRolloutActiveTurn
+      || thread.mobileLocalActiveStatus
+      || thread.mobileStatusTurnId
+      || statusHasRuntimeActiveEvidence(thread.status),
+    );
+  }
+
+  function isDeployLaneIdleSummary(thread) {
+    if (!thread || typeof thread !== "object") return false;
+    const status = thread.status && typeof thread.status === "object" ? thread.status : {};
+    return (thread.mobileDeployLane === true || status.mobileDeployLane === true)
+      && !isThreadListLiveStatus(thread.status);
+  }
+
+  function shouldReplaceDeployLaneRuntimeActiveStatus(base, display) {
+    if (!isDeployLaneIdleSummary(base)) return false;
+    if (!display || !isThreadListLiveStatus(display.status)) return false;
+    return threadHasRuntimeActiveEvidence(display);
+  }
+
+  function copyThreadSummaryActiveMarkers(target, display) {
+    if (!target || !display || typeof target !== "object" || typeof display !== "object") return target;
+    for (const key of [
+      "activeTurnId",
+      "active_turn_id",
+      "mobileActiveTurnId",
+      "mobileRolloutActiveTurn",
+      "mobileLocalActiveStatus",
+      "mobileStatusTurnId",
+      "mobileStatusSource",
+    ]) {
+      if (display[key] !== undefined && display[key] !== null && display[key] !== "") target[key] = display[key];
+    }
+    const displayStatusTurnId = statusTurnId(display.status);
+    if (displayStatusTurnId) target.activeTurnId = displayStatusTurnId;
+    return target;
+  }
+
   function clearThreadSummaryActiveMarkers(thread) {
     if (!thread || typeof thread !== "object") return thread;
     delete thread.activeTurnId;
@@ -316,9 +366,14 @@ function createThreadSummaryStateService(dependencies = {}) {
       const displayFieldUpdatedAtMs = timestampToMs(display.updatedAt || display.updated_at || display.updatedAtMs || display.updated_at_ms);
       next.updatedAt = Math.floor(Math.max(displayUpdatedAtMs, displayFieldUpdatedAtMs) / 1000);
     }
-    if (shouldReplaceThreadDisplayStatus(base.status, display.status, baseUpdatedAtMs, displayUpdatedAtMs)) {
+    const replaceStatus = shouldReplaceDeployLaneRuntimeActiveStatus(base, display)
+      || shouldReplaceThreadDisplayStatus(base.status, display.status, baseUpdatedAtMs, displayUpdatedAtMs);
+    if (replaceStatus) {
       next.status = display.status;
       if (isThreadListRestStatus(display.status)) clearThreadSummaryActiveMarkers(next);
+    }
+    if (isThreadListLiveStatus(next.status) && isThreadListLiveStatus(display.status)) {
+      copyThreadSummaryActiveMarkers(next, display);
     }
     for (const key of ["archived", "archivedAt", "archived_at", "deleted", "deletedAt", "deleted_at", "agentNickname", "agent_nickname", "agentRole", "agent_role"]) {
       const value = display[key];

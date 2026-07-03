@@ -148,6 +148,12 @@ const {
   threadStatusChangedPayloadFromTurnNotification,
   setThreadDisplaySettings,
 } = require("../server");
+const {
+  createThreadSummaryStateService,
+} = require("../adapters/thread-summary-state-service");
+const {
+  normalizeHomeAiDeployLaneSummary,
+} = require("../services/task-cards/thread-task-card-deploy-lane-policy-service");
 
 function normalizeFsPath(value) {
   return String(value || "")
@@ -465,6 +471,47 @@ test("thread list keeps app-server time when duplicate fallback is older", () =>
 
   assert.equal(result.data[0].name, "older fallback");
   assert.equal(result.data[0].updatedAt, 300);
+});
+
+test("deploy lane runtime active summary replaces warm idle cache", () => {
+  const homeAiCwd = "/Users/hermes-dev/HermesMobileDev/app";
+  const service = createThreadSummaryStateService({
+    normalizeHomeAiDeployLaneSummary,
+    statusText: (status) => String(status && status.type || status || ""),
+    timestampToMs(value) {
+      const number = Number(value || 0);
+      if (!Number.isFinite(number) || number <= 0) return 0;
+      return number < 1_000_000_000_000 ? number * 1000 : number;
+    },
+    threadListSummaryTimestampMs(thread) {
+      const number = Number(thread && (thread.updatedAt || thread.updated_at || thread.updatedAtMs || thread.updated_at_ms) || 0);
+      if (!Number.isFinite(number) || number <= 0) return 0;
+      return number < 1_000_000_000_000 ? number * 1000 : number;
+    },
+  });
+  const cachedIdle = normalizeHomeAiDeployLaneSummary({
+    id: "deploy-lane",
+    name: "Codex Mobile Deploy Lane",
+    cwd: homeAiCwd,
+    updatedAt: 1783068319,
+    status: { type: "idle" },
+  });
+  const runtimeActive = {
+    id: "deploy-lane",
+    name: "Codex Mobile Deploy Lane",
+    cwd: homeAiCwd,
+    updatedAt: 1783068243,
+    status: { type: "active", mobileRuntimeDerived: true },
+    activeTurnId: "turn-active",
+  };
+
+  const merged = service.normalizeThreadSummaryLiveStatus(
+    service.mergeThreadDisplaySummary(cachedIdle, runtimeActive),
+  );
+
+  assert.equal(merged.status.type, "active");
+  assert.equal(merged.mobileDeployLane, true);
+  assert.equal(merged.activeTurnId, "turn-active");
 });
 
 test("thread list completed fallback clears stale active markers from older app-server row", () => {

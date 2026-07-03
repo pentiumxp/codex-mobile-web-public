@@ -808,6 +808,19 @@ regresses, run:
 node --test test\thread-visibility.test.js test\conversation-render.test.js test\thread-item-timestamp-enrichment.test.js test\mobile-viewport.test.js
 ```
 
+If the opposite happens for a configured deploy lane, where
+`/api/threads/:id?mode=recent` reports `status=active` with a real
+`activeTurnId` but `/api/threads` still shows the lane as `idle`, inspect the
+warm fallback cache merge path. Deploy-lane idle summaries can have a newer
+cache/list timestamp than the runtime-derived active summary, so the merge rule
+must allow runtime-derived deploy-lane active evidence to replace warm idle
+metadata while preserving the stale-rollout-active protection above. The focused
+coverage is:
+
+```powershell
+node --test test\thread-visibility.test.js test\thread-list-fallback-cache-service.test.js test\thread-task-card-deploy-lane-policy-service.test.js
+```
+
 ## Sent Message Disappears After Re-entering Thread
 
 Common causes:
