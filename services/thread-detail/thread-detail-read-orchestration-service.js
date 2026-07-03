@@ -679,6 +679,15 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     const projection = projectionInput(threadId, summary);
     context.projectionInputAvailable = Boolean(projection);
     context.projectionState = projection ? "input-ready" : "unavailable";
+    let rawBoundedReadDecision = null;
+    function boundedReadBeforeFullReadDecision() {
+      if (!rawBoundedReadDecision) {
+        rawBoundedReadDecision = normalizeBoundedReadDecision(
+          preferBoundedReadBeforeFullRead({ threadId, summary, projection, runtimeSettings }),
+        );
+      }
+      return rawBoundedReadDecision;
+    }
     const projectionStartedAtMs = now();
     const allowPartialProjection = activeReadPolicy.allowPartialProjection;
     const shouldUseActiveOverlayWindowFirst = Boolean(
@@ -1085,7 +1094,19 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             });
           }
         }
-        if (activeOverlayProjectionThread
+        const activeOverlayHistoryBaselineDecision = projectionThreadIsPartial(activeOverlayProjectionThread)
+          ? boundedReadBeforeFullReadDecision()
+          : null;
+        const skipActiveOverlayHistoryBaseline = Boolean(activeOverlayHistoryBaselineDecision
+          && activeOverlayHistoryBaselineDecision.prefer);
+        if (skipActiveOverlayHistoryBaseline) {
+          context.boundedReadBeforeFullRead = context.boundedReadBeforeFullRead || activeOverlayHistoryBaselineDecision;
+          threadLog("active_overlay_history_baseline_skipped", {
+            reason: activeOverlayHistoryBaselineDecision.reason || "large-rollout",
+            rolloutSizeBytes: activeOverlayHistoryBaselineDecision.rolloutSizeBytes || null,
+            thresholdBytes: activeOverlayHistoryBaselineDecision.thresholdBytes || null,
+          });
+        } else if (activeOverlayProjectionThread
           && projectionThreadIsPartial(activeOverlayProjectionThread)
           && projectedThreadResult) {
           const historyBaselineStartedAtMs = now();
@@ -1386,11 +1407,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       });
     }
 
-    const rawBoundedReadDecision = normalizeBoundedReadDecision(
-      preferBoundedReadBeforeFullRead({ threadId, summary, projection, runtimeSettings }),
-    );
+    const rawDecisionBeforeFullRead = boundedReadBeforeFullReadDecision();
     const boundedReadDecision = applyActiveThreadPolicyToBoundedReadDecision(
-      rawBoundedReadDecision,
+      rawDecisionBeforeFullRead,
       activeReadPolicy,
     );
     context.boundedReadBeforeFullRead = boundedReadDecision;

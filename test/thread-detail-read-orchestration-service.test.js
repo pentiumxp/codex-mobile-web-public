@@ -1170,6 +1170,95 @@ test("active overlay complete evidence backfills active turn from cached active-
   assert.doesNotMatch(JSON.stringify(response.body.thread.mobileDiagnostics.threadDetailTimings), /private|upload\.png/);
 });
 
+test("large active overlay skips foreground full history baseline", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "active" },
+      activeTurnId: "active-turn",
+      rolloutPath: "/tmp/large-rollout.jsonl",
+    },
+    projectedThreadResult: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`projection-result:${options.activeOverlay === true ? "active" : "ordinary"}:${options.allowPartial === true ? "partial" : "full"}`);
+      return null;
+    },
+    activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`active-overlay-window-lookup:${options.omitActiveTurnId || ""}`);
+      return {
+        result: {
+          thread: {
+            id: "thread-1",
+            turns: [
+              { id: "older-turn", items: [{ type: "agentMessage" }] },
+              {
+                id: "active-turn",
+                items: [
+                  { id: "user-1", type: "userMessage" },
+                  { id: "agent-live", type: "agentMessage", text: "stale live assistant" },
+                ],
+              },
+            ],
+            mobileReadMode: "projection-v4-partial",
+            mobileProjection: {
+              source: "partial",
+              version: "v4",
+              partial: true,
+              activeOverlayWindow: true,
+              ageMs: 12,
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
+    resolveActiveWindowOverlay: ({ projectionThread }) => {
+      calls.push(`overlay-provider:${projectionThread && projectionThread.mobileReadMode}`);
+      return {
+        overlaySource: "app-server-notification",
+        overlayTurn: {
+          id: "active-turn",
+          items: [
+            { type: "commandExecution", startedAtMs: 110, text: "private command" },
+            { type: "input_image", createdAtMs: 111, path: "/private/upload.png" },
+            { id: "agent-live", type: "agentMessage", text: "fresh response" },
+            { id: "usage", type: "turnUsageSummary" },
+            { type: "turnDiagnostic", createdAtMs: 121 },
+          ],
+        },
+        overlayRevision: 5,
+        overlayTimestampMs: 12_000,
+      };
+    },
+    preferBoundedReadBeforeFullRead: () => ({
+      prefer: true,
+      rolloutSizeBytes: 514_000_000,
+      thresholdBytes: 64_000_000,
+      source: "summary",
+      reason: "large-rollout",
+    }),
+  });
+  const logs = [];
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event, details = {}) => logs.push({ event, details }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-active-overlay");
+  assert.equal(calls.includes("projection-result:active:full"), false);
+  assert.equal(calls.includes("turns-list:turns-list-active-overlay-window"), false);
+  assert.equal(logs.some((entry) => entry.event === "active_overlay_history_baseline_skipped"
+    && entry.details.reason === "large-rollout"), true);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.largeReadProtected, true);
+  assert.equal(timings.largeReadRolloutSizeBytes, 514_000_000);
+  assert.equal(Object.prototype.hasOwnProperty.call(timings.timings, "activeOverlayHistoryBaselineMs"), false);
+  assert.equal(response.body.thread.turns.find((turn) => turn.id === "active-turn").items.find((item) => item.id === "agent-live").text, "fresh response");
+});
+
 test("projection-live incomplete active overlay requires fresh active-window backfill", async () => {
   const { service, calls } = createHarness({
     summary: {
