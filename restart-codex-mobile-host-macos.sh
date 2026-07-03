@@ -15,6 +15,7 @@ MAX_WAIT_SECONDS=45
 DRY_RUN=0
 POSTFLIGHT_JSON="{}"
 STALE_MUX_JSON="[]"
+SELECTED_MUX_STOP_JSON="{}"
 
 usage() {
   cat <<'EOF'
@@ -112,11 +113,16 @@ plist_set_env() {
 }
 
 json_success() {
+  POSTFLIGHT_JSON="$POSTFLIGHT_JSON" \
+  STALE_MUX_JSON="$STALE_MUX_JSON" \
+  SELECTED_MUX_STOP_JSON="$SELECTED_MUX_STOP_JSON" \
   "$NODE_EXE" -e '
 let postflight = {};
 let staleMuxes = [];
+let selectedMuxStop = {};
 try { postflight = JSON.parse(process.env.POSTFLIGHT_JSON || "{}"); } catch (_) {}
 try { staleMuxes = JSON.parse(process.env.STALE_MUX_JSON || "[]"); } catch (_) {}
+try { selectedMuxStop = JSON.parse(process.env.SELECTED_MUX_STOP_JSON || "{}"); } catch (_) {}
 const payload = {
   ok: true,
   serviceLabel: process.argv[1],
@@ -129,6 +135,7 @@ const payload = {
   muxEndpointFile: process.argv[8],
   defaultShellMode: process.argv[9] || undefined,
   postflight,
+  selectedMuxStop,
   staleMuxes
 };
 console.log(JSON.stringify(payload, null, 2));
@@ -233,6 +240,99 @@ try {
 } catch (err) {
   out.push({ error: String(err && err.message || err).slice(0, 220), action: "reported_only" });
 }
+process.stdout.write(JSON.stringify(out));
+NODE
+}
+
+stop_selected_mux_endpoint() {
+  "$NODE_EXE" - "$SELECTED_MUX_ENDPOINT_FILE" <<'NODE'
+const fs = require("node:fs");
+
+const endpointFile = process.argv[2];
+const out = {
+  ok: true,
+  endpointFile,
+  pid: undefined,
+  childPid: undefined,
+  stoppedPids: [],
+  stubbornPids: [],
+  removedEndpoint: false,
+};
+
+function isAlive(pid) {
+  const value = Number(pid || 0);
+  if (!Number.isInteger(value) || value <= 0) return false;
+  try {
+    process.kill(value, 0);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function stopPid(pid) {
+  if (!isAlive(pid)) return;
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch (_) {}
+}
+
+try {
+  if (!endpointFile || !fs.existsSync(endpointFile)) {
+    out.reason = "endpoint_missing";
+    process.stdout.write(JSON.stringify(out));
+    process.exit(0);
+  }
+
+  let endpoint = {};
+  try {
+    endpoint = JSON.parse(fs.readFileSync(endpointFile, "utf8"));
+  } catch (error) {
+    out.ok = false;
+    out.reason = "endpoint_parse_failed";
+    out.error = String(error && error.message || error).slice(0, 180);
+    process.stdout.write(JSON.stringify(out));
+    process.exit(0);
+  }
+
+  out.pid = Number(endpoint.pid || 0) || undefined;
+  out.childPid = Number(endpoint.childPid || 0) || undefined;
+  const pids = [out.childPid, out.pid].filter((pid, index, all) => pid && all.indexOf(pid) === index);
+  for (const pid of pids) {
+    stopPid(pid);
+  }
+
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const alive = pids.filter(isAlive);
+    if (!alive.length) break;
+    sleep(100);
+  }
+
+  for (const pid of pids) {
+    if (isAlive(pid)) {
+      out.stubbornPids.push(pid);
+    } else {
+      out.stoppedPids.push(pid);
+    }
+  }
+
+  try {
+    fs.rmSync(endpointFile, { force: true });
+    out.removedEndpoint = true;
+  } catch (error) {
+    out.ok = false;
+    out.removeError = String(error && error.message || error).slice(0, 180);
+  }
+} catch (error) {
+  out.ok = false;
+  out.error = String(error && error.message || error).slice(0, 180);
+}
+
 process.stdout.write(JSON.stringify(out));
 NODE
 }
@@ -497,6 +597,7 @@ run_sudo /usr/sbin/chown root:wheel "$PLIST_PATH"
 
 validate_preflight_selection
 
+SELECTED_MUX_STOP_JSON="$(stop_selected_mux_endpoint || printf '{"ok":false,"reason":"selected_mux_stop_failed"}')"
 run_sudo /bin/launchctl bootout "system/${SERVICE_LABEL}" >/dev/null 2>&1 || true
 bootstrap_service_with_retry
 run_sudo /bin/launchctl kickstart -k "system/${SERVICE_LABEL}" >/dev/null 2>&1 || true
