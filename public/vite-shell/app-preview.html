@@ -211,6 +211,7 @@
     (function () {
       var bootReady = false;
       var showTimer = 0;
+      var scriptErrorTimer = 0;
       var recoveryReason = "";
       function $(id) { return document.getElementById(id); }
       function setStatus(text) {
@@ -242,6 +243,21 @@
       function hideRecovery() {
         var recovery = $("bootRecovery");
         if (recovery) recovery.hidden = true;
+      }
+      function isScriptStartupError(event) {
+        if (!event) return false;
+        if ((typeof ErrorEvent !== "undefined" && event instanceof ErrorEvent) || event.message || event.error) return true;
+        var target = event.target || event.srcElement;
+        var tagName = target && target.tagName ? String(target.tagName).toUpperCase() : "";
+        return tagName === "SCRIPT";
+      }
+      function scheduleScriptRecovery() {
+        if (bootReady || anyMainSurfaceVisible()) return;
+        if (scriptErrorTimer) clearTimeout(scriptErrorTimer);
+        scriptErrorTimer = window.setTimeout(function () {
+          scriptErrorTimer = 0;
+          showRecovery("script-error");
+        }, 1200);
       }
       async function clearShellState() {
         if ("caches" in window) {
@@ -287,6 +303,7 @@
         ready: function () {
           bootReady = true;
           if (showTimer) clearTimeout(showTimer);
+          if (scriptErrorTimer) clearTimeout(scriptErrorTimer);
           hideRecovery();
         },
         fail: function (reason) {
@@ -295,11 +312,12 @@
         recover: recover,
         reloadOnly: reloadOnly
       };
-      window.addEventListener("error", function () {
-        window.setTimeout(function () { showRecovery("script-error"); }, 0);
+      window.addEventListener("error", function (event) {
+        if (!isScriptStartupError(event)) return;
+        scheduleScriptRecovery();
       }, true);
       window.addEventListener("unhandledrejection", function () {
-        window.setTimeout(function () { showRecovery("script-error"); }, 0);
+        scheduleScriptRecovery();
       });
       document.addEventListener("DOMContentLoaded", function () {
         installRecoveryButtons();
@@ -738,16 +756,16 @@
     </div>
   </div>
 <!-- CODEX_MOBILE_VITE_APP_PREVIEW:BEGIN -->
-  <link rel="modulepreload" href="/vite-shell/assets/_virtual_codex-mobile-esm-compatibility-Co9jDTGL.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-01-BhurwDwA.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-02-BTk5xUMZ.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-03-BqnKsNcC.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-04-DdGrkG30.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-05-CnUNpy7r.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-06-C_r3veuo.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-07-B-1J62Mw.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-08-DQutOEC2.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-09-CyNU0KDr.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/_virtual_codex-mobile-esm-compatibility-CaJ6M9G8.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-01-CxTSCuFm.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-02-U1fUN8Sc.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-03-CEqPBnZo.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-04-DlnrIbFy.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-05-B_3eR7gg.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-06-DZRPpPeF.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-07-LxiLtJaS.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-08-CFDhDjoy.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-09-BzNUJ-dR.js" data-codex-vite-esm-compatibility-chunk="true">
   <script id="codex-vite-app-preview-loader-plan" type="application/json" data-codex-vite-app-preview-loader-plan="true">
 {
   "schemaVersion": 1,
@@ -1464,7 +1482,7 @@
       "chunkTarget": "startup-manifest",
       "sourcePath": "public/shell-asset-manifest.js",
       "bytes": 75971,
-      "sha256": "dd525a451943a34d785cf7f8d8686571bdd821034351422fdc8032ed5e8e99e6",
+      "sha256": "9fc4dbe0e28f8584cdcfdb3a4734e6e6cc06ef944a68fcca3b9c7aac15414f21",
       "ownerId": "shell-manifest",
       "globalName": "CODEX_MOBILE_SHELL_MANIFEST"
     },
@@ -1483,11 +1501,11 @@
       "globalName": "CodexAppBootstrap"
     }
   ],
-  "sha256": "bca1a8953773c969f15e0e7468b9c01345b26d75b1aa3e2788b25f16f574de70",
+  "sha256": "ef3b8fbf21cf63080fbb9157391dd40e615080dad7c586b161c8716fd4cd619a",
   "scripts": []
 }
   </script>
-  <script type="module" src="/vite-shell/assets/vite-shell-entry-C7JLY2xF.js" data-codex-vite-app-preview-entry="true"></script>
+  <script type="module" src="/vite-shell/assets/vite-shell-entry-DqPfldtT.js" data-codex-vite-app-preview-entry="true"></script>
 <!-- CODEX_MOBILE_VITE_APP_PREVIEW:END -->
 
 <script>

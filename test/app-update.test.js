@@ -14,6 +14,7 @@ const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-ru
 const sideChatRuntimeJs = fs.readFileSync(path.join(root, "public", "side-chat-runtime.js"), "utf8");
 const mediaPreviewRuntimeJs = fs.readFileSync(path.join(root, "public", "media-preview-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
+const appPreviewHtml = fs.readFileSync(path.join(root, "public", "vite-shell", "app-preview.html"), "utf8");
 const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const shellManifest = JSON.parse(fs.readFileSync(path.join(root, "public", "shell-asset-manifest.json"), "utf8"));
@@ -248,6 +249,13 @@ test("boot recovery UI can clear PWA shell state before app.js starts", () => {
   assert.match(indexHtml, /shellReload/);
   assert.match(indexHtml, /window\.addEventListener\("error"/);
   assert.match(indexHtml, /window\.addEventListener\("unhandledrejection"/);
+  assert.match(indexHtml, /function isScriptStartupError\(event\)/);
+  assert.match(indexHtml, /tagName === "SCRIPT"/);
+  assert.match(indexHtml, /function scheduleScriptRecovery\(\)/);
+  assert.doesNotMatch(indexHtml, /showRecovery\("script-error"\); \}, 0\)/);
+  assert.match(appPreviewHtml, /function isScriptStartupError\(event\)/);
+  assert.match(appPreviewHtml, /tagName === "SCRIPT"/);
+  assert.match(appPreviewHtml, /function scheduleScriptRecovery\(\)/);
   assert.match(indexHtml, /setTimeout\(function \(\) \{ showRecovery\("startup-timeout"\); \}, 4500\)/);
   assert.match(appUpdateSource, /function markBootReady\(\)/);
   assert.match(appUpdateSource, /window\.codexMobileBoot/);

@@ -34,8 +34,8 @@ function defaultLogCandidates(env = process.env, homeDir = os.homedir()) {
   const candidates = [
     env.CODEX_MOBILE_CLIENT_EVENT_LOG,
     env.CODEX_MOBILE_WEB_LOG_FILE,
-    path.join(homeDir, ".codex-mobile-web", "logs", "codex-mobile-web.out.log"),
     path.join(homeDir, ".codex-mobile-web", "logs", "mobile-web.log"),
+    path.join(homeDir, ".codex-mobile-web", "logs", "codex-mobile-web.out.log"),
   ].map((entry) => String(entry || "").trim()).filter(Boolean);
   return [...new Set(candidates)];
 }

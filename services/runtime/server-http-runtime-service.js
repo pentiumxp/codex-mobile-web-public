@@ -277,11 +277,30 @@ function createServerHttpRuntimeService(dependencies = {}) {
         safeDetails[key] = value.message || String(value);
       } else if (typeof value === "string") {
         safeDetails[key] = value.length > 600 ? `${value.slice(0, 600)}...` : value;
+      } else if (value && typeof value === "object") {
+        safeDetails[key] = compactStructured(value);
       } else {
         safeDetails[key] = value;
       }
     }
     return safeDetails;
+  }
+
+  function appendRuntimeLogLine(line) {
+    const filePath = String(valueFromGetter(getMobileWebLogFile, "") || "").trim();
+    if (!filePath) {
+      console.log(line);
+      return false;
+    }
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      trimRuntimeLogs();
+      fs.appendFileSync(filePath, `${line}\n`, "utf8");
+      return true;
+    } catch (_) {
+      console.log(line);
+      return false;
+    }
   }
 
   function logThreadDetail(event, details = {}) {
@@ -305,8 +324,7 @@ function createServerHttpRuntimeService(dependencies = {}) {
   }
 
   function logClientEvent(event, details = {}) {
-    trimRuntimeLogs();
-    console.log(`[client-event] ${event} ${JSON.stringify(Object.assign({
+    appendRuntimeLogLine(`[client-event] ${event} ${JSON.stringify(Object.assign({
       ts: new Date().toISOString(),
     }, safeLogDetails(details)))}`);
   }
@@ -421,6 +439,7 @@ function createServerHttpRuntimeService(dependencies = {}) {
     trimLogFile,
     trimRuntimeLogs,
     safeLogDetails,
+    appendRuntimeLogLine,
     logThreadDetail,
     logThreadList,
     logContinuation,

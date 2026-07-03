@@ -209,6 +209,7 @@
     (function () {
       var bootReady = false;
       var showTimer = 0;
+      var scriptErrorTimer = 0;
       var recoveryReason = "";
       function $(id) { return document.getElementById(id); }
       function setStatus(text) {
@@ -240,6 +241,21 @@
       function hideRecovery() {
         var recovery = $("bootRecovery");
         if (recovery) recovery.hidden = true;
+      }
+      function isScriptStartupError(event) {
+        if (!event) return false;
+        if ((typeof ErrorEvent !== "undefined" && event instanceof ErrorEvent) || event.message || event.error) return true;
+        var target = event.target || event.srcElement;
+        var tagName = target && target.tagName ? String(target.tagName).toUpperCase() : "";
+        return tagName === "SCRIPT";
+      }
+      function scheduleScriptRecovery() {
+        if (bootReady || anyMainSurfaceVisible()) return;
+        if (scriptErrorTimer) clearTimeout(scriptErrorTimer);
+        scriptErrorTimer = window.setTimeout(function () {
+          scriptErrorTimer = 0;
+          showRecovery("script-error");
+        }, 1200);
       }
       async function clearShellState() {
         if ("caches" in window) {
@@ -285,6 +301,7 @@
         ready: function () {
           bootReady = true;
           if (showTimer) clearTimeout(showTimer);
+          if (scriptErrorTimer) clearTimeout(scriptErrorTimer);
           hideRecovery();
         },
         fail: function (reason) {
@@ -293,11 +310,12 @@
         recover: recover,
         reloadOnly: reloadOnly
       };
-      window.addEventListener("error", function () {
-        window.setTimeout(function () { showRecovery("script-error"); }, 0);
+      window.addEventListener("error", function (event) {
+        if (!isScriptStartupError(event)) return;
+        scheduleScriptRecovery();
       }, true);
       window.addEventListener("unhandledrejection", function () {
-        window.setTimeout(function () { showRecovery("script-error"); }, 0);
+        scheduleScriptRecovery();
       });
       document.addEventListener("DOMContentLoaded", function () {
         installRecoveryButtons();

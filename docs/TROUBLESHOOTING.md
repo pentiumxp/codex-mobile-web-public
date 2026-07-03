@@ -151,6 +151,14 @@ should surface as `vite_app_preview_app_start_failed` or
 `vite_app_preview_app_start_recovery_error`; slow thread bootstrap by itself
 should not be counted as a Vite loader failure.
 
+If the phone shows the boot recovery card with "页面脚本启动失败" but production
+browser gates pass, check whether the page shell is old enough to treat every
+captured `window.error` as a fatal startup script failure. Current app-preview
+shells only schedule the recovery card for real script/module errors or
+unhandled rejections, and give the main shell a short chance to become visible
+before showing the card. Non-script resource errors should not force the
+recovery UI.
+
 Also compare the listener bind address with the plugin base URL advertised to
 Hermes. If `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` is a LAN URL such as
 `http://192.168.x.x:8787`, the listener must bind to `0.0.0.0` or that LAN

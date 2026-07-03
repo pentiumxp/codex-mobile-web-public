@@ -9,6 +9,7 @@ const { test } = require("node:test");
 const service = require("../services/runtime/client-event-stall-self-check-service");
 const adapter = require("../adapters/client-event-stall-self-check-service");
 const {
+  defaultLogCandidates,
   parseClientEventLine,
   runtimeCheckFromClientEventSummary,
   summarizeClientEventLog,
@@ -18,6 +19,13 @@ const {
 test("client-event stall adapter re-exports canonical runtime service", () => {
   assert.equal(adapter.parseClientEventLine, service.parseClientEventLine);
   assert.equal(adapter.summarizeClientEventText, service.summarizeClientEventText);
+});
+
+test("client-event stall self-check prefers bounded mobile log before launchd stdout fallback", () => {
+  const candidates = defaultLogCandidates({}, "/tmp/codex-home");
+
+  assert.ok(candidates.indexOf("/tmp/codex-home/.codex-mobile-web/logs/mobile-web.log")
+    < candidates.indexOf("/tmp/codex-home/.codex-mobile-web/logs/codex-mobile-web.out.log"));
 });
 
 test("client-event stall self-check parses bounded client-event lines", () => {
