@@ -20,11 +20,34 @@ function normalizeCwd(value) {
   return compactOneLine(value).replace(/\\/g, "/").toLowerCase();
 }
 
+function threadRole(thread = {}) {
+  return normalizeText(thread.role || thread.threadRole || thread.thread_role || thread.taskCardRole || thread.task_card_role);
+}
+
 function classifyThreadPurpose(thread = {}) {
   const title = normalizeText(thread.title || thread.name || thread.preview);
+  const role = threadRole(thread);
   const cwd = normalizeCwd(thread.cwd || thread.workspace || thread.targetWorkspace);
   const id = compactOneLine(thread.id || thread.threadId);
 
+  if (/\bpublic[-_\s]*pr\b/.test(role) || /\bpublic[-_\s]*pull[-_\s]*request\b/.test(role)) {
+    return { purpose: "public_pr", specialPurpose: true, reason: "role-public-pr", threadId: id };
+  }
+  if (/\bdeploy\b/.test(role) || /\bdeployment\b/.test(role) || /\bdeploy[-_\s]*lane\b/.test(role)) {
+    return { purpose: "deploy_lane", specialPurpose: true, reason: "role-deploy", threadId: id };
+  }
+  if (/\baudit\b/.test(role) || /\breview\b/.test(role) || /\bproduct[-_\s]*audit\b/.test(role)) {
+    return { purpose: "audit_lane", specialPurpose: true, reason: "role-audit", threadId: id };
+  }
+  if (/\btask[-_\s]*intake\b/.test(role) || /\bintake\b/.test(role)) {
+    return { purpose: "task_intake", specialPurpose: true, reason: "role-task-intake", threadId: id };
+  }
+  if (/\bworker\b/.test(role) || /\bworker[-_\s]*lane\b/.test(role)) {
+    return { purpose: "worker_lane", specialPurpose: true, reason: "role-worker-lane", threadId: id };
+  }
+  if (/\bimplementation\b/.test(role) || /\bimplementer\b/.test(role) || /\brepair\b/.test(role)) {
+    return { purpose: cwd.endsWith("/plugins/codex-mobile-web") ? "codex_mobile_implementation" : "workspace_implementation", specialPurpose: false, reason: "role-implementation", threadId: id };
+  }
   if (/\bpublic\s+pr\b/.test(title) || /\bpublic\s+pull\s+request\b/.test(title)) {
     return { purpose: "public_pr", specialPurpose: true, reason: "title-public-pr", threadId: id };
   }

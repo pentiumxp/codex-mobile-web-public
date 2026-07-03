@@ -16,12 +16,19 @@ function tempStateFile(name) {
 
 function makeRuntime(options = {}) {
   const cards = [];
+  const createdThreads = [];
   let now = options.now || Date.parse("2026-07-03T00:00:00.000Z");
   const visibleThreads = options.visibleThreads || [
     {
       id: "source-thread",
       title: "codex mobile 06-30",
       cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+    },
+    {
+      id: "implementation-thread",
+      title: "codex mobile implementation",
+      cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+      threadRole: "implementation",
     },
     {
       id: "audit-thread",
@@ -34,42 +41,96 @@ function makeRuntime(options = {}) {
       cwd: "/Users/hermes-dev/HermesMobileDev/app",
     },
   ];
-  const runtime = createLoopTaskRuntimeService({
+  const dependencies = {
     storageFile: tempStateFile(options.name || "state"),
     visibleThreads,
     clock: () => now,
     watchdogStaleMs: 1000,
     createThreadTaskCardsFromSourceThread: async (sourceThreadId, payload) => {
+      if (sourceThreadId === payload.targetThreadId) {
+        throw new Error("Target thread must be different from the source thread.");
+      }
       cards.push({ sourceThreadId, payload });
       return { ok: true, cards: [{ id: `ttc_${cards.length}` }] };
     },
-  });
+  };
+  if (options.createLoopRoleThread !== false) {
+    dependencies.createLoopRoleThread = options.createLoopRoleThread || (async ({ role, cwd, title, threadRole }) => {
+      const id = `${role}-created`;
+      const thread = {
+        id,
+        title,
+        cwd,
+        threadRole,
+      };
+      createdThreads.push(thread);
+      visibleThreads.push(thread);
+      return thread;
+    });
+  }
+  const runtime = createLoopTaskRuntimeService(dependencies);
   return {
     cards,
+    createdThreads,
     runtime,
+    visibleThreads,
     setNow: (value) => {
       now = value;
     },
   };
 }
 
-test("loop runtime starts with stable loop id and suppresses duplicate dispatch", async () => {
-  const { cards, runtime } = makeRuntime();
+test("loop runtime records source-thread requirements locally and dispatches implementation", async () => {
+  const { cards, createdThreads, runtime } = makeRuntime({
+    visibleThreads: [{
+      id: "xcode-thread",
+      title: "Xcode",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+    }],
+  });
   const first = await runtime.startLoop({
-    sourceThreadId: "source-thread",
+    sourceThreadId: "xcode-thread",
     text: "@loop fix password=SECRET_VALUE token=abc123456789",
   });
   assert.equal(first.ok, true);
   assert.equal(first.duplicateSuppressed, false);
   assert.equal(first.loop.status, "running");
+  assert.equal(first.loop.currentRole, "implementation");
+  assert.equal(first.loop.requirementsThreadId, "xcode-thread");
+  assert.equal(first.loop.implementationThreadId, "implementation-created");
+  assert.equal(first.loop.auditThreadId, "product_audit-created");
+  assert.equal(first.loop.requirementsLocal, true);
+  assert.equal(createdThreads.length, 2);
   assert.equal(cards.length, 1);
+  const requirements = first.loop.roleSlices.find((slice) => slice.role === "requirements");
+  assert.equal(requirements.status, "local");
+  assert.equal(requirements.dispatchStatus, "source_thread_local_role");
+  assert.equal(requirements.dispatchMode, "source_thread_local_role");
+  assert.equal(requirements.taskCardDispatch, false);
+  assert.equal(requirements.targetThreadId, "xcode-thread");
+  assert.equal(requirements.taskCardId, "");
+  const implementation = first.loop.roleSlices.find((slice) => slice.role === "implementation");
+  assert.equal(implementation.status, "dispatched");
+  assert.equal(implementation.targetThreadId, "implementation-created");
+  const audit = first.loop.roleSlices.find((slice) => slice.role === "product_audit");
+  assert.equal(audit.status, "pending");
+  assert.equal(audit.targetThreadId, "product_audit-created");
   assert.equal(cards[0].payload.cardKind, "at_loop_role_slice");
-  assert.match(cards[0].payload.idempotencyKey, /^at-loop:loop_[0-9a-f]{16}:requirements:1:v1$/);
+  assert.equal(cards[0].payload.sourceThreadId, "xcode-thread");
+  assert.equal(cards[0].payload.targetThreadId, "implementation-created");
+  assert.notEqual(cards[0].payload.sourceThreadId, cards[0].payload.targetThreadId);
+  assert.equal(cards[0].payload.sourceRole, "requirements");
+  assert.equal(cards[0].payload.targetRole, "implementation");
+  assert.equal(cards[0].payload.routeKind, "at_loop_role_slice");
+  assert.equal(cards[0].payload.workflowId, `at-loop:${first.loop.loopId}`);
+  assert.equal(cards[0].payload.routeResolution.code, "at_loop_role_slice");
+  assert.equal(cards[0].payload.routeResolution.targetRole, "implementation");
+  assert.match(cards[0].payload.idempotencyKey, /^at-loop:loop_[0-9a-f]{16}:implementation:1:v1$/);
   assert.doesNotMatch(JSON.stringify(first), /SECRET_VALUE|abc123456789/);
   assert.doesNotMatch(cards[0].payload.bodyMarkdown, /SECRET_VALUE|abc123456789/);
 
   const second = await runtime.startLoop({
-    sourceThreadId: "source-thread",
+    sourceThreadId: "xcode-thread",
     text: "@loop fix password=SECRET_VALUE token=abc123456789",
   });
   assert.equal(second.ok, true);
@@ -77,6 +138,36 @@ test("loop runtime starts with stable loop id and suppresses duplicate dispatch"
   assert.equal(second.loop.loopId, first.loop.loopId);
   assert.equal(second.loop.duplicateSuppressedCount, 1);
   assert.equal(cards.length, 1);
+});
+
+test("loop runtime treats plugin and Home AI main threads as local requirements owners", async () => {
+  for (const source of [
+    {
+      id: "plugin-main",
+      title: "codex mobile 06-30",
+      cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+    },
+    {
+      id: "home-ai-main",
+      title: "Home AI 06-22",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    },
+  ]) {
+    const { cards, runtime } = makeRuntime({
+      name: source.id,
+      visibleThreads: [source],
+    });
+    const result = await runtime.startLoop({
+      sourceThreadId: source.id,
+      text: "@loop improve local product flow",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.loop.requirementsThreadId, source.id);
+    assert.equal(result.loop.requirementsLocal, true);
+    assert.equal(result.loop.roleSlices.find((slice) => slice.role === "requirements").dispatchMode, "source_thread_local_role");
+    assert.equal(cards.length, 1);
+    assert.notEqual(cards[0].payload.sourceThreadId, cards[0].payload.targetThreadId);
+  }
 });
 
 test("loop runtime fails closed when source thread is a Public PR lane", async () => {
@@ -106,30 +197,21 @@ test("loop runtime correlates terminal returns and routes audit failure to repai
     sourceThreadId: "source-thread",
     text: "@loop add status surface",
   });
-  assert.equal(started.loop.currentRole, "requirements");
+  assert.equal(started.loop.currentRole, "implementation");
   assert.equal(cards.length, 1);
 
-  const requirements = await runtime.recordTerminalReturn({
-    roleSliceId: started.loop.roleSlices[0].roleSliceId,
-    status: "completed",
-    summary: "requirements done",
-  });
-  assert.equal(requirements.ok, true);
-  assert.equal(requirements.loop.currentRole, "implementation");
-  assert.equal(cards.length, 2);
-
   const implementation = await runtime.recordTerminalReturn({
-    taskCardId: "ttc_2",
+    taskCardId: "ttc_1",
     status: "completed",
     summary: "implementation done",
   });
   assert.equal(implementation.ok, true);
   assert.equal(implementation.loop.currentRole, "product_audit");
-  assert.equal(cards.length, 3);
-  assert.equal(cards[2].payload.targetThreadId, "audit-thread");
+  assert.equal(cards.length, 2);
+  assert.equal(cards[1].payload.targetThreadId, "audit-thread");
 
   const audit = await runtime.recordTerminalReturn({
-    taskCardId: "ttc_3",
+    taskCardId: "ttc_2",
     status: "completed",
     auditVerdict: "failed_implementation_bug",
     summary: "bug remains",
@@ -138,7 +220,8 @@ test("loop runtime correlates terminal returns and routes audit failure to repai
   assert.equal(audit.loop.currentRole, "repair");
   assert.equal(audit.loop.lastAuditVerdict, "failed_implementation_bug");
   assert.equal(audit.loop.nextRoute, "repair");
-  assert.equal(cards.length, 4);
+  assert.equal(cards.length, 3);
+  assert.equal(cards[2].payload.targetThreadId, "implementation-thread");
 });
 
 test("loop runtime fails closed when required product-audit lane is missing", async () => {
@@ -148,23 +231,50 @@ test("loop runtime fails closed when required product-audit lane is missing", as
       id: "source-thread",
       title: "codex mobile 06-30",
       cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+    }, {
+      id: "implementation-thread",
+      title: "codex mobile implementation",
+      cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+      threadRole: "implementation",
     }],
+    createLoopRoleThread: false,
   });
-  await runtime.startLoop({ sourceThreadId: "source-thread", text: "@loop implement work" });
-  await runtime.recordTerminalReturn({ taskCardId: "ttc_1", status: "completed" });
-  const result = await runtime.recordTerminalReturn({ taskCardId: "ttc_2", status: "completed" });
+  const result = await runtime.startLoop({ sourceThreadId: "source-thread", text: "@loop implement work" });
   assert.equal(result.ok, false);
   assert.equal(result.error, "at_loop_missing_role_lane");
   assert.equal(result.loop.status, "blocked");
   assert.equal(result.loop.blockedReason, "at_loop_missing_role_lane");
-  assert.equal(cards.length, 2);
+  assert.equal(cards.length, 0);
+  assert.equal(result.loop.roleSlices.find((slice) => slice.role === "implementation").targetThreadId, "implementation-thread");
+  assert.equal(result.loop.roleSlices.find((slice) => slice.role === "product_audit").status, "blocked");
+});
+
+test("loop runtime does not report blocked duplicate triggers as successful no-ops", async () => {
+  const { cards, runtime } = makeRuntime({
+    name: "blocked-duplicate",
+    visibleThreads: [{
+      id: "source-thread",
+      title: "codex mobile 06-30",
+      cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+    }],
+    createLoopRoleThread: false,
+  });
+  const first = await runtime.startLoop({ sourceThreadId: "source-thread", text: "@loop implement work" });
+  assert.equal(first.ok, false);
+  assert.equal(first.error, "at_loop_missing_role_lane");
+  const second = await runtime.startLoop({ sourceThreadId: "source-thread", text: "@loop implement work" });
+  assert.equal(second.ok, false);
+  assert.equal(second.error, "at_loop_missing_role_lane");
+  assert.notEqual(second.duplicateSuppressed, true);
+  assert.equal(second.loop.duplicateSuppressedCount, 1);
+  assert.equal(cards.length, 0);
 });
 
 test("loop watchdog marks stale returns without retrying or completing work", async () => {
   const initial = Date.parse("2026-07-03T01:00:00.000Z");
   const { cards, runtime, setNow } = makeRuntime({ name: "watchdog", now: initial });
   const started = await runtime.startLoop({ sourceThreadId: "source-thread", text: "@loop wait for card" });
-  assert.equal(started.loop.currentRole, "requirements");
+  assert.equal(started.loop.currentRole, "implementation");
   setNow(initial + 2000);
   const watchdog = runtime.runWatchdog({ loopId: started.loop.loopId });
   assert.equal(watchdog.ok, true);
@@ -174,6 +284,7 @@ test("loop watchdog marks stale returns without retrying or completing work", as
   assert.equal(watchdog.rejected, false);
   assert.equal(cards.length, 1);
   const status = runtime.status({ loopId: started.loop.loopId });
-  assert.equal(status.loops[0].roleSlices[0].stale, true);
-  assert.equal(status.loops[0].roleSlices[0].dispatchStatus, "return_stale");
+  const implementation = status.loops[0].roleSlices.find((slice) => slice.role === "implementation");
+  assert.equal(implementation.stale, true);
+  assert.equal(implementation.dispatchStatus, "return_stale");
 });

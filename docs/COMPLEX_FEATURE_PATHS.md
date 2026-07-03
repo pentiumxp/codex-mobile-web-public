@@ -642,20 +642,30 @@ Implementation path:
 4. Dispatch role cards only through the existing task-card channel. Role-card
    idempotency keys must be stable per `loopId`, role, iteration, and runtime
    contract version.
-5. Classify target-thread purpose before dispatch. Public PR, deploy lane,
+5. Treat source-main-thread requirements as a local role. A loop submitted from
+   Xcode/Home AI/plugin main threads records requirements as
+   `source_thread_local_role` and must not send a same-thread requirements card.
+   Implementation/audit/repair/deploy roles still require real task cards with
+   `sourceThreadId !== targetThreadId`. Select or create those role lanes from
+   explicit role/purpose metadata first, then bounded cwd/title heuristics; if a
+   safe lane is unavailable, keep the loop blocked and visible.
+6. Classify target-thread purpose before dispatch. Public PR, deploy lane,
    audit, task intake, and worker threads are special-purpose lanes; mismatched
    roles must fail closed with bounded routing metadata instead of relying on
    matching cwd or same-workspace recency.
-6. Terminal return correlation must match by task-card id first, then role
+7. Terminal return correlation must match by task-card id first, then role
    slice id / loop id. Local final prose in a target thread is not a terminal
    return.
-7. Watchdog marks stale/missing role returns only. It must not retry, complete,
+8. Watchdog marks stale/missing role returns only. It must not retry, complete,
    reject, or redispatch role work by itself.
-8. Audit verdict classes route the next iteration: `passed` closes or proceeds
+9. Audit verdict classes route the next iteration: `passed` closes or proceeds
    to deploy/readback when required; requirements gaps route to requirements;
    implementation/test/privacy gaps route to repair; deploy readback failures
    route to deploy/readback or repair; blocked/rejected classes stop the loop.
-9. Focused tests include:
+10. Duplicate blocked triggers must return a visible blocked loop/status, not an
+    `ok=true` no-op. Existing same-thread requirements blockers may be recovered
+    by converting requirements to the local role and preparing role lanes.
+11. Focused tests include:
    - `test/at-loop-trigger-parser.test.js`
    - `test/thread-task-card-loop-routing-service.test.js`
    - `test/loop-task-runtime.test.js`
@@ -663,7 +673,7 @@ Implementation path:
    - `test/at-loop-composer-intent.test.js`
    - MCP/task-card composition tests that prove the API/MCP surfaces stay
      bounded and idempotent.
-10. The Composer `@` picker intentionally exposes `Loop`, `目标任务`, and
+12. The Composer `@` picker intentionally exposes `Loop`, `目标任务`, and
    `ChatGPT Pro` only. Task-card and autonomous-collaboration creation remains
    available through the existing task-card channel/text commands, but is not a
    top-level Composer `@` picker entry.

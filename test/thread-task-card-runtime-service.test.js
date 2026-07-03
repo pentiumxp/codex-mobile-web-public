@@ -17,6 +17,8 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   const homeAiEvents = [];
   const codexRequests = [];
   let serviceOptions = null;
+  let atLoopOptions = null;
+  let rememberedLoopThread = null;
   const runtime = createThreadTaskCardRuntimeService({
     homeAiAutonomousDeliveryReturnServiceFactory: () => ({
       send: async (event, options) => homeAiEvents.push({ event, options }),
@@ -43,9 +45,15 @@ test("thread task-card runtime composition wires return hook, policy, route, and
       }),
       routeMarker: true,
     }),
+    atLoopRuntimeServiceFactory: (options) => {
+      atLoopOptions = options;
+      return { kind: "at-loop-service" };
+    },
+    atLoopRouteServiceFactory: (options) => ({ kind: "at-loop-route", atLoopRuntimeService: options.atLoopRuntimeService }),
     codex: {
       request: async (method, params, options) => {
         codexRequests.push({ method, params, options });
+        if (method === "thread/start") return { threadId: "loop-role-thread", thread: { id: "loop-role-thread", cwd: params.cwd } };
         return method === "turn/start" ? { turnId: "turn-1" } : { ok: true };
       },
     },
@@ -53,6 +61,13 @@ test("thread task-card runtime composition wires return hook, policy, route, and
     applyPermissionModeOverride: (settings, approvalPolicy, cwd) => Object.assign({}, settings, { approvalPolicy, cwd }),
     mutationRpcTimeoutMs: 1234,
     notifyLocalTurnStarted: () => "turn-1",
+    readStartThreadDeveloperInstructions: () => "AGENTS",
+    persistThreadTitleToSessionIndex: () => true,
+    tryUpdateThreadTitle: async () => true,
+    rememberStartedThread: (thread) => {
+      rememberedLoopThread = thread;
+      return thread;
+    },
   });
 
   await serviceOptions.onTerminalReturnCard({ id: "return-1" });
@@ -63,6 +78,8 @@ test("thread task-card runtime composition wires return hook, policy, route, and
 
   assert.equal(runtime.threadTaskCardService.kind, "task-card-service");
   assert.equal(runtime.threadTaskCardRouteService.routeMarker, true);
+  assert.equal(runtime.atLoopRuntimeService.kind, "at-loop-service");
+  assert.equal(runtime.atLoopRouteService.kind, "at-loop-route");
   assert.equal(runtime.attachWorkspaceDelegationRuntimeGuidance({}).guided, true);
   assert.deepEqual(homeAiEvents, [
     { event: { id: "return-1" }, options: { workspaceId: "owner" } },
@@ -75,4 +92,19 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   assert.equal(codexRequests[0].params.resumeRuntime, "high");
   assert.equal(codexRequests[1].method, "turn/start");
   assert.equal(codexRequests[1].params.turnRuntime, "high");
+
+  const roleThread = await atLoopOptions.createLoopRoleThread({
+    role: "implementation",
+    cwd: "/repo/plugin",
+    title: "Plugin Loop Implementation",
+    threadRole: "implementation",
+    sourceThread: { id: "source-thread", title: "Plugin", cwd: "/repo/plugin" },
+    loop: { sourceThreadId: "source-thread" },
+  });
+  assert.equal(roleThread.id, "loop-role-thread");
+  assert.equal(rememberedLoopThread.threadRole, "implementation");
+  assert.equal(rememberedLoopThread.title, "Plugin Loop Implementation");
+  assert.equal(codexRequests[2].method, "thread/start");
+  assert.equal(codexRequests[2].params.cwd, "/repo/plugin");
+  assert.equal(codexRequests[2].params.developerInstructions, "AGENTS");
 });

@@ -174,11 +174,67 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
   attachWorkspaceDelegationRuntimeGuidance = threadTaskCardRouteService.attachWorkspaceDelegationRuntimeGuidance;
   readThreadTaskCardExecutionTargetSummary = threadTaskCardRouteService.readThreadTaskCardExecutionTargetSummary;
 
+  async function createLoopRoleThread(input = {}) {
+    const role = String(input.role || "").trim();
+    const sourceThread = input.sourceThread && typeof input.sourceThread === "object" ? input.sourceThread : {};
+    const cwd = String(input.cwd || sourceThread.cwd || "").trim();
+    const title = String(input.title || `${sourceThread.title || sourceThread.id || "Loop"} ${role || "role"}`).replace(/\s+/g, " ").trim();
+    if (!role) throw new Error("at_loop_role_required");
+    if (!cwd) throw new Error("at_loop_role_thread_cwd_required");
+    if (!dependencies.codex || typeof dependencies.codex.request !== "function") {
+      throw new Error("at_loop_role_thread_create_unavailable");
+    }
+    const sourceThreadId = String(input.loop && input.loop.sourceThreadId || sourceThread.id || sourceThread.threadId || "").trim();
+    const inheritedRuntimeSettings = sourceThreadId && typeof dependencies.resolveThreadRuntimeSettings === "function"
+      ? await dependencies.resolveThreadRuntimeSettings(sourceThreadId)
+      : {};
+    const startParamsBase = {
+      cwd,
+      config: {},
+      developerInstructions: typeof dependencies.readStartThreadDeveloperInstructions === "function"
+        ? dependencies.readStartThreadDeveloperInstructions(cwd) || ""
+        : "",
+      persistExtendedHistory: true,
+    };
+    const startParams = applyStartThreadRuntimeSettings(startParamsBase, inheritedRuntimeSettings || {});
+    const startResult = await dependencies.codex.request("thread/start", startParams, {
+      timeoutMs: dependencies.mutationRpcTimeoutMs,
+      retry: false,
+    });
+    const threadId = typeof dependencies.threadIdFromStartResult === "function"
+      ? dependencies.threadIdFromStartResult(startResult)
+      : String(startResult && (startResult.threadId || startResult.id || startResult.thread && startResult.thread.id) || "");
+    if (!threadId) throw new Error("at_loop_role_thread_create_missing_thread_id");
+    if (title && typeof dependencies.persistThreadTitleToSessionIndex === "function") {
+      dependencies.persistThreadTitleToSessionIndex(threadId, title);
+    }
+    if (title && typeof dependencies.tryUpdateThreadTitle === "function") {
+      try {
+        await dependencies.tryUpdateThreadTitle(threadId, title);
+      } catch (_) {}
+    }
+    const startedThread = startResult && (startResult.thread || startResult.data && startResult.data.thread) || {};
+    const thread = Object.assign({}, startedThread, {
+      id: threadId,
+      name: title || startedThread.name,
+      title: title || startedThread.title,
+      preview: title || startedThread.preview || role,
+      cwd: cwd || startedThread.cwd || "",
+      status: { type: "notLoaded" },
+      threadRole: String(input.threadRole || role || "").trim(),
+    });
+    if (typeof dependencies.rememberStartedThread === "function") {
+      return dependencies.rememberStartedThread(thread) || thread;
+    }
+    return thread;
+  }
+
   const atLoopRuntimeService = atLoopRuntimeServiceFactory({
     fs: dependencies.fs,
     path: dependencies.path,
     storageFile: dependencies.atLoopStateFile,
     createThreadTaskCardsFromSourceThread: threadTaskCardRouteService.createThreadTaskCardsFromSourceThread,
+    createLoopRoleThread,
     readThreadTaskCardTargetSummary: threadTaskCardRouteService.readThreadTaskCardTargetSummary,
     readThreadTaskCardVisibleTargetSummary: threadTaskCardRouteService.readThreadTaskCardVisibleTargetSummary,
     threadTaskCardVisibleTargetThreads: threadTaskCardRouteService.threadTaskCardVisibleTargetThreads,

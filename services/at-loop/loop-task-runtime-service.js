@@ -18,6 +18,8 @@ const {
 const STATE_VERSION = 1;
 const DEFAULT_MAX_ITERATIONS = 3;
 const DEFAULT_WATCHDOG_STALE_MS = 30 * 60 * 1000;
+const SOURCE_THREAD_LOCAL_REQUIREMENTS = "source_thread_local_role";
+const TASK_CARD_DISPATCH = "task_card";
 const AUDIT_VERDICTS = new Set([
   "passed",
   "failed_requirements_gap",
@@ -77,7 +79,50 @@ function publicThread(thread = {}) {
     id: compactOneLine(thread.id || thread.threadId),
     title: boundedText(thread.title || thread.name || thread.preview, 120),
     cwd: boundedText(thread.cwd || thread.workspace || thread.targetWorkspace, 300),
+    threadRole: boundedText(thread.threadRole || thread.thread_role || thread.role, 80),
   };
+}
+
+function threadIdOf(thread = {}) {
+  return compactOneLine(thread && (thread.id || thread.threadId));
+}
+
+function sameThreadId(left, right) {
+  const leftId = compactOneLine(left);
+  const rightId = compactOneLine(right);
+  return Boolean(leftId && rightId && leftId === rightId);
+}
+
+function normalizeCwd(value) {
+  return compactOneLine(value).replace(/\\/g, "/").toLowerCase();
+}
+
+function roleThreadField(role) {
+  if (role === "product_audit") return "auditThreadId";
+  if (role === "deploy_readback") return "deployThreadId";
+  return "implementationThreadId";
+}
+
+function roleThreadRole(role) {
+  if (role === "product_audit") return "product_audit";
+  if (role === "deploy_readback") return "deploy_readback";
+  if (role === "repair") return "repair";
+  return "implementation";
+}
+
+function roleLaneTitle(sourceThread, role, objectiveSummary) {
+  const sourceTitle = compactOneLine(sourceThread && (sourceThread.title || sourceThread.name || sourceThread.preview))
+    || compactOneLine(sourceThread && (sourceThread.id || sourceThread.threadId))
+    || "Loop";
+  const suffix = role === "product_audit"
+    ? "Loop Audit"
+    : role === "deploy_readback"
+      ? "Loop Deploy Readback"
+      : role === "repair"
+        ? "Loop Repair"
+        : "Loop Implementation";
+  const objective = compactOneLine(objectiveSummary);
+  return boundedText(`${sourceTitle} ${suffix}${objective ? `: ${objective}` : ""}`, 120);
 }
 
 function loopRoles(deployReadbackRequired) {
@@ -102,6 +147,11 @@ function roleCardBody(loop, slice) {
     `Loop id: ${loop.loopId}`,
     `Role slice id: ${slice.roleSliceId}`,
     `Iteration: ${slice.iteration} / ${loop.maxIterations}`,
+    `Workflow id: at-loop:${loop.loopId}`,
+    `Source request id: ${slice.sourceRequestId || loop.sourceRequestId || ""}`,
+    `Source thread id: ${loop.sourceThreadId}`,
+    `Target thread id: ${slice.targetThreadId || ""}`,
+    `Target role: ${slice.role}`,
     `Runtime owner: codex-mobile`,
     `Domain adapter: ${loop.domainAdapter}`,
     `Target purpose: ${slice.targetPurpose || "unknown"}`,
@@ -250,18 +300,20 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   }
 
   function targetForRole(loop, role) {
-    if (role === "product_audit") {
-      const audit = visibleThreads().find((thread) => routingService.classifyThreadPurpose(thread).purpose === "audit_lane");
-      return audit || null;
+    const slice = findSlice(loop, { role, iteration: loop.iteration });
+    if (slice && slice.targetThreadId) {
+      return readThreadSummary(slice.targetThreadId) || { id: slice.targetThreadId, threadId: slice.targetThreadId };
     }
-    if (role === "deploy_readback") {
-      const deploy = visibleThreads().find((thread) => routingService.classifyThreadPurpose(thread).purpose === "deploy_lane");
-      return deploy || null;
+    if (role === "requirements") {
+      const requirementsThreadId = compactOneLine(loop.requirementsThreadId || loop.targetThreadId || loop.sourceThreadId);
+      return readThreadSummary(requirementsThreadId) || { id: requirementsThreadId, threadId: requirementsThreadId };
     }
-    if ((role === "implementation" || role === "repair") && loop.targetThreadId) {
-      return readThreadSummary(loop.targetThreadId) || { id: loop.targetThreadId, threadId: loop.targetThreadId };
+    const field = roleThreadField(role);
+    const roleThreadId = compactOneLine(loop[field]);
+    if (roleThreadId) {
+      return readThreadSummary(roleThreadId) || { id: roleThreadId, threadId: roleThreadId };
     }
-    return readThreadSummary(loop.sourceThreadId) || { id: loop.sourceThreadId, threadId: loop.sourceThreadId };
+    return null;
   }
 
   function publicSlice(slice = {}) {
@@ -273,6 +325,12 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       targetThreadId: slice.targetThreadId || "",
       targetPurpose: slice.targetPurpose || "",
       taskCardId: slice.taskCardId || "",
+      dispatchMode: slice.dispatchMode || "",
+      taskCardDispatch: slice.taskCardDispatch === false ? false : slice.taskCardDispatch === true ? true : undefined,
+      sourceRequestId: slice.sourceRequestId || "",
+      workflowId: slice.workflowId || "",
+      roleOwnerThreadId: slice.roleOwnerThreadId || "",
+      roleThreadCreated: slice.roleThreadCreated === true,
       dispatchStatus: slice.dispatchStatus || "",
       returnStatus: slice.returnStatus || "",
       auditVerdict: slice.auditVerdict || "",
@@ -289,6 +347,10 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       loopId: loop.loopId || "",
       sourceThreadId: loop.sourceThreadId || "",
       targetThreadId: loop.targetThreadId || "",
+      requirementsThreadId: loop.requirementsThreadId || "",
+      implementationThreadId: loop.implementationThreadId || "",
+      auditThreadId: loop.auditThreadId || "",
+      deployThreadId: loop.deployThreadId || "",
       targetAlias: loop.targetAlias || "",
       domainAdapter: loop.domainAdapter || "generic",
       objectiveSummary: loop.objectiveSummary || "",
@@ -300,6 +362,8 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       lastAuditVerdict: loop.lastAuditVerdict || "",
       nextRoute: loop.nextRoute || "",
       blockedReason: loop.blockedReason || "",
+      sourceRequestId: loop.sourceRequestId || "",
+      requirementsLocal: loop.requirementsLocal === true,
       duplicateSuppressedCount: Number(loop.duplicateSuppressedCount || 0),
       waitingReturnCount: slices.filter((slice) => slice.status === "dispatched").length,
       roleSlices: slices.map(publicSlice),
@@ -327,9 +391,15 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       iteration: 1,
       status: role === "requirements" ? "planned" : "pending",
       dispatchStatus: "",
+      dispatchMode: "",
+      taskCardDispatch: undefined,
       taskCardId: "",
       targetThreadId: "",
       targetPurpose: "",
+      sourceRequestId: "",
+      workflowId: "",
+      roleOwnerThreadId: "",
+      roleThreadCreated: false,
       routing: null,
       createdAt: loop.createdAt,
       updatedAt: loop.createdAt,
@@ -360,6 +430,195 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return null;
   }
 
+  function sourceThread(loop) {
+    return readThreadSummary(loop.sourceThreadId) || { id: loop.sourceThreadId, threadId: loop.sourceThreadId };
+  }
+
+  function sourceOwnsRequirements(loop) {
+    return sameThreadId(loop.sourceThreadId, loop.requirementsThreadId || loop.targetThreadId || loop.sourceThreadId);
+  }
+
+  function setLoopBlocked(loop, slice, error, options = {}) {
+    const timestamp = nowIso(clock);
+    if (slice) {
+      slice.status = "blocked";
+      slice.dispatchStatus = options.dispatchStatus || "blocked";
+      slice.blockedReason = compactOneLine(options.message || error);
+      slice.routing = options.routing || slice.routing || null;
+      slice.updatedAt = timestamp;
+    }
+    loop.status = "blocked";
+    loop.blockedReason = compactOneLine(error);
+    loop.nextRoute = options.nextRoute || "blocked_target_unavailable";
+    loop.updatedAt = timestamp;
+    saveState();
+    return {
+      ok: false,
+      error,
+      message: options.message ? compactOneLine(options.message) : undefined,
+      routing: options.routing || null,
+      loop: publicLoop(loop),
+      slice: slice ? publicSlice(slice) : undefined,
+    };
+  }
+
+  function markRequirementsLocal(loop, slice) {
+    const timestamp = nowIso(clock);
+    const source = sourceThread(loop);
+    const sourceCheck = routingService.assertLoopRoleTarget({ role: "requirements", thread: source });
+    if (!sourceCheck.ok) {
+      return setLoopBlocked(loop, slice, sourceCheck.error, {
+        routing: publicRoutingMetadata(sourceCheck),
+      });
+    }
+    slice.status = "local";
+    slice.dispatchStatus = SOURCE_THREAD_LOCAL_REQUIREMENTS;
+    slice.dispatchMode = SOURCE_THREAD_LOCAL_REQUIREMENTS;
+    slice.taskCardDispatch = false;
+    slice.roleOwnerThreadId = loop.sourceThreadId;
+    slice.targetThreadId = loop.sourceThreadId;
+    slice.targetPurpose = sourceCheck.classification && sourceCheck.classification.purpose || "";
+    slice.routing = Object.assign(publicRoutingMetadata(sourceCheck), {
+      sourceThreadLocalRole: true,
+      taskCardDispatch: false,
+    });
+    slice.returnStatus = "completed";
+    slice.blockedReason = "";
+    slice.updatedAt = timestamp;
+    loop.requirementsThreadId = loop.sourceThreadId;
+    loop.requirementsLocal = true;
+    loop.status = "running";
+    loop.currentRole = "requirements";
+    loop.nextRoute = "implementation";
+    loop.blockedReason = "";
+    loop.updatedAt = timestamp;
+    saveState();
+    return { ok: true, local: true, loop: publicLoop(loop), slice: publicSlice(slice) };
+  }
+
+  function scoreRoleTarget(loop, role, thread) {
+    const id = threadIdOf(thread);
+    if (!id || sameThreadId(id, loop.sourceThreadId)) return -1;
+    const check = routingService.assertLoopRoleTarget({ role, thread });
+    if (!check.ok) return -1;
+    const source = sourceThread(loop);
+    const sourceCwd = normalizeCwd(source.cwd || source.workspace || source.targetWorkspace);
+    const threadCwd = normalizeCwd(thread.cwd || thread.workspace || thread.targetWorkspace);
+    const roleText = compactOneLine(thread.threadRole || thread.thread_role || thread.role).toLowerCase();
+    const title = compactOneLine(thread.title || thread.name || thread.preview).toLowerCase();
+    const sourceTitle = compactOneLine(source.title || source.name || source.preview).toLowerCase();
+    let score = 10;
+    if (role === "product_audit") {
+      if (check.classification.purpose === "audit_lane") score += 120;
+      if (/\baudit\b|product[-_\s]*audit/.test(roleText)) score += 80;
+      if (/\baudit\b/.test(title)) score += 30;
+    } else if (role === "deploy_readback") {
+      if (check.classification.purpose === "deploy_lane") score += 120;
+      if (/\bdeploy\b|readback/.test(roleText)) score += 80;
+    } else {
+      if (/\bimplementation\b|\bimplementer\b|\brepair\b/.test(roleText)) score += 100;
+      if (check.classification.purpose === "worker_lane") score += 45;
+      if (check.classification.purpose === "workspace_implementation" || check.classification.purpose === "codex_mobile_implementation") score += 35;
+      if (role === "repair" && /\brepair\b/.test(title)) score += 25;
+    }
+    if (sourceCwd && threadCwd && sourceCwd === threadCwd) score += 60;
+    if (sourceTitle && title && title.includes(sourceTitle)) score += 20;
+    return score;
+  }
+
+  function selectExistingRoleTarget(loop, role) {
+    const candidates = visibleThreads()
+      .filter((thread) => !sameThreadId(threadIdOf(thread), loop.sourceThreadId))
+      .map((thread) => ({ thread, score: scoreRoleTarget(loop, role, thread) }))
+      .filter((entry) => entry.score >= 0)
+      .sort((left, right) => right.score - left.score || threadIdOf(left.thread).localeCompare(threadIdOf(right.thread)));
+    return candidates[0] && candidates[0].thread || null;
+  }
+
+  async function createRoleThread(loop, role) {
+    if (typeof dependencies.createLoopRoleThread !== "function") return null;
+    const source = sourceThread(loop);
+    const cwd = compactOneLine(source.cwd || source.workspace || source.targetWorkspace);
+    if (!cwd) return null;
+    const thread = await dependencies.createLoopRoleThread({
+      loop: publicLoop(loop),
+      role,
+      sourceThread: publicThread(source),
+      cwd,
+      title: roleLaneTitle(source, role, loop.objectiveSummary),
+      threadRole: roleThreadRole(role),
+    });
+    return thread || null;
+  }
+
+  async function ensureRoleLane(loop, role) {
+    const slice = findSlice(loop, { role, iteration: loop.iteration });
+    if (!slice) return { ok: false, error: "at_loop_role_slice_not_found" };
+    const field = roleThreadField(role);
+    const existingId = compactOneLine(slice.targetThreadId || loop[field] || (role === "implementation" || role === "repair" ? loop.targetThreadId : ""));
+    if (existingId && !sameThreadId(existingId, loop.sourceThreadId)) {
+      const target = readThreadSummary(existingId) || { id: existingId, threadId: existingId };
+      const check = routingService.assertLoopRoleTarget({ role, thread: target });
+      if (!check.ok) {
+        return setLoopBlocked(loop, slice, check.error, { routing: publicRoutingMetadata(check) });
+      }
+      slice.targetThreadId = existingId;
+      slice.targetPurpose = check.classification && check.classification.purpose || "";
+      slice.routing = publicRoutingMetadata(check);
+      loop[field] = existingId;
+      if (role === "implementation") loop.targetThreadId = existingId;
+      return { ok: true, target, slice };
+    }
+
+    let target = selectExistingRoleTarget(loop, role);
+    let created = false;
+    if (!target) {
+      try {
+        target = await createRoleThread(loop, role);
+        created = Boolean(target);
+      } catch (err) {
+        return setLoopBlocked(loop, slice, "at_loop_role_lane_create_failed", {
+          dispatchStatus: "failed",
+          message: err && err.message || err || "at_loop_role_lane_create_failed",
+        });
+      }
+    }
+    if (!target) {
+      return setLoopBlocked(loop, slice, "at_loop_missing_role_lane", {
+        message: `missing ${role} lane`,
+      });
+    }
+    const check = routingService.assertLoopRoleTarget({ role, thread: target });
+    if (!check.ok) {
+      return setLoopBlocked(loop, slice, check.error, { routing: publicRoutingMetadata(check) });
+    }
+    const targetThreadId = threadIdOf(target);
+    if (sameThreadId(targetThreadId, loop.sourceThreadId)) {
+      return setLoopBlocked(loop, slice, "at_loop_same_thread_task_card_disallowed", {
+        message: "target thread must differ from source thread",
+      });
+    }
+    const timestamp = nowIso(clock);
+    slice.targetThreadId = targetThreadId;
+    slice.targetPurpose = check.classification && check.classification.purpose || "";
+    slice.routing = publicRoutingMetadata(check);
+    slice.roleThreadCreated = created;
+    slice.updatedAt = timestamp;
+    loop[field] = targetThreadId;
+    if (role === "implementation") loop.targetThreadId = targetThreadId;
+    loop.updatedAt = timestamp;
+    saveState();
+    return { ok: true, target, slice };
+  }
+
+  async function ensureCoreRoleLanes(loop) {
+    const implementation = await ensureRoleLane(loop, "implementation");
+    if (!implementation.ok) return implementation;
+    const audit = await ensureRoleLane(loop, "product_audit");
+    if (!audit.ok) return audit;
+    return { ok: true };
+  }
+
   async function dispatchRole(loop, role) {
     const timestamp = nowIso(clock);
     let slice = findSlice(loop, { role, iteration: loop.iteration });
@@ -372,6 +631,19 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         createdAt: timestamp,
       };
       loop.roleSlices.push(slice);
+    }
+    slice.sourceRequestId = slice.sourceRequestId || `at-loop:${loop.loopId}:${role}:${slice.iteration}`;
+    slice.workflowId = slice.workflowId || `at-loop:${loop.loopId}`;
+    if (role === "requirements" && sourceOwnsRequirements(loop)) {
+      const local = markRequirementsLocal(loop, slice);
+      if (!local.ok) return local;
+      const lanes = await ensureCoreRoleLanes(loop);
+      if (!lanes.ok) return lanes;
+      return dispatchRole(loop, "implementation");
+    }
+    if (role !== "requirements") {
+      const lane = await ensureRoleLane(loop, role);
+      if (!lane.ok) return lane;
     }
     const target = targetForRole(loop, role);
     if (!target) {
@@ -388,6 +660,11 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     }
     const thread = publicThread(target);
     const targetThreadId = thread.id || compactOneLine(target.threadId);
+    if (sameThreadId(targetThreadId, loop.sourceThreadId)) {
+      return setLoopBlocked(loop, slice, "at_loop_same_thread_task_card_disallowed", {
+        message: "target thread must differ from source thread",
+      });
+    }
     slice.targetThreadId = targetThreadId;
     const targetCheck = routingService.assertLoopRoleTarget({ role, thread: target });
     slice.targetPurpose = targetCheck.classification && targetCheck.classification.purpose || "";
@@ -417,6 +694,8 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     }
 
     const idempotencyKey = `at-loop:${loop.loopId}:${role}:${slice.iteration}:v1`;
+    slice.sourceRequestId = idempotencyKey;
+    slice.workflowId = `at-loop:${loop.loopId}`;
     const bodyMarkdown = roleCardBody(loop, slice);
     const payload = {
       sourceThreadId: loop.sourceThreadId,
@@ -427,8 +706,25 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       bodyMarkdown,
       cardKind: "at_loop_role_slice",
       category: "at-loop",
+      sourceRole: loop.requirementsLocal ? "requirements" : "loop_coordinator",
+      targetRole: role,
+      routeKind: "at_loop_role_slice",
+      routeResolution: {
+        resolverVersion: "at-loop-role-routing-v1",
+        routeKind: "at_loop_role_slice",
+        inputReferenceKind: "loop_role",
+        inputReferenceKinds: ["loop_id", "role_slice_id", "target_thread_id"],
+        inputReferenceCount: 3,
+        sourceThreadId: loop.sourceThreadId,
+        targetThreadId,
+        matchedThreadId: targetThreadId,
+        matchedThreadIds: [targetThreadId],
+        sourceRole: loop.requirementsLocal ? "requirements" : "loop_coordinator",
+        targetRole: role,
+        code: "at_loop_role_slice",
+      },
       workflowMode: "autonomous",
-      workflowId: `at-loop:${loop.loopId}`,
+      workflowId: slice.workflowId,
       requestId: idempotencyKey,
       idempotencyKey,
       direct: true,
@@ -442,6 +738,8 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       const card = cards[0] || {};
       slice.status = "dispatched";
       slice.dispatchStatus = "dispatched";
+      slice.dispatchMode = TASK_CARD_DISPATCH;
+      slice.taskCardDispatch = true;
       slice.taskCardId = compactOneLine(card.id || card.cardId || result && result.cardId);
       slice.targetPurpose = targetCheck.classification.purpose;
       slice.routing = publicRoutingMetadata(targetCheck);
@@ -477,10 +775,10 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const explicitTarget = input.targetThreadId || (parsed.targetAlias ? targetFromAlias(parsed.targetAlias) : null);
     const explicitTargetId = compactOneLine(typeof explicitTarget === "string" ? explicitTarget : explicitTarget && (explicitTarget.id || explicitTarget.threadId));
     const sourceTarget = readThreadSummary(sourceThreadId) || { id: sourceThreadId, threadId: sourceThreadId };
-    const targetThreadId = explicitTargetId || compactOneLine(sourceTarget.id || sourceTarget.threadId || sourceThreadId);
+    const requirementsThreadId = explicitTargetId || compactOneLine(sourceTarget.id || sourceTarget.threadId || sourceThreadId);
     const loopId = buildLoopId({
       sourceThreadId,
-      targetThreadId,
+      targetThreadId: requirementsThreadId,
       targetAlias: parsed.targetAlias,
       domainAdapter: parsed.domainAdapter,
       objective: parsed.objective,
@@ -490,6 +788,26 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     if (existing) {
       existing.duplicateSuppressedCount = Number(existing.duplicateSuppressedCount || 0) + 1;
       existing.updatedAt = nowIso(clock);
+      if (existing.status === "blocked") {
+        const blockedRole = existing.currentRole || existing.nextRoute || "requirements";
+        const canRecoverRequirements = blockedRole === "requirements"
+          || Array.isArray(existing.roleSlices) && existing.roleSlices.some((slice) => slice.role === "requirements" && /Target thread must be different|same.thread|target_thread_must_differ/i.test(String(slice.blockedReason || "")));
+        if (canRecoverRequirements) {
+          existing.requirementsThreadId = existing.requirementsThreadId || existing.sourceThreadId;
+          existing.blockedReason = "";
+          existing.status = "created";
+          saveState();
+          const recovered = await dispatchRole(existing, "requirements");
+          return Object.assign({ ok: recovered.ok !== false, duplicateSuppressed: false, recovered: recovered.ok !== false }, recovered, { loop: publicLoop(existing) });
+        }
+        saveState();
+        return {
+          ok: false,
+          error: existing.blockedReason || "at_loop_existing_blocked",
+          duplicateSuppressed: true,
+          loop: publicLoop(existing),
+        };
+      }
       saveState();
       return { ok: true, duplicateSuppressed: true, loop: publicLoop(existing) };
     }
@@ -498,7 +816,11 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const loop = {
       loopId,
       sourceThreadId,
-      targetThreadId,
+      targetThreadId: sameThreadId(requirementsThreadId, sourceThreadId) ? "" : requirementsThreadId,
+      requirementsThreadId,
+      implementationThreadId: "",
+      auditThreadId: "",
+      deployThreadId: "",
       targetAlias: parsed.targetAlias || "",
       domainAdapter: parsed.domainAdapter || "generic",
       objectiveHash: stableHash(parsed.objective, 24),
@@ -512,6 +834,8 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       lastAuditVerdict: "",
       nextRoute: "requirements",
       blockedReason: "",
+      sourceRequestId: compactOneLine(input.requestId || input.request_id) || `at-loop:${loopId}:source`,
+      requirementsLocal: sameThreadId(requirementsThreadId, sourceThreadId),
       createdAt: timestamp,
       updatedAt: timestamp,
     };

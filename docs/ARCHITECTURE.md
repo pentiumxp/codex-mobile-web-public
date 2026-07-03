@@ -772,6 +772,16 @@ status projection. The bounded HTTP surface is `/api/at-loop/triggers`,
 `CODEX_MOBILE_AT_LOOP_STATE_FILE` or the runtime `at-loop-state.json` and must
 not include raw secrets, full prompts, private thread bodies, launch tokens,
 cookies, screenshots, database rows, provider payloads, or long logs.
+When `@loop` is submitted from a product/source main thread, that source thread
+owns the requirements role locally. The runtime records a
+`source_thread_local_role` requirements slice and must not dispatch a same-thread
+requirements task card. Implementation, audit, repair, and deploy/readback
+roles still use real task cards and must target a different thread. Codex Mobile
+selects or provisions those role lanes using explicit thread role/purpose
+metadata before cwd/title heuristics; if a safe lane is unavailable, the loop
+stays visibly blocked with bounded routing metadata. Duplicate triggers for an
+already blocked loop return the blocked loop/status instead of reporting a
+successful no-op.
 To keep this from being only a model prompt, the same runtime switch also adds a
 dynamic source-write decision layer. For ordinary non-exempt workspaces,
 `thread/start`, `thread/resume`, and `turn/start` use a real
