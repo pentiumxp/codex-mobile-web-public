@@ -37,6 +37,11 @@ function createThreadSummaryStateService(dependencies = {}) {
   const stripThreadListDetailFields = typeof dependencies.stripThreadListDetailFields === "function" ? dependencies.stripThreadListDetailFields : (thread) => Object.assign({}, thread || {});
   const upsertThreadListFallbackCacheThread = typeof dependencies.upsertThreadListFallbackCacheThread === "function" ? dependencies.upsertThreadListFallbackCacheThread : () => false;
 
+  function normalizeStaleContextThreadForSummary(thread, options = {}) {
+    if (options && options.skipStaleContextOnlyActiveNormalize) return thread;
+    return normalizeStaleContextOnlyActiveThread(thread);
+  }
+
   function statusTurnId(status) {
     if (!status || typeof status !== "object") return "";
     return String(status.turnId || status.turn_id || status.activeTurnId || status.active_turn_id || "").trim();
@@ -274,7 +279,7 @@ function createThreadSummaryStateService(dependencies = {}) {
   }
 
   function normalizeThreadSummaryLiveStatus(thread, options = {}) {
-    const normalized = normalizeStaleContextOnlyActiveThread(thread);
+    const normalized = normalizeStaleContextThreadForSummary(thread, options);
     const activeReconciled = clearSupersededSummaryActiveFromRollout(normalized, options);
     return normalizeHomeAiDeployLaneSummary(applyLocalActiveThreadStatusToSummary(activeReconciled, options));
   }
@@ -436,7 +441,7 @@ function createThreadSummaryStateService(dependencies = {}) {
   function mergeThreadWithCachedDisplaySummary(thread, options = {}) {
     if (!thread || typeof thread !== "object" || !thread.id) return thread;
     const cached = threadDisplaySummaryCache.read(thread.id);
-    return normalizeStaleContextOnlyActiveThread(cached ? (mergeThreadDisplaySummary(thread, cached, options) || thread) : thread);
+    return normalizeStaleContextThreadForSummary(cached ? (mergeThreadDisplaySummary(thread, cached, options) || thread) : thread, options);
   }
 
   function copyThreadDisplayRolloutMetadata(target, display) {
@@ -456,8 +461,8 @@ function createThreadSummaryStateService(dependencies = {}) {
   }
 
   function mergeThreadDisplaySummary(base, display, options = {}) {
-    if (!base) return display ? normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(display, options)) : null;
-    if (!display) return normalizeStaleContextOnlyActiveThread(base);
+    if (!base) return display ? normalizeStaleContextThreadForSummary(annotateThreadRolloutStats(display, options), options) : null;
+    if (!display) return normalizeStaleContextThreadForSummary(base, options);
     const next = Object.assign({}, base);
     for (const key of ["name", "preview", "cwd"]) {
       const value = display[key];
@@ -485,7 +490,7 @@ function createThreadSummaryStateService(dependencies = {}) {
     if (display.isSpawnedChildThread || display.is_spawned_child) next.isSpawnedChildThread = true;
     if (display.mobileFallback && !next.mobileFallback) next.mobileFallback = true;
     copyThreadDisplayRolloutMetadata(next, display);
-    return normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(next, options));
+    return normalizeStaleContextThreadForSummary(annotateThreadRolloutStats(next, options), options);
   }
 
   function mergeThreadRuntimeFromStateDb(thread, summary = null) {

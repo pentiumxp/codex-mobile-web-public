@@ -181,6 +181,95 @@ test("thread-list server boundary composes fallback source and runtime facades",
   assert.equal(service.mergeThreadSummaryListWithDiagnostics, service.threadListRuntimeService.mergeThreadSummaryListWithDiagnostics);
 });
 
+test("thread-list server boundary prevents stale-context normalize recursion during list summary merge", () => {
+  const { createThreadListServerBoundaryService } = require("../services/thread-list/thread-list-server-boundary-service");
+  const seen = {
+    cached: false,
+    normalize: false,
+    display: false,
+  };
+  const service = createThreadListServerBoundaryService({
+    archivedSessionThreadIds: () => new Set(),
+    filterFallbackThreads: (threads) => threads,
+    isThreadListLiveStatus: () => false,
+    isLiveTurn: () => false,
+    parseJsonLine: (line) => JSON.parse(line),
+    readGlobalState: () => ({}),
+    readRolloutTail: () => "",
+    readStateDbFallback: () => [],
+    readStateDbThread: () => null,
+    rolloutPathForThread: () => "",
+    statusText: (status) => String(status && status.type || status || ""),
+    stripThreadListDetailFields: (thread) => Object.assign({}, thread),
+    timestampToMs: () => 0,
+    visibleProjectlessThreadIds: () => new Set(),
+    visibleWorkspaceRoots: () => [],
+    mergeThreadWithCachedDisplaySummary(thread, options = {}) {
+      seen.cached = true;
+      assert.equal(options.skipStaleContextOnlyActiveNormalize, true);
+      return Object.assign({}, thread, { cached: true });
+    },
+    normalizeThreadSummaryLiveStatus(thread, options = {}) {
+      seen.normalize = true;
+      assert.equal(options.skipStaleContextOnlyActiveNormalize, true);
+      return Object.assign({}, thread, { normalized: true });
+    },
+    mergeThreadDisplaySummary(base, display, options = {}) {
+      seen.display = true;
+      assert.equal(options.skipStaleContextOnlyActiveNormalize, true);
+      return Object.assign({}, base || {}, display || {}, { merged: true });
+    },
+  });
+
+  const result = service.mergeThreadSummaryListWithDiagnostics([
+    { id: "thread-a", status: { type: "idle" }, updatedAt: 1 },
+    { id: "thread-a", status: { type: "idle" }, updatedAt: 2 },
+  ]);
+
+  assert.deepEqual(result.threads.map((thread) => thread.id), ["thread-a"]);
+  assert.equal(result.threads[0].cached, true);
+  assert.equal(result.threads[0].normalized, true);
+  assert.equal(result.threads[0].merged, true);
+  assert.deepEqual(seen, { cached: true, normalize: true, display: true });
+});
+
+test("thread summary state service can skip stale-context normalization for boundary-owned list merges", () => {
+  const { createThreadSummaryStateService } = require("../services/thread-list/thread-summary-state-service");
+  const service = createThreadSummaryStateService({
+    normalizeStaleContextOnlyActiveThread() {
+      throw new Error("stale-context normalize should be skipped for thread-list boundary merges");
+    },
+    normalizeHomeAiDeployLaneSummary: (thread) => Object.assign({}, thread, { deployLaneNormalized: true }),
+    annotateThreadRolloutStats: (thread) => Object.assign({}, thread, { rolloutAnnotated: true }),
+    threadDisplaySummaryCache: {
+      read: () => ({ id: "thread-a", name: "Cached", status: { type: "idle" } }),
+      remember: (thread) => thread,
+    },
+    threadListSummaryTimestampMs: (thread) => Number(thread && thread.updatedAt || 0),
+    statusText: (status) => String(status && status.type || status || ""),
+  });
+  const options = { skipStaleContextOnlyActiveNormalize: true };
+
+  const merged = service.mergeThreadDisplaySummary(
+    { id: "thread-a", name: "Base", updatedAt: 1, status: { type: "idle" } },
+    { id: "thread-a", name: "Display", updatedAt: 2, status: { type: "idle" } },
+    options,
+  );
+  const cached = service.mergeThreadWithCachedDisplaySummary(
+    { id: "thread-a", name: "Base", status: { type: "idle" } },
+    options,
+  );
+  const normalized = service.normalizeThreadSummaryLiveStatus(
+    { id: "thread-a", status: { type: "idle" } },
+    options,
+  );
+
+  assert.equal(merged.name, "Display");
+  assert.equal(merged.rolloutAnnotated, true);
+  assert.equal(cached.name, "Cached");
+  assert.equal(normalized.deployLaneNormalized, true);
+});
+
 test("thread-list server composition imports canonical service paths", () => {
   assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-summary-state-service"\)/);
   assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-summary-service"\)/);

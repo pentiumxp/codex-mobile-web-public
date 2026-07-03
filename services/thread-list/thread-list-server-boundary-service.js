@@ -4,6 +4,29 @@ const { createThreadListFallbackSourceService } = require("./thread-list-fallbac
 const { createThreadListRuntimeService } = require("./thread-list-runtime-service");
 
 function createThreadListServerBoundaryService(options = {}) {
+  function threadListBoundarySummaryOptions(extra = {}) {
+    return Object.assign({}, extra && typeof extra === "object" ? extra : {}, {
+      skipStaleContextOnlyActiveNormalize: true,
+    });
+  }
+
+  function mergeThreadDisplaySummaryForThreadList(base, display, mergeOptions = {}) {
+    if (typeof options.mergeThreadDisplaySummary !== "function") {
+      return Object.assign({}, base || {}, display || {});
+    }
+    return options.mergeThreadDisplaySummary(base, display, threadListBoundarySummaryOptions(mergeOptions));
+  }
+
+  function mergeThreadWithCachedDisplaySummaryForThreadList(thread, mergeOptions = {}) {
+    if (typeof options.mergeThreadWithCachedDisplaySummary !== "function") return thread;
+    return options.mergeThreadWithCachedDisplaySummary(thread, threadListBoundarySummaryOptions(mergeOptions));
+  }
+
+  function normalizeThreadSummaryLiveStatusForThreadList(thread, mergeOptions = {}) {
+    if (typeof options.normalizeThreadSummaryLiveStatus !== "function") return thread;
+    return options.normalizeThreadSummaryLiveStatus(thread, threadListBoundarySummaryOptions(mergeOptions));
+  }
+
   const fallbackSourceService = createThreadListFallbackSourceService({
     codexHome: options.codexHome,
     sessionsDir: options.sessionsDir,
@@ -39,11 +62,11 @@ function createThreadListServerBoundaryService(options = {}) {
     filterFallbackThreads: options.filterFallbackThreads,
     hydrateThreadListTitlesFromSessionIndex: options.hydrateThreadListTitlesFromSessionIndex,
     isSubagentThreadSummary: options.isSubagentThreadSummary,
-    mergeThreadDisplaySummary: options.mergeThreadDisplaySummary,
-    mergeThreadWithCachedDisplaySummary: options.mergeThreadWithCachedDisplaySummary,
+    mergeThreadDisplaySummary: mergeThreadDisplaySummaryForThreadList,
+    mergeThreadWithCachedDisplaySummary: mergeThreadWithCachedDisplaySummaryForThreadList,
     normalizeFsPath: options.normalizeFsPath,
     normalizeThreadId: options.normalizeThreadId,
-    normalizeThreadSummaryLiveStatus: options.normalizeThreadSummaryLiveStatus,
+    normalizeThreadSummaryLiveStatus: normalizeThreadSummaryLiveStatusForThreadList,
     readGlobalState: options.readGlobalState,
     readRolloutSessionFallback: (...args) => fallbackSourceService.readRolloutSessionFallback(...args),
     readSessionIndexFallback: (...args) => fallbackSourceService.readSessionIndexFallback(...args),
