@@ -350,13 +350,18 @@ test("loop runtime does not report blocked duplicate triggers as successful no-o
   assert.equal(cards.length, 0);
 });
 
-test("loop runtime recovers blocked duplicate by dropping stale role lane target", async () => {
+test("loop runtime recovers blocked duplicate by dropping stale or ineligible role lane target", async () => {
   const { cards, runtime, storageFile } = makeRuntime({
     name: "blocked-stale-target-recovery",
     visibleThreads: [{
       id: "source-thread",
       title: "codex mobile 06-30",
       cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+    }, {
+      id: "stale-implementation-thread",
+      title: "Home AI Worker Lane A",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+      status: { type: "completed" },
     }, {
       id: "implementation-thread",
       title: "codex mobile implementation",

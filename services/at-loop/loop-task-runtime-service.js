@@ -956,14 +956,26 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       } else {
         const check = routingService.assertLoopRoleTarget({ role, thread: target });
         if (!check.ok) {
-          return setLoopBlocked(loop, slice, check.error, { routing: publicRoutingMetadata(check) });
+          const timestamp = nowIso(clock);
+          slice.targetThreadId = "";
+          slice.targetPurpose = "";
+          slice.routing = Object.assign({}, publicRoutingMetadata(check), {
+            staleTargetThreadId: existingId,
+            staleTargetReason: "stored_target_purpose_mismatch",
+          });
+          slice.updatedAt = timestamp;
+          loop[field] = "";
+          if (loop.targetThreadId === existingId) loop.targetThreadId = "";
+          loop.updatedAt = timestamp;
+          saveState();
+        } else {
+          slice.targetThreadId = existingId;
+          slice.targetPurpose = check.classification && check.classification.purpose || "";
+          slice.routing = publicRoutingMetadata(check);
+          loop[field] = existingId;
+          if (role === "implementation") loop.targetThreadId = existingId;
+          return { ok: true, target, slice };
         }
-        slice.targetThreadId = existingId;
-        slice.targetPurpose = check.classification && check.classification.purpose || "";
-        slice.routing = publicRoutingMetadata(check);
-        loop[field] = existingId;
-        if (role === "implementation") loop.targetThreadId = existingId;
-        return { ok: true, target, slice };
       }
     }
 

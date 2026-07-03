@@ -652,7 +652,9 @@ Implementation path:
 6. Classify target-thread purpose before dispatch. Public PR, deploy lane,
    audit, task intake, and worker threads are special-purpose lanes; mismatched
    roles must fail closed with bounded routing metadata instead of relying on
-   matching cwd or same-workspace recency.
+   matching cwd or same-workspace recency. Generic `@loop` implementation and
+   repair roles must target implementation/workspace threads or freshly created
+   role threads, not unrelated worker-lane threads.
 7. Terminal return correlation must match by task-card id first, then role
    slice id / loop id. Local final prose in a target thread is not a terminal
    return.

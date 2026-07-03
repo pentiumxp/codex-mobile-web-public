@@ -76,7 +76,7 @@ function roleAllowedPurposes(role) {
   if (role === "product_audit") return new Set(["audit_lane"]);
   if (role === "deploy_readback") return new Set(["deploy_lane"]);
   if (role === "implementation" || role === "repair") {
-    return new Set(["codex_mobile_implementation", "workspace_implementation", "worker_lane", "unknown"]);
+    return new Set(["codex_mobile_implementation", "workspace_implementation", "unknown"]);
   }
   if (role === "requirements") {
     return new Set(["codex_mobile_implementation", "workspace_implementation", "unknown"]);

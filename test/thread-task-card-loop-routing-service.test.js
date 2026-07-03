@@ -37,7 +37,7 @@ test("loop routing rejects implementation cards to Public PR special-purpose thr
     targetPurpose: "public_pr",
     targetReason: "title-public-pr",
     targetThreadId: "public-pr",
-    allowedPurposes: ["codex_mobile_implementation", "unknown", "worker_lane", "workspace_implementation"],
+    allowedPurposes: ["codex_mobile_implementation", "unknown", "workspace_implementation"],
     specialPurpose: true,
   });
 });
