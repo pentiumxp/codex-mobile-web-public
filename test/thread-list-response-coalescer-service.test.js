@@ -57,6 +57,27 @@ test("thread-list response coalescer shares one leader result with followers", a
   secondLeader.complete({ data: [{ id: "thread-2" }] });
 });
 
+test("thread-list response coalescer patches diagnostics without cloning list payload", async () => {
+  const coalescer = createThreadListResponseCoalescer({ nowMs: () => 2000 });
+  const leader = coalescer.begin({ limit: 40 });
+  const follower = coalescer.begin({ limit: 40 });
+  const largeRow = { id: "thread-large", preview: "x".repeat(5000) };
+  const payload = {
+    data: [largeRow],
+    mobileDiagnostics: { threadListTimings: { totalMs: 50 } },
+  };
+  const followerResultPromise = follower.result();
+
+  leader.complete(payload);
+
+  const followerResult = await followerResultPromise;
+  assert.notEqual(followerResult, payload);
+  assert.equal(followerResult.data, payload.data);
+  assert.equal(followerResult.data[0], largeRow);
+  assert.equal(followerResult.mobileDiagnostics.threadListTimings.threadListCoalescedRequest, true);
+  assert.equal(payload.mobileDiagnostics.threadListTimings.threadListCoalescedRequest, undefined);
+});
+
 test("thread-list response coalescer does not copy private request fields into diagnostics", async () => {
   let now = 0;
   const coalescer = createThreadListResponseCoalescer({ nowMs: () => now });

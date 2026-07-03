@@ -178,6 +178,45 @@ test("readCachedFallback returns only warm cache and never builds cold baseline"
   assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 });
 
+test("fallback cache stores only summary-safe rows in memory", () => {
+  const { service } = createService({
+    readStateDbFallback: () => [{
+      id: "thread-heavy",
+      name: "Heavy",
+      preview: "p".repeat(800),
+      updatedAt: 100,
+      status: { type: "active", privatePayload: "must-drop", nested: { token: "secret", ok: true } },
+      turns: [{ id: "turn-1", items: [{ id: "item-1", content: "large" }] }],
+      items: [{ id: "orphan-item" }],
+      content: "large body",
+      mobileActiveOverlay: { sourceItems: [{ body: "large" }] },
+      mobileDiagnostics: { requestBody: "large" },
+      normalized: true,
+    }],
+    readRolloutSessionFallback: () => [],
+    readSessionIndexFallback: () => [],
+  });
+
+  const diagnostics = {};
+  const rows = service.readFallback(10, { diagnostics });
+  const status = service.status();
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, "thread-heavy");
+  assert.equal(rows[0].normalized, true);
+  assert.equal(rows[0].preview.length, 500);
+  assert.equal(rows[0].turns, undefined);
+  assert.equal(rows[0].items, undefined);
+  assert.equal(rows[0].content, undefined);
+  assert.equal(rows[0].mobileActiveOverlay, undefined);
+  assert.equal(rows[0].mobileDiagnostics, undefined);
+  assert.deepEqual(rows[0].status, { type: "active", nested: { ok: true } });
+  assert.equal(diagnostics.cacheThreadCount, 1);
+  assert.ok(diagnostics.cacheApproxBytes > 0);
+  assert.equal(status.cacheThreadCount, 1);
+  assert.ok(status.cacheApproxBytes > 0);
+});
+
 test("readCachedFallback filters hidden rows from warm cache", () => {
   const { service } = createService({
     filterFallbackThreads(threads) {

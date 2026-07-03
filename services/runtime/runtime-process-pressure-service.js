@@ -196,7 +196,7 @@ function boundedProcess(process = {}) {
     stat: process.stat,
     cwd: process.cwd || "",
     listeners: Array.isArray(process.listeners) ? process.listeners.slice(0, 4) : [],
-    command: process.command,
+    command: redactCommand(process.command),
   };
 }
 
@@ -307,6 +307,135 @@ function productionListenerOwnershipIssues(processes = [], options = {}) {
   return issues;
 }
 
+function runtimeMemoryPressureIssues(processes = [], appServerChildSummary = {}, options = {}) {
+  const listenerWarnMb = positiveInt(
+    options.productionListenerRssWarningMb || process.env.CODEX_MOBILE_PROCESS_PRESSURE_LISTENER_RSS_WARNING_MB,
+    2048,
+  );
+  const listenerBlockMb = positiveInt(
+    options.productionListenerRssBlockingMb || process.env.CODEX_MOBILE_PROCESS_PRESSURE_LISTENER_RSS_BLOCKING_MB,
+    3072,
+  );
+  const muxWarnMb = positiveInt(
+    options.activeMuxRssWarningMb || process.env.CODEX_MOBILE_PROCESS_PRESSURE_ACTIVE_MUX_RSS_WARNING_MB,
+    1024,
+  );
+  const muxBlockMb = positiveInt(
+    options.activeMuxRssBlockingMb || process.env.CODEX_MOBILE_PROCESS_PRESSURE_ACTIVE_MUX_RSS_BLOCKING_MB,
+    2048,
+  );
+  const staleMuxBlockCount = positiveInt(
+    options.staleMuxBlockingCount || process.env.CODEX_MOBILE_PROCESS_PRESSURE_STALE_MUX_BLOCKING_COUNT,
+    2,
+  );
+  const staleMuxBlockRssMb = positiveInt(
+    options.staleMuxBlockingRssMb || process.env.CODEX_MOBILE_PROCESS_PRESSURE_STALE_MUX_BLOCKING_RSS_MB,
+    1024,
+  );
+  const mcpBlockCount = positiveInt(
+    options.mcpChildBlockingCount || process.env.CODEX_MOBILE_PROCESS_PRESSURE_MCP_CHILD_BLOCKING_COUNT,
+    80,
+  );
+  const mcpBlockAgeSeconds = positiveInt(
+    options.mcpChildBlockingAgeSeconds || process.env.CODEX_MOBILE_PROCESS_PRESSURE_MCP_CHILD_BLOCKING_AGE_SECONDS,
+    2 * 60 * 60,
+  );
+  const issues = [];
+  const productionServer = processes
+    .filter((process) => process.kind === "production-server")
+    .sort((left, right) => (right.rssMb || 0) - (left.rssMb || 0))[0];
+  if (productionServer && listenerBlockMb && productionServer.rssMb >= listenerBlockMb) {
+    issues.push({
+      severity: "H2",
+      code: "production_listener_rss_high",
+      surface: "runtime-process-pressure",
+      category: "process_memory",
+      diagnostic_type: "production_listener_rss_high",
+      listenerPid: productionServer.pid,
+      rssMb: productionServer.rssMb,
+      thresholdMb: listenerBlockMb,
+    });
+  } else if (productionServer && listenerWarnMb && productionServer.rssMb >= listenerWarnMb) {
+    issues.push({
+      severity: "H3",
+      code: "production_listener_rss_elevated",
+      surface: "runtime-process-pressure",
+      category: "process_memory",
+      diagnostic_type: "production_listener_rss_elevated",
+      listenerPid: productionServer.pid,
+      rssMb: productionServer.rssMb,
+      thresholdMb: listenerWarnMb,
+    });
+  }
+  const activeMux = processes
+    .filter((process) => process.kind === "active-app-server-mux")
+    .sort((left, right) => (right.rssMb || 0) - (left.rssMb || 0))[0];
+  if (activeMux && muxBlockMb && activeMux.rssMb >= muxBlockMb) {
+    issues.push({
+      severity: "H2",
+      code: "active_app_server_mux_rss_high",
+      surface: "runtime-process-pressure",
+      category: "process_memory",
+      diagnostic_type: "active_app_server_mux_rss_high",
+      muxPid: activeMux.pid,
+      rssMb: activeMux.rssMb,
+      thresholdMb: muxBlockMb,
+    });
+  } else if (activeMux && muxWarnMb && activeMux.rssMb >= muxWarnMb) {
+    issues.push({
+      severity: "H3",
+      code: "active_app_server_mux_rss_elevated",
+      surface: "runtime-process-pressure",
+      category: "process_memory",
+      diagnostic_type: "active_app_server_mux_rss_elevated",
+      muxPid: activeMux.pid,
+      rssMb: activeMux.rssMb,
+      thresholdMb: muxWarnMb,
+    });
+  }
+  const staleMuxes = processes.filter((process) => process.kind === "stale-app-server-mux");
+  const staleMuxRssMb = staleMuxes.reduce((total, process) => total + (process.rssMb || 0), 0);
+  if (staleMuxes.length >= staleMuxBlockCount || staleMuxRssMb >= staleMuxBlockRssMb) {
+    issues.push({
+      severity: "H2",
+      code: "stale_app_server_mux_pressure",
+      surface: "runtime-process-pressure",
+      category: "process_lifecycle",
+      diagnostic_type: "stale_app_server_mux_pressure",
+      count: staleMuxes.length,
+      rssMb: staleMuxRssMb,
+      countThreshold: staleMuxBlockCount,
+      rssThresholdMb: staleMuxBlockRssMb,
+    });
+  } else if (staleMuxes.length) {
+    issues.push({
+      severity: "H3",
+      code: "stale_app_server_mux_present",
+      surface: "runtime-process-pressure",
+      category: "process_lifecycle",
+      diagnostic_type: "stale_app_server_mux_present",
+      count: staleMuxes.length,
+      rssMb: staleMuxRssMb,
+    });
+  }
+  const mcpGroup = (appServerChildSummary.groups || []).find((group) => group.kind === "codex-mobile-mcp") || null;
+  if (mcpGroup && mcpGroup.count >= mcpBlockCount && elapsedSeconds(mcpGroup.maxElapsed) >= mcpBlockAgeSeconds) {
+    issues.push({
+      severity: "H2",
+      code: "codex_mobile_mcp_child_accumulation",
+      surface: "runtime-process-pressure",
+      category: "process_lifecycle",
+      diagnostic_type: "codex_mobile_mcp_child_accumulation",
+      count: mcpGroup.count,
+      rssMb: mcpGroup.rssMb,
+      maxElapsed: mcpGroup.maxElapsed,
+      countThreshold: mcpBlockCount,
+      ageThresholdSeconds: mcpBlockAgeSeconds,
+    });
+  }
+  return issues;
+}
+
 function summarizeAppServerChildren(processes = [], options = {}) {
   const topLimit = Math.max(1, Math.min(50, positiveInt(options.topLimit, DEFAULT_TOP_LIMIT)));
   const groups = new Map();
@@ -399,7 +528,10 @@ function summarizeProcessPressure(processes = [], options = {}) {
     .slice(0, topLimit)
     .map(boundedProcess);
   const launchdService = options.launchdService || null;
-  const issues = productionListenerOwnershipIssues(processes, Object.assign({}, options, { launchdService }));
+  const issues = [
+    ...productionListenerOwnershipIssues(processes, Object.assign({}, options, { launchdService })),
+    ...runtimeMemoryPressureIssues(processes, appServerChildSummary, options),
+  ];
   return {
     privacy: "metadata_only",
     sampledAt: new Date().toISOString(),
@@ -501,5 +633,6 @@ module.exports = {
   redactCommand,
   readLaunchdService,
   readMuxEndpoint,
+  runtimeMemoryPressureIssues,
   summarizeProcessPressure,
 };

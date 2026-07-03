@@ -164,6 +164,7 @@ function createThreadListRuntimeService(options = {}) {
     normalizeThreadId: options.normalizeThreadId,
     visibleWorkspaceRoots: options.visibleWorkspaceRoots,
     visibleProjectlessThreadIds: options.visibleProjectlessThreadIds,
+    stripThreadListDetailFields,
     mergeThreadDisplaySummary: mergeThreadDisplaySummaryForThreadList,
     normalizeThreadSummaryLiveStatus: normalizeThreadSummaryLiveStatusForThreadList,
     filterFallbackThreads: options.filterFallbackThreads,

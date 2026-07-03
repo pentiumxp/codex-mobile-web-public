@@ -3,6 +3,9 @@
 const {
   createThreadListFallbackBaselineService,
 } = require("./thread-list-fallback-baseline-service");
+const {
+  stripThreadListDetailFields: defaultStripThreadListDetailFields,
+} = require("./thread-list-summary-service");
 
 function clonePlainJson(value) {
   if (value === undefined) return undefined;
@@ -54,6 +57,54 @@ function boundedCounter(value) {
   return Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(number));
 }
 
+function boundedString(value, maxLength = 1000) {
+  return String(value || "").trim().slice(0, maxLength);
+}
+
+function safeScalarObject(value, depth = 0) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || depth > 1) return {};
+  const out = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const safeKey = boundedString(key, 80);
+    if (!safeKey || /token|cookie|secret|password|access.?key|authorization|prompt|body|content|payload/i.test(safeKey)) {
+      continue;
+    }
+    if (typeof raw === "string") out[safeKey] = boundedString(raw, 500);
+    else if (typeof raw === "number" && Number.isFinite(raw)) out[safeKey] = Math.trunc(raw);
+    else if (typeof raw === "boolean") out[safeKey] = raw;
+    else if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const nested = safeScalarObject(raw, depth + 1);
+      if (Object.keys(nested).length) out[safeKey] = nested;
+    }
+  }
+  return out;
+}
+
+function sanitizeThreadSummaryForMemory(thread, stripThreadListDetailFields = defaultStripThreadListDetailFields) {
+  if (!thread || typeof thread !== "object" || Array.isArray(thread)) return null;
+  const stripped = stripThreadListDetailFields(thread);
+  const out = {};
+  for (const [key, raw] of Object.entries(stripped || {})) {
+    if (!key || /^(turns|items|messages|content|body|payload)$/i.test(key)) continue;
+    if (/token|cookie|secret|password|access.?key|authorization|prompt/i.test(key)) continue;
+    if (typeof raw === "string") out[key] = boundedString(raw, key === "preview" ? 500 : 1000);
+    else if (typeof raw === "number" && Number.isFinite(raw)) out[key] = Math.trunc(raw);
+    else if (typeof raw === "boolean") out[key] = raw;
+    else if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const nested = safeScalarObject(raw);
+      if (Object.keys(nested).length) out[key] = nested;
+    }
+  }
+  const id = boundedString(out.id || out.threadId, 240);
+  return id ? Object.assign(out, { id }) : null;
+}
+
+function sanitizeThreadSummariesForMemory(threads, stripThreadListDetailFields = defaultStripThreadListDetailFields) {
+  return (Array.isArray(threads) ? threads : [])
+    .map((thread) => sanitizeThreadSummaryForMemory(thread, stripThreadListDetailFields))
+    .filter(Boolean);
+}
+
 function baselineSourceDiagnostics(timings = {}) {
   const out = {};
   if (!timings || typeof timings !== "object") return out;
@@ -103,6 +154,9 @@ function createThreadListFallbackCacheService(options = {}) {
   const mergeThreadSummaryList = typeof options.mergeThreadSummaryList === "function"
     ? options.mergeThreadSummaryList
     : (threads) => threads || [];
+  const stripThreadListDetailFields = typeof options.stripThreadListDetailFields === "function"
+    ? options.stripThreadListDetailFields
+    : defaultStripThreadListDetailFields;
   const readStateDbFallback = typeof options.readStateDbFallback === "function"
     ? options.readStateDbFallback
     : () => [];
@@ -131,6 +185,28 @@ function createThreadListFallbackCacheService(options = {}) {
   const cache = new Map();
   let buildCount = 0;
 
+  function memoryThreadSummaries(threads) {
+    return sanitizeThreadSummariesForMemory(threads, stripThreadListDetailFields);
+  }
+
+  function memoryThreadSummary(thread) {
+    return sanitizeThreadSummaryForMemory(thread, stripThreadListDetailFields);
+  }
+
+  function cacheThreadCount() {
+    let count = 0;
+    for (const entry of cache.values()) count += Array.isArray(entry && entry.threads) ? entry.threads.length : 0;
+    return count;
+  }
+
+  function cacheApproxBytes() {
+    try {
+      return Buffer.byteLength(JSON.stringify(cacheEntriesForPersistence()), "utf8");
+    } catch (_) {
+      return 0;
+    }
+  }
+
   function cacheEntriesForPersistence() {
     return [...cache.entries()].map(([key, entry]) => Object.assign({ key }, entry || {}));
   }
@@ -155,7 +231,10 @@ function createThreadListFallbackCacheService(options = {}) {
     for (const entry of Array.isArray(entries) ? entries : []) {
       const key = String(entry && entry.key || "");
       if (!key) continue;
-      cache.set(key, Object.assign({}, entry, { persistentRestored: true }));
+      cache.set(key, Object.assign({}, entry, {
+        threads: memoryThreadSummaries(entry.threads),
+        persistentRestored: true,
+      }));
       buildCount = Math.max(buildCount, Number(entry.buildNumber || 0));
     }
     while (cache.size > maxEntries) {
@@ -210,7 +289,8 @@ function createThreadListFallbackCacheService(options = {}) {
     for (const entry of cache.values()) {
       const existing = (entry.threads || []).find((candidate) => String(candidate && candidate.id || "") === id) || null;
       if (!existing && !addIfMissing) continue;
-      const candidate = normalizeThreadSummaryLiveStatus(mergeThreadDisplaySummary(existing, thread) || thread);
+      const candidate = memoryThreadSummary(normalizeThreadSummaryLiveStatus(mergeThreadDisplaySummary(existing, thread) || thread));
+      if (!candidate) continue;
       const filters = entry.filters || {};
       const filtered = filterFallbackThreads([candidate], {
         cwd: filters.cwd,
@@ -226,7 +306,8 @@ function createThreadListFallbackCacheService(options = {}) {
       changed = true;
     }
     if ((changed || addIfMissing) && typeof baselineService.upsertThread === "function") {
-      changed = baselineService.upsertThread(thread) || changed;
+      const baselineThread = memoryThreadSummary(thread);
+      changed = (baselineThread ? baselineService.upsertThread(baselineThread) : false) || changed;
     }
     if (changed) persistCache();
     return changed;
@@ -311,7 +392,7 @@ function createThreadListFallbackCacheService(options = {}) {
       limit: Math.max(1, Math.min(200, Number(rememberOptions.limit || 80))),
       filters: cloneFilters(rememberOptions.filters || {}),
       filterScopeKey: filterScopeKey(rememberOptions.filters || {}),
-      threads: clonePlainJson(Array.isArray(threads) ? threads : []),
+      threads: memoryThreadSummaries(threads),
       timings: Object.assign({}, timings || {}),
       incrementalUpdates: 0,
       persistentRestored: false,
@@ -333,6 +414,8 @@ function createThreadListFallbackCacheService(options = {}) {
     const baseDiagnostics = {
       cacheKeyHash: key ? keyHash : "",
       cacheEntryCount: cache.size,
+      cacheThreadCount: cacheThreadCount(),
+      cacheApproxBytes: cacheApproxBytes(),
       cacheTtlMs: ttlMs,
       cacheBuildCount: buildCount,
     };
@@ -529,6 +612,7 @@ function createThreadListFallbackCacheService(options = {}) {
       sourceSnapshotLimit: sourceSnapshotLimit(limit, filters),
     }));
     const threads = Array.isArray(baseline && baseline.threads) ? baseline.threads : [];
+    const safeThreads = memoryThreadSummaries(threads);
     const baselineTimings = baseline && baseline.timings && typeof baseline.timings === "object"
       ? baseline.timings
       : {};
@@ -540,7 +624,7 @@ function createThreadListFallbackCacheService(options = {}) {
       diagnostics.rolloutCount = Number(baselineTimings.rolloutCount || 0);
       diagnostics.sessionIndexCount = Number(baselineTimings.sessionIndexCount || 0);
       diagnostics.baselineSourceCount = Number(baselineTimings.baselineSourceCount || 0);
-      diagnostics.baselineResultCount = Number(baselineTimings.baselineResultCount || threads.length);
+      diagnostics.baselineResultCount = Number(baselineTimings.baselineResultCount || safeThreads.length);
       Object.assign(diagnostics, baselineWorkDiagnostics(baselineTimings));
       Object.assign(diagnostics, baselineSourceDiagnostics(baselineTimings));
       if (Object.prototype.hasOwnProperty.call(baselineTimings, "sourceSnapshotHit")) {
@@ -552,7 +636,7 @@ function createThreadListFallbackCacheService(options = {}) {
         diagnostics.sourceSnapshotRawCount = Number(baselineTimings.sourceSnapshotRawCount || 0);
       }
     }
-    remember(key, threads, {
+    remember(key, safeThreads, {
       stateDbMs: Number(baselineTimings.stateDbMs || 0),
       rolloutMs: Number(baselineTimings.rolloutMs || 0),
       sessionIndexMs: Number(baselineTimings.sessionIndexMs || 0),
@@ -560,7 +644,7 @@ function createThreadListFallbackCacheService(options = {}) {
       rolloutCount: Number(baselineTimings.rolloutCount || 0),
       sessionIndexCount: Number(baselineTimings.sessionIndexCount || 0),
       baselineSourceCount: Number(baselineTimings.baselineSourceCount || 0),
-      baselineResultCount: Number(baselineTimings.baselineResultCount || threads.length),
+      baselineResultCount: Number(baselineTimings.baselineResultCount || safeThreads.length),
       ...baselineWorkDiagnostics(baselineTimings),
       ...baselineSourceDiagnostics(baselineTimings),
       ...(Object.prototype.hasOwnProperty.call(baselineTimings, "sourceSnapshotHit") ? {
@@ -577,13 +661,15 @@ function createThreadListFallbackCacheService(options = {}) {
     });
     if (diagnostics) {
       diagnostics.cacheEntryCount = cache.size;
+      diagnostics.cacheThreadCount = cacheThreadCount();
+      diagnostics.cacheApproxBytes = cacheApproxBytes();
       diagnostics.cacheBuildCount = buildCount;
       diagnostics.cacheBuildNumber = buildCount;
       diagnostics.cacheIncrementalUpdates = 0;
       diagnostics.cacheBaselineAgeMs = 0;
       diagnostics.cacheAgeMs = 0;
     }
-    return threads;
+    return clonePlainJson(safeThreads);
   }
 
   function readCachedFallback(limit = 80, filters = {}) {
@@ -634,6 +720,15 @@ function createThreadListFallbackCacheService(options = {}) {
     readFallback,
     remember,
     removeThread,
+    status() {
+      return {
+        cacheEntryCount: cache.size,
+        cacheThreadCount: cacheThreadCount(),
+        cacheApproxBytes: cacheApproxBytes(),
+        cacheBuildCount: buildCount,
+        maxEntries,
+      };
+    },
     upsertThread,
     updateStatus,
   };
@@ -641,4 +736,6 @@ function createThreadListFallbackCacheService(options = {}) {
 
 module.exports = {
   createThreadListFallbackCacheService,
+  sanitizeThreadSummariesForMemory,
+  sanitizeThreadSummaryForMemory,
 };

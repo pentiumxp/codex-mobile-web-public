@@ -138,6 +138,66 @@ test("runtime process pressure flags production listener owner mismatch", () => 
   assert.doesNotMatch(JSON.stringify(result), /private\/key|Authorization|Bearer/i);
 });
 
+test("runtime process pressure flags memory and stale child accumulation", () => {
+  const result = service.summarizeProcessPressure([
+    {
+      pid: 100,
+      ppid: 1,
+      user: "hermes-host",
+      kind: "production-server",
+      cpuPercent: 1,
+      rssMb: 4096,
+      elapsed: "00:10:00",
+      stat: "S",
+      command: "node server.js",
+      listeners: ["127.0.0.1:8787"],
+    },
+    {
+      pid: 200,
+      ppid: 1,
+      user: "xuxin",
+      kind: "stale-app-server-mux",
+      cpuPercent: 0,
+      rssMb: 700,
+      elapsed: "04:00:00",
+      stat: "S",
+      command: "node codex-app-server-mux.js",
+      listeners: [],
+    },
+    {
+      pid: 201,
+      ppid: 1,
+      user: "xuxin",
+      kind: "stale-app-server-mux",
+      cpuPercent: 0,
+      rssMb: 700,
+      elapsed: "04:00:00",
+      stat: "S",
+      command: "node codex-app-server-mux.js",
+      listeners: [],
+    },
+  ], {
+    appServerChildren: Array.from({ length: 81 }, (_, index) => ({
+      pid: 300 + index,
+      ppid: 250,
+      user: "xuxin",
+      cpuPercent: 0,
+      rssMb: 35,
+      elapsed: "03:00:00",
+      stat: "S",
+      command: "node scripts/codex-mobile-mcp-server.js --key-file /private/key",
+      childKind: "codex-mobile-mcp",
+    })),
+  });
+
+  const codes = result.issues.map((issue) => issue.code);
+  assert.ok(codes.includes("production_listener_rss_high"));
+  assert.ok(codes.includes("stale_app_server_mux_pressure"));
+  assert.ok(codes.includes("codex_mobile_mcp_child_accumulation"));
+  assert.equal(result.blockingIssueCount, 3);
+  assert.doesNotMatch(JSON.stringify(result), /private\/key|Authorization|Bearer/i);
+});
+
 test("runtime process pressure command redaction is bounded", () => {
   assert.equal(
     service.redactCommand("node script.js --key-file /Users/me/access_key Authorization: Bearer abc123 access_key=secret"),

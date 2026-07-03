@@ -1,10 +1,5 @@
 "use strict";
 
-function clonePlainJson(value) {
-  if (value === undefined) return undefined;
-  return JSON.parse(JSON.stringify(value));
-}
-
 function boundedMs(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return 0;
@@ -38,22 +33,22 @@ function defaultThreadListCoalescingKey(input = {}) {
 
 function assignCoalescedDiagnostics(result, patch = {}) {
   if (!result || typeof result !== "object") return result;
-  const next = clonePlainJson(result);
-  const mobileDiagnostics = next.mobileDiagnostics && typeof next.mobileDiagnostics === "object"
-    ? next.mobileDiagnostics
+  const mobileDiagnostics = result.mobileDiagnostics && typeof result.mobileDiagnostics === "object"
+    ? result.mobileDiagnostics
     : {};
   const timings = mobileDiagnostics.threadListTimings && typeof mobileDiagnostics.threadListTimings === "object"
     ? mobileDiagnostics.threadListTimings
     : {};
-  next.mobileDiagnostics = Object.assign({}, mobileDiagnostics, {
+  return Object.assign({}, result, {
+    mobileDiagnostics: Object.assign({}, mobileDiagnostics, {
     threadListTimings: Object.assign({}, timings, {
       threadListCoalescedRequest: true,
       threadListCoalescedWaitMs: boundedMs(patch.waitMs),
       threadListCoalescedLeaderTotalMs: boundedMs(timings.totalMs),
       threadListCoalescedKeyHash: text(patch.keyHash).slice(0, 16),
     }),
+    }),
   });
-  return next;
 }
 
 function shortStableHash(value) {
@@ -122,7 +117,7 @@ function createThreadListResponseCoalescer(options = {}) {
       keyHash,
       startedAtMs,
       complete(result) {
-        settle(() => resolvePromise(clonePlainJson(result)));
+        settle(() => resolvePromise(result));
       },
       fail(error) {
         settle(() => rejectPromise(error));
