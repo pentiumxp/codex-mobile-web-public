@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CDHURfUR.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CLkE3zzj.js";
 //#region public/modal-runtime.js
 var require_modal_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function renderAppNativeDialog() {
@@ -2407,6 +2407,23 @@ var require_app_shell_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 		}
 		return false;
 	}
+	function appShellStartupErrorCode(err) {
+		return String(err && err.message || err || "app_shell_start_failed").slice(0, 160);
+	}
+	function isRecoverablePluginStartupError(err) {
+		const message = appShellStartupErrorCode(err);
+		return /unauthorized|forbidden|session expired|invalid session|invalid launch|plugin_launch|public_config_failed|failed to fetch|network/i.test(message);
+	}
+	function recordViteAppPreviewStartFailure(err) {
+		const root = typeof globalThis !== "undefined" ? globalThis : window;
+		const status = root && root.__CODEX_MOBILE_VITE_APP_PREVIEW__;
+		if (!status || typeof status !== "object") return false;
+		status.appStartOk = false;
+		status.appStartPending = false;
+		status.appStartErrorCode = appShellStartupErrorCode(err);
+		status.appStartCompletedAt = Date.now();
+		return true;
+	}
 	function wireUi() {
 		$("loginForm").addEventListener("submit", (event) => {
 			event.preventDefault();
@@ -2600,11 +2617,24 @@ var require_app_shell_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 			if (event.target === $("composerIntentDialog")) closeComposerIntentDialog(false);
 		});
 		const quotaUsage = $("quotaUsage");
-		if (quotaUsage) quotaUsage.addEventListener("pointerdown", (event) => {
-			event.preventDefault();
-			event.stopPropagation();
-			if (!toggleQuotaDetailsFromRuntime(quotaUsage)) showError(/* @__PURE__ */ new Error("quota_details_runtime_unavailable"));
-		});
+		if (quotaUsage) {
+			let lastQuotaToggleAt = 0;
+			let suppressSyntheticQuotaToggleUntil = 0;
+			const handleQuotaToggle = (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				const now = Date.now();
+				const eventType = String(event.type || "");
+				if ((eventType === "click" || eventType === "touchend") && now < suppressSyntheticQuotaToggleUntil) return;
+				if (now - lastQuotaToggleAt < 650) return;
+				lastQuotaToggleAt = now;
+				if (eventType === "pointerdown") suppressSyntheticQuotaToggleUntil = now + 2200;
+				if (!toggleQuotaDetailsFromRuntime(quotaUsage)) showError(/* @__PURE__ */ new Error("quota_details_runtime_unavailable"));
+			};
+			quotaUsage.addEventListener("pointerdown", handleQuotaToggle);
+			quotaUsage.addEventListener("click", handleQuotaToggle);
+			quotaUsage.addEventListener("touchend", handleQuotaToggle, { passive: false });
+		}
 		document.addEventListener("pointerdown", primeCompletionAudio, { passive: true });
 		document.addEventListener("touchend", primeCompletionAudio, { passive: true });
 		document.addEventListener("keydown", primeCompletionAudio);
@@ -3213,13 +3243,28 @@ var require_app_shell_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 	}
 	function startCodexMobileAppWithRecovery() {
 		return start().catch((err) => {
-			if (typeof state === "object" && state) state.appShellStartupRecoveryErrorCode = String(err && err.message || err || "app_shell_start_failed").slice(0, 160);
+			if (typeof state === "object" && state) {
+				state.appShellStartupRecoveryErrorCode = appShellStartupErrorCode(err);
+				state.startupInProgress = false;
+			}
+			if (isHermesEmbedMode() && isRecoverablePluginStartupError(err)) {
+				requestHermesPluginRefresh(pluginRefreshReasonForApiError({
+					status: /forbidden/i.test(err && err.message || "") ? 403 : 401,
+					message: err && err.message ? err.message : String(err),
+					path: ""
+				}) || "plugin_startup_recoverable", { force: true });
+				showPluginEmbedRecovering("Refreshing Codex Mobile plugin session...");
+				markBootReady();
+				return;
+			}
+			const isViteAppPreview = recordViteAppPreviewStartFailure(err);
 			var boot = window.codexMobileBoot;
-			if (boot && typeof boot.fail === "function") boot.fail("script-error");
+			if (boot && typeof boot.fail === "function") boot.fail("app-start-error");
 			try {
 				showApp();
 				showError(err);
 			} catch (_) {}
+			if (isViteAppPreview) throw err;
 		});
 	}
 	function createAppShellRuntime() {
@@ -3276,7 +3321,7 @@ var moduleDefinitions = [
 		"expectedFunctions": ["createAppShellRuntime"],
 		"assetPath": "/app-shell-runtime.js",
 		"classicLoaderExcluded": true,
-		"bytes": 43053
+		"bytes": 45076
 	}
 ];
 var moduleApis = {

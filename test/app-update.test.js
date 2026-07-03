@@ -267,7 +267,13 @@ test("boot recovery UI can clear PWA shell state before app.js starts", () => {
   assert.match(appUpdateSource, /function markBootReady\(\)/);
   assert.match(appUpdateSource, /window\.codexMobileBoot/);
   assert.match(appUpdateSource, /markBootReady\(\);[\s\S]*if \(state\.startupThreadOpenPending\) renderCurrentThread\(\);/);
+  assert.match(appUpdateSource, /function isRecoverablePluginStartupError\(err\)/);
+  assert.match(appUpdateSource, /function recordViteAppPreviewStartFailure\(err\)/);
+  assert.match(appUpdateSource, /status\.appStartErrorCode = appShellStartupErrorCode\(err\)/);
   assert.match(appUpdateSource, /start\(\)\.catch\(\(err\) => \{/);
+  assert.match(appUpdateSource, /requestHermesPluginRefresh\(pluginRefreshReasonForApiError/);
+  assert.match(appUpdateSource, /boot\.fail\("app-start-error"\)/);
+  assert.match(appUpdateSource, /if \(isViteAppPreview\) throw err;/);
   assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /await clearAllShellCaches\(\);[\s\S]*await resetPageShellServiceWorker\(\);/);
 });
 

@@ -204,7 +204,7 @@ function activeTurn(thread = {}) {
   const activeId = text(thread.activeTurnId || thread.mobileActiveTurnId || thread.mobileRolloutActiveTurn);
   if (activeId) {
     const index = turns.findIndex((turn) => text(turnId(turn)) === activeId);
-    if (index >= 0) return { turn: turns[index], index };
+    if (index >= 0 && isActiveStatus(turns[index] && turns[index].status)) return { turn: turns[index], index };
   }
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turn = turns[index];

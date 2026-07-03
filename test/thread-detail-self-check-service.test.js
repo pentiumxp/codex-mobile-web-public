@@ -108,6 +108,38 @@ test("thread detail self check blocks active turns superseded by newer completed
   assert.equal(issue && issue.latestCompletedAtMs, 3000000);
 });
 
+test("thread detail self check ignores terminal turns still referenced by active markers", () => {
+  const detail = healthyDetail();
+  const completedAtMs = Date.parse("2026-07-03T08:30:00.000Z");
+  const oldStartedAtMs = Date.parse("2026-07-03T08:00:00.000Z");
+  const oldCompletedAtMs = Date.parse("2026-07-03T08:01:00.000Z");
+  detail.thread.updatedAt = completedAtMs;
+  detail.thread.activeTurnId = "old-terminal";
+  detail.thread.mobileDetailResponseBudget.activeTurnCount = 0;
+  detail.thread.turns[0].completedAtMs = completedAtMs;
+  detail.thread.turns[0].items[0].startedAtMs = completedAtMs - 2;
+  detail.thread.turns[0].items[1].completedAtMs = completedAtMs;
+  detail.thread.turns[0].items[2].completedAtMs = completedAtMs;
+  detail.thread.turns[0].items[3].completedAtMs = completedAtMs;
+  detail.thread.turns.unshift({
+    id: "old-terminal",
+    status: "interrupted",
+    startedAtMs: oldStartedAtMs,
+    completedAtMs: oldCompletedAtMs,
+    items: [
+      { id: "old-user", type: "userMessage", startedAtMs: oldStartedAtMs },
+      { id: "old-agent", type: "agentMessage", startedAtMs: oldCompletedAtMs },
+    ],
+  });
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((entry) => entry.code);
+
+  assert.equal(report.ok, true);
+  assert.equal(report.activeTurn, null);
+  assert.equal(codes.includes("thread_detail_active_turn_superseded_by_completed"), false);
+});
+
 test("thread detail self check detects duplicate client render keys", () => {
   const detail = healthyDetail();
   detail.thread.activeTurnId = "turn-active";

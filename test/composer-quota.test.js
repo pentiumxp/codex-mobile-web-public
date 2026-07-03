@@ -111,6 +111,12 @@ test("quota card click uses the composer bridge runtime under Vite ESM", () => {
   assert.match(appShellRuntimeJs, /createComposerBridgeRuntime\(\)/);
   assert.match(appShellRuntimeJs, /bridge\.toggleQuotaDetails\(anchor\)/);
   assert.match(appShellRuntimeJs, /quota_details_runtime_unavailable/);
+  assert.match(appShellRuntimeJs, /const handleQuotaToggle = \(event\) => \{/);
+  assert.match(appShellRuntimeJs, /quotaUsage\.addEventListener\("pointerdown", handleQuotaToggle\)/);
+  assert.match(appShellRuntimeJs, /quotaUsage\.addEventListener\("click", handleQuotaToggle\)/);
+  assert.match(appShellRuntimeJs, /quotaUsage\.addEventListener\("touchend", handleQuotaToggle, \{ passive: false \}\)/);
+  assert.match(appShellRuntimeJs, /suppressSyntheticQuotaToggleUntil/);
+  assert.match(appShellRuntimeJs, /now - lastQuotaToggleAt < 650/);
   assert.doesNotMatch(appShellRuntimeJs, /toggleQuotaDetails\(quotaUsage\);/);
 });
 

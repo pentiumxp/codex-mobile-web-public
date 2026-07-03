@@ -17,6 +17,26 @@ function toggleQuotaDetailsFromRuntime(anchor) {
   return false;
 }
 
+function appShellStartupErrorCode(err) {
+  return String(err && err.message || err || "app_shell_start_failed").slice(0, 160);
+}
+
+function isRecoverablePluginStartupError(err) {
+  const message = appShellStartupErrorCode(err);
+  return /unauthorized|forbidden|session expired|invalid session|invalid launch|plugin_launch|public_config_failed|failed to fetch|network/i.test(message);
+}
+
+function recordViteAppPreviewStartFailure(err) {
+  const root = typeof globalThis !== "undefined" ? globalThis : window;
+  const status = root && root.__CODEX_MOBILE_VITE_APP_PREVIEW__;
+  if (!status || typeof status !== "object") return false;
+  status.appStartOk = false;
+  status.appStartPending = false;
+  status.appStartErrorCode = appShellStartupErrorCode(err);
+  status.appStartCompletedAt = Date.now();
+  return true;
+}
+
 function wireUi() {
   $("loginForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -230,13 +250,24 @@ function wireUi() {
   });
   const quotaUsage = $("quotaUsage");
   if (quotaUsage) {
-    quotaUsage.addEventListener("pointerdown", (event) => {
+    let lastQuotaToggleAt = 0;
+    let suppressSyntheticQuotaToggleUntil = 0;
+    const handleQuotaToggle = (event) => {
       event.preventDefault();
       event.stopPropagation();
+      const now = Date.now();
+      const eventType = String(event.type || "");
+      if ((eventType === "click" || eventType === "touchend") && now < suppressSyntheticQuotaToggleUntil) return;
+      if (now - lastQuotaToggleAt < 650) return;
+      lastQuotaToggleAt = now;
+      if (eventType === "pointerdown") suppressSyntheticQuotaToggleUntil = now + 2200;
       if (!toggleQuotaDetailsFromRuntime(quotaUsage)) {
         showError(new Error("quota_details_runtime_unavailable"));
       }
-    });
+    };
+    quotaUsage.addEventListener("pointerdown", handleQuotaToggle);
+    quotaUsage.addEventListener("click", handleQuotaToggle);
+    quotaUsage.addEventListener("touchend", handleQuotaToggle, { passive: false });
   }
   document.addEventListener("pointerdown", primeCompletionAudio, { passive: true });
   document.addEventListener("touchend", primeCompletionAudio, { passive: true });
@@ -825,16 +856,29 @@ async function start() {
 function startCodexMobileAppWithRecovery() {
   return start().catch((err) => {
     if (typeof state === "object" && state) {
-      state.appShellStartupRecoveryErrorCode = String(err && err.message || err || "app_shell_start_failed").slice(0, 160);
+      state.appShellStartupRecoveryErrorCode = appShellStartupErrorCode(err);
+      state.startupInProgress = false;
     }
+    if (isHermesEmbedMode() && isRecoverablePluginStartupError(err)) {
+      requestHermesPluginRefresh(pluginRefreshReasonForApiError({
+        status: /forbidden/i.test(err && err.message || "") ? 403 : 401,
+        message: err && err.message ? err.message : String(err),
+        path: "",
+      }) || "plugin_startup_recoverable", { force: true });
+      showPluginEmbedRecovering("Refreshing Codex Mobile plugin session...");
+      markBootReady();
+      return;
+    }
+    const isViteAppPreview = recordViteAppPreviewStartFailure(err);
     var boot = window.codexMobileBoot;
-    if (boot && typeof boot.fail === "function") boot.fail("script-error");
+    if (boot && typeof boot.fail === "function") boot.fail("app-start-error");
     try {
       showApp();
       showError(err);
     } catch (_) {
       // The inline boot recovery panel is the last-resort UI if app startup failed before wiring.
     }
+    if (isViteAppPreview) throw err;
   });
 }
 
