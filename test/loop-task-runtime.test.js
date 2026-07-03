@@ -75,6 +75,9 @@ function makeRuntime(options = {}) {
   if (options.assertThreadTaskCardTargetDeliverable !== false) {
     dependencies.assertThreadTaskCardTargetDeliverable = options.assertThreadTaskCardTargetDeliverable || (() => true);
   }
+  if (options.resolveThreadTaskCardTargetReference !== false) {
+    dependencies.resolveThreadTaskCardTargetReference = options.resolveThreadTaskCardTargetReference || ((threadId) => threadId);
+  }
   if (options.createLoopRoleThread !== false) {
     dependencies.createLoopRoleThread = options.createLoopRoleThread || (async ({ role, cwd, title, threadRole }) => {
       const id = `${role}-created`;
@@ -499,14 +502,14 @@ test("loop runtime skips visible implementation targets rejected by task-card de
       cwd: "/Users/hermes-dev/HermesMobileDev/app",
     }],
     createLoopRoleThread: false,
-    assertThreadTaskCardTargetDeliverable: (thread) => {
-      if (thread && thread.id === "aaa-visible-but-hidden-target") {
+    resolveThreadTaskCardTargetReference: (threadId) => {
+      if (threadId === "aaa-visible-but-hidden-target") {
         const err = new Error("Target thread is not visible or is not a current deliverable thread.");
         err.code = "target_thread_not_visible";
         err.statusCode = 404;
         throw err;
       }
-      return String(thread && thread.id || "");
+      return String(threadId || "");
     },
   });
   const loopId = testLoopId({

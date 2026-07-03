@@ -620,6 +620,17 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     }
     const targetThreadId = threadIdOf(thread);
     try {
+      if (typeof dependencies.resolveThreadTaskCardTargetReference === "function") {
+        const resolved = dependencies.resolveThreadTaskCardTargetReference(targetThreadId, loop && loop.sourceThreadId || "");
+        if (compactOneLine(resolved) !== targetThreadId) {
+          return {
+            ok: false,
+            error: "target_thread_not_resolved",
+            message: "Target thread is not visible or is not a current deliverable thread.",
+          };
+        }
+        return { ok: true };
+      }
       dependencies.assertThreadTaskCardTargetDeliverable(thread, {
         reference: targetThreadId,
         referenceKind: "thread",
@@ -1128,13 +1139,13 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       });
     }
     slice.targetThreadId = targetThreadId;
-    const targetCheck = routingService.assertLoopRoleTarget({ role, thread: target });
+    const targetCheck = roleTargetCheck(loop, role, target);
     slice.targetPurpose = targetCheck.classification && targetCheck.classification.purpose || "";
     if (!targetCheck.ok) {
       slice.status = "blocked";
       slice.dispatchStatus = "blocked";
       slice.blockedReason = targetCheck.error;
-      slice.routing = publicRoutingMetadata(targetCheck);
+      slice.routing = publicRoleTargetRoutingMetadata(targetCheck);
       slice.updatedAt = timestamp;
       loop.status = "blocked";
       loop.blockedReason = targetCheck.error;
@@ -1216,7 +1227,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         slice.auditPacketStatus = auditPacketStatus(loop.auditPacket || sanitizeAuditPacket({}));
       }
       slice.targetPurpose = targetCheck.classification.purpose;
-      slice.routing = publicRoutingMetadata(targetCheck);
+    slice.routing = publicRoleTargetRoutingMetadata(targetCheck);
       slice.dispatchedAt = timestamp;
       slice.updatedAt = timestamp;
       loop.status = "running";

@@ -239,6 +239,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     readThreadTaskCardVisibleTargetSummary: threadTaskCardRouteService.readThreadTaskCardVisibleTargetSummary,
     threadTaskCardVisibleTargetThreads: threadTaskCardRouteService.threadTaskCardVisibleTargetThreads,
     assertThreadTaskCardTargetDeliverable: threadTaskCardRouteService.assertThreadTaskCardTargetDeliverable,
+    resolveThreadTaskCardTargetReference: threadTaskCardRouteService.resolveThreadTaskCardTargetReference,
     loopTargetAliases: dependencies.atLoopTargetAliases,
     maxIterations: dependencies.atLoopMaxIterations,
     watchdogStaleMs: dependencies.atLoopWatchdogStaleMs,

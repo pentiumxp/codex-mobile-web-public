@@ -39,6 +39,7 @@ test("thread task-card runtime composition wires return hook, policy, route, and
     threadTaskCardRouteServiceFactory: () => ({
       attachWorkspaceDelegationRuntimeGuidance: (value) => Object.assign({ guided: true }, value),
       assertThreadTaskCardTargetDeliverable: () => "target-thread",
+      resolveThreadTaskCardTargetReference: (threadId) => threadId,
       readThreadTaskCardExecutionTargetSummary: () => ({
         id: "deploy-thread",
         title: "Home AI Deploy",
@@ -83,6 +84,7 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   assert.equal(runtime.atLoopRouteService.kind, "at-loop-route");
   assert.equal(runtime.attachWorkspaceDelegationRuntimeGuidance({}).guided, true);
   assert.equal(typeof atLoopOptions.assertThreadTaskCardTargetDeliverable, "function");
+  assert.equal(typeof atLoopOptions.resolveThreadTaskCardTargetReference, "function");
   assert.deepEqual(homeAiEvents, [
     { event: { id: "return-1" }, options: { workspaceId: "owner" } },
   ]);
