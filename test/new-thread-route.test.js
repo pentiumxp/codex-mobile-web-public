@@ -157,6 +157,35 @@ test("continuation dialog exposes in-modal progress and diagnostics", () => {
   assert.match(waitBody, /postClientEvent\("continuation_job_failed"/);
 });
 
+test("continuation job status route keeps pruning inside the continuation service", () => {
+  const routeIndex = apiDispatchRouteServiceJs.indexOf("const threadContinuationRouteResult = await threadContinuationRouteService.handleRoute");
+  const routeEnd = apiDispatchRouteServiceJs.indexOf("const chatGptProRouteResult = await chatGptProRouteService.handleRoute", routeIndex);
+  assert.ok(routeIndex > 0 && routeEnd > routeIndex, "missing continuation job route dispatch");
+  const routeBody = apiDispatchRouteServiceJs.slice(routeIndex, routeEnd);
+  assert.doesNotMatch(routeBody, /pruneContinuationJobs/);
+
+  const routeServiceStart = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-continuation-route-service.js"), "utf8");
+  assert.doesNotMatch(routeServiceStart, /pruneContinuationJobs\(\)/, "route service must not call private pruning");
+
+  const getJobBody = functionBody(continuationThreadServiceJs, "getContinuationJob");
+  assert.match(getJobBody, /pruneContinuationJobs\(\)/, "service should prune before exposing job status");
+});
+
+test("continuation service receives completion-status dependency for source handoff fallback", () => {
+  const serviceCreateIndex = serverJs.indexOf("const continuationThreadService = createContinuationThreadService({");
+  const serviceCreateEnd = serverJs.indexOf("});", serviceCreateIndex);
+  assert.ok(serviceCreateIndex > 0 && serviceCreateEnd > serviceCreateIndex, "missing continuation service construction");
+  const serviceCreateBody = serverJs.slice(serviceCreateIndex, serviceCreateEnd);
+  assert.match(serviceCreateBody, /isCompletedStatus,/, "server should inject the shared completion-status helper");
+
+  const serviceSetupBody = continuationThreadServiceJs.slice(
+    continuationThreadServiceJs.indexOf("function createContinuationThreadService"),
+    continuationThreadServiceJs.indexOf("const publicRuntimeSettings"),
+  );
+  assert.match(serviceSetupBody, /const isCompletedStatus = deps\.isCompletedStatus/, "service should define its completion-status dependency");
+  assert.match(functionBody(continuationThreadServiceJs, "waitForContinuationTurnCompletion"), /isCompletedStatus\(turn\.status\)/);
+});
+
 test("new-message route allows Codex App style projectless threads", () => {
   const routeIndex = threadMessageRouteServiceJs.indexOf("/api/threads/new-message");
   const fallbackIndex = threadMessageRouteServiceJs.indexOf('const resume = url.pathname.match', routeIndex);

@@ -156,6 +156,7 @@ function compactResponseBudgetEvidence(stats = {}) {
     "prunedEmptyActivePlaceholderTurns",
     "remappedMissingActiveTurnId",
     "clearedMissingActiveTurnId",
+    "clearedTerminalActiveTurnId",
     "repairedVisibleActiveTurnStatus",
     "downgradedStaleActiveTurns",
     "truncatedActiveUserMessageItems",
@@ -360,8 +361,28 @@ function turnId(turn) {
   return String(turn && (turn.id || turn.turnId || turn.turn_id) || "").trim();
 }
 
+function activeMarkerTurnId(value) {
+  if (!value) return "";
+  if (typeof value === "object") {
+    return String(value.turnId || value.turn_id || value.id || value.activeTurnId || value.active_turn_id || "").trim();
+  }
+  return String(value || "").trim();
+}
+
 function activeTurnId(thread) {
-  return String(thread && (thread.activeTurnId || thread.mobileRolloutActiveTurn || thread.mobileActiveTurnId) || "").trim();
+  if (!thread || typeof thread !== "object") return "";
+  for (const value of [
+    thread.activeTurnId,
+    thread.active_turn_id,
+    thread.mobileActiveTurnId,
+    thread.mobile_active_turn_id,
+    thread.mobileRolloutActiveTurn,
+    thread.mobileLocalActiveStatus,
+  ]) {
+    const id = activeMarkerTurnId(value);
+    if (id) return id;
+  }
+  return "";
 }
 
 function isActiveTurn(turn, thread) {
@@ -471,6 +492,17 @@ function staleCompletedStatusFromActive(value) {
   };
 }
 
+function clearThreadActiveMarkers(thread) {
+  if (!thread || typeof thread !== "object") return;
+  delete thread.activeTurnId;
+  delete thread.active_turn_id;
+  delete thread.mobileRolloutActiveTurn;
+  delete thread.mobileActiveTurnId;
+  delete thread.mobileLocalActiveStatus;
+  delete thread.mobileStatusTurnId;
+  delete thread.mobileStatusSource;
+}
+
 function reconcileVisibleActiveTurnState(thread, stats) {
   if (!thread || !Array.isArray(thread.turns)) return;
   let activeId = activeTurnId(thread);
@@ -488,9 +520,19 @@ function reconcileVisibleActiveTurnState(thread, stats) {
       break;
     }
     if (activeIndex < 0) {
-      delete thread.activeTurnId;
+      clearThreadActiveMarkers(thread);
       stats.clearedMissingActiveTurnId += 1;
       activeId = "";
+    }
+  }
+  if (activeIndex >= 0) {
+    const activeTurn = thread.turns[activeIndex];
+    if (activeTurn && isCompletedStatus(activeTurn.status)) {
+      clearThreadActiveMarkers(thread);
+      if (isActiveStatus(thread.status)) thread.status = { type: "completed", mobileClearedTerminalActiveTurn: true };
+      stats.clearedTerminalActiveTurnId += 1;
+      activeId = "";
+      activeIndex = -1;
     }
   }
   if (activeIndex >= 0) {
@@ -2019,6 +2061,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     prunedEmptyActivePlaceholderTurns: 0,
     remappedMissingActiveTurnId: 0,
     clearedMissingActiveTurnId: 0,
+    clearedTerminalActiveTurnId: 0,
     repairedVisibleActiveTurnStatus: 0,
     downgradedStaleActiveTurns: 0,
     truncatedActiveUserMessageItems: 0,
@@ -2205,6 +2248,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     || stats.prunedEmptyActivePlaceholderTurns > 0
     || stats.remappedMissingActiveTurnId > 0
     || stats.clearedMissingActiveTurnId > 0
+    || stats.clearedTerminalActiveTurnId > 0
     || stats.repairedVisibleActiveTurnStatus > 0
     || stats.downgradedStaleActiveTurns > 0
     || stats.truncatedActiveUserMessageItems > 0

@@ -151,6 +151,7 @@ function createServerRouteCompositionService(dependencies = {}) {
     syncRegisteredWorkspaceTrust: dependencies.syncRegisteredWorkspaceTrust,
     syncThreadDetailReadResultToThreadListFallbackCache: dependencies.syncThreadDetailReadResultToThreadListFallbackCache,
     threadDetailReadOrchestrationService: dependencies.threadDetailReadOrchestrationService,
+    threadDetailCopyTextService: dependencies.threadDetailCopyTextService,
     threadDisplaySummaryCache: dependencies.threadDisplaySummaryCache,
     threadListDefaultWarmFallbackEnabled: dependencies.threadListDefaultWarmFallbackEnabled,
     threadListFallbackBaselineWorkTimingFields: dependencies.threadListFallbackBaselineWorkTimingFields,

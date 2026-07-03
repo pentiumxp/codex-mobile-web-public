@@ -615,10 +615,17 @@ function rememberCopyText(value) {
   return key;
 }
 
-function copyButtonHtml(copyKey, label, className = "") {
+function htmlAttrs(attrs = {}) {
+  return Object.entries(attrs || {})
+    .filter(([, value]) => value !== undefined && value !== null && String(value) !== "")
+    .map(([key, value]) => ` ${key}="${escapeHtml(value)}"`)
+    .join("");
+}
+
+function copyButtonHtml(copyKey, label, className = "", attrs = {}) {
   if (!copyKey) return "";
   const classes = ["copy-button", className].filter(Boolean).join(" ");
-  return `<button class="${escapeHtml(classes)}" type="button" data-copy-key="${escapeHtml(copyKey)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+  return `<button class="${escapeHtml(classes)}" type="button" data-copy-key="${escapeHtml(copyKey)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"${htmlAttrs(attrs)}>${escapeHtml(label)}</button>`;
 }
 
 function fallbackCopyText(text) {
@@ -650,6 +657,17 @@ async function copyTextToClipboard(text) {
   fallbackCopyText(text);
 }
 
+async function fullCopyTextForButton(button) {
+  if (!button || !button.dataset || !button.dataset.fullCopyThreadId || !button.dataset.fullCopyItemId) return "";
+  const params = new URLSearchParams({ itemId: button.dataset.fullCopyItemId });
+  if (button.dataset.fullCopyTurnId) params.set("turnId", button.dataset.fullCopyTurnId);
+  const threadId = encodeURIComponent(button.dataset.fullCopyThreadId);
+  const result = await api(`/api/threads/${threadId}/copy-text?${params.toString()}`, {
+    timeoutMs: 45000,
+  });
+  return String(result && result.text || "");
+}
+
 function showCopyFeedback(button) {
   if (!button) return;
   const previous = button.textContent || "复制";
@@ -667,7 +685,12 @@ function showCopyFeedback(button) {
 
 async function handleCopyButtonClick(button) {
   const key = button && button.dataset ? button.dataset.copyKey : "";
-  const text = state.copyTextStore.get(key || "");
+  let text = "";
+  if (button && button.dataset && button.dataset.fullCopyText === "true") {
+    text = await fullCopyTextForButton(button);
+    if (text && key) state.copyTextStore.set(key, text);
+  }
+  if (!text) text = state.copyTextStore.get(key || "");
   if (!text) return;
   await copyTextToClipboard(text);
   showCopyFeedback(button);

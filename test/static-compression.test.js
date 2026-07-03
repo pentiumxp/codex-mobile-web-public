@@ -104,7 +104,12 @@ test("static compression leaves already-compressed images unencoded", async () =
 });
 
 test("static root keeps classic shell unless Vite app-preview is explicitly requested", async () => {
-  const classic = await requestStatic("/");
+  const classicStatic = createStaticFileService({
+    publicRoot: path.join(root, "public"),
+    mimeFor,
+    defaultShellMode: "classic",
+  });
+  const classic = await requestStaticFrom(classicStatic.serveStatic, "/");
   const appPreview = await requestStatic("/?codexViteShell=app-preview");
   const classicText = classic.body.toString("utf8");
   const appPreviewText = appPreview.body.toString("utf8");

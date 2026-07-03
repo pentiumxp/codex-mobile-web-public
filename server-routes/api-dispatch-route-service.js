@@ -10,6 +10,9 @@ const {
   createThreadContinuationRouteService,
 } = require("./thread-continuation-route-service");
 const {
+  createThreadCopyTextRouteService,
+} = require("./thread-copy-text-route-service");
+const {
   createThreadManagementRouteService,
 } = require("./thread-management-route-service");
 const {
@@ -78,6 +81,7 @@ function createApiDispatchRouteService(dependencies = {}) {
   const syncRegisteredWorkspaceTrust = dependencies.syncRegisteredWorkspaceTrust;
   const syncThreadDetailReadResultToThreadListFallbackCache = dependencies.syncThreadDetailReadResultToThreadListFallbackCache;
   const threadDetailReadOrchestrationService = dependencies.threadDetailReadOrchestrationService;
+  const threadDetailCopyTextService = dependencies.threadDetailCopyTextService;
   const threadDisplaySummaryCache = dependencies.threadDisplaySummaryCache;
   const threadListDefaultWarmFallbackEnabled = dependencies.threadListDefaultWarmFallbackEnabled;
   const threadListFallbackBaselineWorkTimingFields = dependencies.threadListFallbackBaselineWorkTimingFields;
@@ -106,8 +110,10 @@ function createApiDispatchRouteService(dependencies = {}) {
   const threadContinuationRouteService = createThreadContinuationRouteService({
     createContinuationJob,
     getContinuationJob,
-    pruneContinuationJobs,
     publicContinuationJob,
+  });
+  const threadCopyTextRouteService = createThreadCopyTextRouteService({
+    threadDetailCopyTextService,
   });
   const chatGptProRouteService = createChatGptProRouteService({
     chatGptProBridgeService,
@@ -240,6 +246,14 @@ function createApiDispatchRouteService(dependencies = {}) {
       sendJson: (status, body) => sendJson(res, status, body),
     });
     if (threadMessageRouteResult.handled) {
+      return;
+    }
+    const threadCopyTextRouteResult = await threadCopyTextRouteService.handleRoute({
+      url,
+      method: req.method,
+      sendJson: (status, body) => sendJson(res, status, body),
+    });
+    if (threadCopyTextRouteResult.handled) {
       return;
     }
     const threadManagementRouteResult = await threadManagementRouteService.handleRoute({

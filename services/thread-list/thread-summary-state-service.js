@@ -327,6 +327,8 @@ function createThreadSummaryStateService(dependencies = {}) {
     delete thread.mobileLocalActiveStatus;
     delete thread.mobileRolloutActiveTurn;
     delete thread.mobileActiveTurnId;
+    delete thread.mobileStatusTurnId;
+    delete thread.mobileStatusSource;
     return thread;
   }
 

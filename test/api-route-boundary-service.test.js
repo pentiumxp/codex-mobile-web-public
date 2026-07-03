@@ -16,6 +16,9 @@ const {
   createThreadContinuationRouteService,
 } = require("../server-routes/thread-continuation-route-service");
 const {
+  createThreadCopyTextRouteService,
+} = require("../server-routes/thread-copy-text-route-service");
+const {
   createThreadManagementRouteService,
 } = require("../server-routes/thread-management-route-service");
 const {
@@ -38,6 +41,10 @@ test("api boundary adapters re-export canonical route services", () => {
   assert.equal(
     require("../adapters/thread-continuation-route-service").createThreadContinuationRouteService,
     require("../server-routes/thread-continuation-route-service").createThreadContinuationRouteService,
+  );
+  assert.equal(
+    require("../adapters/thread-copy-text-route-service").createThreadCopyTextRouteService,
+    require("../server-routes/thread-copy-text-route-service").createThreadCopyTextRouteService,
   );
   assert.equal(
     require("../adapters/chatgpt-pro-route-service").createChatGptProRouteService,
@@ -209,6 +216,31 @@ test("continuation route creates and reads public jobs", async () => {
     { status: 200, body: { id: "job-1", public: true } },
     { status: 404, body: { error: "Continuation job not found" } },
   ]);
+});
+
+test("thread copy-text route keeps full text reads behind explicit item requests", async () => {
+  const calls = [];
+  const service = createThreadCopyTextRouteService({
+    threadDetailCopyTextService: {
+      readThreadItemCopyText: async (threadId, input) => {
+        calls.push({ threadId, input });
+        return { text: "full text", itemId: input.itemId, turnId: input.turnId, itemType: "agentMessage" };
+      },
+    },
+  });
+  const sent = [];
+
+  await service.handleRoute({
+    url: routeUrl("/api/threads/thread-a/copy-text?itemId=item-a&turnId=turn-a"),
+    method: "GET",
+    sendJson: (status, body) => sent.push({ status, body }),
+  });
+
+  assert.deepEqual(calls, [{ threadId: "thread-a", input: { itemId: "item-a", turnId: "turn-a" } }]);
+  assert.deepEqual(sent, [{
+    status: 200,
+    body: { ok: true, threadId: "thread-a", text: "full text", itemId: "item-a", turnId: "turn-a", itemType: "agentMessage" },
+  }]);
 });
 
 test("chatgpt pro route preserves planner and generate response shapes", async () => {

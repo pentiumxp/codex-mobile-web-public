@@ -65,6 +65,7 @@ const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-s
 const { createRuntimeWorkspaceBootstrapService } = require("./services/runtime/runtime-workspace-bootstrap-service");
 const { handleThreadDetailReadRoute } = require("./server-routes/thread-detail-route-service");
 const { createThreadDetailRuntimeService } = require("./services/thread-detail/thread-detail-runtime-service");
+const { createThreadDetailCopyTextService } = require("./services/thread-detail/thread-detail-copy-text-service");
 const { createThreadDetailStateBridgeService } = require("./services/thread-detail/thread-detail-state-bridge-service");
 const { createThreadSummaryStateService } = require("./services/thread-list/thread-summary-state-service");
 const { createThreadSummaryReadModelService } = require("./services/thread-list/thread-summary-read-model-service");
@@ -1238,6 +1239,7 @@ const continuationThreadService = createContinuationThreadService({
   isWebSearchLikeItem,
   isOperationalItem,
   statusText,
+  isCompletedStatus,
   publicRuntimeSettings,
   applyTurnRuntimeSettings,
   applyResumeRuntimeSettings,
@@ -1477,6 +1479,12 @@ const codex = createCodexAppServerClient({
   rateLimitsByModelObject,
   codexProfileService,
   liveQuotaSnapshotForProfiles,
+});
+const threadDetailCopyTextService = createThreadDetailCopyTextService({
+  codex,
+  appendRolloutFinalReceiptsToThread,
+  visibleItemId,
+  readRpcTimeoutMs: READ_RPC_TIMEOUT_MS,
 });
 threadDetailResponsePreparationService = threadDetailRuntimeService.createResponsePreparationService({
   codex,
@@ -1852,6 +1860,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   syncKnownCodexMobileMcpToolsets,
   syncRegisteredWorkspaceTrust,
   syncThreadDetailReadResultToThreadListFallbackCache,
+  threadDetailCopyTextService,
   threadDetailReadOrchestrationService,
   threadDisplayPublicSettings,
   threadDisplaySummaryCache,

@@ -317,7 +317,7 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0, thre
   const injectedTaskCardText = injectedThreadTaskCardTextForItem(item);
   if (injectedTaskCardText) return renderInjectedThreadTaskCardItem(item, turn, previousKeys, index, injectedTaskCardText, contextThread);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
-  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
+  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button", fullCopyAttrsForItem(item, turn, contextThread));
   const timestampHtml = renderItemTimestampHtml(item, turn, contextThread);
   return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}"${clientSubmissionDataAttr(item)}>
     <div class="item-head">
@@ -332,7 +332,7 @@ function renderInjectedThreadTaskCardItem(item, turn = null, previousKeys = new 
   const key = stableItemKey(turn, item, index);
   const metadata = injectedThreadTaskCardMetadata(text);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
-  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
+  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button", fullCopyAttrsForItem(item, turn, thread));
   const timestampHtml = renderItemTimestampHtml(item, turn, thread);
   return `<section class="item${entryAnimationClass(key, previousKeys)} thread-task-card-injected" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}" data-thread-task-card-item>
     <div class="item-head thread-task-card-message-head">
@@ -437,9 +437,48 @@ function labelForItem(item) {
 
 function copyTextForItem(item) {
   if (!item) return "";
+  if (item.type === "userMessage") return copyTextForUserMessage(item);
   if (item.type === "agentMessage") return item.text || "";
   if (item.type === "turnDiagnostic") return [item.title, item.message].filter(Boolean).join("\n");
   return "";
+}
+
+function itemHasFullCopyTruncation(item) {
+  if (!item || typeof item !== "object") return false;
+  if (item.mobileTextTruncated === true) return Boolean(item.mobileFirstPaintTextBudget || item.mobileActiveTextBudget);
+  return Boolean(item.mobileFirstPaintUserInputBudget);
+}
+
+function copyTextForUserMessage(item) {
+  const values = [];
+  const add = (value) => {
+    const text = String(value || "").trim();
+    if (text && !values.includes(text)) values.push(text);
+  };
+  add(item && item.text);
+  add(item && item.message);
+  add(item && item.input);
+  add(item && item.input_text);
+  const content = item && item.content;
+  if (typeof content === "string") add(content);
+  for (const part of Array.isArray(content) ? content : []) {
+    if (typeof part === "string") add(part);
+    else if (isInputTextPart(part)) add(inputTextValue(part));
+  }
+  return values.join("\n\n");
+}
+
+function fullCopyAttrsForItem(item, turn = null, thread = null) {
+  const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
+  const turnId = String(turn && (turn.id || turn.turnId || turn.turn_id) || "").trim();
+  const itemId = String(item && (item.id || item.itemId || item.item_id) || "").trim();
+  if (!threadId || !itemId || !itemHasFullCopyTruncation(item)) return {};
+  return {
+    "data-full-copy-text": "true",
+    "data-full-copy-thread-id": threadId,
+    "data-full-copy-turn-id": turnId,
+    "data-full-copy-item-id": itemId,
+  };
 }
 
 var mediaPreviewRuntime = null;

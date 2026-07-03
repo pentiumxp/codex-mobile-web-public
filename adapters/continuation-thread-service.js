@@ -37,6 +37,7 @@ function createContinuationThreadService(deps = {}) {
   const isWebSearchLikeItem = deps.isWebSearchLikeItem || (() => false);
   const isOperationalItem = deps.isOperationalItem || (() => false);
   const statusText = deps.statusText || ((status) => typeof status === "string" ? status : status && status.type || "");
+  const isCompletedStatus = deps.isCompletedStatus || ((status) => /completed|failed|cancel|error|interrupted/i.test(statusText(status)));
   const publicRuntimeSettings = deps.publicRuntimeSettings || (() => ({}));
   const applyTurnRuntimeSettings = deps.applyTurnRuntimeSettings || ((params) => params);
   const applyResumeRuntimeSettings = deps.applyResumeRuntimeSettings || ((params) => params);
@@ -1408,6 +1409,7 @@ async function runContinuationJob(job) {
 }
 
   function getContinuationJob(jobId) {
+    pruneContinuationJobs();
     return continuationJobs.get(String(jobId || ""));
   }
 

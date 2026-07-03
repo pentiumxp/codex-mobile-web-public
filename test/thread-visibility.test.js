@@ -524,6 +524,8 @@ test("thread list completed fallback clears stale active markers from older app-
         status: { type: "active" },
         activeTurnId: "turn-active",
         mobileLocalActiveStatus: { turnId: "turn-active", source: "test" },
+        mobileStatusTurnId: "turn-active",
+        mobileStatusSource: "turn/started",
       },
     ],
   }, [
@@ -538,6 +540,8 @@ test("thread list completed fallback clears stale active markers from older app-
   assert.equal(result.data[0].status.type, "completed");
   assert.equal(result.data[0].activeTurnId, undefined);
   assert.equal(result.data[0].mobileLocalActiveStatus, undefined);
+  assert.equal(result.data[0].mobileStatusTurnId, undefined);
+  assert.equal(result.data[0].mobileStatusSource, undefined);
 });
 
 test("thread detail summary for fallback cache strips detail fields and terminal active markers", () => {
@@ -549,6 +553,9 @@ test("thread detail summary for fallback cache strips detail fields and terminal
       status: { type: "completed" },
       activeTurnId: "turn-active",
       mobileLocalActiveStatus: { turnId: "turn-active" },
+      mobileRolloutActiveTurn: { turnId: "turn-active" },
+      mobileStatusTurnId: "turn-active",
+      mobileStatusSource: "turn/started",
       turns: [{ id: "turn-active", status: "completed", items: [] }],
       mobileDiagnostics: { private: false },
     },
@@ -558,6 +565,9 @@ test("thread detail summary for fallback cache strips detail fields and terminal
   assert.equal(summary.status.type, "completed");
   assert.equal(summary.activeTurnId, undefined);
   assert.equal(summary.mobileLocalActiveStatus, undefined);
+  assert.equal(summary.mobileRolloutActiveTurn, undefined);
+  assert.equal(summary.mobileStatusTurnId, undefined);
+  assert.equal(summary.mobileStatusSource, undefined);
   assert.equal(summary.turns, undefined);
   assert.equal(summary.mobileDiagnostics, undefined);
 });

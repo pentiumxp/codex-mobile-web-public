@@ -708,6 +708,52 @@ test("thread detail response budget remaps missing activeTurnId to latest visibl
   assert.equal(compacted.thread.mobileDetailResponseBudget.downgradedStaleActiveTurns, 0);
 });
 
+test("thread detail response budget clears active markers when activeTurnId points to terminal turn", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      status: { type: "active" },
+      mobileRolloutActiveTurn: { turnId: "turn-terminal", startedAtMs: 1000, lastActivityMs: 2000 },
+      mobileLocalActiveStatus: { turnId: "turn-terminal" },
+      mobileStatusTurnId: "turn-terminal",
+      mobileStatusSource: "turn/started",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-older",
+          status: "completed",
+          items: [{ id: "a0", type: "agentMessage", text: "Old reply" }],
+        },
+        {
+          id: "turn-terminal",
+          status: "completed",
+          items: [
+            { id: "u1", type: "userMessage", text: "Deploy" },
+            { id: "a1", type: "agentMessage", text: "Done" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 0,
+  });
+
+  assert.equal(compacted.thread.status.type, "completed");
+  assert.equal(compacted.thread.status.mobileClearedTerminalActiveTurn, true);
+  assert.equal(compacted.thread.activeTurnId, undefined);
+  assert.equal(compacted.thread.mobileRolloutActiveTurn, undefined);
+  assert.equal(compacted.thread.mobileActiveTurnId, undefined);
+  assert.equal(compacted.thread.mobileLocalActiveStatus, undefined);
+  assert.equal(compacted.thread.mobileStatusTurnId, undefined);
+  assert.equal(compacted.thread.mobileStatusSource, undefined);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.clearedTerminalActiveTurnId, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.activeTurnCount, 0);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.downgradedStaleActiveTurns, 0);
+});
+
 test("thread detail response budget repairs missing visible active turn status", () => {
   const result = {
     thread: {

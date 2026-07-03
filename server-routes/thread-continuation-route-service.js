@@ -13,7 +13,6 @@ function createThreadContinuationRouteService(dependencies = {}) {
   const {
     createContinuationJob,
     getContinuationJob,
-    pruneContinuationJobs,
     publicContinuationJob,
   } = dependencies;
 
@@ -32,7 +31,6 @@ function createThreadContinuationRouteService(dependencies = {}) {
 
     const continuationJobMatch = pathname.match(/^\/api\/thread-continuations\/([^/]+)$/);
     if (continuationJobMatch && method === "GET") {
-      pruneContinuationJobs();
       const jobId = decodeURIComponent(continuationJobMatch[1]);
       const job = getContinuationJob(jobId);
       if (!job) {
