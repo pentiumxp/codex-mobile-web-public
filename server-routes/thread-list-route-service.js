@@ -72,6 +72,27 @@ async function handleThreadListRoute(options = {}) {
     if (!Number.isFinite(number) || number <= 0) return 0;
     return Math.min(100000, Math.trunc(number));
   };
+  const cachedFallbackCompleteBelowLimit = (threads, requestedLimit, diagnostics = {}) => {
+    const rows = Array.isArray(threads) ? threads.length : 0;
+    const sourceTimings = diagnostics.cachedSourceTimings && typeof diagnostics.cachedSourceTimings === "object"
+      ? diagnostics.cachedSourceTimings
+      : {};
+    const baselineResultCount = boundedRequestCount(
+      sourceTimings.baselineResultCount !== undefined
+        ? sourceTimings.baselineResultCount
+        : diagnostics.baselineResultCount,
+    );
+    const baselineLimitDropCount = boundedRequestCount(
+      sourceTimings.baselineLimitDropCount !== undefined
+        ? sourceTimings.baselineLimitDropCount
+        : diagnostics.baselineLimitDropCount,
+    );
+    return rows > 0
+      && rows < requestedLimit
+      && baselineResultCount > 0
+      && baselineResultCount <= rows
+      && baselineLimitDropCount === 0;
+  };
   const getThreadListRequestContext = () => {
     if (!threadListRequestContext) {
       threadListRequestContext = createThreadListRequestContext({
@@ -227,7 +248,8 @@ async function handleThreadListRoute(options = {}) {
         && (!initialFallbackPlan.requireCacheHit || initialFallbackCacheHit);
       const initialFallbackInsufficientDefaultWindow = initialFallbackEligible
         && initialFallbackPlan.reason === "default-warm-cache"
-        && initialFallback.length < limit;
+        && initialFallback.length < limit
+        && !cachedFallbackCompleteBelowLimit(initialFallback, limit, fallbackDiagnostics);
       if (initialFallbackEligible && initialFallbackInsufficientDefaultWindow) {
         Object.assign(timings, {
           initialFallbackMs: Number(timings.fallbackMs || 0),
@@ -241,6 +263,9 @@ async function handleThreadListRoute(options = {}) {
         });
       }
       if (initialFallbackEligible && !initialFallbackInsufficientDefaultWindow) {
+        const initialFallbackCompleteBelowLimit = initialFallbackPlan.reason === "default-warm-cache"
+          && initialFallback.length < limit
+          && cachedFallbackCompleteBelowLimit(initialFallback, limit, fallbackDiagnostics);
         const initialFallbackMeta = threadListInitialFallbackMetadata({
           cacheHit: initialFallbackCacheHit,
           reason: initialFallbackPlan.reason,
@@ -269,6 +294,7 @@ async function handleThreadListRoute(options = {}) {
           fallbackCacheBuildNumber: Number(fallbackDiagnostics.cacheBuildNumber || 0),
           fallbackCacheIncrementalUpdates: Number(fallbackDiagnostics.cacheIncrementalUpdates || 0),
           fallbackCachePersistentRestored: fallbackDiagnostics.cachePersistentRestored === true,
+          initialFallbackCompleteBelowLimit,
           fallbackCompatibleCacheHit: fallbackDiagnostics.compatibleCacheHit === true,
           fallbackCompatibleCacheLimit: Number(fallbackDiagnostics.compatibleCacheLimit || 0),
           fallbackWorkspaceDerivedCacheHit: fallbackDiagnostics.workspaceDerivedCacheHit === true,

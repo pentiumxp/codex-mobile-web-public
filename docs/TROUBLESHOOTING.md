@@ -1263,6 +1263,16 @@ Do not infer from rollout file size alone. Separate:
   and whether the process cache was actually warm. A miss on this ordinary
   default/workspace path intentionally falls through to app-server instead of
   building a cold fallback baseline.
+- Did an ordinary default list request use `limit=80` while production only has
+  fewer visible rows? A warm default cache with fewer rows than `limit` is still
+  complete when `fallbackBaselineResultCount` is less than or equal to the row
+  count and `fallbackBaselineLimitDropCount=0`. That response should keep the
+  warm path with `initialFallbackCompleteBelowLimit=true` and
+  `appServerDeferredReason=warm-fallback-default`. If it instead reports
+  `initialFallbackSkippedReason=insufficient-default-warm-cache-window`, the
+  server is incorrectly treating a complete small list as a truncated window and
+  can recreate high CPU by repeatedly falling through to app-server/full
+  fallback work.
 - For small ordinary default list requests, check `appServerRequestLimit`.
   It should follow bounded overfetch `max(limit * 2, 80)` capped at 500. A
   default `limit=8`, `20`, or `40` request reporting `appServerRequestLimit=500`

@@ -18,6 +18,8 @@ function makeThread(id, cwd = "/Users/hermes-dev/HermesMobileDev/app", updatedAt
 function makeThreadListRouteHarness({
   url = "http://127.0.0.1/api/threads?limit=80",
   cachedThreads = [],
+  cachedBaselineResultCount = cachedThreads.length,
+  cachedBaselineLimitDropCount = 0,
   appServerThreads = [],
 } = {}) {
   const responses = [];
@@ -58,7 +60,8 @@ function makeThreadListRouteHarness({
           cacheEntryCount: 1,
           cacheBuildCount: 1,
           cachedSourceTimings: {
-            baselineResultCount: cachedThreads.length,
+            baselineResultCount: cachedBaselineResultCount,
+            baselineLimitDropCount: cachedBaselineLimitDropCount,
           },
         });
         return cachedThreads.slice(0, limit);
@@ -71,7 +74,8 @@ function makeThreadListRouteHarness({
           cacheEntryCount: 1,
           cacheBuildCount: 1,
           cachedSourceTimings: {
-            baselineResultCount: cachedThreads.length,
+            baselineResultCount: cachedBaselineResultCount,
+            baselineLimitDropCount: cachedBaselineLimitDropCount,
           },
         });
         return cachedThreads.slice(0, limit);
@@ -152,6 +156,8 @@ test("thread-list route continues to app-server when default warm fallback has a
   const harness = makeThreadListRouteHarness({
     url: "http://127.0.0.1/api/threads?limit=80",
     cachedThreads,
+    cachedBaselineResultCount: 80,
+    cachedBaselineLimitDropCount: 60,
     appServerThreads,
   });
 
@@ -170,6 +176,33 @@ test("thread-list route continues to app-server when default warm fallback has a
   assert.equal(timings.initialFallbackRequestedLimit, 80);
   assert.equal(timings.appServerDeferred, undefined);
   assert.equal(timings.appServerFilteredCount, appServerThreads.length);
+});
+
+test("thread-list route keeps default warm fallback when cache proves the full list is below requested limit", async () => {
+  const cachedThreads = Array.from({ length: 34 }, (_, index) => makeThread(`cached-${index}`));
+  const harness = makeThreadListRouteHarness({
+    url: "http://127.0.0.1/api/threads?limit=80",
+    cachedThreads,
+    cachedBaselineResultCount: 34,
+    cachedBaselineLimitDropCount: 0,
+    appServerThreads: [makeThread("server-should-not-be-read")],
+  });
+
+  const result = await handleThreadListRoute(harness.options);
+
+  assert.deepEqual(result, { handled: true });
+  assert.equal(harness.codexCallCount(), 0);
+  assert.equal(harness.fallbackReadCount(), 0);
+  const response = harness.responses[0];
+  assert.equal(response.status, 200);
+  assert.equal(response.body.data.length, 34);
+  assert.equal(response.body.mobileDeferredAppServer, true);
+  const timings = response.body.mobileDiagnostics.threadListTimings;
+  assert.equal(timings.appServerDeferred, true);
+  assert.equal(timings.appServerDeferredReason, "warm-fallback-default");
+  assert.equal(timings.initialFallbackSkipped, undefined);
+  assert.equal(timings.initialFallbackCompleteBelowLimit, true);
+  assert.equal(timings.fallbackBaselineResultCount, 34);
 });
 
 test("thread-list route keeps default warm fallback for complete small requested windows", async () => {
