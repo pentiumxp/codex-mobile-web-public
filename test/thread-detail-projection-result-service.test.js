@@ -437,6 +437,47 @@ test("projection result accepts fresh status-only active cache when summary hear
   assert.equal(stale, null);
 });
 
+test("projection result accepts cache seeded for current summary signature without turn timestamps", () => {
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 12_000,
+  });
+  const cached = {
+    partial: true,
+    partialKind: "recent-window",
+    version: "v4",
+    cachedAtMs: 10_000,
+    updatedAtMs: 10_000,
+    signatureSummaryUpdatedAtMs: 9_999,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-complete",
+          status: { type: "completed" },
+          items: [{ id: "agent-complete", type: "agentMessage" }],
+        }],
+      },
+    },
+  };
+
+  const current = service.prepareProjectedThreadReadResult(cached, {
+    id: "thread-1",
+    status: { type: "completed" },
+    updatedAt: 9_999,
+  }, {});
+
+  assert.ok(current);
+  assert.equal(current.thread.mobileReadMode, "projection-v4-partial");
+
+  const stale = service.prepareProjectedThreadReadResult(cached, {
+    id: "thread-1",
+    status: { type: "completed" },
+    updatedAt: 13_000,
+  }, {});
+  assert.equal(stale, null);
+});
+
 test("projection result allows missing local active turn only for active overlay window assembly", () => {
   const service = createThreadDetailProjectionResultService({
     maxTurns: 5,

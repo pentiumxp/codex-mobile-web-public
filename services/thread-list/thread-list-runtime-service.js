@@ -23,8 +23,14 @@ function createThreadListRuntimeService(options = {}) {
   const stripThreadListResultDetailFields = typeof options.stripThreadListResultDetailFields === "function"
     ? options.stripThreadListResultDetailFields
     : (result) => result;
-  const normalizeThreadSummaryLiveStatus = typeof options.normalizeThreadSummaryLiveStatus === "function"
+  const normalizeThreadSummaryLiveStatusBase = typeof options.normalizeThreadSummaryLiveStatus === "function"
     ? options.normalizeThreadSummaryLiveStatus
+    : (thread) => thread;
+  const mergeThreadDisplaySummaryBase = typeof options.mergeThreadDisplaySummary === "function"
+    ? options.mergeThreadDisplaySummary
+    : ((base, display) => Object.assign({}, base || {}, display || {}));
+  const mergeThreadWithCachedDisplaySummaryBase = typeof options.mergeThreadWithCachedDisplaySummary === "function"
+    ? options.mergeThreadWithCachedDisplaySummary
     : (thread) => thread;
   const timestampToMs = typeof options.timestampToMs === "function" ? options.timestampToMs : () => 0;
   const readGlobalState = typeof options.readGlobalState === "function" ? options.readGlobalState : () => ({});
@@ -55,14 +61,53 @@ function createThreadListRuntimeService(options = {}) {
       .map((entry) => entry.thread);
   }
 
+  function threadListBoundarySummaryOptions(extra = {}) {
+    return Object.assign({}, extra && typeof extra === "object" ? extra : {}, {
+      skipFallbackCacheStatusUpdate: true,
+      skipStaleContextOnlyActiveNormalize: true,
+    });
+  }
+
+  function normalizeThreadSummaryLiveStatusForThreadList(thread, mergeOptions = {}) {
+    return normalizeThreadSummaryLiveStatusBase(thread, threadListBoundarySummaryOptions(mergeOptions));
+  }
+
+  function mergeThreadDisplaySummaryForThreadList(base, display, mergeOptions = {}) {
+    return mergeThreadDisplaySummaryBase(base, display, threadListBoundarySummaryOptions(mergeOptions));
+  }
+
+  function mergeThreadWithCachedDisplaySummaryForThreadList(thread, mergeOptions = {}) {
+    return mergeThreadWithCachedDisplaySummaryBase(thread, threadListBoundarySummaryOptions(mergeOptions));
+  }
+
+  function threadListBoundaryMergeOptions(mergeOptions = {}) {
+    const out = Object.assign({}, mergeOptions && typeof mergeOptions === "object" ? mergeOptions : {});
+    if (typeof out.mergeThreadWithCachedDisplaySummary === "function") {
+      const mergeThreadWithCachedDisplaySummaryOverride = out.mergeThreadWithCachedDisplaySummary;
+      out.mergeThreadWithCachedDisplaySummary = (thread, callbackOptions = {}) => mergeThreadWithCachedDisplaySummaryOverride(
+        thread,
+        threadListBoundarySummaryOptions(callbackOptions),
+      );
+    }
+    if (typeof out.mergeThreadDisplaySummary === "function") {
+      const mergeThreadDisplaySummaryOverride = out.mergeThreadDisplaySummary;
+      out.mergeThreadDisplaySummary = (base, display, callbackOptions = {}) => mergeThreadDisplaySummaryOverride(
+        base,
+        display,
+        threadListBoundarySummaryOptions(callbackOptions),
+      );
+    }
+    return out;
+  }
+
   function getThreadListSummaryMergeService() {
     if (!summaryMergeService) {
       summaryMergeService = createThreadListSummaryMergeService({
         archivedSessionThreadIds: options.archivedSessionThreadIds,
-        mergeThreadWithCachedDisplaySummary: options.mergeThreadWithCachedDisplaySummary,
+        mergeThreadWithCachedDisplaySummary: mergeThreadWithCachedDisplaySummaryForThreadList,
         stripThreadListDetailFields,
-        normalizeThreadSummaryLiveStatus,
-        mergeThreadDisplaySummary: options.mergeThreadDisplaySummary,
+        normalizeThreadSummaryLiveStatus: normalizeThreadSummaryLiveStatusForThreadList,
+        mergeThreadDisplaySummary: mergeThreadDisplaySummaryForThreadList,
         threadHasArchiveSignal: options.threadHasArchiveSignal,
         isSubagentThreadSummary: options.isSubagentThreadSummary,
         hydrateThreadListTitlesFromSessionIndex: options.hydrateThreadListTitlesFromSessionIndex,
@@ -74,11 +119,17 @@ function createThreadListRuntimeService(options = {}) {
   }
 
   function mergeThreadSummaryListWithDiagnostics(threads, mergeOptions = {}) {
-    return getThreadListSummaryMergeService().mergeThreadSummaryListWithDiagnostics(threads, mergeOptions);
+    return getThreadListSummaryMergeService().mergeThreadSummaryListWithDiagnostics(
+      threads,
+      threadListBoundaryMergeOptions(mergeOptions),
+    );
   }
 
   function mergeThreadSummaryList(threads, mergeOptions = {}) {
-    return getThreadListSummaryMergeService().mergeThreadSummaryList(threads, mergeOptions);
+    return getThreadListSummaryMergeService().mergeThreadSummaryList(
+      threads,
+      threadListBoundaryMergeOptions(mergeOptions),
+    );
   }
 
   function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
@@ -93,8 +144,8 @@ function createThreadListRuntimeService(options = {}) {
   function normalizeThreadListResultStatuses(result) {
     if (!result || typeof result !== "object") return result;
     const out = Object.assign({}, result);
-    if (Array.isArray(out.data)) out.data = out.data.map((thread) => stripThreadListDetailFields(normalizeThreadSummaryLiveStatus(thread)));
-    if (Array.isArray(out.threads)) out.threads = out.threads.map((thread) => stripThreadListDetailFields(normalizeThreadSummaryLiveStatus(thread)));
+    if (Array.isArray(out.data)) out.data = out.data.map((thread) => stripThreadListDetailFields(normalizeThreadSummaryLiveStatusForThreadList(thread)));
+    if (Array.isArray(out.threads)) out.threads = out.threads.map((thread) => stripThreadListDetailFields(normalizeThreadSummaryLiveStatusForThreadList(thread)));
     return stripThreadListResultDetailFields(out);
   }
 
@@ -113,8 +164,8 @@ function createThreadListRuntimeService(options = {}) {
     normalizeThreadId: options.normalizeThreadId,
     visibleWorkspaceRoots: options.visibleWorkspaceRoots,
     visibleProjectlessThreadIds: options.visibleProjectlessThreadIds,
-    mergeThreadDisplaySummary: options.mergeThreadDisplaySummary,
-    normalizeThreadSummaryLiveStatus,
+    mergeThreadDisplaySummary: mergeThreadDisplaySummaryForThreadList,
+    normalizeThreadSummaryLiveStatus: normalizeThreadSummaryLiveStatusForThreadList,
     filterFallbackThreads: options.filterFallbackThreads,
     mergeThreadSummaryList,
     readStateDbFallback: options.readStateDbFallback,

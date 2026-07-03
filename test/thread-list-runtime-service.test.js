@@ -87,6 +87,82 @@ test("thread-list runtime service owns fallback cache reads, writes, and status 
   assert.equal(service.readThreadListFallbackCache(key), null);
 });
 
+test("thread-list runtime service forces thread-list summary callbacks to skip stale active normalization", () => {
+  const seen = {
+    cached: 0,
+    display: 0,
+    normalize: 0,
+    overrideCached: 0,
+    overrideDisplay: 0,
+  };
+  const assertThreadListBoundaryOptions = (options) => {
+    assert.equal(
+      options && options.skipFallbackCacheStatusUpdate,
+      true,
+      "thread-list runtime summary callbacks must not write fallback cache while normalizing fallback cache",
+    );
+    assert.equal(
+      options && options.skipStaleContextOnlyActiveNormalize,
+      true,
+      "thread-list runtime summary callbacks must skip stale active normalization",
+    );
+  };
+  const service = createRuntimeService({
+    stateThreads: [
+      { id: "a", updatedAt: 10, status: { type: "notLoaded" }, turns: [] },
+      { id: "a", updatedAt: 11, status: { type: "active" } },
+      { id: "b", updatedAt: 9, status: { type: "completed" } },
+    ],
+    mergeThreadWithCachedDisplaySummary(thread, options) {
+      seen.cached += 1;
+      assertThreadListBoundaryOptions(options);
+      return thread;
+    },
+    mergeThreadDisplaySummary(base, display, options) {
+      seen.display += 1;
+      assertThreadListBoundaryOptions(options);
+      return Object.assign({}, base || {}, display || {});
+    },
+    normalizeThreadSummaryLiveStatus(thread, options) {
+      seen.normalize += 1;
+      assertThreadListBoundaryOptions(options);
+      return thread;
+    },
+  });
+
+  const fallback = service.readThreadListFallback(10, {});
+  assert.deepEqual(fallback.map((thread) => thread.id), ["a", "b"]);
+
+  service.mergeThreadSummaryList([
+    { id: "override", updatedAt: 1 },
+    { id: "override", updatedAt: 2 },
+  ], {
+    mergeThreadWithCachedDisplaySummary(thread, options) {
+      seen.overrideCached += 1;
+      assertThreadListBoundaryOptions(options);
+      return thread;
+    },
+    mergeThreadDisplaySummary(base, display, options) {
+      seen.overrideDisplay += 1;
+      assertThreadListBoundaryOptions(options);
+      return Object.assign({}, base || {}, display || {});
+    },
+  });
+
+  const key = service.threadListFallbackCacheKey(10, {});
+  service.rememberThreadListFallbackCache(key, fallback, { source: "test" }, { limit: 10, filters: {} });
+  assert.equal(service.upsertThreadListFallbackCacheThread(
+    { id: "c", updatedAt: 12, status: { type: "active" } },
+    { addIfMissing: true },
+  ), true);
+  assert.equal(service.updateThreadListFallbackCacheStatus("c", { type: "completed" }, { source: "test" }), true);
+  assert.ok(seen.cached > 0);
+  assert.ok(seen.display > 0);
+  assert.ok(seen.normalize > 0);
+  assert.ok(seen.overrideCached > 0);
+  assert.ok(seen.overrideDisplay > 0);
+});
+
 test("thread-list runtime service owns active-detail deferral and prewarm scheduling", () => {
   const emitter = new EventEmitter();
   const prewarmCalls = [];

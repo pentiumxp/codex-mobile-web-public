@@ -191,7 +191,11 @@ function createThreadSummaryStateService(dependencies = {}) {
     return rolloutPathForThread(startedThread);
   }
 
-  function readLocalActiveThreadStatus(threadId, summary = null, nowMs = Date.now()) {
+  function shouldSkipFallbackCacheStatusUpdate(options = {}) {
+    return options && options.skipFallbackCacheStatusUpdate === true;
+  }
+
+  function readLocalActiveThreadStatus(threadId, summary = null, nowMs = Date.now(), options = {}) {
     const id = String(threadId || "").trim();
     if (!id) return null;
     pruneLocalActiveThreadStatuses(nowMs);
@@ -199,22 +203,28 @@ function createThreadSummaryStateService(dependencies = {}) {
     if (!entry) return null;
     if (Number(entry.expiresAtMs || 0) <= nowMs) {
       localActiveThreadStatuses.delete(id);
-      updateThreadListFallbackCacheStatus(id, { type: "idle" }, { source: "local-active-expired" });
+      if (!shouldSkipFallbackCacheStatusUpdate(options)) {
+        updateThreadListFallbackCacheStatus(id, { type: "idle" }, { source: "local-active-expired" });
+      }
       return null;
     }
     const rolloutPath = localActiveSummaryRolloutPath(id, summary);
     if (rolloutHasTerminalEntryAtOrAfter(rolloutPath, entry.startedAtMs)) {
       localActiveThreadStatuses.delete(id);
-      updateThreadListFallbackCacheStatus(id, { type: "completed" }, { source: "local-active-terminal" });
+      if (!shouldSkipFallbackCacheStatusUpdate(options)) {
+        updateThreadListFallbackCacheStatus(id, { type: "completed" }, { source: "local-active-terminal" });
+      }
       return null;
     }
     const supersedingEvidence = localActiveSupersedingRolloutEvidence(rolloutPath, entry, nowMs);
     if (supersedingEvidence) {
       localActiveThreadStatuses.delete(id);
-      updateThreadListFallbackCacheStatus(id, { type: "active" }, {
-        source: "rollout-active-evidence",
-        turnId: supersedingEvidence.turnId,
-      });
+      if (!shouldSkipFallbackCacheStatusUpdate(options)) {
+        updateThreadListFallbackCacheStatus(id, { type: "active" }, {
+          source: "rollout-active-evidence",
+          turnId: supersedingEvidence.turnId,
+        });
+      }
       return null;
     }
     return entry;
@@ -251,7 +261,7 @@ function createThreadSummaryStateService(dependencies = {}) {
     if (!thread || typeof thread !== "object") return thread;
     const threadId = String(thread.id || options.threadId || "").trim();
     if (!threadId) return thread;
-    const entry = readLocalActiveThreadStatus(threadId, thread, options.nowMs || Date.now());
+    const entry = readLocalActiveThreadStatus(threadId, thread, options.nowMs || Date.now(), options);
     if (!entry) return thread;
     const startedAtSeconds = Math.floor(Number(entry.startedAtMs || Date.now()) / 1000);
     const updatedAt = Math.max(Number(thread.updatedAt || thread.updated_at || 0), startedAtSeconds);
@@ -433,7 +443,9 @@ function createThreadSummaryStateService(dependencies = {}) {
     const id = String(out.id || out.threadId || "").trim();
     if (id) {
       localActiveThreadStatuses.delete(id);
-      updateThreadListFallbackCacheStatus(id, { type: "completed" }, { source: "stale-active-terminal-rollout" });
+      if (!shouldSkipFallbackCacheStatusUpdate(options)) {
+        updateThreadListFallbackCacheStatus(id, { type: "completed" }, { source: "stale-active-terminal-rollout" });
+      }
     }
     return out;
   }
@@ -519,9 +531,10 @@ function createThreadSummaryStateService(dependencies = {}) {
     if (!summary || !summary.id) return { synced: false, reason: "missing-thread-summary" };
     const restStatus = isThreadListRestStatus(summary.status);
     if (restStatus) clearLocalActiveThreadStatus(summary.id);
+    const summaryOptions = { skipStaleContextOnlyActiveNormalize: true };
     const normalized = normalizeThreadSummaryLiveStatus(restStatus
       ? clearThreadSummaryActiveMarkers(summary)
-      : summary);
+      : summary, summaryOptions);
     const upserted = upsertThreadListFallbackCacheThread(normalized, { addIfMissing: true });
     threadDisplaySummaryCache.remember(normalized);
     return {

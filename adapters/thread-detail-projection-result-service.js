@@ -92,6 +92,10 @@ function summaryIsStatusOnlyActive(summary) {
       || isActiveLikeStatus(summary && summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.status));
 }
 
+function summaryHasActiveEvidence(summary) {
+  return Boolean(summaryLocalActiveTurnId(summary) || summaryIsStatusOnlyActive(summary));
+}
+
 function createThreadDetailProjectionResultService(options = {}) {
   const maxTurns = Math.max(1, Number(options.maxTurns || 1));
   const compactThreadReadResult = typeof options.compactThreadReadResult === "function"
@@ -148,6 +152,12 @@ function createThreadDetailProjectionResultService(options = {}) {
   function projectedThreadCoversSummaryUpdatedAt(cached, summary) {
     const updatedAtMs = summaryUpdatedAtMs(summary);
     if (!updatedAtMs) return true;
+    const signatureSummaryUpdatedAtMs = timestampToMs(cached && cached.signatureSummaryUpdatedAtMs);
+    if (!summaryHasActiveEvidence(summary)
+      && signatureSummaryUpdatedAtMs
+      && updatedAtMs <= signatureSummaryUpdatedAtMs + SUMMARY_TURN_STALENESS_GRACE_MS) {
+      return true;
+    }
     const latestTurnAtMs = latestProjectedTurnActivityAtMs(cached && cached.result && cached.result.thread);
     if (latestTurnAtMs && updatedAtMs <= latestTurnAtMs + SUMMARY_TURN_STALENESS_GRACE_MS) return true;
     const cacheUpdatedAtMs = timestampToMs(cached && (cached.updatedAtMs || cached.cachedAtMs));

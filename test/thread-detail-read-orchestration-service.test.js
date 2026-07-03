@@ -478,7 +478,7 @@ test("initial turns-list active window falls through to full read when summary m
   assert.doesNotMatch(JSON.stringify(timings), /fresh assistant|early assistant|stale live assistant/);
 });
 
-test("live overlay preprobe reads active window before generic initial turns-list", async () => {
+test("full live overlay preprobe returns without generic initial turns-list", async () => {
   const { service, calls } = createHarness({
     activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, options = {}) => {
       calls.push(`active-overlay-window-lookup:${options.activeOverlayStatusProven === true}:${options.omitActiveTurnId || ""}`);
@@ -562,14 +562,11 @@ test("live overlay preprobe reads active window before generic initial turns-lis
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
     "active-overlay-window-lookup:true:active-turn",
   ]);
-  assert.deepEqual(calls.filter((call) => call.startsWith("turns-list:")), [
-    "turns-list:turns-list-active-overlay-window",
-  ]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("turns-list:")), []);
   assert.equal(calls.includes("thread-read"), false);
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
   const activeTurn = response.body.thread.turns.find((turn) => turn.id === "active-turn");
   assert.deepEqual(activeTurn.items.map((item) => item.id || item.type), [
-    "agent-window",
     "cmd-1",
     "agent-live",
     "usage-1",
@@ -580,16 +577,16 @@ test("live overlay preprobe reads active window before generic initial turns-lis
   assert.equal(timings.readDecision, "projection-active-overlay");
   assert.equal(timings.projectionState, "hit");
   assert.equal(timings.projectionSource, "partial");
-  assert.equal(timings.projectionSeedStatus, "seeded-partial");
-  assert.equal(timings.projectionSeedSource, "active-overlay-projection-window");
+  assert.equal(timings.projectionSeedStatus, "");
+  assert.equal(timings.projectionSeedSource, "");
   assert.equal(timings.activeOverlayAction, "use-projection-overlay");
   assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
-  assert.equal(response.body.thread.mobileActiveOverlay.completeness, "backfilled");
-  assert.equal(timings.activeOverlayItems, 4);
+  assert.equal(response.body.thread.mobileActiveOverlay.completeness, "full");
+  assert.equal(timings.activeOverlayItems, 3);
   assert.equal(timings.activeOverlayOperationItems, 1);
-  assert.equal(timings.activeOverlayAssistantItems, 2);
+  assert.equal(timings.activeOverlayAssistantItems, 1);
   assert.equal(timings.activeOverlayReceiptItems, 1);
-  assert.equal(timings.activeOverlayWindowFirst, true);
+  assert.equal(timings.activeOverlayWindowFirst, false);
   assert.doesNotMatch(JSON.stringify(timings), /live assistant/);
 });
 

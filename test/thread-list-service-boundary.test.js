@@ -270,6 +270,115 @@ test("thread summary state service can skip stale-context normalization for boun
   assert.equal(normalized.deployLaneNormalized, true);
 });
 
+test("thread summary state service skips fallback cache status writes while cache paths normalize summaries", () => {
+  const { createThreadSummaryStateService } = require("../services/thread-list/thread-summary-state-service");
+  const updates = [];
+  const service = createThreadSummaryStateService({
+    localActiveThreadStatusTtlMs: 1,
+    normalizeStaleContextOnlyActiveThread: (thread) => thread,
+    normalizeHomeAiDeployLaneSummary: (thread) => thread,
+    statusText: (status) => String(status && status.type || status || ""),
+    updateThreadListFallbackCacheStatus(threadId, status, meta) {
+      updates.push({ threadId, status, meta });
+      return true;
+    },
+  });
+
+  service.rememberLocalActiveThreadStatus("thread-a", "turn-a", { source: "test" });
+  assert.equal(updates.length, 1);
+  updates.length = 0;
+
+  const normalized = service.normalizeThreadSummaryLiveStatus({
+    id: "thread-a",
+    status: { type: "idle" },
+    updatedAt: 1,
+  }, {
+    nowMs: Date.now() + 1000,
+    skipFallbackCacheStatusUpdate: true,
+    skipStaleContextOnlyActiveNormalize: true,
+  });
+
+  assert.equal(normalized.id, "thread-a");
+  assert.equal(updates.length, 0);
+});
+
+test("thread summary detail sync skips stale-context normalization before fallback upsert", () => {
+  const { createThreadSummaryStateService } = require("../services/thread-list/thread-summary-state-service");
+  const upserts = [];
+  const service = createThreadSummaryStateService({
+    normalizeStaleContextOnlyActiveThread() {
+      throw new Error("stale-context normalize should be skipped for detail post-read sync");
+    },
+    normalizeHomeAiDeployLaneSummary: (thread) => Object.assign({}, thread, { deployLaneNormalized: true }),
+    annotateThreadRolloutStats: (thread) => Object.assign({}, thread, { rolloutAnnotated: true }),
+    stripThreadListDetailFields: (thread) => Object.assign({}, thread),
+    statusText: (status) => String(status && status.type || status || ""),
+    upsertThreadListFallbackCacheThread(thread, options = {}) {
+      upserts.push({ thread, options });
+      return true;
+    },
+  });
+
+  const result = service.syncThreadDetailReadResultToThreadListFallbackCache({
+    status: 200,
+    body: {
+      thread: {
+        id: "thread-a",
+        name: "Thread A",
+        status: { type: "completed" },
+        activeTurnId: "turn-old",
+        turns: [{ id: "turn-a", items: [] }],
+      },
+    },
+  });
+
+  assert.equal(result.synced, true);
+  assert.equal(result.restStatus, true);
+  assert.equal(upserts.length, 1);
+  assert.equal(upserts[0].thread.id, "thread-a");
+  assert.equal(upserts[0].thread.deployLaneNormalized, true);
+  assert.equal(upserts[0].thread.activeTurnId, undefined);
+  assert.deepEqual(upserts[0].options, { addIfMissing: true });
+});
+
+test("thread summary detail sync strips active overlay detail fields before fallback upsert", () => {
+  const { createThreadSummaryStateService } = require("../services/thread-list/thread-summary-state-service");
+  const { stripThreadListDetailFields } = require("../services/thread-list/thread-list-summary-service");
+  const upserts = [];
+  const service = createThreadSummaryStateService({
+    stripThreadListDetailFields,
+    statusText: (status) => String(status && status.type || status || ""),
+    upsertThreadListFallbackCacheThread(thread) {
+      JSON.stringify(thread);
+      upserts.push(thread);
+      return true;
+    },
+  });
+  const overlay = { reason: "overlay-evidence-complete" };
+  overlay.self = overlay;
+
+  const result = service.syncThreadDetailReadResultToThreadListFallbackCache({
+    status: 200,
+    body: {
+      thread: {
+        id: "thread-overlay",
+        name: "Thread Overlay",
+        status: { type: "active", turnId: "turn-active" },
+        mobileActiveOverlay: overlay,
+        mobileActiveOverlayBackfill: { sourceItems: 1 },
+        turns: [{ id: "turn-active", items: [] }],
+      },
+    },
+  });
+
+  assert.equal(result.synced, true);
+  assert.equal(upserts.length, 1);
+  assert.equal(upserts[0].id, "thread-overlay");
+  assert.equal(upserts[0].mobileActiveOverlay, undefined);
+  assert.equal(upserts[0].mobileActiveOverlayBackfill, undefined);
+  assert.equal(upserts[0].turns, undefined);
+});
+
 test("thread-list server composition imports canonical service paths", () => {
   assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-summary-state-service"\)/);
   assert.match(serverJs, /require\("\.\/services\/thread-list\/thread-list-summary-service"\)/);

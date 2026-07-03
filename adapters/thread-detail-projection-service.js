@@ -701,6 +701,7 @@ function createThreadDetailProjectionService(options = {}) {
       dynamic: Boolean(entry.dynamic),
       partial: Boolean(entry.partial),
       partialKind: String(entry.partialKind || ""),
+      signatureSummaryUpdatedAtMs: safeNumber(entry.signature && entry.signature.summaryUpdatedAtMs),
       result: cloneJson(entry.result),
     }, overrides);
   }
@@ -840,20 +841,28 @@ function createThreadDetailProjectionService(options = {}) {
     if (partial && existing && !existing.partial) {
       const reusableFullLookup = lookup(input);
       if (reusableFullLookup.cached && reusableFullLookup.cached.partial !== true) {
-        return {
-          cachedAtMs: existing.cachedAtMs,
-          dynamic: existing.dynamic,
-          partial: false,
-          signatureHash: existing.signatureHash,
-          skipped: true,
-          reason: "full-cache-exists",
-        };
-      }
-      staleFullReason = reusableFullLookup.missReason || "";
-      if (STALE_FULL_MISS_REASONS.has(staleFullReason)) {
+        const replaceReusableFullReason = String(optionsForSeed.replaceReusableFullCacheReason || "").trim();
+        if (!replaceReusableFullReason) {
+          return {
+            cachedAtMs: existing.cachedAtMs,
+            dynamic: existing.dynamic,
+            partial: false,
+            signatureHash: existing.signatureHash,
+            skipped: true,
+            reason: "full-cache-exists",
+          };
+        }
         replacedStaleFull = true;
+        staleFullReason = replaceReusableFullReason.slice(0, 120);
         fullHistory.delete(threadId);
         removePersistedEntry(threadId);
+      } else {
+        staleFullReason = reusableFullLookup.missReason || "";
+        if (STALE_FULL_MISS_REASONS.has(staleFullReason)) {
+          replacedStaleFull = true;
+          fullHistory.delete(threadId);
+          removePersistedEntry(threadId);
+        }
       }
     }
     const entry = {
@@ -907,6 +916,7 @@ function createThreadDetailProjectionService(options = {}) {
         dynamic: entry.dynamic,
         partial: true,
         partialKind: entry.partialKind || "",
+        signatureSummaryUpdatedAtMs: safeNumber(entry.signature && entry.signature.summaryUpdatedAtMs),
         stalePartial: true,
         staleReason: "backing-signature-mismatch",
         result,
@@ -1006,6 +1016,7 @@ function createThreadDetailProjectionService(options = {}) {
         dynamic: entry.dynamic,
         partial: entry.partial === true,
         partialKind: entry.partialKind || "",
+        signatureSummaryUpdatedAtMs: safeNumber(entry.signature && entry.signature.summaryUpdatedAtMs),
         result,
       },
       missReason: "",

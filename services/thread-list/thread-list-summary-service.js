@@ -21,6 +21,8 @@ const THREAD_DETAIL_ONLY_SUMMARY_FIELDS = Object.freeze([
   "mobileInitialSubmissionId",
   "mobileSubmittedAtMs",
   "mobilePendingSubmission",
+  "mobileActiveOverlay",
+  "mobileActiveOverlayBackfill",
 ]);
 
 function stripThreadListDetailFields(thread) {

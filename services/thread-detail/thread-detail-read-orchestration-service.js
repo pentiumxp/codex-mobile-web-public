@@ -576,7 +576,8 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       });
       if (sourceLabel === "active-overlay-projection-window"
         && activeOverlayPlan.action === "use-projection-overlay"
-        && activeOverlayPlan.overlayCompleteness !== "backfilled") {
+        && activeOverlayPlan.overlayCompleteness !== "backfilled"
+        && !overlayCompletenessAllowsCachedActiveWindow(overlayInput)) {
         threadLog("active_overlay_projection_window_requires_backfill", {
           source: context.activeOverlaySource,
           completeness: context.activeOverlayCompleteness,
@@ -1342,6 +1343,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             const seeded = seedProjection(projection, result, {
               partial: true,
               partialKind: "recent-window",
+              replaceReusableFullCacheReason: context.projectionMissReason === "result-missing"
+                ? "projection-result-missing"
+                : "",
             });
             context.projectionSeedStatus = seeded && seeded.skipped
               ? "skipped"

@@ -1407,6 +1407,43 @@ test("thread detail projection partial seed cannot replace an existing full cach
   assert.deepEqual(cached.result.thread.turns.map((turn) => turn.id), ["turn-full"]);
 });
 
+test("thread detail projection partial seed can replace a reusable full cache rejected by projection result", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: () => 1000,
+  });
+  service.seed(signatureInput(), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-full", items: [] }],
+    },
+  });
+
+  const seeded = service.seed(signatureInput(), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-partial", items: [] }],
+    },
+  }, {
+    partial: true,
+    partialKind: "recent-window",
+    replaceReusableFullCacheReason: "projection-result-missing",
+  });
+
+  assert.equal(seeded.skipped, undefined);
+  assert.equal(seeded.partial, true);
+  assert.equal(seeded.replacedStaleFull, true);
+  assert.equal(seeded.staleFullReason, "projection-result-missing");
+
+  const cached = service.get(signatureInput(), { allowPartial: true });
+  assert.ok(cached);
+  assert.equal(cached.partial, true);
+  assert.equal(cached.signatureSummaryUpdatedAtMs, 1000);
+  assert.deepEqual(cached.result.thread.turns.map((turn) => turn.id), ["turn-partial"]);
+});
+
 test("thread detail projection partial seed can replace an unusable stale full cache", () => {
   const service = createThreadDetailProjectionService({
     cacheDir: "",
