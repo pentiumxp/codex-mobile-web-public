@@ -1570,6 +1570,18 @@ function viteAppPreviewProbeExpression(input = {}) {
         && element.getBoundingClientRect().height > 0
         && getComputedStyle(element).display !== "none"
         && getComputedStyle(element).visibility !== "hidden");
+      const waitForAppVisible = async (timeoutMs, requirePluginStartupCleared) => {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          const appNode = document.getElementById("app");
+          const currentState = window.state || {};
+          const startupCleared = requirePluginStartupCleared
+            ? currentState.pluginStartupLoading === false
+            : true;
+          if (startupCleared && visible(appNode)) break;
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+      };
       if (${expectPluginSession ? "true" : "false"}) {
         const sessionDeadline = Date.now() + 7000;
         while (Date.now() < sessionDeadline) {
@@ -1584,21 +1596,11 @@ function viteAppPreviewProbeExpression(input = {}) {
           }
           await new Promise((resolve) => setTimeout(resolve, 120));
         }
-        const appDeadline = Date.now() + 9000;
-        while (Date.now() < appDeadline) {
-          const appNode = document.getElementById("app");
-          const currentState = window.state || {};
-          if (currentState.pluginStartupLoading === false && visible(appNode)) break;
-          await new Promise((resolve) => setTimeout(resolve, 120));
-        }
+        await waitForAppVisible(9000, true);
       } else if (${expectEmbed ? "true" : "false"}) {
-        const embedDeadline = Date.now() + 9000;
-        while (Date.now() < embedDeadline) {
-          const appNode = document.getElementById("app");
-          const currentState = window.state || {};
-          if (currentState.pluginStartupLoading === false && visible(appNode)) break;
-          await new Promise((resolve) => setTimeout(resolve, 120));
-        }
+        await waitForAppVisible(9000, true);
+      } else {
+        await waitForAppVisible(9000, false);
       }
       await new Promise((resolve) => setTimeout(resolve, 600));
       const app = document.getElementById("app");
@@ -1792,6 +1794,13 @@ function viteAppPreviewProbeExpression(input = {}) {
         loaderLoadedCount: Number(appPreviewResult && appPreviewResult.loadedCount || status.loaded && status.loaded.length || 0) || 0,
         loaderFailedCount: Number(appPreviewResult && appPreviewResult.failedCount || status.failed && status.failed.length || 0) || 0,
         loaderErrorCode: String(appPreviewResult && appPreviewResult.errorCode || status.failed && status.failed[0] || "").slice(0, 120),
+        appStartAttempted: status.appStartAttempted === true,
+        appStartPending: status.appStartPending === true,
+        appStartOk: status.appStartOk === true,
+        appStartCompleted: Number(status.appStartCompletedAt || 0) > 0,
+        appStartErrorCode: String(status.appStartErrorCode || "").slice(0, 160),
+        appStartPromisePresent: Boolean(window.__CODEX_MOBILE_VITE_APP_PREVIEW_APP_START_PROMISE__
+          && typeof window.__CODEX_MOBILE_VITE_APP_PREVIEW_APP_START_PROMISE__.then === "function"),
         embedExpected: ${expectEmbed ? "true" : "false"},
         pluginSessionExpected: ${expectPluginSession ? "true" : "false"},
         rootPreviewExpected: ${expectRoot ? "true" : "false"},
@@ -1906,6 +1915,12 @@ function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}, options = 
   if (sample && sample.loaderOk !== true) append("vite_app_preview_loader_failed", "H2", {
     errorCode: sample.loaderErrorCode || "",
     timedOut: sample.loaderTimedOut === true,
+  });
+  if (sample && sample.appStartErrorCode) append("vite_app_preview_app_start_failed", "H2", {
+    errorCode: sample.appStartErrorCode || "",
+  });
+  if (sample && sample.appShellStartupRecoveryErrorCode) append("vite_app_preview_app_start_recovery_error", "H2", {
+    errorCode: sample.appShellStartupRecoveryErrorCode || "",
   });
   if (sample && (Number(sample.classicScriptCount) !== loaderPlanScriptCount
     || sample.classicScriptOrderMatches !== true

@@ -212,6 +212,39 @@ async function loadViteOwnedAppBootstrap(loaderPlan) {
   return api.createAppBootstrapRuntime();
 }
 
+function boundedViteAppPreviewErrorCode(error, fallback = "codex_mobile_vite_app_preview_error") {
+  return String(error && error.message || error || fallback).slice(0, 160);
+}
+
+function startViteAppPreviewApp(status, appEntry) {
+  status.appStartAttempted = true;
+  status.appStartStartedAt = Date.now();
+  status.appStartCompletedAt = 0;
+  status.appStartPending = true;
+  status.appStartOk = false;
+  status.appStartErrorCode = "";
+  const appStartPromise = Promise.resolve()
+    .then(() => appEntry.startCodexMobileApp())
+    .then(() => {
+      status.appStartOk = true;
+      return { ok: true };
+    })
+    .catch((error) => {
+      status.appStartOk = false;
+      status.appStartErrorCode = boundedViteAppPreviewErrorCode(
+        error,
+        "codex_mobile_vite_app_preview_app_start_failed"
+      );
+      return { ok: false, errorCode: status.appStartErrorCode };
+    })
+    .finally(() => {
+      status.appStartPending = false;
+      status.appStartCompletedAt = Date.now();
+    });
+  globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_APP_START_PROMISE__ = appStartPromise;
+  return appStartPromise;
+}
+
 async function startCodexMobileViteAppPreview() {
   const loaderPlan = readAppPreviewClassicLoaderPlan();
   const manifestAssets = shellManifestScriptAssets();
@@ -253,6 +286,12 @@ async function startCodexMobileViteAppPreview() {
     failed: [],
     startedAt: Date.now(),
     completedAt: 0,
+    appStartAttempted: false,
+    appStartStartedAt: 0,
+    appStartCompletedAt: 0,
+    appStartPending: false,
+    appStartOk: false,
+    appStartErrorCode: "",
   };
   globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW__ = status;
   globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_LOADER_PLAN__ = loaderPlan;
@@ -300,20 +339,21 @@ async function startCodexMobileViteAppPreview() {
       await loadClassicScript(asset);
       status.loaded.push(asset);
     }
+    let appEntry = null;
     if (excludedEsmAssets.includes("/app.js")) {
-      const appEntry = globalThis.CodexMobileAppEntry;
+      appEntry = globalThis.CodexMobileAppEntry;
       if (!appEntry || typeof appEntry.startCodexMobileApp !== "function") {
         throw new Error("codex_mobile_vite_app_preview_app_entry_missing");
       }
-      await appEntry.startCodexMobileApp();
     }
     status.ok = true;
+    status.completedAt = Date.now();
+    if (appEntry) startViteAppPreviewApp(status, appEntry);
   } catch (error) {
     status.ok = false;
-    status.failed.push(String(error && error.message || error || "script_failed"));
+    status.failed.push(boundedViteAppPreviewErrorCode(error, "script_failed"));
+    if (!status.completedAt) status.completedAt = Date.now();
     throw error;
-  } finally {
-    status.completedAt = Date.now();
   }
   return {
     ok: status.ok,
@@ -336,6 +376,11 @@ async function startCodexMobileViteAppPreview() {
     scriptCount: status.scriptCount,
     loadedCount: status.loaded.length,
     failedCount: status.failed.length,
+    appStartAttempted: status.appStartAttempted,
+    appStartPending: status.appStartPending,
+    appStartOk: status.appStartOk,
+    appStartCompletedAt: status.appStartCompletedAt,
+    appStartErrorCode: status.appStartErrorCode,
   };
 }
 

@@ -139,6 +139,18 @@ environment after `bootout` / `bootstrap`. It must not print access keys or raw
 auth tokens. Use `--codex-home <path>` only when the host has selected an
 explicit configured home path outside the normal profile ids.
 
+If a Vite default-root cutover reaches `defaultShellMode=vite-app-preview` and
+the browser gate reports `vite_app_preview_loader_failed` with the app already
+visible, ESM compatibility ready, loader-zero counts clean, and no failed
+classic scripts, treat it as a loader/app-start contract issue before assuming
+static asset corruption. `frontend/vite-shell-entry.mjs` owns the split:
+loader readiness covers Vite resources and the classic-loader plan, while app
+startup is reported separately through
+`__CODEX_MOBILE_VITE_APP_PREVIEW_APP_START_PROMISE__`. Real app-start failures
+should surface as `vite_app_preview_app_start_failed` or
+`vite_app_preview_app_start_recovery_error`; slow thread bootstrap by itself
+should not be counted as a Vite loader failure.
+
 Also compare the listener bind address with the plugin base URL advertised to
 Hermes. If `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` is a LAN URL such as
 `http://192.168.x.x:8787`, the listener must bind to `0.0.0.0` or that LAN

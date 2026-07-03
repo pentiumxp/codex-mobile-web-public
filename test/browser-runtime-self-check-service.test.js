@@ -85,6 +85,13 @@ test("browser runtime self-check preserves bounded default shell mode in public 
   assert.match(scriptSource, /defaultShellMode: String\(config && config\.defaultShellMode \|\| ""\)\.slice\(0, 40\)/);
 });
 
+test("browser runtime self-check separates Vite loader readiness from app visibility wait", () => {
+  assert.match(scriptSource, /const waitForAppVisible = async/);
+  assert.match(scriptSource, /__CODEX_MOBILE_VITE_APP_PREVIEW_APP_START_PROMISE__/);
+  assert.match(scriptSource, /vite_app_preview_app_start_failed/);
+  assert.match(scriptSource, /vite_app_preview_app_start_recovery_error/);
+});
+
 test("browser runtime self-check samples active thread rows before recent rows", () => {
   assert.deepEqual(script.selectThreadIdsForSampling([
     { id: "recent-completed", status: "completed" },
@@ -785,6 +792,49 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
   assert.equal(zeroLoaderPassing.ok, true);
   assert.equal(zeroLoaderPassing.issueCount, 0);
 
+  const appStartStillPendingPassing = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    loaderStatusOk: true,
+    loaderStatusCompleted: true,
+    appStartAttempted: true,
+    appStartPending: true,
+    appStartCompleted: false,
+    appStartErrorCode: "",
+    classicScriptCount: 0,
+    shellScriptCount: 51,
+    expectedClassicScriptCount: 0,
+    classicScriptOrderMatches: true,
+    loaderPlanPresent: true,
+    loaderPlanOwnerOk: true,
+    loaderPlanHashPresent: true,
+    loaderPlanSourceScriptCount: 51,
+    loaderPlanScriptCount: 0,
+    loaderPlanHashCount: 0,
+    loaderPlanExcludedEsmScriptCount: 49,
+    loaderPlanExcludedEsmHashCount: 49,
+    loaderPlanExcludedEsmGlobalsReady: true,
+    loaderPlanExcludedViteOwnedScriptCount: 2,
+    loaderPlanExcludedViteOwnedHashCount: 2,
+    loaderPlanExcludedViteOwnedGlobalsReady: true,
+    loaderPlanMatchesShellScripts: true,
+    loaderPlanMatchesInjectedScripts: true,
+    loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] });
+  assert.equal(appStartStillPendingPassing.ok, true);
+  assert.equal(appStartStillPendingPassing.issueCount, 0);
+
   const lateLoaderCompletion = script.analyzeViteAppPreviewProbe({
     markerPresent: true,
     metaPresent: true,
@@ -872,6 +922,51 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_runtime_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_browser_exception"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_console_error"));
+
+  const appStartFailure = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    loaderStatusOk: true,
+    loaderStatusCompleted: true,
+    appStartAttempted: true,
+    appStartPending: false,
+    appStartCompleted: true,
+    appStartErrorCode: "app-start-failed",
+    appShellStartupRecoveryErrorCode: "startup-recovery-failed",
+    classicScriptCount: 0,
+    shellScriptCount: 51,
+    expectedClassicScriptCount: 0,
+    classicScriptOrderMatches: true,
+    loaderPlanPresent: true,
+    loaderPlanOwnerOk: true,
+    loaderPlanHashPresent: true,
+    loaderPlanSourceScriptCount: 51,
+    loaderPlanScriptCount: 0,
+    loaderPlanHashCount: 0,
+    loaderPlanExcludedEsmScriptCount: 49,
+    loaderPlanExcludedEsmHashCount: 49,
+    loaderPlanExcludedEsmGlobalsReady: true,
+    loaderPlanExcludedViteOwnedScriptCount: 2,
+    loaderPlanExcludedViteOwnedHashCount: 2,
+    loaderPlanExcludedViteOwnedGlobalsReady: true,
+    loaderPlanMatchesShellScripts: true,
+    loaderPlanMatchesInjectedScripts: true,
+    loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] });
+  assert.equal(appStartFailure.ok, false);
+  assert.ok(appStartFailure.issues.some((issue) => issue.code === "vite_app_preview_app_start_failed"));
+  assert.ok(appStartFailure.issues.some((issue) => issue.code === "vite_app_preview_app_start_recovery_error"));
 });
 
 test("browser runtime self-check analyzes Vite app-preview default-root readiness", () => {

@@ -167,6 +167,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(source, /import\("virtual:codex-mobile-esm-compatibility"\)/);
   assert.doesNotMatch(source, /import\s+\{\s*codexMobileViteEsmCompatibility\s*\}\s+from\s+"virtual:codex-mobile-esm-compatibility"/);
   assert.match(source, /__CODEX_MOBILE_VITE_ESM_COMPATIBILITY_PROMISE__/);
+  assert.match(source, /__CODEX_MOBILE_VITE_APP_PREVIEW_APP_START_PROMISE__/);
+  assert.match(source, /startViteAppPreviewApp\(status, appEntry\)/);
+  assert.doesNotMatch(source, /await appEntry\.startCodexMobileApp\(\)/);
   assert.doesNotMatch(source, /\.\.\/public\/build-refresh-policy\.js/);
   assert.match(source, /__CODEX_MOBILE_VITE_ESM_COMPATIBILITY__/);
   assert.match(source, /codexMobileEsmCompatibility/);

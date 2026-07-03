@@ -79,5 +79,7 @@ test("Vite app-preview starts the excluded app entry after classic loader script
   assert.match(source, /__CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__/);
   assert.match(source, /excludedEsmAssets\.includes\("\/app\.js"\)/);
   assert.match(source, /CodexMobileAppEntry/);
-  assert.match(source, /await appEntry\.startCodexMobileApp\(\)/);
+  assert.match(source, /startViteAppPreviewApp\(status, appEntry\)/);
+  assert.match(source, /__CODEX_MOBILE_VITE_APP_PREVIEW_APP_START_PROMISE__/);
+  assert.doesNotMatch(source, /await appEntry\.startCodexMobileApp\(\)/);
 });
