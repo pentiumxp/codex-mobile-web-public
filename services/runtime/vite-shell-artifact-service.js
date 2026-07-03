@@ -8,6 +8,7 @@ const DEFAULT_PUBLIC_ARTIFACT_ROOT = "public/vite-shell";
 const DEFAULT_READBACK_FILE = "vite-shell-readback.json";
 const DEFAULT_PREVIEW_FILE = "preview.html";
 const DEFAULT_APP_PREVIEW_FILE = "app-preview.html";
+const DEFAULT_APP_PREVIEW_ENTRY_FILE = "app-preview-entry.js";
 const EXPECTED_PUBLIC_ARTIFACT_STAGE = "vite-shell-preview-html-v1";
 const EXPECTED_SOURCE_BUILD_STAGE = "vite-shell-artifact-contract-v1";
 const EXPECTED_ENTRY_GROUP_IMPORT_OWNER = "vite-shell-entry";
@@ -560,15 +561,32 @@ function createViteShellArtifactService(dependencies = {}) {
       issues.push({ code: "vite_shell_preview_missing" });
     }
     const expectedEntryScript = publicArtifactUrl(readback.entry && readback.entry.fileName);
-    if (!preview || String(preview.entryScript || "") !== expectedEntryScript) {
+    const stableEntry = readback.stableEntry && typeof readback.stableEntry === "object" ? readback.stableEntry : null;
+    const expectedStableEntryScript = publicArtifactUrl(DEFAULT_APP_PREVIEW_ENTRY_FILE);
+    if (!stableEntry || normalizeRelativeFileName(stableEntry.fileName) !== DEFAULT_APP_PREVIEW_ENTRY_FILE) {
+      issues.push({ code: "vite_shell_stable_entry_missing" });
+    }
+    if (!stableEntry || String(stableEntry.entryScript || "") !== expectedStableEntryScript) {
+      issues.push({ code: "vite_shell_stable_entry_script_mismatch" });
+    }
+    if (!stableEntry || String(stableEntry.targetEntryScript || "") !== expectedEntryScript) {
+      issues.push({ code: "vite_shell_stable_entry_target_mismatch" });
+    }
+    if (!preview || String(preview.entryScript || "") !== expectedStableEntryScript) {
       issues.push({ code: "vite_shell_preview_entry_mismatch" });
+    }
+    if (!preview || String(preview.targetEntryScript || "") !== expectedEntryScript) {
+      issues.push({ code: "vite_shell_preview_target_entry_mismatch" });
     }
     const appPreview = readback.appPreview && typeof readback.appPreview === "object" ? readback.appPreview : null;
     if (!appPreview || normalizeRelativeFileName(appPreview.fileName) !== appPreviewFileName) {
       issues.push({ code: "vite_shell_app_preview_missing" });
     }
-    if (!appPreview || String(appPreview.entryScript || "") !== expectedEntryScript) {
+    if (!appPreview || String(appPreview.entryScript || "") !== expectedStableEntryScript) {
       issues.push({ code: "vite_shell_app_preview_entry_mismatch" });
+    }
+    if (!appPreview || String(appPreview.targetEntryScript || "") !== expectedEntryScript) {
+      issues.push({ code: "vite_shell_app_preview_target_entry_mismatch" });
     }
 
     const files = [];
@@ -597,6 +615,7 @@ function createViteShellArtifactService(dependencies = {}) {
       ...readbackEntryGroupChunks.map((chunk) => chunk && chunk.fileName),
       ...(readback.viteOwnedAppBootstrapChunks || []).map((chunk) => chunk && chunk.fileName),
       ...(readback.sharedChunks || []).map((chunk) => chunk && chunk.fileName),
+      stableEntry && stableEntry.fileName,
       previewFileName,
       appPreviewFileName,
     ].map(normalizeRelativeFileName).filter(Boolean)));
@@ -794,7 +813,10 @@ function createViteShellArtifactService(dependencies = {}) {
       if (!previewHtml.includes("id=\"codex-vite-shell-preview\"")) {
         issues.push({ code: "vite_shell_preview_marker_missing" });
       }
-      if (!previewHtml.includes("type=\"module\"") || !expectedEntryScript || !previewHtml.includes(`src="${expectedEntryScript}"`)) {
+      if (!previewHtml.includes("type=\"module\"") || !expectedStableEntryScript || !previewHtml.includes(`src="${expectedStableEntryScript}"`)) {
+        issues.push({ code: "vite_shell_preview_module_entry_missing" });
+      }
+      if (expectedEntryScript && !previewHtml.includes(`href="${expectedEntryScript}"`)) {
         issues.push({ code: "vite_shell_preview_module_entry_missing" });
       }
       if (!previewHtml.includes(`data-stage="${EXPECTED_PUBLIC_ARTIFACT_STAGE}"`)) {
@@ -838,7 +860,10 @@ function createViteShellArtifactService(dependencies = {}) {
         || !appPreviewHtml.includes("data-codex-vite-app-preview-loader-plan=\"true\"")) {
         issues.push({ code: "vite_shell_app_preview_classic_loader_plan_script_missing" });
       }
-      if (!appPreviewHtml.includes("type=\"module\"") || !expectedEntryScript || !appPreviewHtml.includes(`src="${expectedEntryScript}"`)) {
+      if (!appPreviewHtml.includes("type=\"module\"") || !expectedStableEntryScript || !appPreviewHtml.includes(`src="${expectedStableEntryScript}"`)) {
+        issues.push({ code: "vite_shell_app_preview_module_entry_missing" });
+      }
+      if (expectedEntryScript && !appPreviewHtml.includes(`href="${expectedEntryScript}"`)) {
         issues.push({ code: "vite_shell_app_preview_module_entry_missing" });
       }
       if (appPreviewHtml.includes(CLASSIC_SHELL_SCRIPT_BLOCK_START)
@@ -1078,14 +1103,22 @@ function createViteShellArtifactService(dependencies = {}) {
           ? Number(chunk.classicGlobalExportCount)
           : 0,
       })).filter((chunk) => chunk.fileName),
+      stableEntry: stableEntry ? {
+        fileName: normalizeRelativeFileName(stableEntry.fileName),
+        entryScript: String(stableEntry.entryScript || ""),
+        targetEntryFileName: normalizeRelativeFileName(stableEntry.targetEntryFileName),
+        targetEntryScript: String(stableEntry.targetEntryScript || ""),
+      } : null,
       preview: preview ? {
         fileName: normalizeRelativeFileName(preview.fileName),
         entryScript: String(preview.entryScript || ""),
+        targetEntryScript: String(preview.targetEntryScript || ""),
         entryGroupImportOwner: String(readback.entryGroupImportOwner || ""),
       } : null,
       appPreview: appPreview ? {
         fileName: normalizeRelativeFileName(appPreview.fileName),
         entryScript: String(appPreview.entryScript || ""),
+        targetEntryScript: String(appPreview.targetEntryScript || ""),
         sourceShell: String(appPreview.sourceShell || ""),
       } : null,
       publishedFileCount: files.length,

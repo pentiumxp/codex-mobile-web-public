@@ -7,6 +7,7 @@ export const VITE_SHELL_PUBLIC_ARTIFACT_ROOT = "public/vite-shell";
 export const VITE_SHELL_PUBLIC_READBACK_FILE = "vite-shell-readback.json";
 export const VITE_SHELL_PUBLIC_PREVIEW_FILE = "preview.html";
 export const VITE_SHELL_PUBLIC_APP_PREVIEW_FILE = "app-preview.html";
+export const VITE_SHELL_PUBLIC_APP_PREVIEW_ENTRY_FILE = "app-preview-entry.js";
 export const CLASSIC_SHELL_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:BEGIN -->";
 export const CLASSIC_SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->";
 export const VITE_APP_PREVIEW_SCRIPT_BLOCK_START = "<!-- CODEX_MOBILE_VITE_APP_PREVIEW:BEGIN -->";
@@ -331,12 +332,20 @@ export function buildViteShellPublicReadback(options = {}) {
 
   const preview = {
     fileName: VITE_SHELL_PUBLIC_PREVIEW_FILE,
-    entryScript: viteBuild.viteEntry ? publicArtifactUrl(viteBuild.viteEntry.fileName) : "",
+    entryScript: publicArtifactUrl(VITE_SHELL_PUBLIC_APP_PREVIEW_ENTRY_FILE),
+    targetEntryScript: viteBuild.viteEntry ? publicArtifactUrl(viteBuild.viteEntry.fileName) : "",
   };
   const appPreview = {
     fileName: VITE_SHELL_PUBLIC_APP_PREVIEW_FILE,
     entryScript: preview.entryScript,
+    targetEntryScript: preview.targetEntryScript,
     sourceShell: "public/index.html",
+  };
+  const stableEntry = {
+    fileName: VITE_SHELL_PUBLIC_APP_PREVIEW_ENTRY_FILE,
+    entryScript: publicArtifactUrl(VITE_SHELL_PUBLIC_APP_PREVIEW_ENTRY_FILE),
+    targetEntryFileName: normalizeRelativeFileName(viteBuild.viteEntry && viteBuild.viteEntry.fileName),
+    targetEntryScript: viteBuild.viteEntry ? publicArtifactUrl(viteBuild.viteEntry.fileName) : "",
   };
   const entryGroupChunks = (viteBuild.viteEntryGroupChunks || []).map((chunk) => ({
     groupId: String(chunk && chunk.groupId || ""),
@@ -466,6 +475,7 @@ export function buildViteShellPublicReadback(options = {}) {
     sharedChunks,
     viteOwnedAppBootstrapChunks,
     entryGroupChunks,
+    stableEntry,
     preview,
     startupCriticalAssets: startupAssets,
     startupGlobalContracts: startupContracts,
@@ -473,6 +483,9 @@ export function buildViteShellPublicReadback(options = {}) {
     appPreviewClassicLoaderPlan,
     esmCompatibility,
   };
+  const stableEntrySource = renderViteShellStableEntry(readbackForPreview);
+  const stableEntryRecord = bufferRecord(VITE_SHELL_PUBLIC_APP_PREVIEW_ENTRY_FILE, stableEntrySource);
+  if (stableEntryRecord) publishedFiles.push(stableEntryRecord);
   const previewHtml = renderViteShellPreviewHtml(readbackForPreview);
   const previewRecord = bufferRecord(VITE_SHELL_PUBLIC_PREVIEW_FILE, previewHtml);
   if (previewRecord) publishedFiles.push(previewRecord);
@@ -502,6 +515,7 @@ export function buildViteShellPublicReadback(options = {}) {
     sharedChunks,
     viteOwnedAppBootstrapChunks,
     entryGroupChunks,
+    stableEntry,
     preview,
     appPreview,
     startupCriticalAssets: startupAssets,
@@ -554,6 +568,12 @@ export function renderViteShellPreviewHtml(readback = {}) {
   const entryScript = readback.preview && readback.preview.entryScript
     ? String(readback.preview.entryScript)
     : publicArtifactUrl(entryFileName);
+  const targetEntryScript = readback.preview && readback.preview.targetEntryScript
+    ? String(readback.preview.targetEntryScript)
+    : publicArtifactUrl(entryFileName);
+  const targetEntryPreloadTags = targetEntryScript && targetEntryScript !== entryScript
+    ? [`  <link rel=\"modulepreload\" href=\"${escapeHtml(targetEntryScript)}\" data-codex-vite-stable-entry-target=\"true\">`]
+    : [];
   const startupPreloadTags = (Array.isArray(readback.startupCriticalAssets) ? readback.startupCriticalAssets : [])
     .filter((asset) => String(asset || "").startsWith("/"))
     .map((asset) => `  <link rel=\"preload\" as=\"script\" href=\"${escapeHtml(asset)}\" data-codex-vite-startup-asset=\"true\">`);
@@ -579,6 +599,7 @@ export function renderViteShellPreviewHtml(readback = {}) {
     ...startupPreloadTags,
     ...sharedPreloadTags,
     ...esmCompatibilityPreloadTags,
+    ...targetEntryPreloadTags,
     ...entryGroupPreloadTags,
     "  <title>Codex Mobile Vite Shell Preview</title>",
     "</head>",
@@ -614,6 +635,9 @@ export function renderViteShellAppPreviewHtml(readback = {}, root = process.cwd(
   const entryScript = readback.preview && readback.preview.entryScript
     ? String(readback.preview.entryScript)
     : publicArtifactUrl(entryFileName);
+  const targetEntryScript = readback.preview && readback.preview.targetEntryScript
+    ? String(readback.preview.targetEntryScript)
+    : publicArtifactUrl(entryFileName);
   const indexPath = path.join(path.resolve(root), "public", "index.html");
   let source = fs.readFileSync(indexPath, "utf8");
   source = source.replace(
@@ -638,6 +662,9 @@ export function renderViteShellAppPreviewHtml(readback = {}, root = process.cwd(
       .map((chunk) => chunk && chunk.entryScript)
       .filter((asset) => String(asset || "").startsWith("/"))
       .map((asset) => `  <link rel="modulepreload" href="${escapeHtml(asset)}" data-codex-vite-esm-compatibility-chunk="true">`),
+    ...(targetEntryScript && targetEntryScript !== entryScript
+      ? [`  <link rel="modulepreload" href="${escapeHtml(targetEntryScript)}" data-codex-vite-stable-entry-target="true">`]
+      : []),
     "  <script id=\"codex-vite-app-preview-loader-plan\" type=\"application/json\" data-codex-vite-app-preview-loader-plan=\"true\">",
     jsonScriptBody(readback.appPreviewClassicLoaderPlan),
     "  </script>",
@@ -652,6 +679,25 @@ export function renderViteShellAppPreviewHtml(readback = {}, root = process.cwd(
   return `${source.slice(0, start)}${moduleBlock}${source.slice(end + CLASSIC_SHELL_SCRIPT_BLOCK_END.length)}`;
 }
 
+export function renderViteShellStableEntry(readback = {}) {
+  const targetEntryScript = readback.stableEntry && readback.stableEntry.targetEntryScript
+    ? String(readback.stableEntry.targetEntryScript)
+    : "";
+  if (!targetEntryScript || !targetEntryScript.startsWith("/")) {
+    throw new Error("codex_mobile_vite_stable_entry_target_missing");
+  }
+  return [
+    `import "${targetEntryScript}";`,
+    "",
+    "globalThis.__CODEX_MOBILE_VITE_STABLE_ENTRY__ = {",
+    "  source: \"vite-shell-app-preview-stable-entry\",",
+    `  targetEntryScript: ${JSON.stringify(targetEntryScript)},`,
+    "  loadedAt: Date.now(),",
+    "};",
+    "",
+  ].join("\n");
+}
+
 function copyArtifactFile(sourceRoot, targetRoot, fileName) {
   const relativePath = normalizeRelativeFileName(fileName);
   if (!relativePath) throw new Error("invalid_artifact_file_name");
@@ -659,6 +705,42 @@ function copyArtifactFile(sourceRoot, targetRoot, fileName) {
   const targetPath = path.join(targetRoot, relativePath);
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.copyFileSync(sourcePath, targetPath);
+}
+
+function removeNonAssetArtifactFiles(publicArtifactRoot) {
+  if (!fs.existsSync(publicArtifactRoot)) return;
+  for (const entry of fs.readdirSync(publicArtifactRoot, { withFileTypes: true })) {
+    if (entry.name === "assets") continue;
+    fs.rmSync(path.join(publicArtifactRoot, entry.name), { recursive: true, force: true });
+  }
+}
+
+function listRetainedArtifactFiles(publicArtifactRoot, currentFiles) {
+  const assetsRoot = path.join(publicArtifactRoot, "assets");
+  if (!fs.existsSync(assetsRoot)) return [];
+  const current = new Set((currentFiles || []).map(normalizeRelativeFileName).filter(Boolean));
+  const retained = [];
+  const walk = (dir, prefix = "assets") => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fileName = `${prefix}/${entry.name}`;
+      const absolutePath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolutePath, fileName);
+        continue;
+      }
+      const normalized = normalizeRelativeFileName(fileName);
+      if (!normalized || current.has(normalized)) continue;
+      try {
+        retained.push(fileRecord(publicArtifactRoot, normalized));
+      } catch (_) {
+        // Best-effort metadata only; retained compatibility files are not part of the required artifact.
+      }
+    }
+  };
+  walk(assetsRoot);
+  return retained
+    .filter(Boolean)
+    .sort((left, right) => String(left.fileName).localeCompare(String(right.fileName)));
 }
 
 export function publishViteShellPublicArtifact(options = {}) {
@@ -670,13 +752,18 @@ export function publishViteShellPublicArtifact(options = {}) {
     const codes = readback.validation.issues.map((issue) => issue.code).join(", ");
     throw new Error(`codex_mobile_vite_shell_public_artifact_invalid: ${codes}`);
   }
-  fs.rmSync(publicArtifactRoot, { recursive: true, force: true });
   fs.mkdirSync(publicArtifactRoot, { recursive: true });
+  removeNonAssetArtifactFiles(publicArtifactRoot);
   for (const file of readback.publishedFiles) {
     if (file.fileName === VITE_SHELL_PUBLIC_PREVIEW_FILE) continue;
     if (file.fileName === VITE_SHELL_PUBLIC_APP_PREVIEW_FILE) continue;
+    if (file.fileName === VITE_SHELL_PUBLIC_APP_PREVIEW_ENTRY_FILE) continue;
     copyArtifactFile(buildRoot, publicArtifactRoot, file.fileName);
   }
+  fs.writeFileSync(
+    path.join(publicArtifactRoot, VITE_SHELL_PUBLIC_APP_PREVIEW_ENTRY_FILE),
+    renderViteShellStableEntry(readback)
+  );
   fs.writeFileSync(
     path.join(publicArtifactRoot, VITE_SHELL_PUBLIC_PREVIEW_FILE),
     renderViteShellPreviewHtml(readback)
@@ -685,6 +772,9 @@ export function publishViteShellPublicArtifact(options = {}) {
     path.join(publicArtifactRoot, VITE_SHELL_PUBLIC_APP_PREVIEW_FILE),
     renderViteShellAppPreviewHtml(readback, root)
   );
+  const currentFileNames = readback.publishedFiles.map((file) => file && file.fileName).filter(Boolean);
+  readback.retainedArtifactFiles = listRetainedArtifactFiles(publicArtifactRoot, currentFileNames);
+  readback.counts.retainedArtifactFiles = readback.retainedArtifactFiles.length;
   fs.writeFileSync(
     path.join(publicArtifactRoot, VITE_SHELL_PUBLIC_READBACK_FILE),
     `${JSON.stringify(readback, null, 2)}\n`
@@ -712,6 +802,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       startupCriticalAssets: result.counts.startupCriticalAssets,
       esmCompatibilityModules: result.counts.esmCompatibilityModules,
       publishedFiles: result.counts.publishedFiles,
+      retainedArtifactFiles: result.counts.retainedArtifactFiles || 0,
     }));
   } catch (err) {
     console.error(err && err.message ? err.message : String(err));

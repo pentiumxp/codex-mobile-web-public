@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const vm = require("node:vm");
 const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
@@ -53,6 +54,83 @@ function evaluatedPublicPrReviewWorkspacePath() {
     "publicPrReviewWorkspacePath",
   ].map((name) => functionBody(appUpdateSource, name));
   return (state) => Function("state", `${sources.join("\n")}\nreturn publicPrReviewWorkspacePath();`)(state);
+}
+
+function createServiceWorkerHarness() {
+  const listeners = {};
+  const cache = new Map();
+  const putCalls = [];
+  const networkCalls = [];
+  const context = {
+    URL,
+    Request,
+    Response,
+    console,
+    setTimeout,
+    importScripts: () => {},
+    fetch: async (request, init = {}) => {
+      networkCalls.push({
+        url: typeof request === "string" ? request : request.url,
+        cache: init.cache || "",
+      });
+      return new Response("network-stable-entry", { status: 200 });
+    },
+    caches: {
+      async match(key) {
+        const cacheKey = typeof key === "string" ? key : key.url;
+        return cache.get(cacheKey) || null;
+      },
+      async keys() {
+        return ["codex-mobile-shell-v625-test"];
+      },
+      async delete() {
+        return true;
+      },
+      async open() {
+        return {
+          async addAll() {},
+          async put(key, response) {
+            const cacheKey = typeof key === "string" ? key : key.url;
+            putCalls.push(cacheKey);
+            cache.set(cacheKey, response.clone ? response.clone() : response);
+          },
+        };
+      },
+    },
+  };
+  context.self = {
+    location: { origin: "https://codex.example.test" },
+    CODEX_MOBILE_SHELL_MANIFEST: {
+      shellCacheName: "codex-mobile-shell-v625-test",
+      precacheAssets: [],
+    },
+    skipWaiting: () => Promise.resolve(),
+    clients: {
+      claim: () => Promise.resolve(),
+      matchAll: () => Promise.resolve([]),
+      openWindow: () => Promise.resolve(null),
+    },
+    registration: {
+      showNotification: () => Promise.resolve(),
+    },
+    addEventListener(type, handler) {
+      listeners[type] = handler;
+    },
+  };
+  vm.runInNewContext(swJs, context, { filename: "sw.js" });
+  return { listeners, cache, networkCalls, putCalls };
+}
+
+async function runServiceWorkerFetch(harness, request) {
+  let responsePromise = null;
+  harness.listeners.fetch({
+    request,
+    respondWith(promise) {
+      responsePromise = Promise.resolve(promise);
+    },
+  });
+  assert.ok(responsePromise, "fetch handler should respond");
+  return responsePromise;
 }
 
 test("self-update UI explains supervisor-dependent restart", () => {
@@ -252,10 +330,17 @@ test("boot recovery UI can clear PWA shell state before app.js starts", () => {
   assert.match(indexHtml, /function isScriptStartupError\(event\)/);
   assert.match(indexHtml, /tagName === "SCRIPT"/);
   assert.match(indexHtml, /function scheduleScriptRecovery\(\)/);
+  assert.match(indexHtml, /function autoReloadForScriptStartupError\(\)/);
+  assert.match(indexHtml, /SCRIPT_AUTO_RELOAD_STORAGE_KEY/);
+  assert.match(indexHtml, /window\.sessionStorage\.setItem\(scriptAutoReloadKey\(\), "1"\)/);
+  assert.match(indexHtml, /window\.location\.replace\(cacheBustUrl\(\)\)/);
+  assert.match(indexHtml, /if \(autoReloadForScriptStartupError\(\)\) return;/);
+  assert.match(indexHtml, /clearScriptAutoReloadAttempt\(\);/);
   assert.doesNotMatch(indexHtml, /showRecovery\("script-error"\); \}, 0\)/);
   assert.match(appPreviewHtml, /function isScriptStartupError\(event\)/);
   assert.match(appPreviewHtml, /tagName === "SCRIPT"/);
   assert.match(appPreviewHtml, /function scheduleScriptRecovery\(\)/);
+  assert.match(appPreviewHtml, /function autoReloadForScriptStartupError\(\)/);
   assert.match(indexHtml, /var APP_PREVIEW_STARTUP_RECOVERY_TIMEOUT_MS = 12000;/);
   assert.match(indexHtml, /var APP_PREVIEW_STARTUP_RECOVERY_HARD_LIMIT_MS = 30000;/);
   assert.match(indexHtml, /function appPreviewStartupStillPending\(\)/);
@@ -275,6 +360,51 @@ test("boot recovery UI can clear PWA shell state before app.js starts", () => {
   assert.match(appUpdateSource, /boot\.fail\("app-start-error"\)/);
   assert.match(appUpdateSource, /if \(isViteAppPreview\) throw err;/);
   assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /await clearAllShellCaches\(\);[\s\S]*await resetPageShellServiceWorker\(\);/);
+});
+
+test("service worker refreshes mutable Vite shell startup assets network-first", () => {
+  assert.match(swJs, /function isShellReloadNavigation\(url\)/);
+  assert.match(swJs, /url\.searchParams\.has\("shellReload"\)/);
+  assert.match(swJs, /url\.searchParams\.has\("codexMobileBuild"\)/);
+  assert.match(swJs, /url\.searchParams\.has\("codexViteShell"\)/);
+  assert.match(swJs, /function shouldNetworkFirstShellAsset\(url\)/);
+  assert.ok(swJs.includes('path === "/vite-shell/app-preview-entry.js"'));
+  assert.ok(swJs.includes('/^\\/vite-shell\\/assets\\/vite-shell-entry-[^/]+\\.js$/.test(path)'));
+  assert.match(swJs, /function networkFirst\(request, cacheKey = request\)/);
+  assert.match(swJs, /fetch\(request, \{ cache: "reload" \}\)/);
+  assert.match(swJs, /if \(isShellReloadNavigation\(url\)\) \{[\s\S]*return networkFirst\(request, "\/index\.html"\);/);
+  assert.match(swJs, /if \(shouldNetworkFirstShellAsset\(url\)\) \{[\s\S]*event\.respondWith\(networkFirst\(request\)\);/);
+});
+
+test("service worker does not serve cached stale Vite entry before network", async () => {
+  const harness = createServiceWorkerHarness();
+  const staleEntryUrl = "https://codex.example.test/vite-shell/assets/vite-shell-entry-old.js";
+  harness.cache.set(staleEntryUrl, new Response("cached-stale-entry", { status: 200 }));
+
+  const response = await runServiceWorkerFetch(harness, {
+    method: "GET",
+    mode: "same-origin",
+    url: staleEntryUrl,
+  });
+
+  assert.equal(await response.text(), "network-stable-entry");
+  assert.deepEqual(harness.networkCalls, [{ url: staleEntryUrl, cache: "reload" }]);
+  assert.deepEqual(harness.putCalls, [staleEntryUrl]);
+});
+
+test("service worker shellReload navigation bypasses cached index first", async () => {
+  const harness = createServiceWorkerHarness();
+  harness.cache.set("/index.html", new Response("cached-index", { status: 200 }));
+
+  const response = await runServiceWorkerFetch(harness, {
+    method: "GET",
+    mode: "navigate",
+    url: "https://codex.example.test/?shellReload=123",
+  });
+
+  assert.equal(await response.text(), "network-stable-entry");
+  assert.deepEqual(harness.networkCalls, [{ url: "https://codex.example.test/?shellReload=123", cache: "reload" }]);
+  assert.deepEqual(harness.putCalls, ["/index.html"]);
 });
 
 test("public pull request check prompts before public publishing work", () => {

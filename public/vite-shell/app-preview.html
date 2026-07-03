@@ -218,6 +218,7 @@
       var APP_PREVIEW_STARTUP_RECOVERY_TIMEOUT_MS = 12000;
       var APP_PREVIEW_STARTUP_RECOVERY_POLL_MS = 2500;
       var APP_PREVIEW_STARTUP_RECOVERY_HARD_LIMIT_MS = 30000;
+      var SCRIPT_AUTO_RELOAD_STORAGE_KEY = "codexMobileBootScriptAutoReload";
       function $(id) { return document.getElementById(id); }
       function setStatus(text) {
         var el = $("bootRecoveryStatus");
@@ -286,8 +287,36 @@
         if (scriptErrorTimer) clearTimeout(scriptErrorTimer);
         scriptErrorTimer = window.setTimeout(function () {
           scriptErrorTimer = 0;
+          if (autoReloadForScriptStartupError()) return;
           showRecovery("script-error");
         }, 1200);
+      }
+      function scriptAutoReloadKey() {
+        return SCRIPT_AUTO_RELOAD_STORAGE_KEY + ":" + window.location.pathname;
+      }
+      function hasScriptAutoReloadAttempted() {
+        try {
+          return window.sessionStorage && window.sessionStorage.getItem(scriptAutoReloadKey()) === "1";
+        } catch (_) {
+          return true;
+        }
+      }
+      function markScriptAutoReloadAttempted() {
+        try {
+          if (window.sessionStorage) window.sessionStorage.setItem(scriptAutoReloadKey(), "1");
+        } catch (_) {}
+      }
+      function clearScriptAutoReloadAttempt() {
+        try {
+          if (window.sessionStorage) window.sessionStorage.removeItem(scriptAutoReloadKey());
+        } catch (_) {}
+      }
+      function autoReloadForScriptStartupError() {
+        if (!isViteAppPreviewPage() || hasScriptAutoReloadAttempted()) return false;
+        markScriptAutoReloadAttempted();
+        setStatus("页面脚本启动失败，正在自动重新加载最新入口...");
+        window.location.replace(cacheBustUrl());
+        return true;
       }
       async function clearShellState() {
         if ("caches" in window) {
@@ -334,6 +363,7 @@
           bootReady = true;
           if (showTimer) clearTimeout(showTimer);
           if (scriptErrorTimer) clearTimeout(scriptErrorTimer);
+          clearScriptAutoReloadAttempt();
           hideRecovery();
         },
         fail: function (reason) {
@@ -788,16 +818,17 @@
     </div>
   </div>
 <!-- CODEX_MOBILE_VITE_APP_PREVIEW:BEGIN -->
-  <link rel="modulepreload" href="/vite-shell/assets/_virtual_codex-mobile-esm-compatibility-DkT-KYOe.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-01-D2LWLk2d.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-02-DMaWilKB.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-03-OFWqN5WH.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-04-BHjlwWTx.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-05-CHOlfsok.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-06-CEO_iWYn.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-07-aDy65ueM.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-08-kwBUCHIz.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-09-DofZcBfi.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/_virtual_codex-mobile-esm-compatibility-p8oMEPO5.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-01-DKCrF8XC.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-02-BjJFQehp.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-03-CHmVk62O.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-04-ChdFeibI.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-05-B8bZUbxj.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-06-BjS1OCkg.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-07-B7J5pPEn.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-08-fhzpUHXC.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-09-gwzpCMLb.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/vite-shell-entry-D7wrcPt1.js" data-codex-vite-stable-entry-target="true">
   <script id="codex-vite-app-preview-loader-plan" type="application/json" data-codex-vite-app-preview-loader-plan="true">
 {
   "schemaVersion": 1,
@@ -1514,7 +1545,7 @@
       "chunkTarget": "startup-manifest",
       "sourcePath": "public/shell-asset-manifest.js",
       "bytes": 75971,
-      "sha256": "8bcaf6901283914b48a4aae42e41e0d7e7a101866f4f6347c5d0ba8c5867fd48",
+      "sha256": "a4cac823e00846c79941ca46e445df83bb24873068287714e2f65cc238a28ee3",
       "ownerId": "shell-manifest",
       "globalName": "CODEX_MOBILE_SHELL_MANIFEST"
     },
@@ -1533,11 +1564,11 @@
       "globalName": "CodexAppBootstrap"
     }
   ],
-  "sha256": "40c5bf609a57529ef911282f3ed274303306e426bbb353d6da741a3333d7a223",
+  "sha256": "d4787c260da66248d51fedc296781d58b144e02e837b338e7d9028c125f5b650",
   "scripts": []
 }
   </script>
-  <script type="module" src="/vite-shell/assets/vite-shell-entry-S6GhhRRX.js" data-codex-vite-app-preview-entry="true"></script>
+  <script type="module" src="/vite-shell/app-preview-entry.js" data-codex-vite-app-preview-entry="true"></script>
 <!-- CODEX_MOBILE_VITE_APP_PREVIEW:END -->
 
 <script>

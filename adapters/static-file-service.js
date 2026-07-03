@@ -8,6 +8,8 @@ const DEFAULT_STATIC_COMPRESSION_MIN_BYTES = 1024;
 const DEFAULT_STATIC_COMPRESSION_CACHE_MAX_BYTES = 16 * 1024 * 1024;
 const DEFAULT_SHELL_MODE_CLASSIC = "classic";
 const DEFAULT_SHELL_MODE_VITE_APP_PREVIEW = "vite-app-preview";
+const VITE_SHELL_STABLE_APP_PREVIEW_ENTRY = "/vite-shell/app-preview-entry.js";
+const VITE_SHELL_HASHED_ENTRY_PATTERN = /^\/vite-shell\/assets\/vite-shell-entry-[^/]+\.js$/;
 const STATIC_COMPRESSIBLE_EXTENSIONS = new Set([
   ".css",
   ".html",
@@ -155,59 +157,75 @@ function createStaticFileService(options = {}) {
     return url.pathname;
   }
 
+  function viteShellEntryFallbackPathname(rel) {
+    const pathname = `/${String(rel || "").replace(/^\/+/, "")}`;
+    if (VITE_SHELL_HASHED_ENTRY_PATTERN.test(pathname)) return VITE_SHELL_STABLE_APP_PREVIEW_ENTRY;
+    return "";
+  }
+
   function serveStatic(req, res) {
     const url = getUrl(req);
-    const rel = decodeURIComponent(staticPathnameForRequestUrl(url));
-    const target = path.normalize(path.join(publicRoot, rel));
-    if (!target.startsWith(publicRoot)) {
-      res.writeHead(403);
-      res.end("Forbidden");
-      return;
-    }
-    fs.stat(target, (statErr, stat) => {
-      if (statErr || !stat.isFile()) {
-        res.writeHead(404);
-        res.end("Not found");
+    const initialRel = decodeURIComponent(staticPathnameForRequestUrl(url));
+
+    function serveRelativePath(rel, allowViteEntryFallback) {
+      const target = path.normalize(path.join(publicRoot, rel));
+      if (!target.startsWith(publicRoot)) {
+        res.writeHead(403);
+        res.end("Forbidden");
         return;
       }
-      const headers = {
-        "Content-Type": mimeFor(target),
-        "Cache-Control": "no-cache",
-      };
-      if (target.endsWith(".html")) {
-        headers["Content-Security-Policy"] = `frame-ancestors ${frameAncestorsHeader()}`;
-      }
-      const encoding = staticCompressionEncoding(req, target, stat.size);
-      const cacheKey = encoding ? staticCompressionCacheKey(target, stat, encoding) : "";
-      const cached = cacheKey ? getStaticCompressionCache(cacheKey) : null;
-      if (cached) {
-        headers["Content-Encoding"] = encoding;
-        headers.Vary = "Accept-Encoding";
-        writeStaticResponse(res, headers, cached.body);
-        return;
-      }
-      fs.readFile(target, (err, data) => {
-        if (err) {
+      fs.stat(target, (statErr, stat) => {
+        if (statErr || !stat.isFile()) {
+          const fallbackRel = allowViteEntryFallback ? viteShellEntryFallbackPathname(rel) : "";
+          if (fallbackRel) {
+            serveRelativePath(fallbackRel, false);
+            return;
+          }
           res.writeHead(404);
           res.end("Not found");
           return;
         }
-        if (!encoding) {
-          writeStaticResponse(res, headers, data);
+        const headers = {
+          "Content-Type": mimeFor(target),
+          "Cache-Control": "no-cache",
+        };
+        if (target.endsWith(".html")) {
+          headers["Content-Security-Policy"] = `frame-ancestors ${frameAncestorsHeader()}`;
+        }
+        const encoding = staticCompressionEncoding(req, target, stat.size);
+        const cacheKey = encoding ? staticCompressionCacheKey(target, stat, encoding) : "";
+        const cached = cacheKey ? getStaticCompressionCache(cacheKey) : null;
+        if (cached) {
+          headers["Content-Encoding"] = encoding;
+          headers.Vary = "Accept-Encoding";
+          writeStaticResponse(res, headers, cached.body);
           return;
         }
-        compressStaticBody(data, encoding, (compressErr, compressed) => {
-          if (compressErr) {
+        fs.readFile(target, (err, data) => {
+          if (err) {
+            res.writeHead(404);
+            res.end("Not found");
+            return;
+          }
+          if (!encoding) {
             writeStaticResponse(res, headers, data);
             return;
           }
-          headers["Content-Encoding"] = encoding;
-          headers.Vary = "Accept-Encoding";
-          rememberStaticCompressionCache(cacheKey, compressed);
-          writeStaticResponse(res, headers, compressed);
+          compressStaticBody(data, encoding, (compressErr, compressed) => {
+            if (compressErr) {
+              writeStaticResponse(res, headers, data);
+              return;
+            }
+            headers["Content-Encoding"] = encoding;
+            headers.Vary = "Accept-Encoding";
+            rememberStaticCompressionCache(cacheKey, compressed);
+            writeStaticResponse(res, headers, compressed);
+          });
         });
       });
-    });
+    }
+
+    serveRelativePath(initialRel, true);
   }
 
   return {

@@ -159,6 +159,27 @@ unhandled rejections, and give the main shell a short chance to become visible
 before showing the card. Non-script resource errors should not force the
 recovery UI.
 
+Also check stale Vite chunk availability before treating this as a runtime
+logic failure. iOS PWA scenes and embedded iframes can keep an older HTML shell
+after a deploy; if that shell references an older hashed
+`/vite-shell/assets/vite-shell-entry-*.js` that was deleted from production,
+WebKit reports a startup script failure before normal client telemetry can run.
+The durable fix is the stable app-preview entry:
+`/vite-shell/app-preview-entry.js`. Current preview HTML points at that stable
+entry, and the static file service maps missing old
+`/vite-shell/assets/vite-shell-entry-*.js` requests to the stable entry instead
+of returning 404. The boot shell also performs one session-scoped cache-busted
+reload on a Vite script startup error before showing the manual recovery card.
+
+`scripts/publish-vite-shell-artifact.mjs` still preserves existing
+`public/vite-shell/assets/*` files as a transition compatibility window while
+replacing the current HTML/readback/manifest files. That retention is not the
+release boundary and is not expected to cover every historical PWA version
+forever; it only protects already-open scenes during the move to the stable
+entry contract. Do not add deployment cleanup that deletes old Vite asset chunks
+unless the stable-entry fallback and script-error auto-reload gates are still
+green.
+
 If the phone shows the boot recovery card with "页面启动时间过长" during a Vite
 app-preview cold iframe/PWA launch, check the Vite app-preview status object
 before treating it as a failed boot. Current shells start the timeout at 12s

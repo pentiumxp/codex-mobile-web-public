@@ -20,6 +20,42 @@ function resolveAfter(ms, value) {
   });
 }
 
+function isShellReloadNavigation(url) {
+  return url.searchParams.has("shellReload")
+    || url.searchParams.has("codexMobileBuild")
+    || url.searchParams.has("codexViteShell");
+}
+
+function shouldNetworkFirstShellAsset(url) {
+  const path = url.pathname;
+  return path === "/sw.js"
+    || path === "/shell-asset-manifest.js"
+    || path === "/shell-asset-manifest.json"
+    || path === "/vite-shell/app-preview.html"
+    || path === "/vite-shell/preview.html"
+    || path === "/vite-shell/app-preview-entry.js"
+    || /^\/vite-shell\/assets\/vite-shell-entry-[^/]+\.js$/.test(path);
+}
+
+async function putOkResponse(cacheKey, response) {
+  if (!response || !response.ok) return;
+  const copy = response.clone();
+  const cache = await caches.open(CACHE_NAME);
+  await cache.put(cacheKey, copy);
+}
+
+async function networkFirst(request, cacheKey = request) {
+  const cached = await caches.match(cacheKey);
+  try {
+    const response = await fetch(request, { cache: "reload" });
+    await putOkResponse(cacheKey, response);
+    return response;
+  } catch (_) {
+    if (cached) return cached;
+    throw _;
+  }
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -46,12 +82,14 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(
       (async () => {
+        if (isShellReloadNavigation(url)) {
+          return networkFirst(request, "/index.html");
+        }
         const cached = await caches.match("/index.html");
         const network = fetch(request)
           .then((response) => {
             if (response && response.ok) {
-              const copy = response.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
+              putOkResponse("/index.html", response).catch(() => {});
             }
             return response;
           });
@@ -64,12 +102,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (shouldNetworkFirstShellAsset(url)) {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
   event.respondWith(
     caches.match(request).then((cached) => {
       const network = fetch(request).then((response) => {
         if (response && response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          putOkResponse(request, response).catch(() => {});
         }
         return response;
       });

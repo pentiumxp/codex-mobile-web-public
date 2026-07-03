@@ -216,6 +216,7 @@
       var APP_PREVIEW_STARTUP_RECOVERY_TIMEOUT_MS = 12000;
       var APP_PREVIEW_STARTUP_RECOVERY_POLL_MS = 2500;
       var APP_PREVIEW_STARTUP_RECOVERY_HARD_LIMIT_MS = 30000;
+      var SCRIPT_AUTO_RELOAD_STORAGE_KEY = "codexMobileBootScriptAutoReload";
       function $(id) { return document.getElementById(id); }
       function setStatus(text) {
         var el = $("bootRecoveryStatus");
@@ -284,8 +285,36 @@
         if (scriptErrorTimer) clearTimeout(scriptErrorTimer);
         scriptErrorTimer = window.setTimeout(function () {
           scriptErrorTimer = 0;
+          if (autoReloadForScriptStartupError()) return;
           showRecovery("script-error");
         }, 1200);
+      }
+      function scriptAutoReloadKey() {
+        return SCRIPT_AUTO_RELOAD_STORAGE_KEY + ":" + window.location.pathname;
+      }
+      function hasScriptAutoReloadAttempted() {
+        try {
+          return window.sessionStorage && window.sessionStorage.getItem(scriptAutoReloadKey()) === "1";
+        } catch (_) {
+          return true;
+        }
+      }
+      function markScriptAutoReloadAttempted() {
+        try {
+          if (window.sessionStorage) window.sessionStorage.setItem(scriptAutoReloadKey(), "1");
+        } catch (_) {}
+      }
+      function clearScriptAutoReloadAttempt() {
+        try {
+          if (window.sessionStorage) window.sessionStorage.removeItem(scriptAutoReloadKey());
+        } catch (_) {}
+      }
+      function autoReloadForScriptStartupError() {
+        if (!isViteAppPreviewPage() || hasScriptAutoReloadAttempted()) return false;
+        markScriptAutoReloadAttempted();
+        setStatus("页面脚本启动失败，正在自动重新加载最新入口...");
+        window.location.replace(cacheBustUrl());
+        return true;
       }
       async function clearShellState() {
         if ("caches" in window) {
@@ -332,6 +361,7 @@
           bootReady = true;
           if (showTimer) clearTimeout(showTimer);
           if (scriptErrorTimer) clearTimeout(scriptErrorTimer);
+          clearScriptAutoReloadAttempt();
           hideRecovery();
         },
         fail: function (reason) {

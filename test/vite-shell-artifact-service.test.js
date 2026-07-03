@@ -15,6 +15,7 @@ const CLASSIC_SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->"
 const SHELL_MANIFEST_JS_FIXTURE = Buffer.from("window.CODEX_MOBILE_SHELL_MANIFEST = {};\n");
 const APP_BOOTSTRAP_JS_FIXTURE = Buffer.from("window.CodexAppBootstrap = true;\n");
 const APP_JS_FIXTURE = Buffer.from("window.CodexAppShellRuntime = { createAppShellRuntime: function () {} };\n");
+const STABLE_ENTRY_JS_FIXTURE = Buffer.from("import \"/vite-shell/assets/vite-shell-entry-test.js\";\n");
 
 function sha256Hex(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
@@ -234,9 +235,10 @@ function writeArtifact(root, options = {}) {
   ].join("\n"));
   const preview = Buffer.from([
     "<!doctype html>",
+    "<link rel=\"modulepreload\" href=\"/vite-shell/assets/vite-shell-entry-test.js\" data-codex-vite-stable-entry-target=\"true\">",
     "<link rel=\"modulepreload\" href=\"/vite-shell/assets/vite-entry-group-app-entry-test.js\" data-codex-vite-entry-group-chunk=\"true\">",
     "<main id=\"codex-vite-shell-preview\" data-stage=\"vite-shell-preview-html-v1\" data-entry-group-import-owner=\"vite-shell-entry\" data-startup-global-contract-count=\"1\" data-esm-compatibility-module-count=\"1\"></main>",
-    "<script type=\"module\" src=\"/vite-shell/assets/vite-shell-entry-test.js\"></script>",
+    "<script type=\"module\" src=\"/vite-shell/app-preview-entry.js\"></script>",
     "",
   ].join("\n"));
   const appPreview = Buffer.from([
@@ -250,7 +252,8 @@ function writeArtifact(root, options = {}) {
     "<script id=\"codex-vite-app-preview-loader-plan\" type=\"application/json\" data-codex-vite-app-preview-loader-plan=\"true\">",
     JSON.stringify(appPreviewClassicLoaderPlan),
     "</script>",
-    "<script type=\"module\" src=\"/vite-shell/assets/vite-shell-entry-test.js\" data-codex-vite-app-preview-entry=\"true\"></script>",
+    "<link rel=\"modulepreload\" href=\"/vite-shell/assets/vite-shell-entry-test.js\" data-codex-vite-stable-entry-target=\"true\">",
+    "<script type=\"module\" src=\"/vite-shell/app-preview-entry.js\" data-codex-vite-app-preview-entry=\"true\"></script>",
     "<!-- CODEX_MOBILE_VITE_APP_PREVIEW:END -->",
     "</body>",
     "</html>",
@@ -304,6 +307,7 @@ function writeArtifact(root, options = {}) {
   fs.writeFileSync(path.join(artifactRoot, "assets", "app-bootstrap-test.js"), appBootstrapChunk);
   fs.writeFileSync(path.join(artifactRoot, "assets", "vite-deferred-entry-topology-test.js"), deferred);
   fs.writeFileSync(path.join(artifactRoot, "assets", "vite-entry-group-app-entry-test.js"), entryGroup);
+  fs.writeFileSync(path.join(artifactRoot, "app-preview-entry.js"), STABLE_ENTRY_JS_FIXTURE);
   fs.writeFileSync(path.join(artifactRoot, "codex-mobile-shell-manifest.json"), manifest);
   fs.writeFileSync(path.join(artifactRoot, "preview.html"), preview);
   fs.writeFileSync(path.join(artifactRoot, "app-preview.html"), appPreview);
@@ -399,11 +403,19 @@ function writeArtifact(root, options = {}) {
     esmCompatibility,
     preview: {
       fileName: "preview.html",
-      entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
+      entryScript: "/vite-shell/app-preview-entry.js",
+      targetEntryScript: "/vite-shell/assets/vite-shell-entry-test.js",
+    },
+    stableEntry: {
+      fileName: "app-preview-entry.js",
+      entryScript: "/vite-shell/app-preview-entry.js",
+      targetEntryFileName: "assets/vite-shell-entry-test.js",
+      targetEntryScript: "/vite-shell/assets/vite-shell-entry-test.js",
     },
     appPreview: {
       fileName: "app-preview.html",
-      entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
+      entryScript: "/vite-shell/app-preview-entry.js",
+      targetEntryScript: "/vite-shell/assets/vite-shell-entry-test.js",
       sourceShell: "public/index.html",
     },
     publishedFiles: [
@@ -415,6 +427,7 @@ function writeArtifact(root, options = {}) {
       { fileName: "assets/app-bootstrap-test.js", bytes: appBootstrapChunk.length, sha256: sha256Hex(appBootstrapChunk) },
       { fileName: "assets/vite-deferred-entry-topology-test.js", bytes: deferred.length, sha256: sha256Hex(deferred) },
       { fileName: "assets/vite-entry-group-app-entry-test.js", bytes: entryGroup.length, sha256: sha256Hex(entryGroup) },
+      { fileName: "app-preview-entry.js", bytes: STABLE_ENTRY_JS_FIXTURE.length, sha256: sha256Hex(STABLE_ENTRY_JS_FIXTURE) },
       { fileName: "preview.html", bytes: preview.length, sha256: sha256Hex(preview) },
       { fileName: "app-preview.html", bytes: appPreview.length, sha256: sha256Hex(appPreview) },
     ],
@@ -437,7 +450,7 @@ test("Vite shell artifact status validates the guarded public preview files", ()
     readShellAssetManifest: () => currentManifest,
   });
   const status = artifactService.readPublicArtifactStatus();
-  assert.equal(status.ok, true);
+  assert.equal(status.ok, true, JSON.stringify(status.issueCodes));
   assert.equal(status.available, true);
   assert.equal(status.stage, "vite-shell-preview-html-v1");
   assert.equal(status.sourceBuildStage, "vite-shell-artifact-contract-v1");
@@ -464,16 +477,24 @@ test("Vite shell artifact status validates the guarded public preview files", ()
     readbackSha256: status.classicShellScriptBlock.sha256,
   });
   assert.match(status.classicShellScriptBlock.sha256, /^[a-f0-9]{64}$/);
-  assert.equal(status.publishedFileCount, 10);
+  assert.equal(status.publishedFileCount, 11);
   assert.equal(status.sharedChunkCount, 1);
   assert.deepEqual(status.preview, {
     fileName: "preview.html",
-    entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
+    entryScript: "/vite-shell/app-preview-entry.js",
+    targetEntryScript: "/vite-shell/assets/vite-shell-entry-test.js",
     entryGroupImportOwner: "vite-shell-entry",
+  });
+  assert.deepEqual(status.stableEntry, {
+    fileName: "app-preview-entry.js",
+    entryScript: "/vite-shell/app-preview-entry.js",
+    targetEntryFileName: "assets/vite-shell-entry-test.js",
+    targetEntryScript: "/vite-shell/assets/vite-shell-entry-test.js",
   });
   assert.deepEqual(status.appPreview, {
     fileName: "app-preview.html",
-    entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
+    entryScript: "/vite-shell/app-preview-entry.js",
+    targetEntryScript: "/vite-shell/assets/vite-shell-entry-test.js",
     sourceShell: "public/index.html",
   });
   assert.equal(status.classicShellManifestMatch, true);
@@ -659,6 +680,9 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   fs.writeFileSync(path.join(buildRoot, "assets", "vite-deferred-entry-topology-test.js"), "export const deferred = true;\n");
   fs.writeFileSync(path.join(buildRoot, "assets", "vite-entry-group-app-entry-test.js"), "export const group = true;\n");
   fs.writeFileSync(path.join(buildRoot, "shell-extra.js"), "should not publish\n");
+  fs.mkdirSync(path.join(root, "public", "vite-shell", "assets"), { recursive: true });
+  fs.writeFileSync(path.join(root, "public", "vite-shell", "shell-extra.js"), "stale root artifact\n");
+  fs.writeFileSync(path.join(root, "public", "vite-shell", "assets", "vite-shell-entry-old.js"), "export const old = true;\n");
   fs.writeFileSync(path.join(root, "public", "shell-asset-manifest.js"), SHELL_MANIFEST_JS_FIXTURE);
   fs.writeFileSync(path.join(root, "public", "app-bootstrap.js"), APP_BOOTSTRAP_JS_FIXTURE);
   fs.writeFileSync(path.join(root, "public", "app.js"), APP_JS_FIXTURE);
@@ -816,8 +840,11 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   const readback = publishViteShellPublicArtifact({ root, buildRoot });
   const published = fs.readdirSync(path.join(root, "public", "vite-shell")).sort();
   assert.equal(readback.validation.ok, true);
-  assert.deepEqual(published, ["app-preview.html", "assets", "codex-mobile-shell-manifest.json", "preview.html", "vite-shell-readback.json"]);
+  assert.deepEqual(published, ["app-preview-entry.js", "app-preview.html", "assets", "codex-mobile-shell-manifest.json", "preview.html", "vite-shell-readback.json"]);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "shell-extra.js")), false);
+  assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-shell-entry-old.js")), true);
+  assert.equal(readback.counts.retainedArtifactFiles, 1);
+  assert.deepEqual(readback.retainedArtifactFiles.map((entry) => entry.fileName), ["assets/vite-shell-entry-old.js"]);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-shell-entry-test.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-esm-compatibility-test.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-esm-compatibility-shard-01-test.js")), true);
@@ -825,6 +852,7 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "app-bootstrap-test.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-deferred-entry-topology-test.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-entry-group-app-entry-test.js")), true);
+  assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "app-preview-entry.js")), true);
   const previewHtml = fs.readFileSync(path.join(root, "public", "vite-shell", "preview.html"), "utf8");
   assert.match(previewHtml, /id="codex-vite-shell-preview"/);
   assert.match(previewHtml, /data-startup-critical-asset-count="2"/);
@@ -838,10 +866,11 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.match(previewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-shared-runtime-test\.js" data-codex-vite-shared-chunk="true"/);
   assert.match(previewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-esm-compatibility-test\.js" data-codex-vite-esm-compatibility-chunk="true"/);
   assert.match(previewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-esm-compatibility-shard-01-test\.js" data-codex-vite-esm-compatibility-chunk="true"/);
+  assert.match(previewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-shell-entry-test\.js" data-codex-vite-stable-entry-target="true"/);
   assert.match(previewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-entry-group-app-entry-test\.js" data-codex-vite-entry-group-chunk="true"/);
   assert.doesNotMatch(previewHtml, /data-codex-vite-entry-group-imports="true"/);
   assert.doesNotMatch(previewHtml, /__CODEX_MOBILE_VITE_ENTRY_GROUP_IMPORT_PROMISE__/);
-  assert.match(previewHtml, /type="module" src="\/vite-shell\/assets\/vite-shell-entry-test\.js"/);
+  assert.match(previewHtml, /type="module" src="\/vite-shell\/app-preview-entry\.js"/);
   const appPreviewHtml = fs.readFileSync(path.join(root, "public", "vite-shell", "app-preview.html"), "utf8");
   assert.match(appPreviewHtml, /data-codex-vite-app-preview="true"/);
   assert.match(appPreviewHtml, /name="codex-vite-app-preview"/);
@@ -849,10 +878,11 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.match(appPreviewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-shared-runtime-test\.js" data-codex-vite-shared-chunk="true"/);
   assert.match(appPreviewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-esm-compatibility-test\.js" data-codex-vite-esm-compatibility-chunk="true"/);
   assert.match(appPreviewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-esm-compatibility-shard-01-test\.js" data-codex-vite-esm-compatibility-chunk="true"/);
+  assert.match(appPreviewHtml, /rel="modulepreload" href="\/vite-shell\/assets\/vite-shell-entry-test\.js" data-codex-vite-stable-entry-target="true"/);
   assert.match(appPreviewHtml, /id="codex-vite-app-preview-loader-plan"/);
   assert.match(appPreviewHtml, /data-codex-vite-app-preview-loader-plan="true"/);
   assert.match(appPreviewHtml, /"owner": "vite-shell-entry"/);
-  assert.match(appPreviewHtml, /type="module" src="\/vite-shell\/assets\/vite-shell-entry-test\.js" data-codex-vite-app-preview-entry="true"/);
+  assert.match(appPreviewHtml, /type="module" src="\/vite-shell\/app-preview-entry\.js" data-codex-vite-app-preview-entry="true"/);
   assert.doesNotMatch(appPreviewHtml, /CODEX_MOBILE_SHELL_SCRIPTS:BEGIN/);
   assert.doesNotMatch(appPreviewHtml, /<script src="\/app-bootstrap\.js"/);
   assert.doesNotMatch(appPreviewHtml, /<script src="\/app\.js"/);
@@ -865,10 +895,18 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.equal(readback.entryDynamicImportGraph.deferredFileCount, 1);
   assert.equal(readback.entryDynamicImportGraph.entryGroupFileCount, 1);
   assert.equal(readback.preview.fileName, "preview.html");
-  assert.equal(readback.preview.entryScript, "/vite-shell/assets/vite-shell-entry-test.js");
+  assert.equal(readback.preview.entryScript, "/vite-shell/app-preview-entry.js");
+  assert.equal(readback.preview.targetEntryScript, "/vite-shell/assets/vite-shell-entry-test.js");
+  assert.deepEqual(readback.stableEntry, {
+    fileName: "app-preview-entry.js",
+    entryScript: "/vite-shell/app-preview-entry.js",
+    targetEntryFileName: "assets/vite-shell-entry-test.js",
+    targetEntryScript: "/vite-shell/assets/vite-shell-entry-test.js",
+  });
   assert.deepEqual(readback.appPreview, {
     fileName: "app-preview.html",
-    entryScript: "/vite-shell/assets/vite-shell-entry-test.js",
+    entryScript: "/vite-shell/app-preview-entry.js",
+    targetEntryScript: "/vite-shell/assets/vite-shell-entry-test.js",
     sourceShell: "public/index.html",
   });
   assert.deepEqual(readback.esmCompatibilityChunks, [{
@@ -959,7 +997,7 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.equal(readback.counts.classicAssetHashes, 1);
   assert.equal(readback.counts.entryGroupChunks, 1);
   assert.equal(readback.counts.viteOwnedAppBootstrapChunks, 1);
-  assert.equal(readback.counts.publishedFiles, 10);
+  assert.equal(readback.counts.publishedFiles, 11);
 });
 
 test("Vite shell artifact status fails closed when entry group import owner drifts", () => {

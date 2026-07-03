@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const zlib = require("node:zlib");
 const { test } = require("node:test");
@@ -150,6 +151,35 @@ test("static root can be switched to Vite app-preview with explicit default shel
   assert.equal(invalidFallback.statusCode, 200);
   assert.match(invalidFallbackText, /CODEX_MOBILE_SHELL_SCRIPTS:BEGIN/);
   assert.doesNotMatch(invalidFallbackText, /data-codex-vite-app-preview="true"/);
+});
+
+test("stale Vite hashed shell entry falls back to the stable app-preview entry", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-static-vite-entry-"));
+  try {
+    const stableEntry = "import \"/vite-shell/assets/vite-shell-entry-current.js\";\n";
+    fs.mkdirSync(path.join(tempRoot, "vite-shell"), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, "vite-shell", "app-preview-entry.js"), stableEntry);
+    const staticService = createStaticFileService({
+      publicRoot: tempRoot,
+      mimeFor,
+      defaultShellMode: "vite-app-preview",
+    });
+    const staleEntry = await requestStaticFrom(
+      staticService.serveStatic,
+      "/vite-shell/assets/vite-shell-entry-old.js"
+    );
+    const unrelatedMissing = await requestStaticFrom(
+      staticService.serveStatic,
+      "/vite-shell/assets/vite-entry-group-old.js"
+    );
+
+    assert.equal(staleEntry.statusCode, 200);
+    assert.equal(staleEntry.headers["Content-Type"], "text/javascript; charset=utf-8");
+    assert.equal(staleEntry.body.toString("utf8"), stableEntry);
+    assert.equal(unrelatedMissing.statusCode, 404);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("static compression ignores q=0 encodings and serves svg as text", () => {
