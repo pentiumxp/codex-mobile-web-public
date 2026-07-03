@@ -514,6 +514,74 @@ test("deploy lane runtime active summary replaces warm idle cache", () => {
   assert.equal(merged.activeTurnId, "turn-active");
 });
 
+test("deploy lane list normalization clears embedded active markers after rollout terminal event", () => {
+  const homeAiCwd = "/Users/hermes-dev/HermesMobileDev/app";
+  const rolloutPath = "/tmp/rollout-home-ai-deploy.jsonl";
+  const service = createThreadSummaryStateService({
+    normalizeHomeAiDeployLaneSummary,
+    statusText: (status) => String(status && status.type || status || ""),
+    parseJsonLine(line) {
+      return JSON.parse(line);
+    },
+    isRolloutTerminalEntry(entry) {
+      return Boolean(entry && entry.type === "event_msg" && entry.payload && entry.payload.type === "task_complete");
+    },
+    readRolloutTail(pathname) {
+      assert.equal(pathname, rolloutPath);
+      return [
+        JSON.stringify({
+          type: "event_msg",
+          timestamp: "2026-07-03T10:40:30.801Z",
+          payload: {
+            type: "task_complete",
+            turn_id: "turn-active",
+          },
+        }),
+      ].join("\n");
+    },
+    rolloutPathForThread(thread) {
+      return thread && (thread.path || thread.rolloutPath || "");
+    },
+    timestampToMs(value) {
+      const number = Number(value || 0);
+      if (Number.isFinite(number) && number > 0) return number < 1_000_000_000_000 ? number * 1000 : number;
+      const parsed = Date.parse(String(value || ""));
+      return Number.isFinite(parsed) ? parsed : 0;
+    },
+  });
+
+  const normalized = service.normalizeThreadSummaryLiveStatus({
+    id: "deploy-lane",
+    name: "Home AI Deploy",
+    cwd: homeAiCwd,
+    path: rolloutPath,
+    updatedAt: 1783075231,
+    status: { type: "active", mobileRuntimeDerived: true },
+    activeTurnId: "turn-active",
+    mobileLocalActiveStatus: {
+      turnId: "turn-active",
+      source: "turn/started",
+      startedAtMs: Date.parse("2026-07-03T10:38:50.849Z"),
+    },
+    mobileRolloutActiveTurn: {
+      turnId: "turn-active",
+      startedAtMs: Date.parse("2026-07-03T10:38:49.844Z"),
+      lastActivityMs: Date.parse("2026-07-03T10:39:24.485Z"),
+    },
+    mobileStatusTurnId: "turn-active",
+    mobileStatusSource: "turn/started",
+  });
+
+  assert.equal(normalized.status.type, "idle");
+  assert.equal(normalized.status.previousType, "completed");
+  assert.equal(normalized.mobileDeployLane, true);
+  assert.equal(normalized.activeTurnId, undefined);
+  assert.equal(normalized.mobileLocalActiveStatus, undefined);
+  assert.equal(normalized.mobileRolloutActiveTurn, undefined);
+  assert.equal(normalized.mobileStatusTurnId, undefined);
+  assert.equal(normalized.mobileStatusSource, undefined);
+});
+
 test("thread list completed fallback clears stale active markers from older app-server row", () => {
   const result = mergeThreadListFallback({
     data: [

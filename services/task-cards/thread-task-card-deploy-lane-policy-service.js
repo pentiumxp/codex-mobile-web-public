@@ -117,6 +117,8 @@ function normalizeHomeAiDeployLaneSummary(thread, options = {}) {
   delete normalized.mobileLocalActiveStatus;
   delete normalized.mobileRolloutActiveTurn;
   delete normalized.mobileActiveTurnId;
+  delete normalized.mobileStatusTurnId;
+  delete normalized.mobileStatusSource;
   return normalized;
 }
 

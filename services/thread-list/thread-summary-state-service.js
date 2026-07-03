@@ -42,6 +42,64 @@ function createThreadSummaryStateService(dependencies = {}) {
     return String(status.turnId || status.turn_id || status.activeTurnId || status.active_turn_id || "").trim();
   }
 
+  function activeMarkerTurnId(value) {
+    if (!value) return "";
+    if (typeof value === "object") {
+      return String(value.turnId || value.turn_id || value.id || value.activeTurnId || value.active_turn_id || "").trim();
+    }
+    return String(value || "").trim();
+  }
+
+  function activeMarkerTimestampMs(value) {
+    if (!value || typeof value !== "object") return 0;
+    for (const key of [
+      "startedAtMs",
+      "started_at_ms",
+      "startedAt",
+      "started_at",
+      "lastActivityMs",
+      "last_activity_ms",
+      "timestampMs",
+      "timestamp",
+    ]) {
+      const timestamp = timestampToMs(value[key]);
+      if (timestamp) return timestamp;
+    }
+    return 0;
+  }
+
+  function threadActiveMarkerTurnIds(thread) {
+    const ids = new Set();
+    if (!thread || typeof thread !== "object") return ids;
+    for (const value of [
+      thread.activeTurnId,
+      thread.active_turn_id,
+      thread.mobileActiveTurnId,
+      thread.mobile_active_turn_id,
+      thread.mobileRolloutActiveTurn,
+      thread.mobileLocalActiveStatus,
+      thread.mobileStatusTurnId,
+      thread.status,
+    ]) {
+      const id = value === thread.status ? statusTurnId(value) : activeMarkerTurnId(value);
+      if (id) ids.add(id);
+    }
+    return ids;
+  }
+
+  function threadActiveMarkerStartedAtMs(thread) {
+    if (!thread || typeof thread !== "object") return 0;
+    for (const value of [
+      thread.mobileLocalActiveStatus,
+      thread.mobileRolloutActiveTurn,
+      thread.status,
+    ]) {
+      const timestamp = activeMarkerTimestampMs(value);
+      if (timestamp) return timestamp;
+    }
+    return 0;
+  }
+
   function rowToFallbackThread(row) {
     const updatedAt = Number(row.updated_at || row.updatedAt || 0);
     const name = row.title || row.thread_name || null;
@@ -216,7 +274,9 @@ function createThreadSummaryStateService(dependencies = {}) {
   }
 
   function normalizeThreadSummaryLiveStatus(thread, options = {}) {
-    return normalizeHomeAiDeployLaneSummary(applyLocalActiveThreadStatusToSummary(normalizeStaleContextOnlyActiveThread(thread), options));
+    const normalized = normalizeStaleContextOnlyActiveThread(thread);
+    const activeReconciled = clearSupersededSummaryActiveFromRollout(normalized, options);
+    return normalizeHomeAiDeployLaneSummary(applyLocalActiveThreadStatusToSummary(activeReconciled, options));
   }
 
   function readStateDbThread(threadId) {
@@ -330,6 +390,47 @@ function createThreadSummaryStateService(dependencies = {}) {
     delete thread.mobileStatusTurnId;
     delete thread.mobileStatusSource;
     return thread;
+  }
+
+  function rolloutLatestEvidenceForSummary(thread, rolloutPath) {
+    if (!rolloutPath) return null;
+    let stat = null;
+    try {
+      stat = fs.statSync(rolloutPath);
+    } catch (_) {
+      stat = null;
+    }
+    return rolloutLatestTurnEvidence(rolloutPath, stat);
+  }
+
+  function clearSupersededSummaryActiveFromRollout(thread, options = {}) {
+    if (!thread || typeof thread !== "object" || !isThreadListLiveStatus(thread.status)) return thread;
+    const markerIds = threadActiveMarkerTurnIds(thread);
+    if (!markerIds.size) return thread;
+    const rolloutPath = localActiveSummaryRolloutPath(thread.id || thread.threadId || "", thread);
+    if (!rolloutPath) return thread;
+    const startedAtMs = threadActiveMarkerStartedAtMs(thread);
+    let terminal = Boolean(startedAtMs && rolloutHasTerminalEntryAtOrAfter(rolloutPath, startedAtMs));
+    if (!terminal) {
+      const evidence = rolloutLatestEvidenceForSummary(thread, rolloutPath);
+      const evidenceTurnId = String(evidence && evidence.turnId || "").trim();
+      terminal = Boolean(evidence && evidence.hasTerminal && evidenceTurnId && markerIds.has(evidenceTurnId));
+    }
+    if (!terminal) return thread;
+    const out = Object.assign({}, thread, {
+      status: {
+        type: "completed",
+        mobileClearedStaleActiveSummary: true,
+        previousType: statusText(thread.status),
+      },
+    });
+    clearThreadSummaryActiveMarkers(out);
+    const id = String(out.id || out.threadId || "").trim();
+    if (id) {
+      localActiveThreadStatuses.delete(id);
+      updateThreadListFallbackCacheStatus(id, { type: "completed" }, { source: "stale-active-terminal-rollout" });
+    }
+    return out;
   }
 
   function mergeThreadWithCachedDisplaySummary(thread, options = {}) {
