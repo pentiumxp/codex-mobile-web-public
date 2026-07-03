@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-DqPfldtT.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-Q-1cBquO.js";
 //#region public/composer-runtime.js
 var require_composer_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachComposerRuntime(root) {
@@ -3988,17 +3988,11 @@ var require_thread_detail_patch_plan = /* @__PURE__ */ __commonJSMin(((exports, 
 			const threadTileSurface = Boolean(input.threadTileSurface);
 			const tilePaneVisible = Boolean(input.tilePaneVisible);
 			const conversationPresent = Boolean(input.conversationPresent);
-			if (threadTileMode || threadTileSurface) {
+			if (threadTileSurface) {
 				if (!threadTileMode) return {
 					canPatch: false,
 					surface: "blocked",
 					reason: "tile-surface-without-tile-mode",
-					threadId
-				};
-				if (!threadTileSurface) return {
-					canPatch: false,
-					surface: "blocked",
-					reason: "tile-mode-surface-mismatch",
 					threadId
 				};
 				if (!threadId) return {
@@ -4701,7 +4695,7 @@ var moduleDefinitions = [
 		],
 		"assetPath": "/thread-detail-patch-plan.js",
 		"classicLoaderExcluded": true,
-		"bytes": 8310
+		"bytes": 8148
 	},
 	{
 		"id": "thread-detail-actions",

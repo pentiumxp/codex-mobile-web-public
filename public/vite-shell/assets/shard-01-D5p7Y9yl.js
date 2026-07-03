@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-DqPfldtT.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-Q-1cBquO.js";
 //#region public/build-refresh-policy.js
 var require_build_refresh_policy = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function(root, factory) {
@@ -2170,11 +2170,12 @@ var require_thread_detail_render_plan = /* @__PURE__ */ __commonJSMin(((exports,
 			const threadTileConversationSurface = Boolean(input.threadTileConversationSurface);
 			const tilePatchSurface = compactReason(input.tilePatchSurface || input.surface, "");
 			const tilePatchSurfaceMatch = tilePatchSurface === "thread-tile-pane";
-			const tileSurfaceRefresh = Boolean(threadTileMode || threadTileConversationSurface || tilePatchSurfaceMatch);
+			const tileSurfaceRefresh = Boolean(tilePatchSurface) ? tilePatchSurfaceMatch : Boolean(threadTileMode || threadTileConversationSurface);
 			let reason = "single-thread-surface";
-			if (threadTileMode) reason = "tile-mode";
+			if (tilePatchSurfaceMatch) reason = "tile-patch-surface";
+			else if (tilePatchSurface === "single-thread") reason = "single-thread-surface";
+			else if (threadTileMode) reason = "tile-mode";
 			else if (threadTileConversationSurface) reason = "tile-conversation-surface";
-			else if (tilePatchSurfaceMatch) reason = "tile-patch-surface";
 			else if (!shouldRenderDetail) reason = "metadata-only-single-thread-surface";
 			return {
 				shouldProbeTilePatchSurface: shouldRenderDetail,
@@ -5116,7 +5117,7 @@ var moduleDefinitions = [
 		],
 		"assetPath": "/thread-detail-render-plan.js",
 		"classicLoaderExcluded": true,
-		"bytes": 74010
+		"bytes": 74191
 	},
 	{
 		"id": "thread-detail-dom-patch",

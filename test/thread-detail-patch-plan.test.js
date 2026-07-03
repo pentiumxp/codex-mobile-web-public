@@ -80,15 +80,20 @@ test("dom patch surface routes tile panes and blocks tile transition mismatches"
     },
   );
 
-  assert.equal(
+  assert.deepEqual(
     patchPlan.planThreadDetailDomPatchSurface({
       threadId: "thread-1",
       threadTileMode: true,
       threadTileSurface: false,
       tilePaneVisible: true,
       conversationPresent: true,
-    }).reason,
-    "tile-mode-surface-mismatch",
+    }),
+    {
+      canPatch: true,
+      surface: "single-thread",
+      reason: "single-thread-surface",
+      threadId: "thread-1",
+    },
   );
 
   assert.equal(

@@ -54,8 +54,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/thread-detail-render-plan.js",
 			"sourcePath": "public/thread-detail-render-plan.js",
-			"bytes": 74010,
-			"sha256": "4bf2cb63c21951102eae1822e7f00a3e7e589ef1c0990a34ea5765e6151a4038"
+			"bytes": 74191,
+			"sha256": "6261c8056356f17e28d9ab1ee3254d0cb12a80edaa7109aa8ade3edf6beea242"
 		},
 		{
 			"path": "/thread-detail-merge-state.js",
@@ -78,8 +78,8 @@ var codexMobileViteEntryGroup = {
 		{
 			"path": "/thread-detail-patch-plan.js",
 			"sourcePath": "public/thread-detail-patch-plan.js",
-			"bytes": 8310,
-			"sha256": "7953e47d8c7e18e6deb865bb33969529e289618010e7813c986898aff22f67b4"
+			"bytes": 8148,
+			"sha256": "994d6edf9e7d2b57decc6459f32d1f3ab5f8af25cda8244d98c802ca4fa69828"
 		},
 		{
 			"path": "/thread-detail-dom-patch.js",
@@ -143,7 +143,7 @@ var codexMobileViteEntryGroup = {
 		}
 	],
 	"classicAssetHashCount": 19,
-	"classicAssetBytes": 654579,
+	"classicAssetBytes": 654598,
 	"classicGlobalExports": [
 		{
 			"asset": "/thread-list-runtime.js",
@@ -370,8 +370,8 @@ var codexMobileViteEntryGroup = {
 			"present": true
 		}
 	],
-	"shellCacheName": "codex-mobile-shell-v625-b0e9cc8f807c",
-	"clientBuildId": "0.1.11|codex-mobile-shell-v625-b0e9cc8f807c"
+	"shellCacheName": "codex-mobile-shell-v625-e16cb3dcddae",
+	"clientBuildId": "0.1.11|codex-mobile-shell-v625-e16cb3dcddae"
 };
 var codexMobileViteEntryGroupRegistry = globalThis.__CODEX_MOBILE_VITE_ENTRY_GROUP_CHUNKS__ || {};
 codexMobileViteEntryGroupRegistry[codexMobileViteEntryGroup.id] = codexMobileViteEntryGroup;

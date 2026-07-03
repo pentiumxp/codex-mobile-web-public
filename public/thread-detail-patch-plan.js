@@ -47,12 +47,9 @@
     const threadTileSurface = Boolean(input.threadTileSurface);
     const tilePaneVisible = Boolean(input.tilePaneVisible);
     const conversationPresent = Boolean(input.conversationPresent);
-    if (threadTileMode || threadTileSurface) {
+    if (threadTileSurface) {
       if (!threadTileMode) {
         return { canPatch: false, surface: "blocked", reason: "tile-surface-without-tile-mode", threadId };
-      }
-      if (!threadTileSurface) {
-        return { canPatch: false, surface: "blocked", reason: "tile-mode-surface-mismatch", threadId };
       }
       if (!threadId) {
         return { canPatch: false, surface: "thread-tile-pane", reason: "missing-thread-id", threadId: "" };

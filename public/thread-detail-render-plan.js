@@ -528,11 +528,15 @@
     const threadTileConversationSurface = Boolean(input.threadTileConversationSurface);
     const tilePatchSurface = compactReason(input.tilePatchSurface || input.surface, "");
     const tilePatchSurfaceMatch = tilePatchSurface === "thread-tile-pane";
-    const tileSurfaceRefresh = Boolean(threadTileMode || threadTileConversationSurface || tilePatchSurfaceMatch);
+    const tilePatchSurfaceKnown = Boolean(tilePatchSurface);
+    const tileSurfaceRefresh = tilePatchSurfaceKnown
+      ? tilePatchSurfaceMatch
+      : Boolean(threadTileMode || threadTileConversationSurface);
     let reason = "single-thread-surface";
-    if (threadTileMode) reason = "tile-mode";
+    if (tilePatchSurfaceMatch) reason = "tile-patch-surface";
+    else if (tilePatchSurface === "single-thread") reason = "single-thread-surface";
+    else if (threadTileMode) reason = "tile-mode";
     else if (threadTileConversationSurface) reason = "tile-conversation-surface";
-    else if (tilePatchSurfaceMatch) reason = "tile-patch-surface";
     else if (!shouldRenderDetail) reason = "metadata-only-single-thread-surface";
     return {
       shouldProbeTilePatchSurface: shouldRenderDetail,

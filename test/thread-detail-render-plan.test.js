@@ -674,6 +674,18 @@ test("thread detail refresh patch surface plan classifies tile and single-thread
     tilePatchSurface: "single-thread",
     reason: "single-thread-surface",
   });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurface({
+    shouldRenderDetail: true,
+    threadTileMode: true,
+    threadTileConversationSurface: false,
+    tilePatchSurface: "single-thread",
+  }), {
+    shouldProbeTilePatchSurface: true,
+    tileSurfaceRefresh: false,
+    tilePatchSurface: "single-thread",
+    reason: "single-thread-surface",
+  });
 });
 
 test("thread detail refresh patch surface plan keeps metadata-only probes quiet", () => {
