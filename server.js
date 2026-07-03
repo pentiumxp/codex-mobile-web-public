@@ -3419,6 +3419,66 @@ function assistantReceiptText(item) {
   return "";
 }
 
+function copyTextFromThreadItem(item) {
+  if (!item || typeof item !== "object") return "";
+  if (item.type === "userMessage") return copyTextFromUserMessageItem(item);
+  if (item.type === "agentMessage" || item.type === "plan") return assistantReceiptText(item);
+  if (item.type === "turnDiagnostic") return [item.title, item.message].filter(Boolean).join("\n");
+  return "";
+}
+
+function copyTextFromUserMessageItem(item) {
+  const values = [];
+  const add = (value) => {
+    const text = String(value || "").trim();
+    if (text && !values.includes(text)) values.push(text);
+  };
+  add(item && item.text);
+  add(item && item.message);
+  add(item && item.input);
+  add(item && item.input_text);
+  if (typeof (item && item.content) === "string") add(item.content);
+  for (const part of userMessageContentParts(item)) {
+    add(textValueForUserMessagePart(part));
+  }
+  return values.join("\n\n");
+}
+
+function findThreadCopyText(thread, input = {}) {
+  const itemId = String(input.itemId || "").trim();
+  const wantedTurnId = String(input.turnId || "").trim();
+  if (!thread || !Array.isArray(thread.turns) || !itemId) return null;
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items)) continue;
+    const currentTurnId = turnIdentifier(turn);
+    if (wantedTurnId && currentTurnId && currentTurnId !== wantedTurnId) continue;
+    for (const item of turn.items) {
+      if (!item || visibleItemId(item) !== itemId) continue;
+      const text = copyTextFromThreadItem(item);
+      if (text) {
+        return {
+          text,
+          itemId,
+          turnId: currentTurnId || wantedTurnId || "",
+          itemType: String(item.type || ""),
+        };
+      }
+    }
+  }
+  return null;
+}
+
+async function readThreadItemCopyText(codexClient, threadId, input = {}) {
+  const result = await codexClient.request("thread/read", { threadId, includeTurns: true }, {
+    timeoutMs: READ_RPC_TIMEOUT_MS,
+    retry: false,
+    resetOnTimeout: false,
+  });
+  const thread = result && result.thread;
+  if (thread) appendRolloutFinalReceiptsToThread(thread);
+  return findThreadCopyText(thread, input);
+}
+
 function turnHasMatchingAssistantReceipt(turn, receiptItem) {
   const receiptId = visibleItemId(receiptItem);
   const receiptText = normalizeFinalReceiptText(assistantReceiptText(receiptItem));
@@ -5411,10 +5471,12 @@ function imageUrlValueForUserMessagePart(part) {
 }
 
 function textValueForUserMessagePart(part) {
+  if (typeof part === "string") return part;
   if (!part || typeof part !== "object") return "";
   if (typeof part.text === "string") return part.text;
   if (typeof part.input_text === "string") return part.input_text;
   if (part.type === "input_text" && typeof part.content === "string") return part.content;
+  if (typeof part.input === "string") return part.input;
   return "";
 }
 
@@ -9045,6 +9107,27 @@ async function handleApi(req, res) {
       onThreadDetailReadResult: (payload) => syncThreadDetailReadResultToThreadListFallbackCache(payload),
       logThreadDetail,
     });
+    return;
+  }
+  const threadCopyText = url.pathname.match(/^\/api\/threads\/([^/]+)\/copy-text$/);
+  if (threadCopyText && req.method === "GET") {
+    const threadId = decodeURIComponent(threadCopyText[1]);
+    const itemId = String(url.searchParams.get("itemId") || "").trim();
+    const turnId = String(url.searchParams.get("turnId") || "").trim();
+    if (!itemId) {
+      sendJson(res, 400, { ok: false, error: "itemId is required" });
+      return;
+    }
+    try {
+      const result = await readThreadItemCopyText(codex, threadId, { itemId, turnId });
+      if (!result || !result.text) {
+        sendJson(res, 404, { ok: false, error: "Copy text item not found" });
+        return;
+      }
+      sendJson(res, 200, Object.assign({ ok: true, threadId }, result));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const threadTurns = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns$/);

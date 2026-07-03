@@ -1464,10 +1464,17 @@ function rememberCopyText(value) {
   return key;
 }
 
-function copyButtonHtml(copyKey, label, className = "") {
+function htmlAttrs(attrs = {}) {
+  return Object.entries(attrs || {})
+    .filter(([, value]) => value !== undefined && value !== null && String(value) !== "")
+    .map(([key, value]) => ` ${key}="${escapeHtml(value)}"`)
+    .join("");
+}
+
+function copyButtonHtml(copyKey, label, className = "", attrs = {}) {
   if (!copyKey) return "";
   const classes = ["copy-button", className].filter(Boolean).join(" ");
-  return `<button class="${escapeHtml(classes)}" type="button" data-copy-key="${escapeHtml(copyKey)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+  return `<button class="${escapeHtml(classes)}" type="button" data-copy-key="${escapeHtml(copyKey)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"${htmlAttrs(attrs)}>${escapeHtml(label)}</button>`;
 }
 
 function fallbackCopyText(text) {
@@ -1499,6 +1506,20 @@ async function copyTextToClipboard(text) {
   fallbackCopyText(text);
 }
 
+async function fullCopyTextForButton(button) {
+  if (!button || !button.dataset || !button.dataset.fullCopyThreadId || !button.dataset.fullCopyItemId) return "";
+  const params = new URLSearchParams({
+    itemId: button.dataset.fullCopyItemId,
+  });
+  if (button.dataset.fullCopyTurnId) params.set("turnId", button.dataset.fullCopyTurnId);
+  if (state.key) params.set("key", state.key);
+  const threadId = encodeURIComponent(button.dataset.fullCopyThreadId);
+  const result = await fetchJsonWithTimeout(`/api/threads/${threadId}/copy-text?${params.toString()}`, {
+    timeoutMs: 45000,
+  });
+  return String(result && result.text || "");
+}
+
 function showCopyFeedback(button) {
   if (!button) return;
   const previous = button.textContent || "复制";
@@ -1516,7 +1537,12 @@ function showCopyFeedback(button) {
 
 async function handleCopyButtonClick(button) {
   const key = button && button.dataset ? button.dataset.copyKey : "";
-  const text = state.copyTextStore.get(key || "");
+  let text = "";
+  if (button && button.dataset && button.dataset.fullCopyText === "true") {
+    text = await fullCopyTextForButton(button);
+    if (text && key) state.copyTextStore.set(key, text);
+  }
+  if (!text) text = state.copyTextStore.get(key || "");
   if (!text) return;
   await copyTextToClipboard(text);
   showCopyFeedback(button);
@@ -18404,7 +18430,7 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0, thre
   const injectedTaskCardText = injectedThreadTaskCardTextForItem(item);
   if (injectedTaskCardText) return renderInjectedThreadTaskCardItem(item, turn, previousKeys, index, injectedTaskCardText, contextThread);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
-  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
+  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button", fullCopyAttrsForItem(item, turn, contextThread));
   const timestampHtml = renderItemTimestampHtml(item, turn, contextThread);
   return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}"${clientSubmissionDataAttr(item)}>
     <div class="item-head">
@@ -18419,7 +18445,7 @@ function renderInjectedThreadTaskCardItem(item, turn = null, previousKeys = new 
   const key = stableItemKey(turn, item, index);
   const metadata = injectedThreadTaskCardMetadata(text);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
-  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
+  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button", fullCopyAttrsForItem(item, turn, thread));
   const timestampHtml = renderItemTimestampHtml(item, turn, thread);
   return `<section class="item${entryAnimationClass(key, previousKeys)} thread-task-card-injected" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}" data-thread-task-card-item>
     <div class="item-head thread-task-card-message-head">
@@ -18524,9 +18550,48 @@ function labelForItem(item) {
 
 function copyTextForItem(item) {
   if (!item) return "";
+  if (item.type === "userMessage") return copyTextForUserMessage(item);
   if (item.type === "agentMessage") return item.text || "";
   if (item.type === "turnDiagnostic") return [item.title, item.message].filter(Boolean).join("\n");
   return "";
+}
+
+function itemHasFullCopyTruncation(item) {
+  if (!item || typeof item !== "object") return false;
+  if (item.mobileTextTruncated === true) return Boolean(item.mobileFirstPaintTextBudget || item.mobileActiveTextBudget);
+  return Boolean(item.mobileFirstPaintUserInputBudget);
+}
+
+function copyTextForUserMessage(item) {
+  const values = [];
+  const add = (value) => {
+    const text = String(value || "").trim();
+    if (text && !values.includes(text)) values.push(text);
+  };
+  add(item && item.text);
+  add(item && item.message);
+  add(item && item.input);
+  add(item && item.input_text);
+  const content = item && item.content;
+  if (typeof content === "string") add(content);
+  for (const part of Array.isArray(content) ? content : []) {
+    if (typeof part === "string") add(part);
+    else if (isInputTextPart(part)) add(inputTextValue(part));
+  }
+  return values.join("\n\n");
+}
+
+function fullCopyAttrsForItem(item, turn = null, thread = null) {
+  const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
+  const turnId = String(turn && (turn.id || turn.turnId || turn.turn_id) || "").trim();
+  const itemId = String(item && (item.id || item.itemId || item.item_id) || "").trim();
+  if (!threadId || !itemId || !itemHasFullCopyTruncation(item)) return {};
+  return {
+    "data-full-copy-text": "true",
+    "data-full-copy-thread-id": threadId,
+    "data-full-copy-turn-id": turnId,
+    "data-full-copy-item-id": itemId,
+  };
 }
 
 function imageUrlValue(part) {
