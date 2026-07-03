@@ -665,7 +665,17 @@ Implementation path:
 10. Duplicate blocked triggers must return a visible blocked loop/status, not an
     `ok=true` no-op. Existing same-thread requirements blockers may be recovered
     by converting requirements to the local role and preparing role lanes.
-11. Focused tests include:
+11. Product-audit role cards must include a bounded Audit Packet and Delta
+    Matrix. Packet sections are `requirements_packet`,
+    `design_contract_packet`, `implementation_packet`, `validation_packet`, and
+    `privacy_packet`. Delta Matrix ids are `intent_vs_requirements`,
+    `requirements_vs_design`, `design_vs_implementation`,
+    `implementation_vs_validation`, `user_journey_vs_acceptance`, and
+    `privacy_boundary_vs_evidence`. Missing required sections must remain
+    explicit missing-evidence state in the card and `/api/at-loop/status`; do
+    not attach or read `.agent-context/HANDOFF.md` as audit context unless the
+    named handoff is the audit target itself.
+12. Focused tests include:
    - `test/at-loop-trigger-parser.test.js`
    - `test/thread-task-card-loop-routing-service.test.js`
    - `test/loop-task-runtime.test.js`
@@ -673,7 +683,7 @@ Implementation path:
    - `test/at-loop-composer-intent.test.js`
    - MCP/task-card composition tests that prove the API/MCP surfaces stay
      bounded and idempotent.
-12. The Composer `@` picker intentionally exposes `Loop`, `目标任务`, and
+13. The Composer `@` picker intentionally exposes `Loop`, `目标任务`, and
    `ChatGPT Pro` only. Task-card and autonomous-collaboration creation remains
    available through the existing task-card channel/text commands, but is not a
    top-level Composer `@` picker entry.

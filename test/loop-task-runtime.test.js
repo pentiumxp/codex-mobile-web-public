@@ -100,6 +100,8 @@ test("loop runtime records source-thread requirements locally and dispatches imp
   assert.equal(first.loop.implementationThreadId, "implementation-created");
   assert.equal(first.loop.auditThreadId, "product_audit-created");
   assert.equal(first.loop.requirementsLocal, true);
+  assert.deepEqual(first.loop.auditPacketStatus.presentSections, ["requirements_packet"]);
+  assert.ok(first.loop.auditPacketStatus.missingSections.includes("implementation_packet"));
   assert.equal(createdThreads.length, 2);
   assert.equal(cards.length, 1);
   const requirements = first.loop.roleSlices.find((slice) => slice.role === "requirements");
@@ -209,6 +211,12 @@ test("loop runtime correlates terminal returns and routes audit failure to repai
   assert.equal(implementation.loop.currentRole, "product_audit");
   assert.equal(cards.length, 2);
   assert.equal(cards[1].payload.targetThreadId, "audit-thread");
+  assert.equal(cards[1].payload.targetRole, "product_audit");
+  assert.match(cards[1].payload.bodyMarkdown, /## Audit Packet/);
+  assert.match(cards[1].payload.bodyMarkdown, /## Delta Matrix/);
+  assert.ok(cards[1].payload.missingAuditPacketSections.includes("design_contract_packet"));
+  assert.ok(cards[1].payload.missingAuditPacketSections.includes("validation_packet"));
+  assert.ok(cards[1].payload.auditPacket.sections.find((section) => section.id === "implementation_packet" && section.status === "present"));
 
   const audit = await runtime.recordTerminalReturn({
     taskCardId: "ttc_2",
@@ -222,6 +230,59 @@ test("loop runtime correlates terminal returns and routes audit failure to repai
   assert.equal(audit.loop.nextRoute, "repair");
   assert.equal(cards.length, 3);
   assert.equal(cards[2].payload.targetThreadId, "implementation-thread");
+});
+
+test("loop runtime propagates bounded audit packet and delta matrix to product audit card", async () => {
+  const { cards, runtime } = makeRuntime({ name: "audit-packet" });
+  const started = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop improve product journey",
+    designContractPacket: {
+      status: "present",
+      summary: "Use Loop Engineering contract and module ownership.",
+      actualEvidence: ["docs/ARCHITECTURE.md", "docs/COMPLEX_FEATURE_PATHS.md"],
+    },
+    auditPacket: {
+      deltaMatrix: {
+        intent_vs_requirements: { status: "unchecked", summary: "Compare owner request to local requirements." },
+      },
+    },
+  });
+  assert.equal(started.ok, true);
+  assert.equal(cards.length, 1);
+
+  const implementation = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "completed",
+    summary: "implemented without secret SECRET_VALUE",
+    changedFiles: ["services/at-loop/loop-task-runtime-service.js"],
+    tests: ["node --test test/loop-task-runtime.test.js"],
+    validationSummary: "focused loop runtime tests passed",
+    privacyConfirmation: "no raw secrets or private thread bodies included",
+  });
+  assert.equal(implementation.ok, true);
+  assert.equal(cards.length, 2);
+  const auditPayload = cards[1].payload;
+  assert.equal(auditPayload.targetRole, "product_audit");
+  assert.deepEqual(auditPayload.missingAuditPacketSections, []);
+  assert.deepEqual(auditPayload.deltaMatrix.map((entry) => entry.id), [
+    "intent_vs_requirements",
+    "requirements_vs_design",
+    "design_vs_implementation",
+    "implementation_vs_validation",
+    "user_journey_vs_acceptance",
+    "privacy_boundary_vs_evidence",
+  ]);
+  assert.equal(auditPayload.auditPacket.status.complete, true);
+  assert.match(auditPayload.bodyMarkdown, /requirements_packet/);
+  assert.match(auditPayload.bodyMarkdown, /privacy_boundary_vs_evidence/);
+  assert.doesNotMatch(JSON.stringify(auditPayload), /SECRET_VALUE/);
+  assert.doesNotMatch(auditPayload.bodyMarkdown, /\.agent-context\/HANDOFF\.md as audit context/);
+
+  const status = runtime.status({ loopId: implementation.loop.loopId });
+  assert.equal(status.loops[0].auditPacketStatus.complete, true);
+  const auditSlice = status.loops[0].roleSlices.find((slice) => slice.role === "product_audit");
+  assert.equal(auditSlice.auditPacketStatus.complete, true);
 });
 
 test("loop runtime fails closed when required product-audit lane is missing", async () => {

@@ -20,6 +20,49 @@ const DEFAULT_MAX_ITERATIONS = 3;
 const DEFAULT_WATCHDOG_STALE_MS = 30 * 60 * 1000;
 const SOURCE_THREAD_LOCAL_REQUIREMENTS = "source_thread_local_role";
 const TASK_CARD_DISPATCH = "task_card";
+const AUDIT_PACKET_SECTION_DEFINITIONS = Object.freeze([
+  ["requirements_packet", "requirements_role_return", [
+    "objective",
+    "non_goals",
+    "acceptance_criteria",
+    "user_visible_success",
+    "privacy_boundary",
+    "risk_gates",
+  ]],
+  ["design_contract_packet", "durable_docs_and_contracts", [
+    "product_or_module_contract",
+    "architecture_boundary",
+    "routing_policy",
+    "harness_requirements",
+  ]],
+  ["implementation_packet", "implementation_return_card", [
+    "original_task_card_id",
+    "commit_or_changed_files",
+    "bounded_diff_summary",
+    "ownership_claim",
+    "residual_risk",
+  ]],
+  ["validation_packet", "tests_harnesses_and_readback", [
+    "focused_tests",
+    "harness_evidence",
+    "deployment_readback_when_applicable",
+    "privacy_confirmation",
+  ]],
+  ["privacy_packet", "privacy_boundary", [
+    "excluded_payload_classes",
+    "redaction_or_non_collection_claims",
+    "task_card_privacy_confirmation",
+    "residual_privacy_risk",
+  ]],
+]);
+const DELTA_MATRIX_DEFINITIONS = Object.freeze([
+  "intent_vs_requirements",
+  "requirements_vs_design",
+  "design_vs_implementation",
+  "implementation_vs_validation",
+  "user_journey_vs_acceptance",
+  "privacy_boundary_vs_evidence",
+]);
 const AUDIT_VERDICTS = new Set([
   "passed",
   "failed_requirements_gap",
@@ -40,6 +83,31 @@ function nowIso(clock) {
 
 function compactOneLine(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function redactPacketSensitiveText(value) {
+  return redactSensitiveText(value)
+    .replace(/\b(secret|password|token|api[-_\s]*key|access[-_\s]*key)\s*[:=]?\s+([A-Za-z0-9._-]{6,})/ig, "$1 [redacted]");
+}
+
+function safePacketValue(value, max = 240) {
+  if (value == null) return "";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map((item) => safePacketValue(item, max)).filter(Boolean).slice(0, 8).join("; ");
+  if (typeof value === "object") {
+    const entries = Object.entries(value).slice(0, 8)
+      .map(([key, raw]) => `${compactOneLine(key).slice(0, 60)}=${safePacketValue(raw, 120)}`)
+      .filter(Boolean);
+    return boundedText(redactPacketSensitiveText(entries.join("; ")), max);
+  }
+  return boundedText(redactPacketSensitiveText(value), max);
+}
+
+function boundedPacketList(items, maxItems = 12, itemMax = 220) {
+  return (Array.isArray(items) ? items : [items])
+    .map((item) => safePacketValue(item, itemMax))
+    .filter(Boolean)
+    .slice(0, maxItems);
 }
 
 function stableHash(value, length = 16) {
@@ -140,8 +208,274 @@ function roleTitle(role) {
   return role;
 }
 
+function auditSectionDefinition(id) {
+  const normalized = compactOneLine(id);
+  const entry = AUDIT_PACKET_SECTION_DEFINITIONS.find(([sectionId]) => sectionId === normalized);
+  if (!entry) return null;
+  return { id: entry[0], source: entry[1], expectedEvidence: entry[2] };
+}
+
+function auditPacketSource(input = {}) {
+  const directSections = {
+    requirements_packet: input.requirementsPacket || input.requirements_packet,
+    design_contract_packet: input.designContractPacket || input.design_contract_packet,
+    implementation_packet: input.implementationPacket || input.implementation_packet,
+    validation_packet: input.validationPacket || input.validation_packet,
+    privacy_packet: input.privacyPacket || input.privacy_packet,
+  };
+  const hasDirectSection = Object.values(directSections).some(Boolean);
+  const configured = input.auditPacket
+    || input.audit_packet
+    || input.loopPlan && (input.loopPlan.auditPacket || input.loopPlan.audit_packet)
+    || input.loop_plan && (input.loop_plan.auditPacket || input.loop_plan.audit_packet)
+    || input.plan && (input.plan.auditPacket || input.plan.audit_packet)
+    || null;
+  if (configured && hasDirectSection) {
+    const sections = Array.isArray(configured.sections)
+      ? configured.sections.concat(Object.entries(directSections).filter(([, value]) => value).map(([id, value]) => Object.assign({ id }, value)))
+      : Object.assign({}, configured.sections || {}, directSections);
+    return Object.assign({}, configured, { sections });
+  }
+  return configured || (hasDirectSection ? { sections: directSections } : null) || null;
+}
+
+function sectionInputById(packet, id) {
+  if (!packet || typeof packet !== "object") return null;
+  if (packet[id] && typeof packet[id] === "object") return packet[id];
+  const sections = packet.sections;
+  if (Array.isArray(sections)) {
+    return sections.find((section) => compactOneLine(section && section.id) === id) || null;
+  }
+  if (sections && typeof sections === "object" && sections[id]) return sections[id];
+  return null;
+}
+
+function sectionStatus(raw = {}) {
+  const status = compactOneLine(raw.status || raw.state || "").toLowerCase();
+  if (["present", "provided", "completed", "complete", "available"].includes(status)) return "present";
+  if (["missing", "blocked", "unavailable"].includes(status)) return "missing";
+  if (raw.present === true || raw.available === true) return "present";
+  return "missing";
+}
+
+function sanitizeAuditSection(raw, definition) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  return {
+    id: definition.id,
+    required: source.required === false ? false : true,
+    status: sectionStatus(source),
+    source: safePacketValue(source.source || definition.source, 120),
+    summary: safePacketValue(source.summary || source.description || source.note || "", 320),
+    expectedEvidence: boundedPacketList(source.expectedEvidence || source.expected_evidence || definition.expectedEvidence, 12, 120),
+    evidence: boundedPacketList(source.items || source.actualEvidence || source.actual_evidence || source.providedEvidence || source.provided_evidence || [], 12, 220),
+    missingEvidence: boundedPacketList(source.missingEvidence || source.missing_evidence || [], 12, 160),
+  };
+}
+
+function sanitizeDeltaMatrixEntry(raw, id) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  return {
+    id,
+    status: compactOneLine(source.status || source.state || "unchecked").toLowerCase() || "unchecked",
+    summary: safePacketValue(source.summary || source.description || "", 220),
+    evidence: boundedPacketList(source.evidence || source.items || [], 8, 160),
+  };
+}
+
+function deltaInputById(packet, id) {
+  if (!packet || typeof packet !== "object") return null;
+  const delta = packet.deltaMatrix || packet.delta_matrix;
+  if (Array.isArray(delta)) return delta.find((entry) => compactOneLine(entry && entry.id) === id) || null;
+  if (delta && typeof delta === "object" && delta[id]) return delta[id];
+  return null;
+}
+
+function sanitizeAuditPacket(input = {}) {
+  const packet = auditPacketSource(input) || {};
+  const sections = AUDIT_PACKET_SECTION_DEFINITIONS.map(([id, source, expectedEvidence]) => {
+    const definition = { id, source, expectedEvidence };
+    return sanitizeAuditSection(sectionInputById(packet, id), definition);
+  });
+  return {
+    required: true,
+    source: safePacketValue(packet.source || "codex_mobile_loop_runtime", 120),
+    handoffPolicy: {
+      implementationHandoffAsContext: false,
+      implementationHandoffAsAuditContext: false,
+      implementationHandoffAllowedOnlyWhenAuditingHandoff: true,
+      namedHandoffAsTargetEvidenceOnly: true,
+      auditUsesPacketNotRawHandoff: true,
+    },
+    sections,
+    deltaMatrix: DELTA_MATRIX_DEFINITIONS.map((id) => sanitizeDeltaMatrixEntry(deltaInputById(packet, id), id)),
+  };
+}
+
+function auditPacketStatus(packet = {}) {
+  const sections = Array.isArray(packet.sections) ? packet.sections : [];
+  const requiredSections = sections.filter((section) => section.required !== false).map((section) => section.id);
+  const presentSections = sections.filter((section) => section.required !== false && section.status === "present").map((section) => section.id);
+  const missingSections = requiredSections.filter((id) => !presentSections.includes(id));
+  return {
+    required: packet.required !== false,
+    requiredSections,
+    presentSections,
+    missingSections,
+    complete: missingSections.length === 0,
+    deltaMatrix: DELTA_MATRIX_DEFINITIONS.slice(),
+  };
+}
+
+function publicAuditPacket(packet = {}) {
+  const normalized = packet && packet.sections ? packet : sanitizeAuditPacket({ auditPacket: packet });
+  return {
+    required: normalized.required !== false,
+    source: safePacketValue(normalized.source || "codex_mobile_loop_runtime", 120),
+    handoffPolicy: Object.assign({
+      implementationHandoffAsContext: false,
+      implementationHandoffAsAuditContext: false,
+      implementationHandoffAllowedOnlyWhenAuditingHandoff: true,
+      namedHandoffAsTargetEvidenceOnly: true,
+      auditUsesPacketNotRawHandoff: true,
+    }, normalized.handoffPolicy || {}),
+    sections: (Array.isArray(normalized.sections) ? normalized.sections : []).map((section) => ({
+      id: section.id,
+      required: section.required !== false,
+      status: section.status === "present" ? "present" : "missing",
+      source: safePacketValue(section.source, 120),
+      summary: safePacketValue(section.summary, 260),
+      expectedEvidence: boundedPacketList(section.expectedEvidence || [], 12, 120),
+      evidence: boundedPacketList(section.evidence || [], 12, 180),
+      missingEvidence: boundedPacketList(section.missingEvidence || [], 12, 120),
+    })),
+    deltaMatrix: (Array.isArray(normalized.deltaMatrix) ? normalized.deltaMatrix : []).map((entry) => ({
+      id: compactOneLine(entry.id),
+      status: compactOneLine(entry.status || "unchecked"),
+      summary: safePacketValue(entry.summary, 180),
+      evidence: boundedPacketList(entry.evidence || [], 8, 120),
+    })),
+    status: auditPacketStatus(normalized),
+  };
+}
+
+function mergeAuditPacket(base, update) {
+  const packet = publicAuditPacket(base || sanitizeAuditPacket({}));
+  const incoming = publicAuditPacket(update || {});
+  const byId = new Map(packet.sections.map((section) => [section.id, section]));
+  for (const section of incoming.sections) {
+    if (!byId.has(section.id)) continue;
+    const current = byId.get(section.id);
+    byId.set(section.id, {
+      id: section.id,
+      required: section.required !== false,
+      status: section.status === "present" || current.status === "present" ? "present" : "missing",
+      source: section.status === "present" ? section.source : current.source,
+      summary: section.summary || current.summary,
+      expectedEvidence: section.expectedEvidence.length ? section.expectedEvidence : current.expectedEvidence,
+      evidence: section.evidence.length ? section.evidence : current.evidence,
+      missingEvidence: section.missingEvidence.length ? section.missingEvidence : current.missingEvidence,
+    });
+  }
+  const deltaById = new Map(packet.deltaMatrix.map((entry) => [entry.id, entry]));
+  for (const entry of incoming.deltaMatrix) {
+    if (!deltaById.has(entry.id)) continue;
+    const current = deltaById.get(entry.id);
+    deltaById.set(entry.id, {
+      id: entry.id,
+      status: entry.status && entry.status !== "unchecked" ? entry.status : current.status,
+      summary: entry.summary || current.summary,
+      evidence: entry.evidence.length ? entry.evidence : current.evidence,
+    });
+  }
+  return publicAuditPacket(Object.assign({}, packet, {
+    sections: Array.from(byId.values()),
+    deltaMatrix: Array.from(deltaById.values()),
+  }));
+}
+
+function returnEvidence(input = {}, slice = {}, returnStatus = "") {
+  const evidence = [
+    `role_slice_id:${slice.roleSliceId || ""}`,
+    `task_card_id:${slice.taskCardId || ""}`,
+    `return_status:${returnStatus || ""}`,
+  ];
+  if (input.returnCardId || input.replyCardId) evidence.push(`return_card_id:${safePacketValue(input.returnCardId || input.replyCardId, 120)}`);
+  if (input.commit || input.commitHash || input.sourceRef) evidence.push(`commit:${safePacketValue(input.commit || input.commitHash || input.sourceRef, 120)}`);
+  if (Array.isArray(input.changedFiles) && input.changedFiles.length) evidence.push(`changed_files:${input.changedFiles.length}`);
+  if (Array.isArray(input.tests) && input.tests.length) evidence.push(`tests:${input.tests.length}`);
+  return evidence.filter((item) => !/:$/.test(item));
+}
+
+function roleReturnAuditPacketUpdate(loop, slice, input, returnStatus) {
+  const packet = sanitizeAuditPacket(input);
+  const sectionUpdates = {};
+  const summary = safePacketValue(input.summary || "", 320);
+  if (slice.role === "requirements") {
+    sectionUpdates.requirements_packet = {
+      status: "present",
+      source: "requirements_role_return",
+      summary: summary || loop.objectiveSummary,
+      actualEvidence: returnEvidence(input, slice, returnStatus),
+    };
+  }
+  if (slice.role === "implementation" || slice.role === "repair") {
+    sectionUpdates.implementation_packet = {
+      status: "present",
+      source: "implementation_return_card",
+      summary,
+      actualEvidence: returnEvidence(input, slice, returnStatus),
+    };
+    if (input.validationPacket || input.validation_packet || input.validation || input.validationSummary || input.tests || input.deploymentReadback) {
+      sectionUpdates.validation_packet = {
+        status: "present",
+        source: "implementation_return_validation",
+        summary: safePacketValue(input.validationSummary || input.validation || input.deploymentReadback || "", 320),
+        actualEvidence: boundedPacketList(input.tests || input.validationPacket || input.validation_packet || input.validation || input.deploymentReadback, 12, 180),
+      };
+    }
+    if (input.privacyPacket || input.privacy_packet || input.privacy || input.privacyConfirmation || input.privacy_confirmation) {
+      sectionUpdates.privacy_packet = {
+        status: "present",
+        source: "implementation_return_privacy",
+        summary: safePacketValue(input.privacyConfirmation || input.privacy_confirmation || input.privacy || "", 320),
+        actualEvidence: boundedPacketList(input.privacyPacket || input.privacy_packet || input.privacy || input.privacyConfirmation || input.privacy_confirmation, 12, 180),
+      };
+    }
+  }
+  return mergeAuditPacket(packet, sanitizeAuditPacket({ auditPacket: { sections: sectionUpdates } }));
+}
+
+function auditPacketBody(loop) {
+  const packet = publicAuditPacket(loop.auditPacket || sanitizeAuditPacket({}));
+  const status = packet.status;
+  const lines = [
+    "",
+    "## Audit Packet",
+    "",
+    "Use this structured packet as audit input. Do not treat `.agent-context/HANDOFF.md` or implementation-thread handoffs as inherited audit context.",
+    `Missing required sections: ${status.missingSections.length ? status.missingSections.join(", ") : "none"}`,
+    "",
+  ];
+  for (const section of packet.sections) {
+    lines.push(`### ${section.id}`);
+    lines.push(`- status: ${section.status}`);
+    lines.push(`- source: ${section.source || "unknown"}`);
+    if (section.summary) lines.push(`- summary: ${section.summary}`);
+    lines.push(`- expected evidence: ${section.expectedEvidence.join(", ") || "none"}`);
+    lines.push(`- provided evidence: ${section.evidence.join("; ") || "missing"}`);
+    if (section.status !== "present") lines.push("- missing-evidence handling: return `blocked_missing_evidence` with bounded missing-field evidence if this section is required for the verdict.");
+    lines.push("");
+  }
+  lines.push("## Delta Matrix");
+  lines.push("");
+  for (const entry of packet.deltaMatrix) {
+    lines.push(`- [ ] ${entry.id}${entry.summary ? ` - ${entry.summary}` : ""}`);
+  }
+  return lines.join("\n");
+}
+
 function roleCardBody(loop, slice) {
-  return [
+  const body = [
     `# Codex Mobile @loop role: ${roleTitle(slice.role)}`,
     "",
     `Loop id: ${loop.loopId}`,
@@ -165,6 +499,8 @@ function roleCardBody(loop, slice) {
     "- Do not include raw secrets, cookies, launch tokens, provider payloads, private thread bodies, screenshots, DB rows, full prompts, or long logs.",
     "- If the target thread purpose does not match this role, fail closed with bounded routing evidence.",
   ].join("\n");
+  if (slice.role === "product_audit") return `${body}${auditPacketBody(loop)}`;
+  return body;
 }
 
 function nextRouteForAuditVerdict(verdict) {
@@ -317,7 +653,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   }
 
   function publicSlice(slice = {}) {
-    return {
+    const out = {
       roleSliceId: slice.roleSliceId || "",
       role: slice.role || "",
       status: slice.status || "",
@@ -339,10 +675,15 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       routing: slice.routing || null,
       updatedAt: slice.updatedAt || "",
     };
+    if (slice.role === "product_audit" && slice.auditPacketStatus) {
+      out.auditPacketStatus = slice.auditPacketStatus;
+    }
+    return out;
   }
 
   function publicLoop(loop = {}) {
     const slices = Array.isArray(loop.roleSlices) ? loop.roleSlices : [];
+    const packet = publicAuditPacket(loop.auditPacket || sanitizeAuditPacket({}));
     return {
       loopId: loop.loopId || "",
       sourceThreadId: loop.sourceThreadId || "",
@@ -364,6 +705,21 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       blockedReason: loop.blockedReason || "",
       sourceRequestId: loop.sourceRequestId || "",
       requirementsLocal: loop.requirementsLocal === true,
+      auditPacketStatus: packet.status,
+      auditPacket: {
+        required: packet.required,
+        sections: packet.sections.map((section) => ({
+          id: section.id,
+          required: section.required,
+          status: section.status,
+          source: section.source,
+          missingEvidence: section.missingEvidence,
+        })),
+        deltaMatrix: packet.deltaMatrix.map((entry) => ({
+          id: entry.id,
+          status: entry.status,
+        })),
+      },
       duplicateSuppressedCount: Number(loop.duplicateSuppressedCount || 0),
       waitingReturnCount: slices.filter((slice) => slice.status === "dispatched").length,
       roleSlices: slices.map(publicSlice),
@@ -487,6 +843,22 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     slice.updatedAt = timestamp;
     loop.requirementsThreadId = loop.sourceThreadId;
     loop.requirementsLocal = true;
+    loop.auditPacket = mergeAuditPacket(loop.auditPacket || sanitizeAuditPacket({}), sanitizeAuditPacket({
+      auditPacket: {
+        sections: {
+          requirements_packet: {
+            status: "present",
+            source: "source_thread_local_requirements",
+            summary: loop.objectiveSummary,
+            actualEvidence: [
+              `source_thread_id:${loop.sourceThreadId}`,
+              `role_slice_id:${slice.roleSliceId}`,
+              "task_card_dispatch:false",
+            ],
+          },
+        },
+      },
+    }));
     loop.status = "running";
     loop.currentRole = "requirements";
     loop.nextRoute = "implementation";
@@ -696,6 +1068,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const idempotencyKey = `at-loop:${loop.loopId}:${role}:${slice.iteration}:v1`;
     slice.sourceRequestId = idempotencyKey;
     slice.workflowId = `at-loop:${loop.loopId}`;
+    if (role === "product_audit") {
+      slice.auditPacketStatus = auditPacketStatus(loop.auditPacket || sanitizeAuditPacket({}));
+    }
     const bodyMarkdown = roleCardBody(loop, slice);
     const payload = {
       sourceThreadId: loop.sourceThreadId,
@@ -732,6 +1107,12 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       pending: false,
       reasoningEffort: role === "product_audit" ? "medium" : "high",
     };
+    if (role === "product_audit") {
+      const packet = publicAuditPacket(loop.auditPacket || sanitizeAuditPacket({}));
+      payload.auditPacket = packet;
+      payload.deltaMatrix = packet.deltaMatrix;
+      payload.missingAuditPacketSections = packet.status.missingSections;
+    }
     try {
       const result = await createThreadTaskCardsFromSourceThread(loop.sourceThreadId, payload, { source: "at-loop-runtime" });
       const cards = Array.isArray(result && result.cards) ? result.cards : result && result.card ? [result.card] : [];
@@ -741,6 +1122,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       slice.dispatchMode = TASK_CARD_DISPATCH;
       slice.taskCardDispatch = true;
       slice.taskCardId = compactOneLine(card.id || card.cardId || result && result.cardId);
+      if (role === "product_audit") {
+        slice.auditPacketStatus = auditPacketStatus(loop.auditPacket || sanitizeAuditPacket({}));
+      }
       slice.targetPurpose = targetCheck.classification.purpose;
       slice.routing = publicRoutingMetadata(targetCheck);
       slice.dispatchedAt = timestamp;
@@ -836,6 +1220,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       blockedReason: "",
       sourceRequestId: compactOneLine(input.requestId || input.request_id) || `at-loop:${loopId}:source`,
       requirementsLocal: sameThreadId(requirementsThreadId, sourceThreadId),
+      auditPacket: sanitizeAuditPacket(input),
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -866,6 +1251,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     slice.returnSummary = boundedText(redactSensitiveText(input.summary || ""), 220);
     slice.auditVerdict = auditVerdict;
     slice.updatedAt = timestamp;
+    loop.auditPacket = mergeAuditPacket(loop.auditPacket || sanitizeAuditPacket({}), roleReturnAuditPacketUpdate(loop, slice, input, returnStatus));
     loop.lastAuditVerdict = auditVerdict || loop.lastAuditVerdict || "";
 
     const route = roleAfterTerminal(loop, slice, returnStatus, auditVerdict);

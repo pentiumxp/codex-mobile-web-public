@@ -782,6 +782,14 @@ metadata before cwd/title heuristics; if a safe lane is unavailable, the loop
 stays visibly blocked with bounded routing metadata. Duplicate triggers for an
 already blocked loop return the blocked loop/status instead of reporting a
 successful no-op.
+Product-audit role cards receive a structured Audit Packet instead of raw
+implementation handoff context. The runtime stores and projects bounded
+`requirements_packet`, `design_contract_packet`, `implementation_packet`,
+`validation_packet`, and `privacy_packet` sections plus a Delta Matrix covering
+intent, requirements, design, implementation, validation, user journey, and
+privacy comparisons. Missing required sections stay visible as missing evidence
+in `/api/at-loop/status` and in the audit card; the runtime must not read or
+attach `.agent-context/HANDOFF.md` as substitute audit context.
 To keep this from being only a model prompt, the same runtime switch also adds a
 dynamic source-write decision layer. For ordinary non-exempt workspaces,
 `thread/start`, `thread/resume`, and `turn/start` use a real

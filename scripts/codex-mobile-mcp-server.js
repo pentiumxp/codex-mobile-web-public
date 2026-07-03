@@ -163,6 +163,8 @@ function toolsList() {
           targetAlias: { type: "string", maxLength: 120 },
           deployReadbackRequired: { type: "boolean" },
           maxIterations: { type: "integer", minimum: 1, maximum: 10 },
+          auditPacket: { type: "object", additionalProperties: true },
+          loopPlan: { type: "object", additionalProperties: true },
         },
       },
       { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
@@ -411,6 +413,8 @@ async function startLoop(context, args = {}) {
     deployReadbackRequired: Boolean(args.deployReadbackRequired || args.deploy_readback_required),
     maxIterations: Number(args.maxIterations || args.max_iterations || 0) || undefined,
   };
+  if (args.auditPacket && typeof args.auditPacket === "object") body.auditPacket = args.auditPacket;
+  if (args.loopPlan && typeof args.loopPlan === "object") body.loopPlan = args.loopPlan;
   const result = await requestJson(context, "POST", "/api/at-loop/triggers", body);
   const loop = result.loop || {};
   return {

@@ -53,6 +53,7 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.replyToThreadId);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.secretRef);
   assert.ok(listedTools.find((entry) => entry.name === "start_loop").inputSchema.properties.deployReadbackRequired);
+  assert.ok(listedTools.find((entry) => entry.name === "start_loop").inputSchema.properties.auditPacket);
   const initialized = await handleMessage({ server: "http://127.0.0.1:1", key: "secret" }, { id: 1, method: "initialize" });
   assert.equal(initialized.serverInfo.name, "codex_mobile");
   assert.match(initialized.instructions, /delegate_to_thread/);
@@ -220,6 +221,7 @@ test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
       assert.equal(body.sourceThreadId, "source-1");
       assert.equal(body.text, "@home-ai @loop implement loop runtime");
       assert.equal(body.deployReadbackRequired, true);
+      assert.equal(body.auditPacket.sections.design_contract_packet.status, "present");
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({
         ok: true,
@@ -274,6 +276,14 @@ test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
     targetAlias: "home-ai",
     objective: "implement loop runtime",
     deployReadbackRequired: true,
+    auditPacket: {
+      sections: {
+        design_contract_packet: {
+          status: "present",
+          summary: "contract packet",
+        },
+      },
+    },
   });
   assert.equal(started.ok, true);
   assert.equal(started.loop.loopId, "loop_1234");
