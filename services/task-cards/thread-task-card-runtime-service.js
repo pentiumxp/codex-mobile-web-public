@@ -7,6 +7,8 @@ const { createThreadTaskCardService } = require("./thread-task-card-service");
 const {
   isHomeAiDeployLaneThread,
 } = require("./thread-task-card-deploy-lane-policy-service");
+const { createLoopTaskRuntimeService } = require("../at-loop/loop-task-runtime-service");
+const { createAtLoopRouteService } = require("../../server-routes/at-loop-route-service");
 const { createThreadTaskCardRouteService } = require("../../server-routes/thread-task-card-route-service");
 
 function createThreadTaskCardRuntimeService(dependencies = {}) {
@@ -20,6 +22,10 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     || createThreadTaskCardService;
   const threadTaskCardRouteServiceFactory = dependencies.threadTaskCardRouteServiceFactory
     || createThreadTaskCardRouteService;
+  const atLoopRuntimeServiceFactory = dependencies.atLoopRuntimeServiceFactory
+    || createLoopTaskRuntimeService;
+  const atLoopRouteServiceFactory = dependencies.atLoopRouteServiceFactory
+    || createAtLoopRouteService;
 
   const homeAiAutonomousDeliveryReturnService = homeAiAutonomousDeliveryReturnServiceFactory({
     baseUrl: dependencies.hermesPluginNotificationBaseUrl,
@@ -168,7 +174,26 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
   attachWorkspaceDelegationRuntimeGuidance = threadTaskCardRouteService.attachWorkspaceDelegationRuntimeGuidance;
   readThreadTaskCardExecutionTargetSummary = threadTaskCardRouteService.readThreadTaskCardExecutionTargetSummary;
 
+  const atLoopRuntimeService = atLoopRuntimeServiceFactory({
+    fs: dependencies.fs,
+    path: dependencies.path,
+    storageFile: dependencies.atLoopStateFile,
+    createThreadTaskCardsFromSourceThread: threadTaskCardRouteService.createThreadTaskCardsFromSourceThread,
+    readThreadTaskCardTargetSummary: threadTaskCardRouteService.readThreadTaskCardTargetSummary,
+    readThreadTaskCardVisibleTargetSummary: threadTaskCardRouteService.readThreadTaskCardVisibleTargetSummary,
+    threadTaskCardVisibleTargetThreads: threadTaskCardRouteService.threadTaskCardVisibleTargetThreads,
+    loopTargetAliases: dependencies.atLoopTargetAliases,
+    maxIterations: dependencies.atLoopMaxIterations,
+    watchdogStaleMs: dependencies.atLoopWatchdogStaleMs,
+    clock: dependencies.clock,
+  });
+  const atLoopRouteService = atLoopRouteServiceFactory({
+    atLoopRuntimeService,
+  });
+
   return Object.assign({
+    atLoopRouteService,
+    atLoopRuntimeService,
     homeAiAutonomousDeliveryReturnService,
     homeAiSecretRefService,
     taskCardRuntimePolicyService,

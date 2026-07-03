@@ -95,6 +95,7 @@ function createServerRouteCompositionService(dependencies = {}) {
     CODEX_HOME: dependencies.CODEX_HOME,
     archiveThreadId: dependencies.archiveThreadId,
     archivedSessionThreadIds: dependencies.archivedSessionThreadIds,
+    atLoopRouteService: dependencies.atLoopRouteService,
     attachThreadListStateToResult: dependencies.attachThreadListStateToResult,
     chatGptProBridgeService: dependencies.chatGptProBridgeService,
     chatGptProMcpService: dependencies.chatGptProMcpService,

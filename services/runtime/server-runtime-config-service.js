@@ -216,6 +216,8 @@ function createServerRuntimeConfigService(dependencies = {}) {
       HOME_AI_SECRET_REF_TIMEOUT_MS: Math.max(1000, Number(env.CODEX_MOBILE_HOME_AI_SECRET_REF_TIMEOUT_MS || "12000")),
       THREAD_TASK_CARD_FILE: env.CODEX_MOBILE_THREAD_TASK_CARD_FILE
         || path.join(RUNTIME_ROOT, "thread-task-cards.json"),
+      AT_LOOP_STATE_FILE: env.CODEX_MOBILE_AT_LOOP_STATE_FILE
+        || path.join(RUNTIME_ROOT, "at-loop-state.json"),
       RUNTIME_SETTINGS_FILE: env.CODEX_MOBILE_SETTINGS_FILE
         || path.join(RUNTIME_ROOT, "settings.json"),
       THREAD_SIDE_CHAT_FILE: env.CODEX_MOBILE_THREAD_SIDE_CHAT_FILE

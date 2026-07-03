@@ -25,6 +25,7 @@ function createApiDispatchRouteService(dependencies = {}) {
   const CODEX_HOME = dependencies.CODEX_HOME;
   const archiveThreadId = dependencies.archiveThreadId;
   const archivedSessionThreadIds = dependencies.archivedSessionThreadIds;
+  const atLoopRouteService = dependencies.atLoopRouteService;
   const attachThreadListStateToResult = dependencies.attachThreadListStateToResult;
   const chatGptProBridgeService = dependencies.chatGptProBridgeService;
   const chatGptProMcpService = dependencies.chatGptProMcpService;
@@ -201,6 +202,17 @@ function createApiDispatchRouteService(dependencies = {}) {
     });
     if (threadSideChatRouteResult.handled) {
       return;
+    }
+    if (atLoopRouteService && typeof atLoopRouteService.handleRoute === "function") {
+      const atLoopRouteResult = await atLoopRouteService.handleRoute({
+        url,
+        method: req.method,
+        readBody: () => readBody(req),
+        sendJson: (status, body) => sendJson(res, status, body),
+      });
+      if (atLoopRouteResult.handled) {
+        return;
+      }
     }
     const threadTaskCardRouteResult = await threadTaskCardRouteService.handleRoute({
       url,

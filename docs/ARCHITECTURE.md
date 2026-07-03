@@ -755,11 +755,23 @@ This app-server dynamic-tool path is only for Codex app-server turns. Codex
 Mobile also registers a standard `codex_mobile` MCP server into each active or
 target Codex Home during startup, workspace creation, and profile switching.
 That MCP server is backed by `scripts/codex-mobile-mcp-server.js`, exposes
-`list_threads`, `delegate_to_thread`, and `return_to_source`, and uses the same
-authenticated local task-card API. The registration writes
+`list_threads`, `delegate_to_thread`, `start_loop`, `loop_status`, and
+`return_to_source`, and uses the same authenticated local task-card API. The registration writes
 command/script/server/key-file paths to `CODEX_HOME/config.toml`; it does not
 store raw key material. This gives new Profiles and new Codex Homes the same
 delegation and return toolset without manual config edits.
+Explicit `@loop` requests are a Codex Mobile runtime, not a Home AI scheduler.
+Codex Mobile owns trigger parsing, stable `loopId` generation, bounded role
+slices, task-card dispatch idempotency, terminal-return correlation,
+target-purpose fail-closed routing, audit-verdict next-route selection, and
+Watchdog stale-return classification. Home AI owns only domain adapters and
+status projection. The bounded HTTP surface is `/api/at-loop/triggers`,
+`/api/at-loop/status`, `/api/at-loop/status/:loopId`,
+`/api/at-loop/returns`, and `/api/at-loop/watchdog`; the MCP surface uses
+`start_loop` and `loop_status`. Loop state is stored in
+`CODEX_MOBILE_AT_LOOP_STATE_FILE` or the runtime `at-loop-state.json` and must
+not include raw secrets, full prompts, private thread bodies, launch tokens,
+cookies, screenshots, database rows, provider payloads, or long logs.
 To keep this from being only a model prompt, the same runtime switch also adds a
 dynamic source-write decision layer. For ordinary non-exempt workspaces,
 `thread/start`, `thread/resume`, and `turn/start` use a real

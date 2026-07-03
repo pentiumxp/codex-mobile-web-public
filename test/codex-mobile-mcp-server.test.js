@@ -13,7 +13,9 @@ const {
   encodeMessage,
   handleMessage,
   listThreads,
+  loopStatus,
   returnToSource,
+  startLoop,
   toolsList,
 } = require("../scripts/codex-mobile-mcp-server");
 const {
@@ -42,16 +44,19 @@ function readBody(req) {
 
 test("Codex Mobile MCP server exposes delegation tools and parses stdio framing", async () => {
   const listedTools = toolsList();
-  assert.deepEqual(listedTools.map((entry) => entry.name), ["list_threads", "delegate_to_thread", "return_to_source"]);
+  assert.deepEqual(listedTools.map((entry) => entry.name), ["list_threads", "delegate_to_thread", "start_loop", "loop_status", "return_to_source"]);
   assert.equal(listedTools.find((entry) => entry.name === "list_threads").annotations.readOnlyHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "delegate_to_thread").annotations.destructiveHint, false);
+  assert.equal(listedTools.find((entry) => entry.name === "loop_status").annotations.readOnlyHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "return_to_source").annotations.idempotentHint, true);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.pluginId);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.replyToThreadId);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.secretRef);
+  assert.ok(listedTools.find((entry) => entry.name === "start_loop").inputSchema.properties.deployReadbackRequired);
   const initialized = await handleMessage({ server: "http://127.0.0.1:1", key: "secret" }, { id: 1, method: "initialize" });
   assert.equal(initialized.serverInfo.name, "codex_mobile");
   assert.match(initialized.instructions, /delegate_to_thread/);
+  assert.match(initialized.instructions, /start_loop/);
   assert.match(initialized.instructions, /return_to_source/);
 
   const parsed = [];
@@ -206,6 +211,80 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
   assert.ok(calls.every((call) => call.authorization === "Bearer secret"));
 });
 
+test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
+  const calls = [];
+  const server = http.createServer(async (req, res) => {
+    calls.push({ method: req.method, url: req.url, authorization: req.headers.authorization || "" });
+    if (req.method === "POST" && req.url === "/api/at-loop/triggers") {
+      const body = JSON.parse(await readBody(req));
+      assert.equal(body.sourceThreadId, "source-1");
+      assert.equal(body.text, "@home-ai @loop implement loop runtime");
+      assert.equal(body.deployReadbackRequired, true);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        ok: true,
+        duplicateSuppressed: false,
+        loop: {
+          loopId: "loop_1234",
+          status: "running",
+          currentRole: "requirements",
+          nextRoute: "requirements",
+          waitingReturnCount: 1,
+          duplicateSuppressedCount: 0,
+          objectiveSummary: "implement loop runtime",
+        },
+      }));
+      return;
+    }
+    if (req.method === "GET" && req.url === "/api/at-loop/status/loop_1234") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        ok: true,
+        loopCount: 1,
+        loops: [{
+          loopId: "loop_1234",
+          status: "running",
+          currentRole: "requirements",
+          iteration: 1,
+          maxIterations: 3,
+          nextRoute: "requirements",
+          lastAuditVerdict: "",
+          waitingReturnCount: 1,
+          duplicateSuppressedCount: 0,
+          roleSlices: [{
+            roleSliceId: "loop_1234:requirements:1",
+            role: "requirements",
+            status: "dispatched",
+            targetThreadId: "source-1",
+            targetPurpose: "codex_mobile_implementation",
+            taskCardId: "ttc_1",
+            stale: false,
+          }],
+        }],
+      }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  });
+  t.after(() => server.close());
+  const context = { server: await listen(server), key: "secret" };
+  const started = await startLoop(context, {
+    sourceThreadId: "source-1",
+    targetAlias: "home-ai",
+    objective: "implement loop runtime",
+    deployReadbackRequired: true,
+  });
+  assert.equal(started.ok, true);
+  assert.equal(started.loop.loopId, "loop_1234");
+  assert.equal(started.loop.waitingReturnCount, 1);
+
+  const status = await loopStatus(context, { loopId: "loop_1234" });
+  assert.equal(status.loopCount, 1);
+  assert.equal(status.loops[0].roleSlices[0].taskCardId, "ttc_1");
+  assert.ok(calls.every((call) => call.authorization === "Bearer secret"));
+});
+
 test("Codex Mobile MCP config registration is per Codex Home and stores no raw key", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-mcp-config-"));
   const configPath = path.join(dir, "config.toml");
@@ -224,8 +303,10 @@ test("Codex Mobile MCP config registration is per Codex Home and stores no raw k
   assert.match(text, /"\/runtime\/access_key"/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.list_threads\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.delegate_to_thread\]/);
+  assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.start_loop\]/);
+  assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.loop_status\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.return_to_source\]/);
-  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 3);
+  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 5);
   assert.doesNotMatch(text, /Bearer/);
   assert.doesNotMatch(text, /secret/);
 
@@ -268,7 +349,9 @@ test("Codex Mobile MCP config registration repairs stale command args", () => {
   assert.doesNotMatch(text, /old-node|\/old\/script|manual/);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.list_threads\]/g) || []).length, 1);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.delegate_to_thread\]/g) || []).length, 1);
+  assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.start_loop\]/g) || []).length, 1);
+  assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.loop_status\]/g) || []).length, 1);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.return_to_source\]/g) || []).length, 1);
-  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 3);
+  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 5);
   assert.match(text, /\[mcp_servers\.codegraph\]/);
 });

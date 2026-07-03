@@ -150,6 +150,36 @@ function toolsList() {
       { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     ),
     tool(
+      "start_loop",
+      "Start a bounded Codex Mobile @loop runtime and dispatch the first role task card through the existing task-card channel.",
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["sourceThreadId", "objective"],
+        properties: {
+          sourceThreadId: { type: "string", minLength: 1, maxLength: 120 },
+          objective: { type: "string", minLength: 1, maxLength: 2000 },
+          targetThreadId: { type: "string", maxLength: 220 },
+          targetAlias: { type: "string", maxLength: 120 },
+          deployReadbackRequired: { type: "boolean" },
+          maxIterations: { type: "integer", minimum: 1, maximum: 10 },
+        },
+      },
+      { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    ),
+    tool(
+      "loop_status",
+      "Read bounded Codex Mobile @loop status for Home AI projection. Returns ids, role state, verdicts, and routing metadata only.",
+      {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          loopId: { type: "string", maxLength: 120 },
+        },
+      },
+      { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    ),
+    tool(
       "return_to_source",
       "Return a received Codex Mobile task card to its source thread. Use this when target work is completed, blocked, redirected, rejected, or partially completed; a local final answer is not a return card.",
       {
@@ -369,6 +399,65 @@ async function returnToSource(context, args = {}) {
   };
 }
 
+async function startLoop(context, args = {}) {
+  const sourceThreadId = boundedString(args.sourceThreadId || args.threadId, "source_thread_id", 120, true);
+  const objective = boundedString(args.objective, "objective", 2000, true);
+  const targetAlias = boundedString(args.targetAlias || args.target_alias, "target_alias", 120, false);
+  const targetThreadId = boundedString(args.targetThreadId || args.target_thread_id, "target_thread_id", 220, false);
+  const body = {
+    sourceThreadId,
+    text: `${targetAlias ? `@${targetAlias} ` : ""}@loop ${objective}`,
+    targetThreadId,
+    deployReadbackRequired: Boolean(args.deployReadbackRequired || args.deploy_readback_required),
+    maxIterations: Number(args.maxIterations || args.max_iterations || 0) || undefined,
+  };
+  const result = await requestJson(context, "POST", "/api/at-loop/triggers", body);
+  const loop = result.loop || {};
+  return {
+    ok: result.ok !== false,
+    duplicateSuppressed: Boolean(result.duplicateSuppressed),
+    loop: {
+      loopId: String(loop.loopId || ""),
+      status: String(loop.status || ""),
+      currentRole: String(loop.currentRole || ""),
+      nextRoute: String(loop.nextRoute || ""),
+      waitingReturnCount: Number(loop.waitingReturnCount || 0),
+      duplicateSuppressedCount: Number(loop.duplicateSuppressedCount || 0),
+      objectiveSummary: String(loop.objectiveSummary || ""),
+    },
+  };
+}
+
+async function loopStatus(context, args = {}) {
+  const loopId = boundedString(args.loopId || args.loop_id, "loop_id", 120, false);
+  const path = loopId ? `/api/at-loop/status/${encodeURIComponent(loopId)}` : "/api/at-loop/status";
+  const result = await requestJson(context, "GET", path);
+  return {
+    ok: result.ok !== false,
+    loopCount: Number(result.loopCount || 0),
+    loops: (Array.isArray(result.loops) ? result.loops : []).map((loop) => ({
+      loopId: String(loop.loopId || ""),
+      status: String(loop.status || ""),
+      currentRole: String(loop.currentRole || ""),
+      iteration: Number(loop.iteration || 0),
+      maxIterations: Number(loop.maxIterations || 0),
+      nextRoute: String(loop.nextRoute || ""),
+      lastAuditVerdict: String(loop.lastAuditVerdict || ""),
+      waitingReturnCount: Number(loop.waitingReturnCount || 0),
+      duplicateSuppressedCount: Number(loop.duplicateSuppressedCount || 0),
+      roleSlices: (Array.isArray(loop.roleSlices) ? loop.roleSlices : []).map((slice) => ({
+        roleSliceId: String(slice.roleSliceId || ""),
+        role: String(slice.role || ""),
+        status: String(slice.status || ""),
+        targetThreadId: String(slice.targetThreadId || ""),
+        targetPurpose: String(slice.targetPurpose || ""),
+        taskCardId: String(slice.taskCardId || ""),
+        stale: Boolean(slice.stale),
+      })),
+    })),
+  };
+}
+
 async function handleMessage(context, message = {}) {
   const method = String(message.method || "");
   if (method === "initialize") {
@@ -379,6 +468,7 @@ async function handleMessage(context, message = {}) {
       instructions: [
         "Use delegate_to_thread when a user request requires code, files, commands, tests, deployment, or other mutation in another Codex thread/workspace.",
         "Use return_to_source when a received task card is completed, blocked, redirected, rejected, or partially completed; a target-thread final answer is not a source-thread return card.",
+        "Use start_loop only for explicit @loop requests; use loop_status for bounded loop status projection.",
         "Do not use multi_agent_v1 tools as a substitute for Codex Mobile cross-thread task cards.",
       ].join("\n"),
     };
@@ -391,6 +481,8 @@ async function handleMessage(context, message = {}) {
     const args = params.arguments && typeof params.arguments === "object" ? params.arguments : {};
     if (name === "list_threads") return textContent(await listThreads(context, args));
     if (name === "delegate_to_thread") return textContent(await delegateToThread(context, args));
+    if (name === "start_loop") return textContent(await startLoop(context, args));
+    if (name === "loop_status") return textContent(await loopStatus(context, args));
     if (name === "return_to_source") return textContent(await returnToSource(context, args));
     throw new Error("codex_mobile_mcp_unknown_tool");
   }
@@ -490,7 +582,9 @@ module.exports = {
   encodeMessage,
   handleMessage,
   listThreads,
+  loopStatus,
   parseArgs,
   returnToSource,
+  startLoop,
   toolsList,
 };
