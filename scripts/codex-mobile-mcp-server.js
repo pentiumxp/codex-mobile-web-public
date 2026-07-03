@@ -5,6 +5,10 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const {
+  normalizeSecretRefsFromInput,
+  publicSensitiveContext,
+} = require("../services/runtime/home-ai-secret-ref-service");
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "codex_mobile";
@@ -122,6 +126,17 @@ function toolsList() {
           title: { type: "string", minLength: 1, maxLength: 120 },
           summary: { type: "string", maxLength: 300 },
           bodyMarkdown: { type: "string", minLength: 1 },
+          secretRef: { type: "string", maxLength: 180, description: "Home AI short-lived secretRef. Do not put plaintext secrets in bodyMarkdown." },
+          secretRefs: {
+            type: "array",
+            maxItems: 8,
+            items: {
+              anyOf: [
+                { type: "string", maxLength: 180 },
+                { type: "object", additionalProperties: true },
+              ],
+            },
+          },
           requestId: { type: "string", maxLength: 180 },
           idempotencyKey: { type: "string", maxLength: 180 },
           workflowMode: { type: "string", enum: ["manual", "autonomous"] },
@@ -241,6 +256,11 @@ async function delegateToThread(context, args = {}) {
   const sourceThreadId = boundedString(args.sourceThreadId, "source_thread_id", 120, true);
   const title = boundedString(args.title, "title", 120, true);
   const bodyMarkdown = boundedString(args.bodyMarkdown || args.body, "body_markdown", 50_000, true);
+  const sensitiveContext = normalizeSecretRefsFromInput(args, {
+    source: "mcp-delegate",
+    targetPlugin: "codex",
+    sourceThreadId,
+  });
   const payload = {
     sourceThreadId,
     title,
@@ -265,6 +285,7 @@ async function delegateToThread(context, args = {}) {
     cardKind: boundedString(args.cardKind || args.card_kind || args.taskCardKind || args.task_card_kind, "card_kind", 80, false),
     pluginId: boundedString(args.pluginId || args.plugin_id, "plugin_id", 100, false),
     category: boundedString(args.category, "category", 80, false),
+    sensitiveContext,
     direct: true,
     autoApprove: true,
     pending: false,
@@ -286,6 +307,7 @@ async function delegateToThread(context, args = {}) {
       targetApprovalBypassed: Boolean(card.delivery && card.delivery.targetApprovalBypassed),
       reasoningEffort: String(card.delivery && card.delivery.reasoningEffort || card.injectionRuntime && card.injectionRuntime.requestedReasoningEffort || ""),
       runtimeReasoningEffort: String(card.injectionRuntime && card.injectionRuntime.reasoningEffort || ""),
+      sensitiveContext: publicSensitiveContext(card.sensitiveContext),
     })),
   };
 }

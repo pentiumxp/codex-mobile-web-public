@@ -188,6 +188,66 @@ test("create persists a pending task card and lists it for source and target thr
   });
 });
 
+test("task-card secretRef metadata is stored internally but public and injected surfaces stay redacted", async () => {
+  const storageFile = tempFile("cards.json");
+  const service = createThreadTaskCardService({ storageFile });
+  const card = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-src",
+    sourceTurnId: "turn-src",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "codex-mobile-web",
+    targetThreadId: "thread-dst",
+    idempotencyKey: "secret-ref:1",
+    format: "markdown",
+    title: "Use secure credential",
+    summary: "Use secure credential.",
+    body: "Use the secure credential for this task without asking the user to paste it.",
+    secretRef: {
+      id: "sec_taskcard1234567890",
+      expiresInSeconds: 600,
+      targetPlugin: "codex",
+    },
+  });
+
+  assert.equal(card.sensitiveContext.secretRefs[0].id, "sec_task...7890");
+  assert.doesNotMatch(JSON.stringify(card), /sec_taskcard1234567890/);
+
+  const store = JSON.parse(fs.readFileSync(storageFile, "utf8"));
+  assert.equal(store.cards[0].sensitiveContext.secretRefs[0].id, "sec_taskcard1234567890");
+  const injected = service.injectedMessageText(store.cards[0]);
+  assert.match(injected, /已收到安全凭据 sec_task\.\.\.7890，10 分钟内可用于当前任务。/);
+  assert.match(injected, /secure secretRef consumption path/);
+  assert.doesNotMatch(injected, /sec_taskcard1234567890|REAL_PASSWORD_SHOULD_NOT_LEAK/);
+
+  const detail = service.get(card.id, "thread-dst");
+  assert.equal(detail.message.body, "Use the secure credential for this task without asking the user to paste it.");
+  assert.equal(detail.sensitiveContext.secretRefs[0].id, "sec_task...7890");
+  assert.doesNotMatch(JSON.stringify(detail), /sec_taskcard1234567890/);
+});
+
+test("task-card secretRef normalization rejects plaintext-bearing metadata", async () => {
+  const service = createThreadTaskCardService({ storageFile: tempFile("cards.json") });
+  await assert.rejects(
+    () => service.create({
+      sourceWorkspaceId: "home-ai",
+      sourceThreadId: "thread-src",
+      targetWorkspaceId: "codex-mobile-web",
+      targetThreadId: "thread-dst",
+      idempotencyKey: "secret-ref:plaintext",
+      format: "markdown",
+      title: "Use secure credential",
+      summary: "Use secure credential.",
+      body: "Use the secure credential.",
+      secretRef: {
+        id: "sec_taskcard1234567890",
+        value: "REAL_PASSWORD_SHOULD_NOT_LEAK",
+      },
+    }),
+    /secret_ref_plaintext_disallowed/,
+  );
+});
+
 test("listForThread returns bounded summary cards while get keeps full task-card detail", async () => {
   const storageFile = tempFile("cards.json");
   const body = Array.from({ length: 300 }, () => "Detailed request.").join(" ");

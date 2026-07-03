@@ -3,6 +3,12 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const {
+  normalizeSecretRefsFromInput,
+  publicSensitiveContext,
+  scopeSecretRefs,
+  secretRefReceiptText,
+} = require("../runtime/home-ai-secret-ref-service");
 
 const MAX_TITLE_CHARS = 120;
 const MAX_SUMMARY_CHARS = 300;
@@ -616,6 +622,8 @@ function taskCardExecutionContinuationText(card, completed = {}, returnScriptPat
 function publicCard(card, threadId) {
   const role = cardForThread(card, threadId) || "";
   const out = clone(card);
+  out.sensitiveContext = publicSensitiveContext(out.sensitiveContext);
+  if (!out.sensitiveContext) delete out.sensitiveContext;
   out.terminal = cardIsTerminal(out);
   out.requiresReturn = cardRequiresReturn(out);
   out.ackPolicy = cardAckPolicy(out);
@@ -771,6 +779,7 @@ function summarizePublicCard(card) {
     delivery: summarizePublicCardDelivery(card && card.delivery),
     workflow: summarizePublicCardWorkflow(card && card.workflow),
     routeResolution: summarizePublicRouteResolution(card && card.routeResolution),
+    sensitiveContext: publicSensitiveContext(card && card.sensitiveContext),
     audit: summarizePublicCardAudit(card && card.audit),
     executionLease: summarizePublicCardExecutionLease(card && card.executionLease),
     injectionRuntime: omitEmptyObject({
@@ -843,6 +852,13 @@ function normalizeCreateRequest(input = {}) {
     workflowMode: normalizedWorkflowMode(input.workflowMode),
     workflowId: boundedString(input.workflowId, "workflow_id", 220, false),
     replyTo: normalizeReplyToRef(input),
+    sensitiveContext: normalizeSecretRefsFromInput(input, {
+      source: "task-card",
+      targetPlugin: "codex",
+      sourceThreadId: input.sourceThreadId,
+      targetThreadId: input.targetThreadId,
+      workspaceId: input.targetWorkspaceId || input.targetWorkspace,
+    }),
   };
 }
 
@@ -1035,6 +1051,7 @@ function injectedMessageText(card, returnScriptPath = "scripts/return-thread-tas
     && card.delivery.autoReturnOnCompletion === true;
   const sourceDirect = card.delivery
     && card.delivery.approvalMode === "source_thread_direct";
+  const secretReceipt = secretRefReceiptText(card.sensitiveContext);
   const lines = [
     sourceDirect ? "[Cross-thread task card sent by source thread]" : "[Cross-thread task card approved]",
     "",
@@ -1052,6 +1069,8 @@ function injectedMessageText(card, returnScriptPath = "scripts/return-thread-tas
     autoReturnOnCompletion ? "Auto-return: when this injected turn completes, Codex Mobile Web will send a return task card back to the source thread in this workflow." : "",
     terminal ? "Return policy: terminal receipt; do not send an acknowledgement return unless this card explicitly creates new work." : "",
     !terminal && !autoReturnOnCompletion && requiresReturn ? `Return required: local final text in this target thread is not a source-thread return card. When this work is completed, blocked, or redirected, return a task card to the source with taskCardId ${card.id} through codex_mobile.return_to_source or ${returnScriptPath}.` : "",
+    secretReceipt ? "Sensitive context: use the secure secretRef consumption path only for action-specific needs; do not ask the user to paste or reveal the plaintext credential in chat." : "",
+    secretReceipt,
     "",
     stringValue(card.message && card.message.body),
   ].filter((line, index, all) => line !== "" || (index > 0 && all[index - 1] !== ""));
@@ -1344,6 +1363,15 @@ function createThreadTaskCardService(options = {}) {
         createdAt: timestamp,
       },
     };
+    const sensitiveContext = scopeSecretRefs(request.sensitiveContext, {
+      sourceThreadId: request.sourceThreadId,
+      targetThreadId: request.targetThreadId,
+      threadId: request.targetThreadId,
+      taskCardId: cardId,
+      workspaceId: request.targetWorkspaceId,
+      workspaceCwd: request.targetWorkspaceId,
+    });
+    if (sensitiveContext) card.sensitiveContext = sensitiveContext;
     const replyTo = resolveReplyToRefForRequest(request, store);
     if (replyTo) card.replyTo = replyTo;
     store.cards.push(card);

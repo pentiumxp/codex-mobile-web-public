@@ -148,6 +148,27 @@ function createThreadTaskCardRouteService(dependencies = {}) {
           summary: { type: "string", description: "One-line bounded task summary." },
           body: { type: "string", description: "Full Markdown task body for the target thread." },
           bodyMarkdown: { type: "string", description: "Alias for body." },
+          secretRef: { type: "string", description: "Short-lived Home AI secretRef for current-task sensitive context. This is a reference only; never place plaintext secrets in title, summary, body, logs, or return cards." },
+          secretRefs: {
+            type: "array",
+            maxItems: 8,
+            items: {
+              anyOf: [
+                { type: "string" },
+                {
+                  type: "object",
+                  additionalProperties: true,
+                  properties: {
+                    id: { type: "string" },
+                    secretRef: { type: "string" },
+                    targetPlugin: { type: "string", enum: ["codex"] },
+                    expiresInSeconds: { type: "integer", minimum: 60, maximum: 3600 },
+                  },
+                },
+              ],
+            },
+            description: "Short-lived Home AI secretRef entries scoped to targetPlugin=codex. Values are rendered as bounded sec_... receipts only.",
+          },
           replyToThreadId: { type: "string", description: "Optional terminal-return target thread id. Use when this card is a multi-hop supplement that must return to an original requester instead of the immediate source thread." },
           replyToWorkspaceId: { type: "string", description: "Optional workspace/cwd for replyToThreadId." },
           replyToThreadTitle: { type: "string", description: "Optional display title for replyToThreadId." },

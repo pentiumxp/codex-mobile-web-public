@@ -155,6 +155,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(serverRuntimeConfigServiceJs, /WORKSPACE_DELEGATION_TOOL_NAMESPACE: "codex_mobile"/);
   assert.match(serverRuntimeConfigServiceJs, /WORKSPACE_DELEGATION_TOOL_NAME: "delegate_to_thread"/);
   assert.match(serverRuntimeConfigServiceJs, /TASK_CARD_RETURN_TOOL_NAME: "return_to_source"/);
+  assert.match(serverRuntimeConfigServiceJs, /HOME_AI_SECRET_REF_CONSUME_PATH/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED/);
   assert.match(runtimeSettingsServiceJs, /function workspaceDelegationPublicSettings\(/);
@@ -230,6 +231,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /Archived, deleted, hidden, subagent, or non-detail-readable targetThreadId values are rejected/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /Several normal threads may share the same cwd\/workspace/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /reasoningEffort/);
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /secretRef/);
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /targetPlugin/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /effortOptions/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /pluginId/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /replyToThreadId/);
@@ -303,6 +306,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(createThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(createThreadTaskCardScript, /--pending/);
   assert.match(createThreadTaskCardScript, /--reasoning-effort <value>/);
+  assert.match(createThreadTaskCardScript, /--secret-ref <sec_\.\.\.>/);
   assert.match(createThreadTaskCardScript, /--reply-to-thread <id>/);
   assert.match(createThreadTaskCardScript, /replyToThreadId/);
   assert.match(createThreadTaskCardScript, /Settings -> 跨工作区委派/);

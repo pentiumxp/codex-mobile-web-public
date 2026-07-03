@@ -231,6 +231,37 @@ The normal create route above remains pending by default. The thread-callable
 route can also be forced back to pending behavior with `pending:true`,
 `autoApprove:false`, or `direct:false`.
 
+### Sensitive `secretRef` Context
+
+Home AI native shells can help the owner paste temporary passwords or API keys
+without placing plaintext in chat. The iOS shell must read the pasteboard only
+after an explicit user action, upload the value to the Home AI secret broker,
+and pass Codex Mobile only a short-lived `secretRef` such as `sec_...`.
+
+Codex Mobile accepts `secretRef` / `secretRefs` on message and task-card
+metadata, including `sensitiveContext.secretRefs` and secretRef attachment
+metadata. The stored internal card keeps the full broker reference so a
+server-side action can consume it, but public card summaries, injected
+task-card text, MCP responses, and message metadata render only a bounded
+receipt such as:
+
+```text
+已收到安全凭据 sec_...，10 分钟内可用于当前任务。
+```
+
+Plaintext fields such as `value`, `secret`, `password`, `token`,
+`accessKey`, `apiKey`, cookies, or authorization headers are rejected in
+secretRef metadata. The target plugin scope must be `codex`. Expired,
+unauthorized, invalid, unknown, or used-up broker references fail closed with
+bounded error codes.
+
+Codex Mobile does not expose a model-visible MCP tool that returns plaintext.
+Action-specific server code must call `homeAiSecretRefService.consumeSecretRef`
+with the current thread/task/workspace scope and use the returned value only in
+memory for that one action. Public responses should use
+`publicSecretRefConsumeResult` and must not include raw secret values, broker
+payloads, access keys, or full `secretRef` ids.
+
 ### Read one
 
 `GET /api/thread-task-cards/:id`

@@ -1,6 +1,11 @@
 "use strict";
 
 const path = require("node:path");
+const {
+  appendSecretRefReceiptText,
+  normalizeSecretRefsFromInput,
+  publicSensitiveContext,
+} = require("../services/runtime/home-ai-secret-ref-service");
 
 function createThreadMessageRouteService(dependencies = {}) {
   const {
@@ -65,6 +70,12 @@ function createThreadMessageRouteService(dependencies = {}) {
       const { fields: body, uploads } = await readMessage("new-thread");
       const cwd = String(body.cwd || "").trim();
       const text = String(body.text || "").trim();
+      const secretContext = normalizeSecretRefsFromInput(body, {
+        source: "message",
+        targetPlugin: "codex",
+        workspaceCwd: cwd,
+      });
+      const textForInput = appendSecretRefReceiptText(text, secretContext).trim();
       const requestedModel = modelOptions.includes(String(body.model || "").trim())
         ? String(body.model || "").trim()
         : "";
@@ -73,7 +84,7 @@ function createThreadMessageRouteService(dependencies = {}) {
         : "";
       const requestedFastMode = requestedCodexFastMode(body.fastMode);
       const requestedTitle = truncateSingleLine(String(body.title || body.name || "").trim(), 120);
-      const input = buildTurnInput(text, uploads);
+      const input = buildTurnInput(textForInput, uploads);
       const persistExtendedHistory = persistExtendedHistoryForUploads(uploads);
       if (!input.length) {
         sendJson(400, { error: "Message text or attachment is required" });
@@ -85,7 +96,7 @@ function createThreadMessageRouteService(dependencies = {}) {
         sendJson(403, { error: "Workspace is not visible in Codex Desktop" });
         return { handled: true };
       }
-      const submissionKeys = messageSubmissionKeys("new-thread", body, text, uploads);
+      const submissionKeys = messageSubmissionKeys("new-thread", body, textForInput, uploads);
       try {
         const result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
           const runtimeSettings = applyPermissionModeOverride({}, body.permissionMode, cwd);
@@ -159,6 +170,7 @@ function createThreadMessageRouteService(dependencies = {}) {
             turnId: (turnResult && (turnResult.turnId || turnResult.id || turnResult.turn && turnResult.turn.id)) || "",
             result: turnResult,
             startResult,
+            sensitiveContext: publicSensitiveContext(secretContext),
           };
         });
         sendJson(200, result);
@@ -205,7 +217,14 @@ function createThreadMessageRouteService(dependencies = {}) {
       const threadId = decodeURIComponent(messages[1]);
       const { fields: body, uploads } = await readMessage(threadId);
       const text = String(body.text || "").trim();
-      const input = buildTurnInput(text, uploads);
+      const secretContext = normalizeSecretRefsFromInput(body, {
+        source: "message",
+        targetPlugin: "codex",
+        threadId,
+        workspaceCwd: body.cwd || "",
+      });
+      const textForInput = appendSecretRefReceiptText(text, secretContext).trim();
+      const input = buildTurnInput(textForInput, uploads);
       const persistExtendedHistory = persistExtendedHistoryForUploads(uploads);
       if (!input.length) {
         logMessageSubmit("empty", {
@@ -218,12 +237,12 @@ function createThreadMessageRouteService(dependencies = {}) {
       }
       logMessageSubmit("received", {
         threadId,
-        textChars: text.length,
+        textChars: textForInput.length,
         uploads: uploads.length,
         activeTurnId: body.activeTurnId || "",
         clientSubmissionId: body.clientSubmissionId,
       });
-      const submissionKeys = messageSubmissionKeys(threadId, body, text, uploads);
+      const submissionKeys = messageSubmissionKeys(threadId, body, textForInput, uploads);
       const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), body.permissionMode, body.cwd || null);
       const requestedModel = modelOptions.includes(String(body.model || "").trim())
         ? String(body.model || "").trim()
@@ -340,6 +359,11 @@ function createThreadMessageRouteService(dependencies = {}) {
           return { handled: true };
         }
         throw err;
+      }
+      if (secretContext) {
+        result = Object.assign({}, result || {}, {
+          sensitiveContext: publicSensitiveContext(secretContext),
+        });
       }
       sendJson(200, result);
       return { handled: true };

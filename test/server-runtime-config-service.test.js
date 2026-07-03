@@ -53,6 +53,8 @@ test("server runtime config resolves default runtime paths and bounded ids", () 
   assert.equal(config.THREAD_SIDE_CHAT_SCOPE_ID, "profile-main");
   assert.equal(config.WORKSPACE_DELEGATION_TOOL_FULL_NAME, "codex_mobile.delegate_to_thread");
   assert.equal(config.TASK_CARD_RETURN_TOOL_FULL_NAME, "codex_mobile.return_to_source");
+  assert.equal(config.HOME_AI_SECRET_REF_CONSUME_PATH, "/api/secret-refs/consume");
+  assert.equal(config.HOME_AI_SECRET_REF_TIMEOUT_MS, 12000);
 });
 
 test("server runtime config applies env overrides and clamps hot-path limits", () => {
@@ -69,6 +71,10 @@ test("server runtime config applies env overrides and clamps hot-path limits", (
       CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT: "50",
       CODEX_MOBILE_MODEL_OPTIONS: "model-a, model-b, model-a",
       CODEX_MOBILE_PUBLIC_PR_REPOSITORY: "Owner/Repo",
+      CODEX_MOBILE_HOME_AI_SECRET_REF_BASE_URL: "https://home-ai.example.test",
+      CODEX_MOBILE_HOME_AI_SECRET_REF_KEY_FILE: "/runtime/secret-ref-key",
+      CODEX_MOBILE_HOME_AI_SECRET_REF_CONSUME_PATH: "/api/native/secret-ref/consume",
+      CODEX_MOBILE_HOME_AI_SECRET_REF_TIMEOUT_MS: "2500",
     },
     codexHome: "/codex/home",
   });
@@ -85,6 +91,10 @@ test("server runtime config applies env overrides and clamps hot-path limits", (
   assert.deepEqual(config.MODEL_OPTIONS, ["model-a", "model-b"]);
   assert.equal(config.DEFAULT_MODEL, "model-a");
   assert.equal(config.PUBLIC_PR_REPOSITORY, "owner/repo");
+  assert.equal(config.HOME_AI_SECRET_REF_BASE_URL, "https://home-ai.example.test");
+  assert.equal(config.HOME_AI_SECRET_REF_KEY_FILE, "/runtime/secret-ref-key");
+  assert.equal(config.HOME_AI_SECRET_REF_CONSUME_PATH, "/api/native/secret-ref/consume");
+  assert.equal(config.HOME_AI_SECRET_REF_TIMEOUT_MS, 2500);
 });
 
 test("server runtime config keeps duplicate desktop global state files unique", () => {

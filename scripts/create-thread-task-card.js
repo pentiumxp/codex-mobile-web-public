@@ -25,6 +25,7 @@ function usage() {
     "  --summary <text>           Optional summary.",
     "  --body <text>              Body markdown. Prefer --body-file for long text.",
     "  --body-file <path>         Body markdown file. Use '-' for stdin.",
+    "  --secret-ref <sec_...>     Home AI short-lived secretRef for current-task sensitive context; never pass plaintext secrets here.",
     "  --request-id <id>          Stable idempotency seed for retries.",
     "  --idempotency-key <key>    Explicit task-card idempotency key.",
     "  --workflow-mode <mode>     manual or autonomous.",
@@ -111,6 +112,9 @@ function parseArgs(argv) {
       options.request.body = next();
     } else if (arg === "--body-file") {
       options.bodyFile = next();
+    } else if (arg === "--secret-ref" || arg === "--secret-ref-id") {
+      if (!Array.isArray(options.request.secretRefs)) options.request.secretRefs = [];
+      options.request.secretRefs.push(next());
     } else if (arg === "--request-id") {
       options.request.requestId = next();
     } else if (arg === "--idempotency-key") {

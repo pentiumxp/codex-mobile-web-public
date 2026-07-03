@@ -1,6 +1,7 @@
 "use strict";
 
 const { createHomeAiAutonomousDeliveryReturnService } = require("./home-ai-autonomous-delivery-return-service");
+const { createHomeAiSecretRefService } = require("../runtime/home-ai-secret-ref-service");
 const { createTaskCardRuntimePolicyService } = require("./task-card-runtime-policy-service");
 const { createThreadTaskCardService } = require("./thread-task-card-service");
 const {
@@ -11,6 +12,8 @@ const { createThreadTaskCardRouteService } = require("../../server-routes/thread
 function createThreadTaskCardRuntimeService(dependencies = {}) {
   const homeAiAutonomousDeliveryReturnServiceFactory = dependencies.homeAiAutonomousDeliveryReturnServiceFactory
     || createHomeAiAutonomousDeliveryReturnService;
+  const homeAiSecretRefServiceFactory = dependencies.homeAiSecretRefServiceFactory
+    || createHomeAiSecretRefService;
   const taskCardRuntimePolicyServiceFactory = dependencies.taskCardRuntimePolicyServiceFactory
     || createTaskCardRuntimePolicyService;
   const threadTaskCardServiceFactory = dependencies.threadTaskCardServiceFactory
@@ -22,6 +25,14 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     baseUrl: dependencies.hermesPluginNotificationBaseUrl,
     webKey: dependencies.hermesPluginNotificationKey,
     webKeyFile: dependencies.hermesPluginNotificationKeyFile,
+    registrationForWorkspace: dependencies.registrationForWorkspace,
+  });
+  const homeAiSecretRefService = homeAiSecretRefServiceFactory({
+    baseUrl: dependencies.homeAiSecretRefBaseUrl || dependencies.hermesPluginNotificationBaseUrl,
+    webKey: dependencies.homeAiSecretRefKey || dependencies.hermesPluginNotificationKey,
+    webKeyFile: dependencies.homeAiSecretRefKeyFile || dependencies.hermesPluginNotificationKeyFile,
+    consumePath: dependencies.homeAiSecretRefConsumePath,
+    timeoutMs: dependencies.homeAiSecretRefTimeoutMs,
     registrationForWorkspace: dependencies.registrationForWorkspace,
   });
 
@@ -159,6 +170,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
 
   return Object.assign({
     homeAiAutonomousDeliveryReturnService,
+    homeAiSecretRefService,
     taskCardRuntimePolicyService,
     threadTaskCardRouteService,
     threadTaskCardService,
