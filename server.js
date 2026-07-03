@@ -838,6 +838,7 @@ const continuationThreadService = createContinuationThreadService({
   isWebSearchLikeItem,
   isOperationalItem,
   statusText,
+  isCompletedStatus,
   publicRuntimeSettings,
   applyTurnRuntimeSettings,
   applyResumeRuntimeSettings,
@@ -8882,7 +8883,6 @@ async function handleApi(req, res) {
   }
   const continuationJobMatch = url.pathname.match(/^\/api\/thread-continuations\/([^/]+)$/);
   if (continuationJobMatch && req.method === "GET") {
-    pruneContinuationJobs();
     const jobId = decodeURIComponent(continuationJobMatch[1]);
     const job = getContinuationJob(jobId);
     if (!job) {
