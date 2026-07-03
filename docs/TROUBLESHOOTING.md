@@ -1601,7 +1601,12 @@ boundary before debugging quota data. `public/app-shell-runtime.js` should call
 `CodexComposerBridgeRuntime.createComposerBridgeRuntime().toggleQuotaDetails()`
 for the top-level quota click. Calling the classic bare `toggleQuotaDetails`
 symbol directly can fail after that runtime is ESM-owned and no longer creates a
-script-global lexical binding.
+script-global lexical binding. Also verify the popup is visually in the
+viewport, not only `hidden=false` / `aria-expanded=true`: in Hermes embed or
+route-transition states, a zero-size quota anchor can otherwise position the
+panel off-screen. Current builds use a viewport fallback for hidden anchors and
+do not suppress later `click` / `touchend` events unless the bridge toggle has
+already succeeded.
 
 ## Web Push
 

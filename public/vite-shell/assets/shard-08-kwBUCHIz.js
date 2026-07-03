@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CLkE3zzj.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-S6GhhRRX.js";
 //#region public/thread-detail-runtime.js
 var require_thread_detail_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachThreadDetailRuntime(root) {

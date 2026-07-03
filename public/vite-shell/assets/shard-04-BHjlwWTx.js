@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CLkE3zzj.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-S6GhhRRX.js";
 //#region public/modal-runtime.js
 var require_modal_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function renderAppNativeDialog() {
@@ -2627,9 +2627,12 @@ var require_app_shell_runtime = /* @__PURE__ */ __commonJSMin(((exports, module)
 				const eventType = String(event.type || "");
 				if ((eventType === "click" || eventType === "touchend") && now < suppressSyntheticQuotaToggleUntil) return;
 				if (now - lastQuotaToggleAt < 650) return;
+				if (!toggleQuotaDetailsFromRuntime(quotaUsage)) {
+					if (eventType !== "pointerdown") showError(/* @__PURE__ */ new Error("quota_details_runtime_unavailable"));
+					return;
+				}
 				lastQuotaToggleAt = now;
 				if (eventType === "pointerdown") suppressSyntheticQuotaToggleUntil = now + 2200;
-				if (!toggleQuotaDetailsFromRuntime(quotaUsage)) showError(/* @__PURE__ */ new Error("quota_details_runtime_unavailable"));
 			};
 			quotaUsage.addEventListener("pointerdown", handleQuotaToggle);
 			quotaUsage.addEventListener("click", handleQuotaToggle);
@@ -3321,7 +3324,7 @@ var moduleDefinitions = [
 		"expectedFunctions": ["createAppShellRuntime"],
 		"assetPath": "/app-shell-runtime.js",
 		"classicLoaderExcluded": true,
-		"bytes": 45076
+		"bytes": 45125
 	}
 ];
 var moduleApis = {

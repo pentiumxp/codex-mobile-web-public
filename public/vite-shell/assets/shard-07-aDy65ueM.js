@@ -1,4 +1,4 @@
-import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-CLkE3zzj.js";
+import { i as __toESM, r as __commonJSMin } from "./vite-shell-entry-S6GhhRRX.js";
 //#region public/composer-runtime.js
 var require_composer_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	(function attachComposerRuntime(root) {
@@ -843,7 +843,6 @@ var require_composer_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) 
 				}
 			}
 			function fitComposerPopupToAnchor(panel, anchor, options = {}) {
-				const rect = anchor.getBoundingClientRect();
 				const minWidth = Number(options.minWidth || 180);
 				const maxWidth = Number(options.maxWidth || 280);
 				const visualViewport = window.visualViewport;
@@ -851,6 +850,19 @@ var require_composer_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) 
 				const viewportTop = visualViewport ? Number(visualViewport.offsetTop || 0) : 0;
 				const viewportWidth = Math.max(1, Math.floor(visualViewport && visualViewport.width || window.innerWidth || document.documentElement.clientWidth || maxWidth));
 				const viewportHeight = Math.max(1, Math.floor(visualViewport && visualViewport.height || window.innerHeight || document.documentElement.clientHeight || 360));
+				const rawRect = anchor && typeof anchor.getBoundingClientRect === "function" ? anchor.getBoundingClientRect() : null;
+				const rawVisible = Boolean(rawRect && rawRect.width > 0 && rawRect.height > 0 && rawRect.right > viewportLeft && rawRect.left < viewportLeft + viewportWidth && rawRect.bottom > viewportTop && rawRect.top < viewportTop + viewportHeight);
+				const fallbackAnchorWidth = Math.min(128, Math.max(48, viewportWidth - 24));
+				const fallbackAnchorHeight = 30;
+				const fallbackAnchorBottom = Math.max(64, Math.min(96, viewportHeight * .18));
+				const rect = rawVisible ? rawRect : {
+					left: viewportLeft + viewportWidth - fallbackAnchorWidth - 12,
+					right: viewportLeft + viewportWidth - 12,
+					top: viewportTop + viewportHeight - fallbackAnchorBottom - fallbackAnchorHeight,
+					bottom: viewportTop + viewportHeight - fallbackAnchorBottom,
+					width: fallbackAnchorWidth,
+					height: fallbackAnchorHeight
+				};
 				const width = Math.max(minWidth, Math.min(maxWidth, viewportWidth - 16, Math.max(rect.width, minWidth)));
 				const left = Math.max(viewportLeft + 8, Math.min(viewportLeft + viewportWidth - width - 8, rect.left));
 				const anchorTop = Math.max(viewportTop + 8, Math.min(viewportTop + viewportHeight - 8, rect.top));
@@ -4633,7 +4645,7 @@ var moduleDefinitions = [
 		"expectedFunctions": ["createComposerRuntime"],
 		"assetPath": "/composer-runtime.js",
 		"classicLoaderExcluded": true,
-		"bytes": 78244
+		"bytes": 79150
 	},
 	{
 		"id": "composer-bridge-runtime",

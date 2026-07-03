@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { readFrontendSources } = require("./frontend-source-helper");
 
+const composerRuntime = require(path.resolve(__dirname, "..", "public", "composer-runtime.js"));
 const appJs = readFrontendSources(path.resolve(__dirname, ".."));
 const appShellRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app-shell-runtime.js"), "utf8");
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
@@ -117,7 +118,34 @@ test("quota card click uses the composer bridge runtime under Vite ESM", () => {
   assert.match(appShellRuntimeJs, /quotaUsage\.addEventListener\("touchend", handleQuotaToggle, \{ passive: false \}\)/);
   assert.match(appShellRuntimeJs, /suppressSyntheticQuotaToggleUntil/);
   assert.match(appShellRuntimeJs, /now - lastQuotaToggleAt < 650/);
+  assert.match(appShellRuntimeJs, /if \(eventType !== "pointerdown"\) showError\(new Error\("quota_details_runtime_unavailable"\)\)/);
+  assert.match(appShellRuntimeJs, /lastQuotaToggleAt = now;[\s\S]*if \(eventType === "pointerdown"\) suppressSyntheticQuotaToggleUntil = now \+ 2200;/);
   assert.doesNotMatch(appShellRuntimeJs, /toggleQuotaDetails\(quotaUsage\);/);
+});
+
+test("quota detail popup uses a viewport fallback when the quota anchor is hidden", () => {
+  assert.match(composerRuntimeJs, /const rawVisible = Boolean\(rawRect/);
+  assert.match(composerRuntimeJs, /fallbackAnchorBottom/);
+  assert.match(composerRuntimeJs, /const rect = rawVisible \? rawRect : \{/);
+
+  const style = {};
+  const runtime = composerRuntime.createComposerRuntime({
+    document: { documentElement: { clientWidth: 390, clientHeight: 844 } },
+    window: {
+      innerWidth: 390,
+      innerHeight: 844,
+      visualViewport: { width: 390, height: 844, offsetLeft: 0, offsetTop: 0 },
+    },
+  });
+  runtime.fitComposerPopupToAnchor(
+    { style: { setProperty: (key, value) => { style[key] = value; } } },
+    { getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }) },
+    { minWidth: 320, maxWidth: 390 },
+  );
+
+  assert.equal(style["--composer-popup-left"], "62px");
+  assert.equal(style["--composer-popup-width"], "320px");
+  assert.equal(style["--composer-popup-bottom"], "132px");
 });
 
 test("composer attachment button uses explicit WebView-safe file picker trigger", () => {

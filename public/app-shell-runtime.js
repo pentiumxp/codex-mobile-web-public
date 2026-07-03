@@ -259,11 +259,12 @@ function wireUi() {
       const eventType = String(event.type || "");
       if ((eventType === "click" || eventType === "touchend") && now < suppressSyntheticQuotaToggleUntil) return;
       if (now - lastQuotaToggleAt < 650) return;
+      if (!toggleQuotaDetailsFromRuntime(quotaUsage)) {
+        if (eventType !== "pointerdown") showError(new Error("quota_details_runtime_unavailable"));
+        return;
+      }
       lastQuotaToggleAt = now;
       if (eventType === "pointerdown") suppressSyntheticQuotaToggleUntil = now + 2200;
-      if (!toggleQuotaDetailsFromRuntime(quotaUsage)) {
-        showError(new Error("quota_details_runtime_unavailable"));
-      }
     };
     quotaUsage.addEventListener("pointerdown", handleQuotaToggle);
     quotaUsage.addEventListener("click", handleQuotaToggle);
