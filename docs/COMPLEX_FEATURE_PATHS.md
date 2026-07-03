@@ -631,6 +631,8 @@ Implementation path:
    - `POST /api/at-loop/returns`
    - `POST /api/at-loop/watchdog`
    - MCP tools `start_loop` and `loop_status`
+   - `public/composer-runtime.js` for the user-facing Composer `@loop`
+     intent and direct `@loop <objective>` submit path
 3. Persist loop state in `CODEX_MOBILE_AT_LOOP_STATE_FILE` or the runtime root
    `at-loop-state.json`. Store only bounded loop ids, source/target thread ids,
    role slice ids, task-card ids, statuses, audit verdicts, routing metadata,
@@ -658,8 +660,13 @@ Implementation path:
    - `test/thread-task-card-loop-routing-service.test.js`
    - `test/loop-task-runtime.test.js`
    - `test/at-loop-route-service.test.js`
+   - `test/at-loop-composer-intent.test.js`
    - MCP/task-card composition tests that prove the API/MCP surfaces stay
      bounded and idempotent.
+10. The Composer `@` picker intentionally exposes `Loop`, `目标任务`, and
+   `ChatGPT Pro` only. Task-card and autonomous-collaboration creation remains
+   available through the existing task-card channel/text commands, but is not a
+   top-level Composer `@` picker entry.
 
 ## Public/Private Publish
 

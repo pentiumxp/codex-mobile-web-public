@@ -432,6 +432,10 @@ async function sendThreadTaskCardCommand(...args) {
   return composerRuntime.sendThreadTaskCardCommand(...args);
 }
 
+async function submitAtLoopRequest(...args) {
+  return composerRuntime.submitAtLoopRequest(...args);
+}
+
 async function sendMessage(...args) {
   return composerRuntime.sendMessage(...args);
 }
@@ -778,6 +782,7 @@ function createComposerBridgeRuntime() {
   return {
       sendMessage: typeof sendMessage === "function" ? sendMessage : null,
       sendNewThreadMessage: typeof sendNewThreadMessage === "function" ? sendNewThreadMessage : null,
+      submitAtLoopRequest: typeof submitAtLoopRequest === "function" ? submitAtLoopRequest : null,
       answerServerRequest: typeof answerServerRequest === "function" ? answerServerRequest : null,
       answerApproval: typeof answerApproval === "function" ? answerApproval : null,
       declineServerRequest: typeof declineServerRequest === "function" ? declineServerRequest : null,
@@ -887,6 +892,7 @@ const legacyGlobals = {
   requestGoalDialogSubmitFromButton,
   requestGoalDialogSubmit,
   sendThreadTaskCardCommand,
+  submitAtLoopRequest,
   sendMessage,
   sendNewThreadMessage,
   requestComposerSubmitFromButton,

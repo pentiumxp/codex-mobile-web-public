@@ -326,6 +326,21 @@ function normalizedComposerIntentText(value) {
     .trim();
 }
 
+function isAtLoopCommandText(value) {
+  const text = normalizedComposerIntentText(value);
+  return /^@loop(?:\s|$)/i.test(text)
+    || /^@[a-z0-9][a-z0-9_-]*\s+@loop(?:\s|$)/i.test(text);
+}
+
+function atLoopCommandObjectiveText(value) {
+  const text = normalizedComposerIntentText(value);
+  if (/^@loop(?:\s|$)/i.test(text)) {
+    return text.replace(/^@loop(?:\s+|$)/i, "").trim();
+  }
+  const aliasMatch = text.match(/^@[a-z0-9][a-z0-9_-]*\s+@loop(?:\s+|$)([\s\S]*)$/i);
+  return aliasMatch ? String(aliasMatch[1] || "").trim() : "";
+}
+
 function composerIntentOptions() {
   return [
     {
@@ -339,26 +354,6 @@ function composerIntentOptions() {
       submitLabel: "打开目标",
     },
     {
-      kind: "task-card",
-      tag: "@任务卡片",
-      label: "任务卡片",
-      detail: "发给其他线程，目标侧审批后执行",
-      title: "任务卡片",
-      subtitle: "输入要交给其他线程处理的完整需求；提交后会先生成待审批任务卡片。",
-      placeholder: "写清目标线程、任务背景、期望输出和约束。",
-      submitLabel: "创建任务卡片",
-    },
-    {
-      kind: "task-card-auto",
-      tag: "@自由协作",
-      label: "自由协作",
-      detail: "任务卡片自动回传后续结果",
-      title: "自由协作",
-      subtitle: "输入跨线程协作需求；目标线程首次审批后，后续同源回传可自动继续。",
-      placeholder: "写清协作对象、需要对方完成的步骤，以及完成后回传什么。",
-      submitLabel: "创建协作卡片",
-    },
-    {
       kind: "chatgpt-pro",
       tag: "@ChatGPT Pro",
       label: "ChatGPT Pro",
@@ -367,6 +362,16 @@ function composerIntentOptions() {
       subtitle: "输入要交给 ChatGPT Pro 分析的问题；内容不会进入当前工作线程。",
       placeholder: "写清要分析的代码、方案、风险或决策问题。",
       submitLabel: "提交 Pro 分析",
+    },
+    {
+      kind: "loop",
+      tag: "@loop",
+      label: "Loop",
+      detail: "启动当前线程交付循环",
+      title: "Loop",
+      subtitle: "输入要循环推进的目标；提交后会创建第一张角色任务卡片。",
+      placeholder: "写清目标、约束和验收标准。",
+      submitLabel: "启动 Loop",
     },
   ];
 }
@@ -428,10 +433,9 @@ function saveComposerIntentDraft(kind, value) {
 function composerIntentBareTagKind(value) {
   const text = normalizedComposerIntentText(value);
   if (!text || text === "@") return "";
+  if (/^@loop$/i.test(text)) return "loop";
   if (THREAD_GOAL_MENTION_PATTERN.test(text)) return "goal";
   if (/^@(?:ChatGPT\s+Pro|ChatGPTPro|GPT\s+Pro)$/i.test(text)) return "chatgpt-pro";
-  if (THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(text) && !threadTaskCardCommandText(text)) return "task-card-auto";
-  if (THREAD_TASK_CARD_MENTION_PATTERN.test(text) && !threadTaskCardCommandText(text)) return "task-card";
   return "";
 }
 
@@ -581,6 +585,8 @@ async function submitComposerIntentDialog(event) {
   try {
     if (kind === "chatgpt-pro") {
       await submitChatGptProRequest(`${option.tag} ${body}`, { rethrow: true });
+    } else if (kind === "loop") {
+      await submitAtLoopRequest(`${option.tag} ${body}`, { rethrow: true });
     } else if (kind === "task-card" || kind === "task-card-auto") {
       await sendThreadTaskCardCommand(`${option.tag} ${body}`, { rethrow: true });
     }
@@ -1581,6 +1587,88 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
   }
 }
 
+async function submitAtLoopRequest(commandText, options = {}) {
+  const text = String(commandText || "").trim();
+  const objective = atLoopCommandObjectiveText(text);
+  const targetThreadId = currentComposerThreadId();
+  const targetThread = composerTargetThread();
+  if (!text) return false;
+  if (!isAtLoopCommandText(text) || !objective) {
+    const err = new Error("Loop objective is required");
+    showError(err);
+    if (options.rethrow) throw err;
+    return false;
+  }
+  if (state.newThreadDraft || !targetThreadId) {
+    const err = new Error("Loop is only available in an existing thread");
+    showError(err);
+    if (options.rethrow) throw err;
+    return false;
+  }
+  if (state.pendingAttachments.length) {
+    const err = new Error("@loop does not support attachments in this entry point");
+    showError(err);
+    if (options.rethrow) throw err;
+    return false;
+  }
+
+  state.composerBusy = true;
+  state.sendButtonHint = "";
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "正在启动 Loop";
+  markActivity("Loop");
+  updateComposerControls();
+  try {
+    postClientEvent("at_loop_request_start", { threadId: targetThreadId });
+    const result = await api("/api/at-loop/triggers", {
+      method: "POST",
+      body: JSON.stringify({
+        sourceThreadId: targetThreadId,
+        sourceThreadTitle: targetThread ? threadDisplayName(targetThread) : "",
+        cwd: targetThread && targetThread.cwd || "",
+        text,
+      }),
+      timeoutMs: 60000,
+    });
+    if (result && result.ok === false) {
+      throw new Error(result.error || "at_loop_start_failed");
+    }
+    const loopId = String(result && result.loop && result.loop.loopId || "");
+    setComposerText("");
+    clearPendingAttachments();
+    scheduleCurrentDraftSave();
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = loopId
+      ? `Loop 已启动：${loopId.slice(0, 12)}`
+      : "Loop 已启动";
+    markActivity("Loop 已启动");
+    postClientEvent("at_loop_request_success", {
+      threadId: targetThreadId,
+      loopId: loopId ? loopId.slice(0, 24) : "",
+      duplicateSuppressed: Boolean(result && result.duplicateSuppressed),
+    });
+    scheduleComposerTargetRefresh(targetThreadId, 700, "at-loop-submit");
+    scheduleLivePollIfNeeded(1200);
+    loadThreads({ silent: true }).catch(showError);
+    return true;
+  } catch (err) {
+    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err)
+      || "Loop 启动失败";
+    $("connectionState").classList.add("error");
+    $("connectionState").textContent = message;
+    postClientEvent("at_loop_request_failure", {
+      threadId: targetThreadId,
+      message,
+    });
+    showError(new Error(message));
+    if (options.rethrow) throw new Error(message);
+    return false;
+  } finally {
+    state.composerBusy = false;
+    updateComposerControls();
+  }
+}
+
 async function sendMessage(event) {
   if (event && typeof event.preventDefault === "function") event.preventDefault();
   if (state.composerBusy) return;
@@ -1619,6 +1707,10 @@ async function sendMessage(event) {
   }
   if (isChatGptProCommandText(text)) {
     await submitChatGptProRequest(text);
+    return;
+  }
+  if (isAtLoopCommandText(text)) {
+    await submitAtLoopRequest(text);
     return;
   }
   if (state.newThreadDraft) {
@@ -2028,6 +2120,7 @@ async function interruptActiveTurn(threadId = currentComposerThreadId(), activeT
     requestGoalDialogSubmitFromButton,
     requestGoalDialogSubmit,
     sendThreadTaskCardCommand,
+    submitAtLoopRequest,
     sendMessage,
     sendNewThreadMessage,
     requestComposerSubmitFromButton,
