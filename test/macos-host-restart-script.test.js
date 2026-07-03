@@ -32,10 +32,12 @@ test("macOS host restart script is a LaunchDaemon recovery entrypoint", () => {
   assert.match(hostRestartScript, /--list-homes/);
   assert.match(hostRestartScript, /--profile-id/);
   assert.match(hostRestartScript, /--codex-home/);
+  assert.match(hostRestartScript, /--default-shell-mode/);
   assert.match(hostRestartScript, /codex-mobile-macos-profile-helper\.js/);
   assert.match(hostRestartScript, /plist_set_env CODEX_HOME "\$SELECTED_CODEX_HOME"/);
   assert.match(hostRestartScript, /SELECTED_MUX_ENDPOINT_FILE="\$\{SELECTED_CODEX_HOME\}\/app-server-mux\/endpoint\.json"/);
   assert.match(hostRestartScript, /plist_set_env CODEX_MOBILE_MUX_ENDPOINT_FILE "\$SELECTED_MUX_ENDPOINT_FILE"/);
+  assert.match(hostRestartScript, /plist_set_env CODEX_MOBILE_DEFAULT_SHELL "\$DEFAULT_SHELL_MODE"/);
   assert.match(hostRestartScript, /select_args\+=\(--no-write\)/);
   assert.match(hostRestartScript, /launchctl bootout "system\/\$\{SERVICE_LABEL\}"/);
   assert.match(hostRestartScript, /bootstrap_service_with_retry/);
@@ -50,8 +52,13 @@ test("macOS host restart script fails safely around bootstrap and postflight", (
   assert.match(hostRestartScript, /validate_preflight_selection/);
   assert.match(hostRestartScript, /validate_postflight_selection/);
   assert.match(hostRestartScript, /public_config_active_profile/);
+  assert.match(hostRestartScript, /public_config_default_shell_mode/);
   assert.match(hostRestartScript, /launchd_env_value CODEX_HOME/);
   assert.match(hostRestartScript, /launchd_env_value CODEX_MOBILE_MUX_ENDPOINT_FILE/);
+  assert.match(hostRestartScript, /launchd_env_value CODEX_MOBILE_DEFAULT_SHELL/);
+  assert.match(hostRestartScript, /LaunchDaemon plist default shell does not match selected mode/);
+  assert.match(hostRestartScript, /Public config default shell does not match selected mode/);
+  assert.match(hostRestartScript, /Running LaunchDaemon default shell does not match selected mode/);
   assert.match(hostRestartScript, /bootstrap_service_with_retry\(\) \{/);
   assert.match(hostRestartScript, /"\$status" -eq 5/);
   assert.match(hostRestartScript, /LaunchDaemon bootstrap failed/);

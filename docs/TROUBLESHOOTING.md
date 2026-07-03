@@ -123,15 +123,21 @@ the host can recover without depending on the Web UI:
 cd /Users/hermes-host/HermesMobile/plugins/codex-mobile-web
 ./restart-codex-mobile-host-macos.sh --list-homes --json
 ./restart-codex-mobile-host-macos.sh --profile-id previous --json
+./restart-codex-mobile-host-macos.sh --profile-id default --default-shell-mode vite-app-preview --json
 ```
 
 The script reads the target user and runtime paths from
 `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist`, updates the
-active Codex profile store plus the plist `CODEX_HOME`, bootstraps
+active Codex profile store plus the plist `CODEX_HOME`, optional
+`CODEX_MOBILE_DEFAULT_SHELL`, bootstraps
 `system/com.hermesmobile.plugin.codex-mobile`, and waits for
-`/api/public-config`. It must not print access keys or raw auth tokens. Use
-`--codex-home <path>` only when the host has selected an explicit configured
-home path outside the normal profile ids.
+`/api/public-config`. For production Vite default-root cutovers, prefer
+`--default-shell-mode vite-app-preview` on this host script rather than the
+in-process `/api/restart/shared-chain` route, because the host script runs
+outside the managed listener and verifies both public config and launchd
+environment after `bootout` / `bootstrap`. It must not print access keys or raw
+auth tokens. Use `--codex-home <path>` only when the host has selected an
+explicit configured home path outside the normal profile ids.
 
 Also compare the listener bind address with the plugin base URL advertised to
 Hermes. If `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` is a LAN URL such as

@@ -7,6 +7,7 @@ PLIST_PATH="${CODEX_MOBILE_LAUNCHD_PLIST:-/Library/LaunchDaemons/${SERVICE_LABEL
 SUDO_PASSWORD_FILE="${HOMEAI_MAC_SUDO_PASSWORD_FILE:-/Users/xuxin/.homeai-qa/sudo-password}"
 PROFILE_ID=""
 CODEX_HOME_VALUE=""
+DEFAULT_SHELL_MODE=""
 PROMPT=0
 LIST_HOMES=0
 JSON_OUTPUT=0
@@ -27,6 +28,7 @@ Options:
   --list-homes              Print configured Codex Home profiles and exit.
   --profile-id <id>         Start with a configured profile id, e.g. default/current/previous.
   --codex-home <path>       Start with an explicit Codex Home path.
+  --default-shell-mode <m>   Set CODEX_MOBILE_DEFAULT_SHELL to classic or vite-app-preview.
   --prompt                  Prompt on stdin/stdout to select a configured profile.
   --label <launchd-label>   LaunchDaemon label, default com.hermesmobile.plugin.codex-mobile.
   --plist <path>            LaunchDaemon plist path.
@@ -70,9 +72,10 @@ const payload = {
   plistPath: process.argv[5],
   profileId: process.argv[6] || undefined,
   codexHome: process.argv[7] || undefined,
+  defaultShellMode: process.argv[8] || undefined,
 };
 console.log(JSON.stringify(payload, null, 2));
-' "$stage" "$(bounded_text "$message")" "$(bounded_text "$detail")" "$SERVICE_LABEL" "$PLIST_PATH" "${SELECTED_PROFILE_ID:-}" "${SELECTED_CODEX_HOME:-}"
+' "$stage" "$(bounded_text "$message")" "$(bounded_text "$detail")" "$SERVICE_LABEL" "$PLIST_PATH" "${SELECTED_PROFILE_ID:-}" "${SELECTED_CODEX_HOME:-}" "$DEFAULT_SHELL_MODE"
   else
     echo "[$stage] $message" >&2
     if [[ -n "$detail" ]]; then
@@ -124,11 +127,12 @@ const payload = {
   url: process.argv[6],
   dryRun: process.argv[7] === "1",
   muxEndpointFile: process.argv[8],
+  defaultShellMode: process.argv[9] || undefined,
   postflight,
   staleMuxes
 };
 console.log(JSON.stringify(payload, null, 2));
-' "$SERVICE_LABEL" "$PLIST_PATH" "$SELECTED_PROFILE_ID" "$SELECTED_CODEX_HOME" "$PORT" "$READINESS_URL" "$DRY_RUN" "$SELECTED_MUX_ENDPOINT_FILE"
+' "$SERVICE_LABEL" "$PLIST_PATH" "$SELECTED_PROFILE_ID" "$SELECTED_CODEX_HOME" "$PORT" "$READINESS_URL" "$DRY_RUN" "$SELECTED_MUX_ENDPOINT_FILE" "$DEFAULT_SHELL_MODE"
 }
 
 profile_store_active_id() {
@@ -157,6 +161,20 @@ process.stdin.on("end", () => {
   try {
     const config = JSON.parse(input);
     process.stdout.write(String(config.codexProfiles && config.codexProfiles.activeProfileId || ""));
+  } catch (_) {}
+});
+'
+}
+
+public_config_default_shell_mode() {
+  /usr/bin/curl -fsS "$READINESS_URL" \
+    | "$NODE_EXE" -e '
+let input = "";
+process.stdin.on("data", (chunk) => { input += chunk; });
+process.stdin.on("end", () => {
+  try {
+    const config = JSON.parse(input);
+    process.stdout.write(String(config.defaultShellMode || ""));
   } catch (_) {}
 });
 '
@@ -222,9 +240,11 @@ NODE
 validate_preflight_selection() {
   local plist_codex_home
   local plist_mux_endpoint
+  local plist_default_shell
   local store_active_id
   plist_codex_home="$(plist_get_env CODEX_HOME)"
   plist_mux_endpoint="$(plist_get_env CODEX_MOBILE_MUX_ENDPOINT_FILE)"
+  plist_default_shell="$(plist_get_env CODEX_MOBILE_DEFAULT_SHELL)"
   store_active_id="$(profile_store_active_id)"
   if [[ "$plist_codex_home" != "$SELECTED_CODEX_HOME" ]]; then
     json_error "preflight" "LaunchDaemon plist CODEX_HOME does not match selected profile." "plist=${plist_codex_home}; selected=${SELECTED_CODEX_HOME}" 1
@@ -235,15 +255,22 @@ validate_preflight_selection() {
   if [[ "$store_active_id" != "$SELECTED_PROFILE_ID" ]]; then
     json_error "preflight" "Profile store active id does not match selected profile." "store=${store_active_id}; selected=${SELECTED_PROFILE_ID}" 1
   fi
+  if [[ -n "$DEFAULT_SHELL_MODE" && "$plist_default_shell" != "$DEFAULT_SHELL_MODE" ]]; then
+    json_error "preflight" "LaunchDaemon plist default shell does not match selected mode." "plist=${plist_default_shell}; selected=${DEFAULT_SHELL_MODE}" 1
+  fi
 }
 
 validate_postflight_selection() {
   local public_active
+  local public_default_shell
   local launchd_codex_home
   local launchd_mux_endpoint
+  local launchd_default_shell
   public_active="$(public_config_active_profile || true)"
+  public_default_shell="$(public_config_default_shell_mode || true)"
   launchd_codex_home="$(launchd_env_value CODEX_HOME)"
   launchd_mux_endpoint="$(launchd_env_value CODEX_MOBILE_MUX_ENDPOINT_FILE)"
+  launchd_default_shell="$(launchd_env_value CODEX_MOBILE_DEFAULT_SHELL)"
   if [[ "$public_active" != "$SELECTED_PROFILE_ID" ]]; then
     json_error "postflight" "Public config active profile does not match selected profile." "public=${public_active}; selected=${SELECTED_PROFILE_ID}" 1
   fi
@@ -253,15 +280,22 @@ validate_postflight_selection() {
   if [[ "$launchd_mux_endpoint" != "$SELECTED_MUX_ENDPOINT_FILE" ]]; then
     json_error "postflight" "Running LaunchDaemon mux endpoint does not match selected profile." "launchd=${launchd_mux_endpoint}; selected=${SELECTED_MUX_ENDPOINT_FILE}" 1
   fi
+  if [[ -n "$DEFAULT_SHELL_MODE" && "$public_default_shell" != "$DEFAULT_SHELL_MODE" ]]; then
+    json_error "postflight" "Public config default shell does not match selected mode." "public=${public_default_shell}; selected=${DEFAULT_SHELL_MODE}" 1
+  fi
+  if [[ -n "$DEFAULT_SHELL_MODE" && "$launchd_default_shell" != "$DEFAULT_SHELL_MODE" ]]; then
+    json_error "postflight" "Running LaunchDaemon default shell does not match selected mode." "launchd=${launchd_default_shell}; selected=${DEFAULT_SHELL_MODE}" 1
+  fi
   POSTFLIGHT_JSON="$("$NODE_EXE" -e '
 const payload = {
   activeProfileId: process.argv[1],
   codexHome: process.argv[2],
   muxEndpointFile: process.argv[3],
+  defaultShellMode: process.argv[4] || undefined,
   matched: true,
 };
 process.stdout.write(JSON.stringify(payload));
-' "$public_active" "$launchd_codex_home" "$launchd_mux_endpoint")"
+' "$public_active" "$launchd_codex_home" "$launchd_mux_endpoint" "$public_default_shell")"
 }
 
 bootstrap_service_with_retry() {
@@ -297,6 +331,21 @@ while [[ $# -gt 0 ]]; do
       ;;
     --codex-home)
       CODEX_HOME_VALUE="${2:?--codex-home requires a value}"
+      shift 2
+      ;;
+    --default-shell-mode)
+      case "${2:?--default-shell-mode requires a value}" in
+        classic|classic-script|classic-script-fallback)
+          DEFAULT_SHELL_MODE="classic"
+          ;;
+        vite-app-preview|app-preview)
+          DEFAULT_SHELL_MODE="vite-app-preview"
+          ;;
+        *)
+          echo "Unsupported default shell mode: $2" >&2
+          exit 2
+          ;;
+      esac
       shift 2
       ;;
     --prompt)
@@ -426,6 +475,9 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
     json_success
   else
     echo "Would restart $SERVICE_LABEL with CODEX_HOME=$SELECTED_CODEX_HOME"
+    if [[ -n "$DEFAULT_SHELL_MODE" ]]; then
+      echo "Would set CODEX_MOBILE_DEFAULT_SHELL=$DEFAULT_SHELL_MODE"
+    fi
   fi
   exit 0
 fi
@@ -436,6 +488,9 @@ plist_set_env CODEX_MOBILE_PROFILE_FILE "$PROFILE_FILE"
 plist_set_env CODEX_MOBILE_RUNTIME_DIR "$RUNTIME_DIR"
 plist_set_env CODEX_MOBILE_PORT "$PORT"
 plist_set_env CODEX_MOBILE_HOST "$HOST"
+if [[ -n "$DEFAULT_SHELL_MODE" ]]; then
+  plist_set_env CODEX_MOBILE_DEFAULT_SHELL "$DEFAULT_SHELL_MODE"
+fi
 
 run_sudo /bin/chmod 644 "$PLIST_PATH"
 run_sudo /usr/sbin/chown root:wheel "$PLIST_PATH"
