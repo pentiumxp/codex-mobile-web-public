@@ -178,8 +178,12 @@ function createThreadDisplaySummaryCache(options = {}) {
     return decorateSummary(summary);
   }
 
-  function remember(thread) {
-    const summary = summaryFromThread(thread);
+  function remember(thread, options = {}) {
+    const source = options && typeof options === "object" ? String(options.source || "") : "";
+    const input = source === "thread-list"
+      ? Object.assign({}, thread || {}, { mobileListResultSummary: true })
+      : thread;
+    const summary = summaryFromThread(input);
     if (!summary) return null;
     prune();
     const threadId = String(summary.id);
@@ -201,7 +205,7 @@ function createThreadDisplaySummaryCache(options = {}) {
       : Array.isArray(result.threads)
         ? result.threads
         : [];
-    threads.forEach(remember);
+    threads.forEach((thread) => remember(thread, { source: "thread-list" }));
     return result;
   }
 

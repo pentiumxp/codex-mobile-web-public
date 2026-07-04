@@ -364,6 +364,13 @@ function createThreadSummaryStateService(dependencies = {}) {
     );
   }
 
+  function statusHasActiveClearEvidence(status) {
+    if (!status || typeof status !== "object") return false;
+    return status.mobileClearedStaleActiveSummary === true
+      || status.mobileClearedTerminalActiveTurn === true
+      || status.mobileClearedSupersededActiveTurn === true;
+  }
+
   function isDeployLaneIdleSummary(thread) {
     if (!thread || typeof thread !== "object") return false;
     const status = thread.status && typeof thread.status === "object" ? thread.status : {};
@@ -382,6 +389,25 @@ function createThreadSummaryStateService(dependencies = {}) {
     if (!threadHasRuntimeActiveEvidence(display)) return false;
     if (isThreadListLiveStatus(base.status)) return false;
     return isThreadListRestStatus(base.status) || isThreadListUnknownStatus(base.status);
+  }
+
+  function threadActiveMarkerSetsIntersect(left, right) {
+    const leftIds = threadActiveMarkerTurnIds(left);
+    if (!leftIds.size) return false;
+    for (const id of threadActiveMarkerTurnIds(right)) {
+      if (leftIds.has(id)) return true;
+    }
+    return false;
+  }
+
+  function shouldProtectRuntimeActiveFromRestStatus(base, display) {
+    if (!base || !display) return false;
+    if (!isThreadListLiveStatus(base.status) || !isThreadListRestStatus(display.status)) return false;
+    if (!threadHasRuntimeActiveEvidence(base)) return false;
+    if (display.mobileDetailStatusAuthority === true) return false;
+    if (statusHasActiveClearEvidence(display.status)) return false;
+    if (display.mobileListResultSummary !== true) return false;
+    return !threadActiveMarkerSetsIntersect(base, display);
   }
 
   function copyThreadSummaryActiveMarkers(target, display) {
@@ -493,9 +519,10 @@ function createThreadSummaryStateService(dependencies = {}) {
       const displayFieldUpdatedAtMs = timestampToMs(display.updatedAt || display.updated_at || display.updatedAtMs || display.updated_at_ms);
       next.updatedAt = Math.floor(Math.max(displayUpdatedAtMs, displayFieldUpdatedAtMs) / 1000);
     }
+    const protectRuntimeActiveStatus = shouldProtectRuntimeActiveFromRestStatus(base, display);
     const replaceStatus = shouldReplaceRuntimeActiveStatus(base, display)
       || shouldReplaceDeployLaneRuntimeActiveStatus(base, display)
-      || shouldReplaceThreadDisplayStatus(base.status, display.status, baseUpdatedAtMs, displayUpdatedAtMs);
+      || (!protectRuntimeActiveStatus && shouldReplaceThreadDisplayStatus(base.status, display.status, baseUpdatedAtMs, displayUpdatedAtMs));
     if (replaceStatus) {
       next.status = display.status;
       if (isThreadListRestStatus(display.status)) clearThreadSummaryActiveMarkers(next);
@@ -528,6 +555,7 @@ function createThreadSummaryStateService(dependencies = {}) {
     const id = String(thread && (thread.id || thread.threadId || thread.thread_id) || "").trim();
     if (!id) return null;
     const summary = stripThreadListDetailFields(Object.assign({}, thread, { id }));
+    summary.mobileDetailStatusAuthority = true;
     if (isThreadListRestStatus(summary.status)) clearThreadSummaryActiveMarkers(summary);
     return summary;
   }
