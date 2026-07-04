@@ -670,7 +670,10 @@ Implementation path:
    and repair lane selection must then reuse
    only role lanes whose cwd matches that mapped workspace, or create a role
    lane at that cwd; other implementation-looking threads are stale/ineligible
-   for that Loop.
+   for that Loop. Product-audit and deploy/readback lanes also follow the
+   mapped implementation workspace. A source requirements cwd such as an empty
+   Xcode placeholder must not become the audit target when the actual
+   implementation workspace is a different validated project directory.
 6. Classify target-thread purpose before dispatch. Public PR, deploy lane,
    audit, task intake, and worker threads are special-purpose lanes; mismatched
    roles must fail closed with bounded routing metadata instead of relying on
@@ -700,7 +703,12 @@ Implementation path:
     by converting requirements to the local role and preparing role lanes. When
     stored role-lane ids are no longer visible/current deliverable threads,
     or are rejected by the task-card deliverability boundary, discard those
-    stale ids and rerun role-lane selection before dispatch.
+    stale ids and rerun role-lane selection before dispatch. If a returned
+    audit/deploy role blocked because it was dispatched to a target whose cwd
+    no longer matches the mapped implementation workspace, repeated `@loop`
+    should clear that returned role target and redispatch the same role to a
+    valid lane instead of reporting a successful no-op or leaving the old
+    blocked target in place.
 11. Product-audit role cards must include a bounded Audit Packet and Delta
     Matrix. Packet sections are `requirements_packet`,
     `design_contract_packet`, `implementation_packet`, `validation_packet`, and

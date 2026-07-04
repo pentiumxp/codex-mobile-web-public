@@ -275,6 +275,58 @@ test("loop runtime maps source-main thread to registered implementation workspac
   assert.equal(cards[0].payload.targetThreadId, "implementation-created");
 });
 
+test("loop runtime dispatches product audit in the mapped implementation workspace", async () => {
+  const realWorkspace = "/Users/xuxin/Xcode/Home AI";
+  const sourceWorkspace = "/Users/xuxin/Documents/Xcode-HomeAI";
+  const { cards, createdThreads, runtime } = makeRuntime({
+    name: "audit-uses-implementation-workspace",
+    visibleThreads: [{
+      id: "xcode-thread",
+      title: "Xcode",
+      cwd: sourceWorkspace,
+    }],
+    listWorkspaces: async () => [
+      { cwd: sourceWorkspace, label: "Xcode placeholder" },
+      { cwd: realWorkspace, label: "Home AI Xcode" },
+    ],
+    isLoopImplementationWorkspace: (cwd) => cwd === realWorkspace
+      ? { ok: true, cwd, reason: "xcode_project_marker" }
+      : { ok: false, error: "implementation_workspace_project_markers_missing", cwd },
+  });
+
+  const started = await runtime.startLoop({
+    sourceThreadId: "xcode-thread",
+    text: "@loop redesign native settings",
+  });
+  assert.equal(started.ok, true);
+  assert.equal(started.loop.currentRole, "implementation");
+  assert.equal(started.loop.implementationWorkspaceCwd, realWorkspace);
+  assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").cwd, realWorkspace);
+  assert.equal(createdThreads.find((thread) => thread.id === "product_audit-created").cwd, realWorkspace);
+  assert.equal(cards.length, 1);
+
+  const returned = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "completed",
+    summary: "implementation done",
+    changedFiles: ["Home AI/ContentView.swift", "scripts/check-native-settings-layout.sh"],
+    tests: ["scripts/check-native-settings-layout.sh"],
+    privacyConfirmation: "bounded native shell evidence only",
+  });
+
+  assert.equal(returned.ok, true);
+  assert.equal(returned.loop.currentRole, "product_audit");
+  assert.equal(returned.loop.auditThreadId, "product_audit-created");
+  const audit = returned.loop.roleSlices.find((slice) => slice.role === "product_audit");
+  assert.equal(audit.status, "dispatched");
+  assert.equal(audit.targetThreadId, "product_audit-created");
+  assert.equal(cards.length, 2);
+  assert.equal(cards[1].payload.targetRole, "product_audit");
+  assert.equal(cards[1].payload.targetThreadId, "product_audit-created");
+  assert.match(cards[1].payload.bodyMarkdown, /Implementation workspace cwd: \/Users\/xuxin\/Xcode\/Home AI/);
+  assert.match(cards[1].payload.bodyMarkdown, /Home AI\/ContentView\.swift/);
+});
+
 test("loop runtime updates blocked duplicate with explicit implementation workspace", async () => {
   const realWorkspace = "/Users/xuxin/Xcode/Home AI";
   const sourceWorkspace = "/Users/xuxin/Documents/Xcode-HomeAI";
@@ -383,6 +435,129 @@ test("loop runtime updates blocked duplicate with explicit implementation worksp
   assert.equal(cards.length, 1);
   assert.equal(cards[0].payload.targetThreadId, "implementation-created");
   assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").cwd, realWorkspace);
+});
+
+test("loop runtime re-dispatches blocked audit returns whose lane cwd mismatches the implementation workspace", async () => {
+  const realWorkspace = "/Users/xuxin/Xcode/Home AI";
+  const sourceWorkspace = "/Users/xuxin/Documents/Xcode-HomeAI";
+  const { cards, createdThreads, runtime, storageFile } = makeRuntime({
+    name: "blocked-audit-workspace-recovery",
+    visibleThreads: [{
+      id: "xcode-thread",
+      title: "Xcode",
+      cwd: sourceWorkspace,
+    }, {
+      id: "implementation-thread",
+      title: "Xcode Loop Implementation",
+      cwd: realWorkspace,
+      threadRole: "implementation",
+    }, {
+      id: "old-audit-thread",
+      title: "Xcode Loop Audit",
+      cwd: sourceWorkspace,
+      threadRole: "product_audit",
+    }],
+    listWorkspaces: async () => [
+      { cwd: sourceWorkspace, label: "Xcode placeholder" },
+      { cwd: realWorkspace, label: "Home AI Xcode" },
+    ],
+    isLoopImplementationWorkspace: (cwd) => cwd === realWorkspace
+      ? { ok: true, cwd, reason: "xcode_project_marker" }
+      : { ok: false, error: "implementation_workspace_project_markers_missing", cwd },
+  });
+  const loopId = testLoopId({
+    sourceThreadId: "xcode-thread",
+    targetThreadId: "xcode-thread",
+    objective: "redesign native settings",
+  });
+  fs.writeFileSync(storageFile, `${JSON.stringify({ version: 1, loops: [{
+    loopId,
+    sourceThreadId: "xcode-thread",
+    targetThreadId: "implementation-thread",
+    requirementsThreadId: "xcode-thread",
+    implementationThreadId: "implementation-thread",
+    implementationWorkspaceCwd: realWorkspace,
+    auditThreadId: "old-audit-thread",
+    domainAdapter: "generic",
+    objectiveSummary: "redesign native settings",
+    status: "blocked",
+    currentRole: "product_audit",
+    iteration: 1,
+    maxIterations: 3,
+    nextRoute: "blocked_role_return",
+    blockedReason: "product_audit_blocked",
+    sourceRequestId: `at-loop:${loopId}:source`,
+    requirementsLocal: true,
+    auditPacket: {},
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    roleSlices: [{
+      role: "requirements",
+      roleSliceId: `${loopId}:requirements:1`,
+      iteration: 1,
+      status: "local",
+      dispatchStatus: "source_thread_local_role",
+      dispatchMode: "source_thread_local_role",
+      taskCardDispatch: false,
+      taskCardId: "",
+      targetThreadId: "xcode-thread",
+      roleOwnerThreadId: "xcode-thread",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "implementation",
+      roleSliceId: `${loopId}:implementation:1`,
+      iteration: 1,
+      status: "returned",
+      dispatchStatus: "dispatched",
+      dispatchMode: "task_card_dispatch",
+      taskCardDispatch: true,
+      taskCardId: "ttc_impl",
+      targetThreadId: "implementation-thread",
+      targetPurpose: "workspace_implementation",
+      returnStatus: "completed",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "product_audit",
+      roleSliceId: `${loopId}:product_audit:1`,
+      iteration: 1,
+      status: "returned",
+      dispatchStatus: "dispatched",
+      dispatchMode: "task_card_dispatch",
+      taskCardDispatch: true,
+      taskCardId: "ttc_old_audit",
+      targetThreadId: "old-audit-thread",
+      targetPurpose: "audit_lane",
+      returnStatus: "blocked",
+      blockedReason: "workspace has no xcode project",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }],
+  }] }, null, 2)}\n`, "utf8");
+
+  const result = await runtime.startLoop({
+    sourceThreadId: "xcode-thread",
+    text: "@loop redesign native settings",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.recovered, true);
+  assert.equal(result.loop.status, "running");
+  assert.equal(result.loop.currentRole, "product_audit");
+  assert.equal(result.loop.auditThreadId, "product_audit-created");
+  const audit = result.loop.roleSlices.find((slice) => slice.role === "product_audit");
+  assert.equal(audit.status, "dispatched");
+  assert.equal(audit.targetThreadId, "product_audit-created");
+  assert.equal(audit.returnStatus, "");
+  assert.equal(audit.taskCardId, "ttc_1");
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].payload.targetThreadId, "product_audit-created");
+  assert.equal(createdThreads.find((thread) => thread.id === "product_audit-created").cwd, realWorkspace);
+  assert.match(cards[0].payload.bodyMarkdown, /Implementation workspace cwd: \/Users\/xuxin\/Xcode\/Home AI/);
 });
 
 test("loop runtime treats plugin and Home AI main threads as local requirements owners", async () => {

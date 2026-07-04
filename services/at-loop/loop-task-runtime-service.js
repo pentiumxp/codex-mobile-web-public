@@ -165,7 +165,7 @@ function inputImplementationWorkspaceCwd(input = {}) {
 }
 
 function roleWorkspaceCwd(loop = {}, role = "", source = {}) {
-  if (roleRequiresImplementationWorkspace(role)) {
+  if (roleFollowsImplementationWorkspace(role)) {
     return loopImplementationWorkspaceCwd(loop)
       || compactOneLine(source.cwd || source.workspace || source.targetWorkspace);
   }
@@ -196,6 +196,10 @@ function workspacePathTokens(cwd) {
 
 function roleRequiresImplementationWorkspace(role) {
   return role === "implementation" || role === "repair";
+}
+
+function roleFollowsImplementationWorkspace(role) {
+  return roleRequiresImplementationWorkspace(role) || role === "product_audit" || role === "deploy_readback";
 }
 
 function roleThreadField(role) {
@@ -434,8 +438,14 @@ function returnEvidence(input = {}, slice = {}, returnStatus = "") {
   ];
   if (input.returnCardId || input.replyCardId) evidence.push(`return_card_id:${safePacketValue(input.returnCardId || input.replyCardId, 120)}`);
   if (input.commit || input.commitHash || input.sourceRef) evidence.push(`commit:${safePacketValue(input.commit || input.commitHash || input.sourceRef, 120)}`);
-  if (Array.isArray(input.changedFiles) && input.changedFiles.length) evidence.push(`changed_files:${input.changedFiles.length}`);
-  if (Array.isArray(input.tests) && input.tests.length) evidence.push(`tests:${input.tests.length}`);
+  if (Array.isArray(input.changedFiles) && input.changedFiles.length) {
+    evidence.push(`changed_files:${input.changedFiles.length}`);
+    for (const file of boundedPacketList(input.changedFiles, 8, 180)) evidence.push(`changed_file:${file}`);
+  }
+  if (Array.isArray(input.tests) && input.tests.length) {
+    evidence.push(`tests:${input.tests.length}`);
+    for (const testName of boundedPacketList(input.tests, 8, 180)) evidence.push(`test:${testName}`);
+  }
   return evidence.filter((item) => !/:$/.test(item));
 }
 
@@ -508,6 +518,7 @@ function auditPacketBody(loop) {
 }
 
 function roleCardBody(loop, slice) {
+  const implementationWorkspaceCwd = loopImplementationWorkspaceCwd(loop);
   const body = [
     `# Codex Mobile @loop role: ${roleTitle(slice.role)}`,
     "",
@@ -519,6 +530,7 @@ function roleCardBody(loop, slice) {
     `Source thread id: ${loop.sourceThreadId}`,
     `Target thread id: ${slice.targetThreadId || ""}`,
     `Target role: ${slice.role}`,
+    `Implementation workspace cwd: ${implementationWorkspaceCwd || ""}`,
     `Runtime owner: codex-mobile`,
     `Domain adapter: ${loop.domainAdapter}`,
     `Target purpose: ${slice.targetPurpose || "unknown"}`,
@@ -817,6 +829,23 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         role,
         roleLaneRequired: true,
       });
+    }
+    if (roleFollowsImplementationWorkspace(role) && !roleRequiresImplementationWorkspace(role)) {
+      const expectedCwd = normalizeCwd(loopImplementationWorkspaceCwd(loop));
+      const threadCwd = normalizeCwd(thread && (thread.cwd || thread.workspace || thread.targetWorkspace));
+      if (expectedCwd && threadCwd && expectedCwd !== threadCwd) {
+        return Object.assign({}, loopCheck, {
+          ok: false,
+          error: "at_loop_role_workspace_mismatch",
+          role,
+          workspace: {
+            ok: false,
+            error: "role_workspace_mismatch",
+            expectedCwd: loopImplementationWorkspaceCwd(loop),
+            cwd: thread && (thread.cwd || thread.workspace || thread.targetWorkspace) || "",
+          },
+        });
+      }
     }
     if (roleRequiresImplementationWorkspace(role)) {
       const expectedCwd = normalizeCwd(loopImplementationWorkspaceCwd(loop));
@@ -1124,6 +1153,51 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     if (loop && loop.targetThreadId === staleTargetThreadId) loop.targetThreadId = "";
     if (loop) loop.updatedAt = timestamp;
     saveState();
+  }
+
+  function returnedRoleWorkspaceMismatch(loop, slice) {
+    if (!slice || slice.returnStatus !== "blocked" || !roleFollowsImplementationWorkspace(slice.role)) return false;
+    const expectedCwd = normalizeCwd(loopImplementationWorkspaceCwd(loop));
+    if (!expectedCwd) return false;
+    const targetThreadId = compactOneLine(slice.targetThreadId || loop && loop[roleThreadField(slice.role)] || "");
+    if (!targetThreadId) return true;
+    const target = readThreadSummary(targetThreadId);
+    if (!target) return true;
+    const targetCwd = normalizeCwd(target.cwd || target.workspace || target.targetWorkspace);
+    return !targetCwd || targetCwd !== expectedCwd;
+  }
+
+  function blockedReturnedRoleForRedispatch(loop) {
+    const slices = Array.isArray(loop && loop.roleSlices) ? loop.roleSlices : [];
+    return slices.find((slice) => slice.status === "returned" && returnedRoleWorkspaceMismatch(loop, slice)) || null;
+  }
+
+  function resetReturnedRoleForRedispatch(loop, slice, reason) {
+    const timestamp = nowIso(clock);
+    const staleTargetThreadId = compactOneLine(slice && slice.targetThreadId || "");
+    clearRoleLaneTarget(loop, slice, reason);
+    slice.status = "pending";
+    slice.dispatchStatus = "";
+    slice.dispatchMode = "";
+    slice.taskCardDispatch = true;
+    slice.returnStatus = "";
+    slice.returnCardId = "";
+    slice.returnSummary = "";
+    slice.auditVerdict = "";
+    slice.blockedReason = "";
+    slice.dispatchedAt = "";
+    slice.updatedAt = timestamp;
+    loop.status = "running";
+    loop.currentRole = slice.role;
+    loop.nextRoute = slice.role;
+    loop.blockedReason = "";
+    loop.updatedAt = timestamp;
+    saveState();
+    return {
+      role: slice.role,
+      staleTargetThreadId,
+      excludedTargetThreadIds: staleTargetThreadId ? [staleTargetThreadId] : [],
+    };
   }
 
   function markRequirementsLocal(loop, slice) {
@@ -1583,6 +1657,22 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       existing.updatedAt = nowIso(clock);
       if (existing.status === "blocked") {
         const blockedRole = existing.currentRole || existing.nextRoute || "requirements";
+        const blockedReturnedRole = blockedReturnedRoleForRedispatch(existing);
+        if (blockedReturnedRole) {
+          const recoveredRole = resetReturnedRoleForRedispatch(
+            existing,
+            blockedReturnedRole,
+            "returned_role_workspace_mismatch",
+          );
+          const recovered = await dispatchRole(existing, recoveredRole.role, {
+            excludedTargetThreadIds: recoveredRole.excludedTargetThreadIds,
+          });
+          return Object.assign({
+            ok: recovered.ok !== false,
+            duplicateSuppressed: false,
+            recovered: recovered.ok !== false,
+          }, recovered, { loop: publicLoop(existing) });
+        }
         const canRecoverRequirements = blockedRole === "requirements"
           || Array.isArray(existing.roleSlices) && existing.roleSlices.some((slice) => slice.role === "requirements" && /Target thread must be different|same.thread|target_thread_must_differ/i.test(String(slice.blockedReason || "")));
         if (canRecoverRequirements) {
