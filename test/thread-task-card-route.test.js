@@ -343,6 +343,10 @@ test("thread task card routes preserve service status codes", () => {
   assert.doesNotMatch(serverJs, /function maybeAutoReplyThreadTaskCard\(/);
   assert.match(runtimeTurnEventPipelineServiceJs, /threadTaskCardService\.maybeAutoReplyCompletedTurn/);
   assert.match(runtimeTurnEventPipelineServiceJs, /threadTaskCardService\.maybeResumeInterruptedTaskCard/);
+  assert.match(serverJs, /threadTaskCardService\.resumeStaleExecutionLeases/);
+  assert.match(serverJs, /scheduleTaskCardExecutionWatchdog/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS/);
+  assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS/);
   assert.match(notificationRuntimeServiceJs, /maybeApplyQueuedThreadSideChat/);
   assert.match(notificationRuntimeServiceJs, /threadTaskCardService: dependencies\.threadTaskCardService/);
   assert.match(codexAppServerClientServiceJs, /maybeAutoReplyThreadTaskCard\(msg\.method, msg\.params \|\| null\)/);

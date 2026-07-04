@@ -229,6 +229,9 @@ const {
   THREAD_TASK_CARD_DRAFT_TAG,
   THREAD_TASK_CARD_BODY_MAX_CHARS,
   THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK,
+  THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS,
+  THREAD_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS,
+  THREAD_TASK_CARD_EXECUTION_WATCHDOG_LIMIT,
   WORKSPACE_REGISTRY_FILE,
   TOKEN_USAGE_STATS_DB,
   TOKEN_USAGE_QUERY_CACHE_TTL_MS,
@@ -1490,6 +1493,64 @@ const codex = createCodexAppServerClient({
   codexProfileService,
   liveQuotaSnapshotForProfiles,
 });
+
+let taskCardExecutionWatchdogTimer = null;
+let taskCardExecutionWatchdogInitialTimer = null;
+let taskCardExecutionWatchdogRunning = false;
+
+async function runTaskCardExecutionWatchdog() {
+  if (taskCardExecutionWatchdogRunning) return;
+  if (!threadTaskCardService || typeof threadTaskCardService.resumeStaleExecutionLeases !== "function") return;
+  taskCardExecutionWatchdogRunning = true;
+  try {
+    const result = await threadTaskCardService.resumeStaleExecutionLeases({
+      staleAfterMs: THREAD_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS,
+      limit: THREAD_TASK_CARD_EXECUTION_WATCHDOG_LIMIT,
+      source: "listener-watchdog",
+    });
+    if (result && (result.resumed || result.blocked || result.skipped)) {
+      console.log(`[thread task card] execution watchdog inspected=${result.inspected || 0} resumed=${result.resumed || 0} blocked=${result.blocked || 0} skipped=${result.skipped || 0}`);
+    }
+  } catch (err) {
+    console.error(`[thread task card] execution watchdog failed: ${compactOneLine(err && err.message || String(err))}`);
+  } finally {
+    taskCardExecutionWatchdogRunning = false;
+  }
+}
+
+function scheduleTaskCardExecutionWatchdog() {
+  if (taskCardExecutionWatchdogTimer || THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS <= 0) return;
+  taskCardExecutionWatchdogTimer = setInterval(
+    () => runTaskCardExecutionWatchdog(),
+    THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS,
+  );
+  if (taskCardExecutionWatchdogTimer && typeof taskCardExecutionWatchdogTimer.unref === "function") {
+    taskCardExecutionWatchdogTimer.unref();
+  }
+  const initialDelayMs = Math.min(
+    THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS,
+    10_000,
+  );
+  taskCardExecutionWatchdogInitialTimer = setTimeout(() => {
+    taskCardExecutionWatchdogInitialTimer = null;
+    runTaskCardExecutionWatchdog();
+  }, Math.max(1_000, initialDelayMs));
+  if (taskCardExecutionWatchdogInitialTimer && typeof taskCardExecutionWatchdogInitialTimer.unref === "function") {
+    taskCardExecutionWatchdogInitialTimer.unref();
+  }
+}
+
+function clearTaskCardExecutionWatchdog() {
+  if (taskCardExecutionWatchdogInitialTimer) {
+    clearTimeout(taskCardExecutionWatchdogInitialTimer);
+    taskCardExecutionWatchdogInitialTimer = null;
+  }
+  if (taskCardExecutionWatchdogTimer) {
+    clearInterval(taskCardExecutionWatchdogTimer);
+    taskCardExecutionWatchdogTimer = null;
+  }
+}
+
 const threadDetailCopyTextService = createThreadDetailCopyTextService({
   codex,
   appendRolloutFinalReceiptsToThread,
@@ -1915,6 +1976,9 @@ process.on("SIGTERM", () => shutdown());
 
 function shutdown() {
   try {
+    clearTaskCardExecutionWatchdog();
+  } catch (_) {}
+  try {
     if (codex.ws) codex.ws.close();
   } catch (_) {}
   try {
@@ -1939,6 +2003,7 @@ function startServer() {
     console.log(DISABLE_AUTH ? "Authentication disabled by CODEX_MOBILE_DISABLE_AUTH." : `Authentication enabled; key source is env CODEX_MOBILE_KEY or ${AUTH_KEY_FILE}.`);
     scheduleStartupAppUpdateCheck();
     scheduleThreadListFallbackPrewarm();
+    scheduleTaskCardExecutionWatchdog();
   });
 }
 

@@ -566,6 +566,117 @@ test("ordinary user interruption resumes the active task-card execution lease", 
   assert.equal(executions.length, 2);
 });
 
+test("execution watchdog resumes stale active task-card leases without duplicating private body text", async () => {
+  let now = Date.parse("2026-07-04T02:16:31.000Z");
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    now: () => now,
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: `turn-exec-${executions.length}` };
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home-ai",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "movie",
+    targetThreadId: "thread-movie-deploy",
+    idempotencyKey: "watchdog:deploy-lane",
+    format: "markdown",
+    title: "Movie deploy readback",
+    summary: "Install and return bounded readback.",
+    body: "Private deploy instructions and endpoint bodies must not be copied into watchdog continuation text.",
+    workflowMode: "autonomous",
+    workflowId: "workflow-movie",
+  });
+  await service.approveFromSource(created.id, "thread-home-ai");
+  assert.equal(executions.length, 1);
+
+  now += 6 * 60 * 1000;
+  const result = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.inspected, 1);
+  assert.equal(result.resumed, 1);
+  assert.equal(result.blocked, 0);
+  assert.equal(executions.length, 2);
+  assert.equal(executions[1].card.source.threadId, "thread-home-ai");
+  assert.equal(executions[1].card.target.threadId, "thread-movie-deploy");
+  assert.match(executions[1].message.text, /\[Codex Mobile task-card watchdog continuation\]/);
+  assert.match(executions[1].message.text, new RegExp(`Task card id: ${created.id}`));
+  assert.match(executions[1].message.text, /Title: Movie deploy readback/);
+  assert.match(executions[1].message.text, /Summary: Install and return bounded readback\./);
+  assert.doesNotMatch(executions[1].message.text, /Private deploy instructions/);
+  assert.doesNotMatch(executions[1].message.text, /endpoint bodies/);
+
+  const stored = service.get(created.id, "thread-movie-deploy");
+  assert.equal(stored.executionLease.status, "active");
+  assert.equal(stored.executionLease.resumeRequired, true);
+  assert.equal(stored.executionLease.currentTurnId, "turn-exec-2");
+  assert.equal(stored.executionLease.lastContinuationTurnId, "turn-exec-2");
+  assert.equal(stored.executionLease.resumeCount, 1);
+  assert.equal(stored.executionLease.watchdogResumeRequestedAt, new Date(now).toISOString());
+
+  const duplicate = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000 });
+  assert.equal(duplicate.inspected, 0);
+  assert.equal(executions.length, 2);
+});
+
+test("execution watchdog marks resume failures as bounded blocked leases", async () => {
+  let now = Date.parse("2026-07-04T02:16:31.000Z");
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    now: () => now,
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      if (executions.length === 1) return { threadId: card.target.threadId, turnId: "turn-approved" };
+      throw new Error("app_server_resume_unavailable");
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home-ai",
+    targetWorkspaceId: "movie",
+    targetThreadId: "thread-movie-deploy",
+    idempotencyKey: "watchdog:blocked",
+    format: "markdown",
+    title: "Movie deploy readback",
+    summary: "Install and return bounded readback.",
+    body: "Sensitive deploy detail should not appear in blocked metadata.",
+    workflowMode: "autonomous",
+    workflowId: "workflow-movie",
+  });
+  await service.approveFromSource(created.id, "thread-home-ai");
+
+  now += 6 * 60 * 1000;
+  const result = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.inspected, 1);
+  assert.equal(result.resumed, 0);
+  assert.equal(result.blocked, 1);
+  assert.equal(result.results[0].status, "blocked");
+  assert.equal(result.results[0].error, "app_server_resume_unavailable");
+  assert.equal(executions.length, 2);
+  assert.match(executions[1].message.text, /\[Codex Mobile task-card watchdog continuation\]/);
+  assert.doesNotMatch(executions[1].message.text, /Sensitive deploy detail/);
+
+  const stored = service.get(created.id, "thread-movie-deploy");
+  assert.equal(stored.status, "approved");
+  assert.equal(stored.executionLease.status, "blocked");
+  assert.equal(stored.executionLease.resumeRequired, false);
+  assert.equal(stored.executionLease.blockedReason, "task_card_execution_watchdog_resume_failed");
+  assert.equal(stored.executionLease.lastResumeError, "app_server_resume_unavailable");
+  assert.equal(stored.executionLease.blockedAt, new Date(now).toISOString());
+
+  const duplicate = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000 });
+  assert.equal(duplicate.inspected, 0);
+});
+
 test("task-card execution turn completion does not resume itself", async () => {
   const executions = [];
   const service = createThreadTaskCardService({

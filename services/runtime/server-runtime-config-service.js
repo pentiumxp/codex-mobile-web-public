@@ -256,6 +256,24 @@ function createServerRuntimeConfigService(dependencies = {}) {
       THREAD_TASK_CARD_DRAFT_TAG: "codex-mobile-thread-task-card-draft",
       THREAD_TASK_CARD_BODY_MAX_CHARS: 8_000,
       THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK: 4,
+      THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS: boundedNumber(
+        env.CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS || "60000",
+        60000,
+        0,
+        60 * 60 * 1000,
+      ),
+      THREAD_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS: boundedNumber(
+        env.CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS || String(5 * 60 * 1000),
+        5 * 60 * 1000,
+        30 * 1000,
+        24 * 60 * 60 * 1000,
+      ),
+      THREAD_TASK_CARD_EXECUTION_WATCHDOG_LIMIT: boundedNumber(
+        env.CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_LIMIT || "2",
+        2,
+        1,
+        8,
+      ),
       WORKSPACE_REGISTRY_FILE: env.CODEX_MOBILE_WORKSPACE_REGISTRY_FILE
         || path.join(RUNTIME_ROOT, "workspace-registry.json"),
       TOKEN_USAGE_STATS_DB: env.CODEX_MOBILE_TOKEN_USAGE_DB

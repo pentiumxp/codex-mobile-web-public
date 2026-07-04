@@ -1037,6 +1037,13 @@ the service matches `injectedTurnId` / target thread id to an approved
 autonomous card. The auto-return idempotency key is based on the original card
 id plus completed turn id, so replayed completion notifications do not create
 duplicate return turns.
+Approved task cards also carry an execution lease. The listener runs a bounded
+execution watchdog for approved, non-terminal cards whose lease is still
+`active` with `resumeRequired=true` after the configured stale window. The
+watchdog reuses the original target lane and injects a short continuation that
+names only bounded ids/title/summary, not the task-card body. If that resume
+fails, the lease is marked `blocked` with bounded error metadata so the card no
+longer appears healthy while silently stuck.
 Source-side draft creation is also intentionally lightweight: once a valid
 Task-card command drafts create pending cards, the browser does not block on re-reading
 the source thread before settling local state. It updates local draft state and

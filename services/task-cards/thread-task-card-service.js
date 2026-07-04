@@ -27,7 +27,10 @@ const EXECUTION_LEASE_RESUMING = "resuming";
 const EXECUTION_LEASE_PAUSED = "paused";
 const EXECUTION_LEASE_CANCELLED = "cancelled";
 const EXECUTION_LEASE_COMPLETED = "completed";
+const EXECUTION_LEASE_BLOCKED = "blocked";
 const MAX_LEASE_TURN_IDS = 24;
+const DEFAULT_EXECUTION_WATCHDOG_STALE_MS = 5 * 60 * 1000;
+const MAX_EXECUTION_WATCHDOG_BATCH = 8;
 const STORE_LOCK_TIMEOUT_MS = 10_000;
 const STORE_LOCK_STALE_MS = 30_000;
 const STORE_LOCK_POLL_MS = 25;
@@ -538,12 +541,16 @@ function publicExecutionLease(lease) {
     pausedAt: boundedMetadataString(lease.pausedAt, 80),
     cancelledAt: boundedMetadataString(lease.cancelledAt, 80),
     completedAt: boundedMetadataString(lease.completedAt, 80),
+    blockedAt: boundedMetadataString(lease.blockedAt, 80),
+    blockedReason: boundedMetadataString(lease.blockedReason, 120),
     injectedTurnId: boundedMetadataString(lease.injectedTurnId, 120),
     currentTurnId: boundedMetadataString(lease.currentTurnId, 120),
     lastInterruptedTurnId: boundedMetadataString(lease.lastInterruptedTurnId, 120),
     lastContinuationTurnId: boundedMetadataString(lease.lastContinuationTurnId, 120),
     resumeCount: Math.max(0, Math.trunc(Number(lease.resumeCount || 0)) || 0),
     resumeForTurnId: boundedMetadataString(lease.resumeForTurnId, 120),
+    watchdogResumeRequestedAt: boundedMetadataString(lease.watchdogResumeRequestedAt, 80),
+    lastResumeFailedAt: boundedMetadataString(lease.lastResumeFailedAt, 80),
     lastResumeError: boundedMetadataString(lease.lastResumeError, 200),
   };
 }
@@ -611,6 +618,23 @@ function taskCardExecutionContinuationText(card, completed = {}, returnScriptPat
     turnId ? `Interrupted ordinary turn completed: ${turnId}` : "",
     "",
     "An active non-terminal task card for this thread is still open. The previous turn appears to have answered an ordinary user interruption; that interruption does not pause, cancel, or complete the task card.",
+    `Continue the original task-card work from the earlier injected task-card message in this thread. Do not request acknowledgement for terminal receipts, and close the original task card only through codex_mobile.return_to_source or ${returnScriptPath} when the work is completed, blocked, redirected, or partially completed.`,
+    "",
+    card.message && card.message.title ? `Title: ${card.message.title}` : "",
+    card.message && card.message.summary ? `Summary: ${card.message.summary}` : "",
+  ].filter((line, index, all) => line !== "" || (index > 0 && all[index - 1] !== ""));
+  return lines.join("\n");
+}
+
+function taskCardExecutionWatchdogText(card, returnScriptPath = "scripts/return-thread-task-card.js") {
+  const lines = [
+    "[Codex Mobile task-card watchdog continuation]",
+    "",
+    `Task card id: ${card.id}`,
+    `Source thread id: ${card.source && card.source.threadId || ""}`,
+    card.workflow && card.workflow.id ? `Workflow id: ${card.workflow.id}` : "",
+    "",
+    "This task card is approved and still has an active execution lease, but no terminal return has been recorded after the watchdog window.",
     `Continue the original task-card work from the earlier injected task-card message in this thread. Do not request acknowledgement for terminal receipts, and close the original task card only through codex_mobile.return_to_source or ${returnScriptPath} when the work is completed, blocked, redirected, or partially completed.`,
     "",
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
@@ -1892,6 +1916,57 @@ function createThreadTaskCardService(options = {}) {
     return candidates[0] || null;
   }
 
+  function normalizedExecutionWatchdogLimit(value) {
+    const parsed = Math.trunc(Number(value));
+    if (!Number.isFinite(parsed)) return 1;
+    return Math.max(1, Math.min(MAX_EXECUTION_WATCHDOG_BATCH, parsed));
+  }
+
+  function normalizedExecutionWatchdogStaleMs(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return DEFAULT_EXECUTION_WATCHDOG_STALE_MS;
+    return Math.max(0, parsed);
+  }
+
+  function executionLeaseReferenceTimeMs(card) {
+    const lease = card && card.executionLease && typeof card.executionLease === "object" ? card.executionLease : {};
+    return Date.parse(
+      stringValue(lease.lastProgressAt)
+      || stringValue(lease.resumingAt)
+      || stringValue(lease.startedAt)
+      || stringValue(card && card.updatedAt)
+      || stringValue(card && card.createdAt)
+      || "",
+    ) || 0;
+  }
+
+  function nextStaleExecutionLeaseCard(store, selection = {}) {
+    const nowMs = Number.isFinite(Number(selection.nowMs)) ? Number(selection.nowMs) : Date.now();
+    const staleAfterMs = normalizedExecutionWatchdogStaleMs(selection.staleAfterMs);
+    const cardId = stringValue(selection.cardId);
+    const targetThreadId = stringValue(selection.targetThreadId);
+    const candidates = safeArray(store && store.cards)
+      .filter((card) => {
+        if (!cardCanOwnExecutionLease(card)) return false;
+        if (cardId && stringValue(card.id) !== cardId) return false;
+        if (targetThreadId && stringValue(card.target && card.target.threadId) !== targetThreadId) return false;
+        if (stringValue(card.replyCardId) || stringValue(card.autoReplyCardId)) return false;
+        const lease = card.executionLease && typeof card.executionLease === "object" ? card.executionLease : null;
+        if (!lease || lease.resumeRequired !== true) return false;
+        if (stringValue(lease.status) !== EXECUTION_LEASE_ACTIVE) return false;
+        const referenceMs = executionLeaseReferenceTimeMs(card);
+        if (!referenceMs) return false;
+        if (nowMs - referenceMs < staleAfterMs) return false;
+        return true;
+      })
+      .sort((left, right) => {
+        const leftTime = executionLeaseReferenceTimeMs(left);
+        const rightTime = executionLeaseReferenceTimeMs(right);
+        return leftTime - rightTime || stringValue(left.id).localeCompare(stringValue(right.id));
+      });
+    return candidates[0] || null;
+  }
+
   async function maybeResumeInterruptedTaskCard(completed = {}) {
     const turnId = stringValue(completed.turnId);
     const threadId = stringValue(completed.threadId);
@@ -1973,6 +2048,135 @@ function createThreadTaskCardService(options = {}) {
         execution,
       };
     });
+  }
+
+  async function resumeStaleExecutionLeases(resumeOptions = {}) {
+    const limit = normalizedExecutionWatchdogLimit(resumeOptions.limit);
+    const results = [];
+    for (let index = 0; index < limit; index += 1) {
+      const prepared = await withStore(async (store) => {
+        const timestamp = nowIso(options.now);
+        const nowMs = Date.parse(timestamp) || Date.now();
+        const card = nextStaleExecutionLeaseCard(store, {
+          cardId: resumeOptions.cardId,
+          targetThreadId: resumeOptions.targetThreadId,
+          staleAfterMs: resumeOptions.staleAfterMs,
+          nowMs,
+        });
+        if (!card) return null;
+        const resumeMarker = boundedMetadataString(`watchdog:${card.id}:${nowMs}`, 120);
+        card.executionLease = Object.assign({}, card.executionLease || {}, {
+          status: EXECUTION_LEASE_RESUMING,
+          resumeRequired: true,
+          resumeForTurnId: resumeMarker,
+          watchdogResumeRequestedAt: timestamp,
+          lastProgressAt: timestamp,
+          resumingAt: timestamp,
+          lastResumeError: "",
+        });
+        card.audit = Object.assign({}, card.audit || {}, {
+          executionWatchdogResumeRequestedAt: timestamp,
+          executionWatchdogReason: "stale_resume_required",
+        });
+        card.updatedAt = timestamp;
+        return {
+          card: clone(card),
+          resumeMarker,
+        };
+      });
+      if (!prepared) break;
+
+      let execution = null;
+      try {
+        execution = await executeApprovedCard(clone(prepared.card), {
+          text: taskCardExecutionWatchdogText(prepared.card, returnThreadTaskCardScriptPath),
+        });
+      } catch (err) {
+        const blocked = await withStore(async (store) => {
+          const card = findById(store, prepared.card.id);
+          if (!card || !card.executionLease || stringValue(card.executionLease.resumeForTurnId) !== prepared.resumeMarker) {
+            return null;
+          }
+          const timestamp = nowIso(options.now);
+          card.executionLease = Object.assign({}, card.executionLease, {
+            status: EXECUTION_LEASE_BLOCKED,
+            resumeRequired: false,
+            blockedAt: timestamp,
+            blockedReason: "task_card_execution_watchdog_resume_failed",
+            lastResumeFailedAt: timestamp,
+            lastResumeError: boundedErrorMessage(err),
+            resumeForTurnId: "",
+            lastProgressAt: timestamp,
+          });
+          card.audit = Object.assign({}, card.audit || {}, {
+            executionWatchdogBlockedAt: timestamp,
+            executionWatchdogBlockedReason: "task_card_execution_watchdog_resume_failed",
+            executionWatchdogError: boundedErrorMessage(err),
+          });
+          card.updatedAt = timestamp;
+          return publicCard(card, card.target && card.target.threadId || "");
+        });
+        results.push({
+          cardId: prepared.card.id,
+          targetThreadId: prepared.card.target && prepared.card.target.threadId || "",
+          status: "blocked",
+          error: boundedErrorMessage(err),
+          card: blocked,
+        });
+        continue;
+      }
+
+      const resumed = await withStore(async (store) => {
+        const card = findById(store, prepared.card.id);
+        if (!card || !card.executionLease || stringValue(card.executionLease.resumeForTurnId) !== prepared.resumeMarker) {
+          return null;
+        }
+        const timestamp = nowIso(options.now);
+        const nextTurnId = stringValue(execution && execution.turnId);
+        const continuationTurnIds = safeArray(card.executionLease && card.executionLease.continuationTurnIds)
+          .map(stringValue)
+          .filter(Boolean);
+        if (nextTurnId && !continuationTurnIds.includes(nextTurnId)) continuationTurnIds.push(nextTurnId);
+        card.executionLease = Object.assign({}, card.executionLease || {}, {
+          status: EXECUTION_LEASE_ACTIVE,
+          resumeRequired: true,
+          currentTurnId: nextTurnId || stringValue(card.executionLease && card.executionLease.currentTurnId),
+          lastContinuationTurnId: nextTurnId || stringValue(card.executionLease && card.executionLease.lastContinuationTurnId),
+          continuationTurnIds: continuationTurnIds.slice(-MAX_LEASE_TURN_IDS),
+          resumeCount: Math.max(0, Math.trunc(Number(card.executionLease && card.executionLease.resumeCount || 0)) || 0) + 1,
+          resumedAt: timestamp,
+          lastProgressAt: timestamp,
+          resumeForTurnId: "",
+          lastResumeError: "",
+        });
+        card.audit = Object.assign({}, card.audit || {}, {
+          executionWatchdogResumedAt: timestamp,
+          executionWatchdogLastTurnId: nextTurnId,
+        });
+        card.updatedAt = timestamp;
+        if (nextTurnId) card.lastContinuationTurnId = nextTurnId;
+        if (execution && execution.result) card.lastContinuationResult = execution.result;
+        return publicCard(card, card.target && card.target.threadId || "");
+      });
+      results.push({
+        cardId: prepared.card.id,
+        targetThreadId: prepared.card.target && prepared.card.target.threadId || "",
+        status: resumed ? "resumed" : "skipped",
+        card: resumed,
+        execution: {
+          threadId: boundedMetadataString(execution && execution.threadId, 120),
+          turnId: boundedMetadataString(execution && execution.turnId, 120),
+        },
+      });
+    }
+    return {
+      ok: true,
+      inspected: results.length,
+      resumed: results.filter((result) => result.status === "resumed").length,
+      blocked: results.filter((result) => result.status === "blocked").length,
+      skipped: results.filter((result) => result.status === "skipped").length,
+      results,
+    };
   }
 
   async function pauseExecution(cardId, actorThreadId) {
@@ -2168,6 +2372,7 @@ function createThreadTaskCardService(options = {}) {
     pendingCountsForThreads,
     pauseExecution,
     reply,
+    resumeStaleExecutionLeases,
     revoke,
   };
 }
