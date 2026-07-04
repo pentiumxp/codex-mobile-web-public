@@ -844,6 +844,13 @@ coverage is:
 node --test test\thread-visibility.test.js test\thread-list-fallback-cache-service.test.js test\thread-task-card-deploy-lane-policy-service.test.js
 ```
 
+The API self-check reports this direction as
+`thread_list_missing_active_detail_active_mismatch` when a detail read is still
+active but the thread-list row has dropped its active/running state and marker.
+Run `node scripts/codex-mobile-thread-self-check.js --server
+http://127.0.0.1:8787 --json` and inspect `listDetailConsistency` before
+debugging the browser icon layer.
+
 ## Sent Message Disappears After Re-entering Thread
 
 Common causes:

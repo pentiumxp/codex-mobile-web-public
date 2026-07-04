@@ -743,6 +743,15 @@ function detailThreadIsSettled(detail = {}) {
   return Boolean(latestCompletedTurn(thread).turn);
 }
 
+function detailThreadIsActive(detail = {}) {
+  const thread = objectOrNull(detail && detail.thread);
+  if (!thread) return false;
+  if (detailThreadIsSettled(detail)) return false;
+  if (isActiveStatus(thread.status)) return true;
+  if (activeTurn(thread).turn) return true;
+  return Boolean(threadActiveMarker(thread));
+}
+
 function compareThreadListRowToDetail(row = {}, detail = {}) {
   const id = threadId(row) || threadId(detail && detail.thread);
   const threadHash = shortHash(id);
@@ -753,8 +762,10 @@ function compareThreadListRowToDetail(row = {}, detail = {}) {
   const listIsActive = isActiveStatus(listStatus) || listHasActiveMarker;
   const listIsRest = isRestStatus(listStatus);
   const detailSettled = detailThreadIsSettled(detail);
+  const detailIsActive = detailThreadIsActive(detail);
   const detailThread = objectOrNull(detail && detail.thread);
   const detailStatus = statusText(detailThread && detailThread.status);
+  const detailMarker = threadActiveMarker(detailThread);
   if (listIsRest && listHasActiveMarker) {
     pushIssue(issues, "thread_list_rest_status_has_active_turn", "H2", "thread-list-detail-consistency", {
       threadHash,
@@ -770,6 +781,14 @@ function compareThreadListRowToDetail(row = {}, detail = {}) {
       activeTurnHash: marker ? shortHash(marker) : "",
     });
   }
+  if (!listIsActive && detailIsActive) {
+    pushIssue(issues, "thread_list_missing_active_detail_active_mismatch", "H2", "thread-list-detail-consistency", {
+      threadHash,
+      listStatus: statusText(listStatus),
+      detailStatus,
+      detailActiveTurnHash: detailMarker ? shortHash(detailMarker) : "",
+    });
+  }
   return {
     ok: issues.filter(issueSeverityBlocks).length === 0,
     threadHash,
@@ -777,6 +796,7 @@ function compareThreadListRowToDetail(row = {}, detail = {}) {
     detailStatus,
     listHasActiveMarker,
     detailSettled,
+    detailIsActive,
     issues,
   };
 }

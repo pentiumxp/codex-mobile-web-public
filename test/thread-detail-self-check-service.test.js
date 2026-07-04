@@ -290,6 +290,31 @@ test("thread detail self check detects terminal list rows that still carry activ
   assert.ok(report.issues.some((issue) => issue.code === "thread_list_rest_status_has_active_turn"));
 });
 
+test("thread detail self check detects detail active status when list dropped running state", () => {
+  const detail = healthyDetail();
+  detail.thread.status = { type: "active" };
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    items: [
+      { id: "user-active", type: "userMessage" },
+      { id: "agent-active", type: "agentMessage" },
+    ],
+  });
+
+  for (const listStatus of ["completed", "idle", "notLoaded"]) {
+    const report = compareThreadListRowToDetail({
+      id: "thread-1",
+      status: { type: listStatus },
+    }, detail);
+
+    assert.equal(report.ok, false);
+    assert.equal(report.detailIsActive, true);
+    assert.ok(report.issues.some((issue) => issue.code === "thread_list_missing_active_detail_active_mismatch"));
+  }
+});
+
 test("thread detail self check warns when latest completed replay assistant progress was budgeted away", () => {
   const detail = healthyDetail();
   detail.thread.mobileVisibleItemKeys = ["u1", "a1", "usage1"];
