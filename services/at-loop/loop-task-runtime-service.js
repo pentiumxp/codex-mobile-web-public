@@ -910,6 +910,35 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     };
   }
 
+  function isTargetUndeliverableDispatchError(err) {
+    const code = compactOneLine(err && err.code);
+    const message = compactOneLine(err && err.message || err);
+    return code === "target_thread_not_visible"
+      || code === "target_thread_not_deliverable"
+      || /not visible|not a current deliverable|not deliverable/i.test(message);
+  }
+
+  function clearRoleLaneTarget(loop, slice, reason) {
+    const timestamp = nowIso(clock);
+    const role = slice && slice.role || "";
+    const field = roleThreadField(role);
+    const staleTargetThreadId = compactOneLine(slice && slice.targetThreadId || loop && loop[field] || "");
+    if (slice) {
+      slice.targetThreadId = "";
+      slice.targetPurpose = "";
+      slice.taskCardId = "";
+      slice.routing = Object.assign({}, slice.routing || {}, {
+        staleTargetThreadId,
+        staleTargetReason: reason,
+      });
+      slice.updatedAt = timestamp;
+    }
+    if (field && loop) loop[field] = "";
+    if (loop && loop.targetThreadId === staleTargetThreadId) loop.targetThreadId = "";
+    if (loop) loop.updatedAt = timestamp;
+    saveState();
+  }
+
   function markRequirementsLocal(loop, slice) {
     const timestamp = nowIso(clock);
     const source = sourceThread(loop);
@@ -990,9 +1019,17 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return score;
   }
 
-  function selectExistingRoleTarget(loop, role) {
+  function excludedTargetSet(options = {}) {
+    return new Set((Array.isArray(options.excludedTargetThreadIds) ? options.excludedTargetThreadIds : [])
+      .map((id) => compactOneLine(id))
+      .filter(Boolean));
+  }
+
+  function selectExistingRoleTarget(loop, role, options = {}) {
+    const excluded = excludedTargetSet(options);
     const candidates = visibleThreads()
       .filter((thread) => !sameThreadId(threadIdOf(thread), loop.sourceThreadId))
+      .filter((thread) => !excluded.has(threadIdOf(thread)))
       .map((thread) => ({ thread, score: scoreRoleTarget(loop, role, thread) }))
       .filter((entry) => entry.score >= 0)
       .sort((left, right) => right.score - left.score || threadIdOf(left.thread).localeCompare(threadIdOf(right.thread)));
@@ -1015,37 +1052,24 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return thread || null;
   }
 
-  async function ensureRoleLane(loop, role) {
+  async function ensureRoleLane(loop, role, options = {}) {
     const slice = findSlice(loop, { role, iteration: loop.iteration });
     if (!slice) return { ok: false, error: "at_loop_role_slice_not_found" };
     const field = roleThreadField(role);
     const existingId = compactOneLine(slice.targetThreadId || loop[field] || (role === "implementation" || role === "repair" ? loop.targetThreadId : ""));
     if (existingId && !sameThreadId(existingId, loop.sourceThreadId)) {
-      const target = readVisibleThreadSummary(existingId);
-      if (!target) {
-        const timestamp = nowIso(clock);
-        slice.targetThreadId = "";
-        slice.targetPurpose = "";
-        slice.routing = Object.assign({}, slice.routing || {}, {
-          staleTargetThreadId: existingId,
-          staleTargetReason: "not_visible_or_not_current_deliverable",
-        });
-        slice.updatedAt = timestamp;
-        loop[field] = "";
-        if (loop.targetThreadId === existingId) loop.targetThreadId = "";
-        loop.updatedAt = timestamp;
-        saveState();
+      const excluded = excludedTargetSet(options);
+      if (excluded.has(existingId)) {
+        clearRoleLaneTarget(loop, slice, "dispatch_target_not_deliverable");
       } else {
-        const check = roleTargetCheck(loop, role, target);
-        if (!check.ok) {
+        const target = readVisibleThreadSummary(existingId);
+        if (!target) {
           const timestamp = nowIso(clock);
           slice.targetThreadId = "";
           slice.targetPurpose = "";
-          slice.routing = Object.assign({}, publicRoleTargetRoutingMetadata(check), {
+          slice.routing = Object.assign({}, slice.routing || {}, {
             staleTargetThreadId: existingId,
-            staleTargetReason: check.error === "at_loop_target_not_deliverable"
-              ? "stored_target_not_deliverable"
-              : "stored_target_purpose_mismatch",
+            staleTargetReason: "not_visible_or_not_current_deliverable",
           });
           slice.updatedAt = timestamp;
           loop[field] = "";
@@ -1053,17 +1077,35 @@ function createLoopTaskRuntimeService(dependencies = {}) {
           loop.updatedAt = timestamp;
           saveState();
         } else {
-          slice.targetThreadId = existingId;
-          slice.targetPurpose = check.classification && check.classification.purpose || "";
-          slice.routing = publicRoleTargetRoutingMetadata(check);
-          loop[field] = existingId;
-          if (role === "implementation") loop.targetThreadId = existingId;
-          return { ok: true, target, slice };
+          const check = roleTargetCheck(loop, role, target);
+          if (!check.ok) {
+            const timestamp = nowIso(clock);
+            slice.targetThreadId = "";
+            slice.targetPurpose = "";
+            slice.routing = Object.assign({}, publicRoleTargetRoutingMetadata(check), {
+              staleTargetThreadId: existingId,
+              staleTargetReason: check.error === "at_loop_target_not_deliverable"
+                ? "stored_target_not_deliverable"
+                : "stored_target_purpose_mismatch",
+            });
+            slice.updatedAt = timestamp;
+            loop[field] = "";
+            if (loop.targetThreadId === existingId) loop.targetThreadId = "";
+            loop.updatedAt = timestamp;
+            saveState();
+          } else {
+            slice.targetThreadId = existingId;
+            slice.targetPurpose = check.classification && check.classification.purpose || "";
+            slice.routing = publicRoleTargetRoutingMetadata(check);
+            loop[field] = existingId;
+            if (role === "implementation") loop.targetThreadId = existingId;
+            return { ok: true, target, slice };
+          }
         }
       }
     }
 
-    let target = selectExistingRoleTarget(loop, role);
+    let target = selectExistingRoleTarget(loop, role, options);
     let created = false;
     if (!target) {
       try {
@@ -1112,7 +1154,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return { ok: true };
   }
 
-  async function dispatchRole(loop, role) {
+  async function dispatchRole(loop, role, options = {}) {
     const timestamp = nowIso(clock);
     let slice = findSlice(loop, { role, iteration: loop.iteration });
     if (!slice) {
@@ -1132,10 +1174,10 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       if (!local.ok) return local;
       const lanes = await ensureCoreRoleLanes(loop);
       if (!lanes.ok) return lanes;
-      return dispatchRole(loop, "implementation");
+      return dispatchRole(loop, "implementation", options);
     }
     if (role !== "requirements") {
-      const lane = await ensureRoleLane(loop, role);
+      const lane = await ensureRoleLane(loop, role, options);
       if (!lane.ok) return lane;
     }
     const target = targetForRole(loop, role);
@@ -1257,6 +1299,15 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       saveState();
       return { ok: true, loop: publicLoop(loop), slice: publicSlice(slice), cardCount: cards.length };
     } catch (err) {
+      if (!options.retriedAfterTargetClear && isTargetUndeliverableDispatchError(err)) {
+        const failedTargetThreadId = compactOneLine(slice.targetThreadId || targetThreadId);
+        clearRoleLaneTarget(loop, slice, "dispatch_target_not_deliverable");
+        const excludedTargetThreadIds = Array.from(new Set([...(options.excludedTargetThreadIds || []), failedTargetThreadId].filter(Boolean)));
+        return dispatchRole(loop, role, Object.assign({}, options, {
+          retriedAfterTargetClear: true,
+          excludedTargetThreadIds,
+        }));
+      }
       slice.status = "blocked";
       slice.dispatchStatus = "failed";
       slice.blockedReason = compactOneLine(err && err.message || err || "at_loop_dispatch_failed");

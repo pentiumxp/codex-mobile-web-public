@@ -65,6 +65,9 @@ function makeRuntime(options = {}) {
     clock: () => now,
     watchdogStaleMs: 1000,
     createThreadTaskCardsFromSourceThread: async (sourceThreadId, payload) => {
+      if (typeof options.createThreadTaskCardsFromSourceThread === "function") {
+        return options.createThreadTaskCardsFromSourceThread(sourceThreadId, payload, { cards });
+      }
       if (sourceThreadId === payload.targetThreadId) {
         throw new Error("Target thread must be different from the source thread.");
       }
@@ -596,6 +599,126 @@ test("loop runtime skips visible implementation targets rejected by task-card de
   assert.equal(implementation.targetThreadId, "zzz-implementation-thread");
   assert.equal(cards.length, 1);
   assert.equal(cards[0].payload.targetThreadId, "zzz-implementation-thread");
+});
+
+test("loop runtime retries with a fresh target when task-card dispatch rejects a stale target", async () => {
+  const dispatchAttempts = [];
+  const { cards, createdThreads, runtime, storageFile } = makeRuntime({
+    name: "dispatch-layer-stale-target-retry",
+    visibleThreads: [{
+      id: "source-thread",
+      title: "Xcode",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+    }, {
+      id: "stale-created-thread",
+      title: "Xcode Loop Implementation: redesign settings",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+      threadRole: "implementation",
+      status: { type: "notLoaded" },
+    }, {
+      id: "audit-thread",
+      title: "Plugin Workspace Audit",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    }],
+    createThreadTaskCardsFromSourceThread: async (sourceThreadId, payload, context) => {
+      dispatchAttempts.push(payload.targetThreadId);
+      if (payload.targetThreadId === "stale-created-thread") {
+        const err = new Error("Target thread is not visible or is not a current deliverable thread.");
+        err.code = "target_thread_not_visible";
+        err.statusCode = 400;
+        throw err;
+      }
+      context.cards.push({ sourceThreadId, payload });
+      return { ok: true, cards: [{ id: `ttc_${context.cards.length}` }] };
+    },
+  });
+  const loopId = testLoopId({
+    sourceThreadId: "source-thread",
+    targetThreadId: "source-thread",
+    objective: "recover stale dispatch target",
+  });
+  fs.writeFileSync(storageFile, `${JSON.stringify({ version: 1, loops: [{
+    loopId,
+    sourceThreadId: "source-thread",
+    targetThreadId: "stale-created-thread",
+    requirementsThreadId: "source-thread",
+    implementationThreadId: "stale-created-thread",
+    auditThreadId: "audit-thread",
+    domainAdapter: "generic",
+    objectiveSummary: "recover stale dispatch target",
+    status: "blocked",
+    currentRole: "requirements",
+    iteration: 1,
+    maxIterations: 3,
+    nextRoute: "implementation",
+    blockedReason: "at_loop_dispatch_failed",
+    sourceRequestId: `at-loop:${loopId}:source`,
+    requirementsLocal: true,
+    auditPacket: {},
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    roleSlices: [{
+      role: "requirements",
+      roleSliceId: `${loopId}:requirements:1`,
+      iteration: 1,
+      status: "local",
+      dispatchStatus: "source_thread_local_role",
+      dispatchMode: "source_thread_local_role",
+      taskCardDispatch: false,
+      taskCardId: "",
+      targetThreadId: "source-thread",
+      targetPurpose: "workspace_implementation",
+      roleOwnerThreadId: "source-thread",
+      roleThreadCreated: false,
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "implementation",
+      roleSliceId: `${loopId}:implementation:1`,
+      iteration: 1,
+      status: "blocked",
+      dispatchStatus: "failed",
+      taskCardId: "",
+      targetThreadId: "stale-created-thread",
+      targetPurpose: "workspace_implementation",
+      roleThreadCreated: true,
+      routing: null,
+      blockedReason: "Target thread is not visible or is not a current deliverable thread.",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "product_audit",
+      roleSliceId: `${loopId}:product_audit:1`,
+      iteration: 1,
+      status: "pending",
+      dispatchStatus: "",
+      taskCardId: "",
+      targetThreadId: "audit-thread",
+      targetPurpose: "audit_lane",
+      roleThreadCreated: false,
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }],
+  }] }, null, 2)}\n`, "utf8");
+
+  const result = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop recover stale dispatch target",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.recovered, true);
+  assert.deepEqual(dispatchAttempts, ["stale-created-thread", "implementation-created"]);
+  assert.equal(result.loop.implementationThreadId, "implementation-created");
+  const implementation = result.loop.roleSlices.find((slice) => slice.role === "implementation");
+  assert.equal(implementation.status, "dispatched");
+  assert.equal(implementation.targetThreadId, "implementation-created");
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].payload.targetThreadId, "implementation-created");
+  assert.equal(createdThreads.length, 1);
+  assert.equal(createdThreads[0].id, "implementation-created");
 });
 
 test("loop runtime creates implementation lane instead of selecting ordinary completed workspace thread", async () => {
