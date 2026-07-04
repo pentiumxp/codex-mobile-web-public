@@ -613,7 +613,8 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     const sourceSummary = hydrateThreadTitleFromSessionIndex(
       readThreadSummary(sourceId) || (sourceId ? { id: sourceId } : null),
     );
-    let targetThreadIds = resolvedThreadTaskCardTargetIds(body, sourceId, options);
+    const resolutionOptions = Object.assign({}, options, { readThreadSummary });
+    let targetThreadIds = resolvedThreadTaskCardTargetIds(body, sourceId, resolutionOptions);
     if (!targetThreadIds.length) {
       throw threadTaskCardTargetError(
         "target_thread_required",

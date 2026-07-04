@@ -470,6 +470,60 @@ test("task-card route treats recent started threads as visible delegation target
   );
 });
 
+test("task-card source create resolves direct started target summaries outside visible list", async () => {
+  const createCalls = [];
+  const implementationThreadId = "019f2abe-75f2-72b0-9838-ca684e7e6fe9";
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {
+      createMany: async (payload) => {
+        createCalls.push(payload);
+        return [{ id: "ttc_loop_impl", status: "pending", target: { threadId: implementationThreadId } }];
+      },
+    },
+    readThreadListFallback: () => [],
+    readStartedThread: (threadId) => {
+      if (threadId === "source-thread") {
+        return {
+          id: "source-thread",
+          name: "Xcode Requirements",
+          cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+        };
+      }
+      if (threadId === implementationThreadId) {
+        return {
+          id: implementationThreadId,
+          name: "Xcode Loop Implementation",
+          cwd: "/Users/xuxin/Xcode/Home AI",
+          threadRole: "implementation",
+        };
+      }
+      return null;
+    },
+    threadDisplayTitle: (thread) => thread && (thread.name || thread.title || thread.preview || thread.id) || "",
+  });
+
+  const result = await service.createThreadTaskCardsFromSourceThread("source-thread", {
+    targetThreadId: implementationThreadId,
+    title: "Loop implementation",
+    body: "Implement the bounded loop objective.",
+    idempotencyKey: "at-loop:loop_x:implementation:1:target:v1",
+    workflowMode: "autonomous",
+    workflowId: "at-loop:loop_x",
+    direct: false,
+    pending: true,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.cards[0].id, "ttc_loop_impl");
+  assert.equal(createCalls.length, 1);
+  assert.deepEqual(createCalls[0].targetThreadIds, [implementationThreadId]);
+  assert.deepEqual(createCalls[0].targetWorkspaceIds, {
+    [implementationThreadId]: "/Users/xuxin/Xcode/Home AI",
+  });
+  assert.equal(createCalls[0].routeResolution.matchedThreadId, implementationThreadId);
+  assert.equal(createCalls[0].targetRole, "implementation");
+});
+
 test("workspace delegation RPC diagnostics are route-owned and bounded", () => {
   const lines = [];
   const service = createThreadTaskCardRouteService({
