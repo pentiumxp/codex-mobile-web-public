@@ -341,6 +341,55 @@ function atLoopCommandObjectiveText(value) {
   return aliasMatch ? String(aliasMatch[1] || "").trim() : "";
 }
 
+function atLoopPacketSectionLabel(sectionId) {
+  const id = String(sectionId || "").trim();
+  if (id === "requirements_packet") return "需求包";
+  if (id === "design_contract_packet") return "设计契约包";
+  if (id === "implementation_packet") return "实现包";
+  if (id === "validation_packet") return "验证包";
+  if (id === "privacy_packet") return "隐私包";
+  return id;
+}
+
+function atLoopRequestClientOutcome(result) {
+  const loop = result && result.loop && typeof result.loop === "object" ? result.loop : {};
+  const sourceRequirementsStatus = loop.sourceRequirementsStatus && typeof loop.sourceRequirementsStatus === "object"
+    ? loop.sourceRequirementsStatus
+    : {};
+  const loopId = String(loop.loopId || "");
+  const loopStatus = String(loop.status || "");
+  const nextRoute = String(loop.nextRoute || "");
+  const missingSections = Array.isArray(sourceRequirementsStatus.missingSections)
+    ? sourceRequirementsStatus.missingSections.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 6)
+    : [];
+  const waitingSourceRequirements = Boolean(sourceRequirementsStatus.pending)
+    || loopStatus === "waiting_source_requirements"
+    || nextRoute === "source_requirements_pending";
+  if (waitingSourceRequirements) {
+    const missingText = missingSections.map(atLoopPacketSectionLabel).filter(Boolean).join("、");
+    return {
+      loopId,
+      waitingSourceRequirements: true,
+      loopStatus: loopStatus || "waiting_source_requirements",
+      nextRoute: nextRoute || "source_requirements_pending",
+      missingSections,
+      statusText: missingText
+        ? `Loop 等待主线程需求分析：${missingText}`
+        : "Loop 等待主线程需求分析",
+      activityText: "Loop 等待需求分析",
+    };
+  }
+  return {
+    loopId,
+    waitingSourceRequirements: false,
+    loopStatus,
+    nextRoute,
+    missingSections,
+    statusText: loopId ? `Loop 已启动：${loopId.slice(0, 12)}` : "Loop 已启动",
+    activityText: "Loop 已启动",
+  };
+}
+
 function composerIntentOptions() {
   return [
     {
@@ -583,16 +632,22 @@ async function submitComposerIntentDialog(event) {
   setComposerIntentDialogStatus("提交中…");
   updateComposerControls();
   try {
+    let intentResult = null;
     if (kind === "chatgpt-pro") {
       await submitChatGptProRequest(`${option.tag} ${body}`, { rethrow: true });
     } else if (kind === "loop") {
-      await submitAtLoopRequest(`${option.tag} ${body}`, { rethrow: true });
+      intentResult = await submitAtLoopRequest(`${option.tag} ${body}`, { rethrow: true });
     } else if (kind === "task-card" || kind === "task-card-auto") {
       await sendThreadTaskCardCommand(`${option.tag} ${body}`, { rethrow: true });
     }
     saveComposerIntentDraft(kind, "");
     setComposerText("");
     scheduleCurrentDraftSave();
+    if (kind === "loop" && intentResult && intentResult.waitingSourceRequirements) {
+      if (input) input.value = "";
+      setComposerIntentDialogStatus(intentResult.statusText);
+      return;
+    }
     closeComposerIntentDialog();
   } catch (err) {
     setComposerIntentDialogStatus(normalizeClientErrorMessage(err && err.message ? err.message : String(err), err), true);
@@ -1633,24 +1688,27 @@ async function submitAtLoopRequest(commandText, options = {}) {
     if (result && result.ok === false) {
       throw new Error(result.error || "at_loop_start_failed");
     }
-    const loopId = String(result && result.loop && result.loop.loopId || "");
+    const outcome = atLoopRequestClientOutcome(result);
+    const loopId = outcome.loopId;
     setComposerText("");
     clearPendingAttachments();
     scheduleCurrentDraftSave();
     $("connectionState").classList.remove("error");
-    $("connectionState").textContent = loopId
-      ? `Loop 已启动：${loopId.slice(0, 12)}`
-      : "Loop 已启动";
-    markActivity("Loop 已启动");
+    $("connectionState").textContent = outcome.statusText;
+    markActivity(outcome.activityText);
     postClientEvent("at_loop_request_success", {
       threadId: targetThreadId,
       loopId: loopId ? loopId.slice(0, 24) : "",
       duplicateSuppressed: Boolean(result && result.duplicateSuppressed),
+      waitingSourceRequirements: outcome.waitingSourceRequirements,
+      loopStatus: outcome.loopStatus,
+      nextRoute: outcome.nextRoute,
+      missingSections: outcome.missingSections,
     });
     scheduleComposerTargetRefresh(targetThreadId, 700, "at-loop-submit");
     scheduleLivePollIfNeeded(1200);
     loadThreads({ silent: true }).catch(showError);
-    return true;
+    return outcome;
   } catch (err) {
     const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err)
       || "Loop 启动失败";
@@ -2048,6 +2106,7 @@ async function interruptActiveTurn(threadId = currentComposerThreadId(), activeT
     loadComposerIntentDraft,
     saveComposerIntentDraft,
     composerIntentBareTagKind,
+    atLoopRequestClientOutcome,
     shouldShowComposerIntentMenu,
     closeComposerIntentMenu,
     onComposerIntentOutsidePointer,

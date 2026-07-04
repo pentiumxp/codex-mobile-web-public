@@ -51,12 +51,41 @@ test("composer recognizes @loop intent without turning task-card tags into dialo
   assert.equal(runtime.composerIntentBareTagKind("@自由协作"), "");
 });
 
+test("composer renders source-requirements waiting state for @loop", () => {
+  const runtime = composerRuntime.createComposerRuntime({});
+  const outcome = runtime.atLoopRequestClientOutcome({
+    ok: true,
+    loop: {
+      loopId: "loop_1234567890abcdef",
+      status: "waiting_source_requirements",
+      nextRoute: "source_requirements_pending",
+      sourceRequirementsStatus: {
+        pending: true,
+        missingSections: ["requirements_packet", "design_contract_packet"],
+      },
+    },
+  });
+
+  assert.equal(outcome.waitingSourceRequirements, true);
+  assert.equal(outcome.loopStatus, "waiting_source_requirements");
+  assert.equal(outcome.nextRoute, "source_requirements_pending");
+  assert.deepEqual(outcome.missingSections, ["requirements_packet", "design_contract_packet"]);
+  assert.match(outcome.statusText, /Loop 等待主线程需求分析/);
+  assert.match(outcome.statusText, /需求包/);
+  assert.match(outcome.statusText, /设计契约包/);
+  assert.equal(outcome.activityText, "Loop 等待需求分析");
+});
+
 test("composer submits @loop through at-loop API before normal message paths", () => {
   assert.match(composerRuntimeJs, /function isAtLoopCommandText\(/);
   assert.match(composerRuntimeJs, /function atLoopCommandObjectiveText\(/);
+  assert.match(composerRuntimeJs, /function atLoopRequestClientOutcome\(/);
   assert.match(composerRuntimeJs, /async function submitAtLoopRequest\(/);
   assert.match(functionBody(composerRuntimeJs, "submitAtLoopRequest"), /api\("\/api\/at-loop\/triggers"/);
+  assert.match(functionBody(composerRuntimeJs, "submitAtLoopRequest"), /atLoopRequestClientOutcome\(result\)/);
+  assert.match(functionBody(composerRuntimeJs, "submitAtLoopRequest"), /waitingSourceRequirements/);
   assert.match(functionBody(composerRuntimeJs, "submitComposerIntentDialog"), /kind === "loop"[\s\S]*submitAtLoopRequest\(`\$\{option\.tag\} \$\{body\}`, \{ rethrow: true \}\)/);
+  assert.match(functionBody(composerRuntimeJs, "submitComposerIntentDialog"), /waitingSourceRequirements[\s\S]*setComposerIntentDialogStatus\(intentResult\.statusText\)[\s\S]*return;/);
 
   const sendBody = functionBody(composerRuntimeJs, "sendMessage");
   const loopIndex = sendBody.indexOf("isAtLoopCommandText(text)");

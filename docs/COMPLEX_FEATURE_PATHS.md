@@ -766,9 +766,13 @@ Implementation path:
    - MCP/task-card composition tests that prove the API/MCP surfaces stay
      bounded and idempotent.
 13. The Composer `@` picker intentionally exposes `Loop`, `目标任务`, and
-   `ChatGPT Pro` only. Task-card and autonomous-collaboration creation remains
-   available through the existing task-card channel/text commands, but is not a
-   top-level Composer `@` picker entry.
+    `ChatGPT Pro` only. Task-card and autonomous-collaboration creation remains
+    available through the existing task-card channel/text commands, but is not a
+    top-level Composer `@` picker entry. When the trigger returns
+    `waiting_source_requirements`, Composer must render that waiting state
+    visibly instead of treating the request as an ordinary "started" success:
+    direct `@loop` submission updates the connection/activity text, and the
+    `@` dialog keeps the dialog open with the source-requirements status.
 
 ## Public/Private Publish
 
