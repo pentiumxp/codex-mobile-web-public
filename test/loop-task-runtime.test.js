@@ -715,6 +715,7 @@ test("loop runtime retries with a fresh target when task-card dispatch rejects a
   const implementation = result.loop.roleSlices.find((slice) => slice.role === "implementation");
   assert.equal(implementation.status, "dispatched");
   assert.equal(implementation.targetThreadId, "implementation-created");
+  assert.equal(implementation.blockedReason, "");
   assert.equal(cards.length, 1);
   assert.equal(cards[0].payload.targetThreadId, "implementation-created");
   assert.equal(createdThreads.length, 1);

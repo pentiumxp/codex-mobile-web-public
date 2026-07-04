@@ -1285,11 +1285,12 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       slice.dispatchMode = TASK_CARD_DISPATCH;
       slice.taskCardDispatch = true;
       slice.taskCardId = compactOneLine(card.id || card.cardId || result && result.cardId);
+      slice.blockedReason = "";
       if (role === "product_audit") {
         slice.auditPacketStatus = auditPacketStatus(loop.auditPacket || sanitizeAuditPacket({}));
       }
       slice.targetPurpose = targetCheck.classification.purpose;
-    slice.routing = publicRoleTargetRoutingMetadata(targetCheck);
+      slice.routing = publicRoleTargetRoutingMetadata(targetCheck);
       slice.dispatchedAt = timestamp;
       slice.updatedAt = timestamp;
       loop.status = "running";
