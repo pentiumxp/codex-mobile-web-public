@@ -1082,6 +1082,49 @@ test("loop runtime permits final audit retry after exhausted repair fills missin
   assert.deepEqual(cards[3].payload.missingAuditPacketSections, []);
 });
 
+test("loop runtime can hydrate repair packet body from stored terminal return card", async () => {
+  const evidenceCards = new Map([
+    ["ttc_repair_return", {
+      message: {
+        summary: "repair supplied packet evidence",
+        body: xcodeSettingsRepairPacketBody(),
+      },
+    }],
+  ]);
+  const { cards, runtime } = makeRuntime({
+    name: "stored-repair-return-body",
+    readThreadTaskCardForLoopEvidence: (cardId) => evidenceCards.get(cardId) || null,
+  });
+  await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop redesign native settings stored return",
+    maxIterations: 1,
+  });
+  await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "completed",
+    summary: "implementation done",
+  });
+  await runtime.recordTerminalReturn({
+    taskCardId: "ttc_2",
+    status: "blocked",
+    auditVerdict: "blocked_missing_evidence",
+    summary: "missing packet sections",
+  });
+  const repair = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_3",
+    returnCardId: "ttc_repair_return",
+    status: "completed",
+  });
+
+  assert.equal(repair.ok, true);
+  assert.equal(repair.loop.status, "running");
+  assert.equal(repair.loop.currentRole, "product_audit");
+  assert.deepEqual(repair.loop.auditPacketStatus.missingSections, []);
+  assert.equal(cards.length, 4);
+  assert.deepEqual(cards[3].payload.missingAuditPacketSections, []);
+});
+
 test("loop runtime rebuilds exhausted loop audit packet from stored repair return card", async () => {
   const evidenceCards = new Map([
     ["ttc_repair_return", {

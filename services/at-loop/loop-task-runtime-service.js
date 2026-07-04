@@ -1445,6 +1445,26 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return changed;
   }
 
+  function terminalReturnInputWithStoredBody(slice, input = {}) {
+    if (!readThreadTaskCardForLoopEvidence) return input;
+    if (input.returnBody || input.body || input.bodyMarkdown || input.text || input.message && input.message.body) return input;
+    const returnCardId = compactOneLine(input.returnCardId || input.replyCardId || slice && (slice.returnCardId || slice.replyCardId));
+    if (!returnCardId) return input;
+    let card;
+    try {
+      card = readThreadTaskCardForLoopEvidence(returnCardId);
+    } catch (_) {
+      card = null;
+    }
+    const message = card && card.message && typeof card.message === "object" ? card.message : {};
+    if (!message.body) return input;
+    return Object.assign({}, input, {
+      returnBody: String(message.body || ""),
+      summary: input.summary || message.summary || "",
+    });
+  }
+
+
   function prepareProductAuditPacketRetry(loop, reason = "audit_packet_rebuilt") {
     const timestamp = nowIso(clock);
     if (loop.iteration >= loop.maxIterations) {
@@ -2111,16 +2131,17 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     if (!loop) return { ok: false, error: "at_loop_return_loop_not_found" };
     const slice = findSlice(loop, input);
     if (!slice) return { ok: false, error: "at_loop_return_slice_not_found", loop: publicLoop(loop) };
+    const returnInput = terminalReturnInputWithStoredBody(slice, input);
     const timestamp = nowIso(clock);
-    const returnStatus = normalizeStatus(input.status);
-    const auditVerdict = AUDIT_VERDICTS.has(compactOneLine(input.auditVerdict)) ? compactOneLine(input.auditVerdict) : "";
+    const returnStatus = normalizeStatus(returnInput.status);
+    const auditVerdict = AUDIT_VERDICTS.has(compactOneLine(returnInput.auditVerdict)) ? compactOneLine(returnInput.auditVerdict) : "";
     slice.status = "returned";
     slice.returnStatus = returnStatus;
-    slice.returnCardId = boundedText(input.returnCardId || input.replyCardId, 120);
-    slice.returnSummary = boundedText(redactSensitiveText(input.summary || ""), 220);
+    slice.returnCardId = boundedText(returnInput.returnCardId || returnInput.replyCardId, 120);
+    slice.returnSummary = boundedText(redactSensitiveText(returnInput.summary || ""), 220);
     slice.auditVerdict = auditVerdict;
     slice.updatedAt = timestamp;
-    loop.auditPacket = mergeAuditPacket(loop.auditPacket || sanitizeAuditPacket({}), roleReturnAuditPacketUpdate(loop, slice, input, returnStatus));
+    loop.auditPacket = mergeAuditPacket(loop.auditPacket || sanitizeAuditPacket({}), roleReturnAuditPacketUpdate(loop, slice, returnInput, returnStatus));
     loop.lastAuditVerdict = auditVerdict || loop.lastAuditVerdict || "";
 
     const route = roleAfterTerminal(loop, slice, returnStatus, auditVerdict);
