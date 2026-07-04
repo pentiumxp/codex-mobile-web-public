@@ -22,6 +22,39 @@ function markSubmitTimingAliases(timings, names, startedAtMs) {
   return elapsed;
 }
 
+function compactErrorText(err) {
+  if (!err) return "";
+  const parts = [
+    err.code,
+    err.errorCode,
+    err.name,
+    err.message,
+    err.reason,
+  ].filter(Boolean);
+  return parts.map((part) => String(part || "").trim()).filter(Boolean).join(" ").toLowerCase();
+}
+
+function turnStartRequiresThreadResume(err) {
+  const text = compactErrorText(err);
+  if (!text) return false;
+  if (/\bthread[_ -]?not[_ -]?loaded\b/.test(text)) return true;
+  if (/\bthread\b.{0,80}\bnot\s+loaded\b/.test(text)) return true;
+  if (/\bthread[_ -]?unloaded\b/.test(text)) return true;
+  if (/\bunloaded\s+thread\b/.test(text)) return true;
+  if (/\bthread[_ -]?unmaterialized\b/.test(text)) return true;
+  if (/\bunmaterialized\s+thread\b/.test(text)) return true;
+  if (/\bthread\b.{0,80}\b(?:must|needs|requires)\b.{0,80}\bresume\b/.test(text)) return true;
+  if (/\bresume\b.{0,40}\bthread\b.{0,40}\bbefore\b/.test(text)) return true;
+  if (/\b(?:conversation|session)\b.{0,80}\b(?:not\s+loaded|unloaded)\b/.test(text)) return true;
+  return false;
+}
+
+function isThreadResumeAlreadyLoadedError(err) {
+  const text = compactErrorText(err);
+  if (!text) return false;
+  return /\balready\b.{0,80}\b(?:loaded|active|running|resumed)\b/.test(text);
+}
+
 function createThreadMessageRouteService(dependencies = {}) {
   const {
     codex,
@@ -367,19 +400,21 @@ function createThreadMessageRouteService(dependencies = {}) {
               });
             }
           }
-          let resumeStartedAtMs = Date.now();
-          try {
-            await codex.request("thread/resume", applyResumeRuntimeSettings({
-              threadId,
-              cwd: body.cwd || null,
-              persistExtendedHistory,
-            }, runtimeSettings), { timeoutMs: mutationRpcTimeoutMs, retry: false });
-            markSubmitTimingAliases(timings, ["threadResumeMs", "resumeMs"], resumeStartedAtMs);
-          } catch (err) {
-            markSubmitTimingAliases(timings, ["threadResumeMs", "resumeMs"], resumeStartedAtMs);
-            if (!/already|loaded|active/i.test(err.message || "")) throw err;
-            timings.resumeAlreadyLoaded = true;
-          }
+          const resumeThreadBeforeTurnStart = async () => {
+            const resumeStartedAtMs = Date.now();
+            try {
+              await codex.request("thread/resume", applyResumeRuntimeSettings({
+                threadId,
+                cwd: body.cwd || null,
+                persistExtendedHistory,
+              }, runtimeSettings), { timeoutMs: mutationRpcTimeoutMs, retry: false });
+              markSubmitTimingAliases(timings, ["threadResumeMs", "resumeMs"], resumeStartedAtMs);
+            } catch (err) {
+              markSubmitTimingAliases(timings, ["threadResumeMs", "resumeMs"], resumeStartedAtMs);
+              if (!isThreadResumeAlreadyLoadedError(err)) throw err;
+              timings.resumeAlreadyLoaded = true;
+            }
+          };
           const params = applyCodexFastServiceTier(applyTurnRuntimeSettings({
             threadId,
             input,
@@ -387,9 +422,40 @@ function createThreadMessageRouteService(dependencies = {}) {
           if (body.cwd) params.cwd = body.cwd;
           if (requestedModel) params.model = requestedModel;
           if (requestedEffort) params.effort = requestedEffort;
-          const turnStartStartedAtMs = Date.now();
-          const turnResult = await codex.request("turn/start", params, { timeoutMs: mutationRpcTimeoutMs, retry: false });
-          markSubmitTiming(timings, "turnStartMs", turnStartStartedAtMs);
+          const startTurn = async (timingNames) => {
+            const turnStartStartedAtMs = Date.now();
+            try {
+              return await codex.request("turn/start", params, { timeoutMs: mutationRpcTimeoutMs, retry: false });
+            } finally {
+              markSubmitTimingAliases(timings, timingNames, turnStartStartedAtMs);
+            }
+          };
+          let turnResult;
+          const turnStartTotalStartedAtMs = Date.now();
+          if (persistExtendedHistory) {
+            timings.threadResumeMode = "pre-turn-start";
+            await resumeThreadBeforeTurnStart();
+            turnResult = await startTurn(["turnStartInitialMs", "turnStartMs"]);
+          } else {
+            timings.threadResumeMode = "optimistic-turn-start";
+            timings.threadResumeSkipped = true;
+            timings.threadResumeMs = 0;
+            timings.resumeMs = 0;
+            try {
+              turnResult = await startTurn(["turnStartInitialMs", "turnStartMs"]);
+            } catch (err) {
+              if (!turnStartRequiresThreadResume(err)) {
+                timings.turnStartMs = Math.max(0, Date.now() - turnStartTotalStartedAtMs);
+                throw err;
+              }
+              timings.turnStartResumeFallback = true;
+              timings.turnStartResumeFallbackReason = "thread-resume-required";
+              timings.threadResumeSkipped = false;
+              await resumeThreadBeforeTurnStart();
+              turnResult = await startTurn("turnStartRetryMs");
+              timings.turnStartMs = Math.max(0, Date.now() - turnStartTotalStartedAtMs);
+            }
+          }
           const notifyStartedAtMs = Date.now();
           rememberThreadIdForTurnId(threadId, notifyLocalTurnStarted(threadId, turnResult, { source: "message-submit" }));
           markSubmitTimingAliases(timings, ["notifyLocalTurnStartedMs", "notifyMs"], notifyStartedAtMs);
@@ -441,4 +507,8 @@ function createThreadMessageRouteService(dependencies = {}) {
   return { handleRoute };
 }
 
-module.exports = { createThreadMessageRouteService };
+module.exports = {
+  createThreadMessageRouteService,
+  isThreadResumeAlreadyLoadedError,
+  turnStartRequiresThreadResume,
+};

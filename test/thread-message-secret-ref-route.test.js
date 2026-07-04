@@ -3,7 +3,10 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
-const { createThreadMessageRouteService } = require("../server-routes/thread-message-route-service");
+const {
+  createThreadMessageRouteService,
+  turnStartRequiresThreadResume,
+} = require("../server-routes/thread-message-route-service");
 
 function createRouteHarness(overrides = {}) {
   const requests = [];
@@ -141,6 +144,105 @@ test("thread message route reuses duplicate submissions without resolving runtim
   assert.deepEqual(requests, []);
 });
 
+test("thread message route starts ordinary text turns without blocking on thread resume", async () => {
+  const { route, requests } = createRouteHarness();
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "hello",
+        clientSubmissionId: "client-fast",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(requests.map((entry) => entry.method), ["turn/start"]);
+});
+
+test("thread message route resumes and retries once when turn start requires a loaded thread", async () => {
+  const requests = [];
+  const { route } = createRouteHarness({
+    codex: {
+      request: async (method, params) => {
+        requests.push({ method, params });
+        if (method === "turn/start" && requests.filter((entry) => entry.method === "turn/start").length === 1) {
+          const err = new Error("thread not loaded; resume thread before starting a turn");
+          err.code = "thread_not_loaded";
+          throw err;
+        }
+        if (method === "turn/start") return { turnId: "turn-retry" };
+        return { ok: true };
+      },
+      notifyMuxUserMessage: () => {},
+    },
+  });
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "hello",
+        clientSubmissionId: "client-retry",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(requests.map((entry) => entry.method), [
+    "turn/start",
+    "thread/resume",
+    "turn/start",
+  ]);
+  assert.equal(response.body.turnId, "turn-retry");
+});
+
+test("thread message route keeps upload extended-history sends on pre-resume path", async () => {
+  const { route, requests } = createRouteHarness({
+    persistExtendedHistoryForUploads: (uploads) => uploads.length > 0,
+  });
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "inspect this",
+        clientSubmissionId: "client-upload",
+      },
+      uploads: [{ id: "upload-1" }],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(requests.map((entry) => entry.method), ["thread/resume", "turn/start"]);
+  assert.equal(requests[0].params.persistExtendedHistory, true);
+});
+
+test("thread message route does not classify generic turn-start errors as resume-needed", () => {
+  assert.equal(turnStartRequiresThreadResume(new Error("turn rejected because model is unavailable")), false);
+  const loaded = new Error("thread already loaded");
+  loaded.code = "already_loaded";
+  assert.equal(turnStartRequiresThreadResume(loaded), false);
+  const unloaded = new Error("thread not loaded");
+  unloaded.code = "thread_not_loaded";
+  assert.equal(turnStartRequiresThreadResume(unloaded), true);
+});
+
 test("thread message route logs bounded phase timings for message submission", async () => {
   const events = [];
   const { route, requests } = createRouteHarness({
@@ -163,8 +265,7 @@ test("thread message route logs bounded phase timings for message submission", a
   });
 
   assert.equal(response.status, 200);
-  assert.ok(requests.find((entry) => entry.method === "thread/resume"));
-  assert.ok(requests.find((entry) => entry.method === "turn/start"));
+  assert.deepEqual(requests.map((entry) => entry.method), ["turn/start"]);
   const done = events.find((entry) => entry.event === "done");
   assert.ok(done);
   assert.equal(done.details.threadId, "thread-1");
@@ -177,6 +278,7 @@ test("thread message route logs bounded phase timings for message submission", a
     "runtimeSettingsMs",
     "threadResumeMs",
     "resumeMs",
+    "turnStartInitialMs",
     "turnStartMs",
     "notifyLocalTurnStartedMs",
     "notifyMs",
@@ -186,4 +288,6 @@ test("thread message route logs bounded phase timings for message submission", a
   ]) {
     assert.equal(typeof done.details.timings[key], "number", `missing timing ${key}`);
   }
+  assert.equal(done.details.timings.threadResumeMode, "optimistic-turn-start");
+  assert.equal(done.details.timings.threadResumeSkipped, true);
 });

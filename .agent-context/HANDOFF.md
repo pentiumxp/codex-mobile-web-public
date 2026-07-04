@@ -1070,3 +1070,48 @@ The previous full handoff was archived and should be opened only when old proven
   private thread bodies, task-card bodies, endpoint bodies, provider payloads,
   DB rows, screenshots, raw auth URLs, full prompts, full rollout contents, or
   long logs were exposed.
+
+## 2026-07-05T00:05:14+08:00 - Existing-thread message submit latency fix prepared
+
+- User reported Composer sends sometimes block for several seconds before the
+  message is accepted. Current evidence points to
+  `POST /api/threads/:threadId/messages`, not response size or request body
+  parsing.
+- Bounded production timing evidence from recent `[message-submit]` entries
+  showed one Home AI 06-22 send with short text and no uploads taking about
+  `9391ms` total. The dominant phase was `threadResumeMs≈7865ms`; by
+  comparison `readMessageMs≈2ms`, `runtimeSettingsMs≈35ms`,
+  `turnStartMs≈757ms`, `notifyLocalTurnStartedMs≈612ms`, and `sendJsonMs=0`.
+- Root-cause hypothesis and owning layer: Codex Mobile Web's
+  existing-thread message route synchronously called `thread/resume` before
+  every non-steering `turn/start`. For already usable text-only threads this
+  made the user-facing submit path wait on an expensive app-server resume
+  round trip before the actual message mutation.
+- Local fix prepared in `server-routes/thread-message-route-service.js`:
+  - ordinary non-upload existing-thread sends now optimistically call
+    `turn/start` first;
+  - only errors explicitly indicating the thread is not loaded, unloaded,
+    unmaterialized, or must be resumed trigger one bounded
+    `thread/resume` + `turn/start` retry;
+  - generic turn-start failures are not retried, avoiding duplicate user
+    submissions;
+  - upload/extended-history sends still pre-resume to preserve the existing
+    history-persistence contract;
+  - submit timings now record `threadResumeMode`, `threadResumeSkipped`,
+    `turnStartInitialMs`, optional `turnStartRetryMs`, and
+    `turnStartResumeFallback`.
+- Regression coverage added in `test/thread-message-secret-ref-route.test.js`
+  for optimistic text sends, resume-required retry, upload pre-resume,
+  strict resume-needed classification, and bounded timing fields.
+- Validation passed locally:
+  `node --test test/thread-message-secret-ref-route.test.js
+  test/new-thread-route.test.js test/message-input-service.test.js`;
+  `node --test test/thread-task-card-route.test.js`;
+  `npm run --silent check`; and
+  `git diff --check -- ':!.agent-context'`.
+- Deployment has not yet been requested for this fix at the time this handoff
+  entry was written. Privacy boundary respected: only bounded ids, phase
+  timings, file names, and summaries were recorded; no raw secrets, access
+  keys, cookies, launch tokens, private thread bodies, task-card bodies,
+  endpoint bodies, provider payloads, screenshots, DB rows, raw auth URLs,
+  password paths, full prompts, rollout contents, or long logs were exposed.
