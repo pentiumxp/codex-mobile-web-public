@@ -615,6 +615,49 @@ test("thread detail projection persists full dynamic cache with refreshed rollou
   }
 });
 
+test("thread detail projection treats compacted thread reads as partial windows", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: () => 2000,
+  });
+
+  const seeded = service.seed(signatureInput({ summaryStatus: "active" }), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-1", status: { type: "active" }, items: [] }],
+      mobileReadMode: "thread-read",
+      mobileOlderTurnsCursor: JSON.stringify({ turnId: "turn-0", includeAnchor: false }),
+      mobileOmittedTurnCount: 99,
+    },
+  });
+
+  assert.equal(seeded.partial, true);
+  assert.equal(seeded.partialKind, "recent-window");
+
+  const disallowed = service.lookup(signatureInput({ summaryStatus: "active" }));
+  assert.equal(disallowed.cached, null);
+  assert.equal(disallowed.missReason, "partial-not-allowed");
+
+  const allowed = service.lookup(signatureInput({ summaryStatus: "active" }), { allowPartial: true });
+  assert.equal(allowed.missReason, "");
+  assert.ok(allowed.cached);
+  assert.equal(allowed.cached.partial, true);
+
+  const stale = service.lookup(signatureInput({
+    summaryStatus: "completed",
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+  }), {
+    allowPartial: true,
+    allowStalePartial: true,
+  });
+  assert.equal(stale.missReason, "");
+  assert.ok(stale.cached);
+  assert.equal(stale.cached.partial, true);
+  assert.equal(stale.cached.stalePartial, true);
+});
+
 test("thread detail projection soft-expires old active dynamic cache when rollout signature changes", () => {
   let current = 20000;
   const service = createThreadDetailProjectionService({

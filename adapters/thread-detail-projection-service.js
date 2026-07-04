@@ -642,7 +642,9 @@ function isTurnsListWindowThread(thread) {
 
 function isNonFullWindowThread(thread) {
   if (!thread || typeof thread !== "object") return false;
+  if (hasCursor(thread.mobileOlderTurnsCursor)) return true;
   if (hasCursor(thread.mobileNewerTurnsCursor)) return true;
+  if (safeNumber(thread.mobileOmittedTurnCount) > 0) return true;
   return isTurnsListWindowThread(thread);
 }
 
