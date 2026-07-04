@@ -650,6 +650,48 @@ test("loop runtime correlates terminal returns and routes audit failure to repai
   assert.equal(cards[2].payload.targetThreadId, "implementation-thread");
 });
 
+test("loop runtime routes product-audit missing-evidence blocks to repair", async () => {
+  const { cards, runtime } = makeRuntime({ name: "audit-blocked-missing-evidence-repair" });
+  const started = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop redesign settings",
+  });
+  assert.equal(started.loop.currentRole, "implementation");
+  assert.equal(cards.length, 1);
+
+  const implementation = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "completed",
+    summary: "implementation done without full validation packet",
+  });
+  assert.equal(implementation.loop.currentRole, "product_audit");
+  assert.equal(cards.length, 2);
+  assert.ok(cards[1].payload.missingAuditPacketSections.includes("validation_packet"));
+
+  const audit = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_2",
+    status: "blocked",
+    summary: "audit needs validation and privacy evidence",
+  });
+
+  assert.equal(audit.ok, true);
+  assert.equal(audit.loop.status, "running");
+  assert.equal(audit.loop.currentRole, "repair");
+  assert.equal(audit.loop.nextRoute, "repair");
+  assert.equal(cards.length, 3);
+  assert.equal(cards[2].payload.targetRole, "repair");
+  assert.equal(cards[2].payload.targetThreadId, "implementation-thread");
+  assert.match(cards[2].payload.bodyMarkdown, /## Repair Input/);
+  assert.match(cards[2].payload.bodyMarkdown, /Missing audit packet sections:/);
+  assert.match(cards[2].payload.bodyMarkdown, /validation_packet/);
+  assert.match(cards[2].payload.bodyMarkdown, /privacy_packet/);
+  const auditSlice = audit.loop.roleSlices.find((slice) => slice.role === "product_audit");
+  assert.equal(auditSlice.status, "returned");
+  assert.equal(auditSlice.returnStatus, "blocked");
+  const repairSlice = audit.loop.roleSlices.find((slice) => slice.role === "repair");
+  assert.equal(repairSlice.status, "dispatched");
+});
+
 test("loop runtime routes blocked implementation returns back to local requirements revision", async () => {
   const { cards, runtime } = makeRuntime({ name: "implementation-blocked-requirements-revision" });
   const started = await runtime.startLoop({
@@ -904,6 +946,142 @@ test("loop runtime recovers blocked duplicate by dropping stale or ineligible ro
   assert.equal(cards[0].payload.targetThreadId, "implementation-thread");
 });
 
+test("loop runtime recovers duplicate blocked on implementation dispatch failure", async () => {
+  const { cards, runtime, storageFile } = makeRuntime({
+    name: "blocked-implementation-dispatch-duplicate",
+    visibleThreads: [{
+      id: "source-thread",
+      title: "Xcode",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+    }, {
+      id: "bad-implementation-thread",
+      title: "Xcode implementation stale",
+      cwd: "/Users/xuxin/Xcode/Home AI",
+      threadRole: "implementation",
+    }, {
+      id: "good-implementation-thread",
+      title: "Xcode implementation",
+      cwd: "/Users/xuxin/Xcode/Home AI",
+      threadRole: "implementation",
+    }, {
+      id: "audit-thread",
+      title: "Xcode Loop Audit",
+      cwd: "/Users/xuxin/Xcode/Home AI",
+      threadRole: "product_audit",
+    }],
+    createLoopRoleThread: false,
+    resolveThreadTaskCardTargetReference: (threadId) => {
+      if (threadId === "bad-implementation-thread") {
+        const err = new Error("Target thread is not visible or is not a current deliverable thread.");
+        err.code = "target_thread_not_visible";
+        err.statusCode = 404;
+        throw err;
+      }
+      return String(threadId || "");
+    },
+    isLoopImplementationWorkspace: (cwd) => cwd === "/Users/xuxin/Xcode/Home AI",
+  });
+  const loopId = testLoopId({
+    sourceThreadId: "source-thread",
+    targetThreadId: "source-thread",
+    objective: "recover blocked implementation dispatch",
+  });
+  fs.writeFileSync(storageFile, `${JSON.stringify({ version: 1, loops: [{
+    loopId,
+    sourceThreadId: "source-thread",
+    targetThreadId: "bad-implementation-thread",
+    requirementsThreadId: "source-thread",
+    implementationThreadId: "bad-implementation-thread",
+    auditThreadId: "audit-thread",
+    implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
+    domainAdapter: "generic",
+    objectiveSummary: "recover blocked implementation dispatch",
+    status: "blocked",
+    currentRole: "implementation",
+    iteration: 1,
+    maxIterations: 3,
+    nextRoute: "implementation",
+    blockedReason: "at_loop_dispatch_failed",
+    sourceRequestId: `at-loop:${loopId}:source`,
+    requirementsLocal: true,
+    auditPacket: {},
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    roleSlices: [{
+      role: "requirements",
+      roleSliceId: `${loopId}:requirements:1`,
+      iteration: 1,
+      status: "local",
+      dispatchStatus: "source_thread_local_role",
+      dispatchMode: "source_thread_local_role",
+      taskCardDispatch: false,
+      taskCardId: "",
+      targetThreadId: "source-thread",
+      targetPurpose: "workspace_implementation",
+      roleOwnerThreadId: "source-thread",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "implementation",
+      roleSliceId: `${loopId}:implementation:1`,
+      iteration: 1,
+      status: "blocked",
+      dispatchStatus: "failed",
+      taskCardId: "",
+      targetThreadId: "bad-implementation-thread",
+      targetPurpose: "workspace_implementation",
+      returnStatus: "blocked",
+      roleThreadCreated: true,
+      routing: null,
+      blockedReason: "Target thread is not visible or is not a current deliverable thread.",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "product_audit",
+      roleSliceId: `${loopId}:product_audit:1`,
+      iteration: 1,
+      status: "pending",
+      dispatchStatus: "",
+      taskCardId: "",
+      targetThreadId: "audit-thread",
+      targetPurpose: "audit_lane",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "repair",
+      roleSliceId: `${loopId}:repair:1`,
+      iteration: 1,
+      status: "pending",
+      dispatchStatus: "",
+      taskCardId: "",
+      targetThreadId: "",
+      targetPurpose: "",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }],
+  }] }, null, 2)}\n`, "utf8");
+
+  const result = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop recover blocked implementation dispatch",
+    implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.recovered, true);
+  assert.equal(result.loop.status, "running");
+  assert.equal(result.loop.currentRole, "implementation");
+  assert.equal(result.loop.implementationThreadId, "good-implementation-thread");
+  const implementation = result.loop.roleSlices.find((slice) => slice.role === "implementation");
+  assert.equal(implementation.status, "dispatched");
+  assert.equal(implementation.targetThreadId, "good-implementation-thread");
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].payload.targetThreadId, "good-implementation-thread");
+});
+
 test("loop runtime skips visible implementation targets rejected by task-card deliverability", async () => {
   const { cards, runtime, storageFile } = makeRuntime({
     name: "blocked-undeliverable-target-recovery",
@@ -1022,7 +1200,7 @@ test("loop runtime skips visible implementation targets rejected by task-card de
   assert.equal(cards[0].payload.targetThreadId, "zzz-implementation-thread");
 });
 
-test("loop runtime retries with a fresh target when task-card dispatch rejects a stale target", async () => {
+test("loop runtime skips persisted stale dispatch target before sending role card", async () => {
   const dispatchAttempts = [];
   const { cards, createdThreads, runtime, storageFile } = makeRuntime({
     name: "dispatch-layer-stale-target-retry",
@@ -1134,8 +1312,7 @@ test("loop runtime retries with a fresh target when task-card dispatch rejects a
 
   assert.equal(result.ok, true);
   assert.equal(result.recovered, true);
-  assert.deepEqual(dispatchAttempts.map((entry) => entry.targetThreadId), ["stale-created-thread", "implementation-created"]);
-  assert.notEqual(dispatchAttempts[0].idempotencyKey, dispatchAttempts[1].idempotencyKey);
+  assert.deepEqual(dispatchAttempts.map((entry) => entry.targetThreadId), ["implementation-created"]);
   assert.equal(result.loop.implementationThreadId, "implementation-created");
   const implementation = result.loop.roleSlices.find((slice) => slice.role === "implementation");
   assert.equal(implementation.status, "dispatched");
@@ -1261,7 +1438,7 @@ test("loop runtime clears multiple stale dispatch targets before creating a fres
   });
 
   assert.equal(result.ok, true);
-  assert.deepEqual(dispatchAttempts, ["stale-created-thread-a", "stale-created-thread-b", "implementation-created"]);
+  assert.deepEqual(dispatchAttempts, ["stale-created-thread-b", "implementation-created"]);
   assert.equal(result.loop.implementationThreadId, "implementation-created");
   assert.equal(cards.length, 1);
   assert.equal(cards[0].payload.targetThreadId, "implementation-created");

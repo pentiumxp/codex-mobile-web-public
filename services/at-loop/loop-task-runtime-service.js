@@ -517,6 +517,21 @@ function auditPacketBody(loop) {
   return lines.join("\n");
 }
 
+function repairPacketBody(loop) {
+  const packet = publicAuditPacket(loop.auditPacket || sanitizeAuditPacket({}));
+  const missingSections = packet.status.missingSections;
+  const lines = [
+    "",
+    "## Repair Input",
+    "",
+    `Last audit verdict: ${loop.lastAuditVerdict || "none"}`,
+    `Missing audit packet sections: ${missingSections.length ? missingSections.join(", ") : "none"}`,
+    "Return bounded implementation, validation, and privacy packet updates when repair work fills missing evidence.",
+    "",
+  ];
+  return lines.join("\n");
+}
+
 function roleCardBody(loop, slice) {
   const implementationWorkspaceCwd = loopImplementationWorkspaceCwd(loop);
   const body = [
@@ -545,6 +560,7 @@ function roleCardBody(loop, slice) {
     "- If the target thread purpose does not match this role, fail closed with bounded routing evidence.",
   ].join("\n");
   if (slice.role === "product_audit") return `${body}${auditPacketBody(loop)}`;
+  if (slice.role === "repair") return `${body}${repairPacketBody(loop)}`;
   return body;
 }
 
@@ -555,12 +571,25 @@ function nextRouteForAuditVerdict(verdict) {
     return "implementation_repair";
   }
   if (verdict === "failed_deployment_readback") return "deploy_readback";
+  if (verdict === "blocked_missing_evidence") return "implementation_repair";
   if (verdict === "rejected_out_of_scope") return "rejected";
   if (verdict && verdict.startsWith("blocked_")) return verdict;
   return "awaiting_audit_verdict";
 }
 
+function productAuditBlockedRepairRoute(loop, auditVerdict) {
+  if (auditVerdict === "blocked_missing_evidence") return "blocked_missing_evidence_repair";
+  const status = auditPacketStatus(loop.auditPacket || sanitizeAuditPacket({}));
+  if (status && status.complete === false) return "audit_missing_evidence_repair";
+  return "";
+}
+
 function roleAfterTerminal(loop, slice, returnStatus, auditVerdict) {
+  if (returnStatus === "blocked" && slice.role === "product_audit") {
+    const repairRoute = productAuditBlockedRepairRoute(loop, auditVerdict);
+    if (repairRoute) return { role: "repair", nextRoute: repairRoute, blockedReturnRole: slice.role };
+    return { loopStatus: "blocked", nextRoute: "blocked_role_return" };
+  }
   if (returnStatus === "blocked" && (slice.role === "implementation" || slice.role === "repair")) {
     return { role: "requirements", nextRoute: "requirements_revision", blockedReturnRole: slice.role };
   }
@@ -1172,6 +1201,18 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return slices.find((slice) => slice.status === "returned" && returnedRoleWorkspaceMismatch(loop, slice)) || null;
   }
 
+  function blockedDispatchRoleForRedispatch(loop) {
+    const slices = Array.isArray(loop && loop.roleSlices) ? loop.roleSlices : [];
+    return slices.find((slice) => {
+      if (!slice || !["implementation", "product_audit", "repair", "deploy_readback"].includes(slice.role)) return false;
+      if (slice.status !== "blocked") return false;
+      const dispatchStatus = compactOneLine(slice.dispatchStatus);
+      if (dispatchStatus && !["failed", "blocked"].includes(dispatchStatus)) return false;
+      if (isTargetUndeliverableDispatchError(slice.blockedReason)) return true;
+      return compactOneLine(loop && loop.blockedReason) === "at_loop_dispatch_failed";
+    }) || null;
+  }
+
   function resetReturnedRoleForRedispatch(loop, slice, reason) {
     const timestamp = nowIso(clock);
     const staleTargetThreadId = compactOneLine(slice && slice.targetThreadId || "");
@@ -1663,6 +1704,22 @@ function createLoopTaskRuntimeService(dependencies = {}) {
             existing,
             blockedReturnedRole,
             "returned_role_workspace_mismatch",
+          );
+          const recovered = await dispatchRole(existing, recoveredRole.role, {
+            excludedTargetThreadIds: recoveredRole.excludedTargetThreadIds,
+          });
+          return Object.assign({
+            ok: recovered.ok !== false,
+            duplicateSuppressed: false,
+            recovered: recovered.ok !== false,
+          }, recovered, { loop: publicLoop(existing) });
+        }
+        const blockedDispatchRole = blockedDispatchRoleForRedispatch(existing);
+        if (blockedDispatchRole) {
+          const recoveredRole = resetReturnedRoleForRedispatch(
+            existing,
+            blockedDispatchRole,
+            "blocked_dispatch_target_not_deliverable",
           );
           const recovered = await dispatchRole(existing, recoveredRole.role, {
             excludedTargetThreadIds: recoveredRole.excludedTargetThreadIds,

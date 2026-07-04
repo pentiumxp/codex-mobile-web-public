@@ -699,11 +699,14 @@ Implementation path:
 9. Audit verdict classes route the next iteration: `passed` closes or proceeds
    to deploy/readback when required; requirements gaps route to requirements;
    implementation/test/privacy gaps route to repair; deploy readback failures
-   route to deploy/readback or repair; blocked/rejected classes stop the loop.
-   An implementation/repair role returning `blocked` is not a terminal Loop
-   close: for source-thread-local requirements, record the role return and move
-   the loop back to `requirements_revision` so the requirements owner can
-   revise target/workspace/evidence before the next dispatch.
+   route to deploy/readback or repair. Audit `blocked_missing_evidence`, or an
+   audit return that is blocked while the Audit Packet still has missing
+   required sections, routes to repair so the implementation lane can provide
+   bounded validation/privacy/design evidence. Other blocked/rejected classes
+   stop the loop. An implementation/repair role returning `blocked` is not a
+   terminal Loop close: for source-thread-local requirements, record the role
+   return and move the loop back to `requirements_revision` so the requirements
+   owner can revise target/workspace/evidence before the next dispatch.
 10. Duplicate blocked triggers must return a visible blocked loop/status, not an
     `ok=true` no-op. Existing same-thread requirements blockers may be recovered
     by converting requirements to the local role and preparing role lanes. When
@@ -714,7 +717,11 @@ Implementation path:
     no longer matches the mapped implementation workspace, repeated `@loop`
     should clear that returned role target and redispatch the same role to a
     valid lane instead of reporting a successful no-op or leaving the old
-    blocked target in place.
+    blocked target in place. If a role slice is itself stuck at
+    `status=blocked` after a task-card dispatch target was rejected as not
+    visible/current deliverable, repeated `@loop` should clear that target and
+    redispatch the blocked role directly instead of first replaying the local
+    requirements role.
 11. Product-audit role cards must include a bounded Audit Packet and Delta
     Matrix. Packet sections are `requirements_packet`,
     `design_contract_packet`, `implementation_packet`, `validation_packet`, and
@@ -724,7 +731,10 @@ Implementation path:
     `privacy_boundary_vs_evidence`. Missing required sections must remain
     explicit missing-evidence state in the card and `/api/at-loop/status`; do
     not attach or read `.agent-context/HANDOFF.md` as audit context unless the
-    named handoff is the audit target itself.
+    named handoff is the audit target itself. Repair cards created after an
+    audit missing-evidence block must include the bounded missing packet
+    section ids so the implementation lane can fill the packet without raw
+    handoff context.
 12. Focused tests include:
    - `test/at-loop-trigger-parser.test.js`
    - `test/thread-task-card-loop-routing-service.test.js`
