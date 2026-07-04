@@ -287,7 +287,7 @@ function applyNotification(method, params) {
       eventAtMs,
       mobileReplay: replayed,
     });
-    updateThreadListStatus(params.threadId, params.status);
+    updateThreadListStatus(params.threadId, params.status, { eventAtMs });
     pruneHiddenThreads();
     if (state.currentThread && state.currentThread.id === params.threadId) {
       markThreadViewed(params.threadId, state.currentThread, eventAtMs);
@@ -354,7 +354,7 @@ function applyNotification(method, params) {
       eventAtMs,
       mobileReplay: replayed,
     });
-    updateThreadListStatus(params.threadId, runningStatus);
+    updateThreadListStatus(params.threadId, runningStatus, { eventAtMs });
     clearRecentCompletedReplyAnchor();
     clearConversationAutoScrollHold();
     clearLiveOperationDockRuntimeState();
@@ -385,7 +385,7 @@ function applyNotification(method, params) {
       eventAtMs,
       mobileReplay: replayed,
     });
-    updateThreadListStatus(params.threadId, completedStatus);
+    updateThreadListStatus(params.threadId, completedStatus, { eventAtMs });
     state.activeTurnId = "";
     clearLiveOperationDockRuntimeState();
     markActivity("完成");

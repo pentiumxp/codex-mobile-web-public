@@ -210,6 +210,7 @@ threadListRuntime = window.CodexThreadListRuntime.createThreadListRuntime({
   basenameForFsPath,
   visibleWorkspaceNames,
   statusText,
+  threadUpdatedAtMs,
   scheduleRenderCurrentThread,
   threadTilePaneIsVisible,
   scheduleRenderThreadTilePane,
