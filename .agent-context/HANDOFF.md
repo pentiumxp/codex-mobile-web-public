@@ -711,3 +711,42 @@ The previous full handoff was archived and should be opened only when old proven
   tokens, private thread bodies, task-card bodies, endpoint bodies, provider
   payloads, screenshots, DB rows, raw auth URLs, password paths, or long logs
   were exposed.
+
+## 2026-07-04T22:42:00+08:00 - Deploy-lane routing inconsistency fixed locally; Home AI bootstrap card sent
+
+- User asked to fix the inconsistency behind routine Codex Mobile deployment
+  cards failing with `deploy_lane_required` / `deploy_lane_missing` despite the
+  `Codex Mobile Deploy Lane` being visible.
+- Root cause in local source: task-card deploy-lane routing evaluated stale
+  stored target summaries and live visible target summaries inconsistently.
+  After merging live visible metadata into target summaries, the deploy-lane
+  matcher could also see the same lane twice through target and visible
+  summaries and treat the configured lane as non-unique/missing.
+- Source commit `09d9b9bd` (`fix: resolve deploy lane task-card routing`)
+  fixes the owning Codex Mobile Web layer:
+  - `server-routes/thread-task-card-route-service.js` now merges stored target
+    summaries with live visible target summaries before deploy-lane policy
+    evaluation, and prefers live visible metadata when filling target
+    workspace ids;
+  - `services/task-cards/thread-task-card-deploy-lane-policy-service.js`
+    de-duplicates deploy-lane matches by thread id before deciding whether the
+    configured lane is unique;
+  - route/policy tests cover explicit deploy-lane id/title requests when state
+    DB metadata is stale but the live visible summary is correct.
+- Validation passed:
+  `node --test test/thread-task-card-route.test.js
+  test/thread-task-card-deploy-lane-policy-service.test.js` (`47` tests),
+  `npm run check`, and `git diff --check`.
+- A new deployment task-card attempt to `Codex Mobile Deploy Lane` with source
+  ref `09d9b9bd` still failed in production with
+  `deploy_lane_required` / `deploy_lane_missing`, which is expected until the
+  local routing fix is bootstrapped into production.
+- Sent Home AI repair/bootstrap card `ttc_27da18564fee0b046b` to Home AI 06-22
+  (`019eed86-2002-7cc2-b0b7-937eb5355f36`) requesting central deploy or route
+  repair for `codex-mobile-web` commit `09d9b9bd`, with bounded evidence and
+  readback requirements.
+- Production still has not been confirmed updated with `509b50de`, `7483f4d7`,
+  or `09d9b9bd`. No raw secrets, access keys, cookies, launch tokens, private
+  thread bodies, task-card bodies, endpoint bodies, provider payloads,
+  screenshots, DB rows, raw auth URLs, password paths, or long logs were
+  exposed.
