@@ -359,6 +359,51 @@ test("thread message route queues local turn-start notification after replacemen
   assert.ok(events.find((entry) => entry.event === "notify-done"));
 });
 
+test("thread message route default background notification yields until after response", async () => {
+  const events = [];
+  const notified = [];
+  const { route } = createRouteHarness({
+    logMessageSubmit: (event, details) => events.push({ event, details }),
+    notifyLocalTurnStarted: (threadId, result, meta) => {
+      notified.push({ threadId, result, meta });
+      return result.turnId || "turn-detached";
+    },
+    codex: {
+      request: async (method) => {
+        if (method === "turn/start") return { turnId: "turn-detached" };
+        return { ok: true };
+      },
+      notifyMuxUserMessage: () => {},
+    },
+  });
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "hello",
+        clientSubmissionId: "client-detached-notify",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body, notifiedBeforeSend: notified.length };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.notifiedBeforeSend, 0);
+  assert.deepEqual(notified, []);
+  const done = events.find((entry) => entry.event === "done");
+  assert.ok(done);
+  assert.equal(done.details.timings.notifyLocalTurnStartedQueued, true);
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(notified.length, 1);
+  assert.ok(events.find((entry) => entry.event === "notify-done"));
+});
+
 test("thread message route queues slow active-turn steering before turn steer resolves", async () => {
   const steer = deferred();
   const backgroundTasks = [];

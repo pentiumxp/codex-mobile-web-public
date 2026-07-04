@@ -11,9 +11,16 @@ const DEFAULT_ACTIVE_TURN_STEER_FAST_ACCEPT_MS = 120;
 const DEFAULT_ACTIVE_TURN_PREFLIGHT_FAST_ACCEPT_MS = 120;
 
 function scheduleDetachedTask(task) {
-  Promise.resolve()
+  const run = () => Promise.resolve()
     .then(task)
     .catch(() => {});
+  if (typeof setImmediate === "function") {
+    const timer = setImmediate(run);
+    if (timer && typeof timer.unref === "function") timer.unref();
+    return;
+  }
+  const timer = setTimeout(run, 0);
+  if (timer && typeof timer.unref === "function") timer.unref();
 }
 
 function resolveAfter(ms, value) {
