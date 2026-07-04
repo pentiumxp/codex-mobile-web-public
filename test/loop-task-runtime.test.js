@@ -826,6 +826,125 @@ test("loop runtime routes product-audit missing-evidence blocks to repair", asyn
   assert.equal(repairSlice.status, "dispatched");
 });
 
+test("loop runtime normalizes blocked product-audit UX findings without explicit verdict to repair", async () => {
+  const { cards, runtime } = makeRuntime({ name: "audit-blocked-ux-text-repair" });
+  const started = await startLoopWithSourceRequirements(runtime, {
+    sourceThreadId: "source-thread",
+    text: "@loop redesign settings UX",
+  });
+  assert.equal(started.loop.currentRole, "implementation");
+
+  const implementation = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "completed",
+    summary: "implementation done with validation and privacy evidence",
+    returnBody: [
+      "## Validation Packet",
+      "- focused UI validation passed",
+      "",
+      "## Privacy Packet",
+      "- no raw secrets or private payloads exposed",
+    ].join("\n"),
+  });
+  assert.equal(implementation.loop.currentRole, "product_audit");
+  assert.deepEqual(implementation.loop.auditPacketStatus.missingSections, []);
+
+  const audit = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_2",
+    status: "blocked",
+    summary: "Implementation UX failure remains in the primary settings workflow.",
+  });
+
+  assert.equal(audit.ok, true);
+  assert.equal(audit.loop.status, "running");
+  assert.equal(audit.loop.currentRole, "repair");
+  assert.equal(audit.loop.lastAuditVerdict, "failed_implementation_bug");
+  assert.equal(audit.loop.nextRoute, "repair");
+  assert.equal(cards.length, 3);
+  assert.equal(cards[2].payload.targetRole, "repair");
+  assert.match(cards[2].payload.bodyMarkdown, /Audit return summary: Implementation UX failure remains/);
+  const auditSlice = audit.loop.roleSlices.find((slice) => slice.role === "product_audit");
+  assert.equal(auditSlice.auditVerdict, "failed_implementation_bug");
+  assert.equal(auditSlice.routing.auditVerdictNormalization, "return_text");
+  const repairSlice = audit.loop.roleSlices.find((slice) => slice.role === "repair");
+  assert.equal(repairSlice.status, "dispatched");
+});
+
+test("loop runtime routes blocked product-audit requirements gaps back to local requirements", async () => {
+  const { cards, runtime } = makeRuntime({ name: "audit-blocked-requirements-gap" });
+  const started = await startLoopWithSourceRequirements(runtime, {
+    sourceThreadId: "source-thread",
+    text: "@loop clarify product requirements",
+  });
+  assert.equal(started.loop.currentRole, "implementation");
+
+  const implementation = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "completed",
+    summary: "implementation done",
+  });
+  assert.equal(implementation.loop.currentRole, "product_audit");
+
+  const audit = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_2",
+    status: "blocked",
+    auditVerdict: "failed_requirements_gap",
+    summary: "requirements packet is ambiguous for the main acceptance criteria",
+  });
+
+  assert.equal(audit.ok, true);
+  assert.equal(audit.loop.status, "blocked");
+  assert.equal(audit.loop.currentRole, "requirements");
+  assert.equal(audit.loop.nextRoute, "requirements_revision");
+  assert.equal(audit.loop.blockedReason, "product_audit_blocked_requires_requirements_revision");
+  assert.equal(audit.loop.lastAuditVerdict, "failed_requirements_gap");
+  assert.equal(cards.length, 2);
+  const requirements = audit.loop.roleSlices.find((slice) => slice.role === "requirements");
+  assert.equal(requirements.status, "blocked");
+  assert.equal(requirements.taskCardDispatch, false);
+  assert.equal(requirements.blockedReason, "product_audit_blocked_requires_requirements_revision");
+});
+
+test("loop runtime marks malformed completed product-audit return with explicit routing error", async () => {
+  const { cards, runtime } = makeRuntime({ name: "audit-completed-missing-verdict" });
+  const started = await startLoopWithSourceRequirements(runtime, {
+    sourceThreadId: "source-thread",
+    text: "@loop malformed audit return",
+  });
+  assert.equal(started.loop.currentRole, "implementation");
+
+  const implementation = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "completed",
+    summary: "implementation done",
+    returnBody: [
+      "## Validation Packet",
+      "- focused validation passed",
+      "",
+      "## Privacy Packet",
+      "- privacy boundary confirmed",
+    ].join("\n"),
+  });
+  assert.equal(implementation.loop.currentRole, "product_audit");
+
+  const audit = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_2",
+    status: "completed",
+    summary: "audit return omitted the structured verdict",
+  });
+
+  assert.equal(audit.ok, true);
+  assert.equal(audit.loop.status, "blocked");
+  assert.equal(audit.loop.currentRole, "requirements");
+  assert.equal(audit.loop.nextRoute, "requirements_revision");
+  assert.equal(audit.loop.blockedReason, "audit_routing_error");
+  assert.equal(audit.loop.lastAuditVerdict, "blocked_audit_verdict_missing");
+  assert.equal(cards.length, 2);
+  const auditSlice = audit.loop.roleSlices.find((slice) => slice.role === "product_audit");
+  assert.equal(auditSlice.auditVerdict, "blocked_audit_verdict_missing");
+  assert.equal(auditSlice.routing.auditVerdictNormalization, "completed_missing_structured_verdict");
+});
+
 test("loop runtime recovers duplicate blocked after historical audit missing-evidence return", async () => {
   const { cards, runtime, storageFile } = makeRuntime({
     name: "historical-audit-blocked-repair",
@@ -883,11 +1002,11 @@ test("loop runtime recovers duplicate blocked after historical audit missing-evi
       }, {
         id: "design_contract_packet",
         required: true,
-        status: "missing",
+        status: "present",
         source: "durable_docs_and_contracts",
-        summary: "",
+        summary: "bounded design contract",
         expectedEvidence: [],
-        evidence: [],
+        evidence: ["routing_policy"],
         missingEvidence: [],
       }, {
         id: "implementation_packet",

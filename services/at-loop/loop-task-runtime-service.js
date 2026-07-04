@@ -71,6 +71,7 @@ const AUDIT_VERDICTS = new Set([
   "failed_privacy_boundary",
   "failed_deployment_readback",
   "blocked_missing_evidence",
+  "blocked_audit_verdict_missing",
   "blocked_owner_decision",
   "blocked_target_unavailable",
   "rejected_out_of_scope",
@@ -182,6 +183,68 @@ function extractAuditPacketSectionsFromInputText(input = {}) {
     }
     return acc;
   }, {});
+}
+
+function auditReturnText(input = {}) {
+  const message = input.message && typeof input.message === "object" ? input.message : {};
+  return [
+    input.summary,
+    input.returnBody,
+    input.bodyMarkdown,
+    input.body,
+    message.summary,
+    message.body,
+    input.text,
+  ].map((value) => String(value || "")).filter(Boolean).join("\n").slice(0, 12_000);
+}
+
+function directAuditVerdict(input = {}) {
+  const direct = compactOneLine(input.auditVerdict || input.audit_verdict || input.verdict).toLowerCase();
+  return AUDIT_VERDICTS.has(direct) ? direct : "";
+}
+
+function auditVerdictFromText(text = "") {
+  const source = String(text || "");
+  const lower = source.toLowerCase();
+  for (const verdict of AUDIT_VERDICTS) {
+    const pattern = new RegExp(`(^|[^a-z0-9_])${verdict.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9_]|$)`, "i");
+    if (pattern.test(source)) return verdict;
+  }
+  if (/requirements?\s+(gap|problem|issue|missing|unclear|incomplete)|acceptance\s+criteria|requirements?_packet|design_contract_packet|需求包|设计契约|设计合同/.test(lower)) {
+    return "failed_requirements_gap";
+  }
+  if (/privacy|secret|token|credential|access\s*key|隐私|密钥/.test(lower)) return "failed_privacy_boundary";
+  if (/test\s+(gap|missing|failed)|validation\s+(gap|missing|failed)|evidence\s+(gap|missing|required|insufficient)|missing\s+evidence|缺少.*证据|验证.*不足/.test(lower)) {
+    return "blocked_missing_evidence";
+  }
+  if (/deploy|readback|production|发布|部署|回读/.test(lower)) return "failed_deployment_readback";
+  if (/implementation|bug|regression|ux|ui|visual|layout|interaction|failure|failed|problem|issue|repair|实现|缺陷|界面|交互|问题|修复/.test(lower)) {
+    return "failed_implementation_bug";
+  }
+  return "";
+}
+
+function normalizedAuditVerdict(loop, slice, returnInput = {}, returnStatus = "") {
+  const explicit = directAuditVerdict(returnInput);
+  if (explicit) return { verdict: explicit, source: "explicit" };
+  if (!slice || slice.role !== "product_audit") return { verdict: "", source: "" };
+  const textVerdict = auditVerdictFromText(auditReturnText(returnInput));
+  if (textVerdict) return { verdict: textVerdict, source: "return_text" };
+  if (returnStatus === "blocked") {
+    const packetStatus = auditPacketStatus(loop.auditPacket || sanitizeAuditPacket({}));
+    if (packetStatus.missingSections.includes("requirements_packet")
+      || packetStatus.missingSections.includes("design_contract_packet")) {
+      return { verdict: "failed_requirements_gap", source: "blocked_missing_requirements_packet" };
+    }
+    if (packetStatus.complete === false) {
+      return { verdict: "blocked_missing_evidence", source: "blocked_incomplete_audit_packet" };
+    }
+    return { verdict: "blocked_missing_evidence", source: "blocked_missing_structured_verdict" };
+  }
+  if (returnStatus === "completed") {
+    return { verdict: "blocked_audit_verdict_missing", source: "completed_missing_structured_verdict" };
+  }
+  return { verdict: "", source: "" };
 }
 
 function stableHash(value, length = 16) {
@@ -612,11 +675,16 @@ function auditPacketBody(loop) {
 function repairPacketBody(loop) {
   const packet = publicAuditPacket(loop.auditPacket || sanitizeAuditPacket({}));
   const missingSections = packet.status.missingSections;
+  const auditSlice = (Array.isArray(loop.roleSlices) ? loop.roleSlices : [])
+    .filter((slice) => slice && slice.role === "product_audit" && slice.iteration === loop.iteration && slice.status === "returned")
+    .slice(-1)[0] || null;
+  const auditSummary = safePacketValue(auditSlice && auditSlice.returnSummary || "", 320);
   const lines = [
     "",
     "## Repair Input",
     "",
     `Last audit verdict: ${loop.lastAuditVerdict || "none"}`,
+    `Audit return summary: ${auditSummary || "none"}`,
     `Missing audit packet sections: ${missingSections.length ? missingSections.join(", ") : "none"}`,
     "Return bounded implementation, validation, and privacy packet updates when repair work fills missing evidence.",
     "",
@@ -664,20 +732,30 @@ function nextRouteForAuditVerdict(verdict) {
   }
   if (verdict === "failed_deployment_readback") return "deploy_readback";
   if (verdict === "blocked_missing_evidence") return "implementation_repair";
+  if (verdict === "blocked_audit_verdict_missing") return "audit_routing_error";
   if (verdict === "rejected_out_of_scope") return "rejected";
   if (verdict && verdict.startsWith("blocked_")) return verdict;
   return "awaiting_audit_verdict";
 }
 
 function productAuditBlockedRepairRoute(loop, auditVerdict) {
+  if (auditVerdict === "failed_requirements_gap") return "";
   if (auditVerdict === "blocked_missing_evidence") return "blocked_missing_evidence_repair";
   const status = auditPacketStatus(loop.auditPacket || sanitizeAuditPacket({}));
+  if (status && (status.missingSections.includes("requirements_packet") || status.missingSections.includes("design_contract_packet"))) return "";
   if (status && status.complete === false) return "audit_missing_evidence_repair";
+  if (!auditVerdict) return "audit_blocked_missing_verdict_repair";
   return "";
 }
 
 function roleAfterTerminal(loop, slice, returnStatus, auditVerdict) {
   if (returnStatus === "blocked" && slice.role === "product_audit") {
+    const verdictRoute = nextRouteForAuditVerdict(auditVerdict);
+    if (verdictRoute === "requirements_revision" || verdictRoute === "audit_routing_error") {
+      return { role: "requirements", nextRoute: verdictRoute, blockedReturnRole: slice.role };
+    }
+    if (verdictRoute === "implementation_repair") return { role: "repair", nextRoute: verdictRoute, blockedReturnRole: slice.role };
+    if (verdictRoute === "deploy_readback") return { role: "deploy_readback", nextRoute: verdictRoute, blockedReturnRole: slice.role };
     const repairRoute = productAuditBlockedRepairRoute(loop, auditVerdict);
     if (repairRoute) return { role: "repair", nextRoute: repairRoute, blockedReturnRole: slice.role };
     return { loopStatus: "blocked", nextRoute: "blocked_role_return" };
@@ -711,6 +789,7 @@ function roleAfterTerminal(loop, slice, returnStatus, auditVerdict) {
     if (route === "requirements_revision") return { role: "requirements", nextRoute: route };
     if (route === "implementation_repair") return { role: "repair", nextRoute: route };
     if (route === "deploy_readback") return { role: "deploy_readback", nextRoute: route };
+    if (route === "audit_routing_error") return { role: "requirements", nextRoute: route };
     if (route === "rejected") return { loopStatus: "rejected", nextRoute: route };
     if (route.startsWith("blocked_")) return { loopStatus: "blocked", nextRoute: route };
     return { loopStatus: "blocked", nextRoute: route };
@@ -1414,6 +1493,14 @@ function createLoopTaskRuntimeService(dependencies = {}) {
 
   function prepareRepairForAuditBlockedReturn(loop, auditSlice) {
     const timestamp = nowIso(clock);
+    const auditBlockedRoute = productAuditBlockedRepairRoute(loop, auditSlice && auditSlice.auditVerdict || "");
+    if (auditSlice && !auditSlice.auditVerdict && auditBlockedRoute) {
+      auditSlice.auditVerdict = "blocked_missing_evidence";
+      auditSlice.routing = Object.assign({}, auditSlice.routing || {}, {
+        auditVerdictNormalization: "historical_blocked_missing_structured_verdict",
+      });
+      loop.lastAuditVerdict = loop.lastAuditVerdict || auditSlice.auditVerdict;
+    }
     let repair = findSlice(loop, { role: "repair", iteration: loop.iteration });
     if (!repair) {
       repair = {
@@ -1436,7 +1523,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     repair.blockedReason = "";
     repair.routing = Object.assign({}, repair.routing || {}, {
       auditBlockedRoleSliceId: auditSlice && auditSlice.roleSliceId || "",
-      auditBlockedRoute: productAuditBlockedRepairRoute(loop, auditSlice && auditSlice.auditVerdict || ""),
+      auditBlockedRoute,
     });
     repair.updatedAt = timestamp;
     loop.status = "running";
@@ -2312,12 +2399,18 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const returnInput = terminalReturnInputWithStoredBody(slice, input);
     const timestamp = nowIso(clock);
     const returnStatus = normalizeStatus(returnInput.status);
-    const auditVerdict = AUDIT_VERDICTS.has(compactOneLine(returnInput.auditVerdict)) ? compactOneLine(returnInput.auditVerdict) : "";
+    const auditVerdictResult = normalizedAuditVerdict(loop, slice, returnInput, returnStatus);
+    const auditVerdict = auditVerdictResult.verdict;
     slice.status = "returned";
     slice.returnStatus = returnStatus;
     slice.returnCardId = boundedText(returnInput.returnCardId || returnInput.replyCardId, 120);
     slice.returnSummary = boundedText(redactSensitiveText(returnInput.summary || ""), 220);
     slice.auditVerdict = auditVerdict;
+    if (slice.role === "product_audit" && auditVerdictResult.source) {
+      slice.routing = Object.assign({}, slice.routing || {}, {
+        auditVerdictNormalization: auditVerdictResult.source,
+      });
+    }
     slice.updatedAt = timestamp;
     loop.auditPacket = mergeAuditPacket(loop.auditPacket || sanitizeAuditPacket({}), roleReturnAuditPacketUpdate(loop, slice, returnInput, returnStatus));
     loop.lastAuditVerdict = auditVerdict || loop.lastAuditVerdict || "";

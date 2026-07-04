@@ -713,14 +713,22 @@ Implementation path:
 9. Audit verdict classes route the next iteration: `passed` closes or proceeds
    to deploy/readback when required; requirements gaps route to requirements;
    implementation/test/privacy gaps route to repair; deploy readback failures
-   route to deploy/readback or repair. Audit `blocked_missing_evidence`, or an
-   audit return that is blocked while the Audit Packet still has missing
-   required sections, routes to repair so the implementation lane can provide
-   bounded validation/privacy/design evidence. Other blocked/rejected classes
-   stop the loop. An implementation/repair role returning `blocked` is not a
-   terminal Loop close: for source-thread-local requirements, record the role
-   return and move the loop back to `requirements_revision` so the requirements
-   owner can revise target/workspace/evidence before the next dispatch.
+   route to deploy/readback or repair. Product-audit returns must normalize an
+   explicit verdict from structured fields or bounded return text before the
+   next-route decision. Audit `blocked_missing_evidence`, a blocked audit return
+   that omits a structured verdict, or an audit return that is blocked while the
+   Audit Packet still has missing implementation/validation/privacy sections,
+   routes to repair so the implementation lane can provide bounded
+   validation/privacy/design evidence. Requirements/design packet gaps route
+   back to `requirements_revision` in the source thread. A completed audit
+   return that remains unparsable is classified as a bounded routing error and
+   routed to the source requirements lane; it must not leave `lastAuditVerdict`
+   empty or create a pending repair slice without a dispatch target. Other
+   blocked/rejected classes stop the loop. An implementation/repair role
+   returning `blocked` is not a terminal Loop close: for source-thread-local
+   requirements, record the role return and move the loop back to
+   `requirements_revision` so the requirements owner can revise
+   target/workspace/evidence before the next dispatch.
 10. Duplicate blocked triggers must return a visible blocked loop/status, not an
     `ok=true` no-op. Existing same-thread requirements blockers may be recovered
     by converting requirements to the local role and preparing role lanes. When

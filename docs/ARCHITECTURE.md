@@ -804,7 +804,13 @@ implementation handoff context. The runtime stores and projects bounded
 intent, requirements, design, implementation, validation, user journey, and
 privacy comparisons. Missing required sections stay visible as missing evidence
 in `/api/at-loop/status` and in the audit card; the runtime must not read or
-attach `.agent-context/HANDOFF.md` as substitute audit context.
+attach `.agent-context/HANDOFF.md` as substitute audit context. Product-audit
+terminal returns are normalized into an audit verdict from explicit fields or
+bounded return text before routing. Requirements/design gaps go back to the
+source requirements lane, implementation/UX/test/privacy gaps go to repair, and
+malformed completed audit returns become an explicit bounded routing error
+instead of leaving `lastAuditVerdict` empty or a repair slice pending without a
+target card.
 To keep this from being only a model prompt, the same runtime switch also adds a
 dynamic source-write decision layer. For ordinary non-exempt workspaces,
 `thread/start`, `thread/resume`, and `turn/start` use a real
