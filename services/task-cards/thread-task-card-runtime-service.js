@@ -102,7 +102,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
       try {
         await dependencies.codex.request("thread/resume", applyResumeRuntimeSettings({
           threadId: card.target.threadId,
-          cwd: null,
+          cwd: targetThread && targetThread.cwd || null,
           persistExtendedHistory: true,
         }, runtimeSettings), { timeoutMs: dependencies.mutationRpcTimeoutMs, retry: false });
       } catch (err) {

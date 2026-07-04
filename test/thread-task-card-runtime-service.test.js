@@ -93,6 +93,7 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   assert.equal(result.runtime.reasoningEffort, "high");
   assert.equal(result.runtime.deployLaneNoApproval, true);
   assert.equal(codexRequests[0].method, "thread/resume");
+  assert.equal(codexRequests[0].params.cwd, "/Users/hermes-dev/HermesMobileDev/app");
   assert.equal(codexRequests[0].params.resumeRuntime, "high");
   assert.equal(codexRequests[1].method, "turn/start");
   assert.equal(codexRequests[1].params.turnRuntime, "high");
