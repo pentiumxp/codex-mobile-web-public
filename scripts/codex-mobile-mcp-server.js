@@ -160,6 +160,7 @@ function toolsList() {
           sourceThreadId: { type: "string", minLength: 1, maxLength: 120 },
           objective: { type: "string", minLength: 1, maxLength: 2000 },
           targetThreadId: { type: "string", maxLength: 220 },
+          implementationWorkspaceCwd: { type: "string", maxLength: 1000 },
           targetAlias: { type: "string", maxLength: 120 },
           deployReadbackRequired: { type: "boolean" },
           maxIterations: { type: "integer", minimum: 1, maximum: 10 },
@@ -406,10 +407,22 @@ async function startLoop(context, args = {}) {
   const objective = boundedString(args.objective, "objective", 2000, true);
   const targetAlias = boundedString(args.targetAlias || args.target_alias, "target_alias", 120, false);
   const targetThreadId = boundedString(args.targetThreadId || args.target_thread_id, "target_thread_id", 220, false);
+  const implementationWorkspaceCwd = boundedString(
+    args.implementationWorkspaceCwd
+      || args.implementation_workspace_cwd
+      || args.implementationWorkspace
+      || args.implementation_workspace
+      || args.implementationCwd
+      || args.implementation_cwd,
+    "implementation_workspace_cwd",
+    1000,
+    false,
+  );
   const body = {
     sourceThreadId,
     text: `${targetAlias ? `@${targetAlias} ` : ""}@loop ${objective}`,
     targetThreadId,
+    implementationWorkspaceCwd,
     deployReadbackRequired: Boolean(args.deployReadbackRequired || args.deploy_readback_required),
     maxIterations: Number(args.maxIterations || args.max_iterations || 0) || undefined,
   };
@@ -425,6 +438,7 @@ async function startLoop(context, args = {}) {
       status: String(loop.status || ""),
       currentRole: String(loop.currentRole || ""),
       nextRoute: String(loop.nextRoute || ""),
+      implementationWorkspaceCwd: String(loop.implementationWorkspaceCwd || ""),
       waitingReturnCount: Number(loop.waitingReturnCount || 0),
       duplicateSuppressedCount: Number(loop.duplicateSuppressedCount || 0),
       objectiveSummary: String(loop.objectiveSummary || ""),
@@ -446,6 +460,7 @@ async function loopStatus(context, args = {}) {
       iteration: Number(loop.iteration || 0),
       maxIterations: Number(loop.maxIterations || 0),
       nextRoute: String(loop.nextRoute || ""),
+      implementationWorkspaceCwd: String(loop.implementationWorkspaceCwd || ""),
       lastAuditVerdict: String(loop.lastAuditVerdict || ""),
       waitingReturnCount: Number(loop.waitingReturnCount || 0),
       duplicateSuppressedCount: Number(loop.duplicateSuppressedCount || 0),

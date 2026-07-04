@@ -658,7 +658,13 @@ Implementation path:
    cwd must not be blindly treated as the implementation workspace; if the cwd
    is empty or projectless, fail closed with bounded
    `at_loop_implementation_workspace_unresolved` metadata and keep the loop
-   visible at requirements revision.
+   visible at requirements revision. When the source/main requirements thread
+   maps to a separate real implementation workspace, callers may pass
+   `implementationWorkspaceCwd` (or the snake_case equivalent) through the
+   API/MCP trigger. Implementation and repair lane selection must then reuse
+   only role lanes whose cwd matches that mapped workspace, or create a role
+   lane at that cwd; other implementation-looking threads are stale/ineligible
+   for that Loop.
 6. Classify target-thread purpose before dispatch. Public PR, deploy lane,
    audit, task intake, and worker threads are special-purpose lanes; mismatched
    roles must fail closed with bounded routing metadata instead of relying on

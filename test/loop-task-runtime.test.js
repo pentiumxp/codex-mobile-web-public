@@ -206,6 +206,150 @@ test("loop runtime blocks implementation lane creation when source workspace is 
   assert.equal(createdThreads.length, 0);
 });
 
+test("loop runtime uses explicit implementation workspace instead of source requirements cwd", async () => {
+  const realWorkspace = "/Users/xuxin/Xcode/Home AI";
+  const sourceWorkspace = "/Users/xuxin/Documents/Xcode-HomeAI";
+  const { cards, createdThreads, runtime } = makeRuntime({
+    name: "explicit-implementation-workspace",
+    visibleThreads: [{
+      id: "xcode-thread",
+      title: "Xcode",
+      cwd: sourceWorkspace,
+    }],
+    isLoopImplementationWorkspace: (cwd) => cwd === realWorkspace
+      ? { ok: true, cwd, reason: "xcode_project_marker" }
+      : { ok: false, error: "implementation_workspace_project_markers_missing", cwd },
+  });
+
+  const result = await runtime.startLoop({
+    sourceThreadId: "xcode-thread",
+    text: "@loop redesign settings",
+    implementationWorkspaceCwd: realWorkspace,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.loop.requirementsThreadId, "xcode-thread");
+  assert.equal(result.loop.requirementsLocal, true);
+  assert.equal(result.loop.implementationWorkspaceCwd, realWorkspace);
+  assert.equal(result.loop.implementationThreadId, "implementation-created");
+  const implementationThread = createdThreads.find((thread) => thread.id === "implementation-created");
+  assert.equal(implementationThread.cwd, realWorkspace);
+  assert.equal(implementationThread.threadRole, "implementation");
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].payload.targetThreadId, "implementation-created");
+  assert.notEqual(cards[0].payload.targetThreadId, "xcode-thread");
+});
+
+test("loop runtime updates blocked duplicate with explicit implementation workspace", async () => {
+  const realWorkspace = "/Users/xuxin/Xcode/Home AI";
+  const sourceWorkspace = "/Users/xuxin/Documents/Xcode-HomeAI";
+  const { cards, createdThreads, runtime, storageFile } = makeRuntime({
+    name: "blocked-duplicate-implementation-workspace",
+    visibleThreads: [{
+      id: "xcode-thread",
+      title: "Xcode",
+      cwd: sourceWorkspace,
+    }, {
+      id: "old-implementation-thread",
+      title: "Xcode Loop Implementation: redesign settings",
+      cwd: sourceWorkspace,
+      threadRole: "implementation",
+    }, {
+      id: "audit-thread",
+      title: "Plugin Workspace Audit",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    }],
+    isLoopImplementationWorkspace: (cwd) => cwd === realWorkspace
+      ? { ok: true, cwd, reason: "xcode_project_marker" }
+      : { ok: false, error: "implementation_workspace_project_markers_missing", cwd },
+  });
+  const loopId = testLoopId({
+    sourceThreadId: "xcode-thread",
+    targetThreadId: "xcode-thread",
+    objective: "redesign settings",
+  });
+  fs.writeFileSync(storageFile, `${JSON.stringify({ version: 1, loops: [{
+    loopId,
+    sourceThreadId: "xcode-thread",
+    targetThreadId: "old-implementation-thread",
+    requirementsThreadId: "xcode-thread",
+    implementationThreadId: "old-implementation-thread",
+    auditThreadId: "audit-thread",
+    domainAdapter: "generic",
+    objectiveSummary: "redesign settings",
+    status: "blocked",
+    currentRole: "requirements",
+    iteration: 1,
+    maxIterations: 3,
+    nextRoute: "requirements_revision",
+    blockedReason: "implementation_blocked_requires_requirements_revision",
+    sourceRequestId: `at-loop:${loopId}:source`,
+    requirementsLocal: true,
+    auditPacket: {},
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    roleSlices: [{
+      role: "requirements",
+      roleSliceId: `${loopId}:requirements:1`,
+      iteration: 1,
+      status: "blocked",
+      dispatchStatus: "source_thread_local_role",
+      dispatchMode: "source_thread_local_role",
+      taskCardDispatch: false,
+      taskCardId: "",
+      targetThreadId: "xcode-thread",
+      roleOwnerThreadId: "xcode-thread",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "implementation",
+      roleSliceId: `${loopId}:implementation:1`,
+      iteration: 1,
+      status: "returned",
+      dispatchStatus: "failed",
+      taskCardId: "ttc_old",
+      targetThreadId: "old-implementation-thread",
+      targetPurpose: "workspace_implementation",
+      returnStatus: "blocked",
+      blockedReason: "implementation_workspace_project_markers_missing",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "product_audit",
+      roleSliceId: `${loopId}:product_audit:1`,
+      iteration: 1,
+      status: "pending",
+      dispatchStatus: "",
+      taskCardId: "",
+      targetThreadId: "audit-thread",
+      targetPurpose: "audit_lane",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }],
+  }] }, null, 2)}\n`, "utf8");
+
+  const result = await runtime.startLoop({
+    sourceThreadId: "xcode-thread",
+    text: "@loop redesign settings",
+    implementationWorkspaceCwd: realWorkspace,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.recovered, true);
+  assert.equal(result.loop.implementationWorkspaceCwd, realWorkspace);
+  assert.equal(result.loop.implementationThreadId, "implementation-created");
+  const implementation = result.loop.roleSlices.find((slice) => slice.role === "implementation");
+  assert.equal(implementation.status, "dispatched");
+  assert.equal(implementation.targetThreadId, "implementation-created");
+  assert.notEqual(implementation.taskCardId, "ttc_old");
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].payload.targetThreadId, "implementation-created");
+  assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").cwd, realWorkspace);
+});
+
 test("loop runtime treats plugin and Home AI main threads as local requirements owners", async () => {
   for (const source of [
     {

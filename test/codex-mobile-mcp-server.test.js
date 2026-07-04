@@ -220,6 +220,7 @@ test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
       const body = JSON.parse(await readBody(req));
       assert.equal(body.sourceThreadId, "source-1");
       assert.equal(body.text, "@home-ai @loop implement loop runtime");
+      assert.equal(body.implementationWorkspaceCwd, "/Users/xuxin/Xcode/Home AI");
       assert.equal(body.deployReadbackRequired, true);
       assert.equal(body.auditPacket.sections.design_contract_packet.status, "present");
       res.setHeader("content-type", "application/json");
@@ -231,6 +232,7 @@ test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
           status: "running",
           currentRole: "requirements",
           nextRoute: "requirements",
+          implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
           waitingReturnCount: 1,
           duplicateSuppressedCount: 0,
           objectiveSummary: "implement loop runtime",
@@ -250,6 +252,7 @@ test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
           iteration: 1,
           maxIterations: 3,
           nextRoute: "requirements",
+          implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
           lastAuditVerdict: "",
           waitingReturnCount: 1,
           duplicateSuppressedCount: 0,
@@ -275,6 +278,7 @@ test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
     sourceThreadId: "source-1",
     targetAlias: "home-ai",
     objective: "implement loop runtime",
+    implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
     deployReadbackRequired: true,
     auditPacket: {
       sections: {
@@ -287,10 +291,12 @@ test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
   });
   assert.equal(started.ok, true);
   assert.equal(started.loop.loopId, "loop_1234");
+  assert.equal(started.loop.implementationWorkspaceCwd, "/Users/xuxin/Xcode/Home AI");
   assert.equal(started.loop.waitingReturnCount, 1);
 
   const status = await loopStatus(context, { loopId: "loop_1234" });
   assert.equal(status.loopCount, 1);
+  assert.equal(status.loops[0].implementationWorkspaceCwd, "/Users/xuxin/Xcode/Home AI");
   assert.equal(status.loops[0].roleSlices[0].taskCardId, "ttc_1");
   assert.ok(calls.every((call) => call.authorization === "Bearer secret"));
 });

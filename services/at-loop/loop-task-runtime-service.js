@@ -151,6 +151,27 @@ function publicThread(thread = {}) {
   };
 }
 
+function loopImplementationWorkspaceCwd(loop = {}) {
+  return compactOneLine(loop.implementationWorkspaceCwd || loop.implementationWorkspace || loop.implementationCwd);
+}
+
+function inputImplementationWorkspaceCwd(input = {}) {
+  return compactOneLine(input.implementationWorkspaceCwd
+    || input.implementationWorkspace
+    || input.implementationCwd
+    || input.implementation_workspace_cwd
+    || input.implementation_workspace
+    || input.implementation_cwd);
+}
+
+function roleWorkspaceCwd(loop = {}, role = "", source = {}) {
+  if (roleRequiresImplementationWorkspace(role)) {
+    return loopImplementationWorkspaceCwd(loop)
+      || compactOneLine(source.cwd || source.workspace || source.targetWorkspace);
+  }
+  return compactOneLine(source.cwd || source.workspace || source.targetWorkspace);
+}
+
 function threadIdOf(thread = {}) {
   return compactOneLine(thread && (thread.id || thread.threadId));
 }
@@ -728,6 +749,21 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       });
     }
     if (roleRequiresImplementationWorkspace(role)) {
+      const expectedCwd = normalizeCwd(loopImplementationWorkspaceCwd(loop));
+      const threadCwd = normalizeCwd(thread && (thread.cwd || thread.workspace || thread.targetWorkspace));
+      if (expectedCwd && threadCwd && expectedCwd !== threadCwd) {
+        return Object.assign({}, loopCheck, {
+          ok: false,
+          error: "at_loop_implementation_workspace_mismatch",
+          role,
+          workspace: {
+            ok: false,
+            error: "implementation_workspace_mismatch",
+            expectedCwd: loopImplementationWorkspaceCwd(loop),
+            cwd: thread && (thread.cwd || thread.workspace || thread.targetWorkspace) || "",
+          },
+        });
+      }
       const workspace = implementationWorkspaceCheck(thread && (thread.cwd || thread.workspace || thread.targetWorkspace), {
         role,
         loop,
@@ -862,6 +898,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       targetThreadId: loop.targetThreadId || "",
       requirementsThreadId: loop.requirementsThreadId || "",
       implementationThreadId: loop.implementationThreadId || "",
+      implementationWorkspaceCwd: loopImplementationWorkspaceCwd(loop),
       auditThreadId: loop.auditThreadId || "",
       deployThreadId: loop.deployThreadId || "",
       targetAlias: loop.targetAlias || "",
@@ -1096,7 +1133,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const check = roleTargetCheck(loop, role, thread);
     if (!check.ok) return -1;
     const source = sourceThread(loop);
-    const sourceCwd = normalizeCwd(source.cwd || source.workspace || source.targetWorkspace);
+    const sourceCwd = normalizeCwd(roleWorkspaceCwd(loop, role, source));
     const threadCwd = normalizeCwd(thread.cwd || thread.workspace || thread.targetWorkspace);
     const roleText = compactOneLine(thread.threadRole || thread.thread_role || thread.role).toLowerCase();
     const title = compactOneLine(thread.title || thread.name || thread.preview).toLowerCase();
@@ -1140,7 +1177,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   async function createRoleThread(loop, role) {
     if (typeof dependencies.createLoopRoleThread !== "function") return null;
     const source = sourceThread(loop);
-    const cwd = compactOneLine(source.cwd || source.workspace || source.targetWorkspace);
+    const cwd = roleWorkspaceCwd(loop, role, source);
     if (!cwd) return null;
     if (roleRequiresImplementationWorkspace(role)) {
       const workspace = implementationWorkspaceCheck(cwd, { role, loop, thread: source, create: true });
@@ -1152,7 +1189,8 @@ function createLoopTaskRuntimeService(dependencies = {}) {
           error: "at_loop_implementation_workspace_unresolved",
           role,
           sourceThreadId: loop && loop.sourceThreadId || "",
-          sourceCwd: cwd,
+          sourceCwd: compactOneLine(source.cwd || source.workspace || source.targetWorkspace),
+          implementationWorkspaceCwd: loopImplementationWorkspaceCwd(loop),
           workspace,
         };
         throw err;
@@ -1184,6 +1222,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
           const timestamp = nowIso(clock);
           slice.targetThreadId = "";
           slice.targetPurpose = "";
+          slice.taskCardId = "";
           slice.routing = Object.assign({}, slice.routing || {}, {
             staleTargetThreadId: existingId,
             staleTargetReason: "not_visible_or_not_current_deliverable",
@@ -1199,6 +1238,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
             const timestamp = nowIso(clock);
             slice.targetThreadId = "";
             slice.targetPurpose = "";
+            slice.taskCardId = "";
             slice.routing = Object.assign({}, publicRoleTargetRoutingMetadata(check), {
               staleTargetThreadId: existingId,
               staleTargetReason: check.error === "at_loop_target_not_deliverable"
@@ -1446,6 +1486,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   async function startLoop(input = {}) {
     const sourceThreadId = compactOneLine(input.sourceThreadId || input.threadId);
     if (!sourceThreadId) return { ok: false, error: "source_thread_id_required" };
+    const implementationWorkspaceCwd = inputImplementationWorkspaceCwd(input);
     const triggerText = input.text || input.message || (input.objective ? `@loop ${input.objective}` : "");
     const parsed = parser.parse(triggerText, { knownAliases: knownAliases() });
     if (!parsed.triggered) return { ok: false, error: "at_loop_trigger_not_found" };
@@ -1466,6 +1507,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const existing = state.loops.find((loop) => loop.loopId === loopId);
     if (existing) {
       existing.duplicateSuppressedCount = Number(existing.duplicateSuppressedCount || 0) + 1;
+      if (implementationWorkspaceCwd) existing.implementationWorkspaceCwd = implementationWorkspaceCwd;
       existing.updatedAt = nowIso(clock);
       if (existing.status === "blocked") {
         const blockedRole = existing.currentRole || existing.nextRoute || "requirements";
@@ -1498,6 +1540,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       targetThreadId: sameThreadId(requirementsThreadId, sourceThreadId) ? "" : requirementsThreadId,
       requirementsThreadId,
       implementationThreadId: "",
+      implementationWorkspaceCwd,
       auditThreadId: "",
       deployThreadId: "",
       targetAlias: parsed.targetAlias || "",
