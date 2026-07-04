@@ -1201,6 +1201,15 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return slices.find((slice) => slice.status === "returned" && returnedRoleWorkspaceMismatch(loop, slice)) || null;
   }
 
+  function productAuditBlockedReturnForRepair(loop) {
+    const slices = Array.isArray(loop && loop.roleSlices) ? loop.roleSlices : [];
+    return slices.find((slice) => {
+      if (!slice || slice.role !== "product_audit") return false;
+      if (slice.status !== "returned" || slice.returnStatus !== "blocked") return false;
+      return Boolean(productAuditBlockedRepairRoute(loop, slice.auditVerdict));
+    }) || null;
+  }
+
   function blockedDispatchRoleForRedispatch(loop) {
     const slices = Array.isArray(loop && loop.roleSlices) ? loop.roleSlices : [];
     return slices.find((slice) => {
@@ -1239,6 +1248,42 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       staleTargetThreadId,
       excludedTargetThreadIds: staleTargetThreadId ? [staleTargetThreadId] : [],
     };
+  }
+
+  function prepareRepairForAuditBlockedReturn(loop, auditSlice) {
+    const timestamp = nowIso(clock);
+    let repair = findSlice(loop, { role: "repair", iteration: loop.iteration });
+    if (!repair) {
+      repair = {
+        role: "repair",
+        roleSliceId: `${loop.loopId}:repair:${loop.iteration}`,
+        iteration: loop.iteration,
+        createdAt: timestamp,
+      };
+      loop.roleSlices.push(repair);
+    }
+    repair.status = "pending";
+    repair.dispatchStatus = "";
+    repair.dispatchMode = "";
+    repair.taskCardDispatch = true;
+    repair.taskCardId = "";
+    repair.returnStatus = "";
+    repair.returnCardId = "";
+    repair.returnSummary = "";
+    repair.auditVerdict = "";
+    repair.blockedReason = "";
+    repair.routing = Object.assign({}, repair.routing || {}, {
+      auditBlockedRoleSliceId: auditSlice && auditSlice.roleSliceId || "",
+      auditBlockedRoute: productAuditBlockedRepairRoute(loop, auditSlice && auditSlice.auditVerdict || ""),
+    });
+    repair.updatedAt = timestamp;
+    loop.status = "running";
+    loop.currentRole = "repair";
+    loop.nextRoute = "repair";
+    loop.blockedReason = "";
+    loop.updatedAt = timestamp;
+    saveState();
+    return { role: "repair" };
   }
 
   function markRequirementsLocal(loop, slice) {
@@ -1708,6 +1753,16 @@ function createLoopTaskRuntimeService(dependencies = {}) {
           const recovered = await dispatchRole(existing, recoveredRole.role, {
             excludedTargetThreadIds: recoveredRole.excludedTargetThreadIds,
           });
+          return Object.assign({
+            ok: recovered.ok !== false,
+            duplicateSuppressed: false,
+            recovered: recovered.ok !== false,
+          }, recovered, { loop: publicLoop(existing) });
+        }
+        const auditBlockedRepair = productAuditBlockedReturnForRepair(existing);
+        if (auditBlockedRepair) {
+          const recoveredRole = prepareRepairForAuditBlockedReturn(existing, auditBlockedRepair);
+          const recovered = await dispatchRole(existing, recoveredRole.role);
           return Object.assign({
             ok: recovered.ok !== false,
             duplicateSuppressed: false,

@@ -692,6 +692,183 @@ test("loop runtime routes product-audit missing-evidence blocks to repair", asyn
   assert.equal(repairSlice.status, "dispatched");
 });
 
+test("loop runtime recovers duplicate blocked after historical audit missing-evidence return", async () => {
+  const { cards, runtime, storageFile } = makeRuntime({
+    name: "historical-audit-blocked-repair",
+    visibleThreads: [{
+      id: "source-thread",
+      title: "Xcode",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+    }, {
+      id: "implementation-thread",
+      title: "Xcode implementation",
+      cwd: "/Users/xuxin/Xcode/Home AI",
+      threadRole: "implementation",
+    }, {
+      id: "audit-thread",
+      title: "Xcode Loop Audit",
+      cwd: "/Users/xuxin/Xcode/Home AI",
+      threadRole: "product_audit",
+    }],
+    isLoopImplementationWorkspace: (cwd) => cwd === "/Users/xuxin/Xcode/Home AI",
+  });
+  const loopId = testLoopId({
+    sourceThreadId: "source-thread",
+    targetThreadId: "source-thread",
+    objective: "recover audit blocked loop",
+  });
+  fs.writeFileSync(storageFile, `${JSON.stringify({ version: 1, loops: [{
+    loopId,
+    sourceThreadId: "source-thread",
+    targetThreadId: "",
+    requirementsThreadId: "source-thread",
+    implementationThreadId: "implementation-thread",
+    auditThreadId: "audit-thread",
+    implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
+    domainAdapter: "generic",
+    objectiveSummary: "recover audit blocked loop",
+    status: "blocked",
+    currentRole: "",
+    iteration: 1,
+    maxIterations: 3,
+    nextRoute: "blocked_role_return",
+    blockedReason: "",
+    sourceRequestId: `at-loop:${loopId}:source`,
+    requirementsLocal: true,
+    auditPacket: {
+      required: true,
+      sections: [{
+        id: "requirements_packet",
+        required: true,
+        status: "present",
+        source: "source_thread_local_requirements",
+        summary: "recover audit blocked loop",
+        expectedEvidence: [],
+        evidence: ["source_thread_id:source-thread"],
+        missingEvidence: [],
+      }, {
+        id: "design_contract_packet",
+        required: true,
+        status: "missing",
+        source: "durable_docs_and_contracts",
+        summary: "",
+        expectedEvidence: [],
+        evidence: [],
+        missingEvidence: [],
+      }, {
+        id: "implementation_packet",
+        required: true,
+        status: "present",
+        source: "implementation_return_card",
+        summary: "implementation done",
+        expectedEvidence: [],
+        evidence: ["task_card_id:ttc_impl"],
+        missingEvidence: [],
+      }, {
+        id: "validation_packet",
+        required: true,
+        status: "missing",
+        source: "tests_harnesses_and_readback",
+        summary: "",
+        expectedEvidence: [],
+        evidence: [],
+        missingEvidence: [],
+      }, {
+        id: "privacy_packet",
+        required: true,
+        status: "missing",
+        source: "privacy_boundary",
+        summary: "",
+        expectedEvidence: [],
+        evidence: [],
+        missingEvidence: [],
+      }],
+      deltaMatrix: [],
+    },
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    roleSlices: [{
+      role: "requirements",
+      roleSliceId: `${loopId}:requirements:1`,
+      iteration: 1,
+      status: "local",
+      dispatchStatus: "source_thread_local_role",
+      dispatchMode: "source_thread_local_role",
+      taskCardDispatch: false,
+      taskCardId: "",
+      targetThreadId: "source-thread",
+      targetPurpose: "workspace_implementation",
+      returnStatus: "completed",
+      roleOwnerThreadId: "source-thread",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "implementation",
+      roleSliceId: `${loopId}:implementation:1`,
+      iteration: 1,
+      status: "returned",
+      dispatchStatus: "dispatched",
+      dispatchMode: "task_card",
+      taskCardDispatch: true,
+      taskCardId: "ttc_impl",
+      targetThreadId: "implementation-thread",
+      targetPurpose: "workspace_implementation",
+      returnStatus: "completed",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "product_audit",
+      roleSliceId: `${loopId}:product_audit:1`,
+      iteration: 1,
+      status: "returned",
+      dispatchStatus: "dispatched",
+      dispatchMode: "task_card",
+      taskCardDispatch: true,
+      taskCardId: "ttc_audit",
+      targetThreadId: "audit-thread",
+      targetPurpose: "audit_lane",
+      returnStatus: "blocked",
+      auditVerdict: "",
+      returnCardId: "ttc_audit_return",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "repair",
+      roleSliceId: `${loopId}:repair:1`,
+      iteration: 1,
+      status: "pending",
+      dispatchStatus: "",
+      taskCardId: "",
+      targetThreadId: "",
+      targetPurpose: "",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }],
+  }] }, null, 2)}\n`, "utf8");
+
+  const result = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop recover audit blocked loop",
+    implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.recovered, true);
+  assert.equal(result.loop.status, "running");
+  assert.equal(result.loop.currentRole, "repair");
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].payload.targetRole, "repair");
+  assert.equal(cards[0].payload.targetThreadId, "implementation-thread");
+  assert.match(cards[0].payload.bodyMarkdown, /Missing audit packet sections:/);
+  assert.match(cards[0].payload.bodyMarkdown, /validation_packet/);
+  const repair = result.loop.roleSlices.find((slice) => slice.role === "repair");
+  assert.equal(repair.status, "dispatched");
+});
+
 test("loop runtime routes blocked implementation returns back to local requirements revision", async () => {
   const { cards, runtime } = makeRuntime({ name: "implementation-blocked-requirements-revision" });
   const started = await runtime.startLoop({
