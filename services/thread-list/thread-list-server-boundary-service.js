@@ -114,6 +114,7 @@ function createThreadListServerBoundaryService(options = {}) {
     clearThreadListFallbackCache: runtimeService.clearThreadListFallbackCache,
     removeThreadFromThreadListFallbackCache: runtimeService.removeThreadFromThreadListFallbackCache,
     upsertThreadListFallbackCacheThread: runtimeService.upsertThreadListFallbackCacheThread,
+    upsertThreadListFallbackCacheThreadsBulk: runtimeService.upsertThreadListFallbackCacheThreadsBulk,
     updateThreadListFallbackCacheStatus: runtimeService.updateThreadListFallbackCacheStatus,
     applyThreadStatusPayloadToThreadListFallbackCache: runtimeService.applyThreadStatusPayloadToThreadListFallbackCache,
     trackThreadDetailRequestLifecycle: runtimeService.trackThreadDetailRequestLifecycle,

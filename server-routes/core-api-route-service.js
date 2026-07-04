@@ -69,7 +69,9 @@ function createCoreApiRouteService(deps = {}) {
     requestAuthToken,
     requestBaseUrl,
     rolloutWarningBytes,
+    runtimePressureDiagnostics,
     safeAppUpdateError,
+    scheduleBackgroundTask = (fn) => setImmediate(fn),
     scheduleAppRestart,
     setProfileSwitchProgress,
     setThreadDisplaySettings,
@@ -87,6 +89,31 @@ function createCoreApiRouteService(deps = {}) {
     workspaceRegistryService,
     preflightCodexProfileSwitch,
   } = deps;
+
+  function scheduleQuotaHydration() {
+    if (typeof scheduleBackgroundTask !== "function") return;
+    scheduleBackgroundTask(() => {
+      try {
+        const refresh = codex && typeof codex.refreshRateLimitsIfMissing === "function"
+          ? codex.refreshRateLimitsIfMissing()
+          : null;
+        if (refresh && typeof refresh.catch === "function") {
+          refresh.catch((err) => {
+            console.error(`[runtime-pressure] rate-limit refresh failed: ${String(err && err.message || err).slice(0, 180)}`);
+          });
+        }
+      } catch (err) {
+        console.error(`[runtime-pressure] rate-limit refresh failed: ${String(err && err.message || err).slice(0, 180)}`);
+      }
+      if (typeof loadRecentRateLimitsFromRollouts === "function") {
+        try {
+          loadRecentRateLimitsFromRollouts();
+        } catch (err) {
+          console.error(`[runtime-pressure] rollout quota scan failed: ${String(err && err.message || err).slice(0, 180)}`);
+        }
+      }
+    });
+  }
 
   async function handlePublicRoute(context = {}) {
     const { url, req, res, readBody, sendJson } = context;
@@ -106,8 +133,7 @@ function createCoreApiRouteService(deps = {}) {
       return { handled: true };
     }
     if (url.pathname === "/api/public-config") {
-      await codex.refreshRateLimitsIfMissing();
-      loadRecentRateLimitsFromRollouts();
+      scheduleQuotaHydration();
       const buildConfig = deps.currentPublicBuildConfig();
       const workspaceDelegation = workspaceDelegationPublicSettings();
       const activeQuota = liveQuotaSnapshotForProfiles();
@@ -550,9 +576,11 @@ function createCoreApiRouteService(deps = {}) {
       await codex.ensure().catch((err) => {
         codex.lastError = err.message;
       });
-      await codex.refreshRateLimitsIfMissing();
-      loadRecentRateLimitsFromRollouts();
+      scheduleQuotaHydration();
       const status = codex.status();
+      if (truthyParam(url.searchParams.get("detail")) && runtimePressureDiagnostics && typeof runtimePressureDiagnostics.status === "function") {
+        status.runtimePressure = runtimePressureDiagnostics.status();
+      }
       if (truthyParam(url.searchParams.get("muxMetrics"))) {
         status.muxMetrics = await codex.readMuxMetrics(["thread/list"]);
       }

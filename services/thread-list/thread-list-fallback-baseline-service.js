@@ -362,11 +362,38 @@ function createThreadListFallbackBaselineService(options = {}) {
     return changed;
   }
 
+  function upsertThreads(threads) {
+    const rows = safeThreadList(threads);
+    const ids = new Set(rows.map((thread) => String(thread && thread.id || "").trim()).filter(Boolean));
+    if (!ids.size || !sourceSnapshots.size) return 0;
+    const changedIds = new Set();
+    for (const snapshot of sourceSnapshots.values()) {
+      for (const sourceName of ["stateDb", "rollout", "sessionIndex"]) {
+        snapshot.sources[sourceName] = safeThreadList(snapshot.sources && snapshot.sources[sourceName])
+          .filter((candidate) => !ids.has(String(candidate && candidate.id || "").trim()));
+      }
+      const sourceFilters = snapshot.sourceFilters && typeof snapshot.sourceFilters === "object"
+        ? clonePlainJson(snapshot.sourceFilters)
+        : {};
+      const visible = filterSourceThreads(rows, sourceFilters);
+      if (!visible.length) continue;
+      snapshot.sources.stateDb = safeThreadList(snapshot.sources.stateDb);
+      for (let index = visible.length - 1; index >= 0; index -= 1) {
+        const thread = visible[index];
+        const id = String(thread && thread.id || "").trim();
+        if (id) changedIds.add(id);
+        snapshot.sources.stateDb.unshift(clonePlainJson(thread));
+      }
+    }
+    return changedIds.size;
+  }
+
   return {
     clearSourceSnapshots,
     readBaseline,
     removeThread,
     upsertThread,
+    upsertThreads,
   };
 }
 

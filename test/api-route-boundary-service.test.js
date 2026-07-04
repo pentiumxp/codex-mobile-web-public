@@ -63,14 +63,20 @@ test("api boundary adapters re-export canonical route services", () => {
 test("server route composition wires core route service into API dispatch", () => {
   const calls = [];
   const coreApiRouteService = { core: true };
+  const runtimePressureDiagnostics = { status: () => ({ ok: true }) };
   const service = createServerRouteCompositionService({
     appVersion: "0.1-test",
+    runtimePressureDiagnostics,
     coreApiRouteServiceFactory: (deps) => {
-      calls.push(["core", deps.appVersion]);
+      calls.push(["core", deps.appVersion, deps.runtimePressureDiagnostics === runtimePressureDiagnostics]);
       return coreApiRouteService;
     },
     apiDispatchRouteServiceFactory: (deps) => {
-      calls.push(["dispatch", deps.coreApiRouteService === coreApiRouteService]);
+      calls.push([
+        "dispatch",
+        deps.coreApiRouteService === coreApiRouteService,
+        deps.runtimePressureDiagnostics === runtimePressureDiagnostics,
+      ]);
       return {
         handleApi() {},
         handleEvents() {},
@@ -80,8 +86,8 @@ test("server route composition wires core route service into API dispatch", () =
 
   assert.equal(service.coreApiRouteService, coreApiRouteService);
   assert.deepEqual(calls, [
-    ["core", "0.1-test"],
-    ["dispatch", true],
+    ["core", "0.1-test", true],
+    ["dispatch", true, true],
   ]);
 });
 

@@ -203,6 +203,25 @@ test("prewarmNow skips non-active summaries", async () => {
   assert.equal(calls.includes("projection-input"), false);
 });
 
+test("prewarmNow skips huge active rollout summaries before background app-server reads", async () => {
+  const { calls, service } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "active" },
+      activeTurnId: "turn-active",
+      rolloutSizeBytes: 586 * 1024 * 1024,
+    },
+  });
+
+  const result = await service.prewarmNow({ threadId: "thread-1" });
+
+  assert.equal(result.status, "skipped");
+  assert.equal(result.reason, "rollout-too-large");
+  assert.equal(result.rolloutSizeBytes, 586 * 1024 * 1024);
+  assert.equal(calls.includes("projection-input"), false);
+  assert.equal(calls.some((call) => /^turns-list:/.test(call)), false);
+});
+
 test("schedule deduplicates pending work", () => {
   const calls = [];
   const service = createThreadDetailActiveWindowPrewarmService({

@@ -284,6 +284,7 @@ function createThreadListFallbackCacheService(options = {}) {
     const id = String(thread && thread.id || "").trim();
     if (!id || !cache.size) return false;
     const addIfMissing = upsertOptions.addIfMissing === true;
+    const deferPersist = upsertOptions.deferPersist === true;
     const nowMs = now();
     let changed = false;
     for (const entry of cache.values()) {
@@ -309,8 +310,71 @@ function createThreadListFallbackCacheService(options = {}) {
       const baselineThread = memoryThreadSummary(thread);
       changed = (baselineThread ? baselineService.upsertThread(baselineThread) : false) || changed;
     }
-    if (changed) persistCache();
+    if (changed && !deferPersist) persistCache();
     return changed;
+  }
+
+  function upsertThreads(threads, upsertOptions = {}) {
+    const rows = (Array.isArray(threads) ? threads : [])
+      .filter((thread) => String(thread && thread.id || "").trim());
+    if (!rows.length || !cache.size) return 0;
+    const addIfMissing = upsertOptions.addIfMissing === true;
+    const nowMs = now();
+    const ids = new Set(rows.map((thread) => String(thread && thread.id || "").trim()));
+    const changedIds = new Set();
+    for (const entry of cache.values()) {
+      const entryThreads = entry.threads || [];
+      const existingById = new Map();
+      for (const candidate of entryThreads) {
+        const id = String(candidate && candidate.id || "").trim();
+        if (id) existingById.set(id, candidate);
+      }
+      const candidates = [];
+      for (const thread of rows) {
+        const id = String(thread && thread.id || "").trim();
+        const existing = existingById.get(id) || null;
+        if (!existing && !addIfMissing) continue;
+        const candidate = memoryThreadSummary(normalizeThreadSummaryLiveStatus(mergeThreadDisplaySummary(existing, thread) || thread));
+        if (!candidate) continue;
+        candidates.push(candidate);
+      }
+      if (!candidates.length) continue;
+      const filters = entry.filters || {};
+      const filtered = filterFallbackThreads(candidates, {
+        cwd: filters.cwd,
+        searchTerm: filters.searchTerm,
+        globalState: filters.globalState || undefined,
+      });
+      const withoutThreads = entryThreads.filter((item) => !ids.has(String(item && item.id || "").trim()));
+      entry.threads = filtered.length
+        ? mergeThreadSummaryList([...withoutThreads, ...filtered]).slice(0, Math.max(1, Number(entry.limit || 80)))
+        : withoutThreads;
+      entry.updatedAt = nowMs;
+      entry.incrementalUpdates = Number(entry.incrementalUpdates || 0) + candidates.length;
+      for (const candidate of candidates) {
+        const id = String(candidate && candidate.id || "").trim();
+        if (id) changedIds.add(id);
+      }
+    }
+    if (typeof baselineService.upsertThreads === "function") {
+      const baselineChanged = baselineService.upsertThreads(rows);
+      if (baselineChanged) {
+        for (const thread of rows) {
+          const id = String(thread && thread.id || "").trim();
+          if (id) changedIds.add(id);
+        }
+      }
+    } else if (typeof baselineService.upsertThread === "function") {
+      for (const thread of rows) {
+        const baselineThread = memoryThreadSummary(thread);
+        if (baselineThread && baselineService.upsertThread(baselineThread)) {
+          const id = String(thread && thread.id || "").trim();
+          if (id) changedIds.add(id);
+        }
+      }
+    }
+    if (changedIds.size) persistCache();
+    return changedIds.size;
   }
 
   function updateStatus(threadId, status, meta = {}) {
@@ -730,6 +794,7 @@ function createThreadListFallbackCacheService(options = {}) {
       };
     },
     upsertThread,
+    upsertThreads,
     updateStatus,
   };
 }

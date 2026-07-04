@@ -71,6 +71,7 @@ function createService(overrides = {}) {
         ? overrides.readSessionIndexFallback(limit, filters)
         : [{ id: "thread-session", name: "Session", updatedAt: 300 }];
     },
+    persistentStore: overrides.persistentStore,
   });
   return {
     calls,
@@ -621,6 +622,38 @@ test("fresh scoped thread rows backfill the default warm fallback cache", () => 
   assert.equal(defaultHitDiagnostics.cacheHit, true);
   assert.equal(defaultHitDiagnostics.cacheDecision, "hit");
   assert.equal(defaultHitDiagnostics.cacheIncrementalUpdates, 1);
+});
+
+test("bulk upsert persists fallback cache once for list refresh batches", () => {
+  const writes = [];
+  const { service } = createService({
+    persistentStore: {
+      loadEntries: () => [],
+      saveEntries(entries) {
+        writes.push(entries);
+        return true;
+      },
+    },
+    readStateDbFallback: () => [{ id: "thread-1", name: "Home", updatedAt: 100 }],
+    readRolloutSessionFallback: () => [],
+    readSessionIndexFallback: () => [],
+  });
+  service.readFallback(10);
+  assert.equal(writes.length, 1);
+
+  assert.equal(service.upsertThreads([
+    { id: "thread-2", name: "Two", updatedAt: 200 },
+    { id: "thread-3", name: "Three", updatedAt: 300 },
+    { id: "thread-4", name: "Four", updatedAt: 400 },
+  ], { addIfMissing: true }), 3);
+
+  assert.equal(writes.length, 2);
+  assert.deepEqual(service.readFallback(10).map((thread) => thread.id), [
+    "thread-4",
+    "thread-3",
+    "thread-2",
+    "thread-1",
+  ]);
 });
 
 test("workspace reads can derive first paint rows from default warm fallback cache", () => {

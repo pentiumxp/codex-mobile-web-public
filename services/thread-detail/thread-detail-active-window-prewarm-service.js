@@ -43,6 +43,17 @@ function hasProjectionThread(result) {
   return Boolean(result && result.thread && Array.isArray(result.thread.turns));
 }
 
+function summaryRolloutSizeBytes(summary) {
+  const value = Number(summary && summary.rolloutSizeBytes);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+}
+
+function boundedMaxRolloutBytes(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.trunc(parsed));
+}
+
 function createThreadDetailActiveWindowPrewarmService(options = {}) {
   const now = typeof options.now === "function" ? options.now : () => Date.now();
   const scheduleTimer = typeof options.setTimeout === "function" ? options.setTimeout : setTimeout;
@@ -67,6 +78,10 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
     : null;
   const seedProjection = typeof options.seedProjection === "function" ? options.seedProjection : () => null;
   const log = typeof options.log === "function" ? options.log : () => {};
+  const maxRolloutBytes = boundedMaxRolloutBytes(
+    options.maxRolloutBytes,
+    50 * 1024 * 1024,
+  );
   const pending = new Map();
   const lastAttemptAtByThread = new Map();
   const lastResultByThread = new Map();
@@ -86,6 +101,15 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
     }
     const activeReason = activeFullThreadReadReason(summary);
     if (!activeReason) return withThreadDetailActiveWindowPrewarmJobPolicy({ status: "skipped", reason: "not-active" });
+    const rolloutBytes = summaryRolloutSizeBytes(summary);
+    if (maxRolloutBytes > 0 && rolloutBytes > maxRolloutBytes) {
+      return withThreadDetailActiveWindowPrewarmJobPolicy({
+        status: "skipped",
+        reason: "rollout-too-large",
+        rolloutSizeBytes: rolloutBytes,
+        maxRolloutBytes,
+      });
+    }
     let runtimeSettings = threadRuntimeSettings(threadId, summary);
     let projection = projectionInput(threadId, summary);
     if (!projection && inputSummary) {
@@ -95,6 +119,15 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
       const resolvedSummary = summaryResult && summaryResult.summary || null;
       const resolvedActiveReason = activeFullThreadReadReason(resolvedSummary);
       if (!resolvedActiveReason) return withThreadDetailActiveWindowPrewarmJobPolicy({ status: "skipped", reason: "not-active" });
+      const resolvedRolloutBytes = summaryRolloutSizeBytes(resolvedSummary);
+      if (maxRolloutBytes > 0 && resolvedRolloutBytes > maxRolloutBytes) {
+        return withThreadDetailActiveWindowPrewarmJobPolicy({
+          status: "skipped",
+          reason: "rollout-too-large",
+          rolloutSizeBytes: resolvedRolloutBytes,
+          maxRolloutBytes,
+        });
+      }
       summary = resolvedSummary;
       runtimeSettings = threadRuntimeSettings(threadId, summary);
       projection = projectionInput(threadId, summary);
@@ -228,5 +261,6 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
 module.exports = {
   createThreadDetailActiveWindowPrewarmService,
   overlayActiveTurnId,
+  summaryRolloutSizeBytes,
   threadDetailActiveWindowPrewarmJobPolicy,
 };

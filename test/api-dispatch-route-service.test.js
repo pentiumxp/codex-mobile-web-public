@@ -17,6 +17,7 @@ test("api dispatch thread detail route uses injected lifecycle tracker", async (
   let lifecycleTracked = false;
   let detailHandled = false;
   let sent = null;
+  const routeRecords = [];
   const req = { method: "GET", url: "/api/threads/thread-123?mode=recent" };
   const res = {
     once(event, callback) {
@@ -44,6 +45,12 @@ test("api dispatch thread detail route uses injected lifecycle tracker", async (
     sendJson: (_res, status, body) => {
       sent = { status, body };
     },
+    runtimePressureDiagnostics: {
+      responseObjectCount: () => 7,
+      recordRoute: (record) => {
+        routeRecords.push(record);
+      },
+    },
     trackThreadDetailRequestLifecycle: (response) => {
       assert.equal(response, res);
       lifecycleTracked = true;
@@ -68,4 +75,11 @@ test("api dispatch thread detail route uses injected lifecycle tracker", async (
   assert.equal(lifecycleTracked, true);
   assert.equal(detailHandled, true);
   assert.deepEqual(sent, { status: 200, body: { ok: true, threadId: "thread-123" } });
+  assert.equal(routeRecords.length, 1);
+  assert.equal(routeRecords[0].method, "GET");
+  assert.equal(routeRecords[0].path, "/api/threads/thread-123");
+  assert.equal(routeRecords[0].status, 200);
+  assert.equal(routeRecords[0].responseObjectCount, 7);
+  assert.ok(routeRecords[0].responseBytes > 0);
+  assert.ok(routeRecords[0].elapsedMs >= 0);
 });

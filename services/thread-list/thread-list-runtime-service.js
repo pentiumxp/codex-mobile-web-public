@@ -187,6 +187,17 @@ function createThreadListRuntimeService(options = {}) {
     return threadListFallbackCacheService.upsertThread(thread, upsertOptions);
   }
 
+  function upsertThreadListFallbackCacheThreadsBulk(threads, upsertOptions = {}) {
+    if (typeof threadListFallbackCacheService.upsertThreads === "function") {
+      return threadListFallbackCacheService.upsertThreads(threads, upsertOptions);
+    }
+    let changed = 0;
+    for (const thread of Array.isArray(threads) ? threads : []) {
+      if (upsertThreadListFallbackCacheThread(thread, upsertOptions)) changed += 1;
+    }
+    return changed;
+  }
+
   function updateThreadListFallbackCacheStatus(threadId, status, meta = {}) {
     return threadListFallbackCacheService.updateStatus(threadId, status, meta);
   }
@@ -353,6 +364,7 @@ function createThreadListRuntimeService(options = {}) {
     threadListTokenUsageTimingFields,
     trackThreadDetailRequestLifecycle,
     upsertThreadListFallbackCacheThread,
+    upsertThreadListFallbackCacheThreadsBulk,
     updateThreadListFallbackCacheStatus,
   };
 }

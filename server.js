@@ -99,6 +99,7 @@ const { createRuntimeSettingsService } = require("./services/runtime/runtime-set
 const { createThreadRuntimeSettingsService } = require("./services/runtime/thread-runtime-settings-service");
 const { createThreadRolloutRuntimeService } = require("./services/runtime/thread-rollout-runtime-service");
 const { createServerSupportRuntimeService } = require("./services/runtime/server-support-runtime-service");
+const { createRuntimePressureDiagnosticsService } = require("./services/runtime/runtime-pressure-diagnostics-service");
 const { createNotificationRuntimeService } = require("./services/runtime/notification-runtime-service");
 const { createAppServerRequestPolicyService } = require("./services/runtime/app-server-request-policy-service");
 const { createServerRouteCompositionService } = require("./server-routes/server-route-composition-service");
@@ -674,6 +675,8 @@ const {
   filterFallbackThreads,
   readStateDbFallback,
 } = threadVisibilityService;
+const runtimePressureDiagnostics = createRuntimePressureDiagnosticsService();
+runtimePressureDiagnostics.enable();
 const mediaStaticRuntimeService = createMediaStaticRuntimeService({
   env: process.env,
   path,
@@ -956,6 +959,7 @@ const threadListStateService = createThreadListStateService({
   threadTaskCardService,
   threadGoalService,
   upsertThreadListFallbackCacheThread,
+  upsertThreadListFallbackCacheThreadsBulk,
   readGlobalState,
   visibleWorkspaceRoots,
   visibilityFromGlobalState,
@@ -1800,6 +1804,7 @@ function staleContextOnlyActiveStatus(...args) { return callThreadListServerBoun
 function clearThreadListFallbackCache(...args) { return callThreadListServerBoundary("clearThreadListFallbackCache", args); }
 function removeThreadFromThreadListFallbackCache(...args) { return callThreadListServerBoundary("removeThreadFromThreadListFallbackCache", args); }
 function upsertThreadListFallbackCacheThread(...args) { return callThreadListServerBoundary("upsertThreadListFallbackCacheThread", args); }
+function upsertThreadListFallbackCacheThreadsBulk(...args) { return callThreadListServerBoundary("upsertThreadListFallbackCacheThreadsBulk", args); }
 function updateThreadListFallbackCacheStatus(...args) { return callThreadListServerBoundary("updateThreadListFallbackCacheStatus", args); }
 function applyThreadStatusPayloadToThreadListFallbackCache(...args) { return callThreadListServerBoundary("applyThreadStatusPayloadToThreadListFallbackCache", args); }
 function trackThreadDetailRequestLifecycle(...args) { return callThreadListServerBoundary("trackThreadDetailRequestLifecycle", args); }
@@ -1916,10 +1921,12 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   refreshPublicReleaseStatus,
   rolloutWarningBytes: ROLLOUT_WARNING_BYTES,
   rolloutStatsForPath,
+  runtimePressureDiagnostics,
   runThreadGoalAction,
   safeAppUpdateError,
   atLoopRouteService,
   scheduleActiveWindowPrewarmFromThreadListResult,
+  scheduleBackgroundTask: (fn) => setImmediate(fn),
   scheduleAppRestart,
   sendJson,
   serveStatic,

@@ -72,6 +72,32 @@ test("thread-list state service upserts rows from result data and alternate thre
   assert.deepEqual(upserted.map((entry) => entry.options.addIfMissing), [true, true, true]);
 });
 
+test("thread-list state service uses bulk fallback cache upsert when available", () => {
+  const singleUpserts = [];
+  const bulkCalls = [];
+  const service = createThreadListStateService({
+    upsertThreadListFallbackCacheThread: (thread) => {
+      singleUpserts.push(thread && thread.id);
+      return true;
+    },
+    upsertThreadListFallbackCacheThreadsBulk: (threads, options) => {
+      bulkCalls.push({ ids: threads.map((thread) => thread && thread.id), options });
+      return threads.length;
+    },
+  });
+
+  assert.equal(service.upsertThreadListFallbackCacheThreads([
+    { id: "a" },
+    { id: "b" },
+    { id: "c" },
+  ], { addIfMissing: true }), 3);
+  assert.deepEqual(singleUpserts, []);
+  assert.deepEqual(bulkCalls, [{
+    ids: ["a", "b", "c"],
+    options: { addIfMissing: true },
+  }]);
+});
+
 test("thread-list state service hides inactive same-label empty workspace duplicates", async () => {
   const newMusic = "/Users/hermes-dev/HermesMobileDev/plugins/music";
   const oldMusic = "/Users/xuxin/Documents/Music";

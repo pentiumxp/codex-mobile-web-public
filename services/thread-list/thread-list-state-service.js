@@ -31,6 +31,9 @@ function createThreadListStateService(dependencies = {}) {
   const upsertThreadListFallbackCacheThread = typeof dependencies.upsertThreadListFallbackCacheThread === "function"
     ? dependencies.upsertThreadListFallbackCacheThread
     : () => false;
+  const upsertThreadListFallbackCacheThreadsBulk = typeof dependencies.upsertThreadListFallbackCacheThreadsBulk === "function"
+    ? dependencies.upsertThreadListFallbackCacheThreadsBulk
+    : null;
   const readGlobalState = typeof dependencies.readGlobalState === "function" ? dependencies.readGlobalState : () => ({});
   const visibleWorkspaceRoots = typeof dependencies.visibleWorkspaceRoots === "function"
     ? dependencies.visibleWorkspaceRoots
@@ -63,6 +66,9 @@ function createThreadListStateService(dependencies = {}) {
     const rows = Array.isArray(resultOrThreads)
       ? resultOrThreads
       : threadListRowsFromResult(resultOrThreads);
+    if (upsertThreadListFallbackCacheThreadsBulk) {
+      return upsertThreadListFallbackCacheThreadsBulk(rows, options);
+    }
     let changed = 0;
     for (const thread of rows) {
       if (upsertThreadListFallbackCacheThread(thread, options)) changed += 1;

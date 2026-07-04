@@ -20,6 +20,7 @@ test("core public config route uses injected runtime dependencies", async () => 
   let loadedRecentRateLimits = false;
   let syncedMcpToolsets = false;
   let sent = null;
+  const scheduled = [];
   const service = createCoreApiRouteService({
     appRoot: "/workspace",
     appUpdateBranch: "main",
@@ -79,6 +80,9 @@ test("core public config route uses injected runtime dependencies", async () => 
     syncKnownCodexMobileMcpToolsets: () => {
       syncedMcpToolsets = true;
     },
+    scheduleBackgroundTask: (fn) => {
+      scheduled.push(fn);
+    },
     threadListFallbackPrewarmPublicStatus: () => ({ pending: false }),
     workspaceDelegationPublicSettings: () => ({ enabled: true }),
     workspaceRegistryService: {
@@ -99,6 +103,10 @@ test("core public config route uses injected runtime dependencies", async () => 
   });
 
   assert.deepEqual(handled, { handled: true });
+  assert.equal(refreshedRateLimits, false);
+  assert.equal(loadedRecentRateLimits, false);
+  assert.equal(scheduled.length, 1);
+  await scheduled[0]();
   assert.equal(refreshedRateLimits, true);
   assert.equal(loadedRecentRateLimits, true);
   assert.equal(syncedMcpToolsets, true);
@@ -110,6 +118,61 @@ test("core public config route uses injected runtime dependencies", async () => 
   assert.equal(sent.body.defaultModel, "gpt-test");
   assert.equal(sent.body.workspaceDelegation.enabled, true);
   assert.equal(sent.body.threadListFallbackPrewarm.pending, false);
+});
+
+test("core status route exposes runtime pressure without blocking on quota hydration", async () => {
+  let ensured = false;
+  let refreshedRateLimits = false;
+  let loadedRecentRateLimits = false;
+  let sent = null;
+  const scheduled = [];
+  const service = createCoreApiRouteService({
+    codex: {
+      ensure: async () => {
+        ensured = true;
+      },
+      refreshRateLimitsIfMissing: async () => {
+        refreshedRateLimits = true;
+      },
+      status: () => ({ ready: true, issueCodes: [] }),
+    },
+    loadRecentRateLimitsFromRollouts: () => {
+      loadedRecentRateLimits = true;
+    },
+    runtimePressureDiagnostics: {
+      status: () => ({
+        eventLoop: { lagP95Ms: 7, utilization: 0.25 },
+        routes: { recent: [{ path: "/api/status", elapsedMs: 11 }] },
+      }),
+    },
+    scheduleBackgroundTask: (fn) => {
+      scheduled.push(fn);
+    },
+  });
+
+  const handled = await service.handleAuthorizedRoute({
+    url: new URL("http://127.0.0.1:8787/api/status?detail=1"),
+    req: { method: "GET", headers: {} },
+    res: {},
+    readBody: async () => ({}),
+    sendJson: (status, body) => {
+      sent = { status, body };
+    },
+  });
+
+  assert.deepEqual(handled, { handled: true });
+  assert.equal(ensured, true);
+  assert.equal(refreshedRateLimits, false);
+  assert.equal(loadedRecentRateLimits, false);
+  assert.equal(scheduled.length, 1);
+  assert.equal(sent.status, 200);
+  assert.equal(sent.body.ready, true);
+  assert.equal(sent.body.runtimePressure.eventLoop.lagP95Ms, 7);
+  assert.equal(sent.body.runtimePressure.routes.recent[0].path, "/api/status");
+
+  await scheduled[0]();
+  assert.equal(refreshedRateLimits, true);
+  assert.equal(loadedRecentRateLimits, true);
 });
 
 test("core Hermes plugin manifest route forwards runtime build identity", async () => {

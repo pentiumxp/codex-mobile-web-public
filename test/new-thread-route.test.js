@@ -287,8 +287,9 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(codexAppServerClientServiceJs, /mobileOwnedMux:\s*this\.muxChild \? \{[\s\S]*pid:[\s\S]*running:/, "status should expose bounded Mobile-owned mux runtime evidence");
   assert.match(serverJs, /if \(!PERSIST_MOBILE_OWNED_MUX && codex\.muxChild && codex\.muxChild\.exitCode === null\) codex\.muxChild\.kill\(\)/, "server shutdown should preserve persistent owned mux children");
   assert.match(rateLimitRuntimeServiceJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
-  assert.match(coreApiRouteServiceJs, /\/api\/public-config"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should refresh and include active quota");
-  assert.match(coreApiRouteServiceJs, /\/api\/status"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*const status = codex\.status\(\);[\s\S]*sendJson\(200, status\)/, "status should refresh and include hydrated quota snapshots");
+  assert.match(coreApiRouteServiceJs, /function scheduleQuotaHydration\(\)[\s\S]*codex\.refreshRateLimitsIfMissing\(\)[\s\S]*loadRecentRateLimitsFromRollouts\(\)/, "quota hydration should stay in a bounded background helper");
+  assert.match(coreApiRouteServiceJs, /\/api\/public-config"[\s\S]*scheduleQuotaHydration\(\);[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should schedule quota hydration and include the current active quota snapshot");
+  assert.match(coreApiRouteServiceJs, /\/api\/status"[\s\S]*scheduleQuotaHydration\(\);[\s\S]*const status = codex\.status\(\);[\s\S]*sendJson\(200, status\)/, "status should schedule quota hydration without blocking the health read");
 });
 
 test("server runtime inheritance includes model and reasoning effort", () => {

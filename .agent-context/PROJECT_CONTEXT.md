@@ -1,5 +1,67 @@
 # PROJECT_CONTEXT
 
+Last compacted: 2026-07-04T08:32:24.763Z
+
+This live project context was automatically compacted before a Codex Mobile continuation.
+The full previous context was archived and should be read only when this routing index is insufficient.
+
+## Compaction Summary
+
+- Workspace: `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`
+- Original project context bytes: `17913`
+- Archived full project context: `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web/.agent-context/archive/context-compaction-20260704_083224/PROJECT_CONTEXT.full-before-context-budget.md`
+- Preserved live excerpt chars: `17912`
+
+## Source Of Truth
+
+1. Current repository files and runtime checks.
+2. Latest source-thread handoff under `.agent-context/thread-handoffs/` for explicit continuation threads.
+3. This compact `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md`.
+4. Focused docs under `docs/`.
+5. Archived full context only when old provenance is explicitly needed.
+
+## Startup Guidance
+
+- Read `.agent-context/HANDOFF.md` after this file.
+- Read `docs/README.md`, then the smallest relevant focused doc.
+- Keep raw secrets, tokens, one-time approvals, upload contents, full rollout logs, and `.codex` runtime state out of shared context and Git.
+- Do not load the archived full project context by default. Load it only when the user asks about older provenance, a missing rule, or a historical decision not present in live docs.
+
+## Preserved Project Context Excerpt
+
+# PROJECT_CONTEXT
+
+Last compacted: 2026-06-30T03:44:00.549Z
+
+This live project context was automatically compacted before a Codex Mobile continuation.
+The full previous context was archived and should be read only when this routing index is insufficient.
+
+## Compaction Summary
+
+- Workspace: `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`
+- Original project context bytes: `15066`
+- Archived full project context: `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web/.agent-context/archive/context-compaction-20260630_034400/PROJECT_CONTEXT.full-before-context-budget.md`
+- Preserved live excerpt chars: `15065`
+
+## Source Of Truth
+
+1. Current repository files and runtime checks.
+2. Latest source-thread handoff under `.agent-context/thread-handoffs/` for explicit continuation threads.
+3. This compact `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md`.
+4. Focused docs under `docs/`.
+5. Archived full context only when old provenance is explicitly needed.
+
+## Startup Guidance
+
+- Read `.agent-context/HANDOFF.md` after this file.
+- Read `docs/README.md`, then the smallest relevant focused doc.
+- Keep raw secrets, tokens, one-time approvals, upload contents, full rollout logs, and `.codex` runtime state out of shared context and Git.
+- Do not load the archived full project context by default. Load it only when the user asks about older provenance, a missing rule, or a historical decision not present in live docs.
+
+## Preserved Project Context Excerpt
+
+# PROJECT_CONTEXT
+
 Last compacted: 2026-06-22T08:21:02.101Z
 
 This live project context was automatically compacted before a Codex Mobile continuation.
@@ -32,6 +94,12 @@ The full previous context was archived and should be read only when this routing
 - Future release flow: implement and validate in the local/private workspace, then deploy to Mac production first. Push or sync the public repository only after production/user testing is confirmed.
 - Before production/user validation, at most create a local/private commit. Do not push public preemptively.
 - If a public push already happened before this rule was recorded, document that fact in `.agent-context/HANDOFF.md` and follow this rule going forward.
+- For Codex Mobile Web deploys that touch static client, split frontend
+  runtimes, or large architecture boundaries, API/listener `200` is not enough
+  for release closure. Run the read-only startup gate after deploy:
+  `node scripts/codex-mobile-runtime-self-check-loop.js --server http://127.0.0.1:8787 --gate-mode deploy --browser-mode full --browser-startup-only --skip-api --skip-client-events --json`.
+  It must prove the listener, static shell, split runtime assets, and real
+  browser startup path are healthy before calling the deploy complete.
 
 ## Codex Mobile Reliability Rule
 
@@ -170,6 +238,20 @@ This workspace owns the standalone Codex Mobile Web app.
 - Prefer the reversible `start-codex-desktop-shared.ps1` launcher over persistent system environment changes for Desktop/Web live sync.
 - Keep `.codex` state read-only except through app-server RPCs.
 - Keep raw access keys out of Git and out of `.agent-context`.
+
+## Vite App-Preview Migration Boundary
+
+- Do not treat app-preview zero classic loader as a valid target until the large
+  classic runtime files have explicit module contracts.
+- Current classic runtime files still share script-global lexical state. Loading
+  them as Vite modules can isolate state into module scope and break cross-file
+  initialization, including thread-detail startup.
+- The safe migration path is to exclude only proven independent ESM-owned
+  modules from the app-preview classic loader and keep the remaining classic
+  scripts in original manifest order.
+- As of the 2026-07-02 dev validation, the stable app-preview ESM exclusion set
+  was 13 modules; `app-bootstrap.js` must still run through the classic loader
+  even if it remains visible in the Vite build graph.
 ## HANES Context Loading
 
 - Use .agent-context/HANES_CONTEXT_LOADING.md for cross-workspace context loading discipline. Keep startup context short; load detailed skills, docs, handoffs, archives, and harness matrices only when the current task crosses that risk boundary.
