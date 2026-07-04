@@ -750,3 +750,54 @@ The previous full handoff was archived and should be opened only when old proven
   thread bodies, task-card bodies, endpoint bodies, provider payloads,
   screenshots, DB rows, raw auth URLs, password paths, or long logs were
   exposed.
+
+## 2026-07-04T22:55:00+08:00 - Home AI large-thread detail fluctuation diagnosed; rollout enrichment cache fix sent to deploy lane
+
+- User reported that the large Home AI thread sometimes opens slowly, whereas
+  it previously felt consistently fast with cache. User also noted the
+  fluctuation could be CPU pressure rather than cache miss.
+- Production readback before the fix:
+  - repeated reads of Home AI 06-22 (`019eed86-2002-7cc2-b0b7-937eb5355f36`)
+    showed projection hits, not repeated full `thread/read` misses;
+  - observed modes included `projection-active-overlay` and
+    `projection-v4-dynamic`, with `threadReadMs=0`;
+  - rollout size was about `589MB`;
+  - first read after cold enrichment state could show `prepareResponseMs`
+    hundreds of ms, followed by same-stat reads in tens of ms;
+  - listener `server.js` could spike to high CPU while app-server CPU stayed
+    low, pointing at listener-side response preparation / JSONL enrichment
+    work rather than app-server queueing.
+- Local source commit `c68243f0`
+  (`fix: cache rollout enrichment detail parsing`) was created:
+  - `adapters/rollout-detail-enrichment-service.js` now keeps a small
+    process-local parsed enrichment entries cache, reuses it only when rollout
+    `size` and `mtime` match, and parses only appended bytes when an active
+    rollout grows within the bounded enrichment window;
+  - parsed-entry cache is capped separately at a small limit to avoid turning
+    the fix into a heap pressure source;
+  - detail response preparation now records subphase timings for completion
+    backfill, usage summaries, user-input anchors, active-assistant
+    enrichment, projection finalize, task-card attach, and response budget;
+  - diagnostics expose those subphase timings in
+    `mobileDiagnostics.threadDetailTimings`.
+- Validation passed:
+  `node --test test/turn-usage-summary-service.test.js
+  test/thread-detail-runtime-service.test.js` (`15` tests), `npm run check`,
+  and `git diff --check`.
+- Home AI returned terminal receipt `ttc_4fd2eb35d4e47d8d52` stating the prior
+  deploy-lane bootstrap completed: production deployed `54f73f5d`, with
+  `09d9b9bd` as an ancestor, and a pending-only smoke proved routine
+  `plugin_deployment` cards to `Codex Mobile Deploy Lane` no longer fail with
+  `deploy_lane_missing`. Per receipt policy, no acknowledgement return was
+  sent.
+- Created deployment card `ttc_228aeb19b95bce23c5` to `Codex Mobile Deploy
+  Lane` (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`) requesting deployment of
+  `c68243f0` and bounded readback of Home AI large-thread detail timings plus
+  runtime pressure.
+- User noted a future logging strategy cleanup: normal operation should avoid
+  writing most logs, with debug logging enabled by an explicit flag. This is
+  recorded as a follow-up direction, not part of the current performance fix.
+- Privacy boundary respected: no raw secrets, access keys, cookies, launch
+  tokens, private thread bodies, task-card bodies, endpoint bodies, provider
+  payloads, screenshots, DB rows, raw auth URLs, password paths, full rollout
+  contents, full prompts, or long logs were exposed.
