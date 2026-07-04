@@ -101,7 +101,8 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(taskCardRuntimeCompositionServiceJs, /require\("\.\/thread-task-card-service"\)/);
   assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-task-card-service"\)/);
   assert.match(taskCardRuntimeCompositionServiceJs, /createHomeAiAutonomousDeliveryReturnService/);
-  assert.match(taskCardRuntimeCompositionServiceJs, /onTerminalReturnCard: async \(event\) => homeAiAutonomousDeliveryReturnService\.send\(event, \{ workspaceId: "owner" \}\)/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /recordAtLoopTerminalReturn\(event\)/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /homeAiAutonomousDeliveryReturnService\.send\(event, \{ workspaceId: "owner" \}\)/);
   assert.doesNotMatch(serverJs, /createThreadTaskCardIntentService/);
   assert.match(serverJs, /THREAD_TASK_CARD_FILE/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_TASK_CARD_FILE/);

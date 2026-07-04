@@ -15,6 +15,7 @@ test("thread task-card runtime adapter re-exports canonical composition service"
 
 test("thread task-card runtime composition wires return hook, policy, route, and approval execution", async () => {
   const homeAiEvents = [];
+  const atLoopReturns = [];
   const codexRequests = [];
   let serviceOptions = null;
   let atLoopOptions = null;
@@ -49,7 +50,13 @@ test("thread task-card runtime composition wires return hook, policy, route, and
     }),
     atLoopRuntimeServiceFactory: (options) => {
       atLoopOptions = options;
-      return { kind: "at-loop-service" };
+      return {
+        kind: "at-loop-service",
+        recordTerminalReturn: async (input) => {
+          atLoopReturns.push(input);
+          return { ok: true, loop: { loopId: input.loopId } };
+        },
+      };
     },
     atLoopRouteServiceFactory: (options) => ({ kind: "at-loop-route", atLoopRuntimeService: options.atLoopRuntimeService }),
     codex: {
@@ -73,6 +80,17 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   });
 
   await serviceOptions.onTerminalReturnCard({ id: "return-1" });
+  await serviceOptions.onTerminalReturnCard({
+    taskCardId: "ttc_loop_role",
+    returnCardId: "ttc_loop_return",
+    status: "completed",
+    summary: "implementation completed",
+    metadata: {
+      workflowId: "at-loop:loop_abc123",
+      sourceThreadId: "source-thread",
+      targetThreadId: "target-thread",
+    },
+  });
   const result = await serviceOptions.executeApprovedCard({
     target: { threadId: "target-thread" },
     delivery: { reasoningEffort: "high" },
@@ -87,7 +105,28 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   assert.equal(typeof atLoopOptions.resolveThreadTaskCardTargetReference, "function");
   assert.deepEqual(homeAiEvents, [
     { event: { id: "return-1" }, options: { workspaceId: "owner" } },
+    {
+      event: {
+        taskCardId: "ttc_loop_role",
+        returnCardId: "ttc_loop_return",
+        status: "completed",
+        summary: "implementation completed",
+        metadata: {
+          workflowId: "at-loop:loop_abc123",
+          sourceThreadId: "source-thread",
+          targetThreadId: "target-thread",
+        },
+      },
+      options: { workspaceId: "owner" },
+    },
   ]);
+  assert.deepEqual(atLoopReturns, [{
+    loopId: "loop_abc123",
+    taskCardId: "ttc_loop_role",
+    returnCardId: "ttc_loop_return",
+    status: "completed",
+    summary: "implementation completed",
+  }]);
   assert.equal(result.threadId, "target-thread");
   assert.equal(result.turnId, "turn-1");
   assert.equal(result.runtime.reasoningEffort, "high");
@@ -112,4 +151,46 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   assert.equal(codexRequests[2].method, "thread/start");
   assert.equal(codexRequests[2].params.cwd, "/repo/plugin");
   assert.equal(codexRequests[2].params.developerInstructions, "AGENTS");
+});
+
+test("thread task-card runtime fails at-loop terminal return before external notification when local correlation fails", async () => {
+  const homeAiEvents = [];
+  let serviceOptions = null;
+  createThreadTaskCardRuntimeService({
+    homeAiAutonomousDeliveryReturnServiceFactory: () => ({
+      send: async (event, options) => homeAiEvents.push({ event, options }),
+    }),
+    taskCardRuntimePolicyServiceFactory: () => ({
+      applyCodexFastServiceTier: (params) => params,
+      applyResumeRuntimeSettings: (params) => params,
+      applyStartThreadRuntimeSettings: (params) => params,
+      applyTurnRuntimeSettings: (params) => params,
+      requestedCodexFastMode: () => "",
+      workspaceSourceWriteGuardDecisionForRequest: () => ({ ok: true }),
+      workspaceSourceWriteGuardLogPayload: () => ({ ok: true }),
+    }),
+    threadTaskCardServiceFactory: (options) => {
+      serviceOptions = options;
+      return { kind: "task-card-service" };
+    },
+    threadTaskCardRouteServiceFactory: () => ({
+      attachWorkspaceDelegationRuntimeGuidance: (value) => value,
+      assertThreadTaskCardTargetDeliverable: () => "target-thread",
+      resolveThreadTaskCardTargetReference: (threadId) => threadId,
+      readThreadTaskCardExecutionTargetSummary: () => null,
+    }),
+    atLoopRuntimeServiceFactory: () => ({
+      recordTerminalReturn: async () => ({ ok: false, error: "at_loop_return_slice_not_found" }),
+    }),
+    atLoopRouteServiceFactory: (options) => ({ atLoopRuntimeService: options.atLoopRuntimeService }),
+  });
+
+  await assert.rejects(() => serviceOptions.onTerminalReturnCard({
+    taskCardId: "ttc_loop_role",
+    returnCardId: "ttc_loop_return",
+    status: "blocked",
+    summary: "blocked",
+    metadata: { workflowId: "at-loop:loop_missing" },
+  }), /at_loop_return_slice_not_found/);
+  assert.deepEqual(homeAiEvents, []);
 });

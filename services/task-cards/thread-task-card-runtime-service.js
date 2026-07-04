@@ -44,6 +44,36 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
 
   let attachWorkspaceDelegationRuntimeGuidance = () => null;
   let readThreadTaskCardExecutionTargetSummary = () => null;
+  let atLoopRuntimeService = null;
+
+  function atLoopLoopIdFromTerminalReturnEvent(event = {}) {
+    const metadata = event && typeof event.metadata === "object" ? event.metadata : {};
+    const workflowId = String(metadata.workflowId || "").trim();
+    return workflowId.startsWith("at-loop:") ? workflowId.slice("at-loop:".length).trim() : "";
+  }
+
+  async function recordAtLoopTerminalReturn(event = {}) {
+    const loopId = atLoopLoopIdFromTerminalReturnEvent(event);
+    if (!loopId) return null;
+    if (!atLoopRuntimeService || typeof atLoopRuntimeService.recordTerminalReturn !== "function") {
+      const err = new Error("at_loop_runtime_unavailable_for_terminal_return");
+      err.statusCode = 503;
+      throw err;
+    }
+    const result = await atLoopRuntimeService.recordTerminalReturn({
+      loopId,
+      taskCardId: event.taskCardId,
+      returnCardId: event.returnCardId,
+      status: event.status,
+      summary: event.summary,
+    });
+    if (result && result.ok === false) {
+      const err = new Error(result.error || "at_loop_terminal_return_correlation_failed");
+      err.statusCode = 409;
+      throw err;
+    }
+    return result || null;
+  }
 
   const taskCardRuntimePolicyService = taskCardRuntimePolicyServiceFactory({
     fs: dependencies.fs,
@@ -87,7 +117,10 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
   const threadTaskCardService = threadTaskCardServiceFactory({
     storageFile: dependencies.threadTaskCardFile,
     returnThreadTaskCardScriptPath: dependencies.returnThreadTaskCardScriptPath,
-    onTerminalReturnCard: async (event) => homeAiAutonomousDeliveryReturnService.send(event, { workspaceId: "owner" }),
+    onTerminalReturnCard: async (event) => {
+      await recordAtLoopTerminalReturn(event);
+      return homeAiAutonomousDeliveryReturnService.send(event, { workspaceId: "owner" });
+    },
     executeApprovedCard: async (card, message) => {
       const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
       const inheritedRuntimeSettings = await dependencies.resolveThreadRuntimeSettings(card.target.threadId);
@@ -229,7 +262,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     return thread;
   }
 
-  const atLoopRuntimeService = atLoopRuntimeServiceFactory({
+  atLoopRuntimeService = atLoopRuntimeServiceFactory({
     fs: dependencies.fs,
     path: dependencies.path,
     storageFile: dependencies.atLoopStateFile,

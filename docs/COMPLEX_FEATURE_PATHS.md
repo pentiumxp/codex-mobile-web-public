@@ -625,6 +625,8 @@ Implementation path:
    - `services/at-loop/at-loop-trigger-parser-service.js`
    - `services/at-loop/thread-task-card-loop-routing-service.js`
    - `services/at-loop/loop-task-runtime-service.js`
+   - `services/task-cards/thread-task-card-runtime-service.js` for bridging
+     task-card terminal return events into the local Loop runtime
    - `server-routes/at-loop-route-service.js`
    - `POST /api/at-loop/triggers`
    - `GET /api/at-loop/status` and `GET /api/at-loop/status/:loopId`
@@ -661,7 +663,12 @@ Implementation path:
    role threads, not unrelated worker-lane threads.
 7. Terminal return correlation must match by task-card id first, then role
    slice id / loop id. Local final prose in a target thread is not a terminal
-   return.
+   return. Task-card terminal return events whose workflow id is
+   `at-loop:<loopId>` must be recorded through
+   `atLoopRuntimeService.recordTerminalReturn()` from the task-card runtime
+   composition layer before or alongside any external Home AI return-event
+   notification, so implementation/audit/repair returns advance the local Loop
+   state without a manual `/api/at-loop/returns` call.
 8. Watchdog marks stale/missing role returns only. It must not retry, complete,
    reject, or redispatch role work by itself.
 9. Audit verdict classes route the next iteration: `passed` closes or proceeds
