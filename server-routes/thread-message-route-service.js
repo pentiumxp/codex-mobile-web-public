@@ -7,6 +7,13 @@ const {
   publicSensitiveContext,
 } = require("../services/runtime/home-ai-secret-ref-service");
 
+function markSubmitTiming(timings, name, startedAtMs) {
+  if (!timings || !name) return 0;
+  const elapsed = Math.max(0, Date.now() - Number(startedAtMs || Date.now()));
+  timings[name] = elapsed;
+  return elapsed;
+}
+
 function createThreadMessageRouteService(dependencies = {}) {
   const {
     codex,
@@ -214,8 +221,13 @@ function createThreadMessageRouteService(dependencies = {}) {
 
     const messages = url.pathname.match(/^\/api\/threads\/([^/]+)\/messages$/);
     if (messages && method === "POST") {
+      const routeStartedAtMs = Date.now();
+      const timings = {};
       const threadId = decodeURIComponent(messages[1]);
+      const bodyReadStartedAtMs = Date.now();
       const { fields: body, uploads } = await readMessage(threadId);
+      markSubmitTiming(timings, "bodyReadMs", bodyReadStartedAtMs);
+      const inputStartedAtMs = Date.now();
       const text = String(body.text || "").trim();
       const secretContext = normalizeSecretRefsFromInput(body, {
         source: "message",
@@ -226,11 +238,14 @@ function createThreadMessageRouteService(dependencies = {}) {
       const textForInput = appendSecretRefReceiptText(text, secretContext).trim();
       const input = buildTurnInput(textForInput, uploads);
       const persistExtendedHistory = persistExtendedHistoryForUploads(uploads);
+      markSubmitTiming(timings, "inputBuildMs", inputStartedAtMs);
       if (!input.length) {
+        timings.totalMs = Math.max(0, Date.now() - routeStartedAtMs);
         logMessageSubmit("empty", {
           threadId,
           clientSubmissionId: body.clientSubmissionId,
           uploads: uploads.length,
+          timings,
         });
         sendJson(400, { error: "Message text or attachment is required" });
         return { handled: true };
@@ -242,8 +257,9 @@ function createThreadMessageRouteService(dependencies = {}) {
         activeTurnId: body.activeTurnId || "",
         clientSubmissionId: body.clientSubmissionId,
       });
+      const submissionKeyStartedAtMs = Date.now();
       const submissionKeys = messageSubmissionKeys(threadId, body, textForInput, uploads);
-      const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), body.permissionMode, body.cwd || null);
+      markSubmitTiming(timings, "submissionKeyMs", submissionKeyStartedAtMs);
       const requestedModel = modelOptions.includes(String(body.model || "").trim())
         ? String(body.model || "").trim()
         : "";
@@ -253,10 +269,16 @@ function createThreadMessageRouteService(dependencies = {}) {
       const requestedFastMode = requestedCodexFastMode(body.fastMode);
       let result;
       try {
+        const dedupeStartedAtMs = Date.now();
         result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
+          const runtimeStartedAtMs = Date.now();
+          const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), body.permissionMode, body.cwd || null);
+          markSubmitTiming(timings, "runtimeSettingsMs", runtimeStartedAtMs);
           let skipTurnSteer = false;
           if (body.activeTurnId) {
+            const preflightStartedAtMs = Date.now();
             const stalePreflight = await staleActiveTurnPreflight(codex, threadId, String(body.activeTurnId));
+            markSubmitTiming(timings, "stalePreflightMs", preflightStartedAtMs);
             if (stalePreflight.stale) {
               skipTurnSteer = true;
               logMessageSubmit("active-turn-stale-preflight", {
@@ -266,13 +288,17 @@ function createThreadMessageRouteService(dependencies = {}) {
                 reason: stalePreflight.reason,
                 quietMs: stalePreflight.quietMs,
               });
+              let interruptStartedAtMs = Date.now();
               try {
                 await codex.request("turn/interrupt", {
                   threadId,
                   turnId: String(body.activeTurnId),
                 }, { timeoutMs: 20000, retry: false });
+                markSubmitTiming(timings, "interruptMs", interruptStartedAtMs);
                 await new Promise((resolve) => setTimeout(resolve, 250));
+                timings.interruptSettleMs = 250;
               } catch (err) {
+                markSubmitTiming(timings, "interruptMs", interruptStartedAtMs);
                 logMessageSubmit("active-turn-stale-interrupt-failed", {
                   threadId,
                   turnId: String(body.activeTurnId),
@@ -284,6 +310,7 @@ function createThreadMessageRouteService(dependencies = {}) {
           }
           if (body.activeTurnId && !skipTurnSteer) {
             let pendingSteerEchoKey = "";
+            let steerStartedAtMs = Date.now();
             try {
               pendingSteerEchoKey = pendingSteerEchoStore.remember({
                 threadId,
@@ -291,11 +318,13 @@ function createThreadMessageRouteService(dependencies = {}) {
                 input,
                 clientSubmissionId: body.clientSubmissionId,
               });
+              steerStartedAtMs = Date.now();
               const steerResult = await codex.request("turn/steer", {
                 threadId,
                 input,
                 expectedTurnId: String(body.activeTurnId),
               }, { timeoutMs: mutationRpcTimeoutMs, retry: false });
+              markSubmitTiming(timings, "steerMs", steerStartedAtMs);
               codex.notifyMuxUserMessage({
                 threadId,
                 turnId: String(body.activeTurnId),
@@ -304,6 +333,7 @@ function createThreadMessageRouteService(dependencies = {}) {
               });
               return steerResult;
             } catch (err) {
+              if (timings.steerMs === undefined) markSubmitTiming(timings, "steerMs", steerStartedAtMs);
               if (isTurnSteerUnsupportedError(err)) {
                 codex.notifyMuxUserMessage({
                   threadId,
@@ -323,14 +353,18 @@ function createThreadMessageRouteService(dependencies = {}) {
               });
             }
           }
+          let resumeStartedAtMs = Date.now();
           try {
             await codex.request("thread/resume", applyResumeRuntimeSettings({
               threadId,
               cwd: body.cwd || null,
               persistExtendedHistory,
             }, runtimeSettings), { timeoutMs: mutationRpcTimeoutMs, retry: false });
+            markSubmitTiming(timings, "resumeMs", resumeStartedAtMs);
           } catch (err) {
+            markSubmitTiming(timings, "resumeMs", resumeStartedAtMs);
             if (!/already|loaded|active/i.test(err.message || "")) throw err;
+            timings.resumeAlreadyLoaded = true;
           }
           const params = applyCodexFastServiceTier(applyTurnRuntimeSettings({
             threadId,
@@ -339,20 +373,29 @@ function createThreadMessageRouteService(dependencies = {}) {
           if (body.cwd) params.cwd = body.cwd;
           if (requestedModel) params.model = requestedModel;
           if (requestedEffort) params.effort = requestedEffort;
+          const turnStartStartedAtMs = Date.now();
           const turnResult = await codex.request("turn/start", params, { timeoutMs: mutationRpcTimeoutMs, retry: false });
+          markSubmitTiming(timings, "turnStartMs", turnStartStartedAtMs);
+          const notifyStartedAtMs = Date.now();
           rememberThreadIdForTurnId(threadId, notifyLocalTurnStarted(threadId, turnResult, { source: "message-submit" }));
+          markSubmitTiming(timings, "notifyMs", notifyStartedAtMs);
           return turnResult;
         });
+        markSubmitTiming(timings, "dedupeWaitMs", dedupeStartedAtMs);
+        timings.totalMs = Math.max(0, Date.now() - routeStartedAtMs);
         logMessageSubmit("done", {
           threadId,
           clientSubmissionId: body.clientSubmissionId,
           resultTurnId: result && (result.turnId || result.id || result.turn && result.turn.id || ""),
+          timings,
         });
       } catch (err) {
+        timings.totalMs = Math.max(0, Date.now() - routeStartedAtMs);
         logMessageSubmit("failed", {
           threadId,
           clientSubmissionId: body.clientSubmissionId,
           error: err.message || String(err),
+          timings,
         });
         if (isCodexAccountAuthError(err)) {
           sendJson(409, codexAccountAuthErrorPayload(err));

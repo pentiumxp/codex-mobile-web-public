@@ -600,3 +600,32 @@ The previous full handoff was archived and should be opened only when old proven
   from app-server/fallback rows on every search request. The primary default
   thread-list path is back under `100ms`; search refresh can be optimized
   separately if it becomes user-visible.
+
+## 2026-07-04T22:30:00+08:00 - Message-submit hot-path timing and dedupe guard
+
+- User-provided production evidence narrowed the remaining send-message
+  latency to the Codex Mobile listener `POST /api/threads/:threadId/messages`
+  path, with listener event-loop lag and CPU/heap pressure while mux pending
+  was `0` and app-server pressure was low.
+- Root-cause hypothesis: the route performed synchronous/heavy listener-side
+  work before or around the mutation RPCs, especially runtime settings
+  resolution before the submission dedupe boundary, making duplicate submits
+  repeat thread-runtime resolution and leaving no phase evidence for the slow
+  path.
+- Source change in `server-routes/thread-message-route-service.js`:
+  message-submit now records bounded phase timings for body read, input build,
+  submission key, runtime settings, stale preflight, interrupt, steer, resume,
+  turn start, local notify, dedupe wait, and total route time in the existing
+  `[message-submit]` runtime log. `resolveThreadRuntimeSettings()` is now
+  executed inside the `runMessageSubmissionOnce()` leader callback so reused
+  duplicate submissions do not repeat runtime settings resolution.
+- Regression tests added in `test/thread-message-secret-ref-route.test.js`
+  prove duplicate-submission reuse does not resolve runtime settings again and
+  normal sends emit bounded timing fields.
+- Validation passed:
+  `node --test test/thread-message-secret-ref-route.test.js
+  test/new-thread-route.test.js test/server-http-runtime-service.test.js`
+  (`38` tests), plus `npm run check`.
+- Not deployed yet. No raw secrets, access keys, cookies, endpoint bodies,
+  private thread bodies, provider payloads, DB rows, screenshots, raw auth
+  URLs, or long logs were exposed.

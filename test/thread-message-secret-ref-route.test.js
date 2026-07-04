@@ -109,3 +109,77 @@ test("thread message route accepts secretRef attachment metadata without treatin
   assert.doesNotMatch(turnStart.params.input[0].text, /sec_attach1234567890/);
   assert.equal(response.body.sensitiveContext.secretRefs[0].id, "sec_atta...7890");
 });
+
+test("thread message route reuses duplicate submissions without resolving runtime settings again", async () => {
+  let runtimeResolveCount = 0;
+  const { route, requests } = createRouteHarness({
+    runMessageSubmissionOnce: async () => ({ turnId: "existing-turn" }),
+    resolveThreadRuntimeSettings: async () => {
+      runtimeResolveCount += 1;
+      throw new Error("runtime settings should not resolve for duplicate submission reuse");
+    },
+  });
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "repeat",
+        clientSubmissionId: "client-repeat",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.turnId, "existing-turn");
+  assert.equal(runtimeResolveCount, 0);
+  assert.deepEqual(requests, []);
+});
+
+test("thread message route logs bounded phase timings for message submission", async () => {
+  const events = [];
+  const { route, requests } = createRouteHarness({
+    logMessageSubmit: (event, details) => events.push({ event, details }),
+  });
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "hello",
+        clientSubmissionId: "client-timed",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.ok(requests.find((entry) => entry.method === "thread/resume"));
+  assert.ok(requests.find((entry) => entry.method === "turn/start"));
+  const done = events.find((entry) => entry.event === "done");
+  assert.ok(done);
+  assert.equal(done.details.threadId, "thread-1");
+  assert.equal(done.details.clientSubmissionId, "client-timed");
+  for (const key of [
+    "bodyReadMs",
+    "inputBuildMs",
+    "submissionKeyMs",
+    "runtimeSettingsMs",
+    "resumeMs",
+    "turnStartMs",
+    "notifyMs",
+    "dedupeWaitMs",
+    "totalMs",
+  ]) {
+    assert.equal(typeof done.details.timings[key], "number", `missing timing ${key}`);
+  }
+});
