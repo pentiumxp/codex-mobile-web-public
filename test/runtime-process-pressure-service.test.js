@@ -92,6 +92,60 @@ test("runtime process pressure classifies production, stale hotfix, app-server, 
   assert.doesNotMatch(JSON.stringify(result), /private\/key|Authorization|Bearer/i);
 });
 
+test("runtime process pressure uses launchd selected mux endpoint without exposing endpoint path", () => {
+  const endpointPath = "/private/profile/app-server-mux/endpoint.json";
+  const psText = [
+    "33840 1 xuxin 1.0 204800 00:10:00 Ss /runtime/node server.js",
+    "26622 1 xuxin 0.1 1310720 03:10:00 Ss /runtime/node /prod/codex-mobile-web/codex-app-server-mux.js app-server --analytics-default-enabled",
+    "26623 26622 xuxin 3.0 4194304 03:10:00 R /Users/xuxin/.local/bin/codex app-server --analytics-default-enabled",
+    "30002 26623 xuxin 0.0 51200 03:00:00 S /runtime/node scripts/codex-mobile-mcp-server.js --server http://127.0.0.1:8787 --key-file /private/key",
+  ].join("\n");
+  const lsofText = [
+    "COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME",
+    "node    33840 xuxin  20u  IPv4 0x1      0t0  TCP 127.0.0.1:8787 (LISTEN)",
+    "node    26622 xuxin  22u  IPv4 0x3      0t0  TCP 127.0.0.1:54498 (LISTEN)",
+  ].join("\n");
+  const cwdByPid = new Map([
+    ["33840", "p33840\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n"],
+    ["26622", "p26622\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n"],
+    ["26623", "p26623\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n"],
+  ]);
+
+  const result = service.collectRuntimeProcessPressure({}, {
+    execFileSync(command, args) {
+      if (command === "ps") return psText;
+      if (command === "lsof" && args.includes("-iTCP")) return lsofText;
+      if (command === "lsof" && args.includes("-p")) return cwdByPid.get(args[args.indexOf("-p") + 1]) || "";
+      if (command === "launchctl") {
+        return [
+          "system/com.hermesmobile.plugin.codex-mobile = {",
+          "\tactive count = 1",
+          "\tstate = running",
+          "\tworking directory = /Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+          "\tusername = xuxin",
+          "\tpid = 33840",
+          "\tenvironment = {",
+          `\t\tCODEX_MOBILE_MUX_ENDPOINT_FILE => ${endpointPath}`,
+          "\t}",
+          "}",
+        ].join("\n");
+      }
+      return "";
+    },
+    readFileSync(filePath) {
+      assert.equal(filePath, endpointPath);
+      return JSON.stringify({ pid: 26622, host: "127.0.0.1", port: 54498, protocol: "jsonl-tcp" });
+    },
+  });
+
+  assert.equal(result.activeAppServerMuxCount, 1);
+  assert.equal(result.activeCodexAppServerCount, 1);
+  assert.equal(result.staleAppServerMuxCount, 0);
+  assert.equal(result.staleCodexAppServerCount, 0);
+  assert.ok(result.issues.some((issue) => issue.code === "active_codex_app_server_rss_elevated"));
+  assert.doesNotMatch(JSON.stringify(result), /private\/profile|private\/key|Authorization|Bearer/i);
+});
+
 test("runtime process pressure flags production listener owner mismatch", () => {
   const psText = [
     "33840 1 xuxin 1.0 204800 00:10:00 Ss /runtime/node server.js",

@@ -113,6 +113,7 @@ function parseLaunchdServiceReadback(text = "", label = DEFAULT_LAUNCHD_LABEL) {
   const usernameMatch = source.match(/\n\s*username = ([^\n]+)/);
   const workingDirectoryMatch = source.match(/\n\s*working directory = ([^\n]+)/);
   const defaultShellModeMatch = source.match(/\n\s*CODEX_MOBILE_DEFAULT_SHELL => ([^\n]+)/);
+  const muxEndpointFileMatch = source.match(/\n\s*CODEX_MOBILE_MUX_ENDPOINT_FILE => ([^\n]+)/);
   const found = Boolean(stateMatch || activeCountMatch || pidMatch || usernameMatch || workingDirectoryMatch);
   return {
     found,
@@ -123,6 +124,21 @@ function parseLaunchdServiceReadback(text = "", label = DEFAULT_LAUNCHD_LABEL) {
     username: usernameMatch ? String(usernameMatch[1] || "").trim().slice(0, 64) : "",
     workingDirectory: workingDirectoryMatch ? String(workingDirectoryMatch[1] || "").trim().slice(0, 240) : "",
     defaultShellMode: defaultShellModeMatch ? String(defaultShellModeMatch[1] || "").trim().slice(0, 80) : "",
+    muxEndpointFile: muxEndpointFileMatch ? String(muxEndpointFileMatch[1] || "").trim().slice(0, 240) : "",
+  };
+}
+
+function boundedLaunchdService(service = null) {
+  if (!service) return null;
+  return {
+    found: Boolean(service.found),
+    label: String(service.label || "").slice(0, 120),
+    state: String(service.state || "").slice(0, 80),
+    activeCount: positiveInt(service.activeCount, 0),
+    pid: positiveInt(service.pid, 0),
+    username: String(service.username || "").slice(0, 64),
+    workingDirectory: String(service.workingDirectory || "").slice(0, 240),
+    defaultShellMode: String(service.defaultShellMode || "").slice(0, 80),
   };
 }
 
@@ -340,6 +356,22 @@ function runtimeMemoryPressureIssues(processes = [], appServerChildSummary = {},
     options.mcpChildBlockingAgeSeconds || process.env.CODEX_MOBILE_PROCESS_PRESSURE_MCP_CHILD_BLOCKING_AGE_SECONDS,
     2 * 60 * 60,
   );
+  const mcpWarnCount = positiveInt(
+    options.mcpChildWarningCount || process.env.CODEX_MOBILE_PROCESS_PRESSURE_MCP_CHILD_WARNING_COUNT,
+    30,
+  );
+  const mcpWarnRssMb = positiveInt(
+    options.mcpChildWarningRssMb || process.env.CODEX_MOBILE_PROCESS_PRESSURE_MCP_CHILD_WARNING_RSS_MB,
+    1024,
+  );
+  const mcpWarnAgeSeconds = positiveInt(
+    options.mcpChildWarningAgeSeconds || process.env.CODEX_MOBILE_PROCESS_PRESSURE_MCP_CHILD_WARNING_AGE_SECONDS,
+    2 * 60 * 60,
+  );
+  const appServerWarnMb = positiveInt(
+    options.codexAppServerRssWarningMb || process.env.CODEX_MOBILE_PROCESS_PRESSURE_CODEX_APP_SERVER_RSS_WARNING_MB,
+    2048,
+  );
   const issues = [];
   const productionServer = processes
     .filter((process) => process.kind === "production-server")
@@ -393,6 +425,21 @@ function runtimeMemoryPressureIssues(processes = [], appServerChildSummary = {},
       thresholdMb: muxWarnMb,
     });
   }
+  const activeAppServer = processes
+    .filter((process) => process.kind === "active-codex-app-server")
+    .sort((left, right) => (right.rssMb || 0) - (left.rssMb || 0))[0];
+  if (activeAppServer && appServerWarnMb && activeAppServer.rssMb >= appServerWarnMb) {
+    issues.push({
+      severity: "H3",
+      code: "active_codex_app_server_rss_elevated",
+      surface: "runtime-process-pressure",
+      category: "process_memory",
+      diagnostic_type: "active_codex_app_server_rss_elevated",
+      appServerPid: activeAppServer.pid,
+      rssMb: activeAppServer.rssMb,
+      thresholdMb: appServerWarnMb,
+    });
+  }
   const staleMuxes = processes.filter((process) => process.kind === "stale-app-server-mux");
   const staleMuxRssMb = staleMuxes.reduce((total, process) => total + (process.rssMb || 0), 0);
   if (staleMuxes.length >= staleMuxBlockCount || staleMuxRssMb >= staleMuxBlockRssMb) {
@@ -419,7 +466,8 @@ function runtimeMemoryPressureIssues(processes = [], appServerChildSummary = {},
     });
   }
   const mcpGroup = (appServerChildSummary.groups || []).find((group) => group.kind === "codex-mobile-mcp") || null;
-  if (mcpGroup && mcpGroup.count >= mcpBlockCount && elapsedSeconds(mcpGroup.maxElapsed) >= mcpBlockAgeSeconds) {
+  const mcpMaxElapsedSeconds = mcpGroup ? elapsedSeconds(mcpGroup.maxElapsed) : 0;
+  if (mcpGroup && mcpGroup.count >= mcpBlockCount && mcpMaxElapsedSeconds >= mcpBlockAgeSeconds) {
     issues.push({
       severity: "H2",
       code: "codex_mobile_mcp_child_accumulation",
@@ -431,6 +479,24 @@ function runtimeMemoryPressureIssues(processes = [], appServerChildSummary = {},
       maxElapsed: mcpGroup.maxElapsed,
       countThreshold: mcpBlockCount,
       ageThresholdSeconds: mcpBlockAgeSeconds,
+    });
+  } else if (
+    mcpGroup
+    && mcpMaxElapsedSeconds >= mcpWarnAgeSeconds
+    && ((mcpWarnCount && mcpGroup.count >= mcpWarnCount) || (mcpWarnRssMb && mcpGroup.rssMb >= mcpWarnRssMb))
+  ) {
+    issues.push({
+      severity: "H3",
+      code: "codex_mobile_mcp_child_accumulation_elevated",
+      surface: "runtime-process-pressure",
+      category: "process_lifecycle",
+      diagnostic_type: "codex_mobile_mcp_child_accumulation_elevated",
+      count: mcpGroup.count,
+      rssMb: mcpGroup.rssMb,
+      maxElapsed: mcpGroup.maxElapsed,
+      countThreshold: mcpWarnCount,
+      rssThresholdMb: mcpWarnRssMb,
+      ageThresholdSeconds: mcpWarnAgeSeconds,
     });
   }
   return issues;
@@ -547,7 +613,7 @@ function summarizeProcessPressure(processes = [], options = {}) {
     staleCodexAppServerCount: processes.filter((process) => process.kind === "stale-codex-app-server").length,
     activeAppServerMuxCount: processes.filter((process) => process.kind === "active-app-server-mux").length,
     staleAppServerMuxCount: processes.filter((process) => process.kind === "stale-app-server-mux").length,
-    launchdService,
+    launchdService: boundedLaunchdService(launchdService),
     issueCount: issues.length,
     blockingIssueCount: issues.filter((issue) => issue.severity === "H1" || issue.severity === "H2").length,
     issues,
@@ -564,8 +630,13 @@ function summarizeProcessPressure(processes = [], options = {}) {
 function collectRuntimeProcessPressure(options = {}, deps = {}) {
   const execFileSync = deps.execFileSync || childProcess.execFileSync;
   const encoding = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
-  const muxEndpoint = readMuxEndpoint(options.muxEndpointPath, deps);
   const launchdService = readLaunchdService(options, deps);
+  const muxEndpointPath = options.muxEndpointPath
+    || process.env.CODEX_MOBILE_PROCESS_PRESSURE_MUX_ENDPOINT_FILE
+    || (launchdService && launchdService.muxEndpointFile)
+    || process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE
+    || "";
+  const muxEndpoint = readMuxEndpoint(muxEndpointPath || undefined, deps);
   let psText = "";
   let lsofText = "";
   try {
