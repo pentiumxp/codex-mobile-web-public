@@ -260,6 +260,34 @@ test("same-workspace implementation and public-pr candidates fail closed for cwd
   );
 });
 
+test("codex-mobile implementation role excludes ChatGPT Pro and Public PR lanes", () => {
+  const cwd = "/tmp/codex-mobile-routing/plugins/codex-mobile-web";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const implementationThreadId = "10000000-0000-4000-8000-000000000002";
+  const publicPrThreadId = "10000000-0000-4000-8000-000000000003";
+  const chatgptProThreadId = "10000000-0000-4000-8000-000000000004";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: publicPrThreadId, name: "Codex Mobile Public PR", cwd, status: "completed", updatedAt: 900 },
+      { id: chatgptProThreadId, name: "ChatGPT Pro", cwd, status: { type: "active" }, updatedAt: 800 },
+      { id: implementationThreadId, name: "codex mobile 07-04", cwd, status: { type: "active" }, updatedAt: 700 },
+    ],
+  });
+
+  assert.equal(
+    service.resolveTargetReference({ kind: "role", text: "codex_mobile_implementation" }, sourceThreadId),
+    implementationThreadId,
+  );
+  assert.equal(
+    service.resolveTargetReference({ kind: "role", text: "codex_mobile_public_pr" }, sourceThreadId),
+    publicPrThreadId,
+  );
+  assert.equal(
+    service.resolveTargetReference({ kind: "role", text: "chatgpt_pro" }, sourceThreadId),
+    chatgptProThreadId,
+  );
+});
+
 test("workspace cwd routing rejects multiple terminal same-cwd candidates", () => {
   const cwd = "/tmp/codex-mobile-routing/shared";
   const sourceThreadId = "10000000-0000-4000-8000-000000000001";
@@ -315,6 +343,37 @@ test("readable exact thread id can resolve outside current visible list but must
   assert.throws(
     () => service.resolveTargetReference(subagentThreadId, sourceThreadId),
     (err) => err && err.code === "target_thread_not_visible" && err.statusCode === 404,
+  );
+});
+
+test("archived exact implementation id returns bounded visible replacement metadata", () => {
+  const cwd = "/tmp/codex-mobile-routing/plugins/codex-mobile-web";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const archivedThreadId = "10000000-0000-4000-8000-000000000002";
+  const currentThreadId = "10000000-0000-4000-8000-000000000003";
+  const publicPrThreadId = "10000000-0000-4000-8000-000000000004";
+  const summaries = new Map([
+    [archivedThreadId, { id: archivedThreadId, name: "codex mobile 06-30", cwd, archived: true }],
+  ]);
+  const service = fakeRoutingService({
+    summaries,
+    visibleThreads: [
+      { id: publicPrThreadId, name: "Codex Mobile Public PR", cwd, status: "completed", updatedAt: 900 },
+      { id: currentThreadId, name: "codex mobile 07-04", cwd, status: { type: "active" }, updatedAt: 800 },
+    ],
+  });
+
+  assert.throws(
+    () => service.resolveTargetReference(archivedThreadId, sourceThreadId),
+    (err) => err
+      && err.code === "target_thread_archived"
+      && err.statusCode === 409
+      && err.details
+      && err.details.requestedTarget.threadId === archivedThreadId
+      && err.details.suggestedTargetReason === "same_role_visible_target"
+      && err.details.suggestedTargets.length === 1
+      && err.details.suggestedTargets[0].threadId === currentThreadId
+      && err.details.suggestedTargets[0].role === "codex_mobile_implementation",
   );
 });
 

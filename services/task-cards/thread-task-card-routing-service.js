@@ -24,6 +24,7 @@ function defaultThreadRole(thread, displayTitle = defaultThreadDisplayTitle) {
   const title = String(displayTitle(thread) || "").trim().toLowerCase();
   const cwd = String(thread.cwd || thread.workspace || "").trim().toLowerCase();
   if (/chatgpt\s*pro/.test(title)) return "chatgpt_pro";
+  if (/public\s*pr|pull\s*request|pr\s*lane/.test(title)) return "codex_mobile_public_pr";
   if (/task\s*intake/.test(title)) return "home_ai_task_intake";
   if (/deploy\s*lane/.test(title)) return "home_ai_deploy";
   if (/plugin\s*workspace\s*audit/.test(title)) return "plugin_workspace_audit";
@@ -218,6 +219,33 @@ function createThreadTaskCardRoutingService(deps = {}) {
     };
   }
 
+  function replacementTargetDetails(thread, options = {}) {
+    const visibleThreads = Array.isArray(options.visibleThreads) ? options.visibleThreads : [];
+    if (!thread || !visibleThreads.length) return {};
+    const threadId = String(thread.id || "").trim();
+    const cwd = normalizePath(thread.cwd || "");
+    const role = normalizeRoleText(threadRole(thread));
+    const matches = [];
+    for (const candidate of visibleThreads) {
+      if (!candidate || String(candidate.id || "").trim() === threadId) continue;
+      if (hasArchiveSignal(candidate) || isSubagent(candidate) || isSidecar(candidate)) continue;
+      const candidateRole = normalizeRoleText(threadRole(candidate));
+      const candidateCwd = normalizePath(candidate.cwd || "");
+      const roleMatches = role && candidateRole === role;
+      const cwdMatches = !role && cwd && candidateCwd === cwd;
+      if (roleMatches || cwdMatches) matches.push(candidate);
+    }
+    if (!matches.length) return {};
+    return {
+      suggestedTargets: matches
+        .sort(compareThreadTaskCardCanonicalTargets)
+        .map((candidate) => publicTarget(candidate))
+        .filter(Boolean)
+        .slice(0, 6),
+      suggestedTargetReason: role ? "same_role_visible_target" : "same_workspace_visible_target",
+    };
+  }
+
   function resolveTargetMatch(raw, entry, matches, sourceThreadId, ambiguousCode, ambiguousMessage, options = {}) {
     if (matches.length === 1) {
       const onlyMatchId = String(matches[0] && matches[0].id || "").trim();
@@ -269,7 +297,7 @@ function createThreadTaskCardRoutingService(deps = {}) {
       throw targetError(
         "target_thread_archived",
         "Target thread is archived, deleted, or otherwise not deliverable.",
-        Object.assign({}, details, { requestedTarget: target }),
+        Object.assign({}, details, { requestedTarget: target }, replacementTargetDetails(thread, options)),
         409,
       );
     }
@@ -285,7 +313,7 @@ function createThreadTaskCardRoutingService(deps = {}) {
       throw targetError(
         "target_thread_not_visible",
         "Target thread is not visible or is not a current deliverable thread.",
-        Object.assign({}, details, { requestedTarget: target }),
+        Object.assign({}, details, { requestedTarget: target }, replacementTargetDetails(thread, options)),
         404,
       );
     }
@@ -320,7 +348,7 @@ function createThreadTaskCardRoutingService(deps = {}) {
       return assertTargetDeliverable(direct, {
         reference: raw,
         referenceKind: entry.kind || "threadId",
-      }, options);
+      }, Object.assign({}, options, { visibleThreads }));
     }
     const lowered = raw.toLowerCase();
     const rawPath = normalizePath(raw);

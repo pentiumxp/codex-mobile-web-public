@@ -71,7 +71,9 @@ function createThreadTaskCardRouteService(dependencies = {}) {
 
   function readThreadListForTaskCardTargets(limit = 500, filters = { archived: false }) {
     const fallbackRows = readThreadListFallback(limit, filters);
-    const rows = Array.isArray(fallbackRows) ? fallbackRows : [];
+    const rows = Array.isArray(fallbackRows)
+      ? fallbackRows.map((thread) => hydrateThreadTitleFromSessionIndex(thread)).filter(Boolean)
+      : [];
     if (!(recentStartedThreads instanceof Map) || recentStartedThreads.size === 0) return rows;
     const byId = new Map();
     for (const thread of rows) {
@@ -81,7 +83,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     for (const entry of recentStartedThreads.values()) {
       const thread = entry && entry.thread ? entry.thread : entry;
       const id = String(thread && (thread.id || thread.threadId) || "").trim();
-      if (id && !byId.has(id)) byId.set(id, thread);
+      if (id && !byId.has(id)) byId.set(id, hydrateThreadTitleFromSessionIndex(thread));
     }
     return [...byId.values()];
   }
@@ -464,16 +466,19 @@ function createThreadTaskCardRouteService(dependencies = {}) {
   }
 
   function readThreadTaskCardTargetSummary(threadId, options = {}) {
-    if (typeof options.readThreadSummary === "function") return options.readThreadSummary(threadId);
-    return readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId);
+    const summary = typeof options.readThreadSummary === "function"
+      ? options.readThreadSummary(threadId)
+      : readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId);
+    return hydrateThreadTitleFromSessionIndex(summary);
   }
 
   function readThreadTaskCardVisibleTargetSummary(threadId) {
     const id = String(threadId || "").trim();
     if (!id) return null;
     const visibleThreads = threadTaskCardVisibleTargetThreads();
-    return (Array.isArray(visibleThreads) ? visibleThreads : [])
+    const found = (Array.isArray(visibleThreads) ? visibleThreads : [])
       .find((thread) => String(thread && (thread.id || thread.threadId || "") || "").trim() === id) || null;
+    return hydrateThreadTitleFromSessionIndex(found);
   }
 
   function readThreadTaskCardExecutionTargetSummary(card) {
