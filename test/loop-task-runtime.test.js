@@ -144,7 +144,57 @@ function makeRuntime(options = {}) {
   };
 }
 
-test("loop runtime records source-thread requirements locally and dispatches implementation", async () => {
+function sourceRequirementsPackets() {
+  return {
+    requirementsPacket: {
+      status: "present",
+      summary: "Bounded requirements packet from source thread.",
+      actualEvidence: [
+        "objective",
+        "acceptance_criteria",
+        "privacy_boundary",
+      ],
+    },
+    designContractPacket: {
+      status: "present",
+      summary: "Bounded design contract packet from source thread.",
+      actualEvidence: [
+        "architecture_boundary",
+        "routing_policy",
+        "harness_requirements",
+      ],
+    },
+  };
+}
+
+function withSourceRequirements(input = {}) {
+  return Object.assign({}, sourceRequirementsPackets(), input);
+}
+
+async function startLoopWithSourceRequirements(runtime, input = {}) {
+  return runtime.startLoop(withSourceRequirements(input));
+}
+
+async function recordSourceRequirements(runtime, loop, input = {}) {
+  const requirements = loop.roleSlices.find((slice) => slice.role === "requirements");
+  return runtime.recordTerminalReturn(Object.assign({
+    loopId: loop.loopId,
+    roleSliceId: requirements && requirements.roleSliceId,
+    role: "requirements",
+    status: "completed",
+    summary: "source requirements complete",
+    returnBody: [
+      "## Requirements Packet",
+      "- Objective and acceptance criteria are bounded.",
+      "- Privacy boundary and risk gates are explicit.",
+      "",
+      "## Design Contract Packet",
+      "- Architecture boundary, routing policy, and harness requirements are explicit.",
+    ].join("\n"),
+  }, input));
+}
+
+test("loop runtime waits for source-thread requirements before implementation dispatch", async () => {
   const { cards, createdThreads, runtime } = makeRuntime({
     visibleThreads: [{
       id: "xcode-thread",
@@ -158,27 +208,57 @@ test("loop runtime records source-thread requirements locally and dispatches imp
   });
   assert.equal(first.ok, true);
   assert.equal(first.duplicateSuppressed, false);
-  assert.equal(first.loop.status, "running");
-  assert.equal(first.loop.currentRole, "implementation");
+  assert.equal(first.loop.status, "waiting_source_requirements");
+  assert.equal(first.loop.currentRole, "requirements");
+  assert.equal(first.loop.nextRoute, "source_requirements_pending");
   assert.equal(first.loop.requirementsThreadId, "xcode-thread");
-  assert.equal(first.loop.implementationThreadId, "implementation-created");
-  assert.equal(first.loop.auditThreadId, "product_audit-created");
+  assert.equal(first.loop.implementationThreadId, "");
+  assert.equal(first.loop.auditThreadId, "");
   assert.equal(first.loop.requirementsLocal, true);
-  assert.deepEqual(first.loop.auditPacketStatus.presentSections, ["requirements_packet"]);
+  assert.deepEqual(first.loop.auditPacketStatus.presentSections, []);
+  assert.deepEqual(first.loop.sourceRequirementsStatus.missingSections, ["requirements_packet", "design_contract_packet"]);
   assert.ok(first.loop.auditPacketStatus.missingSections.includes("implementation_packet"));
-  assert.equal(createdThreads.length, 2);
-  assert.equal(cards.length, 1);
+  assert.equal(createdThreads.length, 0);
+  assert.equal(cards.length, 0);
   const requirements = first.loop.roleSlices.find((slice) => slice.role === "requirements");
-  assert.equal(requirements.status, "local");
+  assert.equal(requirements.status, "waiting");
   assert.equal(requirements.dispatchStatus, "source_thread_local_role");
   assert.equal(requirements.dispatchMode, "source_thread_local_role");
   assert.equal(requirements.taskCardDispatch, false);
   assert.equal(requirements.targetThreadId, "xcode-thread");
   assert.equal(requirements.taskCardId, "");
+  assert.equal(requirements.returnStatus, "");
+
+  const duplicatePending = await runtime.startLoop({
+    sourceThreadId: "xcode-thread",
+    text: "@loop fix password=SECRET_VALUE token=abc123456789",
+  });
+  assert.equal(duplicatePending.ok, true);
+  assert.equal(duplicatePending.duplicateSuppressed, true);
+  assert.equal(duplicatePending.loop.status, "waiting_source_requirements");
+  assert.equal(duplicatePending.loop.currentRole, "requirements");
+  assert.equal(duplicatePending.loop.sourceRequirementsStatus.pending, true);
+  assert.equal(cards.length, 0);
+
+  const afterRequirements = await recordSourceRequirements(runtime, first.loop);
+  assert.equal(afterRequirements.ok, true);
+  assert.equal(afterRequirements.loop.status, "running");
+  assert.equal(afterRequirements.loop.currentRole, "implementation");
+  assert.equal(afterRequirements.loop.implementationThreadId, "implementation-created");
+  assert.equal(afterRequirements.loop.auditThreadId, "product_audit-created");
+  assert.deepEqual(afterRequirements.loop.auditPacketStatus.presentSections, ["requirements_packet", "design_contract_packet"]);
+  assert.equal(createdThreads.length, 2);
+  assert.equal(cards.length, 1);
+  const returnedRequirements = afterRequirements.loop.roleSlices.find((slice) => slice.role === "requirements");
+  assert.equal(returnedRequirements.status, "returned");
+  assert.equal(returnedRequirements.returnStatus, "completed");
+  assert.equal(afterRequirements.loop.sourceRequirementsStatus.readyForImplementation, true);
   const implementation = first.loop.roleSlices.find((slice) => slice.role === "implementation");
-  assert.equal(implementation.status, "dispatched");
-  assert.equal(implementation.targetThreadId, "implementation-created");
-  const audit = first.loop.roleSlices.find((slice) => slice.role === "product_audit");
+  assert.equal(implementation.status, "pending");
+  const dispatchedImplementation = afterRequirements.loop.roleSlices.find((slice) => slice.role === "implementation");
+  assert.equal(dispatchedImplementation.status, "dispatched");
+  assert.equal(dispatchedImplementation.targetThreadId, "implementation-created");
+  const audit = afterRequirements.loop.roleSlices.find((slice) => slice.role === "product_audit");
   assert.equal(audit.status, "pending");
   assert.equal(audit.targetThreadId, "product_audit-created");
   assert.equal(cards[0].payload.cardKind, "at_loop_role_slice");
@@ -189,11 +269,11 @@ test("loop runtime records source-thread requirements locally and dispatches imp
   assert.equal(cards[0].payload.sourceRole, "requirements");
   assert.equal(cards[0].payload.targetRole, "implementation");
   assert.equal(cards[0].payload.routeKind, "at_loop_role_slice");
-  assert.equal(cards[0].payload.workflowId, `at-loop:${first.loop.loopId}`);
+  assert.equal(cards[0].payload.workflowId, `at-loop:${afterRequirements.loop.loopId}`);
   assert.equal(cards[0].payload.routeResolution.code, "at_loop_role_slice");
   assert.equal(cards[0].payload.routeResolution.targetRole, "implementation");
   assert.match(cards[0].payload.idempotencyKey, /^at-loop:loop_[0-9a-f]{16}:implementation:1:[0-9a-f]{8}:v1$/);
-  assert.doesNotMatch(JSON.stringify(first), /SECRET_VALUE|abc123456789/);
+  assert.doesNotMatch(JSON.stringify(afterRequirements), /SECRET_VALUE|abc123456789/);
   assert.doesNotMatch(cards[0].payload.bodyMarkdown, /SECRET_VALUE|abc123456789/);
 
   const second = await runtime.startLoop({
@@ -203,7 +283,7 @@ test("loop runtime records source-thread requirements locally and dispatches imp
   assert.equal(second.ok, true);
   assert.equal(second.duplicateSuppressed, true);
   assert.equal(second.loop.loopId, first.loop.loopId);
-  assert.equal(second.loop.duplicateSuppressedCount, 1);
+  assert.equal(second.loop.duplicateSuppressedCount, 2);
   assert.equal(cards.length, 1);
 });
 
@@ -221,7 +301,7 @@ test("loop runtime blocks implementation lane creation when source workspace is 
     }),
   });
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "xcode-thread",
     text: "@loop redesign settings",
   });
@@ -256,7 +336,7 @@ test("loop runtime uses explicit implementation workspace instead of source requ
       : { ok: false, error: "implementation_workspace_project_markers_missing", cwd },
   });
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "xcode-thread",
     text: "@loop redesign settings",
     implementationWorkspaceCwd: realWorkspace,
@@ -294,7 +374,7 @@ test("loop runtime maps source-main thread to registered implementation workspac
       : { ok: false, error: "implementation_workspace_project_markers_missing", cwd },
   });
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "xcode-thread",
     text: "@loop redesign native settings",
   });
@@ -328,7 +408,7 @@ test("loop runtime dispatches product audit in the mapped implementation workspa
       : { ok: false, error: "implementation_workspace_project_markers_missing", cwd },
   });
 
-  const started = await runtime.startLoop({
+  const started = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "xcode-thread",
     text: "@loop redesign native settings",
   });
@@ -452,7 +532,7 @@ test("loop runtime updates blocked duplicate with explicit implementation worksp
     }],
   }] }, null, 2)}\n`, "utf8");
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "xcode-thread",
     text: "@loop redesign settings",
     implementationWorkspaceCwd: realWorkspace,
@@ -573,7 +653,7 @@ test("loop runtime re-dispatches blocked audit returns whose lane cwd mismatches
     }],
   }] }, null, 2)}\n`, "utf8");
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "xcode-thread",
     text: "@loop redesign native settings",
   });
@@ -611,7 +691,7 @@ test("loop runtime treats plugin and Home AI main threads as local requirements 
       name: source.id,
       visibleThreads: [source],
     });
-    const result = await runtime.startLoop({
+    const result = await startLoopWithSourceRequirements(runtime, {
       sourceThreadId: source.id,
       text: "@loop improve local product flow",
     });
@@ -634,7 +714,7 @@ test("loop runtime fails closed when source thread is a Public PR lane", async (
       },
     ],
   });
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "public-pr-thread",
     text: "@loop implement runtime",
   });
@@ -647,7 +727,7 @@ test("loop runtime fails closed when source thread is a Public PR lane", async (
 
 test("loop runtime correlates terminal returns and routes audit failure to repair", async () => {
   const { cards, runtime } = makeRuntime({ name: "terminal-routing" });
-  const started = await runtime.startLoop({
+  const started = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop add status surface",
   });
@@ -666,8 +746,9 @@ test("loop runtime correlates terminal returns and routes audit failure to repai
   assert.equal(cards[1].payload.targetRole, "product_audit");
   assert.match(cards[1].payload.bodyMarkdown, /## Audit Packet/);
   assert.match(cards[1].payload.bodyMarkdown, /## Delta Matrix/);
-  assert.ok(cards[1].payload.missingAuditPacketSections.includes("design_contract_packet"));
+  assert.ok(!cards[1].payload.missingAuditPacketSections.includes("design_contract_packet"));
   assert.ok(cards[1].payload.missingAuditPacketSections.includes("validation_packet"));
+  assert.ok(cards[1].payload.auditPacket.sections.find((section) => section.id === "design_contract_packet" && section.status === "present"));
   assert.ok(cards[1].payload.auditPacket.sections.find((section) => section.id === "implementation_packet" && section.status === "present"));
 
   const audit = await runtime.recordTerminalReturn({
@@ -686,7 +767,7 @@ test("loop runtime correlates terminal returns and routes audit failure to repai
 
 test("loop runtime routes product-audit missing-evidence blocks to repair", async () => {
   const { cards, runtime } = makeRuntime({ name: "audit-blocked-missing-evidence-repair" });
-  const started = await runtime.startLoop({
+  const started = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop redesign settings",
   });
@@ -884,7 +965,7 @@ test("loop runtime recovers duplicate blocked after historical audit missing-evi
     }],
   }] }, null, 2)}\n`, "utf8");
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop recover audit blocked loop",
     implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
@@ -905,7 +986,7 @@ test("loop runtime recovers duplicate blocked after historical audit missing-evi
 
 test("loop runtime routes blocked implementation returns back to local requirements revision", async () => {
   const { cards, runtime } = makeRuntime({ name: "implementation-blocked-requirements-revision" });
-  const started = await runtime.startLoop({
+  const started = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop redesign settings",
   });
@@ -937,7 +1018,7 @@ test("loop runtime routes blocked implementation returns back to local requireme
 
 test("loop runtime propagates bounded audit packet and delta matrix to product audit card", async () => {
   const { cards, runtime } = makeRuntime({ name: "audit-packet" });
-  const started = await runtime.startLoop({
+  const started = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop improve product journey",
     designContractPacket: {
@@ -990,7 +1071,7 @@ test("loop runtime propagates bounded audit packet and delta matrix to product a
 
 test("loop runtime normalizes design validation and privacy packets from repair return body", async () => {
   const { cards, runtime } = makeRuntime({ name: "repair-return-packet-body" });
-  const started = await runtime.startLoop({
+  const started = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop redesign native settings",
   });
@@ -1005,9 +1086,10 @@ test("loop runtime normalizes design validation and privacy packets from repair 
   });
   assert.equal(implementation.loop.currentRole, "product_audit");
   assert.equal(cards.length, 2);
-  assert.ok(cards[1].payload.missingAuditPacketSections.includes("design_contract_packet"));
+  assert.ok(!cards[1].payload.missingAuditPacketSections.includes("design_contract_packet"));
   assert.ok(cards[1].payload.missingAuditPacketSections.includes("validation_packet"));
   assert.ok(cards[1].payload.missingAuditPacketSections.includes("privacy_packet"));
+  assert.ok(cards[1].payload.auditPacket.sections.find((section) => section.id === "design_contract_packet" && section.status === "present"));
 
   const audit = await runtime.recordTerminalReturn({
     taskCardId: "ttc_2",
@@ -1045,7 +1127,7 @@ test("loop runtime normalizes design validation and privacy packets from repair 
 
 test("loop runtime permits final audit retry after exhausted repair fills missing packets", async () => {
   const { cards, runtime } = makeRuntime({ name: "exhausted-repair-packet-retry" });
-  const started = await runtime.startLoop({
+  const started = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop redesign native settings exhausted",
     maxIterations: 1,
@@ -1095,7 +1177,7 @@ test("loop runtime can hydrate repair packet body from stored terminal return ca
     name: "stored-repair-return-body",
     readThreadTaskCardForLoopEvidence: (cardId) => evidenceCards.get(cardId) || null,
   });
-  await runtime.startLoop({
+  await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop redesign native settings stored return",
     maxIterations: 1,
@@ -1297,7 +1379,7 @@ test("loop runtime rebuilds exhausted loop audit packet from stored repair retur
     }],
   }] }, null, 2)}\n`, "utf8");
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop recover exhausted audit packet",
     implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
@@ -1317,7 +1399,7 @@ test("loop runtime rebuilds exhausted loop audit packet from stored repair retur
 
 test("loop runtime still blocks exhausted repair when packet sections remain missing", async () => {
   const { cards, runtime } = makeRuntime({ name: "exhausted-repair-missing-packets" });
-  await runtime.startLoop({
+  await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop redesign native settings missing packets",
     maxIterations: 1,
@@ -1344,7 +1426,7 @@ test("loop runtime still blocks exhausted repair when packet sections remain mis
   assert.equal(repair.loop.currentRole, "");
   assert.equal(repair.loop.nextRoute, "max_iterations_reached");
   assert.equal(cards.length, 3);
-  assert.ok(repair.loop.auditPacketStatus.missingSections.includes("design_contract_packet"));
+  assert.ok(!repair.loop.auditPacketStatus.missingSections.includes("design_contract_packet"));
   assert.ok(repair.loop.auditPacketStatus.missingSections.includes("validation_packet"));
   assert.ok(repair.loop.auditPacketStatus.missingSections.includes("privacy_packet"));
 });
@@ -1364,7 +1446,7 @@ test("loop runtime fails closed when required product-audit lane is missing", as
     }],
     createLoopRoleThread: false,
   });
-  const result = await runtime.startLoop({ sourceThreadId: "source-thread", text: "@loop implement work" });
+  const result = await startLoopWithSourceRequirements(runtime, { sourceThreadId: "source-thread", text: "@loop implement work" });
   assert.equal(result.ok, false);
   assert.equal(result.error, "at_loop_missing_role_lane");
   assert.equal(result.loop.status, "blocked");
@@ -1384,10 +1466,10 @@ test("loop runtime does not report blocked duplicate triggers as successful no-o
     }],
     createLoopRoleThread: false,
   });
-  const first = await runtime.startLoop({ sourceThreadId: "source-thread", text: "@loop implement work" });
+  const first = await startLoopWithSourceRequirements(runtime, { sourceThreadId: "source-thread", text: "@loop implement work" });
   assert.equal(first.ok, false);
   assert.equal(first.error, "at_loop_missing_role_lane");
-  const second = await runtime.startLoop({ sourceThreadId: "source-thread", text: "@loop implement work" });
+  const second = await startLoopWithSourceRequirements(runtime, { sourceThreadId: "source-thread", text: "@loop implement work" });
   assert.equal(second.ok, false);
   assert.equal(second.error, "at_loop_missing_role_lane");
   assert.notEqual(second.duplicateSuppressed, true);
@@ -1503,7 +1585,7 @@ test("loop runtime recovers blocked duplicate by dropping stale or ineligible ro
     }],
   }] };
   fs.writeFileSync(storageFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop recover stale lane",
   });
@@ -1636,7 +1718,7 @@ test("loop runtime recovers duplicate blocked on implementation dispatch failure
     }],
   }] }, null, 2)}\n`, "utf8");
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop recover blocked implementation dispatch",
     implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
@@ -1758,7 +1840,7 @@ test("loop runtime skips visible implementation targets rejected by task-card de
     }],
   }] }, null, 2)}\n`, "utf8");
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop recover undeliverable lane",
   });
@@ -1877,7 +1959,7 @@ test("loop runtime skips persisted stale dispatch target before sending role car
     }],
   }] }, null, 2)}\n`, "utf8");
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop recover stale dispatch target",
   });
@@ -2004,7 +2086,7 @@ test("loop runtime clears multiple stale dispatch targets before creating a fres
     }],
   }] }, null, 2)}\n`, "utf8");
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "source-thread",
     text: "@loop recover multiple stale dispatch targets",
   });
@@ -2036,7 +2118,7 @@ test("loop runtime creates implementation lane instead of selecting ordinary com
     }],
   });
 
-  const result = await runtime.startLoop({
+  const result = await startLoopWithSourceRequirements(runtime, {
     sourceThreadId: "xcode-thread",
     text: "@loop redesign settings",
   });
@@ -2052,7 +2134,7 @@ test("loop runtime creates implementation lane instead of selecting ordinary com
 test("loop watchdog marks stale returns without retrying or completing work", async () => {
   const initial = Date.parse("2026-07-03T01:00:00.000Z");
   const { cards, runtime, setNow } = makeRuntime({ name: "watchdog", now: initial });
-  const started = await runtime.startLoop({ sourceThreadId: "source-thread", text: "@loop wait for card" });
+  const started = await startLoopWithSourceRequirements(runtime, { sourceThreadId: "source-thread", text: "@loop wait for card" });
   assert.equal(started.loop.currentRole, "implementation");
   setNow(initial + 2000);
   const watchdog = runtime.runWatchdog({ loopId: started.loop.loopId });

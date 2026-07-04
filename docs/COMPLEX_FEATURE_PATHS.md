@@ -656,13 +656,21 @@ Implementation path:
 5. Treat source-main-thread requirements as a local role. A loop submitted from
    Xcode/Home AI/plugin main threads records requirements as
    `source_thread_local_role` and must not send a same-thread requirements card.
-   Implementation/audit/repair/deploy roles still require real task cards with
-   `sourceThreadId !== targetThreadId`. Select or create those role lanes from
-   explicit role/purpose metadata first, then bounded cwd/title heuristics, and
-   require the same task-card deliverability check used by normal cross-thread
-   dispatch. Ordinary product/source main threads with only a workspace cwd are
-   valid requirements owners but are not implementation/repair lanes; if a safe
-   lane is unavailable, create one only when the source cwd is a real
+   This local role is not automatically completed from the raw Owner objective:
+   the runtime must leave the loop visible as `waiting_source_requirements` /
+   `source_requirements_pending` until the source thread records a bounded
+   local requirements/design return. Implementation dispatch is allowed only
+   after `requirements_packet` and `design_contract_packet` are present in the
+   Audit Packet, unless a future explicit fast-path mode is added. Duplicate
+   triggers during this state return the same waiting loop/status and must not
+   dispatch implementation. Implementation/audit/repair/deploy roles still
+   require real task cards with `sourceThreadId !== targetThreadId`. Select or
+   create those role lanes from explicit role/purpose metadata first, then
+   bounded cwd/title heuristics, and require the same task-card deliverability
+   check used by normal cross-thread dispatch. Ordinary product/source main
+   threads with only a workspace cwd are valid requirements owners but are not
+   implementation/repair lanes; if a safe lane is unavailable, create one only
+   when the source cwd is a real
    implementable workspace with project markers. A requirements/source thread's
    cwd must not be blindly treated as the implementation workspace; if the cwd
    is empty or projectless, fail closed with bounded

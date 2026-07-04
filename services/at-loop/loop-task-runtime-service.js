@@ -437,6 +437,20 @@ function auditPacketStatus(packet = {}) {
   };
 }
 
+function auditPacketHasPresentSection(packet = {}, sectionId = "") {
+  const id = compactOneLine(sectionId);
+  const sections = Array.isArray(packet && packet.sections) ? packet.sections : [];
+  return sections.some((section) => compactOneLine(section && section.id) === id
+    && section.required !== false
+    && section.status === "present");
+}
+
+function sourceRequirementsReadyForImplementation(loop = {}) {
+  const packet = loop.auditPacket || sanitizeAuditPacket({});
+  return auditPacketHasPresentSection(packet, "requirements_packet")
+    && auditPacketHasPresentSection(packet, "design_contract_packet");
+}
+
 function publicAuditPacket(packet = {}) {
   const normalized = packet && packet.sections ? packet : sanitizeAuditPacket({ auditPacket: packet });
   return {
@@ -1109,6 +1123,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   function publicLoop(loop = {}) {
     const slices = Array.isArray(loop.roleSlices) ? loop.roleSlices : [];
     const packet = publicAuditPacket(loop.auditPacket || sanitizeAuditPacket({}));
+    const requirementsSlice = slices.find((slice) => slice.role === "requirements" && slice.iteration === (loop.iteration || 1))
+      || slices.find((slice) => slice.role === "requirements")
+      || null;
     return {
       loopId: loop.loopId || "",
       sourceThreadId: loop.sourceThreadId || "",
@@ -1131,6 +1148,15 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       blockedReason: loop.blockedReason || "",
       sourceRequestId: loop.sourceRequestId || "",
       requirementsLocal: loop.requirementsLocal === true,
+      sourceRequirementsStatus: loop.requirementsLocal === true ? {
+        status: requirementsSlice && requirementsSlice.status || "",
+        dispatchStatus: requirementsSlice && requirementsSlice.dispatchStatus || "",
+        returnStatus: requirementsSlice && requirementsSlice.returnStatus || "",
+        pending: loop.status === "waiting_source_requirements" || requirementsSlice && requirementsSlice.status === "waiting",
+        readyForImplementation: sourceRequirementsReadyForImplementation(loop),
+        missingSections: ["requirements_packet", "design_contract_packet"].filter((id) => !auditPacketHasPresentSection(loop.auditPacket || sanitizeAuditPacket({}), id)),
+        blockedReason: requirementsSlice && requirementsSlice.blockedReason || loop.blockedReason || "",
+      } : null,
       auditPacketStatus: packet.status,
       auditPacket: {
         required: packet.required,
@@ -1524,34 +1550,38 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       sourceThreadLocalRole: true,
       taskCardDispatch: false,
     });
-    slice.returnStatus = "completed";
     slice.blockedReason = "";
     slice.updatedAt = timestamp;
     loop.requirementsThreadId = loop.sourceThreadId;
     loop.requirementsLocal = true;
-    loop.auditPacket = mergeAuditPacket(loop.auditPacket || sanitizeAuditPacket({}), sanitizeAuditPacket({
-      auditPacket: {
-        sections: {
-          requirements_packet: {
-            status: "present",
-            source: "source_thread_local_requirements",
-            summary: loop.objectiveSummary,
-            actualEvidence: [
-              `source_thread_id:${loop.sourceThreadId}`,
-              `role_slice_id:${slice.roleSliceId}`,
-              "task_card_dispatch:false",
-            ],
-          },
-        },
-      },
-    }));
-    loop.status = "running";
+    if (sourceRequirementsReadyForImplementation(loop)) {
+      slice.status = "returned";
+      slice.returnStatus = "completed";
+      loop.status = "running";
+      loop.nextRoute = "implementation";
+    } else {
+      slice.status = "waiting";
+      slice.returnStatus = "";
+      slice.blockedReason = "source_requirements_pending";
+      slice.routing = Object.assign({}, slice.routing || {}, {
+        sourceRequirementsPending: true,
+        requiredPacketSections: ["requirements_packet", "design_contract_packet"],
+        localTurnRequired: true,
+      });
+      loop.status = "waiting_source_requirements";
+      loop.nextRoute = "source_requirements_pending";
+    }
     loop.currentRole = "requirements";
-    loop.nextRoute = "implementation";
     loop.blockedReason = "";
     loop.updatedAt = timestamp;
     saveState();
-    return { ok: true, local: true, loop: publicLoop(loop), slice: publicSlice(slice) };
+    return {
+      ok: true,
+      local: true,
+      waiting: !sourceRequirementsReadyForImplementation(loop),
+      loop: publicLoop(loop),
+      slice: publicSlice(slice),
+    };
   }
 
   function markLocalRequirementsRevision(loop, reason = "requirements_revision") {
@@ -1811,6 +1841,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     if (role === "requirements" && sourceOwnsRequirements(loop)) {
       const local = markRequirementsLocal(loop, slice);
       if (!local.ok) return local;
+      if (local.waiting) return local;
       const lanes = await ensureCoreRoleLanes(loop);
       if (!lanes.ok) return lanes;
       return dispatchRole(loop, "implementation", options);
@@ -2160,6 +2191,30 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         ? `${slice.role}_${returnStatus}_requires_requirements_revision`
         : route.nextRoute || "requirements_revision";
       return markLocalRequirementsRevision(loop, reason);
+    }
+    if (slice.role === "requirements" && loop.requirementsLocal && route.role === "implementation") {
+      if (!sourceRequirementsReadyForImplementation(loop)) {
+        slice.status = "blocked";
+        slice.dispatchStatus = SOURCE_THREAD_LOCAL_REQUIREMENTS;
+        slice.dispatchMode = SOURCE_THREAD_LOCAL_REQUIREMENTS;
+        slice.taskCardDispatch = false;
+        slice.blockedReason = "source_requirements_packet_incomplete";
+        slice.routing = Object.assign({}, slice.routing || {}, {
+          sourceRequirementsPending: true,
+          requiredPacketSections: ["requirements_packet", "design_contract_packet"],
+          missingPacketSections: ["requirements_packet", "design_contract_packet"]
+            .filter((id) => !auditPacketHasPresentSection(loop.auditPacket || sanitizeAuditPacket({}), id)),
+        });
+        loop.status = "blocked";
+        loop.currentRole = "requirements";
+        loop.nextRoute = "source_requirements_pending";
+        loop.blockedReason = "source_requirements_packet_incomplete";
+        loop.updatedAt = timestamp;
+        saveState();
+        return { ok: false, error: "source_requirements_packet_incomplete", loop: publicLoop(loop), slice: publicSlice(slice) };
+      }
+      const lanes = await ensureCoreRoleLanes(loop);
+      if (!lanes.ok) return lanes;
     }
     const dispatch = await dispatchRole(loop, route.role);
     return Object.assign({ ok: dispatch.ok !== false }, dispatch, { loop: publicLoop(loop) });

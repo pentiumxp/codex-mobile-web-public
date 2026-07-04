@@ -777,13 +777,20 @@ cookies, screenshots, database rows, provider payloads, or long logs.
 When `@loop` is submitted from a product/source main thread, that source thread
 owns the requirements role locally. The runtime records a
 `source_thread_local_role` requirements slice and must not dispatch a same-thread
-requirements task card. Implementation, audit, repair, and deploy/readback
-roles still use real task cards and must target a different thread. Codex Mobile
-selects or provisions those role lanes using explicit thread role/purpose
-metadata before cwd/title heuristics; if a safe lane is unavailable, the loop
-stays visibly blocked with bounded routing metadata. Duplicate triggers for an
-already blocked loop return the blocked loop/status instead of reporting a
-successful no-op.
+requirements task card. It also must not auto-complete the requirements role
+from only the raw Owner objective. Instead the loop enters a visible
+`waiting_source_requirements` / `source_requirements_pending` state until the
+source thread records a bounded requirements/design return through the Loop
+return path. Only after the Audit Packet has `requirements_packet` and
+`design_contract_packet` present may the runtime create/select implementation
+and audit lanes and dispatch the implementation card. Implementation, audit,
+repair, and deploy/readback roles still use real task cards and must target a
+different thread. Codex Mobile selects or provisions those role lanes using
+explicit thread role/purpose metadata before cwd/title heuristics; if a safe
+lane is unavailable, the loop stays visibly blocked with bounded routing
+metadata. Duplicate triggers for a waiting or blocked loop return the current
+loop/status instead of reporting a successful no-op or silently dispatching the
+next role.
 Product-audit role cards receive a structured Audit Packet instead of raw
 implementation handoff context. The runtime stores and projects bounded
 `requirements_packet`, `design_contract_packet`, `implementation_packet`,
