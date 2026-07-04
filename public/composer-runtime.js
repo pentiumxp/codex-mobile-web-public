@@ -1878,7 +1878,10 @@ async function sendMessage(event) {
     }
     input.blur();
     $("connectionState").classList.remove("error");
-    if (steering) setSteerFeedback("delivered", { threadId: targetThreadId, turnId: steerTurnId, clientSubmissionId });
+    if (steering) {
+      const steerStatus = result && result.steeringQueued ? "queued" : "delivered";
+      setSteerFeedback(steerStatus, { threadId: targetThreadId, turnId: steerTurnId, clientSubmissionId });
+    }
     else {
       $("connectionState").textContent = "Sent";
       markActivity("已发送");

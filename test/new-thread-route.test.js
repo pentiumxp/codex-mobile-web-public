@@ -37,6 +37,7 @@ const threadSummaryReadModelServiceJs = fs.readFileSync(path.resolve(__dirname, 
 const appJs = readFrontendSources(path.resolve(__dirname, ".."));
 const composerRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "composer-runtime.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
+const navigationRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "navigation-runtime.js"), "utf8");
 
 function functionBody(source, name) {
   let start = source.indexOf(`function ${name}(`);
@@ -538,6 +539,16 @@ test("existing-thread message send refreshes the sidebar thread list", () => {
   assert.match(body, /scheduleComposerTargetRefresh\(targetThreadId, 600, "message-submit"\);[\s\S]*scheduleLivePollIfNeeded\(1200\);[\s\S]*loadThreads\(\{ silent: true \}\)\.catch\(showError\);/);
 });
 
+test("active-turn message send reports queued steering separately from delivered steering", () => {
+  const sendBody = functionBody(composerRuntimeJs, "sendMessage");
+  const labelBody = functionBody(navigationRuntimeJs, "steerFeedbackLabel");
+  const pendingBody = functionBody(navigationRuntimeJs, "isPendingSteerForTurn");
+
+  assert.match(sendBody, /result && result\.steeringQueued \? "queued" : "delivered"/);
+  assert.match(labelBody, /status === "queued"[\s\S]*引导已排队/);
+  assert.match(pendingBody, /feedback\.status === "sending"[\s\S]*feedback\.status === "queued"[\s\S]*feedback\.status === "delivered"/);
+});
+
 test("send auth failures return stable codes and render message receipts", () => {
   assert.match(serverHttpRuntimeServiceJs, /function isCodexAccountAuthError\(/);
   assert.match(serverHttpRuntimeServiceJs, /code:\s*"codex_account_auth_invalid"/);
@@ -615,9 +626,13 @@ test("existing-message route falls back when active turn steering is stale", () 
   const steerIndex = routeBody.indexOf('codex.request("turn/steer"', interruptIndex);
   const pendingEchoIndex = routeBody.indexOf("pendingSteerEchoStore.remember", interruptIndex);
   const forgetEchoIndex = routeBody.indexOf("pendingSteerEchoStore.forget", pendingEchoIndex);
-  const staleLogIndex = routeBody.indexOf('logMessageSubmit("active-turn-stale"');
-  const resumeIndex = routeBody.indexOf('codex.request("thread/resume"', staleLogIndex);
+  const staleLogIndex = routeBody.indexOf('"active-turn-stale"', steerIndex);
+  const resumeHelperIndex = routeBody.indexOf("const resumeThreadBeforeTurnStart", preflightCallIndex);
+  const resumeIndex = routeBody.indexOf('codex.request("thread/resume"', resumeHelperIndex);
   const turnStartIndex = routeBody.indexOf('codex.request("turn/start"', resumeIndex);
+  const replacementHelperIndex = routeBody.indexOf("const startReplacementTurn", turnStartIndex);
+  const staleFallthroughIndex = routeBody.indexOf("return await startReplacementTurn(timings)", staleLogIndex);
+  const queuedFallbackIndex = routeBody.indexOf('logMessageSubmit("steer-background-stale-fallback-done"', staleLogIndex);
   assert.ok(preflightCallIndex > 0, "message route should preflight stale active turns before steering");
   assert.ok(preflightLogIndex > preflightCallIndex, "message route should log stale active-turn preflight");
   assert.ok(interruptIndex > preflightLogIndex, "stale active turn should be interrupted before starting a new turn");
@@ -626,8 +641,12 @@ test("existing-message route falls back when active turn steering is stale", () 
   assert.ok(forgetEchoIndex > steerIndex, "pending steer echo should be forgotten when turn/steer falls through as stale");
   assert.match(routeBody, /if \(body\.activeTurnId && !skipTurnSteer\)/, "stale preflight should skip turn/steer");
   assert.ok(staleLogIndex > 0, "message route should log stale active turn steering");
-  assert.ok(resumeIndex > staleLogIndex, "stale active turn should fall through to thread/resume");
-  assert.ok(turnStartIndex > resumeIndex, "stale active turn should fall through to turn/start");
+  assert.ok(resumeHelperIndex > preflightCallIndex, "message route should own a reusable thread/resume helper");
+  assert.ok(resumeIndex > resumeHelperIndex, "replacement helper should be able to resume threads");
+  assert.ok(turnStartIndex > resumeIndex, "replacement helper should be able to start turns");
+  assert.ok(replacementHelperIndex > turnStartIndex, "message route should own a replacement turn helper");
+  assert.ok(staleFallthroughIndex > staleLogIndex, "foreground stale active turn should fall through to replacement turn start");
+  assert.ok(queuedFallbackIndex > staleLogIndex, "queued stale steering should complete through a background replacement turn");
 });
 
 test("auto-recover route steers live turns before starting a replacement turn", () => {

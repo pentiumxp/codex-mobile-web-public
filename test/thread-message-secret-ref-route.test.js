@@ -58,6 +58,16 @@ function createRouteHarness(overrides = {}) {
   return { route, requests };
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 test("thread message route accepts secretRef-only metadata as a safe current-task receipt", async () => {
   const { route, requests } = createRouteHarness();
   let response = null;
@@ -290,4 +300,138 @@ test("thread message route logs bounded phase timings for message submission", a
   }
   assert.equal(done.details.timings.threadResumeMode, "optimistic-turn-start");
   assert.equal(done.details.timings.threadResumeSkipped, true);
+});
+
+test("thread message route queues slow active-turn steering before turn steer resolves", async () => {
+  const steer = deferred();
+  const backgroundTasks = [];
+  const events = [];
+  const remembered = [];
+  const notified = [];
+  const { route, requests } = createRouteHarness({
+    activeTurnSteerFastAcceptMs: 0,
+    scheduleBackgroundTask: (task) => {
+      backgroundTasks.push(Promise.resolve().then(task));
+    },
+    codex: {
+      request: async (method, params) => {
+        requests.push({ method, params });
+        if (method === "turn/steer") return steer.promise;
+        if (method === "turn/start") return { turnId: "turn-new" };
+        return { ok: true };
+      },
+      notifyMuxUserMessage: (message) => notified.push(message),
+    },
+    pendingSteerEchoStore: {
+      remember: (params) => {
+        remembered.push(params);
+        return "pending-steer-echo";
+      },
+      forget: () => {
+        throw new Error("pending steer echo should stay until a durable user message appears");
+      },
+    },
+    logMessageSubmit: (event, details) => events.push({ event, details }),
+  });
+
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "continue here",
+        activeTurnId: "active-turn-1",
+        clientSubmissionId: "client-steer-slow",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.steeringQueued, true);
+  assert.equal(response.body.turnId, "active-turn-1");
+  assert.deepEqual(requests.map((entry) => entry.method), ["turn/steer"]);
+  assert.equal(remembered.length, 1);
+  assert.equal(notified.length, 0);
+  assert.ok(events.some((entry) => entry.event === "steer-queued"));
+
+  steer.resolve({ turnId: "active-turn-1" });
+  await Promise.all(backgroundTasks);
+
+  assert.equal(notified.length, 1);
+  assert.equal(notified[0].threadId, "thread-1");
+  assert.equal(notified[0].turnId, "active-turn-1");
+  assert.ok(events.some((entry) => entry.event === "steer-background-done"));
+});
+
+test("thread message route starts a replacement turn when queued active-turn steering becomes stale", async () => {
+  const steer = deferred();
+  const backgroundTasks = [];
+  const events = [];
+  const notifiedTurns = [];
+  const { route, requests } = createRouteHarness({
+    activeTurnSteerFastAcceptMs: 0,
+    scheduleBackgroundTask: (task) => {
+      backgroundTasks.push(Promise.resolve().then(task));
+    },
+    codex: {
+      request: async (method, params) => {
+        requests.push({ method, params });
+        if (method === "turn/steer") return steer.promise;
+        if (method === "turn/start") return { turnId: "turn-replacement" };
+        return { ok: true };
+      },
+      notifyMuxUserMessage: () => {
+        throw new Error("stale steering fallback should not notify the stale active turn");
+      },
+    },
+    notifyLocalTurnStarted: (_threadId, result) => {
+      notifiedTurns.push(result.turnId);
+      return result.turnId;
+    },
+    pendingSteerEchoStore: {
+      remember: () => "pending-steer-echo",
+      forget: () => {
+        throw new Error("pending steer echo should stay during successful stale fallback");
+      },
+    },
+    isStaleActiveTurnError: (err) => Boolean(err && err.code === "stale_active_turn"),
+    logMessageSubmit: (event, details) => events.push({ event, details }),
+  });
+
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "continue in a new turn",
+        activeTurnId: "active-turn-stale",
+        clientSubmissionId: "client-steer-stale",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.steeringQueued, true);
+  assert.deepEqual(requests.map((entry) => entry.method), ["turn/steer"]);
+
+  const staleError = new Error("expected active turn no longer active");
+  staleError.code = "stale_active_turn";
+  steer.reject(staleError);
+  await Promise.all(backgroundTasks);
+
+  assert.deepEqual(requests.map((entry) => entry.method), ["turn/steer", "turn/start"]);
+  assert.deepEqual(notifiedTurns, ["turn-replacement"]);
+  const fallbackDone = events.find((entry) => entry.event === "steer-background-stale-fallback-done");
+  assert.ok(fallbackDone);
+  assert.equal(fallbackDone.details.resultTurnId, "turn-replacement");
 });

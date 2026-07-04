@@ -188,6 +188,7 @@ function setSteerFeedback(status, details = {}) {
 
 function steerFeedbackLabel(status) {
   if (status === "sending") return "引导中…";
+  if (status === "queued") return "引导已排队";
   if (status === "delivered") return "引导已送达";
   if (status === "applied") return "Agent 已继续处理";
   if (status === "completed") return "引导已送达，任务已结束";
@@ -199,7 +200,7 @@ function isPendingSteerForTurn(turnId) {
   const feedback = state.steerFeedback;
   if (!feedback || !feedback.turnId || !turnId) return false;
   if (feedback.turnId !== String(turnId)) return false;
-  return feedback.status === "sending" || feedback.status === "delivered";
+  return feedback.status === "sending" || feedback.status === "queued" || feedback.status === "delivered";
 }
 
 function markSteerAppliedIfNeeded(turnId, item = null) {

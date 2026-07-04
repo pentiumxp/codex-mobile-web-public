@@ -7,6 +7,20 @@ const {
   publicSensitiveContext,
 } = require("../services/runtime/home-ai-secret-ref-service");
 
+const DEFAULT_ACTIVE_TURN_STEER_FAST_ACCEPT_MS = 350;
+
+function scheduleDetachedTask(task) {
+  Promise.resolve()
+    .then(task)
+    .catch(() => {});
+}
+
+function resolveAfter(ms, value) {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(value), Math.max(0, Number(ms) || 0));
+  });
+}
+
 function markSubmitTiming(timings, name, startedAtMs) {
   if (!timings || !name) return 0;
   const elapsed = Math.max(0, Date.now() - Number(startedAtMs || Date.now()));
@@ -94,6 +108,8 @@ function createThreadMessageRouteService(dependencies = {}) {
     isTurnSteerUnsupportedError,
     isStaleActiveTurnError,
     autoRecoverThreadTurn,
+    activeTurnSteerFastAcceptMs = DEFAULT_ACTIVE_TURN_STEER_FAST_ACCEPT_MS,
+    scheduleBackgroundTask = scheduleDetachedTask,
   } = dependencies;
 
   async function handleRoute(options = {}) {
@@ -355,52 +371,7 @@ function createThreadMessageRouteService(dependencies = {}) {
               }
             }
           }
-          if (body.activeTurnId && !skipTurnSteer) {
-            let pendingSteerEchoKey = "";
-            let steerStartedAtMs = Date.now();
-            try {
-              pendingSteerEchoKey = pendingSteerEchoStore.remember({
-                threadId,
-                turnId: String(body.activeTurnId),
-                input,
-                clientSubmissionId: body.clientSubmissionId,
-              });
-              steerStartedAtMs = Date.now();
-              const steerResult = await codex.request("turn/steer", {
-                threadId,
-                input,
-                expectedTurnId: String(body.activeTurnId),
-              }, { timeoutMs: mutationRpcTimeoutMs, retry: false });
-              markSubmitTiming(timings, "steerMs", steerStartedAtMs);
-              codex.notifyMuxUserMessage({
-                threadId,
-                turnId: String(body.activeTurnId),
-                input,
-                clientSubmissionId: body.clientSubmissionId,
-              });
-              return steerResult;
-            } catch (err) {
-              if (timings.steerMs === undefined) markSubmitTiming(timings, "steerMs", steerStartedAtMs);
-              if (isTurnSteerUnsupportedError(err)) {
-                codex.notifyMuxUserMessage({
-                  threadId,
-                  turnId: String(body.activeTurnId),
-                  input,
-                  clientSubmissionId: body.clientSubmissionId,
-                });
-                return {};
-              }
-              if (pendingSteerEchoKey) pendingSteerEchoStore.forget(pendingSteerEchoKey);
-              if (!isStaleActiveTurnError(err)) throw err;
-              logMessageSubmit("active-turn-stale", {
-                threadId,
-                turnId: String(body.activeTurnId),
-                clientSubmissionId: body.clientSubmissionId,
-                error: err.message || String(err),
-              });
-            }
-          }
-          const resumeThreadBeforeTurnStart = async () => {
+          const resumeThreadBeforeTurnStart = async (targetTimings = timings) => {
             const resumeStartedAtMs = Date.now();
             try {
               await codex.request("thread/resume", applyResumeRuntimeSettings({
@@ -408,11 +379,11 @@ function createThreadMessageRouteService(dependencies = {}) {
                 cwd: body.cwd || null,
                 persistExtendedHistory,
               }, runtimeSettings), { timeoutMs: mutationRpcTimeoutMs, retry: false });
-              markSubmitTimingAliases(timings, ["threadResumeMs", "resumeMs"], resumeStartedAtMs);
+              markSubmitTimingAliases(targetTimings, ["threadResumeMs", "resumeMs"], resumeStartedAtMs);
             } catch (err) {
-              markSubmitTimingAliases(timings, ["threadResumeMs", "resumeMs"], resumeStartedAtMs);
+              markSubmitTimingAliases(targetTimings, ["threadResumeMs", "resumeMs"], resumeStartedAtMs);
               if (!isThreadResumeAlreadyLoadedError(err)) throw err;
-              timings.resumeAlreadyLoaded = true;
+              targetTimings.resumeAlreadyLoaded = true;
             }
           };
           const params = applyCodexFastServiceTier(applyTurnRuntimeSettings({
@@ -422,44 +393,190 @@ function createThreadMessageRouteService(dependencies = {}) {
           if (body.cwd) params.cwd = body.cwd;
           if (requestedModel) params.model = requestedModel;
           if (requestedEffort) params.effort = requestedEffort;
-          const startTurn = async (timingNames) => {
+          const startTurn = async (timingNames, targetTimings = timings) => {
             const turnStartStartedAtMs = Date.now();
             try {
               return await codex.request("turn/start", params, { timeoutMs: mutationRpcTimeoutMs, retry: false });
             } finally {
-              markSubmitTimingAliases(timings, timingNames, turnStartStartedAtMs);
+              markSubmitTimingAliases(targetTimings, timingNames, turnStartStartedAtMs);
             }
           };
-          let turnResult;
-          const turnStartTotalStartedAtMs = Date.now();
-          if (persistExtendedHistory) {
-            timings.threadResumeMode = "pre-turn-start";
-            await resumeThreadBeforeTurnStart();
-            turnResult = await startTurn(["turnStartInitialMs", "turnStartMs"]);
-          } else {
-            timings.threadResumeMode = "optimistic-turn-start";
-            timings.threadResumeSkipped = true;
-            timings.threadResumeMs = 0;
-            timings.resumeMs = 0;
-            try {
-              turnResult = await startTurn(["turnStartInitialMs", "turnStartMs"]);
-            } catch (err) {
-              if (!turnStartRequiresThreadResume(err)) {
-                timings.turnStartMs = Math.max(0, Date.now() - turnStartTotalStartedAtMs);
-                throw err;
+          const startReplacementTurn = async (targetTimings = timings) => {
+            let turnResult;
+            const turnStartTotalStartedAtMs = Date.now();
+            if (persistExtendedHistory) {
+              targetTimings.threadResumeMode = "pre-turn-start";
+              await resumeThreadBeforeTurnStart(targetTimings);
+              turnResult = await startTurn(["turnStartInitialMs", "turnStartMs"], targetTimings);
+            } else {
+              targetTimings.threadResumeMode = "optimistic-turn-start";
+              targetTimings.threadResumeSkipped = true;
+              targetTimings.threadResumeMs = 0;
+              targetTimings.resumeMs = 0;
+              try {
+                turnResult = await startTurn(["turnStartInitialMs", "turnStartMs"], targetTimings);
+              } catch (err) {
+                if (!turnStartRequiresThreadResume(err)) {
+                  targetTimings.turnStartMs = Math.max(0, Date.now() - turnStartTotalStartedAtMs);
+                  throw err;
+                }
+                targetTimings.turnStartResumeFallback = true;
+                targetTimings.turnStartResumeFallbackReason = "thread-resume-required";
+                targetTimings.threadResumeSkipped = false;
+                await resumeThreadBeforeTurnStart(targetTimings);
+                turnResult = await startTurn("turnStartRetryMs", targetTimings);
+                targetTimings.turnStartMs = Math.max(0, Date.now() - turnStartTotalStartedAtMs);
               }
-              timings.turnStartResumeFallback = true;
-              timings.turnStartResumeFallbackReason = "thread-resume-required";
-              timings.threadResumeSkipped = false;
-              await resumeThreadBeforeTurnStart();
-              turnResult = await startTurn("turnStartRetryMs");
-              timings.turnStartMs = Math.max(0, Date.now() - turnStartTotalStartedAtMs);
+            }
+            const notifyStartedAtMs = Date.now();
+            rememberThreadIdForTurnId(threadId, notifyLocalTurnStarted(threadId, turnResult, { source: "message-submit" }));
+            markSubmitTimingAliases(targetTimings, ["notifyLocalTurnStartedMs", "notifyMs"], notifyStartedAtMs);
+            return turnResult;
+          };
+          if (body.activeTurnId && !skipTurnSteer) {
+            let pendingSteerEchoKey = "";
+            const activeTurnId = String(body.activeTurnId);
+            const rememberPendingSteerEcho = () => {
+              if (pendingSteerEchoKey) return pendingSteerEchoKey;
+              pendingSteerEchoKey = pendingSteerEchoStore.remember({
+                threadId,
+                turnId: activeTurnId,
+                input,
+                clientSubmissionId: body.clientSubmissionId,
+              });
+              return pendingSteerEchoKey;
+            };
+            const notifySteeredUserMessage = () => {
+              codex.notifyMuxUserMessage({
+                threadId,
+                turnId: activeTurnId,
+                input,
+                clientSubmissionId: body.clientSubmissionId,
+              });
+            };
+            const startSteerRequest = () => {
+              rememberPendingSteerEcho();
+              const steerStartedAtMs = Date.now();
+              return codex.request("turn/steer", {
+                threadId,
+                input,
+                expectedTurnId: activeTurnId,
+              }, { timeoutMs: mutationRpcTimeoutMs, retry: false })
+                .then((steerResult) => ({
+                  ok: true,
+                  result: steerResult,
+                  elapsedMs: Math.max(0, Date.now() - steerStartedAtMs),
+                }))
+                .catch((err) => ({
+                  ok: false,
+                  error: err,
+                  elapsedMs: Math.max(0, Date.now() - steerStartedAtMs),
+                }));
+            };
+            const handleSteerOutcome = async (outcome, options = {}) => {
+              const background = options.background === true;
+              const targetTimings = options.timings || timings;
+              targetTimings.steerMs = Math.max(0, Number(outcome && outcome.elapsedMs) || 0);
+              if (outcome && outcome.ok) {
+                notifySteeredUserMessage();
+                if (background) {
+                  targetTimings.totalMs = targetTimings.steerMs;
+                  logMessageSubmit("steer-background-done", {
+                    threadId,
+                    turnId: activeTurnId,
+                    clientSubmissionId: body.clientSubmissionId,
+                    timings: targetTimings,
+                  });
+                }
+                return { handled: true, result: outcome.result || {} };
+              }
+              const err = outcome && outcome.error;
+              if (isTurnSteerUnsupportedError(err)) {
+                notifySteeredUserMessage();
+                if (background) {
+                  logMessageSubmit("steer-background-unsupported", {
+                    threadId,
+                    turnId: activeTurnId,
+                    clientSubmissionId: body.clientSubmissionId,
+                    timings: targetTimings,
+                  });
+                }
+                return { handled: true, result: {} };
+              }
+              if (!isStaleActiveTurnError(err)) throw err;
+              if (!background && pendingSteerEchoKey) pendingSteerEchoStore.forget(pendingSteerEchoKey);
+              logMessageSubmit(background ? "active-turn-stale-background" : "active-turn-stale", {
+                threadId,
+                turnId: activeTurnId,
+                clientSubmissionId: body.clientSubmissionId,
+                error: err.message || String(err),
+                timings: targetTimings,
+              });
+              return { handled: false, error: err };
+            };
+            const steerPromise = startSteerRequest();
+            const fastAcceptMs = Math.max(0, Number(activeTurnSteerFastAcceptMs) || 0);
+            const firstSteerOutcome = await Promise.race([
+              steerPromise,
+              resolveAfter(fastAcceptMs, { pending: true }),
+            ]);
+            if (firstSteerOutcome && firstSteerOutcome.pending) {
+              timings.steerQueued = true;
+              timings.steerFastAcceptMs = Math.max(0, Date.now() - routeStartedAtMs);
+              timings.steerMs = Math.max(0, Number(fastAcceptMs) || 0);
+              scheduleBackgroundTask(async () => {
+                const backgroundTimings = {};
+                try {
+                  const backgroundOutcome = await steerPromise;
+                  const handled = await handleSteerOutcome(backgroundOutcome, {
+                    background: true,
+                    timings: backgroundTimings,
+                  });
+                  if (!handled.handled) {
+                    backgroundTimings.staleFallback = true;
+                    const fallbackStartedAtMs = Date.now();
+                    const fallbackResult = await startReplacementTurn(backgroundTimings);
+                    backgroundTimings.staleFallbackMs = Math.max(0, Date.now() - fallbackStartedAtMs);
+                    backgroundTimings.totalMs = Number(backgroundTimings.steerMs || 0)
+                      + Number(backgroundTimings.staleFallbackMs || 0);
+                    logMessageSubmit("steer-background-stale-fallback-done", {
+                      threadId,
+                      staleTurnId: activeTurnId,
+                      clientSubmissionId: body.clientSubmissionId,
+                      resultTurnId: fallbackResult && (fallbackResult.turnId || fallbackResult.id || fallbackResult.turn && fallbackResult.turn.id || ""),
+                      timings: backgroundTimings,
+                    });
+                  }
+                } catch (err) {
+                  if (pendingSteerEchoKey) pendingSteerEchoStore.forget(pendingSteerEchoKey);
+                  logMessageSubmit("steer-background-failed", {
+                    threadId,
+                    turnId: activeTurnId,
+                    clientSubmissionId: body.clientSubmissionId,
+                    error: err.message || String(err),
+                    timings: backgroundTimings,
+                  });
+                }
+              });
+              logMessageSubmit("steer-queued", {
+                threadId,
+                turnId: activeTurnId,
+                clientSubmissionId: body.clientSubmissionId,
+                timings,
+              });
+              return {
+                ok: true,
+                turnId: activeTurnId,
+                activeTurnId,
+                steeringQueued: true,
+              };
+            }
+            const handledSteer = await handleSteerOutcome(firstSteerOutcome);
+            if (handledSteer.handled) {
+              return handledSteer.result;
             }
           }
-          const notifyStartedAtMs = Date.now();
-          rememberThreadIdForTurnId(threadId, notifyLocalTurnStarted(threadId, turnResult, { source: "message-submit" }));
-          markSubmitTimingAliases(timings, ["notifyLocalTurnStartedMs", "notifyMs"], notifyStartedAtMs);
-          return turnResult;
+          return await startReplacementTurn(timings);
         });
         markSubmitTiming(timings, "dedupeWaitMs", dedupeStartedAtMs);
         timings.totalMs = Math.max(0, Date.now() - routeStartedAtMs);
