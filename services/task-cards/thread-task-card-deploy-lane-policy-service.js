@@ -321,6 +321,11 @@ function findDeployLaneForPlugin(threads = [], pluginId = "", options = {}) {
   return { title, deployLane };
 }
 
+function isAssignedDeployLaneForPlugin(thread, pluginId = "", options = {}) {
+  if (!pluginId || !isHomeAiDeployLaneThread(thread, options)) return false;
+  return normalizeTitle(displayTitle(thread)) === normalizeTitle(deployLaneTitleForPlugin(pluginId, options));
+}
+
 function planHomeAiDeployLaneRouting(input = {}) {
   const body = input.body && typeof input.body === "object" ? input.body : {};
   const sourceThread = input.sourceThread && typeof input.sourceThread === "object" ? input.sourceThread : {};
@@ -346,6 +351,21 @@ function planHomeAiDeployLaneRouting(input = {}) {
     };
   }
   const pluginId = routinePluginId(body, sourceThread);
+  const expectedDeployLaneTitle = deployLaneTitleForPlugin(pluginId, options);
+  const targetIds = Array.from(new Set(targets.map((thread) => thread && thread.id).filter(Boolean)));
+  const sourceThreadId = String(sourceThread && sourceThread.id || "").trim();
+  if (isAssignedDeployLaneForPlugin(sourceThread, pluginId, options)
+    && targetIds.some((id) => String(id || "").trim() !== sourceThreadId)) {
+    return {
+      action: "reject",
+      code: "deploy_lane_already_at_expected_lane",
+      message: "Routine plugin deployment is already in its assigned deploy lane and must not be redirected to another deploy lane.",
+      reason: "source_thread_is_assigned_deploy_lane",
+      pluginId,
+      expectedDeployLaneTitle,
+      deployLane: normalizeHomeAiDeployLaneSummary(sourceThread, options),
+    };
+  }
   const laneMatch = findDeployLaneForPlugin([...targets, ...visibleThreads], pluginId, options);
   const deployLane = laneMatch.deployLane;
   if (!deployLane) {
@@ -367,7 +387,6 @@ function planHomeAiDeployLaneRouting(input = {}) {
       deployLane,
     };
   }
-  const targetIds = Array.from(new Set(targets.map((thread) => thread && thread.id).filter(Boolean)));
   if (targetIds.length === 1 && String(targetIds[0]) === String(deployLane.id || "")) {
     return {
       action: "allow",

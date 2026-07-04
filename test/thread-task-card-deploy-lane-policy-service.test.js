@@ -126,6 +126,34 @@ test("plugin_deployment card for codex-mobile-web resolves to Codex Mobile Deplo
   assert.deepEqual(plan.targetThreadIds, ["deploy-codex"]);
 });
 
+test("plugin_deployment card already in assigned Codex Mobile lane cannot redirect to Home AI Deploy", () => {
+  const homeAiDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-home", HOME_AI_DEPLOY_LANE_TITLE, homeAiCwd, {
+    updatedAt: 100,
+  }));
+  const codexDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-codex", "Codex Mobile Deploy Lane", homeAiCwd, {
+    updatedAt: 20,
+  }));
+
+  const plan = planHomeAiDeployLaneRouting({
+    body: {
+      cardKind: "plugin_deployment",
+      pluginId: "codex-mobile-web",
+      title: "Deploy Codex Mobile plugin",
+      body: "Routine production deploy and readback.",
+    },
+    sourceThread: codexDeployLane,
+    targetThreads: [homeAiDeployLane],
+    visibleThreads: [homeAiDeployLane, codexDeployLane],
+  });
+
+  assert.equal(plan.action, "reject");
+  assert.equal(plan.code, "deploy_lane_already_at_expected_lane");
+  assert.equal(plan.reason, "source_thread_is_assigned_deploy_lane");
+  assert.equal(plan.pluginId, "codex-mobile-web");
+  assert.equal(plan.expectedDeployLaneTitle, "Codex Mobile Deploy Lane");
+  assert.equal(plan.deployLane.id, "deploy-codex");
+});
+
 test("plugin_deployment deploy lane matcher de-duplicates target and visible summaries by id", () => {
   const targetSummary = thread("deploy-codex", "Codex Mobile Deploy Lane", homeAiCwd, { updatedAt: 10 });
   const visibleSummary = thread("deploy-codex", "Codex Mobile Deploy Lane", homeAiCwd, { updatedAt: 20 });
