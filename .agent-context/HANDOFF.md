@@ -801,3 +801,43 @@ The previous full handoff was archived and should be opened only when old proven
   tokens, private thread bodies, task-card bodies, endpoint bodies, provider
   payloads, screenshots, DB rows, raw auth URLs, password paths, full rollout
   contents, full prompts, or long logs were exposed.
+
+## 2026-07-04T23:11:00+08:00 - Codex Mobile deploy-lane self-redirect blocked locally
+
+- User flagged a routing contradiction: routine `codex-mobile-web` deployment
+  should run in the dedicated `Codex Mobile Deploy Lane`, but the previous
+  card `ttc_228aeb19b95bce23c5` was redirected by that lane to generic
+  `Home AI Deploy` as `ttc_d38c5a88850906822f`; the terminal deploy receipt
+  then returned to `Codex Mobile Deploy Lane` instead of the original
+  implementation source.
+- Contract readback confirmed the user was correct: the central macOS deploy
+  contract and deployment module say plugin-specific deploy lanes take
+  precedence while live; `codex-mobile-web` maps to `Codex Mobile Deploy Lane`,
+  with fallback to another shared deploy lane only when the dedicated lane is
+  missing, terminal, stuck, hidden, archived, or transport-failing.
+- Local source commit `82ff6cce`
+  (`fix: block deploy lane self-redirects`) closes the Codex Mobile Web routing
+  gap: `services/task-cards/thread-task-card-deploy-lane-policy-service.js`
+  now rejects a routine plugin deployment when the source thread is already
+  that plugin's assigned deploy lane and the target is another lane. The
+  bounded reject code is `deploy_lane_already_at_expected_lane`, with reason
+  `source_thread_is_assigned_deploy_lane`.
+- Regression coverage:
+  - policy test proves a `codex-mobile-web` `plugin_deployment` card already
+    in `Codex Mobile Deploy Lane` cannot redirect to `Home AI Deploy`;
+  - route test proves `buildThreadTaskCardCreatePayload()` surfaces the same
+    409 bounded error at the dynamic tool boundary.
+- Validation passed:
+  `node --test test/thread-task-card-deploy-lane-policy-service.test.js
+  test/thread-task-card-route.test.js` (`49` tests),
+  `npm run --silent check`, and `git diff --check`.
+- New deployment/repair card sent to `Codex Mobile Deploy Lane`:
+  `ttc_e1664dd87af3390f16`. It requests central deployment of `82ff6cce`,
+  forbids redirecting this live dedicated-lane task to `Home AI Deploy`, and
+  asks the lane to include bounded evidence about whether the previous
+  misrouted Home AI deploy result actually deployed the earlier performance
+  fix and whether a replacement source-visible receipt remains needed.
+- Production deployment of `82ff6cce` has not been returned yet in this
+  thread. No raw secrets, access keys, cookies, launch tokens, private thread
+  bodies, task-card bodies, endpoint bodies, provider payloads, screenshots,
+  DB rows, raw auth URLs, password paths, or long logs were exposed.
