@@ -3072,9 +3072,14 @@ test("large resting recent projection miss defers initial turns/list seed", asyn
   assert.equal(calls.includes("log:deferred_turns_list_initial_seed_done"), true);
 });
 
-test("deferred initial turns/list seed timeout releases pending state", async () => {
+test("deferred initial turns/list seed timeout releases pending state with backoff", async () => {
   const deferredTasks = [];
+  let nowMs = 1_000;
   const { service, calls } = createHarness({
+    now: () => {
+      nowMs += 3;
+      return nowMs;
+    },
     summary: {
       id: "thread-1",
       status: { type: "completed" },
@@ -3097,6 +3102,7 @@ test("deferred initial turns/list seed timeout releases pending state", async ()
       reason: "large-rollout",
     }),
     deferredInitialTurnsListSeedTimeoutMs: 1,
+    deferredInitialTurnsListSeedBackoffMs: 100,
   });
 
   const first = await service.readThreadDetail({
@@ -3117,8 +3123,21 @@ test("deferred initial turns/list seed timeout releases pending state", async ()
     preferRecentTurns: true,
     threadLog: (event) => calls.push(`log:${event}`),
   });
-  assert.equal(second.body.thread.mobileDeferredProjectionSeed.scheduled, true);
-  assert.equal(second.body.thread.mobileDeferredProjectionSeed.reason, "large-projection-miss");
+  assert.equal(second.body.thread.mobileDeferredProjectionSeed.scheduled, false);
+  assert.equal(second.body.thread.mobileDeferredProjectionSeed.reason, "seed-backoff");
+  assert.ok(second.body.thread.mobileDeferredProjectionSeed.retryAfterMs > 0);
+  assert.equal(second.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "deferred-backoff");
+  assert.equal(deferredTasks.length, 1);
+
+  nowMs += 200;
+  const third = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event) => calls.push(`log:${event}`),
+  });
+  assert.equal(third.body.thread.mobileDeferredProjectionSeed.scheduled, true);
+  assert.equal(third.body.thread.mobileDeferredProjectionSeed.reason, "large-projection-miss");
   assert.equal(deferredTasks.length, 2);
 });
 
