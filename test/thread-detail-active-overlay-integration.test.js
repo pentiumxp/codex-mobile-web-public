@@ -242,6 +242,7 @@ test("read orchestration uses live projection provider for active overlay withou
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), []);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
     "active-overlay-window-lookup:hit",
+    "active-overlay-window-lookup:hit",
   ]);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
   assert.equal(timings.readDecision, "projection-active-overlay");
@@ -383,6 +384,7 @@ test("thread detail route smoke returns active overlay from mode=recent without 
   assert.ok(calls.includes("route-read-prefer-recent:true"));
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), []);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
+    "active-overlay-window-lookup:hit",
     "active-overlay-window-lookup:hit",
   ]);
   assert.ok(routeLogs.some((log) => log.event === "start" && log.details.transport === "mux"));

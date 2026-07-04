@@ -3022,6 +3022,55 @@ test("recent thread detail can use initial bounded turns/list without full read"
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "turns-list-initial");
 });
 
+test("recent completed thread downgrades stale active initial window instead of full read", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "completed" },
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    turnsListThreadReadResult: async ({ mode }) => {
+      calls.push(`turns-list:${mode}`);
+      return {
+        thread: {
+          id: "thread-1",
+          status: { type: "completed" },
+          turns: [{
+            id: "stale-active-turn",
+            status: { type: "active" },
+            items: [{ id: "agent-1", type: "agentMessage", text: "done" }],
+          }],
+          mobileReadMode: mode,
+        },
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event) => calls.push(`log:${event}`),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "turns-list-initial");
+  assert.deepEqual(calls.filter((call) => call.startsWith("turns-list:")), ["turns-list:turns-list-initial"]);
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("turns-list:turns-list-large"), false);
+  assert.ok(calls.includes("seed:partial"));
+  assert.ok(calls.includes("log:turns_list_initial_stale_active_turns_downgraded"));
+  const turn = response.body.thread.turns[0];
+  assert.equal(turn.mobileStaleActiveTurn, true);
+  assert.equal(turn.status.type, "completed");
+  assert.equal(turn.status.mobileStaleActiveTurn, true);
+  assert.equal(turn.status.previousType, "active");
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.activeFullReadRequired, false);
+  assert.equal(timings.readDecision, "initial-turns-list");
+  assert.equal(timings.projectionSeedStatus, "seeded-partial");
+});
+
 test("recent thread detail can reuse partial projection without app-server reads", async () => {
   const { service, calls } = createHarness({
     projectedThreadResult: (input, summary, runtimeSettings, options = {}) => {

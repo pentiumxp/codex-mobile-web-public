@@ -972,7 +972,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(threadDetailRuntimeServiceJs, /prepareResponse: prepareThreadDetailResponseResult/);
   assert.match(apiDispatchRouteServiceJs, /threadDetailReadOrchestrationService\.readThreadDetail/);
   assert.match(apiDispatchRouteServiceJs, /handleThreadDetailReadRoute\(\{/);
-  assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailModeFromUrl\(url\) === "recent"/);
+  assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailMode === "recent" \|\| \(detailMode !== "full" && explicitCompactBudgetFromUrl\(url\)\)/);
   assert.match(threadDetailRouteServiceJs, /sendJson\(status, body\)/);
   assert.match(serverJs, /require\("\.\/server-routes\/server-route-composition-service"\)/);
   assert.match(serverRouteCompositionServiceJs, /require\("\.\/api-dispatch-route-service"\)/);

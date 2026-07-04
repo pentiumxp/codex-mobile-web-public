@@ -8,6 +8,17 @@ function detailModeFromUrl(url) {
   return text(url && url.searchParams && url.searchParams.get("mode")).toLowerCase();
 }
 
+function explicitCompactBudgetFromUrl(url) {
+  const params = url && url.searchParams;
+  if (!params) return false;
+  const value = text(
+    params.get("budget")
+      || params.get("responseBudget")
+      || params.get("responseBudgetEvidence"),
+  ).toLowerCase();
+  return Boolean(value && value !== "full" && value !== "verbose");
+}
+
 function responseBudgetEvidenceFromUrl(url) {
   const value = text(url && url.searchParams && (
     url.searchParams.get("budget")
@@ -35,7 +46,8 @@ async function handleThreadDetailReadRoute(input = {}) {
   const requestStartedAtMs = Number(input.requestStartedAtMs || now());
   if (!threadId || !readThreadDetail || !sendJson) return { handled: false, reason: "invalid-route-input" };
 
-  const preferRecentTurns = detailModeFromUrl(url) === "recent";
+  const detailMode = detailModeFromUrl(url);
+  const preferRecentTurns = detailMode === "recent" || (detailMode !== "full" && explicitCompactBudgetFromUrl(url));
   const responseBudgetEvidence = responseBudgetEvidenceFromUrl(url);
   const threadLog = (event, details = {}) => logThreadDetail(event, Object.assign({
     threadId,

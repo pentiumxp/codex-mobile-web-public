@@ -383,7 +383,7 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(threadDetailCompactionServiceJs, /return JSON\.stringify\(\{ turnId, includeAnchor: false \}\);/);
   assert.match(threadDetailCompactionServiceJs, /out\.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn\(out\.turns\[0\]\);/);
   assert.match(apiDispatchRouteServiceJs, /handleThreadDetailReadRoute\(\{/);
-  assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailModeFromUrl\(url\) === "recent";/);
+  assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailMode === "recent" \|\| \(detailMode !== "full" && explicitCompactBudgetFromUrl\(url\)\);/);
   assert.match(threadDetailReadOrchestrationServiceJs, /planActiveThreadDetailReadPolicy\(\{ summary, preferRecentTurns \}\)/);
   assert.match(threadDetailReadOrchestrationServiceJs, /if \(activeReadPolicy\.shouldUseInitialTurnsList\) \{/);
   assert.match(threadDetailReadOrchestrationServiceJs, /"turns-list-initial"/);

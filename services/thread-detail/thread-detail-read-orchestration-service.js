@@ -253,6 +253,100 @@ function isActiveTurn(turn) {
   return /running|active|queued|processing|inprogress|in_progress|in-progress/i.test(statusText(turn && turn.status));
 }
 
+function activeMarkerTurnId(value) {
+  if (!value) return "";
+  if (typeof value === "object") {
+    return nonEmptyText(value.turnId || value.turn_id || value.id || value.activeTurnId || value.active_turn_id);
+  }
+  return nonEmptyText(value);
+}
+
+function summaryActiveTurnMarker(summary) {
+  if (!summary || typeof summary !== "object") return "";
+  for (const value of [
+    summary.activeTurnId,
+    summary.active_turn_id,
+    summary.mobileActiveTurnId,
+    summary.mobile_active_turn_id,
+    summary.mobileRolloutActiveTurn,
+    summary.mobileLocalActiveStatus,
+  ]) {
+    const id = activeMarkerTurnId(value);
+    if (id) return id;
+  }
+  return "";
+}
+
+function isActiveLikeStatusValue(value) {
+  return /running|active|queued|processing|inprogress|in_progress|in-progress|pending|started/i.test(statusText(value));
+}
+
+function isRestingLikeStatusValue(value) {
+  return /^(completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/i
+    .test(statusText(value).trim());
+}
+
+function summaryRejectsWindowActiveTurns(summary) {
+  if (!summary || typeof summary !== "object") return false;
+  if (summaryActiveTurnMarker(summary)) return false;
+  const statuses = [
+    summary.status,
+    summary.mobileStatus,
+    summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.status,
+  ].filter(Boolean);
+  if (statuses.some(isActiveLikeStatusValue)) return false;
+  return statuses.some(isRestingLikeStatusValue);
+}
+
+function staleCompletedStatusFromActiveStatus(value) {
+  if (isCompletedTurn({ status: value })) return value;
+  const previousType = statusText(value);
+  return {
+    type: "completed",
+    mobileStaleActiveTurn: true,
+    previousType,
+    reason: "summary-resting-active-window",
+  };
+}
+
+function clearThreadActiveMarkers(thread) {
+  if (!thread || typeof thread !== "object") return;
+  delete thread.activeTurnId;
+  delete thread.active_turn_id;
+  delete thread.mobileActiveTurnId;
+  delete thread.mobile_active_turn_id;
+  delete thread.mobileRolloutActiveTurn;
+  delete thread.mobileLocalActiveStatus;
+  delete thread.mobileStatusTurnId;
+  delete thread.mobileStatusSource;
+}
+
+function markWindowActiveTurnsStaleForRestingSummary(thread, summary) {
+  if (!summaryRejectsWindowActiveTurns(summary) || !thread || typeof thread !== "object") return 0;
+  const turns = Array.isArray(thread.turns) ? thread.turns : [];
+  let count = 0;
+  for (const turn of turns) {
+    if (!isActiveTurn(turn)) continue;
+    turn.mobileStaleActiveTurn = true;
+    turn.status = staleCompletedStatusFromActiveStatus(turn.status);
+    count += 1;
+  }
+  if (!count) return 0;
+  clearThreadActiveMarkers(thread);
+  if (isActiveLikeStatusValue(thread.status)) {
+    thread.status = {
+      type: "completed",
+      mobileClearedStaleActiveSummary: true,
+      previousType: statusText(thread.status),
+    };
+  }
+  thread.mobileStaleActiveTurn = {
+    count,
+    reason: "summary-resting-active-window",
+  };
+  return count;
+}
+
 function isUserVisibleInputItem(item) {
   const type = itemType(item);
   if (type === "usermessage") return true;
@@ -759,7 +853,14 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         returnedTurns: Array.isArray(projectedThread.turns) ? projectedThread.turns.length : null,
         omittedTurns: projectedThread.mobileOmittedTurnCount || 0,
       });
-      const projectedActiveTurnId = activeTurnIdFromThread(projectedThread);
+      const projectedStaleActiveTurns = markWindowActiveTurnsStaleForRestingSummary(projectedThread, summary);
+      if (projectedStaleActiveTurns) {
+        threadLog("projection_stale_active_turns_downgraded", {
+          count: projectedStaleActiveTurns,
+          reason: "summary-resting-active-window",
+        });
+      }
+      const projectedActiveTurnId = projectedStaleActiveTurns ? "" : activeTurnIdFromThread(projectedThread);
       const projectedThreadIsPartial = projectionThreadIsPartial(projectedThread);
       if (projectedActiveTurnId && projectedThreadIsPartial && !activeReadPolicy.activeFullReadRequired) {
         activeReadPolicy = promoteActiveReadPolicy(activeReadPolicy, "projection-window-active-turn");
@@ -1258,6 +1359,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
 
     if (!activeReadPolicy.activeFullReadRequired
       && preferRecentTurns
+      && !summaryRejectsWindowActiveTurns(summary)
       && projection
       && resolveActiveWindowOverlay
       && activeOverlayProjectionWindowLookup) {
@@ -1397,7 +1499,14 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           return hiddenResponse();
         }
         timer.mark("turnsListInitialMs", turnsStartedAtMs);
-        const initialActiveTurnId = activeTurnIdFromThread(result && result.thread);
+        const initialStaleActiveTurns = markWindowActiveTurnsStaleForRestingSummary(result && result.thread, summary);
+        if (initialStaleActiveTurns) {
+          threadLog("turns_list_initial_stale_active_turns_downgraded", {
+            count: initialStaleActiveTurns,
+            reason: "summary-resting-active-window",
+          });
+        }
+        const initialActiveTurnId = initialStaleActiveTurns ? "" : activeTurnIdFromThread(result && result.thread);
         if (initialActiveTurnId && !activeReadPolicy.activeFullReadRequired) {
           activeReadPolicy = promoteActiveReadPolicy(activeReadPolicy, "initial-window-active-turn");
           applyActivePolicyContext(context, activeReadPolicy);

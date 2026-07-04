@@ -114,6 +114,34 @@ test("thread detail route service preserves complete=false without final complet
   ]);
 });
 
+test("thread detail route service maps explicit compact budget to recent orchestration", async () => {
+  const calls = [];
+  const result = await handleThreadDetailReadRoute({
+    threadId: "thread-1",
+    url: routeUrl("/api/threads/thread-1?budget=compact"),
+    readThreadDetail: async (request) => {
+      calls.push({
+        type: "read",
+        preferRecentTurns: request.preferRecentTurns,
+        responseBudgetEvidence: request.responseBudgetEvidence,
+      });
+      return {
+        status: 200,
+        mode: "projection-v4-partial",
+        body: { thread: { id: "thread-1" } },
+      };
+    },
+    sendJson: (status, body) => calls.push({ type: "send", status, body }),
+  });
+
+  assert.equal(result.handled, true);
+  assert.deepEqual(calls[0], {
+    type: "read",
+    preferRecentTurns: true,
+    responseBudgetEvidence: "compact",
+  });
+});
+
 test("thread detail route service forwards full response-budget evidence for diagnostics", async () => {
   const calls = [];
   const result = await handleThreadDetailReadRoute({
