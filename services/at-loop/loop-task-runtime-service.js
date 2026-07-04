@@ -1532,12 +1532,14 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       saveState();
       return { ok: true, loop: publicLoop(loop), slice: publicSlice(slice), cardCount: cards.length };
     } catch (err) {
-      if (!options.retriedAfterTargetClear && isTargetUndeliverableDispatchError(err)) {
+      const dispatchTargetClearCount = Math.max(0, Number(options.dispatchTargetClearCount || (options.retriedAfterTargetClear ? 1 : 0)) || 0);
+      if (dispatchTargetClearCount < 6 && isTargetUndeliverableDispatchError(err)) {
         const failedTargetThreadId = compactOneLine(slice.targetThreadId || targetThreadId);
         clearRoleLaneTarget(loop, slice, "dispatch_target_not_deliverable");
         const excludedTargetThreadIds = Array.from(new Set([...(options.excludedTargetThreadIds || []), failedTargetThreadId].filter(Boolean)));
         return dispatchRole(loop, role, Object.assign({}, options, {
           retriedAfterTargetClear: true,
+          dispatchTargetClearCount: dispatchTargetClearCount + 1,
           excludedTargetThreadIds,
         }));
       }
