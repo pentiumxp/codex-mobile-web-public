@@ -126,6 +126,18 @@ test("plugin_deployment card for codex-mobile-web resolves to Codex Mobile Deplo
   assert.deepEqual(plan.targetThreadIds, ["deploy-codex"]);
 });
 
+test("plugin_deployment deploy lane matcher de-duplicates target and visible summaries by id", () => {
+  const targetSummary = thread("deploy-codex", "Codex Mobile Deploy Lane", homeAiCwd, { updatedAt: 10 });
+  const visibleSummary = thread("deploy-codex", "Codex Mobile Deploy Lane", homeAiCwd, { updatedAt: 20 });
+
+  const match = findHomeAiDeployLaneThread([targetSummary, visibleSummary], {
+    title: "Codex Mobile Deploy Lane",
+  });
+
+  assert.equal(match.id, "deploy-codex");
+  assert.equal(match.mobileDeployLane, true);
+});
+
 test("plugin_deployment card for movie resolves to Movie Deploy Lane when live", () => {
   const ordinaryHomeAi = thread("home-1", "Home AI 06-22", homeAiCwd, { updatedAt: 100 });
   const movieDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-movie", "Movie Deploy Lane", homeAiCwd, {

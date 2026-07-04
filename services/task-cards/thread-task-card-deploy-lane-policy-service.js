@@ -253,13 +253,22 @@ function isRoutinePluginDeploymentRequest(input = {}, sourceThread = {}, options
 function findHomeAiDeployLaneThread(threads = [], options = {}) {
   const title = String(options.title || "").trim();
   const titleKey = normalizeTitle(title);
+  const byId = new Map();
+  const withoutIds = [];
   const matches = [];
   for (const thread of threads || []) {
     if (!isHomeAiDeployLaneThread(thread, options)) continue;
     if (thread.archived || thread.deleted) continue;
     if (titleKey && normalizeTitle(displayTitle(thread)) !== titleKey) continue;
-    matches.push(normalizeHomeAiDeployLaneSummary(thread, options));
+    const match = normalizeHomeAiDeployLaneSummary(thread, options);
+    const id = String(match && match.id || "").trim();
+    if (id) {
+      if (!byId.has(id)) byId.set(id, match);
+    } else {
+      withoutIds.push(match);
+    }
   }
+  matches.push(...byId.values(), ...withoutIds);
   return matches.length === 1 ? matches[0] : null;
 }
 

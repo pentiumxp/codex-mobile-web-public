@@ -514,7 +514,11 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       .map((threadId) => {
         const id = String(threadId || "").trim();
         if (!id) return null;
-        return readThreadSummary(id) || { id };
+        const stored = readThreadSummary(id) || null;
+        const visible = readThreadTaskCardVisibleTargetSummary(id) || null;
+        const merged = Object.assign({}, stored || {}, visible || {});
+        if (!String(merged.id || "").trim()) merged.id = id;
+        return merged;
       })
       .filter(Boolean);
   }
@@ -678,7 +682,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     Object.assign(targetWorkspaceIds, routingPayload.targetWorkspaceIds && typeof routingPayload.targetWorkspaceIds === "object" ? routingPayload.targetWorkspaceIds : {});
     for (const targetThreadId of targetThreadIds) {
       if (!targetThreadId || targetWorkspaceIds[targetThreadId]) continue;
-      const targetSummary = readThreadSummary(targetThreadId);
+      const targetSummary = readThreadTaskCardVisibleTargetSummary(targetThreadId) || readThreadSummary(targetThreadId);
       targetWorkspaceIds[targetThreadId] = body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "";
     }
     const targetThreads = taskCardPayloadTargetThreads(targetThreadIds, readThreadSummary);
@@ -1432,7 +1436,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         for (const targetThreadId of routedTargetIds) {
           const id = String(targetThreadId || "").trim();
           if (!id || targetWorkspaceIds[id]) continue;
-          const targetSummary = readStateDbThread(id) || readStartedThread(id);
+          const targetSummary = readThreadTaskCardVisibleTargetSummary(id) || readStateDbThread(id) || readStartedThread(id);
           targetWorkspaceIds[id] = routedBody.targetWorkspaceId || routedBody.targetWorkspace || (targetSummary && targetSummary.cwd) || "";
         }
         const cards = await threadTaskCardService.createMany(Object.assign({}, routedBody, {

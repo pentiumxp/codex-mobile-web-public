@@ -120,7 +120,8 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(serverJs, /createThreadDetailStateBridgeService/);
   assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-state-bridge-service"\)/);
   assert.match(threadDetailStateBridgeServiceJs, /function attachThreadTaskCardsToThread\(/);
-  assert.match(threadDetailStateBridgeServiceJs, /thread\.threadTaskCards = typeof threadTaskCardService\.listForThread === "function"/);
+  assert.match(functionBody(threadDetailStateBridgeServiceJs, "attachThreadTaskCardsToThread"), /summary && Array\.isArray\(summary\.cards\)/);
+  assert.match(functionBody(threadDetailStateBridgeServiceJs, "attachThreadTaskCardsToThread"), /threadTaskCardService\.listForThread\(thread\.id\)/);
   assert.match(threadDetailStateBridgeServiceJs, /thread\.pendingIncomingTaskCardCount = Number\(counts\.pendingIncoming \|\| 0\)/);
   assert.match(threadListStateServiceJs, /function attachThreadTaskCardCountsToThreadListResult\(/);
   assert.match(functionBody(threadDetailStateBridgeServiceJs, "attachThreadTaskCardsToResult"), /attachThreadTaskCardsToThread\(result\.thread\)/);
@@ -755,6 +756,14 @@ test("source-thread task-card route uses semantic idempotency for routine plugin
   };
   const firstDeploy = service.buildThreadTaskCardCreatePayload(Object.assign({}, deployBody, { requestId: "dynamic-tool-call" }), "source-thread");
   const retryDeploy = service.buildThreadTaskCardCreatePayload(Object.assign({}, deployBody, { requestId: "fallback-script-retry" }), "source-thread");
+  assert.deepEqual(firstDeploy.targetThreadIds, ["deploy-lane"]);
+  assert.deepEqual(firstDeploy.targetWorkspaceIds, {
+    "deploy-lane": "/Users/hermes-dev/HermesMobileDev/app",
+  });
+  assert.equal(firstDeploy.routeKind, "deployment");
+  assert.equal(firstDeploy.routeResolution.code, "exact_thread_resolved");
+  assert.equal(firstDeploy.routeResolution.targetThreadId, "deploy-lane");
+  assert.equal(firstDeploy.mobileDeployLaneRouting, undefined);
   assert.equal(firstDeploy.idempotencyKey, retryDeploy.idempotencyKey);
 
   const ordinaryBody = {
@@ -766,6 +775,41 @@ test("source-thread task-card route uses semantic idempotency for routine plugin
   const firstOrdinary = service.buildThreadTaskCardCreatePayload(Object.assign({}, ordinaryBody, { requestId: "dynamic-tool-call" }), "source-thread");
   const retryOrdinary = service.buildThreadTaskCardCreatePayload(Object.assign({}, ordinaryBody, { requestId: "fallback-script-retry" }), "source-thread");
   assert.notEqual(firstOrdinary.idempotencyKey, retryOrdinary.idempotencyKey);
+});
+
+test("source-thread task-card route accepts exact deploy lane title when stored summary is stale", () => {
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {},
+    stableTextHash,
+    readThreadListFallback: () => [
+      { id: "source-thread", name: "Codex Mobile Implementation", cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" },
+      { id: "deploy-lane", name: "Codex Mobile Deploy Lane", cwd: "/Users/hermes-dev/HermesMobileDev/app" },
+    ],
+    readStateDbThread: (threadId) => {
+      if (threadId === "source-thread") return { id: "source-thread", title: "Codex Mobile Implementation", cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" };
+      if (threadId === "deploy-lane") return { id: "deploy-lane", title: "deploy-lane" };
+      return null;
+    },
+    threadDisplayTitle: (thread) => thread && (thread.name || thread.title || thread.preview || thread.id) || "",
+  });
+
+  const payload = service.buildThreadTaskCardCreatePayload({
+    targetThreadTitle: "Codex Mobile Deploy Lane",
+    cardKind: "plugin_deployment",
+    pluginId: "codex-mobile-web",
+    title: "Deploy Codex Mobile",
+    body: "Deploy source ref 7483f4d7 for production readback.",
+    workflowMode: "manual",
+  }, "source-thread");
+
+  assert.deepEqual(payload.targetThreadIds, ["deploy-lane"]);
+  assert.deepEqual(payload.targetWorkspaceIds, {
+    "deploy-lane": "/Users/hermes-dev/HermesMobileDev/app",
+  });
+  assert.equal(payload.routeKind, "deployment");
+  assert.equal(payload.routeResolution.inputReferenceKind, "title");
+  assert.equal(payload.routeResolution.targetThreadId, "deploy-lane");
+  assert.equal(payload.mobileDeployLaneRouting, undefined);
 });
 
 test("source-thread task-card route persists exact role routing evidence", () => {
