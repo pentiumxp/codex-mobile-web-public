@@ -37,6 +37,14 @@ function markSubmitTimingAliases(timings, names, startedAtMs) {
   return elapsed;
 }
 
+function turnStartResultTurnId(result) {
+  return String(result && (
+    result.turnId
+    || result.id
+    || result.turn && (result.turn.id || result.turn.turnId || result.turn.turn_id)
+  ) || "").trim();
+}
+
 function compactErrorText(err) {
   if (!err) return "";
   const parts = [
@@ -475,8 +483,39 @@ function createThreadMessageRouteService(dependencies = {}) {
               }
             }
             const notifyStartedAtMs = Date.now();
-            rememberThreadIdForTurnId(threadId, notifyLocalTurnStarted(threadId, turnResult, { source: "message-submit" }));
-            markSubmitTimingAliases(targetTimings, ["notifyLocalTurnStartedMs", "notifyMs"], notifyStartedAtMs);
+            const immediateTurnId = turnStartResultTurnId(turnResult);
+            if (immediateTurnId) {
+              rememberThreadIdForTurnId(threadId, immediateTurnId);
+              targetTimings.notifyLocalTurnStartedQueued = true;
+              markSubmitTimingAliases(targetTimings, ["notifyLocalTurnStartedMs", "notifyMs"], notifyStartedAtMs);
+              scheduleBackgroundTask(async () => {
+                const backgroundTimings = {};
+                const backgroundStartedAtMs = Date.now();
+                try {
+                  const notifiedTurnId = notifyLocalTurnStarted(threadId, turnResult, { source: "message-submit" });
+                  markSubmitTimingAliases(backgroundTimings, ["notifyLocalTurnStartedMs", "notifyMs"], backgroundStartedAtMs);
+                  if (notifiedTurnId) rememberThreadIdForTurnId(threadId, notifiedTurnId);
+                  logMessageSubmit("notify-done", {
+                    threadId,
+                    turnId: notifiedTurnId || immediateTurnId,
+                    clientSubmissionId: body.clientSubmissionId,
+                    timings: backgroundTimings,
+                  });
+                } catch (err) {
+                  markSubmitTimingAliases(backgroundTimings, ["notifyLocalTurnStartedMs", "notifyMs"], backgroundStartedAtMs);
+                  logMessageSubmit("notify-failed", {
+                    threadId,
+                    turnId: immediateTurnId,
+                    clientSubmissionId: body.clientSubmissionId,
+                    error: err.message || String(err),
+                    timings: backgroundTimings,
+                  });
+                }
+              });
+            } else {
+              rememberThreadIdForTurnId(threadId, notifyLocalTurnStarted(threadId, turnResult, { source: "message-submit" }));
+              markSubmitTimingAliases(targetTimings, ["notifyLocalTurnStartedMs", "notifyMs"], notifyStartedAtMs);
+            }
             return turnResult;
           };
           if (body.activeTurnId && !skipTurnSteer) {

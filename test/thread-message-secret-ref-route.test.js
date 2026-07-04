@@ -302,6 +302,63 @@ test("thread message route logs bounded phase timings for message submission", a
   assert.equal(done.details.timings.threadResumeSkipped, true);
 });
 
+test("thread message route queues local turn-start notification after replacement turn starts", async () => {
+  const backgroundTasks = [];
+  const events = [];
+  const notified = [];
+  const remembered = [];
+  const { route, requests } = createRouteHarness({
+    scheduleBackgroundTask: (task) => {
+      backgroundTasks.push(task);
+    },
+    logMessageSubmit: (event, details) => events.push({ event, details }),
+    notifyLocalTurnStarted: (threadId, result, meta) => {
+      notified.push({ threadId, result, meta });
+      return result.turnId || "turn-queued";
+    },
+    rememberThreadIdForTurnId: (threadId, turnId) => remembered.push({ threadId, turnId }),
+    codex: {
+      request: async (method, params) => {
+        requests.push({ method, params });
+        if (method === "turn/start") return { turnId: "turn-queued" };
+        return { ok: true };
+      },
+      notifyMuxUserMessage: () => {},
+    },
+  });
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "hello",
+        clientSubmissionId: "client-queued-notify",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(requests.map((entry) => entry.method), ["turn/start"]);
+  assert.deepEqual(notified, []);
+  assert.deepEqual(remembered, [{ threadId: "thread-1", turnId: "turn-queued" }]);
+  assert.equal(backgroundTasks.length, 1);
+  const done = events.find((entry) => entry.event === "done");
+  assert.ok(done);
+  assert.equal(done.details.timings.notifyLocalTurnStartedQueued, true);
+  assert.equal(typeof done.details.timings.notifyLocalTurnStartedMs, "number");
+
+  await backgroundTasks[0]();
+  assert.equal(notified.length, 1);
+  assert.deepEqual(notified[0].meta, { source: "message-submit" });
+  assert.equal(remembered.length, 2);
+  assert.ok(events.find((entry) => entry.event === "notify-done"));
+});
+
 test("thread message route queues slow active-turn steering before turn steer resolves", async () => {
   const steer = deferred();
   const backgroundTasks = [];
