@@ -841,3 +841,61 @@ The previous full handoff was archived and should be opened only when old proven
   thread. No raw secrets, access keys, cookies, launch tokens, private thread
   bodies, task-card bodies, endpoint bodies, provider payloads, screenshots,
   DB rows, raw auth URLs, password paths, or long logs were exposed.
+
+## 2026-07-04T23:24:00+08:00 - CPU spike check found residual active-overlay backfill hot path
+
+- User asked whether the previous performance code actually solved the CPU
+  spike problem.
+- Production readback after deploy-lane self-redirect repair confirmed
+  `82ff6cce` was deployed by `Codex Mobile Deploy Lane`, and the previous
+  performance ref `c68243f0` was present in production.
+- Bounded production sampling of Home AI large thread
+  `019eed86-2002-7cc2-b0b7-937eb5355f36` showed the old full-rollout parsing
+  path was avoided:
+  - `readMode=projection-active-overlay`;
+  - `projectionState=hit`;
+  - `threadReadMs=0`;
+  - `rolloutSizeBytes≈589651282`;
+  - response body about `121KB`;
+  - `prepareResponseMs≈77-173ms`.
+- The CPU/latency issue was not fully solved. Slow route evidence moved to the
+  active-overlay foreground backfill path:
+  - repeated large-thread detail samples had `activeOverlayWindowMs` around
+    `1814-2366ms` and `activeOverlayBackfillWindowMs` around `1816-2365ms`;
+  - `/api/status?detail=1` showed listener pid `89871`, RSS around
+    `2.0-2.2GB`, heap around `1.19-1.32GB`, and event-loop lag max around
+    `2311ms` after slow samples;
+  - one direct `ps` sample showed listener CPU around `105%`;
+  - `codex app-server` CPU was also spiky during sampling.
+- Root cause found in `services/thread-detail/thread-detail-read-orchestration-service.js`:
+  `projection-live` incomplete active overlays force fresh active-window
+  backfill for correctness. After the first fresh backfill, the service seeds a
+  `turns-list-active-overlay-window` partial projection, but the next read
+  still ignored that version-matched active-window cache and performed the same
+  foreground `turnsListThreadReadResult(mode=turns-list-active-overlay-window)`
+  again.
+- Local source commit `6b120666`
+  (`fix: reuse trusted active overlay window cache`) reuses cached active-window
+  backfill only when it is explicitly an active-overlay window, contains the
+  active turn, carries overlay revision/timestamp evidence, and its
+  revision/timestamp is at least the live overlay revision/timestamp. Stale,
+  missing, unversioned, or turn-missing cache still falls back to the previous
+  fresh-read behavior.
+- Validation passed:
+  `node --test test/thread-detail-read-orchestration-service.test.js
+  test/thread-detail-active-overlay-provider-service.test.js
+  test/thread-detail-projection-v4-service.test.js` (`62` tests);
+  `node --test test/thread-detail-runtime-service.test.js
+  test/turn-usage-summary-service.test.js
+  test/thread-detail-read-orchestration-service.test.js` (`55` tests);
+  `npm run --silent check`; and `git diff --check`.
+- Deployment/readback card sent to `Codex Mobile Deploy Lane`:
+  `ttc_3ff02a441298e60f36`. It requests central deployment of `6b120666` and
+  repeated production large-thread timing/CPU readback focused on
+  `activeOverlayWindowMs`, `activeOverlayBackfillWindowMs`, listener CPU/RSS,
+  event-loop lag, and `codex app-server` CPU.
+- Production deployment of `6b120666` has not yet returned in this thread. No
+  raw secrets, access keys, cookies, launch tokens, private thread bodies,
+  task-card bodies, endpoint bodies, provider payloads, screenshots, DB rows,
+  raw auth URLs, password paths, full prompts, full rollout contents, or long
+  logs were exposed.
