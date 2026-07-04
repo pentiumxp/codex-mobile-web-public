@@ -183,6 +183,28 @@ function overlayRequiresFreshActiveWindow(input) {
   return overlaySource(input) === "projection-live" && !overlayCompletenessAllowsCachedActiveWindow(input);
 }
 
+function projectionThreadIsActiveOverlayWindow(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const projection = thread.mobileProjection && typeof thread.mobileProjection === "object"
+    ? thread.mobileProjection
+    : {};
+  return projection.activeOverlayWindow === true
+    || nonEmptyText(projection.partialKind).toLowerCase() === "turns-list-active-overlay-window"
+    || nonEmptyText(thread.mobileReadMode).toLowerCase() === "projection-active-window";
+}
+
+function trustedActiveOverlayWindowForOverlay(thread, overlayInput, activeTurnId) {
+  if (!projectionThreadIsActiveOverlayWindow(thread)) return false;
+  if (!threadHasTurn(thread, activeTurnId)) return false;
+  const overlayRevision = safeNonNegativeNumber(overlayInput && overlayInput.overlayRevision);
+  const overlayTimestampMs = safeNonNegativeNumber(overlayInput && overlayInput.overlayTimestampMs);
+  if (!overlayRevision && !overlayTimestampMs) return false;
+  const fields = activeOverlayProjectionFieldsFromThread(thread);
+  if (overlayRevision && (!fields.projectionRevision || fields.projectionRevision < overlayRevision)) return false;
+  if (overlayTimestampMs && (!fields.projectionTimestampMs || fields.projectionTimestampMs < overlayTimestampMs)) return false;
+  return true;
+}
+
 function promoteActiveReadPolicy(policy, reason) {
   return Object.assign({}, policy || {}, {
     activeFullReadRequired: true,
@@ -1003,6 +1025,12 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             : "projection-thread";
         }
         if (!backfillThread
+          && requiresFreshActiveWindow
+          && trustedActiveOverlayWindowForOverlay(activeOverlayProjectionThread, overlayInput, backfillActiveTurnId)) {
+          backfillThread = activeOverlayProjectionThread;
+          backfillSource = "trusted-active-window-projection";
+        }
+        if (!backfillThread
           && !requiresFreshActiveWindow
           && activeOverlayProjectionWindowLookup
           && !activeOverlayProjectionWindowLookupAttempted) {
@@ -1017,6 +1045,26 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           if (cachedThread && typeof cachedThread === "object" && threadHasTurn(cachedThread, backfillActiveTurnId)) {
             backfillThread = cachedThread;
             backfillSource = "cached-active-window";
+          }
+        }
+        if (!backfillThread
+          && requiresFreshActiveWindow
+          && activeOverlayProjectionWindowLookup) {
+          const cachedWindow = activeOverlayProjectionWindowLookup(projection, summary, runtimeSettings, {
+            allowPartial: true,
+            activeOverlay: true,
+            activeOverlayStatusProven: true,
+          });
+          const resolvedCachedWindow = isPromiseLike(cachedWindow) ? await cachedWindow : cachedWindow;
+          const cachedThread = resolvedCachedWindow
+            && resolvedCachedWindow.result
+            && resolvedCachedWindow.result.thread;
+          if (trustedActiveOverlayWindowForOverlay(cachedThread, overlayInput, backfillActiveTurnId)) {
+            backfillThread = cachedThread;
+            backfillSource = "trusted-cached-active-window";
+            threadLog("active_overlay_cached_window_reused", {
+              source: backfillSource,
+            });
           }
         }
         const canUseHistoryWindowWithoutBackfill = activeOverlayHistoryWindowWithoutActiveTurn
