@@ -3024,14 +3024,16 @@ test("recent thread detail can use initial bounded turns/list without full read"
 
 test("large resting recent projection miss defers initial turns/list seed", async () => {
   const deferredTasks = [];
+  const deferredTaskOptions = [];
   const { service, calls } = createHarness({
     summary: {
       id: "thread-1",
       status: { type: "completed" },
       rolloutPath: "/tmp/rollout.jsonl",
     },
-    scheduleDeferredTask: (task) => {
+    scheduleDeferredTask: (task, options = {}) => {
       calls.push("defer-task");
+      deferredTaskOptions.push(options);
       deferredTasks.push(task);
       return { unref() {} };
     },
@@ -3056,7 +3058,9 @@ test("large resting recent projection miss defers initial turns/list seed", asyn
   assert.deepEqual(response.body.thread.turns, []);
   assert.equal(response.body.thread.mobileDeferredProjectionSeed.scheduled, true);
   assert.equal(response.body.thread.mobileDeferredProjectionSeed.targetMode, "turns-list-initial");
-  assert.equal(response.body.thread.mobileDeferredProjectionSeed.refreshAfterMs, 900);
+  assert.equal(response.body.thread.mobileDeferredProjectionSeed.delayMs, 3000);
+  assert.equal(response.body.thread.mobileDeferredProjectionSeed.retryAfterMs, 3000);
+  assert.equal(response.body.thread.mobileDeferredProjectionSeed.refreshAfterMs, 3900);
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
   assert.equal(calls.includes("thread-read"), false);
   assert.equal(calls.includes("defer-task"), true);
@@ -3066,14 +3070,33 @@ test("large resting recent projection miss defers initial turns/list seed", asyn
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, true);
 
   assert.equal(deferredTasks.length, 1);
+  assert.equal(deferredTaskOptions.length, 1);
+  assert.equal(deferredTaskOptions[0].delayMs, 3000);
+  assert.equal(deferredTaskOptions[0].name, "deferred-initial-turns-list-seed");
+
+  const pending = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event) => calls.push(`log:${event}`),
+  });
+  assert.equal(pending.body.thread.mobileDeferredProjectionSeed.scheduled, false);
+  assert.equal(pending.body.thread.mobileDeferredProjectionSeed.reason, "already-pending");
+  assert.equal(pending.body.thread.mobileDeferredProjectionSeed.delayMs, 3000);
+  assert.ok(pending.body.thread.mobileDeferredProjectionSeed.retryAfterMs > 0);
+  assert.ok(pending.body.thread.mobileDeferredProjectionSeed.refreshAfterMs > 900);
+  assert.equal(deferredTasks.length, 1);
+
   await deferredTasks[0]();
   assert.ok(calls.indexOf("turns-list:turns-list-initial") > calls.indexOf("defer-task"));
   assert.ok(calls.indexOf("seed:partial") > calls.indexOf("turns-list:turns-list-initial"));
+  assert.equal(calls.includes("log:deferred_turns_list_initial_seed_start"), true);
   assert.equal(calls.includes("log:deferred_turns_list_initial_seed_done"), true);
 });
 
 test("deferred initial turns/list seed timeout releases pending state with backoff", async () => {
   const deferredTasks = [];
+  const deferredTaskOptions = [];
   let nowMs = 1_000;
   const { service, calls } = createHarness({
     now: () => {
@@ -3085,8 +3108,9 @@ test("deferred initial turns/list seed timeout releases pending state with backo
       status: { type: "completed" },
       rolloutPath: "/tmp/rollout.jsonl",
     },
-    scheduleDeferredTask: (task) => {
+    scheduleDeferredTask: (task, options = {}) => {
       calls.push("defer-task");
+      deferredTaskOptions.push(options);
       deferredTasks.push(task);
       return { unref() {} };
     },
@@ -3112,7 +3136,10 @@ test("deferred initial turns/list seed timeout releases pending state with backo
     threadLog: (event) => calls.push(`log:${event}`),
   });
   assert.equal(first.body.thread.mobileDeferredProjectionSeed.reason, "large-projection-miss");
+  assert.equal(first.body.thread.mobileDeferredProjectionSeed.delayMs, 3000);
+  assert.equal(first.body.thread.mobileDeferredProjectionSeed.refreshAfterMs, 3900);
   assert.equal(deferredTasks.length, 1);
+  assert.equal(deferredTaskOptions[0].delayMs, 3000);
 
   await deferredTasks[0]();
   assert.equal(calls.includes("log:deferred_turns_list_initial_seed_error"), true);

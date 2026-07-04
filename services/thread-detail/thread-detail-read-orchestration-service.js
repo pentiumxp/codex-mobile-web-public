@@ -22,6 +22,8 @@ function safeErrorMessage(err) {
 
 const DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_TIMEOUT_MS = 2_500;
 const DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_BACKOFF_MS = 10_000;
+const DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_DELAY_MS = 3_000;
+const DEFERRED_INITIAL_TURNS_LIST_SEED_REFRESH_BUFFER_MS = 900;
 
 function timeoutError(message) {
   const err = new Error(message || "operation timed out");
@@ -81,6 +83,12 @@ function isPromiseLike(value) {
 function safeNonNegativeNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function boundedNonNegativeInteger(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return Math.max(0, Math.trunc(Number(fallback) || 0));
+  return Math.max(0, Math.trunc(number));
 }
 
 function normalizeBoundedReadDecision(value) {
@@ -433,12 +441,13 @@ function createThreadDetailReadOrchestrationService(options = {}) {
   const now = typeof options.now === "function" ? options.now : defaultNow;
   const scheduleDeferredTask = typeof options.scheduleDeferredTask === "function"
     ? options.scheduleDeferredTask
-    : (task) => {
+    : (task, scheduleOptions = {}) => {
+      const delayMs = boundedNonNegativeInteger(scheduleOptions && scheduleOptions.delayMs, 0);
       const timer = setTimeout(() => {
         Promise.resolve()
           .then(task)
           .catch(() => {});
-      }, 0);
+      }, delayMs);
       if (timer && typeof timer.unref === "function") timer.unref();
       return timer;
     };
@@ -506,6 +515,10 @@ function createThreadDetailReadOrchestrationService(options = {}) {
   const deferredInitialTurnsListSeedBackoffMs = configuredDeferredInitialTurnsListSeedBackoffMs > 0
     ? configuredDeferredInitialTurnsListSeedBackoffMs
     : DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_BACKOFF_MS;
+  const configuredDeferredInitialTurnsListSeedDelayMs = options.deferredInitialTurnsListSeedDelayMs;
+  const deferredInitialTurnsListSeedDelayMs = configuredDeferredInitialTurnsListSeedDelayMs === undefined
+    ? DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_DELAY_MS
+    : boundedNonNegativeInteger(configuredDeferredInitialTurnsListSeedDelayMs, DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_DELAY_MS);
   const maxFullThreadTurns = Number(options.maxFullThreadTurns || 0);
   const maxThreadTurns = Number(options.maxThreadTurns || 0);
   const deferredInitialTurnsListSeeds = new Map();
@@ -859,8 +872,15 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       if (!projection || !turnsListThreadReadResult) {
         return { scheduled: false, reason: projection ? "turns-list-unavailable" : "projection-input-unavailable" };
       }
-      if (deferredInitialTurnsListSeeds.has(threadId)) {
-        return { scheduled: false, reason: "already-pending" };
+      const existing = deferredInitialTurnsListSeeds.get(threadId);
+      if (existing) {
+        return {
+          scheduled: false,
+          reason: "already-pending",
+          delayMs: Math.max(0, Number(existing.delayMs || 0)),
+          retryAfterMs: Math.max(0, Number(existing.readyAtMs || 0) - now()),
+          startedAtMs: existing.startedAtMs || 0,
+        };
       }
       const failed = deferredInitialTurnsListSeedFailures.get(threadId);
       if (failed && Number(failed.retryAfterMs || 0) > now()) {
@@ -872,13 +892,24 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         };
       }
       if (failed) deferredInitialTurnsListSeedFailures.delete(threadId);
+      const delayMs = deferredInitialTurnsListSeedDelayMs;
+      const scheduledAtMs = now();
       const entry = {
-        startedAtMs: now(),
+        scheduledAtMs,
+        startedAtMs: 0,
+        readyAtMs: scheduledAtMs + delayMs,
+        delayMs,
         reason: nonEmptyText(reason) || "large-projection-miss",
       };
       deferredInitialTurnsListSeeds.set(threadId, entry);
       scheduleDeferredTask(async () => {
+        entry.startedAtMs = now();
         const seedStartedAtMs = now();
+        threadLog("deferred_turns_list_initial_seed_start", {
+          delayMs,
+          scheduledWaitMs: Math.max(0, seedStartedAtMs - scheduledAtMs),
+          reason: entry.reason,
+        });
         try {
           const result = await withTimeout(turnsListThreadReadResult({
             threadId,
@@ -936,10 +967,17 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             deferredInitialTurnsListSeeds.delete(threadId);
           }
         }
+      }, {
+        name: "deferred-initial-turns-list-seed",
+        threadId,
+        reason: entry.reason,
+        delayMs,
       });
       return {
         scheduled: true,
         reason: entry.reason,
+        delayMs,
+        retryAfterMs: delayMs,
       };
     }
 
@@ -957,6 +995,11 @@ function createThreadDetailReadOrchestrationService(options = {}) {
 
     function deferredInitialTurnsListResponse() {
       const scheduled = scheduleDeferredInitialTurnsListSeed("large-projection-miss");
+      const seedRetryAfterMs = Math.max(0, Number(scheduled.retryAfterMs || 0));
+      const seedDelayMs = Math.max(0, Number(scheduled.delayMs || 0));
+      const seedRefreshAfterMs = scheduled.reason === "seed-backoff"
+        ? Math.min(10_000, Math.max(900, seedRetryAfterMs))
+        : Math.max(900, seedRetryAfterMs || seedDelayMs) + DEFERRED_INITIAL_TURNS_LIST_SEED_REFRESH_BUFFER_MS;
       context.projectionSeedStatus = scheduled.scheduled
         ? "deferred"
         : scheduled.reason === "seed-backoff"
@@ -978,16 +1021,17 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           scheduled: scheduled.scheduled === true,
           reason: scheduled.reason || "",
           targetMode: "turns-list-initial",
-          refreshAfterMs: scheduled.reason === "seed-backoff"
-            ? Math.min(10_000, Math.max(900, Number(scheduled.retryAfterMs || 0)))
-            : 900,
-          retryAfterMs: Math.max(0, Number(scheduled.retryAfterMs || 0)),
+          delayMs: seedDelayMs,
+          refreshAfterMs: seedRefreshAfterMs,
+          retryAfterMs: seedRetryAfterMs,
         };
       }
       threadLog("turns_list_initial_deferred", {
         scheduled: scheduled.scheduled === true,
         reason: scheduled.reason || "",
-        retryAfterMs: Math.max(0, Number(scheduled.retryAfterMs || 0)),
+        delayMs: seedDelayMs,
+        retryAfterMs: seedRetryAfterMs,
+        refreshAfterMs: seedRefreshAfterMs,
       });
       return {
         status: 200,

@@ -445,6 +445,7 @@ function createThreadDetailRuntimeService(dependencies = {}) {
     isReadTimeoutError,
     isUnmaterializedThreadError: dependencies.isUnmaterializedThreadError,
     threadRolloutSizeBytes,
+    deferredInitialTurnsListSeedDelayMs: config.threadDetailDeferredInitialSeedDelayMs,
     readTimeoutMs: config.readRpcTimeoutMs,
     threadDetailRpcTimeoutMs: config.threadDetailRpcTimeoutMs,
     maxThreadTurns: config.maxThreadTurns,
