@@ -265,7 +265,8 @@ cards or acknowledgement loops.
 Every non-terminal approved work card also records an `executionLease` on the
 original card. The lease stores bounded ids and status only: card id,
 source/target thread ids, workflow id/mode, `startedAt`, `lastProgressAt`,
-`injectedTurnId`, `currentTurnId`, `lastInterruptedTurnId`,
+bounded heartbeat metadata (`lastHeartbeatAt`, source/status labels, and turn
+id), `injectedTurnId`, `currentTurnId`, `lastInterruptedTurnId`,
 `lastContinuationTurnId`, `resumeCount`, and `resumeRequired`. If an unrelated
 target-thread turn completes while the lease is still active, the service
 starts a continuation turn with a bounded prompt that references the original
@@ -274,6 +275,11 @@ body. `execution/pause` and `execution/cancel` flip the lease to a non-resuming
 state. Terminal return/no-op cards set `requiresReturn:false` and never create
 leases, so acknowledgement-loop prevention remains separate from interruption
 continuation.
+Active target lanes can refresh the bounded heartbeat through
+`codex_mobile.task_card_heartbeat` or
+`POST /api/thread-task-cards/:id/execution/heartbeat`. Both paths accept only
+short metadata labels and ids; they must not carry private task bodies, prompts,
+endpoint payloads, credentials, cookies, screenshots, or logs.
 
 When the runtime `跨工作区委派` switch is enabled, server-side `thread/start` and
 `turn/start` requests also receive a Codex app-server dynamic tool:

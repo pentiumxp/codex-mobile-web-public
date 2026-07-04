@@ -528,8 +528,22 @@ function terminalReturnEventForCards(originalCard, returnCard) {
   };
 }
 
+function timestampMs(value) {
+  return Date.parse(stringValue(value) || "") || 0;
+}
+
+function timestampAgeMs(value, nowMs = Date.now()) {
+  const ms = timestampMs(value);
+  if (!ms) return 0;
+  return Math.max(0, Math.trunc(nowMs - ms));
+}
+
 function publicExecutionLease(lease) {
   if (!lease || typeof lease !== "object") return null;
+  const nowMs = Date.now();
+  const staleAfterMs = Math.max(0, Math.trunc(Number(lease.watchdogStaleAfterMs || 0)) || 0);
+  const heartbeatAgeMs = timestampAgeMs(lease.lastHeartbeatAt || lease.lastProgressAt, nowMs);
+  const watchdogAttemptAgeMs = timestampAgeMs(lease.lastWatchdogAttemptAt || lease.watchdogResumeRequestedAt, nowMs);
   return {
     cardId: boundedMetadataString(lease.cardId, 80),
     sourceThreadId: boundedMetadataString(lease.sourceThreadId, 80),
@@ -540,6 +554,14 @@ function publicExecutionLease(lease) {
     resumeRequired: lease.resumeRequired === true,
     startedAt: boundedMetadataString(lease.startedAt, 80),
     lastProgressAt: boundedMetadataString(lease.lastProgressAt, 80),
+    lastHeartbeatAt: boundedMetadataString(lease.lastHeartbeatAt, 80),
+    lastHeartbeatSource: boundedMetadataString(lease.lastHeartbeatSource, 80),
+    lastHeartbeatStatus: boundedMetadataString(lease.lastHeartbeatStatus, 80),
+    lastHeartbeatTurnId: boundedMetadataString(lease.lastHeartbeatTurnId, 120),
+    heartbeatCount: Math.max(0, Math.trunc(Number(lease.heartbeatCount || 0)) || 0),
+    heartbeatAgeMs,
+    watchdogStaleAfterMs: staleAfterMs,
+    resumeRequiredByWatchdog: staleAfterMs > 0 && heartbeatAgeMs >= staleAfterMs,
     pausedAt: boundedMetadataString(lease.pausedAt, 80),
     cancelledAt: boundedMetadataString(lease.cancelledAt, 80),
     completedAt: boundedMetadataString(lease.completedAt, 80),
@@ -552,6 +574,9 @@ function publicExecutionLease(lease) {
     resumeCount: Math.max(0, Math.trunc(Number(lease.resumeCount || 0)) || 0),
     resumeForTurnId: boundedMetadataString(lease.resumeForTurnId, 120),
     watchdogResumeRequestedAt: boundedMetadataString(lease.watchdogResumeRequestedAt, 80),
+    lastWatchdogAttemptAt: boundedMetadataString(lease.lastWatchdogAttemptAt, 80),
+    lastWatchdogAttemptAgeMs: watchdogAttemptAgeMs,
+    lastWatchdogResumeReason: boundedMetadataString(lease.lastWatchdogResumeReason, 120),
     lastResumeFailedAt: boundedMetadataString(lease.lastResumeFailedAt, 80),
     lastResumeError: boundedMetadataString(lease.lastResumeError, 200),
   };
@@ -589,6 +614,11 @@ function leaseForApprovedCard(card, execution = {}, timestamp = "") {
     resumeRequired: true,
     startedAt: stringValue(existing.startedAt) || timestamp,
     lastProgressAt: timestamp,
+    lastHeartbeatAt: timestamp,
+    lastHeartbeatSource: "approval-injection",
+    lastHeartbeatStatus: "started",
+    lastHeartbeatTurnId: turnId,
+    heartbeatCount: Math.max(0, Math.trunc(Number(existing.heartbeatCount || 0)) || 0),
     injectedTurnId: stringValue(existing.injectedTurnId) || turnId,
     currentTurnId: turnId,
     resumeCount: Math.max(0, Math.trunc(Number(existing.resumeCount || 0)) || 0),
@@ -636,7 +666,7 @@ function taskCardExecutionWatchdogText(card, returnScriptPath = "scripts/return-
     `Source thread id: ${card.source && card.source.threadId || ""}`,
     card.workflow && card.workflow.id ? `Workflow id: ${card.workflow.id}` : "",
     "",
-    "This task card is approved and still has an active execution lease, but no terminal return has been recorded after the watchdog window.",
+    "This task card is approved and still has an active execution lease, but no terminal return or fresh bounded heartbeat has been recorded after the watchdog window.",
     `Continue the original task-card work from the earlier injected task-card message in this thread. Do not request acknowledgement for terminal receipts, and close the original task card only through codex_mobile.return_to_source or ${returnScriptPath} when the work is completed, blocked, redirected, or partially completed.`,
     "",
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
@@ -784,6 +814,15 @@ function summarizePublicCardExecutionLease(lease = {}) {
     status: boundedMetadataString(lease.status, 40),
     resumeRequired: lease.resumeRequired === true,
     lastProgressAt: boundedMetadataString(lease.lastProgressAt, 80),
+    lastHeartbeatAt: boundedMetadataString(lease.lastHeartbeatAt, 80),
+    lastHeartbeatSource: boundedMetadataString(lease.lastHeartbeatSource, 80),
+    lastHeartbeatStatus: boundedMetadataString(lease.lastHeartbeatStatus, 80),
+    heartbeatAgeMs: Math.max(0, Math.trunc(Number(lease.heartbeatAgeMs || 0)) || 0),
+    watchdogStaleAfterMs: Math.max(0, Math.trunc(Number(lease.watchdogStaleAfterMs || 0)) || 0),
+    resumeRequiredByWatchdog: lease.resumeRequiredByWatchdog === true,
+    lastWatchdogAttemptAt: boundedMetadataString(lease.lastWatchdogAttemptAt, 80),
+    lastWatchdogAttemptAgeMs: Math.max(0, Math.trunc(Number(lease.lastWatchdogAttemptAgeMs || 0)) || 0),
+    blockedReason: boundedMetadataString(lease.blockedReason, 120),
     currentTurnId: boundedMetadataString(lease.currentTurnId, 120),
     lastInterruptedTurnId: boundedMetadataString(lease.lastInterruptedTurnId, 120),
     lastContinuationTurnId: boundedMetadataString(lease.lastContinuationTurnId, 120),
@@ -1932,14 +1971,24 @@ function createThreadTaskCardService(options = {}) {
 
   function executionLeaseReferenceTimeMs(card) {
     const lease = card && card.executionLease && typeof card.executionLease === "object" ? card.executionLease : {};
-    return Date.parse(
-      stringValue(lease.lastProgressAt)
-      || stringValue(lease.resumingAt)
+    return timestampMs(
+      stringValue(lease.lastHeartbeatAt)
+      || stringValue(lease.lastProgressAt)
       || stringValue(lease.startedAt)
       || stringValue(card && card.updatedAt)
       || stringValue(card && card.createdAt)
       || "",
-    ) || 0;
+    );
+  }
+
+  function executionLeaseRecentWatchdogAttemptMs(card) {
+    const lease = card && card.executionLease && typeof card.executionLease === "object" ? card.executionLease : {};
+    return timestampMs(
+      stringValue(lease.lastWatchdogAttemptAt)
+      || stringValue(lease.watchdogResumeRequestedAt)
+      || stringValue(lease.resumingAt)
+      || "",
+    );
   }
 
   function nextStaleExecutionLeaseCard(store, selection = {}) {
@@ -1956,6 +2005,8 @@ function createThreadTaskCardService(options = {}) {
         const lease = card.executionLease && typeof card.executionLease === "object" ? card.executionLease : null;
         if (!lease || lease.resumeRequired !== true) return false;
         if (stringValue(lease.status) !== EXECUTION_LEASE_ACTIVE) return false;
+        const attemptMs = executionLeaseRecentWatchdogAttemptMs(card);
+        if (attemptMs && nowMs - attemptMs < staleAfterMs) return false;
         const referenceMs = executionLeaseReferenceTimeMs(card);
         if (!referenceMs) return false;
         if (nowMs - referenceMs < staleAfterMs) return false;
@@ -2052,6 +2103,62 @@ function createThreadTaskCardService(options = {}) {
     });
   }
 
+  async function heartbeatExecution(cardId, actorThreadId, payload = {}) {
+    const id = stringValue(cardId);
+    const actorThread = stringValue(actorThreadId || payload.threadId || payload.actorThreadId);
+    if (!id) throw errorWithStatus("task_card_id_required");
+    if (!actorThread) throw errorWithStatus("actor_thread_id_required");
+    return withStore(async (store) => {
+      const card = findById(store, id);
+      if (!card) throw errorWithStatus("task_card_not_found", 404);
+      if (!cardCanOwnExecutionLease(card)) throw errorWithStatus(`task_card_execution_not_active:${card && card.status}`, 409);
+      if (stringValue(card.target && card.target.threadId) !== actorThread) {
+        throw errorWithStatus("task_card_execution_heartbeat_forbidden", 403);
+      }
+      const lease = card.executionLease && typeof card.executionLease === "object"
+        ? card.executionLease
+        : leaseForApprovedCard(card, {}, nowIso(options.now));
+      const status = stringValue(lease.status);
+      if (status !== EXECUTION_LEASE_ACTIVE && status !== EXECUTION_LEASE_RESUMING) {
+        throw errorWithStatus(`task_card_execution_heartbeat_not_active:${status || "unknown"}`, 409);
+      }
+      const timestamp = nowIso(options.now);
+      const heartbeatSource = boundedMetadataString(payload.source || payload.heartbeatSource || "target-thread", 80);
+      const heartbeatStatus = boundedMetadataString(payload.status || payload.progressStatus || payload.state || "working", 80);
+      const heartbeatTurnId = boundedMetadataString(
+        payload.turnId || payload.turn_id || lease.currentTurnId || lease.lastContinuationTurnId || lease.injectedTurnId,
+        120,
+      );
+      card.executionLease = Object.assign({}, lease, {
+        lastHeartbeatAt: timestamp,
+        lastHeartbeatSource: heartbeatSource || "target-thread",
+        lastHeartbeatStatus: heartbeatStatus || "working",
+        lastHeartbeatTurnId: heartbeatTurnId,
+        heartbeatCount: Math.max(0, Math.trunc(Number(lease.heartbeatCount || 0)) || 0) + 1,
+        lastProgressAt: timestamp,
+        watchdogStaleAfterMs: Math.max(0, Math.trunc(Number(payload.watchdogStaleAfterMs || lease.watchdogStaleAfterMs || 0)) || 0),
+      });
+      card.updatedAt = timestamp;
+      card.audit = Object.assign({}, card.audit || {}, {
+        executionHeartbeatAt: timestamp,
+        executionHeartbeatSource: heartbeatSource || "target-thread",
+        executionHeartbeatStatus: heartbeatStatus || "working",
+      });
+      return {
+        ok: true,
+        card: publicCard(card, actorThread),
+        heartbeat: {
+          taskCardId: card.id,
+          targetThreadId: actorThread,
+          at: timestamp,
+          source: heartbeatSource || "target-thread",
+          status: heartbeatStatus || "working",
+          turnId: heartbeatTurnId,
+        },
+      };
+    });
+  }
+
   async function resumeStaleExecutionLeases(resumeOptions = {}) {
     const limit = normalizedExecutionWatchdogLimit(resumeOptions.limit);
     const results = [];
@@ -2059,10 +2166,11 @@ function createThreadTaskCardService(options = {}) {
       const prepared = await withStore(async (store) => {
         const timestamp = nowIso(options.now);
         const nowMs = Date.parse(timestamp) || Date.now();
+        const staleAfterMs = normalizedExecutionWatchdogStaleMs(resumeOptions.staleAfterMs);
         const card = nextStaleExecutionLeaseCard(store, {
           cardId: resumeOptions.cardId,
           targetThreadId: resumeOptions.targetThreadId,
-          staleAfterMs: resumeOptions.staleAfterMs,
+          staleAfterMs,
           nowMs,
         });
         if (!card) return null;
@@ -2072,7 +2180,9 @@ function createThreadTaskCardService(options = {}) {
           resumeRequired: true,
           resumeForTurnId: resumeMarker,
           watchdogResumeRequestedAt: timestamp,
-          lastProgressAt: timestamp,
+          lastWatchdogAttemptAt: timestamp,
+          lastWatchdogResumeReason: "stale_heartbeat",
+          watchdogStaleAfterMs: staleAfterMs,
           resumingAt: timestamp,
           lastResumeError: "",
         });
@@ -2108,7 +2218,7 @@ function createThreadTaskCardService(options = {}) {
             lastResumeFailedAt: timestamp,
             lastResumeError: boundedErrorMessage(err),
             resumeForTurnId: "",
-            lastProgressAt: timestamp,
+            watchdogStaleAfterMs: normalizedExecutionWatchdogStaleMs(resumeOptions.staleAfterMs),
           });
           card.audit = Object.assign({}, card.audit || {}, {
             executionWatchdogBlockedAt: timestamp,
@@ -2147,7 +2257,7 @@ function createThreadTaskCardService(options = {}) {
           continuationTurnIds: continuationTurnIds.slice(-MAX_LEASE_TURN_IDS),
           resumeCount: Math.max(0, Math.trunc(Number(card.executionLease && card.executionLease.resumeCount || 0)) || 0) + 1,
           resumedAt: timestamp,
-          lastProgressAt: timestamp,
+          watchdogStaleAfterMs: normalizedExecutionWatchdogStaleMs(resumeOptions.staleAfterMs),
           resumeForTurnId: "",
           lastResumeError: "",
         });
@@ -2365,6 +2475,7 @@ function createThreadTaskCardService(options = {}) {
     createMany,
     deleteCard,
     get,
+    heartbeatExecution,
     injectedMessageText,
     listForThread,
     maybeAutoReplyCompletedTurn,

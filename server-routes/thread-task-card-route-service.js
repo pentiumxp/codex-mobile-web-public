@@ -29,6 +29,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     workspaceDelegationToolNamespace = "codex_mobile",
     workspaceDelegationToolName = "delegate_to_thread",
     taskCardReturnToolName = "return_to_source",
+    taskCardHeartbeatToolName = "task_card_heartbeat",
     reasoningEffortOptions = [],
     readRuntimeSettings = () => ({}),
     workspaceDelegationPublicSettings = () => ({ enabled: false }),
@@ -64,6 +65,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
 
   const workspaceDelegationToolFullName = `${workspaceDelegationToolNamespace}.${workspaceDelegationToolName}`;
   const taskCardReturnToolFullName = `${workspaceDelegationToolNamespace}.${taskCardReturnToolName}`;
+  const taskCardHeartbeatToolFullName = `${workspaceDelegationToolNamespace}.${taskCardHeartbeatToolName}`;
   const effortOptions = Array.isArray(reasoningEffortOptions) ? reasoningEffortOptions : [];
   let workspaceDelegationTargetHintsCache = { text: "", cachedAt: 0 };
 
@@ -260,8 +262,46 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     };
   }
 
+  function taskCardHeartbeatDynamicToolSpec() {
+    return {
+      namespace: workspaceDelegationToolNamespace,
+      name: taskCardHeartbeatToolName,
+      description: [
+        "Report bounded progress for an active received Codex Mobile task card so the execution watchdog does not resume a thread that is still working.",
+        "Use this only from the current target thread for the task card you are actively handling.",
+        "Send only bounded metadata such as taskCardId, status, and turnId. Do not include private task body text, prompts, endpoint bodies, credentials, cookies, logs, or screenshots.",
+        "This does not complete the card. When work is done, still close it through codex_mobile.return_to_source.",
+      ].join("\n\n"),
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          taskCardId: { type: "string", description: "Original active task-card id shown in the injected card message." },
+          cardId: { type: "string", description: "Alias for taskCardId." },
+          threadId: { type: "string", description: "Current target thread id. Usually the server can infer this from turnId." },
+          status: { type: "string", description: "Short bounded progress label such as working, testing, or returning." },
+          turnId: { type: "string", description: "Current turn id when known." },
+          source: { type: "string", description: "Short bounded heartbeat source label. Defaults to dynamic-tool." },
+        },
+        required: ["taskCardId"],
+      },
+      outputSchema: {
+        type: "object",
+        additionalProperties: true,
+        properties: {
+          ok: { type: "boolean" },
+          taskCardId: { type: "string" },
+          targetThreadId: { type: "string" },
+          lastHeartbeatAt: { type: "string" },
+        },
+      },
+      exposeToContext: true,
+      deferLoading: false,
+    };
+  }
+
   function taskCardRuntimeDynamicTools(settings = readRuntimeSettings()) {
-    const tools = [taskCardReturnDynamicToolSpec()];
+    const tools = [taskCardReturnDynamicToolSpec(), taskCardHeartbeatDynamicToolSpec()];
     if (workspaceDelegationSettings(settings).enabled) tools.push(workspaceDelegationDynamicToolSpec());
     return tools;
   }
@@ -899,6 +939,46 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     return false;
   }
 
+  function isTaskCardHeartbeatDynamicToolCall(params = {}) {
+    const identity = dynamicToolCallIdentity(params);
+    if (identity.fullName) return identity.fullName === taskCardHeartbeatToolFullName;
+    if (identity.namespace || identity.name) {
+      return identity.namespace === workspaceDelegationToolNamespace && identity.name === taskCardHeartbeatToolName;
+    }
+    return false;
+  }
+
+  function taskCardHeartbeatDynamicToolBody(params = {}, args = {}) {
+    const taskCardId = String(args.taskCardId || args.task_card_id || args.cardId || args.card_id || "").trim();
+    const actorThreadId = actorThreadIdFromDynamicToolCall(params, args);
+    return {
+      taskCardId,
+      actorThreadId,
+      body: {
+        threadId: actorThreadId,
+        source: String(args.source || "dynamic-tool").trim(),
+        status: String(args.status || args.progressStatus || args.state || "working").trim(),
+        turnId: String(args.turnId || args.turn_id || params.turnId || params.turn_id || "").trim(),
+      },
+    };
+  }
+
+  function logTaskCardHeartbeatDynamicToolCall(request, params = {}, args = {}, extra = {}) {
+    try {
+      logger.log(`[task-card-heartbeat-tool-call] ${JSON.stringify(Object.assign({
+        requestId: shortIdentifier(request && request.id),
+        tool: truncateToolDescriptionText(dynamicToolCallIdentity(params).fullName || taskCardHeartbeatToolFullName, 160),
+        actorThreadId: truncateToolDescriptionText(actorThreadIdFromDynamicToolCall(params, args), 80),
+        turnId: truncateToolDescriptionText(params.turnId || params.turn_id || args.turnId || args.turn_id || "", 80),
+        callId: truncateToolDescriptionText(params.callId || params.call_id || "", 80),
+        taskCardId: truncateToolDescriptionText(args.taskCardId || args.task_card_id || args.cardId || args.card_id || "", 80),
+        status: truncateToolDescriptionText(args.status || args.progressStatus || args.state || "", 40),
+      }, extra))}`);
+    } catch (err) {
+      logger.error(`[task-card-heartbeat-tool-call] failed to summarize request=${shortIdentifier(request && request.id)}: ${err.message || String(err)}`);
+    }
+  }
+
   function normalizedTaskCardReturnStatus(value) {
     const status = String(value || "").trim().toLowerCase();
     if (!status) return "";
@@ -980,6 +1060,50 @@ function createThreadTaskCardRouteService(dependencies = {}) {
   async function dynamicToolServerRequestResponsePayload(request) {
     const params = request && request.params && typeof request.params === "object" ? request.params : {};
     const args = parseDynamicToolArguments(params.arguments || params.input || params.args);
+    if (isTaskCardHeartbeatDynamicToolCall(params)) {
+      const prepared = taskCardHeartbeatDynamicToolBody(params, args);
+      if (!prepared.taskCardId) {
+        logTaskCardHeartbeatDynamicToolCall(request, params, args, { outcome: "task_card_id_required" });
+        return dynamicToolErrorPayload("task_card_id_required", "Original task card id is required for task_card_heartbeat.");
+      }
+      if (!prepared.actorThreadId) {
+        logTaskCardHeartbeatDynamicToolCall(request, params, args, { outcome: "actor_thread_id_required" });
+        return dynamicToolErrorPayload(
+          "actor_thread_id_required",
+          "Codex Mobile could not infer the target thread id for this task-card heartbeat.",
+          { turnId: params.turnId || params.turn_id || "" },
+        );
+      }
+      let result;
+      try {
+        result = await threadTaskCardService.heartbeatExecution(prepared.taskCardId, prepared.actorThreadId, prepared.body);
+      } catch (err) {
+        const code = err && (err.code || err.message) || "task_card_heartbeat_failed";
+        logTaskCardHeartbeatDynamicToolCall(request, params, args, {
+          outcome: code,
+          taskCardId: prepared.taskCardId,
+          actorThreadId: prepared.actorThreadId,
+        });
+        return dynamicToolErrorPayload(code, code, {
+          statusCode: err && err.statusCode || 500,
+          details: err && err.details || undefined,
+        });
+      }
+      logTaskCardHeartbeatDynamicToolCall(request, params, args, {
+        outcome: "ok",
+        taskCardId: result && result.heartbeat && result.heartbeat.taskCardId || prepared.taskCardId,
+        actorThreadId: result && result.heartbeat && result.heartbeat.targetThreadId || prepared.actorThreadId,
+      });
+      return dynamicToolJsonResponse({
+        ok: true,
+        tool: taskCardHeartbeatToolFullName,
+        taskCardId: result && result.heartbeat && result.heartbeat.taskCardId || prepared.taskCardId,
+        targetThreadId: result && result.heartbeat && result.heartbeat.targetThreadId || prepared.actorThreadId,
+        lastHeartbeatAt: result && result.heartbeat && result.heartbeat.at || "",
+        heartbeatStatus: result && result.heartbeat && result.heartbeat.status || "",
+        heartbeatSource: result && result.heartbeat && result.heartbeat.source || "",
+      });
+    }
     if (isTaskCardReturnDynamicToolCall(params)) {
       const prepared = taskCardReturnDynamicToolBody(params, args);
       if (!prepared.taskCardId) {
@@ -1404,6 +1528,18 @@ function createThreadTaskCardRouteService(dependencies = {}) {
           ok: true,
           card: await threadTaskCardService.pauseExecution(cardId, body.threadId || body.actorThreadId || ""),
         });
+      } catch (err) {
+        sendJson(err.statusCode || 500, { ok: false, error: err.message || String(err) });
+      }
+      return { handled: true };
+    }
+
+    const threadTaskCardExecutionHeartbeat = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/execution\/heartbeat$/);
+    if (threadTaskCardExecutionHeartbeat && method === "POST") {
+      try {
+        const cardId = decodeURIComponent(threadTaskCardExecutionHeartbeat[1]);
+        const body = await readBody();
+        sendJson(200, await threadTaskCardService.heartbeatExecution(cardId, body.threadId || body.actorThreadId || "", body));
       } catch (err) {
         sendJson(err.statusCode || 500, { ok: false, error: err.message || String(err) });
       }

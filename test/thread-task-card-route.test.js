@@ -102,7 +102,8 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.doesNotMatch(serverJs, /require\("\.\/adapters\/thread-task-card-service"\)/);
   assert.match(taskCardRuntimeCompositionServiceJs, /createHomeAiAutonomousDeliveryReturnService/);
   assert.match(taskCardRuntimeCompositionServiceJs, /recordAtLoopTerminalReturn\(event\)/);
-  assert.match(taskCardRuntimeCompositionServiceJs, /homeAiAutonomousDeliveryReturnService\.send\(event, \{ workspaceId: "owner" \}\)/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /delete externalEvent\.returnBody/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /homeAiAutonomousDeliveryReturnService\.send\(externalEvent, \{ workspaceId: "owner" \}\)/);
   assert.doesNotMatch(serverJs, /createThreadTaskCardIntentService/);
   assert.match(serverJs, /THREAD_TASK_CARD_FILE/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_TASK_CARD_FILE/);
@@ -162,6 +163,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(runtimeSettingsServiceJs, /function workspaceDelegationPublicSettings\(/);
   assert.match(taskCardRouteServiceJs, /function workspaceDelegationDynamicToolSpec\(/);
   assert.match(taskCardRouteServiceJs, /function taskCardReturnDynamicToolSpec\(/);
+  assert.match(taskCardRouteServiceJs, /function taskCardHeartbeatDynamicToolSpec\(/);
   assert.match(taskCardRouteServiceJs, /function attachTaskCardRuntimeDynamicTools\(/);
   assert.match(taskCardRouteServiceJs, /function attachWorkspaceDelegationRuntimeGuidance\(/);
   assert.match(taskCardRouteServiceJs, /function taskCardReturnScriptFallbackInstruction\(/);
@@ -244,6 +246,9 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnDynamicToolSpec"), /A plain final answer in the target thread is not a source-thread return card/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnDynamicToolSpec"), /Task card id/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardRuntimeDynamicTools"), /taskCardReturnDynamicToolSpec\(\)/);
+  assert.match(functionBody(taskCardRouteServiceJs, "taskCardRuntimeDynamicTools"), /taskCardHeartbeatDynamicToolSpec\(\)/);
+  assert.match(functionBody(taskCardRouteServiceJs, "taskCardHeartbeatDynamicToolSpec"), /bounded progress/);
+  assert.match(functionBody(taskCardRouteServiceJs, "taskCardHeartbeatDynamicToolSpec"), /Do not include private task body text/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardRuntimeDynamicTools"), /workspaceDelegationSettings\(settings\)\.enabled/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolBody"), /body\.direct = true/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolBody"), /body\.autoApprove = true/);
@@ -266,6 +271,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(codexAppServerClientServiceJs, "handleServerRequest"), /msg\.method === "item\/tool\/call"[\s\S]*answerDynamicToolServerRequest\(request\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /createThreadTaskCardsFromSourceThread\(body\.sourceThreadId, body\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /threadTaskCardService\.reply\(prepared\.taskCardId, prepared\.actorThreadId, prepared\.body\)/);
+  assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /threadTaskCardService\.heartbeatExecution\(prepared\.taskCardId, prepared\.actorThreadId, prepared\.body\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /taskCardReturnToolFullName/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnDynamicToolBody"), /workflowId/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /replyCardTerminal: Boolean/);
@@ -347,11 +353,12 @@ test("thread task card routes preserve service status codes", () => {
   assert.match(serverJs, /scheduleTaskCardExecutionWatchdog/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS/);
+  assert.match(routeBlock, /threadTaskCardService\.heartbeatExecution/);
   assert.match(notificationRuntimeServiceJs, /maybeApplyQueuedThreadSideChat/);
   assert.match(notificationRuntimeServiceJs, /threadTaskCardService: dependencies\.threadTaskCardService/);
   assert.match(codexAppServerClientServiceJs, /maybeAutoReplyThreadTaskCard\(msg\.method, msg\.params \|\| null\)/);
   const statusPreservingErrors = routeBlock.match(/sendJson\(err\.statusCode \|\| 500, \{ ok: false, error: err\.message \|\| String\(err\) \}\);/g) || [];
-  assert.equal(statusPreservingErrors.length, 8);
+  assert.equal(statusPreservingErrors.length, 9);
 });
 
 test("approved task cards inherit target thread model and effort", () => {
@@ -623,6 +630,55 @@ test("return_to_source dynamic tool prefers explicit target thread over app-serv
   assert.equal(payload.actorThreadId, "health-thread");
   assert.equal(payload.replyCardId, "ttc_return_card");
   assert.equal(calls[0].body.workflowId, "health-return-workflow");
+  assert.equal(calls.length, 1);
+});
+
+test("task_card_heartbeat dynamic tool records bounded target-thread progress", async () => {
+  const calls = [];
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {
+      heartbeatExecution: async (cardId, actorThreadId, body) => {
+        calls.push({ cardId, actorThreadId, body });
+        assert.equal(cardId, "ttc_active_work");
+        assert.equal(actorThreadId, "target-thread");
+        assert.equal(body.threadId, "target-thread");
+        assert.equal(body.status, "testing");
+        assert.equal(body.source, "dynamic-tool");
+        return {
+          ok: true,
+          heartbeat: {
+            taskCardId: cardId,
+            targetThreadId: actorThreadId,
+            at: "2026-07-04T03:00:00.000Z",
+            source: body.source,
+            status: body.status,
+            turnId: body.turnId,
+          },
+        };
+      },
+    },
+    logger: { log() {}, error() {} },
+  });
+
+  const response = await service.dynamicToolServerRequestResponsePayload({
+    id: "request-heartbeat",
+    params: {
+      fullName: "codex_mobile.task_card_heartbeat",
+      threadId: "target-thread",
+      turnId: "turn-active",
+      arguments: {
+        taskCardId: "ttc_active_work",
+        status: "testing",
+      },
+    },
+  });
+  const payload = JSON.parse(response.result.contentItems[0].text);
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.taskCardId, "ttc_active_work");
+  assert.equal(payload.targetThreadId, "target-thread");
+  assert.equal(payload.lastHeartbeatAt, "2026-07-04T03:00:00.000Z");
+  assert.equal(payload.heartbeatStatus, "testing");
   assert.equal(calls.length, 1);
 });
 

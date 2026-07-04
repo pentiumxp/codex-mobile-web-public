@@ -595,7 +595,23 @@ test("execution watchdog resumes stale active task-card leases without duplicati
   await service.approveFromSource(created.id, "thread-home-ai");
   assert.equal(executions.length, 1);
 
-  now += 6 * 60 * 1000;
+  now += 4 * 60 * 1000;
+  const heartbeatAt = new Date(now).toISOString();
+  const heartbeat = await service.heartbeatExecution(created.id, "thread-movie-deploy", {
+    status: "testing",
+    source: "unit-test",
+    turnId: "turn-exec-1",
+  });
+  assert.equal(heartbeat.ok, true);
+  assert.equal(heartbeat.heartbeat.status, "testing");
+  assert.equal(heartbeat.card.executionLease.lastHeartbeatAt, heartbeatAt);
+
+  now += 2 * 60 * 1000;
+  const fresh = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000 });
+  assert.equal(fresh.inspected, 0);
+  assert.equal(executions.length, 1);
+
+  now += 4 * 60 * 1000;
   const result = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000 });
 
   assert.equal(result.ok, true);
@@ -619,6 +635,10 @@ test("execution watchdog resumes stale active task-card leases without duplicati
   assert.equal(stored.executionLease.lastContinuationTurnId, "turn-exec-2");
   assert.equal(stored.executionLease.resumeCount, 1);
   assert.equal(stored.executionLease.watchdogResumeRequestedAt, new Date(now).toISOString());
+  assert.equal(stored.executionLease.lastWatchdogAttemptAt, new Date(now).toISOString());
+  assert.equal(stored.executionLease.lastHeartbeatAt, heartbeatAt);
+  assert.equal(stored.executionLease.lastHeartbeatStatus, "testing");
+  assert.equal(stored.executionLease.watchdogStaleAfterMs, 5 * 60 * 1000);
 
   const duplicate = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000 });
   assert.equal(duplicate.inspected, 0);

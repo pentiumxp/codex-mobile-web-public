@@ -547,10 +547,10 @@ Implementation path:
    idempotent by original card id plus completed turn id.
    Separately, approved cards with an active execution lease and
    `resumeRequired=true` are covered by the listener execution watchdog. If no
-   terminal return appears after the stale window, the watchdog resumes the
-   original target lane with bounded id/title/summary context only; if resume
-   fails, it records a blocked execution lease instead of leaving a healthy
-   active-looking card.
+   terminal return or fresh bounded heartbeat/progress appears after the stale
+   window, the watchdog resumes the original target lane with bounded
+   id/title/summary context only; if resume fails, it records a blocked
+   execution lease instead of leaving a healthy active-looking card.
 10. Preserve source/target audit metadata after approval injection and
    auto-return creation.
 11. The current implementation uses:
