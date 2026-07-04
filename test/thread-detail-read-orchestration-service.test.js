@@ -3072,6 +3072,56 @@ test("large resting recent projection miss defers initial turns/list seed", asyn
   assert.equal(calls.includes("log:deferred_turns_list_initial_seed_done"), true);
 });
 
+test("deferred initial turns/list seed timeout releases pending state", async () => {
+  const deferredTasks = [];
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "completed" },
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    scheduleDeferredTask: (task) => {
+      calls.push("defer-task");
+      deferredTasks.push(task);
+      return { unref() {} };
+    },
+    turnsListThreadReadResult: async ({ mode }) => {
+      calls.push(`turns-list:${mode}`);
+      return new Promise(() => {});
+    },
+    preferBoundedReadBeforeFullRead: () => ({
+      prefer: true,
+      rolloutSizeBytes: 600_000_000,
+      thresholdBytes: 8_000_000,
+      source: "rollout-size",
+      reason: "large-rollout",
+    }),
+    deferredInitialTurnsListSeedTimeoutMs: 1,
+  });
+
+  const first = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event) => calls.push(`log:${event}`),
+  });
+  assert.equal(first.body.thread.mobileDeferredProjectionSeed.reason, "large-projection-miss");
+  assert.equal(deferredTasks.length, 1);
+
+  await deferredTasks[0]();
+  assert.equal(calls.includes("log:deferred_turns_list_initial_seed_error"), true);
+
+  const second = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event) => calls.push(`log:${event}`),
+  });
+  assert.equal(second.body.thread.mobileDeferredProjectionSeed.scheduled, true);
+  assert.equal(second.body.thread.mobileDeferredProjectionSeed.reason, "large-projection-miss");
+  assert.equal(deferredTasks.length, 2);
+});
+
 test("recent completed thread downgrades stale active initial window instead of full read", async () => {
   const { service, calls } = createHarness({
     summary: {

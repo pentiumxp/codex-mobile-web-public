@@ -368,7 +368,9 @@ function createThreadDetailRuntimeService(dependencies = {}) {
   const threadDetailActiveOverlayProviderService = createThreadDetailActiveOverlayProviderService({
     projectionService: threadDetailProjectionService,
   });
-  const threadDetailTurnsListReadCoalescer = createThreadDetailTurnsListReadCoalescer();
+  const threadDetailTurnsListReadCoalescer = createThreadDetailTurnsListReadCoalescer({
+    maxInFlightMs: config.threadDetailRpcTimeoutMs,
+  });
   const threadDetailActiveWindowPrewarmService = createThreadDetailActiveWindowPrewarmService({
     resolveSummary: (requestCodex, threadId, options) => threadDetailSummaryService.resolveSummary(requestCodex, threadId, options),
     threadRuntimeSettings: dependencies.threadRuntimeSettings,

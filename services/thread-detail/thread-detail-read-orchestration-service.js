@@ -20,6 +20,29 @@ function safeErrorMessage(err) {
   return err && err.message ? err.message : String(err);
 }
 
+const DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_TIMEOUT_MS = 2_500;
+
+function timeoutError(message) {
+  const err = new Error(message || "operation timed out");
+  err.code = "RPC_TIMEOUT";
+  err.timeout = true;
+  return err;
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  const ms = Number(timeoutMs || 0);
+  if (!Number.isFinite(ms) || ms <= 0) return promise;
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(timeoutError(message)), ms);
+    if (timer && typeof timer.unref === "function") timer.unref();
+  });
+  return Promise.race([promise, timeout])
+    .finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+}
+
 function createThreadDetailTimer(now = defaultNow) {
   const startedAtMs = now();
   const timings = {};
@@ -472,6 +495,12 @@ function createThreadDetailReadOrchestrationService(options = {}) {
   const threadRolloutSizeBytes = typeof options.threadRolloutSizeBytes === "function" ? options.threadRolloutSizeBytes : () => 0;
   const readTimeoutMs = Number(options.readTimeoutMs || 0);
   const threadDetailRpcTimeoutMs = Number(options.threadDetailRpcTimeoutMs || 0);
+  const configuredDeferredInitialTurnsListSeedTimeoutMs = Number(options.deferredInitialTurnsListSeedTimeoutMs || 0);
+  const deferredInitialTurnsListSeedTimeoutMs = configuredDeferredInitialTurnsListSeedTimeoutMs > 0
+    ? configuredDeferredInitialTurnsListSeedTimeoutMs
+    : threadDetailRpcTimeoutMs > 0
+      ? Math.min(threadDetailRpcTimeoutMs, DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_TIMEOUT_MS)
+      : DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_TIMEOUT_MS;
   const maxFullThreadTurns = Number(options.maxFullThreadTurns || 0);
   const maxThreadTurns = Number(options.maxThreadTurns || 0);
   const deferredInitialTurnsListSeeds = new Map();
@@ -835,14 +864,14 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       scheduleDeferredTask(async () => {
         const seedStartedAtMs = now();
         try {
-          const result = await turnsListThreadReadResult({
+          const result = await withTimeout(turnsListThreadReadResult({
             threadId,
             summary,
             runtimeSettings,
             warning: "",
             mode: "turns-list-initial",
             threadLog,
-          });
+          }), deferredInitialTurnsListSeedTimeoutMs, "deferred turns-list initial seed timed out");
           const staleTurns = markWindowActiveTurnsStaleForRestingSummary(result && result.thread, summary);
           if (staleTurns) {
             threadLog("deferred_turns_list_initial_stale_active_turns_downgraded", {
@@ -876,6 +905,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         } catch (err) {
           threadLog("deferred_turns_list_initial_seed_error", {
             durationMs: now() - seedStartedAtMs,
+            timeoutMs: deferredInitialTurnsListSeedTimeoutMs,
             timeout: isReadTimeoutError(err),
             error: safeErrorMessage(err),
           });

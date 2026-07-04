@@ -7,6 +7,7 @@ const COALESCED_TURNS_LIST_MODES = new Set([
   "turns-list-initial",
   "turns-list-large",
 ]);
+const DEFAULT_MAX_IN_FLIGHT_MS = 15_000;
 
 function text(value) {
   return String(value || "").trim();
@@ -53,6 +54,7 @@ function coalescedTurnsListKey(input = {}) {
 
 function createThreadDetailTurnsListReadCoalescer(options = {}) {
   const now = typeof options.now === "function" ? options.now : () => Date.now();
+  const maxInFlightMs = boundedMs(options.maxInFlightMs) || DEFAULT_MAX_IN_FLIGHT_MS;
   const inFlight = new Map();
 
   async function read(input = {}, reader) {
@@ -63,16 +65,30 @@ function createThreadDetailTurnsListReadCoalescer(options = {}) {
     if (!key) return reader(input);
     const existing = inFlight.get(key);
     if (existing && existing.promise) {
-      existing.joinCount += 1;
-      const threadLog = typeof input.threadLog === "function" ? input.threadLog : null;
-      if (threadLog) {
-        threadLog("turns_list_coalesced", {
-          mode: text(input.mode),
-          elapsedMs: boundedMs(now() - existing.startedAtMs),
-          joinCount: boundedCount(existing.joinCount),
-        });
+      const elapsedMs = boundedMs(now() - existing.startedAtMs);
+      if (elapsedMs > maxInFlightMs) {
+        inFlight.delete(key);
+        const threadLog = typeof input.threadLog === "function" ? input.threadLog : null;
+        if (threadLog) {
+          threadLog("turns_list_coalesced_stale_evicted", {
+            mode: text(input.mode),
+            elapsedMs,
+            maxInFlightMs,
+            joinCount: boundedCount(existing.joinCount),
+          });
+        }
+      } else {
+        existing.joinCount += 1;
+        const threadLog = typeof input.threadLog === "function" ? input.threadLog : null;
+        if (threadLog) {
+          threadLog("turns_list_coalesced", {
+            mode: text(input.mode),
+            elapsedMs,
+            joinCount: boundedCount(existing.joinCount),
+          });
+        }
+        return existing.promise.then(cloneJson);
       }
-      return existing.promise.then(cloneJson);
     }
     const entry = {
       startedAtMs: now(),

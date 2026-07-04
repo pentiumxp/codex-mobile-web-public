@@ -95,6 +95,50 @@ test("coalesces concurrent initial turns-list reads for the same thread and mode
   assert.equal(service.status().pendingCount, 0);
 });
 
+test("evicts stale in-flight turns-list reads instead of joining forever", async () => {
+  let nowMs = 1_000;
+  const service = createThreadDetailTurnsListReadCoalescer({
+    now: () => nowMs,
+    maxInFlightMs: 100,
+  });
+  const firstBlocker = deferred();
+  const secondBlocker = deferred();
+  const blockers = [firstBlocker, secondBlocker];
+  const calls = [];
+  const logs = [];
+  const reader = async (input) => {
+    calls.push(`reader:${input.threadId}:${input.mode}`);
+    return blockers[calls.length - 1].promise;
+  };
+  const input = {
+    threadId: "thread-1",
+    mode: "turns-list-initial",
+    limit: 10,
+    threadLog: (event, details = {}) => logs.push({ event, details }),
+  };
+
+  service.read(input, reader);
+  await Promise.resolve();
+  nowMs = 1_050;
+  service.read(input, reader);
+  await Promise.resolve();
+  assert.deepEqual(calls, ["reader:thread-1:turns-list-initial"]);
+  assert.equal(service.status().pendingCount, 1);
+  assert.equal(service.status().joinCount, 1);
+
+  nowMs = 1_150;
+  const fresh = service.read(input, reader);
+  await Promise.resolve();
+  assert.deepEqual(calls, [
+    "reader:thread-1:turns-list-initial",
+    "reader:thread-1:turns-list-initial",
+  ]);
+  assert.ok(logs.some((entry) => entry.event === "turns_list_coalesced_stale_evicted"));
+
+  secondBlocker.resolve({ ok: true, fresh: true });
+  assert.deepEqual(await fresh, { ok: true, fresh: true });
+});
+
 test("does not coalesce different modes, different limits, warnings, or failed retries", async () => {
   const service = createThreadDetailTurnsListReadCoalescer();
   let calls = 0;
