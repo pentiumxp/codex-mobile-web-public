@@ -955,11 +955,12 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "prepareThreadTaskCardsToResult"), /prepareThreadTaskCardsToResult\(result\)/);
   const prepareDetailBody = functionBody(threadDetailResponsePreparationServiceJs, "prepareThreadDetailResponseResult");
   assert.match(functionBody(threadDetailRuntimeServiceJs, "prepareThreadDetailResponseResult"), /requireResponsePreparationService\(\)\.prepareThreadDetailResponseResult/);
-  assert.match(prepareDetailBody, /const completionBackfilled = backfillMissingRolloutCompletionTurnsForDetailResult\(result, details\);/);
-  assert.match(prepareDetailBody, /const usageDecorated = attachRolloutUsageSummariesToDetailResult\(completionBackfilled\);/);
-  assert.match(prepareDetailBody, /const inputAnchored = appendRolloutUserInputAnchorsToDetailResult\(usageDecorated\);/);
-  assert.match(prepareDetailBody, /const activeAssistantDecorated = appendRolloutActiveAssistantItemsToDetailResult\(inputAnchored\);/);
-  assert.match(prepareDetailBody, /const detailResult = finalizeActiveAssistantProjectionDetailResult\(activeAssistantDecorated\);/);
+  assert.match(prepareDetailBody, /const turnsListWindow = details\.turnsListWindow === true;/);
+  assert.match(prepareDetailBody, /backfillMissingRolloutCompletionTurnsForDetailResult\(result, details\)/);
+  assert.match(prepareDetailBody, /attachRolloutUsageSummariesToDetailResult\(completionBackfilled\)/);
+  assert.match(prepareDetailBody, /appendRolloutUserInputAnchorsToDetailResult\(usageDecorated\)/);
+  assert.match(prepareDetailBody, /appendRolloutActiveAssistantItemsToDetailResult\(inputAnchored\)/);
+  assert.match(prepareDetailBody, /finalizeActiveAssistantProjectionDetailResult\(activeAssistantDecorated\)/);
   assert.match(prepareDetailBody, /await prepareThreadTaskCardsToResult\(applyLocalActiveThreadStatusToResult\(detailResult, details\)\)/);
   assert.match(prepareDetailBody, /finalizeThreadDetailProjectionResult/);
   assert.match(prepareDetailBody, /const budgetOptions = Object\.assign\(\{\}, responseBudgetOptions\(\) \|\| \{\}, \{/);

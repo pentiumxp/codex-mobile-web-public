@@ -42,13 +42,20 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
   const attachPendingServerRequestsToResult = typeof dependencies.attachPendingServerRequestsToResult === "function" ? dependencies.attachPendingServerRequestsToResult : (result) => result;
   const attachThreadTaskCardsToResult = typeof dependencies.attachThreadTaskCardsToResult === "function" ? dependencies.attachThreadTaskCardsToResult : (result) => result;
 
-  function threadFromTurnsList(threadId, summary, turnsResult) {
+  function isWindowOnlyTurnsListMode(mode) {
+    return mode === "turns-list-initial" || mode === "turns-list-large";
+  }
+
+  function threadFromTurnsList(threadId, summary, turnsResult, options = {}) {
     const data = Array.isArray(turnsResult && turnsResult.data)
       ? turnsResult.data
       : Array.isArray(turnsResult && turnsResult.turns)
         ? turnsResult.turns
         : [];
-    const enriched = enrichThreadItemTimestampsFromRollout(Object.assign({ turns: data }, summary || {}, { id: threadId }));
+    const source = Object.assign({ turns: data }, summary || {}, { id: threadId });
+    const enriched = options.skipRolloutEnrichment === true
+      ? source
+      : enrichThreadItemTimestampsFromRollout(source);
     const turns = sortTurnsChronologically(enriched.turns).slice(-MAX_THREAD_TURNS);
     const latest = turns[turns.length - 1];
     const status = latest && isLiveTurn(latest) ? { type: "active" } : (summary && summary.status) || { type: "notLoaded" };
@@ -142,20 +149,31 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
   async function prepareThreadDetailResponseResult(result, details = {}) {
     const timings = {};
     details.prepareResponseTimings = timings;
+    const turnsListWindow = details.turnsListWindow === true;
     let phaseStartedAtMs = Date.now();
-    const completionBackfilled = backfillMissingRolloutCompletionTurnsForDetailResult(result, details);
+    const completionBackfilled = turnsListWindow
+      ? result
+      : backfillMissingRolloutCompletionTurnsForDetailResult(result, details);
     markPrepareTiming(timings, "prepareCompletionBackfillMs", phaseStartedAtMs);
     phaseStartedAtMs = Date.now();
-    const usageDecorated = attachRolloutUsageSummariesToDetailResult(completionBackfilled);
+    const usageDecorated = turnsListWindow
+      ? completionBackfilled
+      : attachRolloutUsageSummariesToDetailResult(completionBackfilled);
     markPrepareTiming(timings, "prepareUsageSummariesMs", phaseStartedAtMs);
     phaseStartedAtMs = Date.now();
-    const inputAnchored = appendRolloutUserInputAnchorsToDetailResult(usageDecorated);
+    const inputAnchored = turnsListWindow
+      ? usageDecorated
+      : appendRolloutUserInputAnchorsToDetailResult(usageDecorated);
     markPrepareTiming(timings, "prepareUserInputAnchorsMs", phaseStartedAtMs);
     phaseStartedAtMs = Date.now();
-    const activeAssistantDecorated = appendRolloutActiveAssistantItemsToDetailResult(inputAnchored);
+    const activeAssistantDecorated = turnsListWindow
+      ? inputAnchored
+      : appendRolloutActiveAssistantItemsToDetailResult(inputAnchored);
     markPrepareTiming(timings, "prepareActiveAssistantMs", phaseStartedAtMs);
     phaseStartedAtMs = Date.now();
-    const detailResult = finalizeActiveAssistantProjectionDetailResult(activeAssistantDecorated);
+    const detailResult = turnsListWindow
+      ? activeAssistantDecorated
+      : finalizeActiveAssistantProjectionDetailResult(activeAssistantDecorated);
     markPrepareTiming(timings, "prepareFinalizeActiveAssistantMs", phaseStartedAtMs);
     phaseStartedAtMs = Date.now();
     const prepared = applyLocalActiveThreadStatusToResult(
@@ -191,12 +209,20 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
         fallbackFrom: mode,
       });
     }
+    const turnsListWindow = isWindowOnlyTurnsListMode(mode);
     const turnsResult = await codex.request("thread/turns/list", {
       threadId,
       limit: MAX_THREAD_TURNS,
       sortDirection: "desc",
     }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
-    const result = compactThreadReadResult({ thread: threadFromTurnsList(threadId, summary, turnsResult) });
+    const result = compactThreadReadResult({
+      thread: threadFromTurnsList(threadId, summary, turnsResult, {
+        skipRolloutEnrichment: turnsListWindow,
+      }),
+    }, {
+      maxTurns: MAX_THREAD_TURNS,
+      turnsListWindow,
+    });
     if (result.thread) {
       result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
       result.thread.mobileReadMode = mode;
@@ -212,7 +238,12 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
         mode,
       });
     }
-    return prepareThreadDetailResponseResult(result, { threadId, source: mode, responseBudgetEvidence });
+    return prepareThreadDetailResponseResult(result, {
+      threadId,
+      source: mode,
+      responseBudgetEvidence,
+      turnsListWindow,
+    });
   }
 
   async function readRawThreadDetailForOrchestrator({ threadId, summary, runtimeSettings }) {

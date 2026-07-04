@@ -876,16 +876,33 @@ function createThreadDetailCompactionService(deps = {}) {
     const maxTurns = Math.max(1, Math.min(200, Number(options.maxTurns || MAX_THREAD_TURNS)));
     if (Array.isArray(out.turns)) {
       pendingSteerEchoStore.injectIntoThread(out);
-      reconcileThreadActiveTurnWithRolloutEvidence(out, options);
+      if (options.turnsListWindow !== true) {
+        reconcileThreadActiveTurnWithRolloutEvidence(out, options);
+      }
       normalizeSupersededLiveTurns(out);
       pruneSupersededLiveShellTurns(out);
-      appendMissingRolloutCompletionTurnsToThread(out);
       const omitted = Math.max(0, out.turns.length - maxTurns);
       if (omitted > 0) {
         out.mobileOmittedTurnCount = omitted;
         out.turns = out.turns.slice(-maxTurns);
         out.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn(out.turns[0]);
       }
+      if (options.turnsListWindow === true) {
+        out.mobileTurnsListWindowCompaction = {
+          version: "turns-list-window-v1",
+          skippedRolloutEnrichment: true,
+        };
+        out.turns = out.turns
+          .map((turn) => compactTurn(turn, {
+            receiptOnly: true,
+            threadId: out.id || out.threadId || "",
+          }))
+          .map(inferTurnItemDisplayTimestamps)
+          .map(orderTurnItemsByDisplayTimestamp);
+        dedupeUserMessageEchoesInThread(out);
+        return normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(out), options);
+      }
+      appendMissingRolloutCompletionTurnsToThread(out);
       enrichThreadItemTimestampsFromRollout(out);
       const toolOutputImagePayload = readRolloutToolOutputImageItems(rolloutPath, {
         threadId: out.id || out.threadId || "",
