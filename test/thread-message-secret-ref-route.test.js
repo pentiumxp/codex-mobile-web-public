@@ -368,6 +368,53 @@ test("thread message route queues slow active-turn steering before turn steer re
   assert.ok(events.some((entry) => entry.event === "steer-background-done"));
 });
 
+test("thread message route defaults active-turn steering to a short fast-accept window", async () => {
+  const steer = deferred();
+  const events = [];
+  const { route } = createRouteHarness({
+    codex: {
+      request: async (method) => {
+        if (method === "turn/steer") return steer.promise;
+        if (method === "turn/start") return { turnId: "replacement-turn" };
+        return { ok: true };
+      },
+      notifyMuxUserMessage: () => {},
+    },
+    pendingSteerEchoStore: {
+      remember: () => "pending-steer-echo",
+      forget: () => {},
+    },
+    logMessageSubmit: (event, details) => events.push({ event, details }),
+  });
+  let response = null;
+  const started = Date.now();
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "follow active",
+        activeTurnId: "active-turn-1",
+        clientSubmissionId: "client-steer-default",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+  const elapsedMs = Date.now() - started;
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.steeringQueued, true);
+  assert.equal(response.body.turnId, "active-turn-1");
+  assert.ok(elapsedMs < 300, `default queued steer should return quickly, elapsed=${elapsedMs}`);
+  assert.ok(events.some((entry) => entry.event === "steer-queued"));
+
+  steer.resolve({ turnId: "active-turn-1" });
+  await new Promise((resolve) => setImmediate(resolve));
+});
+
 test("thread message route does not block active-turn send on slow stale preflight", async () => {
   const preflight = deferred();
   const steer = deferred();

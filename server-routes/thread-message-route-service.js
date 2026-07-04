@@ -7,7 +7,7 @@ const {
   publicSensitiveContext,
 } = require("../services/runtime/home-ai-secret-ref-service");
 
-const DEFAULT_ACTIVE_TURN_STEER_FAST_ACCEPT_MS = 350;
+const DEFAULT_ACTIVE_TURN_STEER_FAST_ACCEPT_MS = 120;
 const DEFAULT_ACTIVE_TURN_PREFLIGHT_FAST_ACCEPT_MS = 120;
 
 function scheduleDetachedTask(task) {
