@@ -8,6 +8,7 @@ const {
 } = require("../services/runtime/home-ai-secret-ref-service");
 
 const DEFAULT_ACTIVE_TURN_STEER_FAST_ACCEPT_MS = 350;
+const DEFAULT_ACTIVE_TURN_PREFLIGHT_FAST_ACCEPT_MS = 120;
 
 function scheduleDetachedTask(task) {
   Promise.resolve()
@@ -109,6 +110,7 @@ function createThreadMessageRouteService(dependencies = {}) {
     isStaleActiveTurnError,
     autoRecoverThreadTurn,
     activeTurnSteerFastAcceptMs = DEFAULT_ACTIVE_TURN_STEER_FAST_ACCEPT_MS,
+    activeTurnPreflightFastAcceptMs = DEFAULT_ACTIVE_TURN_PREFLIGHT_FAST_ACCEPT_MS,
     scheduleBackgroundTask = scheduleDetachedTask,
   } = dependencies;
 
@@ -340,8 +342,52 @@ function createThreadMessageRouteService(dependencies = {}) {
           let skipTurnSteer = false;
           if (body.activeTurnId) {
             const preflightStartedAtMs = Date.now();
-            const stalePreflight = await staleActiveTurnPreflight(codex, threadId, String(body.activeTurnId));
+            const preflightPromise = Promise.resolve()
+              .then(() => staleActiveTurnPreflight(codex, threadId, String(body.activeTurnId)))
+              .then(
+                (result) => ({ ok: true, result }),
+                (err) => ({ ok: false, error: err }),
+              );
+            const preflightFastAcceptMs = Math.max(0, Number(activeTurnPreflightFastAcceptMs) || 0);
+            const preflightOutcome = await Promise.race([
+              preflightPromise,
+              resolveAfter(preflightFastAcceptMs, { pending: true }),
+            ]);
             markSubmitTiming(timings, "stalePreflightMs", preflightStartedAtMs);
+            if (preflightOutcome && preflightOutcome.pending) {
+              timings.stalePreflightQueued = true;
+              timings.stalePreflightFastAcceptMs = preflightFastAcceptMs;
+              scheduleBackgroundTask(async () => {
+                const backgroundStartedAtMs = Date.now();
+                const backgroundOutcome = await preflightPromise;
+                logMessageSubmit(backgroundOutcome && backgroundOutcome.ok
+                  ? "active-turn-stale-preflight-background-done"
+                  : "active-turn-stale-preflight-background-error", {
+                  threadId,
+                  turnId: String(body.activeTurnId),
+                  clientSubmissionId: body.clientSubmissionId,
+                  stale: Boolean(backgroundOutcome && backgroundOutcome.ok && backgroundOutcome.result && backgroundOutcome.result.stale),
+                  reason: backgroundOutcome && backgroundOutcome.ok && backgroundOutcome.result && backgroundOutcome.result.reason || "",
+                  error: backgroundOutcome && !backgroundOutcome.ok && backgroundOutcome.error
+                    ? backgroundOutcome.error.message || String(backgroundOutcome.error)
+                    : "",
+                  timings: {
+                    stalePreflightBackgroundMs: Math.max(0, Date.now() - backgroundStartedAtMs),
+                  },
+                });
+              });
+              logMessageSubmit("active-turn-stale-preflight-queued", {
+                threadId,
+                turnId: String(body.activeTurnId),
+                clientSubmissionId: body.clientSubmissionId,
+                timings,
+              });
+            } else if (preflightOutcome && !preflightOutcome.ok) {
+              throw preflightOutcome.error;
+            }
+            const stalePreflight = preflightOutcome && preflightOutcome.ok
+              ? preflightOutcome.result
+              : { stale: false, reason: "preflight-queued" };
             if (stalePreflight.stale) {
               skipTurnSteer = true;
               logMessageSubmit("active-turn-stale-preflight", {

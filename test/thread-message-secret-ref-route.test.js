@@ -368,6 +368,60 @@ test("thread message route queues slow active-turn steering before turn steer re
   assert.ok(events.some((entry) => entry.event === "steer-background-done"));
 });
 
+test("thread message route does not block active-turn send on slow stale preflight", async () => {
+  const preflight = deferred();
+  const steer = deferred();
+  const backgroundTasks = [];
+  const events = [];
+  const { route, requests } = createRouteHarness({
+    activeTurnPreflightFastAcceptMs: 0,
+    activeTurnSteerFastAcceptMs: 0,
+    scheduleBackgroundTask: (task) => {
+      backgroundTasks.push(task);
+    },
+    staleActiveTurnPreflight: async () => preflight.promise,
+    codex: {
+      request: async (method, params) => {
+        requests.push({ method, params });
+        if (method === "turn/steer") return steer.promise;
+        if (method === "turn/start") return { turnId: "turn-new" };
+        return { ok: true };
+      },
+      notifyMuxUserMessage: () => {},
+    },
+    pendingSteerEchoStore: {
+      remember: () => "pending-steer-echo",
+      forget: () => {},
+    },
+    logMessageSubmit: (event, details) => events.push({ event, details }),
+  });
+
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "continue while preflight is slow",
+        activeTurnId: "active-turn-1",
+        clientSubmissionId: "client-preflight-slow",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.steeringQueued, true);
+  assert.equal(response.body.turnId, "active-turn-1");
+  assert.deepEqual(requests.map((entry) => entry.method), ["turn/steer"]);
+  assert.ok(events.some((entry) => entry.event === "active-turn-stale-preflight-queued"));
+  assert.ok(events.some((entry) => entry.event === "steer-queued"));
+  assert.equal(backgroundTasks.length, 2);
+});
+
 test("thread message route starts a replacement turn when queued active-turn steering becomes stale", async () => {
   const steer = deferred();
   const backgroundTasks = [];
