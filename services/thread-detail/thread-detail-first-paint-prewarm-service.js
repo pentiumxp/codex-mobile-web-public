@@ -85,18 +85,31 @@ function createThreadDetailFirstPaintPrewarmService(options = {}) {
   const readThreadDetail = typeof options.readThreadDetail === "function"
     ? options.readThreadDetail
     : async () => ({ status: 503, body: { error: "thread_detail_reader_unavailable" } });
+  const resolveSummary = typeof options.resolveSummary === "function"
+    ? options.resolveSummary
+    : async () => ({ summary: null, source: "" });
   const log = typeof options.log === "function" ? options.log : () => {};
   const pending = new Map();
   const lastAttemptAtByThread = new Map();
   const lastResultByThread = new Map();
+  let latestResult = null;
   let nextJobId = 0;
 
   async function prewarmNow(input = {}) {
     const threadId = text(input.threadId);
     if (!enabled) return withThreadDetailFirstPaintPrewarmJobPolicy({ status: "skipped", reason: "disabled" });
     if (!threadId) return withThreadDetailFirstPaintPrewarmJobPolicy({ status: "skipped", reason: "missing-thread-id" });
-    const summary = input.summary && typeof input.summary === "object" ? input.summary : null;
+    let summary = input.summary && typeof input.summary === "object" ? input.summary : null;
     const activeHint = input.activeHint === true;
+    if (!summary || !summaryRolloutSizeBytes(summary)) {
+      const summaryResult = await resolveSummary(input.codex || null, threadId, {
+        threadLog: typeof input.threadLog === "function" ? input.threadLog : () => {},
+      });
+      const resolvedSummary = summaryResult && summaryResult.summary || null;
+      if (resolvedSummary && typeof resolvedSummary === "object") {
+        summary = Object.assign({}, summary || {}, resolvedSummary);
+      }
+    }
     if (!summaryLooksActive(summary, activeHint)) {
       return withThreadDetailFirstPaintPrewarmJobPolicy({ status: "skipped", reason: "not-active" });
     }
@@ -109,7 +122,7 @@ function createThreadDetailFirstPaintPrewarmService(options = {}) {
         minRolloutBytes,
       });
     }
-    if (minRolloutBytes > 0 && !rolloutBytes && !activeHint) {
+    if (minRolloutBytes > 0 && !rolloutBytes) {
       return withThreadDetailFirstPaintPrewarmJobPolicy({
         status: "skipped",
         reason: "rollout-size-unavailable",
@@ -148,7 +161,9 @@ function createThreadDetailFirstPaintPrewarmService(options = {}) {
     const current = pending.get(threadId);
     if (!current || current.jobId === jobId) {
       pending.delete(threadId);
-      lastResultByThread.set(threadId, Object.assign({ updatedAtMs: now() }, result || {}));
+      const stored = Object.assign({ updatedAtMs: now(), threadId }, result || {});
+      lastResultByThread.set(threadId, stored);
+      latestResult = stored;
     }
   }
 
@@ -210,7 +225,7 @@ function createThreadDetailFirstPaintPrewarmService(options = {}) {
       job: threadDetailFirstPaintPrewarmJobPolicy(),
       pending: id ? pending.has(id) : pending.size > 0,
       pendingCount: pending.size,
-      lastResult: id ? lastResultByThread.get(id) || null : null,
+      lastResult: id ? lastResultByThread.get(id) || null : latestResult,
     };
   }
 

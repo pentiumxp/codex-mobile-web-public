@@ -51,6 +51,10 @@ function createHarness(overrides = {}) {
     delayMs: 0,
     minIntervalMs: 0,
     minRolloutBytes: 8 * 1024 * 1024,
+    resolveSummary: async (codex, threadId) => {
+      calls.push(`summary:${threadId}`);
+      return { summary };
+    },
     readThreadDetail: async ({ threadId, responseBudgetEvidence }) => {
       calls.push(`detail:${threadId}:${responseBudgetEvidence}`);
       return {
@@ -117,6 +121,43 @@ test("prewarmNow skips idle and small summaries before detail reads", async () =
   assert.equal(small.calls.some((call) => call.startsWith("detail:")), false);
 });
 
+test("prewarmNow resolves summary before active-hint large-thread prewarm", async () => {
+  const { calls, service } = createHarness();
+
+  const result = await service.prewarmNow({
+    threadId: "thread-1",
+    summary: { id: "thread-1", status: { type: "active" }, activeTurnId: "turn-1" },
+    activeHint: true,
+  });
+
+  assert.equal(result.status, "warmed");
+  assert.equal(result.rolloutSizeBytes, 64 * 1024 * 1024);
+  assert.deepEqual(calls.filter((call) => call.startsWith("summary:")), ["summary:thread-1"]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("detail:")), ["detail:thread-1:compact"]);
+});
+
+test("prewarmNow skips active-hint work when resolved rollout size is unavailable", async () => {
+  const { calls, service } = createHarness({
+    service: {
+      resolveSummary: async (codex, threadId) => {
+        calls.push(`summary:${threadId}`);
+        return { summary: { id: threadId, status: { type: "active" }, activeTurnId: "turn-1" } };
+      },
+    },
+  });
+
+  const result = await service.prewarmNow({
+    threadId: "thread-1",
+    summary: { id: "thread-1", status: { type: "active" }, activeTurnId: "turn-1" },
+    activeHint: true,
+  });
+
+  assert.equal(result.status, "skipped");
+  assert.equal(result.reason, "rollout-size-unavailable");
+  assert.deepEqual(calls.filter((call) => call.startsWith("summary:")), ["summary:thread-1"]);
+  assert.equal(calls.some((call) => call.startsWith("detail:")), false);
+});
+
 test("schedule deduplicates and reuses fresh first-paint warm results", async () => {
   const { calls, service, summary } = createHarness({
     service: {
@@ -131,6 +172,8 @@ test("schedule deduplicates and reuses fresh first-paint warm results", async ()
   }));
   await Promise.resolve();
   await Promise.resolve();
+  assert.equal(service.status().lastResult.status, "warmed");
+  assert.equal(service.status("thread-1").lastResult.status, "warmed");
   assert.deepEqual(service.schedule({ threadId: "thread-1", summary }), withExpectedJob({
     scheduled: false,
     reason: "recently-ready",

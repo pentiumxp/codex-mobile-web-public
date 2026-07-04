@@ -235,7 +235,9 @@ function createThreadEventNotificationService(deps = {}) {
         turn: Object.assign({ id: turnId, status: { type: "active" } }, result && result.turn && typeof result.turn === "object" ? result.turn : {}),
       });
     }
-    scheduleActiveWindowPrewarm(id, { id, status: { type: "active" }, activeTurnId: turnId }, "local-turn-start");
+    const activeSummary = { id, status: { type: "active" }, activeTurnId: turnId };
+    scheduleActiveWindowPrewarm(id, activeSummary, "local-turn-start");
+    scheduleThreadDetailFirstPaintPrewarm(id, activeSummary, "local-turn-start", { activeHint: true });
     broadcastThreadStatusChanged(id, { type: "active" }, {
       source: String(meta.source || "local-turn-start"),
       turnId,

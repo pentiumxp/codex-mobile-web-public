@@ -1016,3 +1016,57 @@ The previous full handoff was archived and should be opened only when old proven
   private thread bodies, task-card bodies, endpoint bodies, provider payloads,
   DB rows, screenshots, raw auth URLs, full prompts, full rollout contents, or
   long logs were exposed.
+
+## 2026-07-05T00:17:00+08:00 - Local-turn first-paint prewarm follow-up prepared
+
+- Codex Mobile Deploy Lane returned completed deployment receipt
+  `ttc_41e0ee0f4cba287707` for `0564eccf`
+  (`fix: stabilize active overlay first paint`). Per terminal receipt policy,
+  no acknowledgement return was sent.
+- Production readback after `0564eccf` confirmed the specific repeated
+  active-overlay window/backfill path was closed:
+  - sampled active-overlay reads had `activeOverlayWindowMs=0` and
+    `activeOverlayBackfillWindowMs=0-1ms`;
+  - remaining slow samples were different paths: projection miss to
+    `turns-list-large`, one cold `thread-read`, and some projection-hit reads
+    dominated by `prepareResponseMs`;
+  - final pressure readback showed listener pid `83391`, event-loop lag p95
+    about `22.4ms`, p99 about `85.4ms`; route stats still had residual
+    `GET /api/threads/:threadId` slow count `4/14` from the cold/miss samples.
+- Additional local sampling after deploy showed repeated direct Home AI detail
+  reads had stable `projection-active-overlay` / projection-hit server totals
+  around `124-162ms`, with one `prepareResponseMs≈495ms` sample and no
+  foreground active-window backfill. `/api/status?detail=1` also showed a
+  separate `POST /api/threads/:threadId/messages` slow sample around `9391ms`,
+  still out of scope for the GET-entry fix.
+- Thread-list readback confirmed the Home AI row
+  `019eed86-2002-7cc2-b0b7-937eb5355f36` is active and has
+  `rolloutSizeBytes≈591491157`, so it is eligible for first-paint prewarm.
+  However `notifyLocalTurnStarted` only scheduled active-window prewarm. If
+  the user opens immediately after local `message-submit`, first detail can
+  race before first-paint detail prewarm has built a projection/detail cache.
+- Local follow-up fix prepared:
+  - `notifyLocalTurnStarted` now schedules
+    `scheduleThreadDetailFirstPaintPrewarm(..., { activeHint: true })` in
+    addition to active-window prewarm;
+  - first-paint prewarm now resolves the real thread summary before deciding
+    when the local active summary lacks `rolloutSizeBytes`, then keeps the
+    rollout-size threshold so small threads are not blindly prewarmed;
+  - first-paint prewarm status now records a global latest result as well as
+    per-thread last result;
+  - `/api/status?detail=1&threadId=<id>` passes the thread id into
+    `threadDetailFirstPaintPrewarmStatus` for bounded readback.
+- Validation passed locally:
+  `node --test test/thread-detail-first-paint-prewarm-service.test.js
+  test/thread-detail-read-orchestration-service.test.js
+  test/thread-detail-runtime-service.test.js
+  test/runtime-job-scheduler-service.test.js
+  test/server-runtime-config-service.test.js
+  test/core-api-route-service.test.js test/thread-task-card-route.test.js`;
+  `npm run --silent check`; and `git diff --check -- ':!.agent-context'`.
+- Deployment has not yet been performed for this follow-up. Privacy boundary
+  respected: only bounded ids, route/status metrics, timing fields, and file
+  summaries were recorded; no raw secrets, access keys, cookies, launch tokens,
+  private thread bodies, task-card bodies, endpoint bodies, provider payloads,
+  DB rows, screenshots, raw auth URLs, full prompts, full rollout contents, or
+  long logs were exposed.

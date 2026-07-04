@@ -581,7 +581,9 @@ function createCoreApiRouteService(deps = {}) {
       const status = codex.status();
       if (truthyParam(url.searchParams.get("detail")) && runtimePressureDiagnostics && typeof runtimePressureDiagnostics.status === "function") {
         status.runtimePressure = runtimePressureDiagnostics.status();
-        status.threadDetailFirstPaintPrewarm = threadDetailFirstPaintPrewarmStatus();
+        status.threadDetailFirstPaintPrewarm = threadDetailFirstPaintPrewarmStatus(
+          url.searchParams.get("threadId") || url.searchParams.get("thread") || "",
+        );
       }
       if (truthyParam(url.searchParams.get("muxMetrics"))) {
         status.muxMetrics = await codex.readMuxMetrics(["thread/list"]);

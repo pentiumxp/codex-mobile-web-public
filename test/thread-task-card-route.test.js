@@ -904,6 +904,7 @@ test("server broadcasts active status immediately for local turn starts", () => 
   assert.match(helperBody, /const turnId = turnStartResultTurnId\(result\)/);
   assert.match(helperBody, /rememberLocalActiveThreadStatus\(id, turnId/);
   assert.match(helperBody, /threadDetailProjectionService\.applyNotification\("turn\/started"/);
+  assert.match(helperBody, /scheduleThreadDetailFirstPaintPrewarm\(id, activeSummary, "local-turn-start", \{ activeHint: true \}\)/);
   assert.match(helperBody, /broadcastThreadStatusChanged\(id, \{ type: "active" \}/);
   assert.match(helperBody, /source: String\(meta\.source \|\| "local-turn-start"\)/);
 

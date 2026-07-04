@@ -454,6 +454,7 @@ function createThreadDetailRuntimeService(dependencies = {}) {
     minIntervalMs: config.threadDetailFirstPaintPrewarmMinIntervalMs,
     minRolloutBytes: config.threadDetailFirstPaintPrewarmMinBytes,
     maxPending: config.threadDetailFirstPaintPrewarmMaxPending,
+    resolveSummary: (requestCodex, threadId, options) => threadDetailSummaryService.resolveSummary(requestCodex, threadId, options),
     readThreadDetail: (input) => threadDetailReadOrchestrationService.readThreadDetail(input),
     log: (event, details) => dependencies.logThreadDetail(event, details),
   });

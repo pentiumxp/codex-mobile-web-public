@@ -126,6 +126,7 @@ test("core status route exposes runtime pressure without blocking on quota hydra
   let loadedRecentRateLimits = false;
   let sent = null;
   const scheduled = [];
+  const prewarmThreadIds = [];
   const service = createCoreApiRouteService({
     codex: {
       ensure: async () => {
@@ -145,13 +146,17 @@ test("core status route exposes runtime pressure without blocking on quota hydra
         routes: { recent: [{ path: "/api/status", elapsedMs: 11 }] },
       }),
     },
+    threadDetailFirstPaintPrewarmStatus: (threadId) => {
+      prewarmThreadIds.push(threadId);
+      return { pending: false, lastResult: threadId ? { threadId, status: "warmed" } : null };
+    },
     scheduleBackgroundTask: (fn) => {
       scheduled.push(fn);
     },
   });
 
   const handled = await service.handleAuthorizedRoute({
-    url: new URL("http://127.0.0.1:8787/api/status?detail=1"),
+    url: new URL("http://127.0.0.1:8787/api/status?detail=1&threadId=thread-1"),
     req: { method: "GET", headers: {} },
     res: {},
     readBody: async () => ({}),
@@ -169,6 +174,8 @@ test("core status route exposes runtime pressure without blocking on quota hydra
   assert.equal(sent.body.ready, true);
   assert.equal(sent.body.runtimePressure.eventLoop.lagP95Ms, 7);
   assert.equal(sent.body.runtimePressure.routes.recent[0].path, "/api/status");
+  assert.deepEqual(prewarmThreadIds, ["thread-1"]);
+  assert.equal(sent.body.threadDetailFirstPaintPrewarm.lastResult.status, "warmed");
 
   await scheduled[0]();
   assert.equal(refreshedRateLimits, true);
