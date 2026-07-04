@@ -170,13 +170,17 @@ test("thread message route logs bounded phase timings for message submission", a
   assert.equal(done.details.threadId, "thread-1");
   assert.equal(done.details.clientSubmissionId, "client-timed");
   for (const key of [
+    "readMessageMs",
     "bodyReadMs",
     "inputBuildMs",
     "submissionKeyMs",
     "runtimeSettingsMs",
+    "threadResumeMs",
     "resumeMs",
     "turnStartMs",
+    "notifyLocalTurnStartedMs",
     "notifyMs",
+    "sendJsonMs",
     "dedupeWaitMs",
     "totalMs",
   ]) {

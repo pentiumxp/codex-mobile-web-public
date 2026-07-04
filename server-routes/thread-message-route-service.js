@@ -14,6 +14,14 @@ function markSubmitTiming(timings, name, startedAtMs) {
   return elapsed;
 }
 
+function markSubmitTimingAliases(timings, names, startedAtMs) {
+  const list = Array.isArray(names) ? names.filter(Boolean) : [names].filter(Boolean);
+  if (!list.length) return 0;
+  const elapsed = Math.max(0, Date.now() - Number(startedAtMs || Date.now()));
+  for (const name of list) timings[name] = elapsed;
+  return elapsed;
+}
+
 function createThreadMessageRouteService(dependencies = {}) {
   const {
     codex,
@@ -223,10 +231,16 @@ function createThreadMessageRouteService(dependencies = {}) {
     if (messages && method === "POST") {
       const routeStartedAtMs = Date.now();
       const timings = {};
+      const timedSendJson = (status, body) => {
+        const sendJsonStartedAtMs = Date.now();
+        const response = sendJson(status, body);
+        markSubmitTiming(timings, "sendJsonMs", sendJsonStartedAtMs);
+        return response;
+      };
       const threadId = decodeURIComponent(messages[1]);
       const bodyReadStartedAtMs = Date.now();
       const { fields: body, uploads } = await readMessage(threadId);
-      markSubmitTiming(timings, "bodyReadMs", bodyReadStartedAtMs);
+      markSubmitTimingAliases(timings, ["readMessageMs", "bodyReadMs"], bodyReadStartedAtMs);
       const inputStartedAtMs = Date.now();
       const text = String(body.text || "").trim();
       const secretContext = normalizeSecretRefsFromInput(body, {
@@ -241,13 +255,13 @@ function createThreadMessageRouteService(dependencies = {}) {
       markSubmitTiming(timings, "inputBuildMs", inputStartedAtMs);
       if (!input.length) {
         timings.totalMs = Math.max(0, Date.now() - routeStartedAtMs);
+        timedSendJson(400, { error: "Message text or attachment is required" });
         logMessageSubmit("empty", {
           threadId,
           clientSubmissionId: body.clientSubmissionId,
           uploads: uploads.length,
           timings,
         });
-        sendJson(400, { error: "Message text or attachment is required" });
         return { handled: true };
       }
       logMessageSubmit("received", {
@@ -360,9 +374,9 @@ function createThreadMessageRouteService(dependencies = {}) {
               cwd: body.cwd || null,
               persistExtendedHistory,
             }, runtimeSettings), { timeoutMs: mutationRpcTimeoutMs, retry: false });
-            markSubmitTiming(timings, "resumeMs", resumeStartedAtMs);
+            markSubmitTimingAliases(timings, ["threadResumeMs", "resumeMs"], resumeStartedAtMs);
           } catch (err) {
-            markSubmitTiming(timings, "resumeMs", resumeStartedAtMs);
+            markSubmitTimingAliases(timings, ["threadResumeMs", "resumeMs"], resumeStartedAtMs);
             if (!/already|loaded|active/i.test(err.message || "")) throw err;
             timings.resumeAlreadyLoaded = true;
           }
@@ -378,11 +392,17 @@ function createThreadMessageRouteService(dependencies = {}) {
           markSubmitTiming(timings, "turnStartMs", turnStartStartedAtMs);
           const notifyStartedAtMs = Date.now();
           rememberThreadIdForTurnId(threadId, notifyLocalTurnStarted(threadId, turnResult, { source: "message-submit" }));
-          markSubmitTiming(timings, "notifyMs", notifyStartedAtMs);
+          markSubmitTimingAliases(timings, ["notifyLocalTurnStartedMs", "notifyMs"], notifyStartedAtMs);
           return turnResult;
         });
         markSubmitTiming(timings, "dedupeWaitMs", dedupeStartedAtMs);
         timings.totalMs = Math.max(0, Date.now() - routeStartedAtMs);
+        if (secretContext) {
+          result = Object.assign({}, result || {}, {
+            sensitiveContext: publicSensitiveContext(secretContext),
+          });
+        }
+        timedSendJson(200, result);
         logMessageSubmit("done", {
           threadId,
           clientSubmissionId: body.clientSubmissionId,
@@ -398,17 +418,11 @@ function createThreadMessageRouteService(dependencies = {}) {
           timings,
         });
         if (isCodexAccountAuthError(err)) {
-          sendJson(409, codexAccountAuthErrorPayload(err));
+          timedSendJson(409, codexAccountAuthErrorPayload(err));
           return { handled: true };
         }
         throw err;
       }
-      if (secretContext) {
-        result = Object.assign({}, result || {}, {
-          sensitiveContext: publicSensitiveContext(secretContext),
-        });
-      }
-      sendJson(200, result);
       return { handled: true };
     }
 
