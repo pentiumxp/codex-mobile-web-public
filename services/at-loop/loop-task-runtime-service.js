@@ -735,6 +735,11 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   const readThreadTaskCardForLoopEvidence = typeof dependencies.readThreadTaskCardForLoopEvidence === "function"
     ? dependencies.readThreadTaskCardForLoopEvidence
     : null;
+  const startSourceRequirementsTurn = typeof dependencies.startSourceRequirementsTurn === "function"
+    ? dependencies.startSourceRequirementsTurn
+    : null;
+  const recordSourceRequirementsScriptPath = compactOneLine(dependencies.recordSourceRequirementsScriptPath)
+    || "scripts/record-at-loop-requirements.js";
 
   let stateCache = null;
 
@@ -1106,6 +1111,10 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       workflowId: slice.workflowId || "",
       roleOwnerThreadId: slice.roleOwnerThreadId || "",
       roleThreadCreated: slice.roleThreadCreated === true,
+      sourceRequirementsTurnId: slice.sourceRequirementsTurnId || "",
+      sourceRequirementsTurnStatus: slice.sourceRequirementsTurnStatus || "",
+      sourceRequirementsTurnStartedAt: slice.sourceRequirementsTurnStartedAt || "",
+      sourceRequirementsTurnError: slice.sourceRequirementsTurnError || "",
       dispatchStatus: slice.dispatchStatus || "",
       returnStatus: slice.returnStatus || "",
       auditVerdict: slice.auditVerdict || "",
@@ -1156,6 +1165,10 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         readyForImplementation: sourceRequirementsReadyForImplementation(loop),
         missingSections: ["requirements_packet", "design_contract_packet"].filter((id) => !auditPacketHasPresentSection(loop.auditPacket || sanitizeAuditPacket({}), id)),
         blockedReason: requirementsSlice && requirementsSlice.blockedReason || loop.blockedReason || "",
+        localTurnStatus: requirementsSlice && requirementsSlice.sourceRequirementsTurnStatus || "",
+        localTurnId: requirementsSlice && requirementsSlice.sourceRequirementsTurnId || "",
+        localTurnStartedAt: requirementsSlice && requirementsSlice.sourceRequirementsTurnStartedAt || "",
+        localTurnError: requirementsSlice && requirementsSlice.sourceRequirementsTurnError || "",
       } : null,
       auditPacketStatus: packet.status,
       auditPacket: {
@@ -1530,7 +1543,115 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return { role: "product_audit" };
   }
 
-  function markRequirementsLocal(loop, slice) {
+  function sourceRequirementsPrompt(loop, slice) {
+    return [
+      "# Codex Mobile @loop source requirements analysis",
+      "",
+      "你是当前主线程的 Loop 需求分析角色。不要实现代码、不要部署、不要向同线程发送 task card。",
+      "先把 Owner 的目标整理成结构化需求包和设计契约包；只有记录完成后，Codex Mobile 才会派发实现线程和审计线程。",
+      "",
+      `Loop id: ${loop.loopId}`,
+      `Role slice id: ${slice.roleSliceId}`,
+      `Source thread id: ${loop.sourceThreadId}`,
+      `Implementation workspace cwd: ${loopImplementationWorkspaceCwd(loop) || "(runtime will resolve later)"}`,
+      "",
+      "## Objective",
+      loop.objectiveSummary || "(bounded objective unavailable)",
+      "",
+      "## Required Output",
+      "",
+      "请在当前线程回复并包含这两个一级小节：",
+      "",
+      "## Requirements Packet",
+      "- objective / non-goals",
+      "- acceptance criteria",
+      "- user-visible success",
+      "- privacy boundary",
+      "- risk gates",
+      "",
+      "## Design Contract Packet",
+      "- owning workspace and architecture boundary",
+      "- relevant docs/contracts",
+      "- routing policy for implementation/audit lanes",
+      "- focused validation harnesses",
+      "- implementation lane hints when needed",
+      "",
+      "完成分析后，把完整分析正文写入一个临时 Markdown 文件，然后运行下面的受限记录命令。命令只提交 packet 正文，不打印正文内容：",
+      "",
+      "```sh",
+      `node "${recordSourceRequirementsScriptPath}" --loop "${loop.loopId}" --role-slice "${slice.roleSliceId}" --status completed --body-file <requirements-packet.md>`,
+      "```",
+      "",
+      "如果无法产出需求/设计包，使用 `--status blocked` 并在正文里给出 bounded reason。不要包含 raw secrets、cookies、launch tokens、provider payloads、private thread bodies、screenshots with private data、DB rows 或 long logs。",
+    ].join("\n");
+  }
+
+  async function ensureSourceRequirementsTurn(loop, slice) {
+    if (!slice || sourceRequirementsReadyForImplementation(loop)) {
+      return { ok: true, skipped: true, reason: "source_requirements_ready" };
+    }
+    const status = compactOneLine(slice.sourceRequirementsTurnStatus);
+    if (slice.sourceRequirementsTurnId || status === "started" || status === "starting") {
+      return { ok: true, duplicateSuppressed: true };
+    }
+    const timestamp = nowIso(clock);
+    if (!startSourceRequirementsTurn) {
+      slice.sourceRequirementsTurnStatus = "unavailable";
+      slice.sourceRequirementsTurnError = "source_requirements_turn_unavailable";
+      slice.routing = Object.assign({}, slice.routing || {}, {
+        sourceRequirementsTurnUnavailable: true,
+      });
+      slice.updatedAt = timestamp;
+      loop.updatedAt = timestamp;
+      saveState();
+      return { ok: true, unavailable: true };
+    }
+    slice.sourceRequirementsTurnStatus = "starting";
+    slice.sourceRequirementsTurnError = "";
+    slice.updatedAt = timestamp;
+    loop.updatedAt = timestamp;
+    saveState();
+    try {
+      const result = await startSourceRequirementsTurn({
+        loop: publicLoop(loop),
+        slice: publicSlice(slice),
+        sourceThread: publicThread(sourceThread(loop)),
+        prompt: sourceRequirementsPrompt(loop, slice),
+      });
+      const startedAt = nowIso(clock);
+      slice.sourceRequirementsTurnStatus = "started";
+      slice.sourceRequirementsTurnId = compactOneLine(result && (result.turnId || result.id || result.turn_id));
+      slice.sourceRequirementsTurnStartedAt = startedAt;
+      slice.sourceRequirementsTurnError = "";
+      slice.routing = Object.assign({}, slice.routing || {}, {
+        sourceRequirementsTurnStarted: true,
+      });
+      slice.updatedAt = startedAt;
+      loop.updatedAt = startedAt;
+      saveState();
+      return { ok: true, result };
+    } catch (err) {
+      const failedAt = nowIso(clock);
+      slice.sourceRequirementsTurnStatus = "failed";
+      slice.sourceRequirementsTurnError = compactOneLine(err && err.message || err || "source_requirements_turn_failed");
+      slice.routing = Object.assign({}, slice.routing || {}, {
+        sourceRequirementsTurnFailed: true,
+      });
+      slice.updatedAt = failedAt;
+      loop.status = "waiting_source_requirements";
+      loop.nextRoute = "source_requirements_pending";
+      loop.blockedReason = "source_requirements_turn_failed";
+      loop.updatedAt = failedAt;
+      saveState();
+      return {
+        ok: false,
+        error: "source_requirements_turn_failed",
+        message: slice.sourceRequirementsTurnError,
+      };
+    }
+  }
+
+  async function markRequirementsLocal(loop, slice) {
     const timestamp = nowIso(clock);
     const source = sourceThread(loop);
     const sourceCheck = routingService.assertLoopRoleTarget({ role: "requirements", thread: source });
@@ -1570,6 +1691,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       });
       loop.status = "waiting_source_requirements";
       loop.nextRoute = "source_requirements_pending";
+      await ensureSourceRequirementsTurn(loop, slice);
     }
     loop.currentRole = "requirements";
     loop.blockedReason = "";
@@ -1839,7 +1961,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     slice.sourceRequestId = slice.sourceRequestId || `at-loop:${loop.loopId}:${role}:${slice.iteration}`;
     slice.workflowId = slice.workflowId || `at-loop:${loop.loopId}`;
     if (role === "requirements" && sourceOwnsRequirements(loop)) {
-      const local = markRequirementsLocal(loop, slice);
+      const local = await markRequirementsLocal(loop, slice);
       if (!local.ok) return local;
       if (local.waiting) return local;
       const lanes = await ensureCoreRoleLanes(loop);
@@ -2111,6 +2233,13 @@ function createLoopTaskRuntimeService(dependencies = {}) {
           loop: publicLoop(existing),
         };
       }
+      if (existing.status === "waiting_source_requirements" && existing.requirementsLocal === true && !sourceRequirementsReadyForImplementation(existing)) {
+        const waiting = await dispatchRole(existing, "requirements");
+        return Object.assign({
+          ok: waiting.ok !== false,
+          duplicateSuppressed: true,
+        }, waiting, { loop: publicLoop(existing) });
+      }
       saveState();
       return { ok: true, duplicateSuppressed: true, loop: publicLoop(existing) };
     }
@@ -2149,6 +2278,24 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     saveState();
     const dispatch = await dispatchRole(loop, "requirements");
     return Object.assign({ ok: dispatch.ok !== false, duplicateSuppressed: false }, dispatch, { loop: publicLoop(loop) });
+  }
+
+  async function startSourceRequirementsForLoop(input = {}) {
+    const loopId = compactOneLine(input.loopId);
+    if (!loopId) return { ok: false, error: "loop_id_required" };
+    const loop = findLoop(loopId);
+    if (!loop) return { ok: false, error: "at_loop_not_found" };
+    if (loop.requirementsLocal !== true) {
+      return { ok: false, error: "source_requirements_not_local", loop: publicLoop(loop) };
+    }
+    if (sourceRequirementsReadyForImplementation(loop)) {
+      return { ok: true, skipped: true, reason: "source_requirements_ready", loop: publicLoop(loop) };
+    }
+    const result = await dispatchRole(loop, "requirements");
+    return Object.assign({
+      ok: result.ok !== false,
+      sourceRequirementsTurnStarted: Boolean(result.loop && result.loop.sourceRequirementsStatus && result.loop.sourceRequirementsStatus.localTurnStatus === "started"),
+    }, result, { loop: publicLoop(loop) });
   }
 
   async function recordTerminalReturn(input = {}) {
@@ -2263,6 +2410,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     recordTerminalReturn,
     runWatchdog,
     startLoop,
+    startSourceRequirementsForLoop,
     status,
   };
 }

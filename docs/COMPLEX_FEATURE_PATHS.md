@@ -659,8 +659,14 @@ Implementation path:
    This local role is not automatically completed from the raw Owner objective:
    the runtime must leave the loop visible as `waiting_source_requirements` /
    `source_requirements_pending` until the source thread records a bounded
-   local requirements/design return. Implementation dispatch is allowed only
-   after `requirements_packet` and `design_contract_packet` are present in the
+   local requirements/design return. The runtime must also start a visible
+   source-thread-local requirements-analysis turn through `thread/resume` +
+   `turn/start` instead of silently waiting; that turn records the packet
+   through `scripts/record-at-loop-requirements.js`. Duplicate triggers while
+   the local turn is already started reuse the same waiting state and must not
+   create a second source turn or any implementation card. Implementation
+   dispatch is allowed only after `requirements_packet` and
+   `design_contract_packet` are present in the
    Audit Packet, unless a future explicit fast-path mode is added. Duplicate
    triggers during this state return the same waiting loop/status and must not
    dispatch implementation. Implementation/audit/repair/deploy roles still
@@ -772,7 +778,10 @@ Implementation path:
     `waiting_source_requirements`, Composer must render that waiting state
     visibly instead of treating the request as an ordinary "started" success:
     direct `@loop` submission updates the connection/activity text, and the
-    `@` dialog keeps the dialog open with the source-requirements status.
+    `@` dialog keeps the dialog open with the source-requirements status. The
+    actual unblock happens in the source thread's local requirements-analysis
+    turn; if a historical loop is waiting without that turn, the bounded
+    `/api/at-loop/source-requirements/start` endpoint can start it by `loopId`.
 
 ## Public/Private Publish
 

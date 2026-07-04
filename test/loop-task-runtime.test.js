@@ -110,6 +110,8 @@ function makeRuntime(options = {}) {
     listWorkspaces: options.listWorkspaces,
     isLoopImplementationWorkspace: options.isLoopImplementationWorkspace || (() => true),
     readThreadTaskCardForLoopEvidence: options.readThreadTaskCardForLoopEvidence,
+    startSourceRequirementsTurn: options.startSourceRequirementsTurn,
+    recordSourceRequirementsScriptPath: options.recordSourceRequirementsScriptPath || "/plugin/scripts/record-at-loop-requirements.js",
   };
   if (options.assertThreadTaskCardTargetDeliverable !== false) {
     dependencies.assertThreadTaskCardTargetDeliverable = options.assertThreadTaskCardTargetDeliverable || (() => true);
@@ -195,12 +197,17 @@ async function recordSourceRequirements(runtime, loop, input = {}) {
 }
 
 test("loop runtime waits for source-thread requirements before implementation dispatch", async () => {
+  const sourceRequirementTurns = [];
   const { cards, createdThreads, runtime } = makeRuntime({
     visibleThreads: [{
       id: "xcode-thread",
       title: "Xcode",
       cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
     }],
+    startSourceRequirementsTurn: async (input) => {
+      sourceRequirementTurns.push(input);
+      return { turnId: `turn-${sourceRequirementTurns.length}` };
+    },
   });
   const first = await runtime.startLoop({
     sourceThreadId: "xcode-thread",
@@ -217,9 +224,18 @@ test("loop runtime waits for source-thread requirements before implementation di
   assert.equal(first.loop.requirementsLocal, true);
   assert.deepEqual(first.loop.auditPacketStatus.presentSections, []);
   assert.deepEqual(first.loop.sourceRequirementsStatus.missingSections, ["requirements_packet", "design_contract_packet"]);
+  assert.equal(first.loop.sourceRequirementsStatus.localTurnStatus, "started");
+  assert.equal(first.loop.sourceRequirementsStatus.localTurnId, "turn-1");
   assert.ok(first.loop.auditPacketStatus.missingSections.includes("implementation_packet"));
   assert.equal(createdThreads.length, 0);
   assert.equal(cards.length, 0);
+  assert.equal(sourceRequirementTurns.length, 1);
+  assert.equal(sourceRequirementTurns[0].loop.loopId, first.loop.loopId);
+  assert.equal(sourceRequirementTurns[0].slice.role, "requirements");
+  assert.equal(sourceRequirementTurns[0].sourceThread.id, "xcode-thread");
+  assert.match(sourceRequirementTurns[0].prompt, /## Requirements Packet/);
+  assert.match(sourceRequirementTurns[0].prompt, /## Design Contract Packet/);
+  assert.match(sourceRequirementTurns[0].prompt, /record-at-loop-requirements\.js/);
   const requirements = first.loop.roleSlices.find((slice) => slice.role === "requirements");
   assert.equal(requirements.status, "waiting");
   assert.equal(requirements.dispatchStatus, "source_thread_local_role");
@@ -228,6 +244,8 @@ test("loop runtime waits for source-thread requirements before implementation di
   assert.equal(requirements.targetThreadId, "xcode-thread");
   assert.equal(requirements.taskCardId, "");
   assert.equal(requirements.returnStatus, "");
+  assert.equal(requirements.sourceRequirementsTurnStatus, "started");
+  assert.equal(requirements.sourceRequirementsTurnId, "turn-1");
 
   const duplicatePending = await runtime.startLoop({
     sourceThreadId: "xcode-thread",
@@ -239,6 +257,7 @@ test("loop runtime waits for source-thread requirements before implementation di
   assert.equal(duplicatePending.loop.currentRole, "requirements");
   assert.equal(duplicatePending.loop.sourceRequirementsStatus.pending, true);
   assert.equal(cards.length, 0);
+  assert.equal(sourceRequirementTurns.length, 1);
 
   const afterRequirements = await recordSourceRequirements(runtime, first.loop);
   assert.equal(afterRequirements.ok, true);

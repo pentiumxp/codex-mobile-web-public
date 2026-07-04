@@ -106,6 +106,7 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   assert.equal(typeof atLoopOptions.assertThreadTaskCardTargetDeliverable, "function");
   assert.equal(typeof atLoopOptions.resolveThreadTaskCardTargetReference, "function");
   assert.equal(typeof atLoopOptions.listWorkspaces, "function");
+  assert.equal(typeof atLoopOptions.startSourceRequirementsTurn, "function");
   assert.deepEqual(homeAiEvents, [
     { event: { id: "return-1" }, options: { workspaceId: "owner" } },
     {
@@ -155,6 +156,22 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   assert.equal(codexRequests[2].method, "thread/start");
   assert.equal(codexRequests[2].params.cwd, "/repo/plugin");
   assert.equal(codexRequests[2].params.developerInstructions, "AGENTS");
+
+  const sourceRequirementsTurn = await atLoopOptions.startSourceRequirementsTurn({
+    loop: { loopId: "loop_source", sourceThreadId: "source-thread" },
+    slice: { roleSliceId: "loop_source:requirements:1" },
+    sourceThread: { id: "source-thread", cwd: "/repo/plugin" },
+    prompt: "produce requirements packets",
+  });
+  assert.equal(sourceRequirementsTurn.threadId, "source-thread");
+  assert.equal(sourceRequirementsTurn.turnId, "turn-1");
+  assert.equal(codexRequests[3].method, "thread/resume");
+  assert.equal(codexRequests[3].params.threadId, "source-thread");
+  assert.equal(codexRequests[3].params.cwd, "/repo/plugin");
+  assert.equal(codexRequests[4].method, "turn/start");
+  assert.equal(codexRequests[4].params.threadId, "source-thread");
+  assert.deepEqual(codexRequests[4].params.input, [{ type: "text", text: "produce requirements packets" }]);
+  assert.equal(codexRequests[4].params.turnRuntime, "medium");
 });
 
 test("thread task-card runtime fails at-loop terminal return before external notification when local correlation fails", async () => {

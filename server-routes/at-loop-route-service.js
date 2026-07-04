@@ -53,6 +53,14 @@ function createAtLoopRouteService(dependencies = {}) {
         const result = await atLoopRuntimeService.recordTerminalReturn(body);
         return jsonResponse(sendJson, result.ok === false ? 400 : 200, result);
       }
+      if (pathname === "/api/at-loop/source-requirements/start" && method === "POST") {
+        const body = await readJsonBody(input.readBody);
+        if (!atLoopRuntimeService || typeof atLoopRuntimeService.startSourceRequirementsForLoop !== "function") {
+          return jsonResponse(sendJson, 503, { ok: false, error: "at_loop_source_requirements_unavailable" });
+        }
+        const result = await atLoopRuntimeService.startSourceRequirementsForLoop(body);
+        return jsonResponse(sendJson, result.ok === false ? 400 : 200, result);
+      }
       if (pathname === "/api/at-loop/watchdog" && method === "POST") {
         const body = await readJsonBody(input.readBody);
         return jsonResponse(sendJson, 200, atLoopRuntimeService.runWatchdog(body));

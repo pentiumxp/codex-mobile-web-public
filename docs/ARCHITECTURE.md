@@ -769,8 +769,9 @@ target-purpose fail-closed routing, audit-verdict next-route selection, and
 Watchdog stale-return classification. Home AI owns only domain adapters and
 status projection. The bounded HTTP surface is `/api/at-loop/triggers`,
 `/api/at-loop/status`, `/api/at-loop/status/:loopId`,
-`/api/at-loop/returns`, and `/api/at-loop/watchdog`; the MCP surface uses
-`start_loop` and `loop_status`. Loop state is stored in
+`/api/at-loop/returns`, `/api/at-loop/source-requirements/start`, and
+`/api/at-loop/watchdog`; the MCP surface uses `start_loop` and `loop_status`.
+Loop state is stored in
 `CODEX_MOBILE_AT_LOOP_STATE_FILE` or the runtime `at-loop-state.json` and must
 not include raw secrets, full prompts, private thread bodies, launch tokens,
 cookies, screenshots, database rows, provider payloads, or long logs.
@@ -781,7 +782,12 @@ requirements task card. It also must not auto-complete the requirements role
 from only the raw Owner objective. Instead the loop enters a visible
 `waiting_source_requirements` / `source_requirements_pending` state until the
 source thread records a bounded requirements/design return through the Loop
-return path. Only after the Audit Packet has `requirements_packet` and
+return path. While waiting, the task-card runtime resumes the source thread
+and starts a local requirements-analysis turn with the bounded loop id / role
+slice id plus instructions to record the packet through
+`scripts/record-at-loop-requirements.js`; repeated starts reuse the existing
+local turn instead of creating duplicate implementation lanes. Only after the
+Audit Packet has `requirements_packet` and
 `design_contract_packet` present may the runtime create/select implementation
 and audit lanes and dispatch the implementation card. Implementation, audit,
 repair, and deploy/readback roles still use real task cards and must target a

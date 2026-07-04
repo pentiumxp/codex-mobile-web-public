@@ -267,12 +267,57 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     return thread;
   }
 
+  async function startSourceRequirementsTurn(input = {}) {
+    const loop = input.loop && typeof input.loop === "object" ? input.loop : {};
+    const sourceThread = input.sourceThread && typeof input.sourceThread === "object" ? input.sourceThread : {};
+    const threadId = String(sourceThread.id || sourceThread.threadId || loop.sourceThreadId || "").trim();
+    const prompt = String(input.prompt || "").trim();
+    if (!threadId) throw new Error("at_loop_source_requirements_thread_required");
+    if (!prompt) throw new Error("at_loop_source_requirements_prompt_required");
+    if (!dependencies.codex || typeof dependencies.codex.request !== "function") {
+      throw new Error("at_loop_source_requirements_turn_unavailable");
+    }
+    const runtimeSettings = typeof dependencies.resolveThreadRuntimeSettings === "function"
+      ? await dependencies.resolveThreadRuntimeSettings(threadId)
+      : {};
+    const cwd = String(sourceThread.cwd || sourceThread.workspace || sourceThread.targetWorkspace || "").trim();
+    try {
+      await dependencies.codex.request("thread/resume", applyResumeRuntimeSettings({
+        threadId,
+        cwd: cwd || null,
+        persistExtendedHistory: true,
+      }, runtimeSettings), { timeoutMs: dependencies.mutationRpcTimeoutMs, retry: false });
+    } catch (err) {
+      if (!/already|loaded|active/i.test(err && err.message || "")) throw err;
+    }
+    const turnParams = applyTurnRuntimeSettings({
+      threadId,
+      input: [{ type: "text", text: prompt }],
+    }, runtimeSettings);
+    const result = await dependencies.codex.request("turn/start", turnParams, {
+      timeoutMs: dependencies.mutationRpcTimeoutMs,
+      retry: false,
+    });
+    const turnId = typeof dependencies.notifyLocalTurnStarted === "function"
+      ? dependencies.notifyLocalTurnStarted(threadId, result, { source: "at-loop-source-requirements" })
+      : String(result && (result.turnId || result.id || "") || "");
+    return {
+      threadId,
+      turnId,
+      result,
+    };
+  }
+
   atLoopRuntimeService = atLoopRuntimeServiceFactory({
     fs: dependencies.fs,
     path: dependencies.path,
     storageFile: dependencies.atLoopStateFile,
     createThreadTaskCardsFromSourceThread: threadTaskCardRouteService.createThreadTaskCardsFromSourceThread,
     createLoopRoleThread,
+    startSourceRequirementsTurn,
+    recordSourceRequirementsScriptPath: dependencies.recordAtLoopRequirementsScriptPath || (dependencies.appRoot
+      ? `${String(dependencies.appRoot).replace(/\/+$/, "")}/scripts/record-at-loop-requirements.js`
+      : "scripts/record-at-loop-requirements.js"),
     readThreadTaskCardTargetSummary: threadTaskCardRouteService.readThreadTaskCardTargetSummary,
     readThreadTaskCardVisibleTargetSummary: threadTaskCardRouteService.readThreadTaskCardVisibleTargetSummary,
     threadTaskCardVisibleTargetThreads: threadTaskCardRouteService.threadTaskCardVisibleTargetThreads,
