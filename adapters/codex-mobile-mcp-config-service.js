@@ -87,6 +87,9 @@ function buildCodexMobileMcpSection(options = {}) {
     toolSectionHeader(serverName, "return_to_source"),
     `approval_mode = ${tomlBasicString("approve")}`,
     "",
+    toolSectionHeader(serverName, "task_card_heartbeat"),
+    `approval_mode = ${tomlBasicString("approve")}`,
+    "",
   ].join("\n");
 }
 

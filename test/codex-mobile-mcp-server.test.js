@@ -16,6 +16,7 @@ const {
   loopStatus,
   returnToSource,
   startLoop,
+  taskCardHeartbeat,
   toolsList,
 } = require("../scripts/codex-mobile-mcp-server");
 const {
@@ -44,21 +45,24 @@ function readBody(req) {
 
 test("Codex Mobile MCP server exposes delegation tools and parses stdio framing", async () => {
   const listedTools = toolsList();
-  assert.deepEqual(listedTools.map((entry) => entry.name), ["list_threads", "delegate_to_thread", "start_loop", "loop_status", "return_to_source"]);
+  assert.deepEqual(listedTools.map((entry) => entry.name), ["list_threads", "delegate_to_thread", "start_loop", "loop_status", "return_to_source", "task_card_heartbeat"]);
   assert.equal(listedTools.find((entry) => entry.name === "list_threads").annotations.readOnlyHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "delegate_to_thread").annotations.destructiveHint, false);
   assert.equal(listedTools.find((entry) => entry.name === "loop_status").annotations.readOnlyHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "return_to_source").annotations.idempotentHint, true);
+  assert.equal(listedTools.find((entry) => entry.name === "task_card_heartbeat").annotations.idempotentHint, true);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.pluginId);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.replyToThreadId);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.secretRef);
   assert.ok(listedTools.find((entry) => entry.name === "start_loop").inputSchema.properties.deployReadbackRequired);
   assert.ok(listedTools.find((entry) => entry.name === "start_loop").inputSchema.properties.auditPacket);
+  assert.ok(listedTools.find((entry) => entry.name === "task_card_heartbeat").inputSchema.properties.threadId);
   const initialized = await handleMessage({ server: "http://127.0.0.1:1", key: "secret" }, { id: 1, method: "initialize" });
   assert.equal(initialized.serverInfo.name, "codex_mobile");
   assert.match(initialized.instructions, /delegate_to_thread/);
   assert.match(initialized.instructions, /start_loop/);
   assert.match(initialized.instructions, /return_to_source/);
+  assert.match(initialized.instructions, /task_card_heartbeat/);
 
   const parsed = [];
   const parser = createMessageParser((message) => parsed.push(message));
@@ -158,6 +162,26 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
       }));
       return;
     }
+    if (req.method === "POST" && req.url === "/api/thread-task-cards/ttc_inbound/execution/heartbeat") {
+      const body = JSON.parse(await readBody(req));
+      assert.equal(body.threadId, "target-1");
+      assert.equal(body.actorThreadId, "target-1");
+      assert.equal(body.status, "validating");
+      assert.equal(body.source, "mcp-test");
+      assert.equal(body.turnId, "turn-1");
+      assert.equal(body.message, "bounded progress");
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        ok: true,
+        taskCardId: "ttc_inbound",
+        status: "validating",
+        source: "mcp-test",
+        heartbeatCount: 3,
+        lastHeartbeatAt: "2026-07-04T09:45:00.000Z",
+        resumeRequired: false,
+      }));
+      return;
+    }
     res.statusCode = 404;
     res.end("{}");
   });
@@ -209,6 +233,23 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
   assert.equal(returned.replyCard.terminal, true);
   assert.equal(returned.replyCard.requiresReturn, false);
   assert.equal(returned.replyCard.ackPolicy, "none");
+
+  const heartbeat = await taskCardHeartbeat(context, {
+    taskCardId: "ttc_inbound",
+    threadId: "target-1",
+    status: "validating",
+    source: "mcp-test",
+    turnId: "turn-1",
+    message: "bounded progress",
+  });
+  assert.equal(heartbeat.ok, true);
+  assert.equal(heartbeat.taskCardId, "ttc_inbound");
+  assert.equal(heartbeat.threadId, "target-1");
+  assert.equal(heartbeat.status, "validating");
+  assert.equal(heartbeat.source, "mcp-test");
+  assert.equal(heartbeat.heartbeatCount, 3);
+  assert.equal(heartbeat.resumeRequired, false);
+  assert.doesNotMatch(JSON.stringify(heartbeat), /secret|Bearer|body|prompt/i);
   assert.ok(calls.every((call) => call.authorization === "Bearer secret"));
 });
 
@@ -322,7 +363,8 @@ test("Codex Mobile MCP config registration is per Codex Home and stores no raw k
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.start_loop\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.loop_status\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.return_to_source\]/);
-  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 5);
+  assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.task_card_heartbeat\]/);
+  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 6);
   assert.doesNotMatch(text, /Bearer/);
   assert.doesNotMatch(text, /secret/);
 
@@ -368,6 +410,7 @@ test("Codex Mobile MCP config registration repairs stale command args", () => {
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.start_loop\]/g) || []).length, 1);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.loop_status\]/g) || []).length, 1);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.return_to_source\]/g) || []).length, 1);
-  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 5);
+  assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.task_card_heartbeat\]/g) || []).length, 1);
+  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 6);
   assert.match(text, /\[mcp_servers\.codegraph\]/);
 });

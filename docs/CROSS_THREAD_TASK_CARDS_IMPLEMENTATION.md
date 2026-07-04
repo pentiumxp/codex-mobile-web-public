@@ -280,6 +280,10 @@ Active target lanes can refresh the bounded heartbeat through
 `POST /api/thread-task-cards/:id/execution/heartbeat`. Both paths accept only
 short metadata labels and ids; they must not carry private task bodies, prompts,
 endpoint payloads, credentials, cookies, screenshots, or logs.
+The standalone `scripts/codex-mobile-mcp-server.js` also exposes
+`task_card_heartbeat`, so target Codex threads can report progress through the
+same MCP connector they use for `return_to_source` without reading or printing
+the access key.
 
 When the runtime `跨工作区委派` switch is enabled, server-side `thread/start` and
 `turn/start` requests also receive a Codex app-server dynamic tool:

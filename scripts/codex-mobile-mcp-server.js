@@ -202,6 +202,26 @@ function toolsList() {
       },
       { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     ),
+    tool(
+      "task_card_heartbeat",
+      "Report bounded progress for an active received Codex Mobile task card so the watchdog does not resume a thread that is still working.",
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["taskCardId", "threadId"],
+        properties: {
+          taskCardId: { type: "string", minLength: 1, maxLength: 120 },
+          cardId: { type: "string", maxLength: 120 },
+          threadId: { type: "string", minLength: 1, maxLength: 120 },
+          actorThreadId: { type: "string", maxLength: 120 },
+          status: { type: "string", maxLength: 80 },
+          source: { type: "string", maxLength: 120 },
+          turnId: { type: "string", maxLength: 180 },
+          message: { type: "string", maxLength: 240 },
+        },
+      },
+      { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    ),
   ];
 }
 
@@ -402,6 +422,31 @@ async function returnToSource(context, args = {}) {
   };
 }
 
+async function taskCardHeartbeat(context, args = {}) {
+  const taskCardId = boundedString(args.taskCardId || args.cardId, "task_card_id", 120, true);
+  const threadId = boundedString(args.threadId || args.actorThreadId, "thread_id", 120, true);
+  const payload = {
+    threadId,
+    actorThreadId: threadId,
+    status: boundedString(args.status || "working", "status", 80, false) || "working",
+    source: boundedString(args.source || "codex-mobile-mcp", "source", 120, false) || "codex-mobile-mcp",
+    turnId: boundedString(args.turnId || args.turn_id, "turn_id", 180, false),
+    message: boundedString(args.message, "message", 240, false),
+  };
+  const result = await requestJson(context, "POST", `/api/thread-task-cards/${encodeURIComponent(taskCardId)}/execution/heartbeat`, payload);
+  const lease = result.executionLease || result.lease || {};
+  return {
+    ok: result.ok !== false,
+    taskCardId: String(result.taskCardId || taskCardId),
+    threadId,
+    status: String(result.status || payload.status || ""),
+    source: String(result.source || payload.source || ""),
+    heartbeatCount: Number(result.heartbeatCount || lease.heartbeatCount || 0),
+    lastHeartbeatAt: String(result.lastHeartbeatAt || lease.lastHeartbeatAt || ""),
+    resumeRequired: Boolean(result.resumeRequired || lease.resumeRequired),
+  };
+}
+
 async function startLoop(context, args = {}) {
   const sourceThreadId = boundedString(args.sourceThreadId || args.threadId, "source_thread_id", 120, true);
   const objective = boundedString(args.objective, "objective", 2000, true);
@@ -487,6 +532,7 @@ async function handleMessage(context, message = {}) {
       instructions: [
         "Use delegate_to_thread when a user request requires code, files, commands, tests, deployment, or other mutation in another Codex thread/workspace.",
         "Use return_to_source when a received task card is completed, blocked, redirected, rejected, or partially completed; a target-thread final answer is not a source-thread return card.",
+        "Use task_card_heartbeat to report bounded progress while actively handling a received task card; this does not complete the card.",
         "Use start_loop only for explicit @loop requests; use loop_status for bounded loop status projection.",
         "Do not use multi_agent_v1 tools as a substitute for Codex Mobile cross-thread task cards.",
       ].join("\n"),
@@ -503,6 +549,7 @@ async function handleMessage(context, message = {}) {
     if (name === "start_loop") return textContent(await startLoop(context, args));
     if (name === "loop_status") return textContent(await loopStatus(context, args));
     if (name === "return_to_source") return textContent(await returnToSource(context, args));
+    if (name === "task_card_heartbeat") return textContent(await taskCardHeartbeat(context, args));
     throw new Error("codex_mobile_mcp_unknown_tool");
   }
   if (method === "ping") return {};
@@ -605,5 +652,6 @@ module.exports = {
   parseArgs,
   returnToSource,
   startLoop,
+  taskCardHeartbeat,
   toolsList,
 };
