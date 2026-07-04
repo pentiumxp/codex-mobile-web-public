@@ -1250,6 +1250,40 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     };
   }
 
+  function resetBlockedRoleForRedispatch(loop, slice, reason) {
+    const timestamp = nowIso(clock);
+    const targetThreadId = compactOneLine(slice && slice.targetThreadId || "");
+    const preserveCreatedLane = Boolean(slice && slice.roleThreadCreated && targetThreadId)
+      && !alternateExistingRoleTarget(loop, slice.role, targetThreadId);
+    if (!preserveCreatedLane) return resetReturnedRoleForRedispatch(loop, slice, reason);
+    slice.status = "pending";
+    slice.dispatchStatus = "";
+    slice.dispatchMode = "";
+    slice.taskCardDispatch = true;
+    slice.returnStatus = "";
+    slice.returnCardId = "";
+    slice.returnSummary = "";
+    slice.auditVerdict = "";
+    slice.blockedReason = "";
+    slice.dispatchedAt = "";
+    slice.routing = Object.assign({}, slice.routing || {}, {
+      preservedTargetThreadId: targetThreadId,
+      preservedTargetReason: reason,
+    });
+    slice.updatedAt = timestamp;
+    loop.status = "running";
+    loop.currentRole = slice.role;
+    loop.nextRoute = slice.role;
+    loop.blockedReason = "";
+    loop.updatedAt = timestamp;
+    saveState();
+    return {
+      role: slice.role,
+      staleTargetThreadId: "",
+      excludedTargetThreadIds: [],
+    };
+  }
+
   function prepareRepairForAuditBlockedReturn(loop, auditSlice) {
     const timestamp = nowIso(clock);
     let repair = findSlice(loop, { role: "repair", iteration: loop.iteration });
@@ -1404,6 +1438,23 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return candidates[0] && candidates[0].thread || null;
   }
 
+  function alternateExistingRoleTarget(loop, role, targetThreadId, options = {}) {
+    const excluded = new Set([
+      ...Array.from(excludedTargetSet(options)),
+      compactOneLine(targetThreadId),
+    ].filter(Boolean));
+    return selectExistingRoleTarget(loop, role, Object.assign({}, options, {
+      excludedTargetThreadIds: Array.from(excluded),
+    }));
+  }
+
+  function shouldPreserveUndeliverableRoleLane(loop, role, slice, target, options = {}) {
+    const targetThreadId = compactOneLine(threadIdOf(target || {}) || slice && slice.targetThreadId || "");
+    if (!targetThreadId) return false;
+    if (!Boolean(slice && slice.roleThreadCreated)) return false;
+    return !alternateExistingRoleTarget(loop, role, targetThreadId, options);
+  }
+
   async function createRoleThread(loop, role) {
     if (typeof dependencies.createLoopRoleThread !== "function") return null;
     const source = sourceThread(loop);
@@ -1465,6 +1516,18 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         } else {
           const check = roleTargetCheck(loop, role, target);
           if (!check.ok) {
+            if (check.error === "at_loop_target_not_deliverable"
+              && shouldPreserveUndeliverableRoleLane(loop, role, slice, target, options)) {
+              return setLoopBlocked(loop, slice, "at_loop_role_lane_not_deliverable", {
+                dispatchStatus: "failed",
+                message: check.deliverability && check.deliverability.message || "created role lane is not currently deliverable",
+                routing: Object.assign({}, publicRoleTargetRoutingMetadata(check), {
+                  preservedTargetThreadId: existingId,
+                  preservedTargetReason: "created_role_lane_not_deliverable",
+                }),
+                nextRoute: role,
+              });
+            }
             const timestamp = nowIso(clock);
             slice.targetThreadId = "";
             slice.targetPurpose = "";
@@ -1693,6 +1756,25 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       return { ok: true, loop: publicLoop(loop), slice: publicSlice(slice), cardCount: cards.length };
     } catch (err) {
       const dispatchTargetClearCount = Math.max(0, Number(options.dispatchTargetClearCount || (options.retriedAfterTargetClear ? 1 : 0)) || 0);
+      if (isTargetUndeliverableDispatchError(err)
+        && shouldPreserveUndeliverableRoleLane(loop, role, slice, target, options)) {
+        const preservedTargetThreadId = compactOneLine(slice.targetThreadId || targetThreadId);
+        slice.status = "blocked";
+        slice.dispatchStatus = "failed";
+        slice.blockedReason = compactOneLine(err && err.message || err || "at_loop_dispatch_failed");
+        slice.routing = Object.assign({}, slice.routing || {}, {
+          preservedTargetThreadId,
+          preservedTargetReason: "created_role_lane_dispatch_not_deliverable",
+        });
+        slice.updatedAt = timestamp;
+        loop.status = "blocked";
+        loop.currentRole = role;
+        loop.nextRoute = role;
+        loop.blockedReason = "at_loop_dispatch_failed";
+        loop.updatedAt = timestamp;
+        saveState();
+        return { ok: false, error: "at_loop_dispatch_failed", message: slice.blockedReason, loop: publicLoop(loop), slice: publicSlice(slice) };
+      }
       if (dispatchTargetClearCount < 6 && isTargetUndeliverableDispatchError(err)) {
         const failedTargetThreadId = compactOneLine(slice.targetThreadId || targetThreadId);
         clearRoleLaneTarget(loop, slice, "dispatch_target_not_deliverable");
@@ -1771,7 +1853,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         }
         const blockedDispatchRole = blockedDispatchRoleForRedispatch(existing);
         if (blockedDispatchRole) {
-          const recoveredRole = resetReturnedRoleForRedispatch(
+          const recoveredRole = resetBlockedRoleForRedispatch(
             existing,
             blockedDispatchRole,
             "blocked_dispatch_target_not_deliverable",

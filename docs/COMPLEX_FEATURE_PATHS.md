@@ -721,7 +721,11 @@ Implementation path:
     `status=blocked` after a task-card dispatch target was rejected as not
     visible/current deliverable, repeated `@loop` should clear that target and
     redispatch the blocked role directly instead of first replaying the local
-    requirements role.
+    requirements role. The exception is a lane that the current Loop runtime
+    created itself (`roleThreadCreated=true`): if no alternate same-role lane is
+    already deliverable, preserve that target and keep the Loop visibly blocked
+    instead of creating another implementation/audit/repair thread on each
+    duplicate trigger.
 11. Product-audit role cards must include a bounded Audit Packet and Delta
     Matrix. Packet sections are `requirements_packet`,
     `design_contract_packet`, `implementation_packet`, `validation_packet`, and

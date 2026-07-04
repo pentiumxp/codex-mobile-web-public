@@ -1487,18 +1487,18 @@ test("loop runtime skips persisted stale dispatch target before sending role car
     text: "@loop recover stale dispatch target",
   });
 
-  assert.equal(result.ok, true);
-  assert.equal(result.recovered, true);
-  assert.deepEqual(dispatchAttempts.map((entry) => entry.targetThreadId), ["implementation-created"]);
-  assert.equal(result.loop.implementationThreadId, "implementation-created");
+  assert.equal(result.ok, false);
+  assert.equal(result.duplicateSuppressed, false);
+  assert.equal(result.recovered, false);
+  assert.deepEqual(dispatchAttempts.map((entry) => entry.targetThreadId), ["stale-created-thread"]);
+  assert.equal(result.loop.implementationThreadId, "stale-created-thread");
   const implementation = result.loop.roleSlices.find((slice) => slice.role === "implementation");
-  assert.equal(implementation.status, "dispatched");
-  assert.equal(implementation.targetThreadId, "implementation-created");
-  assert.equal(implementation.blockedReason, "");
-  assert.equal(cards.length, 1);
-  assert.equal(cards[0].payload.targetThreadId, "implementation-created");
-  assert.equal(createdThreads.length, 1);
-  assert.equal(createdThreads[0].id, "implementation-created");
+  assert.equal(implementation.status, "blocked");
+  assert.equal(implementation.targetThreadId, "stale-created-thread");
+  assert.equal(implementation.blockedReason, "Target thread is not visible or is not a current deliverable thread.");
+  assert.equal(implementation.routing.preservedTargetThreadId, "stale-created-thread");
+  assert.equal(cards.length, 0);
+  assert.equal(createdThreads.length, 0);
 });
 
 test("loop runtime clears multiple stale dispatch targets before creating a fresh role lane", async () => {
@@ -1588,7 +1588,7 @@ test("loop runtime clears multiple stale dispatch targets before creating a fres
       taskCardId: "",
       targetThreadId: "stale-created-thread-a",
       targetPurpose: "workspace_implementation",
-      roleThreadCreated: true,
+      roleThreadCreated: false,
       routing: null,
       blockedReason: "Target thread is not visible or is not a current deliverable thread.",
       createdAt: "2026-07-03T00:00:00.000Z",
