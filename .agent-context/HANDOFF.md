@@ -899,3 +899,57 @@ The previous full handoff was archived and should be opened only when old proven
   task-card bodies, endpoint bodies, provider payloads, screenshots, DB rows,
   raw auth URLs, password paths, full prompts, full rollout contents, or long
   logs were exposed.
+
+## 2026-07-04T23:27:00+08:00 - Active-overlay CPU fix deployed and production readback confirmed
+
+- Codex Mobile Deploy Lane returned terminal completed receipt
+  `ttc_eb5b744b83550dcc2b` for deployment card
+  `ttc_3ff02a441298e60f36`. Per terminal receipt policy, no acknowledgement
+  return was sent.
+- Deployed ref:
+  `6b120666f3e021d218ffb90594f997c6c99c37dd`
+  (`fix: reuse trusted active overlay window cache`).
+- Central private macOS deploy result: `ok=true`; backup path:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260704T152332Z-plugin-codex-mobile-web-codex-mobile-active-overlay-cache-6b120666`.
+- Runtime readback:
+  - launchd `com.hermesmobile.plugin.codex-mobile` running;
+  - listener `127.0.0.1:8787` pid `44844`;
+  - `/api/public-config` HTTP `200`, default shell `vite-app-preview`;
+  - `/api/status?detail=1` HTTP `200`, `ready=true`, issue codes `[]`;
+  - `/api/vite-shell-artifact` HTTP `200`, `ok=true`, published files `23`.
+- Source/prod SHA prefixes matched for:
+  - `services/thread-detail/thread-detail-read-orchestration-service.js`;
+  - `test/thread-detail-read-orchestration-service.test.js`.
+- Production large-thread readback for Home AI 06-22
+  `019eed86-2002-7cc2-b0b7-937eb5355f36` with `?budget=compact` confirmed:
+  - all samples HTTP `200`;
+  - `mobileReadMode=projection-active-overlay`;
+  - `phase=warm-projection-active-overlay`;
+  - `projectionState=hit`;
+  - `threadReadMs=0`, `rawThreadReadMs=0`, `turnsListInitialMs=0`,
+    `turnsListBeforeFullMs=0`, `turnsListFallbackMs=0`;
+  - rollout size about `590178051` bytes;
+  - `activeOverlayWindowMs=0` and `activeOverlayBackfillWindowMs=0` on all
+    reported samples;
+  - first cold sample still had `prepareResponseMs=1439ms`, then warm repeated
+    reads stabilized around `51-65ms` server total and about `73KB` response
+    bytes.
+- Process/route pressure after readback:
+  - listener RSS about `1549MB`, heap used about `984MB`;
+  - event-loop utilization `0.025`, lag p95 `22.1ms`, p99 `42.2ms`;
+  - `GET /api/threads/:threadId` route stats count `10`, slow count `1`,
+    max `1474ms`, average `225ms`, last `56ms`;
+  - first cold read briefly pushed listener CPU above `100%`, after cooldown
+    listener sampled around `18%`;
+  - `codex app-server` stayed out of the foreground detail path but had
+    background fluctuation around `5-31%`.
+- Closure state: repeated active-overlay backfill CPU path is fixed in
+  production. Residual performance target, if needed, is first-cold
+  `prepareResponseMs`; this is not the repeated CPU spike path fixed by
+  `6b120666`.
+- Privacy boundary respected: only bounded ids, statuses, counts, short hashes,
+  commit refs, backup path, route/timing metrics, and summaries were recorded;
+  no raw secrets, access keys, cookies, launch tokens, password-file paths,
+  private thread bodies, task-card bodies, endpoint bodies, provider payloads,
+  DB rows, screenshots, raw auth URLs, full prompts, full rollout contents, or
+  long logs were exposed.
