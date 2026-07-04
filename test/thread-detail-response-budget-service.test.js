@@ -754,6 +754,58 @@ test("thread detail response budget clears active markers when activeTurnId poin
   assert.equal(compacted.thread.mobileDetailResponseBudget.downgradedStaleActiveTurns, 0);
 });
 
+test("thread detail response budget clears active markers superseded by newer completed turn", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      status: { type: "active" },
+      activeTurnId: "old-active",
+      mobileLocalActiveStatus: { turnId: "old-active" },
+      mobileStatusSource: "turn/started",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "old-active",
+          status: "inProgress",
+          startedAtMs: 1000,
+          items: [
+            { id: "old-user", type: "userMessage", startedAtMs: 1000, text: "Old request" },
+            { id: "old-agent", type: "agentMessage", startedAtMs: 1500, text: "Old progress" },
+          ],
+        },
+        {
+          id: "new-completed",
+          status: "completed",
+          completedAtMs: 3000,
+          items: [
+            { id: "new-user", type: "userMessage", startedAtMs: 2500, text: "New request" },
+            { id: "new-agent", type: "agentMessage", completedAtMs: 3000, text: "Done" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 0,
+  });
+  const report = analyzeThreadDetail({ thread: compacted.thread });
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(compacted.thread.status.type, "completed");
+  assert.equal(compacted.thread.status.mobileClearedSupersededActiveTurn, true);
+  assert.equal(compacted.thread.activeTurnId, undefined);
+  assert.equal(compacted.thread.mobileLocalActiveStatus, undefined);
+  assert.equal(compacted.thread.mobileStatusSource, undefined);
+  assert.equal(compacted.thread.turns[0].status.type, "completed");
+  assert.equal(compacted.thread.turns[0].status.mobileStaleActiveTurn, true);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.clearedSupersededActiveTurnId, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.downgradedStaleActiveTurns, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.staleActiveTurnCount, 1);
+  assert.equal(codes.includes("thread_detail_active_turn_superseded_by_completed"), false);
+});
+
 test("thread detail response budget repairs missing visible active turn status", () => {
   const result = {
     thread: {

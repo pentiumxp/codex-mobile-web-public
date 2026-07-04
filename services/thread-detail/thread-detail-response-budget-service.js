@@ -157,6 +157,7 @@ function compactResponseBudgetEvidence(stats = {}) {
     "remappedMissingActiveTurnId",
     "clearedMissingActiveTurnId",
     "clearedTerminalActiveTurnId",
+    "clearedSupersededActiveTurnId",
     "repairedVisibleActiveTurnStatus",
     "downgradedStaleActiveTurns",
     "truncatedActiveUserMessageItems",
@@ -503,6 +504,34 @@ function clearThreadActiveMarkers(thread) {
   delete thread.mobileStatusSource;
 }
 
+function turnLastActivityTimestampMs(turn, thread) {
+  if (!turn || typeof turn !== "object") return 0;
+  let latest = Math.max(turnStartedTimestampMs(turn), turnCompletedTimestampMs(turn));
+  for (const item of Array.isArray(turn.items) ? turn.items : []) {
+    latest = Math.max(latest, itemOwnDisplayTimestampMs(item), itemDisplayTimestampMs(item, turn, thread));
+  }
+  return latest;
+}
+
+function supersedingCompletedTurn(thread, activeIndex) {
+  if (!thread || !Array.isArray(thread.turns) || activeIndex < 0) return null;
+  const activeTurn = thread.turns[activeIndex];
+  const activeTimestamp = turnLastActivityTimestampMs(activeTurn, thread);
+  if (!activeTimestamp) return null;
+  let latestCompleted = null;
+  let latestCompletedTimestamp = 0;
+  for (let index = 0; index < thread.turns.length; index += 1) {
+    if (index === activeIndex) continue;
+    const turn = thread.turns[index];
+    if (!isCompletedStatus(turn && turn.status) || isStaleActiveCompletionStatus(turn && turn.status)) continue;
+    const completedTimestamp = turnCompletedTimestampMs(turn) || turnLastActivityTimestampMs(turn, thread);
+    if (!completedTimestamp || completedTimestamp <= activeTimestamp || completedTimestamp < latestCompletedTimestamp) continue;
+    latestCompleted = turn;
+    latestCompletedTimestamp = completedTimestamp;
+  }
+  return latestCompleted;
+}
+
 function reconcileVisibleActiveTurnState(thread, stats) {
   if (!thread || !Array.isArray(thread.turns)) return;
   let activeId = activeTurnId(thread);
@@ -531,6 +560,20 @@ function reconcileVisibleActiveTurnState(thread, stats) {
       clearThreadActiveMarkers(thread);
       if (isActiveStatus(thread.status)) thread.status = { type: "completed", mobileClearedTerminalActiveTurn: true };
       stats.clearedTerminalActiveTurnId += 1;
+      activeId = "";
+      activeIndex = -1;
+    }
+  }
+  if (activeIndex >= 0) {
+    const activeTurn = thread.turns[activeIndex];
+    const supersededBy = supersedingCompletedTurn(thread, activeIndex);
+    if (activeTurn && supersededBy) {
+      activeTurn.status = staleCompletedStatusFromActive(activeTurn.status);
+      clearThreadActiveMarkers(thread);
+      if (isActiveStatus(thread.status)) thread.status = { type: "completed", mobileClearedSupersededActiveTurn: true };
+      stats.clearedSupersededActiveTurnId += 1;
+      stats.downgradedStaleActiveTurns += 1;
+      stats.staleActiveTurnCount += 1;
       activeId = "";
       activeIndex = -1;
     }
@@ -2062,6 +2105,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     remappedMissingActiveTurnId: 0,
     clearedMissingActiveTurnId: 0,
     clearedTerminalActiveTurnId: 0,
+    clearedSupersededActiveTurnId: 0,
     repairedVisibleActiveTurnStatus: 0,
     downgradedStaleActiveTurns: 0,
     truncatedActiveUserMessageItems: 0,
@@ -2249,6 +2293,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     || stats.remappedMissingActiveTurnId > 0
     || stats.clearedMissingActiveTurnId > 0
     || stats.clearedTerminalActiveTurnId > 0
+    || stats.clearedSupersededActiveTurnId > 0
     || stats.repairedVisibleActiveTurnStatus > 0
     || stats.downgradedStaleActiveTurns > 0
     || stats.truncatedActiveUserMessageItems > 0
