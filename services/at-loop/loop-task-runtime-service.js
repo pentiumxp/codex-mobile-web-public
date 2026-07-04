@@ -1390,7 +1390,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       return { ok: false, error: "at_loop_task_card_channel_unavailable", loop: publicLoop(loop), slice: publicSlice(slice) };
     }
 
-    const idempotencyKey = `at-loop:${loop.loopId}:${role}:${slice.iteration}:v1`;
+    const idempotencyKey = `at-loop:${loop.loopId}:${role}:${slice.iteration}:${stableHash(targetThreadId, 8)}:v1`;
     slice.sourceRequestId = idempotencyKey;
     slice.workflowId = `at-loop:${loop.loopId}`;
     if (role === "product_audit") {

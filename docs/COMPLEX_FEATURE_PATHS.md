@@ -643,7 +643,10 @@ Implementation path:
    provider payloads, or long logs.
 4. Dispatch role cards only through the existing task-card channel. Role-card
    idempotency keys must be stable per `loopId`, role, iteration, and runtime
-   contract version.
+   target-thread generation, plus runtime contract version. If a stale or
+   ineligible role lane is discarded and the same role/iteration retargets to a
+   different thread, the idempotency key must change so the new role card does
+   not resolve to the old target's terminal card.
 5. Treat source-main-thread requirements as a local role. A loop submitted from
    Xcode/Home AI/plugin main threads records requirements as
    `source_thread_local_role` and must not send a same-thread requirements card.

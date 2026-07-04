@@ -157,7 +157,7 @@ test("loop runtime records source-thread requirements locally and dispatches imp
   assert.equal(cards[0].payload.workflowId, `at-loop:${first.loop.loopId}`);
   assert.equal(cards[0].payload.routeResolution.code, "at_loop_role_slice");
   assert.equal(cards[0].payload.routeResolution.targetRole, "implementation");
-  assert.match(cards[0].payload.idempotencyKey, /^at-loop:loop_[0-9a-f]{16}:implementation:1:v1$/);
+  assert.match(cards[0].payload.idempotencyKey, /^at-loop:loop_[0-9a-f]{16}:implementation:1:[0-9a-f]{8}:v1$/);
   assert.doesNotMatch(JSON.stringify(first), /SECRET_VALUE|abc123456789/);
   assert.doesNotMatch(cards[0].payload.bodyMarkdown, /SECRET_VALUE|abc123456789/);
 
@@ -832,7 +832,10 @@ test("loop runtime retries with a fresh target when task-card dispatch rejects a
       cwd: "/Users/hermes-dev/HermesMobileDev/app",
     }],
     createThreadTaskCardsFromSourceThread: async (sourceThreadId, payload, context) => {
-      dispatchAttempts.push(payload.targetThreadId);
+      dispatchAttempts.push({
+        targetThreadId: payload.targetThreadId,
+        idempotencyKey: payload.idempotencyKey,
+      });
       if (payload.targetThreadId === "stale-created-thread") {
         const err = new Error("Target thread is not visible or is not a current deliverable thread.");
         err.code = "target_thread_not_visible";
@@ -921,7 +924,8 @@ test("loop runtime retries with a fresh target when task-card dispatch rejects a
 
   assert.equal(result.ok, true);
   assert.equal(result.recovered, true);
-  assert.deepEqual(dispatchAttempts, ["stale-created-thread", "implementation-created"]);
+  assert.deepEqual(dispatchAttempts.map((entry) => entry.targetThreadId), ["stale-created-thread", "implementation-created"]);
+  assert.notEqual(dispatchAttempts[0].idempotencyKey, dispatchAttempts[1].idempotencyKey);
   assert.equal(result.loop.implementationThreadId, "implementation-created");
   const implementation = result.loop.roleSlices.find((slice) => slice.role === "implementation");
   assert.equal(implementation.status, "dispatched");
