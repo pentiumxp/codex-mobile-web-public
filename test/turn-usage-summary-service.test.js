@@ -6,6 +6,9 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const {
+  createRolloutDetailEnrichmentService,
+} = require("../adapters/rollout-detail-enrichment-service");
+const {
   attachTurnUsageSummaries,
   collectTokenUsageStatsFromEntries,
   collectTurnUsageSummariesFromEntries,
@@ -32,6 +35,10 @@ const threadDetailRuntimeServiceJs = fs.readFileSync(
 );
 const threadDetailCompactionServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-compaction-service.js"),
+  "utf8",
+);
+const threadDetailPerformanceServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-performance-service.js"),
   "utf8",
 );
 
@@ -352,6 +359,9 @@ test("thread detail rollout scans stay bounded for very large sessions", () => {
     rolloutDetailEnrichmentServiceJs,
     /return readRolloutTail\(rolloutPath, maxRolloutEnrichmentContextBytes\);/,
   );
+  assert.match(rolloutDetailEnrichmentServiceJs, /const latestEnrichmentEntriesByPath = new Map\(\);/);
+  assert.match(rolloutDetailEnrichmentServiceJs, /function readRolloutSlice\(rolloutPath, start, length\)/);
+  assert.match(rolloutDetailEnrichmentServiceJs, /parseJsonLineEntriesWithOffsets\(appended, Number\(cached\.size\)\)/);
   assert.match(
     rolloutDetailEnrichmentServiceJs,
     /const indexed = rolloutEnrichmentIndexService\.read\(rolloutPath\);/,
@@ -364,6 +374,58 @@ test("thread detail rollout scans stay bounded for very large sessions", () => {
     threadDetailCompactionServiceJs,
     /const lines = readRolloutTail\(rolloutPath\)\.split\(\/\\r\?\\n\/\)\.filter\(Boolean\)\.slice\(-800\);/,
   );
+});
+
+test("rollout enrichment entries reuse parsed tail and incrementally parse appends", () => {
+  const dir = fs.mkdtempSync(path.join(__dirname, "tmp-rollout-enrichment-"));
+  const file = path.join(dir, "rollout.jsonl");
+  const lineA = JSON.stringify({ type: "event_msg", payload: { type: "token_count", turn_id: "a" } });
+  const lineB = JSON.stringify({ type: "event_msg", payload: { type: "token_count", turn_id: "b" } });
+  fs.writeFileSync(file, `${"x".repeat(270 * 1024)}\n${lineA}\n`);
+  const readLengths = [];
+  const wrappedFs = Object.assign({}, fs, {
+    readSync(fd, buffer, offset, length, position) {
+      readLengths.push(length);
+      return fs.readSync(fd, buffer, offset, length, position);
+    },
+  });
+  const service = createRolloutDetailEnrichmentService({
+    fs: wrappedFs,
+    rolloutEnrichmentIndexService: { read: () => null },
+    maxRolloutContextBytes: 256 * 1024,
+    maxRuntimeContextScanBytes: 256 * 1024,
+    maxRolloutEnrichmentContextBytes: 256 * 1024,
+    runtimeContextCacheTtlMs: 60_000,
+  });
+
+  const first = service.readRolloutEnrichmentEntries(file);
+  assert.equal(first.some((entry) => entry && entry.payload && entry.payload.turn_id === "a"), true);
+  const firstReadCount = readLengths.length;
+  assert.equal(firstReadCount > 0, true);
+
+  const second = service.readRolloutEnrichmentEntries(file);
+  assert.equal(second.some((entry) => entry && entry.payload && entry.payload.turn_id === "a"), true);
+  assert.equal(readLengths.length, firstReadCount);
+
+  fs.appendFileSync(file, `${lineB}\n`);
+  const third = service.readRolloutEnrichmentEntries(file);
+  assert.equal(third.some((entry) => entry && entry.payload && entry.payload.turn_id === "a"), true);
+  assert.equal(third.some((entry) => entry && entry.payload && entry.payload.turn_id === "b"), true);
+  assert.equal(readLengths.length, firstReadCount + 1);
+  assert.equal(readLengths[readLengths.length - 1] < 1024, true);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("thread detail diagnostics expose prepare response subphase timings", () => {
+  assert.match(threadDetailResponsePreparationServiceJs, /details\.prepareResponseTimings = timings;/);
+  assert.match(threadDetailResponsePreparationServiceJs, /prepareCompletionBackfillMs/);
+  assert.match(threadDetailResponsePreparationServiceJs, /prepareUsageSummariesMs/);
+  assert.match(threadDetailResponsePreparationServiceJs, /prepareUserInputAnchorsMs/);
+  assert.match(threadDetailResponsePreparationServiceJs, /prepareActiveAssistantMs/);
+  assert.match(threadDetailResponsePreparationServiceJs, /prepareResponseBudgetMs/);
+  assert.match(threadDetailPerformanceServiceJs, /"prepareCompletionBackfillMs"/);
+  assert.match(threadDetailPerformanceServiceJs, /"prepareResponseBudgetMs"/);
 });
 
 test("attaches summaries only to completed turns and includes rollout stats", () => {

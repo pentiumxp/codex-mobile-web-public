@@ -132,6 +132,14 @@ function buildThreadDetailDiagnostics(input = {}) {
     "activeOverlayFullProjectionMs",
     "activeOverlayHistoryBaselineMs",
     "activeOverlayMergeMs",
+    "prepareCompletionBackfillMs",
+    "prepareUsageSummariesMs",
+    "prepareUserInputAnchorsMs",
+    "prepareActiveAssistantMs",
+    "prepareFinalizeActiveAssistantMs",
+    "prepareTaskCardsMs",
+    "prepareProjectionFinalizeMs",
+    "prepareResponseBudgetMs",
   ]) {
     output[key] = safeDurationMs(timings[key]);
   }

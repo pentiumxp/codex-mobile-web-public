@@ -52,6 +52,8 @@ function createRolloutDetailEnrichmentService(dependencies = {}) {
   const latestItemTimestampsByPath = new Map();
   const latestTurnUsageSummariesByPath = new Map();
   const latestToolOutputImagesByPath = new Map();
+  const latestEnrichmentEntriesByPath = new Map();
+  const enrichmentEntriesCacheMax = Math.max(2, Math.min(runtimeContextCacheMax, 4));
 
   function runtimeContextCacheKey(rolloutPath, stat) {
     return `${normalizeFsPath(rolloutPath)}:${stat.size}:${Math.trunc(Number(stat.mtimeMs || 0))}`;
@@ -66,6 +68,56 @@ function createRolloutDetailEnrichmentService(dependencies = {}) {
       const firstKey = cache.keys().next().value;
       cache.delete(firstKey);
     }
+  }
+
+  function rememberEnrichmentEntries(key, payload) {
+    latestEnrichmentEntriesByPath.set(key, Object.assign({ cachedAt: Date.now() }, payload || {}));
+    while (latestEnrichmentEntriesByPath.size > enrichmentEntriesCacheMax) {
+      const firstKey = latestEnrichmentEntriesByPath.keys().next().value;
+      latestEnrichmentEntriesByPath.delete(firstKey);
+    }
+  }
+
+  function readRolloutSlice(rolloutPath, start, length) {
+    if (!rolloutPath || typeof rolloutPath !== "string" || !length || length <= 0) return "";
+    let fd = null;
+    try {
+      const buffer = Buffer.alloc(length);
+      fd = fs.openSync(rolloutPath, "r");
+      const read = fs.readSync(fd, buffer, 0, length, start);
+      return buffer.subarray(0, read).toString("utf8");
+    } catch (_) {
+      return "";
+    } finally {
+      if (fd !== null) {
+        try {
+          fs.closeSync(fd);
+        } catch (_) {}
+      }
+    }
+  }
+
+  function parseJsonLineEntriesWithOffsets(text, absoluteStart = 0, options = {}) {
+    const entries = [];
+    const includeOpenFinalLine = options.includeOpenFinalLine !== false;
+    let lineStart = 0;
+    for (let index = 0; index <= text.length; index += 1) {
+      const atEnd = index >= text.length;
+      if (!atEnd && text.charCodeAt(index) !== 10) continue;
+      if (atEnd && !includeOpenFinalLine && lineStart < text.length) break;
+      let line = text.slice(lineStart, index);
+      if (line.endsWith("\r")) line = line.slice(0, -1);
+      if (line.trim()) {
+        const entry = parseJsonLine(line);
+        if (entry) entries.push({ entry, endOffset: absoluteStart + index + (atEnd ? 0 : 1) });
+      }
+      lineStart = index + 1;
+    }
+    return entries;
+  }
+
+  function publicParsedEntries(parsedEntries) {
+    return (Array.isArray(parsedEntries) ? parsedEntries : []).map((item) => item && item.entry).filter(Boolean);
   }
 
   function readRolloutTail(rolloutPath, maxBytes = maxRolloutContextBytes, options = {}) {
@@ -122,11 +174,61 @@ function createRolloutDetailEnrichmentService(dependencies = {}) {
     if (indexed && !indexed.readError) {
       return Array.isArray(indexed.entries) ? indexed.entries : [];
     }
-    return readRolloutEnrichmentText(rolloutPath)
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .map(parseJsonLine)
-      .filter(Boolean);
+    if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return [];
+    let stat = null;
+    try {
+      stat = fs.statSync(rolloutPath);
+      if (!stat.isFile() || stat.size <= 0) return [];
+    } catch (_) {
+      return [];
+    }
+    const pathKey = normalizeFsPath(rolloutPath);
+    const nowMs = Date.now();
+    const cached = latestEnrichmentEntriesByPath.get(pathKey);
+    if (cached && nowMs - Number(cached.cachedAt || 0) <= runtimeContextCacheTtlMs) {
+      if (Number(cached.size || 0) === stat.size
+        && Math.trunc(Number(cached.mtimeMs || 0)) === Math.trunc(Number(stat.mtimeMs || 0))) {
+        cached.cachedAt = nowMs;
+        return publicParsedEntries(cached.entries);
+      }
+      if (stat.size > Number(cached.size || 0)
+        && stat.size - Number(cached.size || 0) <= maxRolloutEnrichmentContextBytes
+        && Number(cached.size || 0) >= Number(cached.start || 0)) {
+        const appended = readRolloutSlice(rolloutPath, Number(cached.size), stat.size - Number(cached.size));
+        const appendedEntries = parseJsonLineEntriesWithOffsets(appended, Number(cached.size));
+        const minOffset = Math.max(0, stat.size - maxRolloutEnrichmentContextBytes);
+        const entries = [...(Array.isArray(cached.entries) ? cached.entries : []), ...appendedEntries]
+          .filter((item) => item && Number(item.endOffset || 0) >= minOffset);
+        rememberEnrichmentEntries(pathKey, {
+          size: stat.size,
+          mtimeMs: Number(stat.mtimeMs || 0),
+          start: minOffset,
+          entries,
+        });
+        return publicParsedEntries(entries);
+      }
+    }
+    const full = readRolloutRuntimeScanText(rolloutPath);
+    if (full) {
+      const entries = parseJsonLineEntriesWithOffsets(full, 0);
+      rememberEnrichmentEntries(pathKey, {
+        size: stat.size,
+        mtimeMs: Number(stat.mtimeMs || 0),
+        start: 0,
+        entries,
+      });
+      return publicParsedEntries(entries);
+    }
+    const start = Math.max(0, stat.size - maxRolloutEnrichmentContextBytes);
+    const tail = readRolloutSlice(rolloutPath, start, stat.size - start);
+    const entries = parseJsonLineEntriesWithOffsets(tail, start);
+    rememberEnrichmentEntries(pathKey, {
+      size: stat.size,
+      mtimeMs: Number(stat.mtimeMs || 0),
+      start,
+      entries,
+    });
+    return publicParsedEntries(entries);
   }
 
   function rolloutEntryTurnId(entry) {

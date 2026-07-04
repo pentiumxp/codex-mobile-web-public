@@ -132,28 +132,54 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
     return out;
   }
 
+  function markPrepareTiming(timings, name, startedAtMs) {
+    if (!timings || typeof timings !== "object") return 0;
+    const elapsed = Math.max(0, Date.now() - Number(startedAtMs || Date.now()));
+    timings[name] = elapsed;
+    return elapsed;
+  }
+
   async function prepareThreadDetailResponseResult(result, details = {}) {
+    const timings = {};
+    details.prepareResponseTimings = timings;
+    let phaseStartedAtMs = Date.now();
     const completionBackfilled = backfillMissingRolloutCompletionTurnsForDetailResult(result, details);
+    markPrepareTiming(timings, "prepareCompletionBackfillMs", phaseStartedAtMs);
+    phaseStartedAtMs = Date.now();
     const usageDecorated = attachRolloutUsageSummariesToDetailResult(completionBackfilled);
+    markPrepareTiming(timings, "prepareUsageSummariesMs", phaseStartedAtMs);
+    phaseStartedAtMs = Date.now();
     const inputAnchored = appendRolloutUserInputAnchorsToDetailResult(usageDecorated);
+    markPrepareTiming(timings, "prepareUserInputAnchorsMs", phaseStartedAtMs);
+    phaseStartedAtMs = Date.now();
     const activeAssistantDecorated = appendRolloutActiveAssistantItemsToDetailResult(inputAnchored);
+    markPrepareTiming(timings, "prepareActiveAssistantMs", phaseStartedAtMs);
+    phaseStartedAtMs = Date.now();
     const detailResult = finalizeActiveAssistantProjectionDetailResult(activeAssistantDecorated);
+    markPrepareTiming(timings, "prepareFinalizeActiveAssistantMs", phaseStartedAtMs);
+    phaseStartedAtMs = Date.now();
     const prepared = applyLocalActiveThreadStatusToResult(
       await prepareThreadTaskCardsToResult(applyLocalActiveThreadStatusToResult(detailResult, details)),
       details,
     );
+    markPrepareTiming(timings, "prepareTaskCardsMs", phaseStartedAtMs);
+    phaseStartedAtMs = Date.now();
     const finalized = applyLocalActiveThreadStatusToResult(
       finalizeThreadDetailProjectionResult(prepared, details),
       details,
     );
+    markPrepareTiming(timings, "prepareProjectionFinalizeMs", phaseStartedAtMs);
+    phaseStartedAtMs = Date.now();
     const budgetOptions = Object.assign({}, responseBudgetOptions() || {}, {
       compactTurn,
       responseBudgetEvidence: details.responseBudgetEvidence || "",
     });
-    return applyLocalActiveThreadStatusToResult(
+    const budgeted = applyLocalActiveThreadStatusToResult(
       compactThreadDetailResponseResult(finalized, budgetOptions),
       details,
     );
+    markPrepareTiming(timings, "prepareResponseBudgetMs", phaseStartedAtMs);
+    return budgeted;
   }
 
   async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null, responseBudgetEvidence = "") {

@@ -350,6 +350,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
 
   function attachDetailDiagnostics(result, context, details = {}) {
     const boundedDecision = context.boundedReadBeforeFullRead || null;
+    const prepareTimings = details.prepareResponseTimings && typeof details.prepareResponseTimings === "object"
+      ? details.prepareResponseTimings
+      : {};
     return attachDiagnostics(result, {
       requestMode: context.preferRecentTurns ? "recent" : "full",
       readDecision: details.readDecision || "",
@@ -375,7 +378,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       activeOverlayAssistantItems: context.activeOverlayAssistantItems || 0,
       activeOverlayReceiptItems: context.activeOverlayReceiptItems || 0,
       activeOverlayWindowFirst: context.activeOverlayWindowFirst === true,
-      timings: context.timer.timings,
+      timings: Object.assign({}, context.timer.timings, prepareTimings),
       totalMs: context.timer.elapsedMs(),
       rolloutSizeBytes: result && result.thread ? threadRolloutSizeBytes(result.thread) : 0,
       largeReadProtected: Boolean(boundedDecision && boundedDecision.prefer),
