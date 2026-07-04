@@ -206,8 +206,9 @@ function createThreadDetailProjectionResultService(options = {}) {
 
   function prepareProjectedThreadReadResult(cached, summary, runtimeSettings, options = {}) {
     if (!cached || !cached.result || !cached.result.thread) return null;
+    const stalePartial = cached.stalePartial === true && cached.partial === true;
     if (options.activeOverlay !== true && !projectedThreadSatisfiesLocalActiveSummary(cached, summary)) return null;
-    if (options.activeOverlay !== true && !projectedThreadCoversSummaryUpdatedAt(cached, summary)) return null;
+    if (options.activeOverlay !== true && !stalePartial && !projectedThreadCoversSummaryUpdatedAt(cached, summary)) return null;
     const mergedResult = Object.assign({}, cached.result, {
       thread: mergeThreadDisplaySummary(cached.result.thread, summary) || cached.result.thread,
     });

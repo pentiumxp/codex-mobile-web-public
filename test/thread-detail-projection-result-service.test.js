@@ -395,6 +395,65 @@ test("projection result rejects cached detail older than summary update", () => 
   assert.equal(current.thread.turns[0].id, "turn-current");
 });
 
+test("projection result keeps stale partial first paint while refresh is pending", () => {
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 10_000,
+  });
+
+  const stalePartial = service.prepareProjectedThreadReadResult({
+    dynamic: false,
+    partial: true,
+    partialKind: "recent-window",
+    stalePartial: true,
+    staleReason: "backing-signature-mismatch",
+    version: "v4",
+    cachedAtMs: 8_000,
+    updatedAtMs: 8_000,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-old",
+          completedAt: 1_000,
+          items: [{ id: "agent-old", type: "agentMessage" }],
+        }],
+      },
+    },
+  }, {
+    id: "thread-1",
+    updatedAt: 20_000,
+  }, {});
+
+  assert.ok(stalePartial);
+  assert.equal(stalePartial.thread.mobileReadMode, "projection-v4-partial");
+  assert.equal(stalePartial.thread.mobileProjection.stalePartial, true);
+  assert.equal(stalePartial.thread.mobileProjection.staleReason, "backing-signature-mismatch");
+
+  const missingActiveTurn = service.prepareProjectedThreadReadResult({
+    dynamic: false,
+    partial: true,
+    partialKind: "recent-window",
+    stalePartial: true,
+    version: "v4",
+    cachedAtMs: 8_000,
+    updatedAtMs: 8_000,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-old", status: { type: "active" }, items: [] }],
+      },
+    },
+  }, {
+    id: "thread-1",
+    status: { type: "active" },
+    activeTurnId: "turn-new",
+    mobileLocalActiveStatus: { turnId: "turn-new" },
+  }, {});
+
+  assert.equal(missingActiveTurn, null);
+});
+
 test("projection result accepts fresh status-only active cache when summary heartbeat is newer", () => {
   const service = createThreadDetailProjectionResultService({
     maxTurns: 5,

@@ -544,6 +544,7 @@ function createThreadDetailRuntimeService(dependencies = {}) {
       threadDetailRpcTimeoutMs: config.threadDetailRpcTimeoutMs,
       responseBudgetOptions: options.responseBudgetOptions,
       compactThreadReadResult,
+      compactTurnsListResult,
       compactThreadDetailResponseResult,
       compactTurn,
       enrichThreadItemTimestampsFromRollout,

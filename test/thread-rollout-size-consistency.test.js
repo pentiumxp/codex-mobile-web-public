@@ -95,6 +95,16 @@ test("turns-list initial detail preparation uses window-only enrichment path", a
       compactOptions = options;
       return result;
     },
+    compactTurnsListResult: (result, options = {}) => {
+      calls.push("compact-turns-list");
+      assert.equal(options.threadId, "thread-1");
+      assert.equal(options.summary.id, "thread-1");
+      return Object.assign({}, result, {
+        data: result.data.map((turn) => Object.assign({}, turn, {
+          mobileTurnsListCompacted: true,
+        })),
+      });
+    },
     compactThreadDetailResponseResult: (result) => {
       calls.push("response-budget");
       return result;
@@ -149,6 +159,7 @@ test("turns-list initial detail preparation uses window-only enrichment path", a
   assert.equal(requestPayload.limit, 3);
   assert.equal(result.thread.id, "thread-1");
   assert.equal(result.thread.mobileReadMode, "turns-list-initial");
+  assert.equal(result.thread.turns[0].mobileTurnsListCompacted, true);
   assert.deepEqual(compactOptions, {
     maxTurns: 3,
     turnsListWindow: true,
@@ -161,6 +172,7 @@ test("turns-list initial detail preparation uses window-only enrichment path", a
   assert.equal(calls.includes("finalize-active-assistant"), false);
   assert.deepEqual(calls, [
     "request:thread/turns/list",
+    "compact-turns-list",
     "compact-thread",
     "task-cards",
     "projection-finalize",

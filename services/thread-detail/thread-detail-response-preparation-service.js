@@ -12,6 +12,7 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
     ? dependencies.responseBudgetOptions
     : () => ({});
   const compactThreadReadResult = typeof dependencies.compactThreadReadResult === "function" ? dependencies.compactThreadReadResult : (result) => result;
+  const compactTurnsListResult = typeof dependencies.compactTurnsListResult === "function" ? dependencies.compactTurnsListResult : (result) => result;
   const compactThreadDetailResponseResult = typeof dependencies.compactThreadDetailResponseResult === "function" ? dependencies.compactThreadDetailResponseResult : (result) => result;
   const compactTurn = typeof dependencies.compactTurn === "function" ? dependencies.compactTurn : (turn) => turn;
   const enrichThreadItemTimestampsFromRollout = typeof dependencies.enrichThreadItemTimestampsFromRollout === "function" ? dependencies.enrichThreadItemTimestampsFromRollout : (thread) => thread;
@@ -202,6 +203,7 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
 
   async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null, responseBudgetEvidence = "") {
     const startedAtMs = Date.now();
+    const turnsListWindow = isWindowOnlyTurnsListMode(mode);
     if (threadLog) {
       threadLog("turns_list_start", {
         limit: MAX_THREAD_TURNS,
@@ -209,12 +211,14 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
         fallbackFrom: mode,
       });
     }
-    const turnsListWindow = isWindowOnlyTurnsListMode(mode);
-    const turnsResult = await codex.request("thread/turns/list", {
+    const rawTurnsResult = await codex.request("thread/turns/list", {
       threadId,
       limit: MAX_THREAD_TURNS,
       sortDirection: "desc",
     }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
+    const turnsResult = turnsListWindow
+      ? compactTurnsListResult(rawTurnsResult, { threadId, summary })
+      : rawTurnsResult;
     const result = compactThreadReadResult({
       thread: threadFromTurnsList(threadId, summary, turnsResult, {
         skipRolloutEnrichment: turnsListWindow,
