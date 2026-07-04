@@ -549,13 +549,39 @@ function queueComposerIntentMenuUpdate() {
   window.setTimeout(updateComposerIntentMenu, 0);
 }
 
-function selectComposerIntent(kind) {
+function openSelectedComposerIntentDialog(kind, options = {}) {
+  const option = composerIntentOption(kind);
+  if (!option) return false;
+  if (kind === "goal") {
+    if (state.newThreadDraft) {
+      showError(new Error(`${option.label} is only available in an existing thread`));
+      return false;
+    }
+    if (state.pendingAttachments.length) {
+      showError(new Error("Goal commands do not support attachments"));
+      return false;
+    }
+    const targetThreadId = currentComposerThreadId();
+    if (!targetThreadId || typeof openThreadGoalDialog !== "function") {
+      showError(new Error("No thread is selected"));
+      return false;
+    }
+    setComposerText("");
+    scheduleCurrentDraftSave();
+    openThreadGoalDialog(targetThreadId);
+    return true;
+  }
+  return openComposerIntentDialog(kind, options);
+}
+
+function selectComposerIntent(kind, options = {}) {
   const option = composerIntentOption(kind);
   if (!option) return;
   setComposerText(option.tag);
   closeComposerIntentMenu();
   updateComposerControls();
   scheduleCurrentDraftSave();
+  if (options.openDialog === true && openSelectedComposerIntentDialog(kind, options)) return;
   const input = $("messageInput");
   if (input) input.focus();
 }

@@ -1115,3 +1115,86 @@ The previous full handoff was archived and should be opened only when old proven
   keys, cookies, launch tokens, private thread bodies, task-card bodies,
   endpoint bodies, provider payloads, screenshots, DB rows, raw auth URLs,
   password paths, full prompts, rollout contents, or long logs were exposed.
+
+## 2026-07-05T00:14:11+08:00 - Movie/Xcode stale Loop runtime cleanup completed
+
+- User clarified the stale loop cleanup scope was Movie and Xcode. Music was
+  not part of the final scope.
+- Read-only inventory found 11 visible stale role-lane threads:
+  - Movie: 6 `Movie Loop Implementation/Audit/Repair` threads under
+    `/Users/hermes-dev/HermesMobileDev/Movie`;
+  - Xcode: 5 `Xcode Loop Implementation/Audit/Repair` threads under
+    `/Users/xuxin/Xcode/Home AI`.
+- All 11 role-lane threads were already `completed` and were archived through
+  the authenticated `/api/threads/:threadId/archive` route. No raw thread
+  bodies or message contents were read or printed.
+- Loop runtime state readback found 5 Movie/Xcode loop records. One Movie loop
+  was still `waiting_source_requirements`; the others were `blocked` historical
+  loops. To prevent future duplicate triggers from reusing or recovering stale
+  state, all 5 loop records were terminated through the authenticated
+  `/api/at-loop/returns` route with terminal `rejected` status and bounded
+  operator-cancelled summaries. No new role task cards were dispatched.
+- Final verification:
+  - `Movie Loop` visible-thread search returned `[]`;
+  - `Xcode Loop` visible-thread search returned `[]`;
+  - `/api/at-loop/status` reported all 5 selected Movie/Xcode loop records as
+    `status=rejected`, `nextRoute=rejected_role_return`,
+    `waitingReturnCount=0`;
+  - no non-terminal selected Movie/Xcode loops remained;
+  - `/api/status?detail=1` remained `ready=true` with issue codes `[]`.
+- Current limitation: Codex Mobile has no first-class `cancel_loop` API; this
+  cleanup used terminal rejected returns as the supported state-machine path.
+  A future runtime hardening item is to add an explicit loop-cancel action that
+  records operator cancellation without needing to target a role slice.
+- Privacy boundary respected: only bounded ids, statuses, route names, counts,
+  workspace paths, and summaries were recorded; no raw secrets, access keys,
+  cookies, launch tokens, private thread bodies, task-card bodies, endpoint
+  bodies, provider payloads, screenshots, DB rows, raw auth URLs, password
+  paths, full prompts, rollout contents, or long logs were exposed.
+
+## 2026-07-05T00:19:37+08:00 - Android shell composer @ intent dialog fix prepared
+
+- User reported that in the Android native shell, selecting `@目标任务` and
+  `@loop` did not pop the expected dialog.
+- Root-cause hypothesis and owning layer: Codex Mobile Web frontend composer
+  interaction owned the failure. The `@` intent menu only listened for `click`
+  and `selectComposerIntent()` only wrote the bare tag into the composer. The
+  actual dialogs were opened only by a later send action, which is brittle in
+  Android WebView/native-shell touch and keyboard focus paths.
+- Local fix prepared:
+  - `public/app-shell-runtime.js` now handles intent-menu activation through
+    `pointerdown`, `touchend`, and `click` with synthetic-click suppression;
+  - menu activation calls `selectComposerIntent(..., { openDialog: true })`
+    so a single tap opens the intent dialog path;
+  - `public/composer-runtime.js` routes selected `goal` to the existing thread
+    Goal dialog and routes `loop` / `chatgpt-pro` to the existing composer
+    intent dialog;
+  - `@目标任务` direct selection clears the bare tag before opening the Goal
+    dialog, preserving the existing `/g`/send fallback behavior;
+  - static shell manifest regenerated so `shellCacheName/clientBuildId` changed
+    to `0.1.11|codex-mobile-shell-v625-dfd04fe77600`.
+- Regression coverage added in `test/at-loop-composer-intent.test.js` for
+  Android-safe pointer activation and direct dialog dispatch.
+- Validation passed locally:
+  - `node --test test/at-loop-composer-intent.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js
+    test/chatgpt-pro-bridge-service.test.js test/composer-runtime-ui.test.js
+    test/vite-shell-asset-graph.test.js test/app-update.test.js` -> 74/74;
+  - `npm run --silent check:frontend-manifest`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - Home AI AI Ops required checks for the changed files were run; no visual
+    lane or deployment-required gate was returned, and required syntax/diff
+    checks passed.
+- Deployment not yet completed at the time of this entry. Because this is a
+  static/mobile-shell interaction fix, the deployment request should go to the
+  configured Codex Mobile deploy lane with bounded readback for
+  `/api/public-config`, `/api/status?detail=1`, `/api/vite-shell-artifact`,
+  source/prod SHA parity for the changed frontend files, served client build
+  `0.1.11|codex-mobile-shell-v625-dfd04fe77600`, and an Android native-shell
+  tap verification of `@目标任务` and `@loop` when available.
+- Privacy boundary respected: only bounded file names, statuses, test counts,
+  static build ids, and summaries were recorded; no raw secrets, access keys,
+  cookies, launch tokens, private thread bodies, task-card bodies, endpoint
+  bodies, provider payloads, screenshots, DB rows, raw auth URLs, password
+  paths, full prompts, rollout contents, or long logs were exposed.

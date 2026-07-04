@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, "..");
 const composerRuntime = require(path.join(root, "public", "composer-runtime.js"));
 const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
 const composerBridgeRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-bridge-runtime.js"), "utf8");
+const appShellRuntimeJs = fs.readFileSync(path.join(root, "public", "app-shell-runtime.js"), "utf8");
 
 function functionBody(source, name) {
   let start = source.indexOf(`async function ${name}(`);
@@ -49,6 +50,26 @@ test("composer recognizes @loop intent without turning task-card tags into dialo
   assert.equal(runtime.composerIntentBareTagKind("@Loop"), "loop");
   assert.equal(runtime.composerIntentBareTagKind("@任务卡片"), "");
   assert.equal(runtime.composerIntentBareTagKind("@自由协作"), "");
+});
+
+test("composer intent menu activates dialogs directly on Android-safe pointer events", () => {
+  const wireUiBody = functionBody(appShellRuntimeJs, "wireUi");
+  assert.match(wireUiBody, /const handleComposerIntentOption = \(event\) => \{/);
+  assert.match(wireUiBody, /intentMenu\.addEventListener\("pointerdown", handleComposerIntentOption\)/);
+  assert.match(wireUiBody, /intentMenu\.addEventListener\("touchend", handleComposerIntentOption, \{ passive: false \}\)/);
+  assert.match(wireUiBody, /intentMenu\.addEventListener\("click", handleComposerIntentOption\)/);
+  assert.match(wireUiBody, /suppressSyntheticComposerIntentOptionUntil = now \+ 2200/);
+  assert.match(wireUiBody, /selectComposerIntent\(option\.dataset\.composerIntent \|\| "", \{ openDialog: true, source: eventType \}\)/);
+
+  const selectBody = functionBody(composerRuntimeJs, "selectComposerIntent");
+  assert.match(selectBody, /options\.openDialog === true/);
+  assert.match(selectBody, /openSelectedComposerIntentDialog\(kind, options\)/);
+
+  const selectedDialogBody = functionBody(composerRuntimeJs, "openSelectedComposerIntentDialog");
+  assert.match(selectedDialogBody, /kind === "goal"/);
+  assert.match(selectedDialogBody, /setComposerText\(""\)/);
+  assert.match(selectedDialogBody, /openThreadGoalDialog\(targetThreadId\)/);
+  assert.match(selectedDialogBody, /return openComposerIntentDialog\(kind, options\)/);
 });
 
 test("composer renders source-requirements waiting state for @loop", () => {

@@ -233,13 +233,24 @@ function wireUi() {
   }
   const intentMenu = $("composerIntentMenu");
   if (intentMenu) {
-    intentMenu.addEventListener("click", (event) => {
+    let lastComposerIntentOptionAt = 0;
+    let suppressSyntheticComposerIntentOptionUntil = 0;
+    const handleComposerIntentOption = (event) => {
       const option = event.target.closest("[data-composer-intent]");
       if (!option) return;
       event.preventDefault();
       event.stopPropagation();
-      selectComposerIntent(option.dataset.composerIntent || "");
-    });
+      const now = Date.now();
+      const eventType = String(event.type || "");
+      if ((eventType === "click" || eventType === "touchend") && now < suppressSyntheticComposerIntentOptionUntil) return;
+      if (now - lastComposerIntentOptionAt < 650) return;
+      lastComposerIntentOptionAt = now;
+      if (eventType === "pointerdown") suppressSyntheticComposerIntentOptionUntil = now + 2200;
+      selectComposerIntent(option.dataset.composerIntent || "", { openDialog: true, source: eventType });
+    };
+    intentMenu.addEventListener("pointerdown", handleComposerIntentOption);
+    intentMenu.addEventListener("touchend", handleComposerIntentOption, { passive: false });
+    intentMenu.addEventListener("click", handleComposerIntentOption);
   }
   if ($("composerIntentForm")) $("composerIntentForm").addEventListener("submit", (event) => submitComposerIntentDialog(event).catch(showError));
   if ($("composerIntentSaveButton")) $("composerIntentSaveButton").addEventListener("click", saveComposerIntentDialogDraft);
