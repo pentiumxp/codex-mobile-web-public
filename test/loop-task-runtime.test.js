@@ -597,6 +597,38 @@ test("loop runtime skips visible implementation targets rejected by task-card de
   assert.equal(cards[0].payload.targetThreadId, "zzz-implementation-thread");
 });
 
+test("loop runtime creates implementation lane instead of selecting ordinary completed workspace thread", async () => {
+  const { cards, createdThreads, runtime } = makeRuntime({
+    name: "ordinary-thread-not-implementation-lane",
+    visibleThreads: [{
+      id: "xcode-thread",
+      title: "Xcode",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+    }, {
+      id: "growth-main-thread",
+      title: "成长 06-18",
+      cwd: "/Users/hermes-dev/HermesMobileDev/plugins/growth",
+      status: { type: "completed" },
+    }, {
+      id: "audit-thread",
+      title: "Plugin Workspace Audit",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    }],
+  });
+
+  const result = await runtime.startLoop({
+    sourceThreadId: "xcode-thread",
+    text: "@loop redesign settings",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.loop.implementationThreadId, "implementation-created");
+  assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").threadRole, "implementation");
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].payload.targetThreadId, "implementation-created");
+  assert.notEqual(cards[0].payload.targetThreadId, "growth-main-thread");
+});
+
 test("loop watchdog marks stale returns without retrying or completing work", async () => {
   const initial = Date.parse("2026-07-03T01:00:00.000Z");
   const { cards, runtime, setNow } = makeRuntime({ name: "watchdog", now: initial });

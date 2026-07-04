@@ -649,7 +649,10 @@ Implementation path:
    `sourceThreadId !== targetThreadId`. Select or create those role lanes from
    explicit role/purpose metadata first, then bounded cwd/title heuristics, and
    require the same task-card deliverability check used by normal cross-thread
-   dispatch; if a safe lane is unavailable, keep the loop blocked and visible.
+   dispatch. Ordinary product/source main threads with only a workspace cwd are
+   valid requirements owners but are not implementation/repair lanes; if a safe
+   lane is unavailable, create one when supported or keep the loop blocked and
+   visible.
 6. Classify target-thread purpose before dispatch. Public PR, deploy lane,
    audit, task intake, and worker threads are special-purpose lanes; mismatched
    roles must fail closed with bounded routing metadata instead of relying on

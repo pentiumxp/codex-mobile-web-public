@@ -654,6 +654,14 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   function roleTargetCheck(loop, role, thread) {
     const loopCheck = routingService.assertLoopRoleTarget({ role, thread });
     if (!loopCheck.ok) return loopCheck;
+    if (!threadHasRoleLaneSignal(role, thread)) {
+      return Object.assign({}, loopCheck, {
+        ok: false,
+        error: "at_loop_target_not_role_lane",
+        role,
+        roleLaneRequired: true,
+      });
+    }
     const deliverability = taskCardDeliverabilityCheck(loop, role, thread);
     if (deliverability.ok) return Object.assign({}, loopCheck, { deliverability });
     return Object.assign({}, loopCheck, {
@@ -665,6 +673,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
 
   function publicRoleTargetRoutingMetadata(result = {}) {
     const out = publicRoutingMetadata(result);
+    if (result.roleLaneRequired) out.roleLaneRequired = true;
     if (result.deliverability && result.deliverability.ok === false) {
       out.deliverable = false;
       out.deliverabilityError = result.deliverability.error || "";
@@ -674,6 +683,17 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       out.deliverable = true;
     }
     return out;
+  }
+
+  function threadHasRoleLaneSignal(role, thread = {}) {
+    if (role !== "implementation" && role !== "repair") return true;
+    const roleText = compactOneLine(thread.threadRole || thread.thread_role || thread.role || thread.taskCardRole || thread.task_card_role).toLowerCase();
+    const title = compactOneLine(thread.title || thread.name || thread.preview).toLowerCase();
+    if (/\bimplementation\b|\bimplementer\b/.test(roleText)) return true;
+    if (role === "repair" && /\brepair\b/.test(roleText)) return true;
+    if (role === "implementation" && /\bimplementation\b|\bimplementer\b/.test(title)) return true;
+    if (role === "repair" && /\brepair\b/.test(title)) return true;
+    return false;
   }
 
   function aliasTargets() {
