@@ -32,6 +32,10 @@ test("at-loop route service handles trigger, status, return, and watchdog routes
         calls.push(["sourceRequirementsStart", body]);
         return { ok: true, sourceRequirementsTurnStarted: true };
       },
+      threadLifecycle: async (body) => {
+        calls.push(["threadLifecycle", body]);
+        return { ok: true, action: body.action || "list", count: 0, threads: [] };
+      },
       runWatchdog: (body) => {
         calls.push(["watchdog", body]);
         return { ok: true, staleCount: 0, retried: false };
@@ -63,14 +67,20 @@ test("at-loop route service handles trigger, status, return, and watchdog routes
     sendJson: (status, body) => responses.push({ status, body }),
   });
   await service.handleRoute({
+    url: routeUrl("/api/at-loop/thread-lifecycle"),
+    method: "POST",
+    readBody: async () => ({ action: "list", role: "implementation" }),
+    sendJson: (status, body) => responses.push({ status, body }),
+  });
+  await service.handleRoute({
     url: routeUrl("/api/at-loop/watchdog"),
     method: "POST",
     readBody: async () => ({ loopId: "loop_1234" }),
     sendJson: (status, body) => responses.push({ status, body }),
   });
 
-  assert.deepEqual(calls.map((call) => call[0]), ["startLoop", "status", "return", "sourceRequirementsStart", "watchdog"]);
-  assert.deepEqual(responses.map((response) => response.status), [200, 200, 200, 200, 200]);
+  assert.deepEqual(calls.map((call) => call[0]), ["startLoop", "status", "return", "sourceRequirementsStart", "threadLifecycle", "watchdog"]);
+  assert.deepEqual(responses.map((response) => response.status), [200, 200, 200, 200, 200, 200]);
 });
 
 test("at-loop route service returns unavailable when runtime is absent", async () => {

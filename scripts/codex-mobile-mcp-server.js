@@ -183,6 +183,32 @@ function toolsList() {
       { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     ),
     tool(
+      "thread_lifecycle",
+      "List, resolve, ensure/create, refresh, or mark complete Codex Mobile Loop/Worker role lanes by role, workspace, and deliverability metadata.",
+      {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["list", "resolve", "ensure", "create", "refresh", "achieve", "mark_role_complete"] },
+          loopId: { type: "string", maxLength: 120 },
+          role: { type: "string", maxLength: 80 },
+          threadId: { type: "string", maxLength: 220 },
+          targetThreadId: { type: "string", maxLength: 220 },
+          cwd: { type: "string", maxLength: 1000 },
+          workspaceCwd: { type: "string", maxLength: 1000 },
+          iteration: { type: "integer", minimum: 1, maximum: 20 },
+          limit: { type: "integer", minimum: 1, maximum: 80 },
+          includeIneligible: { type: "boolean" },
+          excludedTargetThreadIds: {
+            type: "array",
+            maxItems: 20,
+            items: { type: "string", maxLength: 220 },
+          },
+        },
+      },
+      { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    ),
+    tool(
       "return_to_source",
       "Return a received Codex Mobile task card to its source thread. Use this when target work is completed, blocked, redirected, rejected, or partially completed; a local final answer is not a return card.",
       {
@@ -522,6 +548,46 @@ async function loopStatus(context, args = {}) {
   };
 }
 
+async function threadLifecycle(context, args = {}) {
+  const body = {
+    action: boundedString(args.action || "list", "action", 80, false) || "list",
+    loopId: boundedString(args.loopId || args.loop_id, "loop_id", 120, false),
+    role: boundedString(args.role || args.threadRole || args.thread_role, "role", 80, false),
+    threadId: boundedString(args.threadId || args.thread_id, "thread_id", 220, false),
+    targetThreadId: boundedString(args.targetThreadId || args.target_thread_id, "target_thread_id", 220, false),
+    cwd: boundedString(args.cwd, "cwd", 1000, false),
+    workspaceCwd: boundedString(args.workspaceCwd || args.workspace_cwd, "workspace_cwd", 1000, false),
+    iteration: Number(args.iteration || 0) || undefined,
+    limit: Number(args.limit || 0) || undefined,
+    includeIneligible: args.includeIneligible === true || args.include_ineligible === true,
+  };
+  if (Array.isArray(args.excludedTargetThreadIds || args.excluded_target_thread_ids)) {
+    body.excludedTargetThreadIds = (args.excludedTargetThreadIds || args.excluded_target_thread_ids)
+      .map((value) => boundedString(value, "excluded_target_thread_id", 220, false))
+      .filter(Boolean)
+      .slice(0, 20);
+  }
+  const result = await requestJson(context, "POST", "/api/at-loop/thread-lifecycle", body);
+  return {
+    ok: result.ok !== false,
+    action: String(result.action || body.action),
+    error: String(result.error || ""),
+    count: Number(result.count || 0),
+    refreshed: Number(result.refreshed || 0),
+    thread: result.thread || null,
+    threads: Array.isArray(result.threads) ? result.threads.slice(0, 80) : [],
+    slice: result.slice || null,
+    loop: result.loop ? {
+      loopId: String(result.loop.loopId || ""),
+      status: String(result.loop.status || ""),
+      currentRole: String(result.loop.currentRole || ""),
+      nextRoute: String(result.loop.nextRoute || ""),
+      implementationThreadId: String(result.loop.implementationThreadId || ""),
+      auditThreadId: String(result.loop.auditThreadId || ""),
+    } : null,
+  };
+}
+
 async function handleMessage(context, message = {}) {
   const method = String(message.method || "");
   if (method === "initialize") {
@@ -534,6 +600,7 @@ async function handleMessage(context, message = {}) {
         "Use return_to_source when a received task card is completed, blocked, redirected, rejected, or partially completed; a target-thread final answer is not a source-thread return card.",
         "Use task_card_heartbeat to report bounded progress while actively handling a received task card; this does not complete the card.",
         "Use start_loop only for explicit @loop requests; use loop_status for bounded loop status projection.",
+        "Use thread_lifecycle to list, resolve, ensure/create, refresh, or mark complete Loop/Worker role lanes by metadata instead of title heuristics.",
         "Do not use multi_agent_v1 tools as a substitute for Codex Mobile cross-thread task cards.",
       ].join("\n"),
     };
@@ -548,6 +615,7 @@ async function handleMessage(context, message = {}) {
     if (name === "delegate_to_thread") return textContent(await delegateToThread(context, args));
     if (name === "start_loop") return textContent(await startLoop(context, args));
     if (name === "loop_status") return textContent(await loopStatus(context, args));
+    if (name === "thread_lifecycle") return textContent(await threadLifecycle(context, args));
     if (name === "return_to_source") return textContent(await returnToSource(context, args));
     if (name === "task_card_heartbeat") return textContent(await taskCardHeartbeat(context, args));
     throw new Error("codex_mobile_mcp_unknown_tool");
@@ -653,5 +721,6 @@ module.exports = {
   returnToSource,
   startLoop,
   taskCardHeartbeat,
+  threadLifecycle,
   toolsList,
 };

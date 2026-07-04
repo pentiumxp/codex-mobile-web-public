@@ -17,6 +17,7 @@ const {
   returnToSource,
   startLoop,
   taskCardHeartbeat,
+  threadLifecycle,
   toolsList,
 } = require("../scripts/codex-mobile-mcp-server");
 const {
@@ -45,10 +46,11 @@ function readBody(req) {
 
 test("Codex Mobile MCP server exposes delegation tools and parses stdio framing", async () => {
   const listedTools = toolsList();
-  assert.deepEqual(listedTools.map((entry) => entry.name), ["list_threads", "delegate_to_thread", "start_loop", "loop_status", "return_to_source", "task_card_heartbeat"]);
+  assert.deepEqual(listedTools.map((entry) => entry.name), ["list_threads", "delegate_to_thread", "start_loop", "loop_status", "thread_lifecycle", "return_to_source", "task_card_heartbeat"]);
   assert.equal(listedTools.find((entry) => entry.name === "list_threads").annotations.readOnlyHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "delegate_to_thread").annotations.destructiveHint, false);
   assert.equal(listedTools.find((entry) => entry.name === "loop_status").annotations.readOnlyHint, true);
+  assert.equal(listedTools.find((entry) => entry.name === "thread_lifecycle").annotations.idempotentHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "return_to_source").annotations.idempotentHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "task_card_heartbeat").annotations.idempotentHint, true);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.pluginId);
@@ -56,11 +58,13 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.secretRef);
   assert.ok(listedTools.find((entry) => entry.name === "start_loop").inputSchema.properties.deployReadbackRequired);
   assert.ok(listedTools.find((entry) => entry.name === "start_loop").inputSchema.properties.auditPacket);
+  assert.ok(listedTools.find((entry) => entry.name === "thread_lifecycle").inputSchema.properties.role);
   assert.ok(listedTools.find((entry) => entry.name === "task_card_heartbeat").inputSchema.properties.threadId);
   const initialized = await handleMessage({ server: "http://127.0.0.1:1", key: "secret" }, { id: 1, method: "initialize" });
   assert.equal(initialized.serverInfo.name, "codex_mobile");
   assert.match(initialized.instructions, /delegate_to_thread/);
   assert.match(initialized.instructions, /start_loop/);
+  assert.match(initialized.instructions, /thread_lifecycle/);
   assert.match(initialized.instructions, /return_to_source/);
   assert.match(initialized.instructions, /task_card_heartbeat/);
 
@@ -310,6 +314,25 @@ test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
       }));
       return;
     }
+    if (req.method === "POST" && req.url === "/api/at-loop/thread-lifecycle") {
+      const body = JSON.parse(await readBody(req));
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        ok: true,
+        action: body.action,
+        count: 1,
+        threads: [{
+          id: "implementation-thread",
+          title: "Home AI Loop Implement",
+          cwd: "/Users/hermes-dev/HermesMobileDev/app",
+          role: body.role,
+          purpose: "workspace_implementation",
+          deliverable: true,
+          status: "completed",
+        }],
+      }));
+      return;
+    }
     res.statusCode = 404;
     res.end("{}");
   });
@@ -339,6 +362,10 @@ test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
   assert.equal(status.loopCount, 1);
   assert.equal(status.loops[0].implementationWorkspaceCwd, "/Users/xuxin/Xcode/Home AI");
   assert.equal(status.loops[0].roleSlices[0].taskCardId, "ttc_1");
+  const lifecycle = await threadLifecycle(context, { action: "list", role: "implementation" });
+  assert.equal(lifecycle.ok, true);
+  assert.equal(lifecycle.threads[0].status, "completed");
+  assert.equal(lifecycle.threads[0].deliverable, true);
   assert.ok(calls.every((call) => call.authorization === "Bearer secret"));
 });
 
@@ -362,9 +389,10 @@ test("Codex Mobile MCP config registration is per Codex Home and stores no raw k
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.delegate_to_thread\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.start_loop\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.loop_status\]/);
+  assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.thread_lifecycle\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.return_to_source\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.task_card_heartbeat\]/);
-  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 6);
+  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 7);
   assert.doesNotMatch(text, /Bearer/);
   assert.doesNotMatch(text, /secret/);
 
@@ -409,8 +437,9 @@ test("Codex Mobile MCP config registration repairs stale command args", () => {
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.delegate_to_thread\]/g) || []).length, 1);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.start_loop\]/g) || []).length, 1);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.loop_status\]/g) || []).length, 1);
+  assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.thread_lifecycle\]/g) || []).length, 1);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.return_to_source\]/g) || []).length, 1);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.task_card_heartbeat\]/g) || []).length, 1);
-  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 6);
+  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 7);
   assert.match(text, /\[mcp_servers\.codegraph\]/);
 });

@@ -61,6 +61,14 @@ function createAtLoopRouteService(dependencies = {}) {
         const result = await atLoopRuntimeService.startSourceRequirementsForLoop(body);
         return jsonResponse(sendJson, result.ok === false ? 400 : 200, result);
       }
+      if (pathname === "/api/at-loop/thread-lifecycle" && method === "POST") {
+        const body = await readJsonBody(input.readBody);
+        if (!atLoopRuntimeService || typeof atLoopRuntimeService.threadLifecycle !== "function") {
+          return jsonResponse(sendJson, 503, { ok: false, error: "at_loop_thread_lifecycle_unavailable" });
+        }
+        const result = await atLoopRuntimeService.threadLifecycle(body);
+        return jsonResponse(sendJson, result.ok === false ? 400 : 200, result);
+      }
       if (pathname === "/api/at-loop/watchdog" && method === "POST") {
         const body = await readJsonBody(input.readBody);
         return jsonResponse(sendJson, 200, atLoopRuntimeService.runWatchdog(body));

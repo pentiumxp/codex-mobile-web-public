@@ -272,6 +272,8 @@ test("loop runtime waits for source-thread requirements before implementation di
   assert.equal(returnedRequirements.status, "returned");
   assert.equal(returnedRequirements.returnStatus, "completed");
   assert.equal(afterRequirements.loop.sourceRequirementsStatus.readyForImplementation, true);
+  assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").title, "Xcode Loop Implement");
+  assert.equal(createdThreads.find((thread) => thread.id === "product_audit-created").title, "Xcode Loop Audit");
   const implementation = first.loop.roleSlices.find((slice) => slice.role === "implementation");
   assert.equal(implementation.status, "pending");
   const dispatchedImplementation = afterRequirements.loop.roleSlices.find((slice) => slice.role === "implementation");
@@ -471,7 +473,7 @@ test("loop runtime updates blocked duplicate with explicit implementation worksp
       cwd: sourceWorkspace,
     }, {
       id: "old-implementation-thread",
-      title: "Xcode Loop Implementation: redesign settings",
+      title: "Xcode Loop Implement",
       cwd: sourceWorkspace,
       threadRole: "implementation",
     }, {
@@ -581,7 +583,7 @@ test("loop runtime re-dispatches blocked audit returns whose lane cwd mismatches
       cwd: sourceWorkspace,
     }, {
       id: "implementation-thread",
-      title: "Xcode Loop Implementation",
+      title: "Xcode Loop Implement",
       cwd: realWorkspace,
       threadRole: "implementation",
     }, {
@@ -1362,7 +1364,7 @@ test("loop runtime rebuilds exhausted loop audit packet from stored repair retur
       cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
     }, {
       id: "implementation-thread",
-      title: "Xcode Loop Implementation",
+      title: "Xcode Loop Implement",
       cwd: "/Users/xuxin/Xcode/Home AI",
       threadRole: "implementation",
     }, {
@@ -2002,7 +2004,7 @@ test("loop runtime skips persisted stale dispatch target before sending role car
       cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
     }, {
       id: "stale-created-thread",
-      title: "Xcode Loop Implementation: redesign settings",
+      title: "Xcode Loop Implement",
       cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
       threadRole: "implementation",
       status: { type: "notLoaded" },
@@ -2126,13 +2128,13 @@ test("loop runtime clears multiple stale dispatch targets before creating a fres
       cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
     }, {
       id: "stale-created-thread-a",
-      title: "Xcode Loop Implementation: a",
+      title: "Xcode Loop Implement 07-04a",
       cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
       threadRole: "implementation",
       status: { type: "notLoaded" },
     }, {
       id: "stale-created-thread-b",
-      title: "Xcode Loop Implementation: b",
+      title: "Xcode Loop Implement 07-04b",
       cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
       threadRole: "implementation",
       status: { type: "notLoaded" },
@@ -2267,6 +2269,79 @@ test("loop runtime creates implementation lane instead of selecting ordinary com
   assert.equal(cards.length, 1);
   assert.equal(cards[0].payload.targetThreadId, "implementation-created");
   assert.notEqual(cards[0].payload.targetThreadId, "growth-main-thread");
+});
+
+test("loop thread lifecycle lists completed role lanes as deliverable metadata targets", async () => {
+  const { runtime } = makeRuntime({
+    name: "thread-lifecycle-completed-role-lane",
+    visibleThreads: [{
+      id: "source-thread",
+      title: "Home AI",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    }, {
+      id: "implementation-lane",
+      title: "Home AI Loop Implement",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+      threadRole: "implementation",
+      status: { type: "completed" },
+    }, {
+      id: "archived-implementation-lane",
+      title: "Home AI Loop Implement",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+      threadRole: "implementation",
+      status: { type: "completed" },
+      archived: true,
+    }],
+  });
+
+  const listed = await runtime.threadLifecycle({
+    action: "list",
+    role: "implementation",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    includeIneligible: true,
+  });
+
+  assert.equal(listed.ok, true);
+  const implementation = listed.threads.find((thread) => thread.id === "implementation-lane");
+  assert.equal(implementation.status, "completed");
+  assert.equal(implementation.deliverable, true);
+  const archived = listed.threads.find((thread) => thread.id === "archived-implementation-lane");
+  assert.equal(archived.deliverable, false);
+  assert.equal(archived.deliverabilityReason, "explicit_non_deliverable_flag");
+});
+
+test("loop thread lifecycle ensures and marks role lanes complete without title routing", async () => {
+  const { createdThreads, runtime } = makeRuntime({
+    name: "thread-lifecycle-ensure-complete",
+    visibleThreads: [{
+      id: "source-thread",
+      title: "Movie Loop Implementation: long old title should not leak",
+      cwd: "/Users/hermes-dev/HermesMobileDev/Movie",
+    }],
+  });
+  const started = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop improve product UI",
+  });
+  assert.equal(started.ok, true);
+
+  const ensured = await runtime.threadLifecycle({
+    action: "ensure",
+    loopId: started.loop.loopId,
+    role: "implementation",
+  });
+  assert.equal(ensured.ok, true);
+  assert.equal(ensured.thread.id, "implementation-created");
+  assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").title, "Movie Loop Implement");
+
+  const completed = await runtime.threadLifecycle({
+    action: "mark_role_complete",
+    loopId: started.loop.loopId,
+    role: "implementation",
+  });
+  assert.equal(completed.ok, true);
+  assert.equal(completed.slice.status, "achieved");
+  assert.equal(completed.slice.dispatchStatus, "role_complete");
 });
 
 test("loop watchdog marks stale returns without retrying or completing work", async () => {

@@ -629,3 +629,40 @@ The previous full handoff was archived and should be opened only when old proven
 - Not deployed yet. No raw secrets, access keys, cookies, endpoint bodies,
   private thread bodies, provider payloads, DB rows, screenshots, raw auth
   URLs, or long logs were exposed.
+
+## 2026-07-04T23:05:00+08:00 - Home AI Loop lifecycle and compact lane titles pending deploy
+
+- Continued Home AI cards `ttc_622c96b5e25347aaa3` and
+  `ttc_3212b56b20e1706387` in the Codex Mobile workspace.
+- Source changes:
+  - `services/at-loop/loop-task-runtime-service.js` now generates compact role
+    lane titles: `<Workspace> Loop Requirements`, `<Workspace> Loop Implement`,
+    `<Workspace> Loop Audit`, `<Workspace> Loop Repair`, and strips old long
+    `Loop Implementation: ...` source title tails before naming new lanes.
+  - The same runtime now exposes a bounded `threadLifecycle()` surface with
+    `list`, `resolve`, `ensure`/`create`, `refresh`, and
+    `achieve`/`mark_role_complete` actions. It classifies by role/purpose/cwd
+    and explicit deliverability metadata; latest-turn `status=completed` is
+    preserved as informational and does not make a role lane non-deliverable.
+  - `server-routes/at-loop-route-service.js` exposes
+    `POST /api/at-loop/thread-lifecycle`.
+  - `scripts/codex-mobile-mcp-server.js` exposes the model-visible
+    `thread_lifecycle` MCP tool, and
+    `adapters/codex-mobile-mcp-config-service.js` registers its tool approval
+    section.
+  - `docs/MODULES.md` was updated for the new MCP surface.
+- Regression coverage:
+  - completed implementation lanes remain lifecycle-deliverable unless
+    explicit non-deliverability metadata such as `archived` is present;
+  - lifecycle `ensure` creates a compact `Movie Loop Implement` lane from an
+    old long title source;
+  - lifecycle `mark_role_complete` marks the role slice achieved;
+  - MCP and HTTP route tests cover `thread_lifecycle`.
+- Validation passed:
+  `node --test test/loop-task-runtime.test.js test/at-loop-route-service.test.js
+  test/codex-mobile-mcp-server.test.js
+  test/thread-task-card-loop-routing-service.test.js` (`43` tests), plus
+  `npm run check`.
+- Not deployed yet and no return cards have been sent yet. No raw secrets,
+  access keys, cookies, endpoint bodies, private thread bodies, provider
+  payloads, DB rows, screenshots, raw auth URLs, or long logs were exposed.
