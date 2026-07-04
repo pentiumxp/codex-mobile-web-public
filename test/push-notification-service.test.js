@@ -100,6 +100,46 @@ test("thread display summary cache stores app-server display names before previe
   assert.ok(decorated.includes("thread-main"));
 });
 
+test("thread display summary cache strips full detail payloads", () => {
+  const cache = createThreadDisplaySummaryCache({ ttlMs: 60_000, maxEntries: 10 });
+
+  cache.remember({
+    id: "thread-main",
+    name: "Large thread",
+    preview: "summary only",
+    cwd: "/tmp/workspace",
+    status: { type: "completed", turnId: "turn-1" },
+    activeTurnId: "turn-1",
+    rolloutStats: { sizeBytes: 590000000, mtimeMs: 123456 },
+    turns: [{
+      id: "turn-1",
+      items: [{ id: "item-1", type: "agentMessage", text: "x".repeat(10000) }],
+    }],
+    mobileProjection: {
+      result: { thread: { turns: [{ items: [{ text: "large" }] }] } },
+    },
+    mobileDiagnostics: { raw: "x".repeat(10000) },
+    pendingServerRequests: [{ id: "request-1" }],
+    metadata: {
+      safe: "kept",
+      payload: { raw: "dropped" },
+    },
+  });
+
+  const summary = cache.read("thread-main");
+  assert.equal(summary.name, "Large thread");
+  assert.equal(summary.cwd, "/tmp/workspace");
+  assert.equal(summary.status.type, "completed");
+  assert.equal(summary.activeTurnId, "turn-1");
+  assert.equal(summary.rolloutStats.sizeBytes, 590000000);
+  assert.equal(summary.metadata.safe, "kept");
+  assert.equal(summary.turns, undefined);
+  assert.equal(summary.mobileProjection, undefined);
+  assert.equal(summary.mobileDiagnostics, undefined);
+  assert.equal(summary.pendingServerRequests, undefined);
+  assert.equal(summary.metadata.payload, undefined);
+});
+
 test("thread display summary cache can skip repeated read decoration", () => {
   const decorated = [];
   const cache = createThreadDisplaySummaryCache({

@@ -127,6 +127,65 @@ function resolveThreadTitleForNotification(input = {}) {
   ]);
 }
 
+const DISPLAY_SUMMARY_DETAIL_KEYS = new Set([
+  "turns",
+  "items",
+  "messages",
+  "content",
+  "body",
+  "payload",
+  "mobileProjection",
+  "mobileDiagnostics",
+  "pendingServerRequests",
+  "threadTaskCards",
+]);
+
+function isDisplaySummaryDetailKey(key) {
+  const text = String(key || "");
+  if (DISPLAY_SUMMARY_DETAIL_KEYS.has(text)) return true;
+  return /^(turns|items|messages|content|body|payload)$/i.test(text)
+    || /projection|diagnostics|serverrequests|threadtaskcards/i.test(text);
+}
+
+function compactDisplaySummaryObject(value, depth = 0) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || depth > 1) return {};
+  const out = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (!key || isDisplaySummaryDetailKey(key)) continue;
+    if (typeof raw === "string") out[key] = compactNotificationText(raw, 500);
+    else if (typeof raw === "number" && Number.isFinite(raw)) out[key] = Math.trunc(raw);
+    else if (typeof raw === "boolean") out[key] = raw;
+    else if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const nested = compactDisplaySummaryObject(raw, depth + 1);
+      if (Object.keys(nested).length) out[key] = nested;
+    }
+  }
+  return out;
+}
+
+function displaySummaryFromThreadFields(thread, threadId, name, preview) {
+  const summary = { id: threadId };
+  for (const [key, raw] of Object.entries(thread || {})) {
+    if (!key || key === "id" || isDisplaySummaryDetailKey(key)) continue;
+    if (typeof raw === "string") {
+      const maxChars = key === "preview" ? 240 : key === "name" || key === "title" ? 160 : 500;
+      const value = compactNotificationText(raw, maxChars);
+      if (value) summary[key] = value;
+    } else if (typeof raw === "number" && Number.isFinite(raw)) {
+      summary[key] = Math.trunc(raw);
+    } else if (typeof raw === "boolean") {
+      summary[key] = raw;
+    } else if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const value = compactDisplaySummaryObject(raw);
+      if (Object.keys(value).length) summary[key] = value;
+    }
+  }
+  summary.id = threadId;
+  if (name) summary.name = name;
+  if (preview) summary.preview = preview;
+  return summary;
+}
+
 function createThreadDisplaySummaryCache(options = {}) {
   const ttlMs = Math.max(60_000, Number(options.ttlMs || 7_200_000));
   const maxEntries = Math.max(1, Number(options.maxEntries || 500));
@@ -172,9 +231,7 @@ function createThreadDisplaySummaryCache(options = {}) {
       240,
     );
     if (!name && !preview && !thread.cwd && !thread.rolloutPath && !thread.rollout_path) return null;
-    const summary = Object.assign({}, thread, { id: threadId });
-    if (name) summary.name = name;
-    if (preview) summary.preview = preview;
+    const summary = displaySummaryFromThreadFields(thread, threadId, name, preview);
     return decorateSummary(summary);
   }
 
