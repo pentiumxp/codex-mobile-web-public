@@ -377,6 +377,13 @@ function createThreadSummaryStateService(dependencies = {}) {
     return threadHasRuntimeActiveEvidence(display);
   }
 
+  function shouldReplaceRuntimeActiveStatus(base, display) {
+    if (!base || !display || !isThreadListLiveStatus(display.status)) return false;
+    if (!threadHasRuntimeActiveEvidence(display)) return false;
+    if (isThreadListLiveStatus(base.status)) return false;
+    return isThreadListRestStatus(base.status) || isThreadListUnknownStatus(base.status);
+  }
+
   function copyThreadSummaryActiveMarkers(target, display) {
     if (!target || !display || typeof target !== "object" || typeof display !== "object") return target;
     for (const key of [
@@ -486,7 +493,8 @@ function createThreadSummaryStateService(dependencies = {}) {
       const displayFieldUpdatedAtMs = timestampToMs(display.updatedAt || display.updated_at || display.updatedAtMs || display.updated_at_ms);
       next.updatedAt = Math.floor(Math.max(displayUpdatedAtMs, displayFieldUpdatedAtMs) / 1000);
     }
-    const replaceStatus = shouldReplaceDeployLaneRuntimeActiveStatus(base, display)
+    const replaceStatus = shouldReplaceRuntimeActiveStatus(base, display)
+      || shouldReplaceDeployLaneRuntimeActiveStatus(base, display)
       || shouldReplaceThreadDisplayStatus(base.status, display.status, baseUpdatedAtMs, displayUpdatedAtMs);
     if (replaceStatus) {
       next.status = display.status;

@@ -514,6 +514,44 @@ test("deploy lane runtime active summary replaces warm idle cache", () => {
   assert.equal(merged.activeTurnId, "turn-active");
 });
 
+test("runtime active summary replaces ordinary completed list row", () => {
+  const service = createThreadSummaryStateService({
+    statusText: (status) => String(status && status.type || status || ""),
+    timestampToMs(value) {
+      const number = Number(value || 0);
+      if (!Number.isFinite(number) || number <= 0) return 0;
+      return number < 1_000_000_000_000 ? number * 1000 : number;
+    },
+    threadListSummaryTimestampMs(thread) {
+      const number = Number(thread && (thread.updatedAt || thread.updated_at || thread.updatedAtMs || thread.updated_at_ms) || 0);
+      if (!Number.isFinite(number) || number <= 0) return 0;
+      return number < 1_000_000_000_000 ? number * 1000 : number;
+    },
+  });
+  const appServerCompleted = {
+    id: "home-ai-thread",
+    name: "Home AI 06-22",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    updatedAt: 1783143704,
+    status: { type: "completed" },
+  };
+  const detailRuntimeActive = {
+    id: "home-ai-thread",
+    name: "Home AI 06-22",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    updatedAt: 1783143600,
+    status: { type: "active", mobileRuntimeDerived: true },
+    activeTurnId: "turn-active",
+  };
+
+  const merged = service.normalizeThreadSummaryLiveStatus(
+    service.mergeThreadDisplaySummary(appServerCompleted, detailRuntimeActive),
+  );
+
+  assert.equal(merged.status.type, "active");
+  assert.equal(merged.activeTurnId, "turn-active");
+});
+
 test("deploy lane list normalization clears embedded active markers after rollout terminal event", () => {
   const homeAiCwd = "/Users/hermes-dev/HermesMobileDev/app";
   const rolloutPath = "/tmp/rollout-home-ai-deploy.jsonl";
