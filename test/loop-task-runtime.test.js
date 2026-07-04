@@ -143,6 +143,7 @@ test("loop runtime records source-thread requirements locally and dispatches imp
   assert.equal(audit.status, "pending");
   assert.equal(audit.targetThreadId, "product_audit-created");
   assert.equal(cards[0].payload.cardKind, "at_loop_role_slice");
+  assert.ok(cards[0].payload.title.length <= 120);
   assert.equal(cards[0].payload.sourceThreadId, "xcode-thread");
   assert.equal(cards[0].payload.targetThreadId, "implementation-created");
   assert.notEqual(cards[0].payload.sourceThreadId, cards[0].payload.targetThreadId);

@@ -1196,7 +1196,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const payload = {
       sourceThreadId: loop.sourceThreadId,
       targetThreadId,
-      title: `@loop ${roleTitle(role)}: ${loop.objectiveSummary}`,
+      title: boundedText(`@loop ${roleTitle(role)} ${loop.loopId}`, 120),
       summary: `${roleTitle(role)} for ${loop.loopId}`,
       body: bodyMarkdown,
       bodyMarkdown,
