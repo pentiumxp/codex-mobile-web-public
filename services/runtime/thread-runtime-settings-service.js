@@ -11,6 +11,7 @@ function defaultLastString(...values) {
 function createThreadRuntimeSettingsService(dependencies = {}) {
   const fs = dependencies.fs || require("node:fs");
   const latestRuntimeContextByPath = dependencies.latestRuntimeContextByPath || new Map();
+  const latestRuntimeContextByRolloutPath = dependencies.latestRuntimeContextByRolloutPath || new Map();
   const maxRuntimeContextScanBytes = Math.max(1, Number(dependencies.maxRuntimeContextScanBytes || 32 * 1024 * 1024));
   const runtimeContextCacheTtlMs = Math.max(1, Number(dependencies.runtimeContextCacheTtlMs || 30_000));
   const runtimeContextCacheMax = Math.max(1, Number(dependencies.runtimeContextCacheMax || 200));
@@ -62,14 +63,26 @@ function createThreadRuntimeSettingsService(dependencies = {}) {
     return `${normalizeFsPath(rolloutPath)}:${stat.size}:${Math.trunc(Number(stat.mtimeMs || 0))}`;
   }
 
-  function rememberRuntimeContext(key, payload) {
-    latestRuntimeContextByPath.set(key, {
+  function pruneMap(map) {
+    while (map.size > runtimeContextCacheMax) {
+      const firstKey = map.keys().next().value;
+      map.delete(firstKey);
+    }
+  }
+
+  function rememberRuntimeContext(key, payload, metadata = {}) {
+    const entry = {
       cachedAt: Date.now(),
       payload: payload || null,
-    });
-    while (latestRuntimeContextByPath.size > runtimeContextCacheMax) {
-      const firstKey = latestRuntimeContextByPath.keys().next().value;
-      latestRuntimeContextByPath.delete(firstKey);
+      size: Number(metadata.size || 0),
+      mtimeMs: Number(metadata.mtimeMs || 0),
+    };
+    latestRuntimeContextByPath.set(key, entry);
+    pruneMap(latestRuntimeContextByPath);
+    const rolloutPath = normalizeFsPath(metadata.rolloutPath);
+    if (rolloutPath && payload) {
+      latestRuntimeContextByRolloutPath.set(rolloutPath, entry);
+      pruneMap(latestRuntimeContextByRolloutPath);
     }
   }
 
@@ -83,6 +96,14 @@ function createThreadRuntimeSettingsService(dependencies = {}) {
       const cached = latestRuntimeContextByPath.get(cacheKey);
       if (cached && Date.now() - cached.cachedAt <= runtimeContextCacheTtlMs) {
         return cached.payload;
+      }
+      const normalizedRolloutPath = normalizeFsPath(rolloutPath);
+      const pathCached = latestRuntimeContextByRolloutPath.get(normalizedRolloutPath);
+      if (pathCached
+        && pathCached.payload
+        && Date.now() - pathCached.cachedAt <= runtimeContextCacheTtlMs
+        && Number(pathCached.size || 0) <= Number(stat.size || 0)) {
+        return pathCached.payload;
       }
       fd = fs.openSync(rolloutPath, "r");
       const chunkSize = 1024 * 1024;
@@ -103,7 +124,11 @@ function createThreadRuntimeSettingsService(dependencies = {}) {
           if (!line || !line.includes('"type":"turn_context"')) continue;
           const entry = parseJsonLine(line);
           if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
-            rememberRuntimeContext(cacheKey, entry.payload);
+            rememberRuntimeContext(cacheKey, entry.payload, {
+              rolloutPath,
+              size: stat.size,
+              mtimeMs: stat.mtimeMs,
+            });
             return entry.payload;
           }
         }
@@ -111,7 +136,11 @@ function createThreadRuntimeSettingsService(dependencies = {}) {
       if (carry && carry.includes('"type":"turn_context"')) {
         const entry = parseJsonLine(carry);
         if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
-          rememberRuntimeContext(cacheKey, entry.payload);
+          rememberRuntimeContext(cacheKey, entry.payload, {
+            rolloutPath,
+            size: stat.size,
+            mtimeMs: stat.mtimeMs,
+          });
           return entry.payload;
         }
       }
@@ -126,7 +155,11 @@ function createThreadRuntimeSettingsService(dependencies = {}) {
     }
     try {
       const stat = fs.statSync(rolloutPath);
-      rememberRuntimeContext(runtimeContextCacheKey(rolloutPath, stat), null);
+      rememberRuntimeContext(runtimeContextCacheKey(rolloutPath, stat), null, {
+        rolloutPath,
+        size: stat.size,
+        mtimeMs: stat.mtimeMs,
+      });
     } catch (_) {}
     return null;
   }
@@ -184,6 +217,7 @@ function createThreadRuntimeSettingsService(dependencies = {}) {
 
   return {
     latestRuntimeContextByPath,
+    latestRuntimeContextByRolloutPath,
     readLatestTurnContext,
     rememberRuntimeContext,
     resolveThreadRuntimeSettings,

@@ -61,6 +61,33 @@ test("thread runtime settings inherit model and effort from latest rollout conte
   assert.equal(settings.sandboxMode, "read-only");
 });
 
+test("thread runtime settings reuse recent rollout context across active rollout writes", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-runtime-settings-"));
+  const rolloutPath = path.join(tempDir, "rollout.jsonl");
+  fs.writeFileSync(
+    rolloutPath,
+    [
+      JSON.stringify({ type: "turn_context", payload: { model: "gpt-5-codex", reasoning_effort: "high" } }),
+      "",
+    ].join("\n"),
+  );
+  let parseCalls = 0;
+  const service = makeService({
+    readStateDbThread: () => ({ id: "thread-1", path: rolloutPath, model: "gpt-5.5", effort: "medium" }),
+    parseJsonLine: (line) => {
+      parseCalls += 1;
+      return JSON.parse(line);
+    },
+  });
+
+  assert.equal(service.threadRuntimeSettings("thread-1").model, "gpt-5-codex");
+  assert.equal(parseCalls, 1);
+
+  fs.appendFileSync(rolloutPath, `${JSON.stringify({ type: "event_msg", payload: { message: "stream update" } })}\n`);
+  assert.equal(service.threadRuntimeSettings("thread-1").model, "gpt-5-codex");
+  assert.equal(parseCalls, 1);
+});
+
 test("thread runtime settings fall back through state, app-server, and config defaults", async () => {
   let appServerReads = 0;
   const service = makeService({
