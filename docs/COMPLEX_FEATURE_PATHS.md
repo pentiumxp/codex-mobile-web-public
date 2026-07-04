@@ -653,8 +653,12 @@ Implementation path:
    require the same task-card deliverability check used by normal cross-thread
    dispatch. Ordinary product/source main threads with only a workspace cwd are
    valid requirements owners but are not implementation/repair lanes; if a safe
-   lane is unavailable, create one when supported or keep the loop blocked and
-   visible.
+   lane is unavailable, create one only when the source cwd is a real
+   implementable workspace with project markers. A requirements/source thread's
+   cwd must not be blindly treated as the implementation workspace; if the cwd
+   is empty or projectless, fail closed with bounded
+   `at_loop_implementation_workspace_unresolved` metadata and keep the loop
+   visible at requirements revision.
 6. Classify target-thread purpose before dispatch. Public PR, deploy lane,
    audit, task intake, and worker threads are special-purpose lanes; mismatched
    roles must fail closed with bounded routing metadata instead of relying on
@@ -675,6 +679,10 @@ Implementation path:
    to deploy/readback when required; requirements gaps route to requirements;
    implementation/test/privacy gaps route to repair; deploy readback failures
    route to deploy/readback or repair; blocked/rejected classes stop the loop.
+   An implementation/repair role returning `blocked` is not a terminal Loop
+   close: for source-thread-local requirements, record the role return and move
+   the loop back to `requirements_revision` so the requirements owner can
+   revise target/workspace/evidence before the next dispatch.
 10. Duplicate blocked triggers must return a visible blocked loop/status, not an
     `ok=true` no-op. Existing same-thread requirements blockers may be recovered
     by converting requirements to the local role and preparing role lanes. When

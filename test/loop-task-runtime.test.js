@@ -74,6 +74,7 @@ function makeRuntime(options = {}) {
       cards.push({ sourceThreadId, payload });
       return { ok: true, cards: [{ id: `ttc_${cards.length}` }] };
     },
+    isLoopImplementationWorkspace: options.isLoopImplementationWorkspace || (() => true),
   };
   if (options.assertThreadTaskCardTargetDeliverable !== false) {
     dependencies.assertThreadTaskCardTargetDeliverable = options.assertThreadTaskCardTargetDeliverable || (() => true);
@@ -171,6 +172,40 @@ test("loop runtime records source-thread requirements locally and dispatches imp
   assert.equal(cards.length, 1);
 });
 
+test("loop runtime blocks implementation lane creation when source workspace is not implementable", async () => {
+  const { cards, createdThreads, runtime } = makeRuntime({
+    visibleThreads: [{
+      id: "xcode-thread",
+      title: "Xcode",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+    }],
+    isLoopImplementationWorkspace: () => ({
+      ok: false,
+      error: "implementation_workspace_project_markers_missing",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+    }),
+  });
+
+  const result = await runtime.startLoop({
+    sourceThreadId: "xcode-thread",
+    text: "@loop redesign settings",
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "at_loop_implementation_workspace_unresolved");
+  assert.equal(result.loop.status, "blocked");
+  assert.equal(result.loop.currentRole, "requirements");
+  assert.equal(result.loop.nextRoute, "implementation_workspace_unresolved");
+  assert.equal(result.loop.requirementsLocal, true);
+  const implementation = result.loop.roleSlices.find((slice) => slice.role === "implementation");
+  assert.equal(implementation.status, "blocked");
+  assert.equal(implementation.dispatchStatus, "failed");
+  assert.equal(implementation.targetThreadId, "");
+  assert.equal(implementation.routing.error, "at_loop_implementation_workspace_unresolved");
+  assert.equal(cards.length, 0);
+  assert.equal(createdThreads.length, 0);
+});
+
 test("loop runtime treats plugin and Home AI main threads as local requirements owners", async () => {
   for (const source of [
     {
@@ -259,6 +294,38 @@ test("loop runtime correlates terminal returns and routes audit failure to repai
   assert.equal(audit.loop.nextRoute, "repair");
   assert.equal(cards.length, 3);
   assert.equal(cards[2].payload.targetThreadId, "implementation-thread");
+});
+
+test("loop runtime routes blocked implementation returns back to local requirements revision", async () => {
+  const { cards, runtime } = makeRuntime({ name: "implementation-blocked-requirements-revision" });
+  const started = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop redesign settings",
+  });
+  assert.equal(started.loop.currentRole, "implementation");
+  assert.equal(cards.length, 1);
+
+  const returned = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "blocked",
+    summary: "target workspace is empty",
+  });
+
+  assert.equal(returned.ok, true);
+  assert.equal(returned.loop.status, "blocked");
+  assert.equal(returned.loop.currentRole, "requirements");
+  assert.equal(returned.loop.nextRoute, "requirements_revision");
+  assert.equal(cards.length, 1);
+  const requirements = returned.loop.roleSlices.find((slice) => slice.role === "requirements");
+  assert.equal(requirements.status, "blocked");
+  assert.equal(requirements.dispatchStatus, "source_thread_local_role");
+  assert.equal(requirements.blockedReason, "implementation_blocked_requires_requirements_revision");
+  const implementation = returned.loop.roleSlices.find((slice) => slice.role === "implementation");
+  assert.equal(implementation.status, "returned");
+  assert.equal(implementation.returnStatus, "blocked");
+  const audit = returned.loop.roleSlices.find((slice) => slice.role === "product_audit");
+  assert.equal(audit.status, "pending");
+  assert.equal(audit.taskCardId, "");
 });
 
 test("loop runtime propagates bounded audit packet and delta matrix to product audit card", async () => {

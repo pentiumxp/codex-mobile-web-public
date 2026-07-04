@@ -165,6 +165,10 @@ function normalizeCwd(value) {
   return compactOneLine(value).replace(/\\/g, "/").toLowerCase();
 }
 
+function roleRequiresImplementationWorkspace(role) {
+  return role === "implementation" || role === "repair";
+}
+
 function roleThreadField(role) {
   if (role === "product_audit") return "auditThreadId";
   if (role === "deploy_readback") return "deployThreadId";
@@ -516,6 +520,9 @@ function nextRouteForAuditVerdict(verdict) {
 }
 
 function roleAfterTerminal(loop, slice, returnStatus, auditVerdict) {
+  if (returnStatus === "blocked" && (slice.role === "implementation" || slice.role === "repair")) {
+    return { role: "requirements", nextRoute: "requirements_revision", blockedReturnRole: slice.role };
+  }
   if (returnStatus === "blocked") return { loopStatus: "blocked", nextRoute: "blocked_role_return" };
   if (returnStatus === "rejected") return { loopStatus: "rejected", nextRoute: "rejected_role_return" };
   if (slice.role === "requirements") return { role: "implementation", nextRoute: "implementation" };
@@ -557,6 +564,64 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   const clock = dependencies.clock || (() => Date.now());
 
   let stateCache = null;
+
+  function defaultImplementationWorkspaceCheck(cwd) {
+    const root = compactOneLine(cwd);
+    if (!root) return { ok: false, error: "implementation_workspace_missing" };
+    let stat;
+    try {
+      stat = fs.statSync(root);
+    } catch (_) {
+      return { ok: false, error: "implementation_workspace_not_found", cwd: root };
+    }
+    if (!stat || !stat.isDirectory()) {
+      return { ok: false, error: "implementation_workspace_not_directory", cwd: root };
+    }
+    let entries;
+    try {
+      entries = fs.readdirSync(root);
+    } catch (_) {
+      return { ok: false, error: "implementation_workspace_unreadable", cwd: root };
+    }
+    const entrySet = new Set(entries);
+    const markerFiles = [
+      ".git",
+      "package.json",
+      "pnpm-lock.yaml",
+      "yarn.lock",
+      "package-lock.json",
+      "Cargo.toml",
+      "go.mod",
+      "pyproject.toml",
+      "requirements.txt",
+      "Gemfile",
+      "Makefile",
+      "CMakeLists.txt",
+      "Package.swift",
+      "server.js",
+    ];
+    if (markerFiles.some((name) => entrySet.has(name))) {
+      return { ok: true, cwd: root, reason: "workspace_marker" };
+    }
+    if (entries.some((name) => /\.(?:xcodeproj|xcworkspace)$/i.test(name))) {
+      return { ok: true, cwd: root, reason: "xcode_project_marker" };
+    }
+    if (entries.some((name) => ["src", "Sources", "app", "public"].includes(name))) {
+      return { ok: true, cwd: root, reason: "source_directory_marker" };
+    }
+    return { ok: false, error: "implementation_workspace_project_markers_missing", cwd: root };
+  }
+
+  function implementationWorkspaceCheck(cwd, context = {}) {
+    if (typeof dependencies.isLoopImplementationWorkspace === "function") {
+      const result = dependencies.isLoopImplementationWorkspace(cwd, context);
+      if (result && typeof result === "object") return Object.assign({ ok: result.ok !== false }, result);
+      return result === true
+        ? { ok: true, cwd: compactOneLine(cwd), reason: "custom_validator" }
+        : { ok: false, error: "implementation_workspace_unresolved", cwd: compactOneLine(cwd) };
+    }
+    return defaultImplementationWorkspaceCheck(cwd);
+  }
 
   function loadState() {
     if (stateCache) return stateCache;
@@ -661,6 +726,21 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         role,
         roleLaneRequired: true,
       });
+    }
+    if (roleRequiresImplementationWorkspace(role)) {
+      const workspace = implementationWorkspaceCheck(thread && (thread.cwd || thread.workspace || thread.targetWorkspace), {
+        role,
+        loop,
+        thread,
+      });
+      if (!workspace.ok) {
+        return Object.assign({}, loopCheck, {
+          ok: false,
+          error: "at_loop_implementation_workspace_unresolved",
+          role,
+          workspace,
+        });
+      }
     }
     const deliverability = taskCardDeliverabilityCheck(loop, role, thread);
     if (deliverability.ok) return Object.assign({}, loopCheck, { deliverability });
@@ -989,6 +1069,27 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return { ok: true, local: true, loop: publicLoop(loop), slice: publicSlice(slice) };
   }
 
+  function markLocalRequirementsRevision(loop, reason = "requirements_revision") {
+    const timestamp = nowIso(clock);
+    const slice = findSlice(loop, { role: "requirements", iteration: loop.iteration });
+    if (slice) {
+      slice.status = "blocked";
+      slice.dispatchStatus = SOURCE_THREAD_LOCAL_REQUIREMENTS;
+      slice.dispatchMode = SOURCE_THREAD_LOCAL_REQUIREMENTS;
+      slice.taskCardDispatch = false;
+      slice.blockedReason = compactOneLine(reason);
+      slice.targetThreadId = loop.requirementsThreadId || loop.sourceThreadId;
+      slice.updatedAt = timestamp;
+    }
+    loop.status = "blocked";
+    loop.currentRole = "requirements";
+    loop.nextRoute = "requirements_revision";
+    loop.blockedReason = compactOneLine(reason);
+    loop.updatedAt = timestamp;
+    saveState();
+    return { ok: true, loop: publicLoop(loop), slice: slice ? publicSlice(slice) : undefined };
+  }
+
   function scoreRoleTarget(loop, role, thread) {
     const id = threadIdOf(thread);
     if (!id || sameThreadId(id, loop.sourceThreadId)) return -1;
@@ -1041,6 +1142,22 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const source = sourceThread(loop);
     const cwd = compactOneLine(source.cwd || source.workspace || source.targetWorkspace);
     if (!cwd) return null;
+    if (roleRequiresImplementationWorkspace(role)) {
+      const workspace = implementationWorkspaceCheck(cwd, { role, loop, thread: source, create: true });
+      if (!workspace.ok) {
+        const err = new Error("at_loop_implementation_workspace_unresolved");
+        err.code = "at_loop_implementation_workspace_unresolved";
+        err.routing = {
+          ok: false,
+          error: "at_loop_implementation_workspace_unresolved",
+          role,
+          sourceThreadId: loop && loop.sourceThreadId || "",
+          sourceCwd: cwd,
+          workspace,
+        };
+        throw err;
+      }
+    }
     const thread = await dependencies.createLoopRoleThread({
       loop: publicLoop(loop),
       role,
@@ -1112,9 +1229,14 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         target = await createRoleThread(loop, role);
         created = Boolean(target);
       } catch (err) {
-        return setLoopBlocked(loop, slice, "at_loop_role_lane_create_failed", {
+        const code = compactOneLine(err && err.code) || "at_loop_role_lane_create_failed";
+        return setLoopBlocked(loop, slice, code, {
           dispatchStatus: "failed",
-          message: err && err.message || err || "at_loop_role_lane_create_failed",
+          message: err && err.message || err || code,
+          routing: err && err.routing || null,
+          nextRoute: code === "at_loop_implementation_workspace_unresolved"
+            ? "implementation_workspace_unresolved"
+            : undefined,
         });
       }
     }
@@ -1438,6 +1560,12 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     }
     loop.updatedAt = timestamp;
     saveState();
+    if (route.role === "requirements" && loop.requirementsLocal) {
+      const reason = route.nextRoute === "requirements_revision"
+        ? `${slice.role}_${returnStatus}_requires_requirements_revision`
+        : route.nextRoute || "requirements_revision";
+      return markLocalRequirementsRevision(loop, reason);
+    }
     const dispatch = await dispatchRole(loop, route.role);
     return Object.assign({ ok: dispatch.ok !== false }, dispatch, { loop: publicLoop(loop) });
   }
