@@ -666,3 +666,48 @@ The previous full handoff was archived and should be opened only when old proven
 - Not deployed yet and no return cards have been sent yet. No raw secrets,
   access keys, cookies, endpoint bodies, private thread bodies, provider
   payloads, DB rows, screenshots, raw auth URLs, or long logs were exposed.
+
+## 2026-07-04T23:35:00+08:00 - Orphaned receipts submitted and message-submit timing aliases committed
+
+- Home AI sent `ttc_aabe26409e8caf766c` requesting replacement closure
+  evidence for cleaned original task cards:
+  `ttc_622c96b5e25347aaa3` and `ttc_3212b56b20e1706387`.
+- Direct `return_to_source` for `ttc_622c96b5e25347aaa3` returned bounded
+  no-op `task_card_not_found`; MCP return produced the same result. Production
+  task-card store only had bounded reverse-return metadata showing prior
+  `partially_completed` records, not enough original-card state for normal
+  terminal attachment.
+- Created replacement source-visible receipts in Home AI 06-22:
+  - `ttc_b4345e134762ea6bf7` for original lifecycle API card
+    `ttc_622c96b5e25347aaa3`;
+  - `ttc_f7775a30238bf3b8a4` for original compact lane title card
+    `ttc_3212b56b20e1706387`.
+- Returned `ttc_aabe26409e8caf766c` completed via reply card
+  `ttc_54193ba7fd3e47415f`.
+- Home AI returned terminal receipt acknowledgements:
+  - `ttc_15be6a51104a1b1bdf` accepted lifecycle replacement receipt;
+  - `ttc_086f5ee8205cb5e51e` accepted compact-title replacement receipt.
+  Both explicitly said not to send acknowledgement returns.
+- Additional source commit `7483f4d7`
+  (`fix: add explicit message submit timing fields`) adds production-friendly
+  message-submit timing aliases: `readMessageMs`, `threadResumeMs`,
+  `notifyLocalTurnStartedMs`, and `sendJsonMs`, while preserving existing
+  timing aliases.
+- Validation for `7483f4d7` passed:
+  `node --test test/thread-message-secret-ref-route.test.js
+  test/new-thread-route.test.js test/server-http-runtime-service.test.js`
+  (`38` tests), plus `npm run check` and `git diff --check`.
+- Deployment request to `Codex Mobile Deploy Lane` was attempted with source
+  ref `7483f4d79b93`, but both dynamic tool and MCP delegation returned
+  `deploy_lane_required` / `deploy_lane_missing`, even though
+  `list_threads(search="Codex Mobile Deploy Lane")` showed the configured lane
+  visible and `idle`. This is a deploy-lane routing/policy blocker; production
+  has not been updated with `7483f4d7` or `509b50de` yet.
+- Follow-up gap remains: task-card cleanup should preserve return-routing
+  tombstones/stubs for recently delegated or non-terminal cards, and
+  `return_to_source` should attach via the stub or return a bounded
+  `task_card_cleaned_return_stub_available` style response.
+- Privacy boundary respected: no raw secrets, access keys, cookies, launch
+  tokens, private thread bodies, task-card bodies, endpoint bodies, provider
+  payloads, screenshots, DB rows, raw auth URLs, password paths, or long logs
+  were exposed.
