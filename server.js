@@ -245,6 +245,7 @@ const {
   MOBILE_WEB_LOG_FILE,
   MOBILE_WEB_LOG_MAX_BYTES,
   MOBILE_WEB_LOG_KEEP_BYTES,
+  MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS,
   MAX_TEXT_CHARS,
   MAX_JSON_BODY_BYTES,
   MAX_START_THREAD_DEVELOPER_INSTRUCTIONS_CHARS,
@@ -336,6 +337,7 @@ const serverHttpRuntimeService = createServerHttpRuntimeService({
   getMobileWebLogFile: () => MOBILE_WEB_LOG_FILE,
   getMobileWebLogMaxBytes: () => MOBILE_WEB_LOG_MAX_BYTES,
   getMobileWebLogKeepBytes: () => MOBILE_WEB_LOG_KEEP_BYTES,
+  getMobileWebLogEventMinIntervalMs: () => MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS,
   getMaxStructuredChars: () => MAX_STRUCTURED_CHARS,
   getMaxJsonBodyBytes: () => MAX_JSON_BODY_BYTES,
 });

@@ -285,6 +285,14 @@ The standalone `scripts/codex-mobile-mcp-server.js` also exposes
 same MCP connector they use for `return_to_source` without reading or printing
 the access key.
 
+The execution Watchdog is a last-resort recovery path, not the normal progress
+mechanism. Fresh heartbeat/progress timestamps suppress stale recovery, and a
+successful Watchdog continuation pauses further automatic Watchdog resumes for
+that card while leaving the card active and returnable. The default stale
+window is 30 minutes, and automatic Watchdog resume is capped per execution
+lease so an alive but non-terminal thread cannot be repeatedly refreshed by the
+Watchdog.
+
 When the runtime `跨工作区委派` switch is enabled, server-side `thread/start` and
 `turn/start` requests also receive a Codex app-server dynamic tool:
 

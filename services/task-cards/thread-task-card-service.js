@@ -29,8 +29,9 @@ const EXECUTION_LEASE_CANCELLED = "cancelled";
 const EXECUTION_LEASE_COMPLETED = "completed";
 const EXECUTION_LEASE_BLOCKED = "blocked";
 const MAX_LEASE_TURN_IDS = 24;
-const DEFAULT_EXECUTION_WATCHDOG_STALE_MS = 5 * 60 * 1000;
+const DEFAULT_EXECUTION_WATCHDOG_STALE_MS = 30 * 60 * 1000;
 const MAX_EXECUTION_WATCHDOG_BATCH = 8;
+const DEFAULT_EXECUTION_WATCHDOG_MAX_RESUME_COUNT = 1;
 const STORE_LOCK_TIMEOUT_MS = 10_000;
 const STORE_LOCK_STALE_MS = 30_000;
 const STORE_LOCK_POLL_MS = 25;
@@ -224,6 +225,27 @@ function saveStore(file, data) {
     }
     throw err;
   }
+}
+
+function storeFileSignature(file) {
+  try {
+    const stat = fs.statSync(file);
+    if (!stat.isFile()) return null;
+    return {
+      mtimeMs: Number(stat.mtimeMs || 0),
+      size: Number(stat.size || 0),
+    };
+  } catch (err) {
+    if (err && err.code === "ENOENT") return { missing: true, mtimeMs: 0, size: 0 };
+    return null;
+  }
+}
+
+function sameStoreFileSignature(left, right) {
+  if (!left || !right) return false;
+  return Boolean(left.missing) === Boolean(right.missing)
+    && Number(left.mtimeMs || 0) === Number(right.mtimeMs || 0)
+    && Number(left.size || 0) === Number(right.size || 0);
 }
 
 async function acquireStoreLock(file) {
@@ -577,6 +599,8 @@ function publicExecutionLease(lease) {
     lastWatchdogAttemptAt: boundedMetadataString(lease.lastWatchdogAttemptAt, 80),
     lastWatchdogAttemptAgeMs: watchdogAttemptAgeMs,
     lastWatchdogResumeReason: boundedMetadataString(lease.lastWatchdogResumeReason, 120),
+    watchdogAutoResumePausedAt: boundedMetadataString(lease.watchdogAutoResumePausedAt, 80),
+    watchdogAutoResumePausedReason: boundedMetadataString(lease.watchdogAutoResumePausedReason, 120),
     lastResumeFailedAt: boundedMetadataString(lease.lastResumeFailedAt, 80),
     lastResumeError: boundedMetadataString(lease.lastResumeError, 200),
   };
@@ -1235,6 +1259,22 @@ function createThreadTaskCardService(options = {}) {
     ? options.idGenerator
     : () => `ttc_${crypto.randomBytes(9).toString("hex")}`;
   let writeQueue = Promise.resolve();
+  let cachedStore = null;
+  let cachedStoreSignature = null;
+
+  function refreshCachedStore(store) {
+    cachedStore = store;
+    cachedStoreSignature = storeFileSignature(storageFile);
+  }
+
+  function readStore() {
+    const signature = storeFileSignature(storageFile);
+    if (cachedStore && sameStoreFileSignature(signature, cachedStoreSignature)) return cachedStore;
+    const store = loadStore(storageFile);
+    cachedStore = store;
+    cachedStoreSignature = signature || storeFileSignature(storageFile);
+    return store;
+  }
 
   async function withStore(mutator) {
     let release;
@@ -1248,6 +1288,7 @@ function createThreadTaskCardService(options = {}) {
       const store = loadStore(storageFile);
       const result = await mutator(store);
       saveStore(storageFile, store);
+      refreshCachedStore(store);
       return result;
     } finally {
       if (releaseStoreLock) releaseStoreLock();
@@ -1635,17 +1676,35 @@ function createThreadTaskCardService(options = {}) {
   function listForThread(threadId) {
     const id = stringValue(threadId);
     if (!id) return [];
-    const store = loadStore(storageFile);
+    const store = readStore();
     return sortCards(store.cards)
       .filter((card) => Boolean(cardForThread(card, id)))
       .slice(0, recentLimit)
       .map((card) => summarizePublicCard(publicCard(card, id)));
   }
 
+  function summaryForThread(threadId) {
+    const id = stringValue(threadId);
+    if (!id) {
+      return {
+        cards: [],
+        counts: countsForThreadFromStore(defaultStore(), ""),
+      };
+    }
+    const store = readStore();
+    return {
+      cards: sortCards(store.cards)
+        .filter((card) => Boolean(cardForThread(card, id)))
+        .slice(0, recentLimit)
+        .map((card) => summarizePublicCard(publicCard(card, id))),
+      counts: countsForThreadFromStore(store, id),
+    };
+  }
+
   function get(cardId, threadId = "") {
     const id = stringValue(cardId);
     if (!id) throw errorWithStatus("task_card_id_required");
-    const store = loadStore(storageFile);
+    const store = readStore();
     const card = findById(store, id);
     if (!card) throw errorWithStatus("task_card_not_found", 404);
     return publicCard(card, threadId || card.source.threadId || card.target.threadId || "");
@@ -1969,6 +2028,12 @@ function createThreadTaskCardService(options = {}) {
     return Math.max(0, parsed);
   }
 
+  function normalizedExecutionWatchdogMaxResumeCount(value) {
+    const parsed = Math.trunc(Number(value));
+    if (!Number.isFinite(parsed)) return DEFAULT_EXECUTION_WATCHDOG_MAX_RESUME_COUNT;
+    return Math.max(0, parsed);
+  }
+
   function executionLeaseReferenceTimeMs(card) {
     const lease = card && card.executionLease && typeof card.executionLease === "object" ? card.executionLease : {};
     return timestampMs(
@@ -1994,6 +2059,7 @@ function createThreadTaskCardService(options = {}) {
   function nextStaleExecutionLeaseCard(store, selection = {}) {
     const nowMs = Number.isFinite(Number(selection.nowMs)) ? Number(selection.nowMs) : Date.now();
     const staleAfterMs = normalizedExecutionWatchdogStaleMs(selection.staleAfterMs);
+    const maxResumeCount = normalizedExecutionWatchdogMaxResumeCount(selection.maxResumeCount);
     const cardId = stringValue(selection.cardId);
     const targetThreadId = stringValue(selection.targetThreadId);
     const candidates = safeArray(store && store.cards)
@@ -2005,6 +2071,8 @@ function createThreadTaskCardService(options = {}) {
         const lease = card.executionLease && typeof card.executionLease === "object" ? card.executionLease : null;
         if (!lease || lease.resumeRequired !== true) return false;
         if (stringValue(lease.status) !== EXECUTION_LEASE_ACTIVE) return false;
+        if (stringValue(lease.watchdogAutoResumePausedAt)) return false;
+        if (maxResumeCount > 0 && Math.max(0, Math.trunc(Number(lease.resumeCount || 0)) || 0) >= maxResumeCount) return false;
         const attemptMs = executionLeaseRecentWatchdogAttemptMs(card);
         if (attemptMs && nowMs - attemptMs < staleAfterMs) return false;
         const referenceMs = executionLeaseReferenceTimeMs(card);
@@ -2171,6 +2239,7 @@ function createThreadTaskCardService(options = {}) {
           cardId: resumeOptions.cardId,
           targetThreadId: resumeOptions.targetThreadId,
           staleAfterMs,
+          maxResumeCount: resumeOptions.maxResumeCount,
           nowMs,
         });
         if (!card) return null;
@@ -2258,12 +2327,16 @@ function createThreadTaskCardService(options = {}) {
           resumeCount: Math.max(0, Math.trunc(Number(card.executionLease && card.executionLease.resumeCount || 0)) || 0) + 1,
           resumedAt: timestamp,
           watchdogStaleAfterMs: normalizedExecutionWatchdogStaleMs(resumeOptions.staleAfterMs),
+          watchdogAutoResumePausedAt: timestamp,
+          watchdogAutoResumePausedReason: "watchdog_resume_attempted",
           resumeForTurnId: "",
           lastResumeError: "",
         });
         card.audit = Object.assign({}, card.audit || {}, {
           executionWatchdogResumedAt: timestamp,
           executionWatchdogLastTurnId: nextTurnId,
+          executionWatchdogAutoResumePausedAt: timestamp,
+          executionWatchdogAutoResumePausedReason: "watchdog_resume_attempted",
         });
         card.updatedAt = timestamp;
         if (nextTurnId) card.lastContinuationTurnId = nextTurnId;
@@ -2449,12 +2522,12 @@ function createThreadTaskCardService(options = {}) {
   }
 
   function pendingCountForThread(threadId) {
-    const store = loadStore(storageFile);
+    const store = readStore();
     return countsForThreadFromStore(store, threadId).pendingTotal;
   }
 
   function pendingCountsForThread(threadId) {
-    const store = loadStore(storageFile);
+    const store = readStore();
     return countsForThreadFromStore(store, threadId);
   }
 
@@ -2462,7 +2535,7 @@ function createThreadTaskCardService(options = {}) {
     const ids = [...new Set(safeArray(threadIds).map(stringValue).filter(Boolean))];
     const counts = new Map();
     if (!ids.length) return counts;
-    const store = loadStore(storageFile);
+    const store = readStore();
     for (const id of ids) counts.set(id, countsForThreadFromStore(store, id));
     return counts;
   }
@@ -2487,6 +2560,7 @@ function createThreadTaskCardService(options = {}) {
     reply,
     resumeStaleExecutionLeases,
     revoke,
+    summaryForThread,
   };
 }
 

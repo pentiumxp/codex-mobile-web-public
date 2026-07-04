@@ -188,6 +188,46 @@ test("create persists a pending task card and lists it for source and target thr
   });
 });
 
+test("task-card read helpers reuse unchanged store snapshots", async () => {
+  const storageFile = tempFile("cached-cards.json");
+  let readCount = 0;
+  const originalReadFileSync = fs.readFileSync;
+  const service = createThreadTaskCardService({ storageFile });
+  const card = await service.create({
+    sourceWorkspaceId: "finance",
+    sourceThreadId: "thread-src",
+    sourceTurnId: "turn-src",
+    sourceThreadTitle: "Finance close",
+    targetWorkspaceId: "ops",
+    targetThreadId: "thread-dst",
+    idempotencyKey: "finance:cached-read",
+    format: "markdown",
+    title: "Need verification",
+    summary: "Please verify the mapping.",
+    body: "Detailed request.",
+  });
+
+  fs.readFileSync = function patchedReadFileSync(file, ...args) {
+    if (file === storageFile) readCount += 1;
+    return originalReadFileSync.call(this, file, ...args);
+  };
+  try {
+    assert.equal(service.listForThread("thread-src").length, 1);
+    assert.equal(service.pendingCountsForThread("thread-src").pendingOutgoing, 1);
+    assert.equal(service.get(card.id, "thread-src").id, card.id);
+    assert.equal(service.summaryForThread("thread-src").counts.pendingOutgoing, 1);
+    assert.equal(readCount, 0);
+
+    const store = JSON.parse(originalReadFileSync(storageFile, "utf8"));
+    store.cards[0].message.summary = "Updated externally.";
+    fs.writeFileSync(storageFile, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+    assert.equal(service.summaryForThread("thread-src").cards[0].message.summary, "Updated externally.");
+    assert.equal(readCount, 1);
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+});
+
 test("task-card secretRef metadata is stored internally but public and injected surfaces stay redacted", async () => {
   const storageFile = tempFile("cards.json");
   const service = createThreadTaskCardService({ storageFile });
@@ -639,10 +679,101 @@ test("execution watchdog resumes stale active task-card leases without duplicati
   assert.equal(stored.executionLease.lastHeartbeatAt, heartbeatAt);
   assert.equal(stored.executionLease.lastHeartbeatStatus, "testing");
   assert.equal(stored.executionLease.watchdogStaleAfterMs, 5 * 60 * 1000);
+  assert.equal(stored.executionLease.watchdogAutoResumePausedAt, new Date(now).toISOString());
+  assert.equal(stored.executionLease.watchdogAutoResumePausedReason, "watchdog_resume_attempted");
 
   const duplicate = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000 });
   assert.equal(duplicate.inspected, 0);
   assert.equal(executions.length, 2);
+
+  now += 6 * 60 * 1000;
+  const laterDuplicate = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000 });
+  assert.equal(laterDuplicate.inspected, 0);
+  assert.equal(executions.length, 2);
+});
+
+test("execution watchdog treats queued heartbeat as progress and suppresses stale resume", async () => {
+  let now = Date.parse("2026-07-04T02:16:31.000Z");
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    now: () => now,
+    executeApprovedCard: async (card) => {
+      executions.push({ card });
+      return { threadId: card.target.threadId, turnId: `turn-exec-${executions.length}` };
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home-ai",
+    targetWorkspaceId: "codex-mobile",
+    targetThreadId: "thread-codex-mobile",
+    idempotencyKey: "watchdog:queued-heartbeat",
+    format: "markdown",
+    title: "Queued work",
+    summary: "Report queued progress.",
+    body: "Private queued work detail.",
+    workflowMode: "autonomous",
+    workflowId: "workflow-queued",
+  });
+  await service.approveFromSource(created.id, "thread-home-ai");
+  now += 4 * 60 * 1000;
+  const heartbeat = await service.heartbeatExecution(created.id, "thread-codex-mobile", {
+    status: "queued",
+    source: "unit-test",
+    turnId: "turn-exec-1",
+  });
+  assert.equal(heartbeat.ok, true);
+  assert.equal(heartbeat.heartbeat.status, "queued");
+
+  now += 4 * 60 * 1000;
+  const fresh = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000 });
+  assert.equal(fresh.inspected, 0);
+  assert.equal(executions.length, 1);
+  const stored = service.get(created.id, "thread-codex-mobile");
+  assert.equal(stored.executionLease.lastHeartbeatStatus, "queued");
+  assert.equal(stored.executionLease.resumeRequired, true);
+});
+
+test("execution watchdog does not repeatedly resume high-pressure stale leases", async () => {
+  let now = Date.parse("2026-07-04T02:16:31.000Z");
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    now: () => now,
+    executeApprovedCard: async (card) => {
+      executions.push({ card });
+      return { threadId: card.target.threadId, turnId: `turn-exec-${executions.length}` };
+    },
+  });
+  for (const suffix of ["a", "b"]) {
+    const created = await service.create({
+      sourceWorkspaceId: "home-ai",
+      sourceThreadId: "thread-home-ai",
+      targetWorkspaceId: "codex-mobile",
+      targetThreadId: `thread-codex-mobile-${suffix}`,
+      idempotencyKey: `watchdog:pressure-${suffix}`,
+      format: "markdown",
+      title: `Pressure ${suffix}`,
+      summary: "Bounded pressure smoke.",
+      body: "Private pressure work detail.",
+      workflowMode: "autonomous",
+      workflowId: `workflow-pressure-${suffix}`,
+    });
+    await service.approveFromSource(created.id, "thread-home-ai");
+  }
+
+  now += 6 * 60 * 1000;
+  const first = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000, limit: 2 });
+  assert.equal(first.inspected, 2);
+  assert.equal(first.resumed, 2);
+  assert.equal(executions.length, 4);
+
+  now += 6 * 60 * 1000;
+  const second = await service.resumeStaleExecutionLeases({ staleAfterMs: 5 * 60 * 1000, limit: 2 });
+  assert.equal(second.inspected, 0);
+  assert.equal(second.resumed, 0);
+  assert.equal(executions.length, 4);
 });
 
 test("execution watchdog marks resume failures as bounded blocked leases", async () => {

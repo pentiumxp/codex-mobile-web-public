@@ -103,9 +103,17 @@ function createServerRuntimeConfigService(dependencies = {}) {
       MAX_THREAD_TURNS,
       boundedNumber(env.CODEX_MOBILE_FULL_THREAD_TURNS || "10", 10, -Infinity, 200),
     );
-    const MOBILE_WEB_LOG_MAX_BYTES = Math.max(
-      1024 * 1024,
-      Number(env.CODEX_MOBILE_WEB_LOG_MAX_BYTES || String(20 * 1024 * 1024)),
+    const MOBILE_WEB_LOG_MAX_BYTES = boundedNumber(
+      env.CODEX_MOBILE_WEB_LOG_MAX_BYTES || String(512 * 1024),
+      512 * 1024,
+      64 * 1024,
+      50 * 1024 * 1024,
+    );
+    const MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS = boundedNumber(
+      env.CODEX_MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS || "30000",
+      30000,
+      0,
+      60 * 1000,
     );
     const THREAD_LIST_FALLBACK_PREWARM_LIMIT = boundedNumber(
       env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT || "40",
@@ -263,8 +271,8 @@ function createServerRuntimeConfigService(dependencies = {}) {
         60 * 60 * 1000,
       ),
       THREAD_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS: boundedNumber(
-        env.CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS || String(5 * 60 * 1000),
-        5 * 60 * 1000,
+        env.CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS || String(30 * 60 * 1000),
+        30 * 60 * 1000,
         30 * 1000,
         24 * 60 * 60 * 1000,
       ),
@@ -302,13 +310,13 @@ function createServerRuntimeConfigService(dependencies = {}) {
         : [],
       MOBILE_WEB_LOG_FILE: env.CODEX_MOBILE_WEB_LOG_FILE || path.join(RUNTIME_ROOT, "logs", "mobile-web.log"),
       MOBILE_WEB_LOG_MAX_BYTES,
-      MOBILE_WEB_LOG_KEEP_BYTES: Math.max(
-        256 * 1024,
-        Math.min(
-          MOBILE_WEB_LOG_MAX_BYTES,
-          Number(env.CODEX_MOBILE_WEB_LOG_KEEP_BYTES || String(5 * 1024 * 1024)),
-        ),
+      MOBILE_WEB_LOG_KEEP_BYTES: boundedNumber(
+        env.CODEX_MOBILE_WEB_LOG_KEEP_BYTES || String(128 * 1024),
+        128 * 1024,
+        16 * 1024,
+        MOBILE_WEB_LOG_MAX_BYTES,
       ),
+      MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS,
       MAX_TEXT_CHARS: 60000,
       MAX_JSON_BODY_BYTES: 2_000_000,
       MAX_START_THREAD_DEVELOPER_INSTRUCTIONS_CHARS: 120000,

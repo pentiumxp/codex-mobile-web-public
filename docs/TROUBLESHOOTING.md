@@ -1742,6 +1742,17 @@ return, or the title grows into `Auto return: Auto return: ...`, restart Mobile
 Web into a build containing the terminal-return guard in
 `adapters/thread-task-card-service.js`.
 
+If approved task-card lanes receive repeated `[Codex Mobile task-card watchdog
+continuation]` turns, inspect the original cards' `executionLease` metadata in
+the task-card store without printing card bodies. Repeatedly increasing
+`resumeCount` with `lastWatchdogResumeReason=stale_heartbeat` means the
+execution Watchdog is being used as a progress mechanism. Current builds keep
+the Watchdog as a last-resort path: fresh `task_card_heartbeat` metadata
+suppresses stale recovery, the default stale window is 30 minutes, and one
+successful Watchdog continuation marks
+`watchdogAutoResumePausedReason=watchdog_resume_attempted` so the same lease is
+not refreshed repeatedly while the target thread remains alive and non-terminal.
+
 If source-side draft `Approve` appears to hang, check whether the card was
 already created in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
 Current draft approval uses a stable key derived from the source thread and

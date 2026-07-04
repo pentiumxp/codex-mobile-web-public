@@ -79,6 +79,49 @@ test("thread-detail state bridge attaches task cards, goals, and pending server 
   ]);
 });
 
+test("thread-detail state bridge prefers task-card combined summary to avoid duplicate store reads", () => {
+  let summaryCalls = 0;
+  let listCalls = 0;
+  let countCalls = 0;
+  const service = createThreadDetailStateBridgeService({
+    threadTaskCardService: {
+      summaryForThread(threadId) {
+        summaryCalls += 1;
+        return {
+          cards: [{ id: `summary-${threadId}` }],
+          counts: {
+            pendingTotal: 4,
+            pendingIncoming: 3,
+            pendingOutgoing: 1,
+          },
+        };
+      },
+      listForThread() {
+        listCalls += 1;
+        return [];
+      },
+      pendingCountsForThread() {
+        countCalls += 1;
+        return {
+          pendingTotal: 0,
+          pendingIncoming: 0,
+          pendingOutgoing: 0,
+        };
+      },
+    },
+  });
+
+  const result = service.attachThreadTaskCardsToResult({ thread: { id: "thread-1" } });
+
+  assert.equal(summaryCalls, 1);
+  assert.equal(listCalls, 0);
+  assert.equal(countCalls, 0);
+  assert.deepEqual(result.thread.threadTaskCards, [{ id: "summary-thread-1" }]);
+  assert.equal(result.thread.pendingTaskCardCount, 4);
+  assert.equal(result.thread.pendingIncomingTaskCardCount, 3);
+  assert.equal(result.thread.pendingOutgoingTaskCardCount, 1);
+});
+
 test("thread-detail state bridge adapter preserves canonical exports", () => {
   assert.equal(adapter.createThreadDetailStateBridgeService, createThreadDetailStateBridgeService);
   assert.equal(adapter.stableTextHash, stableTextHash);

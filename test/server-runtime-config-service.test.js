@@ -56,8 +56,11 @@ test("server runtime config resolves default runtime paths and bounded ids", () 
   assert.equal(config.HOME_AI_SECRET_REF_CONSUME_PATH, "/api/secret-refs/consume");
   assert.equal(config.HOME_AI_SECRET_REF_TIMEOUT_MS, 12000);
   assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS, 60000);
-  assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS, 5 * 60 * 1000);
+  assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS, 30 * 60 * 1000);
   assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_LIMIT, 2);
+  assert.equal(config.MOBILE_WEB_LOG_MAX_BYTES, 512 * 1024);
+  assert.equal(config.MOBILE_WEB_LOG_KEEP_BYTES, 128 * 1024);
+  assert.equal(config.MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS, 30000);
 });
 
 test("server runtime config applies env overrides and clamps hot-path limits", () => {
@@ -81,6 +84,9 @@ test("server runtime config applies env overrides and clamps hot-path limits", (
       CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS: "0",
       CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS: "10000",
       CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_LIMIT: "99",
+      CODEX_MOBILE_WEB_LOG_MAX_BYTES: "32768",
+      CODEX_MOBILE_WEB_LOG_KEEP_BYTES: "8192",
+      CODEX_MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS: "90000",
     },
     codexHome: "/codex/home",
   });
@@ -104,6 +110,9 @@ test("server runtime config applies env overrides and clamps hot-path limits", (
   assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS, 0);
   assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS, 30000);
   assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_LIMIT, 8);
+  assert.equal(config.MOBILE_WEB_LOG_MAX_BYTES, 64 * 1024);
+  assert.equal(config.MOBILE_WEB_LOG_KEEP_BYTES, 16 * 1024);
+  assert.equal(config.MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS, 60 * 1000);
 });
 
 test("server runtime config keeps duplicate desktop global state files unique", () => {

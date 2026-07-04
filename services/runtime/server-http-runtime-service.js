@@ -31,6 +31,9 @@ function createServerHttpRuntimeService(dependencies = {}) {
   const getMobileWebLogKeepBytes = typeof dependencies.getMobileWebLogKeepBytes === "function"
     ? dependencies.getMobileWebLogKeepBytes
     : () => dependencies.mobileWebLogKeepBytes;
+  const getMobileWebLogEventMinIntervalMs = typeof dependencies.getMobileWebLogEventMinIntervalMs === "function"
+    ? dependencies.getMobileWebLogEventMinIntervalMs
+    : () => dependencies.mobileWebLogEventMinIntervalMs;
   const getMaxStructuredChars = typeof dependencies.getMaxStructuredChars === "function"
     ? dependencies.getMaxStructuredChars
     : () => dependencies.maxStructuredChars;
@@ -40,8 +43,10 @@ function createServerHttpRuntimeService(dependencies = {}) {
   const boundedProfilePreflightDetail = typeof dependencies.boundedProfilePreflightDetail === "function"
     ? dependencies.boundedProfilePreflightDetail
     : () => "";
+  const nowMs = typeof dependencies.nowMs === "function" ? dependencies.nowMs : () => Date.now();
 
   let lastLogTrimAt = 0;
+  const runtimeLogEventState = new Map();
 
   function readCodexConfigDefaults() {
     const configPath = path.join(String(getCodexHome() || ""), "config.toml");
@@ -286,10 +291,11 @@ function createServerHttpRuntimeService(dependencies = {}) {
     return safeDetails;
   }
 
-  function appendRuntimeLogLine(line) {
+  function appendRuntimeLogLine(line, options = {}) {
+    const suppressConsoleFallback = Boolean(options && options.suppressConsoleFallback);
     const filePath = String(valueFromGetter(getMobileWebLogFile, "") || "").trim();
     if (!filePath) {
-      console.log(line);
+      if (!suppressConsoleFallback) console.log(line);
       return false;
     }
     try {
@@ -298,35 +304,57 @@ function createServerHttpRuntimeService(dependencies = {}) {
       fs.appendFileSync(filePath, `${line}\n`, "utf8");
       return true;
     } catch (_) {
-      console.log(line);
+      if (!suppressConsoleFallback) console.log(line);
       return false;
     }
   }
 
+  function runtimeLogEventMinIntervalMs() {
+    const parsed = Number(valueFromGetter(getMobileWebLogEventMinIntervalMs, 30000));
+    if (!Number.isFinite(parsed)) return 30000;
+    return Math.max(0, Math.min(60_000, parsed));
+  }
+
+  function appendRuntimeEventLine(category, event, details = {}) {
+    const minIntervalMs = runtimeLogEventMinIntervalMs();
+    const timestampMs = Number(nowMs());
+    const now = Number.isFinite(timestampMs) ? timestampMs : Date.now();
+    const key = `${category}:${event}`;
+    const state = runtimeLogEventState.get(key) || { lastAt: 0, suppressedCount: 0 };
+    if (minIntervalMs > 0 && state.lastAt && now - state.lastAt < minIntervalMs) {
+      state.suppressedCount += 1;
+      runtimeLogEventState.set(key, state);
+      return false;
+    }
+
+    const safeDetails = Object.assign({
+      ts: new Date(now).toISOString(),
+    }, safeLogDetails(details));
+    if (state.suppressedCount) safeDetails.suppressedCount = state.suppressedCount;
+    runtimeLogEventState.set(key, { lastAt: now, suppressedCount: 0 });
+    return appendRuntimeLogLine(`[${category}] ${event} ${JSON.stringify(safeDetails)}`, {
+      suppressConsoleFallback: true,
+    });
+  }
+
   function logThreadDetail(event, details = {}) {
-    trimRuntimeLogs();
-    console.log(`[thread-detail] ${event} ${JSON.stringify(safeLogDetails(details))}`);
+    appendRuntimeEventLine("thread-detail", event, details);
   }
 
   function logThreadList(event, details = {}) {
-    trimRuntimeLogs();
-    console.log(`[thread-list] ${event} ${JSON.stringify(safeLogDetails(details))}`);
+    appendRuntimeEventLine("thread-list", event, details);
   }
 
   function logContinuation(event, details = {}) {
-    trimRuntimeLogs();
-    console.log(`[continuation] ${event} ${JSON.stringify(safeLogDetails(details))}`);
+    appendRuntimeEventLine("continuation", event, details);
   }
 
   function logMessageSubmit(event, details = {}) {
-    trimRuntimeLogs();
-    console.log(`[message-submit] ${event} ${JSON.stringify(safeLogDetails(details))}`);
+    appendRuntimeEventLine("message-submit", event, details);
   }
 
   function logClientEvent(event, details = {}) {
-    appendRuntimeLogLine(`[client-event] ${event} ${JSON.stringify(Object.assign({
-      ts: new Date().toISOString(),
-    }, safeLogDetails(details)))}`);
+    appendRuntimeEventLine("client-event", event, details);
   }
 
   function isTurnSteerUnsupportedError(err) {

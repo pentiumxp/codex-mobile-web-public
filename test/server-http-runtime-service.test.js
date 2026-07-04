@@ -85,3 +85,82 @@ test("server http runtime writes high-volume client events to bounded runtime lo
   assert.ok(text.length < 1200);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("server http runtime routes high-frequency server events to bounded runtime log", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-http-runtime-"));
+  const logPath = path.join(dir, "mobile-web.log");
+  const service = createServerHttpRuntimeService({
+    mobileWebLogFile: logPath,
+    mobileWebLogMaxBytes: 2048,
+    mobileWebLogKeepBytes: 1024,
+    maxStructuredChars: 160,
+  });
+  const originalLog = console.log;
+  const stdoutLines = [];
+  console.log = (...args) => stdoutLines.push(args.join(" "));
+  try {
+    service.logThreadDetail("complete", { threadId: "t1", payload: { body: "x".repeat(2000) } });
+    service.logThreadList("complete", { threadCount: 12 });
+    service.logContinuation("heartbeat", { cardId: "ttc_test" });
+    service.logMessageSubmit("active-turn-stale", { threadId: "t1" });
+  } finally {
+    console.log = originalLog;
+  }
+
+  const text = fs.readFileSync(logPath, "utf8");
+  assert.match(text, /^\[thread-detail\] complete /m);
+  assert.match(text, /^\[thread-list\] complete /m);
+  assert.match(text, /^\[continuation\] heartbeat /m);
+  assert.match(text, /^\[message-submit\] active-turn-stale /m);
+  assert.match(text, /structured payload truncated/);
+  assert.equal(stdoutLines.length, 0);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("server http runtime rate-limits repeated diagnostic log events", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-http-runtime-"));
+  const logPath = path.join(dir, "mobile-web.log");
+  let now = 1_000;
+  const service = createServerHttpRuntimeService({
+    mobileWebLogFile: logPath,
+    mobileWebLogMaxBytes: 2048,
+    mobileWebLogKeepBytes: 1024,
+    mobileWebLogEventMinIntervalMs: 5_000,
+    nowMs: () => now,
+  });
+
+  service.logThreadDetail("complete", { seq: 1 });
+  service.logThreadDetail("complete", { seq: 2 });
+  service.logThreadDetail("complete", { seq: 3 });
+  let text = fs.readFileSync(logPath, "utf8");
+  assert.equal((text.match(/^\[thread-detail\] complete /gm) || []).length, 1);
+  assert.match(text, /"seq":1/);
+  assert.doesNotMatch(text, /"seq":2/);
+
+  now += 5_001;
+  service.logThreadDetail("complete", { seq: 4 });
+  text = fs.readFileSync(logPath, "utf8");
+  assert.equal((text.match(/^\[thread-detail\] complete /gm) || []).length, 2);
+  assert.match(text, /"seq":4/);
+  assert.match(text, /"suppressedCount":2/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("server http runtime suppresses stdout fallback for high-frequency diagnostic events", () => {
+  const service = createServerHttpRuntimeService({
+    mobileWebLogFile: "",
+    mobileWebLogEventMinIntervalMs: 0,
+  });
+  const originalLog = console.log;
+  const stdoutLines = [];
+  console.log = (...args) => stdoutLines.push(args.join(" "));
+  try {
+    service.logThreadDetail("complete", { threadId: "t1" });
+    service.logThreadList("complete", { resultCount: 1 });
+    service.logClientEvent("thread_refresh_ms", { threadId: "t1" });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.equal(stdoutLines.length, 0);
+});

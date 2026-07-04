@@ -152,12 +152,19 @@ function createThreadDetailStateBridgeService(dependencies = {}) {
 
   function attachThreadTaskCardsToThread(thread) {
     if (!thread || typeof thread !== "object" || !thread.id) return thread;
-    const counts = typeof threadTaskCardService.pendingCountsForThread === "function"
-      ? threadTaskCardService.pendingCountsForThread(thread.id)
-      : defaultThreadTaskCardCounts();
-    thread.threadTaskCards = typeof threadTaskCardService.listForThread === "function"
-      ? threadTaskCardService.listForThread(thread.id)
-      : [];
+    const summary = typeof threadTaskCardService.summaryForThread === "function"
+      ? threadTaskCardService.summaryForThread(thread.id)
+      : null;
+    const counts = summary && summary.counts
+      ? summary.counts
+      : typeof threadTaskCardService.pendingCountsForThread === "function"
+        ? threadTaskCardService.pendingCountsForThread(thread.id)
+        : defaultThreadTaskCardCounts();
+    thread.threadTaskCards = summary && Array.isArray(summary.cards)
+      ? summary.cards
+      : typeof threadTaskCardService.listForThread === "function"
+        ? threadTaskCardService.listForThread(thread.id)
+        : [];
     thread.pendingTaskCardCount = Number(counts.pendingTotal || 0);
     thread.pendingIncomingTaskCardCount = Number(counts.pendingIncoming || 0);
     thread.pendingOutgoingTaskCardCount = Number(counts.pendingOutgoing || 0);
