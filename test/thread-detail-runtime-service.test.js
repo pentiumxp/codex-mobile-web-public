@@ -139,3 +139,80 @@ test("thread-detail runtime service exposes composition surface and late-bound r
     fs.rmSync(cacheDir, { recursive: true, force: true });
   }
 });
+
+test("thread-detail runtime reuses summary-stale partials as stale first paint", async () => {
+  const threadId = "thread-1";
+  const seededAtMs = 1_700_000_009_000;
+  const laterSummaryAtMs = 1_700_000_019_000;
+  let summary = null;
+  const { service, cacheDir } = createRuntimeService({
+    readStateDbThread: (id) => (id === threadId ? summary : null),
+    rolloutStatsForPath: (filePath) => {
+      const stat = fs.statSync(filePath);
+      return { sizeBytes: stat.size, mtimeMs: Math.trunc(stat.mtimeMs) };
+    },
+  });
+  try {
+    const rolloutPath = path.join(cacheDir, "rollout.jsonl");
+    fs.writeFileSync(rolloutPath, "{\"type\":\"turn_context\"}\n", "utf8");
+    const seedSummary = {
+      id: threadId,
+      status: { type: "completed" },
+      updatedAtMs: seededAtMs,
+      rolloutPath,
+    };
+    const projectionInput = service.threadDetailProjectionInput(threadId, seedSummary);
+    assert.ok(projectionInput);
+    const seeded = service.threadDetailProjectionService.seed(projectionInput, {
+      thread: {
+        id: threadId,
+        status: { type: "completed" },
+        rolloutPath,
+        turns: [{
+          id: "turn-window",
+          status: { type: "completed" },
+          items: [{ id: "agent-window", type: "agentMessage" }],
+        }],
+        mobileOlderTurnsCursor: "older",
+        mobileOmittedTurnCount: 12,
+        mobileReadMode: "thread-read",
+      },
+    }, { partial: true, partialKind: "recent-window" });
+    assert.equal(seeded.partial, true);
+    service.createResponsePreparationService({
+      codex: {
+        request: async () => ({ data: [] }),
+      },
+      responseBudgetOptions: () => ({}),
+      applyLocalActiveThreadStatusToResult: (result) => result,
+      prepareThreadTaskCardsToResult: async (result) => result,
+      attachPendingServerRequestsToResult: (result) => result,
+      attachThreadTaskCardsToResult: (result) => result,
+    });
+
+    summary = {
+      id: threadId,
+      status: { type: "completed" },
+      updatedAtMs: laterSummaryAtMs,
+      rolloutPath,
+    };
+    const response = await service.threadDetailReadOrchestrationService.readThreadDetail({
+      codex: { transportKind: "mux", ready: true },
+      threadId,
+      preferRecentTurns: true,
+      threadLog: () => {},
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(response.mode, "projection-v4-partial");
+    const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+    assert.equal(timings.projectionState, "hit");
+    assert.equal(timings.projectionMissReason, "");
+    assert.equal(timings.readDecision, "projection-stale-partial-hit");
+    assert.equal(response.body.thread.mobileProjection.stalePartial, true);
+    assert.equal(response.body.thread.mobileProjection.staleReason, "summary-updated-after-window");
+    assert.equal(response.body.thread.mobileReadMode, "projection-v4-partial");
+  } finally {
+    fs.rmSync(cacheDir, { recursive: true, force: true });
+  }
+});

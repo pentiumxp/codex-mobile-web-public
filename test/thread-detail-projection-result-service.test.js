@@ -563,6 +563,100 @@ test("projection result accepts cache seeded for current summary signature witho
   assert.equal(stale, null);
 });
 
+test("projection result can reuse summary-stale partials when caller allows stale first paint", () => {
+  const seededAtMs = 1_700_000_009_000;
+  const laterSummaryAtMs = 1_700_000_019_000;
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => laterSummaryAtMs + 1000,
+  });
+  const cached = {
+    partial: true,
+    partialKind: "recent-window",
+    version: "v4",
+    cachedAtMs: seededAtMs,
+    updatedAtMs: seededAtMs,
+    signatureSummaryUpdatedAtMs: seededAtMs,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-window",
+          status: { type: "completed" },
+          items: [{ id: "agent-window", type: "agentMessage" }],
+        }],
+      },
+    },
+  };
+
+  const summary = {
+    id: "thread-1",
+    status: { type: "completed" },
+    updatedAtMs: laterSummaryAtMs,
+  };
+
+  assert.equal(service.prepareProjectedThreadReadResult(cached, summary, {}), null);
+
+  const readiness = service.projectedThreadReadiness(cached, summary, { allowStalePartial: true });
+  assert.deepEqual(readiness, {
+    ready: true,
+    stalePartial: true,
+    staleReason: "summary-updated-after-window",
+  });
+
+  const staleFirstPaint = service.prepareProjectedThreadReadResult(
+    cached,
+    summary,
+    {},
+    { allowStalePartial: true },
+  );
+
+  assert.ok(staleFirstPaint);
+  assert.equal(staleFirstPaint.thread.mobileReadMode, "projection-v4-partial");
+  assert.equal(staleFirstPaint.thread.mobileProjection.partial, true);
+  assert.equal(staleFirstPaint.thread.mobileProjection.stalePartial, true);
+  assert.equal(staleFirstPaint.thread.mobileProjection.staleReason, "summary-updated-after-window");
+});
+
+test("projection result does not reuse summary-stale partials for active summaries", () => {
+  const seededAtMs = 1_700_000_009_000;
+  const laterSummaryAtMs = 1_700_000_019_000;
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => laterSummaryAtMs + 1000,
+  });
+  const cached = {
+    partial: true,
+    partialKind: "recent-window",
+    version: "v4",
+    cachedAtMs: seededAtMs,
+    updatedAtMs: seededAtMs,
+    signatureSummaryUpdatedAtMs: seededAtMs,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-window",
+          status: { type: "completed" },
+          items: [{ id: "agent-window", type: "agentMessage" }],
+        }],
+      },
+    },
+  };
+
+  const summary = {
+    id: "thread-1",
+    status: { type: "active" },
+    updatedAtMs: laterSummaryAtMs,
+  };
+
+  assert.deepEqual(service.projectedThreadReadiness(cached, summary, { allowStalePartial: true }), {
+    ready: false,
+    reason: "summary-updated-after-window",
+  });
+  assert.equal(service.prepareProjectedThreadReadResult(cached, summary, {}, { allowStalePartial: true }), null);
+});
+
 test("projection result allows missing local active turn only for active overlay window assembly", () => {
   const service = createThreadDetailProjectionResultService({
     maxTurns: 5,

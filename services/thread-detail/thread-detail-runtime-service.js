@@ -470,6 +470,12 @@ function createThreadDetailRuntimeService(dependencies = {}) {
     return threadDetailProjectionResultService.prepareProjectedThreadReadResult(cached, summary, runtimeSettings, options);
   }
 
+  function projectedThreadReadiness(cached, summary, options = {}) {
+    return typeof threadDetailProjectionResultService.projectedThreadReadiness === "function"
+      ? threadDetailProjectionResultService.projectedThreadReadiness(cached, summary, options)
+      : { ready: Boolean(cached && cached.result && cached.result.thread), reason: "" };
+  }
+
   function scheduleRecentWindowProjectionRefresh(input = {}) {
     return threadDetailActiveWindowPrewarmService.schedule(input);
   }
@@ -478,14 +484,20 @@ function createThreadDetailRuntimeService(dependencies = {}) {
     const lookedUp = typeof threadDetailProjectionService.lookup === "function"
       ? threadDetailProjectionService.lookup(input, optionsForProjection)
       : { cached: threadDetailProjectionService.get(input, optionsForProjection), missReason: "" };
+    const cached = lookedUp && lookedUp.cached;
+    const readiness = projectedThreadReadiness(cached, summary, optionsForProjection);
+    const result = prepareProjectedThreadReadResult(
+      cached,
+      summary,
+      runtimeSettings,
+      optionsForProjection,
+    );
+    const projection = result && result.thread && result.thread.mobileProjection || {};
     return {
-      result: prepareProjectedThreadReadResult(
-        lookedUp && lookedUp.cached,
-        summary,
-        runtimeSettings,
-        optionsForProjection,
-      ),
-      missReason: lookedUp && lookedUp.missReason || "",
+      result,
+      missReason: lookedUp && lookedUp.missReason || (cached && !result ? readiness.reason : ""),
+      stalePartial: Boolean((cached && cached.stalePartial) || projection.stalePartial),
+      staleReason: (cached && cached.staleReason) || projection.staleReason || "",
     };
   }
 
