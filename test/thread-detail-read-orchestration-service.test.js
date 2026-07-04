@@ -3022,6 +3022,56 @@ test("recent thread detail can use initial bounded turns/list without full read"
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "turns-list-initial");
 });
 
+test("large resting recent projection miss defers initial turns/list seed", async () => {
+  const deferredTasks = [];
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "completed" },
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    scheduleDeferredTask: (task) => {
+      calls.push("defer-task");
+      deferredTasks.push(task);
+      return { unref() {} };
+    },
+    preferBoundedReadBeforeFullRead: () => ({
+      prefer: true,
+      rolloutSizeBytes: 600_000_000,
+      thresholdBytes: 8_000_000,
+      source: "rollout-size",
+      reason: "large-rollout",
+    }),
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event) => calls.push(`log:${event}`),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "deferred-initial-turns-list");
+  assert.deepEqual(response.body.thread.turns, []);
+  assert.equal(response.body.thread.mobileDeferredProjectionSeed.scheduled, true);
+  assert.equal(response.body.thread.mobileDeferredProjectionSeed.targetMode, "turns-list-initial");
+  assert.equal(response.body.thread.mobileDeferredProjectionSeed.refreshAfterMs, 900);
+  assert.equal(calls.includes("turns-list:turns-list-initial"), false);
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("defer-task"), true);
+  assert.equal(calls.includes("log:turns_list_initial_deferred"), true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "deferred-initial-turns-list");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "deferred");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, true);
+
+  assert.equal(deferredTasks.length, 1);
+  await deferredTasks[0]();
+  assert.ok(calls.indexOf("turns-list:turns-list-initial") > calls.indexOf("defer-task"));
+  assert.ok(calls.indexOf("seed:partial") > calls.indexOf("turns-list:turns-list-initial"));
+  assert.equal(calls.includes("log:deferred_turns_list_initial_seed_done"), true);
+});
+
 test("recent completed thread downgrades stale active initial window instead of full read", async () => {
   const { service, calls } = createHarness({
     summary: {

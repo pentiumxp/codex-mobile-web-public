@@ -1471,6 +1471,11 @@
           seq: Number.isFinite(seq) ? seq : 0,
           source: compactReason(input.source, "").slice(0, 40),
         },
+        {
+          type: "schedule-current-thread-refresh-if-deferred-seed",
+          delayMs: 900,
+          reason: "deferred-projection-seed",
+        },
         { type: "schedule-usage-backfill-refresh" },
       ],
       reason: "first-paint-post-render",

@@ -2430,6 +2430,11 @@ test("thread detail first-paint post-render effects plan preserves order and bou
         seq: 7,
         source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
       },
+      {
+        type: "schedule-current-thread-refresh-if-deferred-seed",
+        delayMs: 900,
+        reason: "deferred-projection-seed",
+      },
       { type: "schedule-usage-backfill-refresh" },
     ],
     reason: "first-paint-post-render",

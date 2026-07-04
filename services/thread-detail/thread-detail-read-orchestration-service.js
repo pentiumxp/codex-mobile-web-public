@@ -407,6 +407,17 @@ function asActiveOverlayProjectionWindow(result, overlayInput = {}) {
 
 function createThreadDetailReadOrchestrationService(options = {}) {
   const now = typeof options.now === "function" ? options.now : defaultNow;
+  const scheduleDeferredTask = typeof options.scheduleDeferredTask === "function"
+    ? options.scheduleDeferredTask
+    : (task) => {
+      const timer = setTimeout(() => {
+        Promise.resolve()
+          .then(task)
+          .catch(() => {});
+      }, 0);
+      if (timer && typeof timer.unref === "function") timer.unref();
+      return timer;
+    };
   const attachDiagnostics = typeof options.attachDiagnostics === "function"
     ? options.attachDiagnostics
     : (result) => result;
@@ -463,6 +474,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
   const threadDetailRpcTimeoutMs = Number(options.threadDetailRpcTimeoutMs || 0);
   const maxFullThreadTurns = Number(options.maxFullThreadTurns || 0);
   const maxThreadTurns = Number(options.maxThreadTurns || 0);
+  const deferredInitialTurnsListSeeds = new Map();
 
   function attachDetailDiagnostics(result, context, details = {}) {
     const boundedDecision = context.boundedReadBeforeFullRead || null;
@@ -806,6 +818,126 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         );
       }
       return rawBoundedReadDecision;
+    }
+
+    function scheduleDeferredInitialTurnsListSeed(reason) {
+      if (!projection || !turnsListThreadReadResult) {
+        return { scheduled: false, reason: projection ? "turns-list-unavailable" : "projection-input-unavailable" };
+      }
+      if (deferredInitialTurnsListSeeds.has(threadId)) {
+        return { scheduled: false, reason: "already-pending" };
+      }
+      const entry = {
+        startedAtMs: now(),
+        reason: nonEmptyText(reason) || "large-projection-miss",
+      };
+      deferredInitialTurnsListSeeds.set(threadId, entry);
+      scheduleDeferredTask(async () => {
+        const seedStartedAtMs = now();
+        try {
+          const result = await turnsListThreadReadResult({
+            threadId,
+            summary,
+            runtimeSettings,
+            warning: "",
+            mode: "turns-list-initial",
+            threadLog,
+          });
+          const staleTurns = markWindowActiveTurnsStaleForRestingSummary(result && result.thread, summary);
+          if (staleTurns) {
+            threadLog("deferred_turns_list_initial_stale_active_turns_downgraded", {
+              count: staleTurns,
+              reason: "summary-resting-active-window",
+            });
+          }
+          let seedStatus = "skipped";
+          let seedSource = "turns-list-initial-deferred";
+          if (projection && result && result.thread) {
+            const seeded = seedProjection(projection, result, {
+              partial: true,
+              partialKind: "recent-window",
+              replaceReusableFullCacheReason: context.projectionMissReason === "result-missing"
+                ? "projection-result-missing"
+                : "",
+            });
+            seedStatus = seeded && seeded.skipped
+              ? "skipped"
+              : seeded && seeded.partial
+                ? "seeded-partial"
+                : "seeded";
+            seedSource = seeded && seeded.reason || seedSource;
+          }
+          threadLog("deferred_turns_list_initial_seed_done", {
+            durationMs: now() - seedStartedAtMs,
+            seedStatus,
+            seedSource,
+            returnedTurns: result && result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
+          });
+        } catch (err) {
+          threadLog("deferred_turns_list_initial_seed_error", {
+            durationMs: now() - seedStartedAtMs,
+            timeout: isReadTimeoutError(err),
+            error: safeErrorMessage(err),
+          });
+        } finally {
+          if (deferredInitialTurnsListSeeds.get(threadId) === entry) {
+            deferredInitialTurnsListSeeds.delete(threadId);
+          }
+        }
+      });
+      return {
+        scheduled: true,
+        reason: entry.reason,
+      };
+    }
+
+    function shouldDeferInitialTurnsListSeed() {
+      if (!preferRecentTurns) return false;
+      if (!activeReadPolicy.shouldUseInitialTurnsList) return false;
+      if (activeReadPolicy.activeFullReadRequired) return false;
+      if (!projection || !turnsListThreadReadResult) return false;
+      if (context.projectionState !== "miss") return false;
+      if (summaryRejectsWindowActiveTurns(summary) !== true) return false;
+      const boundedDecision = boundedReadBeforeFullReadDecision();
+      context.boundedReadBeforeFullRead = boundedDecision;
+      return Boolean(boundedDecision && boundedDecision.prefer);
+    }
+
+    function deferredInitialTurnsListResponse() {
+      const scheduled = scheduleDeferredInitialTurnsListSeed("large-projection-miss");
+      context.projectionSeedStatus = scheduled.scheduled ? "deferred" : "deferred-pending";
+      context.projectionSeedSource = scheduled.reason || "turns-list-initial-deferred";
+      const mode = "deferred-initial-turns-list";
+      const result = fallbackThreadReadResult({
+        threadId,
+        summary,
+        runtimeSettings,
+        warning: "",
+        mode,
+      });
+      if (result && result.thread) {
+        result.thread.mobileReadMode = mode;
+        result.thread.mobileDeferredProjectionSeed = {
+          version: "thread-detail-deferred-seed-v1",
+          scheduled: scheduled.scheduled === true,
+          reason: scheduled.reason || "",
+          targetMode: "turns-list-initial",
+          refreshAfterMs: 900,
+        };
+      }
+      threadLog("turns_list_initial_deferred", {
+        scheduled: scheduled.scheduled === true,
+        reason: scheduled.reason || "",
+      });
+      return {
+        status: 200,
+        mode,
+        body: attachDetailDiagnostics(result, context, {
+          threadId,
+          source: mode,
+          readDecision: "deferred-initial-turns-list",
+        }),
+      };
     }
     const projectionStartedAtMs = now();
     const allowPartialProjection = activeReadPolicy.allowPartialProjection;
@@ -1355,6 +1487,10 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       context.activeOverlayReason = activeFullReadCanCloseWithOverlay(activeReadPolicy)
         ? resolveActiveWindowOverlay ? "projection-input-unavailable" : "overlay-provider-unavailable"
         : "active-full-read-not-overlay-closable";
+    }
+
+    if (shouldDeferInitialTurnsListSeed()) {
+      return deferredInitialTurnsListResponse();
     }
 
     if (!activeReadPolicy.activeFullReadRequired

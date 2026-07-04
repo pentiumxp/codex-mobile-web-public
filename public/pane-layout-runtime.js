@@ -674,6 +674,17 @@ function applyThreadDetailPostRenderEffect(effect, context = {}) {
     }
     return true;
   }
+  if (type === "schedule-current-thread-refresh-if-deferred-seed") {
+    const deferredSeed = context.thread && context.thread.mobileDeferredProjectionSeed;
+    if (deferredSeed && typeof deferredSeed === "object") {
+      const delayMs = Number(deferredSeed.refreshAfterMs ?? item.delayMs);
+      scheduleCurrentThreadRefresh(
+        Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : 900,
+        String(item.reason || deferredSeed.reason || "deferred-projection-seed").slice(0, 40),
+      );
+    }
+    return true;
+  }
   if (type === "schedule-usage-backfill-refresh") {
     scheduleUsageBackfillRefresh();
     return true;
