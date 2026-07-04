@@ -452,6 +452,32 @@ test("projection result keeps stale partial first paint while refresh is pending
   }, {});
 
   assert.equal(missingActiveTurn, null);
+
+  const staleRestingSummaryWithResidualActiveMarker = service.prepareProjectedThreadReadResult({
+    dynamic: false,
+    partial: true,
+    partialKind: "recent-window",
+    stalePartial: true,
+    staleReason: "backing-signature-mismatch",
+    version: "v4",
+    cachedAtMs: 8_000,
+    updatedAtMs: 8_000,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-old", status: { type: "active" }, items: [] }],
+      },
+    },
+  }, {
+    id: "thread-1",
+    status: { type: "completed" },
+    activeTurnId: "turn-new",
+    mobileLocalActiveStatus: { turnId: "turn-new", status: { type: "active" } },
+  }, {});
+
+  assert.ok(staleRestingSummaryWithResidualActiveMarker);
+  assert.equal(staleRestingSummaryWithResidualActiveMarker.thread.mobileReadMode, "projection-v4-partial");
+  assert.equal(staleRestingSummaryWithResidualActiveMarker.thread.mobileProjection.stalePartial, true);
 });
 
 test("projection result accepts fresh status-only active cache when summary heartbeat is newer", () => {

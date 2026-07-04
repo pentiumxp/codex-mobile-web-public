@@ -8,6 +8,7 @@ const {
   activeFullThreadReadReason,
   applyActiveThreadPolicyToBoundedReadDecision,
   isActiveLikeStatus,
+  isRestingLikeStatus,
   planActiveThreadDetailReadPolicy,
   statusText,
   summaryActiveTurnId,
@@ -54,6 +55,27 @@ test("active detail read policy requires full read for active turn ids", () => {
   assert.equal(policy.shouldUseInitialTurnsList, false);
   assert.equal(policy.initialTurnsListSkipReason, "active-thread-requires-full-read");
   assert.doesNotMatch(JSON.stringify(policy), /private-turn-id/);
+});
+
+test("active detail read policy ignores residual active markers when primary summary is resting", () => {
+  const summary = {
+    id: "thread-1",
+    status: { type: "completed" },
+    activeTurnId: "private-turn-id",
+    mobileLocalActiveStatus: {
+      turnId: "private-turn-id",
+      status: { type: "active" },
+    },
+  };
+  const policy = planActiveThreadDetailReadPolicy({ preferRecentTurns: true, summary });
+
+  assert.equal(isRestingLikeStatus(summary.status), true);
+  assert.equal(summaryActiveTurnId(summary), "");
+  assert.equal(activeFullThreadReadReason(summary), "");
+  assert.equal(policy.activeFullReadRequired, false);
+  assert.equal(policy.activeFullReadReason, "");
+  assert.equal(policy.allowPartialProjection, true);
+  assert.equal(policy.shouldUseInitialTurnsList, true);
 });
 
 test("active detail read policy recognizes bounded active status sources", () => {

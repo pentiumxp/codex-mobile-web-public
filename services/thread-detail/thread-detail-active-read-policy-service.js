@@ -16,7 +16,18 @@ function isActiveLikeStatus(value) {
     .test(statusText(value).trim());
 }
 
+function isRestingLikeStatus(value) {
+  return /^(completed|complete|done|success|succeeded|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/i
+    .test(statusText(value).trim());
+}
+
+function summaryHasRestingPrimaryStatus(summary) {
+  if (!summary || typeof summary !== "object") return false;
+  return [summary.status, summary.mobileStatus].filter(Boolean).some(isRestingLikeStatus);
+}
+
 function summaryActiveTurnId(summary) {
+  if (summaryHasRestingPrimaryStatus(summary)) return "";
   return nonEmptyText(summary && (
     summary.activeTurnId
     || summary.active_turn_id
@@ -29,6 +40,7 @@ function summaryActiveTurnId(summary) {
 
 function activeFullThreadReadReason(summary) {
   if (!summary || typeof summary !== "object") return "";
+  if (summaryHasRestingPrimaryStatus(summary)) return "";
   if (summaryActiveTurnId(summary)) return "active-turn-id";
   if (isActiveLikeStatus(summary.status)) return "status-active";
   if (isActiveLikeStatus(summary.mobileStatus)) return "mobile-status-active";
@@ -79,6 +91,7 @@ module.exports = {
   activeFullThreadReadReason,
   applyActiveThreadPolicyToBoundedReadDecision,
   isActiveLikeStatus,
+  isRestingLikeStatus,
   planActiveThreadDetailReadPolicy,
   statusText,
   summaryActiveTurnId,

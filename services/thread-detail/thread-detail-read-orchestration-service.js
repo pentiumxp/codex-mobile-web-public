@@ -318,8 +318,14 @@ function isRestingLikeStatusValue(value) {
     .test(statusText(value).trim());
 }
 
+function summaryHasPrimaryRestingStatus(summary) {
+  if (!summary || typeof summary !== "object") return false;
+  return [summary.status, summary.mobileStatus].filter(Boolean).some(isRestingLikeStatusValue);
+}
+
 function summaryRejectsWindowActiveTurns(summary) {
   if (!summary || typeof summary !== "object") return false;
+  if (summaryHasPrimaryRestingStatus(summary)) return true;
   if (summaryActiveTurnMarker(summary)) return false;
   const statuses = [
     summary.status,

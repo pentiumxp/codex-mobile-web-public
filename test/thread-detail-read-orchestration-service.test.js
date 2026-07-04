@@ -276,6 +276,74 @@ test("thread detail orchestration returns stale partial projection and schedules
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "hit");
 });
 
+test("thread detail orchestration reuses stale partial when resting summary has residual active marker", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "completed" },
+      activeTurnId: "turn-new",
+      mobileLocalActiveStatus: { turnId: "turn-new", status: { type: "active" } },
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadLookup: (projection, summary, runtimeSettings, options) => {
+      calls.push(`projection-lookup-stale:${options.allowStalePartial === true}`);
+      return {
+        stalePartial: true,
+        staleReason: "backing-signature-mismatch",
+        result: {
+          thread: {
+            id: "thread-1",
+            activeTurnId: "turn-old",
+            mobileLocalActiveStatus: { turnId: "turn-old", status: { type: "active" } },
+            turns: [{
+              id: "turn-old",
+              status: { type: "active" },
+              items: [],
+            }],
+            mobileReadMode: "projection-v4-partial",
+            mobileProjection: {
+              source: "partial",
+              version: "v4",
+              partial: true,
+              stalePartial: true,
+              staleReason: "backing-signature-mismatch",
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
+    scheduleProjectionRefresh: (input) => {
+      calls.push(`schedule-refresh:${input.reason}`);
+      return { scheduled: true };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event) => calls.push(`log:${event}`),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-v4-partial");
+  assert.equal(calls.includes("turns-list:turns-list-initial"), false);
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("projection-lookup-stale:true"), true);
+  assert.equal(calls.includes("schedule-refresh:backing-signature-mismatch"), true);
+  assert.equal(calls.includes("log:projection_stale_active_turns_downgraded"), true);
+  const thread = response.body.thread;
+  assert.equal(thread.activeTurnId, undefined);
+  assert.equal(thread.mobileLocalActiveStatus, undefined);
+  assert.equal(thread.turns[0].mobileStaleActiveTurn, true);
+  assert.equal(thread.turns[0].status.type, "completed");
+  assert.equal(thread.turns[0].status.mobileStaleActiveTurn, true);
+  assert.equal(thread.turns[0].status.previousType, "active");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "projection-stale-partial-hit");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "hit");
+});
+
 test("thread detail orchestration preserves full thread/read before bounded turns/list fallback", async () => {
   const { service, calls } = createHarness();
 

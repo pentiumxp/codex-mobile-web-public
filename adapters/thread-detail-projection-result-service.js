@@ -66,6 +66,16 @@ function isActiveLikeStatus(value) {
     .test(statusText(value).trim());
 }
 
+function isRestingLikeStatus(value) {
+  return /^(completed|complete|done|success|succeeded|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/i
+    .test(statusText(value).trim());
+}
+
+function summaryHasRestingPrimaryStatus(summary) {
+  if (!summary || typeof summary !== "object") return false;
+  return [summary.status, summary.mobileStatus].filter(Boolean).some(isRestingLikeStatus);
+}
+
 function latestProjectedTurn(thread) {
   const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
   return turns.length ? turns[turns.length - 1] : null;
@@ -77,6 +87,7 @@ function latestProjectedTurnIsActiveLike(thread) {
 }
 
 function summaryLocalActiveTurnId(summary) {
+  if (summaryHasRestingPrimaryStatus(summary)) return "";
   return String(summary && (
     summary.activeTurnId
     || summary.active_turn_id
@@ -86,6 +97,7 @@ function summaryLocalActiveTurnId(summary) {
 }
 
 function summaryIsStatusOnlyActive(summary) {
+  if (summaryHasRestingPrimaryStatus(summary)) return false;
   return !summaryLocalActiveTurnId(summary)
     && (isActiveLikeStatus(summary && summary.status)
       || isActiveLikeStatus(summary && summary.mobileStatus)
