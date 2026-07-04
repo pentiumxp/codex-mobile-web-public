@@ -1037,6 +1037,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           const cachedWindow = activeOverlayProjectionWindowLookup(projection, summary, runtimeSettings, {
             allowPartial: true,
             activeOverlay: true,
+            omitActiveTurnId: backfillActiveTurnId,
           });
           const resolvedCachedWindow = isPromiseLike(cachedWindow) ? await cachedWindow : cachedWindow;
           const cachedThread = resolvedCachedWindow
@@ -1054,6 +1055,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             allowPartial: true,
             activeOverlay: true,
             activeOverlayStatusProven: true,
+            omitActiveTurnId: backfillActiveTurnId,
           });
           const resolvedCachedWindow = isPromiseLike(cachedWindow) ? await cachedWindow : cachedWindow;
           const cachedThread = resolvedCachedWindow

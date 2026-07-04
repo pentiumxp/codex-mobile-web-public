@@ -33,6 +33,7 @@ function createServerEventRuntimeBoundaryService(options = {}) {
     "scheduleActiveWindowPrewarm",
     "scheduleActiveWindowPrewarmFromNotification",
     "scheduleActiveWindowPrewarmFromThreadListResult",
+    "scheduleThreadDetailFirstPaintPrewarm",
     "shouldSendEventToClient",
     "threadStatusChangedPayload",
     "threadStatusChangedPayloadFromTurnNotification",

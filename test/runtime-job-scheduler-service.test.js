@@ -38,6 +38,7 @@ test("runtime job registry owns prewarm declarations", () => {
   assert.deepEqual(service.PREWARM_JOB_ORDER, [
     "thread-list-fallback-prewarm",
     "thread-detail-active-window-prewarm",
+    "thread-detail-first-paint-prewarm",
   ]);
   for (const name of service.PREWARM_JOB_ORDER) {
     const job = service.RUNTIME_PREWARM_JOBS[name];

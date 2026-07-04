@@ -953,3 +953,66 @@ The previous full handoff was archived and should be opened only when old proven
   private thread bodies, task-card bodies, endpoint bodies, provider payloads,
   DB rows, screenshots, raw auth URLs, full prompts, full rollout contents, or
   long logs were exposed.
+
+## 2026-07-04T23:55:00+08:00 - Active-overlay latency fluctuation root cause narrowed and local fix prepared
+
+- User reported Home AI large thread entry was still fluctuating and could take
+  about `2-3s`.
+- Bounded production sampling of Home AI 06-22
+  `019eed86-2002-7cc2-b0b7-937eb5355f36` on currently deployed
+  `6b120666` showed the new slow samples were not a first-cold
+  `prepareResponse` problem:
+  - slow samples remained `mobileReadMode=projection-active-overlay` and
+    `projectionState=hit`;
+  - `threadReadMs=0` and `rawThreadReadMs=0`;
+  - `prepareResponseMs` stayed around `80-93ms` in slow samples;
+  - slow samples had `activeOverlayWindowMs≈2263-2982ms` and
+    `activeOverlayBackfillWindowMs≈2265-2983ms`;
+  - `/api/status?detail=1` route stats showed
+    `GET /api/threads/:threadId` slow count `28/107`, max `2950ms`, avg
+    `739ms`; listener RSS about `2842MB`, heap used about `1784MB`,
+    event-loop lag max about `3148ms`; `POST /api/threads/:threadId/messages`
+    still had previous slow samples up to about `7815ms`.
+- Root cause refined: the `6b120666` trusted active-window cache reuse path was
+  correct but incomplete. When `projection-live` overlay evidence still required
+  a fresh active window, the foreground cache lookup did not pass
+  `omitActiveTurnId`. v4's dedicated active-window cache can often work without
+  it, but fallback/base stale-full or history-window lookup only proves the
+  active-turn keyed window when `omitActiveTurnId` is present. In that miss
+  shape, the route fell back to `turns-list-active-overlay-window`, producing
+  the observed 2-3s foreground latency.
+- Local fix prepared in
+  `services/thread-detail/thread-detail-read-orchestration-service.js`: both
+  active-window cache lookups used before foreground bounded reads now pass
+  `omitActiveTurnId: backfillActiveTurnId`. This preserves the proof gate and
+  only avoids an unnecessary app-server `turns/list` read when the keyed
+  active-window cache is already available.
+- Added regression coverage in
+  `test/thread-detail-read-orchestration-service.test.js` for the production-like
+  shape where the unkeyed lookup returns a history window without the active
+  turn, but the active-turn keyed lookup returns a trusted active-window; the
+  test asserts no `turns-list-active-overlay-window` read is performed.
+- Also prepared a bounded first-paint prewarm/diagnostic path:
+  - new `thread-detail-first-paint-prewarm` runtime job;
+  - new service under
+    `services/thread-detail/thread-detail-first-paint-prewarm-service.js`;
+  - scheduling from active rows in thread-list results with rollout-size,
+    pending, and min-interval gates;
+  - `/api/status?detail=1` exposes bounded first-paint prewarm status;
+  - dedicated tests in
+    `test/thread-detail-first-paint-prewarm-service.test.js`.
+- Validation passed locally:
+  `node --test test/thread-detail-read-orchestration-service.test.js
+  test/thread-detail-active-window-prewarm-service.test.js
+  test/thread-detail-first-paint-prewarm-service.test.js
+  test/thread-detail-runtime-service.test.js
+  test/runtime-job-scheduler-service.test.js
+  test/server-runtime-config-service.test.js
+  test/core-api-route-service.test.js`;
+  `npm run --silent check`; and `git diff --check -- ':!.agent-context'`.
+- Deployment has not yet been performed for this local fix. Privacy boundary
+  respected: only bounded ids, route/status metrics, timing fields, and file
+  summaries were recorded; no raw secrets, access keys, cookies, launch tokens,
+  private thread bodies, task-card bodies, endpoint bodies, provider payloads,
+  DB rows, screenshots, raw auth URLs, full prompts, full rollout contents, or
+  long logs were exposed.

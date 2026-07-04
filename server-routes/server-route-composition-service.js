@@ -84,6 +84,7 @@ function createServerRouteCompositionService(dependencies = {}) {
     syncKnownCodexMobileMcpToolsets: dependencies.syncKnownCodexMobileMcpToolsets,
     syncRegisteredWorkspaceTrust: dependencies.syncRegisteredWorkspaceTrust,
     threadDisplayPublicSettings: dependencies.threadDisplayPublicSettings,
+    threadDetailFirstPaintPrewarmStatus: dependencies.threadDetailFirstPaintPrewarmStatus,
     threadListFallbackPrewarmPublicStatus: dependencies.threadListFallbackPrewarmPublicStatus,
     timingSafeEquals: dependencies.timingSafeEquals,
     viteShellArtifactService: dependencies.viteShellArtifactService,

@@ -35,6 +35,7 @@ function createThreadEventNotificationService(deps = {}) {
     recordRateLimits = () => {},
     rememberLocalActiveThreadStatus = () => {},
     threadDetailActiveWindowPrewarmService,
+    threadDetailFirstPaintPrewarmService,
     timestampToMs = () => 0,
     truncateMiddle = (value) => value,
     truncateTail = (value) => value,
@@ -148,6 +149,24 @@ function createThreadEventNotificationService(deps = {}) {
     });
   }
 
+  function scheduleThreadDetailFirstPaintPrewarm(threadId, summary = null, reason = "", options = {}) {
+    const id = String(threadId || summary && (summary.id || summary.threadId || summary.thread_id) || "").trim();
+    if (!id || !threadDetailFirstPaintPrewarmService || typeof threadDetailFirstPaintPrewarmService.schedule !== "function") {
+      return { scheduled: false, reason: "unavailable" };
+    }
+    return threadDetailFirstPaintPrewarmService.schedule({
+      codex,
+      threadId: id,
+      summary,
+      reason,
+      delayMs: options.delayMs,
+      bypassMinInterval: options.bypassMinInterval === true,
+      preemptPending: options.preemptPending === true,
+      activeHint: options.activeHint === true,
+      threadLog: (event, details = {}) => logThreadDetail(`first_paint_prewarm_${event}`, Object.assign({ threadId: id }, details)),
+    });
+  }
+
   function scheduleActiveWindowPrewarmFromNotification(payload) {
     if (!payload || payload.type !== "notification" || !payload.params) return;
     const method = String(payload.method || "");
@@ -172,6 +191,7 @@ function createThreadEventNotificationService(deps = {}) {
     for (const thread of rows) {
       if (!threadSummaryLooksActive(thread)) continue;
       scheduleActiveWindowPrewarm(thread.id || thread.threadId || thread.thread_id, thread, reason || "thread-list");
+      scheduleThreadDetailFirstPaintPrewarm(thread.id || thread.threadId || thread.thread_id, thread, reason || "thread-list");
     }
   }
 
@@ -297,6 +317,7 @@ function createThreadEventNotificationService(deps = {}) {
     scheduleActiveWindowPrewarm,
     scheduleActiveWindowPrewarmFromNotification,
     scheduleActiveWindowPrewarmFromThreadListResult,
+    scheduleThreadDetailFirstPaintPrewarm,
     shouldSendEventToClient,
     threadStatusChangedPayload,
     threadStatusChangedPayloadFromTurnNotification,

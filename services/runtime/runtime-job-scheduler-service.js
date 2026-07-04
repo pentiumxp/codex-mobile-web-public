@@ -176,11 +176,22 @@ const RUNTIME_PREWARM_JOBS = Object.freeze({
     periodicDefaultEnabled: false,
     deployDefaultEnabled: false,
   }),
+  "thread-detail-first-paint-prewarm": normalizeRuntimeJobDeclaration("thread-detail-first-paint-prewarm", {
+    timeoutMs: 30000,
+    maxConcurrency: 1,
+    cpuBudgetClass: "medium",
+    realBrowserAllowed: false,
+    userRequestPreemptible: true,
+    periodicAllowed: false,
+    periodicDefaultEnabled: false,
+    deployDefaultEnabled: false,
+  }),
 });
 
 const PREWARM_JOB_ORDER = Object.freeze([
   "thread-list-fallback-prewarm",
   "thread-detail-active-window-prewarm",
+  "thread-detail-first-paint-prewarm",
 ]);
 
 const RUNTIME_DIAGNOSTIC_JOBS = Object.freeze({

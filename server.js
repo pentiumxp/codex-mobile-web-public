@@ -280,6 +280,11 @@ const {
   THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS,
   THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS,
   THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS,
+  THREAD_DETAIL_FIRST_PAINT_PREWARM_ENABLED,
+  THREAD_DETAIL_FIRST_PAINT_PREWARM_DELAY_MS,
+  THREAD_DETAIL_FIRST_PAINT_PREWARM_MIN_INTERVAL_MS,
+  THREAD_DETAIL_FIRST_PAINT_PREWARM_MIN_BYTES,
+  THREAD_DETAIL_FIRST_PAINT_PREWARM_MAX_PENDING,
   OPERATIONAL_ITEM_TYPES,
   THREAD_LIST_FALLBACK_CACHE_TTL_MS,
   THREAD_LIST_FALLBACK_CACHE_FILE,
@@ -1036,6 +1041,11 @@ const threadDetailRuntimeService = createThreadDetailRuntimeService({
     threadDetailCompletedProgressMessages: THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES,
     threadDetailProgressiveActiveUserTextChars: THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS,
     threadDetailSummaryAppServerRefreshTtlMs: THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS,
+    threadDetailFirstPaintPrewarmEnabled: THREAD_DETAIL_FIRST_PAINT_PREWARM_ENABLED,
+    threadDetailFirstPaintPrewarmDelayMs: THREAD_DETAIL_FIRST_PAINT_PREWARM_DELAY_MS,
+    threadDetailFirstPaintPrewarmMinIntervalMs: THREAD_DETAIL_FIRST_PAINT_PREWARM_MIN_INTERVAL_MS,
+    threadDetailFirstPaintPrewarmMinBytes: THREAD_DETAIL_FIRST_PAINT_PREWARM_MIN_BYTES,
+    threadDetailFirstPaintPrewarmMaxPending: THREAD_DETAIL_FIRST_PAINT_PREWARM_MAX_PENDING,
     maxTextChars: MAX_TEXT_CHARS,
     maxCommandOutputChars: MAX_COMMAND_OUTPUT_CHARS,
     maxCommandOutputCharsPerTurn: MAX_COMMAND_OUTPUT_CHARS_PER_TURN,
@@ -1158,6 +1168,7 @@ const {
   rolloutEvidenceIsRecent,
   rolloutTimestampFields,
   scheduleRecentWindowProjectionRefresh,
+  threadDetailFirstPaintPrewarmService,
   sortTurnsChronologically,
   threadDetailActiveWindowPrewarmService,
   threadDetailProjectionInput,
@@ -1352,6 +1363,7 @@ threadEventNotificationService = createThreadEventNotificationService({
   applyThreadStatusPayloadToThreadListFallbackCache,
   getThreadDetailProjectionService: () => threadDetailProjectionService,
   threadDetailActiveWindowPrewarmService,
+  threadDetailFirstPaintPrewarmService,
   getCodex: () => codex,
   logThreadDetail,
   logger: console,
@@ -1817,6 +1829,11 @@ function readThreadListFallback(...args) { return callThreadListServerBoundary("
 function threadListFallbackPrewarmConfig(...args) { return callThreadListServerBoundary("threadListFallbackPrewarmConfig", args); }
 function threadListFallbackPrewarmPublicStatus(...args) { return callThreadListServerBoundary("threadListFallbackPrewarmPublicStatus", args); }
 function scheduleThreadListFallbackPrewarm(...args) { return callThreadListServerBoundary("scheduleThreadListFallbackPrewarm", args); }
+function threadDetailFirstPaintPrewarmStatus(threadId = "") {
+  return threadDetailFirstPaintPrewarmService && typeof threadDetailFirstPaintPrewarmService.status === "function"
+    ? threadDetailFirstPaintPrewarmService.status(threadId)
+    : null;
+}
 function threadListFallbackSourceDiagnosticTimingFields(...args) { return callThreadListServerBoundary("threadListFallbackSourceDiagnosticTimingFields", args); }
 function threadListFallbackBaselineWorkTimingFields(...args) { return callThreadListServerBoundary("threadListFallbackBaselineWorkTimingFields", args); }
 function threadListTokenUsageTimingFields(...args) { return callThreadListServerBoundary("threadListTokenUsageTimingFields", args); }
@@ -1942,6 +1959,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   syncRegisteredWorkspaceTrust,
   syncThreadDetailReadResultToThreadListFallbackCache,
   threadDetailCopyTextService,
+  threadDetailFirstPaintPrewarmStatus,
   threadDetailReadOrchestrationService,
   threadDisplayPublicSettings,
   threadDisplaySummaryCache,

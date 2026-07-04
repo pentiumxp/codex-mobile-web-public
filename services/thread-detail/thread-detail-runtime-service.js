@@ -26,6 +26,7 @@ const { createThreadDetailActiveTurnEvidenceService } = require("./thread-detail
 const { createThreadDetailBoundedReadPolicyService } = require("./thread-detail-bounded-read-policy-service");
 const { createThreadDetailActiveOverlayProviderService } = require("./thread-detail-active-overlay-provider-service");
 const { createThreadDetailActiveWindowPrewarmService } = require("./thread-detail-active-window-prewarm-service");
+const { createThreadDetailFirstPaintPrewarmService } = require("./thread-detail-first-paint-prewarm-service");
 const { createThreadDetailTurnsListReadCoalescer } = require("./thread-detail-turns-list-read-coalescer-service");
 const { createThreadDetailReadOrchestrationService } = require("./thread-detail-read-orchestration-service");
 
@@ -447,6 +448,15 @@ function createThreadDetailRuntimeService(dependencies = {}) {
     maxThreadTurns: config.maxThreadTurns,
     maxFullThreadTurns: config.maxFullThreadTurns,
   });
+  const threadDetailFirstPaintPrewarmService = createThreadDetailFirstPaintPrewarmService({
+    enabled: config.threadDetailFirstPaintPrewarmEnabled !== false,
+    delayMs: config.threadDetailFirstPaintPrewarmDelayMs,
+    minIntervalMs: config.threadDetailFirstPaintPrewarmMinIntervalMs,
+    minRolloutBytes: config.threadDetailFirstPaintPrewarmMinBytes,
+    maxPending: config.threadDetailFirstPaintPrewarmMaxPending,
+    readThreadDetail: (input) => threadDetailReadOrchestrationService.readThreadDetail(input),
+    log: (event, details) => dependencies.logThreadDetail(event, details),
+  });
 
   function threadDetailProjectionInput(threadId, summary) {
     return threadDetailProjectionInputService.projectionInput(threadId, summary);
@@ -702,6 +712,7 @@ function createThreadDetailRuntimeService(dependencies = {}) {
     threadDetailActiveTurnEvidenceService,
     threadDetailActiveWindowPrewarmService,
     threadDetailCompactionService,
+    threadDetailFirstPaintPrewarmService,
     threadDetailProjectionInput,
     threadDetailProjectionService,
     threadDetailReadOrchestrationService,
