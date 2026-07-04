@@ -738,7 +738,17 @@ Implementation path:
     named handoff is the audit target itself. Repair cards created after an
     audit missing-evidence block must include the bounded missing packet
     section ids so the implementation lane can fill the packet without raw
-    handoff context.
+    handoff context. Terminal implementation/repair return cards may supply
+    explicitly headed packet sections such as `## Design Contract Packet`,
+    `## Validation Packet`, and `## Privacy Packet`; the task-card runtime
+    passes that bounded return body only to the local Loop runtime, and the
+    Loop runtime normalizes those sections into the Audit Packet before the
+    next product-audit dispatch. The external Home AI return-event notification
+    keeps its summary-only contract. For historical loops that already reached
+    `max_iterations_reached`, a repeated trigger may rebuild the packet from
+    stored implementation/repair return cards and perform one evidence-complete
+    product-audit retry without losing implementation evidence. If the packet
+    is still incomplete after rebuild, the loop remains blocked.
 12. Focused tests include:
    - `test/at-loop-trigger-parser.test.js`
    - `test/thread-task-card-loop-routing-service.test.js`

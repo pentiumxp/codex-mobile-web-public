@@ -1107,6 +1107,7 @@ test("autonomous workflow auto-returns to the source when the injected target tu
     status: "completed",
     title: "Auto return: Start workflow",
     summary: "Target thread completed and returned the result automatically.",
+    returnBody: "## Automatic workflow return\n\nCompleted target thread: thread-b\nCompleted turn: turn-1\nCompleted at: 2026-06-02T09:00:00.000Z\nWorkflow id: auto-return-workflow\n\n## Target result\nImplemented and validated.",
     metadata: {
       sourceThreadId: "thread-a",
       targetThreadId: "thread-b",
@@ -1198,6 +1199,7 @@ test("autonomous workflow auto-return can target an explicit reply-to thread", a
     status: "completed",
     title: "Auto return: Supplemental deploy evidence",
     summary: "Target thread completed and returned the result automatically.",
+    returnBody: "## Automatic workflow return\n\nCompleted target thread: thread-worker\nCompleted turn: turn-1\nCompleted at: 2026-06-30T06:30:00.000Z\nWorkflow id: reply-to-workflow\n\n## Target result\nSupplemental evidence collected.",
     metadata: {
       sourceThreadId: "thread-hub",
       targetThreadId: "thread-worker",
@@ -1755,6 +1757,7 @@ test("explicit returnToSource replies are terminal and cannot start acknowledgem
     status: "completed",
     title: "Music repair completed",
     summary: "completed",
+    returnBody: "Completed and validated.",
     metadata: {
       sourceThreadId: "thread-home",
       targetThreadId: "thread-music",

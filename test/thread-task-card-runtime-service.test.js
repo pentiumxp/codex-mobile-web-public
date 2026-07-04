@@ -86,6 +86,7 @@ test("thread task-card runtime composition wires return hook, policy, route, and
     returnCardId: "ttc_loop_return",
     status: "completed",
     summary: "implementation completed",
+    returnBody: "## Validation Packet\n- focused test passed",
     metadata: {
       workflowId: "at-loop:loop_abc123",
       sourceThreadId: "source-thread",
@@ -128,6 +129,7 @@ test("thread task-card runtime composition wires return hook, policy, route, and
     returnCardId: "ttc_loop_return",
     status: "completed",
     summary: "implementation completed",
+    returnBody: "## Validation Packet\n- focused test passed",
   }]);
   assert.equal(result.threadId, "target-thread");
   assert.equal(result.turnId, "turn-1");

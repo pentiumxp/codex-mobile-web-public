@@ -110,6 +110,80 @@ function boundedPacketList(items, maxItems = 12, itemMax = 220) {
     .slice(0, maxItems);
 }
 
+function auditPacketSectionIdFromHeading(line) {
+  const raw = compactOneLine(line)
+    .replace(/^\s{0,3}#{1,6}\s*/, "")
+    .replace(/^[-*]\s*/, "")
+    .replace(/^[`*_]+|[`*_]+$/g, "")
+    .replace(/[:：]+$/g, "")
+    .trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  const words = lower.replace(/[`*_/-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (/\brequirements_packet\b/.test(lower) || /^requirements packet\b/.test(words) || /^需求.*包/.test(raw)) return "requirements_packet";
+  if (/\bdesign_contract_packet\b/.test(lower) || /^design contract packet\b/.test(words) || /设计契约包|设计合同包/.test(raw)) return "design_contract_packet";
+  if (/\bimplementation_packet\b/.test(lower) || /^implementation packet\b/.test(words) || /^实现.*包|^实施.*包/.test(raw)) return "implementation_packet";
+  if (/\bvalidation_packet\b/.test(lower) || /^validation packet\b/.test(words) || /^验证.*包|^校验.*包/.test(raw)) return "validation_packet";
+  if (/\bprivacy_packet\b/.test(lower) || /^privacy packet\b/.test(words) || /^隐私.*包/.test(raw)) return "privacy_packet";
+  return "";
+}
+
+function cleanAuditPacketEvidenceLine(line, sectionId) {
+  const text = compactOneLine(line)
+    .replace(/^\s{0,3}#{1,6}\s*/, "")
+    .replace(/^[-*]\s*/, "")
+    .replace(/^\d+[.)]\s*/, "")
+    .trim();
+  if (!text) return "";
+  if (sectionId !== "implementation_packet" && /\.agent-context\/HANDOFF\.md/i.test(text)) return "";
+  return safePacketValue(text, 220);
+}
+
+function extractAuditPacketSectionsFromText(text) {
+  const source = String(text || "").slice(0, 12_000);
+  if (!source) return {};
+  const sections = {};
+  let currentSectionId = "";
+  for (const line of source.split(/\r?\n/)) {
+    const headingSectionId = auditPacketSectionIdFromHeading(line);
+    if (headingSectionId) {
+      currentSectionId = headingSectionId;
+      if (!sections[currentSectionId]) sections[currentSectionId] = [];
+      continue;
+    }
+    if (!currentSectionId) continue;
+    const cleaned = cleanAuditPacketEvidenceLine(line, currentSectionId);
+    if (!cleaned) continue;
+    if (sections[currentSectionId].length < 12) sections[currentSectionId].push(cleaned);
+  }
+  return Object.fromEntries(Object.entries(sections)
+    .filter(([, lines]) => lines.length)
+    .map(([id, lines]) => [id, {
+      status: "present",
+      source: "return_card_body_section",
+      summary: safePacketValue(lines.slice(0, 3).join("; "), 320),
+      actualEvidence: boundedPacketList(lines, 12, 220),
+    }]));
+}
+
+function extractAuditPacketSectionsFromInputText(input = {}) {
+  const message = input.message && typeof input.message === "object" ? input.message : {};
+  const sources = [
+    input.returnBody,
+    input.bodyMarkdown,
+    input.body,
+    message.body,
+    input.text,
+  ].map((value) => String(value || "")).filter(Boolean);
+  return sources.reduce((acc, text) => {
+    const extracted = extractAuditPacketSectionsFromText(text);
+    for (const [id, section] of Object.entries(extracted)) {
+      if (!acc[id]) acc[id] = section;
+    }
+    return acc;
+  }, {});
+}
+
 function stableHash(value, length = 16) {
   return crypto.createHash("sha256").update(String(value || "")).digest("hex").slice(0, length);
 }
@@ -450,7 +524,11 @@ function returnEvidence(input = {}, slice = {}, returnStatus = "") {
 }
 
 function roleReturnAuditPacketUpdate(loop, slice, input, returnStatus) {
-  const packet = sanitizeAuditPacket(input);
+  let packet = sanitizeAuditPacket(input);
+  const bodySectionUpdates = extractAuditPacketSectionsFromInputText(input);
+  if (Object.keys(bodySectionUpdates).length) {
+    packet = mergeAuditPacket(packet, sanitizeAuditPacket({ auditPacket: { sections: bodySectionUpdates } }));
+  }
   const sectionUpdates = {};
   const summary = safePacketValue(input.summary || "", 320);
   if (slice.role === "requirements") {
@@ -598,7 +676,15 @@ function roleAfterTerminal(loop, slice, returnStatus, auditVerdict) {
   if (slice.role === "requirements") return { role: "implementation", nextRoute: "implementation" };
   if (slice.role === "implementation") return { role: "product_audit", nextRoute: "product_audit" };
   if (slice.role === "repair") {
-    if (loop.iteration >= loop.maxIterations) return { loopStatus: "blocked", nextRoute: "max_iterations_reached" };
+    if (loop.iteration >= loop.maxIterations) {
+      const status = auditPacketStatus(loop.auditPacket || sanitizeAuditPacket({}));
+      if (status.complete && loop.maxIterations < 10) {
+        loop.iteration += 1;
+        loop.maxIterations = Math.max(loop.maxIterations, loop.iteration);
+        return { role: "product_audit", nextRoute: "product_audit_packet_retry" };
+      }
+      return { loopStatus: "blocked", nextRoute: "max_iterations_reached" };
+    }
     loop.iteration += 1;
     return { role: "product_audit", nextRoute: "product_audit" };
   }
@@ -632,6 +718,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   const staleAfterMs = Number(dependencies.watchdogStaleMs || DEFAULT_WATCHDOG_STALE_MS);
   const maxIterationsDefault = Number(dependencies.maxIterations || DEFAULT_MAX_ITERATIONS);
   const clock = dependencies.clock || (() => Date.now());
+  const readThreadTaskCardForLoopEvidence = typeof dependencies.readThreadTaskCardForLoopEvidence === "function"
+    ? dependencies.readThreadTaskCardForLoopEvidence
+    : null;
 
   let stateCache = null;
 
@@ -1320,6 +1409,81 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return { role: "repair" };
   }
 
+  function rebuildAuditPacketFromReturnedRoleCards(loop) {
+    if (!readThreadTaskCardForLoopEvidence) return false;
+    let changed = false;
+    const slices = Array.isArray(loop && loop.roleSlices) ? loop.roleSlices : [];
+    for (const slice of slices) {
+      if (!slice || slice.status !== "returned" || !["implementation", "repair", "requirements"].includes(slice.role)) continue;
+      const returnCardId = compactOneLine(slice.returnCardId || slice.replyCardId);
+      if (!returnCardId) continue;
+      let card;
+      try {
+        card = readThreadTaskCardForLoopEvidence(returnCardId);
+      } catch (_) {
+        card = null;
+      }
+      const message = card && card.message && typeof card.message === "object" ? card.message : {};
+      const returnBody = String(message.body || "");
+      if (!returnBody) continue;
+      const update = roleReturnAuditPacketUpdate(loop, slice, {
+        taskCardId: slice.taskCardId,
+        returnCardId,
+        status: slice.returnStatus || "completed",
+        summary: slice.returnSummary || message.summary || "",
+        returnBody,
+      }, normalizeStatus(slice.returnStatus || "completed"));
+      const before = JSON.stringify(publicAuditPacket(loop.auditPacket || sanitizeAuditPacket({})).status);
+      loop.auditPacket = mergeAuditPacket(loop.auditPacket || sanitizeAuditPacket({}), update);
+      const after = JSON.stringify(publicAuditPacket(loop.auditPacket || sanitizeAuditPacket({})).status);
+      if (after !== before) changed = true;
+    }
+    if (changed) {
+      loop.updatedAt = nowIso(clock);
+      saveState();
+    }
+    return changed;
+  }
+
+  function prepareProductAuditPacketRetry(loop, reason = "audit_packet_rebuilt") {
+    const timestamp = nowIso(clock);
+    if (loop.iteration >= loop.maxIterations) {
+      loop.iteration += 1;
+      loop.maxIterations = Math.max(loop.maxIterations, loop.iteration);
+    }
+    let audit = findSlice(loop, { role: "product_audit", iteration: loop.iteration });
+    if (!audit) {
+      audit = {
+        role: "product_audit",
+        roleSliceId: `${loop.loopId}:product_audit:${loop.iteration}`,
+        iteration: loop.iteration,
+        createdAt: timestamp,
+      };
+      loop.roleSlices.push(audit);
+    }
+    audit.status = "pending";
+    audit.dispatchStatus = "";
+    audit.dispatchMode = "";
+    audit.taskCardDispatch = true;
+    audit.taskCardId = "";
+    audit.returnStatus = "";
+    audit.returnCardId = "";
+    audit.returnSummary = "";
+    audit.auditVerdict = "";
+    audit.blockedReason = "";
+    audit.routing = Object.assign({}, audit.routing || {}, {
+      packetRetryReason: compactOneLine(reason),
+    });
+    audit.updatedAt = timestamp;
+    loop.status = "running";
+    loop.currentRole = "product_audit";
+    loop.nextRoute = "product_audit_packet_retry";
+    loop.blockedReason = "";
+    loop.updatedAt = timestamp;
+    saveState();
+    return { role: "product_audit" };
+  }
+
   function markRequirementsLocal(loop, slice) {
     const timestamp = nowIso(clock);
     const source = sourceThread(loop);
@@ -1824,6 +1988,17 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       if (implementationWorkspaceCwd) existing.implementationWorkspaceCwd = implementationWorkspaceCwd;
       existing.updatedAt = nowIso(clock);
       if (existing.status === "blocked") {
+        rebuildAuditPacketFromReturnedRoleCards(existing);
+        const packetStatus = auditPacketStatus(existing.auditPacket || sanitizeAuditPacket({}));
+        if (existing.nextRoute === "max_iterations_reached" && packetStatus.complete) {
+          const recoveredRole = prepareProductAuditPacketRetry(existing, "max_iterations_reached_packet_rebuilt");
+          const recovered = await dispatchRole(existing, recoveredRole.role);
+          return Object.assign({
+            ok: recovered.ok !== false,
+            duplicateSuppressed: false,
+            recovered: recovered.ok !== false,
+          }, recovered, { loop: publicLoop(existing) });
+        }
         const blockedRole = existing.currentRole || existing.nextRoute || "requirements";
         const blockedReturnedRole = blockedReturnedRoleForRedispatch(existing);
         if (blockedReturnedRole) {

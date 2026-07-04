@@ -60,13 +60,15 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
       err.statusCode = 503;
       throw err;
     }
-    const result = await atLoopRuntimeService.recordTerminalReturn({
+    const terminalReturn = {
       loopId,
       taskCardId: event.taskCardId,
       returnCardId: event.returnCardId,
       status: event.status,
       summary: event.summary,
-    });
+    };
+    if (event.returnBody) terminalReturn.returnBody = event.returnBody;
+    const result = await atLoopRuntimeService.recordTerminalReturn(terminalReturn);
     if (result && result.ok === false) {
       const err = new Error(result.error || "at_loop_terminal_return_correlation_failed");
       err.statusCode = 409;
@@ -119,7 +121,9 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     returnThreadTaskCardScriptPath: dependencies.returnThreadTaskCardScriptPath,
     onTerminalReturnCard: async (event) => {
       await recordAtLoopTerminalReturn(event);
-      return homeAiAutonomousDeliveryReturnService.send(event, { workspaceId: "owner" });
+      const externalEvent = Object.assign({}, event || {});
+      delete externalEvent.returnBody;
+      return homeAiAutonomousDeliveryReturnService.send(externalEvent, { workspaceId: "owner" });
     },
     executeApprovedCard: async (card, message) => {
       const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
@@ -274,6 +278,10 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     threadTaskCardVisibleTargetThreads: threadTaskCardRouteService.threadTaskCardVisibleTargetThreads,
     assertThreadTaskCardTargetDeliverable: threadTaskCardRouteService.assertThreadTaskCardTargetDeliverable,
     resolveThreadTaskCardTargetReference: threadTaskCardRouteService.resolveThreadTaskCardTargetReference,
+    readThreadTaskCardForLoopEvidence: (cardId) => {
+      if (!threadTaskCardService || typeof threadTaskCardService.get !== "function") return null;
+      return threadTaskCardService.get(cardId, "");
+    },
     loopTargetAliases: dependencies.atLoopTargetAliases,
     listWorkspaces: dependencies.listWorkspaces,
     maxIterations: dependencies.atLoopMaxIterations,

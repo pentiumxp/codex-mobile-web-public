@@ -499,6 +499,7 @@ function terminalReturnEventForCards(originalCard, returnCard) {
     returnCard.message && returnCard.message.summary || terminalReturnStatusForCard(returnCard),
     MAX_SUMMARY_CHARS,
   );
+  const returnBody = boundedVisibleText(returnCard.message && returnCard.message.body || "", AUTO_REPLY_BODY_CHARS);
   const returnTarget = returnTargetRefForCard(originalCard);
   const metadata = {
     sourceThreadId: boundedMetadataString(originalCard.source && originalCard.source.threadId, 180),
@@ -522,6 +523,7 @@ function terminalReturnEventForCards(originalCard, returnCard) {
     status: terminalReturnStatusForCard(returnCard),
     title,
     summary,
+    returnBody,
     metadata,
   };
 }

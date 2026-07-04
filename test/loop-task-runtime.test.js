@@ -31,6 +31,39 @@ function testLoopId({ sourceThreadId, targetThreadId, objective, targetAlias = "
   return `loop_${stableHash(seed, 16)}`;
 }
 
+function xcodeSettingsRepairPacketBody() {
+  return [
+    "No Swift source repair was required.",
+    "",
+    "## Implementation Packet",
+    "",
+    "- Settings implementation: `Home AI/ContentView.swift`",
+    "- Settings groups verified: `账号连接`, `安全与通知`, `环境上下文`, `环境诊断`, `Apple Health`, `PWA 与本机数据`, `危险操作`",
+    "- Reusable UI components verified: `SettingsSection`, `SettingsStatusBadge`, `SettingsInputBackground`, `SettingsFieldLabel`, `CapabilityRow`",
+    "",
+    "## Design Contract Packet",
+    "",
+    "- The page is organized by product intent rather than a flat capability list.",
+    "- Native SwiftUI owns settings UI and iOS capability controls; Home AI Web owns PWA/plugin UI.",
+    "- Access Key remains Keychain-backed and is not displayed as plaintext.",
+    "",
+    "## Validation Packet",
+    "",
+    "- `scripts/check-native-settings-layout.sh`: passed",
+    "- `scripts/check-native-secure-clipboard-secret.sh`: passed",
+    "- `scripts/check-apple-health-guardian-mode.sh`: passed",
+    "- Xcode build not rerun in repair due known automation limitation.",
+    "",
+    "## Privacy Packet",
+    "",
+    "- Access Key remains Keychain-backed.",
+    "- Secure clipboard upload remains explicit and button-triggered.",
+    "- UI displays bounded `secretRef` / expiry metadata only, not clipboard contents.",
+    "- WebKit PWA data clearing remains separate from native Server/Access Key clearing.",
+    "- Added evidence to `.agent-context/HANDOFF.md`.",
+  ].join("\n");
+}
+
 function makeRuntime(options = {}) {
   const cards = [];
   const createdThreads = [];
@@ -76,6 +109,7 @@ function makeRuntime(options = {}) {
     },
     listWorkspaces: options.listWorkspaces,
     isLoopImplementationWorkspace: options.isLoopImplementationWorkspace || (() => true),
+    readThreadTaskCardForLoopEvidence: options.readThreadTaskCardForLoopEvidence,
   };
   if (options.assertThreadTaskCardTargetDeliverable !== false) {
     dependencies.assertThreadTaskCardTargetDeliverable = options.assertThreadTaskCardTargetDeliverable || (() => true);
@@ -952,6 +986,324 @@ test("loop runtime propagates bounded audit packet and delta matrix to product a
   assert.equal(status.loops[0].auditPacketStatus.complete, true);
   const auditSlice = status.loops[0].roleSlices.find((slice) => slice.role === "product_audit");
   assert.equal(auditSlice.auditPacketStatus.complete, true);
+});
+
+test("loop runtime normalizes design validation and privacy packets from repair return body", async () => {
+  const { cards, runtime } = makeRuntime({ name: "repair-return-packet-body" });
+  const started = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop redesign native settings",
+  });
+  assert.equal(started.loop.currentRole, "implementation");
+  assert.equal(cards.length, 1);
+
+  const implementation = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "completed",
+    summary: "Native settings layout redesign verified in Xcode/Home AI",
+    changedFiles: ["Home AI/ContentView.swift", "scripts/check-native-settings-layout.sh"],
+  });
+  assert.equal(implementation.loop.currentRole, "product_audit");
+  assert.equal(cards.length, 2);
+  assert.ok(cards[1].payload.missingAuditPacketSections.includes("design_contract_packet"));
+  assert.ok(cards[1].payload.missingAuditPacketSections.includes("validation_packet"));
+  assert.ok(cards[1].payload.missingAuditPacketSections.includes("privacy_packet"));
+
+  const audit = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_2",
+    status: "blocked",
+    auditVerdict: "blocked_missing_evidence",
+    summary: "product audit needs design, validation, and privacy packets",
+  });
+  assert.equal(audit.loop.currentRole, "repair");
+  assert.equal(cards.length, 3);
+
+  const repair = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_3",
+    status: "completed",
+    summary: "Filled design, validation, and privacy packets for native settings redesign",
+    returnBody: xcodeSettingsRepairPacketBody(),
+  });
+
+  assert.equal(repair.ok, true);
+  assert.equal(repair.loop.currentRole, "product_audit");
+  assert.equal(repair.loop.iteration, 2);
+  assert.equal(cards.length, 4);
+  const auditPayload = cards[3].payload;
+  assert.equal(auditPayload.targetRole, "product_audit");
+  assert.deepEqual(auditPayload.missingAuditPacketSections, []);
+  assert.equal(auditPayload.auditPacket.status.complete, true);
+  for (const id of ["design_contract_packet", "validation_packet", "privacy_packet"]) {
+    const section = auditPayload.auditPacket.sections.find((entry) => entry.id === id);
+    assert.equal(section.status, "present");
+    assert.ok(section.evidence.length > 0);
+  }
+  assert.match(auditPayload.bodyMarkdown, /Design Contract Packet|design_contract_packet/);
+  assert.match(auditPayload.bodyMarkdown, /scripts\/check-native-settings-layout\.sh/);
+  assert.doesNotMatch(auditPayload.bodyMarkdown, /\.agent-context\/HANDOFF\.md as audit context/);
+});
+
+test("loop runtime permits final audit retry after exhausted repair fills missing packets", async () => {
+  const { cards, runtime } = makeRuntime({ name: "exhausted-repair-packet-retry" });
+  const started = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop redesign native settings exhausted",
+    maxIterations: 1,
+  });
+  assert.equal(started.loop.maxIterations, 1);
+  assert.equal(cards.length, 1);
+
+  await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "completed",
+    summary: "implementation done",
+  });
+  await runtime.recordTerminalReturn({
+    taskCardId: "ttc_2",
+    status: "blocked",
+    auditVerdict: "blocked_missing_evidence",
+    summary: "missing packet sections",
+  });
+  const repair = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_3",
+    status: "completed",
+    summary: "repair supplied final packet evidence",
+    returnBody: xcodeSettingsRepairPacketBody(),
+  });
+
+  assert.equal(repair.ok, true);
+  assert.equal(repair.loop.status, "running");
+  assert.equal(repair.loop.currentRole, "product_audit");
+  assert.equal(repair.loop.nextRoute, "product_audit");
+  assert.equal(repair.loop.iteration, 2);
+  assert.equal(repair.loop.maxIterations, 2);
+  assert.equal(cards.length, 4);
+  assert.equal(cards[3].payload.targetRole, "product_audit");
+  assert.deepEqual(cards[3].payload.missingAuditPacketSections, []);
+});
+
+test("loop runtime rebuilds exhausted loop audit packet from stored repair return card", async () => {
+  const evidenceCards = new Map([
+    ["ttc_repair_return", {
+      message: {
+        summary: "repair supplied final packet evidence",
+        body: xcodeSettingsRepairPacketBody(),
+      },
+    }],
+  ]);
+  const { cards, runtime, storageFile } = makeRuntime({
+    name: "historical-exhausted-packet-rebuild",
+    visibleThreads: [{
+      id: "source-thread",
+      title: "Xcode",
+      cwd: "/Users/xuxin/Documents/Xcode-HomeAI",
+    }, {
+      id: "implementation-thread",
+      title: "Xcode Loop Implementation",
+      cwd: "/Users/xuxin/Xcode/Home AI",
+      threadRole: "implementation",
+    }, {
+      id: "audit-thread",
+      title: "Xcode Loop Audit",
+      cwd: "/Users/xuxin/Xcode/Home AI",
+      threadRole: "product_audit",
+    }],
+    isLoopImplementationWorkspace: (cwd) => cwd === "/Users/xuxin/Xcode/Home AI",
+    readThreadTaskCardForLoopEvidence: (cardId) => evidenceCards.get(cardId) || null,
+  });
+  const loopId = testLoopId({
+    sourceThreadId: "source-thread",
+    targetThreadId: "source-thread",
+    objective: "recover exhausted audit packet",
+  });
+  fs.writeFileSync(storageFile, `${JSON.stringify({ version: 1, loops: [{
+    loopId,
+    sourceThreadId: "source-thread",
+    targetThreadId: "",
+    requirementsThreadId: "source-thread",
+    implementationThreadId: "implementation-thread",
+    auditThreadId: "audit-thread",
+    implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
+    domainAdapter: "generic",
+    objectiveSummary: "recover exhausted audit packet",
+    status: "blocked",
+    currentRole: "",
+    iteration: 3,
+    maxIterations: 3,
+    nextRoute: "max_iterations_reached",
+    blockedReason: "",
+    sourceRequestId: `at-loop:${loopId}:source`,
+    requirementsLocal: true,
+    auditPacket: {
+      required: true,
+      sections: [{
+        id: "requirements_packet",
+        required: true,
+        status: "present",
+        source: "source_thread_local_requirements",
+        summary: "recover exhausted audit packet",
+        expectedEvidence: [],
+        evidence: ["source_thread_id:source-thread"],
+        missingEvidence: [],
+      }, {
+        id: "design_contract_packet",
+        required: true,
+        status: "missing",
+        source: "durable_docs_and_contracts",
+        summary: "",
+        expectedEvidence: [],
+        evidence: [],
+        missingEvidence: [],
+      }, {
+        id: "implementation_packet",
+        required: true,
+        status: "present",
+        source: "implementation_return_card",
+        summary: "implementation done",
+        expectedEvidence: [],
+        evidence: ["task_card_id:ttc_impl"],
+        missingEvidence: [],
+      }, {
+        id: "validation_packet",
+        required: true,
+        status: "missing",
+        source: "tests_harnesses_and_readback",
+        summary: "",
+        expectedEvidence: [],
+        evidence: [],
+        missingEvidence: [],
+      }, {
+        id: "privacy_packet",
+        required: true,
+        status: "missing",
+        source: "privacy_boundary",
+        summary: "",
+        expectedEvidence: [],
+        evidence: [],
+        missingEvidence: [],
+      }],
+      deltaMatrix: [],
+    },
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    roleSlices: [{
+      role: "requirements",
+      roleSliceId: `${loopId}:requirements:1`,
+      iteration: 1,
+      status: "local",
+      dispatchStatus: "source_thread_local_role",
+      dispatchMode: "source_thread_local_role",
+      taskCardDispatch: false,
+      taskCardId: "",
+      targetThreadId: "source-thread",
+      targetPurpose: "workspace_implementation",
+      returnStatus: "completed",
+      roleOwnerThreadId: "source-thread",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "implementation",
+      roleSliceId: `${loopId}:implementation:1`,
+      iteration: 1,
+      status: "returned",
+      dispatchStatus: "dispatched",
+      dispatchMode: "task_card",
+      taskCardDispatch: true,
+      taskCardId: "ttc_impl",
+      targetThreadId: "implementation-thread",
+      targetPurpose: "workspace_implementation",
+      returnStatus: "completed",
+      returnCardId: "ttc_impl_return",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "product_audit",
+      roleSliceId: `${loopId}:product_audit:3`,
+      iteration: 3,
+      status: "returned",
+      dispatchStatus: "dispatched",
+      dispatchMode: "task_card",
+      taskCardDispatch: true,
+      taskCardId: "ttc_audit",
+      targetThreadId: "audit-thread",
+      targetPurpose: "audit_lane",
+      returnStatus: "blocked",
+      auditVerdict: "blocked_missing_evidence",
+      returnCardId: "ttc_audit_return",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "repair",
+      roleSliceId: `${loopId}:repair:3`,
+      iteration: 3,
+      status: "returned",
+      dispatchStatus: "dispatched",
+      dispatchMode: "task_card",
+      taskCardDispatch: true,
+      taskCardId: "ttc_repair",
+      targetThreadId: "implementation-thread",
+      targetPurpose: "workspace_implementation",
+      returnStatus: "completed",
+      returnCardId: "ttc_repair_return",
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }],
+  }] }, null, 2)}\n`, "utf8");
+
+  const result = await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop recover exhausted audit packet",
+    implementationWorkspaceCwd: "/Users/xuxin/Xcode/Home AI",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.recovered, true);
+  assert.equal(result.loop.status, "running");
+  assert.equal(result.loop.currentRole, "product_audit");
+  assert.equal(result.loop.iteration, 4);
+  assert.equal(result.loop.maxIterations, 4);
+  assert.deepEqual(result.loop.auditPacketStatus.missingSections, []);
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].payload.targetRole, "product_audit");
+  assert.deepEqual(cards[0].payload.missingAuditPacketSections, []);
+});
+
+test("loop runtime still blocks exhausted repair when packet sections remain missing", async () => {
+  const { cards, runtime } = makeRuntime({ name: "exhausted-repair-missing-packets" });
+  await runtime.startLoop({
+    sourceThreadId: "source-thread",
+    text: "@loop redesign native settings missing packets",
+    maxIterations: 1,
+  });
+  await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "completed",
+    summary: "implementation done",
+  });
+  await runtime.recordTerminalReturn({
+    taskCardId: "ttc_2",
+    status: "blocked",
+    auditVerdict: "blocked_missing_evidence",
+    summary: "missing packet sections",
+  });
+  const repair = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_3",
+    status: "completed",
+    summary: "repair did not include structured packet sections",
+  });
+
+  assert.equal(repair.ok, true);
+  assert.equal(repair.loop.status, "blocked");
+  assert.equal(repair.loop.currentRole, "");
+  assert.equal(repair.loop.nextRoute, "max_iterations_reached");
+  assert.equal(cards.length, 3);
+  assert.ok(repair.loop.auditPacketStatus.missingSections.includes("design_contract_packet"));
+  assert.ok(repair.loop.auditPacketStatus.missingSections.includes("validation_packet"));
+  assert.ok(repair.loop.auditPacketStatus.missingSections.includes("privacy_packet"));
 });
 
 test("loop runtime fails closed when required product-audit lane is missing", async () => {
