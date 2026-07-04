@@ -828,6 +828,7 @@ const threadTaskCardRuntimeService = createThreadTaskCardRuntimeService({
   visibleWorkspaceRoots,
   readGlobalState: (...args) => readGlobalState(...args),
   readThreadListFallback: (...args) => readThreadListFallback(...args),
+  listWorkspaces: (...args) => listWorkspaces(...args),
   pushThreadId,
   shortIdentifier,
   compactOneLine,

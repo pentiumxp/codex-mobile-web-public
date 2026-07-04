@@ -77,6 +77,7 @@ test("thread task-card runtime composition wires return hook, policy, route, and
       rememberedLoopThread = thread;
       return thread;
     },
+    listWorkspaces: async () => [{ cwd: "/repo/plugin", label: "Plugin" }],
   });
 
   await serviceOptions.onTerminalReturnCard({ id: "return-1" });
@@ -103,6 +104,7 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   assert.equal(runtime.attachWorkspaceDelegationRuntimeGuidance({}).guided, true);
   assert.equal(typeof atLoopOptions.assertThreadTaskCardTargetDeliverable, "function");
   assert.equal(typeof atLoopOptions.resolveThreadTaskCardTargetReference, "function");
+  assert.equal(typeof atLoopOptions.listWorkspaces, "function");
   assert.deepEqual(homeAiEvents, [
     { event: { id: "return-1" }, options: { workspaceId: "owner" } },
     {

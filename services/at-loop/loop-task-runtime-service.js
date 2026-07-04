@@ -186,6 +186,14 @@ function normalizeCwd(value) {
   return compactOneLine(value).replace(/\\/g, "/").toLowerCase();
 }
 
+function workspaceToken(value) {
+  return compactOneLine(value).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "");
+}
+
+function workspacePathTokens(cwd) {
+  return compactOneLine(cwd).split(/[\\/]+/).map(workspaceToken).filter(Boolean);
+}
+
 function roleRequiresImplementationWorkspace(role) {
   return role === "implementation" || role === "repair";
 }
@@ -642,6 +650,68 @@ function createLoopTaskRuntimeService(dependencies = {}) {
         : { ok: false, error: "implementation_workspace_unresolved", cwd: compactOneLine(cwd) };
     }
     return defaultImplementationWorkspaceCheck(cwd);
+  }
+
+  function implementationWorkspaceCandidateScore(workspace = {}, sourceThread = {}) {
+    const cwd = compactOneLine(workspace.cwd || workspace.path || workspace.workspace);
+    const sourceCwd = compactOneLine(sourceThread && (sourceThread.cwd || sourceThread.workspace || sourceThread.targetWorkspace));
+    const sourceTitle = compactOneLine(sourceThread && (sourceThread.title || sourceThread.name || sourceThread.preview));
+    const sourceBase = workspaceToken(sourceCwd.split(/[\\/]+/).filter(Boolean).pop() || "");
+    const sourceTitleToken = workspaceToken(sourceTitle);
+    const workspaceLabelToken = workspaceToken(workspace.label || workspace.name || workspace.title || "");
+    const cwdToken = workspaceToken(cwd);
+    const pathTokens = workspacePathTokens(cwd);
+    if (sourceCwd && normalizeCwd(cwd) === normalizeCwd(sourceCwd)) return 100;
+    let score = 0;
+    if (sourceTitleToken && pathTokens.includes(sourceTitleToken)) score = Math.max(score, 80);
+    if (sourceTitleToken && workspaceLabelToken && workspaceLabelToken.includes(sourceTitleToken)) score = Math.max(score, 70);
+    if (sourceBase && sourceBase.length >= 4 && cwdToken.includes(sourceBase)) score = Math.max(score, 55);
+    return score;
+  }
+
+  async function registeredImplementationWorkspaceCwd(sourceThread = {}) {
+    if (typeof dependencies.listWorkspaces !== "function") return "";
+    let rows;
+    try {
+      rows = await dependencies.listWorkspaces();
+    } catch (_) {
+      return "";
+    }
+    const candidates = [];
+    for (const workspace of Array.isArray(rows) ? rows : []) {
+      const cwd = compactOneLine(workspace && (workspace.cwd || workspace.path || workspace.workspace));
+      if (!cwd) continue;
+      const check = implementationWorkspaceCheck(cwd, {
+        role: "implementation",
+        sourceThread,
+        source: "registered-workspace",
+      });
+      if (!check || check.ok === false) continue;
+      const score = implementationWorkspaceCandidateScore(workspace, sourceThread);
+      if (score <= 0) continue;
+      candidates.push({ cwd, score });
+    }
+    candidates.sort((left, right) => right.score - left.score || left.cwd.localeCompare(right.cwd));
+    if (!candidates.length) return "";
+    if (candidates[1] && candidates[1].score === candidates[0].score) return "";
+    return candidates[0].cwd;
+  }
+
+  async function resolvedImplementationWorkspaceCwd(input = {}, sourceThread = {}) {
+    const explicit = inputImplementationWorkspaceCwd(input);
+    if (explicit) return explicit;
+    if (typeof dependencies.resolveLoopImplementationWorkspaceCwd === "function") {
+      const resolved = await dependencies.resolveLoopImplementationWorkspaceCwd({
+        input,
+        sourceThread,
+        sourceThreadId: compactOneLine(input.sourceThreadId || input.threadId),
+      });
+      const cwd = compactOneLine(resolved && typeof resolved === "object"
+        ? resolved.cwd || resolved.path || resolved.workspace
+        : resolved);
+      if (cwd) return cwd;
+    }
+    return registeredImplementationWorkspaceCwd(sourceThread);
   }
 
   function loadState() {
@@ -1486,7 +1556,6 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   async function startLoop(input = {}) {
     const sourceThreadId = compactOneLine(input.sourceThreadId || input.threadId);
     if (!sourceThreadId) return { ok: false, error: "source_thread_id_required" };
-    const implementationWorkspaceCwd = inputImplementationWorkspaceCwd(input);
     const triggerText = input.text || input.message || (input.objective ? `@loop ${input.objective}` : "");
     const parsed = parser.parse(triggerText, { knownAliases: knownAliases() });
     if (!parsed.triggered) return { ok: false, error: "at_loop_trigger_not_found" };
@@ -1495,6 +1564,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const explicitTarget = input.targetThreadId || (parsed.targetAlias ? targetFromAlias(parsed.targetAlias) : null);
     const explicitTargetId = compactOneLine(typeof explicitTarget === "string" ? explicitTarget : explicitTarget && (explicitTarget.id || explicitTarget.threadId));
     const sourceTarget = readThreadSummary(sourceThreadId) || { id: sourceThreadId, threadId: sourceThreadId };
+    const implementationWorkspaceCwd = await resolvedImplementationWorkspaceCwd(input, sourceTarget);
     const requirementsThreadId = explicitTargetId || compactOneLine(sourceTarget.id || sourceTarget.threadId || sourceThreadId);
     const loopId = buildLoopId({
       sourceThreadId,

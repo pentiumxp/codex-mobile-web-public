@@ -664,7 +664,10 @@ Implementation path:
    visible at requirements revision. When the source/main requirements thread
    maps to a separate real implementation workspace, callers may pass
    `implementationWorkspaceCwd` (or the snake_case equivalent) through the
-   API/MCP trigger. Implementation and repair lane selection must then reuse
+   API/MCP trigger; if omitted, the runtime may resolve a registered
+   implementation workspace by bounded source title/path matching after the
+   candidate passes implementation project-marker validation. Implementation
+   and repair lane selection must then reuse
    only role lanes whose cwd matches that mapped workspace, or create a role
    lane at that cwd; other implementation-looking threads are stale/ineligible
    for that Loop.

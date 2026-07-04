@@ -74,6 +74,7 @@ function makeRuntime(options = {}) {
       cards.push({ sourceThreadId, payload });
       return { ok: true, cards: [{ id: `ttc_${cards.length}` }] };
     },
+    listWorkspaces: options.listWorkspaces,
     isLoopImplementationWorkspace: options.isLoopImplementationWorkspace || (() => true),
   };
   if (options.assertThreadTaskCardTargetDeliverable !== false) {
@@ -238,6 +239,40 @@ test("loop runtime uses explicit implementation workspace instead of source requ
   assert.equal(cards.length, 1);
   assert.equal(cards[0].payload.targetThreadId, "implementation-created");
   assert.notEqual(cards[0].payload.targetThreadId, "xcode-thread");
+});
+
+test("loop runtime maps source-main thread to registered implementation workspace", async () => {
+  const realWorkspace = "/Users/xuxin/Xcode/Home AI";
+  const sourceWorkspace = "/Users/xuxin/Documents/Xcode-HomeAI";
+  const { cards, createdThreads, runtime } = makeRuntime({
+    name: "registered-implementation-workspace",
+    visibleThreads: [{
+      id: "xcode-thread",
+      title: "Xcode",
+      cwd: sourceWorkspace,
+    }],
+    listWorkspaces: async () => [
+      { cwd: sourceWorkspace, label: "Xcode placeholder" },
+      { cwd: realWorkspace, label: "Home AI Xcode" },
+    ],
+    isLoopImplementationWorkspace: (cwd) => cwd === realWorkspace
+      ? { ok: true, cwd, reason: "xcode_project_marker" }
+      : { ok: false, error: "implementation_workspace_project_markers_missing", cwd },
+  });
+
+  const result = await runtime.startLoop({
+    sourceThreadId: "xcode-thread",
+    text: "@loop redesign native settings",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.loop.requirementsThreadId, "xcode-thread");
+  assert.equal(result.loop.requirementsLocal, true);
+  assert.equal(result.loop.implementationWorkspaceCwd, realWorkspace);
+  assert.equal(result.loop.implementationThreadId, "implementation-created");
+  assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").cwd, realWorkspace);
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].payload.targetThreadId, "implementation-created");
 });
 
 test("loop runtime updates blocked duplicate with explicit implementation workspace", async () => {
