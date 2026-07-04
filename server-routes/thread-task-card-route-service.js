@@ -32,6 +32,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     reasoningEffortOptions = [],
     readRuntimeSettings = () => ({}),
     workspaceDelegationPublicSettings = () => ({ enabled: false }),
+    recentStartedThreads = null,
     readStateDbThread = () => null,
     readStartedThread = () => null,
     readRolloutSessionFallbackThread = () => null,
@@ -66,10 +67,27 @@ function createThreadTaskCardRouteService(dependencies = {}) {
   const effortOptions = Array.isArray(reasoningEffortOptions) ? reasoningEffortOptions : [];
   let workspaceDelegationTargetHintsCache = { text: "", cachedAt: 0 };
 
+  function readThreadListForTaskCardTargets(limit = 500, filters = { archived: false }) {
+    const fallbackRows = readThreadListFallback(limit, filters);
+    const rows = Array.isArray(fallbackRows) ? fallbackRows : [];
+    if (!(recentStartedThreads instanceof Map) || recentStartedThreads.size === 0) return rows;
+    const byId = new Map();
+    for (const thread of rows) {
+      const id = String(thread && (thread.id || thread.threadId) || "").trim();
+      if (id) byId.set(id, thread);
+    }
+    for (const entry of recentStartedThreads.values()) {
+      const thread = entry && entry.thread ? entry.thread : entry;
+      const id = String(thread && (thread.id || thread.threadId) || "").trim();
+      if (id && !byId.has(id)) byId.set(id, thread);
+    }
+    return [...byId.values()];
+  }
+
   const threadTaskCardRoutingService = createThreadTaskCardRoutingService({
     normalizeFsPath,
     threadDisplayTitle,
-    readThreadListFallback,
+    readThreadListFallback: readThreadListForTaskCardTargets,
     readThreadSummary: (threadId) => readThreadTaskCardTargetSummary(threadId),
     visibilityFromGlobalState,
     threadHasArchiveSignal,

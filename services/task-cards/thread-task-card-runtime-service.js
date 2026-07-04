@@ -178,6 +178,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     reasoningEffortOptions: dependencies.reasoningEffortOptions,
     readRuntimeSettings: dependencies.readRuntimeSettings,
     workspaceDelegationPublicSettings: dependencies.workspaceDelegationPublicSettings,
+    recentStartedThreads: dependencies.recentStartedThreads,
     readStateDbThread: dependencies.readStateDbThread,
     readStartedThread: dependencies.readStartedThread,
     readRolloutSessionFallbackThread: dependencies.readRolloutSessionFallbackThread,

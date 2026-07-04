@@ -438,6 +438,38 @@ test("approved task-card visible target summary helper is runtime executable", (
   assert.equal(emptyService.readThreadTaskCardVisibleTargetSummary("thread-movie"), null);
 });
 
+test("task-card route treats recent started threads as visible delegation targets", () => {
+  const recentStartedThreads = new Map([[
+    "loop-implementation-thread",
+    {
+      cachedAt: Date.now(),
+      thread: {
+        id: "loop-implementation-thread",
+        name: "Xcode Loop Implementation",
+        cwd: "/Users/xuxin/Xcode/Home AI",
+        threadRole: "implementation",
+      },
+    },
+  ]]);
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {},
+    readThreadListFallback: () => [],
+    recentStartedThreads,
+    threadDisplayTitle: (thread) => thread && (thread.name || thread.title || thread.preview || thread.id) || "",
+  });
+
+  const visible = service.readThreadTaskCardVisibleTargetSummary("loop-implementation-thread");
+  assert.equal(visible.cwd, "/Users/xuxin/Xcode/Home AI");
+  assert.equal(
+    service.resolveThreadTaskCardTargetReference("loop-implementation-thread", "source-thread"),
+    "loop-implementation-thread",
+  );
+  assert.equal(
+    service.assertThreadTaskCardTargetDeliverable(visible),
+    "loop-implementation-thread",
+  );
+});
+
 test("workspace delegation RPC diagnostics are route-owned and bounded", () => {
   const lines = [];
   const service = createThreadTaskCardRouteService({
