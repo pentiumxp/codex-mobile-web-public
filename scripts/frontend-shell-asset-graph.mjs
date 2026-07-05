@@ -627,6 +627,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "api-client-runtime",
     source: "public/api-client-runtime.js",
+    nativeSource: "frontend/native/api-client-runtime.mjs",
     globalName: "CodexApiClientRuntime",
     expectedFunctions: [
       "createApiClientRuntime",
