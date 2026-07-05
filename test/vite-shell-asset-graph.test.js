@@ -1069,6 +1069,81 @@ test("native ESM standalone helper modules match classic fallback behavior", asy
   );
 });
 
+test("native ESM app update runtime matches classic fallback behavior", async () => {
+  const classicAppUpdate = require("../public/app-update-runtime.js");
+  const nativeAppUpdate = await import("../frontend/native/app-update-runtime.mjs");
+  const state = {
+    appVersion: "0.1.11",
+    appWorkspacePath: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+    selectedCwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+    publicReleaseEnabled: true,
+    publicReleaseRepository: "pentiumxp/codex-mobile-web",
+    publicReleaseBranch: "main",
+    publicPrEnabled: true,
+    publicPrRepository: "pentiumxp/codex-mobile-web",
+    workspaces: [
+      { cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" },
+    ],
+    threads: [],
+    appUpdateStatus: {
+      version: "0.1.11",
+      supported: true,
+      updateAvailable: true,
+      canFastForward: true,
+      remote: "origin",
+      branch: "main",
+      remoteShort: "abc1234",
+      remoteUrl: "https://github.com/pentiumxp/codex-mobile-web.git",
+    },
+  };
+  const deps = {
+    state,
+    CLIENT_BUILD_ID: "0.1.11|codex-mobile-shell-v625-cbb2ef9490a1",
+    normalizeFsPath: (value) => String(value || "").toLowerCase(),
+    threadMatchesWorkspaceCwd: (a, b) => String(a || "").toLowerCase() === String(b || "").toLowerCase(),
+  };
+  const classicRuntime = classicAppUpdate.createAppUpdateRuntime(deps);
+  const nativeRuntime = nativeAppUpdate.createAppUpdateRuntime(deps);
+  assert.equal(
+    nativeRuntime.clientBuildVersionText(),
+    classicRuntime.clientBuildVersionText(),
+  );
+  assert.equal(
+    nativeRuntime.appVersionText(),
+    classicRuntime.appVersionText(),
+  );
+  assert.equal(
+    nativeRuntime.currentUpdateUsesPublicRelease(),
+    classicRuntime.currentUpdateUsesPublicRelease(),
+  );
+  assert.equal(
+    nativeRuntime.updateStatusLine(state.appUpdateStatus),
+    classicRuntime.updateStatusLine(state.appUpdateStatus),
+  );
+  assert.equal(
+    nativeRuntime.publicReleaseStatusLine({ updateAvailable: false, publicShort: "def5678" }),
+    classicRuntime.publicReleaseStatusLine({ updateAvailable: false, publicShort: "def5678" }),
+  );
+  const publicPrStatus = {
+    repository: "pentiumxp/codex-mobile-web",
+    openPullRequestCount: 1,
+    pullRequests: [{ number: 82, title: "Public release", updatedAt: "2026-07-05T00:00:00Z" }],
+    hasOpenPullRequests: true,
+  };
+  assert.equal(
+    nativeRuntime.publicPrPromptKey(publicPrStatus),
+    classicRuntime.publicPrPromptKey(publicPrStatus),
+  );
+  assert.equal(
+    nativeRuntime.publicPrSummaryText(publicPrStatus),
+    classicRuntime.publicPrSummaryText(publicPrStatus),
+  );
+  assert.equal(
+    nativeRuntime.publicPrReviewWorkspacePath(),
+    classicRuntime.publicPrReviewWorkspacePath(),
+  );
+});
+
 test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
   const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
   const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
@@ -1330,6 +1405,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/thread-tile-layout\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-tile-actions\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-tile-state\.mjs/);
+  assert.match(shardSources, /frontend\/native\/app-update-runtime\.mjs/);
   assert.doesNotMatch(shardSources, /from ".*public\/build-refresh-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/runtime-settings\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/viewport-metrics\.js"/);
@@ -1356,9 +1432,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-layout\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-actions\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-state\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/app-update-runtime\.js"/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
   assert.match(shardSources, /public\/thread-tile-runtime\.js/);
-  assert.match(shardSources, /public\/app-update-runtime\.js/);
   assert.match(shardSources, /public\/settings-runtime\.js/);
   assert.match(shardSources, /public\/modal-runtime\.js/);
   assert.match(shardSources, /public\/navigation-runtime\.js/);
@@ -1636,8 +1712,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 26);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 26);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 27);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 27);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1752,6 +1828,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "thread-tile-state",
         nativeSource: "frontend/native/thread-tile-state.mjs",
         importSource: "frontend/native/thread-tile-state.mjs",
+      },
+      {
+        id: "app-update-runtime",
+        nativeSource: "frontend/native/app-update-runtime.mjs",
+        importSource: "frontend/native/app-update-runtime.mjs",
       },
       {
         id: "thread-list-load-policy",

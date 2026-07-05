@@ -509,6 +509,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "app-update-runtime",
     source: "public/app-update-runtime.js",
+    nativeSource: "frontend/native/app-update-runtime.mjs",
     globalName: "CodexAppUpdateRuntime",
     expectedFunctions: [
       "createAppUpdateRuntime",
