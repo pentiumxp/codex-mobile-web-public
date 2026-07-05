@@ -2021,6 +2021,12 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return workerLanesState().find((lane) => sameThreadId(lane.threadId, threadId)) || null;
   }
 
+  function exactWorkerLifecycleTarget(input = {}) {
+    const workerLaneId = compactOneLine(input.workerLaneId || input.worker_lane_id);
+    const threadId = compactOneLine(input.targetThreadId || input.target_thread_id || input.threadId || input.thread_id);
+    return { workerLaneId, threadId, exact: Boolean(workerLaneId || threadId) };
+  }
+
   function workerLaneRecordMatchesInput(record = {}, input = {}) {
     const role = roleFromLifecycle(input);
     if (!isWorkerLifecycleRole(role)) return false;
@@ -2214,24 +2220,78 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return { ok: resolved.deliverable, action: "resolve", thread: resolved, error: resolved.deliverable ? "" : "thread_lifecycle_target_not_deliverable" };
   }
 
-  function findWorkerLaneRecord(input = {}) {
-    const workerLaneId = compactOneLine(input.workerLaneId || input.worker_lane_id);
-    const threadId = compactOneLine(input.threadId || input.targetThreadId);
+  function findWorkerLaneRecord(input = {}, options = {}) {
+    const exactTarget = exactWorkerLifecycleTarget(input);
+    const workerLaneId = exactTarget.workerLaneId;
+    const threadId = exactTarget.threadId;
     const requestId = compactWorkerRequestId(input);
     const lanes = workerLanesState();
     if (workerLaneId) {
       const found = lanes.find((lane) => compactOneLine(lane.workerLaneId) === workerLaneId);
       if (found) return found;
+      return null;
     }
     if (threadId) {
       const found = lanes.find((lane) => sameThreadId(lane.threadId, threadId));
       if (found) return found;
+      return null;
     }
+    if (options.exactOnly === true) return null;
     if (requestId) {
       const found = lanes.find((lane) => workerRecordHasRequestId(lane, requestId));
       if (found) return found;
     }
     return lanes.find((lane) => workerLaneRecordMatchesInput(lane, input)) || null;
+  }
+
+  function workerLifecycleTargetNotManageable(input = {}, action = "status") {
+    const exactTarget = exactWorkerLifecycleTarget(input);
+    return {
+      ok: false,
+      action,
+      error: "worker_lifecycle_target_not_manageable",
+      targetThreadId: exactTarget.threadId || "",
+      workerLaneId: exactTarget.workerLaneId || "",
+    };
+  }
+
+  function adoptVisibleWorkerLaneRecord(input = {}) {
+    const role = roleFromLifecycle(input);
+    const exactTarget = exactWorkerLifecycleTarget(input);
+    if (!isWorkerLifecycleRole(role) || !exactTarget.threadId) return null;
+    const thread = readThreadSummary(exactTarget.threadId);
+    if (!thread) return null;
+    const row = lifecycleThread(thread, input);
+    if (row.id !== exactTarget.threadId || row.purpose !== "worker_lane") return null;
+    if (row.deliverabilityReason === "role_mismatch" || row.deliverabilityReason === "role_signal_missing") return null;
+    const timestamp = nowIso(clock);
+    const record = {
+      workerLaneId: `worker_${stableHash(`${role}|legacy|${exactTarget.threadId}`, 16)}`,
+      threadId: exactTarget.threadId,
+      title: boundedText(thread.title || thread.name || thread.preview || row.title, 120),
+      role,
+      cwd: compactOneLine(thread.cwd || thread.workspace || thread.targetWorkspace || input.cwd || input.workspaceCwd),
+      pluginId: pluginIdFromLifecycle(thread) || pluginIdFromLifecycle(input),
+      workerPurpose: workerPurposeFromLifecycle(input),
+      sourceThreadId: compactOneLine(input.sourceThreadId || input.source_thread_id),
+      lifecycleStatus: "available",
+      legacy: true,
+      requestIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    workerLanesState().unshift(record);
+    return record;
+  }
+
+  function findOrAdoptWorkerLaneRecord(input = {}, action = "status") {
+    const record = findWorkerLaneRecord(input, { exactOnly: true });
+    if (record) return { record };
+    const exactTarget = exactWorkerLifecycleTarget(input);
+    if (!exactTarget.exact) return { record: findWorkerLaneRecord(input) };
+    const adopted = adoptVisibleWorkerLaneRecord(input);
+    if (adopted) return { record: adopted };
+    return { error: workerLifecycleTargetNotManageable(input, action) };
   }
 
   async function ensureWorkerLane(input = {}) {
@@ -2299,7 +2359,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
 
   function updateWorkerLaneLifecycle(input = {}, nextStatus = "") {
     const action = compactOneLine(input.action || nextStatus || "status").toLowerCase();
-    const record = findWorkerLaneRecord(input);
+    const lookup = findOrAdoptWorkerLaneRecord(input, action);
+    if (lookup.error) return lookup.error;
+    const record = lookup.record;
     if (!record) return { ok: false, action, error: "thread_lifecycle_target_not_found" };
     const timestamp = nowIso(clock);
     if (nextStatus === "retired") record.retired = true;
@@ -2319,7 +2381,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
 
   function updateWorkerLaneHeartbeat(input = {}) {
     const action = "heartbeat";
-    const record = findWorkerLaneRecord(input);
+    const lookup = findOrAdoptWorkerLaneRecord(input, action);
+    if (lookup.error) return lookup.error;
+    const record = lookup.record;
     if (!record) return { ok: false, action, error: "thread_lifecycle_target_not_found" };
     const timestamp = nowIso(clock);
     record.heartbeat = {
@@ -2382,6 +2446,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       return updateWorkerLaneLifecycle(Object.assign({}, input, { role }), "idle");
     }
     if ((action === "mark_completed" || action === "mark_complete") && isWorkerLifecycleRole(role)) {
+      return updateWorkerLaneLifecycle(Object.assign({}, input, { role }), "completed");
+    }
+    if ((action === "achieve" || action === "mark_role_complete") && isWorkerLifecycleRole(role)) {
       return updateWorkerLaneLifecycle(Object.assign({}, input, { role }), "completed");
     }
     if (workerLifecycleActions.has(action)) {

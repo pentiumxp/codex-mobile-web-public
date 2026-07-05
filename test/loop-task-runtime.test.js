@@ -2495,6 +2495,104 @@ test("thread lifecycle ensures home ai worker lanes with idempotency and retirem
   assert.equal(listed.threads.some((thread) => thread.id === ensured.thread.id), false);
 });
 
+test("thread lifecycle worker exact target retirement does not mutate default lane", async () => {
+  const { runtime } = makeRuntime({
+    name: "thread-lifecycle-worker-exact-target",
+    visibleThreads: [{
+      id: "home-ai-main",
+      title: "Home AI",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    }, {
+      id: "legacy-worker-a",
+      title: "Home AI Worker Lane A",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+      status: "completed",
+    }],
+  });
+
+  const current = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "home_ai_worker",
+    sourceThreadId: "home-ai-main",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    purpose: "implementation",
+    idempotencyKey: "current-worker",
+  });
+  assert.equal(current.ok, true);
+
+  const retiredLegacy = await runtime.threadLifecycle({
+    action: "retire",
+    role: "home_ai_worker",
+    targetThreadId: "legacy-worker-a",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+  });
+  assert.equal(retiredLegacy.ok, true);
+  assert.equal(retiredLegacy.thread.id, "legacy-worker-a");
+  assert.equal(retiredLegacy.thread.deliverable, false);
+  assert.equal(retiredLegacy.thread.deliverabilityReason, "lifecycle_retired");
+
+  const currentStatus = await runtime.threadLifecycle({
+    action: "status",
+    role: "home_ai_worker",
+    targetThreadId: current.thread.id,
+    includeIneligible: true,
+  });
+  assert.equal(currentStatus.ok, true);
+  assert.equal(currentStatus.thread.id, current.thread.id);
+  assert.equal(currentStatus.thread.deliverable, true);
+  assert.equal(currentStatus.thread.lifecycleStatus, "available");
+
+  const missing = await runtime.threadLifecycle({
+    action: "retire",
+    role: "home_ai_worker",
+    targetThreadId: "missing-worker",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+  });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error, "worker_lifecycle_target_not_manageable");
+  assert.equal(missing.targetThreadId, "missing-worker");
+
+  const stillCurrent = await runtime.threadLifecycle({
+    action: "status",
+    role: "home_ai_worker",
+    targetThreadId: current.thread.id,
+    includeIneligible: true,
+  });
+  assert.equal(stillCurrent.ok, true);
+  assert.equal(stillCurrent.thread.deliverable, true);
+});
+
+test("thread lifecycle worker role completion uses worker lifecycle instead of loop lookup", async () => {
+  const { runtime } = makeRuntime({
+    name: "thread-lifecycle-worker-role-complete",
+    visibleThreads: [{
+      id: "home-ai-main",
+      title: "Home AI",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    }],
+  });
+
+  const ensured = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "home_ai_worker",
+    sourceThreadId: "home-ai-main",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    purpose: "implementation",
+    idempotencyKey: "worker-complete",
+  });
+  assert.equal(ensured.ok, true);
+
+  const completed = await runtime.threadLifecycle({
+    action: "mark_role_complete",
+    role: "home_ai_worker",
+    targetThreadId: ensured.thread.id,
+  });
+  assert.equal(completed.ok, true);
+  assert.equal(completed.thread.id, ensured.thread.id);
+  assert.equal(completed.thread.lifecycleStatus, "completed");
+  assert.equal(completed.thread.deliverable, true);
+});
+
 test("thread lifecycle supports plugin worker lanes distinct from plugin loop and deploy lanes", async () => {
   const { createdThreads, runtime } = makeRuntime({
     name: "thread-lifecycle-plugin-worker",
