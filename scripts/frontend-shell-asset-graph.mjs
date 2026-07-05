@@ -396,6 +396,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-tile-layout",
     source: "public/thread-tile-layout.js",
+    nativeSource: "frontend/native/thread-tile-layout.mjs",
     globalName: "CodexThreadTileLayout",
     expectedFunctions: [
       "layoutForViewport",
@@ -408,6 +409,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-tile-actions",
     source: "public/thread-tile-actions.js",
+    nativeSource: "frontend/native/thread-tile-actions.mjs",
     globalName: "CodexThreadTileActions",
     expectedFunctions: [
       "closestWithin",
@@ -424,6 +426,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-tile-state",
     source: "public/thread-tile-state.js",
+    nativeSource: "frontend/native/thread-tile-state.mjs",
     globalName: "CodexThreadTileState",
     expectedFunctions: [
       "activePaneSyncPlan",

@@ -867,6 +867,94 @@ test("native ESM low-risk UI helper modules match classic fallback behavior", as
   );
 });
 
+test("native ESM thread tile helper modules match classic fallback behavior", async () => {
+  const classicLayout = require("../public/thread-tile-layout.js");
+  const nativeLayout = await import("../frontend/native/thread-tile-layout.mjs");
+  const layoutInput = {
+    width: 1440,
+    height: 900,
+    desiredPaneCount: 4,
+    maxPanes: 12,
+    recommendedMaxPanes: 6,
+    verticalChromePx: 120,
+    coarsePointer: false,
+    keyboardFocusActive: false,
+  };
+  assert.deepEqual(
+    nativeLayout.layoutForViewport(layoutInput),
+    classicLayout.layoutForViewport(layoutInput),
+  );
+  const columnInput = {
+    ids: ["thread-a", "thread-b", "thread-c", "thread-d"],
+    columns: 3,
+    splitPairs: [{ anchorId: "thread-a", childId: "thread-b" }],
+  };
+  assert.deepEqual(
+    nativeLayout.default.threadTileColumnGroups(columnInput),
+    classicLayout.threadTileColumnGroups(columnInput),
+  );
+
+  const classicActions = require("../public/thread-tile-actions.js");
+  const nativeActions = await import("../frontend/native/thread-tile-actions.mjs");
+  const pane = {
+    disabled: false,
+    getAttribute(name) {
+      return name === "data-thread-tile-pane" ? "thread-a" : "";
+    },
+    closest(selector) {
+      return selector === "[data-thread-tile-pane]" ? this : null;
+    },
+  };
+  const title = {
+    disabled: false,
+    getAttribute(name) {
+      return name === "data-thread-tile-title" ? "thread-a" : "";
+    },
+    closest(selector) {
+      if (selector === "[data-thread-tile-title]") return this;
+      if (selector === "[data-thread-tile-pane]") return pane;
+      return null;
+    },
+  };
+  const actionRoot = { contains(node) { return node === pane || node === title; } };
+  assert.deepEqual(
+    nativeActions.resolveThreadTilePointerAction({ root: actionRoot, target: title }),
+    classicActions.resolveThreadTilePointerAction({ root: actionRoot, target: title }),
+  );
+  const dragInput = { root: actionRoot, target: pane, draggingId: "thread-b" };
+  assert.deepEqual(
+    nativeActions.default.resolveThreadTileDragOverAction(dragInput),
+    classicActions.resolveThreadTileDragOverAction(dragInput),
+  );
+
+  const classicState = require("../public/thread-tile-state.js");
+  const nativeState = await import("../frontend/native/thread-tile-state.mjs");
+  const paneStateInput = {
+    paneCount: 0,
+    runningIds: ["thread-live"],
+    pinnedIds: ["thread-pinned"],
+    candidateIds: ["thread-current", "thread-list"],
+    maxCandidateIds: ["thread-current", "thread-list", "thread-live", "thread-pinned"],
+    currentThreadId: "thread-current",
+    maxPaneCount: 4,
+  };
+  assert.deepEqual(
+    nativeState.paneCountStatePlan(paneStateInput),
+    classicState.paneCountStatePlan(paneStateInput),
+  );
+  const detailQueueInput = {
+    ids: ["thread-a", "thread-b", "thread-c"],
+    readyIds: ["thread-a"],
+    loadingIds: ["thread-b"],
+    controllerIds: ["thread-old"],
+    maxConcurrentLoads: 2,
+  };
+  assert.deepEqual(
+    nativeState.default.detailLoadQueuePlan(detailQueueInput),
+    classicState.detailLoadQueuePlan(detailQueueInput),
+  );
+});
+
 test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
   const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
   const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
@@ -1123,6 +1211,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/thread-list-stable-order\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-status-hints\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-detail-actions\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-tile-layout\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-tile-actions\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-tile-state\.mjs/);
   assert.doesNotMatch(shardSources, /from ".*public\/build-refresh-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/runtime-settings\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/viewport-metrics\.js"/);
@@ -1142,12 +1233,12 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/thread-list-stable-order\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-status-hints\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-detail-actions\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-layout\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-actions\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-state\.js"/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
   assert.match(shardSources, /public\/plugin-voice-input\.js/);
   assert.match(shardSources, /public\/plugin-embed\.js/);
-  assert.match(shardSources, /public\/thread-tile-layout\.js/);
-  assert.match(shardSources, /public\/thread-tile-actions\.js/);
-  assert.match(shardSources, /public\/thread-tile-state\.js/);
   assert.match(shardSources, /public\/thread-tile-runtime\.js/);
   assert.match(shardSources, /public\/app-update-runtime\.js/);
   assert.match(shardSources, /public\/settings-runtime\.js/);
@@ -1427,8 +1518,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 19);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 19);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 22);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 22);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1508,6 +1599,21 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "thread-diagnostic-events",
         nativeSource: "frontend/native/thread-diagnostic-events.mjs",
         importSource: "frontend/native/thread-diagnostic-events.mjs",
+      },
+      {
+        id: "thread-tile-layout",
+        nativeSource: "frontend/native/thread-tile-layout.mjs",
+        importSource: "frontend/native/thread-tile-layout.mjs",
+      },
+      {
+        id: "thread-tile-actions",
+        nativeSource: "frontend/native/thread-tile-actions.mjs",
+        importSource: "frontend/native/thread-tile-actions.mjs",
+      },
+      {
+        id: "thread-tile-state",
+        nativeSource: "frontend/native/thread-tile-state.mjs",
+        importSource: "frontend/native/thread-tile-state.mjs",
       },
       {
         id: "thread-list-load-policy",
