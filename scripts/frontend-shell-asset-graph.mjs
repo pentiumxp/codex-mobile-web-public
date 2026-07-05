@@ -736,6 +736,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "conversation-render-runtime",
     source: "public/conversation-render-runtime.js",
+    nativeSource: "frontend/native/conversation-render-runtime.mjs",
     globalName: "CodexConversationRenderRuntime",
     expectedFunctions: [
       "createConversationRenderRuntime",
