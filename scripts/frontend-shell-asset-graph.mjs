@@ -297,6 +297,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "plugin-voice-input",
     source: "public/plugin-voice-input.js",
+    nativeSource: "frontend/native/plugin-voice-input.mjs",
     globalName: "CodexPluginVoiceInput",
     expectedFunctions: [
       "actionFromMessageType",
@@ -312,6 +313,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "api-client",
     source: "public/api-client.js",
+    nativeSource: "frontend/native/api-client.mjs",
     globalName: "CodexApiClient",
     expectedFunctions: [
       "createApiClient",
@@ -321,6 +323,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "markdown-renderer",
     source: "public/markdown-renderer.js",
+    nativeSource: "frontend/native/markdown-renderer.mjs",
     globalName: "CodexMarkdownRenderer",
     expectedFunctions: [
       "escapeHtml",
@@ -336,6 +339,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "plugin-embed",
     source: "public/plugin-embed.js",
+    nativeSource: "frontend/native/plugin-embed.mjs",
     globalName: "CodexPluginEmbed",
     expectedFunctions: [
       "detect",

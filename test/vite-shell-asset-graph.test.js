@@ -955,6 +955,120 @@ test("native ESM thread tile helper modules match classic fallback behavior", as
   );
 });
 
+test("native ESM standalone helper modules match classic fallback behavior", async () => {
+  const classicVoiceInput = require("../public/plugin-voice-input.js");
+  const nativeVoiceInput = await import("../frontend/native/plugin-voice-input.mjs");
+  const voiceInputPayload = {
+    actions: ["append", "submit", "replace"],
+    composerId: "composer-a",
+    threadId: "thread-a",
+    draftId: "draft-a",
+    maxChars: 24000,
+    writable: true,
+    requestId: "request-a",
+    voiceSessionId: "voice-a",
+  };
+  assert.deepEqual(
+    nativeVoiceInput.startRequestMessage(voiceInputPayload),
+    classicVoiceInput.startRequestMessage(voiceInputPayload),
+  );
+  assert.equal(
+    nativeVoiceInput.actionFromMessageType(classicVoiceInput.TYPES.APPEND_TEXT),
+    classicVoiceInput.actionFromMessageType(classicVoiceInput.TYPES.APPEND_TEXT),
+  );
+  assert.equal(
+    nativeVoiceInput.default.textFromMessage({ final_text: "  spoken text  " }),
+    classicVoiceInput.textFromMessage({ final_text: "  spoken text  " }),
+  );
+
+  const classicApiClient = require("../public/api-client.js");
+  const nativeApiClient = await import("../frontend/native/api-client.mjs");
+  class FakeFormData {}
+  assert.equal(
+    nativeApiClient.isFormDataBody(new FakeFormData(), FakeFormData),
+    classicApiClient.isFormDataBody(new FakeFormData(), FakeFormData),
+  );
+  function FakeAbortController() {
+    this.signal = {
+      aborted: false,
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    this.abort = () => {
+      this.signal.aborted = true;
+    };
+  }
+  const createFetch = (calls) => async (path, options) => {
+    calls.push({ path, contentType: options.headers["Content-Type"], key: options.headers["X-Codex-Mobile-Key"] });
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { ok: true, path };
+      },
+    };
+  };
+  const classicApiCalls = [];
+  const nativeApiCalls = [];
+  assert.deepEqual(
+    await nativeApiClient.createApiClient({
+      fetch: createFetch(nativeApiCalls),
+      AbortControllerCtor: FakeAbortController,
+      FormDataCtor: FakeFormData,
+      getKey: () => "key-a",
+    }).request("/api/test", { method: "POST", body: JSON.stringify({ value: 1 }) }),
+    await classicApiClient.createApiClient({
+      fetch: createFetch(classicApiCalls),
+      AbortControllerCtor: FakeAbortController,
+      FormDataCtor: FakeFormData,
+      getKey: () => "key-a",
+    }).request("/api/test", { method: "POST", body: JSON.stringify({ value: 1 }) }),
+  );
+  assert.deepEqual(nativeApiCalls, classicApiCalls);
+
+  const classicMarkdown = require("../public/markdown-renderer.js");
+  const nativeMarkdown = await import("../frontend/native/markdown-renderer.mjs");
+  const markdownSource = [
+    "## Links",
+    "",
+    "[repo](https://example.com/path?q=1) and `code`",
+    "",
+    "| A | B |",
+    "| --- | --- |",
+    "| **x** | y |",
+  ].join("\n");
+  assert.equal(
+    nativeMarkdown.renderMarkdown(markdownSource),
+    classicMarkdown.renderMarkdown(markdownSource),
+  );
+  assert.equal(
+    nativeMarkdown.default.normalizeMermaidSourceForRender("flowchart TD\nsubgraph Needs Review\nA[Do (work)]\nend"),
+    classicMarkdown.normalizeMermaidSourceForRender("flowchart TD\nsubgraph Needs Review\nA[Do (work)]\nend"),
+  );
+
+  const classicPluginEmbed = require("../public/plugin-embed.js");
+  const nativePluginEmbed = await import("../frontend/native/plugin-embed.mjs");
+  const embedUrl = "http://127.0.0.1:8787/?embed=hermes&pluginId=codex-mobile&pluginRoute=task&pluginThreadId=thread-a&pluginTaskId=task-a&pluginTheme=dark";
+  assert.deepEqual(
+    nativePluginEmbed.detect(embedUrl),
+    classicPluginEmbed.detect(embedUrl),
+  );
+  const routeHint = {
+    pluginId: "codex-mobile",
+    route: "task",
+    threadId: "thread-a",
+    taskId: "task-a",
+  };
+  assert.deepEqual(
+    nativePluginEmbed.routeHintOpenPlan(routeHint),
+    classicPluginEmbed.routeHintOpenPlan(routeHint),
+  );
+  assert.deepEqual(
+    nativePluginEmbed.default.navigationMessage({ currentThreadId: "thread-a" }, { settingsOpen: true }),
+    classicPluginEmbed.navigationMessage({ currentThreadId: "thread-a" }, { settingsOpen: true }),
+  );
+});
+
 test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
   const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
   const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
@@ -1190,8 +1304,6 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
     assert.equal(shardResolved, `\0${shard.source}`);
     return plugin.load(shardResolved);
   }).join("\n");
-  assert.match(shardSources, /public\/api-client\.js/);
-  assert.match(shardSources, /public\/markdown-renderer\.js/);
   assert.match(shardSources, /frontend\/native\/build-refresh-policy\.mjs/);
   assert.match(shardSources, /frontend\/native\/runtime-settings\.mjs/);
   assert.match(shardSources, /frontend\/native\/viewport-metrics\.mjs/);
@@ -1204,6 +1316,10 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/thread-list-load-policy\.mjs/);
   assert.match(shardSources, /frontend\/native\/draft-store\.mjs/);
   assert.match(shardSources, /frontend\/native\/image-compressor\.mjs/);
+  assert.match(shardSources, /frontend\/native\/plugin-voice-input\.mjs/);
+  assert.match(shardSources, /frontend\/native\/api-client\.mjs/);
+  assert.match(shardSources, /frontend\/native\/markdown-renderer\.mjs/);
+  assert.match(shardSources, /frontend\/native\/plugin-embed\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-performance-metrics\.mjs/);
   assert.match(shardSources, /frontend\/native\/frontend-runtime-health\.mjs/);
   assert.match(shardSources, /frontend\/native\/home-ai-diagnostic-reporting\.mjs/);
@@ -1226,6 +1342,10 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/thread-list-load-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/draft-store\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/image-compressor\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/plugin-voice-input\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/api-client\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/markdown-renderer\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/plugin-embed\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-performance-metrics\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/frontend-runtime-health\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/home-ai-diagnostic-reporting\.js"/);
@@ -1237,8 +1357,6 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-actions\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-state\.js"/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
-  assert.match(shardSources, /public\/plugin-voice-input\.js/);
-  assert.match(shardSources, /public\/plugin-embed\.js/);
   assert.match(shardSources, /public\/thread-tile-runtime\.js/);
   assert.match(shardSources, /public\/app-update-runtime\.js/);
   assert.match(shardSources, /public\/settings-runtime\.js/);
@@ -1518,8 +1636,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 22);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 22);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 26);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 26);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1584,6 +1702,26 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "image-compressor",
         nativeSource: "frontend/native/image-compressor.mjs",
         importSource: "frontend/native/image-compressor.mjs",
+      },
+      {
+        id: "plugin-voice-input",
+        nativeSource: "frontend/native/plugin-voice-input.mjs",
+        importSource: "frontend/native/plugin-voice-input.mjs",
+      },
+      {
+        id: "api-client",
+        nativeSource: "frontend/native/api-client.mjs",
+        importSource: "frontend/native/api-client.mjs",
+      },
+      {
+        id: "markdown-renderer",
+        nativeSource: "frontend/native/markdown-renderer.mjs",
+        importSource: "frontend/native/markdown-renderer.mjs",
+      },
+      {
+        id: "plugin-embed",
+        nativeSource: "frontend/native/plugin-embed.mjs",
+        importSource: "frontend/native/plugin-embed.mjs",
       },
       {
         id: "frontend-runtime-health",
