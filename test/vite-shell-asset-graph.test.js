@@ -389,6 +389,153 @@ test("native ESM draft store and image compressor match classic fallback behavio
   }
 });
 
+test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
+  const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
+  const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
+  const detailThread = {
+    status: { type: "running" },
+    mobileReadMode: "projection-v4-partial",
+    mobileOmittedTurnCount: 2,
+    rolloutSizeBytes: 2048,
+    mobileDiagnostics: {
+      threadDetailTimings: {
+        readDecision: "projection-partial-hit",
+        projectionState: "hit",
+        prepareResponseMs: 14,
+      },
+    },
+    turns: [{
+      status: "completed",
+      items: [
+        { type: "userMessage", text: "hello" },
+        { type: "agentMessage", text: "done" },
+        { type: "turnUsageSummary" },
+      ],
+    }],
+  };
+  for (const value of [0, 1.4, "22.8", -1, "bad", 20 * 60 * 1000]) {
+    assert.equal(
+      nativeThreadPerformanceMetrics.boundedTiming(value),
+      classicThreadPerformanceMetrics.boundedTiming(value),
+    );
+  }
+  assert.equal(
+    nativeThreadPerformanceMetrics.classifyThreadDetailPhase(detailThread.mobileDiagnostics.threadDetailTimings, { readMode: detailThread.mobileReadMode }),
+    classicThreadPerformanceMetrics.classifyThreadDetailPhase(detailThread.mobileDiagnostics.threadDetailTimings, { readMode: detailThread.mobileReadMode }),
+  );
+  assert.deepEqual(
+    nativeThreadPerformanceMetrics.threadDetailRefreshEventFields(detailThread, { source: "test", elapsedMs: 44, renderMode: "patch" }),
+    classicThreadPerformanceMetrics.threadDetailRefreshEventFields(detailThread, { source: "test", elapsedMs: 44, renderMode: "patch" }),
+  );
+  assert.deepEqual(
+    nativeThreadPerformanceMetrics.threadListEventFields({ mobileDiagnostics: { threadListTimings: { fallbackCacheDecision: "hit" } } }),
+    classicThreadPerformanceMetrics.threadListEventFields({ mobileDiagnostics: { threadListTimings: { fallbackCacheDecision: "hit" } } }),
+  );
+  assert.equal(
+    nativeThreadPerformanceMetrics.default.classifyThreadListPhase({ fallbackDeferred: true }),
+    classicThreadPerformanceMetrics.classifyThreadListPhase({ fallbackDeferred: true }),
+  );
+
+  const classicFrontendRuntimeHealth = require("../public/frontend-runtime-health.js");
+  const nativeFrontendRuntimeHealth = await import("../frontend/native/frontend-runtime-health.mjs");
+  const submitProbe = {
+    elapsedMs: 500,
+    currentThreadMatch: true,
+    hasThreadSubmission: true,
+    domHasSubmission: false,
+    domCount: 1,
+    visibleCount: 3,
+    threadHash: "thread_h",
+    itemHash: "item_h",
+  };
+  assert.deepEqual(
+    nativeFrontendRuntimeHealth.submittedMessageDomProbeEffects(submitProbe),
+    classicFrontendRuntimeHealth.submittedMessageDomProbeEffects(submitProbe),
+  );
+  assert.deepEqual(
+    nativeFrontendRuntimeHealth.threadListInteractionStallEffects({ elapsedMs: 6000, thresholdMs: 3000, threadListCount: 4 }),
+    classicFrontendRuntimeHealth.threadListInteractionStallEffects({ elapsedMs: 6000, thresholdMs: 3000, threadListCount: 4 }),
+  );
+  const nativeMonitor = nativeFrontendRuntimeHealth.createMonitor({ windowMs: 10000 });
+  const classicMonitor = classicFrontendRuntimeHealth.createMonitor({ windowMs: 10000 });
+  const renderSample = {
+    nowMs: 1000,
+    fullRender: true,
+    fullRenderThreshold: 1,
+    previousCount: 5,
+    domCount: 1,
+    visibleCount: 5,
+    sameThreadRender: true,
+    renderMode: "full-render",
+  };
+  assert.deepEqual(nativeMonitor.recordRender(renderSample), classicMonitor.recordRender(renderSample));
+  assert.equal(
+    nativeFrontendRuntimeHealth.default.compactToken(" hello world "),
+    classicFrontendRuntimeHealth.compactToken(" hello world "),
+  );
+
+  const classicHomeAiDiagnosticReporting = require("../public/home-ai-diagnostic-reporting.js");
+  const nativeHomeAiDiagnosticReporting = await import("../frontend/native/home-ai-diagnostic-reporting.mjs");
+  const diagnosticInput = {
+    diagnostic_type: "render_dom_drop",
+    error_code: "render_dom_drop",
+    severity_hint: "H2",
+    context: { surface: "conversation-render", action: "refresh", thread_hash: "thread_h", rawText: "unsafe" },
+    counts: { visible_count: 3, raw_payload_bytes: 999, ok: true },
+    breadcrumbs: [{ kind: "render", code: "drop", status: "failed", fields: { visible_count: 3, rawText: "unsafe" } }],
+  };
+  assert.deepEqual(
+    nativeHomeAiDiagnosticReporting.sanitizeInput(diagnosticInput),
+    classicHomeAiDiagnosticReporting.sanitizeInput(diagnosticInput),
+  );
+  const nativeReporter = nativeHomeAiDiagnosticReporting.createDiagnosticReporter({ threshold: 2, throttleMs: 1000, now: () => 1000 });
+  const classicReporter = classicHomeAiDiagnosticReporting.createDiagnosticReporter({ threshold: 2, throttleMs: 1000, now: () => 1000 });
+  assert.deepEqual(nativeReporter.recordFailure(diagnosticInput), classicReporter.recordFailure(diagnosticInput));
+  assert.deepEqual(nativeReporter.recordFailure(diagnosticInput), classicReporter.recordFailure(diagnosticInput));
+  assert.deepEqual(nativeReporter.recordSuccess(diagnosticInput), classicReporter.recordSuccess(diagnosticInput));
+  assert.equal(
+    nativeHomeAiDiagnosticReporting.default.hashIdentifier("thread-1", "t"),
+    classicHomeAiDiagnosticReporting.hashIdentifier("thread-1", "t"),
+  );
+
+  const classicThreadDiagnosticEvents = require("../public/thread-diagnostic-events.js");
+  const nativeThreadDiagnosticEvents = await import("../frontend/native/thread-diagnostic-events.mjs");
+  const projectionSnapshotInput = {
+    renderedConversationSignature: "a",
+    currentSignature: "b",
+    source: "refresh",
+    renderMode: "patch",
+    domShape: { renderKeyCount: 2, duplicateRenderKeyCount: 0 },
+    thread: detailThread,
+  };
+  const deps = {
+    visibleShape: () => ({ visibleTurnCount: 1, visibleItemCount: 3 }),
+    singleSignature: () => "b",
+  };
+  assert.deepEqual(
+    nativeThreadDiagnosticEvents.conversationProjectionDiagnosticSnapshot(projectionSnapshotInput, deps),
+    classicThreadDiagnosticEvents.conversationProjectionDiagnosticSnapshot(projectionSnapshotInput, deps),
+  );
+  assert.deepEqual(
+    nativeThreadDiagnosticEvents.turnOrderDiagnosticSnapshot({ expectedTurnIds: ["a", "b"], domTurnIds: ["a", "c"] }),
+    classicThreadDiagnosticEvents.turnOrderDiagnosticSnapshot({ expectedTurnIds: ["a", "b"], domTurnIds: ["a", "c"] }),
+  );
+  assert.deepEqual(
+    nativeThreadDiagnosticEvents.threadDetailResponseDiagnosticEffects({
+      slowPlan: { shouldReport: true, reason: "thread-read", threadId: "thread", elapsedMs: 3500 },
+      contractPlan: { shouldReport: false, reason: "ok", readMode: "projection-v4-partial" },
+    }),
+    classicThreadDiagnosticEvents.threadDetailResponseDiagnosticEffects({
+      slowPlan: { shouldReport: true, reason: "thread-read", threadId: "thread", elapsedMs: 3500 },
+      contractPlan: { shouldReport: false, reason: "ok", readMode: "projection-v4-partial" },
+    }),
+  );
+  assert.equal(
+    nativeThreadDiagnosticEvents.default.compactToken("bad value!"),
+    classicThreadDiagnosticEvents.compactToken("bad value!"),
+  );
+});
+
 test("Vite shell entry imports the asset-graph ESM compatibility module", async () => {
   const {
     VITE_ESM_COMPATIBILITY_MODULES,
@@ -485,22 +632,26 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/thread-list-load-policy\.mjs/);
   assert.match(shardSources, /frontend\/native\/draft-store\.mjs/);
   assert.match(shardSources, /frontend\/native\/image-compressor\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-performance-metrics\.mjs/);
+  assert.match(shardSources, /frontend\/native\/frontend-runtime-health\.mjs/);
+  assert.match(shardSources, /frontend\/native\/home-ai-diagnostic-reporting\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-diagnostic-events\.mjs/);
   assert.doesNotMatch(shardSources, /from ".*public\/build-refresh-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/runtime-settings\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/viewport-metrics\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-list-load-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/draft-store\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/image-compressor\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-performance-metrics\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/frontend-runtime-health\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/home-ai-diagnostic-reporting\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-diagnostic-events\.js"/);
   assert.match(shardSources, /public\/conversation-scroll\.js/);
-  assert.match(shardSources, /public\/thread-performance-metrics\.js/);
   assert.match(shardSources, /public\/thread-detail-state\.js/);
   assert.match(shardSources, /public\/thread-detail-render-plan\.js/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
   assert.match(shardSources, /public\/plugin-voice-input\.js/);
   assert.match(shardSources, /public\/plugin-embed\.js/);
-  assert.match(shardSources, /public\/frontend-runtime-health\.js/);
-  assert.match(shardSources, /public\/home-ai-diagnostic-reporting\.js/);
-  assert.match(shardSources, /public\/thread-diagnostic-events\.js/);
   assert.match(shardSources, /public\/thread-tile-layout\.js/);
   assert.match(shardSources, /public\/thread-tile-actions\.js/);
   assert.match(shardSources, /public\/thread-tile-state\.js/);
@@ -789,8 +940,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 6);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 6);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 10);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 10);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -827,6 +978,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         importSource: "frontend/native/viewport-metrics.mjs",
       },
       {
+        id: "thread-performance-metrics",
+        nativeSource: "frontend/native/thread-performance-metrics.mjs",
+        importSource: "frontend/native/thread-performance-metrics.mjs",
+      },
+      {
         id: "draft-store",
         nativeSource: "frontend/native/draft-store.mjs",
         importSource: "frontend/native/draft-store.mjs",
@@ -835,6 +991,21 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "image-compressor",
         nativeSource: "frontend/native/image-compressor.mjs",
         importSource: "frontend/native/image-compressor.mjs",
+      },
+      {
+        id: "frontend-runtime-health",
+        nativeSource: "frontend/native/frontend-runtime-health.mjs",
+        importSource: "frontend/native/frontend-runtime-health.mjs",
+      },
+      {
+        id: "home-ai-diagnostic-reporting",
+        nativeSource: "frontend/native/home-ai-diagnostic-reporting.mjs",
+        importSource: "frontend/native/home-ai-diagnostic-reporting.mjs",
+      },
+      {
+        id: "thread-diagnostic-events",
+        nativeSource: "frontend/native/thread-diagnostic-events.mjs",
+        importSource: "frontend/native/thread-diagnostic-events.mjs",
       },
       {
         id: "thread-list-load-policy",

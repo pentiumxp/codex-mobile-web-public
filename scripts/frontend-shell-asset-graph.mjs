@@ -98,6 +98,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-performance-metrics",
     source: "public/thread-performance-metrics.js",
+    nativeSource: "frontend/native/thread-performance-metrics.mjs",
     globalName: "CodexThreadPerformanceMetrics",
     expectedFunctions: [
       "boundedTiming",
@@ -346,6 +347,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "frontend-runtime-health",
     source: "public/frontend-runtime-health.js",
+    nativeSource: "frontend/native/frontend-runtime-health.mjs",
     globalName: "CodexFrontendRuntimeHealth",
     expectedFunctions: [
       "compactToken",
@@ -360,6 +362,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "home-ai-diagnostic-reporting",
     source: "public/home-ai-diagnostic-reporting.js",
+    nativeSource: "frontend/native/home-ai-diagnostic-reporting.mjs",
     globalName: "CodexHomeAiDiagnosticReporting",
     expectedFunctions: [
       "boundedToken",
@@ -374,6 +377,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-diagnostic-events",
     source: "public/thread-diagnostic-events.js",
+    nativeSource: "frontend/native/thread-diagnostic-events.mjs",
     globalName: "CodexThreadDiagnosticEvents",
     expectedFunctions: [
       "boundedCount",
