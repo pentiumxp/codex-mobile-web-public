@@ -780,6 +780,93 @@ test("native ESM thread detail patch and merge helpers match classic fallback be
   );
 });
 
+test("native ESM low-risk UI helper modules match classic fallback behavior", async () => {
+  const classicStableOrder = require("../public/thread-list-stable-order.js");
+  const nativeStableOrder = await import("../frontend/native/thread-list-stable-order.mjs");
+  const stableOrderInput = {
+    nowMs: 2000,
+    selectedCwd: "/workspace",
+    threads: [
+      { id: "thread-b", updatedAtMs: 1000 },
+      { id: "thread-a", updatedAtMs: 900 },
+    ],
+    previousState: {
+      scopeKey: JSON.stringify({ cwd: "/workspace", search: "" }),
+      holdUntilMs: 3000,
+      order: ["thread-a", "thread-b"],
+      updatedAtById: { "thread-a": 900, "thread-b": 1000 },
+    },
+  };
+  assert.deepEqual(
+    nativeStableOrder.planThreadListStableOrder(stableOrderInput),
+    classicStableOrder.planThreadListStableOrder(stableOrderInput),
+  );
+  assert.equal(
+    nativeStableOrder.default.threadListOrderScopeKey({ selectedCwd: "/workspace", search: "Xcode" }),
+    classicStableOrder.threadListOrderScopeKey({ selectedCwd: "/workspace", search: "Xcode" }),
+  );
+
+  const classicStatusHints = require("../public/thread-status-hints.js");
+  const nativeStatusHints = await import("../frontend/native/thread-status-hints.mjs");
+  const statusHintInput = {
+    threadId: "thread-a",
+    isRunningHinted: true,
+    status: { type: "completed" },
+    thread: { id: "thread-a", status: { type: "completed" }, updatedAtMs: 1000 },
+    runningHintedAtMs: 900,
+    nowMs: 2000,
+    wasRunning: true,
+    eventAtMs: 1100,
+  };
+  assert.equal(
+    nativeStatusHints.shouldExpireRunningThreadHint(statusHintInput),
+    classicStatusHints.shouldExpireRunningThreadHint(statusHintInput),
+  );
+  assert.equal(
+    nativeStatusHints.default.shouldMarkThreadUnread({
+      thread: { status: { type: "completed" }, updatedAtMs: 3000 },
+      wasRunning: true,
+      runningHintedAtMs: 2500,
+      viewedAtMs: 2000,
+      eventAtMs: 3000,
+    }),
+    classicStatusHints.shouldMarkThreadUnread({
+      thread: { status: { type: "completed" }, updatedAtMs: 3000 },
+      wasRunning: true,
+      runningHintedAtMs: 2500,
+      viewedAtMs: 2000,
+      eventAtMs: 3000,
+    }),
+  );
+
+  const classicActions = require("../public/thread-detail-actions.js");
+  const nativeActions = await import("../frontend/native/thread-detail-actions.mjs");
+  const approvalButton = {
+    dataset: {
+      approvalAction: "approve-once",
+      approvalId: "1688",
+      approvalThreadId: "thread-a",
+    },
+    closest(selector) {
+      return selector === "[data-approval-action]" ? this : null;
+    },
+  };
+  assert.deepEqual(
+    nativeActions.resolveThreadDetailClickAction({ target: approvalButton }),
+    classicActions.resolveThreadDetailClickAction({ target: approvalButton }),
+  );
+  const copyButton = {
+    dataset: { copyKey: "copy-1" },
+    closest(selector) {
+      return selector === "[data-copy-key]" ? this : null;
+    },
+  };
+  assert.deepEqual(
+    nativeActions.default.resolveRichContentClickAction({ target: copyButton }),
+    classicActions.resolveRichContentClickAction({ target: copyButton }),
+  );
+});
+
 test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
   const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
   const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
@@ -1033,6 +1120,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/frontend-runtime-health\.mjs/);
   assert.match(shardSources, /frontend\/native\/home-ai-diagnostic-reporting\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-diagnostic-events\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-list-stable-order\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-status-hints\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-detail-actions\.mjs/);
   assert.doesNotMatch(shardSources, /from ".*public\/build-refresh-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/runtime-settings\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/viewport-metrics\.js"/);
@@ -1049,6 +1139,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/frontend-runtime-health\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/home-ai-diagnostic-reporting\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-diagnostic-events\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-list-stable-order\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-status-hints\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-detail-actions\.js"/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
   assert.match(shardSources, /public\/plugin-voice-input\.js/);
   assert.match(shardSources, /public\/plugin-embed\.js/);
@@ -1070,9 +1163,6 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/composer-runtime\.js/);
   assert.match(shardSources, /public\/composer-bridge-runtime\.js/);
   assert.match(shardSources, /public\/api-client-runtime\.js/);
-  assert.match(shardSources, /public\/thread-list-stable-order\.js/);
-  assert.match(shardSources, /public\/thread-status-hints\.js/);
-  assert.match(shardSources, /public\/thread-detail-actions\.js/);
   assert.match(shardSources, /public\/thread-detail-runtime\.js/);
   assert.match(shardSources, /public\/task-card-runtime\.js/);
   assert.match(shardSources, /public\/notification-ui-runtime\.js/);
@@ -1337,8 +1427,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 16);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 16);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 19);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 19);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1425,9 +1515,24 @@ test("Vite shell build contract records entry chunks and classic fallback output
         importSource: "frontend/native/thread-list-load-policy.mjs",
       },
       {
+        id: "thread-list-stable-order",
+        nativeSource: "frontend/native/thread-list-stable-order.mjs",
+        importSource: "frontend/native/thread-list-stable-order.mjs",
+      },
+      {
+        id: "thread-status-hints",
+        nativeSource: "frontend/native/thread-status-hints.mjs",
+        importSource: "frontend/native/thread-status-hints.mjs",
+      },
+      {
         id: "thread-detail-patch-plan",
         nativeSource: "frontend/native/thread-detail-patch-plan.mjs",
         importSource: "frontend/native/thread-detail-patch-plan.mjs",
+      },
+      {
+        id: "thread-detail-actions",
+        nativeSource: "frontend/native/thread-detail-actions.mjs",
+        importSource: "frontend/native/thread-detail-actions.mjs",
       },
       {
         id: "thread-detail-merge-state",

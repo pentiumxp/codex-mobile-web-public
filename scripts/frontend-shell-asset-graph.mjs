@@ -624,6 +624,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-list-stable-order",
     source: "public/thread-list-stable-order.js",
+    nativeSource: "frontend/native/thread-list-stable-order.mjs",
     globalName: "CodexThreadListStableOrder",
     expectedFunctions: [
       "threadListOrderScopeKey",
@@ -633,6 +634,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-status-hints",
     source: "public/thread-status-hints.js",
+    nativeSource: "frontend/native/thread-status-hints.mjs",
     globalName: "CodexThreadStatusHints",
     expectedFunctions: [
       "isRunningStatus",
@@ -654,6 +656,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-detail-actions",
     source: "public/thread-detail-actions.js",
+    nativeSource: "frontend/native/thread-detail-actions.mjs",
     globalName: "CodexThreadDetailActions",
     expectedFunctions: [
       "closestWithin",
