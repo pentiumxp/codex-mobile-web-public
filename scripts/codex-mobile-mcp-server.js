@@ -105,6 +105,8 @@ function toolsList() {
         required: ["sourceThreadId", "title", "bodyMarkdown"],
         properties: {
           sourceThreadId: { type: "string", minLength: 1, maxLength: 120 },
+          sourceWorkspaceId: { type: "string", maxLength: 1000 },
+          sourceWorkspace: { type: "string", maxLength: 1000 },
           targetThreadId: { type: "string", maxLength: 220 },
           targetThreadIds: {
             type: "array",
@@ -352,6 +354,7 @@ async function delegateToThread(context, args = {}) {
   });
   const payload = {
     sourceThreadId,
+    sourceWorkspaceId: boundedString(args.sourceWorkspaceId || args.sourceWorkspace || args.sourceCwd || args.source_cwd, "source_workspace_id", 1000, false),
     title,
     summary: boundedString(args.summary, "summary", 300, false),
     body: bodyMarkdown,

@@ -53,6 +53,7 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   assert.equal(listedTools.find((entry) => entry.name === "thread_lifecycle").annotations.idempotentHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "return_to_source").annotations.idempotentHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "task_card_heartbeat").annotations.idempotentHint, true);
+  assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.sourceWorkspaceId);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.pluginId);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.replyToThreadId);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.secretRef);
@@ -103,6 +104,7 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
     if (req.method === "POST" && req.url === "/api/threads/source-1/task-cards") {
       const body = JSON.parse(await readBody(req));
       assert.equal(body.direct, true);
+      assert.equal(body.sourceWorkspaceId, "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web");
       assert.equal(body.autoApprove, true);
       assert.equal(body.pending, false);
       assert.equal(body.body, "body");
@@ -209,6 +211,7 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
 
   const delegated = await delegateToThread(context, {
     sourceThreadId: "source-1",
+    sourceWorkspaceId: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
     targetThreadIds: ["thread-home"],
     title: "title",
     bodyMarkdown: "body",
