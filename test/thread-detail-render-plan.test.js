@@ -1616,6 +1616,56 @@ test("thread detail refresh outcome execution maps local patch completion to met
   });
 });
 
+test("thread detail refresh outcome uses shell patch when only outer shell changed", () => {
+  const renderOutcome = renderPlan.finalizeThreadDetailRenderPlan(
+    { shouldRenderDetail: true, detailRenderMode: "patch" },
+    {
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: false,
+      patchRejectReason: "patch-shell-changed",
+    },
+  );
+
+  assert.deepEqual(renderOutcome, {
+    detailRenderMode: "shell-patch",
+    locallyPatchedDetail: false,
+    tilePanePatchedDetail: false,
+    renderAction: "shell-patch-render",
+    projectionConsistencyPhase: "refresh-local-patch",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution(renderOutcome), {
+    renderAction: "shell-patch-render",
+    metadataUpdateMode: "",
+    metadataEffects: [],
+    executionAction: "shell-patch-render",
+    timingTarget: "conversation-render",
+    runFullRender: false,
+    projectionConsistencyPhase: "refresh-local-patch",
+    consistencyCheck: {
+      shouldCheck: true,
+      phase: "refresh-local-patch",
+      renderMode: "shell-patch",
+      reason: "phase-present",
+    },
+    reason: "shell-patch-render",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshExecutionEffects({
+    executionAction: "shell-patch-render",
+  }), {
+    effects: [
+      {
+        type: "shell-patch-render",
+        timingTarget: "conversation-render",
+        metadataEffects: [],
+        requireEffects: false,
+      },
+    ],
+    reason: "shell-patch-render",
+  });
+});
+
 test("thread detail refresh outcome execution maps metadata-only refreshes", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
     renderAction: "metadata-update",

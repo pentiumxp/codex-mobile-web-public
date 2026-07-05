@@ -108,6 +108,20 @@ test("client-event stall self-check keeps one active thread detail full render a
   assert.equal(summary.issues[0].severity, "H3");
 });
 
+test("client-event stall self-check does not classify shell patch renders as full renders", () => {
+  const text = [
+    '[client-event] thread_refresh_ms {"ts":"2026-07-02T01:29:00.000Z","details":{"status":"active","readMode":"projection-active-overlay","clientTimings":{"refreshRenderAction":"shell-patch-render","renderPlanReason":"signature-changed","renderElapsedMs":14}}}',
+    '[client-event] thread_refresh_ms {"ts":"2026-07-02T01:29:04.000Z","details":{"status":"active","readMode":"projection-active-overlay","clientTimings":{"refreshRenderAction":"shell-patch-render","renderPlanReason":"signature-changed","renderElapsedMs":18}}}',
+  ].join("\n");
+  const summary = summarizeClientEventText(text, {
+    nowMs: Date.parse("2026-07-02T01:29:10.000Z"),
+  });
+
+  assert.equal(summary.ok, true);
+  assert.equal(summary.issueCount, 0);
+  assert.equal(summary.sampleSummary.activeDetailFullRenderEventCount, 0);
+});
+
 test("client-event stall self-check uses a short default active detail window", () => {
   const text = [
     '[client-event] thread_refresh_ms {"ts":"2026-07-02T01:29:00.000Z","details":{"status":"active","readMode":"projection-active-overlay","clientTimings":{"refreshRenderAction":"full-render","renderPlanReason":"signature-changed"}}}',

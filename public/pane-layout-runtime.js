@@ -868,6 +868,14 @@ function applyThreadDetailRefreshExecutionEffect(effect) {
       elapsedMs: roundedDurationMs(conversationRenderStartedAt),
     };
   }
+  if (type === "shell-patch-render") {
+    const conversationRenderStartedAt = nowPerfMs();
+    renderCurrentThread();
+    return {
+      timingTarget: "conversation-render",
+      elapsedMs: roundedDurationMs(conversationRenderStartedAt),
+    };
+  }
   throw new Error(`Unknown thread detail refresh execution action: ${type || "empty"}`);
 }
 

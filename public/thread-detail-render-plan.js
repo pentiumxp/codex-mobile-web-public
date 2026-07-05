@@ -863,24 +863,29 @@
       && localPatchAttempted
       && !locallyPatchedDetail
       && !tilePanePatchedDetail);
+    const patchRejectReason = reportLocalPatchRejected
+      ? compactReason(input.patchRejectReason, "unknown")
+      : "";
+    const finalizeResult = {
+      locallyPatchedDetail,
+      tilePanePatchedDetail,
+    };
+    if (patchRejectReason === "patch-shell-changed") {
+      finalizeResult.patchRejectReason = patchRejectReason;
+    }
     return {
       patchResult,
       locallyPatchedDetail,
       tilePanePatchedDetail,
       detailPatchMs,
       patchTimingSource,
-      patchRejectReason: reportLocalPatchRejected
-        ? compactReason(input.patchRejectReason, "unknown")
-        : "",
+      patchRejectReason,
       reportLocalPatchRejected,
       localPatchAttempted,
       tilePanePatchAttempted,
       patchResult,
       patchTimingSource,
-      finalizeResult: {
-        locallyPatchedDetail,
-        tilePanePatchedDetail,
-      },
+      finalizeResult,
     };
   }
 
@@ -1052,6 +1057,7 @@
   function finalizeThreadDetailRenderPlan(plan = {}, result = {}) {
     const tilePanePatchedDetail = Boolean(result.tilePanePatchedDetail);
     const locallyPatchedDetail = Boolean(result.locallyPatchedDetail);
+    const patchRejectReason = compactReason(result.patchRejectReason, "");
     if (!plan.shouldRenderDetail) {
       if (tilePanePatchedDetail) {
         return {
@@ -1085,6 +1091,15 @@
         locallyPatchedDetail: true,
         tilePanePatchedDetail: false,
         renderAction: "local-patch-metadata-update",
+        projectionConsistencyPhase: "refresh-local-patch",
+      };
+    }
+    if (patchRejectReason === "patch-shell-changed") {
+      return {
+        detailRenderMode: "shell-patch",
+        locallyPatchedDetail: false,
+        tilePanePatchedDetail: false,
+        renderAction: "shell-patch-render",
         projectionConsistencyPhase: "refresh-local-patch",
       };
     }
@@ -1137,6 +1152,22 @@
         projectionConsistencyPhase,
         consistencyCheck,
         reason: "metadata-only",
+      };
+    }
+    if (renderAction === "shell-patch-render") {
+      return {
+        renderAction,
+        metadataUpdateMode: "",
+        metadataEffects: [],
+        executionAction: "shell-patch-render",
+        timingTarget: "conversation-render",
+        runFullRender: false,
+        projectionConsistencyPhase: projectionConsistencyPhase || "refresh-local-patch",
+        consistencyCheck: planThreadDetailRefreshConsistencyCheck({
+          projectionConsistencyPhase: projectionConsistencyPhase || "refresh-local-patch",
+          detailRenderMode: outcome.detailRenderMode,
+        }),
+        reason: "shell-patch-render",
       };
     }
     if (renderAction === "full-render") {
@@ -1425,6 +1456,19 @@
           },
         ],
         reason: "full-render",
+      };
+    }
+    if (executionAction === "shell-patch-render") {
+      return {
+        effects: [
+          {
+            type: "shell-patch-render",
+            timingTarget: "conversation-render",
+            metadataEffects: [],
+            requireEffects: false,
+          },
+        ],
+        reason: "shell-patch-render",
       };
     }
     if (!executionAction || executionAction === "none") {
