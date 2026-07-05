@@ -128,10 +128,11 @@ test("thread status hints mark unread only when terminal activity is newer than 
 });
 
 test("thread status hints keep short submitted-processing idle rows running", () => {
+  const baseMs = 1_700_000_000_000;
   const thread = {
     id: "thread-a",
     status: "idle",
-    updatedAtMs: 2000,
+    updatedAtMs: baseMs,
     turns: [],
   };
 
@@ -140,9 +141,9 @@ test("thread status hints keep short submitted-processing idle rows running", ()
     thread,
     status: thread.status,
     isRunningHinted: true,
-    runningHintedAtMs: 2000,
-    submittedProcessingHintedAtMs: 2000,
-    nowMs: 30_000,
+    runningHintedAtMs: baseMs,
+    submittedProcessingHintedAtMs: baseMs,
+    nowMs: baseMs + 30_000,
   }), true);
 
   assert.equal(policy.shouldKeepRunningHintForSettledStatus({
@@ -150,20 +151,29 @@ test("thread status hints keep short submitted-processing idle rows running", ()
     thread,
     status: thread.status,
     isRunningHinted: true,
-    runningHintedAtMs: 2000,
-    submittedProcessingHintedAtMs: 2000,
-    nowMs: 90_000,
-  }), true);
+    runningHintedAtMs: baseMs,
+    submittedProcessingHintedAtMs: baseMs,
+    nowMs: baseMs + 90_000,
+  }), false);
+});
 
-  assert.equal(policy.shouldExpireRunningThreadHint({
+test("thread status hints clear idle rows without fresh local processing evidence", () => {
+  const baseMs = 1_700_000_000_000;
+  const thread = {
+    id: "thread-a",
+    status: "idle",
+    updatedAtMs: baseMs,
+    turns: [],
+  };
+
+  assert.equal(policy.shouldKeepRunningHintForSettledStatus({
     threadId: "thread-a",
     thread,
     status: thread.status,
     isRunningHinted: true,
-    runningHintedAtMs: 2000,
-    submittedProcessingHintedAtMs: 2000,
-    nowMs: 25 * 60 * 1000,
-  }), true);
+    runningHintedAtMs: baseMs,
+    nowMs: baseMs + 30_000,
+  }), false);
 });
 
 test("thread status hints clear deploy-lane idle rows without turn details", () => {
