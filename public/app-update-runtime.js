@@ -820,6 +820,30 @@ function createAppUpdateRuntime(deps = {}) {
     }
     return Boolean(serverBuildId && clientBuildId && serverBuildId !== clientBuildId);
   }
+
+  function loadedClientBuildId() {
+    return String(CLIENT_BUILD_ID || "").trim();
+  }
+
+  function serverBuildMatchesLoadedClient(config) {
+    const nextBuildId = serverBuildIdFromConfig(config);
+    const clientBuildId = loadedClientBuildId();
+    return Boolean(nextBuildId && clientBuildId && !shouldPromptForServerBuildChange(nextBuildId, clientBuildId));
+  }
+
+  function acceptLoadedClientBuild(config) {
+    const clientBuildId = loadedClientBuildId();
+    const nextBuildId = serverBuildIdFromConfig(config);
+    state.serverBuildId = clientBuildId || nextBuildId || state.serverBuildId;
+    state.serverAssetBuildId = String(config && config.buildId || state.serverAssetBuildId || "").trim();
+    if (state.pageRefreshReason === "build") {
+      state.pageRefreshAvailable = false;
+      state.pageRefreshReason = "";
+      state.pageRefreshBuildId = "";
+      state.pageRefreshPreparedConfig = null;
+      renderPageRefreshPrompt();
+    }
+  }
   
   function pageShellAssetUrl(asset, buildId) {
     const url = new URL(asset, window.location.origin);
@@ -1038,6 +1062,10 @@ function createAppUpdateRuntime(deps = {}) {
         state.serverAssetBuildId = nextAssetBuildId;
         return;
       }
+      if (serverBuildMatchesLoadedClient(config)) {
+        acceptLoadedClientBuild(config);
+        return;
+      }
       const serverBuildChanged = Boolean(nextBuildId && nextBuildId !== state.serverBuildId);
       const serverBuildNeedsRefresh = serverBuildChanged && shouldPromptForServerBuildChange(nextBuildId, state.serverBuildId);
       const assetsChanged = Boolean(nextAssetBuildId && state.serverAssetBuildId && nextAssetBuildId !== state.serverAssetBuildId);
@@ -1114,6 +1142,18 @@ function createAppUpdateRuntime(deps = {}) {
       if (!config) throw new Error("page refresh build config unavailable");
       const nextBuildId = serverBuildIdFromConfig(config);
       const currentBuildId = state.serverBuildId || CLIENT_BUILD_ID || nextBuildId;
+      if (serverBuildMatchesLoadedClient(config)) {
+        rememberRateLimitsFromConfig(config);
+        rememberCodexProfiles(config && config.codexProfiles || null);
+        acceptLoadedClientBuild(config);
+        const restartFinished = reconnectRefresh ? finishRestartingUiIfReady() : false;
+        state.pageRefreshReloading = false;
+        state.pageRefreshAvailable = !restartFinished && state.codexProfileRestarting;
+        state.pageRefreshReason = state.pageRefreshAvailable ? "restart" : "";
+        state.pageRefreshPreparedConfig = null;
+        renderPageRefreshPrompt();
+        return;
+      }
       if (reconnectRefresh && !shouldPromptForServerBuildChange(nextBuildId, currentBuildId)) {
         state.serverBuildId = currentBuildId || nextBuildId;
         state.serverAssetBuildId = String(config && config.buildId || state.serverAssetBuildId || "").trim();
