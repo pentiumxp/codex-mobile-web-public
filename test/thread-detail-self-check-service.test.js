@@ -628,6 +628,59 @@ test("thread detail self check detects refresh downgrade", () => {
   assert.ok(codes.includes("thread_detail_refresh_lost_usage"));
 });
 
+test("thread detail self check does not treat submitted user echo collapse as lost input", () => {
+  const first = healthyDetail();
+  first.thread.turns[0].items = [
+    { id: "local-user-submit", type: "userMessage", mobilePendingSubmission: true, content: [{ type: "input_text", text: "publish it" }] },
+    { id: "durable-user-submit", type: "userMessage", content: [{ type: "text", text: "publish it" }] },
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+  const second = healthyDetail();
+  second.thread.turns[0].items = [
+    { id: "durable-user-submit", type: "userMessage", content: [{ type: "text", text: "publish it" }] },
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = compareDetailReadbacks(first, second);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.equal(report.before.userInputItems, 2);
+  assert.equal(report.before.uniqueUserInputItems, 1);
+  assert.equal(report.after.userInputItems, 1);
+  assert.equal(report.after.uniqueUserInputItems, 1);
+  assert.ok(!codes.includes("thread_detail_refresh_lost_user_input"));
+});
+
+test("thread detail self check does not treat assistant progress consolidation as lost assistant output", () => {
+  const first = healthyDetail();
+  first.thread.turns[0].items = [
+    { id: "u1", type: "userMessage", content: [{ type: "text", text: "publish it" }] },
+    { id: "a-progress", type: "agentMessage", text: "I checked the production behavior gate and" },
+    { id: "a-final", type: "agentMessage", text: "I checked the production behavior gate and it is ready." },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+  const second = healthyDetail();
+  second.thread.turns[0].items = [
+    { id: "u1", type: "userMessage", content: [{ type: "text", text: "publish it" }] },
+    { id: "a-final", type: "agentMessage", text: "I checked the production behavior gate and it is ready." },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = compareDetailReadbacks(first, second);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.equal(report.before.assistantItems, 2);
+  assert.equal(report.before.uniqueAssistantItems, 1);
+  assert.equal(report.after.assistantItems, 1);
+  assert.equal(report.after.uniqueAssistantItems, 1);
+  assert.ok(!codes.includes("thread_detail_refresh_lost_assistant_items"));
+  assert.ok(!codes.includes("thread_detail_refresh_item_downgrade"));
+});
+
 test("thread detail self check detects active turn downgraded to stale completed partial", () => {
   const first = {
     thread: {

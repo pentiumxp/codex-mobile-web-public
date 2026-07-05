@@ -1890,10 +1890,10 @@ async function sendMessage(event) {
     }
     scheduleComposerTargetRefresh(targetThreadId, 250, "message-submit");
     if (typeof schedulePostCompletionThreadRefreshes === "function") {
-      schedulePostCompletionThreadRefreshes(targetThreadId, [450, 1100, 2400, 5200]);
+      schedulePostCompletionThreadRefreshes(targetThreadId, [350, 750, 1200, 2400, 5200]);
     }
     if (typeof scheduleUsageBackfillRefresh === "function" && state.currentThreadId === targetThreadId) {
-      scheduleUsageBackfillRefresh(450, { force: true });
+      scheduleUsageBackfillRefresh(750, { force: true });
     }
     scheduleLivePollIfNeeded(1200);
     loadThreads({ silent: true }).catch(showError);

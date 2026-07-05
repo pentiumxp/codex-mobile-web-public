@@ -7203,8 +7203,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(sendBody, /const serverTurnId = startedTurnId\(result\);/);
   assert.match(sendBody, /if \(!steering && serverTurnId && reconcileSubmittedUserMessageTurn\(targetThreadId, clientSubmissionId, serverTurnId\)\)/);
   assert.match(sendBody, /scheduleComposerTargetRefresh\(targetThreadId, 250, "message-submit"\);/);
-  assert.match(sendBody, /schedulePostCompletionThreadRefreshes\(targetThreadId, \[450, 1100, 2400, 5200\]\);/);
-  assert.match(sendBody, /scheduleUsageBackfillRefresh\(450, \{ force: true \}\);/);
+  assert.match(sendBody, /schedulePostCompletionThreadRefreshes\(targetThreadId, \[350, 750, 1200, 2400, 5200\]\);/);
+  assert.match(sendBody, /scheduleUsageBackfillRefresh\(750, \{ force: true \}\);/);
   assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
   const composerRuntimeFactoryBody = functionBodyFrom(composerRuntimeJs, "createComposerRuntime");
   assert.match(composerRuntimeFactoryBody, /schedulePostCompletionThreadRefreshes,/);

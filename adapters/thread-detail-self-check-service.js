@@ -335,6 +335,65 @@ function duplicateSameTimestampUserMessages(turn = {}, thread = null) {
   };
 }
 
+function uniqueUserInputItemCount(items = []) {
+  const uniqueItems = [];
+  for (const item of safeArray(items)) {
+    const type = itemType(item);
+    if (!USER_INPUT_TYPES.has(type)) continue;
+    if (type === "userMessage") {
+      const matchesExisting = uniqueItems.some((existing) => (
+        itemType(existing) === "userMessage" && sameUserMessageContent(existing, item)
+      ));
+      if (matchesExisting) continue;
+      uniqueItems.push(item);
+      continue;
+    }
+    const identity = `${type}:${itemId(item) || visibleKeyForItem(item)}`;
+    const matchesExisting = uniqueItems.some((existing) => (
+      itemType(existing) !== "userMessage"
+        && `${itemType(existing)}:${itemId(existing) || visibleKeyForItem(existing)}` === identity
+    ));
+    if (!matchesExisting) uniqueItems.push(item);
+  }
+  return boundedCount(uniqueItems.length);
+}
+
+function assistantTextValue(item = {}) {
+  const direct = text(item.text || item.message || item.summary);
+  if (direct) return direct.replace(/\s+/g, " ");
+  const content = safeArray(item.content);
+  const parts = [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    const value = text(part.text || part.input_text || part.content);
+    if (value) parts.push(value);
+  }
+  return parts.join("\n").replace(/\s+/g, " ").trim();
+}
+
+function assistantItemsLikelySame(left = {}, right = {}) {
+  if (!isAssistantItem(left) || !isAssistantItem(right)) return false;
+  const leftText = assistantTextValue(left);
+  const rightText = assistantTextValue(right);
+  if (!leftText || !rightText) return false;
+  if (leftText === rightText) return true;
+  const shorter = leftText.length <= rightText.length ? leftText : rightText;
+  const longer = leftText.length > rightText.length ? leftText : rightText;
+  return shorter.length >= 24
+    && longer.startsWith(shorter)
+    && shorter.length / Math.max(1, longer.length) >= 0.5;
+}
+
+function uniqueAssistantItemCount(items = []) {
+  const uniqueItems = [];
+  for (const item of safeArray(items)) {
+    if (!isAssistantItem(item)) continue;
+    const matchesExisting = uniqueItems.some((existing) => assistantItemsLikelySame(existing, item));
+    if (!matchesExisting) uniqueItems.push(item);
+  }
+  return boundedCount(uniqueItems.length);
+}
+
 function visibleItemTimestampOrderIssue(turn = {}, thread = null) {
   let previousTimestamp = 0;
   let previousIdentity = "";
@@ -412,8 +471,14 @@ function summarizeTurn(turn = {}, thread = null) {
   const operationItems = items.filter(isOperationItem).length;
   const reasoningItems = items.filter(isReasoningItem).length;
   const assistantItems = items.filter(isAssistantItem).length;
+  const uniqueAssistantItems = uniqueAssistantItemCount(items);
   const usageItems = items.filter((item) => itemType(item) === "turnUsageSummary").length;
   const userInputItems = items.filter((item) => USER_INPUT_TYPES.has(itemType(item))).length;
+  const uniqueUserInputItems = uniqueUserInputItemCount(items);
+  const comparableItemCount = boundedCount(Math.max(0,
+    items.length
+      - Math.max(0, userInputItems - uniqueUserInputItems)
+      - Math.max(0, assistantItems - uniqueAssistantItems)));
   const timestampMissingVisibleItems = items.filter((item) => {
     const type = itemType(item);
     return USER_VISIBLE_TIMESTAMP_TYPES.has(type) && !itemTimestampMs(item, turn, thread);
@@ -422,12 +487,15 @@ function summarizeTurn(turn = {}, thread = null) {
     turnHash: shortHash(turnId(turn)),
     status: text(statusText(turn.status)).slice(0, 40),
     itemCount: boundedCount(items.length),
+    comparableItemCount,
     counts: countItems(items),
     operationItems: boundedCount(operationItems),
     reasoningItems: boundedCount(reasoningItems),
     assistantItems: boundedCount(assistantItems),
+    uniqueAssistantItems,
     usageItems: boundedCount(usageItems),
     userInputItems: boundedCount(userInputItems),
+    uniqueUserInputItems,
     timestampMissingVisibleItems: boundedCount(timestampMissingVisibleItems),
     syntheticCompletionTurn: turn && turn.mobileSyntheticCompletionTurn === true,
     startedAtMs: boundedCount(turnStartedAtMs(turn), Number.MAX_SAFE_INTEGER),
@@ -849,28 +917,46 @@ function findTurnById(thread = {}, id = "") {
 
 function pushRefreshTurnDowngradeIssues(issues, beforeSummary, afterSummary, threadHash) {
   if (!beforeSummary || !afterSummary || beforeSummary.turnHash !== afterSummary.turnHash) return;
-  if (afterSummary.itemCount < beforeSummary.itemCount) {
+  const beforeComparableItems = Number.isFinite(Number(beforeSummary.comparableItemCount))
+    ? boundedCount(beforeSummary.comparableItemCount)
+    : beforeSummary.itemCount;
+  const afterComparableItems = Number.isFinite(Number(afterSummary.comparableItemCount))
+    ? boundedCount(afterSummary.comparableItemCount)
+    : afterSummary.itemCount;
+  if (afterComparableItems < beforeComparableItems) {
     pushIssue(issues, "thread_detail_refresh_item_downgrade", "H2", "thread-detail-refresh", {
       threadHash,
       turnHash: afterSummary.turnHash,
-      beforeItems: beforeSummary.itemCount,
-      afterItems: afterSummary.itemCount,
+      beforeItems: beforeComparableItems,
+      afterItems: afterComparableItems,
     });
   }
-  if (afterSummary.userInputItems < beforeSummary.userInputItems) {
+  const beforeUniqueUserInputItems = Number.isFinite(Number(beforeSummary.uniqueUserInputItems))
+    ? boundedCount(beforeSummary.uniqueUserInputItems)
+    : beforeSummary.userInputItems;
+  const afterUniqueUserInputItems = Number.isFinite(Number(afterSummary.uniqueUserInputItems))
+    ? boundedCount(afterSummary.uniqueUserInputItems)
+    : afterSummary.userInputItems;
+  if (afterUniqueUserInputItems < beforeUniqueUserInputItems) {
     pushIssue(issues, "thread_detail_refresh_lost_user_input", "H2", "thread-detail-refresh", {
       threadHash,
       turnHash: afterSummary.turnHash,
-      beforeItems: beforeSummary.userInputItems,
-      afterItems: afterSummary.userInputItems,
+      beforeItems: beforeUniqueUserInputItems,
+      afterItems: afterUniqueUserInputItems,
     });
   }
-  if (afterSummary.assistantItems < beforeSummary.assistantItems) {
+  const beforeUniqueAssistantItems = Number.isFinite(Number(beforeSummary.uniqueAssistantItems))
+    ? boundedCount(beforeSummary.uniqueAssistantItems)
+    : beforeSummary.assistantItems;
+  const afterUniqueAssistantItems = Number.isFinite(Number(afterSummary.uniqueAssistantItems))
+    ? boundedCount(afterSummary.uniqueAssistantItems)
+    : afterSummary.assistantItems;
+  if (afterUniqueAssistantItems < beforeUniqueAssistantItems) {
     pushIssue(issues, "thread_detail_refresh_lost_assistant_items", "H2", "thread-detail-refresh", {
       threadHash,
       turnHash: afterSummary.turnHash,
-      beforeItems: beforeSummary.assistantItems,
-      afterItems: afterSummary.assistantItems,
+      beforeItems: beforeUniqueAssistantItems,
+      afterItems: afterUniqueAssistantItems,
     });
   }
   if (beforeSummary.usageItems > 0 && afterSummary.usageItems === 0) {
