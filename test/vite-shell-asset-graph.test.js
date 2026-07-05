@@ -569,6 +569,76 @@ test("native ESM thread detail state matches classic fallback behavior", async (
   );
 });
 
+test("native ESM thread detail render plan matches classic fallback behavior", async () => {
+  const classicRenderPlan = require("../public/thread-detail-render-plan.js");
+  const nativeRenderPlan = await import("../frontend/native/thread-detail-render-plan.mjs");
+  for (const value of ["abc", 42, null, undefined]) {
+    assert.equal(nativeRenderPlan.normalizeSignature(value), classicRenderPlan.normalizeSignature(value));
+  }
+  for (const input of [
+    {
+      threadId: "thread-a",
+      threadLoadSeq: 7,
+      options: { source: "resume" },
+      hasActiveRefreshController: true,
+    },
+    {
+      currentThreadId: "thread-b",
+      threadLoadSeq: 3,
+      options: { mode: "full", source: "manual", force: true },
+      documentHidden: true,
+      hasActiveThreadLoadController: true,
+    },
+    {
+      threadLoadSeq: 4,
+      options: { source: "ignored" },
+      hasActiveRefreshController: true,
+    },
+  ]) {
+    assert.deepEqual(
+      nativeRenderPlan.planThreadDetailRefreshRequest(input),
+      classicRenderPlan.planThreadDetailRefreshRequest(input),
+    );
+  }
+  const backfillInput = {
+    thread: {
+      id: "thread-workflow",
+      mobileOlderTurnsCursor: "cursor-a",
+      turns: [
+        { items: [{ type: "agentMessage", text: "Task card id: ttc_a\nReturn policy: terminal" }] },
+        { items: [{ type: "agentMessage", text: "Source workspace: /workspace\nApproval: bypassed" }] },
+        { items: [{ type: "agentMessage", text: "Workflow mode: autonomous\nAuto-return: yes" }] },
+        { items: [{ type: "userMessage", text: "normal user message" }] },
+      ],
+    },
+  };
+  assert.deepEqual(
+    nativeRenderPlan.planThreadDetailHistoryAutoBackfill(backfillInput),
+    classicRenderPlan.planThreadDetailHistoryAutoBackfill(backfillInput),
+  );
+  const shellInput = {
+    thread: { id: "thread-a", title: "Thread A" },
+    escapedTitle: "Thread A",
+    mainHtml: "<article>content</article>",
+    pluginNoticeHtml: "<div>notice</div>",
+    emptyStateHtml: "",
+    loadErrorHtml: "",
+  };
+  assert.deepEqual(
+    nativeRenderPlan.planSingleThreadFullRenderShell(shellInput),
+    classicRenderPlan.planSingleThreadFullRenderShell(shellInput),
+  );
+  const patchInput = {
+    patchSurface: { patchable: true, reason: "single-thread", surface: "single-thread" },
+    renderPlan: { action: "patch", reason: "stable", signature: "sig-a" },
+    patchAttempt: { ok: true, patched: true, reason: "patched", elapsedMs: 4 },
+  };
+  assert.deepEqual(
+    nativeRenderPlan.default.planThreadDetailRefreshOutcomeExecution(patchInput),
+    classicRenderPlan.planThreadDetailRefreshOutcomeExecution(patchInput),
+  );
+});
+
 test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
   const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
   const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
@@ -811,6 +881,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/viewport-metrics\.mjs/);
   assert.match(shardSources, /frontend\/native\/conversation-scroll\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-detail-state\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-detail-render-plan\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-list-load-policy\.mjs/);
   assert.match(shardSources, /frontend\/native\/draft-store\.mjs/);
   assert.match(shardSources, /frontend\/native\/image-compressor\.mjs/);
@@ -823,6 +894,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/viewport-metrics\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/conversation-scroll\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-detail-state\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-detail-render-plan\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-list-load-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/draft-store\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/image-compressor\.js"/);
@@ -830,7 +902,6 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/frontend-runtime-health\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/home-ai-diagnostic-reporting\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-diagnostic-events\.js"/);
-  assert.match(shardSources, /public\/thread-detail-render-plan\.js/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
   assert.match(shardSources, /public\/plugin-voice-input\.js/);
   assert.match(shardSources, /public\/plugin-embed\.js/);
@@ -1122,8 +1193,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 12);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 12);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 13);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 13);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1173,6 +1244,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "thread-detail-state",
         nativeSource: "frontend/native/thread-detail-state.mjs",
         importSource: "frontend/native/thread-detail-state.mjs",
+      },
+      {
+        id: "thread-detail-render-plan",
+        nativeSource: "frontend/native/thread-detail-render-plan.mjs",
+        importSource: "frontend/native/thread-detail-render-plan.mjs",
       },
       {
         id: "draft-store",

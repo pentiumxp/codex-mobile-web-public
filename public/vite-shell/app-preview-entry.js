@@ -1,7 +1,7 @@
-import "/vite-shell/assets/vite-shell-entry-C_J-j_1F.js";
+import "/vite-shell/assets/vite-shell-entry-BjmnKh6u.js";
 
 globalThis.__CODEX_MOBILE_VITE_STABLE_ENTRY__ = {
   source: "vite-shell-app-preview-stable-entry",
-  targetEntryScript: "/vite-shell/assets/vite-shell-entry-C_J-j_1F.js",
+  targetEntryScript: "/vite-shell/assets/vite-shell-entry-BjmnKh6u.js",
   loadedAt: Date.now(),
 };

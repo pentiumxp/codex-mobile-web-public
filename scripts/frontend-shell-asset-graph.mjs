@@ -155,6 +155,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-detail-render-plan",
     source: "public/thread-detail-render-plan.js",
+    nativeSource: "frontend/native/thread-detail-render-plan.mjs",
     globalName: "CodexThreadDetailRenderPlan",
     expectedFunctions: [
       "emptyThreadDetailRefreshPatchAttempt",
