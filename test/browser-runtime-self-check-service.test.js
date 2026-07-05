@@ -100,6 +100,30 @@ test("browser runtime self-check gates current-thread refresh status hints", () 
   assert.match(scriptSource, /applyThreadRefreshStatusHintGateIssue\(report\)/);
 });
 
+test("browser runtime self-check plan marks stale-active API turn shapes", () => {
+  const shapes = script.turnShapeExpectation({
+    thread: {
+      id: "thread-a",
+      turns: [{
+        id: "turn-a",
+        status: {
+          type: "completed",
+          mobileStaleActiveTurn: true,
+          previousType: "active",
+        },
+        items: [
+          { id: "u1", type: "userMessage", text: "hello", startedAtMs: 1000 },
+          { id: "a1", type: "agentMessage", text: "world", startedAtMs: 2000 },
+          { id: "usage", type: "turnUsageSummary", startedAtMs: 3000 },
+        ],
+      }],
+    },
+  });
+
+  assert.equal(shapes.length, 1);
+  assert.equal(shapes[0].staleActive, true);
+});
+
 test("browser runtime self-check samples active thread rows before recent rows", () => {
   assert.deepEqual(script.selectThreadIdsForSampling([
     { id: "recent-completed", status: "completed" },
@@ -1603,6 +1627,48 @@ test("browser runtime self-check catches per-turn DOM/API structure mismatches",
   assert.equal(issue.turnShape.turnHash, "turn-a");
   assert.equal(issue.turnShape.actualUserMessageCount, 1);
   assert.equal(issue.turnShape.actualAssistantMessageCount, 0);
+});
+
+test("browser runtime self-check blocks stale-active downgraded API turn shapes", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "stale-active",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        completed: true,
+        staleActive: true,
+        expectedItemCount: 3,
+        expectedUserMessageCount: 1,
+        expectedAssistantMessageCount: 1,
+        expectedUsageRequired: true,
+        expectedTimestampItemCount: 2,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        itemCount: 3,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        usageCount: 1,
+        timestampExpectedItems: 2,
+        timestampMissingItems: 0,
+      }],
+      turns: 1,
+      items: 3,
+      renderKeys: 3,
+    }],
+  });
+
+  const issue = report.issues.find((entry) => entry.code === "browser_api_stale_active_turn_downgraded");
+
+  assert.equal(report.ok, false);
+  assert.equal(issue && issue.severity, "H2");
+  assert.equal(issue && issue.turnShape.staleActive, true);
 });
 
 test("browser runtime self-check keeps one-off dynamic API plan mismatches advisory", () => {

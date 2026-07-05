@@ -667,6 +667,14 @@ function completedStatus(value) {
   return /completed|failed|cancel|error|interrupted/i.test(statusText(value));
 }
 
+function staleActiveStatus(value) {
+  return Boolean(value && typeof value === "object" && value.mobileStaleActiveTurn === true);
+}
+
+function staleActiveTurn(turn = {}) {
+  return Boolean(turn && (turn.mobileStaleActiveTurn === true || staleActiveStatus(turn.status)));
+}
+
 function inputTextValue(part = {}) {
   if (!part || typeof part !== "object") return "";
   return String(part.text || part.input_text || part.value || part.content || "");
@@ -780,6 +788,7 @@ function turnShapeExpectation(detail = {}) {
       index,
       turnHash: browserStableHash(turn && turn.id || ""),
       completed: completedStatus(turn && turn.status),
+      staleActive: staleActiveTurn(turn),
       expectedFirstTimestampMs: timestampRange.firstTimestampMs,
       expectedLastTimestampMs: timestampRange.lastTimestampMs,
       expectedItemCount: items.length,

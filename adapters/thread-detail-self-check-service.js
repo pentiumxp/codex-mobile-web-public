@@ -119,6 +119,28 @@ function isStaleActiveCompletionStatus(value) {
   return Boolean(value && typeof value === "object" && value.mobileStaleActiveTurn === true);
 }
 
+function isStaleActiveTurn(turn) {
+  return Boolean(turn && (turn.mobileStaleActiveTurn === true || isStaleActiveCompletionStatus(turn.status)));
+}
+
+function turnHasConversationDisplayItems(turn) {
+  return safeArray(turn && turn.items).some((item) => {
+    const type = itemType(item);
+    return USER_INPUT_TYPES.has(type)
+      || type === "turnUsageSummary"
+      || isAssistantItem(item)
+      || isOperationItem(item)
+      || isReasoningItem(item);
+  });
+}
+
+function laterTurnHasConversationDisplayItems(turns = [], index = -1) {
+  for (let cursor = index + 1; cursor < turns.length; cursor += 1) {
+    if (turnHasConversationDisplayItems(turns[cursor])) return true;
+  }
+  return false;
+}
+
 function turnCompletedAtMs(turn, thread = null) {
   if (!isTurnComplete(turn)) return 0;
   const direct = numericTimestampMs(turn && (
@@ -464,6 +486,7 @@ function analyzeThreadDetail(detail = {}, options = {}) {
     pushIssue(issues, "duplicate_item_visible_keys", "H2", "thread-detail", { threadHash });
   }
   for (const turn of turns) {
+    const turnIndex = turns.indexOf(turn);
     const renderKeys = safeArray(turn.items).map((item, index) => clientRenderKeyForItem(thread, turn, item, index));
     const duplicate = duplicateInfo(renderKeys);
     if (duplicate.count > 0) {
@@ -490,6 +513,15 @@ function analyzeThreadDetail(detail = {}, options = {}) {
         turnHash: shortHash(turnId(turn)),
         count: timestampOrder.count,
         itemHash: timestampOrder.firstHash,
+      });
+    }
+    if (isStaleActiveTurn(turn)
+      && turnHasConversationDisplayItems(turn)
+      && !laterTurnHasConversationDisplayItems(turns, turnIndex)) {
+      pushIssue(issues, "thread_detail_stale_active_turn_downgraded", "H2", "thread-detail", {
+        threadHash,
+        turnHash: shortHash(turnId(turn)),
+        reason: text((turn.status && turn.status.reason) || turn.reason || "summary-resting-active-window"),
       });
     }
   }

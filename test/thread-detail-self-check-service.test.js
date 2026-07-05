@@ -63,6 +63,24 @@ test("thread detail self check accepts healthy latest completed replay", () => {
   assert.equal(report.budget.latestCompletedReplayOmittedAssistantItems, 0);
 });
 
+test("thread detail self check blocks stale-active downgraded tail turns", () => {
+  const detail = healthyDetail();
+  detail.thread.turns[0].status = {
+    type: "completed",
+    mobileStaleActiveTurn: true,
+    previousType: "active",
+    reason: "summary-resting-active-window",
+  };
+  detail.thread.turns[0].mobileStaleActiveTurn = true;
+
+  const report = analyzeThreadDetail(detail);
+  const issue = report.issues.find((entry) => entry.code === "thread_detail_stale_active_turn_downgraded");
+
+  assert.equal(report.ok, false);
+  assert.equal(issue && issue.severity, "H2");
+  assert.equal(issue && issue.reason, "summary-resting-active-window");
+});
+
 test("thread detail self check accepts repeated operation groups with unique client render keys", () => {
   const detail = healthyDetail();
   detail.thread.activeTurnId = "turn-active";
@@ -487,9 +505,9 @@ test("thread detail self check accepts active assistant overlay explained by syn
   assert.ok(!codes.includes("active_overlay_assistant_projection_gap"));
 });
 
-test("thread detail self check ignores stale active completion shell as latest completed replay", () => {
+test("thread detail self check ignores non-tail stale active completion shell as latest completed replay", () => {
   const detail = healthyDetail();
-  detail.thread.turns.push({
+  detail.thread.turns.unshift({
     id: "stale-active-shell",
     status: {
       type: "completed",

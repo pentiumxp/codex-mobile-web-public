@@ -336,6 +336,102 @@ function summaryRejectsWindowActiveTurns(summary) {
   return statuses.some(isRestingLikeStatusValue);
 }
 
+function timestampToMs(value) {
+  if (value === undefined || value === null || value === "") return 0;
+  const number = Number(value);
+  if (Number.isFinite(number) && number > 0) {
+    return number > 1_000_000_000_000 ? Math.trunc(number) : Math.trunc(number * 1000);
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function timestampFromFields(source, fields = []) {
+  for (const field of fields) {
+    const value = source && source[field];
+    const ms = timestampToMs(value);
+    if (ms) return ms;
+  }
+  return 0;
+}
+
+function summaryUpdatedAtMs(summary) {
+  return timestampFromFields(summary, [
+    "updatedAtMs",
+    "updatedAt",
+    "updated_at_ms",
+    "updated_at",
+    "lastActivityAtMs",
+    "lastActivityAt",
+    "last_activity_at_ms",
+    "last_activity_at",
+  ]);
+}
+
+function itemActivityTimestampMs(item) {
+  return timestampFromFields(item, [
+    "updatedAtMs",
+    "updatedAt",
+    "updated_at_ms",
+    "updated_at",
+    "completedAtMs",
+    "completedAt",
+    "completed_at_ms",
+    "completed_at",
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+    "timestampMs",
+    "timestamp",
+    "mobileDisplayTimestampMs",
+    "mobileDisplayTimestamp",
+  ]);
+}
+
+function turnActivityTimestampMs(turn) {
+  let latest = timestampFromFields(turn, [
+    "updatedAtMs",
+    "updatedAt",
+    "updated_at_ms",
+    "updated_at",
+    "completedAtMs",
+    "completedAt",
+    "completed_at_ms",
+    "completed_at",
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+  ]);
+  for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
+    latest = Math.max(latest, itemActivityTimestampMs(item));
+  }
+  return latest;
+}
+
+function turnHasTerminalUsageSummary(turn) {
+  return (Array.isArray(turn && turn.items) ? turn.items : [])
+    .some((item) => itemType(item) === "turnusagesummary");
+}
+
+function shouldPreserveActiveTurnAgainstRestingSummary(turn, summary) {
+  if (!isActiveTurn(turn)) return false;
+  if (turnHasTerminalUsageSummary(turn)) return false;
+  const summaryMs = summaryUpdatedAtMs(summary);
+  const activityMs = turnActivityTimestampMs(turn);
+  if (!summaryMs || !activityMs) return false;
+  return activityMs >= summaryMs - 15_000;
+}
+
 function staleCompletedStatusFromActiveStatus(value) {
   if (isCompletedTurn({ status: value })) return value;
   const previousType = statusText(value);
@@ -344,6 +440,17 @@ function staleCompletedStatusFromActiveStatus(value) {
     mobileStaleActiveTurn: true,
     previousType,
     reason: "summary-resting-active-window",
+  };
+}
+
+function terminalCompletedStatusFromActiveStatus(value) {
+  if (isCompletedTurn({ status: value })) return value;
+  const previousType = statusText(value);
+  return {
+    type: "completed",
+    mobileCompletedActiveTurn: true,
+    previousType,
+    reason: "terminal-usage-summary",
   };
 }
 
@@ -362,27 +469,66 @@ function clearThreadActiveMarkers(thread) {
 function markWindowActiveTurnsStaleForRestingSummary(thread, summary) {
   if (!summaryRejectsWindowActiveTurns(summary) || !thread || typeof thread !== "object") return 0;
   const turns = Array.isArray(thread.turns) ? thread.turns : [];
-  let count = 0;
+  let staleCount = 0;
+  let terminalCompletedCount = 0;
+  let preserved = 0;
+  let preservedActivityMs = 0;
   for (const turn of turns) {
     if (!isActiveTurn(turn)) continue;
+    if (turnHasTerminalUsageSummary(turn)) {
+      turn.mobileCompletedActiveTurn = true;
+      turn.status = terminalCompletedStatusFromActiveStatus(turn.status);
+      terminalCompletedCount += 1;
+      continue;
+    }
+    if (shouldPreserveActiveTurnAgainstRestingSummary(turn, summary)) {
+      turn.mobilePreservedAgainstRestingSummary = true;
+      preserved += 1;
+      preservedActivityMs = Math.max(preservedActivityMs, turnActivityTimestampMs(turn));
+      continue;
+    }
     turn.mobileStaleActiveTurn = true;
     turn.status = staleCompletedStatusFromActiveStatus(turn.status);
-    count += 1;
+    staleCount += 1;
   }
-  if (!count) return 0;
-  clearThreadActiveMarkers(thread);
-  if (isActiveLikeStatusValue(thread.status)) {
+  if (preserved) {
+    thread.mobileRestingSummaryActiveWindowPreserved = {
+      count: preserved,
+      reason: "active-window-newer-than-resting-summary",
+      activityMs: preservedActivityMs,
+      summaryUpdatedAtMs: summaryUpdatedAtMs(summary),
+    };
+    if (!isActiveLikeStatusValue(thread.status)) {
+      thread.status = {
+        type: "active",
+        mobilePreservedAgainstRestingSummary: true,
+        previousType: statusText(thread.status),
+      };
+    }
+  }
+  const completedCount = staleCount + terminalCompletedCount;
+  if (!completedCount) return 0;
+  if (!preserved) clearThreadActiveMarkers(thread);
+  if (!preserved && isActiveLikeStatusValue(thread.status)) {
     thread.status = {
       type: "completed",
       mobileClearedStaleActiveSummary: true,
       previousType: statusText(thread.status),
     };
   }
-  thread.mobileStaleActiveTurn = {
-    count,
-    reason: "summary-resting-active-window",
-  };
-  return count;
+  if (staleCount) {
+    thread.mobileStaleActiveTurn = {
+      count: staleCount,
+      reason: "summary-resting-active-window",
+    };
+  }
+  if (terminalCompletedCount) {
+    thread.mobileCompletedActiveTurn = {
+      count: terminalCompletedCount,
+      reason: "terminal-usage-summary",
+    };
+  }
+  return completedCount;
 }
 
 function isUserVisibleInputItem(item) {

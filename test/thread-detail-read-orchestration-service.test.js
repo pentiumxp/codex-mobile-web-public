@@ -344,6 +344,102 @@ test("thread detail orchestration reuses stale partial when resting summary has 
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "hit");
 });
 
+test("thread detail orchestration preserves active projection window newer than resting summary", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "completed" },
+      updatedAt: 2_000,
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadResult: () => {
+      calls.push("projection-hit");
+      return {
+        thread: {
+          id: "thread-1",
+          status: { type: "active" },
+          activeTurnId: "turn-active",
+          turns: [{
+            id: "turn-active",
+            status: { type: "active" },
+            items: [
+              { id: "u1", type: "userMessage", startedAt: 3_000 },
+              { id: "a1", type: "agentMessage", startedAt: 3_100 },
+            ],
+          }],
+          mobileReadMode: "projection-v4-cache",
+        },
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event) => calls.push(`log:${event}`),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-v4-cache");
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("log:projection_stale_active_turns_downgraded"), false);
+  const thread = response.body.thread;
+  assert.equal(thread.status.type, "active");
+  assert.equal(thread.activeTurnId, "turn-active");
+  assert.equal(thread.mobileRestingSummaryActiveWindowPreserved.count, 1);
+  assert.equal(thread.turns[0].status.type, "active");
+  assert.equal(thread.turns[0].mobileStaleActiveTurn, undefined);
+});
+
+test("thread detail orchestration normalizes active window with terminal usage as completed", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "completed" },
+      updatedAt: 4_000,
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadResult: () => {
+      calls.push("projection-hit");
+      return {
+        thread: {
+          id: "thread-1",
+          status: { type: "active" },
+          activeTurnId: "turn-active",
+          turns: [{
+            id: "turn-active",
+            status: { type: "active" },
+            items: [
+              { id: "u1", type: "userMessage", startedAt: 3_000 },
+              { id: "a1", type: "agentMessage", startedAt: 3_100 },
+              { id: "usage", type: "turnUsageSummary", startedAt: 3_900 },
+            ],
+          }],
+          mobileReadMode: "projection-v4-cache",
+        },
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event) => calls.push(`log:${event}`),
+  });
+
+  assert.equal(response.status, 200);
+  const thread = response.body.thread;
+  assert.equal(thread.activeTurnId, undefined);
+  assert.equal(thread.mobileCompletedActiveTurn.count, 1);
+  assert.equal(thread.mobileStaleActiveTurn, undefined);
+  assert.equal(thread.turns[0].mobileCompletedActiveTurn, true);
+  assert.equal(thread.turns[0].mobileStaleActiveTurn, undefined);
+  assert.equal(thread.turns[0].status.type, "completed");
+  assert.equal(thread.turns[0].status.mobileCompletedActiveTurn, true);
+});
+
 test("thread detail orchestration preserves full thread/read before bounded turns/list fallback", async () => {
   const { service, calls } = createHarness();
 

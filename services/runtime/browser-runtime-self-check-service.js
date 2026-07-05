@@ -153,6 +153,7 @@ function safeTurnShape(value = {}) {
     index: Math.max(0, Math.trunc(toNumber(row.index))),
     turnHash: safeLabel(row.turnHash, ""),
     completed: row.completed === true,
+    staleActive: row.staleActive === true,
     firstTimestampMs: Math.max(0, Math.trunc(toNumber(row.firstTimestampMs || row.expectedFirstTimestampMs))),
     lastTimestampMs: Math.max(0, Math.trunc(toNumber(row.lastTimestampMs || row.expectedLastTimestampMs))),
     expectedItemCount: toNumber(row.expectedItemCount),
@@ -351,6 +352,9 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       }
       if (toNumber(turnShape.expectedTimestampItemCount) > 0 && toNumber(turnShape.timestampMissingItems) > 0) {
         incrementMapCount(turnShapeMismatchCounts, turnShapeIssueKey("browser_turn_timestamp_missing", sample, turnShape));
+      }
+      if (turnShape.staleActive === true) {
+        incrementMapCount(turnShapeMismatchCounts, turnShapeIssueKey("browser_api_stale_active_turn_downgraded", sample, turnShape));
       }
     }
     if (sample.latestTurnMatchesTarget
@@ -663,6 +667,10 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           dynamicThreadPlan: sample && sample.dynamicThreadPlan === true ? true : undefined,
           observationCount: turnShapeMismatchCounts.get(turnShapeIssueKey(code, sample, turnShape)) || 0,
         }));
+      }
+      if (turnShape.staleActive === true) {
+        const code = "browser_api_stale_active_turn_downgraded";
+        issues.push(issue(turnShapeMismatchSeverity(code, sample, turnShape), code, sample, turnShapeMismatchDetails(code, sample, turnShape)));
       }
     }
     if (sampleIsConfirmed(sample)
