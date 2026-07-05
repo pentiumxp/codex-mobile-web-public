@@ -253,6 +253,9 @@ function normalizeEsmCompatibilityContract(contract) {
       id: String(entry && entry.id || ""),
       source: String(entry && entry.source || ""),
       assetPath: String(entry && entry.assetPath || ""),
+      nativeSource: String(entry && entry.nativeSource || ""),
+      importSource: String(entry && entry.importSource || entry && entry.source || ""),
+      compatibilityMode: String(entry && entry.compatibilityMode || "classic-global-compat"),
       globalName: String(entry && entry.globalName || ""),
       classicLoaderExcluded: Boolean(entry && entry.classicLoaderExcluded),
       expectedFunctions: Array.isArray(entry && entry.expectedFunctions)
@@ -275,6 +278,12 @@ function normalizeEsmCompatibilityContract(contract) {
     shardCount: Number.isFinite(Number(contract.shardCount)) ? Number(contract.shardCount) : shards.length,
     shards,
     moduleCount: Number.isFinite(Number(contract.moduleCount)) ? Number(contract.moduleCount) : modules.length,
+    nativeEsmModuleCount: Number.isFinite(Number(contract.nativeEsmModuleCount))
+      ? Number(contract.nativeEsmModuleCount)
+      : modules.filter((entry) => entry.compatibilityMode === "native-esm").length,
+    classicGlobalCompatibilityModuleCount: Number.isFinite(Number(contract.classicGlobalCompatibilityModuleCount))
+      ? Number(contract.classicGlobalCompatibilityModuleCount)
+      : modules.filter((entry) => entry.compatibilityMode !== "native-esm").length,
     expectedFunctionCount: Number.isFinite(Number(contract.expectedFunctionCount))
       ? Number(contract.expectedFunctionCount)
       : modules.reduce((total, entry) => total + entry.expectedFunctions.length, 0),
@@ -440,6 +449,8 @@ export function buildViteShellPublicReadback(options = {}) {
       issues.push({ code: "vite_esm_compatibility_owner_mismatch" });
     }
     if (Number(esmCompatibility.moduleCount) !== esmCompatibility.modules.length
+      || Number(esmCompatibility.nativeEsmModuleCount) !== esmCompatibility.modules.filter((entry) => entry.compatibilityMode === "native-esm").length
+      || Number(esmCompatibility.classicGlobalCompatibilityModuleCount) !== esmCompatibility.modules.filter((entry) => entry.compatibilityMode !== "native-esm").length
       || Number(esmCompatibility.hashCount) !== esmCompatibility.modules.length
       || Number(esmCompatibility.expectedFunctionCount) !== esmCompatibility.modules.reduce((total, entry) => (
         total + entry.expectedFunctions.length
@@ -537,6 +548,8 @@ export function buildViteShellPublicReadback(options = {}) {
       appPreviewClassicLoaderExcludedEsmScripts: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.excludedEsmScriptCount : 0,
       appPreviewClassicLoaderExcludedViteOwnedScripts: appPreviewClassicLoaderPlan ? appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount : 0,
       esmCompatibilityModules: esmCompatibility ? esmCompatibility.moduleCount : 0,
+      esmCompatibilityNativeModules: esmCompatibility ? esmCompatibility.nativeEsmModuleCount : 0,
+      esmCompatibilityClassicGlobalModules: esmCompatibility ? esmCompatibility.classicGlobalCompatibilityModuleCount : 0,
       esmCompatibilityHashes: esmCompatibility ? esmCompatibility.hashCount : 0,
       esmCompatibilityExpectedFunctions: esmCompatibility ? esmCompatibility.expectedFunctionCount : 0,
       startupGlobalContracts: startupContracts.length,

@@ -34,6 +34,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "build-refresh-policy",
     source: "public/build-refresh-policy.js",
+    nativeSource: "frontend/native/build-refresh-policy.mjs",
     globalName: "CodexBuildRefreshPolicy",
     expectedFunctions: [
       "shellSequenceFromBuildId",
@@ -1089,7 +1090,7 @@ function esmCompatibilityImportName(id) {
 }
 
 function esmCompatibilityModuleSource(root, moduleRecord) {
-  const sourcePath = String(moduleRecord && moduleRecord.source || "");
+  const sourcePath = String(moduleRecord && (moduleRecord.importSource || moduleRecord.nativeSource || moduleRecord.source) || "");
   return pathToFileURL(path.join(root, sourcePath)).href;
 }
 
@@ -1105,6 +1106,8 @@ function esmCompatibilityModuleDefinitions() {
     .map((moduleRecord) => ({
       ...moduleRecord,
       assetPath: publicAssetPathFromSourcePath(moduleRecord.source),
+      importSource: String(moduleRecord.nativeSource || moduleRecord.source || ""),
+      compatibilityMode: moduleRecord.nativeSource ? "native-esm" : "classic-global-compat",
       classicLoaderExcluded: true,
     }));
 }
@@ -3215,6 +3218,9 @@ function createEsmCompatibilityShardVirtualModuleSource(root, moduleDefinitions)
     "      id: definition.id,",
     "      source: definition.source,",
     "      assetPath: definition.assetPath,",
+    "      nativeSource: definition.nativeSource || \"\",",
+    "      importSource: definition.importSource || definition.source,",
+    "      compatibilityMode: definition.compatibilityMode || \"classic-global-compat\",",
     "      globalName: definition.globalName,",
     "      classicLoaderExcluded: definition.classicLoaderExcluded === true,",
     "      expectedFunctions: expectedFunctions.slice(),",
@@ -3230,6 +3236,8 @@ function createEsmCompatibilityShardVirtualModuleSource(root, moduleDefinitions)
     "    schemaVersion: 1,",
     "    owner: \"vite-shell-entry\",",
     "    moduleCount: modules.length,",
+    "    nativeEsmModuleCount: modules.filter((entry) => entry.compatibilityMode === \"native-esm\").length,",
+    "    classicGlobalCompatibilityModuleCount: modules.filter((entry) => entry.compatibilityMode !== \"native-esm\").length,",
     "    readyCount: modules.filter((entry) => entry.ready === true).length,",
     "    modules,",
     "  };",
@@ -3301,6 +3309,8 @@ function createEsmCompatibilityVirtualModuleSource(root) {
     "          shardCount: shardSummaries.length,",
     "          shards: shardSummaries,",
     "          moduleCount: modules.length,",
+    "          nativeEsmModuleCount: modules.filter((entry) => entry && entry.compatibilityMode === \"native-esm\").length,",
+    "          classicGlobalCompatibilityModuleCount: modules.filter((entry) => entry && entry.compatibilityMode !== \"native-esm\").length,",
     "          readyCount: modules.filter((entry) => entry && entry.ready === true).length,",
     "          modules,",
     "        };",
@@ -3616,6 +3626,9 @@ function esmCompatibilityContract(root = process.cwd()) {
       id: String(moduleRecord && moduleRecord.id || ""),
       source: sourcePath,
       assetPath: String(moduleRecord && moduleRecord.assetPath || ""),
+      nativeSource: String(moduleRecord && moduleRecord.nativeSource || ""),
+      importSource: String(moduleRecord && moduleRecord.importSource || moduleRecord.source || ""),
+      compatibilityMode: String(moduleRecord && moduleRecord.compatibilityMode || "classic-global-compat"),
       globalName: String(moduleRecord && moduleRecord.globalName || ""),
       classicLoaderExcluded: moduleRecord && moduleRecord.classicLoaderExcluded === true,
       expectedFunctions,
@@ -3634,6 +3647,8 @@ function esmCompatibilityContract(root = process.cwd()) {
     shardCount: shards.length,
     shards,
     moduleCount: modules.length,
+    nativeEsmModuleCount: modules.filter((entry) => entry.compatibilityMode === "native-esm").length,
+    classicGlobalCompatibilityModuleCount: modules.filter((entry) => entry.compatibilityMode !== "native-esm").length,
     expectedFunctionCount: modules.reduce((total, entry) => total + entry.expectedFunctionCount, 0),
     hashCount: modules.filter((entry) => entry.hashPresent).length,
     byteCount: modules.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
@@ -3827,6 +3842,9 @@ function validateViteShellBuildContract(contract, manifest) {
       const actual = modules[index] || {};
       if (actual.source !== expected.source
         || actual.assetPath !== publicAssetPathFromSourcePath(expected.source)
+        || String(actual.nativeSource || "") !== String(expected.nativeSource || "")
+        || String(actual.importSource || "") !== String(expected.importSource || expected.source || "")
+        || String(actual.compatibilityMode || "") !== String(expected.compatibilityMode || "classic-global-compat")
         || actual.globalName !== expected.globalName
         || actual.classicLoaderExcluded !== true
         || JSON.stringify(actual.expectedFunctions || []) !== JSON.stringify(expected.expectedFunctions || [])) {

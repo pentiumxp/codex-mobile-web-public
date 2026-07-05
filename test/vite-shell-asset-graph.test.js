@@ -153,6 +153,35 @@ test("classic shell cache name changes when static shell asset contents change",
   assert.notEqual(second.clientBuildId, first.clientBuildId);
 });
 
+test("native ESM build refresh policy matches the classic public API", async () => {
+  const classicApi = require("../public/build-refresh-policy.js");
+  const nativeApi = await import("../frontend/native/build-refresh-policy.mjs");
+  const cases = [
+    ["0.1.11|codex-mobile-shell-v626", "0.1.11|codex-mobile-shell-v625"],
+    ["0.1.11|codex-mobile-shell-v624", "0.1.11|codex-mobile-shell-v625"],
+    ["0.1.11|codex-mobile-shell-v625", "0.1.11|codex-mobile-shell-v625"],
+    ["build-a", "build-b"],
+  ];
+  for (const [serverBuildId, clientBuildId] of cases) {
+    assert.equal(
+      nativeApi.shellSequenceFromBuildId(serverBuildId),
+      classicApi.shellSequenceFromBuildId(serverBuildId)
+    );
+    assert.equal(
+      nativeApi.classifyServerBuildChange(serverBuildId, clientBuildId),
+      classicApi.classifyServerBuildChange(serverBuildId, clientBuildId)
+    );
+    assert.equal(
+      nativeApi.shouldPromptForServerBuildChange(serverBuildId, clientBuildId),
+      classicApi.shouldPromptForServerBuildChange(serverBuildId, clientBuildId)
+    );
+    assert.equal(
+      nativeApi.default.classifyServerBuildChange(serverBuildId, clientBuildId),
+      classicApi.classifyServerBuildChange(serverBuildId, clientBuildId)
+    );
+  }
+});
+
 test("Vite shell entry imports the asset-graph ESM compatibility module", async () => {
   const {
     VITE_ESM_COMPATIBILITY_MODULES,
@@ -243,7 +272,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   }).join("\n");
   assert.match(shardSources, /public\/api-client\.js/);
   assert.match(shardSources, /public\/markdown-renderer\.js/);
-  assert.match(shardSources, /public\/build-refresh-policy\.js/);
+  assert.match(shardSources, /frontend\/native\/build-refresh-policy\.mjs/);
+  assert.doesNotMatch(shardSources, /from ".*public\/build-refresh-policy\.js"/);
   assert.match(shardSources, /public\/runtime-settings\.js/);
   assert.match(shardSources, /public\/viewport-metrics\.js/);
   assert.match(shardSources, /public\/conversation-scroll\.js/);
@@ -547,6 +577,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 1);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 1);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -559,6 +591,18 @@ test("Vite shell build contract records entry chunks and classic fallback output
   assert.deepEqual(
     contract.esmCompatibility.modules.map((entry) => entry.assetPath),
     VITE_ESM_COMPATIBILITY_MODULES.map((entry) => `/${entry.source.replace(/^public\//, "")}`)
+  );
+  assert.deepEqual(
+    contract.esmCompatibility.modules.filter((entry) => entry.compatibilityMode === "native-esm").map((entry) => ({
+      id: entry.id,
+      nativeSource: entry.nativeSource,
+      importSource: entry.importSource,
+    })),
+    [{
+      id: "build-refresh-policy",
+      nativeSource: "frontend/native/build-refresh-policy.mjs",
+      importSource: "frontend/native/build-refresh-policy.mjs",
+    }]
   );
   assert.ok(contract.esmCompatibility.modules.every((entry) => entry.classicLoaderExcluded === true));
   assert.ok(contract.esmCompatibility.modules.every((entry) => entry.bytes > 0));

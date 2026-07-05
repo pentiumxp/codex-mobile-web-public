@@ -219,6 +219,9 @@ function esmCompatibilityContract(source) {
       id: String(entry && entry.id || ""),
       source: String(entry && entry.source || ""),
       assetPath: String(entry && entry.assetPath || ""),
+      nativeSource: String(entry && entry.nativeSource || ""),
+      importSource: String(entry && (entry.importSource || entry.source) || ""),
+      compatibilityMode: String(entry && entry.compatibilityMode || "classic-global-compat"),
       globalName: String(entry && entry.globalName || ""),
       classicLoaderExcluded: Boolean(entry && entry.classicLoaderExcluded),
       expectedFunctions: Array.isArray(entry && entry.expectedFunctions)
@@ -241,6 +244,12 @@ function esmCompatibilityContract(source) {
     shardCount: Number.isFinite(Number(contract.shardCount)) ? Number(contract.shardCount) : shards.length,
     shards,
     moduleCount: Number.isFinite(Number(contract.moduleCount)) ? Number(contract.moduleCount) : modules.length,
+    nativeEsmModuleCount: Number.isFinite(Number(contract.nativeEsmModuleCount))
+      ? Number(contract.nativeEsmModuleCount)
+      : modules.filter((entry) => entry.compatibilityMode === "native-esm").length,
+    classicGlobalCompatibilityModuleCount: Number.isFinite(Number(contract.classicGlobalCompatibilityModuleCount))
+      ? Number(contract.classicGlobalCompatibilityModuleCount)
+      : modules.filter((entry) => entry.compatibilityMode !== "native-esm").length,
     expectedFunctionCount: Number.isFinite(Number(contract.expectedFunctionCount))
       ? Number(contract.expectedFunctionCount)
       : modules.reduce((total, entry) => total + entry.expectedFunctions.length, 0),
@@ -1019,6 +1028,8 @@ function createViteShellArtifactService(dependencies = {}) {
         match: Boolean(readbackEsmCompatibility.owner === EXPECTED_ENTRY_GROUP_IMPORT_OWNER
           && readbackEsmCompatibility.virtualModuleSource === "virtual:codex-mobile-esm-compatibility"
           && Number(readbackEsmCompatibility.moduleCount) === readbackEsmCompatibility.modules.length
+          && Number(readbackEsmCompatibility.nativeEsmModuleCount) === readbackEsmCompatibility.modules.filter((entry) => entry.compatibilityMode === "native-esm").length
+          && Number(readbackEsmCompatibility.classicGlobalCompatibilityModuleCount) === readbackEsmCompatibility.modules.filter((entry) => entry.compatibilityMode !== "native-esm").length
           && Number(readbackEsmCompatibility.hashCount) === readbackEsmCompatibility.modules.length
           && readbackEsmCompatibility.modules.every((entry) => {
             const assetPath = publicAssetPathFromSource(entry.source);
@@ -1031,6 +1042,8 @@ function createViteShellArtifactService(dependencies = {}) {
           })),
         owner: readbackEsmCompatibility.owner,
         moduleCount: readbackEsmCompatibility.moduleCount,
+        nativeEsmModuleCount: readbackEsmCompatibility.nativeEsmModuleCount,
+        classicGlobalCompatibilityModuleCount: readbackEsmCompatibility.classicGlobalCompatibilityModuleCount,
         shardCount: readbackEsmCompatibility.shardCount,
         expectedFunctionCount: readbackEsmCompatibility.expectedFunctionCount,
         hashCount: readbackEsmCompatibility.hashCount,
@@ -1040,6 +1053,8 @@ function createViteShellArtifactService(dependencies = {}) {
         match: false,
         owner: "",
         moduleCount: 0,
+        nativeEsmModuleCount: 0,
+        classicGlobalCompatibilityModuleCount: 0,
         shardCount: 0,
         expectedFunctionCount: 0,
         hashCount: 0,

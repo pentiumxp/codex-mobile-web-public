@@ -14,6 +14,7 @@ Always start substantial work by reading:
 | --- | --- |
 | System design, process boundaries, runtime state, request flow | `docs/ARCHITECTURE.md` |
 | Current architecture diagnosis and staged optimization plan | `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` |
+| Vite shell native ESM migration plan and remaining module order | `docs/FRONTEND_ESM_MIGRATION_PLAN.md` |
 | File/module ownership, where to implement changes, test map | `docs/MODULES.md` |
 | Live production issue, stuck turn, missing message, PWA cache, Push, mux drift | `docs/TROUBLESHOOTING.md` |
 | Model context size, image upload context, continuation bootstrap strategy, workspace context compaction | `docs/CONTEXT_STRATEGY.md` |

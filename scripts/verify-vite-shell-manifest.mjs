@@ -166,11 +166,16 @@ if (!fs.existsSync(manifestPath)) {
     const expectedEsmFunctionCount = VITE_ESM_COMPATIBILITY_MODULES.reduce((total, entry) => (
       total + (Array.isArray(entry && entry.expectedFunctions) ? entry.expectedFunctions.length : 0)
     ), 0);
+    const expectedNativeEsmModuleCount = VITE_ESM_COMPATIBILITY_MODULES
+      .filter((entry) => entry && entry.nativeSource).length;
+    const expectedClassicGlobalCompatibilityModuleCount = expectedEsmIds.length - expectedNativeEsmModuleCount;
     if (!esmCompatibility
       || esmCompatibility.owner !== "vite-shell-entry"
       || esmCompatibility.virtualModuleSource !== VITE_ESM_COMPATIBILITY_SOURCE) {
       mismatch.push("viteBuildEsmCompatibility");
     } else if (Number(esmCompatibility.moduleCount) !== expectedEsmIds.length
+      || Number(esmCompatibility.nativeEsmModuleCount || 0) !== expectedNativeEsmModuleCount
+      || Number(esmCompatibility.classicGlobalCompatibilityModuleCount || 0) !== expectedClassicGlobalCompatibilityModuleCount
       || Number(esmCompatibility.hashCount) !== expectedEsmIds.length
       || Number(esmCompatibility.expectedFunctionCount) !== expectedEsmFunctionCount) {
       mismatch.push("viteBuildEsmCompatibilityCount");
