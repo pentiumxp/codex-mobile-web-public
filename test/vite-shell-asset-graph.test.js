@@ -639,6 +639,147 @@ test("native ESM thread detail render plan matches classic fallback behavior", a
   );
 });
 
+test("native ESM thread detail patch and merge helpers match classic fallback behavior", async () => {
+  const classicPatchPlan = require("../public/thread-detail-patch-plan.js");
+  const nativePatchPlan = await import("../frontend/native/thread-detail-patch-plan.mjs");
+  const visiblePatchInput = [
+    [{ key: "user-1", signature: { type: "userMessage", text: "request" } }],
+    [
+      { key: "user-1", signature: { type: "userMessage", text: "request" } },
+      { key: "usage-1", signature: { type: "turnUsageSummary", total: 12 } },
+    ],
+  ];
+  assert.deepEqual(
+    nativePatchPlan.planVisibleItemRefreshPatch(...visiblePatchInput),
+    classicPatchPlan.planVisibleItemRefreshPatch(...visiblePatchInput),
+  );
+  const patchSurfaceInput = {
+    threadId: "thread-1",
+    threadTileMode: true,
+    threadTileSurface: true,
+    tilePaneVisible: true,
+    conversationPresent: true,
+  };
+  assert.deepEqual(
+    nativePatchPlan.planThreadDetailDomPatchSurface(patchSurfaceInput),
+    classicPatchPlan.planThreadDetailDomPatchSurface(patchSurfaceInput),
+  );
+  const domPatchInput = {
+    nextTurnEntries: [
+      { key: "turn-1", articlePresent: true, itemPatchable: true, hasPreviousTurn: true },
+      { key: "turn-2", articlePresent: false, itemPatchable: false, hasPreviousTurn: false },
+    ],
+    previousTurnKeys: ["turn-1", "turn-old"],
+  };
+  assert.deepEqual(
+    nativePatchPlan.default.planThreadDetailRefreshDomPatch(domPatchInput),
+    classicPatchPlan.planThreadDetailRefreshDomPatch(domPatchInput),
+  );
+
+  const classicMergeState = require("../public/thread-detail-merge-state.js");
+  const nativeMergeState = await import("../frontend/native/thread-detail-merge-state.mjs");
+  const sortTurnsForDisplay = (turns) => (turns || []).slice().sort((left, right) => (
+    Number(left && (left.completedAtMs || left.startedAtMs) || 0)
+    - Number(right && (right.completedAtMs || right.startedAtMs) || 0)
+  ));
+  const mergeOptions = {
+    normalizeThreadVisibleUserMessages: (thread) => thread,
+    turnVisibleWeight: (turn) => (Array.isArray(turn && turn.items) ? turn.items.length : 0),
+    shouldPreserveExistingTurnVisibleItems: (existingTurn, incomingTurn) => (
+      String(existingTurn && existingTurn.status || "") === "running"
+      && String(incomingTurn && incomingTurn.status || "") === "completed"
+    ),
+    mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible) {
+      if (!preserveLocalVisible) return incomingItems;
+      return incomingItems.concat((existingItems || []).filter((item) => item && item.localOnly));
+    },
+    isTurnComplete: (turn) => String(turn && turn.status || "") === "completed",
+    sortTurnsForDisplay,
+    threadHasInitialSubmissionEcho: () => true,
+  };
+  const existingThread = {
+    id: "thread-1",
+    turns: [
+      { id: "turn-b", status: "completed", completedAtMs: 2000, items: [{ id: "b-old" }] },
+      { id: "turn-a", status: "running", startedAtMs: 1000, items: [{ id: "a-old" }, { id: "local", localOnly: true }] },
+    ],
+  };
+  const incomingThread = {
+    id: "thread-1",
+    turns: [
+      { id: "turn-a", status: "completed", completedAtMs: 1000, items: [{ id: "a-new" }] },
+      { id: "turn-b", status: "completed", completedAtMs: 2000, items: [{ id: "b-new" }] },
+    ],
+  };
+  assert.deepEqual(
+    nativeMergeState.createThreadDetailMergePolicy(mergeOptions).mergeThreadPreservingVisibleItems(
+      JSON.parse(JSON.stringify(existingThread)),
+      JSON.parse(JSON.stringify(incomingThread)),
+    ),
+    classicMergeState.createThreadDetailMergePolicy(mergeOptions).mergeThreadPreservingVisibleItems(
+      JSON.parse(JSON.stringify(existingThread)),
+      JSON.parse(JSON.stringify(incomingThread)),
+    ),
+  );
+
+  const classicV4MergeState = require("../public/thread-detail-v4-merge-state.js");
+  const nativeV4MergeState = await import("../frontend/native/thread-detail-v4-merge-state.mjs");
+  const comparableText = (item) => String(item && (item.message || item.text || "") || "").trim().toLowerCase();
+  const v4Options = {
+    normalizeThreadVisibleUserMessages: (thread) => thread,
+    turnVisibleWeight: (turn) => (Array.isArray(turn && turn.items) ? turn.items.length : 0),
+    isOptimisticUserMessage: (item) => Boolean(item && item.mobilePendingSubmission),
+    isRecentlySubmittedUserMessage: (item) => Boolean(item && item.mobilePendingSubmission),
+    isReasoningItem: (item) => Boolean(item && item.type === "reasoning"),
+    userMessageHasSubmissionId: (item, submissionId) => Boolean(item && submissionId && String(item.clientSubmissionId || "") === String(submissionId)),
+    userMessagesCanShadow: (incoming, pending) => Boolean(incoming && pending && incoming.type === "userMessage" && pending.type === "userMessage" && comparableText(incoming) === comparableText(pending)),
+    isTurnComplete: (turn) => /completed|failed|cancel|interrupted/i.test(String(turn && (turn.status && turn.status.type || turn.status) || "")),
+    isRunningStatus: (status) => /active|running|queued|processing|pending/i.test(String(status && status.type || status || "")),
+    isIncompleteInterruptedTurn: () => false,
+    turnHasActiveLiveItems: () => false,
+    turnOrderMs: (turn) => Number(turn && (turn.completedAtMs || turn.startedAtMs || 0)) || 0,
+    mergeTurnPreservingVisibleItems: (existingTurn, incomingTurn) => Object.assign({}, existingTurn, incomingTurn, {
+      items: Array.isArray(incomingTurn && incomingTurn.items) ? incomingTurn.items.slice() : [],
+    }),
+    sortTurnsForDisplay,
+    maxVisibleTurnsForThread: () => 10,
+  };
+  const existingV4Thread = {
+    id: "thread-v4",
+    mobileProjectionVersion: "v4",
+    turns: [{
+      id: "pending-turn",
+      startedAtMs: 300,
+      status: { type: "running" },
+      items: [{ id: "local", type: "userMessage", message: "send me", clientSubmissionId: "submit-1", mobilePendingSubmission: true }],
+    }],
+  };
+  const incomingV4Thread = {
+    id: "thread-v4",
+    mobileProjectionVersion: "v4",
+    turns: [{
+      id: "durable-turn",
+      startedAtMs: 100,
+      completedAtMs: 200,
+      status: { type: "completed" },
+      items: [
+        { id: "durable", type: "userMessage", message: "send me", clientSubmissionId: "submit-1" },
+        { id: "assistant", type: "agentMessage", text: "done" },
+      ],
+    }],
+  };
+  assert.deepEqual(
+    nativeV4MergeState.default.createThreadDetailV4MergePolicy(v4Options).mergeV4ProjectionThread(
+      JSON.parse(JSON.stringify(existingV4Thread)),
+      JSON.parse(JSON.stringify(incomingV4Thread)),
+    ),
+    classicV4MergeState.createThreadDetailV4MergePolicy(v4Options).mergeV4ProjectionThread(
+      JSON.parse(JSON.stringify(existingV4Thread)),
+      JSON.parse(JSON.stringify(incomingV4Thread)),
+    ),
+  );
+});
+
 test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
   const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
   const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
@@ -882,6 +1023,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/conversation-scroll\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-detail-state\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-detail-render-plan\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-detail-patch-plan\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-detail-merge-state\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-detail-v4-merge-state\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-list-load-policy\.mjs/);
   assert.match(shardSources, /frontend\/native\/draft-store\.mjs/);
   assert.match(shardSources, /frontend\/native\/image-compressor\.mjs/);
@@ -895,6 +1039,9 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/conversation-scroll\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-detail-state\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-detail-render-plan\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-detail-patch-plan\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-detail-merge-state\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-detail-v4-merge-state\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-list-load-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/draft-store\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/image-compressor\.js"/);
@@ -925,10 +1072,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/api-client-runtime\.js/);
   assert.match(shardSources, /public\/thread-list-stable-order\.js/);
   assert.match(shardSources, /public\/thread-status-hints\.js/);
-  assert.match(shardSources, /public\/thread-detail-patch-plan\.js/);
   assert.match(shardSources, /public\/thread-detail-actions\.js/);
-  assert.match(shardSources, /public\/thread-detail-merge-state\.js/);
-  assert.match(shardSources, /public\/thread-detail-v4-merge-state\.js/);
   assert.match(shardSources, /public\/thread-detail-runtime\.js/);
   assert.match(shardSources, /public\/task-card-runtime\.js/);
   assert.match(shardSources, /public\/notification-ui-runtime\.js/);
@@ -1193,8 +1337,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 13);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 13);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 16);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 16);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1279,6 +1423,21 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "thread-list-load-policy",
         nativeSource: "frontend/native/thread-list-load-policy.mjs",
         importSource: "frontend/native/thread-list-load-policy.mjs",
+      },
+      {
+        id: "thread-detail-patch-plan",
+        nativeSource: "frontend/native/thread-detail-patch-plan.mjs",
+        importSource: "frontend/native/thread-detail-patch-plan.mjs",
+      },
+      {
+        id: "thread-detail-merge-state",
+        nativeSource: "frontend/native/thread-detail-merge-state.mjs",
+        importSource: "frontend/native/thread-detail-merge-state.mjs",
+      },
+      {
+        id: "thread-detail-v4-merge-state",
+        nativeSource: "frontend/native/thread-detail-v4-merge-state.mjs",
+        importSource: "frontend/native/thread-detail-v4-merge-state.mjs",
       },
     ]
   );

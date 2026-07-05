@@ -643,6 +643,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-detail-patch-plan",
     source: "public/thread-detail-patch-plan.js",
+    nativeSource: "frontend/native/thread-detail-patch-plan.mjs",
     globalName: "CodexThreadDetailPatchPlan",
     expectedFunctions: [
       "planThreadDetailDomPatchSurface",
@@ -665,6 +666,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-detail-merge-state",
     source: "public/thread-detail-merge-state.js",
+    nativeSource: "frontend/native/thread-detail-merge-state.mjs",
     globalName: "CodexThreadDetailMergeState",
     expectedFunctions: [
       "createThreadDetailMergePolicy",
@@ -673,6 +675,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-detail-v4-merge-state",
     source: "public/thread-detail-v4-merge-state.js",
+    nativeSource: "frontend/native/thread-detail-v4-merge-state.mjs",
     globalName: "CodexThreadDetailV4MergeState",
     expectedFunctions: [
       "createThreadDetailV4MergePolicy",
