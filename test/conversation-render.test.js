@@ -1755,6 +1755,7 @@ function evaluatedThreadPendingApprovalProjection() {
     "serverRequestWithThreadContext",
     "resolveServerRequest",
     "answerServerRequest",
+    "isStaleServerRequestError",
     "answerApproval",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -1771,7 +1772,9 @@ let activity = "";
 let renderCount = 0;
 let tileRenderCalls = [];
 let approvalRemovalCalls = [];
+let currentThreadRefreshCalls = [];
 let apiResult = {};
+let apiFailure = null;
 const apiCalls = [];
 function escapeHtml(value) {
   return String(value ?? "")
@@ -1791,11 +1794,16 @@ function scheduleRenderThreadTilePane(threadId) {
 function scheduleApprovalRemoval(requestId, delayMs = 6000) {
   approvalRemovalCalls.push({ requestId: String(requestId || ""), delayMs });
 }
+function scheduleCurrentThreadRefresh(options = {}) {
+  currentThreadRefreshCalls.push(options);
+}
 async function api(url, options) {
   apiCalls.push({ url, options });
+  if (apiFailure) throw apiFailure;
   return apiResult;
 }
 function setApiResult(value) { apiResult = value; }
+function setApiFailure(value) { apiFailure = value; }
 function $(id) { return { classList: { remove() {}, add() {} }, textContent: "" }; }
 function showError(err) { throw err; }
 ${sources.join("\n")}
@@ -1808,11 +1816,13 @@ return {
   answerServerRequest,
   answerApproval,
   setApiResult,
+  setApiFailure,
   apiCalls: () => apiCalls.slice(),
   activity: () => activity,
   renderCount: () => renderCount,
   tileRenderCalls: () => tileRenderCalls.slice(),
   approvalRemovalCalls: () => approvalRemovalCalls.slice(),
+  currentThreadRefreshCalls: () => currentThreadRefreshCalls.slice(),
 };
 `)();
 }
@@ -6646,6 +6656,32 @@ test("fileChange approval answer posts even when browser pending state is stale"
   assert.equal(JSON.parse(calls[0].options.body).decision, "allow_once");
   assert.equal(harness.state.pendingApprovals.get("file-approval").params.threadId, "thread-worker");
   assert.equal(harness.activity(), "批准发送");
+});
+
+test("stale fileChange approval answer clears local pending card on missing server request", async () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.state.currentThreadId = "thread-worker";
+  harness.state.currentThread = { id: "thread-worker" };
+  harness.state.pendingApprovals.set("file-approval", {
+    id: "file-approval",
+    method: "item/fileChange/requestApproval",
+    status: "waiting",
+    actionable: true,
+    params: {
+      threadId: "thread-worker",
+      turnId: "turn-file",
+      itemId: "call-file",
+    },
+  });
+  const err = new Error("Approval request is no longer pending");
+  err.status = 404;
+  harness.setApiFailure(err);
+
+  await harness.answerApproval("file-approval", "allow_session", { threadId: "thread-worker" });
+
+  assert.equal(harness.state.pendingApprovals.has("file-approval"), false);
+  assert.equal(harness.activity(), "批准已结束");
+  assert.deepEqual(harness.currentThreadRefreshCalls(), [{ reason: "stale-server-request" }]);
 });
 
 test("thread detail pending server requests refresh and render against tile pane thread context", () => {

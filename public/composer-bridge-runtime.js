@@ -480,11 +480,30 @@ async function answerServerRequest(requestId, payload, options = {}) {
     markActivity(isUserInputRequest(request) ? "输入已发送" : "批准发送");
     scheduleApprovalThreadRender(threadId);
   } catch (err) {
+    if (isStaleServerRequestError(err)) {
+      state.pendingApprovals.delete(key);
+      $("connectionState").classList.remove("error");
+      $("connectionState").textContent = isUserInputRequest(request) ? "Response no longer pending" : "Approval no longer pending";
+      markActivity(isUserInputRequest(request) ? "输入已结束" : "批准已结束");
+      scheduleApprovalThreadRender(threadId);
+      scheduleCurrentThreadRefresh({ reason: "stale-server-request" });
+      return;
+    }
     request.status = "waiting";
     request.decision = null;
     showError(err);
     scheduleApprovalThreadRender(threadId);
   }
+}
+
+function isStaleServerRequestError(err) {
+  const status = Number(err && (err.status || err.statusCode) || 0);
+  const text = String(err && (err.code || err.message || err.detail) || err || "").toLowerCase();
+  if (status === 404) return true;
+  return text.includes("no longer pending")
+    || text.includes("not pending")
+    || text.includes("not found")
+    || text.includes("not available");
 }
 
 function answerApproval(requestId, decision, options = {}) {
@@ -509,6 +528,15 @@ function answerApproval(requestId, decision, options = {}) {
     if (threadId) scheduleApprovalThreadRender(threadId);
     return result;
   }).catch((err) => {
+    if (isStaleServerRequestError(err)) {
+      state.pendingApprovals.delete(key);
+      $("connectionState").classList.remove("error");
+      $("connectionState").textContent = "Approval no longer pending";
+      markActivity("批准已结束");
+      if (threadId) scheduleApprovalThreadRender(threadId);
+      scheduleCurrentThreadRefresh({ reason: "stale-approval-request" });
+      return { ok: true, stale: true };
+    }
     showError(err);
     throw err;
   });

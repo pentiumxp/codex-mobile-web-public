@@ -174,6 +174,81 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   assert.equal(codexRequests[4].params.turnRuntime, "medium");
 });
 
+test("thread task-card runtime grants worker lanes full access by default", async () => {
+  const codexRequests = [];
+  const overrides = [];
+  let serviceOptions = null;
+  createThreadTaskCardRuntimeService({
+    homeAiAutonomousDeliveryReturnServiceFactory: () => ({ send: async () => ({ ok: true }) }),
+    taskCardRuntimePolicyServiceFactory: () => ({
+      applyCodexFastServiceTier: (params) => params,
+      applyResumeRuntimeSettings: (params, settings) => Object.assign({}, params, {
+        resumeApprovalPolicy: settings.approvalPolicy,
+        resumeSandboxPolicyType: settings.sandboxPolicy && settings.sandboxPolicy.type,
+      }),
+      applyStartThreadRuntimeSettings: (params) => params,
+      applyTurnRuntimeSettings: (params, settings) => Object.assign({}, params, {
+        turnApprovalPolicy: settings.approvalPolicy,
+        turnSandboxPolicyType: settings.sandboxPolicy && settings.sandboxPolicy.type,
+      }),
+      requestedCodexFastMode: () => "",
+      workspaceSourceWriteGuardDecisionForRequest: () => null,
+      workspaceSourceWriteGuardLogPayload: () => ({}),
+    }),
+    threadTaskCardServiceFactory: (options) => {
+      serviceOptions = options;
+      return { kind: "task-card-service" };
+    },
+    threadTaskCardRouteServiceFactory: () => ({
+      attachWorkspaceDelegationRuntimeGuidance: (value) => value,
+      assertThreadTaskCardTargetDeliverable: () => "worker-thread",
+      resolveThreadTaskCardTargetReference: (threadId) => threadId,
+      readThreadTaskCardExecutionTargetSummary: () => ({
+        id: "worker-thread",
+        title: "Home AI Worker Lane",
+        cwd: "/Users/hermes-dev/HermesMobileDev/app",
+        threadRole: "home_ai_worker",
+      }),
+    }),
+    atLoopRuntimeServiceFactory: () => ({ recordTerminalReturn: async () => ({ ok: true }) }),
+    atLoopRouteServiceFactory: () => ({ kind: "at-loop-route" }),
+    codex: {
+      request: async (method, params, options) => {
+        codexRequests.push({ method, params, options });
+        return method === "turn/start" ? { turnId: "turn-worker" } : { ok: true };
+      },
+    },
+    resolveThreadRuntimeSettings: async () => ({
+      reasoningEffort: "medium",
+      approvalPolicy: "on-request",
+      sandboxPolicy: { type: "workspaceWrite" },
+    }),
+    applyPermissionModeOverride: (settings, approvalPolicy, cwd) => {
+      overrides.push({ approvalPolicy, cwd });
+      return Object.assign({}, settings, {
+        approvalPolicy: "never",
+        sandboxPolicy: { type: "dangerFullAccess" },
+        cwd,
+      });
+    },
+    mutationRpcTimeoutMs: 1234,
+    notifyLocalTurnStarted: () => "turn-worker",
+  });
+
+  const result = await serviceOptions.executeApprovedCard({
+    target: { threadId: "worker-thread" },
+    delivery: {},
+  }, { text: "run worker task" });
+
+  assert.deepEqual(overrides, [{ approvalPolicy: "full", cwd: "/Users/hermes-dev/HermesMobileDev/app" }]);
+  assert.equal(result.runtime.workerLaneFullAccess, true);
+  assert.equal(result.runtime.approvalPolicy, "never");
+  assert.equal(result.runtime.sandboxPolicyType, "dangerFullAccess");
+  assert.equal(codexRequests[0].params.resumeApprovalPolicy, "never");
+  assert.equal(codexRequests[1].params.turnApprovalPolicy, "never");
+  assert.equal(codexRequests[1].params.turnSandboxPolicyType, "dangerFullAccess");
+});
+
 test("thread task-card runtime fails at-loop terminal return before external notification when local correlation fails", async () => {
   const homeAiEvents = [];
   let serviceOptions = null;

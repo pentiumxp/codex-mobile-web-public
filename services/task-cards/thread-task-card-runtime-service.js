@@ -7,6 +7,9 @@ const { createThreadTaskCardService } = require("./thread-task-card-service");
 const {
   isHomeAiDeployLaneThread,
 } = require("./thread-task-card-deploy-lane-policy-service");
+const {
+  classifyThreadPurpose,
+} = require("../at-loop/thread-task-card-loop-routing-service");
 const { createLoopTaskRuntimeService } = require("../at-loop/loop-task-runtime-service");
 const { createAtLoopRouteService } = require("../../server-routes/at-loop-route-service");
 const { createThreadTaskCardRouteService } = require("../../server-routes/thread-task-card-route-service");
@@ -45,6 +48,13 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
   let attachWorkspaceDelegationRuntimeGuidance = () => null;
   let readThreadTaskCardExecutionTargetSummary = () => null;
   let atLoopRuntimeService = null;
+
+  function isWorkerLaneThread(thread = {}) {
+    const role = String(thread && (thread.role || thread.threadRole || thread.thread_role || thread.taskCardRole || thread.task_card_role) || "").trim().toLowerCase();
+    if (role === "home_ai_worker" || role === "plugin_worker") return true;
+    const classification = classifyThreadPurpose(thread || {});
+    return classification && classification.purpose === "worker_lane";
+  }
 
   function atLoopLoopIdFromTerminalReturnEvent(event = {}) {
     const metadata = event && typeof event.metadata === "object" ? event.metadata : {};
@@ -130,7 +140,9 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
       const inheritedRuntimeSettings = await dependencies.resolveThreadRuntimeSettings(card.target.threadId);
       const targetThread = readThreadTaskCardExecutionTargetSummary(card);
       const targetIsDeployLane = isHomeAiDeployLaneThread(targetThread);
-      const baseRuntimeSettings = targetIsDeployLane
+      const targetIsWorkerLane = isWorkerLaneThread(targetThread);
+      const targetUsesFullAccess = targetIsDeployLane || targetIsWorkerLane;
+      const baseRuntimeSettings = targetUsesFullAccess
         ? dependencies.applyPermissionModeOverride(inheritedRuntimeSettings, "full", targetThread && targetThread.cwd || null)
         : inheritedRuntimeSettings;
       const runtimeSettings = requestedReasoningEffort
@@ -166,6 +178,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
           approvalPolicy: runtimeSettings.approvalPolicy || "",
           sandboxPolicyType: runtimeSettings.sandboxPolicy && runtimeSettings.sandboxPolicy.type || "",
           deployLaneNoApproval: targetIsDeployLane,
+          workerLaneFullAccess: targetIsWorkerLane,
         },
       };
     },
