@@ -191,6 +191,38 @@ test("workspace route keeps list/register behavior and trust sync", async () => 
   assert.deepEqual(sent.at(-1), { status: 200, body: { ok: true, cwd: "/repo" } });
 });
 
+test("workspace route reconciles selector rows with shared workspace snapshot", async () => {
+  const sent = [];
+  const service = createWorkspaceRouteService({
+    listWorkspaces: async () => [{
+      cwd: "/Users/me/Documents/Codex/investing",
+      label: "investing",
+      active: false,
+      recentThreadCount: 1,
+      source: "mobile",
+    }],
+    tokenUsageWorkspaceCwds: () => [
+      "/Users/me/syncthings/projects/codex-mobile-web-public",
+      "/Users/me/Documents/Codex/investing",
+      "/Users/me/hermes-webui",
+    ],
+    normalizeFsPath: (value) => String(value || "").replace(/\/+$/, "").toLowerCase(),
+  });
+
+  const result = await service.handleRoute({
+    url: routeUrl("/api/workspaces"),
+    method: "GET",
+    sendJson: (status, body) => sent.push({ status, body }),
+  });
+
+  assert.equal(result.handled, true);
+  assert.deepEqual(sent[0].body.data.map((row) => [row.cwd, row.source]), [
+    ["/Users/me/syncthings/projects/codex-mobile-web-public", "codex"],
+    ["/Users/me/hermes-webui", "codex"],
+    ["/Users/me/Documents/Codex/investing", "mobile"],
+  ]);
+});
+
 test("continuation route creates and reads public jobs", async () => {
   const service = createThreadContinuationRouteService({
     createContinuationJob: (body) => ({ id: "job-1", body }),

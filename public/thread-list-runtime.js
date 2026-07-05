@@ -569,9 +569,7 @@ function isHiddenThread(thread) {
   if (/archived|deleted|removed/.test(status)) return true;
   if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
   if (/\.jsonl\.(bak|backup|old)(?:\b|[-_.])/.test(location)) return true;
-  const cwd = normalizeFsPath(thread.cwd);
   if (state.selectedCwd && !threadMatchesWorkspaceCwd(thread.cwd, state.selectedCwd)) return true;
-  if (cwd && !threadMatchesVisibleWorkspace(thread.cwd)) return true;
   return false;
 }
 

@@ -104,6 +104,8 @@ function createApiDispatchRouteService(dependencies = {}) {
   const workspaceRouteService = createWorkspaceRouteService({
     CODEX_HOME,
     listWorkspaces,
+    normalizeFsPath,
+    tokenUsageWorkspaceCwds,
     workspaceRegistryService,
     syncRegisteredWorkspaceTrust,
     syncKnownCodexMobileMcpToolsets,
