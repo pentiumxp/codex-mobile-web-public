@@ -128,6 +128,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-detail-state",
     source: "public/thread-detail-state.js",
+    nativeSource: "frontend/native/thread-detail-state.mjs",
     globalName: "CodexThreadDetailState",
     expectedFunctions: [
       "buildThreadDetailRenderEvidence",

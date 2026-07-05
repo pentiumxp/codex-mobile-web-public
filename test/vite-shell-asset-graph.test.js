@@ -450,6 +450,125 @@ test("native ESM conversation scroll matches classic fallback behavior", async (
   }
 });
 
+test("native ESM thread detail state matches classic fallback behavior", async () => {
+  const classicThreadDetailState = require("../public/thread-detail-state.js");
+  const nativeThreadDetailState = await import("../frontend/native/thread-detail-state.mjs");
+  const loadedThread = {
+    id: "thread-a",
+    title: "Thread A",
+    status: "completed",
+    mobileDetailLoaded: true,
+    mobileLoading: false,
+    turns: [{
+      id: "turn-a",
+      status: "completed",
+      items: [{ type: "userMessage", text: "hello", clientSubmissionId: "submit-a" }],
+    }],
+    mobileProjection: { source: "sample" },
+    runtimeSettings: { model: "test" },
+  };
+  assert.deepEqual(
+    nativeThreadDetailState.threadListSummaryFromDetailThread(loadedThread),
+    classicThreadDetailState.threadListSummaryFromDetailThread(loadedThread),
+  );
+  for (const input of [
+    loadedThread,
+    Object.assign({}, loadedThread, { mobileLoading: true }),
+    Object.assign({}, loadedThread, { turns: [] }),
+  ]) {
+    assert.equal(
+      nativeThreadDetailState.threadHasLoadedDetailState(input),
+      classicThreadDetailState.threadHasLoadedDetailState(input),
+    );
+    assert.equal(
+      nativeThreadDetailState.threadHasReusableLoadedDetailState(input),
+      classicThreadDetailState.threadHasReusableLoadedDetailState(input),
+    );
+    assert.equal(
+      nativeThreadDetailState.threadHasVisualBaselineLoadedDetailState(input),
+      classicThreadDetailState.threadHasVisualBaselineLoadedDetailState(input),
+    );
+  }
+  for (const input of [
+    { currentThread: loadedThread, threadId: "thread-a" },
+    { currentThread: loadedThread, threadId: "thread-b" },
+    { currentThread: null, threadId: "thread-a" },
+  ]) {
+    assert.deepEqual(
+      nativeThreadDetailState.planThreadOpenCacheReuse(input),
+      classicThreadDetailState.planThreadOpenCacheReuse(input),
+    );
+  }
+  const policyOptions = {
+    itemVisibleWeight(item) {
+      if (item && Object.prototype.hasOwnProperty.call(item, "weight")) return Number(item.weight) || 0;
+      return JSON.stringify(item || {}).length;
+    },
+    isContextCompactionItem(item) {
+      return Boolean(item && item.type === "contextCompaction");
+    },
+    isOperationalItem(item) {
+      return Boolean(item && item.type === "commandExecution");
+    },
+    isAssistantReceiptLikeItem(item) {
+      return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
+    },
+    isTurnComplete(turn) {
+      return Boolean(turn && turn.status === "completed");
+    },
+    isReasoningItem(item) {
+      return Boolean(item && item.type === "reasoning");
+    },
+    visualReceiptMatchesSuppressionKeys(item, keys) {
+      return Boolean(item && keys && keys.has(item.suppressionKey));
+    },
+  };
+  const classicPolicy = classicThreadDetailState.createThreadDetailStatePolicy(policyOptions);
+  const nativePolicy = nativeThreadDetailState.createThreadDetailStatePolicy(policyOptions);
+  assert.deepEqual(
+    nativePolicy.mergeItemPreservingVisibleFields({
+      id: "existing",
+      type: "agentMessage",
+      text: "longer visible response",
+      weight: 100,
+    }, {
+      id: "incoming",
+      type: "agentMessage",
+      text: "short",
+      status: "completed",
+      weight: 10,
+    }),
+    classicPolicy.mergeItemPreservingVisibleFields({
+      id: "existing",
+      type: "agentMessage",
+      text: "longer visible response",
+      weight: 100,
+    }, {
+      id: "incoming",
+      type: "agentMessage",
+      text: "short",
+      status: "completed",
+      weight: 10,
+    }),
+  );
+  assert.equal(
+    nativePolicy.shouldPreserveLocalOnlyItem({ id: "mux-user-1", type: "userMessage", weight: 10 }, false),
+    classicPolicy.shouldPreserveLocalOnlyItem({ id: "mux-user-1", type: "userMessage", weight: 10 }, false),
+  );
+  assert.deepEqual(
+    nativeThreadDetailState.default.planSummaryOnlyCurrentThreadRecoveryEffects({
+      plan: { shouldRecover: true, reason: "summary-only-current" },
+      threadId: "thread-a",
+      seq: 4,
+    }),
+    classicThreadDetailState.planSummaryOnlyCurrentThreadRecoveryEffects({
+      plan: { shouldRecover: true, reason: "summary-only-current" },
+      threadId: "thread-a",
+      seq: 4,
+    }),
+  );
+});
+
 test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
   const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
   const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
@@ -691,6 +810,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/runtime-settings\.mjs/);
   assert.match(shardSources, /frontend\/native\/viewport-metrics\.mjs/);
   assert.match(shardSources, /frontend\/native\/conversation-scroll\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-detail-state\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-list-load-policy\.mjs/);
   assert.match(shardSources, /frontend\/native\/draft-store\.mjs/);
   assert.match(shardSources, /frontend\/native\/image-compressor\.mjs/);
@@ -702,6 +822,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/runtime-settings\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/viewport-metrics\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/conversation-scroll\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-detail-state\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-list-load-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/draft-store\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/image-compressor\.js"/);
@@ -709,7 +830,6 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/frontend-runtime-health\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/home-ai-diagnostic-reporting\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-diagnostic-events\.js"/);
-  assert.match(shardSources, /public\/thread-detail-state\.js/);
   assert.match(shardSources, /public\/thread-detail-render-plan\.js/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
   assert.match(shardSources, /public\/plugin-voice-input\.js/);
@@ -1002,8 +1122,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 11);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 11);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 12);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 12);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1048,6 +1168,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "thread-performance-metrics",
         nativeSource: "frontend/native/thread-performance-metrics.mjs",
         importSource: "frontend/native/thread-performance-metrics.mjs",
+      },
+      {
+        id: "thread-detail-state",
+        nativeSource: "frontend/native/thread-detail-state.mjs",
+        importSource: "frontend/native/thread-detail-state.mjs",
       },
       {
         id: "draft-store",
