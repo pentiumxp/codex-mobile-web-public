@@ -3,6 +3,9 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const {
+  inheritedWorkspaceMainThreadRole,
+} = require("../services/runtime/workspace-main-thread-routing-service");
 
 function missingDependency(name) {
   return () => { throw new Error(`Missing continuation thread service dependency: ${name}`); };
@@ -371,6 +374,9 @@ function normalizeContinuationLineageEntry(entry) {
     sourceThreadTitle: String(entry.sourceThreadTitle || ""),
     sourceRolloutPath: String(entry.sourceRolloutPath || ""),
     sourceRolloutSizeBytes: Number(entry.sourceRolloutSizeBytes || 0),
+    sourceThreadRole: String(entry.sourceThreadRole || ""),
+    inheritedThreadRole: String(entry.inheritedThreadRole || ""),
+    preferredMain: Boolean(entry.preferredMain),
     handoffFile: String(entry.handoffFile || ""),
     handoffRelativePath: String(entry.handoffRelativePath || ""),
     handoffId: String(entry.handoffId || ""),
@@ -1280,6 +1286,14 @@ async function startThreadFromRequestBody(body, options = {}) {
   }
   if (job) job.sourceArchive = sourceArchive;
   const sourceSummary = sourceSnapshot && sourceSnapshot.summary;
+  const inheritedThreadRole = inheritedWorkspaceMainThreadRole({
+    sourceThread: Object.assign({}, sourceSummary || {}, {
+      title: sourceThreadTitle || (sourceSummary && (sourceSummary.name || sourceSummary.preview)) || "",
+      cwd,
+    }),
+    sourceThreadTitle,
+    cwd,
+  });
   const sourceRolloutPath = sourceSummary ? rolloutPathForThread(sourceSummary) : "";
   const sourceStats = sourceRolloutPath ? rolloutStatsForPath(sourceRolloutPath) : null;
   const lineage = appendContinuationLineageEntry(cwd, {
@@ -1287,6 +1301,9 @@ async function startThreadFromRequestBody(body, options = {}) {
     newThreadTitle: desiredTitle,
     sourceThreadId,
     sourceThreadTitle: sourceThreadTitle || (sourceSummary && (sourceSummary.name || sourceSummary.preview)) || "",
+    sourceThreadRole: inheritedThreadRole,
+    inheritedThreadRole,
+    preferredMain: Boolean(inheritedThreadRole),
     sourceRolloutPath,
     sourceRolloutSizeBytes: sourceStats ? sourceStats.sizeBytes : 0,
     handoffFile: sourceHandoff && sourceHandoff.path,
@@ -1307,6 +1324,11 @@ async function startThreadFromRequestBody(body, options = {}) {
       name: desiredTitle,
       preview: desiredTitle,
       cwd,
+      threadRole: inheritedThreadRole || undefined,
+      role: inheritedThreadRole || undefined,
+      taskCardRole: inheritedThreadRole || undefined,
+      preferredMain: Boolean(inheritedThreadRole),
+      sourceContinuationThreadId: sourceThreadId,
       status: { type: "active" },
       turns: [],
       mobileReadMode: "continuation-bootstrap",

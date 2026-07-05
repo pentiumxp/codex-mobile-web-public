@@ -14,6 +14,11 @@ const {
   createThreadTaskCardLoopRoutingService,
   publicRoutingMetadata,
 } = require("./thread-task-card-loop-routing-service");
+const {
+  createWorkspaceMainThreadRoutingService,
+  isWorkspaceMainRole,
+  normalizeWorkspaceMainRole,
+} = require("../runtime/workspace-main-thread-routing-service");
 
 const STATE_VERSION = 1;
 const DEFAULT_MAX_ITERATIONS = 3;
@@ -841,6 +846,13 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     : null;
   const recordSourceRequirementsScriptPath = compactOneLine(dependencies.recordSourceRequirementsScriptPath)
     || "scripts/record-at-loop-requirements.js";
+  const workspaceMainRouting = dependencies.workspaceMainRouting || createWorkspaceMainThreadRoutingService({
+    fs,
+    path: pathModule,
+    readContinuationLineageEntries: dependencies.readContinuationLineageEntries,
+    readThreadSummary,
+    visibleThreads,
+  });
 
   let stateCache = null;
 
@@ -1943,6 +1955,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     if (raw === "deploy" || raw === "deploy_readback" || raw === "deploy-readback") return "deploy_readback";
     if (raw === "home_ai_worker" || raw === "worker" || raw === "worker_lane") return "home_ai_worker";
     if (raw === "plugin_worker" || raw === "plugin-worker" || raw === "plugin_worker_lane" || raw === "plugin-worker-lane") return "plugin_worker";
+    if (normalizeWorkspaceMainRole(raw)) return normalizeWorkspaceMainRole(raw);
     return raw;
   }
 
@@ -2131,6 +2144,10 @@ function createLoopTaskRuntimeService(dependencies = {}) {
 
   function lifecycleList(input = {}) {
     const role = roleFromLifecycle(input);
+    if (isWorkspaceMainRole(role)) {
+      const threads = workspaceMainRouting.list(Object.assign({}, input, { role }));
+      return { ok: true, action: "list", count: threads.length, threads };
+    }
     if (isWorkerLifecycleRole(role)) return workerLifecycleList(Object.assign({}, input, { role }));
     const rows = visibleThreads()
       .map((thread) => lifecycleThread(thread, input))
@@ -2141,6 +2158,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
 
   function lifecycleResolve(input = {}) {
     const role = roleFromLifecycle(input);
+    if (isWorkspaceMainRole(role)) return workspaceMainRouting.resolve(Object.assign({}, input, { role }));
     if (isWorkerLifecycleRole(role)) return workerLifecycleResolve(Object.assign({}, input, { role }));
     const threadId = compactOneLine(input.threadId || input.targetThreadId);
     const rows = lifecycleList(Object.assign({}, input, { includeIneligible: true })).threads;
@@ -2337,7 +2355,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const workerLifecycleActions = new Set(["status", "heartbeat", "retire", "disable", "archive", "mark_available", "available", "mark_idle", "idle", "mark_completed", "mark_complete"]);
     if (action === "list") return lifecycleList(Object.assign({}, input, { role }));
     if (action === "resolve") return lifecycleResolve(Object.assign({}, input, { role }));
+    if ((action === "status") && isWorkspaceMainRole(role)) return lifecycleResolve(Object.assign({}, input, { role }));
     if (action === "ensure" || action === "create") {
+      if (isWorkspaceMainRole(role)) return { ok: false, action, error: "thread_lifecycle_main_create_unsupported" };
       if (isWorkerLifecycleRole(role)) return ensureWorkerLane(Object.assign({}, input, { role, action }));
       if (!role || role === "home_ai_worker") return { ok: false, action, error: "thread_lifecycle_loop_role_required" };
       const loopId = compactOneLine(input.loopId);

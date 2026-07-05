@@ -110,6 +110,7 @@ function makeRuntime(options = {}) {
     listWorkspaces: options.listWorkspaces,
     isLoopImplementationWorkspace: options.isLoopImplementationWorkspace || (() => true),
     readThreadTaskCardForLoopEvidence: options.readThreadTaskCardForLoopEvidence,
+    readContinuationLineageEntries: options.readContinuationLineageEntries,
     startSourceRequirementsTurn: options.startSourceRequirementsTurn,
     recordSourceRequirementsScriptPath: options.recordSourceRequirementsScriptPath || "/plugin/scripts/record-at-loop-requirements.js",
   };
@@ -408,6 +409,71 @@ test("loop runtime maps source-main thread to registered implementation workspac
   assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").cwd, realWorkspace);
   assert.equal(cards.length, 1);
   assert.equal(cards[0].payload.targetThreadId, "implementation-created");
+});
+
+test("thread lifecycle resolves Home AI main continuation over old source and Workers", async () => {
+  const homeAiCwd = "/Users/hermes-dev/HermesMobileDev/app";
+  const { runtime } = makeRuntime({
+    name: "home-ai-main-continuation",
+    visibleThreads: [
+      {
+        id: "home-old",
+        title: "Home AI 06-22",
+        cwd: homeAiCwd,
+        status: { type: "completed" },
+        updatedAt: 10,
+      },
+      {
+        id: "home-new",
+        title: "Home AI 07-05",
+        cwd: homeAiCwd,
+        status: { type: "completed" },
+        updatedAt: 20,
+      },
+      {
+        id: "home-worker",
+        title: "Home AI 06-22 Worker Lane",
+        cwd: homeAiCwd,
+        threadRole: "home_ai_worker",
+        status: { type: "idle" },
+        updatedAt: 30,
+      },
+      {
+        id: "task-intake",
+        title: "Home AI Task Intake",
+        cwd: homeAiCwd,
+        status: { type: "completed" },
+        updatedAt: 40,
+      },
+    ],
+    readContinuationLineageEntries: () => [{
+      createdAt: "2026-07-05T00:00:00.000Z",
+      sourceThreadId: "home-old",
+      sourceThreadTitle: "Home AI 06-22",
+      newThreadId: "home-new",
+      newThreadTitle: "Home AI 07-05",
+      inheritedThreadRole: "home_ai_main",
+      preferredMain: true,
+    }],
+  });
+
+  const resolved = await runtime.threadLifecycle({
+    action: "resolve",
+    role: "home_ai_main",
+    cwd: homeAiCwd,
+    sourceThreadId: "home-old",
+  });
+
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.thread.id, "home-new");
+  assert.equal(resolved.thread.role, "home_ai_main");
+
+  const listed = await runtime.threadLifecycle({
+    action: "list",
+    role: "home_ai_main",
+    cwd: homeAiCwd,
+  });
+  assert.deepEqual(listed.threads.map((thread) => thread.id), ["home-new"]);
 });
 
 test("loop runtime dispatches product audit in the mapped implementation workspace", async () => {
