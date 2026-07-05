@@ -1327,6 +1327,7 @@ function createThreadDetailRuntime(deps = {}) {
     userMessageSpecificity,
     userMessagesLikelySame,
     userMessagesCanShadow,
+    userMessagesAreSameTurnDuplicateEvent,
     userMessageTimestampMs,
     userMessagesHaveNearbyTimestamps,
     isProjectionIndexUserMessage,

@@ -473,7 +473,7 @@ function clearUsageBackfillRefresh() {
   state.usageBackfillAttempts = 0;
 }
 
-function scheduleUsageBackfillRefresh(delay = 1200) {
+function scheduleUsageBackfillRefresh(delay = 350) {
   if (!state.currentThreadId || document.visibilityState === "hidden") return;
   const turn = latestSuccessfulCompletedTurnMissingUsage();
   if (!turn || !turn.id) {

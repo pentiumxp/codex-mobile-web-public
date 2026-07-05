@@ -928,10 +928,30 @@ function safeConsoleText(value) {
   const text = String(value || "").toLowerCase();
   if (text.includes("not allowed to load local resource")) return "local_resource_blocked";
   if (text.includes("failed to load resource")) return "resource_load_failed";
+  if (text.includes("typeerror") || text.includes("cannot read properties")) return "type_error";
+  if (text.includes("referenceerror") || text.includes("is not defined")) return "reference_error";
+  if (text.includes("syntaxerror")) return "syntax_error";
+  if (text.includes("rangeerror")) return "range_error";
   if (text.includes("uncaught")) return "uncaught";
   if (text.includes("error")) return "console_error";
   if (text.includes("warning")) return "console_warning";
   return "console_event";
+}
+
+function boundedException(details = {}) {
+  const exception = details && details.exception && typeof details.exception === "object"
+    ? details.exception
+    : {};
+  const raw = [
+    details && details.text,
+    exception.className,
+    exception.description,
+  ].filter(Boolean).join(" | ");
+  return {
+    code: safeConsoleText(raw || "exception"),
+    label: boundedToken(raw || "exception", "exception", 80),
+    detailHash: shortHash(raw || "exception"),
+  };
 }
 
 class CdpClient {
@@ -2946,9 +2966,7 @@ async function run(options = parseArgs(), deps = {}) {
           });
         }
       } else if (message.method === "Runtime.exceptionThrown") {
-        exceptions.push({
-          code: safeConsoleText(message.params && message.params.exceptionDetails && message.params.exceptionDetails.text || "exception"),
-        });
+        exceptions.push(boundedException(message.params && message.params.exceptionDetails || {}));
       }
     });
     await cdp.send("Page.enable");

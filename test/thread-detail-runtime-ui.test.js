@@ -105,6 +105,9 @@ test("thread detail runtime is wired into the static shell", () => {
   assert.match(appJs, /(?:const|var) threadDetailRuntimeApi = window\.CodexThreadDetailRuntime/);
   assert.match(appJs, /threadDetailRuntimeApi\.createThreadDetailRuntime\(\{/);
   assert.match(appJs, /function initializeThreadDetailRuntimeWiring\(\)/);
+  assert.match(appJs, /function exposeThreadDetailRuntimeHelpers\(runtime\)/);
+  assert.match(appJs, /exposeThreadDetailRuntimeHelpers\(threadDetailRuntime\)/);
+  assert.match(appJs, /"userMessagesAreSameTurnDuplicateEvent"/);
 });
 
 test("thread detail runtime exposes merge and echo-normalizer APIs", () => {
@@ -118,6 +121,7 @@ test("thread detail runtime exposes merge and echo-normalizer APIs", () => {
     "mergeItemsPreservingLocalVisible",
     "mergeThreadPreservingVisibleItems",
     "normalizeThreadVisibleUserMessages",
+    "userMessagesAreSameTurnDuplicateEvent",
     "userMessagesLikelySame",
     "turnIsSupersededBy",
   ]) {

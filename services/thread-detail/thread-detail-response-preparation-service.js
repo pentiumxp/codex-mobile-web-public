@@ -157,9 +157,7 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
       : backfillMissingRolloutCompletionTurnsForDetailResult(result, details);
     markPrepareTiming(timings, "prepareCompletionBackfillMs", phaseStartedAtMs);
     phaseStartedAtMs = Date.now();
-    const usageDecorated = turnsListWindow
-      ? completionBackfilled
-      : attachRolloutUsageSummariesToDetailResult(completionBackfilled);
+    const usageDecorated = attachRolloutUsageSummariesToDetailResult(completionBackfilled);
     markPrepareTiming(timings, "prepareUsageSummariesMs", phaseStartedAtMs);
     phaseStartedAtMs = Date.now();
     const inputAnchored = turnsListWindow

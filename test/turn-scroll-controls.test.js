@@ -65,11 +65,11 @@ test("current-turn reply jump shares one floating slot with the bottom jump", ()
   assert.match(appJs, /schedulePostCompletionThreadRefreshes\(params\.threadId, \[700, 2400\]\)/);
   assert.match(appJs, /refreshCurrentThread\(\{\s*source: "post-completion",\s*full: true,\s*\}\)\.catch\(showError\);/);
   assert.match(appJs, /function latestSuccessfulCompletedTurnMissingUsage\(\)/);
-  assert.match(appJs, /function scheduleUsageBackfillRefresh\(delay = 1200\)/);
+  assert.match(appJs, /function scheduleUsageBackfillRefresh\(delay = 350\)/);
   assert.match(functionBody("loadThread"), /renderCurrentThread\(\{ stickToBottom: true \}\);[\s\S]*const firstPaintPostRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPostRenderEffects\(\{[\s\S]*\}\);[\s\S]*applyThreadDetailPostRenderEffectsPlan\(firstPaintPostRenderPlan, \{ thread: result\.thread \}\);[\s\S]*const firstPaintReportingStage = threadDetailRenderPlanApi\.planThreadDetailFirstPaintReportingStage\(\{[\s\S]*\}\);[\s\S]*const firstPaintTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintTelemetryEffects\(Object\.assign\(\{[\s\S]*\}, firstPaintReportingStage\.telemetryInput\)\);[\s\S]*applyThreadDetailFirstPaintTelemetryEffectsPlan\(firstPaintTelemetryPlan, \{ thread: result\.thread \}\);/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postPerformanceEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}, item\.options \|\| \{\}\);/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "schedule-usage-backfill-refresh"\) \{[\s\S]*scheduleUsageBackfillRefresh\(\);/);
-  assert.match(appJs, /scheduleUsageBackfillRefresh\(1400\)/);
+  assert.match(appJs, /scheduleUsageBackfillRefresh\(250\)/);
   assert.match(appJs, /refreshCurrentThread\(\{ source: "usage-backfill" \}\)\.catch\(showError\);/);
   assert.match(appJs, /state\.usageBackfillAttempts >= 6/);
   assert.match(appJs, /state\.postCompletionRefreshTimers\.forEach\(\(timer\) => clearTimeout\(timer\)\);/);
@@ -102,7 +102,7 @@ test("current-turn reply jump shares one floating slot with the bottom jump", ()
   assert.match(functionBody("applyNotification"), /const suppressAutomaticRefresh = shouldSuppressAutomaticCurrentThreadRefresh\("post-completion", \{ threadId: params\.threadId \}\);/);
   assert.match(functionBody("applyNotification"), /renderCurrentThread\(\{ stickToBottom: !suppressAutomaticRefresh \}\);/);
   assert.match(functionBody("applyNotification"), /if \(!suppressAutomaticRefresh\) schedulePostCompletionThreadRefreshes\(params\.threadId, \[700, 2400\]\);/);
-  assert.match(functionBody("applyNotification"), /if \(!suppressAutomaticRefresh\) \{[\s\S]*scheduleUsageBackfillRefresh\(1400\);[\s\S]*scheduleLivePollIfNeeded\(1400\);[\s\S]*\}/);
+  assert.match(functionBody("applyNotification"), /if \(!suppressAutomaticRefresh\) \{[\s\S]*scheduleUsageBackfillRefresh\(250\);[\s\S]*scheduleLivePollIfNeeded\(1400\);[\s\S]*\}/);
   assert.match(appJs, /scrollToTurnReceiptStart/);
   assert.match(appJs, /(?:const|var) explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
   assert.doesNotMatch(appJs, /return replies\[0\];/);

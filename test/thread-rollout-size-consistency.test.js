@@ -73,7 +73,7 @@ test("thread detail response preparation adapter exports the canonical service",
   );
 });
 
-test("turns-list initial detail preparation uses window-only enrichment path", async () => {
+test("turns-list initial detail preparation keeps bounded usage summaries on window path", async () => {
   const calls = [];
   let compactOptions = null;
   let requestPayload = null;
@@ -117,9 +117,27 @@ test("turns-list initial detail preparation uses window-only enrichment path", a
       calls.push("completion-backfill");
       return result;
     },
-    attachRolloutUsageSummariesToDetailResult: (result) => {
-      calls.push("usage-summaries");
-      return result;
+    rolloutPathForThread: (thread) => thread && thread.rolloutPath,
+    readRolloutTurnUsageSummaries: (rolloutPath, options = {}) => {
+      calls.push("read-usage");
+      assert.equal(rolloutPath, "/tmp/rollout.jsonl");
+      assert.deepEqual(options.targetTurnIds, ["turn-1"]);
+      return {
+        byTurnId: new Map([[
+          "turn-1",
+          { timestampMs: 1_234, totalTokenUsage: { totalTokens: 42 } },
+        ]]),
+        unscoped: [],
+      };
+    },
+    attachTurnUsageSummaries: (thread, summaries) => {
+      calls.push("attach-usage");
+      const summary = summaries.byTurnId.get("turn-1");
+      thread.turns[0].items.push({
+        id: "usage-1",
+        type: "turnUsageSummary",
+        mobileUsageSummary: summary,
+      });
     },
     appendRolloutUserInputAnchorsToDetailResult: (result) => {
       calls.push("user-input-anchors");
@@ -150,7 +168,7 @@ test("turns-list initial detail preparation uses window-only enrichment path", a
 
   const result = await service.turnsListThreadReadResult(
     "thread-1",
-    { id: "thread-1", status: { type: "idle" } },
+    { id: "thread-1", status: { type: "idle" }, rolloutPath: "/tmp/rollout.jsonl" },
     { model: "gpt-5" },
     "",
     "turns-list-initial",
@@ -160,13 +178,16 @@ test("turns-list initial detail preparation uses window-only enrichment path", a
   assert.equal(result.thread.id, "thread-1");
   assert.equal(result.thread.mobileReadMode, "turns-list-initial");
   assert.equal(result.thread.turns[0].mobileTurnsListCompacted, true);
+  assert.deepEqual(result.thread.turns[0].items.map((item) => item.type), [
+    "userMessage",
+    "turnUsageSummary",
+  ]);
   assert.deepEqual(compactOptions, {
     maxTurns: 3,
     turnsListWindow: true,
   });
   assert.equal(calls.includes("enrich-timestamps"), false);
   assert.equal(calls.includes("completion-backfill"), false);
-  assert.equal(calls.includes("usage-summaries"), false);
   assert.equal(calls.includes("user-input-anchors"), false);
   assert.equal(calls.includes("active-assistant"), false);
   assert.equal(calls.includes("finalize-active-assistant"), false);
@@ -174,6 +195,8 @@ test("turns-list initial detail preparation uses window-only enrichment path", a
     "request:thread/turns/list",
     "compact-turns-list",
     "compact-thread",
+    "read-usage",
+    "attach-usage",
     "task-cards",
     "projection-finalize",
     "response-budget",

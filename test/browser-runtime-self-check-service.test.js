@@ -3144,13 +3144,17 @@ test("browser runtime self-check catches duplicate DOM keys and runtime exceptio
       duplicateRenderKeys: 1,
       duplicateItemIds: 2,
     }],
-    exceptions: [{ code: "uncaught" }],
+    exceptions: [{ code: "uncaught", label: "ReferenceError_test_value_is_not_defined", detailHash: "hash1" }],
   });
 
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.code === "browser_duplicate_render_keys"));
   assert.ok(report.issues.some((issue) => issue.code === "browser_duplicate_item_ids"));
-  assert.ok(report.issues.some((issue) => issue.code === "browser_runtime_exception"));
+  const exceptionIssue = report.issues.find((issue) => issue.code === "browser_runtime_exception");
+  assert.ok(exceptionIssue);
+  assert.deepEqual(exceptionIssue.exceptionCodes, ["uncaught"]);
+  assert.deepEqual(exceptionIssue.exceptionLabels, ["ReferenceError_test_value_is_not_defined"]);
+  assert.deepEqual(exceptionIssue.exceptionHashes, ["hash1"]);
 });
 
 test("browser runtime self-check helper output is metadata-only", () => {
@@ -3303,7 +3307,7 @@ test("browser runtime self-check route and console classifiers are bounded", () 
   assert.equal(script.routeKind("http://127.0.0.1:8787/api/client-events?key=secret"), "client_events");
   assert.equal(script.routeKind("http://127.0.0.1:8787/private/path?cookie=value"), "other");
   assert.equal(script.safeConsoleText("Failed to load resource: the server responded with a status of 500"), "resource_load_failed");
-  assert.equal(script.safeConsoleText("Uncaught TypeError: private value"), "uncaught");
+  assert.equal(script.safeConsoleText("Uncaught TypeError: private value"), "type_error");
 });
 
 test("browser runtime self-check launches Chrome in a cleanup-owned process group", () => {

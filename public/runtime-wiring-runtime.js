@@ -42,7 +42,23 @@ threadDetailRuntime = threadDetailRuntimeApi.createThreadDetailRuntime({
   numericTimestampMs,
   renderContextThread,
 });
+  exposeThreadDetailRuntimeHelpers(threadDetailRuntime);
   return threadDetailRuntime;
+}
+
+function exposeThreadDetailRuntimeHelpers(runtime) {
+  if (!runtime || typeof runtime !== "object") return;
+  const root = typeof globalThis !== "undefined" ? globalThis : window;
+  [
+    "userMessagesAreSameTurnDuplicateEvent",
+    "mergeLikelySameUserMessage",
+    "normalizeThreadVisibleUserMessages",
+    "visibleTextItemsLikelySame",
+    "isTurnUsageSummaryItem",
+    "mergeItemPreservingVisibleFields",
+  ].forEach((name) => {
+    if (typeof runtime[name] === "function") root[name] = runtime[name];
+  });
 }
 
 function initializeComposerRuntimeWiring() {

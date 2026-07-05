@@ -1065,11 +1065,23 @@ function analyzeBrowserRuntimeSamples(input = {}) {
   }
 
   if (exceptions.length) {
+    const exceptionCodes = Array.from(new Set(exceptions
+      .map((entry) => safeLabel(entry && entry.code, "runtime_exception"))
+      .filter(Boolean))).slice(0, 8);
+    const exceptionHashes = Array.from(new Set(exceptions
+      .map((entry) => safeLabel(entry && entry.detailHash, ""))
+      .filter(Boolean))).slice(0, 8);
+    const exceptionLabels = Array.from(new Set(exceptions
+      .map((entry) => safeLabel(entry && entry.label, ""))
+      .filter(Boolean))).slice(0, 8);
     issues.push({
       severity: "H2",
       code: "browser_runtime_exception",
       surface: "browser-runtime",
       count: exceptions.length,
+      exceptionCodes,
+      exceptionHashes,
+      exceptionLabels,
     });
   }
   if (consoleEvents.filter((entry) => entry && entry.type === "error").length) {
