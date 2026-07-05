@@ -5902,6 +5902,58 @@ test("v4 projection merge refuses empty incoming detail over stronger visible de
   assert.equal(merged.mobileReadMode, "projection-v4-dynamic");
 });
 
+test("v4 projection merge refuses smaller same-window refresh without newer turn evidence", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 20,
+    turns: Array.from({ length: 10 }, (_, turnIndex) => ({
+      id: `turn-rich-${turnIndex}`,
+      status: { type: "completed" },
+      startedAtMs: 1783200000000 + turnIndex,
+      completedAtMs: 1783200001000 + turnIndex,
+      items: Array.from({ length: turnIndex === 9 ? 6 : 9 }, (_, itemIndex) => ({
+        id: `rich-${turnIndex}-${itemIndex}`,
+        type: itemIndex === 0 ? "userMessage" : "agentMessage",
+        text: itemIndex === 0 ? "" : `rich visible receipt ${turnIndex}-${itemIndex}`,
+        content: itemIndex === 0 ? [{ type: "text", text: `prompt ${turnIndex}` }] : undefined,
+      })),
+    })),
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 21,
+    mobileReadMode: "projection-v4-partial",
+    turns: Array.from({ length: 10 }, (_, turnIndex) => ({
+      id: `turn-compact-${turnIndex}`,
+      status: { type: "completed" },
+      startedAtMs: 1783200000000 + turnIndex,
+      completedAtMs: 1783200001000 + turnIndex,
+      items: [
+        {
+          id: `compact-user-${turnIndex}`,
+          type: "userMessage",
+          content: [{ type: "input_text", text: `prompt ${turnIndex}` }],
+        },
+        {
+          id: `compact-agent-${turnIndex}`,
+          type: "agentMessage",
+          text: `compact receipt ${turnIndex}`,
+        },
+      ],
+    })),
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.equal(merged.mobileProjectionRevision, 21);
+  assert.equal(merged.mobileReadMode, "projection-v4-partial");
+  assert.deepEqual(merged.turns.map((turn) => turn.id), existingThread.turns.map((turn) => turn.id));
+  assert.equal(merged.turns.flatMap((turn) => turn.items).length, 87);
+});
+
 test("v4 projection merge removes local pending message after matching mux echo arrives", () => {
   const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
   const existingThread = {

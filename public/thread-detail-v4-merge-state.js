@@ -151,6 +151,35 @@
       return Boolean(existingRevision && incomingRevision && incomingRevision < existingRevision);
     }
 
+    function threadVisibleWeight(turns = []) {
+      return (Array.isArray(turns) ? turns : []).reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+    }
+
+    function incomingTurnsHaveNewerVisibleEvidence(existingTurns = [], incomingTurns = []) {
+      const existingIds = new Set((existingTurns || []).map((turn) => String(turn && turn.id || "")).filter(Boolean));
+      const existingMaxOrder = (existingTurns || []).reduce((max, turn) => Math.max(max, turnOrderMs(turn) || 0), 0);
+      return (incomingTurns || []).some((turn) => {
+        const id = String(turn && turn.id || "");
+        if (id && existingIds.has(id)) return false;
+        if (turnVisibleWeight(turn) <= 0) return false;
+        const order = turnOrderMs(turn);
+        return Boolean(order && existingMaxOrder && order > existingMaxOrder);
+      });
+    }
+
+    function isV4ProjectionVisibleWindowRegressive(existingThread, incomingThread) {
+      const existingTurns = Array.isArray(existingThread && existingThread.turns) ? existingThread.turns : [];
+      const incomingTurns = Array.isArray(incomingThread && incomingThread.turns) ? incomingThread.turns : [];
+      if (!existingTurns.length || !incomingTurns.length) return false;
+      if (Math.min(existingTurns.length, incomingTurns.length) < 3) return false;
+      if (existingTurns.some(isActiveLikeProjectionTurn) || incomingTurns.some(isActiveLikeProjectionTurn)) return false;
+      if (incomingTurnsHaveNewerVisibleEvidence(existingTurns, incomingTurns)) return false;
+      const existingWeight = threadVisibleWeight(existingTurns);
+      const incomingWeight = threadVisibleWeight(incomingTurns);
+      if (existingWeight <= 0 || incomingWeight <= 0 || incomingWeight >= existingWeight) return false;
+      return incomingWeight < Math.max(1, Math.floor(existingWeight * 0.55));
+    }
+
     function isActiveLikeProjectionTurn(turn) {
       return Boolean(turn
         && !isTurnComplete(turn)
@@ -202,6 +231,10 @@
           merged.turns = existingTurns;
           return normalizeThreadVisibleUserMessages(merged);
         }
+        if (isV4ProjectionVisibleWindowRegressive(existingThread, incomingThread)) {
+          merged.turns = existingTurns;
+          return normalizeThreadVisibleUserMessages(merged);
+        }
         const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
         merged.turns = incomingTurns.map((incomingTurn) => {
           const existingTurn = existingById.get(String(incomingTurn && incomingTurn.id || ""));
@@ -230,9 +263,11 @@
     return {
       applyV4PendingOverlay,
       isV4ProjectionRefreshRegressive,
+      isV4ProjectionVisibleWindowRegressive,
       isV4ProjectionThread,
       mergeV4ProjectionThread,
       shouldPreserveExistingV4ProjectionTurn,
+      threadVisibleWeight,
       v4ProjectionRevisionValue,
     };
   }
