@@ -36,6 +36,7 @@ const STORE_LOCK_TIMEOUT_MS = 10_000;
 const STORE_LOCK_STALE_MS = 30_000;
 const STORE_LOCK_POLL_MS = 25;
 const TASK_CARD_RESOLVER_VERSION = "task-card-exact-routing-v1";
+const TASK_CARD_RETURN_TOOL_HINT = "mcp__codex_mobile.return_to_source, codex_mobile.return_to_source";
 
 function nowIso(nowFn) {
   const value = typeof nowFn === "function" ? nowFn() : Date.now();
@@ -674,7 +675,7 @@ function taskCardExecutionContinuationText(card, completed = {}, returnScriptPat
     turnId ? `Interrupted ordinary turn completed: ${turnId}` : "",
     "",
     "An active non-terminal task card for this thread is still open. The previous turn appears to have answered an ordinary user interruption; that interruption does not pause, cancel, or complete the task card.",
-    `Continue the original task-card work from the earlier injected task-card message in this thread. Do not request acknowledgement for terminal receipts, and close the original task card only through codex_mobile.return_to_source or ${returnScriptPath} when the work is completed, blocked, redirected, or partially completed.`,
+    `Continue the original task-card work from the earlier injected task-card message in this thread. Do not request acknowledgement for terminal receipts, and close the original task card only through ${TASK_CARD_RETURN_TOOL_HINT}, or ${returnScriptPath} when neither tool surface is callable, when the work is completed, blocked, redirected, or partially completed.`,
     "",
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
     card.message && card.message.summary ? `Summary: ${card.message.summary}` : "",
@@ -691,7 +692,7 @@ function taskCardExecutionWatchdogText(card, returnScriptPath = "scripts/return-
     card.workflow && card.workflow.id ? `Workflow id: ${card.workflow.id}` : "",
     "",
     "This task card is approved and still has an active execution lease, but no terminal return or fresh bounded heartbeat has been recorded after the watchdog window.",
-    `Continue the original task-card work from the earlier injected task-card message in this thread. Do not request acknowledgement for terminal receipts, and close the original task card only through codex_mobile.return_to_source or ${returnScriptPath} when the work is completed, blocked, redirected, or partially completed.`,
+    `Continue the original task-card work from the earlier injected task-card message in this thread. Do not request acknowledgement for terminal receipts, and close the original task card only through ${TASK_CARD_RETURN_TOOL_HINT}, or ${returnScriptPath} when neither tool surface is callable, when the work is completed, blocked, redirected, or partially completed.`,
     "",
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
     card.message && card.message.summary ? `Summary: ${card.message.summary}` : "",
@@ -1157,7 +1158,7 @@ function injectedMessageText(card, returnScriptPath = "scripts/return-thread-tas
     autonomous ? `Workflow id: ${card.workflow.id}` : "",
     autoReturnOnCompletion ? "Auto-return: when this injected turn completes, Codex Mobile Web will send a return task card back to the source thread in this workflow." : "",
     terminal ? "Return policy: terminal receipt; do not send an acknowledgement return unless this card explicitly creates new work." : "",
-    !terminal && !autoReturnOnCompletion && requiresReturn ? `Return required: local final text in this target thread is not a source-thread return card. When this work is completed, blocked, or redirected, return a task card to the source with taskCardId ${card.id} through codex_mobile.return_to_source or ${returnScriptPath}.` : "",
+    !terminal && !autoReturnOnCompletion && requiresReturn ? `Return required: local final text in this target thread is not a source-thread return card. When this work is completed, blocked, or redirected, return a task card to the source with taskCardId ${card.id} through ${TASK_CARD_RETURN_TOOL_HINT}, or ${returnScriptPath} when neither tool surface is callable.` : "",
     secretReceipt ? "Sensitive context: use the secure secretRef consumption path only for action-specific needs; do not ask the user to paste or reveal the plaintext credential in chat." : "",
     secretReceipt,
     "",

@@ -70,6 +70,8 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   assert.ok(listedTools.find((entry) => entry.name === "task_card_heartbeat").inputSchema.properties.threadId);
   const initialized = await handleMessage({ server: "http://127.0.0.1:1", key: "secret" }, { id: 1, method: "initialize" });
   assert.equal(initialized.serverInfo.name, "codex_mobile");
+  assert.match(initialized.instructions, /mcp__codex_mobile\.delegate_to_thread/);
+  assert.match(initialized.instructions, /mcp__codex_mobile/);
   assert.match(initialized.instructions, /delegate_to_thread/);
   assert.match(initialized.instructions, /start_loop/);
   assert.match(initialized.instructions, /thread_lifecycle/);

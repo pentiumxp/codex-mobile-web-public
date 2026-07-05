@@ -260,7 +260,9 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "attachWorkspaceDelegationRuntimeGuidance"), /workspaceDelegationScriptFallbackInstruction\(params\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /return-thread-task-card\.js/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /local final answer in the target thread is not a source-thread return card/);
+  assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /mcp__codex_mobile\.return_to_source/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /create-thread-task-card\.js/);
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /mcp__codex_mobile\.delegate_to_thread/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /deferred tool discovery such as `tool_search`/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /first-class fallback path/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /multi_agent_v1\.spawn_agent/);
@@ -959,7 +961,8 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(prepareDetailBody, /backfillMissingRolloutCompletionTurnsForDetailResult\(result, details\)/);
   assert.match(prepareDetailBody, /attachRolloutUsageSummariesToDetailResult\(completionBackfilled\)/);
   assert.match(prepareDetailBody, /appendRolloutUserInputAnchorsToDetailResult\(usageDecorated\)/);
-  assert.match(prepareDetailBody, /appendRolloutActiveAssistantItemsToDetailResult\(inputAnchored\)/);
+  assert.match(prepareDetailBody, /appendRolloutLatestCompletedAssistantItemsToDetailResult\(inputAnchored\)/);
+  assert.match(prepareDetailBody, /appendRolloutActiveAssistantItemsToDetailResult\(latestCompletedAssistantDecorated\)/);
   assert.match(prepareDetailBody, /finalizeActiveAssistantProjectionDetailResult\(activeAssistantDecorated\)/);
   assert.match(prepareDetailBody, /await prepareThreadTaskCardsToResult\(applyLocalActiveThreadStatusToResult\(detailResult, details\)\)/);
   assert.match(prepareDetailBody, /finalizeThreadDetailProjectionResult/);

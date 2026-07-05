@@ -606,6 +606,8 @@ async function handleMessage(context, message = {}) {
       capabilities: { tools: {} },
       serverInfo: { name: SERVER_NAME, version: packageVersion() },
       instructions: [
+        "When surfaced through Codex deferred tool discovery, these tools appear under the `mcp__codex_mobile` namespace, for example `mcp__codex_mobile.delegate_to_thread`.",
+        "If an app-server dynamic namespace `codex_mobile` is directly visible in a thread, it is equivalent; otherwise use the `mcp__codex_mobile` tools before falling back to local scripts.",
         "Use delegate_to_thread when a user request requires code, files, commands, tests, deployment, or other mutation in another Codex thread/workspace.",
         "Use return_to_source when a received task card is completed, blocked, redirected, rejected, or partially completed; a target-thread final answer is not a source-thread return card.",
         "Use task_card_heartbeat to report bounded progress while actively handling a received task card; this does not complete the card.",

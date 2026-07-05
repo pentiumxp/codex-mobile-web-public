@@ -229,7 +229,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         "Use this for task-card closure. A plain final answer in the target thread is not a source-thread return card.",
         "The original injected task-card message contains `Task card id`; pass that value as `taskCardId`.",
         "The server validates that the current target thread is allowed to return the card and creates the reverse-direction return card through the normal task-card reply service.",
-        "Do not use this to delegate new work. Use codex_mobile.delegate_to_thread for new cross-thread work when that tool is available.",
+        "Do not use this to delegate new work. Use `mcp__codex_mobile.delegate_to_thread` when Codex MCP tools are visible, or `codex_mobile.delegate_to_thread` when the app-server dynamic tool namespace is visible.",
       ].join("\n\n"),
       inputSchema: {
         type: "object",
@@ -274,7 +274,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         "Report bounded progress for an active received Codex Mobile task card so the execution watchdog does not resume a thread that is still working.",
         "Use this only from the current target thread for the task card you are actively handling.",
         "Send only bounded metadata such as taskCardId, status, and turnId. Do not include private task body text, prompts, endpoint bodies, credentials, cookies, logs, or screenshots.",
-        "This does not complete the card. When work is done, still close it through codex_mobile.return_to_source.",
+        "This does not complete the card. When work is done, still close it through `mcp__codex_mobile.return_to_source` when Codex MCP tools are visible, or `codex_mobile.return_to_source` when the app-server dynamic tool namespace is visible.",
       ].join("\n\n"),
       inputSchema: {
         type: "object",
@@ -350,9 +350,10 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     const scriptPath = path.join(appRoot, "scripts", "create-thread-task-card.js");
     return [
       "Codex Mobile cross-thread delegation fallback:",
-      `- Prefer the app-server dynamic tool \`${workspaceDelegationToolFullName}\` when it is visible.`,
+      "- Prefer `mcp__codex_mobile.delegate_to_thread` when Codex MCP tools are visible, because deferred tool discovery exposes Codex Mobile through the MCP namespace.",
+      `- If the app-server dynamic tool namespace is directly visible, \`${workspaceDelegationToolFullName}\` is equivalent and may also be used.`,
       "- App-server dynamic tools may not appear in deferred tool discovery such as `tool_search`; absence there is not proof that delegation is unavailable.",
-      "- If no direct callable `codex_mobile.delegate_to_thread` tool surface is visible, use the local script below as the first-class fallback path:",
+      "- If neither `mcp__codex_mobile.delegate_to_thread` nor `codex_mobile.delegate_to_thread` is callable, use the local script below as the first-class fallback path:",
       `  node ${JSON.stringify(scriptPath)} --source-thread ${sourceThreadId || "<current-thread-id>"} --target-thread <target-thread-id-or-exact-title> --title \"<short title>\" --body-file <markdown-file>`,
       "- `multi_agent_v1.spawn_agent`, `multi_agent_v1.resume`, `multi_agent_v1.send`, and `multi_agent_v1.close` are not Codex Mobile task-card APIs and must not be used as a substitute for cross-workspace file changes.",
       "- When the user requested another workspace/thread to be modified, tested, deployed, or otherwise mutated, do not retry a guarded local write after sandbox/permission/cwd/approval failure. Delegate through the dynamic tool or this script and then report the created card.",
@@ -365,9 +366,10 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     const scriptPath = path.join(appRoot, "scripts", "return-thread-task-card.js");
     return [
       "Codex Mobile task-card return fallback:",
-      `- Prefer the app-server dynamic tool \`${taskCardReturnToolFullName}\` when it is visible.`,
+      "- Prefer `mcp__codex_mobile.return_to_source` when Codex MCP tools are visible, because deferred tool discovery exposes Codex Mobile through the MCP namespace.",
+      `- If the app-server dynamic tool namespace is directly visible, \`${taskCardReturnToolFullName}\` is equivalent and may also be used.`,
       "- A local final answer in the target thread is not a source-thread return card.",
-      "- If no direct callable `codex_mobile.return_to_source` tool surface is visible, use the local script below as the first-class return path:",
+      "- If neither `mcp__codex_mobile.return_to_source` nor `codex_mobile.return_to_source` is callable, use the local script below as the first-class return path:",
       `  node ${JSON.stringify(scriptPath)} --task-card <task-card-id> --thread ${threadId || "<current-target-thread-id>"} --status completed --title "<short return title>" --body-file <markdown-file>`,
       "- Use status `completed`, `blocked`, or `redirected` to close the task-card workflow.",
     ].join("\n");
