@@ -1253,6 +1253,7 @@ function turnsArrayFromListResult(result) {
 }
 
 function shouldBackfillFullThreadDetail(thread) {
+  if (thread && thread.mobileDeferredProjectionSeed && typeof thread.mobileDeferredProjectionSeed === "object") return false;
   return /turns-list-initial/i.test(String(thread && thread.mobileReadMode || ""));
 }
 

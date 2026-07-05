@@ -7035,6 +7035,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /publishPluginNavigationState\(\{ force: Boolean\(item\.force\) \}\)/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /scheduleLivePollIfNeeded\(Number\.isFinite\(delayMs\) && delayMs >= 0 \? delayMs : undefined\)/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(shouldBackfillFullThreadDetail\(context\.thread\)\)/);
+  assert.match(functionBody("shouldBackfillFullThreadDetail"), /mobileDeferredProjectionSeed/);
+  assert.match(functionBody("shouldBackfillFullThreadDetail"), /return false;[\s\S]*turns-list-initial/i);
   assert.doesNotMatch(functionBody("loadThread"), /publishPluginNavigationState\(\{ force: true \}\);\s*restoreConnectionState\(\);\s*scheduleLivePollIfNeeded\(1200\);/);
   assert.match(functionBody("loadThread"), /const firstPaintTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintTelemetryEffects\(Object\.assign\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*\}, firstPaintReportingStage\.telemetryInput\)\);[\s\S]*applyThreadDetailFirstPaintTelemetryEffectsPlan\(firstPaintTelemetryPlan, \{ thread: result\.thread \}\);/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /recordThreadDetailResponseDiagnostics\(item\.performanceEvent \|\| \{\}, \{[\s\S]*thread: context\.thread,[\s\S]*\}\);/);
