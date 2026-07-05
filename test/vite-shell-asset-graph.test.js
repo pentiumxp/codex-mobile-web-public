@@ -389,6 +389,67 @@ test("native ESM draft store and image compressor match classic fallback behavio
   }
 });
 
+test("native ESM conversation scroll matches classic fallback behavior", async () => {
+  const classicConversationScroll = require("../public/conversation-scroll.js");
+  const nativeConversationScroll = await import("../frontend/native/conversation-scroll.mjs");
+  assert.deepEqual(
+    nativeConversationScroll.DEFAULT_BOTTOM_FOLLOW_DELAYS_MS,
+    classicConversationScroll.DEFAULT_BOTTOM_FOLLOW_DELAYS_MS,
+  );
+  for (const metrics of [
+    { scrollHeight: 1800, scrollTop: 725, clientHeight: 980 },
+    { scrollHeight: 1800, scrollTop: 640, clientHeight: 980 },
+    { scrollHeight: "800", scrollTop: "600", clientHeight: "160" },
+  ]) {
+    assert.equal(nativeConversationScroll.isNearBottom(metrics), classicConversationScroll.isNearBottom(metrics));
+  }
+  const submittedFollow = { threadId: "thread-a", clientSubmissionId: "submit-1", untilMs: 6000 };
+  for (const input of [
+    ["thread-a", { clientSubmissionId: "submit-1", nowMs: 1000, ttlMs: 5000 }],
+    ["", { clientSubmissionId: "submit-1", nowMs: 1000, ttlMs: 5000 }],
+  ]) {
+    assert.deepEqual(
+      nativeConversationScroll.createSubmittedMessageFollow(input[0], input[1]),
+      classicConversationScroll.createSubmittedMessageFollow(input[0], input[1]),
+    );
+  }
+  for (const input of [
+    { threadId: "thread-a", nowMs: 5999 },
+    { threadId: "thread-b", nowMs: 2000 },
+    { threadId: "thread-a", nowMs: 6001 },
+  ]) {
+    assert.equal(
+      nativeConversationScroll.shouldFollowSubmittedMessage(submittedFollow, input),
+      classicConversationScroll.shouldFollowSubmittedMessage(submittedFollow, input),
+    );
+  }
+  for (const input of [
+    { nearBottom: true, nowMs: 10000 },
+    { nearBottom: false, nowMs: 10000, lastNearBottomAtMs: 7000, recentBottomMs: 5000 },
+    { nearBottom: false, nowMs: 10000, lastNearBottomAtMs: 4000, recentBottomMs: 5000 },
+  ]) {
+    assert.equal(nativeConversationScroll.shouldStartViewportFollow(input), classicConversationScroll.shouldStartViewportFollow(input));
+  }
+  const planCases = [
+    ["planBottomFollowLeaseEvaluation", { userReadingCurrentTurn: true, leaseActive: true, hasLease: true }],
+    ["planBottomFollowScrollSchedule", undefined],
+    ["planLocalPatchScrollCompletion", { submittedMessageFollow: true }],
+    ["planLocalPatchScrollCompletion", { userReadingCurrentTurn: true, nearBottom: true }],
+    ["planConversationJumpButtons", { hasThread: true, isScrollable: true, nearBottom: false, hasReplyTarget: true, replyTargetAbove: true }],
+    ["planUserReadingCurrentTurn", { nearBottom: false, recentScrollIntent: true, hasCurrentTurn: true }],
+    ["planConversationAutoScrollHoldFromScroll", { nearBottom: false, recentScrollIntent: true, hasCurrentTurn: true }],
+    ["planFullRenderScroll", { submittedMessageFollow: true, autoScrollHold: true }],
+    ["planFullRenderScroll", { viewportFollow: true }],
+    ["planReadingViewportPreservation", { nearBottom: false, userReadingAwayFromBottom: true }],
+    ["planAutomaticConversationRefresh", { hasThread: true, nearBottom: false, recentScrollIntent: true }],
+    ["planAutomaticConversationRefresh", { hasThread: true, nearBottom: false, recentScrollIntent: true, userInitiated: true }],
+  ];
+  for (const [fn, input] of planCases) {
+    assert.deepEqual(nativeConversationScroll[fn](input), classicConversationScroll[fn](input));
+    assert.deepEqual(nativeConversationScroll.default[fn](input), classicConversationScroll[fn](input));
+  }
+});
+
 test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
   const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
   const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
@@ -629,6 +690,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/build-refresh-policy\.mjs/);
   assert.match(shardSources, /frontend\/native\/runtime-settings\.mjs/);
   assert.match(shardSources, /frontend\/native\/viewport-metrics\.mjs/);
+  assert.match(shardSources, /frontend\/native\/conversation-scroll\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-list-load-policy\.mjs/);
   assert.match(shardSources, /frontend\/native\/draft-store\.mjs/);
   assert.match(shardSources, /frontend\/native\/image-compressor\.mjs/);
@@ -639,6 +701,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/build-refresh-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/runtime-settings\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/viewport-metrics\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/conversation-scroll\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-list-load-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/draft-store\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/image-compressor\.js"/);
@@ -646,7 +709,6 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/frontend-runtime-health\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/home-ai-diagnostic-reporting\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-diagnostic-events\.js"/);
-  assert.match(shardSources, /public\/conversation-scroll\.js/);
   assert.match(shardSources, /public\/thread-detail-state\.js/);
   assert.match(shardSources, /public\/thread-detail-render-plan\.js/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
@@ -940,8 +1002,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 10);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 10);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 11);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 11);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -976,6 +1038,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "viewport-metrics",
         nativeSource: "frontend/native/viewport-metrics.mjs",
         importSource: "frontend/native/viewport-metrics.mjs",
+      },
+      {
+        id: "conversation-scroll",
+        nativeSource: "frontend/native/conversation-scroll.mjs",
+        importSource: "frontend/native/conversation-scroll.mjs",
       },
       {
         id: "thread-performance-metrics",

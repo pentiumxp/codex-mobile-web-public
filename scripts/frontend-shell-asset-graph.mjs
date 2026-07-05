@@ -75,6 +75,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "conversation-scroll",
     source: "public/conversation-scroll.js",
+    nativeSource: "frontend/native/conversation-scroll.mjs",
     globalName: "CodexConversationScroll",
     expectedFunctions: [
       "createSubmittedMessageFollow",
