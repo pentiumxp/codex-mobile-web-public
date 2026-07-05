@@ -565,6 +565,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "pane-layout-runtime",
     source: "public/pane-layout-runtime.js",
+    nativeSource: "frontend/native/pane-layout-runtime.mjs",
     globalName: "CodexPaneLayoutRuntime",
     expectedFunctions: [
       "createPaneLayoutRuntime",
