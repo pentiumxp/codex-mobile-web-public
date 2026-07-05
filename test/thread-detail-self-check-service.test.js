@@ -610,6 +610,66 @@ test("thread detail self check detects refresh downgrade", () => {
   assert.ok(codes.includes("thread_detail_refresh_lost_usage"));
 });
 
+test("thread detail self check detects active turn downgraded to stale completed partial", () => {
+  const first = {
+    thread: {
+      id: "thread-1",
+      status: { type: "active", turnId: TURN_ID },
+      activeTurnId: TURN_ID,
+      turns: [{
+        id: TURN_ID,
+        status: { type: "active" },
+        startedAt: "2026-07-05T01:09:15.000Z",
+        items: [
+          { id: "u1", type: "userMessage" },
+          { id: "u2", type: "userMessage" },
+          { id: "a1", type: "agentMessage" },
+          { id: "a2", type: "agentMessage" },
+        ],
+      }],
+    },
+  };
+  const second = {
+    thread: {
+      id: "thread-1",
+      status: {
+        type: "completed",
+        mobileClearedStaleActiveSummary: true,
+        previousType: "active",
+      },
+      mobileReadMode: "projection-v4-partial",
+      mobileStaleActiveTurn: {
+        count: 1,
+        reason: "summary-resting-active-window",
+      },
+      turns: [{
+        id: TURN_ID,
+        status: {
+          type: "completed",
+          mobileStaleActiveTurn: true,
+          previousType: "active",
+          reason: "summary-resting-active-window",
+        },
+        startedAt: "2026-07-05T01:09:15.000Z",
+        items: [
+          { id: "u1", type: "userMessage" },
+          { id: "a1", type: "agentMessage" },
+          { id: "usage1", type: "turnUsageSummary" },
+        ],
+      }],
+    },
+  };
+
+  const report = compareDetailReadbacks(first, second);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, false);
+  assert.ok(codes.includes("thread_detail_refresh_active_status_downgrade"));
+  assert.ok(codes.includes("thread_detail_refresh_item_downgrade"));
+  assert.ok(codes.includes("thread_detail_refresh_lost_user_input"));
+  assert.ok(codes.includes("thread_detail_refresh_lost_assistant_items"));
+});
+
 test("thread detail self check names user and assistant refresh downgrades", () => {
   const first = healthyDetail();
   first.thread.turns[0].items = [

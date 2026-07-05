@@ -801,6 +801,79 @@ function compareThreadListRowToDetail(row = {}, detail = {}) {
   };
 }
 
+function findTurnById(thread = {}, id = "") {
+  const expected = text(id);
+  if (!expected) return null;
+  return safeArray(thread.turns).find((turn) => turnId(turn) === expected) || null;
+}
+
+function pushRefreshTurnDowngradeIssues(issues, beforeSummary, afterSummary, threadHash) {
+  if (!beforeSummary || !afterSummary || beforeSummary.turnHash !== afterSummary.turnHash) return;
+  if (afterSummary.itemCount < beforeSummary.itemCount) {
+    pushIssue(issues, "thread_detail_refresh_item_downgrade", "H2", "thread-detail-refresh", {
+      threadHash,
+      turnHash: afterSummary.turnHash,
+      beforeItems: beforeSummary.itemCount,
+      afterItems: afterSummary.itemCount,
+    });
+  }
+  if (afterSummary.userInputItems < beforeSummary.userInputItems) {
+    pushIssue(issues, "thread_detail_refresh_lost_user_input", "H2", "thread-detail-refresh", {
+      threadHash,
+      turnHash: afterSummary.turnHash,
+      beforeItems: beforeSummary.userInputItems,
+      afterItems: afterSummary.userInputItems,
+    });
+  }
+  if (afterSummary.assistantItems < beforeSummary.assistantItems) {
+    pushIssue(issues, "thread_detail_refresh_lost_assistant_items", "H2", "thread-detail-refresh", {
+      threadHash,
+      turnHash: afterSummary.turnHash,
+      beforeItems: beforeSummary.assistantItems,
+      afterItems: afterSummary.assistantItems,
+    });
+  }
+  if (beforeSummary.usageItems > 0 && afterSummary.usageItems === 0) {
+    pushIssue(issues, "thread_detail_refresh_lost_usage", "H2", "thread-detail-refresh", {
+      threadHash,
+      turnHash: afterSummary.turnHash,
+    });
+  }
+  if (beforeSummary.reasoningItems === 0 && afterSummary.reasoningItems > 0) {
+    pushIssue(issues, "thread_detail_refresh_added_reasoning", "H2", "thread-detail-refresh", {
+      threadHash,
+      turnHash: afterSummary.turnHash,
+      count: afterSummary.reasoningItems,
+    });
+  }
+  if (beforeSummary.operationItems === 0 && afterSummary.operationItems > 0) {
+    pushIssue(issues, "thread_detail_refresh_added_operations", "H2", "thread-detail-refresh", {
+      threadHash,
+      turnHash: afterSummary.turnHash,
+      count: afterSummary.operationItems,
+    });
+  }
+  if (beforeSummary.timestampMissingVisibleItems === 0 && afterSummary.timestampMissingVisibleItems > 0) {
+    pushIssue(issues, "thread_detail_refresh_lost_visible_timestamps", "H2", "thread-detail-refresh", {
+      threadHash,
+      turnHash: afterSummary.turnHash,
+      count: afterSummary.timestampMissingVisibleItems,
+    });
+  }
+  if (beforeSummary.startedAtMs > 0 && afterSummary.startedAtMs === 0) {
+    pushIssue(issues, "thread_detail_refresh_lost_turn_start_timestamp", "H2", "thread-detail-refresh", {
+      threadHash,
+      turnHash: afterSummary.turnHash,
+    });
+  }
+  if (beforeSummary.completedAtMs > 0 && afterSummary.completedAtMs === 0) {
+    pushIssue(issues, "thread_detail_refresh_lost_turn_completion_timestamp", "H2", "thread-detail-refresh", {
+      threadHash,
+      turnHash: afterSummary.turnHash,
+    });
+  }
+}
+
 function compareDetailReadbacks(firstDetail = {}, secondDetail = {}, options = {}) {
   const issues = [];
   const firstThread = objectOrNull(firstDetail.thread) || {};
@@ -810,70 +883,22 @@ function compareDetailReadbacks(firstDetail = {}, secondDetail = {}, options = {
   const firstSummary = firstLatest ? summarizeTurn(firstLatest, firstThread) : null;
   const secondSummary = secondLatest ? summarizeTurn(secondLatest, secondThread) : null;
   const threadHash = shortHash(threadId(secondThread) || threadId(firstThread) || options.threadId);
+  const firstActive = activeTurn(firstThread).turn;
+  const firstActiveId = turnId(firstActive);
+  const secondSameActive = findTurnById(secondThread, firstActiveId);
+  if (firstActive && secondSameActive && isStaleActiveCompletionStatus(secondSameActive.status)) {
+    const beforeActiveSummary = summarizeTurn(firstActive, firstThread);
+    const afterActiveSummary = summarizeTurn(secondSameActive, secondThread);
+    pushIssue(issues, "thread_detail_refresh_active_status_downgrade", "H2", "thread-detail-refresh", {
+      threadHash,
+      turnHash: beforeActiveSummary.turnHash,
+      beforeStatus: beforeActiveSummary.status,
+      afterStatus: afterActiveSummary.status,
+    });
+    pushRefreshTurnDowngradeIssues(issues, beforeActiveSummary, afterActiveSummary, threadHash);
+  }
   if (firstSummary && secondSummary && firstSummary.turnHash === secondSummary.turnHash) {
-    if (secondSummary.itemCount < firstSummary.itemCount) {
-      pushIssue(issues, "thread_detail_refresh_item_downgrade", "H2", "thread-detail-refresh", {
-        threadHash,
-        turnHash: secondSummary.turnHash,
-        beforeItems: firstSummary.itemCount,
-        afterItems: secondSummary.itemCount,
-      });
-    }
-    if (secondSummary.userInputItems < firstSummary.userInputItems) {
-      pushIssue(issues, "thread_detail_refresh_lost_user_input", "H2", "thread-detail-refresh", {
-        threadHash,
-        turnHash: secondSummary.turnHash,
-        beforeItems: firstSummary.userInputItems,
-        afterItems: secondSummary.userInputItems,
-      });
-    }
-    if (secondSummary.assistantItems < firstSummary.assistantItems) {
-      pushIssue(issues, "thread_detail_refresh_lost_assistant_items", "H2", "thread-detail-refresh", {
-        threadHash,
-        turnHash: secondSummary.turnHash,
-        beforeItems: firstSummary.assistantItems,
-        afterItems: secondSummary.assistantItems,
-      });
-    }
-    if (firstSummary.usageItems > 0 && secondSummary.usageItems === 0) {
-      pushIssue(issues, "thread_detail_refresh_lost_usage", "H2", "thread-detail-refresh", {
-        threadHash,
-        turnHash: secondSummary.turnHash,
-      });
-    }
-    if (firstSummary.reasoningItems === 0 && secondSummary.reasoningItems > 0) {
-      pushIssue(issues, "thread_detail_refresh_added_reasoning", "H2", "thread-detail-refresh", {
-        threadHash,
-        turnHash: secondSummary.turnHash,
-        count: secondSummary.reasoningItems,
-      });
-    }
-    if (firstSummary.operationItems === 0 && secondSummary.operationItems > 0) {
-      pushIssue(issues, "thread_detail_refresh_added_operations", "H2", "thread-detail-refresh", {
-        threadHash,
-        turnHash: secondSummary.turnHash,
-        count: secondSummary.operationItems,
-      });
-    }
-    if (firstSummary.timestampMissingVisibleItems === 0 && secondSummary.timestampMissingVisibleItems > 0) {
-      pushIssue(issues, "thread_detail_refresh_lost_visible_timestamps", "H2", "thread-detail-refresh", {
-        threadHash,
-        turnHash: secondSummary.turnHash,
-        count: secondSummary.timestampMissingVisibleItems,
-      });
-    }
-    if (firstSummary.startedAtMs > 0 && secondSummary.startedAtMs === 0) {
-      pushIssue(issues, "thread_detail_refresh_lost_turn_start_timestamp", "H2", "thread-detail-refresh", {
-        threadHash,
-        turnHash: secondSummary.turnHash,
-      });
-    }
-    if (firstSummary.completedAtMs > 0 && secondSummary.completedAtMs === 0) {
-      pushIssue(issues, "thread_detail_refresh_lost_turn_completion_timestamp", "H2", "thread-detail-refresh", {
-        threadHash,
-        turnHash: secondSummary.turnHash,
-      });
-    }
+    pushRefreshTurnDowngradeIssues(issues, firstSummary, secondSummary, threadHash);
   }
   return {
     ok: issues.length === 0,

@@ -366,8 +366,7 @@ function createThreadSummaryStateService(dependencies = {}) {
 
   function statusHasActiveClearEvidence(status) {
     if (!status || typeof status !== "object") return false;
-    return status.mobileClearedStaleActiveSummary === true
-      || status.mobileClearedTerminalActiveTurn === true
+    return status.mobileClearedTerminalActiveTurn === true
       || status.mobileClearedSupersededActiveTurn === true;
   }
 
@@ -406,7 +405,7 @@ function createThreadSummaryStateService(dependencies = {}) {
     if (!threadHasRuntimeActiveEvidence(base)) return false;
     if (display.mobileDetailStatusAuthority === true) return false;
     if (statusHasActiveClearEvidence(display.status)) return false;
-    if (display.mobileListResultSummary !== true) return false;
+    if (display.mobileListResultSummary !== true && display.mobileDetailStatusAuthority !== false) return false;
     return !threadActiveMarkerSetsIntersect(base, display);
   }
 
@@ -550,12 +549,46 @@ function createThreadSummaryStateService(dependencies = {}) {
     return next;
   }
 
+  function statusHasSummaryRestingActiveClear(status) {
+    if (!status || typeof status !== "object") return false;
+    return status.mobileClearedStaleActiveSummary === true
+      || status.reason === "summary-resting-active-window";
+  }
+
+  function threadHasSummaryRestingActiveClear(thread) {
+    if (!thread || typeof thread !== "object") return false;
+    if (statusHasSummaryRestingActiveClear(thread.status)) return true;
+    const staleActive = thread.mobileStaleActiveTurn;
+    if (staleActive && typeof staleActive === "object" && staleActive.reason === "summary-resting-active-window") {
+      return true;
+    }
+    return false;
+  }
+
+  function threadIsPartialProjectionDetail(thread) {
+    if (!thread || typeof thread !== "object") return false;
+    const mode = String(thread.mobileReadMode || "").toLowerCase();
+    if (mode.includes("partial")) return true;
+    const projection = thread.mobileProjection && typeof thread.mobileProjection === "object"
+      ? thread.mobileProjection
+      : {};
+    return projection.partial === true || projection.partialKind === "recent-window";
+  }
+
+  function detailThreadHasStatusAuthority(thread) {
+    if (!thread || typeof thread !== "object") return true;
+    if (threadIsPartialProjectionDetail(thread) && threadHasSummaryRestingActiveClear(thread)) {
+      return false;
+    }
+    return true;
+  }
+
   function detailReadThreadSummaryForFallbackCache(body = {}) {
     const thread = body && body.thread && typeof body.thread === "object" ? body.thread : null;
     const id = String(thread && (thread.id || thread.threadId || thread.thread_id) || "").trim();
     if (!id) return null;
     const summary = stripThreadListDetailFields(Object.assign({}, thread, { id }));
-    summary.mobileDetailStatusAuthority = true;
+    summary.mobileDetailStatusAuthority = detailThreadHasStatusAuthority(thread);
     if (isThreadListRestStatus(summary.status)) clearThreadSummaryActiveMarkers(summary);
     return summary;
   }
@@ -566,9 +599,10 @@ function createThreadSummaryStateService(dependencies = {}) {
     const summary = detailReadThreadSummaryForFallbackCache(payload.body);
     if (!summary || !summary.id) return { synced: false, reason: "missing-thread-summary" };
     const restStatus = isThreadListRestStatus(summary.status);
-    if (restStatus) clearLocalActiveThreadStatus(summary.id);
+    const restStatusClearsActive = restStatus && summary.mobileDetailStatusAuthority !== false;
+    if (restStatusClearsActive) clearLocalActiveThreadStatus(summary.id);
     const summaryOptions = { skipStaleContextOnlyActiveNormalize: true };
-    const normalized = normalizeThreadSummaryLiveStatus(restStatus
+    const normalized = normalizeThreadSummaryLiveStatus(restStatusClearsActive
       ? clearThreadSummaryActiveMarkers(summary)
       : summary, summaryOptions);
     const upserted = upsertThreadListFallbackCacheThread(normalized, { addIfMissing: true });
@@ -576,6 +610,7 @@ function createThreadSummaryStateService(dependencies = {}) {
     return {
       synced: Boolean(upserted),
       restStatus,
+      restStatusClearsActive,
     };
   }
 

@@ -341,6 +341,109 @@ test("thread summary detail sync skips stale-context normalization before fallba
   assert.deepEqual(upserts[0].options, { addIfMissing: true });
 });
 
+test("thread summary detail sync keeps partial stale-active windows non-authoritative", () => {
+  const { createThreadSummaryStateService } = require("../services/thread-list/thread-summary-state-service");
+  const upserts = [];
+  const statusUpdates = [];
+  const service = createThreadSummaryStateService({
+    normalizeHomeAiDeployLaneSummary: (thread) => thread,
+    annotateThreadRolloutStats: (thread) => thread,
+    stripThreadListDetailFields: (thread) => {
+      const summary = Object.assign({}, thread);
+      delete summary.turns;
+      delete summary.mobileReadMode;
+      delete summary.mobileProjection;
+      return summary;
+    },
+    statusText: (status) => String(status && status.type || status || ""),
+    upsertThreadListFallbackCacheThread(thread, options = {}) {
+      upserts.push({ thread, options });
+      return true;
+    },
+    updateThreadListFallbackCacheStatus(threadId, status, meta = {}) {
+      statusUpdates.push({ threadId, status, meta });
+      return true;
+    },
+  });
+
+  service.rememberLocalActiveThreadStatus("thread-active", "turn-active", { source: "test-active" });
+  statusUpdates.length = 0;
+
+  const result = service.syncThreadDetailReadResultToThreadListFallbackCache({
+    status: 200,
+    body: {
+      thread: {
+        id: "thread-active",
+        name: "Home AI",
+        status: {
+          type: "completed",
+          mobileClearedStaleActiveSummary: true,
+          previousType: "active",
+        },
+        mobileReadMode: "projection-v4-partial",
+        mobileProjection: { partial: true, partialKind: "recent-window" },
+        mobileStaleActiveTurn: {
+          count: 1,
+          reason: "summary-resting-active-window",
+        },
+        turns: [{
+          id: "turn-active",
+          status: {
+            type: "completed",
+            mobileStaleActiveTurn: true,
+            previousType: "active",
+            reason: "summary-resting-active-window",
+          },
+          items: [{ id: "u1", type: "userMessage" }],
+        }],
+      },
+    },
+  });
+
+  assert.equal(result.synced, true);
+  assert.equal(result.restStatus, true);
+  assert.equal(result.restStatusClearsActive, false);
+  assert.equal(upserts.length, 1);
+  assert.equal(upserts[0].thread.mobileDetailStatusAuthority, false);
+  assert.equal(service.readLocalActiveThreadStatus("thread-active").turnId, "turn-active");
+  assert.equal(statusUpdates.length, 0);
+});
+
+test("thread summary merge protects runtime-active cache from non-authoritative stale partial", () => {
+  const { createThreadSummaryStateService } = require("../services/thread-list/thread-summary-state-service");
+  const service = createThreadSummaryStateService({
+    statusText: (status) => String(status && status.type || status || ""),
+    threadListSummaryTimestampMs(thread) {
+      const number = Number(thread && (thread.updatedAt || thread.updated_at || thread.updatedAtMs || thread.updated_at_ms) || 0);
+      if (!Number.isFinite(number) || number <= 0) return 0;
+      return number < 1_000_000_000_000 ? number * 1000 : number;
+    },
+  });
+  const cachedRuntimeActive = {
+    id: "home-ai-thread",
+    updatedAt: 1783215768,
+    status: { type: "active", mobileRuntimeDerived: true },
+    activeTurnId: "turn-active",
+  };
+  const stalePartialDetail = {
+    id: "home-ai-thread",
+    updatedAt: 1783215795,
+    status: {
+      type: "completed",
+      mobileClearedStaleActiveSummary: true,
+      previousType: "active",
+    },
+    mobileDetailStatusAuthority: false,
+  };
+
+  const merged = service.normalizeThreadSummaryLiveStatus(
+    service.mergeThreadDisplaySummary(cachedRuntimeActive, stalePartialDetail),
+  );
+
+  assert.equal(merged.status.type, "active");
+  assert.equal(merged.activeTurnId, "turn-active");
+});
+
 test("thread summary detail sync strips active overlay detail fields before fallback upsert", () => {
   const { createThreadSummaryStateService } = require("../services/thread-list/thread-summary-state-service");
   const { stripThreadListDetailFields } = require("../services/thread-list/thread-list-summary-service");
