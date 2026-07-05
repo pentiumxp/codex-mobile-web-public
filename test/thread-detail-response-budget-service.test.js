@@ -615,6 +615,59 @@ test("thread detail response budget keeps non-current active placeholder content
   assert.equal(compacted.thread.mobileDetailResponseBudget.staleActiveTurnCount, 1);
 });
 
+test("thread detail response budget clears stale active markers when terminal usage is present", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      status: {
+        type: "completed",
+        mobileClearedStaleActiveSummary: true,
+        previousType: "active",
+      },
+      mobileReadMode: "projection-v4-partial",
+      mobileStaleActiveTurn: {
+        count: 1,
+        reason: "summary-resting-active-window",
+      },
+      turns: [
+        {
+          id: "turn-stale-terminal",
+          status: {
+            type: "completed",
+            mobileStaleActiveTurn: true,
+            previousType: "active",
+            reason: "summary-resting-active-window",
+          },
+          mobileStaleActiveTurn: true,
+          items: [
+            { id: "u1", type: "userMessage", text: "Finished request" },
+            { id: "a1", type: "agentMessage", text: "Finished receipt" },
+            { id: "usage", type: "turnUsageSummary" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 0,
+  });
+  const report = analyzeThreadDetail({ thread: compacted.thread });
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(compacted.thread.mobileStaleActiveTurn, undefined);
+  assert.equal(compacted.thread.mobileCompletedActiveTurn.count, 1);
+  assert.equal(compacted.thread.turns[0].mobileStaleActiveTurn, undefined);
+  assert.equal(compacted.thread.turns[0].mobileCompletedActiveTurn, true);
+  assert.equal(compacted.thread.turns[0].status.type, "completed");
+  assert.equal(compacted.thread.turns[0].status.mobileStaleActiveTurn, undefined);
+  assert.equal(compacted.thread.turns[0].status.mobileCompletedActiveTurn, true);
+  assert.equal(compacted.thread.turns[0].status.reason, "terminal-usage-summary");
+  assert.equal(compacted.thread.mobileDetailResponseBudget.terminalCompletedActiveTurnCount, 1);
+  assert.equal(codes.includes("thread_detail_stale_active_turn_downgraded"), false);
+});
+
 test("thread detail response budget treats non-current active-looking turns as stale when active id is known", () => {
   const result = {
     thread: {

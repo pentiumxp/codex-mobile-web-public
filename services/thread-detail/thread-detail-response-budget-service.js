@@ -157,6 +157,7 @@ function compactResponseBudgetEvidence(stats = {}) {
     "remappedMissingActiveTurnId",
     "clearedMissingActiveTurnId",
     "clearedTerminalActiveTurnId",
+    "terminalCompletedActiveTurnCount",
     "clearedSupersededActiveTurnId",
     "repairedVisibleActiveTurnStatus",
     "downgradedStaleActiveTurns",
@@ -493,6 +494,43 @@ function staleCompletedStatusFromActive(value) {
   };
 }
 
+function terminalCompletedStatusFromActiveLike(value) {
+  const status = value && typeof value === "object"
+    ? Object.assign({}, value)
+    : {};
+  const previousType = statusText(status.previousType || value);
+  status.type = "completed";
+  status.mobileCompletedActiveTurn = true;
+  delete status.mobileStaleActiveTurn;
+  if (previousType && !status.previousType) status.previousType = previousType;
+  status.reason = "terminal-usage-summary";
+  return status;
+}
+
+function turnHasTerminalUsageSummary(turn) {
+  return (Array.isArray(turn && turn.items) ? turn.items : []).some(isUsageItem);
+}
+
+function turnHasStaleActiveMarker(turn) {
+  return Boolean(turn && (
+    turn.mobileStaleActiveTurn
+      || (turn.status && turn.status.mobileStaleActiveTurn)
+      || (turn.status && turn.status.reason === "summary-resting-active-window")
+      || turn.reason === "summary-resting-active-window"
+  ));
+}
+
+function normalizeTerminalUsageActiveTurn(turn) {
+  if (!turn || typeof turn !== "object") return false;
+  if (!turnHasTerminalUsageSummary(turn)) return false;
+  if (!turnHasStaleActiveMarker(turn)) return false;
+  delete turn.mobileStaleActiveTurn;
+  if (turn.reason === "summary-resting-active-window") delete turn.reason;
+  turn.mobileCompletedActiveTurn = true;
+  turn.status = terminalCompletedStatusFromActiveLike(turn.status);
+  return true;
+}
+
 function clearThreadActiveMarkers(thread) {
   if (!thread || typeof thread !== "object") return;
   delete thread.activeTurnId;
@@ -534,6 +572,23 @@ function supersedingCompletedTurn(thread, activeIndex) {
 
 function reconcileVisibleActiveTurnState(thread, stats) {
   if (!thread || !Array.isArray(thread.turns)) return;
+  let terminalUsageActiveTurns = 0;
+  for (const turn of thread.turns) {
+    if (normalizeTerminalUsageActiveTurn(turn)) {
+      terminalUsageActiveTurns += 1;
+      stats.terminalCompletedActiveTurnCount += 1;
+    }
+  }
+  if (terminalUsageActiveTurns) {
+    if (!thread.turns.some(turnHasStaleActiveMarker)) delete thread.mobileStaleActiveTurn;
+    const existing = thread.mobileCompletedActiveTurn && typeof thread.mobileCompletedActiveTurn === "object"
+      ? thread.mobileCompletedActiveTurn
+      : {};
+    thread.mobileCompletedActiveTurn = {
+      count: boundedCount(Number(existing.count || 0) + terminalUsageActiveTurns, terminalUsageActiveTurns, 100000),
+      reason: "terminal-usage-summary",
+    };
+  }
   let activeId = activeTurnId(thread);
   let activeIndex = activeId
     ? thread.turns.findIndex((turn) => turnId(turn) === activeId)
@@ -2105,6 +2160,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     remappedMissingActiveTurnId: 0,
     clearedMissingActiveTurnId: 0,
     clearedTerminalActiveTurnId: 0,
+    terminalCompletedActiveTurnCount: 0,
     clearedSupersededActiveTurnId: 0,
     repairedVisibleActiveTurnStatus: 0,
     downgradedStaleActiveTurns: 0,
@@ -2293,6 +2349,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     || stats.remappedMissingActiveTurnId > 0
     || stats.clearedMissingActiveTurnId > 0
     || stats.clearedTerminalActiveTurnId > 0
+    || stats.terminalCompletedActiveTurnCount > 0
     || stats.clearedSupersededActiveTurnId > 0
     || stats.repairedVisibleActiveTurnStatus > 0
     || stats.downgradedStaleActiveTurns > 0
