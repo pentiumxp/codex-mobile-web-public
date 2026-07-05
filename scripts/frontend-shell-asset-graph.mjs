@@ -736,6 +736,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "client-render-stability-guard",
     source: "public/client-render-stability-guard.js",
+    nativeSource: "frontend/native/client-render-stability-guard.mjs",
     globalName: "CodexClientRenderStabilityGuard",
     expectedFunctions: [
       "firstSubmittedUserMessageClientSubmissionId",
@@ -750,6 +751,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "live-operation-dock-state",
     source: "public/live-operation-dock-state.js",
+    nativeSource: "frontend/native/live-operation-dock-state.mjs",
     globalName: "CodexLiveOperationDockState",
     expectedFunctions: [
       "compactBubblePreservation",

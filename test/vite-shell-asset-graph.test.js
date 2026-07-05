@@ -1185,6 +1185,68 @@ test("native ESM modal runtime preserves classic global dialog helpers", async (
   );
 });
 
+test("native ESM client render guard and live operation dock match classic policies", async () => {
+  const classicGuard = require("../public/client-render-stability-guard.js");
+  const nativeGuard = await import("../frontend/native/client-render-stability-guard.mjs");
+  const sourceTurn = {
+    id: "local-turn-submission-secret",
+    items: [{ type: "userMessage", clientSubmissionId: "submission-secret", mobilePendingSubmission: true }],
+  };
+  const nativeSourceTurn = structuredClone(sourceTurn);
+  const targetTurn = {
+    id: "server-turn-1",
+    items: [{ type: "userMessage", clientSubmissionId: "submission-secret" }],
+  };
+  const nativeTargetTurn = structuredClone(targetTurn);
+  const classicKey = classicGuard.markSubmittedTurn(sourceTurn, "submission-secret");
+  const nativeKey = nativeGuard.markSubmittedTurn(nativeSourceTurn, "submission-secret");
+  assert.equal(nativeKey, classicKey);
+  assert.equal(
+    nativeGuard.transferSubmittedTurnIdentity(nativeSourceTurn, nativeTargetTurn, "submission-secret"),
+    classicGuard.transferSubmittedTurnIdentity(sourceTurn, targetTurn, "submission-secret"),
+  );
+  assert.equal(nativeGuard.stableTurnIdentity(nativeTargetTurn), classicGuard.stableTurnIdentity(targetTurn));
+  assert.equal(globalThis.CodexClientRenderStabilityGuard, nativeGuard.default);
+
+  const classicDock = require("../public/live-operation-dock-state.js");
+  const nativeDock = await import("../frontend/native/live-operation-dock-state.mjs");
+  const dockInput = {
+    itemId: "cmd-1",
+    type: "commandExecution",
+    status: "running",
+    title: "Command",
+    detail: "npm   test",
+    durationText: "00:00:05",
+    durationAttrs: "data-started-at-ms=\"1\" data-ended-at-ms=\"6\"",
+    extraClass: "mobile-operation-sheet-card",
+  };
+  assert.deepEqual(
+    nativeDock.operationCardContentPlan(dockInput),
+    classicDock.operationCardContentPlan(dockInput),
+  );
+  assert.deepEqual(
+    nativeDock.compactBubblePreservation({
+      nextHtml: "",
+      visibleUntilMs: 1500,
+      nowMs: 1200,
+      savedHtml: "<button class=\"mobile-operation-bubble\"></button>",
+      savedThreadId: "thread-1",
+      currentThreadId: "thread-1",
+      dockHasBubble: true,
+    }),
+    classicDock.compactBubblePreservation({
+      nextHtml: "",
+      visibleUntilMs: 1500,
+      nowMs: 1200,
+      savedHtml: "<button class=\"mobile-operation-bubble\"></button>",
+      savedThreadId: "thread-1",
+      currentThreadId: "thread-1",
+      dockHasBubble: true,
+    }),
+  );
+  assert.equal(globalThis.CodexLiveOperationDockState, nativeDock.default);
+});
+
 test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
   const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
   const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
@@ -1448,6 +1510,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/thread-tile-state\.mjs/);
   assert.match(shardSources, /frontend\/native\/app-update-runtime\.mjs/);
   assert.match(shardSources, /frontend\/native\/modal-runtime\.mjs/);
+  assert.match(shardSources, /frontend\/native\/client-render-stability-guard\.mjs/);
+  assert.match(shardSources, /frontend\/native\/live-operation-dock-state\.mjs/);
   assert.doesNotMatch(shardSources, /from ".*public\/build-refresh-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/runtime-settings\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/viewport-metrics\.js"/);
@@ -1476,6 +1540,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-state\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/app-update-runtime\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/modal-runtime\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/client-render-stability-guard\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/live-operation-dock-state\.js"/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
   assert.match(shardSources, /public\/thread-tile-runtime\.js/);
   assert.match(shardSources, /public\/settings-runtime\.js/);
@@ -1495,8 +1561,6 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/notification-ui-runtime\.js/);
   assert.match(shardSources, /public\/conversation-render-runtime\.js/);
   assert.match(shardSources, /public\/event-stream-runtime\.js/);
-  assert.match(shardSources, /public\/client-render-stability-guard\.js/);
-  assert.match(shardSources, /public\/live-operation-dock-state\.js/);
   assert.match(shardSources, /createApiClient/);
   assert.match(shardSources, /renderMarkdownTable/);
   assert.match(shardSources, /planThreadListLoadRequest/);
@@ -1754,8 +1818,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 28);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 28);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 30);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 30);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1915,6 +1979,16 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "thread-detail-v4-merge-state",
         nativeSource: "frontend/native/thread-detail-v4-merge-state.mjs",
         importSource: "frontend/native/thread-detail-v4-merge-state.mjs",
+      },
+      {
+        id: "client-render-stability-guard",
+        nativeSource: "frontend/native/client-render-stability-guard.mjs",
+        importSource: "frontend/native/client-render-stability-guard.mjs",
+      },
+      {
+        id: "live-operation-dock-state",
+        nativeSource: "frontend/native/live-operation-dock-state.mjs",
+        importSource: "frontend/native/live-operation-dock-state.mjs",
       },
     ]
   );
