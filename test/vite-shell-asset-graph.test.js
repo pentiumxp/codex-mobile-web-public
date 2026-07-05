@@ -1830,8 +1830,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 32);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 32);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 33);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 33);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1886,6 +1886,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "thread-detail-render-plan",
         nativeSource: "frontend/native/thread-detail-render-plan.mjs",
         importSource: "frontend/native/thread-detail-render-plan.mjs",
+      },
+      {
+        id: "thread-detail-dom-patch",
+        nativeSource: "frontend/native/thread-detail-dom-patch.mjs",
+        importSource: "frontend/native/thread-detail-dom-patch.mjs",
       },
       {
         id: "draft-store",

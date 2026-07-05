@@ -230,6 +230,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-detail-dom-patch",
     source: "public/thread-detail-dom-patch.js",
+    nativeSource: "frontend/native/thread-detail-dom-patch.mjs",
     globalName: "CodexThreadDetailDomPatch",
     expectedFunctions: [
       "applyLiveTextItemDomPatch",
