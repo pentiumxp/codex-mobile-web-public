@@ -115,6 +115,9 @@ test("app-server endpoint resolver reads bounded mux endpoint shapes", () => {
           protocol: "jsonl-tcp",
           host: "127.0.0.1",
           port: 4567,
+          pid: 1234,
+          childPid: 5678,
+          startedAt: "2026-07-05T00:00:00.000Z",
           capabilities: { mobileUserMessageEcho: true },
         });
       },
@@ -127,6 +130,9 @@ test("app-server endpoint resolver reads bounded mux endpoint shapes", () => {
     source: "/tmp/mux-endpoint.json",
     capabilities: { mobileUserMessageEcho: true },
     required: true,
+    pid: 1234,
+    childPid: 5678,
+    startedAt: "2026-07-05T00:00:00.000Z",
   });
 
   const missingResolver = createAppServerEndpointResolver({
@@ -138,6 +144,88 @@ test("app-server endpoint resolver reads bounded mux endpoint shapes", () => {
     },
   });
   assert.equal(missingResolver(), null);
+});
+
+test("app-server client preserves a live profile mux when initialize fails", async () => {
+  let startOwnedMuxCount = 0;
+  const endpoint = {
+    protocol: "jsonl-tcp",
+    host: "127.0.0.1",
+    port: 4567,
+    source: "/tmp/profile-mux-endpoint.json",
+    pid: 1234,
+    required: true,
+  };
+  const client = createCodexAppServerClient({
+    REQUIRE_SHARED_APP_SERVER: true,
+    MUX_ENDPOINT_FILE: "/tmp/profile-mux-endpoint.json",
+    PERSIST_MOBILE_OWNED_MUX: true,
+    resolveExternalEndpoint: () => endpoint,
+    normalizeFsPath: (value) => String(value || ""),
+    processImpl: {
+      kill(pid, signal) {
+        assert.equal(pid, 1234);
+        assert.equal(signal, 0);
+      },
+    },
+  });
+  client.connectEndpoint = async (target) => {
+    client.endpoint = target;
+    client.transportKind = "external-jsonl-tcp";
+    client.ws = { readyState: 1, close() {} };
+  };
+  client.initialize = async () => {
+    throw new Error("Codex request timed out: initialize");
+  };
+  client.startOwnedMuxAndConnect = async () => {
+    startOwnedMuxCount += 1;
+  };
+
+  await assert.rejects(
+    () => client.startAndConnect(),
+    /shared app-server endpoint preserved after initialize failure/,
+  );
+  assert.equal(startOwnedMuxCount, 0);
+  assert.match(client.lastError, /preserved/);
+});
+
+test("app-server client replaces a profile mux only after the endpoint process is dead", async () => {
+  let startOwnedMuxCount = 0;
+  const endpoint = {
+    protocol: "jsonl-tcp",
+    host: "127.0.0.1",
+    port: 4567,
+    source: "/tmp/profile-mux-endpoint.json",
+    pid: 1234,
+    required: true,
+  };
+  const client = createCodexAppServerClient({
+    REQUIRE_SHARED_APP_SERVER: true,
+    MUX_ENDPOINT_FILE: "/tmp/profile-mux-endpoint.json",
+    PERSIST_MOBILE_OWNED_MUX: true,
+    resolveExternalEndpoint: () => endpoint,
+    normalizeFsPath: (value) => String(value || ""),
+    processImpl: {
+      kill() {
+        const err = new Error("not found");
+        err.code = "ESRCH";
+        throw err;
+      },
+    },
+  });
+  client.connectEndpoint = async () => {
+    throw new Error("connect ECONNREFUSED");
+  };
+  client.initialize = async () => {};
+  client.startOwnedMuxAndConnect = async () => {
+    startOwnedMuxCount += 1;
+    client.endpoint = endpoint;
+    client.transportKind = "external-jsonl-tcp";
+    client.ws = { readyState: 1, close() {} };
+  };
+
+  await client.startAndConnect();
+  assert.equal(startOwnedMuxCount, 1);
 });
 
 test("JsonLineConnection emits complete json lines and writes newline-delimited messages", () => {

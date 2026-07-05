@@ -61,6 +61,12 @@ function parseTcpEndpoint(value, source) {
   return { protocol: "jsonl-tcp", host, port, source, required: true };
 }
 
+function boundedProcessId(value) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number <= 0) return 0;
+  return number;
+}
+
 function createAppServerEndpointResolver(options = {}) {
   const {
     fs: fsImpl = fs,
@@ -81,7 +87,7 @@ function createAppServerEndpointResolver(options = {}) {
       const raw = fsImpl.readFileSync(muxEndpointFile, "utf8");
       const endpoint = JSON.parse(raw);
       if (endpoint && endpoint.protocol === "jsonl-tcp" && endpoint.host && endpoint.port) {
-        return {
+        const resolved = {
           protocol: "jsonl-tcp",
           host: endpoint.host,
           port: Number(endpoint.port),
@@ -89,6 +95,12 @@ function createAppServerEndpointResolver(options = {}) {
           capabilities: endpoint.capabilities || null,
           required: true,
         };
+        const pid = boundedProcessId(endpoint.pid || endpoint.muxPid || endpoint.processId);
+        const childPid = boundedProcessId(endpoint.childPid || endpoint.appServerPid);
+        if (pid) resolved.pid = pid;
+        if (childPid) resolved.childPid = childPid;
+        if (endpoint.startedAt) resolved.startedAt = String(endpoint.startedAt).slice(0, 80);
+        return resolved;
       }
       if (endpoint && endpoint.protocol === "ws" && endpoint.url) {
         return { protocol: "ws", url: endpoint.url, source: muxEndpointFile, required: true };
@@ -170,6 +182,7 @@ function createCodexAppServerClient(dependencies = {}) {
     rateLimitsByModelObject,
     codexProfileService,
     liveQuotaSnapshotForProfiles,
+    processImpl = process,
   } = dependencies;
   const latestLiveRateLimitsValue = typeof dependencies.latestLiveRateLimits === "function"
     ? dependencies.latestLiveRateLimits
@@ -213,12 +226,20 @@ class CodexAppServerClient {
     const externalEndpoint = resolveExternalEndpoint();
     if (externalEndpoint) {
       this.requireSharedAppServer = true;
+      let connected = false;
       try {
         await this.connectEndpoint(externalEndpoint);
+        connected = true;
         await this.initialize({ allowAlreadyInitialized: true });
         return;
       } catch (err) {
         this.closeTransportOnly();
+        if (this.shouldPreserveProfileMuxAfterFailure(externalEndpoint)) {
+          const phase = connected ? "initialize" : "connect";
+          this.lastError = `shared app-server endpoint preserved after ${phase} failure (${err.message})`;
+          console.error(`[codex app-server] ${this.lastError}`);
+          throw new Error(this.lastError);
+        }
         if (this.canStartOwnedMuxForEndpoint(externalEndpoint)) {
           console.error(`[codex app-server] profile mux endpoint unavailable; starting Mobile-owned mux (${err.message})`);
           await this.startOwnedMuxAndConnect();
@@ -292,6 +313,21 @@ class CodexAppServerClient {
     return Boolean(endpoint && endpoint.source && normalizeFsPath(endpoint.source) === normalizeFsPath(MUX_ENDPOINT_FILE));
   }
 
+  endpointProcessIsAlive(endpoint) {
+    const pid = boundedProcessId(endpoint && endpoint.pid);
+    if (!pid || !processImpl || typeof processImpl.kill !== "function") return false;
+    try {
+      processImpl.kill(pid, 0);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  shouldPreserveProfileMuxAfterFailure(endpoint) {
+    return this.canStartOwnedMuxForEndpoint(endpoint) && this.endpointProcessIsAlive(endpoint);
+  }
+
   async startOwnedMuxAndConnect() {
     assertCommandAvailable(CODEX_EXE, "Codex executable");
     if (this.muxChild && this.muxChild.exitCode === null && this.muxChild.signalCode === null) {
@@ -307,7 +343,7 @@ class CodexAppServerClient {
         CODEX_MOBILE_RUNTIME_DIR: RUNTIME_ROOT,
         CODEX_MUX_STANDALONE: "1",
         CODEX_MUX_KEEP_ALIVE: "1",
-        CODEX_MUX_PUBLISH_ENDPOINT: "1",
+        CODEX_MUX_PUBLISH_ENDPOINT: "auto",
         CODEX_MUX_ENDPOINT_FILE: MUX_ENDPOINT_FILE,
         CODEX_MUX_CODEX_EXE: CODEX_EXE,
       }),

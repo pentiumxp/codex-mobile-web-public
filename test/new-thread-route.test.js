@@ -278,9 +278,10 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(serverRuntimeUtilsJs, /if \(codexHome\) out\.CODEX_HOME = codexHome;[\s\S]*Object\.assign\(out, extra\);/, "explicit child env should be able to override the active CODEX_HOME for profile preflight");
   assert.match(codexAppServerClientServiceJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: codexAppServerChildEnv\(\{ CODEX_HOME \}\)/, "managed child app-server should inherit the resolved active CODEX_HOME without desktop bridge env");
   assert.match(codexAppServerClientServiceJs, /async startOwnedMuxAndConnect\(\)/, "Mobile Web should be able to own a shared mux instead of depending on Desktop");
-  assert.match(codexAppServerClientServiceJs, /CODEX_MUX_STANDALONE:\s*"1"[\s\S]*CODEX_MUX_KEEP_ALIVE:\s*"1"[\s\S]*CODEX_MUX_PUBLISH_ENDPOINT:\s*"1"/, "Mobile-owned mux should stay alive after Desktop exits and publish the active profile endpoint");
+  assert.match(codexAppServerClientServiceJs, /CODEX_MUX_STANDALONE:\s*"1"[\s\S]*CODEX_MUX_KEEP_ALIVE:\s*"1"[\s\S]*CODEX_MUX_PUBLISH_ENDPOINT:\s*"auto"/, "Mobile-owned mux should stay alive after Desktop exits and avoid overwriting a live active profile endpoint");
   assert.match(codexAppServerClientServiceJs, /shared endpoint missing; starting Mobile-owned mux/, "required shared mode should start a Mobile-owned mux when the profile endpoint is absent");
-  assert.match(codexAppServerClientServiceJs, /profile mux endpoint unavailable; starting Mobile-owned mux/, "stale profile endpoints should be replaced by a Mobile-owned mux");
+  assert.match(codexAppServerClientServiceJs, /shouldPreserveProfileMuxAfterFailure/, "live profile mux endpoints should be preserved across listener restarts");
+  assert.match(codexAppServerClientServiceJs, /profile mux endpoint unavailable; starting Mobile-owned mux/, "dead profile endpoints should still be replaced by a Mobile-owned mux");
   assert.match(serverRuntimeConfigServiceJs, /PERSIST_MOBILE_OWNED_MUX:\s*boolFlag\(env\.CODEX_MOBILE_PERSIST_OWNED_MUX\)/, "server should expose a persistent owned mux mode for Listener restarts");
   assert.match(codexAppServerClientServiceJs, /detached:\s*PERSIST_MOBILE_OWNED_MUX/, "persistent owned mux should detach from the Listener process group");
   assert.match(codexAppServerClientServiceJs, /child\.unref\(\)/, "persistent owned mux should not keep the Listener process alive");
