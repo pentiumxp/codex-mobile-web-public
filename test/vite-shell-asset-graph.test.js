@@ -1830,8 +1830,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 43);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 43);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 44);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 44);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -2011,6 +2011,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "media-preview-runtime",
         nativeSource: "frontend/native/media-preview-runtime.mjs",
         importSource: "frontend/native/media-preview-runtime.mjs",
+      },
+      {
+        id: "composer-bridge-runtime",
+        nativeSource: "frontend/native/composer-bridge-runtime.mjs",
+        importSource: "frontend/native/composer-bridge-runtime.mjs",
       },
       {
         id: "api-client-runtime",

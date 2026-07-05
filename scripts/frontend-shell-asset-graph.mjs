@@ -619,6 +619,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "composer-bridge-runtime",
     source: "public/composer-bridge-runtime.js",
+    nativeSource: "frontend/native/composer-bridge-runtime.mjs",
     globalName: "CodexComposerBridgeRuntime",
     expectedFunctions: [
       "createComposerBridgeRuntime",
