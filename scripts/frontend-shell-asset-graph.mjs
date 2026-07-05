@@ -611,6 +611,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "composer-runtime",
     source: "public/composer-runtime.js",
+    nativeSource: "frontend/native/composer-runtime.mjs",
     globalName: "CodexComposerRuntime",
     expectedFunctions: [
       "createComposerRuntime",
