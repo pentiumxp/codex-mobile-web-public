@@ -270,6 +270,78 @@ test("runtime process pressure flags memory and stale child accumulation", () =>
   assert.doesNotMatch(JSON.stringify(result), /private\/key|Authorization|Bearer/i);
 });
 
+test("runtime process pressure blocks stale codex app-server rss even when stale mux is small", () => {
+  const result = service.summarizeProcessPressure([
+    {
+      pid: 100,
+      ppid: 1,
+      user: "hermes-host",
+      kind: "production-server",
+      cpuPercent: 1,
+      rssMb: 512,
+      elapsed: "00:10:00",
+      stat: "S",
+      command: "node server.js",
+      listeners: ["*:8787"],
+    },
+    {
+      pid: 200,
+      ppid: 1,
+      user: "xuxin",
+      kind: "active-app-server-mux",
+      cpuPercent: 0,
+      rssMb: 180,
+      elapsed: "00:20:00",
+      stat: "S",
+      command: "node codex-app-server-mux.js",
+      listeners: ["127.0.0.1:50000"],
+    },
+    {
+      pid: 201,
+      ppid: 200,
+      user: "xuxin",
+      kind: "active-codex-app-server",
+      cpuPercent: 0,
+      rssMb: 420,
+      elapsed: "00:20:00",
+      stat: "S",
+      command: "codex app-server",
+      listeners: [],
+    },
+    {
+      pid: 300,
+      ppid: 1,
+      user: "xuxin",
+      kind: "stale-app-server-mux",
+      cpuPercent: 0,
+      rssMb: 300,
+      elapsed: "02:20:00",
+      stat: "S",
+      command: "node codex-app-server-mux.js",
+      listeners: ["127.0.0.1:49366"],
+    },
+    {
+      pid: 301,
+      ppid: 300,
+      user: "xuxin",
+      kind: "stale-codex-app-server",
+      cpuPercent: 0,
+      rssMb: 4096,
+      elapsed: "02:20:00",
+      stat: "S",
+      command: "codex app-server",
+      listeners: [],
+    },
+  ]);
+
+  const staleMuxIssue = result.issues.find((issue) => issue.code === "stale_app_server_mux_present");
+  const staleAppServerIssue = result.issues.find((issue) => issue.code === "stale_codex_app_server_pressure");
+  assert.equal(staleMuxIssue && staleMuxIssue.severity, "H3");
+  assert.equal(staleAppServerIssue && staleAppServerIssue.severity, "H2");
+  assert.equal(staleAppServerIssue.rssMb, 4096);
+  assert.equal(result.blockingIssueCount, 1);
+});
+
 test("runtime process pressure command redaction is bounded", () => {
   assert.equal(
     service.redactCommand("node script.js --key-file /Users/me/access_key Authorization: Bearer abc123 access_key=secret"),

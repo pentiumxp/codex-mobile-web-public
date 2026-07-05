@@ -736,6 +736,79 @@ test("runtime self-check gate blocks actionable browser regressions", async () =
   assert.deepEqual(result.gate.actionableIssueCodes, ["browser_pending_user_message_disappeared"]);
 });
 
+test("runtime self-check deploy gate preflights process pressure before browser jobs", async () => {
+  let browserJobStarted = false;
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: ["private-thread-id"],
+    sampleThreads: 1,
+    browserRounds: 1,
+    browserSampleDelaysMs: "100",
+    browserMinSettledDelayMs: 1000,
+    skipClientEvents: true,
+    skipApi: true,
+    skipBrowser: false,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    fetchJson: fakeHermesManifestFetchJson,
+    execFile(_node, _args, _options, callback) {
+      browserJobStarted = true;
+      callback(null, JSON.stringify({
+        ok: true,
+        publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
+        browserReport: { issueCount: 0, blockingIssueCount: 0, issues: [] },
+      }), "");
+    },
+    execFileSync(command, args) {
+      if (command === "ps") {
+        return [
+          "33840 1 hermes-host 1.5 204800 00:10:00 Ss /runtime/node server.js",
+          "200 1 xuxin 0.0 181424 00:20:00 S /prod/codex-mobile-web/codex-app-server-mux.js app-server",
+          "201 200 xuxin 0.0 400080 00:20:00 S /Users/xuxin/.local/bin/codex app-server",
+          "300 1 xuxin 0.0 310912 02:20:00 S /prod/codex-mobile-web/codex-app-server-mux.js app-server",
+          "301 300 xuxin 0.0 4194304 02:20:00 S /Users/xuxin/.local/bin/codex app-server",
+        ].join("\n");
+      }
+      if (command === "lsof" && args.includes("-iTCP")) {
+        return [
+          "COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME",
+          "node    33840 xuxin  20u  IPv4 0x1      0t0  TCP *:8787 (LISTEN)",
+          "node    200 xuxin  21u  IPv4 0x2      0t0  TCP 127.0.0.1:50000 (LISTEN)",
+          "node    300 xuxin  22u  IPv4 0x3      0t0  TCP 127.0.0.1:49366 (LISTEN)",
+        ].join("\n");
+      }
+      if (command === "lsof" && args.includes("-p")) {
+        return "p0\nfcwd\nn/Users/hermes-host/HermesMobile/plugins/codex-mobile-web\n";
+      }
+      if (command === "launchctl") {
+        return [
+          "system/com.hermesmobile.plugin.codex-mobile = {",
+          "\tactive count = 1",
+          "\tstate = running",
+          "\tworking directory = /Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+          "\tusername = hermes-host",
+          "\tpid = 33840",
+          "}",
+        ].join("\n");
+      }
+      return "";
+    },
+    readFileSync() {
+      return JSON.stringify({ pid: 200, host: "127.0.0.1", port: 50000, protocol: "jsonl-tcp" });
+    },
+  });
+
+  assert.equal(browserJobStarted, false);
+  assert.equal(result.ok, false);
+  assert.equal(result.gate.deployPass, false);
+  assert.deepEqual(result.gate.actionableIssueCodes, ["stale_codex_app_server_pressure"]);
+  assert.equal(result.checks.some((check) => check.name === "browser-runtime"), false);
+  const preflight = result.checks.find((check) => check.name === "process-pressure-preflight");
+  assert.equal(preflight.ok, false);
+  assert.equal(preflight.blockingIssueCount, 1);
+});
+
 test("runtime self-check gate blocks production listener owner mismatch", async () => {
   const result = await runtimeLoop.runOnce({
     server: "http://127.0.0.1:8790",

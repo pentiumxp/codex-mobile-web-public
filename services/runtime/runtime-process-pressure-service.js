@@ -361,6 +361,14 @@ function runtimeMemoryPressureIssues(processes = [], appServerChildSummary = {},
     options.staleMuxBlockingRssMb || process.env.CODEX_MOBILE_PROCESS_PRESSURE_STALE_MUX_BLOCKING_RSS_MB,
     1024,
   );
+  const staleAppServerBlockCount = positiveInt(
+    options.staleCodexAppServerBlockingCount || process.env.CODEX_MOBILE_PROCESS_PRESSURE_STALE_CODEX_APP_SERVER_BLOCKING_COUNT,
+    2,
+  );
+  const staleAppServerBlockRssMb = positiveInt(
+    options.staleCodexAppServerBlockingRssMb || process.env.CODEX_MOBILE_PROCESS_PRESSURE_STALE_CODEX_APP_SERVER_BLOCKING_RSS_MB,
+    1024,
+  );
   const mcpBlockCount = positiveInt(
     options.mcpChildBlockingCount || process.env.CODEX_MOBILE_PROCESS_PRESSURE_MCP_CHILD_BLOCKING_COUNT,
     80,
@@ -476,6 +484,21 @@ function runtimeMemoryPressureIssues(processes = [], appServerChildSummary = {},
       diagnostic_type: "stale_app_server_mux_present",
       count: staleMuxes.length,
       rssMb: staleMuxRssMb,
+    });
+  }
+  const staleAppServers = processes.filter((process) => process.kind === "stale-codex-app-server");
+  const staleAppServerRssMb = staleAppServers.reduce((total, process) => total + (process.rssMb || 0), 0);
+  if (staleAppServers.length >= staleAppServerBlockCount || staleAppServerRssMb >= staleAppServerBlockRssMb) {
+    issues.push({
+      severity: "H2",
+      code: "stale_codex_app_server_pressure",
+      surface: "runtime-process-pressure",
+      category: "process_lifecycle",
+      diagnostic_type: "stale_codex_app_server_pressure",
+      count: staleAppServers.length,
+      rssMb: staleAppServerRssMb,
+      countThreshold: staleAppServerBlockCount,
+      rssThresholdMb: staleAppServerBlockRssMb,
     });
   }
   const mcpGroup = (appServerChildSummary.groups || []).find((group) => group.kind === "codex-mobile-mcp") || null;

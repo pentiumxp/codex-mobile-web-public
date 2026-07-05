@@ -462,6 +462,43 @@ async function runOnce(options = {}, deps = {}) {
     checks.push(summarizeCheck("api-thread", result));
   }
   const browserJob = runtimeSelfCheckJob(jobPlan, "browser-runtime");
+  let processPressure = null;
+  if (
+    String(options.gateMode || "").toLowerCase() === "deploy"
+    && !options.skipBrowser
+    && browserJob
+    && browserJob.enabled
+  ) {
+    processPressure = collectRuntimeProcessPressure({ topLimit: 12 }, deps);
+    const processPressureCheck = runtimeCheckFromProcessPressure(processPressure);
+    checks.push({
+      ...processPressureCheck,
+      name: "process-pressure-preflight",
+    });
+    if (!processPressureCheck.ok) {
+      const event = {
+        privacy: "metadata_only",
+        startedAt,
+        completedAt: new Date().toISOString(),
+        profile: {
+          browserMode: jobPlan.profile.browserMode,
+          scheduler: "runtime-job-scheduler-service",
+          defaultShellMode: observedDefaultShellMode,
+          viteAppPreviewDefaultRootGate: "skipped-process-pressure-preflight",
+        },
+        runtimeJobs: jobPlan.jobs,
+        processPressure,
+        checks,
+      };
+      event.issueCount = checks.reduce((total, check) => total + check.issueCount, 0);
+      event.blockingIssueCount = checks.reduce((total, check) => total + check.blockingIssueCount, 0);
+      event.diagnosticCandidateCount = checks.reduce((total, check) => total + check.diagnosticCandidateCount, 0);
+      event.gate = classifyRuntimeSelfCheckGate({ checks, mode: options.gateMode });
+      event.ok = event.gate.ok;
+      if (options.output) appendJsonLine(options.output, event);
+      return event;
+    }
+  }
   const browserScript = path.join(root, "scripts", "codex-mobile-browser-runtime-self-check.js");
   if (browserJob && browserJob.enabled) {
     const browserArgs = baseArgs(options).concat([
@@ -624,7 +661,7 @@ async function runOnce(options = {}, deps = {}) {
     });
     checks.push(runtimeCheckFromClientEventSummary(clientEventSummary));
   }
-  const processPressure = collectRuntimeProcessPressure({ topLimit: 12 }, deps);
+  processPressure = collectRuntimeProcessPressure({ topLimit: 12 }, deps);
   checks.push(runtimeCheckFromProcessPressure(processPressure));
   const event = {
     privacy: "metadata_only",
