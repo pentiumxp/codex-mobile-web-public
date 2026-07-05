@@ -309,6 +309,16 @@ function summaryActiveTurnMarker(summary) {
   return "";
 }
 
+function summaryHasActiveRuntimeMarker(summary) {
+  if (!summary || typeof summary !== "object") return false;
+  if (summaryActiveTurnMarker(summary)) return true;
+  return [
+    summary.status,
+    summary.mobileStatus,
+    summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.status,
+  ].filter(Boolean).some(isActiveLikeStatusValue);
+}
+
 function isActiveLikeStatusValue(value) {
   return /running|active|queued|processing|inprogress|in_progress|in-progress|pending|started/i.test(statusText(value));
 }
@@ -1173,6 +1183,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
 
     function shouldDeferInitialTurnsListSeed() {
       if (!preferRecentTurns) return false;
+      if (summaryHasActiveRuntimeMarker(summary)) return false;
       const boundedDecision = boundedReadBeforeFullReadDecision();
       context.boundedReadBeforeFullRead = boundedDecision;
       const activeLargeReadCanDefer = Boolean(
@@ -2006,10 +2017,20 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     }
 
     const rawDecisionBeforeFullRead = boundedReadBeforeFullReadDecision();
-    const boundedReadDecision = applyActiveThreadPolicyToBoundedReadDecision(
+    let boundedReadDecision = applyActiveThreadPolicyToBoundedReadDecision(
       rawDecisionBeforeFullRead,
       activeReadPolicy,
     );
+    if (!boundedReadDecision.prefer
+      && rawDecisionBeforeFullRead.prefer
+      && activePolicyRequiresFullThreadRead(activeReadPolicy)
+      && turnsListThreadReadResult) {
+      boundedReadDecision = Object.assign({}, rawDecisionBeforeFullRead, {
+        prefer: true,
+        reason: "active-thread-bounded-window",
+        activeFullReadBypass: "bounded-window-first-paint",
+      });
+    }
     context.boundedReadBeforeFullRead = boundedReadDecision;
     if (boundedReadDecision.prefer) {
       const turnsStartedAtMs = now();
