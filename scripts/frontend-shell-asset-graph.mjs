@@ -717,6 +717,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "task-card-runtime",
     source: "public/task-card-runtime.js",
+    nativeSource: "frontend/native/task-card-runtime.mjs",
     globalName: "CodexTaskCardRuntime",
     expectedFunctions: [
       "createTaskCardRuntime",
