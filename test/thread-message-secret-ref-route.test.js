@@ -218,6 +218,48 @@ test("thread message route resumes and retries once when turn start requires a l
   assert.equal(response.body.turnId, "turn-retry");
 });
 
+test("thread message route treats turn-start thread-not-found as resume-needed", async () => {
+  const requests = [];
+  const { route } = createRouteHarness({
+    codex: {
+      request: async (method, params) => {
+        requests.push({ method, params });
+        if (method === "turn/start" && requests.filter((entry) => entry.method === "turn/start").length === 1) {
+          const err = new Error("thread not found: thread-1");
+          err.code = "thread_not_found";
+          throw err;
+        }
+        if (method === "turn/start") return { turnId: "turn-after-resume" };
+        return { ok: true };
+      },
+      notifyMuxUserMessage: () => {},
+    },
+  });
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/thread-1/messages"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "hello",
+        clientSubmissionId: "client-thread-not-found-retry",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(requests.map((entry) => entry.method), [
+    "turn/start",
+    "thread/resume",
+    "turn/start",
+  ]);
+  assert.equal(response.body.turnId, "turn-after-resume");
+});
+
 test("thread message route keeps upload extended-history sends on pre-resume path", async () => {
   const { route, requests } = createRouteHarness({
     persistExtendedHistoryForUploads: (uploads) => uploads.length > 0,
@@ -251,6 +293,8 @@ test("thread message route does not classify generic turn-start errors as resume
   const unloaded = new Error("thread not loaded");
   unloaded.code = "thread_not_loaded";
   assert.equal(turnStartRequiresThreadResume(unloaded), true);
+  assert.equal(turnStartRequiresThreadResume(new Error("thread not found: thread-1")), true);
+  assert.equal(turnStartRequiresThreadResume(new Error("model file not found")), false);
 });
 
 test("thread message route logs bounded phase timings for message submission", async () => {

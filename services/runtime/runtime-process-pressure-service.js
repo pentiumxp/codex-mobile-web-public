@@ -86,6 +86,19 @@ function parseCwdFromLsofFn(text = "") {
   return line ? line.slice(1, 240) : "";
 }
 
+function listenerMatchesPort(listeners = "", port = 0) {
+  const targetPort = positiveInt(port, 0);
+  if (!targetPort) return false;
+  const source = Array.isArray(listeners) ? listeners.join(" ") : String(listeners || "");
+  const escapedPort = String(targetPort).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`(?:^|\\s)TCP\\s+[^\\s]*:${escapedPort}\\b`, "i"),
+    new RegExp(`(?:^|\\s)(?:\\*|0\\.0\\.0\\.0|127\\.0\\.0\\.1|localhost|::|::1|\\[::\\]|\\[::1\\])?:${escapedPort}\\b`, "i"),
+    new RegExp(`(?:^|\\s)\\[[^\\]]+\\]:${escapedPort}\\b`, "i"),
+  ];
+  return patterns.some((pattern) => pattern.test(source));
+}
+
 function defaultMuxEndpointPath() {
   return path.join(os.homedir(), ".codex", "app-server-mux", "endpoint.json");
 }
@@ -170,10 +183,10 @@ function classifyProcess(process = {}, context = {}) {
   if (/codex-mobile-web-combined-hotfix/.test(cwd) || /codex-mobile-web-combined-hotfix/.test(command)) {
     return "stale-hotfix-server";
   }
-  if (/node\s+server\.js/.test(command) && /127\.0\.0\.1:8788/.test(listeners)) {
+  if (/node\s+server\.js/.test(command) && listenerMatchesPort(listeners, 8788)) {
     return "stale-hotfix-server";
   }
-  if (/node\s+server\.js/.test(command) && /127\.0\.0\.1:8787/.test(listeners)) {
+  if (/node\s+server\.js/.test(command) && listenerMatchesPort(listeners, 8787)) {
     return "production-server";
   }
   if (/codex-app-server-mux\.js/.test(command)) {
@@ -696,6 +709,7 @@ module.exports = {
   classifyAppServerChildProcess,
   collectRuntimeProcessPressure,
   elapsedSeconds,
+  listenerMatchesPort,
   parseCwdFromLsofFn,
   parseLaunchdServiceReadback,
   parseLsofListeners,

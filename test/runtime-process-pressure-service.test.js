@@ -146,6 +146,24 @@ test("runtime process pressure uses launchd selected mux endpoint without exposi
   assert.doesNotMatch(JSON.stringify(result), /private\/profile|private\/key|Authorization|Bearer/i);
 });
 
+test("runtime process pressure classifies LAN-bound production listener", () => {
+  assert.equal(service.listenerMatchesPort(["TCP *:8787 (LISTEN)"], 8787), true);
+  assert.equal(service.listenerMatchesPort(["TCP 0.0.0.0:8787 (LISTEN)"], 8787), true);
+  assert.equal(service.listenerMatchesPort(["TCP [::]:8787 (LISTEN)"], 8787), true);
+  assert.equal(service.listenerMatchesPort(["TCP 127.0.0.1:8788 (LISTEN)"], 8787), false);
+  assert.equal(service.classifyProcess({
+    pid: 33840,
+    ppid: 1,
+    user: "xuxin",
+    cpuPercent: 1,
+    rssMb: 512,
+    elapsed: "00:10:00",
+    stat: "S",
+    command: "/runtime/node server.js",
+    listeners: ["TCP *:8787 (LISTEN)"],
+  }), "production-server");
+});
+
 test("runtime process pressure flags production listener owner mismatch", () => {
   const psText = [
     "33840 1 xuxin 1.0 204800 00:10:00 Ss /runtime/node server.js",

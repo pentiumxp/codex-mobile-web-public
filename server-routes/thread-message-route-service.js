@@ -69,6 +69,8 @@ function turnStartRequiresThreadResume(err) {
   if (!text) return false;
   if (/\bthread[_ -]?not[_ -]?loaded\b/.test(text)) return true;
   if (/\bthread\b.{0,80}\bnot\s+loaded\b/.test(text)) return true;
+  if (/\bthread[_ -]?not[_ -]?found\b/.test(text)) return true;
+  if (/\bthread\b.{0,80}\bnot\s+found\b/.test(text)) return true;
   if (/\bthread[_ -]?unloaded\b/.test(text)) return true;
   if (/\bunloaded\s+thread\b/.test(text)) return true;
   if (/\bthread[_ -]?unmaterialized\b/.test(text)) return true;
@@ -76,6 +78,7 @@ function turnStartRequiresThreadResume(err) {
   if (/\bthread\b.{0,80}\b(?:must|needs|requires)\b.{0,80}\bresume\b/.test(text)) return true;
   if (/\bresume\b.{0,40}\bthread\b.{0,40}\bbefore\b/.test(text)) return true;
   if (/\b(?:conversation|session)\b.{0,80}\b(?:not\s+loaded|unloaded)\b/.test(text)) return true;
+  if (/\b(?:conversation|session)\b.{0,80}\bnot\s+found\b/.test(text)) return true;
   return false;
 }
 
