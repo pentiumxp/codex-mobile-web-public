@@ -718,6 +718,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "notification-ui-runtime",
     source: "public/notification-ui-runtime.js",
+    nativeSource: "frontend/native/notification-ui-runtime.mjs",
     globalName: "CodexNotificationUiRuntime",
     expectedFunctions: [
       "createNotificationUiRuntime",
