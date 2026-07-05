@@ -597,6 +597,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "media-preview-runtime",
     source: "public/media-preview-runtime.js",
+    nativeSource: "frontend/native/media-preview-runtime.mjs",
     globalName: "CodexMediaPreviewRuntime",
     expectedFunctions: [
       "createMediaPreviewRuntime",

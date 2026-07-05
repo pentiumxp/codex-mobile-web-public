@@ -1830,8 +1830,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 35);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 35);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 36);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 36);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1981,6 +1981,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "side-chat-runtime",
         nativeSource: "frontend/native/side-chat-runtime.mjs",
         importSource: "frontend/native/side-chat-runtime.mjs",
+      },
+      {
+        id: "media-preview-runtime",
+        nativeSource: "frontend/native/media-preview-runtime.mjs",
+        importSource: "frontend/native/media-preview-runtime.mjs",
       },
       {
         id: "thread-list-load-policy",
