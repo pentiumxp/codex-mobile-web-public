@@ -161,6 +161,12 @@ function createServerRuntimeConfigService(dependencies = {}) {
       REQUIRE_SHARED_APP_SERVER: boolFlag(env.CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER),
       DISABLE_MOBILE_OWNED_MUX: boolFlag(env.CODEX_MOBILE_DISABLE_OWNED_MUX),
       PERSIST_MOBILE_OWNED_MUX: boolFlag(env.CODEX_MOBILE_PERSIST_OWNED_MUX),
+      MAX_APP_SERVER_INBOUND_MESSAGE_BYTES: boundedNumber(
+        env.CODEX_MOBILE_APP_SERVER_MAX_MESSAGE_BYTES || String(64 * 1024 * 1024),
+        64 * 1024 * 1024,
+        1024 * 1024,
+        512 * 1024 * 1024,
+      ),
       HOST: env.CODEX_MOBILE_HOST || "0.0.0.0",
       PORT: Number(env.CODEX_MOBILE_PORT || "8787"),
       APP_VERSION,

@@ -249,6 +249,11 @@ test("JsonLineConnection emits complete json lines and writes newline-delimited 
       this.ended = true;
       this.emit("close");
     }
+
+    destroy() {
+      this.ended = true;
+      this.emit("close");
+    }
   }
 
   const socket = new FakeSocket();
@@ -272,6 +277,91 @@ test("JsonLineConnection emits complete json lines and writes newline-delimited 
   assert.equal(closed, true);
   assert.equal(connection.readyState, 3);
   assert.throws(() => connection.send("{}"), /jsonl tcp connection is not open/);
+});
+
+test("JsonLineConnection closes before buffering oversized app-server lines", () => {
+  class FakeSocket extends EventEmitter {
+    constructor() {
+      super();
+      this.destroyed = false;
+      this.encoding = "";
+    }
+
+    setEncoding(value) {
+      this.encoding = value;
+    }
+
+    write() {}
+
+    destroy() {
+      this.destroyed = true;
+      this.emit("close");
+    }
+  }
+
+  const socket = new FakeSocket();
+  const connection = new JsonLineConnection(socket, { maxInboundMessageBytes: 1024 * 1024 });
+  const messages = [];
+  let error = null;
+  let closed = false;
+  connection.onmessage = (event) => messages.push(event.data);
+  connection.onerror = (err) => {
+    error = err;
+  };
+  connection.onclose = () => {
+    closed = true;
+  };
+
+  socket.emit("data", "x".repeat(1024 * 1024));
+  socket.emit("data", "y");
+
+  assert.equal(socket.encoding, "utf8");
+  assert.equal(socket.destroyed, true);
+  assert.equal(closed, true);
+  assert.equal(connection.readyState, 3);
+  assert.equal(messages.length, 0);
+  assert.equal(error && error.code, "APP_SERVER_MESSAGE_TOO_LARGE");
+});
+
+test("app-server client fails pending RPC instead of parsing oversized inbound responses", async () => {
+  const sent = [];
+  let closed = false;
+  const client = createCodexAppServerClient({
+    MAX_APP_SERVER_INBOUND_MESSAGE_BYTES: 1024 * 1024,
+    DEFAULT_RPC_TIMEOUT_MS: 1000,
+    READ_RPC_TIMEOUT_MS: 1000,
+    SAFE_RETRY_METHODS: new Set(),
+    SERVER_REQUEST_METHODS: new Set(),
+    MUX_ENDPOINT_FILE: "/tmp/profile-mux-endpoint.json",
+    broadcast() {},
+    logWorkspaceDelegationRpc() {},
+  });
+  client.ready = true;
+  client.ws = {
+    readyState: 1,
+    send(value) {
+      sent.push(value);
+    },
+    close() {
+      closed = true;
+    },
+  };
+
+  const diagnostics = {};
+  const pending = client.sendRpc("thread/read", { threadId: "thread-large" }, 1000, { diagnostics });
+  client.handleMessage(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    result: { text: "x".repeat(1024 * 1024) },
+  }));
+
+  await assert.rejects(pending, /codex app-server inbound message exceeded/);
+  assert.equal(sent.length, 1);
+  assert.equal(closed, true);
+  assert.equal(client.ready, false);
+  assert.equal(client.pending.size, 0);
+  assert.equal(diagnostics.errorCode, "APP_SERVER_MESSAGE_TOO_LARGE");
+  assert.ok(diagnostics.responsePayloadBytes > 1024 * 1024);
 });
 
 test("safeJsonByteLength returns bounded zero for unserializable values", () => {

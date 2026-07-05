@@ -5,22 +5,50 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 
+const DEFAULT_MAX_INBOUND_MESSAGE_BYTES = 64 * 1024 * 1024;
+
+function boundedByteLimit(value, fallback = DEFAULT_MAX_INBOUND_MESSAGE_BYTES) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return fallback;
+  return Math.max(1024 * 1024, Math.min(Math.trunc(number), 512 * 1024 * 1024));
+}
+
+function inboundMessageByteLength(value) {
+  if (typeof value === "string") return Buffer.byteLength(value, "utf8");
+  if (Buffer.isBuffer(value)) return value.length;
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  return Buffer.byteLength(String(value || ""), "utf8");
+}
+
 class JsonLineConnection {
-  constructor(socket) {
+  constructor(socket, options = {}) {
     this.socket = socket;
     this.readyState = 1;
     this.onmessage = null;
     this.onclose = null;
     this.onerror = null;
     this.buffer = "";
+    this.bufferBytes = 0;
+    this.maxInboundMessageBytes = boundedByteLimit(options.maxInboundMessageBytes);
 
     socket.setEncoding("utf8");
     socket.on("data", (chunk) => {
-      this.buffer += chunk;
+      if (this.readyState !== 1) return;
+      const text = String(chunk || "");
+      const chunkBytes = Buffer.byteLength(text, "utf8");
+      if (this.bufferBytes + chunkBytes > this.maxInboundMessageBytes) {
+        this.failOversizedMessage(this.bufferBytes + chunkBytes);
+        return;
+      }
+      this.buffer += text;
+      this.bufferBytes += chunkBytes;
       let index;
       while ((index = this.buffer.indexOf("\n")) >= 0) {
+        const consumed = this.buffer.slice(0, index + 1);
         const line = this.buffer.slice(0, index).trim();
         this.buffer = this.buffer.slice(index + 1);
+        this.bufferBytes = Math.max(0, this.bufferBytes - Buffer.byteLength(consumed, "utf8"));
         if (line && this.onmessage) this.onmessage({ data: line });
       }
     });
@@ -32,6 +60,20 @@ class JsonLineConnection {
       this.readyState = 3;
       if (this.onclose) this.onclose();
     });
+  }
+
+  failOversizedMessage(observedBytes) {
+    this.readyState = 3;
+    this.buffer = "";
+    this.bufferBytes = 0;
+    const err = new Error(`codex app-server inbound message exceeded ${this.maxInboundMessageBytes} bytes`);
+    err.code = "APP_SERVER_MESSAGE_TOO_LARGE";
+    err.observedBytes = observedBytes;
+    if (this.onerror) this.onerror(err);
+    try {
+      if (typeof this.socket.destroy === "function") this.socket.destroy(err);
+      else this.socket.end();
+    } catch (_) {}
   }
 
   send(data) {
@@ -143,12 +185,13 @@ function createCodexAppServerClient(dependencies = {}) {
     CODEX_EXE,
     APP_ROOT,
     CODEX_HOME,
-    CODEX_HOME_RESOLUTION,
+    CODEX_HOME_RESOLUTION = {},
     RUNTIME_ROOT,
     PERSIST_MOBILE_OWNED_MUX,
     MUX_REPLAY_NOTIFICATION_LIMIT,
     READ_RPC_TIMEOUT_MS,
     DEFAULT_RPC_TIMEOUT_MS,
+    MAX_APP_SERVER_INBOUND_MESSAGE_BYTES,
     LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS,
     SAFE_RETRY_METHODS,
     SERVER_REQUEST_METHODS,
@@ -178,15 +221,16 @@ function createCodexAppServerClient(dependencies = {}) {
     dynamicToolErrorPayload,
     safeJsonByteLength: safeJsonByteLengthImpl = safeJsonByteLength,
     logWorkspaceDelegationRpc,
-    activeRateLimits,
-    rateLimitsByModelObject,
-    codexProfileService,
-    liveQuotaSnapshotForProfiles,
+    activeRateLimits = () => null,
+    rateLimitsByModelObject = () => ({}),
+    codexProfileService = { profiles: () => null },
+    liveQuotaSnapshotForProfiles = () => null,
     processImpl = process,
   } = dependencies;
   const latestLiveRateLimitsValue = typeof dependencies.latestLiveRateLimits === "function"
     ? dependencies.latestLiveRateLimits
     : () => null;
+  const maxInboundMessageBytes = boundedByteLimit(MAX_APP_SERVER_INBOUND_MESSAGE_BYTES);
 
 class CodexAppServerClient {
   constructor() {
@@ -519,7 +563,7 @@ class CodexAppServerClient {
       }, 2500);
       socket.once("connect", () => {
         clearTimeout(timer);
-        const connection = new JsonLineConnectionImpl(socket);
+        const connection = new JsonLineConnectionImpl(socket, { maxInboundMessageBytes });
         this.ws = connection;
         this.endpoint = endpoint;
         this.transportKind = "external-jsonl-tcp";
@@ -544,9 +588,16 @@ class CodexAppServerClient {
   }
 
   handleMessage(raw) {
+    const rawBytes = inboundMessageByteLength(raw);
+    if (rawBytes > maxInboundMessageBytes) {
+      this.recordOversizedInboundMessage(rawBytes);
+      this.resetConnection(`codex app-server inbound message exceeded ${maxInboundMessageBytes} bytes`);
+      return;
+    }
     let msg;
+    const rawText = typeof raw === "string" ? raw : String(raw);
     try {
-      msg = JSON.parse(String(raw));
+      msg = JSON.parse(rawText);
     } catch (_) {
       return;
     }
@@ -559,7 +610,7 @@ class CodexAppServerClient {
       clearTimeout(timer);
       this.pending.delete(msg.id);
       this.recordRpcDiagnostics(diagnostics, {
-        responsePayloadBytes: Buffer.byteLength(String(raw || ""), "utf8"),
+        responsePayloadBytes: rawBytes,
       });
       if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
       else resolve(msg.result);
@@ -581,6 +632,15 @@ class CodexAppServerClient {
       maybeApplyQueuedThreadSideChat(msg.method, msg.params || null);
       maybeSendTurnCompletedPush(msg.method, msg.params || null);
       broadcast({ type: "notification", method: msg.method, params: msg.params || null });
+    }
+  }
+
+  recordOversizedInboundMessage(rawBytes) {
+    for (const pending of this.pending.values()) {
+      this.recordRpcDiagnostics(pending.diagnostics, {
+        responsePayloadBytes: rawBytes,
+        errorCode: "APP_SERVER_MESSAGE_TOO_LARGE",
+      });
     }
   }
 
@@ -907,6 +967,7 @@ class CodexAppServerClient {
         capabilities: this.endpoint.capabilities || null,
       } : null,
       muxEndpointFile: MUX_ENDPOINT_FILE,
+      maxInboundMessageBytes,
       persistentOwnedMux: PERSIST_MOBILE_OWNED_MUX,
       mobileOwnedMux: this.muxChild ? {
         pid: this.muxChild.pid || null,
