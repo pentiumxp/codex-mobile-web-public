@@ -63,6 +63,54 @@ test("v4 projection service returns versioned visible keys from warm cache", () 
   }
 });
 
+test("v4 projection service invalidates stale persisted policy entries", () => {
+  const dir = tempDir();
+  try {
+    const input = signatureInput({
+      summaryStatus: "completed",
+    });
+    const writer = createThreadDetailProjectionV4Service({
+      cacheDir: dir,
+      maxTurns: 3,
+      now: () => 2000,
+    });
+    writer.seed(input, {
+      thread: {
+        id: "thread-1",
+        status: { type: "completed" },
+        mobileOlderTurnsCursor: "older",
+        mobileOmittedTurnCount: 8,
+        mobileReadMode: "thread-read",
+        turns: [{
+          id: "turn-1",
+          status: { type: "completed" },
+          items: [{ id: "user-1", type: "userMessage" }],
+        }],
+      },
+    }, { partial: true, partialKind: "recent-window" });
+
+    const files = fs.readdirSync(dir).filter((file) => file.endsWith(".json"));
+    assert.equal(files.length, 1);
+    const cacheFile = path.join(dir, files[0]);
+    const persisted = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+    assert.equal(persisted.policyVersion, "state-relevant-receipt-v5");
+
+    persisted.policyVersion = "state-relevant-receipt-v4";
+    fs.writeFileSync(cacheFile, `${JSON.stringify(persisted)}\n`, "utf8");
+
+    const reader = createThreadDetailProjectionV4Service({
+      cacheDir: dir,
+      maxTurns: 3,
+      now: () => 3000,
+    });
+    const lookup = reader.lookup(input, { allowPartial: true, allowStalePartial: true });
+    assert.equal(lookup.cached, null);
+    assert.equal(lookup.missReason, "entry-missing");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("v4 projection service reuses normalized visible metadata on cache hits", () => {
   const service = createThreadDetailProjectionV4Service({
     cacheDir: "",

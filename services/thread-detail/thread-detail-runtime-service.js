@@ -78,7 +78,7 @@ function createThreadDetailRuntimeService(dependencies = {}) {
   const threadDetailProjectionService = config.threadDetailProjectionV4Enabled
     ? createThreadDetailProjectionV4Service({
       cacheDir: config.threadDetailProjectionCacheDir,
-      policyVersion: "state-relevant-receipt-v4",
+      policyVersion: "state-relevant-receipt-v5",
       maxTurns: config.maxFullThreadTurns,
     })
     : createThreadDetailProjectionService({

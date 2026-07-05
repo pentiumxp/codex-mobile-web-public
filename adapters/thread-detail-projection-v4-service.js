@@ -93,7 +93,7 @@ function boundedEntryLimit(value, fallback, minimum = 1) {
 }
 
 function createThreadDetailProjectionV4Service(options = {}) {
-  const policyVersion = String(options.policyVersion || "state-relevant-receipt-v4");
+  const policyVersion = String(options.policyVersion || "state-relevant-receipt-v5");
   const maxTurns = Math.max(1, safeNumber(options.maxTurns) || 10);
   const now = typeof options.now === "function" ? options.now : () => Date.now();
   const activeOverlayCacheMaxEntries = boundedEntryLimit(options.activeOverlayCacheMaxEntries, 24);
