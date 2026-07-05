@@ -745,6 +745,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "event-stream-runtime",
     source: "public/event-stream-runtime.js",
+    nativeSource: "frontend/native/event-stream-runtime.mjs",
     globalName: "CodexEventStreamRuntime",
     expectedFunctions: [
       "createEventStreamRuntime",

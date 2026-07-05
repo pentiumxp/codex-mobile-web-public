@@ -1830,8 +1830,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 47);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 47);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 48);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 48);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -2076,6 +2076,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "conversation-render-runtime",
         nativeSource: "frontend/native/conversation-render-runtime.mjs",
         importSource: "frontend/native/conversation-render-runtime.mjs",
+      },
+      {
+        id: "event-stream-runtime",
+        nativeSource: "frontend/native/event-stream-runtime.mjs",
+        importSource: "frontend/native/event-stream-runtime.mjs",
       },
       {
         id: "client-render-stability-guard",
