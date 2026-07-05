@@ -128,3 +128,26 @@ test("rollout enrichment index resets when rollout file is truncated", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("rollout enrichment index bounds retained parsed entries per file", () => {
+  const { dir, file } = tempRollout();
+  const service = createRolloutEnrichmentIndexService({
+    maxEntriesPerIndex: 2,
+  });
+  try {
+    writeLine(file, { type: "event_msg", payload: { seq: 1 } }, "w");
+    writeLine(file, { type: "event_msg", payload: { seq: 2 } });
+    writeLine(file, { type: "event_msg", payload: { seq: 3 } });
+
+    const first = service.read(file);
+    assert.deepEqual(first.entries.map((entry) => entry.payload.seq), [2, 3]);
+    assert.equal(first.parsedLineCount, 3);
+
+    writeLine(file, { type: "event_msg", payload: { seq: 4 } });
+    const second = service.read(file);
+    assert.deepEqual(second.entries.map((entry) => entry.payload.seq), [3, 4]);
+    assert.equal(second.parsedLines, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

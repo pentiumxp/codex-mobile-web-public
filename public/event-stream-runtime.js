@@ -400,7 +400,7 @@ function applyNotification(method, params) {
       if (state.currentThreadId === params.threadId) loadSideChat(params.threadId, { silent: true }).catch(showError);
     }, 900);
     if (!suppressAutomaticRefresh) {
-      scheduleUsageBackfillRefresh(250);
+      scheduleUsageBackfillRefresh(120, { force: true });
       scheduleLivePollIfNeeded(1400);
     }
     return;

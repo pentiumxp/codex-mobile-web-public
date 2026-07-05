@@ -439,6 +439,63 @@ function analyzeActiveTurnRawProjection(row = {}, detail = {}, rawCounts = null)
   };
 }
 
+function rawAssistantItemCount(rawCounts = {}) {
+  return Math.max(
+    Number(rawCounts.rawAssistantItems || 0),
+    Number(rawCounts.rawAgentMessageEvents || 0),
+  );
+}
+
+function analyzeLatestCompletedRawProjection(row = {}, detail = {}, rawCounts = null) {
+  if (!rawCounts || rawCounts.checked !== true || rawCounts.found !== true) return null;
+  const thread = detailThread(detail);
+  const latest = latestCompletedTurn(thread);
+  if (!latest || !latest.turn) return null;
+  const rawAssistantItems = rawAssistantItemCount(rawCounts);
+  if (rawAssistantItems <= 0) return null;
+  const summary = summarizeTurn(latest.turn, thread);
+  const detailAssistantItems = summary ? summary.assistantItems : 0;
+  const budget = objectOrNull(thread.mobileDetailResponseBudget) || {};
+  const retainedAssistantBudget = Math.max(
+    Number(budget.latestCompletedReplayAssistantItems) || 0,
+    Number(budget.protectedCompletedReplayAssistantItems) || 0,
+    Number(budget.richCompletedReplayAssistantItems) || 0,
+  );
+  const omittedAssistantItems = Math.max(
+    Number(budget.latestCompletedReplayOmittedAssistantItems) || 0,
+    Number(budget.protectedCompletedReplayOmittedAssistantItems) || 0,
+    Number(budget.richCompletedReplayOmittedAssistantItems) || 0,
+  );
+  const rawAssistantGap = Math.max(0, rawAssistantItems - detailAssistantItems);
+  const budgetExplainsGap = Boolean(
+    omittedAssistantItems > 0
+      && retainedAssistantBudget > 0
+      && detailAssistantItems >= retainedAssistantBudget
+      && rawAssistantGap <= omittedAssistantItems,
+  );
+  const issues = [];
+  if (detailAssistantItems < rawAssistantItems && !budgetExplainsGap) {
+    issues.push({
+      code: "latest_completed_assistant_projection_gap",
+      severity: "H2",
+      surface: "thread-detail-latest-completed",
+      threadHash: rawCounts.threadHash,
+      turnHash: rawCounts.turnHash,
+      rawAssistantItems,
+      detailAssistantItems,
+    });
+  }
+  return {
+    ok: issues.length === 0,
+    threadHash: rawCounts.threadHash,
+    turnHash: rawCounts.turnHash,
+    rawAssistantItems,
+    detailAssistantItems,
+    responseBudgetExplainsAssistantGap: budgetExplainsGap,
+    issues,
+  };
+}
+
 async function readRawLatestCompletedTurnCounts(row = {}, detail = {}, options = {}) {
   const thread = detailThread(detail);
   const latest = latestCompletedTurn(thread);
@@ -476,6 +533,7 @@ function suppressRawProvenSystemInputMissingIssue(analysis = {}, rawCounts = nul
       rawLineCount: rawCounts.rawLineCount || 0,
       rawUserItems: rawCounts.rawUserItems || 0,
       rawUserLikeEvents: rawCounts.rawUserLikeEvents || 0,
+      rawAssistantItems: rawAssistantItemCount(rawCounts),
     },
   });
 }
@@ -490,6 +548,7 @@ function rawLatestCompletedInputEvidence(rawCounts = null) {
     rawLineCount: rawCounts.rawLineCount || 0,
     rawUserItems: rawCounts.rawUserItems || 0,
     rawUserLikeEvents: rawCounts.rawUserLikeEvents || 0,
+    rawAssistantItems: rawAssistantItemCount(rawCounts),
   };
   if (rawCounts.skippedReason) evidence.skippedReason = text(rawCounts.skippedReason).slice(0, 80);
   if (rawCounts.rolloutSizeBytes) evidence.rolloutSizeBytes = rawCounts.rolloutSizeBytes;
@@ -555,11 +614,17 @@ async function run(options = {}, env = process.env) {
       rawLatestCompletedCountsBeforeFirstDetail,
     );
     const firstActiveRawProjection = analyzeActiveTurnRawProjection(row, firstDetail, rawCountsForFirstDetail);
+    const firstLatestCompletedRawProjection = analyzeLatestCompletedRawProjection(
+      row,
+      firstDetail,
+      rawLatestCompletedCountsBeforeFirstDetail,
+    );
     const listDetailConsistency = compareThreadListRowToDetail(row, firstDetail);
     const detailReport = {
       threadHash: shortHash(threadId),
       first: firstAnalysis,
       activeTurnRawProjection: firstActiveRawProjection,
+      latestCompletedRawProjection: firstLatestCompletedRawProjection,
       listDetailConsistency,
       rawLatestCompletedInputEvidence: firstAnalysis.rawLatestCompletedInputEvidence
         || rawLatestCompletedInputEvidence(rawLatestCompletedCountsBeforeFirstDetail),
@@ -583,8 +648,16 @@ async function run(options = {}, env = process.env) {
           rawLatestCompletedCountsBeforeNextDetail,
         );
         const nextActiveRawProjection = analyzeActiveTurnRawProjection(row, nextDetail, rawCountsForNextDetail);
+        const nextLatestCompletedRawProjection = analyzeLatestCompletedRawProjection(
+          row,
+          nextDetail,
+          rawLatestCompletedCountsBeforeNextDetail,
+        );
         if (nextActiveRawProjection && nextActiveRawProjection.issues.length) {
           repeatChecks.push(Object.assign({ index, baseline: "raw-active-turn" }, nextActiveRawProjection));
+        }
+        if (nextLatestCompletedRawProjection && nextLatestCompletedRawProjection.issues.length) {
+          repeatChecks.push(Object.assign({ index, baseline: "raw-latest-completed-turn" }, nextLatestCompletedRawProjection));
         }
         const previousComparison = compareDetailReadbacks(lastDetail, nextDetail, { threadId });
         if (previousComparison.issues.length) {
@@ -608,6 +681,7 @@ async function run(options = {}, env = process.env) {
   for (const detail of report.threadDetails) {
     if (detail.first) detailParts.push(detail.first);
     if (detail.activeTurnRawProjection) detailParts.push(detail.activeTurnRawProjection);
+    if (detail.latestCompletedRawProjection) detailParts.push(detail.latestCompletedRawProjection);
     if (detail.listDetailConsistency) detailParts.push(detail.listDetailConsistency);
     if (detail.second) detailParts.push(detail.second);
     if (detail.repeat) detailParts.push(detail.repeat);

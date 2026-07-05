@@ -539,6 +539,78 @@ function normalizeProjectionThreadUserMessages(thread) {
   return thread;
 }
 
+function latestCompletedProjectionTurn(thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (!turn || !Array.isArray(turn.items) || !turn.items.length) continue;
+    if (isActiveLikeStatus(turn.status)) continue;
+    if (!isRestingStatus(turn.status)) continue;
+    return turn;
+  }
+  return null;
+}
+
+function projectionReceiptAlreadyPresent(items = [], receipt = {}) {
+  const id = itemId(receipt);
+  return items.some((item) => {
+    if (id && itemId(item) === id) return true;
+    return textReceiptsLikelySame(item, receipt);
+  });
+}
+
+function matchingProjectionReceipt(items = [], receipt = {}) {
+  const id = itemId(receipt);
+  return items.find((item) => {
+    if (id && itemId(item) === id) return true;
+    return textReceiptsLikelySame(item, receipt);
+  }) || null;
+}
+
+function isProjectionPreservedReceipt(item) {
+  return isProjectionAssistantReceiptItem(item) || isProjectionVisualReceiptItem(item);
+}
+
+function mergeRicherCompletedAssistantReceipts(existingResult, incomingResult) {
+  const existingTurn = latestCompletedProjectionTurn(existingResult && existingResult.thread);
+  const incomingTurn = latestCompletedProjectionTurn(incomingResult && incomingResult.thread);
+  if (!existingTurn || !incomingTurn || turnId(existingTurn) !== turnId(incomingTurn)) return false;
+  const existingItems = Array.isArray(existingTurn.items) ? existingTurn.items : [];
+  const incomingItems = Array.isArray(incomingTurn.items) ? incomingTurn.items : [];
+  const existingReceipts = existingItems.filter(isProjectionPreservedReceipt);
+  const incomingReceiptCount = incomingItems.filter(isProjectionPreservedReceipt).length;
+  if (existingReceipts.length <= incomingReceiptCount) return false;
+  const missingReceipts = existingReceipts
+    .filter((item) => !projectionReceiptAlreadyPresent(incomingItems, item))
+    .map(cloneJson);
+  if (!missingReceipts.length) return false;
+  const usageIndex = incomingItems.findIndex((item) => item && item.type === "turnUsageSummary");
+  const insertAt = usageIndex >= 0 ? usageIndex : incomingItems.length;
+  const incomingBeforeUsage = incomingItems.slice(0, insertAt);
+  const incomingAfterUsage = incomingItems.slice(insertAt);
+  const usedIncomingReceipts = new Set();
+  const retainedReceipts = existingReceipts.map((receipt) => {
+    const incoming = matchingProjectionReceipt(incomingBeforeUsage, receipt);
+    if (incoming) {
+      usedIncomingReceipts.add(incoming);
+      return cloneJson(incoming);
+    }
+    return cloneJson(receipt);
+  });
+  const extraIncomingReceipts = incomingBeforeUsage
+    .filter((item) => isProjectionPreservedReceipt(item) && !usedIncomingReceipts.has(item))
+    .map(cloneJson);
+  incomingTurn.items = dedupeProjectionItems([
+    ...incomingBeforeUsage.filter((item) => !isProjectionPreservedReceipt(item)).map(cloneJson),
+    ...retainedReceipts,
+    ...extraIncomingReceipts,
+    ...incomingAfterUsage.map(cloneJson),
+  ]);
+  incomingTurn.mobileRicherAssistantReceiptsRetained = true;
+  incomingTurn.mobileRicherAssistantReceiptRetainedCount = missingReceipts.length;
+  return true;
+}
+
 function mergeProjectionItems(existingItems, incomingItems) {
   const existing = Array.isArray(existingItems) ? existingItems : [];
   const incoming = Array.isArray(incomingItems) ? incomingItems : [];
@@ -663,10 +735,20 @@ function markWindowEntryPartial(entry, kind = "") {
   return true;
 }
 
+function boundedEntryLimit(value, fallback, minimum = 0) {
+  if (value !== undefined && value !== null && String(value).trim() !== "") {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(minimum, Math.trunc(number)) : Math.max(minimum, fallback);
+  }
+  return Math.max(minimum, fallback);
+}
+
 function createThreadDetailProjectionService(options = {}) {
   const cacheDir = String(options.cacheDir || "").trim();
   const policyVersion = String(options.policyVersion || "1");
   const maxTurns = Math.max(1, safeNumber(options.maxTurns) || 10);
+  const memoryMaxEntries = boundedEntryLimit(options.memoryMaxEntries, 48, 1);
+  const fullHistoryMaxEntries = boundedEntryLimit(options.fullHistoryMaxEntries, 12, 0);
   const dynamicSignatureMismatchMaxAgeMs = Math.max(1000, safeNumber(options.dynamicSignatureMismatchMaxAgeMs) || 15000);
   const dynamicPersistMinIntervalMs = options.dynamicPersistMinIntervalMs === undefined
     ? 1000
@@ -675,9 +757,52 @@ function createThreadDetailProjectionService(options = {}) {
   const memory = new Map();
   const fullHistory = new Map();
 
+  function touchEntry(entry) {
+    if (entry && typeof entry === "object") entry.lastAccessedAtMs = now();
+    return entry;
+  }
+
+  function pruneEntryMap(map, maxEntries, keepThreadId = "") {
+    const limit = safeNumber(maxEntries);
+    if (!map || limit <= 0) {
+      if (map && keepThreadId) {
+        const keep = map.get(keepThreadId);
+        map.clear();
+        if (keep) map.set(keepThreadId, keep);
+      } else if (map) {
+        map.clear();
+      }
+      return;
+    }
+    while (map.size > limit) {
+      let oldestKey = "";
+      let oldestAt = Infinity;
+      for (const [key, entry] of map.entries()) {
+        if (key === keepThreadId) continue;
+        const accessedAt = safeNumber(entry && (entry.lastAccessedAtMs || entry.updatedAtMs || entry.cachedAtMs));
+        if (accessedAt < oldestAt) {
+          oldestAt = accessedAt;
+          oldestKey = key;
+        }
+      }
+      if (!oldestKey) break;
+      map.delete(oldestKey);
+    }
+  }
+
+  function rememberMemoryEntry(threadId, entry) {
+    const id = String(threadId || entry && entry.threadId || "").trim();
+    if (!id || !entry) return null;
+    touchEntry(entry);
+    memory.set(id, entry);
+    pruneEntryMap(memory, memoryMaxEntries, id);
+    return entry;
+  }
+
   function entryForThread(threadId) {
     const id = String(threadId || "").trim();
-    return id ? memory.get(id) || null : null;
+    const entry = id ? memory.get(id) || null : null;
+    return touchEntry(entry) || null;
   }
 
   function isReusableFullEntry(entry) {
@@ -700,6 +825,7 @@ function createThreadDetailProjectionService(options = {}) {
       cachedAtMs: safeNumber(entry.cachedAtMs),
       updatedAtMs: safeNumber(entry.updatedAtMs || entry.cachedAtMs),
       lastPersistedAtMs: safeNumber(entry.lastPersistedAtMs || entry.updatedAtMs || entry.cachedAtMs),
+      lastAccessedAtMs: safeNumber(entry.lastAccessedAtMs || entry.updatedAtMs || entry.cachedAtMs),
       dynamic: Boolean(entry.dynamic),
       partial: Boolean(entry.partial),
       partialKind: String(entry.partialKind || ""),
@@ -710,7 +836,10 @@ function createThreadDetailProjectionService(options = {}) {
 
   function rememberFullHistoryEntry(entry) {
     if (!isReusableFullEntry(entry)) return false;
-    fullHistory.set(entry.threadId, cloneEntry(entry, { historyBaseline: true }));
+    const id = String(entry.threadId || "").trim();
+    if (!id || fullHistoryMaxEntries <= 0) return false;
+    fullHistory.set(id, cloneEntry(touchEntry(entry), { historyBaseline: true }));
+    pruneEntryMap(fullHistory, fullHistoryMaxEntries, id);
     return true;
   }
 
@@ -797,6 +926,7 @@ function createThreadDetailProjectionService(options = {}) {
       cachedAtMs: safeNumber(raw.cachedAtMs),
       updatedAtMs: safeNumber(raw.updatedAtMs || raw.cachedAtMs),
       lastPersistedAtMs: safeNumber(raw.updatedAtMs || raw.cachedAtMs),
+      lastAccessedAtMs: now(),
       dynamic: Boolean(raw.dynamic),
       partial: Boolean(raw.partial),
       partialKind: String(raw.partialKind || ""),
@@ -814,11 +944,11 @@ function createThreadDetailProjectionService(options = {}) {
     const id = String(threadId || "").trim();
     if (!id) return null;
     const entry = fullHistory.get(id);
-    if (entry) return entry;
+    if (entry) return touchEntry(entry);
     const persisted = persistedEntryForThread(id);
     if (!persisted) return null;
     rememberFullHistoryEntry(persisted);
-    return fullHistory.get(id) || null;
+    return touchEntry(fullHistory.get(id)) || null;
   }
 
   function staleFullHistoryWindowForLookup(threadId, signature, input = {}, optionsForGet = {}) {
@@ -867,6 +997,15 @@ function createThreadDetailProjectionService(options = {}) {
         }
       }
     }
+    const entryResult = cloneJson(result);
+    const retainedRicherReceipts = Boolean(existing
+      && mergeRicherCompletedAssistantReceipts(existing.result, entryResult));
+    if (retainedRicherReceipts) {
+      mergeRicherCompletedAssistantReceipts(existing.result, result);
+      normalizeProjectionThreadUserMessages(result.thread);
+      normalizeProjectionSupersededLiveTurns(result.thread);
+      trimTurns(result.thread, maxTurns);
+    }
     const entry = {
       threadId,
       rolloutPath: String(input.rolloutPath || "").trim(),
@@ -878,12 +1017,12 @@ function createThreadDetailProjectionService(options = {}) {
       dynamic: false,
       partial,
       partialKind,
-      result: cloneJson(result),
+      result: entryResult,
     };
     normalizeProjectionThreadUserMessages(entry.result.thread);
     normalizeProjectionSupersededLiveTurns(entry.result.thread);
     trimTurns(entry.result.thread, maxTurns);
-    memory.set(threadId, entry);
+    rememberMemoryEntry(threadId, entry);
     rememberFullHistoryEntry(entry);
     persistEntry(entry);
     return {
@@ -894,13 +1033,14 @@ function createThreadDetailProjectionService(options = {}) {
       replacedStaleFull,
       signatureHash: entry.signatureHash,
       staleFullReason,
+      retainedRicherReceipts,
     };
   }
 
   function readDisk(threadId) {
     const entry = persistedEntryForThread(threadId);
     if (!entry) return null;
-    memory.set(threadId, entry);
+    rememberMemoryEntry(threadId, entry);
     rememberFullHistoryEntry(entry);
     return entry;
   }
@@ -1079,7 +1219,7 @@ function createThreadDetailProjectionService(options = {}) {
       const persisted = persistedEntryForThread(threadId);
       if (persisted) {
         entry = persisted;
-        memory.set(threadId, entry);
+        rememberMemoryEntry(threadId, entry);
         rememberFullHistoryEntry(entry);
       }
     }
@@ -1096,7 +1236,7 @@ function createThreadDetailProjectionService(options = {}) {
         partialKind: "notification-shell",
         result: { thread: { id: threadId, turns: [] } },
       };
-      memory.set(threadId, entry);
+      rememberMemoryEntry(threadId, entry);
     }
 
     const thread = ensureThread(entry.result, threadId);
@@ -1151,11 +1291,13 @@ function createThreadDetailProjectionService(options = {}) {
     normalizeProjectionSupersededLiveTurns(thread);
     trimTurns(thread, maxTurns);
     entry.updatedAtMs = now();
+    touchEntry(entry);
     entry.dynamic = true;
     rememberFullHistoryEntry(entry);
     markWindowEntryPartial(entry);
     refreshEntrySignatureFromRollout(entry);
     persistDynamicEntry(entry, method);
+    pruneEntryMap(memory, memoryMaxEntries, threadId);
     return true;
   }
 
@@ -1167,6 +1309,12 @@ function createThreadDetailProjectionService(options = {}) {
     lookup,
     projectionSignature,
     seed,
+    stats: () => ({
+      memorySize: memory.size,
+      memoryMaxEntries,
+      fullHistorySize: fullHistory.size,
+      fullHistoryMaxEntries,
+    }),
   };
 }
 

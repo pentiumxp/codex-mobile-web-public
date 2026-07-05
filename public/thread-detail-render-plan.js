@@ -31,6 +31,20 @@
     return Array.isArray(value) ? value.map((entry) => String(entry || "")).filter(Boolean) : [];
   }
 
+  function signatureThreadId(value) {
+    const signature = normalizeSignature(value);
+    if (!signature) return "";
+    if (signature.startsWith("loading|")) return signature.split("|")[1] || "";
+    if (signature.startsWith("load-error|")) return signature.split("|")[1] || "";
+    if (signature[0] !== "{") return "";
+    try {
+      const parsed = JSON.parse(signature);
+      return String(parsed && parsed.threadId || "");
+    } catch (_) {
+      return "";
+    }
+  }
+
   function turnOrderMismatch(expectedValue, renderedValue) {
     const expected = normalizedStringList(expectedValue);
     const rendered = normalizedStringList(renderedValue);
@@ -1856,6 +1870,31 @@
   function planSingleThreadEarlyShellExecution(input = {}) {
     const loadingWithoutVisibleTurns = Boolean(input.loadingWithoutVisibleTurns);
     const loadError = text(input.loadError);
+    const threadId = text(input.threadId || input.currentThreadId);
+    const renderedThreadId = signatureThreadId(input.renderedConversationSignature);
+    const renderedDomTurnCount = normalizedCount(input.renderedDomTurnCount);
+    const renderedDomItemCount = normalizedCount(input.renderedDomItemCount);
+    const hasSameThreadVisibleDom = Boolean(
+      loadingWithoutVisibleTurns
+      && !loadError
+      && threadId
+      && renderedThreadId === threadId
+      && (renderedDomTurnCount > 0 || renderedDomItemCount > 0)
+    );
+    if (hasSameThreadVisibleDom) {
+      return {
+        shouldRender: false,
+        mode: "detail",
+        reason: "preserve-existing-visible-dom",
+        html: "",
+        clearLiveOperationDock: false,
+        bindRetry: false,
+        retryThreadId: "",
+        conversationSignature: text(input.conversationSignature),
+        patchShellSignature: text(input.patchShellSignature),
+        stickToBottom: Boolean(input.stickToBottom),
+      };
+    }
     if (!loadingWithoutVisibleTurns && !loadError) {
       return {
         shouldRender: false,
@@ -1871,7 +1910,7 @@
       };
     }
     const shellPlan = planSingleThreadFullRenderShell({
-      threadId: input.threadId || input.currentThreadId,
+      threadId,
       currentThreadId: input.currentThreadId,
       loadingWithoutVisibleTurns,
       loadError,

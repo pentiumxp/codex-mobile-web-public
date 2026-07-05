@@ -2874,6 +2874,41 @@ test("single-thread early shell execution plans loading terminal render", () => 
   });
 });
 
+test("single-thread early shell preserves same-thread visible DOM while loading", () => {
+  assert.deepEqual(renderPlan.planSingleThreadEarlyShellExecution({
+    threadId: "thread-1",
+    loadingWithoutVisibleTurns: true,
+    conversationSignature: "loading|thread-1",
+    patchShellSignature: "patch|thread-1",
+    renderedConversationSignature: JSON.stringify({
+      threadId: "thread-1",
+      turns: [{ id: "turn-1", items: [{ item: { type: "message" } }] }],
+    }),
+    renderedDomTurnCount: 1,
+    renderedDomItemCount: 3,
+    stickToBottom: true,
+  }), {
+    shouldRender: false,
+    mode: "detail",
+    reason: "preserve-existing-visible-dom",
+    html: "",
+    clearLiveOperationDock: false,
+    bindRetry: false,
+    retryThreadId: "",
+    conversationSignature: "loading|thread-1",
+    patchShellSignature: "patch|thread-1",
+    stickToBottom: true,
+  });
+
+  assert.equal(renderPlan.planSingleThreadEarlyShellExecution({
+    threadId: "thread-2",
+    loadingWithoutVisibleTurns: true,
+    conversationSignature: "loading|thread-2",
+    renderedConversationSignature: JSON.stringify({ threadId: "thread-1" }),
+    renderedDomTurnCount: 1,
+  }).shouldRender, true);
+});
+
 test("single-thread early shell execution plans load-error retry", () => {
   const plan = renderPlan.planSingleThreadEarlyShellExecution({
     currentThreadId: "thread-2",

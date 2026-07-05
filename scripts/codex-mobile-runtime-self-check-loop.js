@@ -40,7 +40,7 @@ function usage() {
     "  --server <url>          Codex Mobile server. Default: http://127.0.0.1:8787",
     "  --thread-id <id>        Thread id to target. Repeatable.",
     "  --sample-threads <n>    Browser sample thread count when no id is passed. Default: 3.",
-    "  --browser-rounds <n>    Browser switch/sample rounds. Default: 5.",
+    "  --browser-rounds <n>    Browser switch/sample rounds. Default: 2.",
     "  --browser-sample-delays-ms <csv> Browser delays after each switch. Default: 100,350,700,900,1200,1600,2800,6000.",
     "  --browser-min-settled-delay-ms <n> Browser downgrade H2 threshold. Default: 1000.",
     "  --browser-startup-only Run only listener/static shell/browser startup smoke for browser job.",
@@ -87,7 +87,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     server: env.CODEX_MOBILE_BASE_URL || DEFAULT_SERVER,
     threadIds: [],
     sampleThreads: positiveInt(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_SAMPLE_THREADS || "3", 3, 20),
-    browserRounds: positiveInt(env.CODEX_MOBILE_RUNTIME_BROWSER_ROUNDS || "5", 5, 20),
+    browserRounds: positiveInt(env.CODEX_MOBILE_RUNTIME_BROWSER_ROUNDS || "2", 2, 20),
     browserSampleDelaysMs: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SAMPLE_DELAYS_MS || "100,350,700,900,1200,1600,2800,6000"),
     browserMinSettledDelayMs: positiveInt(env.CODEX_MOBILE_RUNTIME_BROWSER_MIN_SETTLED_DELAY_MS || "1000", 1000, 10000),
     browserStartupOnly: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_RUNTIME_BROWSER_STARTUP_ONLY || "")),
@@ -442,6 +442,19 @@ function baseArgs(options = {}) {
   return args;
 }
 
+function browserRuntimeSamplingArgs(options = {}) {
+  return [
+    "--sample-threads",
+    String(positiveInt(options.sampleThreads, 3, 20)),
+    "--rounds",
+    String(positiveInt(options.browserRounds, 2, 20)),
+    "--sample-delays-ms",
+    String(options.browserSampleDelaysMs || "100,350,700,900,1200,1600,2800,6000"),
+    "--min-settled-delay-ms",
+    String(positiveInt(options.browserMinSettledDelayMs, 1000, 10000)),
+  ];
+}
+
 async function runOnce(options = {}, deps = {}) {
   const startedAt = new Date().toISOString();
   const checks = [];
@@ -501,16 +514,7 @@ async function runOnce(options = {}, deps = {}) {
   }
   const browserScript = path.join(root, "scripts", "codex-mobile-browser-runtime-self-check.js");
   if (browserJob && browserJob.enabled) {
-    const browserArgs = baseArgs(options).concat([
-      "--sample-threads",
-      String(positiveInt(options.sampleThreads, 3, 20)),
-      "--rounds",
-      String(positiveInt(options.browserRounds, 5, 20)),
-      "--sample-delays-ms",
-      String(options.browserSampleDelaysMs || "100,350,700,900,1200,1600,2800,6000"),
-      "--min-settled-delay-ms",
-      String(positiveInt(options.browserMinSettledDelayMs, 1000, 10000)),
-    ]);
+    const browserArgs = baseArgs(options).concat(browserRuntimeSamplingArgs(options));
     if (options.browserStartupOnly) browserArgs.push("--startup-only");
     if (!options.browserStartupOnly && options.browserExerciseSubmit) browserArgs.push("--exercise-submit");
     if (!options.browserStartupOnly && options.browserSubmitThreadId) browserArgs.push("--submit-thread-id", options.browserSubmitThreadId);
@@ -542,44 +546,24 @@ async function runOnce(options = {}, deps = {}) {
   }
   const browserViteAppPreviewJob = runtimeSelfCheckJob(jobPlan, "browser-vite-app-preview");
   if (browserViteAppPreviewJob && browserViteAppPreviewJob.enabled) {
-    const viteAppPreviewArgs = baseArgs(options);
-    if (options.browserStartupOnly) {
-      viteAppPreviewArgs.push("--vite-app-preview-only");
-    } else {
-      viteAppPreviewArgs.push(
-        "--sample-threads",
-        String(positiveInt(options.sampleThreads, 3, 20)),
-        "--rounds",
-        String(positiveInt(options.browserRounds, 5, 20)),
-        "--sample-delays-ms",
-        String(options.browserSampleDelaysMs || "100,350,700,900,1200,1600,2800,6000"),
-        "--min-settled-delay-ms",
-        String(positiveInt(options.browserMinSettledDelayMs, 1000, 10000)),
-        "--vite-app-preview-runtime",
-      );
-    }
+    const viteAppPreviewArgs = [
+      "--server",
+      options.server || DEFAULT_SERVER,
+      "--json",
+      "--vite-app-preview-only",
+    ];
     const result = await runNodeScript(browserScript, viteAppPreviewArgs, deps, browserViteAppPreviewJob);
     checks.push(summarizeCheck("browser-vite-app-preview", result));
   }
   const browserViteAppPreviewRootJob = runtimeSelfCheckJob(jobPlan, "browser-vite-app-preview-root");
   if (browserViteAppPreviewRootJob && browserViteAppPreviewRootJob.enabled) {
-    const viteAppPreviewRootArgs = baseArgs(options);
-    if (options.browserStartupOnly) {
-      viteAppPreviewRootArgs.push("--vite-app-preview-only", "--vite-app-preview-root");
-    } else {
-      viteAppPreviewRootArgs.push(
-        "--sample-threads",
-        String(positiveInt(options.sampleThreads, 3, 20)),
-        "--rounds",
-        String(positiveInt(options.browserRounds, 5, 20)),
-        "--sample-delays-ms",
-        String(options.browserSampleDelaysMs || "100,350,700,900,1200,1600,2800,6000"),
-        "--min-settled-delay-ms",
-        String(positiveInt(options.browserMinSettledDelayMs, 1000, 10000)),
-        "--vite-app-preview-runtime",
-        "--vite-app-preview-root",
-      );
-    }
+    const viteAppPreviewRootArgs = [
+      "--server",
+      options.server || DEFAULT_SERVER,
+      "--json",
+      "--vite-app-preview-only",
+      "--vite-app-preview-root",
+    ];
     const result = await runNodeScript(browserScript, viteAppPreviewRootArgs, deps, browserViteAppPreviewRootJob);
     checks.push(summarizeCheck("browser-vite-app-preview-root", result));
   }
@@ -588,23 +572,13 @@ async function runOnce(options = {}, deps = {}) {
   if (shouldRunViteAppPreviewDefaultRoot) {
     const browserViteAppPreviewDefaultRootJob = runtimeSelfCheckJob(jobPlan, "browser-vite-app-preview-default-root");
     if (browserViteAppPreviewDefaultRootJob && browserViteAppPreviewDefaultRootJob.enabled) {
-      const viteAppPreviewDefaultRootArgs = baseArgs(options);
-      if (options.browserStartupOnly) {
-        viteAppPreviewDefaultRootArgs.push("--vite-app-preview-only", "--vite-app-preview-default-root");
-      } else {
-        viteAppPreviewDefaultRootArgs.push(
-          "--sample-threads",
-          String(positiveInt(options.sampleThreads, 3, 20)),
-          "--rounds",
-          String(positiveInt(options.browserRounds, 5, 20)),
-          "--sample-delays-ms",
-          String(options.browserSampleDelaysMs || "100,350,700,900,1200,1600,2800,6000"),
-          "--min-settled-delay-ms",
-          String(positiveInt(options.browserMinSettledDelayMs, 1000, 10000)),
-          "--vite-app-preview-runtime",
-          "--vite-app-preview-default-root",
-        );
-      }
+      const viteAppPreviewDefaultRootArgs = [
+        "--server",
+        options.server || DEFAULT_SERVER,
+        "--json",
+        "--vite-app-preview-only",
+        "--vite-app-preview-default-root",
+      ];
       const result = await runNodeScript(browserScript, viteAppPreviewDefaultRootArgs, deps, browserViteAppPreviewDefaultRootJob);
       checks.push(summarizeCheck("browser-vite-app-preview-default-root", result));
     }

@@ -109,6 +109,48 @@ test("render monitor reports DOM drops from non-empty detail to sparse DOM", () 
   assert.equal(stable.effects.some((effect) => effect.type === "diagnostic-success" && effect.diagnosticType === "render_dom_drop"), true);
 });
 
+test("render monitor reports early shell drops even before visible count is known", () => {
+  const monitor = health.createMonitor({ now: () => 1000, windowMs: 5000 });
+  const plan = monitor.recordRender({
+    action: "single-thread-early-shell",
+    routeKind: "thread-detail",
+    threadHash: "h_thread",
+    renderMode: "set-inner-html",
+    renderPlanReason: "signature-changed",
+    sameThreadRender: true,
+    previousCount: 12,
+    visibleCount: 0,
+    domCount: 1,
+    renderElapsedMs: 7,
+  });
+
+  const drop = plan.effects.find((effect) => effect.diagnosticType === "render_dom_drop");
+  assert.ok(drop);
+  assert.equal(drop.type, "diagnostic-failure");
+  assert.equal(drop.diagnostic.error_code, "render_dom_drop");
+  assert.equal(drop.diagnostic.counts.previous_count, 12);
+  assert.equal(drop.diagnostic.counts.visible_count, 0);
+});
+
+test("render monitor ignores cross-thread early shell drops", () => {
+  const monitor = health.createMonitor({ now: () => 1000, windowMs: 5000 });
+  const plan = monitor.recordRender({
+    action: "single-thread-early-shell",
+    routeKind: "thread-detail",
+    threadHash: "h_next_thread",
+    previousRenderedThreadHash: "h_previous_thread",
+    sameThreadRender: false,
+    renderMode: "set-inner-html",
+    renderPlanReason: "signature-changed",
+    previousCount: 12,
+    visibleCount: 0,
+    domCount: 1,
+    renderElapsedMs: 7,
+  });
+
+  assert.equal(plan.effects.some((effect) => effect.diagnosticType === "render_dom_drop" && effect.type === "diagnostic-failure"), false);
+});
+
 test("render monitor reports repeated fallback/full-render churn", () => {
   let now = 1000;
   const monitor = health.createMonitor({ now: () => now, windowMs: 5000, fallbackThreshold: 2, fullRenderThreshold: 3 });

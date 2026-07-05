@@ -270,6 +270,79 @@ test("runtime process pressure flags memory and stale child accumulation", () =>
   assert.doesNotMatch(JSON.stringify(result), /private\/key|Authorization|Bearer/i);
 });
 
+test("runtime process pressure blocks recent production listener sigkill restarts", () => {
+  const result = service.summarizeProcessPressure([
+    {
+      pid: 100,
+      ppid: 1,
+      user: "xuxin",
+      kind: "production-server",
+      cpuPercent: 1,
+      rssMb: 2100,
+      elapsed: "00:36:00",
+      stat: "S",
+      command: "node server.js",
+      listeners: ["*:8787"],
+      cwd: "/Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+    },
+  ], {
+    launchdService: {
+      found: true,
+      label: "system/com.hermesmobile.plugin.codex-mobile",
+      state: "running",
+      activeCount: 1,
+      pid: 100,
+      runs: 10,
+      lastTerminatingSignal: "Killed: 9",
+      username: "xuxin",
+      workingDirectory: "/Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+    },
+    recentSigkillRestartSeconds: 60 * 60,
+  });
+
+  const issue = result.issues.find((entry) => entry.code === "production_listener_recent_sigkill");
+  assert.equal(issue.severity, "H2");
+  assert.equal(issue.listenerPid, 100);
+  assert.equal(issue.runs, 10);
+  assert.equal(result.blockingIssueCount, 1);
+  assert.doesNotMatch(JSON.stringify(result), /private\/key|Authorization|Bearer/i);
+});
+
+test("runtime process pressure does not block old listener sigkill history after stability window", () => {
+  const result = service.summarizeProcessPressure([
+    {
+      pid: 100,
+      ppid: 1,
+      user: "xuxin",
+      kind: "production-server",
+      cpuPercent: 1,
+      rssMb: 2100,
+      elapsed: "02:05:00",
+      stat: "S",
+      command: "node server.js",
+      listeners: ["*:8787"],
+      cwd: "/Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+    },
+  ], {
+    launchdService: {
+      found: true,
+      label: "system/com.hermesmobile.plugin.codex-mobile",
+      state: "running",
+      activeCount: 1,
+      pid: 100,
+      runs: 10,
+      lastTerminatingSignal: "Killed: 9",
+      username: "xuxin",
+      workingDirectory: "/Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+    },
+    recentSigkillRestartSeconds: 60 * 60,
+  });
+
+  assert.equal(result.issues.some((entry) => entry.code === "production_listener_recent_sigkill"), false);
+  assert.equal(result.issues.some((entry) => entry.code === "production_listener_rss_elevated"), true);
+  assert.equal(result.blockingIssueCount, 0);
+});
+
 test("runtime process pressure blocks stale codex app-server rss even when stale mux is small", () => {
   const result = service.summarizeProcessPressure([
     {

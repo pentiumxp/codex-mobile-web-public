@@ -55,6 +55,7 @@ function createThreadDetailRuntimeService(dependencies = {}) {
   let visibleItemId;
   let appendMissingRolloutCompletionTurnsToThread;
   let appendRolloutActiveAssistantItemsToDetailResult;
+  let appendRolloutLatestCompletedAssistantItemsToDetailResult;
   let appendRolloutEmptyCompletionDiagnosticsToThread;
   let appendRolloutFinalReceiptsToThread;
   let appendRolloutUserInputAnchorsToDetailResult;
@@ -275,6 +276,7 @@ function createThreadDetailRuntimeService(dependencies = {}) {
   ({
     appendMissingRolloutCompletionTurnsToThread,
     appendRolloutActiveAssistantItemsToDetailResult,
+    appendRolloutLatestCompletedAssistantItemsToDetailResult,
     appendRolloutEmptyCompletionDiagnosticsToThread,
     appendRolloutFinalReceiptsToThread,
     appendRolloutUserInputAnchorsToDetailResult,
@@ -573,6 +575,7 @@ function createThreadDetailRuntimeService(dependencies = {}) {
       workspaceContextStatsForCwd: dependencies.workspaceContextStatsForCwd,
       backfillMissingRolloutCompletionTurnsForDetailResult,
       appendRolloutUserInputAnchorsToDetailResult,
+      appendRolloutLatestCompletedAssistantItemsToDetailResult,
       appendRolloutActiveAssistantItemsToDetailResult,
       finalizeActiveAssistantProjectionDetailResult,
       applyLocalActiveThreadStatusToResult: options.applyLocalActiveThreadStatusToResult,
@@ -667,6 +670,7 @@ function createThreadDetailRuntimeService(dependencies = {}) {
   return {
     appendMissingRolloutCompletionTurnsToThread,
     appendRolloutActiveAssistantItemsToDetailResult,
+    appendRolloutLatestCompletedAssistantItemsToDetailResult,
     appendRolloutEmptyCompletionDiagnosticsToThread,
     appendRolloutFinalReceiptsToThread,
     appendRolloutToolOutputImagesToThread,

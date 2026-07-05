@@ -60,6 +60,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     attachPendingServerRequestsToResult = (result) => result,
     httpStatusError = (statusCode, code) => defaultError(statusCode, code, code),
     createTargetError = defaultError,
+    targetLifecycleDeliverability = () => ({ ok: true }),
     logger = console,
   } = dependencies;
 
@@ -99,6 +100,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     isSubagentThreadSummary,
     isSideChatSidecarThreadSummary,
     createError: createTargetError,
+    targetLifecycleDeliverability,
   });
 
   function workspaceDelegationSettings(settings = readRuntimeSettings()) {

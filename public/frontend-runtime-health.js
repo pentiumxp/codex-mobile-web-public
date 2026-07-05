@@ -333,8 +333,16 @@
       const visibleCount = boundedCount(source.visibleCount || source.visible_count);
       const duplicateCount = boundedCount(source.duplicateCount || source.duplicate_count);
       const effects = [];
+      const sameThreadRender = source.sameThreadRender === true || source.same_thread_render === true;
 
-      if (previousCount >= 2 && visibleCount >= 2 && domCount <= 1 && domCount < previousCount) {
+      const priorNonEmptyDomDropped = previousCount >= 2 && domCount <= 1 && domCount < previousCount;
+      const expectedNonEmptyDomDropped = visibleCount >= 2 && priorNonEmptyDomDropped;
+      const shellOrUnknownVisibleDrop = sameThreadRender && visibleCount <= 1 && priorNonEmptyDomDropped && /(?:early-shell|loading|shell)/i.test([
+        source.action,
+        source.renderMode || source.render_mode,
+        source.renderPlanReason || source.render_plan_reason,
+      ].filter(Boolean).join("|"));
+      if (expectedNonEmptyDomDropped || shellOrUnknownVisibleDrop) {
         effects.push({
           type: "diagnostic-failure",
           diagnostic: domDropEvent(Object.assign({}, source, { renderCount, fullRenderCount, fallbackCount })),

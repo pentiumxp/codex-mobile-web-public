@@ -473,7 +473,7 @@ function clearUsageBackfillRefresh() {
   state.usageBackfillAttempts = 0;
 }
 
-function scheduleUsageBackfillRefresh(delay = 350) {
+function scheduleUsageBackfillRefresh(delay = 350, options = {}) {
   if (!state.currentThreadId || document.visibilityState === "hidden") return;
   const turn = latestSuccessfulCompletedTurnMissingUsage();
   if (!turn || !turn.id) {
@@ -488,14 +488,23 @@ function scheduleUsageBackfillRefresh(delay = 350) {
     state.usageBackfillAttempts = 0;
   }
   if (state.usageBackfillAttempts >= 6 || state.usageBackfillTimer) return;
-  if (shouldSuppressAutomaticCurrentThreadRefresh("usage-backfill")) return;
+  const forceRefresh = options.force === true || options.userInitiated === true;
+  const suppressionContext = {
+    threadId: state.currentThreadId,
+    userInitiated: forceRefresh,
+  };
+  if (shouldSuppressAutomaticCurrentThreadRefresh("usage-backfill", suppressionContext)) return;
   state.usageBackfillAttempts += 1;
   state.usageBackfillTimer = setTimeout(() => {
     state.usageBackfillTimer = null;
     if (document.visibilityState === "hidden") return;
     if (!state.currentThreadId || `${state.currentThreadId}|${turn.id}` !== state.usageBackfillKey) return;
-    if (shouldSuppressAutomaticCurrentThreadRefresh("usage-backfill")) return;
-    refreshCurrentThread({ source: "usage-backfill" }).catch(showError);
+    if (shouldSuppressAutomaticCurrentThreadRefresh("usage-backfill", suppressionContext)) return;
+    refreshCurrentThread({
+      source: "usage-backfill",
+      force: forceRefresh,
+      userInitiated: forceRefresh,
+    }).catch(showError);
   }, delay);
 }
 
@@ -1062,7 +1071,11 @@ async function refreshCurrentThread(options = {}) {
   const seq = requestPlan.seq;
   const source = requestPlan.source;
   const requestedMode = requestPlan.requestedMode;
-  if (shouldSuppressAutomaticCurrentThreadRefresh(source, { threadId })) return;
+  const refreshSuppressionContext = {
+    threadId,
+    userInitiated: options.userInitiated === true || options.force === true,
+  };
+  if (shouldSuppressAutomaticCurrentThreadRefresh(source, refreshSuppressionContext)) return;
   if (requestPlan.abortActiveRefresh && state.refreshThreadController) state.refreshThreadController.abort();
   const controller = new AbortController();
   state.refreshThreadController = controller;
@@ -1096,7 +1109,7 @@ async function refreshCurrentThread(options = {}) {
     source,
   });
   if (!responseEffectsPlan.shouldApply) return;
-  if (shouldSuppressAutomaticCurrentThreadRefresh(source, { threadId })) return;
+  if (shouldSuppressAutomaticCurrentThreadRefresh(source, refreshSuppressionContext)) return;
   const renderStartedAt = nowPerfMs();
   const mergeStartedAt = nowPerfMs();
   const previousThread = state.currentThread;
@@ -3104,8 +3117,31 @@ function checkPrimaryShellSelectionConflictAfterRender(metrics = {}) {
   });
 }
 
+function threadIdFromConversationSignatureValue(value) {
+  const signatureValue = String(value || "");
+  if (!signatureValue) return "";
+  if (signatureValue.startsWith("loading|")) return signatureValue.split("|")[1] || "";
+  if (signatureValue.startsWith("load-error|")) return signatureValue.split("|")[1] || "";
+  if (signatureValue[0] !== "{") return "";
+  try {
+    const parsed = JSON.parse(signatureValue);
+    return String(parsed && parsed.threadId || "");
+  } catch (_) {
+    return "";
+  }
+}
+
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
+  const renderedThreadIdBefore = threadIdFromConversationSignatureValue(state.renderedConversationSignature);
+  const currentRenderThreadId = String(state.currentThreadId || "");
+  const sameThreadRender = Boolean(
+    renderedThreadIdBefore
+      && currentRenderThreadId
+      && renderedThreadIdBefore === currentRenderThreadId,
+  );
+  const currentRenderThreadHash = diagnosticThreadHash(currentRenderThreadId);
+  const previousRenderedThreadHash = diagnosticThreadHash(renderedThreadIdBefore);
   const scrollAnchor = options.stickToBottom
     ? null
     : captureConversationViewportAnchor({ userReadingCurrentTurn: Boolean(options.userReadingCurrentTurn) });
@@ -3259,7 +3295,11 @@ function updateConversationHtml(html, signature, options = {}) {
     childCount: conversation ? conversation.childNodes.length : 0,
     stickToBottom: Boolean(options.stickToBottom),
     threadId: state.currentThreadId || "",
+    threadHash: currentRenderThreadHash,
+    previousRenderedThreadHash,
+    sameThreadRender,
     currentThreadStatus: statusText(state.currentThread && state.currentThread.status),
+    source: options.source || "conversation-update",
     html,
     slowThresholdMs: PERF_SLOW_RENDER_REPORT_MS,
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
@@ -3268,7 +3308,9 @@ function updateConversationHtml(html, signature, options = {}) {
   applyFrontendRuntimeHealthEffectsPlan(state.frontendRuntimeHealthMonitor.recordRender({
     action: options.source || "conversation-update",
     routeKind: options.routeKind || diagnosticRouteKind(),
-    threadHash: options.threadHash || diagnosticThreadHash(state.currentThreadId),
+    threadHash: options.threadHash || currentRenderThreadHash,
+    previousRenderedThreadHash,
+    sameThreadRender,
     readMode: state.currentThread && state.currentThread.mobileReadMode || "",
     renderMode: String(options.renderMode || applicationPlan.finalAction || updatePlan.action || ""),
     finalAction: String(applicationPlan.finalAction || updatePlan.action || ""),
@@ -4693,6 +4735,7 @@ function renderCurrentThread(options = {}) {
     applySummaryOnlyCurrentThreadRecoveryEffectsPlan(summaryRecoveryEffectsPlan);
     thread = state.currentThread;
   }
+  const preRenderDomShape = conversationDomShape();
   const earlyShellPlan = threadDetailRenderPlanApi.planSingleThreadEarlyShellExecution({
     threadId: thread.id || state.currentThreadId || "",
     currentThreadId: state.currentThreadId,
@@ -4700,6 +4743,9 @@ function renderCurrentThread(options = {}) {
     loadError: thread.mobileLoadError,
     conversationSignature: conversationRenderSignature(thread),
     patchShellSignature: conversationPatchShellSignature(thread),
+    renderedConversationSignature: state.renderedConversationSignature,
+    renderedDomTurnCount: preRenderDomShape.turnCount,
+    renderedDomItemCount: preRenderDomShape.itemCount,
     stickToBottom: shouldStickToBottom,
     escapeHtml,
   });
@@ -4776,7 +4822,7 @@ function renderCurrentThread(options = {}) {
   updateLiveOperationDockHtml(liveOperationDock);
   const previousChildCount = $("conversation") ? $("conversation").childNodes.length : 0;
   const renderVisibleShape = visibleConversationShape(thread);
-  const renderDomShape = conversationDomShape();
+  const renderDomShape = preRenderDomShape;
   const shellUpdatePlan = threadDetailRenderPlanApi.planSingleThreadShellConversationUpdate({
     shellPlan,
     conversationSignature: conversationRenderSignature(thread),

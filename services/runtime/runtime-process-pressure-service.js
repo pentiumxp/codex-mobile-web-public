@@ -127,6 +127,8 @@ function parseLaunchdServiceReadback(text = "", label = DEFAULT_LAUNCHD_LABEL) {
   const workingDirectoryMatch = source.match(/\n\s*working directory = ([^\n]+)/);
   const defaultShellModeMatch = source.match(/\n\s*CODEX_MOBILE_DEFAULT_SHELL => ([^\n]+)/);
   const muxEndpointFileMatch = source.match(/\n\s*CODEX_MOBILE_MUX_ENDPOINT_FILE => ([^\n]+)/);
+  const runsMatch = source.match(/\n\s*runs = (\d+)/);
+  const lastTerminatingSignalMatch = source.match(/\n\s*last terminating signal = ([^\n]+)/);
   const found = Boolean(stateMatch || activeCountMatch || pidMatch || usernameMatch || workingDirectoryMatch);
   return {
     found,
@@ -134,6 +136,8 @@ function parseLaunchdServiceReadback(text = "", label = DEFAULT_LAUNCHD_LABEL) {
     state: stateMatch ? String(stateMatch[1] || "").trim().slice(0, 80) : "",
     activeCount: activeCountMatch ? positiveInt(activeCountMatch[1], 0) : 0,
     pid: pidMatch ? positiveInt(pidMatch[1], 0) : 0,
+    runs: runsMatch ? positiveInt(runsMatch[1], 0) : 0,
+    lastTerminatingSignal: lastTerminatingSignalMatch ? String(lastTerminatingSignalMatch[1] || "").trim().slice(0, 80) : "",
     username: usernameMatch ? String(usernameMatch[1] || "").trim().slice(0, 64) : "",
     workingDirectory: workingDirectoryMatch ? String(workingDirectoryMatch[1] || "").trim().slice(0, 240) : "",
     defaultShellMode: defaultShellModeMatch ? String(defaultShellModeMatch[1] || "").trim().slice(0, 80) : "",
@@ -149,6 +153,8 @@ function boundedLaunchdService(service = null) {
     state: String(service.state || "").slice(0, 80),
     activeCount: positiveInt(service.activeCount, 0),
     pid: positiveInt(service.pid, 0),
+    runs: positiveInt(service.runs, 0),
+    lastTerminatingSignal: String(service.lastTerminatingSignal || "").slice(0, 80),
     username: String(service.username || "").slice(0, 64),
     workingDirectory: String(service.workingDirectory || "").slice(0, 240),
     defaultShellMode: String(service.defaultShellMode || "").slice(0, 80),
@@ -334,6 +340,33 @@ function productionListenerOwnershipIssues(processes = [], options = {}) {
     });
   }
   return issues;
+}
+
+function runtimeLifecycleIssues(processes = [], options = {}) {
+  const launchdService = options.launchdService || null;
+  if (!launchdService || !launchdService.found || launchdService.state !== "running") return [];
+  const lastSignal = String(launchdService.lastTerminatingSignal || "");
+  if (!/Killed:\s*9/i.test(lastSignal)) return [];
+  const recentRestartSeconds = positiveInt(
+    options.recentSigkillRestartSeconds || process.env.CODEX_MOBILE_PROCESS_PRESSURE_RECENT_SIGKILL_SECONDS,
+    60 * 60,
+  );
+  const listener = processes.find((process) => process.kind === "production-server" && process.pid === launchdService.pid)
+    || processes.find((process) => process.kind === "production-server");
+  const listenerAgeSeconds = listener ? elapsedSeconds(listener.elapsed) : 0;
+  if (recentRestartSeconds && listenerAgeSeconds > recentRestartSeconds) return [];
+  return [{
+    severity: "H2",
+    code: "production_listener_recent_sigkill",
+    surface: "runtime-process-pressure",
+    category: "process_lifecycle",
+    diagnostic_type: "production_listener_recent_sigkill",
+    listenerPid: launchdService.pid || (listener && listener.pid) || 0,
+    listenerAgeSeconds,
+    restartWindowSeconds: recentRestartSeconds,
+    runs: positiveInt(launchdService.runs, 0),
+    lastTerminatingSignal: lastSignal.slice(0, 80),
+  }];
 }
 
 function runtimeMemoryPressureIssues(processes = [], appServerChildSummary = {}, options = {}) {
@@ -632,6 +665,7 @@ function summarizeProcessPressure(processes = [], options = {}) {
   const launchdService = options.launchdService || null;
   const issues = [
     ...productionListenerOwnershipIssues(processes, Object.assign({}, options, { launchdService })),
+    ...runtimeLifecycleIssues(processes, Object.assign({}, options, { launchdService })),
     ...runtimeMemoryPressureIssues(processes, appServerChildSummary, options),
   ];
   return {
@@ -741,6 +775,7 @@ module.exports = {
   redactCommand,
   readLaunchdService,
   readMuxEndpoint,
+  runtimeLifecycleIssues,
   runtimeMemoryPressureIssues,
   summarizeProcessPressure,
 };

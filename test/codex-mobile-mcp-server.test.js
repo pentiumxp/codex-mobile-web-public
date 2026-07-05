@@ -58,7 +58,15 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.secretRef);
   assert.ok(listedTools.find((entry) => entry.name === "start_loop").inputSchema.properties.deployReadbackRequired);
   assert.ok(listedTools.find((entry) => entry.name === "start_loop").inputSchema.properties.auditPacket);
-  assert.ok(listedTools.find((entry) => entry.name === "thread_lifecycle").inputSchema.properties.role);
+  const lifecycleSchema = listedTools.find((entry) => entry.name === "thread_lifecycle").inputSchema;
+  assert.ok(lifecycleSchema.properties.role);
+  assert.ok(lifecycleSchema.properties.pluginId);
+  assert.ok(lifecycleSchema.properties.workerPurpose);
+  assert.ok(lifecycleSchema.properties.sourceThreadId);
+  assert.ok(lifecycleSchema.properties.workerLaneId);
+  assert.ok(lifecycleSchema.properties.action.enum.includes("retire"));
+  assert.ok(lifecycleSchema.properties.action.enum.includes("heartbeat"));
+  assert.ok(lifecycleSchema.properties.action.enum.includes("mark_completed"));
   assert.ok(listedTools.find((entry) => entry.name === "task_card_heartbeat").inputSchema.properties.threadId);
   const initialized = await handleMessage({ server: "http://127.0.0.1:1", key: "secret" }, { id: 1, method: "initialize" });
   assert.equal(initialized.serverInfo.name, "codex_mobile");

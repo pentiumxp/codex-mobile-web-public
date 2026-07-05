@@ -341,6 +341,15 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
           "--vite-preview-only",
         ]);
       }
+      if (isViteAppPreviewOnly) {
+        assert.deepEqual(args, [
+          String(args[0]),
+          "--server",
+          "http://127.0.0.1:8790",
+          "--json",
+          "--vite-app-preview-only",
+        ]);
+      }
       if (isViteAppPreviewRuntime) {
         assert.ok(args.includes("--thread-id"));
         assert.equal(args[args.indexOf("--thread-id") + 1], "private-thread-id");
@@ -457,20 +466,18 @@ test("runtime self-check loop can run explicit Vite app-preview default-root gat
       calls.push(args.slice());
       const isDefaultRoot = args.includes("--vite-app-preview-default-root");
       if (isDefaultRoot) {
-        assert.ok(args.includes("--vite-app-preview-runtime"));
-        assert.doesNotMatch(args.join(" "), /--vite-app-preview-root|--vite-app-preview-only/);
-        assert.ok(args.includes("--sample-threads"));
-        assert.equal(args[args.indexOf("--sample-threads") + 1], "1");
-        assert.ok(args.includes("--rounds"));
-        assert.equal(args[args.indexOf("--rounds") + 1], "2");
-        assert.ok(args.includes("--sample-delays-ms"));
-        assert.equal(args[args.indexOf("--sample-delays-ms") + 1], "100,900");
-        assert.ok(args.includes("--min-settled-delay-ms"));
-        assert.equal(args[args.indexOf("--min-settled-delay-ms") + 1], "900");
+        assert.deepEqual(args, [
+          String(args[0]),
+          "--server",
+          "http://127.0.0.1:8790",
+          "--json",
+          "--vite-app-preview-only",
+          "--vite-app-preview-default-root",
+        ]);
       }
       callback(null, JSON.stringify({
         ok: true,
-        mode: isDefaultRoot ? "vite-app-preview-default-root-runtime" : "ok",
+        mode: isDefaultRoot ? "vite-app-preview-default-root" : "ok",
         publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
         browserReport: { issueCount: 0, blockingIssueCount: 0 },
       }), "");
@@ -505,12 +512,18 @@ test("runtime self-check loop auto-runs default-root gate when public config rep
       const isDefaultRoot = args.includes("--vite-app-preview-default-root");
       const isBrowserRuntime = !/--vite-preview-only|--vite-app-preview/.test(argText);
       if (isDefaultRoot) {
-        assert.ok(args.includes("--vite-app-preview-runtime"));
-        assert.doesNotMatch(argText, /--vite-app-preview-root|--vite-app-preview-only/);
+        assert.deepEqual(args, [
+          String(args[0]),
+          "--server",
+          "http://127.0.0.1:8790",
+          "--json",
+          "--vite-app-preview-only",
+          "--vite-app-preview-default-root",
+        ]);
       }
       callback(null, JSON.stringify({
         ok: true,
-        mode: isDefaultRoot ? "vite-app-preview-default-root-runtime" : "ok",
+        mode: isDefaultRoot ? "vite-app-preview-default-root" : "ok",
         publicConfig: {
           clientBuildId: "build",
           shellCacheName: "shell",

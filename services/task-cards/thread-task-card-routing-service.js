@@ -140,6 +140,9 @@ function createThreadTaskCardRoutingService(deps = {}) {
   const threadRole = typeof deps.threadTaskCardRole === "function"
     ? deps.threadTaskCardRole
     : (thread) => defaultThreadRole(thread, displayTitle);
+  const targetLifecycleDeliverability = typeof deps.targetLifecycleDeliverability === "function"
+    ? deps.targetLifecycleDeliverability
+    : () => ({ ok: true });
 
   function targetError(code, message, details = {}, statusCode = 400) {
     return createError(statusCode, code, message || code, details);
@@ -315,6 +318,22 @@ function createThreadTaskCardRoutingService(deps = {}) {
         "Target thread is not visible or is not a current deliverable thread.",
         Object.assign({}, details, { requestedTarget: target }, replacementTargetDetails(thread, options)),
         404,
+      );
+    }
+    const lifecycle = targetLifecycleDeliverability(thread, details, options);
+    if (lifecycle && lifecycle.ok === false) {
+      throw targetError(
+        lifecycle.error || "target_thread_lifecycle_not_deliverable",
+        lifecycle.message || "Target thread is not deliverable by lifecycle metadata.",
+        Object.assign({}, details, {
+          requestedTarget: target,
+          lifecycle: {
+            workerLaneId: lifecycle.workerLaneId || "",
+            role: lifecycle.role || "",
+            lifecycleStatus: lifecycle.lifecycleStatus || "",
+          },
+        }),
+        409,
       );
     }
     return String(thread.id || "");

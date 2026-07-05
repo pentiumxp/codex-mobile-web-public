@@ -806,3 +806,60 @@ test("v4 projection service treats turn completion as an item-preserving patch",
     "turn-1:turnUsageSummary",
   ]);
 });
+
+test("v4 projection service bounds active overlay caches", () => {
+  const service = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    memoryMaxEntries: 4,
+    activeOverlayCacheMaxEntries: 1,
+    activeOverlayWindowCacheMaxEntries: 1,
+    revisionMaxEntries: 2,
+    now: (() => {
+      let current = 8000;
+      return () => {
+        current += 100;
+        return current;
+      };
+    })(),
+  });
+
+  service.seed(signatureInput({ threadId: "thread-1" }), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "older-1", items: [{ id: "agent-1", type: "agentMessage", text: "one" }] }],
+    },
+  }, {
+    partial: true,
+    partialKind: "turns-list-active-overlay-window",
+  });
+  service.seed(signatureInput({
+    threadId: "thread-2",
+    rolloutPath: path.join(os.tmpdir(), "rollout-thread-2.jsonl"),
+  }), {
+    thread: {
+      id: "thread-2",
+      turns: [{ id: "older-2", items: [{ id: "agent-2", type: "agentMessage", text: "two" }] }],
+    },
+  }, {
+    partial: true,
+    partialKind: "turns-list-active-overlay-window",
+  });
+
+  assert.equal(service.stats().activeOverlayWindowCacheSize, 1);
+
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "active-1", status: { type: "active" }, items: [{ id: "cmd-1", type: "commandExecution" }] },
+  });
+  service.applyNotification("turn/started", {
+    threadId: "thread-2",
+    turn: { id: "active-2", status: { type: "active" }, items: [{ id: "cmd-2", type: "commandExecution" }] },
+  });
+
+  assert.equal(service.activeOverlaySnapshot({ threadId: "thread-1" }).found, true);
+  assert.equal(service.activeOverlaySnapshot({ threadId: "thread-2" }).found, true);
+  assert.equal(service.stats().activeOverlayCacheSize, 1);
+  assert.ok(service.stats().revisionSize <= 2);
+});

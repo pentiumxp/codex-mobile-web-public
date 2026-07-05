@@ -65,6 +65,81 @@ test("thread detail projection persists and restores matching warm cache", () =>
   }
 });
 
+test("thread detail projection bounds memory cache while preserving persisted warm cache", () => {
+  const dir = tempDir();
+  try {
+    const service = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      memoryMaxEntries: 1,
+      fullHistoryMaxEntries: 1,
+      now: (() => {
+        let current = 1000;
+        return () => {
+          current += 100;
+          return current;
+        };
+      })(),
+    });
+
+    service.seed(signatureInput({ threadId: "thread-1" }), {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-1", items: [] }],
+      },
+    });
+    service.seed(signatureInput({ threadId: "thread-2", rolloutPath: path.join(os.tmpdir(), "rollout-thread-2.jsonl") }), {
+      thread: {
+        id: "thread-2",
+        turns: [{ id: "turn-2", items: [] }],
+      },
+    });
+
+    assert.equal(service.stats().memorySize, 1);
+    assert.equal(service.stats().fullHistorySize, 1);
+
+    const restored = service.get(signatureInput({ threadId: "thread-1" }));
+    assert.ok(restored);
+    assert.equal(restored.result.thread.id, "thread-1");
+    assert.equal(service.stats().memorySize, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("thread detail projection drops evicted memory entry when persistence is disabled", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    memoryMaxEntries: 1,
+    now: (() => {
+      let current = 2000;
+      return () => {
+        current += 100;
+        return current;
+      };
+    })(),
+  });
+
+  service.seed(signatureInput({ threadId: "thread-1" }), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-1", items: [] }],
+    },
+  });
+  service.seed(signatureInput({ threadId: "thread-2", rolloutPath: path.join(os.tmpdir(), "rollout-thread-2.jsonl") }), {
+    thread: {
+      id: "thread-2",
+      turns: [{ id: "turn-2", items: [] }],
+    },
+  });
+
+  assert.equal(service.stats().memorySize, 1);
+  assert.equal(service.lookup(signatureInput({ threadId: "thread-1" })).missReason, "entry-missing");
+});
+
 test("thread detail projection misses when rollout signature changes", () => {
   const dir = tempDir();
   try {
@@ -915,6 +990,61 @@ test("thread detail projection keeps streamed receipt when completed turn patch 
   const turn = cached.result.thread.turns.find((item) => item.id === "turn-1");
   assert.equal(turn.status.type, "completed");
   assert.equal(turn.items.some((item) => item.id === "agent-1" && item.text === "final receipt text"), true);
+});
+
+test("thread detail projection retains richer completed assistant receipts on thinner reseed", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: (() => {
+      let current = 6400;
+      return () => {
+        current += 100;
+        return current;
+      };
+    })(),
+  });
+  service.seed(signatureInput({ summaryStatus: "completed", summaryUpdatedAtMs: 6400 }), {
+    thread: {
+      id: "thread-1",
+      turns: [{
+        id: "turn-1",
+        status: { type: "completed" },
+        items: [
+          { id: "context-1", type: "contextCompaction", text: "old user context" },
+          { id: "agent-1", type: "agentMessage", text: "first receipt" },
+          { id: "agent-2", type: "agentMessage", text: "second receipt" },
+          { id: "usage-1", type: "turnUsageSummary" },
+        ],
+      }],
+    },
+  });
+
+  const thinnerResult = {
+    thread: {
+      id: "thread-1",
+      turns: [{
+        id: "turn-1",
+        status: { type: "completed" },
+        items: [
+          { id: "user-1", type: "userMessage", text: "question" },
+          { id: "agent-2", type: "agentMessage", text: "second receipt" },
+          { id: "usage-1", type: "turnUsageSummary" },
+        ],
+      }],
+    },
+  };
+  const seeded = service.seed(signatureInput({ summaryStatus: "completed", summaryUpdatedAtMs: 6500 }), thinnerResult);
+
+  assert.equal(seeded.retainedRicherReceipts, true);
+  const cached = service.get(signatureInput({ summaryStatus: "completed", summaryUpdatedAtMs: 6500 }));
+  const turn = cached.result.thread.turns.find((item) => item.id === "turn-1");
+  assert.deepEqual(turn.items.map((item) => item.id), ["user-1", "agent-1", "agent-2", "usage-1"]);
+  assert.equal(turn.items.some((item) => item.id === "context-1"), false);
+  assert.equal(turn.mobileRicherAssistantReceiptsRetained, true);
+  assert.deepEqual(thinnerResult.thread.turns[0].items.map((item) => item.id), ["user-1", "agent-1", "agent-2", "usage-1"]);
+  assert.equal(thinnerResult.thread.turns[0].items.some((item) => item.id === "context-1"), false);
 });
 
 test("thread detail projection merges replacement receipts and keeps one usage summary", () => {

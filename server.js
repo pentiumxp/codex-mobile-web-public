@@ -1113,6 +1113,7 @@ const threadDetailRuntimeService = createThreadDetailRuntimeService({
 const {
   appendMissingRolloutCompletionTurnsToThread,
   appendRolloutActiveAssistantItemsToDetailResult,
+  appendRolloutLatestCompletedAssistantItemsToDetailResult,
   appendRolloutEmptyCompletionDiagnosticsToThread,
   appendRolloutFinalReceiptsToThread,
   appendRolloutToolOutputImagesToThread,
@@ -2045,6 +2046,7 @@ module.exports = {
   anyThreadMatchesVisibleWorkspace,
   attachRolloutFallbackStatus,
   appendRolloutActiveAssistantItemsToDetailResult,
+  appendRolloutLatestCompletedAssistantItemsToDetailResult,
   applyLocalActiveThreadStatusToSummary,
   backfillMissingRolloutCompletionTurnsForDetailResult,
   codeGraphMcpElicitationToolName,

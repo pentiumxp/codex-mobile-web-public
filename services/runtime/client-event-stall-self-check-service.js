@@ -184,10 +184,54 @@ function isConversationPatchFallback(entry = {}) {
   if (entry.event === CONVERSATION_PATCH_FALLBACK_EVENT_NAME) return true;
   if (entry.event !== CONVERSATION_RENDER_EVENT_NAME) return false;
   const details = entry.details || {};
-  const action = safeLabel(details.domUpdateAction || details.dom_update_action, "", 120);
   return details.patchFallbackApplied === true
-    || details.patch_fallback_applied === true
-    || action === "set-inner-html";
+    || details.patch_fallback_applied === true;
+}
+
+function conversationDomDropIssue(entries = []) {
+  if (!entries.length) return null;
+  const h2Entries = entries.filter((entry) => {
+    const details = entry.details || {};
+    return safeLabel(details.source || details.action || details.updateSource || details.update_source, "", 120) === "single-thread-early-shell";
+  });
+  const source = h2Entries[0] || entries[0];
+  const severity = h2Entries.length ? "H2" : "H3";
+  const details = source.details || {};
+  return {
+    severity,
+    code: "browser_conversation_render_dom_drop",
+    surface: "client-events",
+    category: "thread_detail_refresh",
+    diagnostic_type: "thread_detail_refresh",
+    error_code: "browser_conversation_render_dom_drop",
+    count: boundedCount(entries.length),
+    counts: {
+      previous_child_count: boundedCount(details.previousChildCount || details.previous_child_count),
+      child_count: boundedCount(details.childCount || details.child_count),
+      html_chars: boundedCount(details.htmlChars || details.html_chars),
+      h2_drop_count: boundedCount(h2Entries.length),
+    },
+    source: safeLabel(details.source || details.action || details.updateSource || details.update_source, "", 120),
+    updateReason: safeLabel(details.updateReason || details.update_reason, "", 120),
+  };
+}
+
+function isConversationDomDrop(entry = {}) {
+  if (entry.event !== CONVERSATION_RENDER_EVENT_NAME) return false;
+  const details = entry.details || {};
+  const hasSameThreadRender = Object.prototype.hasOwnProperty.call(details, "sameThreadRender")
+    || Object.prototype.hasOwnProperty.call(details, "same_thread_render");
+  const sameThreadRender = details.sameThreadRender === true || details.same_thread_render === true;
+  if (!hasSameThreadRender || !sameThreadRender) return false;
+  const previousChildCount = boundedCount(details.previousChildCount || details.previous_child_count);
+  const childCount = boundedCount(details.childCount || details.child_count);
+  if (previousChildCount < 2 || childCount > 1 || childCount >= previousChildCount) return false;
+  const source = safeLabel(details.source || details.action || details.updateSource || details.update_source, "", 120);
+  if (source === "single-thread-early-shell") return true;
+  const action = safeLabel(details.domUpdateAction || details.dom_update_action, "", 120);
+  const updateReason = safeLabel(details.updateReason || details.update_reason, "", 120);
+  const htmlChars = boundedCount(details.htmlChars || details.html_chars);
+  return action === "set-inner-html" && updateReason === "signature-changed" && previousChildCount >= 4 && htmlChars > 0 && htmlChars <= 1000;
 }
 
 function activeThreadFullRenderIssue(entries = [], options = {}) {
@@ -243,10 +287,12 @@ function summarizeClientEventText(text = "", options = {}) {
   const stalls = [];
   const activeDetailFullRenders = [];
   const conversationPatchFallbacks = [];
+  const conversationDomDrops = [];
   let untimedStallEventCount = 0;
   let outOfWindowStallEventCount = 0;
   let outOfWindowActiveDetailFullRenderEventCount = 0;
   let outOfWindowConversationPatchFallbackEventCount = 0;
+  let outOfWindowConversationDomDropEventCount = 0;
   for (const line of lines) {
     const entry = parseClientEventLine(line);
     if (!entry) continue;
@@ -259,6 +305,10 @@ function summarizeClientEventText(text = "", options = {}) {
     if (isConversationPatchFallback(entry)) {
       if (inActiveDetailWindow) conversationPatchFallbacks.push(entry);
       else outOfWindowConversationPatchFallbackEventCount += 1;
+    }
+    if (isConversationDomDrop(entry)) {
+      if (inActiveDetailWindow) conversationDomDrops.push(entry);
+      else outOfWindowConversationDomDropEventCount += 1;
     }
     if (!STALL_EVENT_NAMES.has(entry.event)) continue;
     if (maxDelayForDetails(entry.details) < minStallMs) continue;
@@ -277,6 +327,8 @@ function summarizeClientEventText(text = "", options = {}) {
   if (activeFullRenderIssue) issues.push(activeFullRenderIssue);
   const patchFallbackIssue = conversationPatchFallbackIssue(conversationPatchFallbacks);
   if (patchFallbackIssue) issues.push(patchFallbackIssue);
+  const domDropIssue = conversationDomDropIssue(conversationDomDrops);
+  if (domDropIssue) issues.push(domDropIssue);
   const h2Count = issues.filter((issue) => issue.severity === "H2").length;
   const maxDelayMs = issues.reduce((max, issue) => Math.max(max, boundedCount(issue.counts && issue.counts.max_delay_ms)), 0);
   const maxRafDelayMs = issues.reduce((max, issue) => Math.max(max, boundedCount(issue.counts && issue.counts.raf_delay_ms)), 0);
@@ -293,10 +345,12 @@ function summarizeClientEventText(text = "", options = {}) {
       stallEventCount: boundedCount(stalls.length),
       activeDetailFullRenderEventCount: boundedCount(activeDetailFullRenders.length),
       conversationPatchFallbackEventCount: boundedCount(conversationPatchFallbacks.length),
+      conversationDomDropEventCount: boundedCount(conversationDomDrops.length),
       untimedStallEventCount: boundedCount(untimedStallEventCount),
       outOfWindowStallEventCount: boundedCount(outOfWindowStallEventCount),
       outOfWindowActiveDetailFullRenderEventCount: boundedCount(outOfWindowActiveDetailFullRenderEventCount),
       outOfWindowConversationPatchFallbackEventCount: boundedCount(outOfWindowConversationPatchFallbackEventCount),
+      outOfWindowConversationDomDropEventCount: boundedCount(outOfWindowConversationDomDropEventCount),
       h2StallEventCount: boundedCount(h2Count),
       maxDelayMs,
       maxRafDelayMs,
@@ -331,10 +385,12 @@ function summarizeClientEventLog(options = {}) {
         stallEventCount: 0,
         activeDetailFullRenderEventCount: 0,
         conversationPatchFallbackEventCount: 0,
+        conversationDomDropEventCount: 0,
         untimedStallEventCount: 0,
         outOfWindowStallEventCount: 0,
         outOfWindowActiveDetailFullRenderEventCount: 0,
         outOfWindowConversationPatchFallbackEventCount: 0,
+        outOfWindowConversationDomDropEventCount: 0,
         h2StallEventCount: 0,
         maxDelayMs: 0,
         maxRafDelayMs: 0,

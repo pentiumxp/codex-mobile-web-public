@@ -258,7 +258,7 @@ function normalizeStatus(value) {
 }
 
 function stateSkeleton() {
-  return { version: STATE_VERSION, loops: [] };
+  return { version: STATE_VERSION, loops: [], workerLanes: [] };
 }
 
 function safeJsonParse(text) {
@@ -377,6 +377,15 @@ function roleLaneTitle(sourceThread, role, _objectiveSummary, cwd = "") {
         : role === "repair"
           ? "Loop Repair"
           : "Loop Implement";
+  return boundedText(`${workspace} ${suffix}`, 120);
+}
+
+function workerLaneTitle(sourceThread, purpose = "", cwd = "") {
+  const workspace = workspaceDisplayName(sourceThread, cwd);
+  const normalizedPurpose = compactOneLine(purpose).toLowerCase();
+  const suffix = normalizedPurpose && normalizedPurpose !== "default"
+    ? `Worker ${boundedText(normalizedPurpose.replace(/[_-]+/g, " "), 32)}`
+    : "Worker Lane";
   return boundedText(`${workspace} ${suffix}`, 120);
 }
 
@@ -968,6 +977,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const parsed = safeJsonParse(fs.readFileSync(storageFile, "utf8"));
     stateCache = Object.assign(stateSkeleton(), parsed, {
       loops: Array.isArray(parsed.loops) ? parsed.loops : [],
+      workerLanes: Array.isArray(parsed.workerLanes) ? parsed.workerLanes : [],
     });
     return stateCache;
   }
@@ -1932,6 +1942,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     if (raw === "loop_requirements" || raw === "requirements") return "requirements";
     if (raw === "deploy" || raw === "deploy_readback" || raw === "deploy-readback") return "deploy_readback";
     if (raw === "home_ai_worker" || raw === "worker" || raw === "worker_lane") return "home_ai_worker";
+    if (raw === "plugin_worker" || raw === "plugin-worker" || raw === "plugin_worker_lane" || raw === "plugin-worker-lane") return "plugin_worker";
     return raw;
   }
 
@@ -1947,9 +1958,119 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return { unavailable: false, reason: "" };
   }
 
+  function workerPurposeFromLifecycle(input = {}) {
+    return compactOneLine(input.workerPurpose || input.worker_purpose || input.purpose || input.targetPurpose || input.target_purpose || "default").toLowerCase() || "default";
+  }
+
+  function hasWorkerPurposeFilter(input = {}) {
+    return Boolean(compactOneLine(input.workerPurpose || input.worker_purpose || input.purpose || input.targetPurpose || input.target_purpose));
+  }
+
+  function pluginIdFromLifecycle(input = {}) {
+    return compactOneLine(input.pluginId || input.plugin_id || input.plugin || input.targetPlugin || input.target_plugin).toLowerCase();
+  }
+
+  function isWorkerLifecycleRole(role) {
+    return role === "home_ai_worker" || role === "plugin_worker";
+  }
+
+  function workerLaneKey(input = {}) {
+    const role = roleFromLifecycle(input);
+    const cwd = normalizeCwd(input.cwd || input.workspaceCwd || input.workspace || input.targetWorkspace);
+    const pluginId = role === "plugin_worker" ? pluginIdFromLifecycle(input) : "";
+    const purpose = workerPurposeFromLifecycle(input);
+    return [role || "home_ai_worker", cwd, pluginId, purpose].join("|");
+  }
+
+  function workerLaneIdFor(input = {}) {
+    return `worker_${stableHash(workerLaneKey(input), 16)}`;
+  }
+
+  function workerLanesState() {
+    const state = loadState();
+    if (!Array.isArray(state.workerLanes)) state.workerLanes = [];
+    return state.workerLanes;
+  }
+
+  function workerLaneTerminalState(record = {}) {
+    const status = compactOneLine(record.lifecycleStatus || record.status).toLowerCase();
+    if (record.retired === true || status === "retired") return { unavailable: true, reason: "lifecycle_retired" };
+    if (record.disabled === true || status === "disabled") return { unavailable: true, reason: "lifecycle_disabled" };
+    if (record.archived === true || status === "archived") return { unavailable: true, reason: "lifecycle_archived" };
+    return { unavailable: false, reason: "" };
+  }
+
+  function workerLaneRecordForThread(threadOrId = {}) {
+    const threadId = compactOneLine(typeof threadOrId === "string"
+      ? threadOrId
+      : threadOrId && (threadOrId.id || threadOrId.threadId));
+    if (!threadId) return null;
+    return workerLanesState().find((lane) => sameThreadId(lane.threadId, threadId)) || null;
+  }
+
+  function workerLaneRecordMatchesInput(record = {}, input = {}) {
+    const role = roleFromLifecycle(input);
+    if (!isWorkerLifecycleRole(role)) return false;
+    if (compactOneLine(record.role) !== role) return false;
+    const requestedCwd = normalizeCwd(input.cwd || input.workspaceCwd || input.workspace || input.targetWorkspace);
+    const requestedPurpose = workerPurposeFromLifecycle(input);
+    const purposeFiltered = hasWorkerPurposeFilter(input);
+    const requestedPluginId = pluginIdFromLifecycle(input);
+    if (requestedCwd && normalizeCwd(record.cwd) !== requestedCwd) return false;
+    if (role === "plugin_worker" && requestedPluginId && pluginIdFromLifecycle(record) !== requestedPluginId) return false;
+    if (purposeFiltered && workerPurposeFromLifecycle(record) !== requestedPurpose) return false;
+    return true;
+  }
+
+  function compactWorkerRequestId(input = {}) {
+    return compactOneLine(input.idempotencyKey || input.idempotency_key || input.requestId || input.request_id);
+  }
+
+  function workerRecordHasRequestId(record = {}, requestId = "") {
+    const id = compactOneLine(requestId);
+    return Boolean(id && Array.isArray(record.requestIds) && record.requestIds.includes(id));
+  }
+
+  function rememberWorkerRequestId(record = {}, requestId = "") {
+    const id = compactOneLine(requestId);
+    if (!id) return;
+    if (!Array.isArray(record.requestIds)) record.requestIds = [];
+    if (!record.requestIds.includes(id)) record.requestIds.push(id);
+    if (record.requestIds.length > 12) record.requestIds = record.requestIds.slice(-12);
+  }
+
+  function publicWorkerLane(record = {}, thread = null, input = {}) {
+    const resolvedThread = thread || readThreadSummary(record.threadId) || {};
+    const lifecycle = workerLaneTerminalState(record);
+    const threadShape = resolvedThread && typeof resolvedThread === "object" ? resolvedThread : {};
+    const detail = lifecycleThread(Object.assign({}, threadShape, {
+      id: record.threadId || threadShape.id || threadShape.threadId,
+      title: threadShape.title || threadShape.name || threadShape.preview || record.title,
+      cwd: threadShape.cwd || record.cwd,
+      threadRole: threadShape.threadRole || threadShape.thread_role || threadShape.role || record.role || "home_ai_worker",
+      status: threadShape.status || record.threadStatus || record.lifecycleStatus || record.status,
+    }), Object.assign({}, input, { role: record.role || input.role || "home_ai_worker" }));
+    const deliverable = detail.deliverable && !lifecycle.unavailable;
+    return Object.assign({}, detail, {
+      workerLaneId: compactOneLine(record.workerLaneId),
+      workerPurpose: workerPurposeFromLifecycle(record),
+      lifecycleStatus: compactOneLine(record.lifecycleStatus || record.status || (deliverable ? "available" : "retired")),
+      deliverable,
+      deliverabilityReason: deliverable ? "eligible" : lifecycle.reason || detail.deliverabilityReason || "not_deliverable",
+      pluginId: pluginIdFromLifecycle(record),
+      retired: record.retired === true,
+      disabled: record.disabled === true,
+      archived: record.archived === true,
+      sourceThreadId: compactOneLine(record.sourceThreadId),
+      heartbeat: record.heartbeat && typeof record.heartbeat === "object" ? Object.assign({}, record.heartbeat) : null,
+      lastTaskCardId: compactOneLine(record.lastTaskCardId),
+      updatedAt: compactOneLine(record.updatedAt),
+    });
+  }
+
   function lifecyclePurposeAllowed(role, classification) {
     const purpose = classification && classification.purpose || "";
-    if (role === "home_ai_worker") return purpose === "worker_lane";
+    if (isWorkerLifecycleRole(role)) return purpose === "worker_lane";
     if (!role) return true;
     if (role === "implementation" || role === "repair") return ["codex_mobile_implementation", "workspace_implementation", "unknown"].includes(purpose);
     if (role === "requirements") return ["codex_mobile_implementation", "workspace_implementation", "unknown"].includes(purpose);
@@ -1961,17 +2082,39 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   function lifecycleThread(thread = {}, input = {}) {
     const role = roleFromLifecycle(input);
     const classification = routingService.assertLoopRoleTarget({
-      role: role === "home_ai_worker" ? "implementation" : role,
+      role: isWorkerLifecycleRole(role) ? "implementation" : role,
       thread,
     }).classification || routingService.classifyThreadPurpose(thread);
     const nonDeliverable = explicitNonDeliverability(thread);
+    const workerRecord = isWorkerLifecycleRole(role) ? workerLaneRecordForThread(thread) : null;
+    const workerLifecycle = workerRecord ? workerLaneTerminalState(workerRecord) : { unavailable: false, reason: "" };
     const cwd = compactOneLine(thread.cwd || thread.workspace || thread.targetWorkspace);
     const requestedCwd = compactOneLine(input.cwd || input.workspaceCwd || input.workspace || input.targetWorkspace);
     const cwdMatches = !requestedCwd || normalizeCwd(cwd) === normalizeCwd(requestedCwd);
-    const roleSignal = role === "home_ai_worker"
-      ? classification.purpose === "worker_lane"
+    const requestedPluginId = pluginIdFromLifecycle(input);
+    const workerRoleMatches = !isWorkerLifecycleRole(role)
+      ? true
+      : workerRecord
+        ? compactOneLine(workerRecord.role) === role
+        : compactOneLine(thread.threadRole || thread.thread_role || thread.role || thread.taskCardRole || thread.task_card_role).toLowerCase() === role
+          || (role === "home_ai_worker" && classification.purpose === "worker_lane" && !requestedPluginId);
+    const pluginMatches = role !== "plugin_worker" || !requestedPluginId
+      || pluginIdFromLifecycle(workerRecord || thread) === requestedPluginId;
+    const sourceThreadId = compactOneLine(input.sourceThreadId || input.source_thread_id);
+    const selfTarget = sourceThreadId && sameThreadId(sourceThreadId, threadIdOf(thread));
+    const roleSignal = isWorkerLifecycleRole(role)
+      ? classification.purpose === "worker_lane" && workerRoleMatches && pluginMatches
       : !role || role === "requirements" || role === "product_audit" || role === "deploy_readback" || threadHasRoleLaneSignal(role, thread);
-    const deliverable = !nonDeliverable.unavailable && cwdMatches && lifecyclePurposeAllowed(role, classification) && roleSignal;
+    const deliverable = !nonDeliverable.unavailable && !workerLifecycle.unavailable && !selfTarget && cwdMatches && lifecyclePurposeAllowed(role, classification) && roleSignal;
+    let deliverabilityReason = "eligible";
+    if (!deliverable) {
+      deliverabilityReason = nonDeliverable.reason
+        || workerLifecycle.reason
+        || (selfTarget ? "source_thread_self" : "")
+        || (!cwdMatches ? "workspace_mismatch" : "")
+        || (!roleSignal ? (isWorkerLifecycleRole(role) && !workerRoleMatches ? "role_mismatch" : "role_signal_missing") : "")
+        || "purpose_mismatch";
+    }
     return {
       id: threadIdOf(thread),
       title: boundedText(thread.title || thread.name || thread.preview, 120),
@@ -1982,11 +2125,13 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       purposeReason: classification.reason || "",
       status: compactOneLine(thread.status && (thread.status.type || thread.status.status) || thread.status),
       deliverable,
-      deliverabilityReason: deliverable ? "eligible" : nonDeliverable.reason || (!cwdMatches ? "workspace_mismatch" : !roleSignal ? "role_signal_missing" : "purpose_mismatch"),
+      deliverabilityReason,
     };
   }
 
   function lifecycleList(input = {}) {
+    const role = roleFromLifecycle(input);
+    if (isWorkerLifecycleRole(role)) return workerLifecycleList(Object.assign({}, input, { role }));
     const rows = visibleThreads()
       .map((thread) => lifecycleThread(thread, input))
       .filter((thread) => thread.id && (input.includeIneligible === true || thread.deliverable))
@@ -1995,6 +2140,8 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   }
 
   function lifecycleResolve(input = {}) {
+    const role = roleFromLifecycle(input);
+    if (isWorkerLifecycleRole(role)) return workerLifecycleResolve(Object.assign({}, input, { role }));
     const threadId = compactOneLine(input.threadId || input.targetThreadId);
     const rows = lifecycleList(Object.assign({}, input, { includeIneligible: true })).threads;
     const resolved = threadId
@@ -2004,12 +2151,194 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return { ok: resolved.deliverable, action: "resolve", thread: resolved, error: resolved.deliverable ? "" : "thread_lifecycle_target_not_deliverable" };
   }
 
+  function workerThreadFromRecord(record = {}) {
+    return readThreadSummary(record.threadId) || {
+      id: record.threadId,
+      threadId: record.threadId,
+      title: record.title,
+      name: record.title,
+      preview: record.title,
+      cwd: record.cwd,
+      threadRole: record.role,
+      pluginId: record.pluginId,
+      workerPurpose: record.workerPurpose,
+      status: { type: record.lifecycleStatus || "available" },
+    };
+  }
+
+  function workerLifecycleList(input = {}) {
+    const byId = new Map();
+    for (const record of workerLanesState()) {
+      if (!workerLaneRecordMatchesInput(record, input)) continue;
+      const row = publicWorkerLane(record, workerThreadFromRecord(record), input);
+      if (row.id && (input.includeIneligible === true || row.deliverable)) byId.set(row.id, row);
+    }
+    for (const thread of visibleThreads()) {
+      const row = lifecycleThread(thread, input);
+      if (!row.id) continue;
+      if (byId.has(row.id)) continue;
+      if (row.purpose !== "worker_lane") continue;
+      if (input.includeIneligible === true || row.deliverable) byId.set(row.id, row);
+    }
+    const rows = [...byId.values()]
+      .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")) || left.id.localeCompare(right.id))
+      .slice(0, Math.max(1, Math.min(80, Number(input.limit || 40) || 40)));
+    return { ok: true, action: "list", count: rows.length, threads: rows };
+  }
+
+  function workerLifecycleResolve(input = {}) {
+    const threadId = compactOneLine(input.threadId || input.targetThreadId);
+    const rows = workerLifecycleList(Object.assign({}, input, { includeIneligible: true })).threads;
+    const resolved = threadId
+      ? rows.find((thread) => sameThreadId(thread.id, threadId))
+      : rows.find((thread) => thread.deliverable);
+    if (!resolved) return { ok: false, action: "resolve", error: "thread_lifecycle_target_not_found", threads: rows.slice(0, 8) };
+    return { ok: resolved.deliverable, action: "resolve", thread: resolved, error: resolved.deliverable ? "" : "thread_lifecycle_target_not_deliverable" };
+  }
+
+  function findWorkerLaneRecord(input = {}) {
+    const workerLaneId = compactOneLine(input.workerLaneId || input.worker_lane_id);
+    const threadId = compactOneLine(input.threadId || input.targetThreadId);
+    const requestId = compactWorkerRequestId(input);
+    const lanes = workerLanesState();
+    if (workerLaneId) {
+      const found = lanes.find((lane) => compactOneLine(lane.workerLaneId) === workerLaneId);
+      if (found) return found;
+    }
+    if (threadId) {
+      const found = lanes.find((lane) => sameThreadId(lane.threadId, threadId));
+      if (found) return found;
+    }
+    if (requestId) {
+      const found = lanes.find((lane) => workerRecordHasRequestId(lane, requestId));
+      if (found) return found;
+    }
+    return lanes.find((lane) => workerLaneRecordMatchesInput(lane, input)) || null;
+  }
+
+  async function ensureWorkerLane(input = {}) {
+    const role = roleFromLifecycle(input);
+    const action = compactOneLine(input.action || "ensure").toLowerCase();
+    if (!isWorkerLifecycleRole(role)) return { ok: false, action, error: "thread_lifecycle_worker_role_required" };
+    const cwd = compactOneLine(input.cwd || input.workspaceCwd || input.workspace || input.targetWorkspace);
+    if (!cwd) return { ok: false, action, error: "thread_lifecycle_worker_workspace_required" };
+    const pluginId = pluginIdFromLifecycle(input);
+    if (role === "plugin_worker" && !pluginId) return { ok: false, action, error: "thread_lifecycle_plugin_id_required" };
+    const sourceThreadId = compactOneLine(input.sourceThreadId || input.source_thread_id || input.threadId);
+    if (!sourceThreadId) return { ok: false, action, error: "thread_lifecycle_source_thread_required" };
+    const requestId = compactWorkerRequestId(input);
+    const existing = findWorkerLaneRecord(input);
+    if (existing && (workerRecordHasRequestId(existing, requestId) || !workerLaneTerminalState(existing).unavailable)) {
+      rememberWorkerRequestId(existing, requestId);
+      existing.updatedAt = nowIso(clock);
+      saveState();
+      const row = publicWorkerLane(existing, workerThreadFromRecord(existing), input);
+      return { ok: row.deliverable, action, created: false, thread: row, error: row.deliverable ? "" : "thread_lifecycle_target_not_deliverable" };
+    }
+    if (typeof dependencies.createLoopRoleThread !== "function") {
+      return { ok: false, action, error: "thread_lifecycle_worker_create_unavailable" };
+    }
+    const sourceThread = readThreadSummary(sourceThreadId) || {
+      id: sourceThreadId,
+      threadId: sourceThreadId,
+      title: input.sourceThreadTitle || input.sourceTitle || sourceThreadId,
+      cwd,
+    };
+    const purpose = workerPurposeFromLifecycle(input);
+    const thread = await dependencies.createLoopRoleThread({
+      role,
+      sourceThread: publicThread(sourceThread),
+      cwd,
+      title: workerLaneTitle(sourceThread, purpose, cwd),
+      threadRole: role,
+      pluginId,
+      workerPurpose: purpose,
+    });
+    const threadId = threadIdOf(thread);
+    if (!threadId) return { ok: false, action, error: "thread_lifecycle_worker_create_missing_thread_id" };
+    if (sameThreadId(threadId, sourceThreadId)) return { ok: false, action, error: "thread_lifecycle_target_self_disallowed" };
+    const timestamp = nowIso(clock);
+    const record = {
+      workerLaneId: `worker_${stableHash(`${workerLaneKey(Object.assign({}, input, { role, cwd, pluginId, purpose }))}|${threadId}`, 16)}`,
+      threadId,
+      title: boundedText(thread.title || thread.name || thread.preview || workerLaneTitle(sourceThread, purpose, cwd), 120),
+      role,
+      cwd,
+      pluginId,
+      workerPurpose: purpose,
+      sourceThreadId,
+      lifecycleStatus: "available",
+      requestIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    rememberWorkerRequestId(record, requestId);
+    workerLanesState().unshift(record);
+    saveState();
+    const row = publicWorkerLane(record, thread, input);
+    return { ok: row.deliverable, action, created: true, thread: row, error: row.deliverable ? "" : "thread_lifecycle_target_not_deliverable" };
+  }
+
+  function updateWorkerLaneLifecycle(input = {}, nextStatus = "") {
+    const action = compactOneLine(input.action || nextStatus || "status").toLowerCase();
+    const record = findWorkerLaneRecord(input);
+    if (!record) return { ok: false, action, error: "thread_lifecycle_target_not_found" };
+    const timestamp = nowIso(clock);
+    if (nextStatus === "retired") record.retired = true;
+    if (nextStatus === "disabled") record.disabled = true;
+    if (nextStatus === "archived") record.archived = true;
+    if (nextStatus === "available" || nextStatus === "idle" || nextStatus === "completed") {
+      record.retired = false;
+      record.disabled = false;
+      record.archived = false;
+    }
+    if (nextStatus) record.lifecycleStatus = nextStatus;
+    record.updatedAt = timestamp;
+    saveState();
+    const row = publicWorkerLane(record, workerThreadFromRecord(record), Object.assign({}, input, { role: record.role }));
+    return { ok: row.deliverable || ["retired", "disabled", "archived"].includes(nextStatus), action, thread: row };
+  }
+
+  function updateWorkerLaneHeartbeat(input = {}) {
+    const action = "heartbeat";
+    const record = findWorkerLaneRecord(input);
+    if (!record) return { ok: false, action, error: "thread_lifecycle_target_not_found" };
+    const timestamp = nowIso(clock);
+    record.heartbeat = {
+      status: boundedText(input.status || input.heartbeatStatus || "working", 80),
+      taskCardId: boundedText(input.taskCardId || input.cardId || "", 120),
+      summary: boundedText(input.summary || input.message || "", 240),
+      updatedAt: timestamp,
+    };
+    if (record.heartbeat.taskCardId) record.lastTaskCardId = record.heartbeat.taskCardId;
+    record.updatedAt = timestamp;
+    saveState();
+    return { ok: true, action, thread: publicWorkerLane(record, workerThreadFromRecord(record), Object.assign({}, input, { role: record.role })) };
+  }
+
+  function workerLifecycleDeliverability(thread = {}) {
+    const record = workerLaneRecordForThread(thread);
+    if (!record) return { ok: true };
+    const lifecycle = workerLaneTerminalState(record);
+    if (!lifecycle.unavailable) return { ok: true, workerLaneId: record.workerLaneId, role: record.role };
+    return {
+      ok: false,
+      error: `thread_lifecycle_worker_lane_${lifecycle.reason.replace(/^lifecycle_/, "")}`,
+      message: "Target Worker lane is retired, disabled, or archived by lifecycle metadata.",
+      workerLaneId: record.workerLaneId,
+      role: record.role,
+      lifecycleStatus: record.lifecycleStatus || "",
+    };
+  }
+
   async function threadLifecycle(input = {}) {
     const action = compactOneLine(input.action || "list").toLowerCase();
     const role = roleFromLifecycle(input);
+    const workerLifecycleActions = new Set(["status", "heartbeat", "retire", "disable", "archive", "mark_available", "available", "mark_idle", "idle", "mark_completed", "mark_complete"]);
     if (action === "list") return lifecycleList(Object.assign({}, input, { role }));
     if (action === "resolve") return lifecycleResolve(Object.assign({}, input, { role }));
     if (action === "ensure" || action === "create") {
+      if (isWorkerLifecycleRole(role)) return ensureWorkerLane(Object.assign({}, input, { role, action }));
       if (!role || role === "home_ai_worker") return { ok: false, action, error: "thread_lifecycle_loop_role_required" };
       const loopId = compactOneLine(input.loopId);
       const loop = loopId ? findLoop(loopId) : null;
@@ -2020,6 +2349,23 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       return Object.assign({ action }, ensured.ok
         ? { ok: true, thread: lifecycleThread(ensured.target, { role }), slice: publicSlice(ensured.slice), loop: publicLoop(loop) }
         : ensured);
+    }
+    if (action === "status" && isWorkerLifecycleRole(role)) return workerLifecycleResolve(Object.assign({}, input, { role, action }));
+    if (action === "heartbeat" && isWorkerLifecycleRole(role)) return updateWorkerLaneHeartbeat(Object.assign({}, input, { role }));
+    if (action === "retire" && isWorkerLifecycleRole(role)) return updateWorkerLaneLifecycle(Object.assign({}, input, { role }), "retired");
+    if (action === "disable" && isWorkerLifecycleRole(role)) return updateWorkerLaneLifecycle(Object.assign({}, input, { role }), "disabled");
+    if (action === "archive" && isWorkerLifecycleRole(role)) return updateWorkerLaneLifecycle(Object.assign({}, input, { role }), "archived");
+    if ((action === "mark_available" || action === "available") && isWorkerLifecycleRole(role)) {
+      return updateWorkerLaneLifecycle(Object.assign({}, input, { role }), "available");
+    }
+    if ((action === "mark_idle" || action === "idle") && isWorkerLifecycleRole(role)) {
+      return updateWorkerLaneLifecycle(Object.assign({}, input, { role }), "idle");
+    }
+    if ((action === "mark_completed" || action === "mark_complete") && isWorkerLifecycleRole(role)) {
+      return updateWorkerLaneLifecycle(Object.assign({}, input, { role }), "completed");
+    }
+    if (workerLifecycleActions.has(action)) {
+      return { ok: false, action, error: "thread_lifecycle_worker_role_required" };
     }
     if (action === "achieve" || action === "mark_role_complete") {
       const loopId = compactOneLine(input.loopId);
@@ -2649,6 +2995,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     startSourceRequirementsForLoop,
     status,
     threadLifecycle,
+    workerLifecycleDeliverability,
   };
 }
 

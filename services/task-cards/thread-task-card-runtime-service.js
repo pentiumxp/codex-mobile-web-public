@@ -206,6 +206,12 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     attachPendingServerRequestsToResult: dependencies.attachPendingServerRequestsToResult,
     httpStatusError: dependencies.httpStatusError,
     createTargetError: dependencies.createTargetError,
+    targetLifecycleDeliverability: (thread, details, options) => {
+      if (!atLoopRuntimeService || typeof atLoopRuntimeService.workerLifecycleDeliverability !== "function") {
+        return { ok: true };
+      }
+      return atLoopRuntimeService.workerLifecycleDeliverability(thread, details, options);
+    },
     logger: dependencies.logger,
   });
 
@@ -260,6 +266,8 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
       cwd: cwd || startedThread.cwd || "",
       status: { type: "notLoaded" },
       threadRole: String(input.threadRole || role || "").trim(),
+      pluginId: String(input.pluginId || input.plugin_id || "").trim(),
+      workerPurpose: String(input.workerPurpose || input.worker_purpose || "").trim(),
     });
     if (typeof dependencies.rememberStartedThread === "function") {
       return dependencies.rememberStartedThread(thread) || thread;

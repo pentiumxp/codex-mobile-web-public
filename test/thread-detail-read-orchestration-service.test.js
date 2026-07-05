@@ -344,6 +344,81 @@ test("thread detail orchestration reuses stale partial when resting summary has 
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "hit");
 });
 
+test("thread detail orchestration clears stale-active marker once terminal usage arrives", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "completed" },
+      activeTurnId: "turn-new",
+      mobileLocalActiveStatus: { turnId: "turn-new", status: { type: "active" } },
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadLookup: (projection, summary, runtimeSettings, options) => {
+      calls.push(`projection-lookup-stale:${options.allowStalePartial === true}`);
+      return {
+        stalePartial: true,
+        staleReason: "backing-signature-mismatch",
+        result: {
+          thread: {
+            id: "thread-1",
+            activeTurnId: "turn-old",
+            mobileLocalActiveStatus: { turnId: "turn-old", status: { type: "active" } },
+            turns: [{
+              id: "turn-old",
+              status: {
+                type: "completed",
+                mobileStaleActiveTurn: true,
+                previousType: "inProgress",
+                reason: "summary-resting-active-window",
+              },
+              items: [
+                { id: "u1", type: "userMessage" },
+                { id: "a1", type: "agentMessage" },
+                { id: "usage1", type: "turnUsageSummary" },
+              ],
+            }],
+            mobileReadMode: "projection-v4-partial",
+            mobileProjection: {
+              source: "partial",
+              version: "v4",
+              partial: true,
+              stalePartial: true,
+              staleReason: "backing-signature-mismatch",
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: (event) => calls.push(`log:${event}`),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-v4-partial");
+  assert.equal(calls.includes("turns-list:turns-list-initial"), false);
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("log:projection_stale_active_turns_downgraded"), false);
+  const thread = response.body.thread;
+  assert.equal(thread.activeTurnId, undefined);
+  assert.equal(thread.mobileLocalActiveStatus, undefined);
+  assert.equal(thread.mobileStaleActiveTurn, undefined);
+  assert.equal(thread.mobileCompletedActiveTurn.count, 1);
+  assert.equal(thread.turns[0].mobileStaleActiveTurn, undefined);
+  assert.equal(thread.turns[0].mobileCompletedActiveTurn, true);
+  assert.equal(thread.turns[0].status.type, "completed");
+  assert.equal(thread.turns[0].status.mobileStaleActiveTurn, undefined);
+  assert.equal(thread.turns[0].status.mobileCompletedActiveTurn, true);
+  assert.equal(thread.turns[0].status.reason, "terminal-usage-summary");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "projection-stale-partial-hit");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "hit");
+});
+
 test("thread detail orchestration preserves active projection window newer than resting summary", async () => {
   const { service, calls } = createHarness({
     summary: {

@@ -2344,6 +2344,183 @@ test("loop thread lifecycle ensures and marks role lanes complete without title 
   assert.equal(completed.slice.dispatchStatus, "role_complete");
 });
 
+test("thread lifecycle ensures home ai worker lanes with idempotency and retirement", async () => {
+  const { createdThreads, runtime } = makeRuntime({
+    name: "thread-lifecycle-home-ai-worker",
+    visibleThreads: [{
+      id: "home-ai-main",
+      title: "Home AI",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    }, {
+      id: "home-ai-task-intake",
+      title: "Home AI Task Intake",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+      threadRole: "home_ai_task_intake",
+    }, {
+      id: "home-ai-deploy",
+      title: "Home AI Deploy Lane",
+      cwd: "/Users/hermes-dev/HermesMobileDev/app",
+      threadRole: "home_ai_deploy",
+    }],
+  });
+
+  const ensured = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "home_ai_worker",
+    sourceThreadId: "home-ai-main",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    purpose: "implementation",
+    idempotencyKey: "home-ai-worker-ensure-1",
+  });
+  assert.equal(ensured.ok, true);
+  assert.equal(ensured.created, true);
+  assert.equal(ensured.thread.threadRole, "home_ai_worker");
+  assert.equal(ensured.thread.workerPurpose, "implementation");
+  assert.equal(createdThreads[0].threadRole, "home_ai_worker");
+
+  const duplicate = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "home_ai_worker",
+    sourceThreadId: "home-ai-main",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    purpose: "implementation",
+    idempotencyKey: "home-ai-worker-ensure-1",
+  });
+  assert.equal(duplicate.ok, true);
+  assert.equal(duplicate.created, false);
+  assert.equal(duplicate.thread.id, ensured.thread.id);
+  assert.equal(createdThreads.length, 1);
+
+  const completed = await runtime.threadLifecycle({
+    action: "mark_completed",
+    role: "home_ai_worker",
+    targetThreadId: ensured.thread.id,
+  });
+  assert.equal(completed.ok, true);
+  assert.equal(completed.thread.lifecycleStatus, "completed");
+  assert.equal(completed.thread.deliverable, true);
+
+  const retired = await runtime.threadLifecycle({
+    action: "retire",
+    role: "home_ai_worker",
+    targetThreadId: ensured.thread.id,
+  });
+  assert.equal(retired.ok, true);
+  assert.equal(retired.thread.deliverable, false);
+  assert.equal(retired.thread.deliverabilityReason, "lifecycle_retired");
+
+  const resolved = await runtime.threadLifecycle({
+    action: "resolve",
+    role: "home_ai_worker",
+    targetThreadId: ensured.thread.id,
+    includeIneligible: true,
+  });
+  assert.equal(resolved.ok, false);
+  assert.equal(resolved.error, "thread_lifecycle_target_not_deliverable");
+
+  const listed = await runtime.threadLifecycle({
+    action: "list",
+    role: "home_ai_worker",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+  });
+  assert.equal(listed.ok, true);
+  assert.equal(listed.threads.some((thread) => thread.id === "home-ai-task-intake"), false);
+  assert.equal(listed.threads.some((thread) => thread.id === "home-ai-deploy"), false);
+  assert.equal(listed.threads.some((thread) => thread.id === ensured.thread.id), false);
+});
+
+test("thread lifecycle supports plugin worker lanes distinct from plugin loop and deploy lanes", async () => {
+  const { createdThreads, runtime } = makeRuntime({
+    name: "thread-lifecycle-plugin-worker",
+    visibleThreads: [{
+      id: "movie-main",
+      title: "Movie",
+      cwd: "/Users/hermes-dev/HermesMobileDev/Movie",
+    }, {
+      id: "movie-loop-implementation",
+      title: "Movie Loop Implement",
+      cwd: "/Users/hermes-dev/HermesMobileDev/Movie",
+      threadRole: "implementation",
+    }, {
+      id: "movie-deploy",
+      title: "Movie Deploy Lane",
+      cwd: "/Users/hermes-dev/HermesMobileDev/Movie",
+      threadRole: "plugin_deployment",
+    }],
+  });
+
+  const missingPlugin = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    sourceThreadId: "movie-main",
+    cwd: "/Users/hermes-dev/HermesMobileDev/Movie",
+  });
+  assert.equal(missingPlugin.ok, false);
+  assert.equal(missingPlugin.error, "thread_lifecycle_plugin_id_required");
+
+  const ensured = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "movie",
+    sourceThreadId: "movie-main",
+    cwd: "/Users/hermes-dev/HermesMobileDev/Movie",
+    purpose: "review",
+    requestId: "movie-worker-review",
+  });
+  assert.equal(ensured.ok, true);
+  assert.equal(ensured.created, true);
+  assert.equal(ensured.thread.pluginId, "movie");
+  assert.equal(ensured.thread.workerPurpose, "review");
+  assert.equal(createdThreads[0].threadRole, "plugin_worker");
+
+  const duplicate = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "movie",
+    sourceThreadId: "movie-main",
+    cwd: "/Users/hermes-dev/HermesMobileDev/Movie",
+    purpose: "review",
+    requestId: "movie-worker-review",
+  });
+  assert.equal(duplicate.ok, true);
+  assert.equal(duplicate.created, false);
+  assert.equal(duplicate.thread.id, ensured.thread.id);
+  assert.equal(createdThreads.length, 1);
+
+  const heartbeat = await runtime.threadLifecycle({
+    action: "heartbeat",
+    role: "plugin_worker",
+    pluginId: "movie",
+    targetThreadId: ensured.thread.id,
+    taskCardId: "ttc_plugin_worker",
+    status: "working",
+    summary: "bounded progress",
+  });
+  assert.equal(heartbeat.ok, true);
+  assert.equal(heartbeat.thread.heartbeat.taskCardId, "ttc_plugin_worker");
+  assert.equal(heartbeat.thread.heartbeat.summary, "bounded progress");
+
+  const listed = await runtime.threadLifecycle({
+    action: "list",
+    role: "plugin_worker",
+    pluginId: "movie",
+    cwd: "/Users/hermes-dev/HermesMobileDev/Movie",
+    includeIneligible: true,
+  });
+  assert.equal(listed.ok, true);
+  assert.equal(listed.threads.some((thread) => thread.id === ensured.thread.id && thread.deliverable), true);
+  assert.equal(listed.threads.some((thread) => thread.id === "movie-loop-implementation"), false);
+  assert.equal(listed.threads.some((thread) => thread.id === "movie-deploy"), false);
+
+  const retired = await runtime.threadLifecycle({
+    action: "retire",
+    role: "plugin_worker",
+    targetThreadId: ensured.thread.id,
+  });
+  assert.equal(retired.ok, true);
+  assert.equal(retired.thread.deliverable, false);
+});
+
 test("loop watchdog marks stale returns without retrying or completing work", async () => {
   const initial = Date.parse("2026-07-03T01:00:00.000Z");
   const { cards, runtime, setNow } = makeRuntime({ name: "watchdog", now: initial });

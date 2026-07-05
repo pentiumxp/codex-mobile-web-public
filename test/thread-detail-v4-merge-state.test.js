@@ -212,3 +212,51 @@ test("non-regressive v4 projection drops stale active-like turn superseded by ne
   const merged = policy.mergeV4ProjectionThread(existing, incoming);
   assert.deepEqual(merged.turns.map((candidate) => candidate.id), ["new-receipt-turn"]);
 });
+
+test("partial active v4 refresh preserves visible completed receipts omitted by active window", () => {
+  const policy = createPolicy();
+  const existing = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 20,
+    turns: [
+      turn("completed-receipt", [
+        userMessage("task request"),
+        { type: "agentMessage", id: "receipt", text: "completed receipt" },
+      ], {
+        startedAtMs: 100,
+        completedAtMs: 200,
+        status: { type: "completed" },
+      }),
+      turn("active-turn", [
+        userMessage("follow-up"),
+        { type: "agentMessage", id: "active-progress", text: "working" },
+      ], {
+        startedAtMs: 300,
+        status: { type: "running" },
+      }),
+    ],
+  };
+  const incoming = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 21,
+    mobileReadMode: "projection-v4-partial",
+    mobileProjection: { version: "v4", partial: true, source: "partial" },
+    turns: [
+      turn("active-turn", [
+        userMessage("follow-up"),
+        { type: "agentMessage", id: "active-progress-2", text: "still working" },
+      ], {
+        startedAtMs: 300,
+        status: { type: "running" },
+      }),
+    ],
+  };
+
+  const merged = policy.mergeV4ProjectionThread(existing, incoming);
+
+  assert.deepEqual(merged.turns.map((candidate) => candidate.id), ["completed-receipt", "active-turn"]);
+  assert.equal(merged.turns[0].items.some((item) => item && item.id === "receipt"), true);
+  assert.equal(merged.turns[1].items.some((item) => item && item.id === "active-progress-2"), true);
+});

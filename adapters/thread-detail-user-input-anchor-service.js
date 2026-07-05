@@ -85,6 +85,22 @@ function timestampFields(entry = {}) {
   };
 }
 
+function comparableAnchorText(item = {}) {
+  return text(item.text).replace(/\s+/g, " ");
+}
+
+function userInputAnchorsLikelySame(left = {}, right = {}) {
+  const leftText = comparableAnchorText(left);
+  const rightText = comparableAnchorText(right);
+  if (!leftText || !rightText || leftText !== rightText) return false;
+  const leftTimestamp = displayTimestampMs(left);
+  const rightTimestamp = displayTimestampMs(right);
+  if (leftTimestamp && rightTimestamp) return leftTimestamp === rightTimestamp;
+  const leftId = text(left.id || left.itemId || left.item_id);
+  const rightId = text(right.id || right.itemId || right.item_id);
+  return Boolean(leftId && rightId && leftId === rightId);
+}
+
 function userInputAnchorItem(entry = {}, turnId = "", index = 0, options = {}) {
   const payload = entry && entry.payload && typeof entry.payload === "object" ? entry.payload : {};
   const limit = Math.max(256, Number(options.textLimit || DEFAULT_TEXT_LIMIT) || DEFAULT_TEXT_LIMIT);
@@ -120,7 +136,9 @@ function collectRolloutUserInputAnchors(entries = [], options = {}) {
     if (!turnId) continue;
     if (!byTurn.has(turnId)) byTurn.set(turnId, []);
     const list = byTurn.get(turnId);
-    list.push(userInputAnchorItem(entry, turnId, list.length, options));
+    const anchor = userInputAnchorItem(entry, turnId, list.length, options);
+    if (list.some((existing) => userInputAnchorsLikelySame(existing, anchor))) continue;
+    list.push(anchor);
     if (list.length > maxPerTurn) list.splice(0, list.length - maxPerTurn);
   }
   return { byTurn, scopedCount: Array.from(byTurn.values()).reduce((sum, list) => sum + list.length, 0) };

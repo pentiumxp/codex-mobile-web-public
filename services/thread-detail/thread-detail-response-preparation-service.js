@@ -28,6 +28,7 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
   const workspaceContextStatsForCwd = typeof dependencies.workspaceContextStatsForCwd === "function" ? dependencies.workspaceContextStatsForCwd : () => ({});
   const backfillMissingRolloutCompletionTurnsForDetailResult = typeof dependencies.backfillMissingRolloutCompletionTurnsForDetailResult === "function" ? dependencies.backfillMissingRolloutCompletionTurnsForDetailResult : (result) => result;
   const appendRolloutUserInputAnchorsToDetailResult = typeof dependencies.appendRolloutUserInputAnchorsToDetailResult === "function" ? dependencies.appendRolloutUserInputAnchorsToDetailResult : (result) => result;
+  const appendRolloutLatestCompletedAssistantItemsToDetailResult = typeof dependencies.appendRolloutLatestCompletedAssistantItemsToDetailResult === "function" ? dependencies.appendRolloutLatestCompletedAssistantItemsToDetailResult : (result) => result;
   const appendRolloutActiveAssistantItemsToDetailResult = typeof dependencies.appendRolloutActiveAssistantItemsToDetailResult === "function" ? dependencies.appendRolloutActiveAssistantItemsToDetailResult : (result) => result;
   const finalizeActiveAssistantProjectionDetailResult = typeof dependencies.finalizeActiveAssistantProjectionDetailResult === "function" ? dependencies.finalizeActiveAssistantProjectionDetailResult : (result) => result;
   const applyLocalActiveThreadStatusToResult = typeof dependencies.applyLocalActiveThreadStatusToResult === "function" ? dependencies.applyLocalActiveThreadStatusToResult : (result) => result;
@@ -165,9 +166,14 @@ function createThreadDetailResponsePreparationService(dependencies = {}) {
       : appendRolloutUserInputAnchorsToDetailResult(usageDecorated);
     markPrepareTiming(timings, "prepareUserInputAnchorsMs", phaseStartedAtMs);
     phaseStartedAtMs = Date.now();
-    const activeAssistantDecorated = turnsListWindow
+    const latestCompletedAssistantDecorated = turnsListWindow
       ? inputAnchored
-      : appendRolloutActiveAssistantItemsToDetailResult(inputAnchored);
+      : appendRolloutLatestCompletedAssistantItemsToDetailResult(inputAnchored);
+    markPrepareTiming(timings, "prepareLatestCompletedAssistantMs", phaseStartedAtMs);
+    phaseStartedAtMs = Date.now();
+    const activeAssistantDecorated = turnsListWindow
+      ? latestCompletedAssistantDecorated
+      : appendRolloutActiveAssistantItemsToDetailResult(latestCompletedAssistantDecorated);
     markPrepareTiming(timings, "prepareActiveAssistantMs", phaseStartedAtMs);
     phaseStartedAtMs = Date.now();
     const detailResult = turnsListWindow

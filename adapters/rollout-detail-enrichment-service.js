@@ -170,10 +170,6 @@ function createRolloutDetailEnrichmentService(dependencies = {}) {
   }
 
   function readRolloutEnrichmentEntries(rolloutPath) {
-    const indexed = rolloutEnrichmentIndexService.read(rolloutPath);
-    if (indexed && !indexed.readError) {
-      return Array.isArray(indexed.entries) ? indexed.entries : [];
-    }
     if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return [];
     let stat = null;
     try {
@@ -181,6 +177,12 @@ function createRolloutDetailEnrichmentService(dependencies = {}) {
       if (!stat.isFile() || stat.size <= 0) return [];
     } catch (_) {
       return [];
+    }
+    if (stat.size <= maxRuntimeContextScanBytes) {
+      const indexed = rolloutEnrichmentIndexService.read(rolloutPath);
+      if (indexed && !indexed.readError) {
+        return Array.isArray(indexed.entries) ? indexed.entries : [];
+      }
     }
     const pathKey = normalizeFsPath(rolloutPath);
     const nowMs = Date.now();

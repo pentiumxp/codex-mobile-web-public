@@ -218,6 +218,14 @@ function createThreadDetailRolloutBackfillService(dependencies = {}) {
     });
   }
 
+  function rolloutLatestCompletedAssistantItem(entry, turnId, text, index) {
+    return Object.assign({}, rolloutProgressItem(entry, turnId, text, index), {
+      id: `mobile-completed-replay-message-${turnId || "unscoped"}-${index}-${stableTextHash(text)}`,
+      source: "rollout_completed_replay_assistant",
+      mobileSyntheticCompletedReplayAssistant: true,
+    });
+  }
+
   function appendRolloutProgressMessage(progressByTurn, entry, turnId) {
     if (!turnId || threadDetailCompletedProgressMessages <= 0) return;
     const text = rolloutProgressTextFromEntry(entry);
@@ -346,13 +354,14 @@ function createThreadDetailRolloutBackfillService(dependencies = {}) {
       ? options.targetTurnIds.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
     const targetSet = new Set(targetTurnIds);
+    const mode = String(options.mode || "active").trim() || "active";
     if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath) || !targetSet.size) {
       return { byTurn: new Map(), scopedCount: 0 };
     }
     let cacheKey = "";
     try {
       const stat = fs.statSync(rolloutPath);
-      cacheKey = `${runtimeContextCacheKey(rolloutPath, stat)}:active-assistant:${targetTurnIds.sort().join(",")}`;
+      cacheKey = `${runtimeContextCacheKey(rolloutPath, stat)}:${mode}-assistant:${targetTurnIds.sort().join(",")}`;
       const cached = latestFinalReceiptsByPath.get(cacheKey);
       if (cached && Date.now() - cached.cachedAt <= runtimeContextCacheTtlMs) {
         return cloneRolloutAssistantItemsPayload(cached.payload);
@@ -382,7 +391,9 @@ function createThreadDetailRolloutBackfillService(dependencies = {}) {
         items = [];
         byTurn.set(turnId, items);
       }
-      items.push(rolloutActiveAssistantItem(entry, turnId, text, items.length));
+      items.push(mode === "latest-completed"
+        ? rolloutLatestCompletedAssistantItem(entry, turnId, text, items.length)
+        : rolloutActiveAssistantItem(entry, turnId, text, items.length));
       scopedCount += 1;
     }
     const payload = { byTurn, scopedCount };
@@ -634,6 +645,67 @@ function createThreadDetailRolloutBackfillService(dependencies = {}) {
     }
     if (!changed) return result;
     out.thread.mobileActiveRolloutAssistantBackfilled = true;
+    return out;
+  }
+
+  function latestCompletedAssistantReplayTurn(thread) {
+    if (!thread || !Array.isArray(thread.turns)) return null;
+    for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
+      const turn = thread.turns[index];
+      if (!turn || isLiveTurn(turn) || !isCompletedStatus(turn.status)) continue;
+      if (!Array.isArray(turn.items) || !turn.items.length) continue;
+      return turn;
+    }
+    return null;
+  }
+
+  function appendRolloutLatestCompletedAssistantItemsToDetailResult(result) {
+    const thread = result && result.thread;
+    if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return result;
+    const rolloutPath = rolloutPathForThread(thread);
+    if (!rolloutPath) return result;
+    const latest = latestCompletedAssistantReplayTurn(thread);
+    const turnId = latest ? turnIdentifier(latest) : "";
+    if (!turnId) return result;
+    const payload = readRolloutActiveAssistantItems(rolloutPath, {
+      targetTurnIds: [turnId],
+      mode: "latest-completed",
+    });
+    const rolloutItems = payload && payload.byTurn instanceof Map ? payload.byTurn.get(turnId) : null;
+    if (!Array.isArray(rolloutItems) || !rolloutItems.length) return result;
+    const existingAssistantCount = (Array.isArray(latest.items) ? latest.items : [])
+      .filter(isAssistantReceiptItem)
+      .length;
+    if (existingAssistantCount >= rolloutItems.length) return result;
+    const out = Object.assign({}, result, {
+      thread: cloneThreadForUsageDecoration(thread),
+    });
+    const outLatest = latestCompletedAssistantReplayTurn(out.thread);
+    if (!outLatest) return result;
+    outLatest.items = Array.isArray(outLatest.items) ? outLatest.items : [];
+    const existingIds = new Set(outLatest.items.map(visibleItemId).filter(Boolean));
+    const existingTexts = new Set(outLatest.items
+      .filter(isAssistantReceiptItem)
+      .map((item) => normalizeFinalReceiptText(assistantReceiptText(item)))
+      .filter(Boolean));
+    let inserted = 0;
+    for (const item of rolloutItems) {
+      const id = visibleItemId(item);
+      const normalized = normalizeFinalReceiptText(assistantReceiptText(item));
+      if ((id && existingIds.has(id)) || (normalized && existingTexts.has(normalized))) continue;
+      insertProjectedItemByTimestamp(outLatest.items, clonePlainJson(item));
+      if (id) existingIds.add(id);
+      if (normalized) existingTexts.add(normalized);
+      inserted += 1;
+    }
+    if (!inserted) return result;
+    orderTurnItemsByDisplayTimestamp(outLatest);
+    outLatest.mobileCompletedReplayAssistantBackfilled = true;
+    outLatest.mobileCompletedReplayAssistantBackfillCount = inserted;
+    out.thread.mobileCompletedReplayAssistantBackfilled = {
+      turnId,
+      count: inserted,
+    };
     return out;
   }
 
@@ -937,6 +1009,7 @@ function createThreadDetailRolloutBackfillService(dependencies = {}) {
   return {
     appendMissingRolloutCompletionTurnsToThread,
     appendRolloutActiveAssistantItemsToDetailResult,
+    appendRolloutLatestCompletedAssistantItemsToDetailResult,
     appendRolloutEmptyCompletionDiagnosticsToThread,
     appendRolloutFinalReceiptsToThread,
     appendRolloutUserInputAnchorsToDetailResult,

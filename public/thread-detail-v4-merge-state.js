@@ -196,6 +196,29 @@
       });
     }
 
+    function incomingThreadIsPartialActiveRefresh(incomingThread, incomingTurns = []) {
+      if (!incomingThread) return false;
+      const readMode = String(incomingThread.mobileReadMode || "");
+      const projection = incomingThread.mobileProjection && typeof incomingThread.mobileProjection === "object"
+        ? incomingThread.mobileProjection
+        : {};
+      const partialLike = /projection-v4-partial/i.test(readMode)
+        || projection.partial === true
+        || /partial/i.test(String(projection.source || ""));
+      return Boolean(partialLike && (incomingTurns || []).some(isActiveLikeProjectionTurn));
+    }
+
+    function incomingTurnsHaveNewerCompletedVisibleTurn(existingTurn, incomingTurns = []) {
+      const existingOrder = turnOrderMs(existingTurn);
+      if (!existingOrder) return false;
+      return (incomingTurns || []).some((incomingTurn) => {
+        if (!incomingTurn || String(incomingTurn.id || "") === String(existingTurn && existingTurn.id || "")) return false;
+        if (!isTurnComplete(incomingTurn) || turnVisibleWeight(incomingTurn) <= 0) return false;
+        const incomingOrder = turnOrderMs(incomingTurn);
+        return Boolean(incomingOrder && incomingOrder > existingOrder);
+      });
+    }
+
     function existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns) {
       const visibleItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : [])
         .filter((item) => item && turnVisibleWeight({ items: [item] }) > 0 && !isReasoningItem(item));
@@ -210,6 +233,13 @@
       if (existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns)) return false;
       const activeLike = isActiveLikeProjectionTurn(existingTurn);
       const regressiveRefresh = isV4ProjectionRefreshRegressive(existingThread, incomingThread);
+      if (!activeLike
+        && !regressiveRefresh
+        && isTurnComplete(existingTurn)
+        && incomingThreadIsPartialActiveRefresh(incomingThread, incomingTurns)
+        && !incomingTurnsHaveNewerCompletedVisibleTurn(existingTurn, incomingTurns)) {
+        return true;
+      }
       if (!activeLike && !regressiveRefresh) return false;
       return !incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns);
     }

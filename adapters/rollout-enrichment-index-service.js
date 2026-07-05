@@ -56,6 +56,7 @@ function snapshot(index, extra = {}) {
 
 function createRolloutEnrichmentIndexService(options = {}) {
   const maxIndexes = Math.max(1, safeNumber(options.maxIndexes) || 200);
+  const maxEntriesPerIndex = Math.max(1, safeNumber(options.maxEntriesPerIndex) || 20000);
   const chunkBytes = Math.max(64 * 1024, safeNumber(options.chunkBytes) || 1024 * 1024);
   const now = typeof options.now === "function" ? options.now : () => Date.now();
   const parseJsonLine = typeof options.parseJsonLine === "function" ? options.parseJsonLine : defaultParseJsonLine;
@@ -105,6 +106,7 @@ function createRolloutEnrichmentIndexService(options = {}) {
       }
       index.entries.push(parsed);
       parsedLines += 1;
+      while (index.entries.length > maxEntriesPerIndex) index.entries.shift();
     }
     index.parsedLineCount += parsedLines;
     index.parseErrorCount += parseErrors;
@@ -207,6 +209,7 @@ function createRolloutEnrichmentIndexService(options = {}) {
     return {
       size: indexes.size,
       maxIndexes,
+      maxEntriesPerIndex,
       paths: Array.from(indexes.keys()),
     };
   }

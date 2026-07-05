@@ -122,6 +122,7 @@ try {
 const {
   anyThreadMatchesVisibleWorkspace,
   appendRolloutActiveAssistantItemsToDetailResult,
+  appendRolloutLatestCompletedAssistantItemsToDetailResult,
   applyLocalActiveThreadStatusToSummary,
   attachRolloutFallbackStatus,
   clearLocalActiveThreadStatus,
@@ -2158,6 +2159,74 @@ test("active detail appends missing rollout assistant items for live turns", () 
       "missing assistant progress",
     ]);
     assert.equal(activeTurn.items.filter((item) => item.mobileSyntheticActiveAssistant === true).length, 1);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("detail appends missing rollout assistant items for latest completed replay", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-completed-rollout-assistant-"));
+  try {
+    const rolloutPath = path.join(tempDir, "rollout.jsonl");
+    const completedTurnId = "019e9100-0000-7000-8000-complete";
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "turn_context",
+        timestamp: "2026-06-28T10:00:00.000Z",
+        payload: { turn_id: completedTurnId },
+      }),
+      JSON.stringify({
+        type: "response_item",
+        timestamp: "2026-06-28T10:00:01.000Z",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "already visible" }],
+        },
+      }),
+      JSON.stringify({
+        type: "response_item",
+        timestamp: "2026-06-28T10:00:02.000Z",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "missing completed receipt" }],
+        },
+      }),
+    ].join("\n") + "\n", "utf8");
+
+    const result = appendRolloutLatestCompletedAssistantItemsToDetailResult({
+      thread: {
+        id: "thread-completed",
+        path: rolloutPath,
+        status: { type: "active" },
+        activeTurnId: "active-turn",
+        turns: [{
+          id: completedTurnId,
+          status: { type: "completed" },
+          items: [
+            { id: "u1", type: "userMessage", text: "question" },
+            { id: "existing-agent", type: "agentMessage", text: "already visible" },
+            { id: "usage", type: "turnUsageSummary" },
+          ],
+        }, {
+          id: "active-turn",
+          status: { type: "inProgress" },
+          items: [{ id: "active-agent", type: "agentMessage", text: "active" }],
+        }],
+      },
+    });
+
+    const completedTurn = result.thread.turns.find((turn) => turn.id === completedTurnId);
+    assert.equal(result.thread.mobileCompletedReplayAssistantBackfilled.count, 1);
+    assert.equal(completedTurn.mobileCompletedReplayAssistantBackfilled, true);
+    assert.deepEqual(completedTurn.items
+      .filter((item) => item.type === "agentMessage")
+      .map((item) => item.text), [
+      "already visible",
+      "missing completed receipt",
+    ]);
+    assert.equal(completedTurn.items.filter((item) => item.mobileSyntheticCompletedReplayAssistant === true).length, 1);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

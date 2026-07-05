@@ -139,6 +139,40 @@ test("client-event stall self-check blocks conversation patch fallbacks", () => 
   assert.equal(summary.issues[0].code, "browser_conversation_patch_fallback");
 });
 
+test("client-event stall self-check blocks early shell DOM drops after nonempty render", () => {
+  const text = [
+    '[client-event] conversation_render_ms {"ts":"2026-07-02T01:29:00.000Z","details":{"source":"single-thread-early-shell","domUpdateAction":"set-inner-html","updateReason":"signature-changed","previousChildCount":12,"childCount":1,"htmlChars":150,"sameThreadRender":true,"threadHash":"h_thread","previousRenderedThreadHash":"h_thread"}}',
+  ].join("\n");
+
+  const summary = summarizeClientEventText(text, {
+    nowMs: Date.parse("2026-07-02T01:29:10.000Z"),
+  });
+
+  assert.equal(summary.ok, false);
+  assert.equal(summary.blockingIssueCount, 1);
+  assert.equal(summary.sampleSummary.conversationDomDropEventCount, 1);
+  assert.equal(summary.issues.some((issue) => issue.code === "browser_conversation_render_dom_drop"), true);
+  const issue = summary.issues.find((item) => item.code === "browser_conversation_render_dom_drop");
+  assert.equal(issue.severity, "H2");
+  assert.equal(issue.counts.previous_child_count, 12);
+  assert.equal(issue.counts.child_count, 1);
+  assert.doesNotMatch(JSON.stringify(summary), /thread-secret|private/);
+});
+
+test("client-event stall self-check ignores cross-thread early shell DOM drops", () => {
+  const text = [
+    '[client-event] conversation_render_ms {"ts":"2026-07-02T01:29:00.000Z","details":{"source":"single-thread-early-shell","domUpdateAction":"set-inner-html","updateReason":"signature-changed","previousChildCount":12,"childCount":1,"htmlChars":150,"sameThreadRender":false,"threadHash":"h_next","previousRenderedThreadHash":"h_previous"}}',
+  ].join("\n");
+
+  const summary = summarizeClientEventText(text, {
+    nowMs: Date.parse("2026-07-02T01:29:10.000Z"),
+  });
+
+  assert.equal(summary.ok, true);
+  assert.equal(summary.blockingIssueCount, 0);
+  assert.equal(summary.sampleSummary.conversationDomDropEventCount, 0);
+});
+
 test("client-event stall self-check ignores stale or untimed severe stalls for blocking gates", () => {
   const text = [
     '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T16:00:00.000Z","details":{"maxRafDelayMs":5000}}',

@@ -46,6 +46,7 @@ function fakeRoutingService(options = {}) {
     isSideChatSidecarThreadSummary(thread) {
       return Boolean(thread && thread.sidecar);
     },
+    targetLifecycleDeliverability: options.targetLifecycleDeliverability,
   });
 }
 
@@ -129,6 +130,40 @@ test("workspace cwd routing is allowed only for a unique visible deliverable thr
 
   assert.equal(service.resolveTargetReference(cwd, sourceThreadId), targetThreadId);
   assert.equal(service.canonicalTargetForCwd(cwd, service.visibleTargetThreads()).id, targetThreadId);
+});
+
+test("target routing rejects worker lanes disabled by lifecycle metadata", () => {
+  const cwd = "/tmp/codex-mobile-routing/worker";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const workerThreadId = "10000000-0000-4000-8000-000000000002";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: workerThreadId, name: "Plugin Worker Lane", cwd, role: "plugin_worker", updatedAt: 200 },
+    ],
+    targetLifecycleDeliverability(thread) {
+      if (thread && thread.id === workerThreadId) {
+        return {
+          ok: false,
+          error: "thread_lifecycle_worker_lane_retired",
+          message: "Target Worker lane is retired.",
+          workerLaneId: "worker_retired",
+          role: "plugin_worker",
+          lifecycleStatus: "retired",
+        };
+      }
+      return { ok: true };
+    },
+  });
+
+  assert.throws(
+    () => service.resolveTargetReference(workerThreadId, sourceThreadId),
+    (err) => err
+      && err.code === "thread_lifecycle_worker_lane_retired"
+      && err.statusCode === 409
+      && err.details
+      && err.details.lifecycle
+      && err.details.lifecycle.workerLaneId === "worker_retired",
+  );
 });
 
 test("role routing resolves a unique role and fails closed for duplicate role candidates", () => {

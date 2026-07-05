@@ -42,7 +42,7 @@ function classifyThreadPurpose(thread = {}) {
   if (/\btask[-_\s]*intake\b/.test(role) || /\bintake\b/.test(role)) {
     return { purpose: "task_intake", specialPurpose: true, reason: "role-task-intake", threadId: id };
   }
-  if (/\bworker\b/.test(role) || /\bworker[-_\s]*lane\b/.test(role)) {
+  if (/\bworker\b/.test(role) || /\bworker[-_\s]*lane\b/.test(role) || /(^|_)worker($|_)/.test(role) || role === "home_ai_worker" || role === "plugin_worker") {
     return { purpose: "worker_lane", specialPurpose: true, reason: "role-worker-lane", threadId: id };
   }
   if (/\bimplementation\b/.test(role) || /\bimplementer\b/.test(role) || /\brepair\b/.test(role)) {

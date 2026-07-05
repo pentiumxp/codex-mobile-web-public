@@ -454,6 +454,38 @@ function terminalCompletedStatusFromActiveStatus(value) {
   };
 }
 
+function terminalCompletedStatusFromStaleStatus(value) {
+  const previousType = statusText(value && value.previousType || value);
+  const status = value && typeof value === "object"
+    ? Object.assign({}, value)
+    : {};
+  status.type = "completed";
+  status.mobileCompletedActiveTurn = true;
+  delete status.mobileStaleActiveTurn;
+  if (previousType && !status.previousType) status.previousType = previousType;
+  status.reason = "terminal-usage-summary";
+  return status;
+}
+
+function turnHasStaleActiveMarker(turn) {
+  return Boolean(turn && (
+    turn.mobileStaleActiveTurn
+      || (turn.status && turn.status.mobileStaleActiveTurn)
+      || (turn.status && turn.status.reason === "summary-resting-active-window")
+      || turn.reason === "summary-resting-active-window"
+  ));
+}
+
+function normalizeTerminalUsageStaleActiveTurn(turn) {
+  if (!turn || typeof turn !== "object") return false;
+  if (!turnHasStaleActiveMarker(turn)) return false;
+  if (!turnHasTerminalUsageSummary(turn)) return false;
+  delete turn.mobileStaleActiveTurn;
+  turn.mobileCompletedActiveTurn = true;
+  turn.status = terminalCompletedStatusFromStaleStatus(turn.status);
+  return true;
+}
+
 function clearThreadActiveMarkers(thread) {
   if (!thread || typeof thread !== "object") return;
   delete thread.activeTurnId;
@@ -473,7 +505,13 @@ function markWindowActiveTurnsStaleForRestingSummary(thread, summary) {
   let terminalCompletedCount = 0;
   let preserved = 0;
   let preservedActivityMs = 0;
+  delete thread.mobileStaleActiveTurn;
+  delete thread.mobileCompletedActiveTurn;
   for (const turn of turns) {
+    if (normalizeTerminalUsageStaleActiveTurn(turn)) {
+      terminalCompletedCount += 1;
+      continue;
+    }
     if (!isActiveTurn(turn)) continue;
     if (turnHasTerminalUsageSummary(turn)) {
       turn.mobileCompletedActiveTurn = true;
@@ -528,7 +566,7 @@ function markWindowActiveTurnsStaleForRestingSummary(thread, summary) {
       reason: "terminal-usage-summary",
     };
   }
-  return completedCount;
+  return staleCount;
 }
 
 function isUserVisibleInputItem(item) {

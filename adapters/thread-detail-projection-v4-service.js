@@ -86,16 +86,50 @@ function shouldClearActiveOverlayWindowCache(method) {
     || method === "turn/completed";
 }
 
+function boundedEntryLimit(value, fallback, minimum = 1) {
+  const number = safeNumber(value);
+  if (!number) return Math.max(minimum, fallback);
+  return Math.max(minimum, number);
+}
+
 function createThreadDetailProjectionV4Service(options = {}) {
   const policyVersion = String(options.policyVersion || "state-relevant-receipt-v4");
   const maxTurns = Math.max(1, safeNumber(options.maxTurns) || 10);
   const now = typeof options.now === "function" ? options.now : () => Date.now();
+  const activeOverlayCacheMaxEntries = boundedEntryLimit(options.activeOverlayCacheMaxEntries, 24);
+  const activeOverlayWindowCacheMaxEntries = boundedEntryLimit(options.activeOverlayWindowCacheMaxEntries, 24);
+  const revisionMaxEntries = boundedEntryLimit(options.revisionMaxEntries, Math.max(activeOverlayCacheMaxEntries, activeOverlayWindowCacheMaxEntries, 48));
   const base = createThreadDetailProjectionService(Object.assign({}, options, {
     policyVersion,
   }));
   const revisions = new Map();
   const activeOverlayCache = new Map();
   const activeOverlayWindowCache = new Map();
+
+  function pruneCacheMap(map, maxEntries, keepThreadId = "") {
+    while (map.size > maxEntries) {
+      let oldestKey = "";
+      let oldestAt = Infinity;
+      for (const [key, entry] of map.entries()) {
+        if (key === keepThreadId) continue;
+        const timestamp = safeNumber(entry && (entry.lastAccessedAtMs || entry.updatedAtMs || entry.cachedAtMs));
+        if (timestamp < oldestAt) {
+          oldestAt = timestamp;
+          oldestKey = key;
+        }
+      }
+      if (!oldestKey) break;
+      map.delete(oldestKey);
+    }
+  }
+
+  function pruneRevisions(keepThreadId = "") {
+    while (revisions.size > revisionMaxEntries) {
+      const oldestKey = Array.from(revisions.keys()).find((key) => key !== keepThreadId);
+      if (!oldestKey) break;
+      revisions.delete(oldestKey);
+    }
+  }
 
   function revisionForThread(threadId) {
     const id = String(threadId || "").trim();
@@ -107,6 +141,7 @@ function createThreadDetailProjectionV4Service(options = {}) {
     if (!id) return 0;
     const next = revisionForThread(id) + 1;
     revisions.set(id, next);
+    pruneRevisions(id);
     return next;
   }
 
@@ -215,6 +250,7 @@ function createThreadDetailProjectionV4Service(options = {}) {
     if (!threadId) return null;
     const entry = activeOverlayWindowCache.get(threadId);
     if (!entry || !entry.result) return null;
+    entry.lastAccessedAtMs = now();
     const signature = projectionSignatureForInput(input);
     if (!signature) return null;
     const exactHash = signatureHash(signature);
@@ -269,10 +305,12 @@ function createThreadDetailProjectionV4Service(options = {}) {
         signatureHash: signatureHash(signature),
         cachedAtMs,
         updatedAtMs: safeNumber(optionsForSeed.projectionTimestampMs) || cachedAtMs,
+        lastAccessedAtMs: now(),
         revision: safeNumber(optionsForSeed.projectionRevision) || revisionForThread(threadId),
         partialKind: "turns-list-active-overlay-window",
         result: cloneJson(normalized),
       });
+      pruneCacheMap(activeOverlayWindowCache, activeOverlayWindowCacheMaxEntries, threadId);
       return {
         cachedAtMs,
         dynamic: false,
@@ -379,6 +417,7 @@ function createThreadDetailProjectionV4Service(options = {}) {
       updatedAtMs,
       cachedAtMs,
     })) {
+      cacheEntry.lastAccessedAtMs = now();
       const overlayTurn = input.cloneOverlayTurn === false
         ? cacheEntry.overlayTurn
         : cloneJson(cacheEntry.overlayTurn);
@@ -409,8 +448,10 @@ function createThreadDetailProjectionV4Service(options = {}) {
       revision,
       updatedAtMs,
       cachedAtMs,
+      lastAccessedAtMs: now(),
       overlayTurn: cloneJson(overlayTurn),
     });
+    pruneCacheMap(activeOverlayCache, activeOverlayCacheMaxEntries, threadId);
     return Object.assign({}, snapshot, {
       version: PROJECTION_VERSION,
       overlayRevision: revision,
@@ -457,6 +498,14 @@ function createThreadDetailProjectionV4Service(options = {}) {
     lookup,
     normalizeResult,
     seed,
+    stats: () => Object.assign({}, typeof base.stats === "function" ? base.stats() : {}, {
+      revisionSize: revisions.size,
+      revisionMaxEntries,
+      activeOverlayCacheSize: activeOverlayCache.size,
+      activeOverlayCacheMaxEntries,
+      activeOverlayWindowCacheSize: activeOverlayWindowCache.size,
+      activeOverlayWindowCacheMaxEntries,
+    }),
   };
 }
 

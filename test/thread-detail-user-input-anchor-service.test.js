@@ -102,6 +102,34 @@ test("bounds user input anchors and marks non-text input", () => {
   assert.doesNotMatch(item.text, /data:image/i);
 });
 
+test("dedupes rollout user input anchors mirrored by event and response items", () => {
+  const turnId = "turn-1";
+  const timestamp = "2026-07-05T04:11:40.074Z";
+  const collected = collectRolloutUserInputAnchors([
+    { type: "turn_context", payload: { turn_id: turnId } },
+    {
+      type: "event_msg",
+      timestamp,
+      payload: { type: "user_message", message: "Same question" },
+    },
+    {
+      type: "response_item",
+      timestamp,
+      payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Same   question" }] },
+    },
+    {
+      type: "response_item",
+      timestamp: "2026-07-05T04:12:40.074Z",
+      payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Same question" }] },
+    },
+  ]);
+  const anchors = collected.byTurn.get(turnId);
+
+  assert.equal(anchors.length, 2);
+  assert.deepEqual(anchors.map((item) => item.text), ["Same question", "Same question"]);
+  assert.notEqual(anchors[0].startedAtMs, anchors[1].startedAtMs);
+});
+
 test("keeps only the latest bounded anchors per turn", () => {
   const turnId = "turn-1";
   const entries = [{ type: "turn_context", payload: { turn_id: turnId } }];
