@@ -1173,13 +1173,19 @@ function createThreadDetailReadOrchestrationService(options = {}) {
 
     function shouldDeferInitialTurnsListSeed() {
       if (!preferRecentTurns) return false;
-      if (!activeReadPolicy.shouldUseInitialTurnsList) return false;
-      if (activeReadPolicy.activeFullReadRequired) return false;
-      if (!projection || !turnsListThreadReadResult) return false;
-      if (context.projectionState !== "miss") return false;
-      if (summaryRejectsWindowActiveTurns(summary) !== true) return false;
       const boundedDecision = boundedReadBeforeFullReadDecision();
       context.boundedReadBeforeFullRead = boundedDecision;
+      const activeLargeReadCanDefer = Boolean(
+        activeReadPolicy.activeFullReadRequired
+          && activeFullReadCanCloseWithOverlay(activeReadPolicy)
+          && boundedDecision
+          && boundedDecision.prefer,
+      );
+      if (!activeReadPolicy.shouldUseInitialTurnsList && !activeLargeReadCanDefer) return false;
+      if (activeReadPolicy.activeFullReadRequired && !activeLargeReadCanDefer) return false;
+      if (!projection || !turnsListThreadReadResult) return false;
+      if (context.projectionState !== "miss") return false;
+      if (summaryRejectsWindowActiveTurns(summary) !== true && !activeLargeReadCanDefer) return false;
       return Boolean(boundedDecision && boundedDecision.prefer);
     }
 

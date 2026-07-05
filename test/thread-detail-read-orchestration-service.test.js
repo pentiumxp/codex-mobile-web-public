@@ -1065,13 +1065,21 @@ test("large summary read uses bounded turns/list even when projection input is u
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "no-projection-input");
 });
 
-test("active recent thread detail skips partial windows and bounded turns/list", async () => {
+test("active large recent projection miss defers seed instead of foreground full thread/read", async () => {
+  const deferredTasks = [];
+  const deferredTaskOptions = [];
   const { service, calls } = createHarness({
     summary: {
       id: "thread-1",
       status: { type: "active" },
       activeTurnId: "turn-active",
       rolloutPath: "/tmp/rollout.jsonl",
+    },
+    scheduleDeferredTask: (task, options = {}) => {
+      calls.push("defer-task");
+      deferredTaskOptions.push(options);
+      deferredTasks.push(task);
+      return { unref() {} };
     },
     projectedThreadResult: (input, summary, runtimeSettings, options = {}) => {
       calls.push(`projection-allow-partial:${options.allowPartial === true}`);
@@ -1094,22 +1102,30 @@ test("active recent thread detail skips partial windows and bounded turns/list",
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.mode, "thread-read");
-  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-from-read"]);
+  assert.equal(response.mode, "deferred-initial-turns-list");
+  assert.deepEqual(response.body.thread.turns, []);
+  assert.equal(response.body.thread.mobileDeferredProjectionSeed.scheduled, true);
+  assert.equal(response.body.thread.mobileDeferredProjectionSeed.targetMode, "turns-list-initial");
   assert.ok(calls.includes("projection-allow-partial:false"));
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
-  assert.ok(calls.includes("thread-read"));
-  assert.equal(calls.includes("seed"), true);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("defer-task"), true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "deferred-initial-turns-list");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadReason, "active-turn-id");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAction, "require-full-read");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "overlay-provider-unavailable");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "seeded");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "active-thread-read");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, false);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "active-thread-requires-full-read");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "deferred");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "large-projection-miss");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "large-rollout");
+  assert.equal(deferredTasks.length, 1);
+  assert.equal(deferredTaskOptions[0].name, "deferred-initial-turns-list-seed");
+
+  await deferredTasks[0]();
+  assert.ok(calls.indexOf("turns-list:turns-list-initial") > calls.indexOf("defer-task"));
+  assert.ok(calls.indexOf("seed:partial") > calls.indexOf("turns-list:turns-list-initial"));
 });
 
 test("active overlay incomplete evidence still falls through to full thread/read", async () => {
