@@ -2114,6 +2114,7 @@ function createNavigationRuntime() {
     renderContextThreadId,
     renderContextThread,
     withRenderContextThread,
+    approvalThreadId,
     approvalTurnId,
     isApprovalActive,
     isApprovalSettled,

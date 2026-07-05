@@ -16,6 +16,8 @@ const mediaPreviewRuntimeJs = fs.readFileSync(path.join(root, "public", "media-p
 const apiClientRuntimeJs = fs.readFileSync(path.join(root, "public", "api-client-runtime.js"), "utf8");
 const paneLayoutRuntimeJs = fs.readFileSync(path.join(root, "public", "pane-layout-runtime.js"), "utf8");
 const conversationRenderRuntimeJs = fs.readFileSync(path.join(root, "public", "conversation-render-runtime.js"), "utf8");
+const eventStreamRuntimeJs = fs.readFileSync(path.join(root, "public", "event-stream-runtime.js"), "utf8");
+const navigationRuntimeJs = fs.readFileSync(path.join(root, "public", "navigation-runtime.js"), "utf8");
 const settingsRuntimeJs = fs.readFileSync(path.join(root, "public", "settings-runtime.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const threadDetailCompactionServiceJs = fs.readFileSync(
@@ -6544,6 +6546,14 @@ test("live user message upsert collapses mux echoes before refresh", () => {
   assert.equal(userMessages[0].mobilePendingSubmission, undefined);
   assert.equal(userMessages[0].clientSubmissionId, "submission-1");
   assert.equal(harness.renderCount(), 2);
+});
+
+test("event stream split runtime has approval thread helper exposed by navigation runtime", () => {
+  assert.match(eventStreamRuntimeJs, /approvalThreadId\(request\)/);
+  const exposeIndex = navigationRuntimeJs.indexOf("Object.assign(root, {");
+  assert.ok(exposeIndex > 0, "navigation runtime must expose globals");
+  const exposedGlobals = navigationRuntimeJs.slice(exposeIndex);
+  assert.match(exposedGlobals, /approvalThreadId,\n/);
 });
 
 test("thread detail pending server requests render approval cards without SSE timing", () => {
