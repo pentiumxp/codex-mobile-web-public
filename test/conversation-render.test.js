@@ -18,6 +18,7 @@ const paneLayoutRuntimeJs = fs.readFileSync(path.join(root, "public", "pane-layo
 const conversationRenderRuntimeJs = fs.readFileSync(path.join(root, "public", "conversation-render-runtime.js"), "utf8");
 const eventStreamRuntimeJs = fs.readFileSync(path.join(root, "public", "event-stream-runtime.js"), "utf8");
 const navigationRuntimeJs = fs.readFileSync(path.join(root, "public", "navigation-runtime.js"), "utf8");
+const runtimeWiringRuntimeJs = fs.readFileSync(path.join(root, "public", "runtime-wiring-runtime.js"), "utf8");
 const settingsRuntimeJs = fs.readFileSync(path.join(root, "public", "settings-runtime.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const threadDetailCompactionServiceJs = fs.readFileSync(
@@ -7148,7 +7149,16 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(sendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);
   assert.match(sendBody, /const serverTurnId = startedTurnId\(result\);/);
   assert.match(sendBody, /if \(!steering && serverTurnId && reconcileSubmittedUserMessageTurn\(targetThreadId, clientSubmissionId, serverTurnId\)\)/);
+  assert.match(sendBody, /scheduleComposerTargetRefresh\(targetThreadId, 250, "message-submit"\);/);
+  assert.match(sendBody, /schedulePostCompletionThreadRefreshes\(targetThreadId, \[900, 2200, 5200\]\);/);
+  assert.match(sendBody, /scheduleUsageBackfillRefresh\(900, \{ force: true \}\);/);
   assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
+  const composerRuntimeFactoryBody = functionBodyFrom(composerRuntimeJs, "createComposerRuntime");
+  assert.match(composerRuntimeFactoryBody, /schedulePostCompletionThreadRefreshes,/);
+  assert.match(composerRuntimeFactoryBody, /scheduleUsageBackfillRefresh,/);
+  const composerRuntimeWiringBody = functionBodyFrom(runtimeWiringRuntimeJs, "initializeComposerRuntimeWiring");
+  assert.match(composerRuntimeWiringBody, /schedulePostCompletionThreadRefreshes,/);
+  assert.match(composerRuntimeWiringBody, /scheduleUsageBackfillRefresh,/);
 
   const taskCardSendBody = composerRuntimeBody("sendThreadTaskCardCommand");
   assert.match(taskCardSendBody, /const targetThreadId = currentComposerThreadId\(\);/);

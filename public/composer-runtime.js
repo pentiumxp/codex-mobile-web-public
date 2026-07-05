@@ -79,8 +79,10 @@ function createComposerRuntime(deps = {}) {
     scheduleCurrentDraftSave,
     scheduleCurrentThreadRefresh,
     scheduleLivePollIfNeeded,
+    schedulePostCompletionThreadRefreshes,
     scheduleScrollToBottomButtonUpdate,
     scheduleSubmittedMessageDomProbe,
+    scheduleUsageBackfillRefresh,
     selectedQuotaModel,
     setComposerActionButtonLabel,
     setSteerFeedback,
@@ -1886,7 +1888,13 @@ async function sendMessage(event) {
       $("connectionState").textContent = "Sent";
       markActivity("已发送");
     }
-    scheduleComposerTargetRefresh(targetThreadId, 600, "message-submit");
+    scheduleComposerTargetRefresh(targetThreadId, 250, "message-submit");
+    if (typeof schedulePostCompletionThreadRefreshes === "function") {
+      schedulePostCompletionThreadRefreshes(targetThreadId, [900, 2200, 5200]);
+    }
+    if (typeof scheduleUsageBackfillRefresh === "function" && state.currentThreadId === targetThreadId) {
+      scheduleUsageBackfillRefresh(900, { force: true });
+    }
     scheduleLivePollIfNeeded(1200);
     loadThreads({ silent: true }).catch(showError);
   } catch (err) {
