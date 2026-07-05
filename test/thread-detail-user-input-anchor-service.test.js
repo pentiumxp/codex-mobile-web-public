@@ -130,6 +130,27 @@ test("dedupes rollout user input anchors mirrored by event and response items", 
   assert.notEqual(anchors[0].startedAtMs, anchors[1].startedAtMs);
 });
 
+test("dedupes mirrored user input anchors across close event and response timestamps", () => {
+  const turnId = "turn-1";
+  const collected = collectRolloutUserInputAnchors([
+    { type: "turn_context", payload: { turn_id: turnId } },
+    {
+      type: "event_msg",
+      timestamp: "2026-07-05T04:11:40.074Z",
+      payload: { type: "user_message", message: "Same question" },
+    },
+    {
+      type: "response_item",
+      timestamp: "2026-07-05T04:11:42.074Z",
+      payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Same   question" }] },
+    },
+  ]);
+  const anchors = collected.byTurn.get(turnId);
+
+  assert.equal(anchors.length, 1);
+  assert.equal(anchors[0].text, "Same question");
+});
+
 test("keeps only the latest bounded anchors per turn", () => {
   const turnId = "turn-1";
   const entries = [{ type: "turn_context", payload: { turn_id: turnId } }];

@@ -2,6 +2,7 @@
 
 const DEFAULT_TEXT_LIMIT = 8192;
 const DEFAULT_MAX_ANCHORS_PER_TURN = 4;
+const SAME_INPUT_DEDUPE_WINDOW_MS = 5000;
 
 function text(value) {
   return String(value || "").trim();
@@ -95,7 +96,9 @@ function userInputAnchorsLikelySame(left = {}, right = {}) {
   if (!leftText || !rightText || leftText !== rightText) return false;
   const leftTimestamp = displayTimestampMs(left);
   const rightTimestamp = displayTimestampMs(right);
-  if (leftTimestamp && rightTimestamp) return leftTimestamp === rightTimestamp;
+  if (leftTimestamp && rightTimestamp) {
+    return Math.abs(leftTimestamp - rightTimestamp) <= SAME_INPUT_DEDUPE_WINDOW_MS;
+  }
   const leftId = text(left.id || left.itemId || left.item_id);
   const rightId = text(right.id || right.itemId || right.item_id);
   return Boolean(leftId && rightId && leftId === rightId);

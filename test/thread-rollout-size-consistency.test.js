@@ -143,6 +143,10 @@ test("turns-list initial detail preparation keeps bounded usage summaries on win
       calls.push("user-input-anchors");
       return result;
     },
+    appendRolloutLatestCompletedAssistantItemsToDetailResult: (result) => {
+      calls.push("latest-completed-assistant");
+      return result;
+    },
     appendRolloutActiveAssistantItemsToDetailResult: (result) => {
       calls.push("active-assistant");
       return result;
@@ -188,15 +192,20 @@ test("turns-list initial detail preparation keeps bounded usage summaries on win
   });
   assert.equal(calls.includes("enrich-timestamps"), false);
   assert.equal(calls.includes("completion-backfill"), false);
-  assert.equal(calls.includes("user-input-anchors"), false);
-  assert.equal(calls.includes("active-assistant"), false);
-  assert.equal(calls.includes("finalize-active-assistant"), false);
+  assert.equal(calls.includes("user-input-anchors"), true);
+  assert.equal(calls.includes("latest-completed-assistant"), true);
+  assert.equal(calls.includes("active-assistant"), true);
+  assert.equal(calls.includes("finalize-active-assistant"), true);
   assert.deepEqual(calls, [
     "request:thread/turns/list",
     "compact-turns-list",
     "compact-thread",
     "read-usage",
     "attach-usage",
+    "user-input-anchors",
+    "latest-completed-assistant",
+    "active-assistant",
+    "finalize-active-assistant",
     "task-cards",
     "projection-finalize",
     "response-budget",
