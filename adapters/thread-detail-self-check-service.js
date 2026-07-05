@@ -184,10 +184,18 @@ function threadId(thread) {
 
 function threadUpdatedAtMs(thread) {
   return numericTimestampMs(thread && (
-    thread.updatedAtMs
+    thread.mobileListUpdatedAtMs
+    || thread.mobile_list_updated_at_ms
+    || thread.listActivityAtMs
+    || thread.list_activity_at_ms
+    || thread.updatedAtMs
     || thread.updatedAt
+    || thread.updated_at_ms
+    || thread.updated_at
     || thread.lastActivityAtMs
     || thread.lastActivityAt
+    || thread.last_activity_at_ms
+    || thread.last_activity_at
   ));
 }
 

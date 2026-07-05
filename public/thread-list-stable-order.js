@@ -37,10 +37,18 @@
 
   function threadUpdatedAtMs(thread) {
     return timestampMs(thread && (
-      thread.updatedAtMs
+      thread.mobileListUpdatedAtMs
+      || thread.mobile_list_updated_at_ms
+      || thread.listActivityAtMs
+      || thread.list_activity_at_ms
+      || thread.updatedAtMs
       || thread.updated_at_ms
       || thread.updatedAt
       || thread.updated_at
+      || thread.lastActivityAtMs
+      || thread.last_activity_at_ms
+      || thread.lastActivityAt
+      || thread.last_activity_at
     ));
   }
 

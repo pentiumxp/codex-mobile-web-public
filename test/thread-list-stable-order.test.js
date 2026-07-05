@@ -86,6 +86,31 @@ test("thread-list stable order adopts server order when an existing row has newe
   assert.equal(plan.state.updatedAtById.a, 5000);
 });
 
+test("thread-list stable order uses projected route ordering timestamps", () => {
+  const previousState = {
+    scopeKey: policy.threadListOrderScopeKey({ selectedCwd: "", search: "" }),
+    holdUntilMs: 60_000,
+    order: ["a", "b"],
+    updatedAtById: {
+      a: 1781000000000,
+      b: 1782000000000,
+    },
+  };
+
+  const plan = policy.planThreadListStableOrder({
+    threads: [
+      { id: "a", updatedAt: 1, mobileListUpdatedAtMs: 1783000000000 },
+      { id: "b", updatedAt: 2, mobileListUpdatedAtMs: 1782000000000 },
+    ],
+    previousState,
+    nowMs: 10_000,
+  });
+
+  assert.equal(plan.held, false);
+  assert.deepEqual(ids(plan.threads), ["a", "b"]);
+  assert.equal(plan.state.updatedAtById.a, 1783000000000);
+});
+
 test("thread-list stable order adopts server order after hold window expires", () => {
   const previousState = {
     scopeKey: policy.threadListOrderScopeKey({ selectedCwd: "", search: "" }),

@@ -48,8 +48,12 @@ function createThreadListRuntimeService(options = {}) {
   function threadListSummaryTimestampMs(thread) {
     if (!thread || typeof thread !== "object") return 0;
     return Math.max(
+      timestampToMs(thread.mobileListUpdatedAtMs || thread.mobile_list_updated_at_ms),
+      timestampToMs(thread.listActivityAtMs || thread.list_activity_at_ms),
       timestampToMs(thread.updatedAtMs || thread.updated_at_ms),
       timestampToMs(thread.updatedAt || thread.updated_at),
+      timestampToMs(thread.lastActivityAtMs || thread.last_activity_at_ms),
+      timestampToMs(thread.lastActivityAt || thread.last_activity_at),
       Number(thread.rolloutSizeUpdatedAtMs || 0),
     );
   }

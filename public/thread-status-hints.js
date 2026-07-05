@@ -66,7 +66,20 @@
   }
 
   function threadUpdatedAtMs(thread) {
-    return timestampMs(thread && (thread.updatedAtMs || thread.updatedAt || thread.updated_at_ms || thread.updated_at));
+    return timestampMs(thread && (
+      thread.mobileListUpdatedAtMs
+      || thread.mobile_list_updated_at_ms
+      || thread.listActivityAtMs
+      || thread.list_activity_at_ms
+      || thread.updatedAtMs
+      || thread.updatedAt
+      || thread.updated_at_ms
+      || thread.updated_at
+      || thread.lastActivityAtMs
+      || thread.lastActivityAt
+      || thread.last_activity_at_ms
+      || thread.last_activity_at
+    ));
   }
 
   function terminalTurnAtMs(turn) {

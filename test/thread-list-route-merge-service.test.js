@@ -140,8 +140,25 @@ test("thread-list route merge preserves duplicate fallback when rollout activity
   assert.equal(merged.result.data.length, 1);
   assert.equal(merged.result.data[0].status.type, "active");
   assert.equal(merged.result.data[0].rolloutSizeUpdatedAtMs, 1782600000000);
+  assert.equal(merged.result.data[0].mobileListUpdatedAtMs, 1782600000000);
   assert.equal(merged.diagnostics.routeMergeFallbackDuplicateDropCount, 0);
   assert.equal(merged.diagnostics.routeMergeDuplicateCount, 1);
+});
+
+test("thread-list route merge projects the route ordering timestamp for self checks and clients", () => {
+  const merged = mergeThreadListRouteResult({
+    result: {
+      data: [
+        { id: "a", updatedAt: 100, rolloutSizeUpdatedAtMs: 300000 },
+        { id: "b", updatedAt: 200, rolloutSizeUpdatedAtMs: 200000 },
+      ],
+    },
+    limit: 10,
+    mergeThreadSummaryList: (threads) => threads,
+  });
+
+  assert.equal(merged.result.data[0].mobileListUpdatedAtMs, 300000);
+  assert.equal(merged.result.data[1].mobileListUpdatedAtMs, 200000);
 });
 
 test("thread-list route merge includes summary-merge diagnostics without private fields", () => {

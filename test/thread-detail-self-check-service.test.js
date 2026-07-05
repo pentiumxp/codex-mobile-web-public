@@ -725,6 +725,18 @@ test("thread list self check detects duplicate ids and order mismatch", () => {
   assert.ok(codes.includes("thread_list_updated_order_mismatch"));
 });
 
+test("thread list self check uses projected route ordering timestamps", () => {
+  const report = analyzeThreadList({
+    data: [
+      { id: "thread-a", name: "Thread A", preview: "ready", status: "completed", updatedAt: 1000, mobileListUpdatedAtMs: 1783000000000 },
+      { id: "thread-b", name: "Thread B", preview: "ready", status: "completed", updatedAt: 2000, mobileListUpdatedAtMs: 1782000000000 },
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.issues.some((issue) => issue.code === "thread_list_updated_order_mismatch"), false);
+});
+
 test("thread list self check detects unmaterialized id-title placeholders", () => {
   const report = analyzeThreadList({
     data: [{

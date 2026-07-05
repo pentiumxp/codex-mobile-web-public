@@ -372,7 +372,11 @@
 
   function threadUpdatedAtMs(thread) {
     if (!thread || typeof thread !== "object") return 0;
-    return timestampMs(thread.updatedAtMs)
+    return timestampMs(thread.mobileListUpdatedAtMs)
+      || timestampMs(thread.mobile_list_updated_at_ms)
+      || timestampMs(thread.listActivityAtMs)
+      || timestampMs(thread.list_activity_at_ms)
+      || timestampMs(thread.updatedAtMs)
       || timestampMs(thread.updatedAt)
       || timestampMs(thread.updated_at_ms)
       || timestampMs(thread.updated_at)

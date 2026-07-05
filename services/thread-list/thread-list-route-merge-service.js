@@ -57,10 +57,23 @@ function timestampMs(value) {
 function threadSummaryTimestampMs(thread) {
   if (!thread || typeof thread !== "object") return 0;
   return Math.max(
+    timestampMs(thread.mobileListUpdatedAtMs || thread.mobile_list_updated_at_ms),
+    timestampMs(thread.listActivityAtMs || thread.list_activity_at_ms),
     timestampMs(thread.updatedAtMs || thread.updated_at_ms),
     timestampMs(thread.updatedAt || thread.updated_at),
+    timestampMs(thread.lastActivityAtMs || thread.last_activity_at_ms),
+    timestampMs(thread.lastActivityAt || thread.last_activity_at),
     Number(thread.rolloutSizeUpdatedAtMs || 0),
   );
+}
+
+function projectThreadListActivityTimestamp(thread) {
+  if (!thread || typeof thread !== "object") return thread;
+  const timestamp = threadSummaryTimestampMs(thread);
+  if (!timestamp || Number(thread.mobileListUpdatedAtMs || 0) === timestamp) return thread;
+  return Object.assign({}, thread, {
+    mobileListUpdatedAtMs: timestamp,
+  });
 }
 
 function countUniqueIds(threads) {
@@ -178,7 +191,9 @@ function mergeThreadListRouteResult(options = {}) {
   const mergeOutput = mergeThreadSummaryList(rawInput, options.mergeThreadSummaryListOptions || {});
   const mergeOutputObject = objectOrNull(mergeOutput);
   const mergedThreads = safeThreadList(mergeOutputObject ? mergeOutputObject.threads : mergeOutput);
-  const outputThreads = mergedThreads.slice(0, boundedLimit(options.limit));
+  const outputThreads = mergedThreads
+    .slice(0, boundedLimit(options.limit))
+    .map(projectThreadListActivityTimestamp);
 
   if (Array.isArray(out.data) || !Array.isArray(out.threads)) out.data = outputThreads;
   if (Array.isArray(out.threads)) out.threads = outputThreads;
@@ -209,4 +224,5 @@ module.exports = {
   routeMergeDiagnostics,
   summaryMergeDiagnostics,
   threadRowsFromResult,
+  threadSummaryTimestampMs,
 };
