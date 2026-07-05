@@ -584,6 +584,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-list-runtime",
     source: "public/thread-list-runtime.js",
+    nativeSource: "frontend/native/thread-list-runtime.mjs",
     globalName: "CodexThreadListRuntime",
     expectedFunctions: [
       "createThreadListRuntime",
