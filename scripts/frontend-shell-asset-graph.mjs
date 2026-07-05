@@ -568,6 +568,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "app-entry",
     source: "public/app.js",
+    nativeSource: "frontend/native/app-entry.mjs",
     globalName: "CodexMobileAppEntry",
     expectedFunctions: [
       "createCodexMobileAppEntry",
