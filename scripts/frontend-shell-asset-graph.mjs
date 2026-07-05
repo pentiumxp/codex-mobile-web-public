@@ -538,6 +538,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "navigation-runtime",
     source: "public/navigation-runtime.js",
+    nativeSource: "frontend/native/navigation-runtime.mjs",
     globalName: "CodexNavigationRuntime",
     expectedFunctions: [
       "createNavigationRuntime",

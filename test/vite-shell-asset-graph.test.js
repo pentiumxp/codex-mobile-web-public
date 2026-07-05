@@ -1830,8 +1830,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 38);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 38);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 39);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 39);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1971,6 +1971,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "modal-runtime",
         nativeSource: "frontend/native/modal-runtime.mjs",
         importSource: "frontend/native/modal-runtime.mjs",
+      },
+      {
+        id: "navigation-runtime",
+        nativeSource: "frontend/native/navigation-runtime.mjs",
+        importSource: "frontend/native/navigation-runtime.mjs",
       },
       {
         id: "runtime-wiring-runtime",
