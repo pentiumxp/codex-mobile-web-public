@@ -1830,8 +1830,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 37);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 37);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 38);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 38);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1951,6 +1951,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "thread-tile-state",
         nativeSource: "frontend/native/thread-tile-state.mjs",
         importSource: "frontend/native/thread-tile-state.mjs",
+      },
+      {
+        id: "thread-tile-runtime",
+        nativeSource: "frontend/native/thread-tile-runtime.mjs",
+        importSource: "frontend/native/thread-tile-runtime.mjs",
       },
       {
         id: "app-update-runtime",

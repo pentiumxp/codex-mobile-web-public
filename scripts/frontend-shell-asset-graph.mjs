@@ -502,6 +502,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-tile-runtime",
     source: "public/thread-tile-runtime.js",
+    nativeSource: "frontend/native/thread-tile-runtime.mjs",
     globalName: "CodexThreadTileRuntime",
     expectedFunctions: [
       "createThreadTileRuntime",
