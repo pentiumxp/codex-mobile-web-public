@@ -678,10 +678,25 @@
         && completedIncomingTurnHasAuthoritativeReceipt(incomingTurn);
     }
 
+    function incomingTurnHasUserMessage(incomingTurn = null) {
+      return Array.isArray(incomingTurn && incomingTurn.items)
+        && incomingTurn.items.some((item) => item && item.type === "userMessage");
+    }
+
+    function isPendingSubmittedUserMessage(item) {
+      return Boolean(item
+        && item.type === "userMessage"
+        && !item.mobileSendError
+        && (item.mobilePendingSubmission || String(item.clientSubmissionId || "").trim()));
+    }
+
     function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false, suppressedVisualReceiptKeys = null, incomingTurn = null) {
       if (!item || itemVisibleWeight(item) <= 0) return false;
       if (visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys)) return false;
       if (shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn)) return false;
+      if (isPendingSubmittedUserMessage(item)
+        && completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)
+        && !incomingTurnHasUserMessage(incomingTurn)) return true;
       if (item.type === "userMessage" && completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)) return false;
       if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
       return preserveLocalVisible && !isReasoningItem(item);

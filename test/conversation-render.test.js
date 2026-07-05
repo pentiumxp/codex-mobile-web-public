@@ -6154,6 +6154,59 @@ test("completed projection merge drops local-only live receipts when server rece
   assert.equal(mergedItems.filter((item) => item.type === "turnUsageSummary").length, 1);
 });
 
+test("completed projection merge preserves pending submitted user when server receipt arrives without durable user", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 18,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        {
+          id: "local-user-submit-current",
+          type: "userMessage",
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-current",
+          content: [{ type: "input_text", text: "ship the public build" }],
+        },
+        { id: "local-live-receipt", type: "agentMessage", text: "I am checking the build." },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 19,
+    turns: [{
+      id: "turn-current",
+      status: { type: "completed" },
+      completedAtMs: 1782221300000,
+      items: [
+        { id: "server-final-receipt", type: "agentMessage", text: "Build checked." },
+        {
+          id: "mobile-turn-usage-turn-current",
+          type: "turnUsageSummary",
+          mobileUsageSummary: { totalTokenUsage: { totalTokens: 64 } },
+        },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+  const mergedItems = merged.turns[0].items;
+
+  assert.deepEqual(mergedItems.map((item) => item.id), [
+    "server-final-receipt",
+    "mobile-turn-usage-turn-current",
+    "local-user-submit-current",
+  ]);
+  assert.equal(mergedItems.filter((item) => item.type === "userMessage").length, 1);
+  assert.equal(mergedItems.some((item) => item.id === "local-live-receipt"), false);
+  assert.equal(mergedItems.filter((item) => item.type === "turnUsageSummary").length, 1);
+});
+
 test("completed projection merge preserves small live images and operations despite long final receipt", () => {
   const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
   const existingThread = {
@@ -7150,8 +7203,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(sendBody, /const serverTurnId = startedTurnId\(result\);/);
   assert.match(sendBody, /if \(!steering && serverTurnId && reconcileSubmittedUserMessageTurn\(targetThreadId, clientSubmissionId, serverTurnId\)\)/);
   assert.match(sendBody, /scheduleComposerTargetRefresh\(targetThreadId, 250, "message-submit"\);/);
-  assert.match(sendBody, /schedulePostCompletionThreadRefreshes\(targetThreadId, \[900, 2200, 5200\]\);/);
-  assert.match(sendBody, /scheduleUsageBackfillRefresh\(900, \{ force: true \}\);/);
+  assert.match(sendBody, /schedulePostCompletionThreadRefreshes\(targetThreadId, \[450, 1100, 2400, 5200\]\);/);
+  assert.match(sendBody, /scheduleUsageBackfillRefresh\(450, \{ force: true \}\);/);
   assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
   const composerRuntimeFactoryBody = functionBodyFrom(composerRuntimeJs, "createComposerRuntime");
   assert.match(composerRuntimeFactoryBody, /schedulePostCompletionThreadRefreshes,/);
