@@ -526,6 +526,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "modal-runtime",
     source: "public/modal-runtime.js",
+    nativeSource: "frontend/native/modal-runtime.mjs",
     globalName: "CodexModalRuntime",
     expectedFunctions: [
       "createModalRuntime",

@@ -1144,6 +1144,47 @@ test("native ESM app update runtime matches classic fallback behavior", async ()
   );
 });
 
+test("native ESM modal runtime preserves classic global dialog helpers", async () => {
+  globalThis.CODEX_PROFILE_SWITCH_STAGES = [
+    { id: "profile_lookup", label: "读取 Profile" },
+  ];
+  const classicModal = require("../public/modal-runtime.js");
+  const classicRuntime = classicModal.createModalRuntime();
+  const classicProgress = globalThis.formatCodexProfileSwitchProgress;
+  const classicStageLabel = globalThis.codexProfileSwitchStageLabel;
+  const nativeModal = await import("../frontend/native/modal-runtime.mjs");
+  const nativeRuntime = nativeModal.createModalRuntime();
+  const runtimeKeys = [
+    "requestAppNativeDialog",
+    "requestAppAlert",
+    "requestAppConfirmation",
+    "requestAppTextInput",
+    "requestCodexProfileSwitchConfirmation",
+  ];
+  assert.deepEqual(
+    Object.fromEntries(runtimeKeys.map((key) => [key, typeof nativeRuntime[key]])),
+    Object.fromEntries(runtimeKeys.map((key) => [key, typeof classicRuntime[key]])),
+  );
+  assert.equal(globalThis.CodexModalRuntime, nativeModal.default);
+  assert.equal(typeof globalThis.handleAppNativeDialogKeydown, "function");
+  assert.equal(typeof globalThis.closeAppNativeDialog, "function");
+  assert.equal(typeof globalThis.performCodexProfileSwitch, "function");
+  const progressInput = {
+    stage: "profile_lookup",
+    message: "",
+    stepIndex: 1,
+    stepCount: 3,
+  };
+  assert.equal(
+    globalThis.formatCodexProfileSwitchProgress(progressInput),
+    classicProgress(progressInput),
+  );
+  assert.equal(
+    globalThis.codexProfileSwitchStageLabel("profile_lookup"),
+    classicStageLabel("profile_lookup"),
+  );
+});
+
 test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
   const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
   const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
@@ -1406,6 +1447,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/thread-tile-actions\.mjs/);
   assert.match(shardSources, /frontend\/native\/thread-tile-state\.mjs/);
   assert.match(shardSources, /frontend\/native\/app-update-runtime\.mjs/);
+  assert.match(shardSources, /frontend\/native\/modal-runtime\.mjs/);
   assert.doesNotMatch(shardSources, /from ".*public\/build-refresh-policy\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/runtime-settings\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/viewport-metrics\.js"/);
@@ -1433,10 +1475,10 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-actions\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-state\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/app-update-runtime\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/modal-runtime\.js"/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
   assert.match(shardSources, /public\/thread-tile-runtime\.js/);
   assert.match(shardSources, /public\/settings-runtime\.js/);
-  assert.match(shardSources, /public\/modal-runtime\.js/);
   assert.match(shardSources, /public\/navigation-runtime\.js/);
   assert.match(shardSources, /public\/runtime-wiring-runtime\.js/);
   assert.match(shardSources, /public\/app-shell-runtime\.js/);
@@ -1712,8 +1754,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 27);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 27);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 28);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 28);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1833,6 +1875,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "app-update-runtime",
         nativeSource: "frontend/native/app-update-runtime.mjs",
         importSource: "frontend/native/app-update-runtime.mjs",
+      },
+      {
+        id: "modal-runtime",
+        nativeSource: "frontend/native/modal-runtime.mjs",
+        importSource: "frontend/native/modal-runtime.mjs",
       },
       {
         id: "thread-list-load-policy",
