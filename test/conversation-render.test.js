@@ -1755,6 +1755,7 @@ function evaluatedThreadPendingApprovalProjection() {
     "serverRequestWithThreadContext",
     "resolveServerRequest",
     "answerServerRequest",
+    "answerApproval",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 const HIDDEN_SERVER_REQUEST_METHODS = new Set();
@@ -1805,6 +1806,7 @@ return {
   upsertServerRequest,
   resolveServerRequest,
   answerServerRequest,
+  answerApproval,
   setApiResult,
   apiCalls: () => apiCalls.slice(),
   activity: () => activity,
@@ -6585,6 +6587,65 @@ test("thread detail pending server requests render approval cards without SSE ti
   assert.match(html, /api\.example\.test/);
   assert.match(html, /data-approval-id="approval-1"/);
   assert.match(html, /data-approval-thread-id="thread-approval"/);
+});
+
+test("fileChange approval cards render actionable approval controls", () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.syncThreadPendingServerRequests({
+    id: "thread-worker",
+    pendingServerRequests: [
+      {
+        id: "file-approval",
+        method: "item/fileChange/requestApproval",
+        status: "waiting",
+        actionable: true,
+        params: {
+          threadId: "thread-worker",
+          turnId: "turn-file",
+          itemId: "call-file",
+          reason: "Review file changes",
+        },
+      },
+    ],
+  });
+
+  const html = harness.renderPendingApprovals({ id: "thread-worker" });
+
+  assert.match(html, /文件改动需要批准/);
+  assert.match(html, /data-approval-id="file-approval"/);
+  assert.match(html, /data-approval-thread-id="thread-worker"/);
+  assert.match(html, /data-approval-action="allow_once"/);
+  assert.match(html, /data-approval-action="allow_session"/);
+  assert.match(html, /data-approval-action="deny"/);
+});
+
+test("fileChange approval answer posts even when browser pending state is stale", async () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.state.currentThreadId = "thread-worker";
+  harness.state.currentThread = { id: "thread-worker" };
+  harness.setApiResult({
+    request: {
+      id: "file-approval",
+      method: "item/fileChange/requestApproval",
+      status: "responded",
+      actionable: true,
+      decision: "allow_once",
+      params: {
+        threadId: "thread-worker",
+        turnId: "turn-file",
+        itemId: "call-file",
+      },
+    },
+  });
+
+  await harness.answerApproval("file-approval", "allow_once", { threadId: "thread-worker" });
+
+  const calls = harness.apiCalls();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "/api/approvals/file-approval");
+  assert.equal(JSON.parse(calls[0].options.body).decision, "allow_once");
+  assert.equal(harness.state.pendingApprovals.get("file-approval").params.threadId, "thread-worker");
+  assert.equal(harness.activity(), "批准发送");
 });
 
 test("thread detail pending server requests refresh and render against tile pane thread context", () => {

@@ -459,7 +459,10 @@ async function interruptActiveTurn(...args) {
 async function answerServerRequest(requestId, payload, options = {}) {
   const key = requestId !== null && requestId !== undefined ? String(requestId) : "";
   const request = state.pendingApprovals.get(key);
-  if (!request || request.status !== "waiting") return;
+  if (!request) {
+    throw new Error("Server request is not available in this browser session");
+  }
+  if (request.status !== "waiting") return;
   const threadId = approvalActionThreadId(request, options.threadId);
   request.status = "responding";
   request.decision = payload && (payload.decision || payload.action) || "submitted";
@@ -485,7 +488,30 @@ async function answerServerRequest(requestId, payload, options = {}) {
 }
 
 function answerApproval(requestId, decision, options = {}) {
-  return answerServerRequest(requestId, { decision }, options);
+  const key = requestId !== null && requestId !== undefined ? String(requestId) : "";
+  if (!key) return Promise.reject(new Error("Approval request id is missing"));
+  const request = state.pendingApprovals.get(key);
+  if (request) return answerServerRequest(key, { decision }, options);
+  const threadId = String(options.threadId || state.currentThreadId || "").trim();
+  markActivity("批准中");
+  if (threadId) scheduleApprovalThreadRender(threadId);
+  return api(`/api/approvals/${encodeURIComponent(key)}`, {
+    method: "POST",
+    body: JSON.stringify({ decision }),
+    timeoutMs: 20000,
+  }).then((result) => {
+    if (result && result.request) {
+      state.pendingApprovals.set(key, serverRequestWithThreadContext(result.request, threadId));
+    }
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = "Approval sent";
+    markActivity("批准发送");
+    if (threadId) scheduleApprovalThreadRender(threadId);
+    return result;
+  }).catch((err) => {
+    showError(err);
+    throw err;
+  });
 }
 
 function serverRequestPayload(request, responseText, questionId) {
