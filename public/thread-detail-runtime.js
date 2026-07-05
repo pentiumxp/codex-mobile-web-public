@@ -706,6 +706,16 @@ function createThreadDetailRuntime(deps = {}) {
       && userMessagesLikelySame(left, right));
   }
 
+  function userMessagesAreSameTurnDuplicateEvent(left, right) {
+    if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
+    if (userMessagesCanShadow(left, right)) return true;
+    if (!userMessagesLikelySame(left, right)) return false;
+    const leftTime = userMessageTimestampMs(left);
+    const rightTime = userMessageTimestampMs(right);
+    if (!leftTime || !rightTime || Math.abs(leftTime - rightTime) > 5000) return false;
+    return true;
+  }
+
   function userMessageTimestampMs(item) {
     const value = item && (
       item.startedAtMs
@@ -843,7 +853,7 @@ function createThreadDetailRuntime(deps = {}) {
     const out = [];
     for (const item of items || []) {
       if (item && item.type === "userMessage") {
-        const existingIndex = out.findIndex((candidate) => userMessagesCanShadow(candidate, item));
+        const existingIndex = out.findIndex((candidate) => userMessagesAreSameTurnDuplicateEvent(candidate, item));
         if (existingIndex >= 0) {
           out[existingIndex] = mergeLikelySameUserMessage(out[existingIndex], item);
           continue;

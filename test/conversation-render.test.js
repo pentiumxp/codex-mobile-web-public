@@ -810,6 +810,7 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "userMessagesAreSameTurnDuplicateEvent",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
   "isProjectionIndexUserMessage",
@@ -904,6 +905,7 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "userMessagesAreSameTurnDuplicateEvent",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
   "isProjectionIndexUserMessage",
@@ -1005,6 +1007,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "userMessagesAreSameTurnDuplicateEvent",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
   "isProjectionIndexUserMessage",
@@ -1159,6 +1162,7 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "userMessagesAreSameTurnDuplicateEvent",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
   "isProjectionIndexUserMessage",
@@ -1215,6 +1219,7 @@ function evaluatedLiveUserMessageUpsert() {
     "userMessagePathNameOverlap",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "userMessagesAreSameTurnDuplicateEvent",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
   "isProjectionIndexUserMessage",
@@ -1292,6 +1297,8 @@ function evaluatedVisibleItemsForTurn() {
     "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessagesLikelySame",
+    "userMessagesCanShadow",
+    "userMessagesAreSameTurnDuplicateEvent",
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
   "isProjectionIndexUserMessage",
@@ -1539,6 +1546,10 @@ return {
 function evaluatedThreadStatusPaneContext() {
   const threadListRuntimeSourceNames = new Set([
     "applyThreadStatusToThread",
+    "updateThreadActivityTimestamp",
+    "syncThreadListStableOrderFromCurrentThreads",
+    "sortThreadListByUpdatedAt",
+    "promoteThreadListActivity",
     "scheduleThreadStatusDetailRender",
     "updateThreadListStatus",
     "localThreadForStatusContext",
@@ -1547,6 +1558,10 @@ function evaluatedThreadStatusPaneContext() {
   ]);
   const sources = [
     "applyThreadStatusToThread",
+    "updateThreadActivityTimestamp",
+    "syncThreadListStableOrderFromCurrentThreads",
+    "sortThreadListByUpdatedAt",
+    "promoteThreadListActivity",
     "scheduleThreadStatusDetailRender",
     "updateThreadListStatus",
     "localThreadForStatusContext",
@@ -1586,6 +1601,14 @@ function updateThreadStatusHints(id, previousStatus, nextStatus, options) {
 }
 function threadDisplayName(thread) { return thread && (thread.name || thread.id) || ""; }
 function threadTilePaneIsVisible(id) { return state.threadTileActiveIds.includes(id); }
+function threadUpdatedAtMs(thread) {
+  const value = thread && (thread.updatedAtMs || thread.updated_at_ms || thread.updatedAt || thread.updated_at);
+  if (!value) return 0;
+  const number = Number(value);
+  if (Number.isFinite(number) && number > 0) return number > 100000000000 ? number : number * 1000;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
 function scheduleRenderThreadTilePane(threadId, options = {}) {
   calls.tileRenders.push({ threadId, preserveScroll: options.preserveScroll });
   return true;
@@ -1611,12 +1634,20 @@ return {
 function evaluatedThreadStatusNotificationContext() {
   const threadListRuntimeSourceNames = new Set([
     "applyThreadStatusToThread",
+    "updateThreadActivityTimestamp",
+    "syncThreadListStableOrderFromCurrentThreads",
+    "sortThreadListByUpdatedAt",
+    "promoteThreadListActivity",
     "scheduleThreadStatusDetailRender",
     "updateThreadListStatus",
     "localThreadForStatusContext",
   ]);
   const sources = [
     "applyThreadStatusToThread",
+    "updateThreadActivityTimestamp",
+    "syncThreadListStableOrderFromCurrentThreads",
+    "sortThreadListByUpdatedAt",
+    "promoteThreadListActivity",
     "scheduleThreadStatusDetailRender",
     "updateThreadListStatus",
     "localThreadForStatusContext",
@@ -1648,6 +1679,14 @@ function shouldThrottleThreadNotification() { return false; }
 function clearThreadTileOperationBubble(threadId) { calls.clearedBubbles.push(threadId); }
 function isRunningStatus(status) { return status && status.type === "active"; }
 function threadStatusNotificationEventAtMs(params, fallback) { return params && params.eventAtMs || fallback || 0; }
+function threadUpdatedAtMs(thread) {
+  const value = thread && (thread.updatedAtMs || thread.updated_at_ms || thread.updatedAt || thread.updated_at);
+  if (!value) return 0;
+  const number = Number(value);
+  if (Number.isFinite(number) && number > 0) return number > 100000000000 ? number : number * 1000;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
 function updateThreadStatusHints(id, previousStatus, nextStatus, options) {
   calls.statusHints.push({
     id,
@@ -2558,6 +2597,58 @@ test("live turn keeps repeated durable user messages visible", () => {
     harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
     ["real-user-one", "real-user-two"],
   );
+});
+
+test("normalizer collapses same-turn durable user message duplicate with nearby timestamps", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [{
+      id: "turn-current",
+      items: [
+        {
+          id: "durable-user-one",
+          type: "userMessage",
+          startedAtMs: 1783220100000,
+          content: [{ type: "input_text", text: "same request" }],
+        },
+        {
+          id: "durable-user-two",
+          type: "userMessage",
+          startedAtMs: 1783220101000,
+          content: [{ type: "text", text: "same   request" }],
+        },
+        { id: "assistant-progress", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), [
+    "durable-user-two",
+    "assistant-progress",
+  ]);
+});
+
+test("live upsert merges same-turn durable user message duplicate before render", () => {
+  const harness = evaluatedLiveUserMessageUpsert();
+
+  harness.upsertItem("turn-1", {
+    id: "durable-user-one",
+    type: "userMessage",
+    startedAtMs: 1783220100000,
+    content: [{ type: "input_text", text: "same request" }],
+  });
+  harness.upsertItem("turn-1", {
+    id: "durable-user-two",
+    type: "userMessage",
+    startedAtMs: 1783220101000,
+    content: [{ type: "text", text: "same   request" }],
+  });
+
+  const userMessages = harness.state.currentThread.turns[0].items.filter((item) => item.type === "userMessage");
+  assert.equal(userMessages.length, 1);
+  assert.equal(userMessages[0].id, "durable-user-two");
 });
 
 test("existing thread send inserts a local pending user turn before server projection catches up", () => {
@@ -6919,10 +7010,10 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(notificationBody, /const runningStatus = \{ type: "active" \};/);
   assert.match(notificationBody, /const thread = localThreadForStatusContext\(params\.threadId\)/);
   assert.match(notificationBody, /const previousStatus = thread \? thread\.status : null/);
-  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, params\.status\)/);
+  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, params\.status, \{ eventAtMs \}\)/);
   assert.match(notificationBody, /const completedStatus = \(params\.turn && params\.turn\.status\) \|\| \{ type: "completed" \};/);
   assert.match(notificationBody, /updateThreadStatusHints\(params\.threadId, state\.currentThread\.status, completedStatus/);
-  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, completedStatus\)/);
+  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, completedStatus, \{ eventAtMs \}\)/);
   assert.match(notificationBody, /scheduleThreadStatusDetailRender\(params\.threadId\)/);
   assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*scheduleCurrentThreadRefresh\(500\)/);
   assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*schedulePostCompletionThreadRefreshes\(params\.threadId, \[700, 2400\]\)/);

@@ -65,6 +65,7 @@ function createThreadListRuntime(deps = {}) {
     basenameForFsPath,
     visibleWorkspaceNames,
     statusText,
+    threadUpdatedAtMs,
     scheduleRenderCurrentThread,
     threadTilePaneIsVisible,
     scheduleRenderThreadTilePane,
@@ -588,6 +589,56 @@ function applyThreadStatusToThread(thread, status) {
   return true;
 }
 
+function updateThreadActivityTimestamp(thread, eventAtMs = 0) {
+  if (!thread) return false;
+  const nextMs = Math.max(0, Math.trunc(Number(eventAtMs) || 0));
+  if (!nextMs) return false;
+  const currentMs = typeof threadUpdatedAtMs === "function" ? threadUpdatedAtMs(thread) : 0;
+  if (currentMs && currentMs >= nextMs) return false;
+  thread.updatedAt = Math.floor(nextMs / 1000);
+  return true;
+}
+
+function syncThreadListStableOrderFromCurrentThreads() {
+  if (!state.threadListStableOrder || typeof state.threadListStableOrder !== "object") return;
+  const updatedAtById = {};
+  const order = [];
+  for (const thread of state.threads || []) {
+    const id = String(thread && thread.id || "");
+    if (!id) continue;
+    order.push(id);
+    const updatedAtMs = typeof threadUpdatedAtMs === "function" ? threadUpdatedAtMs(thread) : 0;
+    if (updatedAtMs > 0) updatedAtById[id] = updatedAtMs;
+  }
+  state.threadListStableOrder = Object.assign({}, state.threadListStableOrder, {
+    order,
+    updatedAtById,
+  });
+}
+
+function sortThreadListByUpdatedAt() {
+  const indexed = (state.threads || []).map((thread, index) => ({
+    thread,
+    index,
+    updatedAtMs: typeof threadUpdatedAtMs === "function" ? threadUpdatedAtMs(thread) : 0,
+  }));
+  indexed.sort((left, right) => (right.updatedAtMs - left.updatedAtMs) || (left.index - right.index));
+  state.threads = indexed.map((entry) => entry.thread);
+  syncThreadListStableOrderFromCurrentThreads();
+}
+
+function promoteThreadListActivity(threadId, eventAtMs = 0) {
+  const id = String(threadId || "");
+  if (!id) return false;
+  const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id);
+  let changed = false;
+  if (updateThreadActivityTimestamp(listThread, eventAtMs)) changed = true;
+  if (updateThreadActivityTimestamp(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, eventAtMs)) changed = true;
+  if (updateThreadActivityTimestamp(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, eventAtMs)) changed = true;
+  if (changed && listThread) sortThreadListByUpdatedAt();
+  return changed;
+}
+
 function scheduleThreadStatusDetailRender(threadId = "") {
   const id = String(threadId || state.currentThreadId || "").trim();
   if (!id) return false;
@@ -609,6 +660,7 @@ function updateThreadListStatus(threadId, status, options = {}) {
   applyThreadStatusToThread(thread, status);
   applyThreadStatusToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, status);
   applyThreadStatusToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, status);
+  if (options.promote !== false) promoteThreadListActivity(id, options.eventAtMs || 0);
   if (options.render === true) scheduleThreadStatusDetailRender(id);
 }
 

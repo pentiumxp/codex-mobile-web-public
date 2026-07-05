@@ -21,6 +21,7 @@ test("thread-list stable order adopts server order on first scope read", () => {
   assert.equal(plan.held, false);
   assert.deepEqual(ids(plan.threads), ["a", "b"]);
   assert.deepEqual(plan.state.order, ["a", "b"]);
+  assert.deepEqual(plan.state.updatedAtById, {});
   assert.equal(plan.state.holdUntilMs, 1000 + policy.DEFAULT_HOLD_MS);
 });
 
@@ -56,6 +57,33 @@ test("thread-list stable order inserts new rows without reshuffling held rows", 
 
   assert.equal(plan.held, true);
   assert.deepEqual(ids(plan.threads), ["d", "a", "b", "c"]);
+});
+
+test("thread-list stable order adopts server order when an existing row has newer activity", () => {
+  const previousState = {
+    scopeKey: policy.threadListOrderScopeKey({ selectedCwd: "", search: "" }),
+    holdUntilMs: 60_000,
+    order: ["a", "b", "c"],
+    updatedAtById: {
+      a: 1000,
+      b: 2000,
+      c: 3000,
+    },
+  };
+
+  const plan = policy.planThreadListStableOrder({
+    threads: [
+      { id: "a", updatedAt: 5 },
+      { id: "c", updatedAt: 3 },
+      { id: "b", updatedAt: 2 },
+    ],
+    previousState,
+    nowMs: 10_000,
+  });
+
+  assert.equal(plan.held, false);
+  assert.deepEqual(ids(plan.threads), ["a", "c", "b"]);
+  assert.equal(plan.state.updatedAtById.a, 5000);
 });
 
 test("thread-list stable order adopts server order after hold window expires", () => {

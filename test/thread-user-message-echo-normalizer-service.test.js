@@ -23,6 +23,27 @@ test("user message echo normalizer keeps repeated durable messages without share
   assert.deepEqual(result.items.map((item) => item.id), ["user-1", "assistant-1", "user-2"]);
 });
 
+test("user message echo normalizer collapses same-turn durable duplicate messages with nearby timestamps", () => {
+  const result = dedupeUserMessageEchoesInItems([
+    {
+      id: "durable-user-1",
+      type: "userMessage",
+      startedAtMs: 1783220100000,
+      content: [{ type: "text", text: "same request" }],
+    },
+    { id: "assistant-1", type: "agentMessage", text: "working" },
+    {
+      id: "durable-user-2",
+      type: "userMessage",
+      startedAtMs: 1783220101200,
+      content: [{ type: "input_text", text: "same   request" }],
+    },
+  ]);
+
+  assert.equal(result.removed, 1);
+  assert.deepEqual(result.items.map((item) => item.id), ["durable-user-1", "assistant-1"]);
+});
+
 test("user message echo normalizer skips long durable content comparisons without echo identity", () => {
   const longText = "x".repeat(128 * 1024);
   const items = [];

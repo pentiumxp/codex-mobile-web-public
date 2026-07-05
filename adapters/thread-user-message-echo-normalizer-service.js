@@ -5,6 +5,7 @@ const {
 } = require("./message-pending-echo-service");
 
 const PROJECTION_INDEX_DUPLICATE_WINDOW_MS = 5_000;
+const SAME_TURN_DURABLE_DUPLICATE_WINDOW_MS = 5_000;
 
 function text(value) {
   return String(value || "").trim();
@@ -114,6 +115,12 @@ function nearProjectionIndexTimestamp(left, right) {
   return Boolean(a && b && Math.abs(a - b) <= PROJECTION_INDEX_DUPLICATE_WINDOW_MS);
 }
 
+function nearSameTurnDurableTimestamp(left, right) {
+  const a = itemTimestampMs(left);
+  const b = itemTimestampMs(right);
+  return Boolean(a && b && Math.abs(a - b) <= SAME_TURN_DURABLE_DUPLICATE_WINDOW_MS);
+}
+
 function userMessagesMayBeSameEvent(left, right) {
   if (!isUserMessage(left) || !isUserMessage(right)) return false;
   if (sameClientSubmission(left, right)) return true;
@@ -124,6 +131,9 @@ function userMessagesMayBeSameEvent(left, right) {
   if (leftProjectionIndex !== rightProjectionIndex) {
     return leftProjectionIndex ? hasDurableNonIndexId(right) : hasDurableNonIndexId(left);
   }
+  if (hasDurableNonIndexId(left) && hasDurableNonIndexId(right)) {
+    return nearSameTurnDurableTimestamp(left, right);
+  }
   return false;
 }
 
@@ -131,6 +141,8 @@ function userMessagesAreSameEvent(left, right) {
   if (!isUserMessage(left) || !isUserMessage(right)) return false;
   if (!userMessagesMayBeSameEvent(left, right)) return false;
   if (!sameUserMessageContent(left, right)) return false;
+  if (sameClientSubmission(left, right)) return true;
+  if (isSyntheticUserMessage(left) || isSyntheticUserMessage(right)) return true;
   const leftProjectionIndex = isProjectionIndexUserMessage(left);
   const rightProjectionIndex = isProjectionIndexUserMessage(right);
   if (leftProjectionIndex && rightProjectionIndex) {
@@ -139,9 +151,11 @@ function userMessagesAreSameEvent(left, right) {
   if (leftProjectionIndex !== rightProjectionIndex) {
     return leftProjectionIndex ? hasDurableNonIndexId(right) : hasDurableNonIndexId(left);
   }
-  return sameClientSubmission(left, right)
-    || isSyntheticUserMessage(left)
-    || isSyntheticUserMessage(right);
+  if (!isSyntheticUserMessage(left) && !isSyntheticUserMessage(right)
+    && hasDurableNonIndexId(left) && hasDurableNonIndexId(right)) {
+    return nearSameTurnDurableTimestamp(left, right);
+  }
+  return false;
 }
 
 function findMatchingUserMessageIndex(items, candidate) {

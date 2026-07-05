@@ -24,6 +24,37 @@
     return text(thread && thread.id);
   }
 
+  function timestampMs(value) {
+    if (!value) return 0;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) {
+      if (typeof value !== "string") return 0;
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    }
+    return number > 100_000_000_000 ? number : number * 1000;
+  }
+
+  function threadUpdatedAtMs(thread) {
+    return timestampMs(thread && (
+      thread.updatedAtMs
+      || thread.updated_at_ms
+      || thread.updatedAt
+      || thread.updated_at
+    ));
+  }
+
+  function threadUpdatedAtById(threads) {
+    const byId = {};
+    for (const thread of threads || []) {
+      const id = threadId(thread);
+      if (!id) continue;
+      const updatedAtMs = threadUpdatedAtMs(thread);
+      if (updatedAtMs > 0) byId[id] = updatedAtMs;
+    }
+    return byId;
+  }
+
   function threadListOrderScopeKey(input = {}) {
     const cwd = text(input.selectedCwd);
     const search = text(input.search).toLowerCase();
@@ -63,17 +94,27 @@
   function planThreadListStableOrder(input = {}) {
     const threads = Array.isArray(input.threads) ? input.threads : [];
     const incomingIds = threads.map(threadId).filter(Boolean);
+    const incomingUpdatedAtById = threadUpdatedAtById(threads);
     const previous = input.previousState && typeof input.previousState === "object"
       ? input.previousState
       : {};
     const previousOrder = Array.isArray(previous.order) ? previous.order.map(text).filter(Boolean) : [];
+    const previousUpdatedAtById = previous.updatedAtById && typeof previous.updatedAtById === "object"
+      ? previous.updatedAtById
+      : {};
     const scopeKey = text(input.scopeKey) || threadListOrderScopeKey(input);
     const nowMs = Math.max(0, Math.trunc(Number(input.nowMs) || Date.now()));
     const holdMs = boundedHoldMs(input.holdMs);
     const previousHoldUntilMs = Math.max(0, Math.trunc(Number(previous.holdUntilMs) || 0));
     const sameScope = text(previous.scopeKey) === scopeKey;
+    const hasNewerActivity = sameScope && incomingIds.some((id) => {
+      const previousUpdatedAtMs = Math.max(0, Math.trunc(Number(previousUpdatedAtById[id]) || 0));
+      const incomingUpdatedAtMs = Math.max(0, Math.trunc(Number(incomingUpdatedAtById[id]) || 0));
+      return previousUpdatedAtMs > 0 && incomingUpdatedAtMs > previousUpdatedAtMs;
+    });
     const canHold = !input.forceServerOrder
       && sameScope
+      && !hasNewerActivity
       && previousOrder.length > 0
       && previousHoldUntilMs > nowMs;
     const order = canHold ? mergeHeldOrder(previousOrder, incomingIds) : incomingIds;
@@ -89,6 +130,7 @@
         scopeKey,
         holdUntilMs,
         order,
+        updatedAtById: incomingUpdatedAtById,
       },
     };
   }
