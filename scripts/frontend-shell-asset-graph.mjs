@@ -556,6 +556,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "app-shell-runtime",
     source: "public/app-shell-runtime.js",
+    nativeSource: "frontend/native/app-shell-runtime.mjs",
     globalName: "CodexAppShellRuntime",
     expectedFunctions: [
       "createAppShellRuntime",
