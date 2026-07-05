@@ -261,9 +261,12 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /return-thread-task-card\.js/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /local final answer in the target thread is not a source-thread return card/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /mcp__codex_mobile\.return_to_source/);
+  assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /tool_search/);
+  assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /unsupported namespace error/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /create-thread-task-card\.js/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /mcp__codex_mobile\.delegate_to_thread/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /deferred tool discovery such as `tool_search`/);
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /unsupported-namespace errors/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /first-class fallback path/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /multi_agent_v1\.spawn_agent/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /must not be used as a substitute/);
@@ -370,7 +373,9 @@ test("approved task cards inherit target thread model and effort", () => {
   assert.match(setupBlock, /const inheritedRuntimeSettings = await dependencies\.resolveThreadRuntimeSettings\(card\.target\.threadId\);/);
   assert.match(setupBlock, /const targetThread = readThreadTaskCardExecutionTargetSummary\(card\);/);
   assert.match(setupBlock, /const targetIsDeployLane = isHomeAiDeployLaneThread\(targetThread\);/);
-  assert.match(setupBlock, /const baseRuntimeSettings = targetIsDeployLane/);
+  assert.match(setupBlock, /const targetIsWorkerLane = isWorkerLaneThread\(targetThread\);/);
+  assert.match(setupBlock, /const targetUsesFullAccess = targetIsDeployLane \|\| targetIsWorkerLane;/);
+  assert.match(setupBlock, /const baseRuntimeSettings = targetUsesFullAccess/);
   assert.match(setupBlock, /dependencies\.applyPermissionModeOverride\(inheritedRuntimeSettings, "full", targetThread && targetThread\.cwd \|\| null\)/);
   assert.match(setupBlock, /Object\.assign\(\{\}, baseRuntimeSettings, \{ reasoningEffort: requestedReasoningEffort \}\)/);
   assert.match(setupBlock, /thread\/resume", applyResumeRuntimeSettings\(/);

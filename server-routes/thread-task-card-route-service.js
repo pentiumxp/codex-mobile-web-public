@@ -351,8 +351,9 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     return [
       "Codex Mobile cross-thread delegation fallback:",
       "- Prefer `mcp__codex_mobile.delegate_to_thread` when Codex MCP tools are visible, because deferred tool discovery exposes Codex Mobile through the MCP namespace.",
-      `- If the app-server dynamic tool namespace is directly visible, \`${workspaceDelegationToolFullName}\` is equivalent and may also be used.`,
-      "- App-server dynamic tools may not appear in deferred tool discovery such as `tool_search`; absence there is not proof that delegation is unavailable.",
+      "- If `mcp__codex_mobile.delegate_to_thread` is not visible yet, call `tool_search` for Codex Mobile cross-thread task-card tools before trying another namespace.",
+      `- Use \`${workspaceDelegationToolFullName}\` only when the app-server dynamic tool namespace is directly visible and actually callable; if it returns an unsupported namespace error, switch to MCP or the script fallback.`,
+      "- App-server dynamic tools may not appear in deferred tool discovery such as `tool_search`; absence there is not proof that delegation is unavailable, but unsupported-namespace errors are proof that this namespace is not callable in the current thread.",
       "- If neither `mcp__codex_mobile.delegate_to_thread` nor `codex_mobile.delegate_to_thread` is callable, use the local script below as the first-class fallback path:",
       `  node ${JSON.stringify(scriptPath)} --source-thread ${sourceThreadId || "<current-thread-id>"} --target-thread <target-thread-id-or-exact-title> --title \"<short title>\" --body-file <markdown-file>`,
       "- `multi_agent_v1.spawn_agent`, `multi_agent_v1.resume`, `multi_agent_v1.send`, and `multi_agent_v1.close` are not Codex Mobile task-card APIs and must not be used as a substitute for cross-workspace file changes.",
@@ -367,7 +368,8 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     return [
       "Codex Mobile task-card return fallback:",
       "- Prefer `mcp__codex_mobile.return_to_source` when Codex MCP tools are visible, because deferred tool discovery exposes Codex Mobile through the MCP namespace.",
-      `- If the app-server dynamic tool namespace is directly visible, \`${taskCardReturnToolFullName}\` is equivalent and may also be used.`,
+      "- If `mcp__codex_mobile.return_to_source` is not visible yet, call `tool_search` for Codex Mobile task-card tools before trying another namespace.",
+      `- Use \`${taskCardReturnToolFullName}\` only when the app-server dynamic tool namespace is directly visible and actually callable; if it returns an unsupported namespace error, switch to MCP or the script fallback.`,
       "- A local final answer in the target thread is not a source-thread return card.",
       "- If neither `mcp__codex_mobile.return_to_source` nor `codex_mobile.return_to_source` is callable, use the local script below as the first-class return path:",
       `  node ${JSON.stringify(scriptPath)} --task-card <task-card-id> --thread ${threadId || "<current-target-thread-id>"} --status completed --title "<short return title>" --body-file <markdown-file>`,
