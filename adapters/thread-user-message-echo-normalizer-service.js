@@ -140,8 +140,8 @@ function userMessagesMayBeSameEvent(left, right) {
 function userMessagesAreSameEvent(left, right) {
   if (!isUserMessage(left) || !isUserMessage(right)) return false;
   if (!userMessagesMayBeSameEvent(left, right)) return false;
-  if (!sameUserMessageContent(left, right)) return false;
   if (sameClientSubmission(left, right)) return true;
+  if (!sameUserMessageContent(left, right)) return false;
   if (isSyntheticUserMessage(left) || isSyntheticUserMessage(right)) return true;
   const leftProjectionIndex = isProjectionIndexUserMessage(left);
   const rightProjectionIndex = isProjectionIndexUserMessage(right);

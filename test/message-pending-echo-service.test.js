@@ -108,6 +108,52 @@ test("pending steer echo is removed when durable history has the message in anot
   assert.equal(store.size(), 0);
 });
 
+test("pending steer echo is removed when same-submission durable message already exists earlier", () => {
+  const store = createPendingSteerEchoStore({ now: () => 1000 });
+  store.remember({
+    threadId: "thread-1",
+    turnId: "turn-2",
+    clientSubmissionId: "submission-1",
+    input: [{ type: "text", text: "same text" }],
+  });
+  const thread = {
+    id: "thread-1",
+    turns: [
+      {
+        id: "turn-1",
+        status: "completed",
+        items: [{
+          id: "real-user-1",
+          type: "userMessage",
+          clientSubmissionId: "submission-1",
+          content: [{ type: "input_text", text: "same text" }],
+        }],
+      },
+      {
+        id: "turn-2",
+        status: "completed",
+        items: [
+          { id: "assistant-final", type: "agentMessage", text: "done" },
+          {
+            id: "mux-user-thread-1-turn-2-submission-1",
+            type: "userMessage",
+            mobilePendingSubmission: true,
+            clientSubmissionId: "submission-1",
+            content: [{ type: "text", text: "same text" }],
+          },
+          { id: "usage", type: "turnUsageSummary" },
+        ],
+      },
+    ],
+  };
+
+  store.injectIntoThread(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["real-user-1"]);
+  assert.deepEqual(thread.turns[1].items.map((item) => item.id), ["assistant-final", "usage"]);
+  assert.equal(store.size(), 0);
+});
+
 test("pending steer echo remains anchored in a completed target turn until durable history catches up", () => {
   const store = createPendingSteerEchoStore({ now: () => 1000 });
   store.remember({

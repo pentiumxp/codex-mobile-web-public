@@ -98,6 +98,39 @@
       return false;
     }
 
+    function v4ThreadHasDurableSubmissionMatch(thread, pendingItem) {
+      if (!pendingItem || pendingItem.type !== "userMessage") return false;
+      const submissionId = String(pendingItem.clientSubmissionId || "").trim();
+      if (!submissionId) return false;
+      for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) {
+        for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
+          if (!item || item.type !== "userMessage") continue;
+          if (isOptimisticUserMessage(item)) continue;
+          if (userMessageHasSubmissionId(item, submissionId)) return true;
+        }
+      }
+      return false;
+    }
+
+    function dropSyntheticSubmissionEchoes(thread, pendingItem) {
+      if (!thread || !pendingItem || !Array.isArray(thread.turns)) return false;
+      const submissionId = String(pendingItem.clientSubmissionId || "").trim();
+      if (!submissionId) return false;
+      let changed = false;
+      for (const turn of thread.turns) {
+        if (!turn || !Array.isArray(turn.items)) continue;
+        const nextItems = turn.items.filter((item) => !(item
+          && item.type === "userMessage"
+          && isOptimisticUserMessage(item)
+          && userMessageHasSubmissionId(item, submissionId)));
+        if (nextItems.length !== turn.items.length) {
+          turn.items = nextItems;
+          changed = true;
+        }
+      }
+      return changed;
+    }
+
     function appendV4PendingOverlayItem(turn, item) {
       if (!turn || !item) return;
       turn.items = Array.isArray(turn.items) ? turn.items : [];
@@ -156,16 +189,22 @@
           .filter((item) => shouldPreserveV4PendingOverlayItem(item)
             && !v4ThreadHasPendingMatch(mergedThread, item));
         if (!pendingItems.length) continue;
+        const unresolvedPendingItems = pendingItems.filter((item) => {
+          if (!v4ThreadHasDurableSubmissionMatch(mergedThread, item)) return true;
+          dropSyntheticSubmissionEchoes(mergedThread, item);
+          return false;
+        });
+        if (!unresolvedPendingItems.length) continue;
         const targetTurn = turnsById.get(String(existingTurn.id || ""));
         if (targetTurn) {
-          pendingItems.forEach((item) => appendV4PendingOverlayItem(targetTurn, item));
+          unresolvedPendingItems.forEach((item) => appendV4PendingOverlayItem(targetTurn, item));
           continue;
         }
         if (existingV4TurnHasOnlyPendingOverlayItems(existingTurn)
           && incomingTurnsHaveNewerNonUserAuthority(existingTurn, mergedThread.turns)) {
           continue;
         }
-        const overlayTurn = copyTurnWithOnlyItems(existingTurn, pendingItems);
+        const overlayTurn = copyTurnWithOnlyItems(existingTurn, unresolvedPendingItems);
         overlayTurn.mobilePendingOverlay = true;
         mergedThread.turns.push(overlayTurn);
         if (overlayTurn.id) turnsById.set(String(overlayTurn.id), overlayTurn);

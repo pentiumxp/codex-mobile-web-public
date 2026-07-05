@@ -175,6 +175,12 @@ function isDurableUserMessage(item) {
   return Boolean(item && item.type === "userMessage" && !isSyntheticUserMessage(item));
 }
 
+function sameClientSubmission(left, right) {
+  const a = String(left && left.clientSubmissionId || "").trim();
+  const b = String(right && right.clientSubmissionId || "").trim();
+  return Boolean(a && b && a === b);
+}
+
 function statusText(status) {
   if (!status) return "";
   if (typeof status === "string") return status;
@@ -301,6 +307,24 @@ function createPendingSteerEchoStore(options = {}) {
     return -1;
   }
 
+  function hasDurableSubmissionMatch(thread, pendingItem) {
+    if (!pendingItem || !String(pendingItem.clientSubmissionId || "").trim()) return false;
+    for (const turn of thread.turns || []) {
+      const items = Array.isArray(turn && turn.items) ? turn.items : [];
+      if (items.some((item) => isDurableUserMessage(item) && sameClientSubmission(item, pendingItem))) return true;
+    }
+    return false;
+  }
+
+  function removePendingEchoFromEntireThread(thread, pendingItem) {
+    if (!thread || !Array.isArray(thread.turns) || !pendingItem) return;
+    for (const turn of thread.turns) {
+      if (!turn || !Array.isArray(turn.items)) continue;
+      turn.items = turn.items.filter((item) => !(isSyntheticUserMessage(item)
+        && (item.id === pendingItem.id || sameClientSubmission(item, pendingItem))));
+    }
+  }
+
   function removePendingEchoFromThread(thread, pendingItem, pendingTurnId, durableTurnIndex) {
     const pendingTurnIndex = turnIndexForId(thread, pendingTurnId);
     if (pendingTurnIndex < 0 || durableTurnIndex < pendingTurnIndex) return;
@@ -319,6 +343,11 @@ function createPendingSteerEchoStore(options = {}) {
     if (!threadId) return thread;
     for (const entry of entries.values()) {
       if (entry.threadId !== threadId) continue;
+      if (hasDurableSubmissionMatch(thread, entry.item)) {
+        removePendingEchoFromEntireThread(thread, entry.item);
+        entries.delete(entry.key);
+        continue;
+      }
       const durableTurnIndex = matchingDurableUserMessageTurnIndex(thread, entry.item, entry.turnId);
       if (durableTurnIndex >= 0) {
         removePendingEchoFromThread(thread, entry.item, entry.turnId, durableTurnIndex);

@@ -152,6 +152,27 @@ test("user message echo normalizer removes duplicate durable user messages with 
   assert.deepEqual(result.items.map((item) => item.id), ["user-1", "assistant-1"]);
 });
 
+test("user message echo normalizer treats shared submission identity as authoritative", () => {
+  const result = dedupeUserMessageEchoesInItems([
+    {
+      id: "local-user-submit-1",
+      type: "userMessage",
+      mobilePendingSubmission: true,
+      clientSubmissionId: "submit-1",
+      content: [{ type: "text", text: "local attachment summary" }],
+    },
+    {
+      id: "server-user-1",
+      type: "userMessage",
+      clientSubmissionId: "submit-1",
+      content: [{ type: "input_text", text: "server normalized durable input" }],
+    },
+  ]);
+
+  assert.equal(result.removed, 1);
+  assert.deepEqual(result.items.map((item) => item.id), ["server-user-1"]);
+});
+
 test("user message echo normalizer prefers durable server echo over pending synthetic echo", () => {
   const result = dedupeUserMessageEchoesInItems([
     {

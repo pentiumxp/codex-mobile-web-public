@@ -162,6 +162,35 @@ test("drops pending overlay when durable matching user message is projected", ()
   assert.equal(merged.turns[0].items[0].id, "durable");
 });
 
+test("drops stale pending overlay once same-submission durable user message is projected", () => {
+  const policy = createPolicy();
+  const existing = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("pending-turn", [
+      userMessage("local text before upload path was durable", {
+        id: "local-submit-1",
+        clientSubmissionId: "submit-1",
+        mobilePendingSubmission: true,
+      }),
+    ], { startedAtMs: 300, status: { type: "running" } })],
+  };
+  const incoming = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("durable-turn", [
+      userMessage("server normalized text", { id: "durable", clientSubmissionId: "submit-1" }),
+      { type: "agentMessage", id: "assistant-final", text: "done" },
+    ], { startedAtMs: 100, completedAtMs: 200, status: { type: "completed" } })],
+  };
+
+  const merged = policy.mergeV4ProjectionThread(existing, incoming);
+
+  assert.deepEqual(merged.turns.map((candidate) => candidate.id), ["durable-turn"]);
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), ["durable", "assistant-final"]);
+  assert.equal(JSON.stringify(merged).includes("local-submit-1"), false);
+});
+
 test("drops unanchored pending overlay after newer non-user receipt authority arrives", () => {
   const policy = createPolicy();
   const existing = {

@@ -669,6 +669,10 @@ function createThreadDetailRuntime(deps = {}) {
   }
 
   function userMessagesCanShadow(left, right) {
+    if (left && right && left.type === "userMessage" && right.type === "userMessage"
+      && userMessagesShareSubmissionId(left, right)) {
+      return true;
+    }
     const leftSubmittedEcho = Boolean(String(left && left.clientSubmissionId || "").trim() && !(left && left.mobileSendError));
     const rightSubmittedEcho = Boolean(String(right && right.clientSubmissionId || "").trim() && !(right && right.mobileSendError));
     const projectionIndexId = (item) => String(item && (item.id || item.itemId || item.item_id) || "").trim().match(/^item-(\d+)$/i);
@@ -908,6 +912,7 @@ function createThreadDetailRuntime(deps = {}) {
     if (!isOptimisticUserMessage(item) || !Array.isArray(durableUserMessages)) return false;
     return durableUserMessages.some((real) => {
       if (!real || !real.item || real.item.id === item.id) return false;
+      if (userMessagesShareSubmissionId(real.item, item)) return true;
       if (!userMessagesCanShadow(real.item, item)) return false;
       if (real.turnIndex >= turnIndex) return true;
       if (optimisticEchoCanMatchEarlierDurable(real.item, item, real.turn)) return true;

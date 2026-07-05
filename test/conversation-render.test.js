@@ -5596,6 +5596,50 @@ test("cross-turn normalization drops successful local pending echo after active 
   assert.deepEqual(thread.turns[1].items, []);
 });
 
+test("cross-turn normalization drops same-submission pending echo after durable completed receipt", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "server-completed-turn",
+        status: { type: "completed" },
+        items: [
+          {
+            id: "real-user-current",
+            type: "userMessage",
+            clientSubmissionId: "submit-current",
+            startedAtMs: 1782907392000,
+            content: [{ type: "input_text", text: "server normalized input" }],
+          },
+          { id: "assistant-final", type: "agentMessage", text: "done" },
+          { id: "usage", type: "turnUsageSummary" },
+        ],
+      },
+      {
+        id: "local-turn-submit-current",
+        status: { type: "active" },
+        items: [{
+          id: "local-user-submit-current",
+          type: "userMessage",
+          startedAtMs: 1782907392600,
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-current",
+          content: [{ type: "text", text: "local pre-upload input" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), [
+    "real-user-current",
+    "assistant-final",
+    "usage",
+  ]);
+  assert.deepEqual(thread.turns[1].items, []);
+});
+
 test("cross-turn normalization keeps nearby repeated send after completed durable turn", () => {
   const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
   const thread = {
