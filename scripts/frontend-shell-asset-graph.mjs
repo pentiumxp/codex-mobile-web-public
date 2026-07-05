@@ -519,6 +519,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "settings-runtime",
     source: "public/settings-runtime.js",
+    nativeSource: "frontend/native/settings-runtime.mjs",
     globalName: "CodexSettingsRuntime",
     expectedFunctions: [
       "createSettingsRuntime",
