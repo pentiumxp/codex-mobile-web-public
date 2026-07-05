@@ -2010,7 +2010,120 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     if (record.retired === true || status === "retired") return { unavailable: true, reason: "lifecycle_retired" };
     if (record.disabled === true || status === "disabled") return { unavailable: true, reason: "lifecycle_disabled" };
     if (record.archived === true || status === "archived") return { unavailable: true, reason: "lifecycle_archived" };
+    if (record.ownershipInheritanceStatus === "blocked") {
+      const reason = compactOneLine(record.ownershipInheritanceBlockedReason).replace(/[^a-z0-9_:-]+/gi, "_").toLowerCase();
+      return { unavailable: true, reason: reason ? `ownership_inheritance_blocked_${reason}` : "ownership_inheritance_blocked" };
+    }
     return { unavailable: false, reason: "" };
+  }
+
+  function workerMainRoleForWorkerRole(role = "") {
+    if (role === "home_ai_worker") return "home_ai_main";
+    if (role === "plugin_worker") return "plugin_main";
+    return "";
+  }
+
+  function workerLaneActiveHeartbeatReason(record = {}) {
+    const heartbeat = record.heartbeat && typeof record.heartbeat === "object" ? record.heartbeat : null;
+    if (!heartbeat) return "";
+    const status = compactOneLine(heartbeat.status).toLowerCase();
+    if (/^(completed|complete|done|idle|available|cleared|closed)$/i.test(status)) return "";
+    return "active_heartbeat";
+  }
+
+  function taskCardIsTerminalForWorkerOwnership(card = {}) {
+    const status = compactOneLine(card.status).toLowerCase();
+    if (/^(replied|completed|complete|revoked|deleted|rejected|blocked|redirected|partially_completed)$/i.test(status)) return true;
+    const lease = card.executionLease && typeof card.executionLease === "object" ? card.executionLease : null;
+    if (!lease) return /^(done|closed|terminal)$/i.test(status);
+    const leaseStatus = compactOneLine(lease.status || lease.executionStatus || lease.terminalStatus).toLowerCase();
+    return /^(completed|complete|done|closed|returned|terminal)$/i.test(leaseStatus);
+  }
+
+  function workerLaneActiveTaskReason(record = {}) {
+    const taskCardId = compactOneLine(record.lastTaskCardId);
+    if (!taskCardId) return "";
+    if (!readThreadTaskCardForLoopEvidence) return "task_card_state_unavailable";
+    let card = null;
+    try {
+      card = readThreadTaskCardForLoopEvidence(taskCardId);
+    } catch (_) {
+      card = null;
+    }
+    if (!card) return "";
+    if (taskCardIsTerminalForWorkerOwnership(card)) return "";
+    return "active_task_card";
+  }
+
+  function workerLaneContinuationInheritanceBlockReason(record = {}) {
+    const lifecycle = workerLaneTerminalState(Object.assign({}, record, {
+      ownershipInheritanceStatus: "",
+      ownershipInheritanceBlockedReason: "",
+    }));
+    if (lifecycle.unavailable) return lifecycle.reason;
+    return workerLaneActiveHeartbeatReason(record) || workerLaneActiveTaskReason(record) || "";
+  }
+
+  function currentMainForWorkerLaneOwner(record = {}, input = {}) {
+    const role = compactOneLine(record.role);
+    const mainRole = workerMainRoleForWorkerRole(role);
+    const sourceThreadId = compactOneLine(record.sourceThreadId);
+    const cwd = compactOneLine(record.cwd || input.cwd || input.workspaceCwd || input.workspace || input.targetWorkspace);
+    if (!mainRole || !sourceThreadId || !cwd) return null;
+    const resolved = workspaceMainRouting.resolve({
+      action: "resolve",
+      role: mainRole,
+      cwd,
+      sourceThreadId,
+    });
+    if (!resolved || !resolved.ok || !resolved.thread || !resolved.thread.id) return null;
+    if (sameThreadId(resolved.thread.id, sourceThreadId)) return null;
+    return resolved.thread;
+  }
+
+  function rememberPreviousWorkerOwner(record = {}, sourceThreadId = "") {
+    const previous = compactOneLine(sourceThreadId);
+    if (!previous) return;
+    if (!Array.isArray(record.previousSourceThreadIds)) record.previousSourceThreadIds = [];
+    if (!record.previousSourceThreadIds.some((id) => sameThreadId(id, previous))) record.previousSourceThreadIds.push(previous);
+    if (record.previousSourceThreadIds.length > 12) record.previousSourceThreadIds = record.previousSourceThreadIds.slice(-12);
+  }
+
+  function inheritWorkerLaneOwnershipFromContinuations(input = {}) {
+    const role = roleFromLifecycle(input);
+    if (!isWorkerLifecycleRole(role)) return { inherited: 0, blocked: 0 };
+    const timestamp = nowIso(clock);
+    let inherited = 0;
+    let blocked = 0;
+    let changed = false;
+    for (const record of workerLanesState()) {
+      if (!workerLaneRecordMatchesInput(record, input)) continue;
+      const currentMain = currentMainForWorkerLaneOwner(record, input);
+      if (!currentMain || !currentMain.id) continue;
+      const blockReason = workerLaneContinuationInheritanceBlockReason(record);
+      if (blockReason) {
+        record.currentMainThreadId = currentMain.id;
+        record.ownershipInheritanceStatus = "blocked";
+        record.ownershipInheritanceBlockedReason = blockReason;
+        record.updatedAt = timestamp;
+        blocked += 1;
+        changed = true;
+        continue;
+      }
+      const previousSourceThreadId = compactOneLine(record.sourceThreadId);
+      rememberPreviousWorkerOwner(record, previousSourceThreadId);
+      record.sourceThreadId = currentMain.id;
+      record.inheritedFromSourceThreadId = previousSourceThreadId;
+      record.currentMainThreadId = currentMain.id;
+      record.ownershipInheritanceStatus = "inherited";
+      record.ownershipInheritanceBlockedReason = "";
+      record.ownershipUpdatedAt = timestamp;
+      record.updatedAt = timestamp;
+      inherited += 1;
+      changed = true;
+    }
+    if (changed) saveState();
+    return { inherited, blocked };
   }
 
   function workerLaneRecordForThread(threadOrId = {}) {
@@ -2081,6 +2194,11 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       disabled: record.disabled === true,
       archived: record.archived === true,
       sourceThreadId: compactOneLine(record.sourceThreadId),
+      previousSourceThreadIds: Array.isArray(record.previousSourceThreadIds) ? record.previousSourceThreadIds.map(compactOneLine).filter(Boolean).slice(-12) : [],
+      inheritedFromSourceThreadId: compactOneLine(record.inheritedFromSourceThreadId),
+      currentMainThreadId: compactOneLine(record.currentMainThreadId),
+      ownershipInheritanceStatus: compactOneLine(record.ownershipInheritanceStatus),
+      ownershipInheritanceBlockedReason: compactOneLine(record.ownershipInheritanceBlockedReason),
       heartbeat: record.heartbeat && typeof record.heartbeat === "object" ? Object.assign({}, record.heartbeat) : null,
       lastTaskCardId: compactOneLine(record.lastTaskCardId),
       updatedAt: compactOneLine(record.updatedAt),
@@ -2191,6 +2309,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   }
 
   function workerLifecycleList(input = {}) {
+    inheritWorkerLaneOwnershipFromContinuations(input);
     const byId = new Map();
     for (const record of workerLanesState()) {
       if (!workerLaneRecordMatchesInput(record, input)) continue;
@@ -2211,6 +2330,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   }
 
   function workerLifecycleResolve(input = {}) {
+    inheritWorkerLaneOwnershipFromContinuations(input);
     const threadId = compactOneLine(input.threadId || input.targetThreadId);
     const rows = workerLifecycleList(Object.assign({}, input, { includeIneligible: true })).threads;
     const resolved = threadId
@@ -2304,6 +2424,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     if (role === "plugin_worker" && !pluginId) return { ok: false, action, error: "thread_lifecycle_plugin_id_required" };
     const sourceThreadId = compactOneLine(input.sourceThreadId || input.source_thread_id || input.threadId);
     if (!sourceThreadId) return { ok: false, action, error: "thread_lifecycle_source_thread_required" };
+    inheritWorkerLaneOwnershipFromContinuations(Object.assign({}, input, { role, cwd, pluginId }));
     const requestId = compactWorkerRequestId(input);
     const existing = findWorkerLaneRecord(input);
     if (existing && (workerRecordHasRequestId(existing, requestId) || !workerLaneTerminalState(existing).unavailable)) {
@@ -2353,7 +2474,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     rememberWorkerRequestId(record, requestId);
     workerLanesState().unshift(record);
     saveState();
-    const row = publicWorkerLane(record, thread, input);
+    inheritWorkerLaneOwnershipFromContinuations(Object.assign({}, input, { role, cwd, pluginId }));
+    const inheritedRecord = findWorkerLaneRecord({ role, targetThreadId: threadId }, { exactOnly: true }) || record;
+    const row = publicWorkerLane(inheritedRecord, thread, input);
     return { ok: row.deliverable, action, created: true, thread: row, error: row.deliverable ? "" : "thread_lifecycle_target_not_deliverable" };
   }
 

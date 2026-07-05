@@ -2562,6 +2562,182 @@ test("thread lifecycle worker exact target retirement does not mutate default la
   assert.equal(stillCurrent.thread.deliverable, true);
 });
 
+test("thread lifecycle inherits eligible worker lane ownership to main continuation", async () => {
+  const homeAiCwd = "/Users/hermes-dev/HermesMobileDev/app";
+  const { createdThreads, runtime } = makeRuntime({
+    name: "thread-lifecycle-worker-continuation-inherit",
+    visibleThreads: [{
+      id: "home-old",
+      title: "Home AI 06-22",
+      cwd: homeAiCwd,
+      status: { type: "completed" },
+      updatedAt: 10,
+    }, {
+      id: "home-new",
+      title: "Home AI 07-05",
+      cwd: homeAiCwd,
+      status: { type: "active" },
+      updatedAt: 20,
+    }],
+    readContinuationLineageEntries: () => [{
+      createdAt: "2026-07-05T00:00:00.000Z",
+      sourceThreadId: "home-old",
+      sourceThreadTitle: "Home AI 06-22",
+      newThreadId: "home-new",
+      newThreadTitle: "Home AI 07-05",
+      inheritedThreadRole: "home_ai_main",
+      preferredMain: true,
+    }],
+  });
+
+  const oldOwned = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "home_ai_worker",
+    sourceThreadId: "home-old",
+    cwd: homeAiCwd,
+    purpose: "implementation",
+    idempotencyKey: "old-main-worker",
+  });
+  assert.equal(oldOwned.ok, true);
+  assert.equal(oldOwned.thread.sourceThreadId, "home-new");
+  assert.equal(oldOwned.thread.inheritedFromSourceThreadId, "home-old");
+  assert.deepEqual(oldOwned.thread.previousSourceThreadIds, ["home-old"]);
+  assert.equal(oldOwned.thread.ownershipInheritanceStatus, "inherited");
+
+  const ensuredFromCurrent = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "home_ai_worker",
+    sourceThreadId: "home-new",
+    cwd: homeAiCwd,
+    purpose: "implementation",
+    idempotencyKey: "current-main-worker",
+  });
+  assert.equal(ensuredFromCurrent.ok, true);
+  assert.equal(ensuredFromCurrent.created, false);
+  assert.equal(ensuredFromCurrent.thread.id, oldOwned.thread.id);
+  assert.equal(ensuredFromCurrent.thread.sourceThreadId, "home-new");
+  assert.equal(createdThreads.length, 1);
+
+  const listed = await runtime.threadLifecycle({
+    action: "list",
+    role: "home_ai_worker",
+    cwd: homeAiCwd,
+  });
+  assert.equal(listed.ok, true);
+  assert.equal(listed.threads.length, 1);
+  assert.equal(listed.threads[0].id, oldOwned.thread.id);
+  assert.equal(listed.threads[0].sourceThreadId, "home-new");
+});
+
+test("thread lifecycle does not inherit retired or active worker lanes from old main", async () => {
+  const homeAiCwd = "/Users/hermes-dev/HermesMobileDev/app";
+  const evidenceCards = new Map();
+  const createdThreadIds = [];
+  let lineageEntries = [];
+  const { runtime } = makeRuntime({
+    name: "thread-lifecycle-worker-continuation-safe-boundaries",
+    visibleThreads: [{
+      id: "home-old",
+      title: "Home AI 06-22",
+      cwd: homeAiCwd,
+      status: { type: "completed" },
+      updatedAt: 10,
+    }, {
+      id: "home-new",
+      title: "Home AI 07-05",
+      cwd: homeAiCwd,
+      status: { type: "active" },
+      updatedAt: 20,
+    }],
+    readContinuationLineageEntries: () => lineageEntries,
+    readThreadTaskCardForLoopEvidence: (cardId) => evidenceCards.get(cardId) || null,
+    createLoopRoleThread: async ({ role, cwd, title, threadRole, workerPurpose }) => {
+      const id = `${role}-${workerPurpose || "worker"}-${createdThreadIds.length + 1}-created`;
+      const thread = { id, title, cwd, threadRole };
+      createdThreadIds.push(id);
+      return thread;
+    },
+  });
+  const continuationLineage = {
+    createdAt: "2026-07-05T00:00:00.000Z",
+    sourceThreadId: "home-old",
+    newThreadId: "home-new",
+    inheritedThreadRole: "home_ai_main",
+    preferredMain: true,
+  };
+
+  const retiredLane = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "home_ai_worker",
+    sourceThreadId: "home-old",
+    cwd: homeAiCwd,
+    purpose: "retired",
+    idempotencyKey: "old-retired-worker",
+  });
+  await runtime.threadLifecycle({
+    action: "retire",
+    role: "home_ai_worker",
+    targetThreadId: retiredLane.thread.id,
+  });
+
+  const heartbeatLane = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "home_ai_worker",
+    sourceThreadId: "home-old",
+    cwd: homeAiCwd,
+    purpose: "heartbeat",
+    idempotencyKey: "old-heartbeat-worker",
+  });
+  await runtime.threadLifecycle({
+    action: "heartbeat",
+    role: "home_ai_worker",
+    targetThreadId: heartbeatLane.thread.id,
+    status: "working",
+    taskCardId: "ttc_active_heartbeat",
+    summary: "bounded active work",
+  });
+  evidenceCards.set("ttc_active_heartbeat", {
+    id: "ttc_active_heartbeat",
+    status: "approved",
+    executionLease: { status: "running" },
+  });
+  lineageEntries = [continuationLineage];
+
+  const currentEnsure = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "home_ai_worker",
+    sourceThreadId: "home-new",
+    cwd: homeAiCwd,
+    purpose: "heartbeat",
+    idempotencyKey: "new-main-heartbeat-worker",
+  });
+  assert.equal(currentEnsure.ok, true);
+  assert.equal(currentEnsure.created, true);
+  assert.notEqual(currentEnsure.thread.id, heartbeatLane.thread.id);
+  assert.equal(createdThreadIds.length, 3);
+
+  const retiredStatus = await runtime.threadLifecycle({
+    action: "status",
+    role: "home_ai_worker",
+    targetThreadId: retiredLane.thread.id,
+    includeIneligible: true,
+  });
+  assert.equal(retiredStatus.thread.sourceThreadId, "home-old");
+  assert.equal(retiredStatus.thread.deliverabilityReason, "lifecycle_retired");
+
+  const heartbeatStatus = await runtime.threadLifecycle({
+    action: "status",
+    role: "home_ai_worker",
+    targetThreadId: heartbeatLane.thread.id,
+    includeIneligible: true,
+  });
+  assert.equal(heartbeatStatus.thread.sourceThreadId, "home-old");
+  assert.equal(heartbeatStatus.thread.currentMainThreadId, "home-new");
+  assert.equal(heartbeatStatus.thread.ownershipInheritanceStatus, "blocked");
+  assert.equal(heartbeatStatus.thread.ownershipInheritanceBlockedReason, "active_heartbeat");
+  assert.equal(heartbeatStatus.thread.deliverable, false);
+});
+
 test("thread lifecycle worker role completion uses worker lifecycle instead of loop lookup", async () => {
   const { runtime } = makeRuntime({
     name: "thread-lifecycle-worker-role-complete",
