@@ -45,6 +45,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "runtime-settings",
     source: "public/runtime-settings.js",
+    nativeSource: "frontend/native/runtime-settings.mjs",
     globalName: "CodexRuntimeSettings",
     expectedFunctions: [
       "normalizeOptionList",
@@ -62,6 +63,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "viewport-metrics",
     source: "public/viewport-metrics.js",
+    nativeSource: "frontend/native/viewport-metrics.mjs",
     globalName: "CodexViewportMetrics",
     expectedFunctions: [
       "cssPixel",
@@ -264,6 +266,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "draft-store",
     source: "public/draft-store.js",
+    nativeSource: "frontend/native/draft-store.mjs",
     globalName: "CodexDraftStore",
     expectedFunctions: [
       "defaultNormalizeFsPath",
@@ -277,6 +280,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "image-compressor",
     source: "public/image-compressor.js",
+    nativeSource: "frontend/native/image-compressor.mjs",
     globalName: "CodexImageCompressor",
     expectedFunctions: [
       "compressedImageName",
@@ -604,6 +608,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-list-load-policy",
     source: "public/thread-list-load-policy.js",
+    nativeSource: "frontend/native/thread-list-load-policy.mjs",
     globalName: "CodexThreadListLoadPolicy",
     expectedFunctions: [
       "planThreadListLoadRequest",

@@ -259,6 +259,31 @@ function createPendingSteerEchoStore(options = {}) {
       && (item.id === pendingItem.id || sameUserMessageContent(item, pendingItem)));
   }
 
+  function insertPendingEchoIntoTurn(turn, pendingItem) {
+    if (!turn || !pendingItem) return false;
+    turn.items = Array.isArray(turn.items) ? turn.items : [];
+    const matchingIndex = turn.items.findIndex((item) => item
+      && item.type === "userMessage"
+      && (item.id === pendingItem.id || sameUserMessageContent(item, pendingItem)));
+    if (matchingIndex >= 0) {
+      const firstNonUserIndex = turn.items.findIndex((item) => item && item.type !== "userMessage");
+      if (firstNonUserIndex >= 0 && matchingIndex > firstNonUserIndex) {
+        const [item] = turn.items.splice(matchingIndex, 1);
+        turn.items.splice(firstNonUserIndex, 0, item);
+        return true;
+      }
+      return false;
+    }
+    const insertAt = turn.items.findIndex((item) => item && item.type !== "userMessage");
+    const item = Object.assign({}, pendingItem);
+    if (insertAt < 0) {
+      turn.items.push(item);
+    } else {
+      turn.items.splice(insertAt, 0, item);
+    }
+    return true;
+  }
+
   function turnIndexForId(thread, turnId) {
     const id = String(turnId || "");
     if (!id) return -1;
@@ -302,17 +327,7 @@ function createPendingSteerEchoStore(options = {}) {
       }
       const turn = thread.turns.find((candidate) => String(candidate && candidate.id || "") === entry.turnId);
       if (!turn) continue;
-      if (isCompletedTurn(turn)) {
-        const pendingTurnIndex = turnIndexForId(thread, entry.turnId);
-        if (pendingTurnIndex >= 0) {
-          removePendingEchoFromThread(thread, entry.item, entry.turnId, pendingTurnIndex);
-        }
-        entries.delete(entry.key);
-        continue;
-      }
-      turn.items = Array.isArray(turn.items) ? turn.items : [];
-      if (hasMatchingUserMessage(turn, entry.item)) continue;
-      turn.items.push(Object.assign({}, entry.item));
+      insertPendingEchoIntoTurn(turn, entry.item);
     }
     return thread;
   }

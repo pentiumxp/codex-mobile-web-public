@@ -107,12 +107,43 @@
         || existing.id === item.id
         || userMessagesCanShadow(existing, item)
       ));
-      if (!alreadyPresent) turn.items.push(item);
+      if (alreadyPresent) return;
+      const insertAt = turn.items.findIndex((existing) => existing && existing.type !== "userMessage");
+      if (insertAt < 0) {
+        turn.items.push(item);
+      } else {
+        turn.items.splice(insertAt, 0, item);
+      }
     }
 
     function copyTurnWithOnlyItems(turn, items) {
       return Object.assign({}, turn || {}, {
         items: (items || []).slice(),
+      });
+    }
+
+    function visibleNonReasoningItems(turn) {
+      return (Array.isArray(turn && turn.items) ? turn.items : [])
+        .filter((item) => item && turnVisibleWeight({ items: [item] }) > 0 && !isReasoningItem(item));
+    }
+
+    function existingV4TurnHasOnlyPendingOverlayItems(existingTurn) {
+      const visibleItems = visibleNonReasoningItems(existingTurn);
+      return Boolean(visibleItems.length && visibleItems.every(shouldPreserveV4PendingOverlayItem));
+    }
+
+    function turnHasNonUserAuthority(turn) {
+      return visibleNonReasoningItems(turn).some((item) => item && item.type !== "userMessage");
+    }
+
+    function incomingTurnsHaveNewerNonUserAuthority(existingTurn, incomingTurns = []) {
+      const existingOrder = turnOrderMs(existingTurn);
+      if (!existingOrder) return false;
+      return (incomingTurns || []).some((incomingTurn) => {
+        if (!incomingTurn || String(incomingTurn.id || "") === String(existingTurn && existingTurn.id || "")) return false;
+        if (!turnHasNonUserAuthority(incomingTurn)) return false;
+        const incomingOrder = turnOrderMs(incomingTurn);
+        return Boolean(incomingOrder && incomingOrder > existingOrder);
       });
     }
 
@@ -128,6 +159,10 @@
         const targetTurn = turnsById.get(String(existingTurn.id || ""));
         if (targetTurn) {
           pendingItems.forEach((item) => appendV4PendingOverlayItem(targetTurn, item));
+          continue;
+        }
+        if (existingV4TurnHasOnlyPendingOverlayItems(existingTurn)
+          && incomingTurnsHaveNewerNonUserAuthority(existingTurn, mergedThread.turns)) {
           continue;
         }
         const overlayTurn = copyTurnWithOnlyItems(existingTurn, pendingItems);

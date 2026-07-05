@@ -351,6 +351,7 @@ test("thread message route queues local turn-start notification after replacemen
   const events = [];
   const notified = [];
   const remembered = [];
+  const pendingEchoes = [];
   const { route, requests } = createRouteHarness({
     scheduleBackgroundTask: (task) => {
       backgroundTasks.push(task);
@@ -361,6 +362,13 @@ test("thread message route queues local turn-start notification after replacemen
       return result.turnId || "turn-queued";
     },
     rememberThreadIdForTurnId: (threadId, turnId) => remembered.push({ threadId, turnId }),
+    pendingSteerEchoStore: {
+      remember: (params) => {
+        pendingEchoes.push(params);
+        return "pending-submit-echo";
+      },
+      forget: () => {},
+    },
     codex: {
       request: async (method, params) => {
         requests.push({ method, params });
@@ -390,6 +398,12 @@ test("thread message route queues local turn-start notification after replacemen
   assert.deepEqual(requests.map((entry) => entry.method), ["turn/start"]);
   assert.deepEqual(notified, []);
   assert.deepEqual(remembered, [{ threadId: "thread-1", turnId: "turn-queued" }]);
+  assert.deepEqual(pendingEchoes, [{
+    threadId: "thread-1",
+    turnId: "turn-queued",
+    input: [{ type: "text", text: "hello" }],
+    clientSubmissionId: "client-queued-notify",
+  }]);
   assert.equal(backgroundTasks.length, 1);
   const done = events.find((entry) => entry.event === "done");
   assert.ok(done);

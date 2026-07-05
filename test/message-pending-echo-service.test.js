@@ -108,7 +108,7 @@ test("pending steer echo is removed when durable history has the message in anot
   assert.equal(store.size(), 0);
 });
 
-test("pending steer echo is discarded when the target turn has completed", () => {
+test("pending steer echo remains anchored in a completed target turn until durable history catches up", () => {
   const store = createPendingSteerEchoStore({ now: () => 1000 });
   store.remember({
     threadId: "thread-1",
@@ -137,8 +137,20 @@ test("pending steer echo is discarded when the target turn has completed", () =>
 
   store.injectIntoThread(thread);
 
-  assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["assistant-final", "usage"]);
-  assert.equal(store.size(), 0);
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), [
+    "mux-user-thread-1-turn-1-submission-1",
+    "assistant-final",
+    "usage",
+  ]);
+  assert.equal(store.size(), 1);
+
+  store.injectIntoThread(thread);
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), [
+    "mux-user-thread-1-turn-1-submission-1",
+    "assistant-final",
+    "usage",
+  ]);
+  assert.equal(store.size(), 1);
 });
 
 test("pending steer echo is removed when upload summary gains a durable path", () => {

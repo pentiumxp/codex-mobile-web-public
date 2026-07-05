@@ -162,6 +162,64 @@ test("drops pending overlay when durable matching user message is projected", ()
   assert.equal(merged.turns[0].items[0].id, "durable");
 });
 
+test("drops unanchored pending overlay after newer non-user receipt authority arrives", () => {
+  const policy = createPolicy();
+  const existing = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("pending-turn", [
+      userMessage("old pending", { id: "local-old", clientSubmissionId: "submit-old", mobilePendingSubmission: true }),
+    ], { startedAtMs: 100, status: { type: "running" } })],
+  };
+  const incoming = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("new-receipt-turn", [
+      { type: "agentMessage", id: "assistant-new", text: "newer receipt" },
+      { type: "turnUsageSummary", id: "usage-new" },
+    ], {
+      startedAtMs: 150,
+      completedAtMs: 300,
+      status: { type: "completed" },
+    })],
+  };
+
+  const merged = policy.mergeV4ProjectionThread(existing, incoming);
+
+  assert.deepEqual(merged.turns.map((candidate) => candidate.id), ["new-receipt-turn"]);
+  assert.equal(JSON.stringify(merged).includes("local-old"), false);
+});
+
+test("anchors pending overlay before non-user items in the matching turn", () => {
+  const policy = createPolicy();
+  const existing = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("turn-1", [
+      userMessage("pending", { id: "local-pending", clientSubmissionId: "submit-1", mobilePendingSubmission: true }),
+    ], { startedAtMs: 100, status: { type: "running" } })],
+  };
+  const incoming = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("turn-1", [
+      { type: "agentMessage", id: "assistant-1", text: "working" },
+      { type: "turnUsageSummary", id: "usage-1" },
+    ], {
+      startedAtMs: 100,
+      status: { type: "running" },
+    })],
+  };
+
+  const merged = policy.mergeV4ProjectionThread(existing, incoming);
+
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "local-pending",
+    "assistant-1",
+    "usage-1",
+  ]);
+});
+
 test("regressive v4 projection refresh keeps newer revision and active visible turn", () => {
   const policy = createPolicy();
   const existing = {

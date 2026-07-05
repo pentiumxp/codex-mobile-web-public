@@ -14,6 +14,24 @@ async function loadShellManifestGenerator() {
   return import("../scripts/generate-frontend-shell-manifest.mjs");
 }
 
+function createMemoryStorage(initial = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    getItem(key) {
+      return values.has(key) ? values.get(key) : null;
+    },
+    setItem(key, value) {
+      values.set(key, String(value));
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+    snapshot() {
+      return Object.fromEntries(values.entries());
+    },
+  };
+}
+
 test("Vite shell asset graph covers the current ordered frontend shell", async () => {
   const { buildShellAssetManifest } = await loadAssetGraphModule();
   const manifest = buildShellAssetManifest(path.resolve(__dirname, ".."));
@@ -182,6 +200,195 @@ test("native ESM build refresh policy matches the classic public API", async () 
   }
 });
 
+test("native ESM pure utility modules match the classic public APIs", async () => {
+  const classicThreadListLoadPolicy = require("../public/thread-list-load-policy.js");
+  const nativeThreadListLoadPolicy = await import("../frontend/native/thread-list-load-policy.mjs");
+  for (const input of [
+    {},
+    { silent: true, documentHidden: true },
+    { silent: true, documentHidden: true, allowHidden: true, selectedCwd: "/Users/example" },
+    { silent: true, threadDetailOpening: true },
+    { silent: true, threadDetailOpening: true, allowDuringDetail: true, threadListLoadedAtMs: 100 },
+    { silent: true, threadDetailOpening: true, deferFallback: false },
+    { silent: false, search: " owner " },
+  ]) {
+    assert.deepEqual(
+      nativeThreadListLoadPolicy.planThreadListLoadRequest(input),
+      classicThreadListLoadPolicy.planThreadListLoadRequest(input),
+    );
+    assert.deepEqual(
+      nativeThreadListLoadPolicy.default.planThreadListLoadRequest(input),
+      classicThreadListLoadPolicy.planThreadListLoadRequest(input),
+    );
+  }
+
+  const classicViewportMetrics = require("../public/viewport-metrics.js");
+  const nativeViewportMetrics = await import("../frontend/native/viewport-metrics.mjs");
+  for (const value of [0, 0.4, 10.6, "22.4", -3, "bad"]) {
+    assert.equal(nativeViewportMetrics.cssPixel(value), classicViewportMetrics.cssPixel(value));
+  }
+  for (const input of [
+    { previous: 100, next: 100.5 },
+    { previous: 100, next: 103, options: { epsilonPx: 2 } },
+    { previous: 0, next: 1 },
+    { previous: 2, next: 0 },
+  ]) {
+    assert.equal(
+      nativeViewportMetrics.stablePixelChanged(input.previous, input.next, input.options),
+      classicViewportMetrics.stablePixelChanged(input.previous, input.next, input.options),
+    );
+  }
+  for (const element of [
+    null,
+    { tagName: "textarea", disabled: false, readOnly: false },
+    { tagName: "input", type: "text", disabled: false, readOnly: false },
+    { tagName: "input", type: "checkbox", disabled: false, readOnly: false },
+    { tagName: "div", isContentEditable: true },
+  ]) {
+    assert.equal(
+      nativeViewportMetrics.isKeyboardEditable(element),
+      classicViewportMetrics.isKeyboardEditable(element),
+    );
+  }
+  for (const input of [
+    { visualHeight: 700, visualOffsetTop: 0, innerHeight: 700 },
+    { visualHeight: 420, visualOffsetTop: 120, innerHeight: 800, keyboardInputActive: true },
+    { innerHeight: 900, hostKeyboardVisible: true, hostKeyboardBottomInset: 260, hostViewportHeight: 640 },
+  ]) {
+    assert.deepEqual(
+      nativeViewportMetrics.measureViewport(input),
+      classicViewportMetrics.measureViewport(input),
+    );
+  }
+
+  const classicRuntimeSettings = require("../public/runtime-settings.js");
+  const nativeRuntimeSettings = await import("../frontend/native/runtime-settings.mjs");
+  const settingsCases = [
+    { selected: "gpt-5.4-mini", defaultValue: "gpt-5.2", options: ["gpt-5.5"] },
+    { selected: "", defaultValue: "gpt-5.2", options: ["gpt-5.4"] },
+    { selected: "full-access", defaultValue: "auto-review", options: ["config.toml"] },
+    { selected: "", defaultValue: "", options: ["workspace-write"] },
+  ];
+  assert.deepEqual(
+    nativeRuntimeSettings.normalizeOptionList([" gpt-5.4 ", "", "gpt-5.4", "gpt-5.5"]),
+    classicRuntimeSettings.normalizeOptionList([" gpt-5.4 ", "", "gpt-5.4", "gpt-5.5"]),
+  );
+  for (const value of ["gpt-5.5", "gpt-5.3-codex-spark", "custom-model"]) {
+    assert.equal(nativeRuntimeSettings.labelForModel(value), classicRuntimeSettings.labelForModel(value));
+    assert.equal(nativeRuntimeSettings.compactLabelForModel(value), classicRuntimeSettings.compactLabelForModel(value));
+  }
+  for (const value of ["low", "xhigh", "unknown"]) {
+    assert.equal(nativeRuntimeSettings.labelForEffort(value), classicRuntimeSettings.labelForEffort(value));
+  }
+  for (const value of ["full", "full-access", "workspace-write", "config.toml", ""]) {
+    assert.equal(nativeRuntimeSettings.labelForPermissionMode(value), classicRuntimeSettings.labelForPermissionMode(value));
+    assert.equal(nativeRuntimeSettings.titleForPermissionMode(value), classicRuntimeSettings.titleForPermissionMode(value));
+    assert.equal(nativeRuntimeSettings.normalizePermissionModeValue(value), classicRuntimeSettings.normalizePermissionModeValue(value));
+  }
+  for (const settings of settingsCases) {
+    assert.equal(nativeRuntimeSettings.selectedNewThreadModel(settings), classicRuntimeSettings.selectedNewThreadModel(settings));
+    assert.equal(nativeRuntimeSettings.selectedNewThreadEffort(settings), classicRuntimeSettings.selectedNewThreadEffort(settings));
+    assert.equal(nativeRuntimeSettings.selectedNewThreadPermission(settings), classicRuntimeSettings.selectedNewThreadPermission(settings));
+  }
+});
+
+test("native ESM draft store and image compressor match classic fallback behavior", async () => {
+  const classicDraftStore = require("../public/draft-store.js");
+  const nativeDraftStore = await import("../frontend/native/draft-store.mjs");
+  assert.deepEqual(nativeDraftStore.DEFAULTS, classicDraftStore.DEFAULTS);
+  assert.equal(
+    nativeDraftStore.defaultNormalizeFsPath("\\\\?\\C:/Users/Owner/Project/"),
+    classicDraftStore.defaultNormalizeFsPath("\\\\?\\C:/Users/Owner/Project/"),
+  );
+  for (const raw of ["", "{\"a\":{\"text\":\"hello\"}}", "[]", "{bad"]) {
+    assert.deepEqual(nativeDraftStore.parseDraftMap(raw), classicDraftStore.parseDraftMap(raw));
+  }
+  for (const draft of [
+    null,
+    {},
+    { text: "  " },
+    { text: "hello" },
+    { attachments: [{ id: "a" }] },
+    { fastMode: true },
+  ]) {
+    assert.equal(nativeDraftStore.draftHasContent(draft), classicDraftStore.draftHasContent(draft));
+  }
+  const attachment = { id: 77, file: { name: "shot.png", type: "image/png", size: 42, lastModified: 123 } };
+  assert.deepEqual(nativeDraftStore.normalizeAttachmentMeta(attachment), classicDraftStore.normalizeAttachmentMeta(attachment));
+  assert.equal(
+    nativeDraftStore.attachmentStorageKey("new:C:\\Project", "a/b"),
+    classicDraftStore.attachmentStorageKey("new:C:\\Project", "a/b"),
+  );
+
+  const nativeStorage = createMemoryStorage();
+  const classicStorage = createMemoryStorage();
+  const nativeStore = nativeDraftStore.createDraftStore({ storage: nativeStorage, maxDrafts: 2 });
+  const classicStore = classicDraftStore.createDraftStore({ storage: classicStorage, maxDrafts: 2 });
+  assert.equal(nativeStore.keyForThread(" thread-a "), classicStore.keyForThread(" thread-a "));
+  assert.equal(nativeStore.keyForNewThread("C:/Work/App/"), classicStore.keyForNewThread("C:/Work/App/"));
+  const drafts = {
+    a: { text: "older", updatedAt: 1 },
+    b: { text: "newer", updatedAt: 3 },
+    c: { text: "middle", updatedAt: 2 },
+  };
+  nativeStore.writeMap(drafts);
+  classicStore.writeMap(drafts);
+  assert.deepEqual(nativeStore.readMap(), classicStore.readMap());
+  assert.deepEqual(nativeStorage.snapshot(), classicStorage.snapshot());
+  nativeStore.setTargetKey("thread:a");
+  classicStore.setTargetKey("thread:a");
+  assert.equal(nativeStore.getTargetKey(), classicStore.getTargetKey());
+  nativeStore.clearTargetKeyIfMatches("thread:a");
+  classicStore.clearTargetKeyIfMatches("thread:a");
+  assert.equal(nativeStore.getTargetKey(), classicStore.getTargetKey());
+
+  const classicImageCompressor = require("../public/image-compressor.js");
+  const nativeImageCompressor = await import("../frontend/native/image-compressor.mjs");
+  assert.deepEqual(nativeImageCompressor.DEFAULT_OPTIONS, classicImageCompressor.DEFAULT_OPTIONS);
+  for (const file of [
+    null,
+    { type: "image/png", size: 256 * 1024 },
+    { type: "image/gif", size: 999999 },
+    { type: "image/jpeg", size: 1024 },
+  ]) {
+    assert.equal(
+      nativeImageCompressor.isCompressibleImageFile(file),
+      classicImageCompressor.isCompressibleImageFile(file),
+    );
+  }
+  for (const dims of [
+    [4000, 2000, 1280],
+    [640, 480, 1280],
+    [0, 0, 0],
+  ]) {
+    assert.deepEqual(
+      nativeImageCompressor.targetDimensions(...dims),
+      classicImageCompressor.targetDimensions(...dims),
+    );
+  }
+  for (const [name, type] of [
+    ["photo.png", "image/jpeg"],
+    ["folder/name.webp", "image/webp"],
+    ["", ""],
+  ]) {
+    assert.equal(
+      nativeImageCompressor.compressedImageName(name, type),
+      classicImageCompressor.compressedImageName(name, type),
+    );
+  }
+  for (const input of [
+    [{ size: 1000 }, { size: 900 }],
+    [{ size: 1000 }, { size: 950 }],
+    [{ size: 0 }, { size: 1 }],
+    [{ size: 1000 }, null],
+  ]) {
+    assert.equal(
+      nativeImageCompressor.shouldUseCompressedBlob(input[0], input[1]),
+      classicImageCompressor.shouldUseCompressedBlob(input[0], input[1]),
+    );
+  }
+});
+
 test("Vite shell entry imports the asset-graph ESM compatibility module", async () => {
   const {
     VITE_ESM_COMPATIBILITY_MODULES,
@@ -273,21 +480,27 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/api-client\.js/);
   assert.match(shardSources, /public\/markdown-renderer\.js/);
   assert.match(shardSources, /frontend\/native\/build-refresh-policy\.mjs/);
+  assert.match(shardSources, /frontend\/native\/runtime-settings\.mjs/);
+  assert.match(shardSources, /frontend\/native\/viewport-metrics\.mjs/);
+  assert.match(shardSources, /frontend\/native\/thread-list-load-policy\.mjs/);
+  assert.match(shardSources, /frontend\/native\/draft-store\.mjs/);
+  assert.match(shardSources, /frontend\/native\/image-compressor\.mjs/);
   assert.doesNotMatch(shardSources, /from ".*public\/build-refresh-policy\.js"/);
-  assert.match(shardSources, /public\/runtime-settings\.js/);
-  assert.match(shardSources, /public\/viewport-metrics\.js/);
+  assert.doesNotMatch(shardSources, /from ".*public\/runtime-settings\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/viewport-metrics\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/thread-list-load-policy\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/draft-store\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/image-compressor\.js"/);
   assert.match(shardSources, /public\/conversation-scroll\.js/);
   assert.match(shardSources, /public\/thread-performance-metrics\.js/);
   assert.match(shardSources, /public\/thread-detail-state\.js/);
   assert.match(shardSources, /public\/thread-detail-render-plan\.js/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
-  assert.match(shardSources, /public\/image-compressor\.js/);
   assert.match(shardSources, /public\/plugin-voice-input\.js/);
   assert.match(shardSources, /public\/plugin-embed\.js/);
   assert.match(shardSources, /public\/frontend-runtime-health\.js/);
   assert.match(shardSources, /public\/home-ai-diagnostic-reporting\.js/);
   assert.match(shardSources, /public\/thread-diagnostic-events\.js/);
-  assert.match(shardSources, /public\/draft-store\.js/);
   assert.match(shardSources, /public\/thread-tile-layout\.js/);
   assert.match(shardSources, /public\/thread-tile-actions\.js/);
   assert.match(shardSources, /public\/thread-tile-state\.js/);
@@ -306,7 +519,6 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /public\/composer-runtime\.js/);
   assert.match(shardSources, /public\/composer-bridge-runtime\.js/);
   assert.match(shardSources, /public\/api-client-runtime\.js/);
-  assert.match(shardSources, /public\/thread-list-load-policy\.js/);
   assert.match(shardSources, /public\/thread-list-stable-order\.js/);
   assert.match(shardSources, /public\/thread-status-hints\.js/);
   assert.match(shardSources, /public\/thread-detail-patch-plan\.js/);
@@ -577,8 +789,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 1);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 1);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 6);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 6);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -598,11 +810,38 @@ test("Vite shell build contract records entry chunks and classic fallback output
       nativeSource: entry.nativeSource,
       importSource: entry.importSource,
     })),
-    [{
-      id: "build-refresh-policy",
-      nativeSource: "frontend/native/build-refresh-policy.mjs",
-      importSource: "frontend/native/build-refresh-policy.mjs",
-    }]
+    [
+      {
+        id: "build-refresh-policy",
+        nativeSource: "frontend/native/build-refresh-policy.mjs",
+        importSource: "frontend/native/build-refresh-policy.mjs",
+      },
+      {
+        id: "runtime-settings",
+        nativeSource: "frontend/native/runtime-settings.mjs",
+        importSource: "frontend/native/runtime-settings.mjs",
+      },
+      {
+        id: "viewport-metrics",
+        nativeSource: "frontend/native/viewport-metrics.mjs",
+        importSource: "frontend/native/viewport-metrics.mjs",
+      },
+      {
+        id: "draft-store",
+        nativeSource: "frontend/native/draft-store.mjs",
+        importSource: "frontend/native/draft-store.mjs",
+      },
+      {
+        id: "image-compressor",
+        nativeSource: "frontend/native/image-compressor.mjs",
+        importSource: "frontend/native/image-compressor.mjs",
+      },
+      {
+        id: "thread-list-load-policy",
+        nativeSource: "frontend/native/thread-list-load-policy.mjs",
+        importSource: "frontend/native/thread-list-load-policy.mjs",
+      },
+    ]
   );
   assert.ok(contract.esmCompatibility.modules.every((entry) => entry.classicLoaderExcluded === true));
   assert.ok(contract.esmCompatibility.modules.every((entry) => entry.bytes > 0));

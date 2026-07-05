@@ -496,6 +496,12 @@ function createThreadMessageRouteService(dependencies = {}) {
             const immediateTurnId = turnStartResultTurnId(turnResult);
             if (immediateTurnId) {
               rememberThreadIdForTurnId(threadId, immediateTurnId);
+              pendingSteerEchoStore.remember({
+                threadId,
+                turnId: immediateTurnId,
+                input,
+                clientSubmissionId: body.clientSubmissionId,
+              });
               targetTimings.notifyLocalTurnStartedQueued = true;
               markSubmitTimingAliases(targetTimings, ["notifyLocalTurnStartedMs", "notifyMs"], notifyStartedAtMs);
               scheduleBackgroundTask(async () => {
