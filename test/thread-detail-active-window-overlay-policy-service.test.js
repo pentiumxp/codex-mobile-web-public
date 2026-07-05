@@ -461,6 +461,26 @@ test("display timestamp order matches client fallback for completed turns", () =
   ]);
 });
 
+test("display timestamp order places context compaction by its own timestamp", () => {
+  const turn = {
+    id: "turn-active",
+    status: "inProgress",
+    startedAt: "2026-07-05T01:10:00.000Z",
+  };
+  const items = [
+    { id: "user-late", type: "userMessage", startedAt: "2026-07-05T01:23:30.000Z" },
+    { id: "context-old", type: "contextCompaction", startedAt: "2026-07-05T01:12:49.000Z" },
+    { id: "agent-later", type: "agentMessage", startedAt: "2026-07-05T01:24:00.000Z" },
+  ];
+
+  assert.equal(itemDisplayTimestampMs(items[1], turn, null), Date.parse("2026-07-05T01:12:49.000Z"));
+  assert.deepEqual(orderItemsByDisplayTimestamp(items, turn, null).map((item) => item.id), [
+    "context-old",
+    "user-late",
+    "agent-later",
+  ]);
+});
+
 test("active overlay turn backfill dedupes matching user message echoes", () => {
   const merged = mergeActiveOverlayTurnWithWindowBackfill({
     id: "active-turn",

@@ -140,7 +140,7 @@ function itemType(item) {
 function itemDisplayTimestampMs(item, turn = null, thread = null) {
   if (!item || typeof item !== "object") return 0;
   const type = itemType(item);
-  if (type === "turnusagesummary" || type === "contextcompaction") return 0;
+  if (type === "turnusagesummary") return 0;
   const direct = timestampMs(item && (
     item.createdAtMs
     || item.createdAt

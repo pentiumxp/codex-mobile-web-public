@@ -21,6 +21,46 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## Current Addendum - 2026-07-04 POST/detail latency and settled large-window fix
+
+- Existing-thread `POST /api/threads/:threadId/messages` is not the current
+  production bottleneck after `82d1cf08` / `d38d6e23`: the latest isolated
+  existing-thread follow-up smoke after the detail fix had route max/last
+  `12ms`, slow `0`, and `steeringQueued=false`. No real Home AI large-thread
+  message was injected for verification.
+- Commit `79093e2b126b` (`fix: bound display summary cache memory`) was
+  deployed through Codex Mobile Deploy Lane. Backup:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260704T165412Z-plugin-codex-mobile-web-codex-mobile-display-summary-cache-memory-79093e2b`.
+  The display summary cache no longer retains full thread-detail payloads, but
+  large-window reads can still raise V8 heap until GC.
+- Commit `4ea4195ec229` (`fix: keep settled large detail on recent window`)
+  was deployed through Codex Mobile Deploy Lane card
+  `ttc_cb581a439344044dfb`; return card
+  `ttc_e5d913b09574255ce6` completed. Backup:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260704T171043Z-plugin-codex-mobile-web-codex-mobile-settled-large-detail-window-4ea4195e`.
+- Root cause for the remaining user-perceived send/open latency: completed
+  Home AI large thread `019eed86-2002-7cc2-b0b7-937eb5355f36` was repeatedly
+  falling through to `turns-list-large` because stale active-like window turns
+  promoted recent reads to full/large fallback. Explicit `budget=compact` also
+  did not map to recent-window orchestration.
+- Fix: terminal summaries now downgrade stale active turns in projected/initial
+  windows with bounded `mobileStaleActiveTurn` markers and seed/reuse recent
+  partial projection. Explicit compact budget maps to recent-window
+  orchestration unless `mode=full`.
+- Validation: source focused node tests, `npm run --silent check`, and
+  `git diff --check -- ':!.agent-context'` passed. Production focused tests
+  passed `153/153`, and source/production SHA parity matched all changed files.
+- Production readback for the Home AI large thread: first
+  `?mode=recent&budget=compact` cold seed was `3365ms`, then warm partial
+  projection reads were `160-174ms` external / `25-29ms` server. Plain
+  `?budget=compact` repeated reads were `158-159ms` external / `25-26ms`
+  server. Repeated `turns-list-large` fallback was closed.
+- Residuals: first cold seed still costs about `3.36s`; listener heap can rise
+  near `1GB` after large-window reads until V8 GC; shared app-server had a
+  moderate residual CPU sample. If latency or CPU spikes persist, the next
+  bounded targets are cold seed cost and large-window allocation/GC, then
+  app-server CPU profiling.
+
 ## Current Addendum - 2026-07-04 Listener Pressure Diagnostics Hotfix
 
 - Emergency break-glass card `ttc_5b65caeb537e1d002c` was completed from the
@@ -1198,3 +1238,949 @@ The previous full handoff was archived and should be opened only when old proven
   cookies, launch tokens, private thread bodies, task-card bodies, endpoint
   bodies, provider payloads, screenshots, DB rows, raw auth URLs, password
   paths, full prompts, rollout contents, or long logs were exposed.
+
+## 2026-07-05T00:36:36+08:00 - Message submit active-turn steering latency fix prepared
+
+- User reported that entering large threads is now mostly acceptable, but
+  sending user messages can still be intermittently slow for seconds and has
+  failed before.
+- Current strongest evidence and root-cause hypothesis:
+  - prior production timed samples showed ordinary existing-thread sends had
+    already been improved by avoiding blocking pre-resume;
+  - remaining multi-second active-thread sends were dominated by
+    `steerMs/dedupeWaitMs`, specifically `turn/steer` waiting before the HTTP
+    `POST /api/threads/:threadId/messages` response;
+  - the violated boundary was that the route treated active-turn steering as a
+    synchronous foreground operation even though the UI already has optimistic
+    user-message echo and `clientSubmissionId`-based submission dedupe.
+- Local fix prepared:
+  - `server-routes/thread-message-route-service.js` now fast-accepts slow
+    active-turn steering after a bounded threshold and returns
+    `steeringQueued=true` instead of holding the POST response on `turn/steer`;
+  - the pending steer echo is remembered before the background steer request,
+    preserving visible user input while the app-server operation completes;
+  - successful background steering still notifies mux user-message state;
+  - if queued `turn/steer` later reports a stale active turn, the route now
+    starts a replacement turn in the background and calls the normal
+    `notifyLocalTurnStarted` path instead of dropping the accepted message into
+    a failure-only log;
+  - foreground stale steering still falls through to the same replacement
+    turn-start path;
+  - `public/composer-runtime.js` and `public/navigation-runtime.js` distinguish
+    queued steering from delivered steering so the Android/web composer no
+    longer reports a background-queued steer as already delivered.
+- Frontend artifact consistency:
+  - `npm run --silent build:frontend` regenerated the static shell manifest and
+    Vite shell artifacts;
+  - new `clientBuildId/shellCacheName`:
+    `0.1.11|codex-mobile-shell-v625-63a078fee68a`;
+  - bounded readback check showed `public/shell-asset-manifest.json` and
+    `public/vite-shell/vite-shell-readback.json` have matching
+    client/cache ids and `publishedFiles=23`.
+- Validation passed locally:
+  - `node --test test/thread-message-secret-ref-route.test.js
+    test/new-thread-route.test.js` -> 38/38;
+  - `node --check server-routes/thread-message-route-service.js
+    public/composer-runtime.js public/navigation-runtime.js`;
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - `node --test test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js` -> 114/114.
+- Deployment not yet completed at the time of this entry. Deploy should use the
+  Codex Mobile dedicated deploy lane and include readback for
+  `/api/public-config`, `/api/status?detail=1`, `/api/vite-shell-artifact`,
+  source/prod SHA parity for the changed route/frontend/artifact files, and
+  at least one bounded existing-thread POST smoke that reports a fast
+  `steeringQueued=true` response for a slow active-turn steering path if a safe
+  synthetic active-turn fixture is available.
+- Deployment request sent after commit:
+  - target: `Codex Mobile Deploy Lane`
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`);
+  - task card: `ttc_d7de5287606e84b45b`;
+  - structured fields: `cardKind=plugin_deployment`,
+    `pluginId=codex-mobile-web`;
+  - source commit: `82d1cf082ba6` `fix: queue active turn message steering`;
+  - card notes that this ref also resolves the earlier Vite artifact mismatch
+    for the Android composer intent fix by shipping matching
+    `codex-mobile-shell-v625-63a078fee68a` artifacts.
+- Privacy boundary respected: only bounded file names, statuses, test counts,
+  static build ids, route names, and timing-field names were recorded; no raw
+  secrets, access keys, cookies, launch tokens, private thread bodies,
+  task-card bodies, endpoint bodies, provider payloads, screenshots, DB rows,
+  raw auth URLs, password paths, full prompts, rollout contents, or long logs
+  were exposed.
+
+## 2026-07-05T01:39:17+08:00 - Cold large-thread detail seed defer committed
+
+- User reported that Home AI large-thread entry still sometimes felt like
+  0.5-1s and that POST sends remained the higher-priority issue. After prior
+  deploys, repeated large-thread GET reads were warm, but the first cold recent
+  detail seed could still block the foreground route on app-server
+  `thread/turns/list`.
+- Root-cause hypothesis for this slice:
+  - violated boundary: first paint for a large resting/recent thread was still
+    coupled to seeding a projection window, even when a bounded empty fallback
+    plus immediate deferred seed would preserve correctness and avoid foreground
+    app-server work;
+  - active/live thread paths must keep the stricter active-overlay/full-read
+    rules and were not relaxed by this fix.
+- Local fix committed:
+  - commit `0348b97f53e0` `fix: defer cold detail projection seed`;
+  - `services/thread-detail/thread-detail-read-orchestration-service.js`
+    now coalesces and schedules `turns-list-initial` seeding for large resting
+    recent projection misses, returning
+    `mobileReadMode=deferred-initial-turns-list` immediately with bounded
+    `mobileDeferredProjectionSeed` metadata;
+  - `public/thread-detail-render-plan.js` and
+    `public/pane-layout-runtime.js` schedule a delayed current-thread refresh
+    only when that deferred-seed metadata is present;
+  - frontend artifacts were regenerated with
+    `0.1.11|codex-mobile-shell-v625-d7475b2931a4`.
+- Validation passed locally:
+  - `node --test test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-render-plan.test.js` -> 133/133;
+  - `node --test test/thread-detail-runtime-service.test.js
+    test/thread-detail-projection-service.test.js
+    test/thread-rollout-size-consistency.test.js
+    test/thread-task-card-route.test.js` -> 70/70;
+  - `node --test test/conversation-render.test.js
+    test/mobile-viewport.test.js` -> 168/168;
+  - `npm run --silent build:frontend` -> ok;
+  - `node --test test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-render-plan.test.js
+    test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js` -> 247/247;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Deployment request sent:
+  - target: `Codex Mobile Deploy Lane`
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`);
+  - task card: `ttc_0c5b18436a8c9fccfb`;
+  - structured fields: `cardKind=plugin_deployment`,
+    `pluginId=codex-mobile-web`;
+  - source ref: `0348b97f53e0`;
+  - requested readback: central private macOS deploy only, artifact
+    consistency, SHA parity for changed code/tests/artifacts, focused
+    production tests, Home AI large-thread bounded GET samples, and synthetic
+    isolated POST route stats without injecting messages into the real Home AI
+    thread.
+- Current source worktree state after commit: only `.agent-context/HANDOFF.md`
+  remained modified locally.
+
+## 2026-07-05T02:56:00+08:00 - Compacted detail read partial classification fix committed and deploy requested
+
+- Deploy lane returned `a4d3b536` as `partially_completed`:
+  - deployment and production focused tests succeeded;
+  - initial Home AI large-thread samples could use `projection-v4-partial`;
+  - residual remained: the same target later returned
+    `deferred-initial-turns-list` with `projectionMissReason=result-missing`
+    and seed pending metadata; listener heap/CPU still spiked after samples.
+- Additional bounded diagnosis found a second projection-cache invariant break:
+  - production cache for Home AI large thread had raw persisted
+    `dynamic=true`, `partial=false`;
+  - the same cached thread had `mobileOlderTurnsCursor` and positive
+    `mobileOmittedTurnCount`, so it was a compacted/windowed `thread-read`,
+    not a full reusable cache;
+  - existing `isNonFullWindowThread()` only treated older cursor as partial for
+    `turns-list-*` modes, so compacted `thread-read` windows could be stored as
+    full cache and later block stale partial reuse.
+- Source fix committed:
+  - `589998085f880e14e7d0aa7b3297ce7bc95f32a7`
+    `fix: classify compacted detail reads as partial`;
+  - any result with `mobileOlderTurnsCursor`, `mobileNewerTurnsCursor`, or
+    positive `mobileOmittedTurnCount` is now classified as a non-full window.
+- Validation passed locally:
+  - `node --check adapters/thread-detail-projection-service.js`;
+  - `node --test test/thread-detail-active-read-policy-service.test.js
+    test/thread-detail-projection-result-service.test.js
+    test/thread-detail-projection-service.test.js
+    test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-turns-list-read-coalescer-service.test.js
+    test/thread-detail-runtime-service.test.js
+    test/thread-message-secret-ref-route.test.js
+    test/new-thread-route.test.js` -> 145/145;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Bounded local simulation against production cache metadata after the source
+  patch:
+  - raw persisted entry remained `partial=false`, `dynamic=true`, with cursor
+    and omitted-turn markers;
+  - same-signature lookup with `allowPartial=true` returned cached
+    `partial=true`;
+  - changed-signature lookup with `allowPartial=true, allowStalePartial=true`
+    returned cached `partial=true`, `stalePartial=true`.
+- Deployment request sent:
+  - target: `Codex Mobile Deploy Lane`
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`);
+  - task card: `ttc_e686e5bfc558599996`;
+  - source ref: `589998085f880e14e7d0aa7b3297ce7bc95f32a7`;
+  - requested readback must verify no `deferred-initial-turns-list` recurrence
+    for the target during bounded samples and include bounded cache
+    classification evidence.
+- Completion state:
+  - source-side second fix is committed and deploy requested;
+  - do not mark the CPU/POST latency goal complete until production readback
+    confirms the seed cycle and listener CPU/heap spike are closed.
+
+## 2026-07-05T03:08:00+08:00 - Active steering POST fast-accept fix committed and deploy requested
+
+- Production/source-thread readback after `58999808` was positive for the CPU
+  seed-cycle path:
+  - 14 Home AI large-thread compact samples across the old delayed-seed window
+    all returned `projection-v4-partial` / `projection-partial-hit`;
+  - no `deferred-initial-turns-list`, no foreground `thread/read`, no
+    foreground `turns-list`;
+  - production cache metadata still had raw `partial=false`, `dynamic=true`,
+    but with cursor/omitted markers; deployed classification read it as
+    partial at lookup time;
+  - cooldown `ps` sample showed listener, mux, and app-server CPU near `0%`.
+- Remaining POST evidence before the next source fix:
+  - isolated existing-thread active follow-up POST returned HTTP `200`, no
+    error, active steer response shape;
+  - route stats for `POST /api/threads/:threadId/messages` showed count `2`,
+    slow `0`, max route `378ms`, avg `365ms`;
+  - root cause for this residual was the default active steering fast-accept
+    wait of `350ms`.
+- Source fix committed:
+  - `92e106a92b6618a47344cb117fb85f99bd6fa94d`
+    `fix: shorten active steering submit wait`;
+  - `DEFAULT_ACTIVE_TURN_STEER_FAST_ACCEPT_MS` changed from `350` to `120`;
+  - existing background queued steering path is retained.
+- Validation passed locally:
+  - `node --check server-routes/thread-message-route-service.js`;
+  - `node --check test/thread-message-secret-ref-route.test.js`;
+  - `node --test test/thread-detail-active-read-policy-service.test.js
+    test/thread-detail-projection-result-service.test.js
+    test/thread-detail-projection-service.test.js
+    test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-turns-list-read-coalescer-service.test.js
+    test/thread-detail-runtime-service.test.js
+    test/thread-message-secret-ref-route.test.js
+    test/new-thread-route.test.js` -> 146/146;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Deployment request sent:
+  - target: `Codex Mobile Deploy Lane`
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`);
+  - task card: `ttc_f9769e4717a81ae54d`;
+  - source ref: `92e106a92b6618a47344cb117fb85f99bd6fa94d`;
+  - requested readback must verify large-thread seed-cycle remains closed and
+    active-turn existing-thread POST route no longer waits about 350ms before
+    queued return.
+- Completion state:
+  - source-side POST wait fix is committed and deploy requested;
+  - wait for production readback before marking the CPU/POST latency goal
+    complete.
+- Residual risk after this local fix until deploy readback:
+  - if production state is already warm, deploy lane may not naturally prove a
+    cold `deferred-initial-turns-list` sample without mutating the real Home AI
+    thread;
+  - POST send latency remains a separate foreground path; prior deployed
+    fixes made ordinary synthetic existing-thread POST fast, but real active
+    Home AI sends still need natural phase-timing evidence if users continue
+    seeing multi-second sends.
+- Privacy boundary respected: only bounded file names, statuses, test counts,
+  static build ids, route names, timing-field names, short refs, task-card id,
+  and target ids were recorded; no raw secrets, access keys, cookies, launch
+  tokens, private thread bodies, task-card bodies, endpoint bodies, provider
+  payloads, screenshots, DB rows, raw auth URLs, password paths, full prompts,
+  rollout contents, or long logs were exposed.
+
+## 2026-07-05T01:48:03+08:00 - POST preflight and deferred seed follow-up deployed request sent
+
+- Deploy lane returned `0348b97f53e0`
+  `fix: defer cold detail projection seed` as `partially_completed`:
+  - production deploy succeeded and artifact/readback were healthy;
+  - Home AI large-thread foreground GET became fast, with cold recent samples
+    returning `deferred-initial-turns-list` in about tens to hundreds of ms and
+    no foreground `turns-list` or full `thread/read`;
+  - residual: background deferred seed stayed `already-pending` and did not
+    warm to `projection-v4-partial` within bounded readback.
+- Additional source fixes committed:
+  - `ceb6c308` `fix: bound active turn preflight on submit`:
+    active-turn message submit now bounds stale-active preflight, logs
+    `active-turn-stale-preflight-queued`, and proceeds to the existing
+    `turn/steer` fast-accept path instead of letting `thread/turns/list`
+    preflight block the HTTP POST;
+  - `3b46182b` `fix: release stalled deferred detail seeds`:
+    deferred `turns-list-initial` seed now has a bounded local timeout that
+    releases `deferredInitialTurnsListSeeds`, and the turns-list coalescer
+    evicts stale in-flight reads instead of joining a stuck promise forever.
+- Validation passed locally:
+  - `node --check server-routes/thread-message-route-service.js &&
+    node --test test/thread-message-secret-ref-route.test.js` -> 11/11;
+  - `node --test test/new-thread-route.test.js` -> 28/28;
+  - `node --check services/thread-detail/thread-detail-read-orchestration-service.js &&
+    node --check services/thread-detail/thread-detail-turns-list-read-coalescer-service.js &&
+    node --check services/thread-detail/thread-detail-runtime-service.js` -> pass;
+  - `node --test test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-turns-list-read-coalescer-service.test.js
+    test/thread-detail-runtime-service.test.js` -> 51/51;
+  - `node --test test/thread-message-secret-ref-route.test.js
+    test/new-thread-route.test.js` -> 39/39;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Deployment request sent:
+  - target: `Codex Mobile Deploy Lane`
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`);
+  - task card: `ttc_7f0139e182a8012ce1`;
+  - structured fields: `cardKind=plugin_deployment`,
+    `pluginId=codex-mobile-web`;
+  - source ref: `3b46182b8f36d3122f816aa52797b8069e588295`;
+  - requested readback: central private macOS deploy only, status/artifact
+    readback, SHA parity for changed POST/detail/coalescer files, focused
+    production tests, bounded Home AI large-thread GET samples, and isolated
+    synthetic POST route stats without injecting messages into the real Home AI
+    thread.
+- Current source worktree state after commit: only `.agent-context/HANDOFF.md`
+  remained modified locally.
+- Privacy boundary respected: only bounded refs, task-card id, target id, test
+  counts, route names, timing-field names, and status summaries were recorded;
+  no raw secrets, access keys, cookies, launch tokens, private thread bodies,
+  task-card bodies, endpoint bodies, provider payloads, screenshots, DB rows,
+  raw auth URLs, password paths, full prompts, rollout contents, or long logs
+  were exposed.
+
+## 2026-07-05T03:09:36+08:00 - Large-thread GET seed-cycle and existing-thread POST latency fixes deployed
+
+- Root-cause closure for the Home AI large-thread entry regression:
+  - deployed `82552f38dec903fbb4458775acd008b9ad282e4c`
+    `fix: reuse summary-stale partial detail windows`;
+  - production route now accepts summary-stale partial recent-window projections
+    for non-active summaries instead of re-entering `deferred-initial-turns-list`
+    / `result-missing`;
+  - deploy-lane return card `ttc_34b4c2dbc045a942ee` reported status
+    `completed`, deploy `ok=true`, focused production tests `137/137`;
+  - Home AI large-thread readback for
+    `019eed86-2002-7cc2-b0b7-937eb5355f36?budget=compact` showed
+    `deferred-initial-turns-list` `0/14`, mode `projection-v4-partial`,
+    decision `projection-stale-partial-hit`, foreground `threadReadMs=0`,
+    `turnsListInitialMs=0`, and `turnsListBeforeFullMs=0`, with server totals
+    about `40-102ms`.
+- Root-cause closure for existing-thread `POST /api/threads/:threadId/messages`
+  waiting on local notification/projection work:
+  - deployed `08d3e48949bb0e4093d04752ae6416f2e7858878`
+    `fix: queue local turn-start notification on submit`;
+  - deploy-lane return card `ttc_5ba542eac70eb6af7a` reported status
+    `completed`, deploy `ok=true`, focused production tests `167/167`;
+  - remaining evidence showed the background notification could still run in
+    the same microtask turn before response flush.
+- Response-first follow-up for existing-thread POST:
+  - deployed `6a0b68034bc74a9afa442d256a68d5f4251e9eb0`
+    `fix: defer submit notification work past response`;
+  - deploy-lane return card `ttc_e30af10c1fab76da6c` reported status
+    `completed`, deploy `ok=true`, focused production tests `168/168`;
+  - production existing-thread synthetic follow-up route stats after deploy:
+    `POST /api/threads/:threadId/messages` count `2`, slow count `0`,
+    max `32ms`, average `22ms`, last `32ms`;
+  - the same return reported Home AI large-thread spot check:
+    `deferred-initial-turns-list` `0/8`, mode `projection-v4-partial`,
+    decision `projection-stale-partial-hit`, foreground `threadReadMs=0`,
+    `turnsListInitialMs=0`, `turnsListBeforeFullMs=0`, server totals about
+    `41-54ms`.
+- Local source validation for the final POST response-first patch passed:
+  - `node --test test/thread-message-secret-ref-route.test.js` -> 14/14;
+  - `node --test test/thread-message-secret-ref-route.test.js
+    test/new-thread-route.test.js test/thread-task-card-route.test.js
+    test/thread-detail-projection-result-service.test.js
+    test/thread-detail-runtime-service.test.js
+    test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-projection-service.test.js` -> 168/168;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Current residuals:
+  - `new-message` creation can still take seconds and is a separate route from
+    existing-thread `POST /api/threads/:threadId/messages`;
+  - listener RSS/heap can rise after large-thread projection activity until V8
+    GC, but the repeated foreground seed/read loop and existing-thread POST
+    notification wait are closed by production route evidence.
+- Current source worktree state after commits: only `.agent-context/HANDOFF.md`
+  remained modified locally.
+- Privacy boundary respected: only bounded refs, task-card ids, target ids, test
+  counts, route names, status summaries, and aggregate timings were recorded;
+  no raw secrets, access keys, cookies, launch tokens, private thread bodies,
+  task-card bodies, endpoint bodies, provider payloads, screenshots, DB rows,
+  raw auth URLs, password paths, full prompts, rollout contents, raw cache JSON,
+  raw message text, command output bodies, or long logs were exposed.
+
+## 2026-07-05T04:33:41+08:00 - Runtime pressure attribution repair deployed and audit return ready
+
+- Accepted Home AI Platform Audit task card `ttc_71c502eacddfcf1cf4`
+  for Codex Mobile runtime pressure.
+- Read-only before/current investigation:
+  - Home AI collector originally attributed degraded
+    `system_resource_health` to `codex_mobile_runtime_pressure`, with CPU,
+    memory, swap, disk, and Home AI launchd service health otherwise ok.
+  - Current runtime showed selected mux/app-server plus many Codex Mobile MCP
+    children, not general host pressure.
+  - Codex Mobile process-pressure probe was using the default mux endpoint
+    instead of the production launchd-selected mux endpoint, so the selected
+    mux/app-server tree could be reported as `stale-*`.
+- Source fix committed:
+  - `4cd6dddb560a527d2303d97f2a1975a98306de39`
+    `fix: classify active mux runtime pressure`;
+  - `runtime-process-pressure-service` now reads selected mux endpoint from
+    explicit process-pressure config, launchd service environment, then normal
+    env fallback;
+  - returned pressure summary bounds launchd metadata and does not expose the
+    endpoint path;
+  - moderate active app-server RSS and long-lived Codex Mobile MCP child
+    accumulation are visible as H3 issues.
+- Source validation passed:
+  - `node --test test/runtime-process-pressure-service.test.js` -> 5/5;
+  - `node --test test/runtime-process-pressure-service.test.js
+    test/runtime-self-check-loop.test.js test/core-api-route-service.test.js`
+    -> 28/28;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Deployment:
+  - deploy card `ttc_f5d5bf4b6712640efc` sent to Codex Mobile Deploy Lane;
+  - return card `ttc_c3b4df2a3fa013b784` reported `completed`;
+  - deployed ref `4cd6dddb560a527d2303d97f2a1975a98306de39`, deploy
+    `ok=true`, focused production tests `28/28`, and SHA parity for the changed
+    service/test files matched;
+  - deploy restart recycled listener only and preserved selected mux/app-server
+    state.
+- Production readback after deploy:
+  - Codex Mobile process-pressure classified `activeAppServerMuxCount=1`,
+    `staleAppServerMuxCount=0`, `activeCodexAppServerCount=1`,
+    `staleCodexAppServerCount=0`;
+  - app-server children remained elevated but observable: Codex Mobile MCP
+    children about `36-37`, node-repl children about `36-37`, child RSS around
+    `2.3GB`;
+  - current Codex Mobile process-pressure issues were H3 only:
+    `production_listener_rss_elevated`,
+    `active_codex_app_server_rss_elevated`, and
+    `codex_mobile_mcp_child_accumulation_elevated`.
+- Home AI system-resource closure probe:
+  - final probe returned `overallStatus=warning`, not degraded;
+  - CPU status `ok`, memory status `ok`, memory pressure free about `94%`,
+    swap `0%`;
+  - `codex_mobile_runtime_pressure=warning`, process count about `40`, total
+    Codex Mobile RSS about `9.1GB`, max process CPU about `55%`, max process
+    RSS about `4.3GB`.
+- Residual risk:
+  - short-window probes during deploy/test cooldown showed intermittent
+    one-sample CPU spikes that could briefly make Home AI collector report
+    degraded; the final closure probe returned warning;
+  - RSS remains high but host memory/swap are healthy, so this is retained as
+    warning evidence by the Home AI contract;
+  - next root-cause work, if needed, should target Codex app-server/MCP child
+    lifecycle and listener heap retention, not broad restarts or Home AI
+    threshold suppression.
+- Current source worktree after commit: only `.agent-context/HANDOFF.md`
+  remained modified locally.
+- Privacy boundary respected: only bounded refs, task-card ids, role names,
+  issue codes, counts, RSS/CPU fields, and status summaries were recorded; no
+  raw secrets, access keys, cookies, launch tokens, private task/thread bodies,
+  endpoint file paths, command lines with sensitive args, provider payloads,
+  DB rows, screenshots, raw auth URLs, password paths, full prompts, rollout
+  contents, raw cache JSON, raw message text, or long logs were exposed.
+
+## 2026-07-05T02:42:00+08:00 - Stale partial resting-summary CPU fix committed and deploy requested
+
+- Residual issue after `7df06321` delayed deferred seeds:
+  - foreground Home AI large-thread detail reads were fast, but delayed
+    background `turns-list-initial` seed still ran after about 3s;
+  - observed production bounded evidence showed the deferred seed took about
+    2.9s and was followed by listener heap/RSS growth and later CPU/GC spikes;
+  - this could still indirectly delay existing-thread POST messages by blocking
+    the listener event loop even though POST route internals were fast.
+- Root-cause hypothesis tightened:
+  - a usable persisted stale partial window existed for the Home AI large
+    thread;
+  - the thread summary top-level status was terminal/resting, but residual
+    `activeTurnId` / `mobileLocalActiveStatus` markers caused active-read
+    policy and projection-result checks to reject the stale partial before
+    orchestration could downgrade stale active turns;
+  - rejection produced `result-missing` / deferred seed behavior instead of
+    `projection-stale-partial-hit`.
+- Source fix committed:
+  - `a4d3b536bb3a59b910dd32362ff27c6be59bd093`
+    `fix: reuse stale partials for resting summaries`;
+  - active-read policy, projection-result preparation, and read orchestration
+    now treat primary terminal/resting summary status (`completed`, `failed`,
+    `cancelled`, etc.) as authoritative over residual active markers;
+  - `idle` is intentionally not treated as terminal/resting override, so
+    `idle + activeTurnId` still follows the active-turn/full-read protection;
+  - stale partial windows can be reused and their old active turns downgraded
+    for terminal/resting summaries.
+- Validation passed locally:
+  - `node --check services/thread-detail/thread-detail-active-read-policy-service.js`;
+  - `node --check adapters/thread-detail-projection-result-service.js`;
+  - `node --check services/thread-detail/thread-detail-read-orchestration-service.js`;
+  - `node --test test/thread-detail-active-read-policy-service.test.js
+    test/thread-detail-projection-result-service.test.js
+    test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-projection-service.test.js
+    test/thread-detail-turns-list-read-coalescer-service.test.js
+    test/thread-detail-runtime-service.test.js
+    test/thread-message-secret-ref-route.test.js
+    test/new-thread-route.test.js` -> 144/144;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Deployment request sent:
+  - target: `Codex Mobile Deploy Lane`
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`);
+  - task card: `ttc_3739fcd783aa5671e1`;
+  - source ref: `a4d3b536bb3a59b910dd32362ff27c6be59bd093`;
+  - requested bounded readback must verify that the Home AI large thread
+    reuses stale partials instead of returning `deferred-initial-turns-list`
+    and starting a new `deferred_turns_list_initial_seed_start`.
+- Completion state:
+  - source-side fix is committed and deploy requested;
+  - do not mark the CPU/POST latency goal complete until deploy-lane production
+    readback confirms no repeated deferred seed and no listener CPU/heap spike
+    during bounded Home AI large-thread samples.
+- Current source worktree state after commit: only `.agent-context/HANDOFF.md`
+  remained modified locally.
+
+## 2026-07-05T02:20:41+08:00 - Deferred detail seed delay committed and deploy requested
+
+- Current residual after `985db7b4` production readback:
+  - `GET /api/threads/:threadId` and synthetic existing-thread
+    `POST /api/threads/:threadId/messages` route-handler stats were bounded
+    in production;
+  - Home AI large-thread foreground detail reads stayed fast, but logs still
+    showed `deferred-initial-turns-list` scheduling an immediate background
+    `turns-list-initial` seed after the foreground response;
+  - one recent bounded log sample showed foreground detail returning in about
+    `16ms`, then a background `turns-list-initial` seed taking about
+    `1933ms`;
+  - listener RSS/heap remained high and background seed work can overlap with
+    user message submission, causing event-loop/CPU pressure outside the POST
+    handler's internal route timing.
+- Root-cause hypothesis refined:
+  - the new cold-detail deferred seed path lived inside
+    `thread-detail-read-orchestration-service` and used the local default
+    `setTimeout(0)` scheduling path;
+  - therefore it did not inherit the existing prewarm/runtime-job foreground
+    preemption policy and could start immediately after a user opened a large
+    thread, just before a message submit.
+- Source fix committed:
+  - `7df06321` `fix: delay deferred detail projection seeds`;
+  - large-thread deferred initial turns-list seeds now default to a bounded
+    `3000ms` delay, configurable with
+    `CODEX_MOBILE_THREAD_DETAIL_DEFERRED_INITIAL_SEED_DELAY_MS`;
+  - `mobileDeferredProjectionSeed` exposes `delayMs`, `retryAfterMs`, and an
+    adjusted `refreshAfterMs` so readback can prove the seed is not the old
+    immediate `900ms` refresh path;
+  - bounded `deferred_turns_list_initial_seed_start` logging records
+    `delayMs` and scheduled wait metadata without private content.
+- Validation passed locally:
+  - `node --check services/thread-detail/thread-detail-read-orchestration-service.js &&
+    node --check services/thread-detail/thread-detail-runtime-service.js &&
+    node --check services/runtime/server-runtime-config-service.js &&
+    node --check server.js` -> pass;
+  - `node --test test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-turns-list-read-coalescer-service.test.js
+    test/thread-detail-runtime-service.test.js
+    test/runtime-job-scheduler-service.test.js` -> 62/62;
+  - `node --test test/thread-message-secret-ref-route.test.js
+    test/new-thread-route.test.js test/runtime-pressure-diagnostics-service.test.js
+    test/core-api-route-service.test.js` -> 49/49;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Central deploy plan from Home AI app workspace returned `ok=true`:
+  - target `plugin:codex-mobile-web`;
+  - source ref `7df0632118f8`;
+  - `deployDirtyFiles=[]`;
+  - ignored dirty file `.agent-context/HANDOFF.md`;
+  - planned restart label `com.hermesmobile.plugin.codex-mobile`;
+  - planned backup
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260704T182001Z-plugin-codex-mobile-web-codex-mobile-deferred-seed-delay-7df06321`.
+- Deployment request sent:
+  - target: `Codex Mobile Deploy Lane`
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`);
+  - task card: `ttc_9b6d46b7acdae669b1`;
+  - card kind `plugin_deployment`, `pluginId=codex-mobile-web`;
+  - requested readback: central private macOS deploy only, status/artifact
+    health, SHA parity for changed files, focused production tests, bounded
+    Home AI large-thread GET samples proving delayed seed metadata, synthetic
+    existing-thread POST stats without mutating the real Home AI thread, and
+    runtime pressure/cooldown CPU.
+- Current source worktree after commit: `.agent-context/HANDOFF.md` modified
+  only.
+- Privacy boundary respected: only bounded ids, refs, route/timing names,
+  test counts, status summaries, aggregate timings, and paths were recorded;
+  no raw secrets, access keys, cookies, launch tokens, private thread bodies,
+  task-card bodies, endpoint bodies, provider payloads, screenshots, DB rows,
+  raw auth URLs, password paths, full prompts, rollout contents, raw message
+  text, or long logs were exposed.
+
+## 2026-07-05T02:07:51+08:00 - Stale partial detail-window fix committed and deploy requested
+
+- Production after `a11c8b6b` still showed residual detail/projection pressure:
+  - existing-thread POST route stats stayed fast: `POST /api/threads/:threadId/messages`
+    count `1`, slow `0`, max/avg/last about `16ms`;
+  - Home AI large-thread compact GET could still hit
+    `projection-active-overlay` with server total about `2914ms` while
+    `threadReadMs=0`, `turnsListInitialMs=0`, and `prepareResponseMs` about
+    `25ms`;
+  - following reads repeatedly returned `projectionMissReason=result-missing`
+    with `projectionSeedStatus=deferred/deferred-pending` as the about
+    `601MB` rollout kept growing;
+  - listener pressure rose to about RSS `2119MB`, heap used `1303MB`, and max
+    event-loop lag about `2844ms`.
+- Root-cause hypothesis refined:
+  - partial/stale projection cache can be returned by the cache layer, but
+    `prepareProjectedThreadReadResult` still rejected stale partial windows
+    when summary `updatedAt` was newer;
+  - this collapsed a usable stale-first-paint window into `result-missing`,
+    causing repeated deferred background `thread/turns/list` seeds and large
+    object allocation pressure;
+  - background seed also passed raw turns-list data farther than necessary
+    before window compaction.
+- Source fix committed:
+  - `985db7b4` `fix: reuse stale partial detail windows`;
+  - stale partial windows now bypass only the summary freshness check, while
+    still preserving the current-active-turn safety check;
+  - window-only `thread/turns/list` results are compacted with the canonical
+    `compactTurnsListResult` before building the detail thread/projection seed.
+- Validation passed locally:
+  - `node --check adapters/thread-detail-projection-result-service.js &&
+    node --check services/thread-detail/thread-detail-response-preparation-service.js &&
+    node --check services/thread-detail/thread-detail-runtime-service.js` -> pass;
+  - `node --test test/thread-detail-projection-result-service.test.js
+    test/thread-rollout-size-consistency.test.js
+    test/thread-detail-read-orchestration-service.test.js` -> 61/61;
+  - `node --test test/thread-runtime-settings-service.test.js
+    test/thread-message-secret-ref-route.test.js test/new-thread-route.test.js`
+    -> 43/43;
+  - `node --test test/thread-detail-projection-service.test.js
+    test/thread-detail-projection-v4-service.test.js
+    test/thread-detail-active-overlay-integration.test.js
+    test/thread-detail-response-budget-service.test.js` -> 108/108;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Deployment request sent:
+  - target: `Codex Mobile Deploy Lane`
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`);
+  - task card: `ttc_6d344573cf195ba00e`;
+  - source ref: `985db7b4`;
+  - requested readback focuses on repeated Home AI large-thread compact GET
+    stability, absence of repeated `result-missing -> deferred` cycles, POST
+    route stats, and listener/app-server pressure.
+- Current source worktree after commit: `.agent-context/HANDOFF.md` modified
+  only.
+- Privacy boundary respected: only bounded ids, refs, route/timing names,
+  test counts, status summaries, and aggregate metrics were recorded; no raw
+  secrets, cookies, launch tokens, private thread bodies, task-card bodies,
+  endpoint bodies, provider payloads, screenshots, DB rows, raw auth URLs,
+  password paths, full prompts, rollout contents, raw message text, or long
+  logs were exposed.
+
+## 2026-07-05T01:58:00+08:00 - 552dcf70 deployed; a11c8b6b still pending readback
+
+- Deploy lane returned task card `ttc_dc5cd837e5974bed05` as `completed`:
+  - deployed ref `552dcf706d0cfd9629d4df5088495e883c77766d`
+    `fix: reuse runtime context during active writes`;
+  - includes `3b46182b` and `ceb6c308`;
+  - central deploy `ok=true`, startup/process-pressure gate `ok=true`,
+    `deployPass=true`, blocking/execution-failure `0/0`;
+  - `/api/public-config`, `/api/status?detail=1`, and
+    `/api/vite-shell-artifact` all returned healthy bounded readback;
+  - focused production tests passed `94/94`.
+- Production GET readback for Home AI large thread:
+  - initial recent compact read returned
+    `mobileReadMode=deferred-initial-turns-list` in about `35ms` elapsed and
+    server `totalMs=18`, with no foreground `turns-list` or full
+    `thread/read`;
+  - after waiting beyond the seed/coalescer window, reads warmed to
+    `projection-v4-partial` / `projection-partial-hit`;
+  - first warm partial sample had server `totalMs=1317` with
+    `projectionMs=1238`, then subsequent samples were much faster:
+    server `totalMs=27ms` and `25ms`.
+- Production POST readback:
+  - isolated synthetic existing-thread active follow-up returned HTTP `200`,
+    elapsed about `304ms`, `steeringQueued=false`,
+    `stalePreflightQueued=false`;
+  - route stats: `POST /api/threads/:threadId/messages` count `1`, slow `0`,
+    max/avg/last `15ms`.
+- Runtime pressure after smokes:
+  - listener pid `50072`, RSS about `1598MB`, heap used about `981MB`;
+  - event-loop utilization about `0.217`, p95/p99 lag about `22.3/94.7ms`,
+    max observed lag about `1480.6ms`;
+  - GET route stats count `26`, slow `1`, max `1317ms`, avg `101ms`,
+    last `25ms`.
+- Current status:
+  - `552dcf70` readback closes the prior `3b46182b` residual where deferred
+    seed failed to warm to partial projection;
+  - latest local ref `a11c8b6b274f73ef7f9f0bfd935b9744edf9a309`
+    `fix: back off stalled deferred detail seeds` remains queued/pending via
+    task card `ttc_5b5134d6f4e5ebb6bb`;
+  - do not mark CPU/POST goal complete until `a11c8b6b` deploy readback or
+    equivalent current production evidence proves no repeated background seed
+    pressure and no slow POST route samples.
+- Privacy boundary respected: only bounded refs, task-card ids, route names,
+  test counts, timings, status summaries, and pressure metrics were recorded;
+  no raw secrets, access keys, cookies, launch tokens, private thread bodies,
+  task-card bodies, endpoint bodies, provider payloads, screenshots, DB rows,
+  raw auth URLs, password paths, full prompts, rollout contents, or long logs
+  were exposed.
+
+## 2026-07-05T01:55:54+08:00 - Deferred seed backoff committed and superseding deploy requested
+
+- After the `3b46182b` deploy readback, remaining detail-side pressure was
+  narrowed to background deferred seed behavior:
+  - foreground large-thread GET stayed fast;
+  - local pending could release and reschedule once;
+  - app-server/background `turns-list-initial` did not prove stable completion
+    to warm `projection-v4-partial`;
+  - repeated entries could therefore keep starting or joining stalled
+    background seed RPCs.
+- Additional source fix committed:
+  - `a11c8b6b` `fix: back off stalled deferred detail seeds`;
+  - deferred `turns-list-initial` seed now records a bounded failure backoff
+    after timeout/error;
+  - during backoff, foreground response stays fast and exposes
+    `projectionSeedStatus=deferred-backoff`, `reason=seed-backoff`,
+    `retryAfterMs`, and a longer `refreshAfterMs`;
+  - this prevents immediate repeated background seed RPC attempts while
+    app-server is failing to complete the seed.
+- Validation passed locally:
+  - `node --check services/thread-detail/thread-detail-read-orchestration-service.js &&
+    node --test test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-turns-list-read-coalescer-service.test.js
+    test/thread-detail-runtime-service.test.js` -> 51/51;
+  - `node --test test/thread-runtime-settings-service.test.js
+    test/thread-message-secret-ref-route.test.js
+    test/new-thread-route.test.js` -> 43/43;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Superseding deployment request sent:
+  - target: `Codex Mobile Deploy Lane`
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`);
+  - task card: `ttc_5b5134d6f4e5ebb6bb`;
+  - source ref: `a11c8b6b274f73ef7f9f0bfd935b9744edf9a309`;
+  - card states it supersedes `ttc_dc5cd837e5974bed05` if that card had not
+    started, or should deploy as a follow-up if `552dcf70` already landed.
+- Current source worktree state after commit: only `.agent-context/HANDOFF.md`
+  remained modified locally.
+- Privacy boundary respected: only bounded refs, task-card id, target id, test
+  counts, route names, timing-field names, and status summaries were recorded;
+  no raw secrets, access keys, cookies, launch tokens, private thread bodies,
+  task-card bodies, endpoint bodies, provider payloads, screenshots, DB rows,
+  raw auth URLs, password paths, full prompts, rollout contents, or long logs
+  were exposed.
+
+## 2026-07-05T01:52:35+08:00 - Runtime context cache follow-up committed and superseding deploy requested
+
+- Deploy lane returned prior task card `ttc_7f0139e182a8012ce1` as
+  `partially_completed` after deploying `3b46182b`:
+  - production deploy succeeded and focused tests passed;
+  - included `ceb6c308` POST preflight fix;
+  - POST synthetic isolated existing-thread route stats were fast:
+    count `2`, slow `0`, max route stat `16ms`;
+  - foreground GET stayed fast with no foreground `turns-list` or full
+    `thread/read`;
+  - residual: background deferred seed could release and reschedule once, but
+    did not prove stable warm `projection-v4-partial`, and later returned to
+    `already-pending`; one residual detail sample showed
+    `projection-active-overlay` with server total about `2627ms`.
+- Additional source fix committed:
+  - `552dcf70` `fix: reuse runtime context during active writes`;
+  - `thread-runtime-settings-service` now keeps exact stat cache behavior while
+    also reusing a recent non-empty `turn_context` by normalized rollout path
+    within the existing runtime context TTL when the rollout file grows during
+    active writes;
+  - purpose: avoid repeated synchronous 32MB rollout tail scans in
+    `resolveThreadRuntimeSettings(threadId)` as active rollout mtime changes,
+    reducing POST `runtimeSettingsMs` CPU/GC pressure.
+- Validation passed locally:
+  - `node --check services/runtime/thread-runtime-settings-service.js &&
+    node --test test/thread-runtime-settings-service.test.js` -> 4/4;
+  - `node --test test/thread-message-secret-ref-route.test.js
+    test/new-thread-route.test.js` -> 39/39;
+  - `node --test test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-turns-list-read-coalescer-service.test.js
+    test/thread-detail-runtime-service.test.js` -> 51/51;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Superseding deployment request sent:
+  - target: `Codex Mobile Deploy Lane`
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`);
+  - task card: `ttc_dc5cd837e5974bed05`;
+  - source ref: `552dcf706d0cfd9629d4df5088495e883c77766d`;
+  - card states it supersedes prior `ttc_7f0139e182a8012ce1` if that card had
+    not started, or should deploy as a follow-up if `3b46182b` already landed.
+- Current source worktree state after commit: only `.agent-context/HANDOFF.md`
+  remained modified locally.
+- Privacy boundary respected: only bounded refs, task-card id, target id, test
+  counts, route names, timing-field names, and status summaries were recorded;
+  no raw secrets, access keys, cookies, launch tokens, private thread bodies,
+  task-card bodies, endpoint bodies, provider payloads, screenshots, DB rows,
+  raw auth URLs, password paths, full prompts, rollout contents, or long logs
+  were exposed.
+
+## 2026-07-05T08:48:52+08:00 - Message-submit thread-not-found recovery committed; deploy pending
+
+- User reported Home AI main and worker sends failing with a thread-does-not-exist
+  style message.
+- Bounded production/source investigation:
+  - 8787 LAN bind was already active (`*:8787`) after the prior deploy card;
+  - `/api/status?detail=1` was HTTP `200`, `ready=true`, active profile
+    `previous`, endpoint kind `profile-mux-file`;
+  - Home AI main and worker thread ids were still present in local state DB, so
+    the user-facing error was not caused by deleted thread rows;
+  - safe content-free GET probes for Home AI main and worker returned HTTP
+    `200`;
+  - safe `/api/threads/:threadId/resume` probes returned HTTP `200` for both
+    targets; Home AI main resume was slow at about `10.3s`, worker resume about
+    `294ms`;
+  - bounded listener log sample showed an active-turn path can surface
+    `thread not found` for an existing thread after mux/app-server runtime
+    state changes, then recover through replacement turn.
+- Root-cause fix committed:
+  - `59b656c3` `fix: recover message submit after mux thread misses`;
+  - `server-routes/thread-message-route-service.js` now treats container-level
+    `thread not found` / `thread_not_found` and conversation/session not-found
+    errors from optimistic existing-thread `turn/start` as resume-required,
+    then retries once after `thread/resume`;
+  - truly missing threads still fail through the `thread/resume` path, so this
+    is not a silent success fallback;
+  - `services/runtime/runtime-process-pressure-service.js` now classifies
+    listener sockets by port and accepts LAN/wildcard binds such as `*:8787`,
+    preventing the false `production_listener_missing` signal after opening the
+    LAN listener.
+- Validation passed locally:
+  - `node --test test/thread-message-secret-ref-route.test.js
+    test/runtime-process-pressure-service.test.js` -> 21/21;
+  - `node --check server-routes/thread-message-route-service.js &&
+    node --check services/runtime/runtime-process-pressure-service.js` -> pass;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Deployment request sent to Codex Mobile Deploy Lane:
+  - task card `ttc_2f9f818c08af2bd9d8`;
+  - target thread `019f16e6-9131-79e2-9b6b-ad41f7e65d92`;
+  - requested central macOS plugin deploy/readback for `59b656c3`;
+  - current source-side readback: card `approved`, execution lease `active`,
+    no completion/blocked return yet.
+- Separate LAN-listener return card received:
+  - `ttc_f9b2f4480a6105c067` marked completed;
+  - launchd env `CODEX_MOBILE_HOST=0.0.0.0`, `CODEX_MOBILE_PORT=8787`;
+  - socket `*:8787`; local and LAN `/api/public-config` HTTP `200`.
+- Current source worktree after commit: `.agent-context/HANDOFF.md` modified
+  only.
+- Privacy boundary respected: only bounded ids, refs, status/timing summaries,
+  route names, and aggregate diagnostics were recorded; no raw secrets, access
+  keys, cookies, launch tokens, endpoint file contents, private thread bodies,
+  task-card private bodies, provider payloads, DB rows, screenshots, raw auth
+  URLs, password paths, full prompts, rollout contents, raw message text, or
+  long logs were exposed.
+
+## 2026-07-05T09:05:23+08:00 - Preserve live profile mux across listener deploy restarts
+
+- User reported a regression: deploying/restarting only the Codex Mobile
+  listener used to be effectively invisible when app-server stayed alive, but
+  recent deploys caused Codex Mobile/thread reads/sends to time out or remain
+  unreachable for a noticeable window.
+- Bounded production readback:
+  - listener/API were up on `*:8787`; `/api/status?detail=1` was HTTP `200`
+    with active profile `previous`, endpoint kind `profile-mux-file`, and no
+    top-level issue codes;
+  - process snapshot showed two mux/app-server groups at once: an older
+    long-lived group and a newer listener-started group;
+  - current selected profile endpoint pointed at the newer group, which means
+    the latest listener path had replaced the warm profile mux/app-server
+    instead of preserving it;
+  - route stats after the replacement showed the user-visible symptom:
+    `GET /api/threads/:threadId` max about `17s`, `POST
+    /api/threads/:threadId/messages` max about `9.6s`, and `/resume` about
+    `7.9s`.
+- Root-cause hypothesis confirmed in source:
+  - `services/runtime/codex-app-server-client-service.js` treated any profile
+    mux connect/initialize failure as permission to start a Mobile-owned mux;
+  - that branch also launched the replacement mux with unconditional endpoint
+    publishing, so a slow-but-live selected profile mux could be overwritten by
+    a cold app-server during a deploy/readback window.
+- Source fix implemented:
+  - endpoint resolver now preserves bounded mux metadata (`pid`, `childPid`,
+    `startedAt`) from the selected profile endpoint;
+  - app-server client now checks whether the selected profile mux process is
+    alive before replacing it;
+  - if the mux process is alive, connect/initialize failure preserves the
+    endpoint and returns an observable shared-endpoint error for retry instead
+    of replacing the warm app-server;
+  - if the endpoint is missing or the mux process is dead, recovery still starts
+    a Mobile-owned mux;
+  - replacement mux publishing now uses guarded `auto` mode so it does not
+    unconditionally overwrite a live endpoint.
+- Validation passed locally:
+  - `node --test test/codex-app-server-client-service.test.js
+    test/new-thread-route.test.js test/thread-message-secret-ref-route.test.js
+    test/runtime-process-pressure-service.test.js` -> 58/58;
+  - `node --check services/runtime/codex-app-server-client-service.js` -> pass;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Commit/deploy status:
+  - committed as `56d300e8` `fix: preserve live profile mux on listener restart`;
+  - deployment request sent to Codex Mobile Deploy Lane
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`) as task card
+    `ttc_ed514f94618203534b`;
+  - requested readback must prove central deploy health, SHA parity, focused
+    production tests, and that listener deploy/readback does not create an
+    additional mux/app-server group when the selected profile endpoint process
+    is alive.
+- Privacy boundary respected: only bounded ids, roles, route names, timings,
+  process-group counts, and status summaries were recorded; no raw endpoint
+  contents, secrets, access keys, cookies, launch tokens, private thread bodies,
+  task-card private bodies, provider payloads, DB rows, screenshots, raw auth
+  URLs, password paths, full prompts, rollout contents, raw message text, or
+  long logs were exposed.
+
+## 2026-07-05T09:28:29+08:00 - Fix visible item ordering and text-only user bubbles
+
+- User reported severe display regressions after mux cleanup:
+  - new user messages could be accepted instantly but not appear in the current
+    Codex Mobile thread until later refresh;
+  - older receipts could appear below newer user bubbles, for example a
+    `09:18` Codex receipt below a newer `09:21` user message;
+  - Home AI main still showed a completed status despite user expectation that
+    it was active.
+- Bounded production/source diagnostics:
+  - stale mux/app-server group was cleaned first per user request; selected
+    live mux/app-server remained intact;
+  - current Codex thread detail returned `projection-active-overlay` with an
+    active turn, but a `contextCompaction` item timestamped around `01:12Z`
+    was ordered after newer `01:23Z` user messages;
+  - detail self-check had already flagged `visible_item_timestamp_order_mismatch`;
+  - focused Home AI detail probe showed text-only userMessage rows (`text`
+    populated, `content` absent/empty), while the browser renderer only used
+    `item.content`, explaining blank user bubbles after durable projection
+    replaced the optimistic local echo.
+- Source fix implemented:
+  - `itemDisplayTimestampMs` now lets `contextCompaction` use its own timestamp
+    in `orderItemsByDisplayTimestamp`; only `turnUsageSummary` keeps the
+    tail-summary no-timestamp behavior;
+  - `renderUserMessageBody` now derives renderable text content from
+    `item.content`, string `item.content`, `item.text`, or `item.message`, so
+    text-only durable userMessage rows no longer render as blank bubbles;
+  - regenerated frontend shell manifest and Vite preview artifact with matching
+    cache id `codex-mobile-shell-v625-53ebcbc5b25c`.
+- Validation passed locally:
+  - `node --test test/thread-detail-active-window-overlay-policy-service.test.js
+    test/thread-detail-response-budget-service.test.js
+    test/thread-detail-self-check-service.test.js test/conversation-render.test.js`
+    -> 265/265;
+  - `npm run --silent build:frontend` -> pass;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass;
+  - `node --test test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js` -> 114/114.
+- Deployment pending:
+  - source changes need commit and Codex Mobile Deploy Lane central macOS plugin
+    deploy/readback;
+  - post-deploy readback should verify `/api/vite-shell-artifact ok=true`,
+    current-thread detail no longer reports `visible_item_timestamp_order_mismatch`,
+    and text-only userMessage rows render nonblank in browser behavior harness.
+- Privacy boundary respected: only bounded ids, roles, route names, timings,
+  process-group counts, hashes, and status summaries were recorded; no raw
+  secrets, access keys, cookies, launch tokens, private thread/task-card bodies,
+  provider payloads, DB rows, screenshots, raw auth URLs, password paths, full
+  prompts, rollout contents, raw message text, raw cache JSON, or long logs were
+  exposed.

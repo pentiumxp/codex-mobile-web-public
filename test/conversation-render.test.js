@@ -248,6 +248,21 @@ function evaluatedInputContentRenderer() {
   return evaluatedInputContentRendererWithKey("");
 }
 
+function evaluatedUserMessageBodyRenderer() {
+  const renderInputContent = evaluatedInputContentRenderer();
+  const escapeHtml = (value) => String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+  return Function(
+    "renderInputContent",
+    "escapeHtml",
+    `${functionSourceFrom(appJs, "userMessageRenderableContent")}\n${functionSourceFrom(appJs, "renderUserMessageBody")}\nreturn renderUserMessageBody;`,
+  )(renderInputContent, escapeHtml);
+}
+
 function evaluatedConversationProjectionDiagnosticSnapshot() {
   const source = functionSourceFrom(appJs, "conversationProjectionDiagnosticSnapshot");
   return Function("threadDiagnosticEventsApi", `
@@ -5103,9 +5118,22 @@ test("refresh merge uses incoming item order for durable user messages appended 
 
 test("failed submitted messages render an inline receipt", () => {
   assert.match(functionBody("renderItemBody"), /item\.type === "userMessage"\) return renderUserMessageBody\(item\)/);
+  assert.match(functionBody("renderUserMessageBody"), /userMessageRenderableContent\(item\)/);
   assert.match(functionBody("renderUserMessageBody"), /mobileSendError/);
   assert.match(functionBody("renderUserMessageBody"), /send-error-receipt/);
   assert.match(stylesCss, /\.send-error-receipt/);
+});
+
+test("text-only user messages render instead of blank bubbles", () => {
+  const renderUserMessageBody = evaluatedUserMessageBodyRenderer();
+  const html = renderUserMessageBody({
+    id: "user-text-only",
+    type: "userMessage",
+    text: "render this <message>",
+  });
+
+  assert.match(html, /render this/);
+  assert.match(html, /&lt;message&gt;/);
 });
 
 test("optimistic user messages match app-server input_text messages", () => {
