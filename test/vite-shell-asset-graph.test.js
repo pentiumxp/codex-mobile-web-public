@@ -1830,8 +1830,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 48);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 48);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 49);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 49);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -2061,6 +2061,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "thread-detail-v4-merge-state",
         nativeSource: "frontend/native/thread-detail-v4-merge-state.mjs",
         importSource: "frontend/native/thread-detail-v4-merge-state.mjs",
+      },
+      {
+        id: "thread-detail-runtime",
+        nativeSource: "frontend/native/thread-detail-runtime.mjs",
+        importSource: "frontend/native/thread-detail-runtime.mjs",
       },
       {
         id: "task-card-runtime",

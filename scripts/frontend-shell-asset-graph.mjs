@@ -710,6 +710,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "thread-detail-runtime",
     source: "public/thread-detail-runtime.js",
+    nativeSource: "frontend/native/thread-detail-runtime.mjs",
     globalName: "CodexThreadDetailRuntime",
     expectedFunctions: [
       "createThreadDetailRuntime",
