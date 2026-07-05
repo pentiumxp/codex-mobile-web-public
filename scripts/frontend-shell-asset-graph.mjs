@@ -543,6 +543,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "runtime-wiring-runtime",
     source: "public/runtime-wiring-runtime.js",
+    nativeSource: "frontend/native/runtime-wiring-runtime.mjs",
     globalName: "CodexRuntimeWiringRuntime",
     expectedFunctions: [
       "createRuntimeWiringRuntime",

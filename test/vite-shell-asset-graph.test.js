@@ -1247,6 +1247,17 @@ test("native ESM client render guard and live operation dock match classic polic
   assert.equal(globalThis.CodexLiveOperationDockState, nativeDock.default);
 });
 
+test("native ESM runtime wiring exposes startup factory without initializing globals", async () => {
+  const classicRuntimeWiring = require("../public/runtime-wiring-runtime.js");
+  const nativeRuntimeWiring = await import("../frontend/native/runtime-wiring-runtime.mjs");
+  const classicRuntime = classicRuntimeWiring.createRuntimeWiringRuntime();
+  const nativeRuntime = nativeRuntimeWiring.createRuntimeWiringRuntime();
+
+  assert.equal(typeof classicRuntime.initialize, "function");
+  assert.equal(typeof nativeRuntime.initialize, "function");
+  assert.equal(globalThis.CodexRuntimeWiringRuntime, nativeRuntimeWiring.default);
+});
+
 test("native ESM diagnostic and metrics helpers match classic public APIs", async () => {
   const classicThreadPerformanceMetrics = require("../public/thread-performance-metrics.js");
   const nativeThreadPerformanceMetrics = await import("../frontend/native/thread-performance-metrics.mjs");
@@ -1510,6 +1521,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /frontend\/native\/thread-tile-state\.mjs/);
   assert.match(shardSources, /frontend\/native\/app-update-runtime\.mjs/);
   assert.match(shardSources, /frontend\/native\/modal-runtime\.mjs/);
+  assert.match(shardSources, /frontend\/native\/runtime-wiring-runtime\.mjs/);
   assert.match(shardSources, /frontend\/native\/client-render-stability-guard\.mjs/);
   assert.match(shardSources, /frontend\/native\/live-operation-dock-state\.mjs/);
   assert.doesNotMatch(shardSources, /from ".*public\/build-refresh-policy\.js"/);
@@ -1540,13 +1552,13 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.doesNotMatch(shardSources, /from ".*public\/thread-tile-state\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/app-update-runtime\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/modal-runtime\.js"/);
+  assert.doesNotMatch(shardSources, /from ".*public\/runtime-wiring-runtime\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/client-render-stability-guard\.js"/);
   assert.doesNotMatch(shardSources, /from ".*public\/live-operation-dock-state\.js"/);
   assert.match(shardSources, /public\/thread-detail-dom-patch\.js/);
   assert.match(shardSources, /public\/thread-tile-runtime\.js/);
   assert.match(shardSources, /public\/settings-runtime\.js/);
   assert.match(shardSources, /public\/navigation-runtime\.js/);
-  assert.match(shardSources, /public\/runtime-wiring-runtime\.js/);
   assert.match(shardSources, /public\/app-shell-runtime\.js/);
   assert.match(shardSources, /public\/pane-layout-runtime\.js/);
   assert.match(shardSources, /public\/app\.js/);
@@ -1818,8 +1830,8 @@ test("Vite shell build contract records entry chunks and classic fallback output
     VITE_ESM_COMPATIBILITY_MODULES.length
   );
   assert.equal(contract.esmCompatibility.moduleCount, VITE_ESM_COMPATIBILITY_MODULES.length);
-  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 30);
-  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 30);
+  assert.equal(contract.esmCompatibility.nativeEsmModuleCount, 31);
+  assert.equal(contract.esmCompatibility.classicGlobalCompatibilityModuleCount, VITE_ESM_COMPATIBILITY_MODULES.length - 31);
   assert.equal(contract.esmCompatibility.hashCount, VITE_ESM_COMPATIBILITY_MODULES.length);
   assert.equal(
     contract.esmCompatibility.expectedFunctionCount,
@@ -1944,6 +1956,11 @@ test("Vite shell build contract records entry chunks and classic fallback output
         id: "modal-runtime",
         nativeSource: "frontend/native/modal-runtime.mjs",
         importSource: "frontend/native/modal-runtime.mjs",
+      },
+      {
+        id: "runtime-wiring-runtime",
+        nativeSource: "frontend/native/runtime-wiring-runtime.mjs",
+        importSource: "frontend/native/runtime-wiring-runtime.mjs",
       },
       {
         id: "thread-list-load-policy",
