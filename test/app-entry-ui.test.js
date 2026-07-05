@@ -3,9 +3,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
+const { pathToFileURL } = require("node:url");
 
 const root = path.resolve(__dirname, "..");
 const appEntryPath = path.join(root, "public", "app.js");
+const nativeAppEntryPath = path.join(root, "frontend", "native", "app-entry.mjs");
 
 function appEntrySource() {
   return fs.readFileSync(appEntryPath, "utf8");
@@ -72,6 +74,43 @@ test("app entry does not auto-start when imported by Vite app-preview ESM", () =
   assert.deepEqual(counters, { initialize: 0, start: 0 });
   assert.equal(context.CodexMobileAppEntry.startCodexMobileApp(), "startup-result");
   assert.deepEqual(counters, { initialize: 1, start: 1 });
+});
+
+test("native app entry does not auto-start on Vite shell preview artifact page", async () => {
+  const counters = { initialize: 0, start: 0 };
+  const previous = {
+    document: globalThis.document,
+    window: globalThis.window,
+    CodexRuntimeWiringRuntime: globalThis.CodexRuntimeWiringRuntime,
+    CodexAppShellRuntime: globalThis.CodexAppShellRuntime,
+    CodexMobileAppEntry: globalThis.CodexMobileAppEntry,
+    __CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__: globalThis.__CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__,
+  };
+  Object.assign(globalThis, runtimeStubs(counters), {
+    document: {
+      currentScript: null,
+      getElementById(id) {
+        return id === "codex-vite-shell-preview" ? { id } : null;
+      },
+    },
+    window: globalThis,
+    __CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__: false,
+  });
+  try {
+    const moduleUrl = `${pathToFileURL(nativeAppEntryPath).href}?test=${Date.now()}-${Math.random()}`;
+    const appEntry = await import(moduleUrl);
+    assert.equal(typeof appEntry.createCodexMobileAppEntry, "function");
+    assert.equal(typeof appEntry.startCodexMobileApp, "function");
+    assert.equal(globalThis.CodexMobileAppEntry, appEntry.default);
+    assert.deepEqual(counters, { initialize: 0, start: 0 });
+    assert.equal(globalThis.CodexMobileAppEntry.startCodexMobileApp(), "startup-result");
+    assert.deepEqual(counters, { initialize: 1, start: 1 });
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete globalThis[key];
+      else globalThis[key] = value;
+    }
+  }
 });
 
 test("Vite app-preview starts the excluded app entry after classic loader scripts", () => {

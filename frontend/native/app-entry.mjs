@@ -37,7 +37,13 @@ const loadedByClassicAppPreview = Boolean(
     && currentScript.dataset
     && currentScript.dataset.codexViteAppPreviewClassicScript === "true"
 );
-const shouldAutoStart = !root.__CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__ || loadedByClassicAppPreview;
+const viteShellPreviewPage = Boolean(
+  root.document
+    && typeof root.document.getElementById === "function"
+    && root.document.getElementById("codex-vite-shell-preview")
+);
+const shouldAutoStart = (!root.__CODEX_MOBILE_VITE_APP_PREVIEW_PAGE__ && !viteShellPreviewPage)
+  || loadedByClassicAppPreview;
 
 if (shouldAutoStart) {
   startCodexMobileApp();
