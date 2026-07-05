@@ -587,6 +587,7 @@ const VITE_ESM_COMPATIBILITY_MODULE_CANDIDATES = [
   {
     id: "side-chat-runtime",
     source: "public/side-chat-runtime.js",
+    nativeSource: "frontend/native/side-chat-runtime.mjs",
     globalName: "CodexSideChatRuntime",
     expectedFunctions: [
       "createSideChatRuntime",
