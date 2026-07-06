@@ -7,6 +7,7 @@ const STORAGE_FRONTEND_DIAGNOSTIC_LOG_UPLOAD = "codexMobileFrontendDiagnosticLog
 const STORAGE_FRONTEND_DIAGNOSTIC_LOG_SCOPES = "codexMobileFrontendDiagnosticLogScopes";
 const STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENTRIES = "codexMobileFrontendDiagnosticLogEntries";
 const STORAGE_FRONTEND_DIAGNOSTIC_LOG_MAX_ENTRIES = "codexMobileFrontendDiagnosticLogMaxEntries";
+const STORAGE_FRONTEND_DIAGNOSTIC_LOG_SERVER_ENABLED = "codexMobileFrontendDiagnosticLogServerEnabled";
 let frontendDiagnosticLogUrlParamsApplied = false;
 
 async function api(path, options = {}) {
@@ -272,6 +273,26 @@ function configureFrontendDiagnosticLog(options = {}) {
   return frontendDiagnosticLogStatus();
 }
 
+function applyFrontendDiagnosticLogPublicConfig(config = {}) {
+  const raw = config && config.frontendDiagnosticLog && typeof config.frontendDiagnosticLog === "object"
+    ? config.frontendDiagnosticLog
+    : null;
+  if (!raw || typeof raw.enabled !== "boolean") return frontendDiagnosticLogStatus();
+  if (raw.enabled) {
+    frontendDiagnosticLogStorageSet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_SERVER_ENABLED, "1");
+    return setFrontendDiagnosticLogEnabled(true, {
+      upload: raw.upload !== false,
+      scopes: raw.scopes || "submitted_echo",
+      maxEntries: raw.maxEntries || 400,
+    });
+  }
+  if (truthyFrontendDiagnosticLogValue(frontendDiagnosticLogStorageGet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_SERVER_ENABLED))) {
+    frontendDiagnosticLogStorageRemove(STORAGE_FRONTEND_DIAGNOSTIC_LOG_SERVER_ENABLED);
+    return setFrontendDiagnosticLogEnabled(false);
+  }
+  return frontendDiagnosticLogStatus();
+}
+
 function exportFrontendDiagnosticLog() {
   return JSON.stringify({
     exportedAt: new Date().toISOString(),
@@ -511,6 +532,7 @@ const frontendDiagnosticLogApi = Object.freeze({
   enable: (options = {}) => setFrontendDiagnosticLogEnabled(true, options),
   disable: () => setFrontendDiagnosticLogEnabled(false),
   configure: configureFrontendDiagnosticLog,
+  applyPublicConfig: applyFrontendDiagnosticLogPublicConfig,
   status: frontendDiagnosticLogStatus,
   read: readFrontendDiagnosticLog,
   export: exportFrontendDiagnosticLog,
@@ -1594,6 +1616,7 @@ const legacyGlobals = {
   clientSubmissionDataAttr,
   frontendDiagnosticLogSettings,
   frontendDiagnosticLogStatus,
+  applyFrontendDiagnosticLogPublicConfig,
   setFrontendDiagnosticLogEnabled,
   configureFrontendDiagnosticLog,
   readFrontendDiagnosticLog,

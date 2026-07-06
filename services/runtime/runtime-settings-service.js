@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const THREAD_DISPLAY_MAX_PANES = 12;
+const FRONTEND_DIAGNOSTIC_LOG_DEFAULT_SCOPES = Object.freeze(["submitted_echo"]);
 
 function uniqueStrings(values) {
   const seen = new Set();
@@ -65,6 +66,36 @@ function normalizeThreadDisplayMode(value, fallback = "single") {
   if (text === "tile" || text === "tiles" || text === "tiled") return "tile";
   if (text === "single" || text === "normal") return "single";
   return fallback === "tile" ? "tile" : "single";
+}
+
+function normalizeFrontendDiagnosticLogScopes(value) {
+  const raw = Array.isArray(value) ? value.join(",") : String(value || "");
+  const scopes = raw
+    .split(/[,\s]+/g)
+    .map((item) => item.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_"))
+    .filter(Boolean);
+  const uniqueScopes = uniqueStrings(scopes).slice(0, 24);
+  return uniqueScopes.length
+    ? uniqueScopes
+    : FRONTEND_DIAGNOSTIC_LOG_DEFAULT_SCOPES.slice();
+}
+
+function normalizeFrontendDiagnosticLogMaxEntries(value, fallback = 400) {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.max(25, Math.min(2000, parsed));
+}
+
+function normalizeFrontendDiagnosticLogSettings(raw = {}, options = {}) {
+  const input = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  return {
+    enabled: Boolean(input.enabled),
+    upload: input.upload === false ? false : true,
+    scopes: normalizeFrontendDiagnosticLogScopes(input.scopes),
+    maxEntries: normalizeFrontendDiagnosticLogMaxEntries(input.maxEntries),
+    updatedAt: String(input.updatedAt || ""),
+    source: options.source || "runtime",
+  };
 }
 
 function normalizeThreadDisplaySettings(raw = {}, options = {}) {
@@ -214,9 +245,40 @@ function createRuntimeSettingsService(options = {}) {
     return workspaceDelegationPublicSettings(readRuntimeSettings());
   }
 
+  function frontendDiagnosticLogPublicSettings(settings = readRuntimeSettings()) {
+    const raw = settings && settings.frontendDiagnosticLog && typeof settings.frontendDiagnosticLog === "object" && !Array.isArray(settings.frontendDiagnosticLog)
+      ? settings.frontendDiagnosticLog
+      : null;
+    return normalizeFrontendDiagnosticLogSettings(raw || {}, {
+      source: raw ? "runtime" : "default",
+    });
+  }
+
+  function setFrontendDiagnosticLogSettings(patch = {}) {
+    const input = patch && patch.frontendDiagnosticLog && typeof patch.frontendDiagnosticLog === "object" && !Array.isArray(patch.frontendDiagnosticLog)
+      ? patch.frontendDiagnosticLog
+      : patch;
+    const current = frontendDiagnosticLogPublicSettings();
+    const next = normalizeFrontendDiagnosticLogSettings(Object.assign({}, current, input || {}, {
+      updatedAt: new Date().toISOString(),
+    }), { source: "runtime" });
+    writeRuntimeSettings({
+      frontendDiagnosticLog: {
+        enabled: next.enabled,
+        upload: next.upload,
+        scopes: next.scopes,
+        maxEntries: next.maxEntries,
+        updatedAt: next.updatedAt,
+      },
+    });
+    return frontendDiagnosticLogPublicSettings(readRuntimeSettings());
+  }
+
   return {
+    frontendDiagnosticLogPublicSettings,
     readJsonFile,
     readRuntimeSettings,
+    setFrontendDiagnosticLogSettings,
     setThreadDisplaySettings,
     setWorkspaceDelegationEnabled,
     threadDisplayPublicSettings,
@@ -228,6 +290,9 @@ function createRuntimeSettingsService(options = {}) {
 
 module.exports = {
   createRuntimeSettingsService,
+  normalizeFrontendDiagnosticLogMaxEntries,
+  normalizeFrontendDiagnosticLogScopes,
+  normalizeFrontendDiagnosticLogSettings,
   normalizeThreadDisplayMode,
   normalizeThreadDisplayPaneCount,
   normalizeThreadDisplaySettings,

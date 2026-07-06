@@ -19,6 +19,7 @@ test("api client runtime preserves CommonJS and legacy global entry points", () 
     "postPerformanceEvent",
     "diagnosticThreadHash",
     "frontendDiagnosticLogStatus",
+    "applyFrontendDiagnosticLogPublicConfig",
     "configureFrontendDiagnosticLog",
     "recordFrontendDiagnosticLog",
     "recordSubmittedEchoDiagnosticLog",
@@ -39,6 +40,7 @@ test("api client runtime preserves CommonJS and legacy global entry points", () 
   assert.match(apiClientRuntimeJs, /root\.CodexApiClientRuntime = apiClientRuntimeApi/);
   assert.equal(typeof globalThis.CodexFrontendLog, "object");
   assert.equal(typeof globalThis.CodexFrontendLog.enable, "function");
+  assert.equal(typeof globalThis.CodexFrontendLog.applyPublicConfig, "function");
 });
 
 test("frontend diagnostic log is switchable, persistent, bounded, and metadata-only", () => {
@@ -84,13 +86,16 @@ test("frontend diagnostic log is switchable, persistent, bounded, and metadata-o
     text: "raw private message",
   }), false);
 
-  const status = runtime.configureFrontendDiagnosticLog({
-    enabled: true,
-    scopes: ["submitted_echo"],
-    upload: true,
-    maxEntries: 25,
+  const status = runtime.applyFrontendDiagnosticLogPublicConfig({
+    frontendDiagnosticLog: {
+      enabled: true,
+      scopes: ["submitted_echo"],
+      upload: true,
+      maxEntries: 25,
+    },
   });
   assert.equal(status.enabled, true);
+  assert.equal(globalThis.CodexFrontendLog.status().enabled, true);
 
   runtime.recordFrontendDiagnosticLog("submitted_echo_lifecycle", {
     scope: "submitted_echo",
@@ -128,5 +133,9 @@ test("frontend diagnostic log is switchable, persistent, bounded, and metadata-o
 
   assert.equal(runtime.clearFrontendDiagnosticLog(), true);
   assert.deepEqual(runtime.readFrontendDiagnosticLog(), []);
+  runtime.applyFrontendDiagnosticLogPublicConfig({
+    frontendDiagnosticLog: { enabled: false },
+  });
+  assert.equal(runtime.frontendDiagnosticLogStatus().enabled, false);
   runtime.setFrontendDiagnosticLogEnabled(false);
 });

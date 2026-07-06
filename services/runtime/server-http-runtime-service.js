@@ -315,8 +315,10 @@ function createServerHttpRuntimeService(dependencies = {}) {
     return Math.max(0, Math.min(60_000, parsed));
   }
 
-  function appendRuntimeEventLine(category, event, details = {}) {
-    const minIntervalMs = runtimeLogEventMinIntervalMs();
+  function appendRuntimeEventLine(category, event, details = {}, options = {}) {
+    const minIntervalMs = Number(options.minIntervalMs) >= 0
+      ? Number(options.minIntervalMs)
+      : runtimeLogEventMinIntervalMs();
     const timestampMs = Number(nowMs());
     const now = Number.isFinite(timestampMs) ? timestampMs : Date.now();
     const key = `${category}:${event}`;
@@ -354,7 +356,9 @@ function createServerHttpRuntimeService(dependencies = {}) {
   }
 
   function logClientEvent(event, details = {}) {
-    appendRuntimeEventLine("client-event", event, details);
+    appendRuntimeEventLine("client-event", event, details, {
+      minIntervalMs: String(event || "") === "frontend_diagnostic_log" ? 0 : undefined,
+    });
   }
 
   function isTurnSteerUnsupportedError(err) {

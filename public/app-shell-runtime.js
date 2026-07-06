@@ -748,6 +748,7 @@ async function start() {
     state.startupInProgress = false;
     return;
   }
+  applyFrontendDiagnosticLogPublicConfig(config);
   initializePageBuildState(config);
   startPageRefreshChecks();
   state.appVersion = String(config.version || "");

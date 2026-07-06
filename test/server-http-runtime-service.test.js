@@ -146,6 +146,30 @@ test("server http runtime rate-limits repeated diagnostic log events", () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("server http runtime does not rate-limit frontend diagnostic log samples", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-http-runtime-"));
+  const logPath = path.join(dir, "mobile-web.log");
+  const service = createServerHttpRuntimeService({
+    mobileWebLogFile: logPath,
+    mobileWebLogMaxBytes: 4096,
+    mobileWebLogKeepBytes: 2048,
+    mobileWebLogEventMinIntervalMs: 30_000,
+    nowMs: () => 1_000,
+  });
+
+  service.logClientEvent("frontend_diagnostic_log", { details: { seq: 1, stage: "local-insert" } });
+  service.logClientEvent("frontend_diagnostic_log", { details: { seq: 2, stage: "post-response" } });
+  service.logClientEvent("frontend_diagnostic_log", { details: { seq: 3, stage: "dom-probe" } });
+
+  const text = fs.readFileSync(logPath, "utf8");
+  assert.equal((text.match(/^\[client-event\] frontend_diagnostic_log /gm) || []).length, 3);
+  assert.match(text, /"seq":1/);
+  assert.match(text, /"seq":2/);
+  assert.match(text, /"seq":3/);
+  assert.doesNotMatch(text, /"suppressedCount"/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("server http runtime suppresses stdout fallback for high-frequency diagnostic events", () => {
   const service = createServerHttpRuntimeService({
     mobileWebLogFile: "",

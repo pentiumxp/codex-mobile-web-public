@@ -37,6 +37,14 @@ function createCoreApiRouteService(deps = {}) {
     defaultModel,
     defaultPermissionModeFromConfigDefaults,
     disableAuth,
+    frontendDiagnosticLogPublicSettings = () => ({
+      enabled: false,
+      upload: true,
+      scopes: ["submitted_echo"],
+      maxEntries: 400,
+      source: "default",
+      updatedAt: "",
+    }),
     getProfileSwitchProgress,
     hermesNotificationDelegateService,
     hermesOriginFromRequest,
@@ -73,6 +81,7 @@ function createCoreApiRouteService(deps = {}) {
     safeAppUpdateError,
     scheduleBackgroundTask = (fn) => setImmediate(fn),
     scheduleAppRestart,
+    setFrontendDiagnosticLogSettings,
     setProfileSwitchProgress,
     setThreadDisplaySettings,
     setWorkspaceDelegationEnabled,
@@ -185,6 +194,7 @@ function createCoreApiRouteService(deps = {}) {
           roots: workspaceRegistryService.createRoots(),
         },
         workspaceDelegation,
+        frontendDiagnosticLog: frontendDiagnosticLogPublicSettings(),
         hermesPlugin: {
           id: "codex-mobile",
           manifestPath: "/api/v1/hermes/plugin/manifest",
@@ -397,6 +407,25 @@ function createCoreApiRouteService(deps = {}) {
         sendJson(200, {
           ok: true,
           threadDisplay: setThreadDisplaySettings(body),
+        });
+      } catch (err) {
+        sendJson(err.statusCode || 500, { ok: false, error: err.message || String(err) });
+      }
+      return { handled: true };
+    }
+    if (url.pathname === "/api/settings/frontend-diagnostic-log" && (req.method === "GET" || req.method === "POST")) {
+      try {
+        if (req.method === "GET") {
+          sendJson(200, { ok: true, frontendDiagnosticLog: frontendDiagnosticLogPublicSettings() });
+          return { handled: true };
+        }
+        if (typeof setFrontendDiagnosticLogSettings !== "function") {
+          throw httpStatusError(503, "frontend_diagnostic_log_settings_unavailable");
+        }
+        const body = await readBody();
+        sendJson(200, {
+          ok: true,
+          frontendDiagnosticLog: setFrontendDiagnosticLogSettings(body),
         });
       } catch (err) {
         sendJson(err.statusCode || 500, { ok: false, error: err.message || String(err) });

@@ -52,6 +52,7 @@ test("core public config route uses injected runtime dependencies", async () => 
     hermesOriginFromRequest: () => "http://127.0.0.1",
     hermesPluginBaseUrl: "http://127.0.0.1:8787",
     hermesPluginService: {},
+    frontendDiagnosticLogPublicSettings: () => ({ enabled: true, upload: true, scopes: ["submitted_echo"], maxEntries: 100, source: "runtime" }),
     liveQuotaSnapshotForProfiles: () => ({ source: "test" }),
     loadRecentRateLimitsFromRollouts: () => {
       loadedRecentRateLimits = true;
@@ -117,7 +118,55 @@ test("core public config route uses injected runtime dependencies", async () => 
   assert.equal(sent.body.defaultShellMode, "vite-app-preview");
   assert.equal(sent.body.defaultModel, "gpt-test");
   assert.equal(sent.body.workspaceDelegation.enabled, true);
+  assert.equal(sent.body.frontendDiagnosticLog.enabled, true);
+  assert.deepEqual(sent.body.frontendDiagnosticLog.scopes, ["submitted_echo"]);
   assert.equal(sent.body.threadListFallbackPrewarm.pending, false);
+});
+
+test("core settings route persists frontend diagnostic log settings", async () => {
+  let current = { enabled: false, upload: true, scopes: ["submitted_echo"], maxEntries: 400, source: "default" };
+  let sent = null;
+  const service = createCoreApiRouteService({
+    frontendDiagnosticLogPublicSettings: () => current,
+    setFrontendDiagnosticLogSettings: (body) => {
+      current = Object.assign({}, current, body, { source: "runtime" });
+      return current;
+    },
+    httpStatusError: (statusCode, message) => {
+      const err = new Error(message);
+      err.statusCode = statusCode;
+      return err;
+    },
+  });
+
+  let handled = await service.handleAuthorizedRoute({
+    url: new URL("http://127.0.0.1:8787/api/settings/frontend-diagnostic-log"),
+    req: { method: "POST", headers: {} },
+    res: {},
+    readBody: async () => ({ enabled: true, scopes: ["submitted_echo"], maxEntries: 80 }),
+    sendJson: (status, body) => {
+      sent = { status, body };
+    },
+  });
+
+  assert.deepEqual(handled, { handled: true });
+  assert.equal(sent.status, 200);
+  assert.equal(sent.body.frontendDiagnosticLog.enabled, true);
+  assert.equal(sent.body.frontendDiagnosticLog.maxEntries, 80);
+
+  handled = await service.handleAuthorizedRoute({
+    url: new URL("http://127.0.0.1:8787/api/settings/frontend-diagnostic-log"),
+    req: { method: "GET", headers: {} },
+    res: {},
+    readBody: async () => ({}),
+    sendJson: (status, body) => {
+      sent = { status, body };
+    },
+  });
+
+  assert.deepEqual(handled, { handled: true });
+  assert.equal(sent.status, 200);
+  assert.equal(sent.body.frontendDiagnosticLog.source, "runtime");
 });
 
 test("core status route exposes runtime pressure without blocking on quota hydration", async () => {

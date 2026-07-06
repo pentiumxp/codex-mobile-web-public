@@ -1380,8 +1380,10 @@ const runtimeSettingsService = createRuntimeSettingsService({
   workspaceDelegationToolFullName: WORKSPACE_DELEGATION_TOOL_FULL_NAME,
 });
 const {
+  frontendDiagnosticLogPublicSettings,
   readJsonFile,
   readRuntimeSettings,
+  setFrontendDiagnosticLogSettings,
   setThreadDisplaySettings,
   setWorkspaceDelegationEnabled,
   threadDisplayPublicSettings,
@@ -1952,6 +1954,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   scheduleAppRestart,
   sendJson,
   serveStatic,
+  setFrontendDiagnosticLogSettings,
   setProfileSwitchProgress,
   setThreadGoal,
   setThreadDisplaySettings,
@@ -1966,6 +1969,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   threadDetailCopyTextService,
   threadDetailFirstPaintPrewarmStatus,
   threadDetailReadOrchestrationService,
+  frontendDiagnosticLogPublicSettings,
   threadDisplayPublicSettings,
   threadDisplaySummaryCache,
   threadListDefaultWarmFallbackEnabled: THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED,
