@@ -292,6 +292,19 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(platformPointer, /development visual check passes/);
 });
 
+test("desktop tile layout keeps composer inside the fixed app viewport", () => {
+  const appRule = stylesCss.match(/\.app\s*\{[\s\S]*?\n\}/);
+  assert.ok(appRule, "missing .app rule");
+  assert.match(appRule[0], /grid-template-columns:\s*520px minmax\(0, 1fr\);/);
+  assert.match(appRule[0], /grid-template-rows:\s*minmax\(0, 1fr\);/);
+
+  const sidebarRule = [...stylesCss.matchAll(/\.sidebar\s*\{[\s\S]*?\n\}/g)]
+    .map((match) => match[0])
+    .find((rule) => /position:\s*relative;/.test(rule) && /flex-direction:\s*column;/.test(rule));
+  assert.ok(sidebarRule, "missing .sidebar rule");
+  assert.match(sidebarRule, /min-height:\s*0;/);
+});
+
 test("Android composer focused native tap preserves IME focus", () => {
   const prepareBody = composerRuntimeFunctionBody("prepareMessageInputForNativeGesture");
   const recoverBody = composerRuntimeFunctionBody("recoverMessageInputKeyboardFromGesture");
