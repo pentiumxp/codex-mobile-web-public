@@ -5915,3 +5915,71 @@ The previous full handoff was archived and should be opened only when old proven
   Home AI main submitted-message harness in `block` and `allow` modes against
   expected hash `503cbb124641`, plus Codex source submitted-message and quota
   harnesses.
+
+## 2026-07-06T19:34Z - Production validation for submitted user DOM cleanup
+
+- Production switched to requested commit `d5113f35` and serves
+  `0.1.11|codex-mobile-shell-v625-503cbb124641`.
+- Production status/readback:
+  - `/api/public-config`: HTTP 200, client/cache
+    `0.1.11|codex-mobile-shell-v625-503cbb124641`, default shell
+    `vite-app-preview`;
+  - `/api/status?detail=1`: HTTP 200, `ready=true`, issue codes `[]`;
+  - `/api/vite-shell-artifact`: HTTP 200, `ok=true`,
+    `productionExecution=vite-app-preview-native-esm`, published files `24`.
+- Production submitted-message harness on Home AI main thread
+  `019f316b-27cd-7622-9944-0b909fec3c70`, expected hash `503cbb124641`:
+  - service workers `block` and `allow`;
+  - result `ok=true`, issue codes `[]`;
+  - one POST per scenario;
+  - one durable API user item;
+  - one visible user node at `100/350/900/1600/2800/6000ms`;
+  - one visible user node after reopen.
+- Production submitted-message harness on Codex source thread
+  `019f2d75-39bd-7462-8dca-de24f97aeaf6`, expected hash `503cbb124641`:
+  - service workers `block` and `allow`;
+  - result `ok=true`, issue codes `[]`;
+  - one POST per scenario;
+  - one durable API user item;
+  - one visible user node at `100/350/900/1600/2800/6000ms`;
+  - one visible user node after reopen.
+- Production quota popup harness on Codex source thread
+  `019f2d75-39bd-7462-8dca-de24f97aeaf6`:
+  - service workers `block` and `allow`;
+  - result `ok=true`, issue codes `[]`;
+  - quota toggle/close runtime bridge functions present;
+  - click sets `aria-expanded=true`;
+  - quota panel visible with quota labels.
+- Startup-only deploy gate passed:
+  - `deployPass=true`, blocking/actionable issue codes `[]`;
+  - direct runtime, Vite preview, app-preview, root/default-root, embed, and
+    session startup surfaces all green.
+- Explicit controlled-submit full gate on thread
+  `019f307c-56fb-7261-a584-2636051ee724` passed:
+  - `deployPass=true`;
+  - blocking/actionable/reportable/observe-only issue codes `[]`;
+  - advisory-only codes: `thread_list_updated_order_mismatch`,
+    one dynamic `browser_latest_turn_item_below_api_expectation`,
+    `active_codex_app_server_rss_elevated`,
+    `codex_mobile_mcp_child_accumulation_elevated`.
+- Targeted regressions absent from production harness/gate evidence:
+  - visible submitted-user DOM duplicate;
+  - transient duplicate that clears after reopen;
+  - durable submitted-user duplicate;
+  - pending submitted-user disappearance;
+  - submitted-user delayed order mismatch;
+  - quota popup bridge/panel failure.
+
+## 2026-07-07 - Quota Popup Fast-Click Fix
+
+- Symptom: quota detail panel opens on normal click, but rapid repeated quota button clicks can immediately close it.
+- Failing layer: client interaction contract in `app-shell-runtime` quota button event handling; composer runtime owns the detail panel as a toggle, so repeated button activation could toggle an already-open panel closed.
+- Fix: added `quotaDetailsAreOpen(anchor)` guard in `frontend/native/app-shell-runtime.mjs` and generated `public/app-shell-runtime.js`; quota button activations now keep the details panel open when it is already open. Outside pointer close remains owned by composer runtime.
+- Harness: extended `scripts/codex-mobile-quota-popup-harness.js` with `--click-count` and `--click-interval-ms`; default repeated-click interval is 760ms so it crosses the existing 650ms synthetic-event suppression window and catches the old close-on-second-click behavior.
+- Local validation:
+  - `node --test test/quota-popup-harness.test.js test/composer-quota.test.js test/composer-runtime-ui.test.js` passed `21/21`.
+  - `npm run --silent build:frontend` produced `0.1.11|codex-mobile-shell-v625-b43560c1055b`.
+  - `node --test test/quota-popup-harness.test.js test/composer-quota.test.js test/composer-runtime-ui.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js` passed `59/59`.
+  - Local Playwright harness on `http://127.0.0.1:8897`, thread `019f2d75-39bd-7462-8dca-de24f97aeaf6`, `--service-workers both --click-count 2`, passed with issue codes `[]`; both block and allow modes ended with `ariaExpanded=true` and visible quota panel.
+  - `npm run --silent check` passed.
+- Deployment status: not yet delegated/deployed in this local implementation slice.

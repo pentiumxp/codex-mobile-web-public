@@ -17,6 +17,12 @@ function toggleQuotaDetailsFromRuntime(anchor) {
   return false;
 }
 
+function quotaDetailsAreOpen(anchor) {
+  if (anchor && anchor.getAttribute("aria-expanded") === "true") return true;
+  const panel = document.getElementById("quotaDetailPanel");
+  return Boolean(panel && panel.hidden === false);
+}
+
 function appShellStartupErrorCode(err) {
   return String(err && err.message || err || "app_shell_start_failed").slice(0, 160);
 }
@@ -271,6 +277,11 @@ function wireUi() {
     const eventType = String(event.type || "");
     if ((eventType === "click" || eventType === "touchend") && now < suppressSyntheticQuotaToggleUntil) return;
     if (now - lastQuotaToggleAt < 650) return;
+    if (quotaDetailsAreOpen(quotaUsage)) {
+      lastQuotaToggleAt = now;
+      if (eventType === "pointerdown") suppressSyntheticQuotaToggleUntil = now + 2200;
+      return;
+    }
     if (!toggleQuotaDetailsFromRuntime(quotaUsage)) {
       if (eventType !== "pointerdown") showError(new Error("quota_details_runtime_unavailable"));
       return;

@@ -54,6 +54,8 @@ test("quota popup harness parses service worker and thread options", () => {
     "--thread-id", "thread-123",
     "--service-workers", "both",
     "--entry-surface", "direct",
+    "--click-count", "2",
+    "--click-interval-ms", "180",
     "--timeout-ms", "12000",
     "--json",
   ], {});
@@ -62,6 +64,8 @@ test("quota popup harness parses service worker and thread options", () => {
   assert.equal(options.threadId, "thread-123");
   assert.equal(options.serviceWorkers, "both");
   assert.equal(options.entrySurface, "direct");
+  assert.equal(options.clickCount, 2);
+  assert.equal(options.clickIntervalMs, 180);
   assert.equal(options.timeoutMs, 12000);
   assert.equal(options.json, true);
 });

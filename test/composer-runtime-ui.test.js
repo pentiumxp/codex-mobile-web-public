@@ -135,6 +135,7 @@ test("quota toggle reports success so synthetic click suppression works", () => 
   assert.match(appJs, /target\.closest\("#quotaUsage"\)/);
   assert.match(appJs, /document\.addEventListener\("pointerdown", handleQuotaToggle\)/);
   assert.match(appJs, /if \(!toggleQuotaDetailsFromRuntime\(quotaUsage\)\)/);
+  assert.match(appJs, /if \(quotaDetailsAreOpen\(quotaUsage\)\) \{/);
   assert.match(appJs, /suppressSyntheticQuotaToggleUntil = now \+ 2200/);
 });
 

@@ -113,11 +113,13 @@ test("quota card click uses the composer bridge runtime under Vite ESM", () => {
   assert.match(appShellRuntimeJs, /bridge\.toggleQuotaDetails\(anchor\)/);
   assert.match(appShellRuntimeJs, /quota_details_runtime_unavailable/);
   assert.match(appShellRuntimeJs, /const handleQuotaToggle = \(event\) => \{/);
-  assert.match(appShellRuntimeJs, /quotaUsage\.addEventListener\("pointerdown", handleQuotaToggle\)/);
-  assert.match(appShellRuntimeJs, /quotaUsage\.addEventListener\("click", handleQuotaToggle\)/);
-  assert.match(appShellRuntimeJs, /quotaUsage\.addEventListener\("touchend", handleQuotaToggle, \{ passive: false \}\)/);
+  assert.match(appShellRuntimeJs, /document\.addEventListener\("pointerdown", handleQuotaToggle\)/);
+  assert.match(appShellRuntimeJs, /document\.addEventListener\("click", handleQuotaToggle\)/);
+  assert.match(appShellRuntimeJs, /document\.addEventListener\("touchend", handleQuotaToggle, \{ passive: false \}\)/);
   assert.match(appShellRuntimeJs, /suppressSyntheticQuotaToggleUntil/);
   assert.match(appShellRuntimeJs, /now - lastQuotaToggleAt < 650/);
+  assert.match(appShellRuntimeJs, /function quotaDetailsAreOpen\(anchor\)/);
+  assert.match(appShellRuntimeJs, /if \(quotaDetailsAreOpen\(quotaUsage\)\) \{/);
   assert.match(appShellRuntimeJs, /if \(eventType !== "pointerdown"\) showError\(new Error\("quota_details_runtime_unavailable"\)\)/);
   assert.match(appShellRuntimeJs, /lastQuotaToggleAt = now;[\s\S]*if \(eventType === "pointerdown"\) suppressSyntheticQuotaToggleUntil = now \+ 2200;/);
   assert.doesNotMatch(appShellRuntimeJs, /toggleQuotaDetails\(quotaUsage\);/);

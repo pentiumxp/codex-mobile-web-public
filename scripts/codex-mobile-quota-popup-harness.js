@@ -17,6 +17,8 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     entryUrl: "",
     entrySurface: env.CODEX_MOBILE_QUOTA_HARNESS_ENTRY_SURFACE || "app-preview",
     serviceWorkers: "block",
+    clickCount: 1,
+    clickIntervalMs: 760,
     playwrightModuleDir: env.PLAYWRIGHT_NODE_MODULE_DIR || "",
     timeoutMs: 30_000,
     headful: false,
@@ -32,6 +34,8 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--entry-url") options.entryUrl = next();
     else if (arg === "--entry-surface") options.entrySurface = next();
     else if (arg === "--service-workers") options.serviceWorkers = next();
+    else if (arg === "--click-count") options.clickCount = Math.max(1, Number(next()) || options.clickCount);
+    else if (arg === "--click-interval-ms") options.clickIntervalMs = Math.max(0, Number(next()) || options.clickIntervalMs);
     else if (arg === "--playwright-module-dir") options.playwrightModuleDir = next();
     else if (arg === "--timeout-ms") options.timeoutMs = Math.max(1000, Number(next()) || options.timeoutMs);
     else if (arg === "--headful") options.headful = true;
@@ -57,6 +61,8 @@ function usage() {
     "  --entry-url <url>             Exact browser entry URL for custom embedded/proxy checks.",
     "  --entry-surface <app-preview|direct|custom> Default: app-preview.",
     "  --service-workers <block|allow|both>",
+    "  --click-count <n>            Number of quota button clicks before assertion. Default: 1.",
+    "  --click-interval-ms <n>      Delay between repeated quota clicks. Default: 760.",
     "  --playwright-module-dir <dir> Directory used to resolve the Playwright package.",
     "  --json                        Print metadata-only JSON.",
   ].join("\n");
@@ -244,13 +250,20 @@ async function runScenario(options, serviceWorkers) {
     await page.waitForTimeout(1200);
     await closeNativeDialog(page);
     const before = await collectQuotaSnapshot(page);
-    await page.locator("#quotaUsage").click({ force: true });
+    for (let clickIndex = 0; clickIndex < options.clickCount; clickIndex += 1) {
+      await page.locator("#quotaUsage").click({ force: true });
+      if (clickIndex + 1 < options.clickCount && options.clickIntervalMs > 0) {
+        await page.waitForTimeout(options.clickIntervalMs);
+      }
+    }
     await page.waitForTimeout(400);
     const after = await collectQuotaSnapshot(page);
     const analysis = analyzeQuotaPopupScenario({ before, after });
     return {
       ok: analysis.ok,
       serviceWorkers,
+      clickCount: options.clickCount,
+      clickIntervalMs: options.clickIntervalMs,
       threadId: options.threadId || "",
       before,
       after,
