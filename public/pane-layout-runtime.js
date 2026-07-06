@@ -4437,6 +4437,12 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   });
   restoreConversationViewportAnchor(scrollAnchor);
   if (!applyResult.ok) return rejectThreadDetailPatch(applyResult.reason || "turn-patch-apply-failed");
+  const postPatchDomShape = conversationDomShape();
+  const expectedShape = visibleConversationShape(nextThread);
+  if (postPatchDomShape.duplicateUserMessageCount > Math.max(0, Number(expectedShape.duplicateUserMessageCount || 0))) {
+    renderCurrentThread({ stickToBottom: shouldFollowSubmittedMessageToBottom() });
+    return acceptThreadDetailPatch("full-render-after-duplicate-user-message-dom");
+  }
   return acceptThreadDetailPatch("patched");
 }
 

@@ -1110,7 +1110,7 @@ test("native ESM app update runtime matches classic fallback behavior", async ()
   );
   assert.equal(
     nativeRuntime.clientBuildVersionText(),
-    "客户端 v625 · cbb2ef94",
+    "客户端 v625",
   );
   assert.equal(
     nativeRuntime.appVersionText(),
@@ -1118,7 +1118,24 @@ test("native ESM app update runtime matches classic fallback behavior", async ()
   );
   assert.equal(
     nativeRuntime.appVersionText(),
-    "v0.1.11 · 客户端 v625 · cbb2ef94",
+    "v0.1.11 · 客户端 v625",
+  );
+  assert.equal(
+    nativeRuntime.fullClientBuildVersionText({
+      clientBuildId: "0.1.11|codex-mobile-shell-v625-cbb2ef9490a1",
+      shellCacheName: "codex-mobile-shell-v625-cbb2ef9490a1",
+    }),
+    classicRuntime.fullClientBuildVersionText({
+      clientBuildId: "0.1.11|codex-mobile-shell-v625-cbb2ef9490a1",
+      shellCacheName: "codex-mobile-shell-v625-cbb2ef9490a1",
+    }),
+  );
+  assert.equal(
+    nativeRuntime.fullClientBuildVersionText({
+      clientBuildId: "0.1.11|codex-mobile-shell-v625-cbb2ef9490a1",
+      shellCacheName: "codex-mobile-shell-v625-cbb2ef9490a1",
+    }),
+    "clientBuildId 0.1.11|codex-mobile-shell-v625-cbb2ef9490a1 · shellCacheName codex-mobile-shell-v625-cbb2ef9490a1",
   );
   assert.equal(
     nativeRuntime.currentUpdateUsesPublicRelease(),
@@ -1660,8 +1677,7 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /activePaneSyncPlan/);
   assert.match(shardSources, /createThreadTileRuntime/);
   assert.match(shardSources, /createAppUpdateRuntime/);
-  assert.match(shardSources, /客户端 v625 · a5a3d596/);
-  assert.doesNotMatch(shardSources, /客户端 v625 · a5a3d596240d/);
+  assert.match(shardSources, /客户端 v625/);
   assert.match(shardSources, /createSettingsRuntime/);
   assert.match(shardSources, /createModalRuntime/);
   assert.match(shardSources, /createNavigationRuntime/);

@@ -1201,6 +1201,7 @@ function closeQuotaDetails() {
   const quota = $("quotaUsage");
   if (quota) quota.setAttribute("aria-expanded", "false");
   document.removeEventListener("pointerdown", onQuotaOutsidePointer);
+  return true;
 }
 
 function onQuotaOutsidePointer(event) {
@@ -1223,6 +1224,7 @@ function toggleQuotaDetails(anchor) {
   } else {
     document.removeEventListener("pointerdown", onQuotaOutsidePointer);
   }
+  return Boolean(panel);
 }
 
 function composerPlaceholderText() {
@@ -2132,13 +2134,16 @@ function requestComposerSubmitFromButton(event) {
   state.lastSendButtonSubmitAt = now;
   const button = $("sendMessage");
   if (!button || button.disabled || state.composerBusy) return;
-  const composerForm = $("composer");
   try {
-    if (composerForm && typeof composerForm.requestSubmit === "function") {
-      composerForm.requestSubmit();
-    } else {
-      sendMessage(event);
-    }
+    sendMessage(event).catch((err) => {
+      postClientEvent("send_button_submit_exception", {
+        activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",
+        hasContent: composerHasContent(),
+        buttonDisabled: button.disabled,
+        error: String(err && err.message || ""),
+      });
+      showError(err);
+    });
   } catch (err) {
     postClientEvent("send_button_submit_exception", {
       activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",

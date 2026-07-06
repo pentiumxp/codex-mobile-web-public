@@ -60,15 +60,23 @@ function createAppUpdateRuntime(deps = {}) {
     const client = clientBuildVersionText();
     return version ? `v${version} · ${client}` : client;
   }
-  
+
   function clientBuildVersionText(buildId = CLIENT_BUILD_ID) {
     const text = String(buildId || "").trim();
-    const match = text.match(/\bcodex-mobile-shell-v([0-9]+)(?:-([a-f0-9]{6,}))?\b/i);
+    const match = text.match(/\bcodex-mobile-shell-v([0-9]+)(?:-[a-f0-9]{6,})?\b/i);
     if (match) {
-      const buildHash = String(match[2] || "").slice(0, 8);
-      return buildHash ? `客户端 v${match[1]} · ${buildHash}` : `客户端 v${match[1]}`;
+      return `客户端 v${match[1]}`;
     }
     return text ? `客户端 ${text}` : "客户端未知";
+  }
+
+  function fullClientBuildVersionText(status = state.appUpdateStatus) {
+    const clientBuildId = String((status && status.clientBuildId) || CLIENT_BUILD_ID || "").trim();
+    const shellCacheName = String((status && status.shellCacheName) || "").trim();
+    const parts = [];
+    if (clientBuildId) parts.push(`clientBuildId ${clientBuildId}`);
+    if (shellCacheName && shellCacheName !== clientBuildId) parts.push(`shellCacheName ${shellCacheName}`);
+    return parts.join(" · ") || "clientBuildId unknown";
   }
   
   function renderAppUpdateStatus() {
@@ -214,6 +222,13 @@ function createAppUpdateRuntime(deps = {}) {
       }),
     ].join("");
     content.innerHTML = `
+      <section class="update-card update-version-card">
+        <div class="update-card-title">完整客户端版本</div>
+        <div class="update-row">
+          <strong>${escapeHtml(appVersionText(current))}</strong>
+          <span class="update-row-meta">${escapeHtml(fullClientBuildVersionText(current))}</span>
+        </div>
+      </section>
       <section class="update-card">
         <div class="update-card-title">Current checkout</div>
         <div class="update-row">
@@ -1247,6 +1262,7 @@ function createAppUpdateRuntime(deps = {}) {
   return Object.freeze({
     appVersionText,
     clientBuildVersionText,
+    fullClientBuildVersionText,
     renderAppUpdateStatus,
     refreshAppUpdateStatus,
     currentUpdateUsesPublicRelease,

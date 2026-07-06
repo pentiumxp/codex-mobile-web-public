@@ -4635,6 +4635,9 @@ test("thread tile local patch paths refresh the pane instead of writing a single
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailRefreshLocalPatchTransactionCallbacks\(transactionEffectsPlan, \{/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /commitEffects: transactionCallbacks\.commitEffects/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /afterSuccess: transactionCallbacks\.afterSuccess/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const postPatchDomShape = conversationDomShape\(\);/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const expectedShape = visibleConversationShape\(nextThread\);/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /full-render-after-duplicate-user-message-dom/);
   assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = \{/);
   assert.match(functionBody("threadDetailRefreshLocalPatchTransactionCallback"), /type === "complete-local-conversation-dom-update"/);
   assert.match(functionBody("threadDetailRefreshLocalPatchTransactionCallback"), /\{ completionSnapshot: item\.completionSnapshot \|\| \{\} \}/);
@@ -7774,6 +7777,9 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(sendBody, /schedulePostCompletionThreadRefreshes\(targetThreadId, \[350, 750, 1200, 2400, 5200\]\);/);
   assert.match(sendBody, /scheduleUsageBackfillRefresh\(750, \{ force: true \}\);/);
   assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
+  const sendButtonBody = composerRuntimeBody("requestComposerSubmitFromButton");
+  assert.match(sendButtonBody, /sendMessage\(event\)\.catch/);
+  assert.doesNotMatch(sendButtonBody, /requestSubmit\(\)/);
   const composerRuntimeFactoryBody = functionBodyFrom(composerRuntimeJs, "createComposerRuntime");
   assert.match(composerRuntimeFactoryBody, /schedulePostCompletionThreadRefreshes,/);
   assert.match(composerRuntimeFactoryBody, /scheduleUsageBackfillRefresh,/);

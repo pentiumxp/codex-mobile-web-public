@@ -105,10 +105,7 @@ function pluginVoiceInputCapabilityPayload(extra = {}) {
 }
 
 function pluginVoiceInputGestureAvailable() {
-  if (!isHermesEmbedMode()) return false;
-  if (pluginVoiceInputActiveTurnHoldAvailable()) return true;
-  if (state.activeTurnId && !composerHasContent()) return false;
-  return pluginVoiceInputComposerWritable();
+  return false;
 }
 
 function postPluginVoiceInputMessage(message) {

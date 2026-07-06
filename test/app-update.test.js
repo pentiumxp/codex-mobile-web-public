@@ -521,7 +521,10 @@ test("version button opens an update panel with Public release status", () => {
   assert.match(appUpdateSource, /function refreshPublicReleaseStatus\(options = \{\}\)/);
   assert.match(appUpdateSource, /function currentUpdateUsesPublicRelease\(/);
   assert.match(appUpdateSource, /function clientBuildVersionText\(buildId = CLIENT_BUILD_ID\)/);
+  assert.match(appUpdateSource, /function fullClientBuildVersionText\(status = state\.appUpdateStatus\)/);
   assert.match(appUpdateSource, /v\$\{version\} · \$\{client\}/);
+  assert.match(appUpdateSource, /完整客户端版本/);
+  assert.match(appUpdateSource, /fullClientBuildVersionText\(current\)/);
   assert.match(appUpdateSource, /当前客户端 \$\{CLIENT_BUILD_ID\}/);
   assert.match(appUpdateSource, /appUpdateStatus"\)\.addEventListener\("click", openUpdatePanel\)/);
   assert.match(appUpdateSource, /updateActionButton\("apply-current"/);

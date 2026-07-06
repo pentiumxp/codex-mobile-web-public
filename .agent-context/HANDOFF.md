@@ -5603,3 +5603,64 @@ The previous full handoff was archived and should be opened only when old proven
     `#messageInput`, not a second conversation article.
 - Pending: commit this fix and deploy through the Codex Mobile Deploy Lane with
   startup and controlled-submit behavior readback.
+
+## 2026-07-07T01:15Z - Quota popup and submitted-message harness hardening
+
+- Owner reported quota usage click regression: clicking the quota chip did not
+  open the quota detail panel. This repeated an earlier class of UI regression,
+  so the fix now includes a dedicated Playwright harness gate.
+- Root cause found with local browser probing on `127.0.0.1:8897`: native ESM
+  app shell called `bridge.toggleQuotaDetails(anchor)` through
+  `createComposerBridgeRuntime()`, but the bridge factory did not expose quota
+  methods. After exposing them, a second issue remained: quota runtime toggles
+  returned `undefined`, so app-shell treated the pointerdown toggle as failure
+  and did not suppress the synthetic click; the click immediately toggled the
+  panel closed again. The startup-time direct button listener was also brittle
+  under dynamic shell rendering.
+- Fixes:
+  - `composer-bridge-runtime` factory now exports `closeQuotaDetails` and
+    `toggleQuotaDetails`;
+  - `composer-runtime` quota close/toggle functions return explicit success
+    values;
+  - `app-shell-runtime` handles quota clicks via document-level delegation to
+    `#quotaUsage`, so clicks on nested chip spans use the same path;
+  - added `scripts/codex-mobile-quota-popup-harness.js` and
+    `test/quota-popup-harness.test.js`;
+  - added `check:quota-harness` and included the harness syntax/test files in
+    the main `npm run check`;
+  - kept the submitted-message Playwright harness in
+    `scripts/codex-mobile-submitted-message-harness.js`, with explicit session
+    key install, thread targeting via both `thread` and `threadId`, DOM/API
+    duplicate/missing checks, and reopen sampling;
+  - send-button voice gesture remains disabled; direct button send path remains
+    isolated;
+  - version chip displays short `客户端 v625`; full client/cache hash is shown
+    in the update panel.
+- Build/readback:
+  - regenerated Vite/native ESM artifacts with client/cache
+    `0.1.11|codex-mobile-shell-v625-d77c1845e647`;
+  - `productionExecution=vite-app-preview-native-esm`, published files `24`,
+    retained artifact files `1149`.
+- Local Playwright acceptance on `127.0.0.1:8897`:
+  - quota harness against thread `019f2d75-39bd-7462-8dca-de24f97aeaf6` passed
+    with service workers `block` and `allow`; after click, `aria-expanded=true`,
+    `quotaDetailPanel.hidden=false`, and panel text included `5小时额度` and
+    `周额度`;
+  - submitted-message harness against Codex thread
+    `019f2d75-39bd-7462-8dca-de24f97aeaf6` passed with SW `block` and `allow`:
+    one POST, one visible user article/node, one durable API user item, and
+    reopen samples still one;
+  - submitted-message harness against Home AI main thread
+    `019f316b-27cd-7622-9944-0b909fec3c70` passed with SW `block` and `allow`
+    with the same one-post/one-visible/one-durable/reopen-one evidence.
+- Validation:
+  - `npm run --silent check:quota-harness` passed;
+  - `npm run --silent check:submitted-harness` passed;
+  - `node --test test/composer-runtime-ui.test.js test/quota-popup-harness.test.js test/vite-shell-asset-graph.test.js` -> `32/32`;
+  - `node --test test/plugin-voice-input.test.js test/conversation-render.test.js test/app-update.test.js test/submitted-message-harness.test.js test/quota-popup-harness.test.js` -> `216/216`;
+  - `node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js` -> `154/154`;
+  - `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Pending: commit this source fix, then deploy through the Codex Mobile Deploy
+  Lane for production startup/full behavior/readback before claiming production
+  closure.

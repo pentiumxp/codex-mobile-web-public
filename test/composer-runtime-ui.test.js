@@ -81,7 +81,7 @@ test("composer runtime is created after its constant dependencies", () => {
 
 test("composer runtime receives composer target thread as an explicit dependency", () => {
   assert.match(composerRuntimeJs, /composerTargetThread = \(\) => null/);
-  assert.match(appJs, /composerTargetThread,\n  composerTargetActiveTurnId,/);
+  assert.match(appJs, /composerTargetThread,\n\s+composerTargetActiveTurnId,/);
 
   const runtime = composerRuntime.createComposerRuntime({
     state: {
@@ -118,6 +118,8 @@ test("composer bridge runtime preserves CommonJS and legacy global entry points"
     "replyTaskCard",
     "queueThreadTaskCardDraftCreation",
     "createThreadTaskCardDraft",
+    "closeQuotaDetails",
+    "toggleQuotaDetails",
   ]) {
     assert.equal(typeof bridge[name], "function", `${name} should be exported`);
     assert.equal(typeof globalThis[name], "function", `${name} should remain a legacy global`);
@@ -125,6 +127,15 @@ test("composer bridge runtime preserves CommonJS and legacy global entry points"
   assert.equal(globalThis.CodexComposerBridgeRuntime, composerBridgeRuntime);
   assert.match(composerBridgeRuntimeJs, /module\.exports = api/);
   assert.match(composerBridgeRuntimeJs, /root\.CodexComposerBridgeRuntime = api/);
+});
+
+test("quota toggle reports success so synthetic click suppression works", () => {
+  assert.match(runtimeBody("closeQuotaDetails"), /return true;/);
+  assert.match(runtimeBody("toggleQuotaDetails"), /return Boolean\(panel\);/);
+  assert.match(appJs, /target\.closest\("#quotaUsage"\)/);
+  assert.match(appJs, /document\.addEventListener\("pointerdown", handleQuotaToggle\)/);
+  assert.match(appJs, /if \(!toggleQuotaDetailsFromRuntime\(quotaUsage\)\)/);
+  assert.match(appJs, /suppressSyntheticQuotaToggleUntil = now \+ 2200/);
 });
 
 test("composer runtime is part of the current static shell", () => {

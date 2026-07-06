@@ -259,28 +259,28 @@ function wireUi() {
   if ($("composerIntentDialog")) $("composerIntentDialog").addEventListener("click", (event) => {
     if (event.target === $("composerIntentDialog")) closeComposerIntentDialog(false);
   });
-  const quotaUsage = $("quotaUsage");
-  if (quotaUsage) {
-    let lastQuotaToggleAt = 0;
-    let suppressSyntheticQuotaToggleUntil = 0;
-    const handleQuotaToggle = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const now = Date.now();
-      const eventType = String(event.type || "");
-      if ((eventType === "click" || eventType === "touchend") && now < suppressSyntheticQuotaToggleUntil) return;
-      if (now - lastQuotaToggleAt < 650) return;
-      if (!toggleQuotaDetailsFromRuntime(quotaUsage)) {
-        if (eventType !== "pointerdown") showError(new Error("quota_details_runtime_unavailable"));
-        return;
-      }
-      lastQuotaToggleAt = now;
-      if (eventType === "pointerdown") suppressSyntheticQuotaToggleUntil = now + 2200;
-    };
-    quotaUsage.addEventListener("pointerdown", handleQuotaToggle);
-    quotaUsage.addEventListener("click", handleQuotaToggle);
-    quotaUsage.addEventListener("touchend", handleQuotaToggle, { passive: false });
-  }
+  let lastQuotaToggleAt = 0;
+  let suppressSyntheticQuotaToggleUntil = 0;
+  const handleQuotaToggle = (event) => {
+    const target = event && event.target;
+    const quotaUsage = target && typeof target.closest === "function" ? target.closest("#quotaUsage") : null;
+    if (!quotaUsage) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const now = Date.now();
+    const eventType = String(event.type || "");
+    if ((eventType === "click" || eventType === "touchend") && now < suppressSyntheticQuotaToggleUntil) return;
+    if (now - lastQuotaToggleAt < 650) return;
+    if (!toggleQuotaDetailsFromRuntime(quotaUsage)) {
+      if (eventType !== "pointerdown") showError(new Error("quota_details_runtime_unavailable"));
+      return;
+    }
+    lastQuotaToggleAt = now;
+    if (eventType === "pointerdown") suppressSyntheticQuotaToggleUntil = now + 2200;
+  };
+  document.addEventListener("pointerdown", handleQuotaToggle);
+  document.addEventListener("click", handleQuotaToggle);
+  document.addEventListener("touchend", handleQuotaToggle, { passive: false });
   document.addEventListener("pointerdown", primeCompletionAudio, { passive: true });
   document.addEventListener("touchend", primeCompletionAudio, { passive: true });
   document.addEventListener("keydown", primeCompletionAudio);
@@ -327,15 +327,6 @@ function wireUi() {
   if (pageRefreshPrompt) pageRefreshPrompt.addEventListener("click", refreshPageForNewBuild);
   $("composer").addEventListener("submit", sendMessage);
   const sendButton = $("sendMessage");
-  sendButton.addEventListener("pointerdown", handlePluginVoiceInputSendPointerDown);
-  sendButton.addEventListener("pointerup", handlePluginVoiceInputSendPointerUp);
-  sendButton.addEventListener("pointercancel", handlePluginVoiceInputSendPointerCancel);
-  sendButton.addEventListener("contextmenu", (event) => {
-    if (!state.pluginVoiceInputPress) return;
-    event.preventDefault();
-  });
-  sendButton.addEventListener("click", handlePluginVoiceInputSendClick);
-  sendButton.addEventListener("pointerup", requestComposerSubmitFromButton);
   sendButton.addEventListener("click", requestComposerSubmitFromButton);
   $("interruptTurn").addEventListener("click", interruptActiveTurn);
   if ($("scrollToBottom")) $("scrollToBottom").addEventListener("click", () => {

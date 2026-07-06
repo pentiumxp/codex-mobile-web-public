@@ -202,8 +202,8 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(functionBody("pluginVoiceInputActiveTurnHoldAvailable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
   assert.match(functionBody("pluginVoiceInputCanReceiveText"), /if \(pluginVoiceInputComposerWritable\(\)\) return true;/);
   assert.match(functionBody("pluginVoiceInputCanReceiveText"), /return pluginVoiceInputActiveTurnHoldAvailable\(\);/);
-  assert.match(functionBody("pluginVoiceInputGestureAvailable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
-  assert.match(functionBody("pluginVoiceInputGestureAvailable"), /if \(pluginVoiceInputActiveTurnHoldAvailable\(\)\) return true;/);
+  assert.match(functionBody("pluginVoiceInputGestureAvailable"), /return false;/);
+  assert.doesNotMatch(functionBody("pluginVoiceInputGestureAvailable"), /pluginVoiceInputActiveTurnHoldAvailable\(\)/);
   assert.match(functionBody("handlePluginVoiceInputMessage"), /pluginVoiceInputParentOriginAllowed\(event\)/);
   assert.match(functionBody("handlePluginVoiceInputMessage"), /payload\.pluginId && String\(payload\.pluginId\) !== "codex-mobile"/);
   assert.match(composerRuntimeBody("updateComposerControls"), /const voiceGestureAvailable = pluginVoiceInputGestureAvailable\(\)/);
@@ -229,17 +229,14 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(composerRuntimeBody("sendNewThreadMessage"), /commitPluginVoiceInputSessionsAfterSend\(submittedDraftKey, text/);
 });
 
-test("send button long press delegates recording to Home AI only after threshold", () => {
-  assert.match(functionBody("handlePluginVoiceInputSendPointerDown"), /event\.preventDefault\(\)/);
-  assert.match(functionBody("handlePluginVoiceInputSendPointerDown"), /event\.stopPropagation\(\)/);
-  assert.match(functionBody("handlePluginVoiceInputSendPointerDown"), /setTimeout\(\(\) => \{/);
-  assert.match(functionBody("handlePluginVoiceInputSendPointerDown"), /PLUGIN_VOICE_INPUT_LONG_PRESS_MS/);
-  assert.match(functionBody("handlePluginVoiceInputSendPointerDown"), /pluginVoiceInputApi\.startRequestMessage/);
-  assert.match(functionBody("handlePluginVoiceInputSendPointerUp"), /pluginVoiceInputApi\.stopRequestMessage/);
-  assert.match(functionBody("handlePluginVoiceInputSendPointerUp"), /event\.stopImmediatePropagation\(\)/);
-  assert.match(functionBody("handlePluginVoiceInputSendClick"), /event\.stopImmediatePropagation\(\)/);
-  assert.match(appJs, /sendButton\.addEventListener\("pointerdown", handlePluginVoiceInputSendPointerDown\)/);
-  assert.match(appJs, /sendButton\.addEventListener\("pointerup", handlePluginVoiceInputSendPointerUp\);[\s\S]*sendButton\.addEventListener\("pointerup", requestComposerSubmitFromButton\)/);
+test("send button voice gesture is disabled while direct send remains isolated", () => {
+  assert.match(functionBody("pluginVoiceInputGestureAvailable"), /return false;/);
+  assert.doesNotMatch(appJs, /sendButton\.addEventListener\("pointerdown", handlePluginVoiceInputSendPointerDown\)/);
+  assert.doesNotMatch(appJs, /sendButton\.addEventListener\("pointerup", handlePluginVoiceInputSendPointerUp\)/);
+  assert.doesNotMatch(appJs, /sendButton\.addEventListener\("pointercancel", handlePluginVoiceInputSendPointerCancel\)/);
+  assert.doesNotMatch(appJs, /sendButton\.addEventListener\("click", handlePluginVoiceInputSendClick\)/);
+  assert.doesNotMatch(appJs, /sendButton\.addEventListener\("pointerup", requestComposerSubmitFromButton\)/);
+  assert.match(appJs, /sendButton\.addEventListener\("click", requestComposerSubmitFromButton\)/);
 });
 
 test("embedded active-turn stop button is not rendered as selectable text", () => {

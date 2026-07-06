@@ -844,6 +844,8 @@ function createComposerBridgeRuntime() {
       replyTaskCard: typeof replyTaskCard === "function" ? replyTaskCard : null,
       queueThreadTaskCardDraftCreation: typeof queueThreadTaskCardDraftCreation === "function" ? queueThreadTaskCardDraftCreation : null,
       createThreadTaskCardDraft: typeof createThreadTaskCardDraft === "function" ? createThreadTaskCardDraft : null,
+      closeQuotaDetails: typeof closeQuotaDetails === "function" ? closeQuotaDetails : null,
+      toggleQuotaDetails: typeof toggleQuotaDetails === "function" ? toggleQuotaDetails : null,
   };
 }
 
