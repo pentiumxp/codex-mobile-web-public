@@ -239,6 +239,8 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appUpdateSource, /function handleHardRefreshClick\(/);
   assert.match(appUpdateSource, /(?:const|var) buildRefreshPolicy = window\.CodexBuildRefreshPolicy/);
   assert.match(appUpdateSource, /function shouldPromptForServerBuildChange\(/);
+  assert.match(appUpdateSource, /function serverBuildMatchesLoadedClient\(config\)/);
+  assert.match(appUpdateSource, /function acceptLoadedClientBuild\(config\)/);
   assert.match(appUpdateSource, /function rememberRateLimitsFromConfig\(config\)/);
   assert.match(appUpdateSource, /function preparePageShellAssets\(config, options = \{\}\)/);
   assert.match(appUpdateSource, /function clearAllShellCaches\(\)/);
@@ -248,6 +250,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /await clearAllShellCaches\(\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\);[\s\S]*await resetPageShellServiceWorker\(\);[\s\S]*window\.location\.replace\(pageReloadUrlWithBust\(\)\);/);
   assert.doesNotMatch(functionBody(appUpdateSource, "checkPageRefreshAvailability"), /preparePageShellAssets\(config, \{ populateCache: true \}\)/);
   assert.match(functionBody(appUpdateSource, "initializePageBuildState"), /shouldPromptForServerBuildChange\(currentServerBuildId, state\.serverBuildId\)/);
+  assert.match(functionBody(appUpdateSource, "checkPageRefreshAvailability"), /if \(serverBuildMatchesLoadedClient\(config\)\) \{[\s\S]*acceptLoadedClientBuild\(config\);[\s\S]*return;/);
   assert.match(functionBody(appUpdateSource, "checkPageRefreshAvailability"), /const serverBuildNeedsRefresh = serverBuildChanged && shouldPromptForServerBuildChange\(nextBuildId, state\.serverBuildId\)/);
   assert.match(functionBody(appUpdateSource, "checkPageRefreshAvailability"), /if \(serverBuildNeedsRefresh\) \{[\s\S]*if \(isHermesEmbedMode\(\)\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed"\);/);
   assert.match(functionBody(appUpdateSource, "checkPageRefreshAvailability"), /if \(assetsChanged && !serverBuildNeedsRefresh\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;[\s\S]*return;/);
@@ -260,6 +263,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appUpdateSource, /window\.location\.replace\(pageReloadUrlWithBust\(\)\)/);
   assert.match(functionBody(appUpdateSource, "renderPageRefreshPrompt"), /renderHardRefreshButton\(\)/);
   assert.match(functionBody(appUpdateSource, "handleHardRefreshClick"), /state\.pageRefreshPreparedConfig = null;[\s\S]*state\.pageRefreshReason = "build";[\s\S]*state\.pageRefreshAvailable = true;[\s\S]*await refreshPageForNewBuild\(\);/);
+  assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /if \(serverBuildMatchesLoadedClient\(config\)\) \{[\s\S]*acceptLoadedClientBuild\(config\);[\s\S]*state\.pageRefreshReloading = false;[\s\S]*renderPageRefreshPrompt\(\);[\s\S]*return;/);
   assert.match(appUpdateSource, /hardRefreshButton"\)\.addEventListener\("click", \(\) => handleHardRefreshClick\(\)\.catch\(showError\)\)/);
   assert.match(appUpdateSource, /addEventListener\("click", refreshPageForNewBuild\)/);
   assert.doesNotMatch(stylesCss, /html\.embed-hermes #pageRefreshPrompt/);

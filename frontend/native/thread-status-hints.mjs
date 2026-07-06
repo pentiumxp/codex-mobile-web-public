@@ -157,13 +157,13 @@
     if (!isSettledStatus(status)) return false;
     if (input.currentThreadRefreshing) return true;
     if (isDeployLaneSettledIdle(input.thread, status)) return false;
-    if (isIdleStatus(status) && !latestTerminalTurn(input.thread) && !input.eventIsTerminal) return true;
+    const idleWithoutTerminalEvidence = isIdleStatus(status) && !latestTerminalTurn(input.thread) && !input.eventIsTerminal;
     if (input.allowLocalProcessing !== false
-      && isIdleStatus(status)
-      && !latestTerminalTurn(input.thread)
+      && idleWithoutTerminalEvidence
       && hasFreshSubmittedProcessingHint(input.submittedProcessingHintedAtMs, input.nowMs, input.submittedProcessingHintStaleMs)) {
       return true;
     }
+    if (idleWithoutTerminalEvidence) return false;
     if (input.currentThreadId && threadId === String(input.currentThreadId) && input.currentThreadSettled) return false;
     if (input.currentThreadHasLiveTurn) return true;
     if (!input.mobileReplay && (isTerminalStatus(status) || latestTerminalTurn(input.thread) || input.eventIsTerminal)) return false;
