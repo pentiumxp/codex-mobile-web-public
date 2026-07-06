@@ -651,6 +651,8 @@ export function renderViteShellAppPreviewHtml(readback = {}, root = process.cwd(
   const targetEntryScript = readback.preview && readback.preview.targetEntryScript
     ? String(readback.preview.targetEntryScript)
     : publicArtifactUrl(entryFileName);
+  const targetEntryFileName = targetEntryScript.split("/").filter(Boolean).pop() || "entry";
+  const entryScriptUrl = `${entryScript}${entryScript.includes("?") ? "&" : "?"}targetEntry=${encodeURIComponent(targetEntryFileName)}`;
   const indexPath = path.join(path.resolve(root), "public", "index.html");
   let source = fs.readFileSync(indexPath, "utf8");
   source = source.replace(
@@ -681,7 +683,7 @@ export function renderViteShellAppPreviewHtml(readback = {}, root = process.cwd(
     "  <script id=\"codex-vite-app-preview-loader-plan\" type=\"application/json\" data-codex-vite-app-preview-loader-plan=\"true\">",
     jsonScriptBody(readback.appPreviewClassicLoaderPlan),
     "  </script>",
-    `  <script type="module" src="${escapeHtml(entryScript)}" data-codex-vite-app-preview-entry="true"></script>`,
+    `  <script type="module" src="${escapeHtml(entryScriptUrl)}" data-codex-vite-app-preview-entry="true"></script>`,
     VITE_APP_PREVIEW_SCRIPT_BLOCK_END,
   ].join("\n");
   const start = source.indexOf(CLASSIC_SHELL_SCRIPT_BLOCK_START);
@@ -703,14 +705,28 @@ export function renderViteShellStableEntry(readback = {}) {
     ? `./assets/${targetEntryScript.slice("/vite-shell/assets/".length)}`
     : targetEntryScript;
   return [
-    `import "${targetEntryImportSpecifier}";`,
+    `const targetEntryImportSpecifier = ${JSON.stringify(targetEntryImportSpecifier)};`,
+    "const targetEntryImportUrl = new URL(targetEntryImportSpecifier, import.meta.url);",
+    "try {",
+    "  const sourceUrl = new URL(import.meta.url);",
+    "  sourceUrl.searchParams.forEach((value, key) => {",
+    "    if (!targetEntryImportUrl.searchParams.has(key)) targetEntryImportUrl.searchParams.set(key, value);",
+    "  });",
+    "} catch (_) {}",
+    "const targetEntryImportPromise = import(targetEntryImportUrl.href);",
     "",
     "globalThis.__CODEX_MOBILE_VITE_STABLE_ENTRY__ = {",
     "  source: \"vite-shell-app-preview-stable-entry\",",
     `  targetEntryScript: ${JSON.stringify(targetEntryScript)},`,
-    `  targetEntryImportSpecifier: ${JSON.stringify(targetEntryImportSpecifier)},`,
+    "  targetEntryImportSpecifier,",
+    "  targetEntryImportUrl: targetEntryImportUrl.href,",
+    "  targetEntryImportPromise,",
     "  loadedAt: Date.now(),",
     "};",
+    "targetEntryImportPromise.catch((err) => {",
+    "  globalThis.__CODEX_MOBILE_VITE_STABLE_ENTRY__.error = err && err.message ? err.message : String(err);",
+    "  throw err;",
+    "});",
     "",
   ].join("\n");
 }

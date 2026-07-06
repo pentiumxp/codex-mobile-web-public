@@ -53,6 +53,15 @@ function extractExternalScriptSrcs(source) {
   return values;
 }
 
+function htmlHasModuleScriptSourcePath(source, expectedPath) {
+  const text = String(source || "");
+  const pathText = String(expectedPath || "").trim();
+  if (!pathText) return false;
+  const escapedPath = pathText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`<script\\b(?=[^>]*\\btype=["']module["'])(?=[^>]*\\bsrc=["']${escapedPath}(?:\\?[^"']*)?["'])[^>]*>\\s*<\\/script>`, "i");
+  return pattern.test(text);
+}
+
 function compactIssueCodes(issues) {
   return Array.from(new Set((issues || []).map((issue) => issue && issue.code).filter(Boolean)));
 }
@@ -822,7 +831,7 @@ function createViteShellArtifactService(dependencies = {}) {
       if (!previewHtml.includes("id=\"codex-vite-shell-preview\"")) {
         issues.push({ code: "vite_shell_preview_marker_missing" });
       }
-      if (!previewHtml.includes("type=\"module\"") || !expectedStableEntryScript || !previewHtml.includes(`src="${expectedStableEntryScript}"`)) {
+      if (!expectedStableEntryScript || !htmlHasModuleScriptSourcePath(previewHtml, expectedStableEntryScript)) {
         issues.push({ code: "vite_shell_preview_module_entry_missing" });
       }
       if (expectedEntryScript && !previewHtml.includes(`href="${expectedEntryScript}"`)) {
@@ -869,7 +878,7 @@ function createViteShellArtifactService(dependencies = {}) {
         || !appPreviewHtml.includes("data-codex-vite-app-preview-loader-plan=\"true\"")) {
         issues.push({ code: "vite_shell_app_preview_classic_loader_plan_script_missing" });
       }
-      if (!appPreviewHtml.includes("type=\"module\"") || !expectedStableEntryScript || !appPreviewHtml.includes(`src="${expectedStableEntryScript}"`)) {
+      if (!expectedStableEntryScript || !htmlHasModuleScriptSourcePath(appPreviewHtml, expectedStableEntryScript)) {
         issues.push({ code: "vite_shell_app_preview_module_entry_missing" });
       }
       if (expectedEntryScript && !appPreviewHtml.includes(`href="${expectedEntryScript}"`)) {

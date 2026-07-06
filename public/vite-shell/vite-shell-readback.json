@@ -4869,8 +4869,8 @@
     },
     {
       "fileName": "app-preview-entry.js",
-      "bytes": 318,
-      "sha256": "1007dff65e7923c6aebd1cf8205d8de9274b67ee7828907db8d9bd8210001903"
+      "bytes": 926,
+      "sha256": "1b2390bf14a1e2ff1872c4d51576c06e29145aa3ae904ed3fa3d7a9a4171bb75"
     },
     {
       "fileName": "preview.html",
@@ -4879,8 +4879,8 @@
     },
     {
       "fileName": "app-preview.html",
-      "bytes": 70704,
-      "sha256": "d980e78d2287131d4a17709019f115df3fa9bc28e163a081a62301ff736d7fe0"
+      "bytes": 70745,
+      "sha256": "47672600afd16ed2dc48a81841c338aee9cac641f3019f6740046aeb6623a2bc"
     }
   ],
   "validation": {

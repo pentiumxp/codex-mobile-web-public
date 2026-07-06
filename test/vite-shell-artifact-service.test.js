@@ -871,10 +871,14 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-entry-group-app-entry-test.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "app-preview-entry.js")), true);
   const appPreviewEntry = fs.readFileSync(path.join(root, "public", "vite-shell", "app-preview-entry.js"), "utf8");
-  assert.match(appPreviewEntry, /import "\.\/assets\/vite-shell-entry-test\.js";/);
+  assert.match(appPreviewEntry, /const targetEntryImportSpecifier = "\.\/assets\/vite-shell-entry-test\.js";/);
+  assert.match(appPreviewEntry, /new URL\(targetEntryImportSpecifier, import\.meta\.url\)/);
+  assert.match(appPreviewEntry, /sourceUrl\.searchParams\.forEach/);
+  assert.match(appPreviewEntry, /import\(targetEntryImportUrl\.href\)/);
   assert.doesNotMatch(appPreviewEntry, /import "\/vite-shell\/assets\//);
   assert.match(appPreviewEntry, /targetEntryScript: "\/vite-shell\/assets\/vite-shell-entry-test\.js"/);
-  assert.match(appPreviewEntry, /targetEntryImportSpecifier: "\.\/assets\/vite-shell-entry-test\.js"/);
+  assert.match(appPreviewEntry, /targetEntryImportSpecifier,/);
+  assert.match(appPreviewEntry, /targetEntryImportUrl: targetEntryImportUrl\.href/);
   const previewHtml = fs.readFileSync(path.join(root, "public", "vite-shell", "preview.html"), "utf8");
   assert.match(previewHtml, /id="codex-vite-shell-preview"/);
   assert.match(previewHtml, /data-startup-critical-asset-count="2"/);
@@ -904,7 +908,7 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.match(appPreviewHtml, /id="codex-vite-app-preview-loader-plan"/);
   assert.match(appPreviewHtml, /data-codex-vite-app-preview-loader-plan="true"/);
   assert.match(appPreviewHtml, /"owner": "vite-shell-entry"/);
-  assert.match(appPreviewHtml, /type="module" src="\/vite-shell\/app-preview-entry\.js" data-codex-vite-app-preview-entry="true"/);
+  assert.match(appPreviewHtml, /type="module" src="\/vite-shell\/app-preview-entry\.js\?targetEntry=vite-shell-entry-test\.js" data-codex-vite-app-preview-entry="true"/);
   assert.doesNotMatch(appPreviewHtml, /CODEX_MOBILE_SHELL_SCRIPTS:BEGIN/);
   assert.doesNotMatch(appPreviewHtml, /<script src="\/app-bootstrap\.js"/);
   assert.doesNotMatch(appPreviewHtml, /<script src="\/app\.js"/);
