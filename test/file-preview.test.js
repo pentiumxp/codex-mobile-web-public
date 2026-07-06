@@ -8,6 +8,7 @@ const { test } = require("node:test");
 
 const {
   createMediaFileService,
+  filePreviewContentSecurityPolicy,
   filePreviewContentDisposition,
   filePreviewContentType,
   filePreviewAuthoritiesForThread,
@@ -67,7 +68,10 @@ test("file preview allows the current thread cwd even when workspace roots are v
 
   assert.equal(preview.fileName, "index.html");
   assert.equal(preview.relativePath, path.join("artifacts", "daily-oblique-full", "index.html"));
-  assert.equal(preview.kind, "text");
+  assert.equal(preview.kind, "html");
+  assert.equal(preview.contentType, "text/html; charset=utf-8");
+  assert.match(filePreviewContentSecurityPolicy(file), /sandbox allow-scripts/);
+  assert.doesNotMatch(filePreviewContentSecurityPolicy(file), /allow-same-origin/);
 });
 
 test("file preview allows configured Codex skill roots without allowing all Codex state", () => {

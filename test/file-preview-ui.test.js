@@ -53,6 +53,10 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(stylesCss, /width: min\(980px, calc\(100vw - 36px\)\)/);
   assert.match(stylesCss, /\.file-preview-body \{[\s\S]*overflow-x: hidden;[\s\S]*overflow-y: auto;/);
   assert.match(stylesCss, /\.file-preview-image/);
+  assert.match(stylesCss, /\.file-preview-html-frame/);
+  assert.match(stylesCss, /\.file-preview-html\.is-fullscreen/);
+  assert.match(stylesCss, /height: min\(66vh, 760px\)/);
+  assert.match(stylesCss, /html\.file-preview-html-fullscreen-open/);
   assert.match(stylesCss, /\.image-preview-dialog/);
   assert.match(stylesCss, /\.image-preview-stage \{[\s\S]*overflow: auto;[\s\S]*touch-action: pan-x pan-y;/);
   assert.match(stylesCss, /\.image-preview-image \{[\s\S]*width: calc\(100% \* var\(--image-preview-scale, 1\)\);[\s\S]*max-width: none;/);
@@ -67,6 +71,15 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.doesNotMatch(stylesCss, /\.local-file-preview-link span/);
   assert.match(appAndMediaJs, /data-local-file-path/);
   assert.match(appAndMediaJs, /file && file\.kind === "markdown"\) return renderMarkdown\(content, \{ orderedListMode: "source" \}\)/);
+  assert.match(appAndMediaJs, /file && file\.kind === "html"/);
+  assert.match(appAndMediaJs, /sandbox="allow-scripts"/);
+  assert.match(appAndMediaJs, /data-file-preview-html-view="render"/);
+  assert.match(appAndMediaJs, /data-file-preview-html-fullscreen/);
+  assert.match(appAndMediaJs, /function handleFilePreviewHtmlViewClick\(button\)/);
+  assert.match(appAndMediaJs, /function handleFilePreviewHtmlFullscreenClick\(button\)/);
+  assert.match(appJs, /handleFilePreviewHtmlViewClick\(htmlPreviewButton\)/);
+  assert.match(appJs, /handleFilePreviewHtmlFullscreenClick\(htmlFullscreenButton\)/);
+  assert.match(appJs, /closeFilePreviewHtmlFullscreen\(\)/);
   assert.match(appAndMediaJs, /file && file\.kind === "image"/);
   assert.match(appAndMediaJs, /file && file\.kind === "pdf"/);
   assert.match(appAndMediaJs, /function renderImageView\(item\)/);
@@ -86,6 +99,9 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(serverJs, /readRolloutToolOutputImageItems/);
   assert.match(mediaFileServiceJs, /\/api\/generated-images\/file/);
   assert.match(mediaFileServiceJs, /\/api\/uploads\/file/);
+  assert.match(mediaFileServiceJs, /if \(isHtmlFilePreview\(filePath\)\) return "html"/);
+  assert.match(mediaFileServiceJs, /"Content-Security-Policy"/);
+  assert.match(mediaFileServiceJs, /sandbox allow-scripts/);
   assert.match(mediaFileServiceJs, /url\.searchParams\.get\("id"\)/);
   assert.match(generatedImageContentServiceJs, /item\.type !== "imageView" && item\.type !== "imageGeneration"/);
   assert.match(threadDetailCompactionServiceJs, /out\.type === "imageView" \|\| out\.type === "imageGeneration"/);

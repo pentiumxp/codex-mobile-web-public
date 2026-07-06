@@ -142,6 +142,9 @@ test("media preview runtime exposes the moved preview APIs", () => {
     "mermaidRenderArtifactIds",
     "openImagePreviewFromImage",
     "renderFilePreviewContent",
+    "handleFilePreviewHtmlViewClick",
+    "handleFilePreviewHtmlFullscreenClick",
+    "closeFilePreviewHtmlFullscreen",
     "renderImageView",
     "scheduleVisibleImageFailureScan",
   ]) {
@@ -166,6 +169,19 @@ test("media preview runtime renders attachment summaries and file preview conten
   const csvPreview = runtime.renderFilePreviewContent({ kind: "csv", content: "a,b\n1,2" });
   assert.match(csvPreview, /file-preview-table/);
   assert.match(csvPreview, /<td>2<\/td>/);
+  const htmlPreview = runtime.renderFilePreviewContent({
+    kind: "html",
+    fileName: "demo.html",
+    path: "/tmp/demo.html",
+    content: "<!doctype html><title>Demo</title>",
+    contentUrl: "/api/files/preview/content?threadId=thread-1&path=%2Ftmp%2Fdemo.html",
+  });
+  assert.match(htmlPreview, /class="file-preview-html-frame"/);
+  assert.match(htmlPreview, /sandbox="allow-scripts"/);
+  assert.match(htmlPreview, /data-file-preview-html-view="render"/);
+  assert.match(htmlPreview, /data-file-preview-html-fullscreen/);
+  assert.match(htmlPreview, /data-file-preview-html-pane="source" hidden/);
+  assert.match(htmlPreview, /&lt;!doctype html&gt;&lt;title&gt;Demo&lt;\/title&gt;/);
 });
 
 test("media preview runtime keeps GitHub, Mermaid, and image view behavior local", () => {

@@ -284,6 +284,12 @@ function wireUi() {
   document.addEventListener("pointerdown", primeCompletionAudio, { passive: true });
   document.addEventListener("touchend", primeCompletionAudio, { passive: true });
   document.addEventListener("keydown", primeCompletionAudio);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && closeFilePreviewHtmlFullscreen()) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  });
   $("threadSearch").addEventListener("input", () => {
     clearTimeout(state.searchTimer);
     state.searchTimer = setTimeout(() => loadThreads().catch(showError), 250);
@@ -518,6 +524,18 @@ function wireUi() {
       }
       const previewImage = previewableImageFromEvent(event);
       if (previewImage && openImagePreviewFromImage(previewImage)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      const htmlPreviewButton = event.target.closest("[data-file-preview-html-view]");
+      if (htmlPreviewButton && handleFilePreviewHtmlViewClick(htmlPreviewButton)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      const htmlFullscreenButton = event.target.closest("[data-file-preview-html-fullscreen]");
+      if (htmlFullscreenButton && handleFilePreviewHtmlFullscreenClick(htmlFullscreenButton)) {
         event.preventDefault();
         event.stopPropagation();
         return;
