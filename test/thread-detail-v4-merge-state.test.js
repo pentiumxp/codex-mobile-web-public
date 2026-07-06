@@ -68,6 +68,14 @@ function testTurnOrderMs(candidate) {
   return 0;
 }
 
+function testItemTimestampMs(item) {
+  for (const field of ["startedAtMs", "createdAtMs", "updatedAtMs", "timestampMs", "mobileDisplayTimestampMs"]) {
+    const value = Number(item && item[field]);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return 0;
+}
+
 function createPolicy() {
   return createThreadDetailV4MergePolicy({
     normalizeThreadVisibleUserMessages: (thread) => thread,
@@ -89,6 +97,16 @@ function createPolicy() {
       && pending.type === "userMessage"
       && comparableText(incoming) === comparableText(pending),
     ),
+    durableUserMessageSettlesPendingEcho: (durable, pending, durableTurn) => {
+      if (!durable || !pending || durable.type !== "userMessage" || pending.type !== "userMessage") return false;
+      if (comparableText(durable) !== comparableText(pending)) return false;
+      const durableMs = testItemTimestampMs(durable) || testTurnOrderMs(durableTurn);
+      const pendingMs = testItemTimestampMs(pending);
+      if (!pendingMs) return Boolean(durableMs);
+      if (durableMs && Math.abs(durableMs - pendingMs) <= 5000) return true;
+      const completedMs = Number(durableTurn && durableTurn.completedAtMs || 0);
+      return Boolean(completedMs && pendingMs <= completedMs);
+    },
     isTurnComplete: (candidate) => isCompletedStatus(candidate && candidate.status),
     isRunningStatus: (status) => /active|running|queued|processing|pending|started/i.test(
       String(status && status.type || status || ""),
@@ -199,6 +217,64 @@ test("drops pending overlay when durable user message only exposes clientId", ()
 
   assert.equal(merged.turns.some((candidate) => candidate.id === "pending-turn"), false);
   assert.deepEqual(merged.turns[0].items.map((item) => item.id), ["durable", "assistant-final"]);
+});
+
+test("drops pending overlay when durable matching user message lacks submission id", () => {
+  const policy = createPolicy();
+  const existing = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("pending-turn", [
+      userMessage("send me", {
+        id: "local-user-submit-1",
+        clientSubmissionId: "submit-1",
+        mobilePendingSubmission: true,
+        startedAtMs: 1000,
+      }),
+    ], { startedAtMs: 1000, status: { type: "running" } })],
+  };
+  const incoming = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("server-turn", [
+      userMessage("send me", { id: "durable", startedAtMs: 1200 }),
+      { type: "agentMessage", id: "assistant-progress", text: "working" },
+    ], { startedAtMs: 1100, status: { type: "running" } })],
+  };
+
+  const merged = policy.mergeV4ProjectionThread(existing, incoming);
+
+  assert.equal(merged.turns.some((candidate) => candidate.id === "pending-turn"), false);
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), ["durable", "assistant-progress"]);
+});
+
+test("keeps pending overlay when same text durable user message is too old", () => {
+  const policy = createPolicy();
+  const existing = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("pending-turn", [
+      userMessage("send me", {
+        id: "local-user-submit-1",
+        clientSubmissionId: "submit-1",
+        mobilePendingSubmission: true,
+        startedAtMs: 30_000,
+      }),
+    ], { startedAtMs: 30_000, status: { type: "running" } })],
+  };
+  const incoming = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("server-turn", [
+      userMessage("send me", { id: "older-durable", startedAtMs: 1000 }),
+    ], { startedAtMs: 1000, completedAtMs: 2000, status: { type: "completed" } })],
+  };
+
+  const merged = policy.mergeV4ProjectionThread(existing, incoming);
+
+  const pendingTurn = merged.turns.find((candidate) => candidate.id === "pending-turn");
+  assert.ok(pendingTurn);
+  assert.equal(pendingTurn.items[0].id, "local-user-submit-1");
 });
 
 test("drops stale pending overlay once same-submission durable user message is projected", () => {

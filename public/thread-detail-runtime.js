@@ -1322,6 +1322,14 @@ function createThreadDetailRuntime(deps = {}) {
     isReasoningItem,
     userMessageHasSubmissionId,
     userMessagesCanShadow,
+    durableUserMessageSettlesPendingEcho: (durableItem, pendingItem, durableTurn) => Boolean(
+      durableItem
+      && pendingItem
+      && durableItem.type === "userMessage"
+      && pendingItem.type === "userMessage"
+      && !isOptimisticUserMessage(durableItem)
+      && optimisticEchoCanMatchEarlierDurable(durableItem, pendingItem, durableTurn)
+    ),
     isTurnComplete,
     isRunningStatus,
     isIncompleteInterruptedTurn,

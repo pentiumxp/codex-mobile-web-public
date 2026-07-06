@@ -48,6 +48,9 @@
     const userMessagesCanShadow = typeof options.userMessagesCanShadow === "function"
       ? options.userMessagesCanShadow
       : () => false;
+    const durableUserMessageSettlesPendingEcho = typeof options.durableUserMessageSettlesPendingEcho === "function"
+      ? options.durableUserMessageSettlesPendingEcho
+      : () => false;
     const isTurnComplete = typeof options.isTurnComplete === "function"
       ? options.isTurnComplete
       : (turn) => /completed|failed|cancel|error|interrupted/i.test(statusText(turn && turn.status));
@@ -92,7 +95,7 @@
         for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
           if (!item || item.type !== "userMessage") continue;
           if (submissionId && userMessageHasSubmissionId(item, submissionId)) return true;
-          if (!isOptimisticUserMessage(item) && userMessagesCanShadow(item, pendingItem)) return true;
+          if (!isOptimisticUserMessage(item) && durableUserMessageSettlesPendingEcho(item, pendingItem, turn)) return true;
         }
       }
       return false;
@@ -101,12 +104,12 @@
     function v4ThreadHasDurableSubmissionMatch(thread, pendingItem) {
       if (!pendingItem || pendingItem.type !== "userMessage") return false;
       const submissionId = String(pendingItem.clientSubmissionId || "").trim();
-      if (!submissionId) return false;
       for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) {
         for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
           if (!item || item.type !== "userMessage") continue;
           if (isOptimisticUserMessage(item)) continue;
-          if (userMessageHasSubmissionId(item, submissionId)) return true;
+          if (submissionId && userMessageHasSubmissionId(item, submissionId)) return true;
+          if (durableUserMessageSettlesPendingEcho(item, pendingItem, turn)) return true;
         }
       }
       return false;

@@ -5796,3 +5796,49 @@ The previous full handoff was archived and should be opened only when old proven
   - both with submitted-message harness, service workers `block` and `allow`,
     expected hash `6816dd7f9690`, and no visible/durable/transient duplicate or
     disappearing submitted-user issue codes.
+
+## 2026-07-07T03:35Z - V4 pending overlay settlement for durable user without submission id
+
+- Deployed/local follow-up `6a70bad5` switched production to
+  `0.1.11|codex-mobile-shell-v625-6816dd7f9690`, but real Home AI main thread
+  harness still reproduced the owner-visible bug in service-worker `block`
+  mode:
+  - one POST;
+  - one durable API user item;
+  - one visible article;
+  - two visible user DOM nodes at 2800ms and 6000ms;
+  - one visible user node after reopen.
+- Root cause was narrowed below DOM rendering: V4 projection merge re-applied
+  the local pending overlay because durable user-message settlement only treated
+  a durable message as resolved when it carried the same `clientSubmissionId`.
+  Home AI production durable projection can omit the submission id while still
+  carrying the same submitted user message. In that case the current in-memory
+  thread kept both the local pending item and the durable user item; a rerender
+  could not fix it because the duplicate was in state, not just DOM residue.
+- Fix: `thread-detail-v4-merge-state` now accepts an explicit
+  `durableUserMessageSettlesPendingEcho` policy. V4 pending-match and durable
+  submission-match checks use this policy for durable user messages that do not
+  expose the client submission id. The production policy delegates to the
+  existing bounded `optimisticEchoCanMatchEarlierDurable()` settlement rules,
+  preserving the guard that old same-text durable messages must not erase a
+  newer user submission.
+- Added focused V4 merge tests:
+  - durable matching user message without submission id drops the pending
+    overlay;
+  - old same-text durable user message does not drop a newer pending overlay.
+- Rebuilt frontend artifacts. Current local client/cache:
+  `0.1.11|codex-mobile-shell-v625-d9f0435feebd`.
+- Source validation:
+  - `node --test test/thread-detail-v4-merge-state.test.js test/conversation-render.test.js test/frontend-runtime-health.test.js test/submitted-message-harness.test.js test/quota-popup-harness.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js`
+    -> `375/375` pass;
+  - `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Local browser/harness validation on `127.0.0.1:8897`, hash
+  `d9f0435feebd`:
+  - Codex source thread `019f2d75-39bd-7462-8dca-de24f97aeaf6`
+    submitted-message harness passed with service workers `block` and `allow`;
+  - quota popup harness passed with service workers `block` and `allow`.
+- Production acceptance for this fix must rerun the Home AI main thread harness
+  on `019f316b-27cd-7622-9944-0b909fec3c70`, expected hash `d9f0435feebd`;
+  the known previous failure code pair was `visible_user_card_duplicate` and
+  `transient_visible_user_duplicate_clears_after_reopen`.
