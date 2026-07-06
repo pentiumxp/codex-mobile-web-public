@@ -2397,6 +2397,48 @@ test("browser runtime self-check catches DOM user message order divergence from 
   assert.deepEqual(issue.turnShape.actualItemKindSequence, ["userMessage", "userMessage", "agentMessage", "agentMessage"]);
 });
 
+test("browser runtime self-check keeps immediate submit order divergence diagnostic-only", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "submit-after-2",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "latest-turn-hash",
+      latestTurnItemCount: 3,
+      latestTurnUserMessageCount: 2,
+      latestTurnAssistantMessageCount: 1,
+      turns: 3,
+      items: 12,
+      delayMs: 0,
+      expectedTurnShapes: [{
+        turnHash: "latest-turn-hash",
+        completed: false,
+        expectedItemCount: 3,
+        expectedUserMessageCount: 2,
+        expectedAssistantMessageCount: 1,
+        expectedUserAfterAssistantLikeCount: 1,
+        expectedItemKindSequence: ["userMessage", "agentMessage", "userMessage"],
+      }],
+      domTurnShapes: [{
+        turnHash: "latest-turn-hash",
+        itemCount: 3,
+        userMessageCount: 2,
+        assistantMessageCount: 1,
+        userAfterAssistantLikeCount: 0,
+        userAtTail: false,
+        itemKindSequence: ["userMessage", "userMessage", "agentMessage"],
+      }],
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.issues.some((item) => item.code === "browser_turn_user_message_order_mismatch"), false);
+});
+
 test("browser runtime self-check ignores null samples in summary", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [

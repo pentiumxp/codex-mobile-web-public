@@ -702,7 +702,9 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       }
       const expectedUserAfterAssistantLikeCount = toNumber(turnShape.expectedUserAfterAssistantLikeCount);
       const actualUserAfterAssistantLikeCount = toNumber(turnShape.userAfterAssistantLikeCount);
-      if ((expectedUserAfterAssistantLikeCount > 0 || actualUserAfterAssistantLikeCount > 0)
+      const orderSampleIsObservable = toNumber(sample.delayMs) > 0;
+      if (orderSampleIsObservable
+        && (expectedUserAfterAssistantLikeCount > 0 || actualUserAfterAssistantLikeCount > 0)
         && actualUserAfterAssistantLikeCount !== expectedUserAfterAssistantLikeCount) {
         const code = "browser_turn_user_message_order_mismatch";
         issues.push(issue("H2", code, sample, turnShapeOrderMismatchDetails(sample, turnShape)));
