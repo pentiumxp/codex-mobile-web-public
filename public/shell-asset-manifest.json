@@ -1,8 +1,8 @@
 {
   "schemaVersion": 4,
   "generatedBy": "generate-frontend-shell-manifest",
-  "shellCacheName": "codex-mobile-shell-v625-d77c1845e647",
-  "clientBuildId": "0.1.11|codex-mobile-shell-v625-d77c1845e647",
+  "shellCacheName": "codex-mobile-shell-v625-852b517ddf87",
+  "clientBuildId": "0.1.11|codex-mobile-shell-v625-852b517ddf87",
   "scriptAssets": [
     "/shell-asset-manifest.js",
     "/api-client.js",

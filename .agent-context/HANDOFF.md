@@ -5683,3 +5683,74 @@ The previous full handoff was archived and should be opened only when old proven
 - Supplement card `ttc_3c78aa6c79aeaa21fd` was sent to the Deploy Lane asking
   it to execute the pending `322c1fb7` deploy and run quota/submitted harnesses
   against the deployed build rather than the stale `a8a0493e87a2` build.
+- Deploy Lane returned `322c1fb7` as blocked: central execute failed the
+  default/manual behavior gate and final production remained on
+  `a8a0493e87a2`. During the attempted target-validation window, quota harness
+  was observed green, but final production was not the target build, so no
+  production closure was claimed.
+- Local reproduction on the fixed `d77c1845e647` build found a source-owned
+  gate regression from the shortened version label: the ESM compatibility
+  sample for `app-update-runtime` still expected `客户端 v625 · <hash>`. This
+  made Vite/app-preview readiness report `app-update-runtime` not ready.
+- Follow-up fix committed as `6fc199495d0bee3a0dd28232d78eb09de26c1f1a`
+  (`fix: align app update esm readiness check`): the compatibility sample now
+  expects the short visible label while checking the full client/cache hash via
+  `fullClientBuildVersionText()`.
+- Follow-up validation:
+  - `node --test test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js test/app-update.test.js`
+    -> `52/52`;
+  - `npm run --silent check` passed;
+  - local startup-only deploy gate on `127.0.0.1:8897` passed with no
+    actionable issue codes;
+  - local full deploy gate on `127.0.0.1:8897` passed with no
+    actionable/reportable issue codes.
+- New deploy card sent through MCP-prefixed delegation:
+  `ttc_be64480beffc36e619`, requesting central deployment of `6fc19949` and
+  quota/submitted harness readback against live `d77c1845e647`.
+
+## 2026-07-07T02:05Z - Submitted user DOM animation residue semantic duplicate fix
+
+- Owner continued to reproduce visible duplicate user messages after earlier
+  submit/durable echo fixes. Production Home AI main harness on
+  `019f316b-27cd-7622-9944-0b909fec3c70` showed the critical shape: one
+  backend POST, one durable API user item, but two same-turn visible DOM user
+  message nodes at the transient sample; one had the live/animated class and
+  one had the stable/durable shape. Reopen collapsed back to one message.
+- Root cause: the existing DOM duplicate guard only counted event-level
+  duplicate signatures. When the transient local/animated node lacked the same
+  timestamp/event attributes as the durable node, the duplicate was invisible to
+  the guard even though it was semantically the same submitted user message in
+  the same turn.
+- Fix: `conversationDomShape()` and `visibleConversationShape()` now compare the
+  max of event-level duplicate signatures and same-turn semantic user-message
+  signatures. The semantic signature prefers `submission + text` when both are
+  present, then falls back to submission-only, then text-only. This keeps real
+  distinct same-submission diagnostics from false-positive collapse while
+  detecting the observed animation residue.
+- Added focused regression coverage in `test/conversation-render.test.js` for
+  two same-turn submitted-user DOM nodes with identical text but different
+  render/timestamp shape.
+- Rebuilt frontend artifacts. Current local client/cache:
+  `0.1.11|codex-mobile-shell-v625-852b517ddf87`.
+- Local validation:
+  - `node --test test/conversation-render.test.js test/thread-detail-dom-patch.test.js`
+    -> `237/237` pass;
+  - `node --test test/conversation-render.test.js test/submitted-message-harness.test.js test/quota-popup-harness.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js`
+    -> `347/347` pass;
+  - `npm run --silent build:frontend && npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Local browser/harness validation on `127.0.0.1:8897`:
+  - Codex source thread `019f2d75-39bd-7462-8dca-de24f97aeaf6` submitted-message
+    harness passed with service workers `block` and `allow`: one POST, one
+    visible user card across samples, one durable API user item, and one visible
+    user card after reopen;
+  - quota popup harness still passed with service workers `block` and `allow`.
+- Local Home AI main thread `019f316b-27cd-7622-9944-0b909fec3c70` cannot be
+  read by the local Codex Mobile dev server on `8897` (`404` outside visible
+  workspace), so Home AI main acceptance must be rerun from production after
+  deployment of the new cache.
+- Pending: commit this source fix and send a deploy card through the
+  MCP-prefixed delegation tool. Required production acceptance: deployed cache
+  `852b517ddf87`, startup gate, focused tests/parity, quota harness, Codex
+  submitted-message harness, and Home AI main submitted-message harness on
+  `019f316b-27cd-7622-9944-0b909fec3c70`.

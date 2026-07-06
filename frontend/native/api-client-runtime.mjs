@@ -946,10 +946,15 @@ function conversationDomShape() {
       userMessageNodes.push({ turnNode, node });
     }
   }
-  duplicateUserMessageCount = duplicateUserMessageSignatureCount(
+  const eventDuplicateUserMessageCount = duplicateUserMessageSignatureCount(
     userMessageNodes,
     (entry) => domUserMessageEventDuplicateSignature(entry.turnNode, entry.node),
   );
+  const turnDuplicateUserMessageCount = duplicateUserMessageSignatureCount(
+    userMessageNodes,
+    (entry) => domUserMessageDuplicateSignature(entry.turnNode, entry.node),
+  );
+  duplicateUserMessageCount = Math.max(eventDuplicateUserMessageCount, turnDuplicateUserMessageCount);
   return {
     renderKeyCount: seen.size,
     duplicateRenderKeyCount,
@@ -977,9 +982,10 @@ function domUserMessageDuplicateSignature(turnNode, node) {
     turnNode && turnNode.getAttribute && (turnNode.getAttribute("data-turn") || turnNode.getAttribute("data-thread-tile-turn")) || "",
   ).trim();
   const submissionHash = String(node.getAttribute("data-client-submission-hash") || "").trim();
-  if (submissionHash) return `submission:${turnId}:${submissionHash}`;
   const body = node.querySelector && node.querySelector(".item-body");
   const text = String((body || node).textContent || "").replace(/\s+/g, " ").trim();
+  if (submissionHash && text) return `submission-text:${turnId}:${submissionHash}:${stableTextHash(text)}`;
+  if (submissionHash) return `submission:${turnId}:${submissionHash}`;
   return text ? `text:${turnId}:${stableTextHash(text)}` : "";
 }
 
@@ -1003,7 +1009,6 @@ function visibleUserMessageDuplicateSignature(turn, item) {
   if (!item || item.type !== "userMessage") return "";
   const turnId = String(turn && turn.id || turn && turn.mobileVisibleKey || "").trim();
   const submissionHash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
-  if (submissionHash) return `submission:${turnId}:${submissionHash}`;
   const comparable = userMessageComparableParts(item);
   const text = String(
     comparable.text
@@ -1012,6 +1017,8 @@ function visibleUserMessageDuplicateSignature(turn, item) {
     || itemTextValue(item && item.content)
     || "",
   ).replace(/\s+/g, " ").trim();
+  if (submissionHash && text) return `submission-text:${turnId}:${submissionHash}:${stableTextHash(text)}`;
+  if (submissionHash) return `submission:${turnId}:${submissionHash}`;
   return text ? `text:${turnId}:${stableTextHash(text)}` : "";
 }
 
@@ -1073,10 +1080,15 @@ function visibleConversationShape(thread) {
       if (item && item.type === "userMessage") userMessages.push({ turn, item });
     }
   }
-  const duplicateUserMessageCount = duplicateUserMessageSignatureCount(
+  const eventDuplicateUserMessageCount = duplicateUserMessageSignatureCount(
     userMessages,
     (entry) => visibleUserMessageEventDuplicateSignature(entry.turn, entry.item),
   );
+  const turnDuplicateUserMessageCount = duplicateUserMessageSignatureCount(
+    userMessages,
+    (entry) => visibleUserMessageDuplicateSignature(entry.turn, entry.item),
+  );
+  const duplicateUserMessageCount = Math.max(eventDuplicateUserMessageCount, turnDuplicateUserMessageCount);
   return {
     visibleTurnCount: turns.length,
     visibleItemCount,

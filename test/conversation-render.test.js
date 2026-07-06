@@ -5345,6 +5345,68 @@ return { distinct, duplicate };
   assert.equal(result.duplicate.duplicateUserMessageCount, 1);
 });
 
+test("conversation DOM shape detects same-turn submitted user animation residue", () => {
+  const sources = [
+    "duplicateUserMessageSignatureCount",
+    "domUserMessageDuplicateSignature",
+    "domUserMessageEventDuplicateSignature",
+    "conversationDomShape",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+function stableTextHash(value) { return "text-" + String(value || ""); }
+function userNode({ text, renderKey, datetime = "" }) {
+  return {
+    textContent: text,
+    getAttribute(name) {
+      if (name === "data-client-submission-hash") return "";
+      if (name === "data-item") return "item-" + renderKey;
+      if (name === "data-render-key") return renderKey;
+      return "";
+    },
+    querySelector(selector) {
+      if (selector === ".item-body") return { textContent: text };
+      if (selector === ".item-timestamp") {
+        return datetime ? { getAttribute: (name) => (name === "datetime" ? datetime : "") } : null;
+      }
+      return null;
+    },
+  };
+}
+function turnNode(users) {
+  return {
+    getAttribute(name) {
+      if (name === "data-turn") return "turn-current";
+      return "";
+    },
+    querySelectorAll(selector) {
+      if (selector === ".item.userMessage") return users;
+      return [];
+    },
+  };
+}
+function conversationWith(users) {
+  const turn = turnNode(users);
+  return {
+    querySelectorAll(selector) {
+      if (selector === "[data-render-key]") return users;
+      if (selector === "article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]") return [turn];
+      if (selector === "[data-item]") return users;
+      return [];
+    },
+  };
+}
+const residueConversation = conversationWith([
+  userNode({ text: "same submitted marker", renderKey: "local-animated" }),
+  userNode({ text: "same submitted marker", renderKey: "durable-stable", datetime: "2026-07-06T17:45:00.000Z" }),
+]);
+function $(id) { return id === "conversation" ? residueConversation : null; }
+${sources.join("\n")}
+return conversationDomShape();
+`)();
+
+  assert.equal(result.duplicateUserMessageCount, 1);
+});
+
 test("visible conversation shape counts cross-turn same-event user duplicates", () => {
   const sources = [
     "duplicateUserMessageSignatureCount",
