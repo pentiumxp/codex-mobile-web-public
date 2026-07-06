@@ -983,6 +983,21 @@ function createAppUpdateRuntime(deps = {}) {
     url.searchParams.set("shellReload", String(Date.now()));
     return url.href;
   }
+
+  function recordPageRefreshFailure(err, phase = "refresh") {
+    try {
+      postClientEvent("page_refresh_failed", {
+        phase,
+        reason: String(state.pageRefreshReason || ""),
+        currentBuildId: String(state.serverBuildId || CLIENT_BUILD_ID || ""),
+        targetBuildId: String(state.pageRefreshBuildId || ""),
+        errorName: err && err.name ? String(err.name) : "",
+        errorMessage: err && err.message ? String(err.message).slice(0, 180) : String(err || "").slice(0, 180),
+      });
+    } catch (_) {
+      // Best-effort diagnostic only; refresh state must not depend on telemetry.
+    }
+  }
   
   function initializePageBuildState(config) {
     state.serverBuildId = CLIENT_BUILD_ID || serverBuildIdFromConfig(config);
@@ -1217,12 +1232,13 @@ function createAppUpdateRuntime(deps = {}) {
       await resetPageShellServiceWorker();
       await pruneOldShellCaches(String(config && config.shellCacheName || "").trim());
       window.location.replace(pageReloadUrlWithBust());
-    } catch (_) {
+    } catch (err) {
+      recordPageRefreshFailure(err, "new-build-refresh");
       state.pageRefreshReloading = false;
       state.pageRefreshPreparedConfig = null;
       if (state.pageRefreshReason !== "reconnect" && state.pageRefreshReason !== "restart") {
-        state.pageRefreshAvailable = false;
-        state.pageRefreshReason = "";
+        state.pageRefreshAvailable = true;
+        state.pageRefreshReason = "build";
       }
       renderPageRefreshPrompt();
     }

@@ -15,7 +15,7 @@ const CLASSIC_SHELL_SCRIPT_BLOCK_END = "<!-- CODEX_MOBILE_SHELL_SCRIPTS:END -->"
 const SHELL_MANIFEST_JS_FIXTURE = Buffer.from("window.CODEX_MOBILE_SHELL_MANIFEST = {};\n");
 const APP_BOOTSTRAP_JS_FIXTURE = Buffer.from("window.CodexAppBootstrap = true;\n");
 const APP_JS_FIXTURE = Buffer.from("window.CodexAppShellRuntime = { createAppShellRuntime: function () {} };\n");
-const STABLE_ENTRY_JS_FIXTURE = Buffer.from("import \"/vite-shell/assets/vite-shell-entry-test.js\";\n");
+const STABLE_ENTRY_JS_FIXTURE = Buffer.from("import \"./assets/vite-shell-entry-test.js\";\n");
 
 function sha256Hex(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
@@ -870,6 +870,11 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-deferred-entry-topology-test.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-entry-group-app-entry-test.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "app-preview-entry.js")), true);
+  const appPreviewEntry = fs.readFileSync(path.join(root, "public", "vite-shell", "app-preview-entry.js"), "utf8");
+  assert.match(appPreviewEntry, /import "\.\/assets\/vite-shell-entry-test\.js";/);
+  assert.doesNotMatch(appPreviewEntry, /import "\/vite-shell\/assets\//);
+  assert.match(appPreviewEntry, /targetEntryScript: "\/vite-shell\/assets\/vite-shell-entry-test\.js"/);
+  assert.match(appPreviewEntry, /targetEntryImportSpecifier: "\.\/assets\/vite-shell-entry-test\.js"/);
   const previewHtml = fs.readFileSync(path.join(root, "public", "vite-shell", "preview.html"), "utf8");
   assert.match(previewHtml, /id="codex-vite-shell-preview"/);
   assert.match(previewHtml, /data-startup-critical-asset-count="2"/);

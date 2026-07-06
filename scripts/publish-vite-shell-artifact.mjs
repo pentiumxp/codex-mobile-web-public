@@ -699,12 +699,16 @@ export function renderViteShellStableEntry(readback = {}) {
   if (!targetEntryScript || !targetEntryScript.startsWith("/")) {
     throw new Error("codex_mobile_vite_stable_entry_target_missing");
   }
+  const targetEntryImportSpecifier = targetEntryScript.startsWith("/vite-shell/assets/")
+    ? `./assets/${targetEntryScript.slice("/vite-shell/assets/".length)}`
+    : targetEntryScript;
   return [
-    `import "${targetEntryScript}";`,
+    `import "${targetEntryImportSpecifier}";`,
     "",
     "globalThis.__CODEX_MOBILE_VITE_STABLE_ENTRY__ = {",
     "  source: \"vite-shell-app-preview-stable-entry\",",
     `  targetEntryScript: ${JSON.stringify(targetEntryScript)},`,
+    `  targetEntryImportSpecifier: ${JSON.stringify(targetEntryImportSpecifier)},`,
     "  loadedAt: Date.now(),",
     "};",
     "",
