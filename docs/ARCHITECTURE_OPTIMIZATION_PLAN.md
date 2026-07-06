@@ -5171,6 +5171,20 @@ This does not change production defaults. It removes an ownership ambiguity in
 the deploy gate before any production restart intentionally moves plain `/` to
 the Vite app-preview shell.
 
+The 2026-07-06 ESM production execution switch changes the Vite artifact
+contract from rehearsal/default-root readiness to the production expectation:
+
+- `viteBuild.productionExecution` is now
+  `vite-app-preview-native-esm`.
+- `public/vite-shell/preview.html` and
+  `public/vite-shell/vite-shell-readback.json` report that mode through the
+  bounded artifact contract.
+- The browser runtime self-check treats any non-native-ESM production execution
+  marker as a mismatch.
+- Classic public shell files remain generated, hashed, and checked as rollback
+  assets, but they are no longer the expected production execution path once the
+  central deploy promotes this source ref.
+
 ## Release Rule
 
 Follow the current release order:

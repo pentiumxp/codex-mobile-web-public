@@ -406,7 +406,7 @@ function createViteShellArtifactService(dependencies = {}) {
         available: false,
         stage: EXPECTED_PUBLIC_ARTIFACT_STAGE,
         sourceBuildStage: EXPECTED_SOURCE_BUILD_STAGE,
-        productionExecution: "classic-script-fallback",
+        productionExecution: "vite-app-preview-native-esm",
         artifactRoot: DEFAULT_PUBLIC_ARTIFACT_ROOT,
         issueCodes: compactIssueCodes(issues),
         validation: { ok: false, issues },
@@ -419,8 +419,8 @@ function createViteShellArtifactService(dependencies = {}) {
     if (readback.sourceBuildStage !== EXPECTED_SOURCE_BUILD_STAGE) {
       issues.push({ code: "vite_shell_source_build_stage_mismatch" });
     }
-    if (readback.productionExecution !== "classic-script-fallback") {
-      issues.push({ code: "vite_shell_artifact_not_classic_fallback" });
+    if (readback.productionExecution !== "vite-app-preview-native-esm") {
+      issues.push({ code: "vite_shell_artifact_not_native_esm" });
     }
     if (publicShellManifest.shellCacheName && readback.shellCacheName !== publicShellManifest.shellCacheName) {
       issues.push({ code: "vite_shell_artifact_cache_mismatch" });

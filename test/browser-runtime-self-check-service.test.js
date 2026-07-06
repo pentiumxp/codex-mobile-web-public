@@ -22,6 +22,14 @@ const viteEsmCompatibilityMissing = {
   esmCompatibilityModuleCount: 0,
   esmCompatibilityReadyCount: 0,
   esmCompatibilityExpectedCount: 8,
+  esmCompatibilityNotReadyModuleIds: ["thread-status-hints"],
+  esmCompatibilityNotReadyModules: [{
+    id: "thread-status-hints",
+    expectedFunctionCount: 3,
+    exportedFunctionCount: 3,
+    globalPublished: true,
+    sample: { ok: false, running: true, unread: true, expire: false },
+  }],
 };
 
 test("browser runtime self-check adapter re-exports canonical runtime service", () => {
@@ -676,7 +684,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     markerVisible: true,
     stage: "vite-shell-preview-html-v1",
     sourceBuildStage: "vite-shell-artifact-contract-v1",
-    productionExecution: "classic-script-fallback",
+    productionExecution: "vite-app-preview-native-esm",
     clientBuildMatches: true,
     shellCacheMatches: true,
     moduleScriptMatchesPreview: true,
@@ -708,7 +716,7 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
     markerVisible: true,
     stage: "wrong",
     sourceBuildStage: "vite-shell-artifact-contract-v1",
-    productionExecution: "classic-script-fallback",
+    productionExecution: "vite-app-preview-native-esm",
     clientBuildMatches: true,
     shellCacheMatches: true,
     moduleScriptMatchesPreview: false,
@@ -748,7 +756,10 @@ test("browser runtime self-check analyzes Vite preview module readiness", () => 
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_compatibility_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_startup_globals_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_classic_startup_global_contract_mismatch"));
-  assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_esm_compatibility_missing"));
+  const vitePreviewEsmIssue = failing.issues.find((issue) => issue.code === "vite_preview_esm_compatibility_missing");
+  assert.ok(vitePreviewEsmIssue);
+  assert.deepEqual(vitePreviewEsmIssue.notReadyModuleIds, ["thread-status-hints"]);
+  assert.equal(vitePreviewEsmIssue.notReadyModules[0].sample.expire, false);
   assert.ok(failing.issues.some((issue) => issue.code === "vite_preview_browser_exception"));
 });
 
@@ -942,7 +953,10 @@ test("browser runtime self-check analyzes Vite app-preview startup readiness", (
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_module_entry_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_classic_loader_plan_missing"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_classic_loader_plan_mismatch"));
-  assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_esm_compatibility_missing"));
+  const appPreviewEsmIssue = failing.issues.find((issue) => issue.code === "vite_app_preview_esm_compatibility_missing");
+  assert.ok(appPreviewEsmIssue);
+  assert.deepEqual(appPreviewEsmIssue.notReadyModuleIds, ["thread-status-hints"]);
+  assert.equal(appPreviewEsmIssue.notReadyModules[0].sample.expire, false);
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_loader_failed"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_classic_script_order_mismatch"));
   assert.ok(failing.issues.some((issue) => issue.code === "vite_app_preview_client_build_mismatch"));

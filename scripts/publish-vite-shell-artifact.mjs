@@ -315,8 +315,8 @@ export function buildViteShellPublicReadback(options = {}) {
   if (!viteBuild.validation || !viteBuild.validation.ok) {
     issues.push({ code: "vite_build_contract_invalid" });
   }
-  if (viteBuild.productionExecution !== "classic-script-fallback") {
-    issues.push({ code: "vite_build_execution_not_classic_fallback" });
+  if (viteBuild.productionExecution !== "vite-app-preview-native-esm") {
+    issues.push({ code: "vite_build_execution_not_native_esm" });
   }
   if (!viteBuild.viteEntry || viteBuild.viteEntry.source !== "frontend/vite-shell-entry.mjs") {
     issues.push({ code: "vite_shell_entry_missing" });

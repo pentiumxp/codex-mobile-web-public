@@ -1724,7 +1724,7 @@ test("Vite shell build contract records entry chunks and classic fallback output
   const contract = buildViteShellBuildContract(manifest, bundle);
   assert.equal(contract.validation.ok, true);
   assert.equal(contract.stage, "vite-shell-artifact-contract-v1");
-  assert.equal(contract.productionExecution, "classic-script-fallback");
+  assert.equal(contract.productionExecution, "vite-app-preview-native-esm");
   assert.equal(contract.entryGroupImportOwner, "vite-shell-entry");
   assert.equal(contract.viteEntry.source, "frontend/vite-shell-entry.mjs");
   assert.equal(contract.viteEntry.fileName, "assets/vite-shell-entry-example.js");

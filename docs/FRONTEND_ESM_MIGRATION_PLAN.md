@@ -3,21 +3,21 @@
 ## Current Contract
 
 Codex Mobile uses the Vite shell entry for app-preview execution, but the
-default production shell still preserves the generated classic script fallback.
-The migration therefore has two separate milestones:
+production shell execution contract has now been switched to the native ESM
+app-preview path. The generated classic assets remain present as an explicit
+rollback fallback, not as the expected production execution path.
 
-- Vite/ESM loading contract: done for app-preview. The app-preview classic
-  loader has no direct classic scripts; Vite owns the entry and imports the
-  compatibility graph.
-- Source-native ESM: in progress. Classic `public/*.js` files remain the
-  canonical default-shell fallback until the behavior gate proves each migrated
-  module can be imported natively without regressing user-message, approval,
-  thread-detail, or refresh behavior.
+- Vite/ESM loading contract: done. The app-preview classic loader has no
+  direct classic scripts; Vite owns the entry and imports the compatibility
+  graph.
+- Source-native ESM: done for all app-preview runtime modules. Classic
+  `public/*.js` files remain generated and hashed for rollback parity.
+- Production execution: `vite-app-preview-native-esm`.
 
 ## Phase 1 Scope
 
-Phase 1 makes native ESM migration explicit and measurable without switching
-the default shell away from classic fallback:
+Phase 1 made native ESM migration explicit and measurable before switching the
+production execution contract:
 
 - Each migrated runtime keeps its public classic asset for fallback.
 - The Vite compatibility graph can import a native ESM source through
@@ -34,7 +34,7 @@ the default shell away from classic fallback:
 The first migrated module is `build-refresh-policy`, a pure utility module with
 no DOM, thread state, or user-message side effects.
 
-## Remaining Migration Order
+## Migration Order
 
 Migrate modules in low-risk to high-risk order:
 
@@ -61,7 +61,7 @@ Each module migration must add or preserve focused tests proving:
 
 ## Release Rule
 
-Do not remove the classic fallback or switch `productionExecution` until the
-native ESM count covers all app-preview runtime modules and the full behavior
-gate passes with controlled submit. Public release can happen for intermediate
-Phase 1 slices only when production deploy/readback and full behavior gate pass.
+Classic fallback removal remains a separate future cleanup. Keep the fallback
+until production deploy/readback and the full behavior gate pass repeatedly
+under `productionExecution: "vite-app-preview-native-esm"` and a rollback
+window has been retained.

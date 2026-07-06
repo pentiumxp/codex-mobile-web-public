@@ -72,7 +72,7 @@ if (!fs.existsSync(manifestPath)) {
     mismatch.push("viteBuildContract");
   } else {
     const viteBuild = built.viteBuild;
-    if (viteBuild.productionExecution !== "classic-script-fallback") {
+    if (viteBuild.productionExecution !== "vite-app-preview-native-esm") {
       mismatch.push("viteBuildProductionExecution");
     }
     if (!viteBuild.viteEntry || viteBuild.viteEntry.source !== "frontend/vite-shell-entry.mjs") {

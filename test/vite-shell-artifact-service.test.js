@@ -268,7 +268,7 @@ function writeArtifact(root, options = {}) {
     ...shellManifest,
     viteBuild: {
       stage: "vite-shell-artifact-contract-v1",
-      productionExecution: "classic-script-fallback",
+      productionExecution: "vite-app-preview-native-esm",
       entryDynamicImportGraph: {
         owner: "vite-shell-entry",
         actualFiles: [
@@ -320,7 +320,7 @@ function writeArtifact(root, options = {}) {
     schemaVersion: 1,
     stage,
     sourceBuildStage: "vite-shell-artifact-contract-v1",
-    productionExecution: "classic-script-fallback",
+    productionExecution: "vite-app-preview-native-esm",
     entryGroupImportOwner: "vite-shell-entry",
     classicShellScriptBlock: classicScriptBlock,
     entryDynamicImportGraph: {
@@ -459,7 +459,7 @@ test("Vite shell artifact status validates the guarded public preview files", ()
   assert.equal(status.available, true);
   assert.equal(status.stage, "vite-shell-preview-html-v1");
   assert.equal(status.sourceBuildStage, "vite-shell-artifact-contract-v1");
-  assert.equal(status.productionExecution, "classic-script-fallback");
+  assert.equal(status.productionExecution, "vite-app-preview-native-esm");
   assert.equal(status.entryGroupImportOwner, "vite-shell-entry");
   assert.deepEqual(status.entryDynamicImportGraph, {
     owner: "vite-shell-entry",
@@ -748,7 +748,7 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
     ...buildShellManifest,
     viteBuild: {
       stage: "vite-shell-artifact-contract-v1",
-      productionExecution: "classic-script-fallback",
+      productionExecution: "vite-app-preview-native-esm",
       entryGroupImportOwner: "vite-shell-entry",
       appPreviewClassicLoaderPlan: buildAppPreviewClassicLoaderPlan,
       esmCompatibility: buildEsmCompatibility,

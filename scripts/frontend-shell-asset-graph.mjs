@@ -2799,11 +2799,11 @@ function createEsmCompatibilityShardVirtualModuleSource(root, moduleDefinitions)
     "      ? api.shouldExpireRunningThreadHint({",
     "        threadId: \"target-thread\",",
     "        isRunningHinted: true,",
-    "        status: \"idle\",",
+    "        status: { type: \"completed\", mobileStaleActiveTurn: true },",
     "        runningHintedAtMs: 0,",
     "        runningHintStaleMs: 1000,",
     "        nowMs: 5000,",
-    "        thread: {},",
+    "        thread: { mobileStaleActiveTurn: true },",
     "      })",
     "      : false;",
     "    return {",
@@ -3725,8 +3725,8 @@ function validateViteShellBuildContract(contract, manifest) {
     .filter(Boolean);
   const entryChunkIds = new Set(entryGroupChunks.map((chunk) => sanitizeEntryGroupId(chunk.groupId)));
 
-  if (contract.productionExecution !== "classic-script-fallback") {
-    issues.push({ code: "vite_build_contract_not_classic_fallback" });
+  if (contract.productionExecution !== "vite-app-preview-native-esm") {
+    issues.push({ code: "vite_build_contract_not_native_esm" });
   }
   if (contract.entryGroupImportOwner !== "vite-shell-entry") {
     issues.push({ code: "vite_entry_group_import_owner_mismatch" });
@@ -4030,7 +4030,7 @@ export function buildViteShellBuildContract(manifest, bundle = {}, root = proces
   const contract = {
     schemaVersion: VITE_SHELL_BUILD_CONTRACT_SCHEMA_VERSION,
     stage: "vite-shell-artifact-contract-v1",
-    productionExecution: "classic-script-fallback",
+    productionExecution: "vite-app-preview-native-esm",
     entryGroupImportOwner: "vite-shell-entry",
     entryDynamicImportGraph,
     entrySource: VITE_SHELL_ENTRY_SOURCE,
