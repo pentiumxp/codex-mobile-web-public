@@ -283,6 +283,7 @@ function latestTurnShapeForIssue(sample = {}) {
     expectedUserMessageCount: toNumber(sample.expectedLatestUserMessageCount),
     expectedTaskCardUserMessageCount: toNumber(sample.expectedLatestTaskCardUserMessageCount),
     expectedAssistantMessageCount: toNumber(sample.expectedLatestAssistantMessageCount),
+    expectedUsageRequired: sample.expectedLatestUsageRequired === true,
   };
 }
 
@@ -374,6 +375,14 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         turnShapeIssueKey("browser_latest_turn_user_message_below_api_expectation", sample, latestTurnShapeForIssue(sample)),
       );
     }
+    if (sample.latestTurnMatchesTarget
+      && sample.expectedLatestUsageRequired === true
+      && toNumber(sample.latestTurnUsageCount) <= 0) {
+      incrementMapCount(
+        turnShapeMismatchCounts,
+        turnShapeIssueKey("browser_latest_turn_usage_missing", sample, latestTurnShapeForIssue(sample)),
+      );
+    }
   }
 
   function turnShapeMismatchSeverity(code, sample, turnShape) {
@@ -386,7 +395,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
   function latestTurnMismatchSeverity(code, sample, turnShape) {
     const key = turnShapeIssueKey(code, sample, turnShape);
     const observationCount = turnShapeMismatchCounts.get(key) || 0;
-    if (sample && sample.dynamicThreadPlan === true && activeDynamicTurnShape(turnShape) && observationCount < 2) return "H3";
+    if (sample && sample.dynamicThreadPlan === true && observationCount < 2) return "H3";
     return "H2";
   }
 
@@ -401,9 +410,10 @@ function analyzeBrowserRuntimeSamples(input = {}) {
 
   function latestTurnMismatchDetails(code, sample, turnShape, details = {}) {
     const key = turnShapeIssueKey(code, sample, turnShape);
+    const dynamicThreadPlan = sample && sample.dynamicThreadPlan === true;
     return Object.assign({}, details, {
-      turnShape: activeDynamicTurnShape(turnShape) ? safeTurnShape(turnShape) : undefined,
-      dynamicThreadPlan: sample && sample.dynamicThreadPlan === true ? true : undefined,
+      turnShape: activeDynamicTurnShape(turnShape) || dynamicThreadPlan ? safeTurnShape(turnShape) : undefined,
+      dynamicThreadPlan: dynamicThreadPlan ? true : undefined,
       observationCount: turnShapeMismatchCounts.get(key) || 0,
     });
   }
@@ -710,10 +720,12 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       && sample.expectedLatestUsageRequired
       && sample.latestTurnMatchesTarget
       && toNumber(sample.latestTurnUsageCount) <= 0) {
-      issues.push(issue("H2", "browser_latest_turn_usage_missing", sample, {
+      const code = "browser_latest_turn_usage_missing";
+      const latestShape = latestTurnShapeForIssue(sample);
+      issues.push(issue(latestTurnMismatchSeverity(code, sample, latestShape), code, sample, latestTurnMismatchDetails(code, sample, latestShape, {
         expectedLatestUsageRequired: true,
         latestTurnUsageCount: toNumber(sample.latestTurnUsageCount),
-      }));
+      })));
     }
     const hash = sampleThreadHash(sample);
     const targetComparable = sampleIsConfirmed(sample) || toNumber(sample.expectedTurnHashCount) > 0;

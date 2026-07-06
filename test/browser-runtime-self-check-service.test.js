@@ -1776,6 +1776,118 @@ test("browser runtime self-check blocks repeated dynamic API plan mismatches", (
   assert.equal(issue && issue.observationCount, 2);
 });
 
+test("browser runtime self-check keeps one-off dynamic latest completed tail catch-up advisory", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "submit-post-1600",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      delayMs: 1600,
+      dynamicThreadPlan: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "turn-a",
+      expectedLatestItemCount: 4,
+      latestTurnItemCount: 2,
+      expectedLatestUserMessageCount: 1,
+      latestTurnUserMessageCount: 1,
+      expectedLatestAssistantMessageCount: 2,
+      latestTurnAssistantMessageCount: 1,
+      expectedLatestUsageRequired: true,
+      latestTurnUsageCount: 0,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        completed: true,
+        expectedItemCount: 4,
+        expectedUserMessageCount: 1,
+        expectedAssistantMessageCount: 2,
+        expectedUsageRequired: true,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        itemCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        usageCount: 0,
+      }],
+      turns: 1,
+      items: 2,
+      renderKeys: 2,
+    }],
+  });
+
+  const itemIssue = report.issues.find((entry) => entry.code === "browser_latest_turn_item_below_api_expectation");
+  const usageIssue = report.issues.find((entry) => entry.code === "browser_latest_turn_usage_missing");
+
+  assert.equal(report.ok, true);
+  assert.equal(itemIssue && itemIssue.severity, "H3");
+  assert.equal(itemIssue && itemIssue.observationCount, 1);
+  assert.equal(usageIssue && usageIssue.severity, "H3");
+  assert.equal(usageIssue && usageIssue.observationCount, 1);
+  assert.equal(usageIssue && usageIssue.turnShape.expectedUsageRequired, true);
+});
+
+test("browser runtime self-check blocks repeated dynamic latest completed tail gaps", () => {
+  const sample = {
+    threadHash: "thread-hash",
+    appVisible: true,
+    targetConfirmed: true,
+    contentConfirmed: true,
+    delayMs: 1600,
+    dynamicThreadPlan: true,
+    latestTurnMatchesTarget: true,
+    latestTurnHash: "turn-a",
+    expectedLatestItemCount: 4,
+    latestTurnItemCount: 2,
+    expectedLatestUserMessageCount: 1,
+    latestTurnUserMessageCount: 1,
+    expectedLatestAssistantMessageCount: 2,
+    latestTurnAssistantMessageCount: 1,
+    expectedLatestUsageRequired: true,
+    latestTurnUsageCount: 0,
+    expectedTurnShapes: [{
+      index: 0,
+      turnHash: "turn-a",
+      completed: true,
+      expectedItemCount: 4,
+      expectedUserMessageCount: 1,
+      expectedAssistantMessageCount: 2,
+      expectedUsageRequired: true,
+    }],
+    domTurnShapes: [{
+      index: 0,
+      turnHash: "turn-a",
+      itemCount: 2,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      usageCount: 0,
+    }],
+    turns: 1,
+    items: 2,
+    renderKeys: 2,
+  };
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      Object.assign({ label: "submit-post-1600-a" }, sample),
+      Object.assign({ label: "submit-post-1600-b" }, sample),
+    ],
+  });
+
+  const itemIssue = report.issues.find((entry) => entry.code === "browser_latest_turn_item_below_api_expectation");
+  const usageIssue = report.issues.find((entry) => entry.code === "browser_latest_turn_usage_missing");
+
+  assert.equal(report.ok, false);
+  assert.equal(itemIssue && itemIssue.severity, "H2");
+  assert.equal(itemIssue && itemIssue.observationCount, 2);
+  assert.equal(usageIssue && usageIssue.severity, "H2");
+  assert.equal(usageIssue && usageIssue.observationCount, 2);
+});
+
 test("browser runtime self-check counts task-card DOM as visible user input", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{
