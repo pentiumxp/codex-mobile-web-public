@@ -1907,8 +1907,7 @@ async function sendMessage(event) {
         steeringQueued: Boolean(result && result.steeringQueued),
       });
     }
-    const reconciledSubmittedUserMessage = !steering
-      && serverTurnId
+    const reconciledSubmittedUserMessage = serverTurnId
       && reconcileSubmittedUserMessageTurn(targetThreadId, clientSubmissionId, serverTurnId);
     if (typeof recordSubmittedEchoDiagnosticLog === "function") {
       recordSubmittedEchoDiagnosticLog("post-reconcile-result", {

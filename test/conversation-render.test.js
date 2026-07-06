@@ -2861,6 +2861,36 @@ test("existing thread send reconciles local pending turn to returned server turn
   assert.deepEqual(harness.counters(), { mergeCount: 2, syncCount: 2 });
 });
 
+test("steered send reconciles optimistic user message from active turn to returned server turn", () => {
+  const harness = evaluatedLocalSubmissionInserter();
+  harness.state.currentThread.turns = [{
+    id: "active-turn",
+    status: { type: "active" },
+    items: [
+      { id: "assistant-progress", type: "agentMessage", text: "working" },
+    ],
+  }];
+
+  const inserted = harness.insertLocalSubmittedUserMessage(
+    "thread-live",
+    "steered user text",
+    [],
+    "submit-steer",
+    { turnId: "active-turn" },
+  );
+  const reconciled = harness.reconcileSubmittedUserMessageTurn("thread-live", "submit-steer", "server-turn-steer");
+
+  assert.equal(inserted, true);
+  assert.equal(reconciled, true);
+  assert.equal(harness.state.currentThread.turns.length, 2);
+  const activeTurn = harness.state.currentThread.turns.find((turn) => turn.id === "active-turn");
+  const serverTurn = harness.state.currentThread.turns.find((turn) => turn.id === "server-turn-steer");
+  assert.deepEqual(activeTurn.items.map((item) => item.id), ["assistant-progress"]);
+  assert.equal(serverTurn.items.length, 1);
+  assert.equal(serverTurn.items[0].clientSubmissionId, "submit-steer");
+  assert.equal(serverTurn.items[0].mobilePendingSubmission, true);
+});
+
 test("durable refresh settles submitted user record and removes stale local echo", () => {
   const harness = evaluatedLocalSubmissionInserter();
   const recordItem = {
@@ -7737,7 +7767,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(sendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);
   assert.match(sendBody, /recordSubmittedEchoDiagnosticLog\("post-response"/);
   assert.match(sendBody, /const serverTurnId = startedTurnId\(result\);/);
-  assert.match(sendBody, /const reconciledSubmittedUserMessage = !steering[\s\S]*&& reconcileSubmittedUserMessageTurn\(targetThreadId, clientSubmissionId, serverTurnId\);/);
+  assert.match(sendBody, /const reconciledSubmittedUserMessage = serverTurnId[\s\S]*&& reconcileSubmittedUserMessageTurn\(targetThreadId, clientSubmissionId, serverTurnId\);/);
+  assert.doesNotMatch(sendBody, /const reconciledSubmittedUserMessage = !steering/);
   assert.match(sendBody, /if \(reconciledSubmittedUserMessage\) \{[\s\S]*renderCurrentThread\(\{ stickToBottom: true \}\);[\s\S]*recordSubmittedEchoDiagnosticLog\("post-reconcile-rendered"/);
   assert.match(sendBody, /scheduleComposerTargetRefresh\(targetThreadId, 250, "message-submit"\);/);
   assert.match(sendBody, /schedulePostCompletionThreadRefreshes\(targetThreadId, \[350, 750, 1200, 2400, 5200\]\);/);
