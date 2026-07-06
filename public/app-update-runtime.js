@@ -65,7 +65,7 @@ function createAppUpdateRuntime(deps = {}) {
     const text = String(buildId || "").trim();
     const match = text.match(/\bcodex-mobile-shell-v([0-9]+)(?:-([a-f0-9]{6,}))?\b/i);
     if (match) {
-      const buildHash = String(match[2] || "").slice(0, 12);
+      const buildHash = String(match[2] || "").slice(0, 8);
       return buildHash ? `客户端 v${match[1]} · ${buildHash}` : `客户端 v${match[1]}`;
     }
     return text ? `客户端 ${text}` : "客户端未知";

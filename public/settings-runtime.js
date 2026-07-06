@@ -328,12 +328,18 @@ function createSubmissionId() {
 }
 
 var RECENT_SUBMITTED_USER_MESSAGE_TTL_MS = 6 * 60 * 60 * 1000;
+var RECENT_SUBMITTED_USER_MESSAGE_ACCEPTED_TTL_MS = 2 * 60 * 1000;
 
 function pruneRecentSubmittedUserMessages(now = Date.now()) {
   const records = state.recentSubmittedUserMessages;
   if (!records || typeof records.entries !== "function") return;
   for (const [key, record] of records.entries()) {
-    if (!record || now - Number(record.createdAtMs || 0) > RECENT_SUBMITTED_USER_MESSAGE_TTL_MS) records.delete(key);
+    const acceptedAtMs = Number(record && record.acceptedAtMs || 0);
+    const ttlMs = acceptedAtMs > 0
+      ? RECENT_SUBMITTED_USER_MESSAGE_ACCEPTED_TTL_MS
+      : RECENT_SUBMITTED_USER_MESSAGE_TTL_MS;
+    const anchorMs = acceptedAtMs || Number(record && record.createdAtMs || 0);
+    if (!record || now - anchorMs > ttlMs) records.delete(key);
   }
 }
 
@@ -480,6 +486,83 @@ function mergeSubmittedUserItemIntoTurn(turn, item) {
   return true;
 }
 
+function markRecentSubmittedUserMessageAccepted(threadId, clientSubmissionId, serverTurnId) {
+  const id = String(clientSubmissionId || "").trim();
+  if (!id || !state.recentSubmittedUserMessages || typeof state.recentSubmittedUserMessages.get !== "function") return false;
+  const record = state.recentSubmittedUserMessages.get(id);
+  if (!record) return false;
+  record.threadId = String(threadId || record.threadId || "");
+  record.serverTurnId = String(serverTurnId || record.serverTurnId || "");
+  record.acceptedAtMs = Date.now();
+  state.recentSubmittedUserMessages.set(id, record);
+  return true;
+}
+
+function durableUserMessageMatchesSubmittedRecord(item, record, clientSubmissionId) {
+  if (!item || item.type !== "userMessage" || isOptimisticUserMessage(item)) return false;
+  const submissionId = String(clientSubmissionId || "").trim();
+  if (submissionId && String(item.clientSubmissionId || "") === submissionId) return true;
+  const recordItem = record && record.item;
+  return Boolean(recordItem && userMessagesCanShadow(item, recordItem));
+}
+
+function threadHasDurableSubmittedUserRecord(thread, record, clientSubmissionId) {
+  for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) {
+    for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
+      if (durableUserMessageMatchesSubmittedRecord(item, record, clientSubmissionId)) return true;
+    }
+  }
+  return false;
+}
+
+function optimisticUserMessageMatchesSubmittedRecord(item, record, clientSubmissionId) {
+  if (!item || item.type !== "userMessage" || !isOptimisticUserMessage(item)) return false;
+  const submissionId = String(clientSubmissionId || "").trim();
+  if (submissionId && String(item.clientSubmissionId || "") === submissionId) return true;
+  const recordItem = record && record.item;
+  return Boolean(recordItem && userMessagesCanShadow(item, recordItem));
+}
+
+function removeOptimisticSubmittedUserRecordEchoes(thread, record, clientSubmissionId) {
+  if (!thread || !Array.isArray(thread.turns)) return false;
+  let changed = false;
+  thread.turns = thread.turns.filter((turn) => {
+    if (!turn || !Array.isArray(turn.items)) return true;
+    const nextItems = turn.items.filter((item) => !optimisticUserMessageMatchesSubmittedRecord(item, record, clientSubmissionId));
+    if (nextItems.length !== turn.items.length) {
+      turn.items = nextItems;
+      changed = true;
+    }
+    return Boolean(turn.items.length || !/^local-turn-/.test(String(turn.id || "")));
+  });
+  return changed;
+}
+
+function settleRecentSubmittedUserMessagesForThread(thread, source = "thread-refresh") {
+  const records = state.recentSubmittedUserMessages;
+  if (!thread || !records || typeof records.entries !== "function") return 0;
+  pruneRecentSubmittedUserMessages();
+  const threadId = String(thread.id || state.currentThreadId || "").trim();
+  let settledCount = 0;
+  let changed = false;
+  for (const [clientSubmissionId, record] of Array.from(records.entries())) {
+    if (!recentSubmittedUserRecordBelongsToThread(record, threadId)) continue;
+    if (!threadHasDurableSubmittedUserRecord(thread, record, clientSubmissionId)) continue;
+    records.delete(clientSubmissionId);
+    settledCount += 1;
+    changed = removeOptimisticSubmittedUserRecordEchoes(thread, record, clientSubmissionId) || changed;
+    if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+      recordSubmittedEchoDiagnosticLog("recent-submission-settled", {
+        threadId,
+        clientSubmissionId,
+        source: String(source || "thread-refresh").slice(0, 80),
+      });
+    }
+  }
+  if (changed) normalizeThreadVisibleUserMessages(thread);
+  return settledCount;
+}
+
 function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverTurnId) {
   const id = String(threadId || "").trim();
   const submissionId = String(clientSubmissionId || "").trim();
@@ -539,6 +622,7 @@ function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverT
   }
   clientRenderStabilityGuard.transferSubmittedTurnIdentity(sourceTurn, targetTurn, submissionId);
   const changed = mergeSubmittedUserItemIntoTurn(targetTurn, sourceItem);
+  markRecentSubmittedUserMessageAccepted(id, submissionId, turnId);
   if (sourceTurn && sourceTurn !== targetTurn) {
     sourceTurn.items = (sourceTurn.items || []).filter((item) => item !== sourceItem);
     if (!sourceTurn.items.length && /^local-turn-/.test(String(sourceTurn.id || ""))) {
@@ -2400,6 +2484,12 @@ function createSettingsRuntime() {
     syncLocalSubmissionThread,
     insertLocalSubmittedUserMessage,
     mergeSubmittedUserItemIntoTurn,
+    markRecentSubmittedUserMessageAccepted,
+    durableUserMessageMatchesSubmittedRecord,
+    threadHasDurableSubmittedUserRecord,
+    optimisticUserMessageMatchesSubmittedRecord,
+    removeOptimisticSubmittedUserRecordEchoes,
+    settleRecentSubmittedUserMessagesForThread,
     reconcileSubmittedUserMessageTurn,
     markSubmittedUserMessageFailed,
     recentSubmittedUserRecordBelongsToThread,

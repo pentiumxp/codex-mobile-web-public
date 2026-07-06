@@ -834,6 +834,9 @@ function applyThreadDetailRefreshResponseEffect(effect, context = {}) {
   }
   if (type === "merge-current-thread") {
     state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, thread);
+    if (typeof settleRecentSubmittedUserMessagesForThread === "function") {
+      settleRecentSubmittedUserMessagesForThread(state.currentThread, String(context.source || item.source || "refresh-detail-api"));
+    }
     rememberReusableThreadDetail(state.currentThread);
     if (typeof recordRecentSubmittedEchoDiagnosticLogs === "function") {
       recordRecentSubmittedEchoDiagnosticLogs("refresh-merge-current-thread", {

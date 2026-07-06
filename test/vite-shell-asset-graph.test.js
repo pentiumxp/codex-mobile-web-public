@@ -1110,7 +1110,7 @@ test("native ESM app update runtime matches classic fallback behavior", async ()
   );
   assert.equal(
     nativeRuntime.clientBuildVersionText(),
-    "客户端 v625 · cbb2ef9490a1",
+    "客户端 v625 · cbb2ef94",
   );
   assert.equal(
     nativeRuntime.appVersionText(),
@@ -1118,7 +1118,7 @@ test("native ESM app update runtime matches classic fallback behavior", async ()
   );
   assert.equal(
     nativeRuntime.appVersionText(),
-    "v0.1.11 · 客户端 v625 · cbb2ef9490a1",
+    "v0.1.11 · 客户端 v625 · cbb2ef94",
   );
   assert.equal(
     nativeRuntime.currentUpdateUsesPublicRelease(),

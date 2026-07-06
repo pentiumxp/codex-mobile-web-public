@@ -1487,6 +1487,7 @@ function evaluatedLocalSubmissionInserter() {
     "isLikelyAbsoluteLocalPath",
     "canRenderImageAttachment",
     "localSubmittedTurnId",
+    "pruneRecentSubmittedUserMessages",
     "currentThreadHasClientSubmission",
     "threadHasClientSubmission",
     "isTurnComplete",
@@ -1529,17 +1530,27 @@ function evaluatedLocalSubmissionInserter() {
     "shouldDropOptimisticUserMessageForHigherPriorityEcho",
   "shouldDropDuplicateUserMessageEvent",
     "mergeSubmittedUserItemIntoTurn",
+    "markRecentSubmittedUserMessageAccepted",
+    "durableUserMessageMatchesSubmittedRecord",
+    "threadHasDurableSubmittedUserRecord",
+    "optimisticUserMessageMatchesSubmittedRecord",
+    "removeOptimisticSubmittedUserRecordEchoes",
+    "settleRecentSubmittedUserMessagesForThread",
     "reconcileSubmittedUserMessageTurn",
+    "recentSubmittedUserRecordBelongsToThread",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function("clientRenderStabilityGuard", [
     `
 let mergeCount = 0;
 let syncCount = 0;
+var RECENT_SUBMITTED_USER_MESSAGE_TTL_MS = 6 * 60 * 60 * 1000;
+      var RECENT_SUBMITTED_USER_MESSAGE_ACCEPTED_TTL_MS = 2 * 60 * 1000;
 const state = {
   currentThreadId: "thread-live",
   currentThread: { id: "thread-live", status: { type: "idle" }, turns: [], mobileLoading: true },
   threads: [],
   threadTileDetails: new Map(),
+  recentSubmittedUserMessages: new Map(),
 };
 function localUserMessageItem(text, attachments, clientSubmissionId) {
   return {
@@ -1566,6 +1577,7 @@ return {
   state,
   insertLocalSubmittedUserMessage,
   reconcileSubmittedUserMessageTurn,
+  settleRecentSubmittedUserMessagesForThread,
   counters: () => ({ mergeCount, syncCount }),
 };
 `,
@@ -2847,6 +2859,84 @@ test("existing thread send reconciles local pending turn to returned server turn
   assert.equal(harness.state.currentThread.turns[0].items[0].clientSubmissionId, "submit-public");
   assert.equal(harness.state.currentThread.turns[0].items[0].mobilePendingSubmission, true);
   assert.deepEqual(harness.counters(), { mergeCount: 2, syncCount: 2 });
+});
+
+test("durable refresh settles submitted user record and removes stale local echo", () => {
+  const harness = evaluatedLocalSubmissionInserter();
+  const recordItem = {
+    id: "local-user-submit-current",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    clientSubmissionId: "submit-current",
+    startedAtMs: 1783335085484,
+    content: [{ type: "text", text: "same submitted message" }],
+  };
+  harness.state.recentSubmittedUserMessages.set("submit-current", {
+    threadId: "thread-live",
+    item: recordItem,
+    createdAtMs: Date.now(),
+    acceptedAtMs: Date.now(),
+    serverTurnId: "server-turn",
+  });
+  harness.state.currentThread.turns = [{
+    id: "server-turn",
+    status: { type: "active" },
+    items: [
+      {
+        id: "durable-user",
+        type: "userMessage",
+        startedAtMs: 1783335085700,
+        content: [{ type: "input_text", text: "same   submitted message" }],
+      },
+      recordItem,
+      { id: "assistant-progress", type: "agentMessage", text: "working" },
+    ],
+  }];
+
+  const settled = harness.settleRecentSubmittedUserMessagesForThread(harness.state.currentThread, "test-refresh");
+
+  assert.equal(settled, 1);
+  assert.equal(harness.state.recentSubmittedUserMessages.has("submit-current"), false);
+  assert.deepEqual(
+    harness.state.currentThread.turns[0].items.map((item) => item.id),
+    ["durable-user", "assistant-progress"],
+  );
+});
+
+test("submitted user record remains pending until durable refresh appears", () => {
+  const harness = evaluatedLocalSubmissionInserter();
+  const recordItem = {
+    id: "local-user-submit-current",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    clientSubmissionId: "submit-current",
+    startedAtMs: 1783335085484,
+    content: [{ type: "text", text: "same submitted message" }],
+  };
+  harness.state.recentSubmittedUserMessages.set("submit-current", {
+    threadId: "thread-live",
+    item: recordItem,
+    createdAtMs: Date.now(),
+    acceptedAtMs: Date.now(),
+    serverTurnId: "server-turn",
+  });
+  harness.state.currentThread.turns = [{
+    id: "server-turn",
+    status: { type: "active" },
+    items: [
+      recordItem,
+      { id: "assistant-progress", type: "agentMessage", text: "working" },
+    ],
+  }];
+
+  const settled = harness.settleRecentSubmittedUserMessagesForThread(harness.state.currentThread, "test-refresh");
+
+  assert.equal(settled, 0);
+  assert.equal(harness.state.recentSubmittedUserMessages.has("submit-current"), true);
+  assert.deepEqual(
+    harness.state.currentThread.turns[0].items.map((item) => item.id),
+    ["local-user-submit-current", "assistant-progress"],
+  );
 });
 
 test("local pending image attachments render browser previews before upload projection catches up", () => {
