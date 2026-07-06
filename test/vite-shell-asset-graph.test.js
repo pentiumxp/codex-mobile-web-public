@@ -1109,8 +1109,16 @@ test("native ESM app update runtime matches classic fallback behavior", async ()
     classicRuntime.clientBuildVersionText(),
   );
   assert.equal(
+    nativeRuntime.clientBuildVersionText(),
+    "客户端 v625 · cbb2ef9490a1",
+  );
+  assert.equal(
     nativeRuntime.appVersionText(),
     classicRuntime.appVersionText(),
+  );
+  assert.equal(
+    nativeRuntime.appVersionText(),
+    "v0.1.11 · 客户端 v625 · cbb2ef9490a1",
   );
   assert.equal(
     nativeRuntime.currentUpdateUsesPublicRelease(),
@@ -1142,6 +1150,62 @@ test("native ESM app update runtime matches classic fallback behavior", async ()
     nativeRuntime.publicPrReviewWorkspacePath(),
     classicRuntime.publicPrReviewWorkspacePath(),
   );
+
+  const diagnosticConfig = {
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-cbb2ef9490a1",
+    buildId: "test-build",
+    frontendDiagnosticLog: {
+      enabled: true,
+      upload: true,
+      scopes: ["submitted_echo"],
+      maxEntries: 800,
+      updatedAt: "2026-07-06T09:46:56.028Z",
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return diagnosticConfig;
+    },
+  });
+  try {
+    for (const createRuntime of [
+      classicAppUpdate.createAppUpdateRuntime,
+      nativeAppUpdate.createAppUpdateRuntime,
+    ]) {
+      const applied = [];
+      const events = [];
+      const runtime = createRuntime({
+        state: {},
+        CLIENT_BUILD_ID: "0.1.11|codex-mobile-shell-v625-cbb2ef9490a1",
+        applyFrontendDiagnosticLogPublicConfig(config) {
+          applied.push(config.frontendDiagnosticLog);
+          return {
+            enabled: true,
+            upload: true,
+            scopes: ["submitted_echo"],
+            maxEntries: 800,
+          };
+        },
+        postClientEvent(event, details) {
+          events.push({ event, details });
+        },
+      });
+      assert.equal((await runtime.fetchPageBuildConfig()).clientBuildId, diagnosticConfig.clientBuildId);
+      assert.equal(applied.length, 1);
+      assert.deepEqual(applied[0], diagnosticConfig.frontendDiagnosticLog);
+      assert.deepEqual(events.map((entry) => entry.event), ["frontend_diagnostic_log_settings_applied"]);
+      assert.equal(events[0].details.source, "page-build-check");
+      assert.equal(events[0].details.enabled, true);
+      await runtime.fetchPageBuildConfig();
+      assert.equal(applied.length, 1);
+      assert.equal(events.length, 1);
+    }
+  } finally {
+    if (originalFetch) globalThis.fetch = originalFetch;
+    else delete globalThis.fetch;
+  }
 });
 
 test("native ESM modal runtime preserves classic global dialog helpers", async () => {

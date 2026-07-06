@@ -53,6 +53,7 @@ function createAppUpdateRuntime(deps = {}) {
     renderCodexProfileSettings = () => {},
     stopCodexProfileSwitchProgressPolling = () => {},
     publishPluginNavigationState = () => {},
+    applyFrontendDiagnosticLogPublicConfig = () => null,
   } = deps;
 
   function appVersionText(status = state.appUpdateStatus) {
@@ -63,8 +64,11 @@ function createAppUpdateRuntime(deps = {}) {
 
   function clientBuildVersionText(buildId = CLIENT_BUILD_ID) {
     const text = String(buildId || "").trim();
-    const match = text.match(/\bcodex-mobile-shell-v([0-9]+)\b/);
-    if (match) return `客户端 v${match[1]}`;
+    const match = text.match(/\bcodex-mobile-shell-v([0-9]+)(?:-([a-f0-9]{6,}))?\b/i);
+    if (match) {
+      const buildHash = String(match[2] || "").slice(0, 12);
+      return buildHash ? `客户端 v${match[1]} · ${buildHash}` : `客户端 v${match[1]}`;
+    }
     return text ? `客户端 ${text}` : "客户端未知";
   }
 
@@ -846,6 +850,43 @@ function createAppUpdateRuntime(deps = {}) {
     }
   }
 
+  function frontendDiagnosticPublicConfigSignature(config) {
+    const raw = config && config.frontendDiagnosticLog && typeof config.frontendDiagnosticLog === "object"
+      ? config.frontendDiagnosticLog
+      : null;
+    if (!raw || typeof raw.enabled !== "boolean") return "";
+    return JSON.stringify({
+      enabled: Boolean(raw.enabled),
+      upload: raw.upload !== false,
+      scopes: raw.scopes || "submitted_echo",
+      maxEntries: raw.maxEntries || 400,
+      updatedAt: raw.updatedAt || "",
+    });
+  }
+
+  function applyRuntimePublicConfig(config, source = "public-config") {
+    const signature = frontendDiagnosticPublicConfigSignature(config);
+    if (!signature || state.frontendDiagnosticLogPublicConfigSignature === signature) return null;
+    state.frontendDiagnosticLogPublicConfigSignature = signature;
+    try {
+      const status = applyFrontendDiagnosticLogPublicConfig(config) || {};
+      postClientEvent("frontend_diagnostic_log_settings_applied", {
+        source,
+        enabled: Boolean(status.enabled),
+        upload: Boolean(status.upload),
+        scopes: Array.isArray(status.scopes) ? status.scopes.join(",") : String(status.scopes || ""),
+        maxEntries: Number(status.maxEntries || 0),
+      });
+      return status;
+    } catch (err) {
+      postClientEvent("frontend_diagnostic_log_settings_apply_failed", {
+        source,
+        error: err && err.message ? err.message : String(err),
+      });
+      return null;
+    }
+  }
+
   function pageShellAssetUrl(asset, buildId) {
     const url = new URL(asset, window.location.origin);
     url.searchParams.set("shellBuild", buildId || "current");
@@ -906,7 +947,9 @@ function createAppUpdateRuntime(deps = {}) {
       credentials: "same-origin",
     });
     if (!response.ok) return null;
-    return response.json();
+    const config = await response.json();
+    applyRuntimePublicConfig(config, "page-build-check");
+    return config;
   }
 
   async function pruneOldShellCaches(expectedCacheName) {

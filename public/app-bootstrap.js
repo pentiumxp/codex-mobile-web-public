@@ -660,6 +660,7 @@ function requireAppUpdateRuntime() {
       renderCodexProfileSettings,
       stopCodexProfileSwitchProgressPolling,
       publishPluginNavigationState,
+      applyFrontendDiagnosticLogPublicConfig,
     });
     if (root) root.appUpdateRuntime = appUpdateRuntime;
   }
