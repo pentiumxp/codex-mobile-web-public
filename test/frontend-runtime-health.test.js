@@ -75,6 +75,40 @@ test("submitted message probe clears the signature when the DOM is healthy", () 
   assert.equal(plan.effects[0].diagnostic.diagnostic_type, "submitted_message_dom_missing");
 });
 
+test("submitted message probe requests render when submitted user DOM is duplicated", () => {
+  const plan = health.submittedMessageDomProbeEffects({
+    elapsedMs: 2800,
+    action: "message-submit",
+    routeKind: "thread-detail",
+    threadHash: "h_thread",
+    itemHash: "h_submission",
+    currentThreadMatch: true,
+    hasThreadSubmission: true,
+    domHasSubmission: true,
+    visibleCount: 10,
+    domCount: 10,
+    duplicateUserMessageCount: 1,
+    expectedDuplicateUserMessageCount: 0,
+    text: "private message body",
+    token: "secret-token",
+  });
+
+  assert.equal(plan.reason, "submitted-message-dom-duplicate");
+  assert.equal(plan.effects.length, 2);
+  assert.equal(plan.effects[0].type, "diagnostic-failure");
+  assert.equal(plan.effects[0].diagnosticType, "submitted_message_dom_duplicate");
+  assert.equal(plan.effects[0].diagnostic.error_code, "submitted_message_dom_duplicate");
+  assert.equal(plan.effects[0].diagnostic.counts.duplicate_user_message_count, 1);
+  assert.equal(plan.effects[0].diagnostic.counts.expected_duplicate_user_message_count, 0);
+  assert.equal(JSON.stringify(plan.effects[0].diagnostic).includes("private"), false);
+  assert.equal(JSON.stringify(plan.effects[0].diagnostic).includes("secret"), false);
+  assert.deepEqual(plan.effects[1], {
+    type: "render-current-thread",
+    reason: "submitted-message-dom-duplicate",
+    stickToBottom: true,
+  });
+});
+
 test("render monitor reports DOM drops from non-empty detail to sparse DOM", () => {
   let now = 1000;
   const monitor = health.createMonitor({ now: () => now, windowMs: 5000 });

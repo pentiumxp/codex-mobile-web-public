@@ -4436,6 +4436,34 @@ test("conversation projection consistency delegates report payloads to diagnosti
   assert.match(appJs, /(?:const|var) threadDiagnosticEventsApi = window\.CodexThreadDiagnosticEvents;/);
 });
 
+test("frontend runtime health render effect re-renders the current thread", () => {
+  const sources = [
+    "applyFrontendRuntimeHealthEffect",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const calls = [];
+const root = {
+  renderCurrentThread(options) {
+    calls.push(options);
+  },
+};
+function recordHomeAiDiagnosticFailure() { calls.push({ diagnostic: "failure" }); }
+function recordHomeAiDiagnosticSuccess() { calls.push({ diagnostic: "success" }); }
+${sources.join("\n")}
+applyFrontendRuntimeHealthEffect({
+  type: "render-current-thread",
+  reason: "submitted-message-dom-duplicate",
+  stickToBottom: true,
+});
+return calls;
+`)();
+
+  assert.deepEqual(result, [{
+    stickToBottom: true,
+    source: "submitted-message-dom-duplicate",
+  }]);
+});
+
 test("conversation turn-order diagnostics delegate empty DOM mismatch planning to helper", () => {
   const body = functionBody("conversationTurnOrderDiagnosticSnapshot");
   assert.match(body, /threadDiagnosticEventsApi\.turnOrderDiagnosticSnapshot\(\{/);

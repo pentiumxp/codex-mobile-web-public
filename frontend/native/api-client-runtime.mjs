@@ -650,6 +650,16 @@ function applyFrontendRuntimeHealthEffect(effect) {
     recordHomeAiDiagnosticSuccess(item.diagnostic || {});
     return;
   }
+  if (item.type === "render-current-thread") {
+    const renderer = typeof root.renderCurrentThread === "function" ? root.renderCurrentThread : null;
+    if (renderer) {
+      renderer({
+        stickToBottom: item.stickToBottom !== false,
+        source: item.reason || "frontend-runtime-health",
+      });
+    }
+    return;
+  }
   throw new Error(`Unknown frontend runtime health effect: ${item.type}`);
 }
 
@@ -841,6 +851,8 @@ function probeSubmittedMessageDom(threadId, clientSubmissionId, action = "messag
     hasThreadSubmission: threadHasClientSubmission(thread, submissionId),
     visibleCount: visibleShape.visibleItemCount,
     domCount: domShape.itemCount,
+    duplicateUserMessageCount: domShape.duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount: visibleShape.duplicateUserMessageCount || 0,
     composerBusy: state.composerBusy,
   });
   const plan = frontendRuntimeHealthApi.submittedMessageDomProbeEffects({
@@ -854,6 +866,8 @@ function probeSubmittedMessageDom(threadId, clientSubmissionId, action = "messag
     domHasSubmission: conversationHasClientSubmissionHash(submissionHash),
     visibleCount: visibleShape.visibleItemCount,
     domCount: domShape.itemCount,
+    duplicateUserMessageCount: domShape.duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount: visibleShape.duplicateUserMessageCount || 0,
     composerBusy: state.composerBusy,
   });
   applyFrontendRuntimeHealthEffectsPlan(plan);

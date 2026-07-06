@@ -121,6 +121,52 @@ const DEFAULT_WINDOW_MS = 5000;
     }));
   }
 
+  function submittedMessageDomDuplicateEvent(input = {}) {
+    const elapsedMs = boundedCount(input.elapsedMs || input.elapsed_ms);
+    const domCount = boundedCount(input.domCount || input.dom_count);
+    const visibleCount = boundedCount(input.visibleCount || input.visible_count);
+    const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount || input.duplicate_user_message_count);
+    const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount || input.expected_duplicate_user_message_count);
+    const excessiveDuplicateUserMessageCount = Math.max(0, duplicateUserMessageCount - expectedDuplicateUserMessageCount);
+    const context = baseContext(Object.assign({}, input, {
+      surface: "user-operation",
+      action: input.action || "message-submit",
+    }));
+    return runtimeEvent({
+      diagnosticType: "submitted_message_dom_duplicate",
+      severityHint: "H2",
+      evidenceConfidence: 0.86,
+      errorCode: "submitted_message_dom_duplicate",
+      context,
+      counts: {
+        elapsed_ms: elapsedMs,
+        dom_count: domCount,
+        visible_count: visibleCount,
+        duplicate_user_message_count: duplicateUserMessageCount,
+        expected_duplicate_user_message_count: expectedDuplicateUserMessageCount,
+        excessive_duplicate_user_message_count: excessiveDuplicateUserMessageCount,
+        current_thread_match: boolCount(input.currentThreadMatch),
+        has_thread_submission: boolCount(input.hasThreadSubmission),
+        dom_has_submission: boolCount(input.domHasSubmission),
+        composer_busy: boolCount(input.composerBusy),
+      },
+      breadcrumbs: [{
+        kind: "user-operation",
+        code: "submitted-message-dom-duplicate",
+        status: "failed",
+        fields: {
+          elapsed_ms: elapsedMs,
+          dom_count: domCount,
+          visible_count: visibleCount,
+          duplicate_user_message_count: duplicateUserMessageCount,
+          expected_duplicate_user_message_count: expectedDuplicateUserMessageCount,
+          thread_hash: context.thread_hash || "",
+          item_hash: context.item_hash || "",
+        },
+      }],
+    });
+  }
+
   function submittedMessageDomProbeEffects(input = {}) {
     const elapsedMs = boundedCount(input.elapsedMs || input.elapsed_ms);
     const minElapsedMs = boundedCount(input.minElapsedMs || input.min_elapsed_ms || DEFAULT_SUBMISSION_PROBE_MIN_MS);
@@ -128,6 +174,27 @@ const DEFAULT_WINDOW_MS = 5000;
     if (!input.currentThreadMatch) return { effects: [], reason: "different-thread" };
     if (!input.hasThreadSubmission) return { effects: [], reason: "no-thread-submission" };
     const missing = !input.domHasSubmission;
+    const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount || input.duplicate_user_message_count);
+    const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount || input.expected_duplicate_user_message_count);
+    const excessiveDuplicateUserMessages = Math.max(0, duplicateUserMessageCount - expectedDuplicateUserMessageCount);
+    if (!missing && excessiveDuplicateUserMessages > 0) {
+      return {
+        effects: [
+          {
+            type: "diagnostic-failure",
+            diagnostic: submittedMessageDomDuplicateEvent(input),
+            diagnosticType: "submitted_message_dom_duplicate",
+            reason: "submitted-message-dom-duplicate",
+          },
+          {
+            type: "render-current-thread",
+            reason: "submitted-message-dom-duplicate",
+            stickToBottom: true,
+          },
+        ],
+        reason: "submitted-message-dom-duplicate",
+      };
+    }
     return {
       effects: [{
         type: missing ? "diagnostic-failure" : "diagnostic-success",

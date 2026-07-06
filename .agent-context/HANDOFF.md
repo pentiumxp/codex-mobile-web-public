@@ -5754,3 +5754,45 @@ The previous full handoff was archived and should be opened only when old proven
   `852b517ddf87`, startup gate, focused tests/parity, quota harness, Codex
   submitted-message harness, and Home AI main submitted-message harness on
   `019f316b-27cd-7622-9944-0b909fec3c70`.
+
+## 2026-07-07T03:10Z - Submitted user duplicate DOM probe render effect follow-up
+
+- Production settled validation for `4c370212` later reported green for the
+  standard gate, quota harness, Codex submitted-message harness, and Home AI
+  main submitted-message harness. A separate local follow-up remains useful
+  because the submitted-message probe path did not yet act on same-turn
+  semantic duplicate counts.
+- Root cause: `probeSubmittedMessageDom()` computed the conversation DOM shape
+  but only sent DOM/visible counts to `submittedMessageDomProbeEffects()`. The
+  runtime health effect path therefore could report missing submitted messages
+  but could not detect or repair a transient duplicate user DOM node that
+  collapsed after reopen.
+- Fix: submitted-message DOM probes now include
+  `duplicateUserMessageCount` and `expectedDuplicateUserMessageCount`.
+  `submittedMessageDomProbeEffects()` emits a bounded
+  `submitted_message_dom_duplicate` diagnostic and a `render-current-thread`
+  effect when the DOM duplicate count exceeds the expected visible shape. The
+  API client applies that effect by rerendering the current thread with bottom
+  stickiness, preserving the architectural source of truth instead of deleting
+  DOM nodes manually.
+- Rebuilt frontend artifacts. Current local client/cache:
+  `0.1.11|codex-mobile-shell-v625-6816dd7f9690`.
+- Source validation:
+  - `node --test test/frontend-runtime-health.test.js test/conversation-render.test.js test/submitted-message-harness.test.js test/quota-popup-harness.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js`
+    -> `361/361` pass;
+  - `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Local browser/harness validation on `127.0.0.1:8897`:
+  - Codex source thread `019f2d75-39bd-7462-8dca-de24f97aeaf6` submitted-message
+    harness passed with service workers `block` and `allow`, expected hash
+    `6816dd7f9690`, one POST per scenario, one visible user card/node across
+    all samples, one durable API user item, and one visible user card after
+    reopen;
+  - quota popup harness passed with service workers `block` and `allow`.
+- Production acceptance, if this follow-up is deployed, must prove both real
+  threads rather than only the controlled submit fixture:
+  - Codex source thread `019f2d75-39bd-7462-8dca-de24f97aeaf6`;
+  - Home AI main thread `019f316b-27cd-7622-9944-0b909fec3c70`;
+  - both with submitted-message harness, service workers `block` and `allow`,
+    expected hash `6816dd7f9690`, and no visible/durable/transient duplicate or
+    disappearing submitted-user issue codes.
