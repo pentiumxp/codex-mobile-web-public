@@ -1549,7 +1549,7 @@ function renderThreadTileLayout(layout, options = {}) {
     renderedDomItemCount: renderedDomShape.itemCount,
     duplicateRenderKeyCount: renderedDomShape.duplicateRenderKeyCount,
     duplicateUserMessageCount: renderedDomShape.duplicateUserMessageCount,
-    expectedDuplicateUserMessageCount: visibleShape.duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount: 0,
     action: "thread-tile-empty-state",
     routeKind: "thread-tile",
     threadHash: diagnosticHash(`thread-tile:${ids.join("|")}`),

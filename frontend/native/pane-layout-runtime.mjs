@@ -4859,7 +4859,7 @@ function renderCurrentThread(options = {}) {
     renderedDomItemCount: renderDomShape.itemCount,
     duplicateRenderKeyCount: renderDomShape.duplicateRenderKeyCount,
     duplicateUserMessageCount: renderDomShape.duplicateUserMessageCount,
-    expectedDuplicateUserMessageCount: renderVisibleShape.duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount: 0,
     expectedTurnIds: visibleRenderableTurnIds(thread),
     renderedDomTurnIds: conversationDomTurnIds(),
     source: "single-thread-render",

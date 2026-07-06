@@ -4543,7 +4543,7 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleItemCount: renderVisibleShape\.visibleItemCount/);
   assert.match(functionBody("renderCurrentThread"), /duplicateRenderKeyCount: renderDomShape\.duplicateRenderKeyCount/);
   assert.match(functionBody("renderCurrentThread"), /duplicateUserMessageCount: renderDomShape\.duplicateUserMessageCount/);
-  assert.match(functionBody("renderCurrentThread"), /expectedDuplicateUserMessageCount: renderVisibleShape\.duplicateUserMessageCount/);
+  assert.match(functionBody("renderCurrentThread"), /expectedDuplicateUserMessageCount: 0/);
   assert.match(functionBody("renderCurrentThread"), /checkProjectionConsistency: true/);
   assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*shellUpdatePlan\.html,\s*shellUpdatePlan\.conversationSignature,\s*Object\.assign\(\{\}, shellUpdatePlan\.options, \{ userReadingCurrentTurn \}\),\s*\)/);
   assert.match(functionBody("visibleRenderableTurnIds"), /visibleRenderableTurnsForConversation\(thread\)\.map/);
@@ -4559,7 +4559,7 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /const renderedDomShape = conversationDomShape\(\);/);
   assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /expectedVisibleItemCount: visibleShape\.visibleItemCount/);
   assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /duplicateUserMessageCount: renderedDomShape\.duplicateUserMessageCount/);
-  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /expectedDuplicateUserMessageCount: visibleShape\.duplicateUserMessageCount/);
+  assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /expectedDuplicateUserMessageCount: 0/);
   assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /routeKind: "thread-tile"/);
   assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /currentVisibleItems: visibleShape\.visibleItemCount/);
   assert.match(threadTileRuntimeBody("renderThreadTileLayout"), /source: "thread-tile-render"/);

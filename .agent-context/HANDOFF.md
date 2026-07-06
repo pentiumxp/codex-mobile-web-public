@@ -5540,3 +5540,66 @@ The previous full handoff was archived and should be opened only when old proven
 - Pending after this handoff entry: commit source changes, delegate deployment
   through the Codex Mobile Deploy Lane, then return task card
   `ttc_db709e027679d0c94a` to Home AI with production readback or deploy blocker.
+- Commit completed as `4d036f5a7b5a3b1322927cff16642367a20f7400`
+  (`fix: stabilize embedded plugin session replay`) and deploy/readback returned
+  from Deploy Lane.
+- Production readback for `4d036f5a`:
+  - client/cache `0.1.11|codex-mobile-shell-v625-d64da72cac49`;
+  - `/api/public-config`, `/api/status?detail=1`, and
+    `/api/vite-shell-artifact` HTTP 200, artifact `ok=true`, native ESM
+    `49/49`, published files `24`;
+  - startup-only gate passed for direct runtime, Vite preview, app-preview,
+    app-preview root/default-root, embed, and session surfaces;
+  - explicit controlled-submit full gate passed with `blockingIssueCount=0`,
+    `executionFailureCount=0`, and no actionable/reportable issue codes;
+  - Home AI Owner-cookie embedded smoke passed `3/3`; plugin session statuses
+    were `[200]` in each sample, so the prior `[200,401]` residual did not
+    recur.
+- Focused production tests passed `244/244` across Hermes plugin service/route,
+  core route service, conversation render, and Vite artifact/asset graph tests.
+- SHA parity matched for changed source, test, and Vite artifact readback files.
+- Residual unrelated to this session replay repair: central default/manual full
+  gate still reported `thread_list_missing_active_detail_active_mismatch`.
+
+## 2026-07-06T15:10Z - Submitted user duplicate DOM acceptance repair
+
+- Owner reproduced visible duplicate user messages on the `codex mobile 07-04`
+  thread. Production API detail later showed only one durable user item for the
+  reproduced text, so this was a client DOM/render authority problem rather
+  than a persistent backend duplicate.
+- Frontend diagnostic logs for thread `019f2d75-39bd-7462-8dca-de24f97aeaf6`
+  showed `conversation_patch_html_fallback` with
+  `post-apply-duplicate-user-messages` and
+  `conversation_dom_authority_invalidated` with
+  `stable-signature-duplicate-user-messages`.
+- Root cause: current-thread and tile-pane render paths passed
+  `visibleConversationShape(...).duplicateUserMessageCount` as the expected DOM
+  duplicate count. That made duplicate user-message DOM states acceptable when
+  the render shape itself already contained the duplicate, so later patch or
+  authority checks could preserve a duplicate instead of forcing canonical
+  repaint.
+- Fix: `expectedDuplicateUserMessageCount` is now always `0` for current-thread
+  and tile-pane conversation DOM consistency checks in both native source and
+  published classic runtime files. Tests assert the contract in
+  `test/conversation-render.test.js`.
+- Build/readback:
+  - regenerated Vite/native ESM artifacts with client/cache
+    `0.1.11|codex-mobile-shell-v625-a8a0493e87a2`;
+  - retained only current `vite-shell-readback.json` published assets from the
+    generated untracked shard set.
+- Validation:
+  - `node --test test/conversation-render.test.js
+    test/thread-detail-dom-patch.test.js test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js` -> `274/274` pass;
+  - `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Local browser verification on `127.0.0.1:8897` with service workers blocked:
+  - opened 07-04 thread under local `v625-a8a0493e`;
+  - submitted two unique metadata-only markers through the real composer;
+  - message POST count was `1` for the sampled submit;
+  - samples from 100ms through 6000ms showed exactly one visible user message
+    article/card for the marker;
+  - the temporary second text occurrence at 100ms was traced to disabled
+    `#messageInput`, not a second conversation article.
+- Pending: commit this fix and deploy through the Codex Mobile Deploy Lane with
+  startup and controlled-submit behavior readback.
