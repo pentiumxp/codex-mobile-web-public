@@ -792,6 +792,23 @@ function createThreadDetailRuntime(deps = {}) {
     if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
     if (isOptimisticUserMessage(durableItem) || !isOptimisticUserMessage(optimisticItem)) return false;
     if (userMessagesShareSubmissionId(durableItem, optimisticItem)) return true;
+    const durableTurnSubmissionKey = String(durableTurn && durableTurn.mobileLocalSubmissionRenderKey || "").trim();
+    if (durableTurnSubmissionKey) {
+      const localSubmissionRenderKey = (clientSubmissionId) => {
+        const text = String(clientSubmissionId || "").trim();
+        if (!text) return "";
+        let hash = 2166136261;
+        for (let index = 0; index < text.length; index += 1) {
+          hash ^= text.charCodeAt(index);
+          hash = Math.imul(hash, 16777619);
+        }
+        return `submitted:${(hash >>> 0).toString(36)}`;
+      };
+      if (userMessageSubmissionIdCandidates(optimisticItem)
+        .some((submissionId) => durableTurnSubmissionKey === localSubmissionRenderKey(submissionId))) {
+        return userMessagesLikelySame(durableItem, optimisticItem);
+      }
+    }
     const likelySameNearby = userMessagesLikelySame(durableItem, optimisticItem)
       && userMessagesHaveNearbyTimestamps(durableItem, optimisticItem);
     if (optimisticItem.mobileSendError) return likelySameNearby;
