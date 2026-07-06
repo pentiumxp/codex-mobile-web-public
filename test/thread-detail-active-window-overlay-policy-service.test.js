@@ -388,6 +388,41 @@ test("active window overlay merge appends or replaces the active turn without mu
   assert.equal(replaced.turns[0].items[0].text, "new");
 });
 
+test("active overlay merge dedupes same-submit user echoes before replacing active turn", () => {
+  const merged = mergeProjectionThreadWithActiveOverlay(projectionThread(), {
+    id: "active-turn",
+    status: "inProgress",
+    items: [
+      {
+        id: "durable-user-1",
+        type: "userMessage",
+        content: [{ type: "text", text: "process this once" }],
+        startedAtMs: 200,
+      },
+      {
+        id: "mux-user-active-turn-client-1",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "client-1",
+        content: [{ type: "text", text: "process this once" }],
+        startedAtMs: 201,
+      },
+      { id: "agent-1", type: "agentMessage", text: "working", startedAtMs: 250 },
+    ],
+  }, {
+    overlaySource: "projection-live",
+    reason: "overlay-evidence-complete",
+    counts: { items: 3 },
+  });
+
+  const activeTurn = merged.turns.find((turn) => turn.id === "active-turn");
+  assert.deepEqual(activeTurn.items.map((item) => item.id), ["durable-user-1", "agent-1"]);
+  assert.deepEqual(activeTurn.mobileActiveOverlayUserMessageDedupe, {
+    version: "active-overlay-user-message-dedupe-v1",
+    removed: 1,
+  });
+});
+
 test("active overlay turn backfill preserves earlier assistant items from active window", () => {
   const merged = mergeActiveOverlayTurnWithWindowBackfill({
     id: "active-turn",

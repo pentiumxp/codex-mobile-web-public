@@ -506,6 +506,14 @@ function mergeProjectionThreadWithActiveOverlay(projectionThread, overlayTurn, o
     }) || overlayTurn
     : overlayTurn;
   const turn = cloneJson(preparedOverlayTurn);
+  const deduped = dedupeUserMessageEchoesInItems(asArray(turn.items));
+  if (deduped.removed > 0) {
+    turn.items = deduped.items;
+    turn.mobileActiveOverlayUserMessageDedupe = {
+      version: "active-overlay-user-message-dedupe-v1",
+      removed: deduped.removed,
+    };
+  }
   const id = turnId(turn);
   const turns = asArray(thread.turns).map((candidate) => cloneJson(candidate));
   const existingIndex = id ? turns.findIndex((candidate) => turnId(candidate) === id) : -1;
