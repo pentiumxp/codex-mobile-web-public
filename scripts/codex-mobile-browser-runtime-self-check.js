@@ -2529,9 +2529,11 @@ function snapshotExpression(input = {}) {
       const allUserEventHashes = Array.from(renderRoot.querySelectorAll(".item.userMessage"))
         .map((node) => {
           const submissionHash = String(node.getAttribute("data-client-submission-hash") || "").trim();
-          if (submissionHash) return "submission:" + submissionHash;
           const body = node.querySelector(".item-body") || node;
           const text = String(body.textContent || "").replace(/\\s+/g, " ").trim();
+          const textHash = text ? stableHash(text) : "";
+          if (submissionHash && textHash) return "submission-text:" + submissionHash + ":" + textHash;
+          if (submissionHash) return "submission:" + submissionHash;
           if (!text) return "";
           const timestamp = node.querySelector(".item-timestamp");
           const datetime = String(timestamp && timestamp.getAttribute("datetime") || "").trim();

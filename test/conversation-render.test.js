@@ -5119,6 +5119,109 @@ return visibleConversationShape({
   assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 3, duplicateUserMessageCount: 1 });
 });
 
+test("visible conversation shape does not count distinct same-submission active user entries", () => {
+  const sources = [
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
+    "visibleUserMessageEventDuplicateSignature",
+    "turnRendersConversationArticle",
+    "visibleRenderableTurnsForConversation",
+    "visibleConversationShape",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+  function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+  function visibleItemsForTurn(turn) { return Array.isArray(turn && turn.entries) ? turn.entries : []; }
+  function clientSubmissionDiagnosticHash(value) { return value ? "hash-" + String(value) : ""; }
+  function userMessageComparableParts(item) { return { text: String(item && item.text || ""), paths: [] }; }
+  function itemTextValue(value) { return String(value || ""); }
+  function userMessageTimestampMs(item) { return Number(item && item.startedAtMs || 0); }
+  function turnStartedAtMs(turn) { return Number(turn && turn.startedAtMs || 0); }
+  function stableTextHash(value) { return "text-" + String(value || ""); }
+${sources.join("\n")}
+return visibleConversationShape({
+  turns: [{
+    id: "turn-current",
+    entries: [
+      { item: { id: "user-1", type: "userMessage", clientSubmissionId: "submit-current", text: "first" } },
+      { item: { id: "user-2", type: "userMessage", clientSubmissionId: "submit-current", text: "second" } },
+      { item: { id: "assistant-1", type: "agentMessage", text: "working" } },
+    ],
+  }],
+});
+`)();
+
+  assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 3, duplicateUserMessageCount: 0 });
+});
+
+test("conversation DOM shape does not count distinct same-submission user nodes", () => {
+  const sources = [
+    "duplicateUserMessageSignatureCount",
+    "domUserMessageDuplicateSignature",
+    "domUserMessageEventDuplicateSignature",
+    "conversationDomShape",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+function stableTextHash(value) { return "text-" + String(value || ""); }
+function userNode(submission, text) {
+  return {
+    textContent: text,
+    getAttribute(name) {
+      if (name === "data-client-submission-hash") return submission;
+      if (name === "data-item") return "item-" + text;
+      if (name === "data-render-key") return "rk-" + text;
+      return "";
+    },
+    querySelector(selector) {
+      if (selector === ".item-body") return { textContent: text };
+      if (selector === ".item-timestamp") return null;
+      return null;
+    },
+  };
+}
+function turnNode(users) {
+  return {
+    getAttribute(name) {
+      if (name === "data-turn") return "turn-current";
+      return "";
+    },
+    querySelectorAll(selector) {
+      if (selector === ".item.userMessage") return users;
+      return [];
+    },
+  };
+}
+function conversationWith(users) {
+  const turn = turnNode(users);
+  return {
+    querySelectorAll(selector) {
+      if (selector === "[data-render-key]") return users;
+      if (selector === "article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]") return [turn];
+      if (selector === "[data-item]") return users;
+      return [];
+    },
+  };
+}
+const distinctConversation = conversationWith([
+  userNode("shared-submission", "first"),
+  userNode("shared-submission", "second"),
+]);
+const duplicateConversation = conversationWith([
+  userNode("shared-submission", "same"),
+  userNode("shared-submission", "same"),
+]);
+let activeConversation = distinctConversation;
+function $(id) { return id === "conversation" ? activeConversation : null; }
+${sources.join("\n")}
+const distinct = conversationDomShape();
+activeConversation = duplicateConversation;
+const duplicate = conversationDomShape();
+return { distinct, duplicate };
+`)();
+
+  assert.equal(result.distinct.duplicateUserMessageCount, 0);
+  assert.equal(result.duplicate.duplicateUserMessageCount, 1);
+});
+
 test("visible conversation shape counts cross-turn same-event user duplicates", () => {
   const sources = [
     "duplicateUserMessageSignatureCount",

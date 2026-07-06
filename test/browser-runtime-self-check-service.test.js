@@ -3499,6 +3499,8 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /imageFailureDetails/);
   assert.match(expression, /brokenCompleteImageCount/);
   assert.match(expression, /data-client-submission-hash/);
+  assert.match(expression, /submission-text:/);
+  assert.match(expression, /submissionHash && textHash/);
   assert.match(expression, /visualAnchorKeyHash/);
   assert.match(expression, /visualFrameHash/);
   assert.match(expression, /submittedMessageKeyHash/);

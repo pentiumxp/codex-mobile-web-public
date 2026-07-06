@@ -524,9 +524,11 @@ function domUserMessageDuplicateSignature(turnNode, node) {
 function domUserMessageEventDuplicateSignature(turnNode, node) {
   if (!node || !node.getAttribute) return "";
   const submissionHash = String(node.getAttribute("data-client-submission-hash") || "").trim();
-  if (submissionHash) return `submission:${submissionHash}`;
   const body = node.querySelector && node.querySelector(".item-body");
   const text = String((body || node).textContent || "").replace(/\s+/g, " ").trim();
+  const textHash = text ? stableTextHash(text) : "";
+  if (submissionHash && textHash) return `submission-text:${submissionHash}:${textHash}`;
+  if (submissionHash) return `submission:${submissionHash}`;
   if (!text) return "";
   const timestamp = node.querySelector && node.querySelector(".item-timestamp");
   const datetime = String(timestamp && timestamp.getAttribute && timestamp.getAttribute("datetime") || "").trim();
@@ -554,7 +556,6 @@ function visibleUserMessageDuplicateSignature(turn, item) {
 function visibleUserMessageEventDuplicateSignature(turn, item) {
   if (!item || item.type !== "userMessage") return "";
   const submissionHash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
-  if (submissionHash) return `submission:${submissionHash}`;
   const comparable = userMessageComparableParts(item);
   const text = String(
     comparable.text
@@ -563,6 +564,9 @@ function visibleUserMessageEventDuplicateSignature(turn, item) {
     || itemTextValue(item && item.content)
     || "",
   ).replace(/\s+/g, " ").trim();
+  const textHash = text ? stableTextHash(text) : "";
+  if (submissionHash && textHash) return `submission-text:${submissionHash}:${textHash}`;
+  if (submissionHash) return `submission:${submissionHash}`;
   if (!text) return "";
   const timestampMs = userMessageTimestampMs(item) || turnStartedAtMs(turn);
   if (timestampMs) return `text-time:${Math.floor(timestampMs / 5000)}:${stableTextHash(text)}`;
