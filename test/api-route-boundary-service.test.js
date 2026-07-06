@@ -64,11 +64,21 @@ test("server route composition wires core route service into API dispatch", () =
   const calls = [];
   const coreApiRouteService = { core: true };
   const runtimePressureDiagnostics = { status: () => ({ ok: true }) };
+  const frontendDiagnosticLogPublicSettings = () => ({ enabled: true });
+  const setFrontendDiagnosticLogSettings = () => ({ enabled: true });
   const service = createServerRouteCompositionService({
     appVersion: "0.1-test",
     runtimePressureDiagnostics,
+    frontendDiagnosticLogPublicSettings,
+    setFrontendDiagnosticLogSettings,
     coreApiRouteServiceFactory: (deps) => {
-      calls.push(["core", deps.appVersion, deps.runtimePressureDiagnostics === runtimePressureDiagnostics]);
+      calls.push([
+        "core",
+        deps.appVersion,
+        deps.runtimePressureDiagnostics === runtimePressureDiagnostics,
+        deps.frontendDiagnosticLogPublicSettings === frontendDiagnosticLogPublicSettings,
+        deps.setFrontendDiagnosticLogSettings === setFrontendDiagnosticLogSettings,
+      ]);
       return coreApiRouteService;
     },
     apiDispatchRouteServiceFactory: (deps) => {
@@ -86,7 +96,7 @@ test("server route composition wires core route service into API dispatch", () =
 
   assert.equal(service.coreApiRouteService, coreApiRouteService);
   assert.deepEqual(calls, [
-    ["core", "0.1-test", true],
+    ["core", "0.1-test", true, true, true],
     ["dispatch", true, true],
   ]);
 });
