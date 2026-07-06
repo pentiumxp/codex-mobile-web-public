@@ -1003,7 +1003,7 @@ test("runtime self-check loop includes recent client-event stall summary", async
     '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:00.000Z","threadId":"private-thread","path":"/private","details":{"maxRafDelayMs":3200,"maxScrollApplyMs":7,"threadListCount":12},"userAgent":"private UA"}',
   ].join("\n"), "utf8");
   const realDateNow = Date.now;
-  Date.now = () => Date.parse("2026-06-29T17:40:10.000Z");
+  Date.now = () => Date.parse("2026-06-29T17:39:50.000Z");
 
   let result;
   try {

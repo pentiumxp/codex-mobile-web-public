@@ -146,8 +146,12 @@ const DETAIL_ONLY_SUMMARY_FIELDS = Object.freeze([
     if (!item || item.type !== "userMessage") return [];
     return [
       item.clientSubmissionId,
+      item.clientId,
+      item.client_id,
       item.submissionId,
+      item.submission_id,
       item.mobileSubmissionId,
+      item.mobile_submission_id,
       item.id && /^local-user-/.test(String(item.id)) ? String(item.id).replace(/^local-user-/, "") : "",
     ].map((value) => String(value || "").trim()).filter(Boolean);
   }

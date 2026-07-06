@@ -520,6 +520,7 @@
       eventName: "conversation_patch_html_fallback",
       payload: {
         threadId: String(input.threadId || ""),
+        clientBuildId: String(input.clientBuildId || ""),
         reason: String(applicationPlan.patchRejectReason || applicationPlan.reason || "patch-html-failed").slice(0, 80),
         updateReason: String(updatePlan.reason || "").slice(0, 80),
         expectedVisibleTurnCount: boundedCount(input.expectedVisibleTurnCount),

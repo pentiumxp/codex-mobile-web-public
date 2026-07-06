@@ -62,16 +62,32 @@ function hasDurableNonIndexId(item) {
 function userMessagePreferenceScore(item) {
   if (!isUserMessage(item)) return 0;
   let score = isSyntheticUserMessage(item) ? 0 : isProjectionIndexUserMessage(item) ? 20 : 100;
-  if (item.clientSubmissionId) score += 10;
+  if (userMessageSubmissionIds(item).length) score += 10;
   if (itemId(item)) score += 2;
   if (item.mobileVisibleKey || item.visibleKey) score += 1;
   return score;
 }
 
+function userMessageSubmissionIds(item) {
+  if (!isUserMessage(item)) return [];
+  const local = itemId(item).match(/^local-user-(.+)$/);
+  return [
+    item.clientSubmissionId,
+    item.clientId,
+    item.client_id,
+    item.submissionId,
+    item.submission_id,
+    item.mobileSubmissionId,
+    item.mobile_submission_id,
+    local && local[1],
+  ].map((value) => text(value)).filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index);
+}
+
 function sameClientSubmission(left, right) {
-  const a = text(left && left.clientSubmissionId);
-  const b = text(right && right.clientSubmissionId);
-  return Boolean(a && b && a === b);
+  const leftIds = userMessageSubmissionIds(left);
+  const rightIds = userMessageSubmissionIds(right);
+  return leftIds.some((value) => rightIds.includes(value));
 }
 
 function timestampMs(value) {

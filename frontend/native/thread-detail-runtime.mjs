@@ -486,10 +486,19 @@ function createThreadDetailRuntime(deps = {}) {
   function userMessageSubmissionIdCandidates(item) {
     if (!item || item.type !== "userMessage") return [];
     const values = [];
-    const explicit = String(item.clientSubmissionId || "").trim();
-    if (explicit) values.push(explicit);
+    const pushCandidate = (value) => {
+      const text = String(value || "").trim();
+      if (text) values.push(text);
+    };
+    pushCandidate(item.clientSubmissionId);
+    pushCandidate(item.clientId);
+    pushCandidate(item.client_id);
+    pushCandidate(item.submissionId);
+    pushCandidate(item.submission_id);
+    pushCandidate(item.mobileSubmissionId);
+    pushCandidate(item.mobile_submission_id);
     const local = String(item.id || "").match(/^local-user-(.+)$/);
-    if (local && local[1]) values.push(local[1]);
+    if (local && local[1]) pushCandidate(local[1]);
     return [...new Set(values)];
   }
 

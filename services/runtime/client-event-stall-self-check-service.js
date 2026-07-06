@@ -88,9 +88,16 @@ function eventTimestampMs(entry = {}) {
   return Number.isFinite(value) ? value : 0;
 }
 
+function eventNotBeforeMs(options = {}) {
+  const value = Number(options.notBeforeMs || options.sinceMs || 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
 function isEntryInWindow(entry = {}, options = {}) {
   const timestampMs = eventTimestampMs(entry);
   if (!timestampMs) return false;
+  const notBeforeMs = eventNotBeforeMs(options);
+  if (notBeforeMs && timestampMs < notBeforeMs) return false;
   const nowMs = Number.isFinite(Number(options.nowMs)) ? Number(options.nowMs) : Date.now();
   const windowMs = boundedCount(options.windowMs || DEFAULT_WINDOW_MS, 30 * 24 * 60 * 60 * 1000) || DEFAULT_WINDOW_MS;
   return timestampMs <= nowMs + 60_000 && nowMs - timestampMs <= windowMs;
@@ -265,6 +272,7 @@ function activeThreadFullRenderIssue(entries = [], options = {}) {
 function conversationPatchFallbackIssue(entries = []) {
   const count = boundedCount(entries.length);
   if (!count) return null;
+  const details = entries[0] && entries[0].details || {};
   return {
     severity: "H2",
     code: "browser_conversation_patch_fallback",
@@ -276,6 +284,9 @@ function conversationPatchFallbackIssue(entries = []) {
     counts: {
       conversation_patch_fallback_count: count,
     },
+    reason: safeLabel(details.reason || details.patchRejectReason || details.patch_reject_reason, "", 120),
+    updateReason: safeLabel(details.updateReason || details.update_reason, "", 120),
+    clientBuildId: safeLabel(details.clientBuildId || details.client_build_id, "", 160),
   };
 }
 
@@ -356,6 +367,7 @@ function summarizeClientEventText(text = "", options = {}) {
       maxRafDelayMs,
       maxScrollApplyMs,
       maxLongTaskMs,
+      notBeforeMs: boundedCount(eventNotBeforeMs(options), 4102444800000),
     },
   };
 }

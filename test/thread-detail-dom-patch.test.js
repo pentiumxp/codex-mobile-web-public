@@ -752,6 +752,7 @@ test("conversation HTML patch fallback client event plan bounds payload fields",
       reason: "stable-signature-dom-empty-private-detail-that-should-be-bounded-and-not-grow-longer-than-needed",
     },
     threadId: "thread-1",
+    clientBuildId: "0.1.11|client-a",
     expectedVisibleTurnCount: 3.9,
     renderedDomTurnCount: "0",
   });
@@ -761,6 +762,7 @@ test("conversation HTML patch fallback client event plan bounds payload fields",
   assert.equal(plan.reason, "patch-html-fallback");
   assert.deepEqual(plan.payload, {
     threadId: "thread-1",
+    clientBuildId: "0.1.11|client-a",
     reason: "missing-document-private-detail-that-should-be-bounded-and-not-grow-longer-than-",
     updateReason: "stable-signature-dom-empty-private-detail-that-should-be-bounded-and-not-grow-lo",
     expectedVisibleTurnCount: 3,

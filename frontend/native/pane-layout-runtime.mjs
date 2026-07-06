@@ -3284,6 +3284,7 @@ function updateConversationHtml(html, signature, options = {}) {
     applicationPlan,
     updatePlan,
     threadId: state.currentThreadId || "",
+    clientBuildId: CLIENT_BUILD_ID,
     expectedVisibleTurnCount,
     renderedDomTurnCount,
   });

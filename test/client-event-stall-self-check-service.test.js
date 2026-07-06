@@ -140,7 +140,7 @@ test("client-event stall self-check uses a short default active detail window", 
 
 test("client-event stall self-check blocks conversation patch fallbacks", () => {
   const text = [
-    '[client-event] conversation_render_ms {"ts":"2026-07-02T01:29:00.000Z","details":{"domUpdateAction":"set-inner-html","patchFallbackApplied":true}}',
+    '[client-event] conversation_render_ms {"ts":"2026-07-02T01:29:00.000Z","details":{"clientBuildId":"0.1.11|build-a","domUpdateAction":"set-inner-html","patchFallbackApplied":true,"patchRejectReason":"post-apply-duplicate-user-messages","updateReason":"signature-changed"}}',
   ].join("\n");
 
   const summary = summarizeClientEventText(text, {
@@ -151,6 +151,44 @@ test("client-event stall self-check blocks conversation patch fallbacks", () => 
   assert.equal(summary.blockingIssueCount, 1);
   assert.equal(summary.sampleSummary.conversationPatchFallbackEventCount, 1);
   assert.equal(summary.issues[0].code, "browser_conversation_patch_fallback");
+  assert.equal(summary.issues[0].reason, "post-apply-duplicate-user-messages");
+  assert.equal(summary.issues[0].updateReason, "signature-changed");
+  assert.equal(summary.issues[0].clientBuildId, "0.1.11_build-a");
+});
+
+test("client-event deploy self-check ignores conversation patch fallbacks before gate start", () => {
+  const text = [
+    '[client-event] conversation_patch_html_fallback {"ts":"2026-07-02T01:28:59.900Z","details":{"clientBuildId":"0.1.11|old-build","reason":"post-apply-duplicate-user-messages","updateReason":"signature-changed"}}',
+    '[client-event] conversation_render_ms {"ts":"2026-07-02T01:29:00.200Z","details":{"clientBuildId":"0.1.11|new-build","domUpdateAction":"patch-html","patchFallbackApplied":false}}',
+  ].join("\n");
+
+  const summary = summarizeClientEventText(text, {
+    nowMs: Date.parse("2026-07-02T01:29:10.000Z"),
+    notBeforeMs: Date.parse("2026-07-02T01:29:00.000Z"),
+  });
+
+  assert.equal(summary.ok, true);
+  assert.equal(summary.blockingIssueCount, 0);
+  assert.equal(summary.sampleSummary.conversationPatchFallbackEventCount, 0);
+  assert.equal(summary.sampleSummary.outOfWindowConversationPatchFallbackEventCount, 1);
+  assert.equal(summary.sampleSummary.notBeforeMs, Date.parse("2026-07-02T01:29:00.000Z"));
+});
+
+test("client-event deploy self-check still blocks conversation patch fallbacks after gate start", () => {
+  const text = [
+    '[client-event] conversation_patch_html_fallback {"ts":"2026-07-02T01:29:00.200Z","details":{"clientBuildId":"0.1.11|new-build","reason":"patch-html-failed","updateReason":"signature-changed"}}',
+  ].join("\n");
+
+  const summary = summarizeClientEventText(text, {
+    nowMs: Date.parse("2026-07-02T01:29:10.000Z"),
+    notBeforeMs: Date.parse("2026-07-02T01:29:00.000Z"),
+  });
+
+  assert.equal(summary.ok, false);
+  assert.equal(summary.blockingIssueCount, 1);
+  assert.equal(summary.sampleSummary.conversationPatchFallbackEventCount, 1);
+  assert.equal(summary.issues[0].code, "browser_conversation_patch_fallback");
+  assert.equal(summary.issues[0].clientBuildId, "0.1.11_new-build");
 });
 
 test("client-event stall self-check blocks early shell DOM drops after nonempty render", () => {

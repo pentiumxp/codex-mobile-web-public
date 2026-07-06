@@ -17,6 +17,21 @@ function comparableText(item) {
   return String(item && (item.message || item.text || item.content || "") || "").trim().toLowerCase();
 }
 
+function userMessageSubmissionIds(item) {
+  const local = String(item && item.id || "").match(/^local-user-(.+)$/);
+  return [
+    item && item.clientSubmissionId,
+    item && item.clientId,
+    item && item.client_id,
+    item && item.submissionId,
+    item && item.submission_id,
+    item && item.mobileSubmissionId,
+    item && item.mobile_submission_id,
+    local && local[1],
+  ].map((value) => String(value || "").trim()).filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index);
+}
+
 function isCompletedStatus(status) {
   return /completed|failed|canceled|cancelled|interrupted/i.test(
     String(status && status.type || status || ""),
@@ -65,7 +80,7 @@ function createPolicy() {
     userMessageHasSubmissionId: (item, submissionId) => Boolean(
       item
       && submissionId
-      && String(item.clientSubmissionId || "") === String(submissionId || ""),
+      && userMessageSubmissionIds(item).includes(String(submissionId || "")),
     ),
     userMessagesCanShadow: (incoming, pending) => Boolean(
       incoming
@@ -160,6 +175,30 @@ test("drops pending overlay when durable matching user message is projected", ()
   const merged = policy.mergeV4ProjectionThread(existing, incoming);
   assert.equal(merged.turns.some((candidate) => candidate.id === "pending-turn"), false);
   assert.equal(merged.turns[0].items[0].id, "durable");
+});
+
+test("drops pending overlay when durable user message only exposes clientId", () => {
+  const policy = createPolicy();
+  const existing = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("pending-turn", [
+      userMessage("send me", { id: "local-user-submit-1", clientSubmissionId: "submit-1", mobilePendingSubmission: true }),
+    ], { startedAtMs: 10, status: { type: "running" } })],
+  };
+  const incoming = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("server-turn", [
+      userMessage("send me", { id: "durable", clientId: "submit-1" }),
+      { type: "agentMessage", id: "assistant-final", text: "done" },
+    ], { startedAtMs: 20, completedAtMs: 30, status: { type: "completed" } })],
+  };
+
+  const merged = policy.mergeV4ProjectionThread(existing, incoming);
+
+  assert.equal(merged.turns.some((candidate) => candidate.id === "pending-turn"), false);
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), ["durable", "assistant-final"]);
 });
 
 test("drops stale pending overlay once same-submission durable user message is projected", () => {

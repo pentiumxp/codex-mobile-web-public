@@ -2519,6 +2519,44 @@ test("normalizer collapses durable submitted user echoes after pending state is 
   );
 });
 
+test("normalizer drops local echo when durable projection uses clientId identity", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "server-turn-current",
+        status: { type: "completed" },
+        items: [
+          {
+            id: "real-user-current",
+            type: "userMessage",
+            clientId: "submit-current",
+            content: [{ type: "input_text", text: "current long user message" }],
+          },
+          { id: "assistant-final", type: "agentMessage", text: "done" },
+        ],
+      },
+      {
+        id: "local-turn-submit-current",
+        live: true,
+        items: [{
+          id: "local-user-submit-current",
+          type: "userMessage",
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-current",
+          content: [{ type: "text", text: "current long user message" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  const userMessages = thread.turns.flatMap((turn) => turn.items || [])
+    .filter((item) => item.type === "userMessage");
+  assert.deepEqual(userMessages.map((item) => item.id), ["real-user-current"]);
+});
+
 test("live turn hides failed local pending user message after durable match appears", () => {
   const harness = evaluatedVisibleItemsForTurn();
   const liveTurn = {

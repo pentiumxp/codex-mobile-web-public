@@ -456,7 +456,7 @@ function browserRuntimeSamplingArgs(options = {}) {
 }
 
 async function runOnce(options = {}, deps = {}) {
-  const startedAt = new Date().toISOString();
+  const startedAt = new Date(Date.now()).toISOString();
   const checks = [];
   let planOptions = { ...options };
   if (planOptions.browserViteAppPreviewDefaultRoot) {
@@ -627,11 +627,15 @@ async function runOnce(options = {}, deps = {}) {
   }
   const clientEventsJob = runtimeSelfCheckJob(jobPlan, "client-events");
   if (clientEventsJob && clientEventsJob.enabled) {
+    const clientEventNotBeforeMs = String(options.gateMode || "").trim() === "deploy"
+      ? Date.parse(startedAt)
+      : 0;
     const clientEventSummary = summarizeClientEventLog({
       logCandidates: options.clientEventLog ? [options.clientEventLog] : null,
       tailBytes: options.clientEventTailBytes,
       maxLines: options.clientEventMaxLines,
       windowMs: options.clientEventWindowMs,
+      notBeforeMs: Number.isFinite(clientEventNotBeforeMs) ? clientEventNotBeforeMs : 0,
     });
     checks.push(runtimeCheckFromClientEventSummary(clientEventSummary));
   }
