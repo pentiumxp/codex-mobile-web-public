@@ -574,6 +574,16 @@ test("Vite shell artifact status validates the guarded public preview files", ()
   assert.equal(status.publishedFiles.every((file) => file.exists && !path.isAbsolute(file.fileName)), true);
 });
 
+test("checked-in Vite shell artifact readback files all exist", () => {
+  const status = service.createViteShellArtifactService({
+    appRoot: path.resolve(__dirname, ".."),
+  }).readPublicArtifactStatus();
+
+  assert.equal(status.ok, true, JSON.stringify(status.issueCodes));
+  assert.deepEqual(status.issueCodes, []);
+  assert.equal(status.publishedFiles.every((file) => file.exists), true);
+});
+
 test("Vite shell artifact status fails closed when published manifest drifts from classic shell", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-drift-"));
   const artifactRoot = writeArtifact(root);
