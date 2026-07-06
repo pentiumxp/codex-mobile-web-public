@@ -1705,7 +1705,7 @@ Current implementation rules:
 - reply creates a reverse-direction pending card, not a direct source-thread
   message;
 - a target-thread `final` answer is not a source-thread return card. Manual
-  task-card closure must use `codex_mobile.return_to_source` or
+  task-card closure must use `mcp__codex_mobile.return_to_source` or
   `scripts/return-thread-task-card.js`, both of which call
   `POST /api/thread-task-cards/:id/reply`;
 - approved implementation cards remain returnable by the target thread. If a

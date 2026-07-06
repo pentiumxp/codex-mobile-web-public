@@ -28,7 +28,7 @@ own injected turn completes, and its title collapses repeated `Auto return:`
 prefixes to one prefix.
 
 Return cards and acknowledgement cards are terminal by default. A card created
-by `codex_mobile.return_to_source`, `scripts/return-thread-task-card.js`, or
+by `mcp__codex_mobile.return_to_source`, `scripts/return-thread-task-card.js`, or
 `/reply` with `returnToSource:true` carries structured terminal delivery state
 (`terminal:true`, `requiresReturn:false`, `ackPolicy:"none"`). It must not
 inject `Return required` guidance and must not require a second acknowledgement.

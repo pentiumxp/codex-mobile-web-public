@@ -51,8 +51,8 @@ test("server runtime config resolves default runtime paths and bounded ids", () 
   assert.equal(config.MUX_ENDPOINT_FILE, "/home/tester/.codex/mux/endpoint.json");
   assert.equal(config.APP_VERSION, "9.8.7");
   assert.equal(config.THREAD_SIDE_CHAT_SCOPE_ID, "profile-main");
-  assert.equal(config.WORKSPACE_DELEGATION_TOOL_FULL_NAME, "codex_mobile.delegate_to_thread");
-  assert.equal(config.TASK_CARD_RETURN_TOOL_FULL_NAME, "codex_mobile.return_to_source");
+  assert.equal(config.WORKSPACE_DELEGATION_TOOL_FULL_NAME, "mcp__codex_mobile.delegate_to_thread");
+  assert.equal(config.TASK_CARD_RETURN_TOOL_FULL_NAME, "mcp__codex_mobile.return_to_source");
   assert.equal(config.HOME_AI_SECRET_REF_CONSUME_PATH, "/api/secret-refs/consume");
   assert.equal(config.HOME_AI_SECRET_REF_TIMEOUT_MS, 12000);
   assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS, 60000);

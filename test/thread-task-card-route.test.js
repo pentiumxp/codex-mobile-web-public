@@ -155,7 +155,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.doesNotMatch(serverJs, /buildWorkspaceDelegationTaskCardPayload\(/);
   assert.match(serverJs, /RUNTIME_SETTINGS_FILE/);
   assert.match(serverJs, /WORKSPACE_DELEGATION_ENV_DEFAULT/);
-  assert.match(serverRuntimeConfigServiceJs, /WORKSPACE_DELEGATION_TOOL_NAMESPACE: "codex_mobile"/);
+  assert.match(serverRuntimeConfigServiceJs, /WORKSPACE_DELEGATION_TOOL_NAMESPACE: "mcp__codex_mobile"/);
   assert.match(serverRuntimeConfigServiceJs, /WORKSPACE_DELEGATION_TOOL_NAME: "delegate_to_thread"/);
   assert.match(serverRuntimeConfigServiceJs, /TASK_CARD_RETURN_TOOL_NAME: "return_to_source"/);
   assert.match(serverRuntimeConfigServiceJs, /HOME_AI_SECRET_REF_CONSUME_PATH/);
@@ -262,11 +262,19 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /local final answer in the target thread is not a source-thread return card/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /mcp__codex_mobile\.return_to_source/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /tool_search/);
-  assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /unsupported namespace error/);
+  assert.equal(
+    functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction")
+      .includes(["`codex_mobile", "return_to_source`"].join(".")),
+    false,
+  );
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /create-thread-task-card\.js/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /mcp__codex_mobile\.delegate_to_thread/);
-  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /deferred tool discovery such as `tool_search`/);
-  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /unsupported-namespace errors/);
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /tool_search/);
+  assert.equal(
+    functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction")
+      .includes(["`codex_mobile", "delegate_to_thread`"].join(".")),
+    false,
+  );
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /first-class fallback path/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /multi_agent_v1\.spawn_agent/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /must not be used as a substitute/);
@@ -314,7 +322,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(taskCardRouteServiceJs, /service\.approveFromSource\(card\.id, payload\.sourceThreadId\)/);
   assert.match(taskCardRouteServiceJs, /direct: autoApprove/);
   assert.match(taskCardRouteServiceJs, /workspaceDelegationEnabled: workspaceDelegation\.enabled/);
-  assert.match(coreApiRouteServiceJs, /workspaceDelegation,\s+hermesPlugin:/);
+  assert.match(coreApiRouteServiceJs, /workspaceDelegation,/);
+  assert.match(coreApiRouteServiceJs, /hermesPlugin:/);
   assert.match(createThreadTaskCardScript, /\/api\/threads\/\$\{encodeURIComponent\(sourceThreadId\)\}\/task-cards/);
   assert.match(createThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(createThreadTaskCardScript, /--pending/);
@@ -558,9 +567,9 @@ test("workspace delegation RPC diagnostics are route-owned and bounded", () => {
     thread_id: "thread-1234567890",
     cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
     dynamicTools: [
-      { namespace: "codex_mobile", name: "delegate_to_thread" },
-      { fullName: "codex_mobile.delegate_to_thread" },
-      { toolNamespace: "codex_mobile", toolName: "return_to_source" },
+      { namespace: "mcp__codex_mobile", name: "delegate_to_thread" },
+      { fullName: "mcp__codex_mobile.delegate_to_thread" },
+      { toolNamespace: "mcp__codex_mobile", toolName: "return_to_source" },
     ],
     developerInstructions: "Codex Mobile cross-thread delegation fallback:\nprivate body omitted",
     sandboxPolicy: { type: "dangerFullAccess" },
@@ -572,8 +581,8 @@ test("workspace delegation RPC diagnostics are route-owned and bounded", () => {
   assert.equal(diagnostics.workspaceDelegationEnabled, true);
   assert.equal(diagnostics.dynamicToolsCount, 2);
   assert.deepEqual(diagnostics.dynamicToolNames, [
-    "codex_mobile.delegate_to_thread",
-    "codex_mobile.return_to_source",
+    "mcp__codex_mobile.delegate_to_thread",
+    "mcp__codex_mobile.return_to_source",
   ]);
   assert.equal(diagnostics.hasWorkspaceDelegationTool, true);
   assert.equal(diagnostics.hasFallbackGuidance, true);
@@ -582,7 +591,7 @@ test("workspace delegation RPC diagnostics are route-owned and bounded", () => {
   assert.equal(diagnostics.permissionProfileType, "disabled");
 
   service.logWorkspaceDelegationRpc("turn/start", {
-    dynamicTools: [{ namespace: "codex_mobile", name: "delegate_to_thread" }],
+    dynamicTools: [{ namespace: "mcp__codex_mobile", name: "delegate_to_thread" }],
   });
   assert.equal(lines.length, 1);
   assert.match(lines[0], /^\[workspace-delegation-rpc\] /);
@@ -619,7 +628,7 @@ test("return_to_source dynamic tool prefers explicit target thread over app-serv
   const response = await service.dynamicToolServerRequestResponsePayload({
     id: "request-return",
     params: {
-      fullName: "codex_mobile.return_to_source",
+      fullName: "mcp__codex_mobile.return_to_source",
       threadId: "xcode-thread",
       arguments: {
         taskCardId: "ttc_xcode_to_health",
@@ -671,7 +680,7 @@ test("task_card_heartbeat dynamic tool records bounded target-thread progress", 
   const response = await service.dynamicToolServerRequestResponsePayload({
     id: "request-heartbeat",
     params: {
-      fullName: "codex_mobile.task_card_heartbeat",
+      fullName: "mcp__codex_mobile.task_card_heartbeat",
       threadId: "target-thread",
       turnId: "turn-active",
       arguments: {
@@ -716,7 +725,7 @@ test("return_to_source dynamic tool reports workflow actor mismatch evidence", a
   const response = await service.dynamicToolServerRequestResponsePayload({
     id: "request-return",
     params: {
-      fullName: "codex_mobile.return_to_source",
+      fullName: "mcp__codex_mobile.return_to_source",
       threadId: "home-ai-task-intake",
       workflowId: "home-ai-intake-workflow",
       arguments: {

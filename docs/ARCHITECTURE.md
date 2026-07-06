@@ -703,9 +703,9 @@ when the runtime Settings switch `跨工作区委派` is enabled. With the defau
 configuration the route creates pending target cards. Passing
 `pending:true`, `autoApprove:false`, or `direct:false` keeps pending behavior
 even when the switch is enabled.
-When that same runtime switch is enabled, Mobile Web injects the Codex
-app-server dynamic tool `codex_mobile.delegate_to_thread` into `thread/start`
-and `turn/start`. The model can call this tool after it determines that the
+When that same runtime switch is enabled, Mobile Web injects the exact
+MCP-prefixed task-card tool `mcp__codex_mobile.delegate_to_thread` into
+`thread/start` and `turn/start`. The model can call this tool after it determines that the
 current request belongs in another thread/workspace. When the tool is injected,
 its description is a mandatory model-visible boundary: cross-workspace
 implementation, file edits, command execution, tests, deployments, and other
@@ -722,7 +722,7 @@ evidence.
 Server-side handling of `item/tool/call` resolves the source thread from
 app-server metadata or the recent turn/thread map, resolves the target by exact
 thread id/title/cwd, and then calls the same source-thread task-card helper.
-Separately, Mobile Web injects `codex_mobile.return_to_source` for task-card
+Separately, Mobile Web injects `mcp__codex_mobile.return_to_source` for task-card
 target turns. This return tool is independent of the workspace-delegation
 switch because it closes an already received card; it validates the original
 `Task card id`, the target actor thread, and the return body before calling
@@ -753,8 +753,8 @@ routine plugin deploy-lane routing are owned by
 `services/task-cards/thread-task-card-deploy-lane-policy-service.js`; the
 adapter paths are compatibility exports only, and `server.js` keeps only the
 HTTP/app-server composition wrappers for those rules.
-This app-server dynamic-tool path is only for Codex app-server turns. Codex
-Mobile also registers a standard `codex_mobile` MCP server into each active or
+This MCP-prefixed tool path is only for Codex turns. Codex Mobile also
+registers a standard MCP server named `codex_mobile` into each active or
 target Codex Home during startup, workspace creation, and profile switching.
 That MCP server is backed by `scripts/codex-mobile-mcp-server.js`, exposes
 `list_threads`, `delegate_to_thread`, `start_loop`, `loop_status`, and
@@ -835,7 +835,7 @@ inline tool scripts are not rejected merely because they contain arrow
 functions.
 
 Cross-workspace discipline is therefore enforced through two layers: the
-model-visible `codex_mobile.delegate_to_thread` dynamic tool/MCP/script
+model-visible `mcp__codex_mobile.delegate_to_thread` MCP-prefixed tool/script
 fallback, and the server-side sandbox/approval decision layer. Home AI central
 control-plane provided tools are allowed through a narrow command allowlist when
 the cwd is the Home AI control-plane root and the command is not shell-chained:

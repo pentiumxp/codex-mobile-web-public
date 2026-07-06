@@ -26,7 +26,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     threadTaskCardService,
     threadTaskCardDraftTag = "codex-mobile-thread-task-card-draft",
     threadTaskCardBodyMaxChars = 8_000,
-    workspaceDelegationToolNamespace = "codex_mobile",
+    workspaceDelegationToolNamespace = "mcp__codex_mobile",
     workspaceDelegationToolName = "delegate_to_thread",
     taskCardReturnToolName = "return_to_source",
     taskCardHeartbeatToolName = "task_card_heartbeat",
@@ -144,7 +144,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         "Do not inspect, cd into, edit, patch, run commands in, test, deploy, or otherwise operate on the other workspace from the current thread. Delegate first, then stop or report the created task card.",
         "If the user requested target-workspace mutation and your local attempt already failed with sandbox, filesystem, permission denied, operation not permitted, cwd, or approval-policy errors, do not retry locally or merely report blocked. Use the source-thread context to decide the exact delegation, then call this tool yourself with the failed intent and exact target.",
         "The server does not auto-create task cards from failure logs; the source model must call this tool so the card preserves source-thread context and intent.",
-        "This dynamic tool always creates source-direct cards when workspace delegation is enabled; do not request target-side pending approval from this tool.",
+        "This tool always creates source-direct cards when workspace delegation is enabled; do not request target-side pending approval from this tool.",
         "Do not use this for ordinary discussion, read-only references that do not require target-workspace inspection, or work that clearly belongs in the current thread workspace.",
         "The model must decide from the user's request whether delegation is required; do not rely on local keyword or path heuristics.",
         "Use only a current non-archived target thread. Archived, deleted, hidden, subagent, or non-detail-readable targetThreadId values are rejected by the server.",
@@ -229,7 +229,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         "Use this for task-card closure. A plain final answer in the target thread is not a source-thread return card.",
         "The original injected task-card message contains `Task card id`; pass that value as `taskCardId`.",
         "The server validates that the current target thread is allowed to return the card and creates the reverse-direction return card through the normal task-card reply service.",
-        "Do not use this to delegate new work. Use `mcp__codex_mobile.delegate_to_thread` when Codex MCP tools are visible, or `codex_mobile.delegate_to_thread` when the app-server dynamic tool namespace is visible.",
+        "Do not use this to delegate new work. Use `mcp__codex_mobile.delegate_to_thread` when Codex MCP tools are visible.",
       ].join("\n\n"),
       inputSchema: {
         type: "object",
@@ -274,7 +274,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         "Report bounded progress for an active received Codex Mobile task card so the execution watchdog does not resume a thread that is still working.",
         "Use this only from the current target thread for the task card you are actively handling.",
         "Send only bounded metadata such as taskCardId, status, and turnId. Do not include private task body text, prompts, endpoint bodies, credentials, cookies, logs, or screenshots.",
-        "This does not complete the card. When work is done, still close it through `mcp__codex_mobile.return_to_source` when Codex MCP tools are visible, or `codex_mobile.return_to_source` when the app-server dynamic tool namespace is visible.",
+        "This does not complete the card. When work is done, still close it through `mcp__codex_mobile.return_to_source` when Codex MCP tools are visible.",
       ].join("\n\n"),
       inputSchema: {
         type: "object",
@@ -350,14 +350,12 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     const scriptPath = path.join(appRoot, "scripts", "create-thread-task-card.js");
     return [
       "Codex Mobile cross-thread delegation fallback:",
-      "- Prefer `mcp__codex_mobile.delegate_to_thread` when Codex MCP tools are visible, because deferred tool discovery exposes Codex Mobile through the MCP namespace.",
-      "- If `mcp__codex_mobile.delegate_to_thread` is not visible yet, call `tool_search` for Codex Mobile cross-thread task-card tools before trying another namespace.",
-      `- Use \`${workspaceDelegationToolFullName}\` only when the app-server dynamic tool namespace is directly visible and actually callable; if it returns an unsupported namespace error, switch to MCP or the script fallback.`,
-      "- App-server dynamic tools may not appear in deferred tool discovery such as `tool_search`; absence there is not proof that delegation is unavailable, but unsupported-namespace errors are proof that this namespace is not callable in the current thread.",
-      "- If neither `mcp__codex_mobile.delegate_to_thread` nor `codex_mobile.delegate_to_thread` is callable, use the local script below as the first-class fallback path:",
+      "- Use the exact MCP tool name `mcp__codex_mobile.delegate_to_thread`.",
+      "- If `mcp__codex_mobile.delegate_to_thread` is not visible yet, call `tool_search` for Codex Mobile cross-thread task-card tools.",
+      "- If the MCP tool is still not callable, use the local script below as the first-class fallback path:",
       `  node ${JSON.stringify(scriptPath)} --source-thread ${sourceThreadId || "<current-thread-id>"} --target-thread <target-thread-id-or-exact-title> --title \"<short title>\" --body-file <markdown-file>`,
       "- `multi_agent_v1.spawn_agent`, `multi_agent_v1.resume`, `multi_agent_v1.send`, and `multi_agent_v1.close` are not Codex Mobile task-card APIs and must not be used as a substitute for cross-workspace file changes.",
-      "- When the user requested another workspace/thread to be modified, tested, deployed, or otherwise mutated, do not retry a guarded local write after sandbox/permission/cwd/approval failure. Delegate through the dynamic tool or this script and then report the created card.",
+      "- When the user requested another workspace/thread to be modified, tested, deployed, or otherwise mutated, do not retry a guarded local write after sandbox/permission/cwd/approval failure. Delegate through the MCP tool or this script and then report the created card.",
       "- The server does not create task cards from failure logs in the background; the source thread model must create the card so the body preserves source-thread context and intent.",
     ].join("\n");
   }
@@ -367,11 +365,10 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     const scriptPath = path.join(appRoot, "scripts", "return-thread-task-card.js");
     return [
       "Codex Mobile task-card return fallback:",
-      "- Prefer `mcp__codex_mobile.return_to_source` when Codex MCP tools are visible, because deferred tool discovery exposes Codex Mobile through the MCP namespace.",
-      "- If `mcp__codex_mobile.return_to_source` is not visible yet, call `tool_search` for Codex Mobile task-card tools before trying another namespace.",
-      `- Use \`${taskCardReturnToolFullName}\` only when the app-server dynamic tool namespace is directly visible and actually callable; if it returns an unsupported namespace error, switch to MCP or the script fallback.`,
+      "- Use the exact MCP tool name `mcp__codex_mobile.return_to_source`.",
+      "- If `mcp__codex_mobile.return_to_source` is not visible yet, call `tool_search` for Codex Mobile task-card tools.",
       "- A local final answer in the target thread is not a source-thread return card.",
-      "- If neither `mcp__codex_mobile.return_to_source` nor `codex_mobile.return_to_source` is callable, use the local script below as the first-class return path:",
+      "- If the MCP tool is still not callable, use the local script below as the first-class return path:",
       `  node ${JSON.stringify(scriptPath)} --task-card <task-card-id> --thread ${threadId || "<current-target-thread-id>"} --status completed --title "<short return title>" --body-file <markdown-file>`,
       "- Use status `completed`, `blocked`, or `redirected` to close the task-card workflow.",
     ].join("\n");

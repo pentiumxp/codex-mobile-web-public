@@ -189,7 +189,7 @@ node scripts/return-thread-task-card.js \
 
 This script calls only `POST /api/thread-task-cards/:id/reply`. It is the
 fallback path for target implementation or audit threads when a direct
-`codex_mobile.return_to_source` tool surface is not visible. It reads the
+`mcp__codex_mobile.return_to_source` tool surface is not visible. It reads the
 access key from the same env/key-file sources as the create wrapper, does not
 print key material, and generates a stable `task-card-return:*` idempotency key
 when the caller does not supply one. It always sets `returnToSource:true`, so
@@ -200,7 +200,7 @@ Every approved task-card injection includes `Task card id: ...` in the target
 turn input. For manual workflows, the target must close with a real return card
 using that id. A target-thread `final` answer is not a source-thread return card
 and must not be counted as `completed`, `blocked`, or `redirected` by the
-source workflow. Return cards created by `codex_mobile.return_to_source`,
+source workflow. Return cards created by `mcp__codex_mobile.return_to_source`,
 `scripts/return-thread-task-card.js`, or `/reply` with `returnToSource:true`
 are source-direct approved into the original source thread, or into an explicit
 `replyToThreadId` when the original work card carries one, and do not require a
@@ -276,7 +276,7 @@ state. Terminal return/no-op cards set `requiresReturn:false` and never create
 leases, so acknowledgement-loop prevention remains separate from interruption
 continuation.
 Active target lanes can refresh the bounded heartbeat through
-`codex_mobile.task_card_heartbeat` or
+`mcp__codex_mobile.task_card_heartbeat` or
 `POST /api/thread-task-cards/:id/execution/heartbeat`. Both paths accept only
 short metadata labels and ids; they must not carry private task bodies, prompts,
 endpoint payloads, credentials, cookies, screenshots, or logs.
@@ -294,10 +294,10 @@ lease so an alive but non-terminal thread cannot be repeatedly refreshed by the
 Watchdog.
 
 When the runtime `跨工作区委派` switch is enabled, server-side `thread/start` and
-`turn/start` requests also receive a Codex app-server dynamic tool:
+`turn/start` requests also receive the exact MCP-prefixed task-card tool:
 
 ```text
-codex_mobile.delegate_to_thread
+mcp__codex_mobile.delegate_to_thread
 ```
 
 This is one model-visible path for running Codex turns. The model decides from
@@ -307,13 +307,13 @@ server converts the tool call into the same
 `createThreadTaskCardsFromSourceThread()` path used by
 `POST /api/threads/:sourceThreadId/task-cards`. The tool returns bounded JSON
 text containing card ids, target thread ids, and whether source-direct approval
-was used, wrapped as app-server dynamic-tool output:
+was used, wrapped for the Codex app-server tool-call protocol as:
 `result.success` plus `result.contentItems[{ type:"inputText" }]`. This schema
 is intentionally not the MCP `content[{ type:"text" }]` response shape. Direct
-dynamic-tool task cards are idempotent by explicit request id when one is
+tool-call task cards are idempotent by explicit request id when one is
 supplied, except routine `plugin_deployment` cards: those use the semantic
 deployment key described above so fallback-script retries converge with the
-dynamic-tool attempt. When no request id is supplied, the server uses the source
+tool-call attempt. When no request id is supplied, the server uses the source
 thread plus target/title/body/workflow semantics so retry calls with a new tool
 call id do not create duplicate cards. If the switch is off, the tool is not
 injected. If the tool is called without a target or source thread id cannot be
@@ -335,11 +335,11 @@ inherited runtime effort during `thread/resume` / `turn/start`. The approved car
 records bounded `injectionRuntime.reasoningEffort` and
 `injectionRuntime.requestedReasoningEffort` evidence.
 
-Server-side `thread/start` and `turn/start` also receive a Codex app-server
-dynamic return tool:
+Server-side `thread/start` and `turn/start` also receive the exact MCP-prefixed
+return tool:
 
 ```text
-codex_mobile.return_to_source
+mcp__codex_mobile.return_to_source
 ```
 
 This tool is independent of the `跨工作区委派` switch because it closes work that
@@ -389,13 +389,11 @@ source-thread ownership boundary. `multi_agent_v1.spawn_agent`,
 not Codex Mobile task-card APIs and must not be substituted for cross-workspace
 file-change delegation.
 
-App-server dynamic tools are passed in the `dynamicTools` field of
-`thread/start` and `turn/start`, but they may not be listed by deferred tool
-discovery surfaces such as `tool_search`. Production diagnostics should
-distinguish "injected into RPC" from "discoverable through tool search". When
-the dynamic tool is injected but no direct callable tool surface is visible to
-the source model, the script fallback is the supported path and should create
-the same source-direct task card.
+The model-visible task-card tools use the exact MCP-prefixed names
+`mcp__codex_mobile.delegate_to_thread`, `mcp__codex_mobile.return_to_source`,
+and `mcp__codex_mobile.task_card_heartbeat`. If those tools are not visible
+after MCP/tool discovery, the script fallback is the supported path and should
+create the same source-direct task card.
 
 Codex Mobile also registers a standard Codex MCP server named `codex_mobile`.
 `server.js` calls `syncKnownCodexMobileMcpToolsets()` on startup, Profile list
@@ -416,7 +414,7 @@ profile switch.
 When injected, the tool's model-visible description is a mandatory boundary,
 not just an optional shortcut. If the requested implementation, file edit,
 command, test, deployment, or other mutation belongs to another workspace or
-thread, the model should call `codex_mobile.delegate_to_thread` before doing
+thread, the model should call `mcp__codex_mobile.delegate_to_thread` before doing
 target-workspace work. It should not `cd` into, inspect, edit, patch, test,
 deploy, or otherwise mutate the other workspace from the current thread.
 Mobile Web still does not restore local keyword/path heuristics; the model is
@@ -425,7 +423,7 @@ boundary. If the current thread already attempted the target-workspace mutation
 and received a sandbox, permission, cwd, or approval-policy failure, that
 failure is treated as evidence for the source model to evaluate. The server
 must not scan failure logs and auto-create a card in the background; the source
-model must call `codex_mobile.delegate_to_thread` itself so the delegated body
+model must call `mcp__codex_mobile.delegate_to_thread` itself so the delegated body
 preserves the source-thread context, intent, and failure evidence. Because this
 is the free delegation path for an already trusted Codex thread, the dynamic
 tool always forces `direct:true`, `autoApprove:true`, and `pending:false` before
@@ -523,7 +521,7 @@ The v363 local heuristic was removed because directory names and thread titles
 are not reliable enough to decide target workspaces. New cross-workspace
 delegation must be model/tool explicit through `POST
 /api/threads/:sourceThreadId/task-cards`, `scripts/create-thread-task-card.js`,
-the `codex_mobile.delegate_to_thread` app-server dynamic tool,
+the `mcp__codex_mobile.delegate_to_thread` MCP-prefixed task-card tool,
 or structured model output that is materialized by the existing task-card
 draft flow.
 
