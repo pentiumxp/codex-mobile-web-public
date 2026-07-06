@@ -122,6 +122,12 @@ function itemText(node) {
   return node && node.childNodes && node.childNodes[0] ? node.childNodes[0].nodeValue : "";
 }
 
+function visibleItemKeys(node) {
+  return Array.from(node && node.childNodes || [])
+    .filter((child) => child && child.getAttribute && child.getAttribute("data-item") != null)
+    .map((child) => child.getAttribute("data-render-key"));
+}
+
 function reducePatchEffects(effects, runner) {
   let aggregate = renderPlan.emptyThreadDetailRefreshPatchAttempt();
   for (const effect of effects) {
@@ -300,6 +306,48 @@ test("refresh DOM harness commits single-thread local patch before dock update",
   assert.equal(result.patchAttemptResult.patchResult, "local-patched");
   assert.equal(result.renderOutcome.renderAction, "local-patch-metadata-update");
   assert.equal(renderPlan.planThreadDetailRefreshOutcomeExecution(result.renderOutcome).executionAction, "metadata-effects");
+});
+
+test("visible item refresh DOM patch removes stale duplicate render-key nodes", () => {
+  const article = createElement("article", { "data-render-key": "turn-a" }, [
+    createElement("div", { "data-render-key": "item-user", "data-item": "1" }, [createTextNode("user")]),
+    createElement("div", { "data-render-key": "item-user", "data-item": "1" }, [createTextNode("stale-user")]),
+    createElement("div", { "data-render-key": "item-agent", "data-item": "1" }, [createTextNode("old")]),
+  ]);
+  const itemPatchPlan = patchPlan.planVisibleItemRefreshPatch(
+    [
+      { key: "item-user", signature: { type: "userMessage", text: "user" } },
+      { key: "item-agent", signature: { type: "agentMessage", text: "old" } },
+    ],
+    [
+      { key: "item-user", signature: { type: "userMessage", text: "user" } },
+      { key: "item-agent", signature: { type: "agentMessage", text: "new" } },
+      { key: "item-usage", signature: { type: "turnUsageSummary", total: 10 } },
+    ],
+  );
+  const result = domPatch.applyVisibleItemRefreshDomPatch({
+    article,
+    patchPlan: itemPatchPlan,
+    findElementByKey: (key) => article.querySelector(`[data-render-key="${key}"]`),
+    renderElement: (entry) => createElement(
+      "div",
+      { "data-render-key": entry.key, "data-item": "1" },
+      [createTextNode(entry.signature.text || "usage")],
+    ),
+    patchElement: (target, entry) => domPatch.patchNode(
+      target,
+      createElement(
+        "div",
+        { "data-render-key": entry.key, "data-item": "1" },
+        [createTextNode(entry.signature.text || "usage")],
+      ),
+    ),
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(visibleItemKeys(article), ["item-user", "item-agent", "item-usage"]);
+  assert.equal(article.childNodes.filter((child) => child.getAttribute("data-render-key") === "item-user").length, 1);
+  assert.equal(itemText(article.childNodes[1]), "new");
 });
 
 test("refresh DOM harness routes local patch rejection to full render", () => {

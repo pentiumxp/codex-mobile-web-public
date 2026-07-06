@@ -90,6 +90,24 @@
     return true;
   }
 
+  function removeUnexpectedVisibleItemNodes(article, expectedKeys) {
+    const remaining = new Map();
+    for (const key of normalizedStringList(expectedKeys)) {
+      remaining.set(key, Number(remaining.get(key) || 0) + 1);
+    }
+    for (const child of Array.from(article && article.childNodes || [])) {
+      const key = visibleItemRenderKeyForNode(child);
+      if (!key) continue;
+      const count = Number(remaining.get(key) || 0);
+      if (count > 0) {
+        remaining.set(key, count - 1);
+        continue;
+      }
+      if (typeof child.remove === "function") child.remove();
+      else if (child.parentNode) child.parentNode.removeChild(child);
+    }
+  }
+
   function placeVisibleItemNode(article, node, lastPatchedNode) {
     if (!article || typeof article.insertBefore !== "function" || !node) return node;
     const anchor = lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild || null;
@@ -957,16 +975,18 @@
       lastPatchedNode = source;
       counts.inserted += 1;
     }
-    const nextKeys = new Set(patchPlan.operations
+    const expectedKeys = patchPlan.operations
       .map((operation) => normalizeOperation(operation))
       .filter(Boolean)
-      .map((operation) => operation.key));
+      .map((operation) => operation.key);
+    const nextKeys = new Set(expectedKeys);
     for (const child of Array.from(article.childNodes || [])) {
       const key = visibleItemRenderKeyForNode(child);
       if (!key || nextKeys.has(key)) continue;
       if (typeof child.remove === "function") child.remove();
     }
-    if (!visibleItemOrderMatches(article, Array.from(nextKeys))) {
+    removeUnexpectedVisibleItemNodes(article, expectedKeys);
+    if (!visibleItemOrderMatches(article, expectedKeys)) {
       return result(false, "post-apply-visible-item-order-mismatch", counts);
     }
     return result(true, "applied", counts);

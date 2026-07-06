@@ -348,6 +348,24 @@ function turnShapeOrderMismatchDetails(sample = {}, turnShape = {}) {
   };
 }
 
+function sequenceHasOnlyExtraTailUsers(expectedSequence = [], actualSequence = []) {
+  const expected = safeItemKindSequence(expectedSequence);
+  const actual = safeItemKindSequence(actualSequence);
+  if (!expected.length || actual.length <= expected.length) return false;
+  for (let index = 0; index < expected.length; index += 1) {
+    if (actual[index] !== expected[index]) return false;
+  }
+  return actual.slice(expected.length).every((kind) => kind === "userMessage");
+}
+
+function submitLocalTailExplainsOrderMismatch(sample = {}, turnShape = {}) {
+  if (!sample || sample.dynamicThreadPlan !== true) return false;
+  if (!/^submit-post-/i.test(String(sample.label || ""))) return false;
+  if (toNumber(sample.clientSubmissionCount) <= 0) return false;
+  if (toNumber(turnShape.userMessageCount) <= toNumber(turnShape.expectedUserMessageCount)) return false;
+  return sequenceHasOnlyExtraTailUsers(turnShape.expectedItemKindSequence, turnShape.itemKindSequence);
+}
+
 function incrementMapCount(map, key) {
   if (!key) return;
   map.set(key, (map.get(key) || 0) + 1);
@@ -705,7 +723,8 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       const orderSampleIsObservable = toNumber(sample.delayMs) > 0;
       if (orderSampleIsObservable
         && (expectedUserAfterAssistantLikeCount > 0 || actualUserAfterAssistantLikeCount > 0)
-        && actualUserAfterAssistantLikeCount !== expectedUserAfterAssistantLikeCount) {
+        && actualUserAfterAssistantLikeCount !== expectedUserAfterAssistantLikeCount
+        && !submitLocalTailExplainsOrderMismatch(sample, turnShape)) {
         const code = "browser_turn_user_message_order_mismatch";
         issues.push(issue("H2", code, sample, turnShapeOrderMismatchDetails(sample, turnShape)));
       }

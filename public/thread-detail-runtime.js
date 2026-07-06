@@ -1149,7 +1149,22 @@ function createThreadDetailRuntime(deps = {}) {
   function insertLocalOnlyItemByExistingOrder(merged, item, existingIndex, existingIndexToMergedIndex) {
     if (!item) return;
     let insertAt = -1;
+    if (isLocalPendingSubmissionEcho(item)) {
+      const itemTime = userMessageTimestampMs(item);
+      if (itemTime) {
+        for (let index = 0; index < merged.length; index += 1) {
+          const candidateTime = userMessageTimestampMs(merged[index]);
+          if (!candidateTime) continue;
+          if (candidateTime > itemTime) {
+            insertAt = index;
+            break;
+          }
+          insertAt = index + 1;
+        }
+      }
+    }
     for (let index = existingIndex - 1; index >= 0; index -= 1) {
+      if (insertAt >= 0) break;
       if (existingIndexToMergedIndex.has(index)) {
         insertAt = existingIndexToMergedIndex.get(index) + 1;
         break;

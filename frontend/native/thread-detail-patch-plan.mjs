@@ -95,11 +95,40 @@ function normalizePatchEntry(entry) {
     return previousIndex === previous.length;
   }
 
+  function patchEntryKind(entry) {
+    if (!entry || typeof entry !== "object") return "";
+    const signature = entry.signature && typeof entry.signature === "object" ? entry.signature : null;
+    const item = entry.item && typeof entry.item === "object" ? entry.item : null;
+    return String((signature && signature.type) || (item && item.type) || entry.type || "");
+  }
+
+  function visibleUserMessagePatchKeysPreserved(previousEntries, nextEntries) {
+    if (!Array.isArray(previousEntries) || !Array.isArray(nextEntries)) return false;
+    const previous = previousEntries.map(normalizePatchEntry).filter(Boolean);
+    const next = nextEntries.map(normalizePatchEntry).filter(Boolean);
+    if (previous.length !== previousEntries.length || next.length !== nextEntries.length) return false;
+    const previousKeys = previous
+      .filter((entry) => patchEntryKind(entry) === "userMessage")
+      .map((entry) => entry.key);
+    const nextKeys = next
+      .filter((entry) => patchEntryKind(entry) === "userMessage")
+      .map((entry) => entry.key);
+    if (previousKeys.length !== nextKeys.length) return false;
+    return previousKeys.every((key, index) => key === nextKeys[index]);
+  }
+
   function planVisibleItemRefreshPatch(previousEntries, nextEntries) {
     if (!visibleItemPatchShapePreservesExisting(previousEntries, nextEntries)) {
       return {
         canPatch: false,
         reason: "shape-changed",
+        operations: [],
+      };
+    }
+    if (!visibleUserMessagePatchKeysPreserved(previousEntries, nextEntries)) {
+      return {
+        canPatch: false,
+        reason: "user-message-shape-changed",
         operations: [],
       };
     }
@@ -203,6 +232,7 @@ const api = {
     planVisibleItemRefreshPatch,
     planThreadDetailDomPatchSurface,
     visibleItemPatchShapePreservesExisting,
+    visibleUserMessagePatchKeysPreserved,
 };
 
 export {
@@ -213,6 +243,7 @@ export {
   planVisibleItemRefreshPatch,
   planThreadDetailDomPatchSurface,
   visibleItemPatchShapePreservesExisting,
+  visibleUserMessagePatchKeysPreserved,
 };
 
 export default api;

@@ -2439,6 +2439,50 @@ test("browser runtime self-check keeps immediate submit order divergence diagnos
   assert.equal(report.issues.some((item) => item.code === "browser_turn_user_message_order_mismatch"), false);
 });
 
+test("browser runtime self-check accepts local submitted user tail before API catches up", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "submit-post-350",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      dynamicThreadPlan: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "latest-turn-hash",
+      latestTurnItemCount: 6,
+      latestTurnUserMessageCount: 3,
+      latestTurnAssistantMessageCount: 3,
+      clientSubmissionCount: 1,
+      turns: 3,
+      items: 14,
+      delayMs: 350,
+      expectedTurnShapes: [{
+        turnHash: "latest-turn-hash",
+        completed: false,
+        expectedItemCount: 5,
+        expectedUserMessageCount: 2,
+        expectedAssistantMessageCount: 3,
+        expectedUserAfterAssistantLikeCount: 1,
+        expectedItemKindSequence: ["userMessage", "agentMessage", "agentMessage", "agentMessage", "userMessage"],
+      }],
+      domTurnShapes: [{
+        turnHash: "latest-turn-hash",
+        itemCount: 6,
+        userMessageCount: 3,
+        assistantMessageCount: 3,
+        userAfterAssistantLikeCount: 2,
+        userAtTail: true,
+        itemKindSequence: ["userMessage", "agentMessage", "agentMessage", "agentMessage", "userMessage", "userMessage"],
+      }],
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.issues.some((item) => item.code === "browser_turn_user_message_order_mismatch"), false);
+});
+
 test("browser runtime self-check ignores null samples in summary", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [

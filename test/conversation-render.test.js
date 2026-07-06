@@ -5344,6 +5344,55 @@ test("refresh merge uses incoming item order for durable user messages appended 
   assert.equal(merged[1].text, "working\nwith more detail");
 });
 
+test("refresh merge anchors local pending user messages by timestamp around assistant progress", () => {
+  const mergeItemsPreservingLocalVisible = evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight();
+  const existingItems = [
+    {
+      id: "real-user-first",
+      type: "userMessage",
+      startedAtMs: 100,
+      content: [{ type: "input_text", text: "first prompt" }],
+    },
+    {
+      id: "local-user-second",
+      type: "userMessage",
+      startedAtMs: 300,
+      mobilePendingSubmission: true,
+      clientSubmissionId: "submission-second",
+      content: [{ type: "text", text: "second prompt" }],
+    },
+    {
+      id: "agent-progress",
+      type: "agentMessage",
+      startedAtMs: 200,
+      text: "working\nwith more detail",
+    },
+  ];
+  const incomingItems = [
+    {
+      id: "real-user-first",
+      type: "userMessage",
+      startedAtMs: 100,
+      content: [{ type: "input_text", text: "first prompt" }],
+    },
+    {
+      id: "agent-progress",
+      type: "agentMessage",
+      startedAtMs: 200,
+      text: "working",
+    },
+  ];
+
+  const merged = mergeItemsPreservingLocalVisible(existingItems, incomingItems, true);
+
+  assert.deepEqual(merged.map((item) => item.id), [
+    "real-user-first",
+    "agent-progress",
+    "local-user-second",
+  ]);
+  assert.equal(merged[1].text, "working\nwith more detail");
+});
+
 test("failed submitted messages render an inline receipt", () => {
   assert.match(functionBody("renderItemBody"), /item\.type === "userMessage"\) return renderUserMessageBody\(item\)/);
   assert.match(functionBody("renderUserMessageBody"), /userMessageRenderableContent\(item\)/);

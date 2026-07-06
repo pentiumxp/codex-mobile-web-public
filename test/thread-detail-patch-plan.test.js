@@ -25,6 +25,32 @@ test("visible item patch plan preserves existing order while appending items", (
   assert.deepEqual(plan.operations.map((operation) => operation.key), ["user-1", "agent-1", "usage-1"]);
 });
 
+test("visible item patch plan rejects user-message shape changes", () => {
+  assert.deepEqual(
+    patchPlan.planVisibleItemRefreshPatch(
+      [{ key: "agent-1", signature: { type: "agentMessage", text: "working" } }],
+      [
+        { key: "agent-1", signature: { type: "agentMessage", text: "working" } },
+        { key: "user-1", signature: { type: "userMessage", text: "request" } },
+      ],
+    ),
+    { canPatch: false, reason: "user-message-shape-changed", operations: [] },
+  );
+  assert.deepEqual(
+    patchPlan.planVisibleItemRefreshPatch(
+      [
+        { key: "user-1", signature: { type: "userMessage", text: "request" } },
+        { key: "agent-1", signature: { type: "agentMessage", text: "working" } },
+      ],
+      [
+        { key: "user-2", signature: { type: "userMessage", text: "request" } },
+        { key: "agent-1", signature: { type: "agentMessage", text: "working" } },
+      ],
+    ),
+    { canPatch: false, reason: "shape-changed", operations: [] },
+  );
+});
+
 test("visible item patch plan patches changed signatures without changing shape", () => {
   const plan = patchPlan.planVisibleItemRefreshPatch(
     [
