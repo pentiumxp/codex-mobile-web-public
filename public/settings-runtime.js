@@ -346,6 +346,14 @@ function registerSubmittedUserMessage(threadId, text, attachments, clientSubmiss
     item: localUserMessageItem(text, attachments || [], id),
     createdAtMs: Date.now(),
   });
+  if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+    recordSubmittedEchoDiagnosticLog("recent-submission-registered", {
+      threadId,
+      clientSubmissionId: id,
+      attachmentCount: Array.isArray(attachments) ? attachments.length : 0,
+      textLength: String(text || "").length,
+    });
+  }
 }
 
 function localSubmittedTurnId(clientSubmissionId) {
@@ -397,9 +405,27 @@ function syncLocalSubmissionThread(thread) {
 function insertLocalSubmittedUserMessage(threadId, text, attachments, clientSubmissionId, options = null) {
   const id = String(threadId || "").trim();
   const thread = mutableThreadForLocalSubmission(id);
-  if (!id || !thread) return false;
+  if (!id || !thread) {
+    if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+      recordSubmittedEchoDiagnosticLog("local-insert-skipped", {
+        threadId: id,
+        clientSubmissionId,
+        reason: !id ? "missing_thread_id" : "missing_thread",
+      });
+    }
+    return false;
+  }
   const submissionId = String(clientSubmissionId || "").trim();
-  if (submissionId && threadHasClientSubmission(thread, submissionId)) return false;
+  if (submissionId && threadHasClientSubmission(thread, submissionId)) {
+    if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+      recordSubmittedEchoDiagnosticLog("local-insert-skipped", {
+        threadId: id,
+        clientSubmissionId: submissionId,
+        reason: "submission_already_present",
+      });
+    }
+    return false;
+  }
   const opts = options || {};
   const requestedTurnId = String(opts.turnId || "").trim();
   const requestedTurn = requestedTurnId
@@ -426,6 +452,17 @@ function insertLocalSubmittedUserMessage(threadId, text, attachments, clientSubm
   turn.items.push(localUserMessageItem(text, attachments || [], submissionId));
   thread.status = { type: "active" };
   syncLocalSubmissionThread(thread);
+  if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+    recordSubmittedEchoDiagnosticLog("local-insert-applied", {
+      threadId: id,
+      clientSubmissionId: submissionId,
+      requestedTurnHash: diagnosticTurnHash(requestedTurnId),
+      targetTurnHash: diagnosticTurnHash(turnId),
+      createdLocalTurn: !requestedTurnId || requestedTurnId !== turnId,
+      attachmentCount: Array.isArray(attachments) ? attachments.length : 0,
+      textLength: String(text || "").length,
+    });
+  }
   return true;
 }
 
@@ -448,7 +485,21 @@ function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverT
   const submissionId = String(clientSubmissionId || "").trim();
   const turnId = String(serverTurnId || "").trim();
   const thread = mutableThreadForLocalSubmission(id);
-  if (!id || !submissionId || !turnId || !thread || String(thread.id || "") !== id) return false;
+  if (!id || !submissionId || !turnId || !thread || String(thread.id || "") !== id) {
+    if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+      recordSubmittedEchoDiagnosticLog("reconcile-skipped", {
+        threadId: id,
+        clientSubmissionId: submissionId,
+        serverTurnHash: diagnosticTurnHash(turnId),
+        reason: !id ? "missing_thread_id"
+          : !submissionId ? "missing_submission_id"
+          : !turnId ? "missing_server_turn_id"
+          : !thread ? "missing_thread"
+          : "thread_id_mismatch",
+      });
+    }
+    return false;
+  }
   thread.turns = Array.isArray(thread.turns) ? thread.turns : [];
   let sourceTurn = null;
   let sourceItem = null;
@@ -462,7 +513,17 @@ function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverT
     sourceItem = item;
     break;
   }
-  if (!sourceItem) return false;
+  if (!sourceItem) {
+    if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+      recordSubmittedEchoDiagnosticLog("reconcile-skipped", {
+        threadId: id,
+        clientSubmissionId: submissionId,
+        serverTurnHash: diagnosticTurnHash(turnId),
+        reason: "optimistic_source_item_missing",
+      });
+    }
+    return false;
+  }
   let targetTurn = thread.turns.find((turn) => String(turn && turn.id || "") === turnId);
   if (!targetTurn) {
     targetTurn = {
@@ -486,6 +547,16 @@ function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverT
   }
   normalizeThreadVisibleUserMessages(thread);
   syncLocalSubmissionThread(thread);
+  if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+    recordSubmittedEchoDiagnosticLog("reconcile-applied", {
+      threadId: id,
+      clientSubmissionId: submissionId,
+      sourceTurnHash: diagnosticTurnHash(sourceTurn && sourceTurn.id),
+      serverTurnHash: diagnosticTurnHash(turnId),
+      changed,
+      movedTurn: Boolean(sourceTurn && sourceTurn !== targetTurn),
+    });
+  }
   return changed;
 }
 

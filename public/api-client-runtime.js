@@ -1,6 +1,14 @@
 "use strict";
 
 (function attachApiClientRuntime(root) {
+const FRONTEND_DIAGNOSTIC_LOG_VERSION = "20260706-v1";
+const STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENABLED = "codexMobileFrontendDiagnosticLogEnabled";
+const STORAGE_FRONTEND_DIAGNOSTIC_LOG_UPLOAD = "codexMobileFrontendDiagnosticLogUpload";
+const STORAGE_FRONTEND_DIAGNOSTIC_LOG_SCOPES = "codexMobileFrontendDiagnosticLogScopes";
+const STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENTRIES = "codexMobileFrontendDiagnosticLogEntries";
+const STORAGE_FRONTEND_DIAGNOSTIC_LOG_MAX_ENTRIES = "codexMobileFrontendDiagnosticLogMaxEntries";
+let frontendDiagnosticLogUrlParamsApplied = false;
+
 async function api(path, options = {}) {
   return apiClient.request(path, options);
 }
@@ -90,6 +98,427 @@ function clientSubmissionDataAttr(item) {
   const hash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
   return hash ? ` data-client-submission-hash="${escapeHtml(hash)}"` : "";
 }
+
+function frontendDiagnosticLogStorageGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (_) {
+    return "";
+  }
+}
+
+function frontendDiagnosticLogStorageSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function frontendDiagnosticLogStorageRemove(key) {
+  try {
+    localStorage.removeItem(key);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function truthyFrontendDiagnosticLogValue(value) {
+  return /^(1|true|yes|on|enable|enabled)$/i.test(String(value || "").trim());
+}
+
+function falseyFrontendDiagnosticLogValue(value) {
+  return /^(0|false|no|off|disable|disabled)$/i.test(String(value || "").trim());
+}
+
+function normalizeFrontendDiagnosticLogScopes(value) {
+  const raw = Array.isArray(value) ? value.join(",") : String(value || "");
+  const scopes = raw
+    .split(/[,\s]+/g)
+    .map((item) => item.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_"))
+    .filter(Boolean)
+    .slice(0, 24);
+  return scopes.length ? Array.from(new Set(scopes)) : ["submitted_echo"];
+}
+
+function boundedFrontendDiagnosticLogMaxEntries(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 400;
+  return Math.max(25, Math.min(2000, Math.trunc(number)));
+}
+
+function applyFrontendDiagnosticLogUrlParams() {
+  if (frontendDiagnosticLogUrlParamsApplied) return;
+  frontendDiagnosticLogUrlParamsApplied = true;
+  let params = null;
+  try {
+    params = new URL(window.location.href).searchParams;
+  } catch (_) {
+    return;
+  }
+  const enabledValue = params.get("codexFrontendLog") || params.get("codexMobileFrontendLog") || params.get("clientLog");
+  if (truthyFrontendDiagnosticLogValue(enabledValue)) {
+    frontendDiagnosticLogStorageSet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENABLED, "1");
+  } else if (falseyFrontendDiagnosticLogValue(enabledValue)) {
+    frontendDiagnosticLogStorageRemove(STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENABLED);
+  }
+  const uploadValue = params.get("codexFrontendLogUpload") || params.get("clientLogUpload");
+  if (truthyFrontendDiagnosticLogValue(uploadValue)) {
+    frontendDiagnosticLogStorageSet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_UPLOAD, "1");
+  } else if (falseyFrontendDiagnosticLogValue(uploadValue)) {
+    frontendDiagnosticLogStorageSet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_UPLOAD, "0");
+  }
+  const scopesValue = params.get("codexFrontendLogScopes") || params.get("clientLogScopes");
+  if (String(scopesValue || "").trim()) {
+    frontendDiagnosticLogStorageSet(
+      STORAGE_FRONTEND_DIAGNOSTIC_LOG_SCOPES,
+      normalizeFrontendDiagnosticLogScopes(scopesValue).join(","),
+    );
+  }
+}
+
+function frontendDiagnosticLogSettings() {
+  applyFrontendDiagnosticLogUrlParams();
+  const enabled = truthyFrontendDiagnosticLogValue(
+    frontendDiagnosticLogStorageGet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENABLED),
+  );
+  const uploadRaw = frontendDiagnosticLogStorageGet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_UPLOAD);
+  const upload = !falseyFrontendDiagnosticLogValue(uploadRaw);
+  const scopes = normalizeFrontendDiagnosticLogScopes(
+    frontendDiagnosticLogStorageGet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_SCOPES) || "submitted_echo",
+  );
+  const maxEntries = boundedFrontendDiagnosticLogMaxEntries(
+    frontendDiagnosticLogStorageGet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_MAX_ENTRIES),
+  );
+  return { enabled, upload, scopes, maxEntries, version: FRONTEND_DIAGNOSTIC_LOG_VERSION };
+}
+
+function frontendDiagnosticLogScopeEnabled(scope, settings = frontendDiagnosticLogSettings()) {
+  if (!settings.enabled) return false;
+  const normalized = normalizeFrontendDiagnosticLogScopes(scope || "general")[0] || "general";
+  return settings.scopes.includes("all") || settings.scopes.includes(normalized);
+}
+
+function readFrontendDiagnosticLog() {
+  try {
+    const entries = JSON.parse(frontendDiagnosticLogStorageGet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENTRIES) || "[]");
+    return Array.isArray(entries) ? entries : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function writeFrontendDiagnosticLog(entries, maxEntries = 400) {
+  const boundedEntries = (Array.isArray(entries) ? entries : []).slice(-boundedFrontendDiagnosticLogMaxEntries(maxEntries));
+  return frontendDiagnosticLogStorageSet(
+    STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENTRIES,
+    JSON.stringify(boundedEntries),
+  );
+}
+
+function clearFrontendDiagnosticLog() {
+  return frontendDiagnosticLogStorageSet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENTRIES, "[]");
+}
+
+function frontendDiagnosticLogStatus() {
+  const settings = frontendDiagnosticLogSettings();
+  return Object.assign({}, settings, {
+    count: readFrontendDiagnosticLog().length,
+    storageKey: STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENTRIES,
+  });
+}
+
+function setFrontendDiagnosticLogEnabled(enabled, options = {}) {
+  if (enabled) frontendDiagnosticLogStorageSet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENABLED, "1");
+  else frontendDiagnosticLogStorageRemove(STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENABLED);
+  if (Object.prototype.hasOwnProperty.call(options, "upload")) {
+    frontendDiagnosticLogStorageSet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_UPLOAD, options.upload === false ? "0" : "1");
+  }
+  if (options.scopes) {
+    frontendDiagnosticLogStorageSet(
+      STORAGE_FRONTEND_DIAGNOSTIC_LOG_SCOPES,
+      normalizeFrontendDiagnosticLogScopes(options.scopes).join(","),
+    );
+  }
+  if (options.maxEntries) {
+    frontendDiagnosticLogStorageSet(
+      STORAGE_FRONTEND_DIAGNOSTIC_LOG_MAX_ENTRIES,
+      String(boundedFrontendDiagnosticLogMaxEntries(options.maxEntries)),
+    );
+  }
+  return frontendDiagnosticLogStatus();
+}
+
+function configureFrontendDiagnosticLog(options = {}) {
+  const hasEnabled = Object.prototype.hasOwnProperty.call(options, "enabled");
+  if (hasEnabled) return setFrontendDiagnosticLogEnabled(Boolean(options.enabled), options);
+  if (Object.prototype.hasOwnProperty.call(options, "upload")) {
+    frontendDiagnosticLogStorageSet(STORAGE_FRONTEND_DIAGNOSTIC_LOG_UPLOAD, options.upload === false ? "0" : "1");
+  }
+  if (options.scopes) {
+    frontendDiagnosticLogStorageSet(
+      STORAGE_FRONTEND_DIAGNOSTIC_LOG_SCOPES,
+      normalizeFrontendDiagnosticLogScopes(options.scopes).join(","),
+    );
+  }
+  if (options.maxEntries) {
+    frontendDiagnosticLogStorageSet(
+      STORAGE_FRONTEND_DIAGNOSTIC_LOG_MAX_ENTRIES,
+      String(boundedFrontendDiagnosticLogMaxEntries(options.maxEntries)),
+    );
+  }
+  return frontendDiagnosticLogStatus();
+}
+
+function exportFrontendDiagnosticLog() {
+  return JSON.stringify({
+    exportedAt: new Date().toISOString(),
+    status: frontendDiagnosticLogStatus(),
+    entries: readFrontendDiagnosticLog(),
+  });
+}
+
+function frontendDiagnosticLogSensitiveKey(key) {
+  return /(text|content|body|message|prompt|html|markdown|secret|token|cookie|authorization|password|access|launchkey|path|url|filename|file)/i
+    .test(String(key || ""));
+}
+
+function sanitizeFrontendDiagnosticLogValue(value, key = "", depth = 0) {
+  if (value == null) return value;
+  if (typeof value === "boolean" || typeof value === "number") return value;
+  if (typeof value === "string") {
+    const raw = String(value || "");
+    if (frontendDiagnosticLogSensitiveKey(key)) {
+      return raw ? { hash: diagnosticHash(`${key}:${raw}`), length: raw.length } : "";
+    }
+    return raw.length > 160 ? `${raw.slice(0, 157)}...` : raw;
+  }
+  if (Array.isArray(value)) {
+    if (depth >= 3) return { arrayLength: value.length };
+    return value.slice(0, 20).map((item) => sanitizeFrontendDiagnosticLogValue(item, key, depth + 1));
+  }
+  if (typeof value === "object") {
+    if (depth >= 3) return { objectKeys: Object.keys(value).slice(0, 20) };
+    const out = {};
+    for (const [entryKey, entryValue] of Object.entries(value).slice(0, 50)) {
+      out[entryKey] = sanitizeFrontendDiagnosticLogValue(entryValue, entryKey, depth + 1);
+    }
+    return out;
+  }
+  return String(value).slice(0, 120);
+}
+
+function frontendDiagnosticLogThreadForId(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  if (state.threadTileDetails && typeof state.threadTileDetails.get === "function") return state.threadTileDetails.get(id) || null;
+  return null;
+}
+
+function submittedEchoItemSource(item) {
+  if (!item || item.type !== "userMessage") return "";
+  if (typeof isOptimisticUserMessage === "function" && isOptimisticUserMessage(item)) return "optimistic";
+  if (item.mobilePendingSubmission) return "pending";
+  if (item.clientSubmissionId) return "client-submission";
+  if (item.id) return "durable";
+  return "unknown";
+}
+
+function submittedEchoItemTextHash(item) {
+  const text = typeof itemTextValue === "function"
+    ? itemTextValue(item && (item.text || item.message || item.content || item.summary || item.input))
+    : "";
+  return text ? stableTextHash(text) : "";
+}
+
+function submittedEchoThreadSnapshot(thread, clientSubmissionId = "") {
+  const submissionId = String(clientSubmissionId || "").trim();
+  const submissionHash = clientSubmissionDiagnosticHash(submissionId);
+  const entries = [];
+  let userMessageCount = 0;
+  let matchingSubmissionCount = 0;
+  let optimisticCount = 0;
+  let durableCount = 0;
+  let localTurnCount = 0;
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  turns.forEach((turn, turnIndex) => {
+    const turnId = String(turn && turn.id || "");
+    if (/^local-turn-/.test(turnId)) localTurnCount += 1;
+    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    items.forEach((item, itemIndex) => {
+      if (!item || item.type !== "userMessage") return;
+      userMessageCount += 1;
+      const source = submittedEchoItemSource(item);
+      if (source === "optimistic" || source === "pending") optimisticCount += 1;
+      else durableCount += 1;
+      const matchesSubmission = Boolean(submissionId && String(item.clientSubmissionId || "") === submissionId);
+      if (matchesSubmission) matchingSubmissionCount += 1;
+      if (matchesSubmission || entries.length < 8) {
+        entries.push({
+          turnIndex,
+          itemIndex,
+          turnHash: diagnosticTurnHash(turnId),
+          itemHash: diagnosticItemHash(item.id || `${turnId}:${itemIndex}`),
+          renderKeyHash: diagnosticItemHash(item.mobileRenderKey || item.id || `${turnId}:${itemIndex}`),
+          source,
+          matchesSubmission,
+          clientSubmissionHash: clientSubmissionDiagnosticHash(item.clientSubmissionId || ""),
+          textHash: submittedEchoItemTextHash(item),
+          turnStatus: statusText(turn && turn.status),
+        });
+      }
+    });
+  });
+  return {
+    threadHash: diagnosticThreadHash(thread && thread.id || ""),
+    submissionHash,
+    status: statusText(thread && thread.status),
+    turnCount: turns.length,
+    localTurnCount,
+    userMessageCount,
+    matchingSubmissionCount,
+    optimisticCount,
+    durableCount,
+    entries: entries.slice(0, 12),
+  };
+}
+
+function submittedEchoDomSnapshot(clientSubmissionId = "") {
+  const submissionHash = clientSubmissionDiagnosticHash(clientSubmissionId);
+  const conversation = $("conversation");
+  if (!conversation) {
+    return {
+      submissionHash,
+      available: false,
+      itemCount: 0,
+      userMessageCount: 0,
+      matchingSubmissionCount: 0,
+      duplicateUserMessageCount: 0,
+      duplicateRenderKeyCount: 0,
+      entries: [],
+    };
+  }
+  const shape = conversationDomShape();
+  const userNodes = Array.from(conversation.querySelectorAll(".item.userMessage"));
+  const entries = [];
+  let matchingSubmissionCount = 0;
+  userNodes.forEach((node, index) => {
+    const nodeSubmissionHash = String(node.getAttribute("data-client-submission-hash") || "");
+    const matchesSubmission = Boolean(submissionHash && nodeSubmissionHash === submissionHash);
+    if (matchesSubmission) matchingSubmissionCount += 1;
+    if (matchesSubmission || entries.length < 8) {
+      const turnNode = node.closest("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]");
+      entries.push({
+        index,
+        fromTail: userNodes.length - index - 1,
+        matchesSubmission,
+        clientSubmissionHash: nodeSubmissionHash,
+        turnHash: diagnosticTurnHash(
+          turnNode && (turnNode.getAttribute("data-turn") || turnNode.getAttribute("data-thread-tile-turn")) || "",
+        ),
+        itemHash: diagnosticItemHash(node.getAttribute("data-item") || ""),
+        renderKeyHash: diagnosticItemHash(node.getAttribute("data-render-key") || ""),
+        textHash: stableTextHash(String(node.textContent || "")),
+      });
+    }
+  });
+  return {
+    submissionHash,
+    available: true,
+    itemCount: shape.itemCount,
+    turnCount: shape.turnCount,
+    userMessageCount: userNodes.length,
+    matchingSubmissionCount,
+    duplicateUserMessageCount: shape.duplicateUserMessageCount,
+    duplicateRenderKeyCount: shape.duplicateRenderKeyCount,
+    entries: entries.slice(0, 12),
+  };
+}
+
+function submittedEchoDiagnosticSnapshot(input = {}) {
+  const threadId = String(input.threadId || state.currentThreadId || "").trim();
+  const clientSubmissionId = String(input.clientSubmissionId || "").trim();
+  const thread = input.thread || frontendDiagnosticLogThreadForId(threadId);
+  return {
+    threadId,
+    threadHash: diagnosticThreadHash(threadId),
+    submissionHash: clientSubmissionDiagnosticHash(clientSubmissionId),
+    routeKind: diagnosticRouteKind(),
+    currentThreadMatch: Boolean(threadId && String(state.currentThreadId || "") === threadId),
+    thread: submittedEchoThreadSnapshot(thread, clientSubmissionId),
+    dom: submittedEchoDomSnapshot(clientSubmissionId),
+  };
+}
+
+function recordFrontendDiagnosticLog(event, details = {}, options = {}) {
+  const scope = normalizeFrontendDiagnosticLogScopes(options.scope || details.scope || event || "general")[0] || "general";
+  const settings = frontendDiagnosticLogSettings();
+  if (!options.force && !frontendDiagnosticLogScopeEnabled(scope, settings)) return false;
+  const threadId = String(details.threadId || state.currentThreadId || "").trim();
+  state.frontendDiagnosticLogSeq = Number(state.frontendDiagnosticLogSeq || 0) + 1;
+  const entry = {
+    version: FRONTEND_DIAGNOSTIC_LOG_VERSION,
+    seq: state.frontendDiagnosticLogSeq,
+    at: new Date().toISOString(),
+    event: String(event || "frontend_diagnostic").slice(0, 100),
+    scope,
+    threadId,
+    threadHash: diagnosticThreadHash(threadId),
+    routeKind: diagnosticRouteKind(),
+    visibility: document.visibilityState || "",
+    clientBuildId: CLIENT_BUILD_ID,
+    details: sanitizeFrontendDiagnosticLogValue(details || {}),
+  };
+  const entries = readFrontendDiagnosticLog();
+  entries.push(entry);
+  writeFrontendDiagnosticLog(entries, settings.maxEntries);
+  if (settings.upload && state.key) {
+    postClientEvent("frontend_diagnostic_log", entry);
+  }
+  return entry;
+}
+
+function recordSubmittedEchoDiagnosticLog(stage, details = {}, options = {}) {
+  const payload = Object.assign({
+    stage: String(stage || "unknown").slice(0, 80),
+  }, details || {});
+  const snapshot = submittedEchoDiagnosticSnapshot(payload);
+  payload.threadHash = snapshot.threadHash;
+  payload.submissionHash = snapshot.submissionHash;
+  payload.snapshot = snapshot;
+  return recordFrontendDiagnosticLog("submitted_echo_lifecycle", payload, Object.assign({ scope: "submitted_echo" }, options || {}));
+}
+
+function recordRecentSubmittedEchoDiagnosticLogs(stage, details = {}, options = {}) {
+  const records = state.recentSubmittedUserMessages;
+  if (!records || typeof records.entries !== "function") return 0;
+  const threadId = String(details.threadId || state.currentThreadId || "").trim();
+  let count = 0;
+  for (const [clientSubmissionId, record] of Array.from(records.entries()).slice(-20)) {
+    if (threadId && String(record && record.threadId || "") !== threadId) continue;
+    if (recordSubmittedEchoDiagnosticLog(stage, Object.assign({}, details, {
+      clientSubmissionId,
+      threadId: String(record && record.threadId || threadId || ""),
+    }), options)) count += 1;
+  }
+  return count;
+}
+
+const frontendDiagnosticLogApi = Object.freeze({
+  enable: (options = {}) => setFrontendDiagnosticLogEnabled(true, options),
+  disable: () => setFrontendDiagnosticLogEnabled(false),
+  configure: configureFrontendDiagnosticLog,
+  status: frontendDiagnosticLogStatus,
+  read: readFrontendDiagnosticLog,
+  export: exportFrontendDiagnosticLog,
+  clear: clearFrontendDiagnosticLog,
+  record: recordFrontendDiagnosticLog,
+  recordSubmittedEcho: recordSubmittedEchoDiagnosticLog,
+  snapshotSubmittedEcho: submittedEchoDiagnosticSnapshot,
+});
 
 function diagnosticRouteKind() {
   if (state.newThreadDraft) return "new-thread";
@@ -377,11 +806,23 @@ function probeSubmittedMessageDom(threadId, clientSubmissionId, action = "messag
   const submissionId = String(clientSubmissionId || "").trim();
   const submissionHash = clientSubmissionDiagnosticHash(submissionId);
   if (!id || !submissionId || !submissionHash) return;
+  const elapsedMs = Date.now() - Number(startedAtMs || Date.now());
   const thread = frontendHealthThreadForSubmission(id);
   const domShape = conversationDomShape();
   const visibleShape = thread ? visibleConversationShape(thread) : { visibleItemCount: 0 };
+  recordSubmittedEchoDiagnosticLog("dom-probe", {
+    threadId: id,
+    clientSubmissionId: submissionId,
+    action,
+    elapsedMs,
+    domHasSubmission: conversationHasClientSubmissionHash(submissionHash),
+    hasThreadSubmission: threadHasClientSubmission(thread, submissionId),
+    visibleCount: visibleShape.visibleItemCount,
+    domCount: domShape.itemCount,
+    composerBusy: state.composerBusy,
+  });
   const plan = frontendRuntimeHealthApi.submittedMessageDomProbeEffects({
-    elapsedMs: Date.now() - Number(startedAtMs || Date.now()),
+    elapsedMs,
     action,
     routeKind: diagnosticRouteKind(),
     threadHash: diagnosticThreadHash(id),
@@ -1151,6 +1592,17 @@ const legacyGlobals = {
   diagnosticItemHash,
   clientSubmissionDiagnosticHash,
   clientSubmissionDataAttr,
+  frontendDiagnosticLogSettings,
+  frontendDiagnosticLogStatus,
+  setFrontendDiagnosticLogEnabled,
+  configureFrontendDiagnosticLog,
+  readFrontendDiagnosticLog,
+  clearFrontendDiagnosticLog,
+  exportFrontendDiagnosticLog,
+  recordFrontendDiagnosticLog,
+  submittedEchoDiagnosticSnapshot,
+  recordSubmittedEchoDiagnosticLog,
+  recordRecentSubmittedEchoDiagnosticLogs,
   diagnosticRouteKind,
   diagnosticErrorStatus,
   diagnosticErrorCode,
@@ -1216,6 +1668,7 @@ const legacyGlobals = {
   sendTestPushNotification,
   handlePushButtonClick,
 };
+root.CodexFrontendLog = frontendDiagnosticLogApi;
 
 function createApiClientRuntime() {
   return Object.assign({}, legacyGlobals);

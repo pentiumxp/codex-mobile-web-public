@@ -4,8 +4,8 @@
   var manifest = {
     "schemaVersion": 4,
     "generatedBy": "generate-frontend-shell-manifest",
-    "shellCacheName": "codex-mobile-shell-v625-17fc0ceb8cf6",
-    "clientBuildId": "0.1.11|codex-mobile-shell-v625-17fc0ceb8cf6",
+    "shellCacheName": "codex-mobile-shell-v625-75ff8c622f17",
+    "clientBuildId": "0.1.11|codex-mobile-shell-v625-75ff8c622f17",
     "scriptAssets": [
       "/shell-asset-manifest.js",
       "/api-client.js",
@@ -582,7 +582,8 @@
       {
         "asset": "/api-client-runtime.js",
         "globals": [
-          "CodexApiClientRuntime"
+          "CodexApiClientRuntime",
+          "CodexFrontendLog"
         ]
       },
       {
@@ -2509,7 +2510,7 @@
       "scriptAssets": 51,
       "entryGroups": 6,
       "classicGlobalExportAssets": 50,
-      "classicGlobalExports": 228,
+      "classicGlobalExports": 229,
       "startupGlobalContracts": 208,
       "linkAssets": 4,
       "iconAssets": 4,

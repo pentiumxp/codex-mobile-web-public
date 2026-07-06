@@ -835,6 +835,12 @@ function applyThreadDetailRefreshResponseEffect(effect, context = {}) {
   if (type === "merge-current-thread") {
     state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, thread);
     rememberReusableThreadDetail(state.currentThread);
+    if (typeof recordRecentSubmittedEchoDiagnosticLogs === "function") {
+      recordRecentSubmittedEchoDiagnosticLogs("refresh-merge-current-thread", {
+        threadId: state.currentThread && state.currentThread.id || state.currentThreadId || "",
+        source: String(context.source || item.source || "refresh-detail-api").slice(0, 80),
+      });
+    }
     return true;
   }
   throw new Error(`Unknown thread detail refresh response effect: ${type || "empty"}`);
@@ -3284,6 +3290,7 @@ function updateConversationHtml(html, signature, options = {}) {
     applicationPlan,
     updatePlan,
     threadId: state.currentThreadId || "",
+    clientBuildId: CLIENT_BUILD_ID,
     expectedVisibleTurnCount,
     renderedDomTurnCount,
   });
@@ -4786,6 +4793,12 @@ function renderCurrentThread(options = {}) {
       shellPlan: earlyShellPlan,
       threadId: thread.id || state.currentThreadId || "",
     });
+    if (typeof recordRecentSubmittedEchoDiagnosticLogs === "function") {
+      recordRecentSubmittedEchoDiagnosticLogs("render-current-thread-early-shell", {
+        threadId: thread.id || state.currentThreadId || "",
+        renderMode: "early-shell",
+      });
+    }
     return;
   }
   const turns = visibleTurnsForConversation(thread);
@@ -4872,6 +4885,13 @@ function renderCurrentThread(options = {}) {
     shellPlan,
     threadId: thread.id || state.currentThreadId || "",
   });
+  if (typeof recordRecentSubmittedEchoDiagnosticLogs === "function") {
+    recordRecentSubmittedEchoDiagnosticLogs("render-current-thread-full", {
+      threadId: thread.id || state.currentThreadId || "",
+      renderMode: "full-render",
+      shellUpdateReason: shellUpdatePlan.reason || "",
+    });
+  }
 }
 
 function renderNewThreadDraft() {

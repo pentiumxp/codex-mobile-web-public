@@ -7641,11 +7641,14 @@ test("thread running hints survive notLoaded list refreshes", () => {
   const sendBody = composerRuntimeBody("sendMessage");
   assert.match(sendBody, /const targetThreadId = currentComposerThreadId\(\);/);
   assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(targetThreadId\);/);
+  assert.match(sendBody, /recordSubmittedEchoDiagnosticLog\("submit-start"/);
   assert.match(sendBody, /registerSubmittedUserMessage\(targetThreadId, outboundText, submittedAttachments, clientSubmissionId\);\s*const insertedLocalMessage = insertLocalSubmittedUserMessage/);
-  assert.match(sendBody, /if \(insertedLocalMessage\) renderCurrentThread\(\{ stickToBottom: true \}\);/);
+  assert.match(sendBody, /if \(insertedLocalMessage\) \{[\s\S]*renderCurrentThread\(\{ stickToBottom: true \}\);[\s\S]*recordSubmittedEchoDiagnosticLog\("local-rendered"/);
   assert.match(sendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);
+  assert.match(sendBody, /recordSubmittedEchoDiagnosticLog\("post-response"/);
   assert.match(sendBody, /const serverTurnId = startedTurnId\(result\);/);
-  assert.match(sendBody, /if \(!steering && serverTurnId && reconcileSubmittedUserMessageTurn\(targetThreadId, clientSubmissionId, serverTurnId\)\)/);
+  assert.match(sendBody, /const reconciledSubmittedUserMessage = !steering[\s\S]*&& reconcileSubmittedUserMessageTurn\(targetThreadId, clientSubmissionId, serverTurnId\);/);
+  assert.match(sendBody, /if \(reconciledSubmittedUserMessage\) \{[\s\S]*renderCurrentThread\(\{ stickToBottom: true \}\);[\s\S]*recordSubmittedEchoDiagnosticLog\("post-reconcile-rendered"/);
   assert.match(sendBody, /scheduleComposerTargetRefresh\(targetThreadId, 250, "message-submit"\);/);
   assert.match(sendBody, /schedulePostCompletionThreadRefreshes\(targetThreadId, \[350, 750, 1200, 2400, 5200\]\);/);
   assert.match(sendBody, /scheduleUsageBackfillRefresh\(750, \{ force: true \}\);/);

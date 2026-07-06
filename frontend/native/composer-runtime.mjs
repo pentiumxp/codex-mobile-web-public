@@ -32,6 +32,7 @@ function createComposerRuntime(deps = {}) {
     diagnosticErrorStatus,
     diagnosticTaskHash,
     diagnosticThreadHash,
+    diagnosticTurnHash,
     document,
     draftKeyForThread,
     effectiveComposerPermissionMode,
@@ -69,6 +70,7 @@ function createComposerRuntime(deps = {}) {
     publishPluginVoiceInputCapability,
     reconcileSubmittedUserMessageTurn,
     recordHomeAiDiagnosticFailure,
+    recordSubmittedEchoDiagnosticLog,
     renderCurrentThread,
     renderQuotaUsage,
     renderThreads,
@@ -1825,6 +1827,18 @@ async function sendMessage(event) {
   const clientSubmissionId = createSubmissionId();
   const submittedAttachments = state.pendingAttachments.slice();
   const previousThreadStatus = snapshotThreadStatus(targetThreadId);
+  if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+    recordSubmittedEchoDiagnosticLog("submit-start", {
+      threadId: targetThreadId,
+      clientSubmissionId,
+      activeTurnHash: diagnosticTurnHash(targetActiveTurnId),
+      steering,
+      hasText: Boolean(outboundText),
+      textLength: String(outboundText || "").length,
+      attachmentCount: submittedAttachments.length,
+      composerBusyBeforeSet: state.composerBusy,
+    });
+  }
   state.composerBusy = true;
   state.sendButtonHint = "";
   startSendProgressWatchdog(targetThreadId);
@@ -1852,11 +1866,29 @@ async function sendMessage(event) {
     const insertedLocalMessage = insertLocalSubmittedUserMessage(targetThreadId, outboundText, submittedAttachments, clientSubmissionId, {
       turnId: steering ? steerTurnId : "",
     });
+    if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+      recordSubmittedEchoDiagnosticLog("local-insert-result", {
+        threadId: targetThreadId,
+        clientSubmissionId,
+        insertedLocalMessage,
+        steering,
+      });
+    }
     if (!steering) {
       markThreadOptimisticallyActive(targetThreadId);
       renderThreads();
     }
-    if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
+    if (insertedLocalMessage) {
+      renderCurrentThread({ stickToBottom: true });
+      if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+        recordSubmittedEchoDiagnosticLog("local-rendered", {
+          threadId: targetThreadId,
+          clientSubmissionId,
+          insertedLocalMessage,
+          steering,
+        });
+      }
+    }
     scheduleSubmittedMessageDomProbe(targetThreadId, clientSubmissionId, steering ? "message-steer" : "message-submit");
     followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
     const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
@@ -1865,8 +1897,38 @@ async function sendMessage(event) {
       timeoutMs: 180000,
     });
     const serverTurnId = startedTurnId(result);
-    if (!steering && serverTurnId && reconcileSubmittedUserMessageTurn(targetThreadId, clientSubmissionId, serverTurnId)) {
+    if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+      recordSubmittedEchoDiagnosticLog("post-response", {
+        threadId: targetThreadId,
+        clientSubmissionId,
+        serverTurnHash: diagnosticTurnHash(serverTurnId),
+        steering,
+        resultKeys: result && typeof result === "object" ? Object.keys(result).sort().slice(0, 20) : [],
+        steeringQueued: Boolean(result && result.steeringQueued),
+      });
+    }
+    const reconciledSubmittedUserMessage = !steering
+      && serverTurnId
+      && reconcileSubmittedUserMessageTurn(targetThreadId, clientSubmissionId, serverTurnId);
+    if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+      recordSubmittedEchoDiagnosticLog("post-reconcile-result", {
+        threadId: targetThreadId,
+        clientSubmissionId,
+        serverTurnHash: diagnosticTurnHash(serverTurnId),
+        steering,
+        reconciled: Boolean(reconciledSubmittedUserMessage),
+      });
+    }
+    if (reconciledSubmittedUserMessage) {
       renderCurrentThread({ stickToBottom: true });
+      if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+        recordSubmittedEchoDiagnosticLog("post-reconcile-rendered", {
+          threadId: targetThreadId,
+          clientSubmissionId,
+          serverTurnHash: diagnosticTurnHash(serverTurnId),
+          steering,
+        });
+      }
     }
     commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
       threadId: targetThreadId,
@@ -1918,10 +1980,27 @@ async function sendMessage(event) {
       message,
       steering,
     });
+    if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+      recordSubmittedEchoDiagnosticLog("send-error", {
+        threadId: targetThreadId,
+        clientSubmissionId,
+        steering,
+        errorCode: diagnosticErrorCode(err, "send_failed"),
+        statusCode: diagnosticErrorStatus(err),
+      });
+    }
   } finally {
     finishSendProgressWatchdog();
     state.composerBusy = false;
     updateComposerControls();
+    if (typeof recordSubmittedEchoDiagnosticLog === "function") {
+      recordSubmittedEchoDiagnosticLog("send-finally", {
+        threadId: targetThreadId,
+        clientSubmissionId,
+        steering,
+        composerBusy: state.composerBusy,
+      });
+    }
   }
 }
 
