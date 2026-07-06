@@ -1984,6 +1984,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   tryUpdateThreadTitle,
   upsertThreadListFallbackCacheThreads,
   visibilityFromGlobalState,
+  visibleWorkspaceRoots,
   viteShellArtifactService,
   webPushRuntimeService: notificationRuntimeService.webPushRuntimeService,
   workspaceDelegationPublicSettings,

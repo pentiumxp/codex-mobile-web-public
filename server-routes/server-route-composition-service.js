@@ -173,6 +173,7 @@ function createServerRouteCompositionService(dependencies = {}) {
     tryUpdateThreadTitle: dependencies.tryUpdateThreadTitle,
     upsertThreadListFallbackCacheThreads: dependencies.upsertThreadListFallbackCacheThreads,
     visibilityFromGlobalState: dependencies.visibilityFromGlobalState,
+    visibleWorkspaceRoots: dependencies.visibleWorkspaceRoots,
     webPushRuntimeService: dependencies.webPushRuntimeService,
     workspaceRegistryService: dependencies.workspaceRegistryService,
   });

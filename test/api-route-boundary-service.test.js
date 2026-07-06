@@ -64,9 +64,11 @@ test("server route composition wires core route service into API dispatch", () =
   const calls = [];
   const coreApiRouteService = { core: true };
   const runtimePressureDiagnostics = { status: () => ({ ok: true }) };
+  const visibleWorkspaceRoots = () => new Set();
   const service = createServerRouteCompositionService({
     appVersion: "0.1-test",
     runtimePressureDiagnostics,
+    visibleWorkspaceRoots,
     coreApiRouteServiceFactory: (deps) => {
       calls.push(["core", deps.appVersion, deps.runtimePressureDiagnostics === runtimePressureDiagnostics]);
       return coreApiRouteService;
@@ -76,6 +78,7 @@ test("server route composition wires core route service into API dispatch", () =
         "dispatch",
         deps.coreApiRouteService === coreApiRouteService,
         deps.runtimePressureDiagnostics === runtimePressureDiagnostics,
+        deps.visibleWorkspaceRoots === visibleWorkspaceRoots,
       ]);
       return {
         handleApi() {},
@@ -87,7 +90,7 @@ test("server route composition wires core route service into API dispatch", () =
   assert.equal(service.coreApiRouteService, coreApiRouteService);
   assert.deepEqual(calls, [
     ["core", "0.1-test", true],
-    ["dispatch", true, true],
+    ["dispatch", true, true, true],
   ]);
 });
 
@@ -216,6 +219,42 @@ test("workspace route reconciles selector rows with shared workspace snapshot", 
   });
 
   assert.equal(result.handled, true);
+  assert.deepEqual(sent[0].body.data.map((row) => [row.cwd, row.source]), [
+    ["/Users/me/syncthings/projects/codex-mobile-web-public", "codex"],
+    ["/Users/me/hermes-webui", "codex"],
+    ["/Users/me/Documents/Codex/investing", "mobile"],
+  ]);
+});
+
+test("workspace route reconciles selector rows with direct visible workspace roots", async () => {
+  const sent = [];
+  const service = createWorkspaceRouteService({
+    listWorkspaces: async () => [{
+      cwd: "/Users/me/Documents/Codex/investing",
+      label: "investing",
+      active: false,
+      recentThreadCount: 1,
+      source: "mobile",
+    }],
+    readGlobalState: () => ({
+      "electron-saved-workspace-roots": [
+        "/Users/me/syncthings/projects/codex-mobile-web-public",
+        "/Users/me/hermes-webui",
+      ],
+    }),
+    visibleWorkspaceRoots: (globalState) => new Set(globalState["electron-saved-workspace-roots"] || []),
+    tokenUsageWorkspaceCwds: () => {
+      throw new Error("token usage unavailable during startup");
+    },
+    normalizeFsPath: (value) => String(value || "").replace(/\/+$/, "").toLowerCase(),
+  });
+
+  await service.handleRoute({
+    url: routeUrl("/api/workspaces"),
+    method: "GET",
+    sendJson: (status, body) => sent.push({ status, body }),
+  });
+
   assert.deepEqual(sent[0].body.data.map((row) => [row.cwd, row.source]), [
     ["/Users/me/syncthings/projects/codex-mobile-web-public", "codex"],
     ["/Users/me/hermes-webui", "codex"],

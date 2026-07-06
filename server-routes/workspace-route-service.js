@@ -27,7 +27,9 @@ function createWorkspaceRouteService(dependencies = {}) {
     CODEX_HOME,
     listWorkspaces,
     normalizeFsPath,
+    readGlobalState,
     tokenUsageWorkspaceCwds,
+    visibleWorkspaceRoots,
     workspaceRegistryService,
     syncRegisteredWorkspaceTrust,
     syncKnownCodexMobileMcpToolsets,
@@ -41,13 +43,23 @@ function createWorkspaceRouteService(dependencies = {}) {
   }
 
   function workspaceSnapshotCwds() {
-    if (typeof tokenUsageWorkspaceCwds !== "function") return [];
+    const out = [];
+    if (typeof visibleWorkspaceRoots === "function") {
+      try {
+        const globalState = typeof readGlobalState === "function" ? readGlobalState() : undefined;
+        const roots = globalState === undefined ? visibleWorkspaceRoots() : visibleWorkspaceRoots(globalState);
+        if (roots && typeof roots[Symbol.iterator] === "function") out.push(...roots);
+      } catch (_) {}
+    }
+    if (typeof tokenUsageWorkspaceCwds !== "function") return out;
     try {
       const values = tokenUsageWorkspaceCwds();
-      return Array.isArray(values) ? values : [];
+      if (Array.isArray(values)) out.push(...values);
     } catch (_) {
-      return [];
+      // The Workspace selector should still expose Desktop-visible roots even
+      // if token-usage decoration is unavailable during startup.
     }
+    return out;
   }
 
   async function workspaceRows() {

@@ -99,13 +99,16 @@ function createApiDispatchRouteService(dependencies = {}) {
   const tryUpdateThreadTitle = dependencies.tryUpdateThreadTitle;
   const upsertThreadListFallbackCacheThreads = dependencies.upsertThreadListFallbackCacheThreads;
   const visibilityFromGlobalState = dependencies.visibilityFromGlobalState;
+  const visibleWorkspaceRoots = dependencies.visibleWorkspaceRoots;
   const webPushRuntimeService = dependencies.webPushRuntimeService;
   const workspaceRegistryService = dependencies.workspaceRegistryService;
   const workspaceRouteService = createWorkspaceRouteService({
     CODEX_HOME,
     listWorkspaces,
     normalizeFsPath,
+    readGlobalState,
     tokenUsageWorkspaceCwds,
+    visibleWorkspaceRoots,
     workspaceRegistryService,
     syncRegisteredWorkspaceTrust,
     syncKnownCodexMobileMcpToolsets,
