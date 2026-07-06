@@ -3016,14 +3016,14 @@
         "assets/vite-entry-group-bootstrap-state-DHih1wQN.js",
         "assets/vite-entry-group-shell-services-DuMpakad.js",
         "assets/vite-entry-group-app-entry-BgyKC0hH.js",
-        "assets/_virtual_codex-mobile-esm-compatibility-BFr0siaX.js",
-        "assets/app-bootstrap-b7n-QLCR.js",
-        "assets/vite-deferred-entry-topology-DgM5qDVR.js"
+        "assets/_virtual_codex-mobile-esm-compatibility--k8asiKr.js",
+        "assets/app-bootstrap-Dp0enEss.js",
+        "assets/vite-deferred-entry-topology-TDCLN_ha.js"
       ],
       "expectedFiles": [
-        "assets/_virtual_codex-mobile-esm-compatibility-BFr0siaX.js",
-        "assets/app-bootstrap-b7n-QLCR.js",
-        "assets/vite-deferred-entry-topology-DgM5qDVR.js",
+        "assets/_virtual_codex-mobile-esm-compatibility--k8asiKr.js",
+        "assets/app-bootstrap-Dp0enEss.js",
+        "assets/vite-deferred-entry-topology-TDCLN_ha.js",
         "assets/vite-entry-group-app-entry-BgyKC0hH.js",
         "assets/vite-entry-group-bootstrap-state-DHih1wQN.js",
         "assets/vite-entry-group-feature-runtimes-Csk_28IM.js",
@@ -10154,7 +10154,7 @@
       ]
     },
     "viteEntry": {
-      "fileName": "assets/vite-shell-entry-2E7WoSlm.js",
+      "fileName": "assets/vite-shell-entry-lPNzxnG2.js",
       "name": "vite-shell-entry",
       "source": "frontend/vite-shell-entry.mjs",
       "isEntry": true,
@@ -10167,36 +10167,36 @@
         "assets/vite-entry-group-bootstrap-state-DHih1wQN.js",
         "assets/vite-entry-group-shell-services-DuMpakad.js",
         "assets/vite-entry-group-app-entry-BgyKC0hH.js",
-        "assets/_virtual_codex-mobile-esm-compatibility-BFr0siaX.js",
-        "assets/app-bootstrap-b7n-QLCR.js",
-        "assets/vite-deferred-entry-topology-DgM5qDVR.js"
+        "assets/_virtual_codex-mobile-esm-compatibility--k8asiKr.js",
+        "assets/app-bootstrap-Dp0enEss.js",
+        "assets/vite-deferred-entry-topology-TDCLN_ha.js"
       ]
     },
     "viteEsmCompatibilityChunks": [
       {
-        "fileName": "assets/_virtual_codex-mobile-esm-compatibility-BFr0siaX.js",
+        "fileName": "assets/_virtual_codex-mobile-esm-compatibility--k8asiKr.js",
         "name": "_virtual_codex-mobile-esm-compatibility",
         "source": "virtual:codex-mobile-esm-compatibility",
         "isEntry": false,
         "isDynamicEntry": true,
         "imports": [
-          "assets/vite-shell-entry-2E7WoSlm.js"
+          "assets/vite-shell-entry-lPNzxnG2.js"
         ],
         "dynamicImports": [
-          "assets/shard-01-BSCa6Ljj.js",
-          "assets/shard-02-MXjOym51.js",
-          "assets/shard-03-DOuA3FCG.js",
-          "assets/shard-04-ByJoKT3i.js",
-          "assets/shard-05-BDgmnScG.js",
-          "assets/shard-06-DereYLR-.js",
-          "assets/shard-07-DQjng5Xe.js",
-          "assets/shard-08-DzvwyY4r.js",
-          "assets/shard-09-Dik_qMQb.js",
-          "assets/shard-10-BAi2rhoT.js"
+          "assets/shard-01-C8F-vv7Q.js",
+          "assets/shard-02-B7iUn75N.js",
+          "assets/shard-03-CIVWLinn.js",
+          "assets/shard-04-DLvVKO27.js",
+          "assets/shard-05-Bn7yXSIw.js",
+          "assets/shard-06-B8ToPiWW.js",
+          "assets/shard-07-Dm0lut2a.js",
+          "assets/shard-08-D3KZiFJ2.js",
+          "assets/shard-09-CC9X14gl.js",
+          "assets/shard-10-BbG0Q70X.js"
         ]
       },
       {
-        "fileName": "assets/shard-01-BSCa6Ljj.js",
+        "fileName": "assets/shard-01-C8F-vv7Q.js",
         "name": "shard-01",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-01",
         "isEntry": false,
@@ -10205,7 +10205,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-02-MXjOym51.js",
+        "fileName": "assets/shard-02-B7iUn75N.js",
         "name": "shard-02",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-02",
         "isEntry": false,
@@ -10214,7 +10214,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-03-DOuA3FCG.js",
+        "fileName": "assets/shard-03-CIVWLinn.js",
         "name": "shard-03",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-03",
         "isEntry": false,
@@ -10223,7 +10223,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-04-ByJoKT3i.js",
+        "fileName": "assets/shard-04-DLvVKO27.js",
         "name": "shard-04",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-04",
         "isEntry": false,
@@ -10232,7 +10232,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-05-BDgmnScG.js",
+        "fileName": "assets/shard-05-Bn7yXSIw.js",
         "name": "shard-05",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-05",
         "isEntry": false,
@@ -10241,7 +10241,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-06-DereYLR-.js",
+        "fileName": "assets/shard-06-B8ToPiWW.js",
         "name": "shard-06",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-06",
         "isEntry": false,
@@ -10250,7 +10250,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-07-DQjng5Xe.js",
+        "fileName": "assets/shard-07-Dm0lut2a.js",
         "name": "shard-07",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-07",
         "isEntry": false,
@@ -10259,7 +10259,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-08-DzvwyY4r.js",
+        "fileName": "assets/shard-08-D3KZiFJ2.js",
         "name": "shard-08",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-08",
         "isEntry": false,
@@ -10268,7 +10268,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-09-Dik_qMQb.js",
+        "fileName": "assets/shard-09-CC9X14gl.js",
         "name": "shard-09",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-09",
         "isEntry": false,
@@ -10277,7 +10277,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-10-BAi2rhoT.js",
+        "fileName": "assets/shard-10-BbG0Q70X.js",
         "name": "shard-10",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-10",
         "isEntry": false,
@@ -10288,26 +10288,26 @@
     ],
     "viteOwnedAppBootstrapChunks": [
       {
-        "fileName": "assets/app-bootstrap-b7n-QLCR.js",
+        "fileName": "assets/app-bootstrap-Dp0enEss.js",
         "name": "app-bootstrap",
         "source": "public/app-bootstrap.js",
         "isEntry": false,
         "isDynamicEntry": true,
         "imports": [
-          "assets/vite-shell-entry-2E7WoSlm.js"
+          "assets/vite-shell-entry-lPNzxnG2.js"
         ],
         "dynamicImports": []
       }
     ],
     "viteDeferredChunks": [
       {
-        "fileName": "assets/vite-deferred-entry-topology-DgM5qDVR.js",
+        "fileName": "assets/vite-deferred-entry-topology-TDCLN_ha.js",
         "name": "vite-deferred-entry-topology",
         "source": "frontend/vite-deferred-entry-topology.mjs",
         "isEntry": false,
         "isDynamicEntry": true,
         "imports": [
-          "assets/vite-shell-entry-2E7WoSlm.js"
+          "assets/vite-shell-entry-lPNzxnG2.js"
         ],
         "dynamicImports": []
       }
@@ -13398,26 +13398,26 @@
       }
     ],
     "outputFiles": [
-      "assets/_virtual_codex-mobile-esm-compatibility-BFr0siaX.js",
-      "assets/app-bootstrap-b7n-QLCR.js",
-      "assets/shard-01-BSCa6Ljj.js",
-      "assets/shard-02-MXjOym51.js",
-      "assets/shard-03-DOuA3FCG.js",
-      "assets/shard-04-ByJoKT3i.js",
-      "assets/shard-05-BDgmnScG.js",
-      "assets/shard-06-DereYLR-.js",
-      "assets/shard-07-DQjng5Xe.js",
-      "assets/shard-08-DzvwyY4r.js",
-      "assets/shard-09-Dik_qMQb.js",
-      "assets/shard-10-BAi2rhoT.js",
-      "assets/vite-deferred-entry-topology-DgM5qDVR.js",
+      "assets/_virtual_codex-mobile-esm-compatibility--k8asiKr.js",
+      "assets/app-bootstrap-Dp0enEss.js",
+      "assets/shard-01-C8F-vv7Q.js",
+      "assets/shard-02-B7iUn75N.js",
+      "assets/shard-03-CIVWLinn.js",
+      "assets/shard-04-DLvVKO27.js",
+      "assets/shard-05-Bn7yXSIw.js",
+      "assets/shard-06-B8ToPiWW.js",
+      "assets/shard-07-Dm0lut2a.js",
+      "assets/shard-08-D3KZiFJ2.js",
+      "assets/shard-09-CC9X14gl.js",
+      "assets/shard-10-BbG0Q70X.js",
+      "assets/vite-deferred-entry-topology-TDCLN_ha.js",
       "assets/vite-entry-group-app-entry-BgyKC0hH.js",
       "assets/vite-entry-group-bootstrap-state-DHih1wQN.js",
       "assets/vite-entry-group-feature-runtimes-Csk_28IM.js",
       "assets/vite-entry-group-foundation-Ch8Ty-Zj.js",
       "assets/vite-entry-group-manifest-BMoPj2_9.js",
       "assets/vite-entry-group-shell-services-DuMpakad.js",
-      "assets/vite-shell-entry-2E7WoSlm.js",
+      "assets/vite-shell-entry-lPNzxnG2.js",
       "codex-mobile-shell-manifest.json",
       "shell-assets/api-client-runtime.js",
       "shell-assets/api-client.js",

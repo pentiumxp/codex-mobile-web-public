@@ -1660,6 +1660,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   assert.match(shardSources, /activePaneSyncPlan/);
   assert.match(shardSources, /createThreadTileRuntime/);
   assert.match(shardSources, /createAppUpdateRuntime/);
+  assert.match(shardSources, /客户端 v625 · a5a3d596/);
+  assert.doesNotMatch(shardSources, /客户端 v625 · a5a3d596240d/);
   assert.match(shardSources, /createSettingsRuntime/);
   assert.match(shardSources, /createModalRuntime/);
   assert.match(shardSources, /createNavigationRuntime/);
