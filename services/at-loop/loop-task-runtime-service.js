@@ -1210,7 +1210,37 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return null;
   }
 
-  function publicSlice(slice = {}) {
+  function terminalLoopReason(loop = {}) {
+    const status = compactOneLine(loop.status);
+    if (status === "completed") return "loop_terminal_completed";
+    if (status === "rejected") return "loop_terminal_rejected";
+    if (status === "cancelled") return "loop_terminal_cancelled";
+    return "";
+  }
+
+  function isTerminalLoop(loop = {}) {
+    return Boolean(terminalLoopReason(loop));
+  }
+
+  function sliceIsResidualAfterTerminal(loop = {}, slice = {}) {
+    if (!isTerminalLoop(loop)) return false;
+    return ["pending", "planned", "blocked", "dispatched", "waiting"].includes(compactOneLine(slice.status));
+  }
+
+  function publicSlice(slice = {}, loop = {}) {
+    const terminalReason = terminalLoopReason(loop);
+    const stale = Boolean(slice.stale);
+    const blocked = !terminalReason && !stale && compactOneLine(slice.status) === "blocked";
+    const waitingReturn = !terminalReason && !stale && compactOneLine(slice.status) === "dispatched";
+    const terminalResidual = sliceIsResidualAfterTerminal(loop, slice);
+    const statusProjection = {
+      effectiveStatus: terminalResidual ? "terminal_suppressed" : stale ? "stale" : slice.status || "",
+      active: !terminalReason && !stale && ["dispatched", "blocked", "waiting"].includes(compactOneLine(slice.status)),
+      blocking: blocked,
+      waitingReturn,
+      terminalResidual,
+      nonBlockingReason: terminalReason || (stale ? "slice_stale" : ""),
+    };
     const out = {
       roleSliceId: slice.roleSliceId || "",
       role: slice.role || "",
@@ -1235,6 +1265,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       stale: Boolean(slice.stale),
       blockedReason: slice.blockedReason || "",
       routing: slice.routing || null,
+      statusProjection,
       updatedAt: slice.updatedAt || "",
     };
     if (slice.role === "product_audit" && slice.auditPacketStatus) {
@@ -1249,6 +1280,12 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const requirementsSlice = slices.find((slice) => slice.role === "requirements" && slice.iteration === (loop.iteration || 1))
       || slices.find((slice) => slice.role === "requirements")
       || null;
+    const terminalReason = terminalLoopReason(loop);
+    const publicSlices = slices.map((slice) => publicSlice(slice, loop));
+    const activeWaitingReturnCount = publicSlices.filter((slice) => slice.statusProjection && slice.statusProjection.waitingReturn).length;
+    const activeBlockedSliceCount = publicSlices.filter((slice) => slice.statusProjection && slice.statusProjection.blocking).length;
+    const terminalResidualRoleSliceCount = publicSlices.filter((slice) => slice.statusProjection && slice.statusProjection.terminalResidual).length;
+    const activeBlocked = !terminalReason && compactOneLine(loop.status) === "blocked";
     return {
       loopId: loop.loopId || "",
       sourceThreadId: loop.sourceThreadId || "",
@@ -1301,7 +1338,19 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       },
       duplicateSuppressedCount: Number(loop.duplicateSuppressedCount || 0),
       waitingReturnCount: slices.filter((slice) => slice.status === "dispatched").length,
-      roleSlices: slices.map(publicSlice),
+      activeWaitingReturnCount,
+      activeBlockedSliceCount,
+      terminalResidualRoleSliceCount,
+      statusProjection: {
+        terminal: Boolean(terminalReason),
+        active: !terminalReason && ["running", "blocked", "waiting_source_requirements"].includes(compactOneLine(loop.status)),
+        activeBlocked,
+        activeBlockedCount: activeBlocked ? Math.max(1, activeBlockedSliceCount) : 0,
+        activeWaitingReturnCount,
+        terminalResidualRoleSliceCount,
+        nonBlockingReason: terminalReason,
+      },
+      roleSlices: publicSlices,
       createdAt: loop.createdAt || "",
       updatedAt: loop.updatedAt || "",
     };
@@ -3187,10 +3236,16 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   function status(input = {}) {
     const loopId = compactOneLine(input.loopId);
     const loops = loopId ? loadState().loops.filter((loop) => loop.loopId === loopId) : loadState().loops;
+    const publicLoops = loops.map(publicLoop);
     return {
       ok: true,
       loopCount: loops.length,
-      loops: loops.map(publicLoop),
+      activeLoopCount: publicLoops.filter((loop) => loop.statusProjection && loop.statusProjection.active).length,
+      activeBlockedCount: publicLoops.reduce((sum, loop) => sum + Number(loop.statusProjection && loop.statusProjection.activeBlockedCount || 0), 0),
+      activeWaitingReturnCount: publicLoops.reduce((sum, loop) => sum + Number(loop.statusProjection && loop.statusProjection.activeWaitingReturnCount || 0), 0),
+      terminalLoopCount: publicLoops.filter((loop) => loop.statusProjection && loop.statusProjection.terminal).length,
+      terminalResidualRoleSliceCount: publicLoops.reduce((sum, loop) => sum + Number(loop.statusProjection && loop.statusProjection.terminalResidualRoleSliceCount || 0), 0),
+      loops: publicLoops,
     };
   }
 

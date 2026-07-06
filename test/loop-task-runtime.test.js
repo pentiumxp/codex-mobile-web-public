@@ -2861,6 +2861,157 @@ test("thread lifecycle supports plugin worker lanes distinct from plugin loop an
   assert.equal(retired.thread.deliverable, false);
 });
 
+test("loop status classifies rejected pending slices as terminal residuals, not active blockers", () => {
+  const { runtime, storageFile } = makeRuntime({ name: "rejected-terminal-status-projection" });
+  const loopId = testLoopId({
+    sourceThreadId: "source-thread",
+    targetThreadId: "target-thread",
+    objective: "stale rejected loop",
+  });
+  fs.writeFileSync(storageFile, `${JSON.stringify({ version: 1, loops: [{
+    loopId,
+    sourceThreadId: "source-thread",
+    targetThreadId: "target-thread",
+    requirementsThreadId: "source-thread",
+    implementationThreadId: "implementation-thread",
+    auditThreadId: "audit-thread",
+    targetAlias: "",
+    domainAdapter: "generic",
+    objectiveHash: "hash",
+    objectiveSummary: "stale rejected loop",
+    status: "rejected",
+    currentRole: "",
+    iteration: 1,
+    maxIterations: 3,
+    deployReadbackRequired: false,
+    duplicateSuppressedCount: 0,
+    lastAuditVerdict: "",
+    nextRoute: "rejected_role_return",
+    blockedReason: "at_loop_dispatch_failed",
+    sourceRequestId: `at-loop:${loopId}:source`,
+    requirementsLocal: false,
+    auditPacket: {},
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    roleSlices: [{
+      role: "implementation",
+      roleSliceId: `${loopId}:implementation:1`,
+      iteration: 1,
+      status: "completed",
+      dispatchStatus: "returned",
+      returnStatus: "rejected",
+      taskCardId: "ttc_done",
+      targetThreadId: "implementation-thread",
+      targetPurpose: "worker_lane",
+      sourceRequestId: "",
+      workflowId: "",
+      roleOwnerThreadId: "",
+      roleThreadCreated: false,
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "product_audit",
+      roleSliceId: `${loopId}:product_audit:1`,
+      iteration: 1,
+      status: "pending",
+      dispatchStatus: "",
+      taskCardId: "",
+      targetThreadId: "audit-thread",
+      targetPurpose: "audit_lane",
+      sourceRequestId: "",
+      workflowId: "",
+      roleOwnerThreadId: "",
+      roleThreadCreated: false,
+      routing: null,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }],
+  }] }, null, 2)}\n`, "utf8");
+
+  const status = runtime.status({});
+  assert.equal(status.activeBlockedCount, 0);
+  assert.equal(status.activeWaitingReturnCount, 0);
+  assert.equal(status.terminalLoopCount, 1);
+  assert.equal(status.terminalResidualRoleSliceCount, 1);
+  const loop = status.loops[0];
+  assert.equal(loop.status, "rejected");
+  assert.equal(loop.blockedReason, "at_loop_dispatch_failed");
+  assert.equal(loop.statusProjection.terminal, true);
+  assert.equal(loop.statusProjection.activeBlocked, false);
+  assert.equal(loop.statusProjection.nonBlockingReason, "loop_terminal_rejected");
+  const audit = loop.roleSlices.find((slice) => slice.role === "product_audit");
+  assert.equal(audit.status, "pending");
+  assert.equal(audit.statusProjection.effectiveStatus, "terminal_suppressed");
+  assert.equal(audit.statusProjection.terminalResidual, true);
+  assert.equal(audit.statusProjection.blocking, false);
+});
+
+test("loop status keeps true blocked loops actionable", () => {
+  const { runtime, storageFile } = makeRuntime({ name: "active-blocked-status-projection" });
+  const loopId = testLoopId({
+    sourceThreadId: "source-thread",
+    targetThreadId: "target-thread",
+    objective: "active blocked loop",
+  });
+  fs.writeFileSync(storageFile, `${JSON.stringify({ version: 1, loops: [{
+    loopId,
+    sourceThreadId: "source-thread",
+    targetThreadId: "target-thread",
+    requirementsThreadId: "source-thread",
+    implementationThreadId: "implementation-thread",
+    auditThreadId: "audit-thread",
+    targetAlias: "",
+    domainAdapter: "generic",
+    objectiveHash: "hash",
+    objectiveSummary: "active blocked loop",
+    status: "blocked",
+    currentRole: "implementation",
+    iteration: 1,
+    maxIterations: 3,
+    deployReadbackRequired: false,
+    duplicateSuppressedCount: 0,
+    lastAuditVerdict: "",
+    nextRoute: "implementation",
+    blockedReason: "at_loop_dispatch_failed",
+    sourceRequestId: `at-loop:${loopId}:source`,
+    requirementsLocal: false,
+    auditPacket: {},
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    roleSlices: [{
+      role: "implementation",
+      roleSliceId: `${loopId}:implementation:1`,
+      iteration: 1,
+      status: "blocked",
+      dispatchStatus: "failed",
+      taskCardId: "",
+      targetThreadId: "implementation-thread",
+      targetPurpose: "worker_lane",
+      sourceRequestId: "",
+      workflowId: "",
+      roleOwnerThreadId: "",
+      roleThreadCreated: false,
+      routing: null,
+      blockedReason: "Target thread is not visible or is not a current deliverable thread.",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }],
+  }] }, null, 2)}\n`, "utf8");
+
+  const status = runtime.status({});
+  assert.equal(status.activeBlockedCount, 1);
+  assert.equal(status.terminalLoopCount, 0);
+  assert.equal(status.terminalResidualRoleSliceCount, 0);
+  const loop = status.loops[0];
+  assert.equal(loop.statusProjection.terminal, false);
+  assert.equal(loop.statusProjection.activeBlocked, true);
+  assert.equal(loop.statusProjection.activeBlockedCount, 1);
+  const implementation = loop.roleSlices.find((slice) => slice.role === "implementation");
+  assert.equal(implementation.statusProjection.blocking, true);
+  assert.equal(implementation.statusProjection.effectiveStatus, "blocked");
+});
+
 test("loop watchdog marks stale returns without retrying or completing work", async () => {
   const initial = Date.parse("2026-07-03T01:00:00.000Z");
   const { cards, runtime, setNow } = makeRuntime({ name: "watchdog", now: initial });
