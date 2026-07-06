@@ -5664,3 +5664,22 @@ The previous full handoff was archived and should be opened only when old proven
 - Pending: commit this source fix, then deploy through the Codex Mobile Deploy
   Lane for production startup/full behavior/readback before claiming production
   closure.
+- Commit completed as `322c1fb79f9760f3c64336725277efe96bde99dd`
+  (`fix: harden quota popup and submitted message harness`).
+- Deployment card sent through the MCP-prefixed task-card tool
+  `mcp__codex_mobile.delegate_to_thread`:
+  `ttc_f3019d132ba7e29abf`.
+- Immediate production readback after card creation still showed old build
+  `0.1.11|codex-mobile-shell-v625-a8a0493e87a2`, not the requested local build
+  `0.1.11|codex-mobile-shell-v625-d77c1845e647`.
+- Production quota harness against old build reproduced the quota regression:
+  missing `toggleQuotaDetails`/`closeQuotaDetails` bridge functions,
+  `aria-expanded=false` after click, and quota panel still hidden. This is
+  old-build evidence and should not be used to judge `322c1fb7`.
+- Production submitted-message harness against old build submitted one marker
+  and saw one visible user card through the live sampling window, but failed
+  after reopen/API with `durable_user_item_missing` and `stale_client_build`.
+  This also belongs to the old production build.
+- Supplement card `ttc_3c78aa6c79aeaa21fd` was sent to the Deploy Lane asking
+  it to execute the pending `322c1fb7` deploy and run quota/submitted harnesses
+  against the deployed build rather than the stale `a8a0493e87a2` build.
