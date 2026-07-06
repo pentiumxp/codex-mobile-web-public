@@ -1252,7 +1252,11 @@ function evaluatedLiveUserMessageUpsert() {
     "shouldDropOptimisticUserMessageForDurable",
     "shouldDropOptimisticUserMessageForHigherPriorityEcho",
   "shouldDropDuplicateUserMessageEvent",
+    "isTrailingPendingUserEcho",
+    "shouldPlaceLiveProgressBeforeTrailingUserEcho",
+    "insertLiveItem",
     "upsertItem",
+    "appendToItem",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 const state = { currentThread: { id: "thread-1", turns: [{ id: "turn-1", items: [] }] } };
@@ -1276,12 +1280,18 @@ function patchVisibleItemDom() { return false; }
 function insertVisibleItemDom() { return false; }
 function scheduleRenderCurrentThread() { renderCount += 1; }
 function visibleTextItemsLikelySame() { return false; }
+function appendCommandOutput(item, delta) { item.aggregatedOutput = (item.aggregatedOutput || "") + delta; }
+function compactLiveText(value) { return String(value || ""); }
+function sustainSubmittedMessageBottomFollow() {}
+function shouldRenderAfterAppend() { return true; }
+function updateLiveOperationDockForLocalPatch() {}
+function patchLiveTextItemDom() { return false; }
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return Object.assign({}, existingItem || {}, incomingItem || {});
 }
 ${sources.join("\n")}
-return { state, upsertItem, renderCount: () => renderCount };
+return { state, upsertItem, appendToItem, renderCount: () => renderCount };
 `)();
 }
 
@@ -2718,6 +2728,64 @@ test("live upsert merges same-turn durable user message duplicate before render"
   const userMessages = harness.state.currentThread.turns[0].items.filter((item) => item.type === "userMessage");
   assert.equal(userMessages.length, 1);
   assert.equal(userMessages[0].id, "durable-user-two");
+});
+
+test("live upsert inserts assistant progress before trailing pending submitted user echo", () => {
+  const harness = evaluatedLiveUserMessageUpsert();
+
+  harness.upsertItem("turn-1", {
+    id: "local-user-first",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    clientSubmissionId: "submission-1",
+    content: [{ type: "text", text: "first prompt" }],
+  });
+  harness.upsertItem("turn-1", {
+    id: "local-user-second",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    clientSubmissionId: "submission-2",
+    content: [{ type: "text", text: "second prompt" }],
+  });
+  harness.upsertItem("turn-1", {
+    id: "agent-progress",
+    type: "agentMessage",
+    text: "working",
+  });
+
+  assert.deepEqual(harness.state.currentThread.turns[0].items.map((item) => item.id), [
+    "local-user-first",
+    "agent-progress",
+    "local-user-second",
+  ]);
+});
+
+test("live append inserts new assistant text before trailing pending submitted user echo", () => {
+  const harness = evaluatedLiveUserMessageUpsert();
+
+  harness.upsertItem("turn-1", {
+    id: "local-user-first",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    clientSubmissionId: "submission-1",
+    content: [{ type: "text", text: "first prompt" }],
+  });
+  harness.upsertItem("turn-1", {
+    id: "local-user-second",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    clientSubmissionId: "submission-2",
+    content: [{ type: "text", text: "second prompt" }],
+  });
+  harness.appendToItem("turn-1", "agent-progress", "agentMessage", "text", "working");
+
+  const turn = harness.state.currentThread.turns[0];
+  assert.deepEqual(turn.items.map((item) => item.id), [
+    "local-user-first",
+    "agent-progress",
+    "local-user-second",
+  ]);
+  assert.equal(turn.items[1].text, "working");
 });
 
 test("existing thread send inserts a local pending user turn before server projection catches up", () => {

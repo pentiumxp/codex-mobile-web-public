@@ -4,6 +4,36 @@ function shouldRenderAfterUpsert(turn, item) {
   return !shouldDeferLiveFinalReceipt(turn, item && item.type);
 }
 
+function isTrailingPendingUserEcho(item) {
+  return Boolean(item
+    && item.type === "userMessage"
+    && !item.mobileSendError
+    && isOptimisticUserMessage(item));
+}
+
+function shouldPlaceLiveProgressBeforeTrailingUserEcho(item) {
+  return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
+}
+
+function insertLiveItem(turn, item) {
+  turn.items = turn.items || [];
+  if (!shouldPlaceLiveProgressBeforeTrailingUserEcho(item)) {
+    turn.items.push(item);
+    return false;
+  }
+  let firstTrailingPendingIndex = turn.items.length;
+  while (firstTrailingPendingIndex > 0 && isTrailingPendingUserEcho(turn.items[firstTrailingPendingIndex - 1])) {
+    firstTrailingPendingIndex -= 1;
+  }
+  const insertIndex = Math.max(1, firstTrailingPendingIndex);
+  if (insertIndex >= turn.items.length) {
+    turn.items.push(item);
+    return false;
+  }
+  turn.items.splice(insertIndex, 0, item);
+  return true;
+}
+
 function upsertItem(turnId, item) {
   const turn = ensureTurn(turnId);
   if (!turn || !item || !item.id) return;
@@ -47,7 +77,7 @@ function upsertItem(turnId, item) {
     turn.items[index] = mergeItemPreservingVisibleFields(turn.items[index], item);
     nextItem = turn.items[index];
   } else {
-    turn.items.push(item);
+    structureChanged = insertLiveItem(turn, item) || structureChanged;
   }
   normalizeThreadVisibleUserMessages(state.currentThread);
   if (shouldRenderAfterUpsert(turn, nextItem)) {
@@ -107,9 +137,10 @@ function appendToItem(turnId, itemId, itemType, field, delta, index = 0, options
   markActivity(activityLabelForItem({ type: itemType }));
   let item = (turn.items || []).find((x) => x.id === itemId);
   let createdItem = false;
+  let insertedBeforeTrailingPendingUser = false;
   if (!item) {
     item = { id: itemId, type: itemType, startedAtMs: Date.now() };
-    turn.items.push(item);
+    insertedBeforeTrailingPendingUser = insertLiveItem(turn, item);
     createdItem = true;
   }
   if (!item.startedAtMs) item.startedAtMs = Date.now();
@@ -129,7 +160,8 @@ function appendToItem(turnId, itemId, itemType, field, delta, index = 0, options
   if (shouldRenderAfterAppend(turn, itemType, field, previousValue, nextValue, options)) {
     if (isOperationalItem(item)) updateLiveOperationDockForLocalPatch();
     else if (createdItem) {
-      if (!insertVisibleItemDom(turn, item)) scheduleRenderCurrentThread();
+      if (insertedBeforeTrailingPendingUser) scheduleRenderCurrentThread();
+      else if (!insertVisibleItemDom(turn, item)) scheduleRenderCurrentThread();
     } else if (!patchLiveTextItemDom(turn, item)) scheduleRenderCurrentThread();
   }
 }
