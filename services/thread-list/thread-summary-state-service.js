@@ -504,11 +504,58 @@ function createThreadSummaryStateService(dependencies = {}) {
     return target;
   }
 
+  function sessionIndexTitleUpdatedAtMs(thread) {
+    if (!thread || typeof thread !== "object") return 0;
+    const direct = Number(thread.mobileSessionIndexTitleUpdatedAtMs || thread.mobile_session_index_title_updated_at_ms || 0);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    return timestampToMs(thread.mobileSessionIndexTitleUpdatedAt || thread.mobile_session_index_title_updated_at);
+  }
+
+  function sessionIndexTitleEntry(thread) {
+    if (!thread || typeof thread !== "object") return null;
+    const title = String(thread.mobileSessionIndexTitle || thread.mobile_session_index_title || "").trim();
+    if (!title) return null;
+    return {
+      title,
+      updatedAtMs: sessionIndexTitleUpdatedAtMs(thread),
+    };
+  }
+
+  function preferredSessionIndexTitleEntry(base, display) {
+    const baseTitle = sessionIndexTitleEntry(base);
+    const displayTitle = sessionIndexTitleEntry(display);
+    if (!baseTitle) return displayTitle;
+    if (!displayTitle) return baseTitle;
+    return displayTitle.updatedAtMs >= baseTitle.updatedAtMs ? displayTitle : baseTitle;
+  }
+
+  function applySessionIndexTitleMarker(target, entry) {
+    if (!target || !entry || !entry.title) return target;
+    target.displayTitle = entry.title;
+    target.threadTitle = entry.title;
+    target.thread_name = entry.title;
+    target.name = entry.title;
+    target.title = entry.title;
+    target.preview = entry.title;
+    target.mobileSessionIndexTitle = entry.title;
+    if (entry.updatedAtMs > 0) target.mobileSessionIndexTitleUpdatedAtMs = entry.updatedAtMs;
+    return target;
+  }
+
   function mergeThreadDisplaySummary(base, display, options = {}) {
     if (!base) return display ? normalizeStaleContextThreadForSummary(annotateThreadRolloutStats(display, options), options) : null;
     if (!display) return normalizeStaleContextThreadForSummary(base, options);
     const next = Object.assign({}, base);
-    for (const key of ["name", "preview", "cwd"]) {
+    const sessionIndexTitle = preferredSessionIndexTitleEntry(base, display);
+    for (const key of ["name", "preview"]) {
+      const value = display[key];
+      if (!sessionIndexTitle && value !== null && value !== undefined && String(value).trim() !== "") next[key] = value;
+    }
+    for (const key of ["displayTitle", "threadTitle", "thread_name", "title"]) {
+      const value = display[key];
+      if (!sessionIndexTitle && value !== null && value !== undefined && String(value).trim() !== "") next[key] = value;
+    }
+    for (const key of ["cwd"]) {
       const value = display[key];
       if (value !== null && value !== undefined && String(value).trim() !== "") next[key] = value;
     }
@@ -536,6 +583,7 @@ function createThreadSummaryStateService(dependencies = {}) {
     if (display.isSpawnedChildThread || display.is_spawned_child) next.isSpawnedChildThread = true;
     if (display.mobileFallback && !next.mobileFallback) next.mobileFallback = true;
     copyThreadDisplayRolloutMetadata(next, display);
+    applySessionIndexTitleMarker(next, sessionIndexTitle);
     return normalizeStaleContextThreadForSummary(annotateThreadRolloutStats(next, options), options);
   }
 

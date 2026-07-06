@@ -787,6 +787,12 @@ test("thread list hydrates display titles from the Mobile session index", () => 
 
   assert.equal(hydrated[0].name, "记账 06-05");
   assert.equal(hydrated[0].preview, "记账 06-05");
+  assert.equal(hydrated[0].displayTitle, "记账 06-05");
+  assert.equal(hydrated[0].threadTitle, "记账 06-05");
+  assert.equal(hydrated[0].thread_name, "记账 06-05");
+  assert.equal(hydrated[0].title, "记账 06-05");
+  assert.equal(hydrated[0].mobileSessionIndexTitle, "记账 06-05");
+  assert.equal(hydrated[0].mobileSessionIndexTitleUpdatedAtMs, 1780591873524);
   assert.equal(hydrated[0].updatedAt, 1780591873);
   assert.equal(hydrated[1].name, "Session Indexed Title");
   assert.equal(hydrated[2].name, "星盘");
@@ -813,6 +819,60 @@ test("thread list hydrates continuation bootstrap titles from the Mobile session
 
   assert.equal(hydrated[0].name, "Hermes 06-05");
   assert.equal(hydrated[0].preview, "Hermes 06-05");
+});
+
+test("thread display summary preserves Mobile session-index title over stale display summaries", () => {
+  const toMs = (value) => {
+    if (typeof value === "string" && value.trim()) return Date.parse(value);
+    const number = Number(value || 0);
+    if (!Number.isFinite(number) || number <= 0) return 0;
+    return number < 1_000_000_000_000 ? number * 1000 : number;
+  };
+  const service = createThreadSummaryStateService({
+    statusText: (status) => String(status && status.type || status || ""),
+    timestampToMs: toMs,
+    threadListSummaryTimestampMs(thread) {
+      return toMs(thread && (thread.updatedAt || thread.updated_at || thread.updatedAtMs || thread.updated_at_ms));
+    },
+  });
+  const manualTitle = "家庭网络";
+  const staleLongTitle = "Obsidian Vault 家庭网络 Tailscale NAS 转发性能排查和续接讨论";
+  const merged = service.mergeThreadDisplaySummary({
+    id: "019ed4de-dd44-77c3-88d0-e1be26df0bbe",
+    name: manualTitle,
+    preview: manualTitle,
+    displayTitle: manualTitle,
+    threadTitle: manualTitle,
+    thread_name: manualTitle,
+    title: manualTitle,
+    mobileSessionIndexTitle: manualTitle,
+    mobileSessionIndexTitleUpdatedAtMs: Date.parse("2026-07-06T12:24:21.331Z"),
+    updatedAt: 1783339000,
+    cwd: "/old",
+    status: { type: "completed" },
+  }, {
+    id: "019ed4de-dd44-77c3-88d0-e1be26df0bbe",
+    name: staleLongTitle,
+    preview: staleLongTitle,
+    displayTitle: staleLongTitle,
+    threadTitle: staleLongTitle,
+    thread_name: staleLongTitle,
+    title: staleLongTitle,
+    updatedAt: 1783341000,
+    cwd: "/Users/xuefusong/syncthings/Obsidian/Obsidian Vault",
+    status: { type: "completed" },
+  });
+
+  assert.equal(merged.name, manualTitle);
+  assert.equal(merged.preview, manualTitle);
+  assert.equal(merged.displayTitle, manualTitle);
+  assert.equal(merged.threadTitle, manualTitle);
+  assert.equal(merged.thread_name, manualTitle);
+  assert.equal(merged.title, manualTitle);
+  assert.equal(merged.mobileSessionIndexTitle, manualTitle);
+  assert.equal(merged.mobileSessionIndexTitleUpdatedAtMs, Date.parse("2026-07-06T12:24:21.331Z"));
+  assert.equal(merged.cwd, "/Users/xuefusong/syncthings/Obsidian/Obsidian Vault");
+  assert.equal(merged.updatedAt, 1783341000);
 });
 
 test("deferred thread list result hydrates display titles before first paint", () => {

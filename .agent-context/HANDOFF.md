@@ -1,5 +1,34 @@
 # HANDOFF
 
+## 2026-07-06 - Manual Thread Title Priority PR
+
+- User-visible symptom: after manually renaming the `家庭网络` thread, the
+  session title could temporarily revert to an older long title on refresh.
+- Root cause: Mobile persisted the manual title in `session_index.jsonl`, but
+  later display-summary merges could still accept older app-server/display-cache
+  `name`/`preview`/title fields because the merge layer did not preserve the
+  session-index title as an explicit UI-title source.
+- Fix branch: `franksong2702/fix-manual-title-priority` from `origin/main`
+  (`95ab4c41`).
+- Source changes:
+  - `adapters/thread-visibility-service.js` now applies session-index titles to
+    all UI title fields and marks them with `mobileSessionIndexTitle`.
+  - `services/thread-list/thread-summary-state-service.js` preserves the newest
+    session-index title marker during display-summary merges while still
+    accepting non-title metadata such as `cwd`, status, and rollout stats.
+  - `test/thread-visibility.test.js` and `test/thread-title-source.test.js`
+    cover title hydration and stale display-summary overwrite prevention.
+- Validation:
+  - changed-file `node --check` -> exit 0.
+  - `node --test test/thread-visibility.test.js test/thread-title-source.test.js`
+    with the shared installed `node_modules` -> exit 0, 69/69.
+  - broader thread-list/title boundary tests -> exit 0, 114/114.
+  - `npm run --silent check` -> exit 0.
+  - `npm run --silent check:frontend-manifest` -> exit 0.
+  - `npm run --silent build:frontend` -> exit 0 after linking the clean
+    worktree to the already-installed dependency directory for Vite resolution.
+  - `git diff --check` -> exit 0.
+
 Last compacted: 2026-07-04T08:32:24.763Z
 
 This active handoff was automatically compacted before a Codex Mobile continuation.

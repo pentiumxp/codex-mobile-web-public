@@ -332,13 +332,22 @@ function createThreadVisibilityService(options = {}) {
     const id = String(thread.id || "").trim();
     const name = sessionIndexDisplayName(entry);
     if (!id || !name) return thread;
-    const next = Object.assign({}, thread, {
-      name,
-      preview: name,
-    });
     const updatedAt = entry && (entry.updated_at || entry.updatedAt);
-    if (updatedAt && timestampToMs(updatedAt) >= timestampToMs(next.updatedAt || next.updated_at)) {
-      next.updatedAt = Math.floor(timestampToMs(updatedAt) / 1000);
+    const updatedAtMs = timestampToMs(updatedAt);
+    const next = Object.assign({}, thread, {
+      displayTitle: name,
+      threadTitle: name,
+      thread_name: name,
+      name,
+      title: name,
+      preview: name,
+      mobileSessionIndexTitle: name,
+    });
+    if (updatedAtMs > 0) {
+      next.mobileSessionIndexTitleUpdatedAtMs = updatedAtMs;
+    }
+    if (updatedAtMs && updatedAtMs >= timestampToMs(next.updatedAt || next.updated_at)) {
+      next.updatedAt = Math.floor(updatedAtMs / 1000);
     }
     return next;
   }
