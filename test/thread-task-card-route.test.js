@@ -262,18 +262,18 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /local final answer in the target thread is not a source-thread return card/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /mcp__codex_mobile\.return_to_source/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /tool_search/);
-  assert.equal(
-    functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction")
-      .includes(["`codex_mobile", "return_to_source`"].join(".")),
-    false,
+  assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /non-MCP namespace variants/);
+  assert.doesNotMatch(
+    functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"),
+    /(?<!mcp__)codex_mobile\.return_to_source/,
   );
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /create-thread-task-card\.js/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /mcp__codex_mobile\.delegate_to_thread/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /tool_search/);
-  assert.equal(
-    functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction")
-      .includes(["`codex_mobile", "delegate_to_thread`"].join(".")),
-    false,
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /non-MCP namespace variants/);
+  assert.doesNotMatch(
+    functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"),
+    /(?<!mcp__)codex_mobile\.delegate_to_thread/,
   );
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /first-class fallback path/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /multi_agent_v1\.spawn_agent/);
@@ -312,6 +312,12 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(routingServiceJs, /visibleTargetsForCwd\(rawPath, visibleThreads, sourceThreadId\)/);
   assert.match(routingServiceJs, /target_workspace_ambiguous/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /Thread identity is the exact targetThreadId/);
+  assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /non-MCP namespace variants are unsupported/);
+  assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnDynamicToolSpec"), /non-MCP namespace variants are unsupported/);
+  assert.match(functionBody(taskCardRouteServiceJs, "taskCardHeartbeatDynamicToolSpec"), /non-MCP namespace variants are unsupported/);
+  assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolSpec"), /(?<!mcp__)codex_mobile\.delegate_to_thread/);
+  assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "taskCardReturnDynamicToolSpec"), /(?<!mcp__)codex_mobile\.return_to_source/);
+  assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "taskCardHeartbeatDynamicToolSpec"), /(?<!mcp__)codex_mobile\.task_card_heartbeat/);
   const sourceThreadTaskCardCreateRoute = taskCardRouteServiceJs.slice(
     taskCardRouteServiceJs.indexOf('const sourceThreadTaskCardCreate = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/task-cards$/);'),
     taskCardRouteServiceJs.indexOf('if (url.pathname === "/api/thread-task-cards" && method === "POST")'),

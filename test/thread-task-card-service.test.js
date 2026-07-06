@@ -1040,8 +1040,9 @@ test("source-thread direct approval bypasses target pending approval with audit 
   assert.match(executions[0].message.text, /target approval bypassed/);
   assert.match(executions[0].message.text, /Task card id: ttc_/);
   assert.match(executions[0].message.text, /mcp__codex_mobile\.return_to_source/);
-  assert.match(executions[0].message.text, /MCP discovery/);
-  assert.equal(executions[0].message.text.includes(["`codex_mobile", "return_to_source`"].join(".")), false);
+  assert.match(executions[0].message.text, /MCP\/tool discovery/);
+  assert.match(executions[0].message.text, /non-MCP namespace variants are unsupported/);
+  assert.doesNotMatch(executions[0].message.text, /(?<!mcp__)codex_mobile\.return_to_source/);
 
   const retry = await service.approveFromSource(created.id, "thread-src");
   assert.equal(retry.alreadyApproved, true);

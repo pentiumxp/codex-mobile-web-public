@@ -36,7 +36,7 @@ const STORE_LOCK_TIMEOUT_MS = 10_000;
 const STORE_LOCK_STALE_MS = 30_000;
 const STORE_LOCK_POLL_MS = 25;
 const TASK_CARD_RESOLVER_VERSION = "task-card-exact-routing-v1";
-const TASK_CARD_RETURN_TOOL_HINT = "`mcp__codex_mobile.return_to_source` after Codex Mobile MCP discovery if needed";
+const TASK_CARD_RETURN_TOOL_HINT = "`mcp__codex_mobile.return_to_source` after Codex Mobile MCP/tool discovery when needed; non-MCP namespace variants are unsupported";
 
 function nowIso(nowFn) {
   const value = typeof nowFn === "function" ? nowFn() : Date.now();

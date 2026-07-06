@@ -140,6 +140,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       name: workspaceDelegationToolName,
       description: [
         "Create a Codex Mobile cross-thread task card when the current user request requires work in another Codex thread or workspace.",
+        "Only MCP-prefixed Codex Mobile tool names are valid in model context; non-MCP namespace variants are unsupported and must not be called.",
         "Mandatory boundary when this tool is available: if the requested implementation, file edit, command execution, test, deployment, or other mutation belongs to a different workspace or thread, call this tool before doing that work.",
         "Do not inspect, cd into, edit, patch, run commands in, test, deploy, or otherwise operate on the other workspace from the current thread. Delegate first, then stop or report the created task card.",
         "If the user requested target-workspace mutation and your local attempt already failed with sandbox, filesystem, permission denied, operation not permitted, cwd, or approval-policy errors, do not retry locally or merely report blocked. Use the source-thread context to decide the exact delegation, then call this tool yourself with the failed intent and exact target.",
@@ -226,6 +227,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       name: taskCardReturnToolName,
       description: [
         "Return a received Codex Mobile task card to its source thread when target work is completed, blocked, or redirected.",
+        "Only MCP-prefixed Codex Mobile tool names are valid in model context; non-MCP namespace variants are unsupported and must not be called.",
         "Use this for task-card closure. A plain final answer in the target thread is not a source-thread return card.",
         "The original injected task-card message contains `Task card id`; pass that value as `taskCardId`.",
         "The server validates that the current target thread is allowed to return the card and creates the reverse-direction return card through the normal task-card reply service.",
@@ -272,6 +274,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       name: taskCardHeartbeatToolName,
       description: [
         "Report bounded progress for an active received Codex Mobile task card so the execution watchdog does not resume a thread that is still working.",
+        "Only MCP-prefixed Codex Mobile tool names are valid in model context; non-MCP namespace variants are unsupported and must not be called.",
         "Use this only from the current target thread for the task card you are actively handling.",
         "Send only bounded metadata such as taskCardId, status, and turnId. Do not include private task body text, prompts, endpoint bodies, credentials, cookies, logs, or screenshots.",
         "This does not complete the card. When work is done, still close it through `mcp__codex_mobile.return_to_source` when Codex MCP tools are visible.",
@@ -351,6 +354,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     return [
       "Codex Mobile cross-thread delegation fallback:",
       "- Use the exact MCP tool name `mcp__codex_mobile.delegate_to_thread`.",
+      "- Do not call non-MCP namespace variants; if only a non-MCP variant is visible, treat it as unavailable and use discovery or the script fallback.",
       "- If `mcp__codex_mobile.delegate_to_thread` is not visible yet, call `tool_search` for Codex Mobile cross-thread task-card tools.",
       "- If the MCP tool is still not callable, use the local script below as the first-class fallback path:",
       `  node ${JSON.stringify(scriptPath)} --source-thread ${sourceThreadId || "<current-thread-id>"} --target-thread <target-thread-id-or-exact-title> --title \"<short title>\" --body-file <markdown-file>`,
@@ -366,6 +370,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     return [
       "Codex Mobile task-card return fallback:",
       "- Use the exact MCP tool name `mcp__codex_mobile.return_to_source`.",
+      "- Do not call non-MCP namespace variants; if only a non-MCP variant is visible, treat it as unavailable and use discovery or the script fallback.",
       "- If `mcp__codex_mobile.return_to_source` is not visible yet, call `tool_search` for Codex Mobile task-card tools.",
       "- A local final answer in the target thread is not a source-thread return card.",
       "- If the MCP tool is still not callable, use the local script below as the first-class return path:",

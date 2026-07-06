@@ -73,6 +73,8 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   assert.equal(initialized.serverInfo.name, "codex_mobile");
   assert.match(initialized.instructions, /mcp__codex_mobile\.delegate_to_thread/);
   assert.match(initialized.instructions, /mcp__codex_mobile/);
+  assert.match(initialized.instructions, /non-MCP namespace variants are unsupported/);
+  assert.doesNotMatch(initialized.instructions, /(?<!mcp__)codex_mobile\.(delegate_to_thread|return_to_source|task_card_heartbeat)/);
   assert.match(initialized.instructions, /delegate_to_thread/);
   assert.match(initialized.instructions, /start_loop/);
   assert.match(initialized.instructions, /thread_lifecycle/);
