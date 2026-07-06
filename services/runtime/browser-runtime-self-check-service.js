@@ -38,6 +38,26 @@ function visibleUserInputCount(row = {}) {
     + toNumber(row.taskCardUserMessageCount || row.latestTurnTaskCardItemCount);
 }
 
+function safeItemKindSequence(value = []) {
+  const allowed = new Set([
+    "userMessage",
+    "agentMessage",
+    "plan",
+    "operation",
+    "reasoning",
+    "contextCompaction",
+    "turnUsageSummary",
+    "threadTaskCard",
+    "turnDiagnostic",
+    "other",
+    "unknown",
+  ]);
+  return toArray(value)
+    .slice(0, 60)
+    .map((entry) => safeLabel(entry, "unknown"))
+    .map((entry) => (allowed.has(entry) ? entry : "other"));
+}
+
 function isSparseSample(sample = {}) {
   return toNumber(sample.turns) <= 1 && toNumber(sample.items) <= 3;
 }
@@ -170,6 +190,12 @@ function safeTurnShape(value = {}) {
     timestampMissingItems: toNumber(row.timestampMissingItems),
     timestampMissingKindCounts: safeTimestampKindCounts(row.timestampMissingKindCounts),
     userAfterUsageCount: toNumber(row.userAfterUsageCount),
+    expectedUserAfterAssistantLikeCount: toNumber(row.expectedUserAfterAssistantLikeCount),
+    actualUserAfterAssistantLikeCount: toNumber(row.userAfterAssistantLikeCount),
+    expectedUserAtTail: row.expectedUserAtTail === true,
+    actualUserAtTail: row.userAtTail === true,
+    expectedItemKindSequence: safeItemKindSequence(row.expectedItemKindSequence),
+    actualItemKindSequence: safeItemKindSequence(row.itemKindSequence),
   };
 }
 
@@ -313,6 +339,13 @@ function turnShapeIssueKey(code, sample = {}, turnShape = {}) {
     turnShape.expectedUsageRequired === true ? "usage" : "no-usage",
     toNumber(turnShape.expectedTimestampItemCount),
   ].join("|");
+}
+
+function turnShapeOrderMismatchDetails(sample = {}, turnShape = {}) {
+  return {
+    turnShape: safeTurnShape(turnShape),
+    dynamicThreadPlan: sample && sample.dynamicThreadPlan === true ? true : undefined,
+  };
 }
 
 function incrementMapCount(map, key) {
@@ -666,6 +699,13 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       if (toNumber(turnShape.userAfterUsageCount) > 0) {
         const code = "browser_turn_user_message_after_usage";
         issues.push(issue(turnShapeMismatchSeverity(code, sample, turnShape), code, sample, turnShapeMismatchDetails(code, sample, turnShape)));
+      }
+      const expectedUserAfterAssistantLikeCount = toNumber(turnShape.expectedUserAfterAssistantLikeCount);
+      const actualUserAfterAssistantLikeCount = toNumber(turnShape.userAfterAssistantLikeCount);
+      if ((expectedUserAfterAssistantLikeCount > 0 || actualUserAfterAssistantLikeCount > 0)
+        && actualUserAfterAssistantLikeCount !== expectedUserAfterAssistantLikeCount) {
+        const code = "browser_turn_user_message_order_mismatch";
+        issues.push(issue("H2", code, sample, turnShapeOrderMismatchDetails(sample, turnShape)));
       }
       if (toNumber(turnShape.expectedTimestampItemCount) > 0 && toNumber(turnShape.timestampMissingItems) > 0) {
         const activeProgressive = activeProgressiveTurnShape(turnShape);

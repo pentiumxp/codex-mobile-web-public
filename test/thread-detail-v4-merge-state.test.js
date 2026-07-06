@@ -258,21 +258,26 @@ test("drops unanchored pending overlay after newer non-user receipt authority ar
   assert.equal(JSON.stringify(merged).includes("local-old"), false);
 });
 
-test("anchors pending overlay before non-user items in the matching turn", () => {
+test("anchors earlier pending overlay before later non-user items in the matching turn", () => {
   const policy = createPolicy();
   const existing = {
     id: "thread-a",
     mobileProjectionVersion: "v4",
     turns: [turn("turn-1", [
-      userMessage("pending", { id: "local-pending", clientSubmissionId: "submit-1", mobilePendingSubmission: true }),
+      userMessage("pending", {
+        id: "local-pending",
+        clientSubmissionId: "submit-1",
+        mobilePendingSubmission: true,
+        startedAtMs: 100,
+      }),
     ], { startedAtMs: 100, status: { type: "running" } })],
   };
   const incoming = {
     id: "thread-a",
     mobileProjectionVersion: "v4",
     turns: [turn("turn-1", [
-      { type: "agentMessage", id: "assistant-1", text: "working" },
-      { type: "turnUsageSummary", id: "usage-1" },
+      { type: "agentMessage", id: "assistant-1", text: "working", startedAtMs: 150 },
+      { type: "turnUsageSummary", id: "usage-1", startedAtMs: 200 },
     ], {
       startedAtMs: 100,
       status: { type: "running" },
@@ -285,6 +290,41 @@ test("anchors pending overlay before non-user items in the matching turn", () =>
     "local-pending",
     "assistant-1",
     "usage-1",
+  ]);
+});
+
+test("anchors later pending overlay after existing assistant progress in the matching turn", () => {
+  const policy = createPolicy();
+  const existing = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("turn-1", [
+      userMessage("follow-up", {
+        id: "local-follow-up",
+        clientSubmissionId: "submit-2",
+        mobilePendingSubmission: true,
+        startedAtMs: 220,
+      }),
+    ], { startedAtMs: 100, status: { type: "running" } })],
+  };
+  const incoming = {
+    id: "thread-a",
+    mobileProjectionVersion: "v4",
+    turns: [turn("turn-1", [
+      userMessage("initial", { id: "durable-user", startedAtMs: 100 }),
+      { type: "agentMessage", id: "assistant-progress", text: "working", startedAtMs: 180 },
+    ], {
+      startedAtMs: 100,
+      status: { type: "running" },
+    })],
+  };
+
+  const merged = policy.mergeV4ProjectionThread(existing, incoming);
+
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "durable-user",
+    "assistant-progress",
+    "local-follow-up",
   ]);
 });
 

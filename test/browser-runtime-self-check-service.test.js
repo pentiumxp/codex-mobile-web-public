@@ -89,6 +89,25 @@ test("browser runtime self-check parses Vite app-preview launch session option",
   assert.equal(options.json, true);
 });
 
+test("browser runtime self-check parses repeated submit diagnostics", () => {
+  const options = script.parseArgs([
+    "--server",
+    "http://127.0.0.1:8787",
+    "--exercise-submit",
+    "--submit-repeat",
+    "2",
+    "--submit-interval-ms",
+    "75",
+    "--diagnostic-samples",
+    "--json",
+  ]);
+  assert.equal(options.exerciseSubmit, true);
+  assert.equal(options.submitRepeat, 2);
+  assert.equal(options.submitIntervalMs, 75);
+  assert.equal(options.diagnosticSamples, true);
+  assert.equal(options.json, true);
+});
+
 test("browser runtime self-check preserves bounded default shell mode in public config summary", () => {
   assert.match(scriptSource, /defaultShellMode: String\(config && config\.defaultShellMode \|\| ""\)\.slice\(0, 40\)/);
 });
@@ -2332,6 +2351,52 @@ test("browser runtime self-check catches cross-turn user event duplicates", () =
   assert.equal(report.sampleSummary.maxAllUserEventDuplicates, 1);
 });
 
+test("browser runtime self-check catches DOM user message order divergence from API", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "settled-order-diverged",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "latest-turn-hash",
+      latestTurnItemCount: 4,
+      latestTurnUserMessageCount: 2,
+      latestTurnAssistantMessageCount: 2,
+      turns: 3,
+      items: 12,
+      delayMs: 1600,
+      expectedTurnShapes: [{
+        turnHash: "latest-turn-hash",
+        completed: false,
+        expectedItemCount: 4,
+        expectedUserMessageCount: 2,
+        expectedAssistantMessageCount: 2,
+        expectedUserAfterAssistantLikeCount: 1,
+        expectedItemKindSequence: ["userMessage", "agentMessage", "userMessage", "agentMessage"],
+      }],
+      domTurnShapes: [{
+        turnHash: "latest-turn-hash",
+        itemCount: 4,
+        userMessageCount: 2,
+        assistantMessageCount: 2,
+        userAfterAssistantLikeCount: 0,
+        userAtTail: false,
+        itemKindSequence: ["userMessage", "userMessage", "agentMessage", "agentMessage"],
+      }],
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  const issue = report.issues.find((item) => item.code === "browser_turn_user_message_order_mismatch");
+  assert.ok(issue);
+  assert.equal(issue.severity, "H2");
+  assert.deepEqual(issue.turnShape.expectedItemKindSequence, ["userMessage", "agentMessage", "userMessage", "agentMessage"]);
+  assert.deepEqual(issue.turnShape.actualItemKindSequence, ["userMessage", "userMessage", "agentMessage", "agentMessage"]);
+});
+
 test("browser runtime self-check ignores null samples in summary", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [
@@ -3329,6 +3394,8 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /expectedTurnShapes/);
   assert.match(expression, /domTurnShapes/);
   assert.match(expression, /userAfterUsageCount/);
+  assert.match(expression, /itemKindSequence/);
+  assert.match(expression, /userAfterAssistantLikeCount/);
   assert.match(expression, /longTaskMaxDurationMs/);
   assert.match(expression, /latestTurnHash/);
   assert.match(expression, /latestTurnUserMessageCount/);

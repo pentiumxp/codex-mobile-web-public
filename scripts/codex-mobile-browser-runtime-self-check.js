@@ -101,12 +101,15 @@ function usage() {
     "  --exercise-submit          Send one short UI message through Composer in the target test thread.",
     "  --submit-thread-id <id>    Dedicated thread id for --exercise-submit. Defaults to first selected thread.",
     "  --submit-message <text>    Test message. Default asks for a one-token OK reply.",
+    "  --submit-repeat <n>        Number of submit messages for interruption/echo checks. Default: 1.",
+    "  --submit-interval-ms <n>   Delay between repeated submit messages. Default: 120.",
     "  --submit-sample-delays-ms <csv> Delays after submit. Default: 100,350,900,1600,2800,6000.",
     "  --viewport <WxH>           Browser viewport. Default: 390x844.",
     "  --chrome-path <path>       Chrome executable. Default: macOS Google Chrome.",
     "  --headed                   Run visible Chrome instead of headless.",
     "  --timeout-ms <n>           Request/browser timeout. Default: 20000.",
     "  --min-settled-delay-ms <n> Sparse-after-nonempty H2 threshold. Default: 1000.",
+    "  --diagnostic-samples       Include bounded metadata-only DOM/API sample shapes.",
     "  --json                     Print JSON only.",
     "  --help                     Show this help.",
   ].join("\n");
@@ -169,11 +172,14 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     exerciseSubmit: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_EXERCISE_SUBMIT || "")),
     submitThreadId: String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_THREAD_ID || "").trim(),
     submitMessage: String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_MESSAGE || "Codex Mobile self-check test. Reply exactly: OK").slice(0, 500),
+    submitRepeat: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_REPEAT || "1", 1, 5),
+    submitIntervalMs: readNonNegativeInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_INTERVAL_MS || "120", 120, 5000),
     submitSampleDelaysMs: parseDelayList(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_SAMPLE_DELAYS_MS || "100,350,900,1600,2800,6000", [100, 350, 900, 1600, 2800, 6000]),
     viewport: parseViewport(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VIEWPORT || DEFAULT_VIEWPORT),
     headed: false,
     timeoutMs: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_TIMEOUT_MS || "20000", 20000, 120000),
     minSettledDelayMs: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_MIN_SETTLED_DELAY_MS || "1000", 1000, 10000),
+    diagnosticSamples: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_DIAGNOSTIC_SAMPLES || "")),
     json: false,
     help: false,
   };
@@ -205,11 +211,14 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--exercise-submit") options.exerciseSubmit = true;
     else if (arg === "--submit-thread-id") options.submitThreadId = next();
     else if (arg === "--submit-message") options.submitMessage = next().slice(0, 500);
+    else if (arg === "--submit-repeat") options.submitRepeat = readPositiveInt(next(), options.submitRepeat, 5);
+    else if (arg === "--submit-interval-ms") options.submitIntervalMs = readNonNegativeInt(next(), options.submitIntervalMs, 5000);
     else if (arg === "--submit-sample-delays-ms") options.submitSampleDelaysMs = parseDelayList(next(), options.submitSampleDelaysMs);
     else if (arg === "--viewport") options.viewport = parseViewport(next());
     else if (arg === "--headed") options.headed = true;
     else if (arg === "--timeout-ms") options.timeoutMs = readPositiveInt(next(), options.timeoutMs, 120000);
     else if (arg === "--min-settled-delay-ms") options.minSettledDelayMs = readPositiveInt(next(), options.minSettledDelayMs, 10000);
+    else if (arg === "--diagnostic-samples") options.diagnosticSamples = true;
     else if (arg === "--json") options.json = true;
     else throw new Error(`unknown option: ${arg}`);
   }
@@ -217,6 +226,8 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
   options.threadIds = options.threadIds.map((id) => String(id || "").trim()).filter(Boolean);
   options.submitThreadId = String(options.submitThreadId || "").trim();
   options.submitMessage = String(options.submitMessage || "Codex Mobile self-check test. Reply exactly: OK").slice(0, 500);
+  options.submitRepeat = readPositiveInt(options.submitRepeat, 1, 5);
+  options.submitIntervalMs = readNonNegativeInt(options.submitIntervalMs, 120, 5000);
   return options;
 }
 
@@ -737,6 +748,40 @@ function turnItemTimestampRange(items = []) {
   };
 }
 
+function expectedItemKind(item = {}) {
+  const type = String(item && item.type || "").trim();
+  if (!type) return "unknown";
+  if (/^agentMessage$/i.test(type)) return "agentMessage";
+  if (/^userMessage$/i.test(type)) return isInjectedThreadTaskCardItem(item) ? "threadTaskCard" : "userMessage";
+  if (/^plan$/i.test(type)) return "plan";
+  if (/^turnUsageSummary$/i.test(type)) return "turnUsageSummary";
+  if (/^reasoning$/i.test(type)) return "reasoning";
+  if (/^(commandExecution|fileChange|dynamicToolCall|mcpToolCall|collabAgentToolCall)$/i.test(type)) return "operation";
+  if (/^contextCompaction$/i.test(type)) return "contextCompaction";
+  if (/^turnDiagnostic$/i.test(type)) return "turnDiagnostic";
+  return "other";
+}
+
+function itemOrderShape(items = []) {
+  const kinds = (Array.isArray(items) ? items : []).map(expectedItemKind);
+  let assistantLikeSeen = false;
+  let userAfterAssistantLikeCount = 0;
+  for (const kind of kinds) {
+    if (kind === "userMessage") {
+      if (assistantLikeSeen) userAfterAssistantLikeCount += 1;
+      continue;
+    }
+    if (["agentMessage", "plan", "operation", "reasoning", "contextCompaction", "turnUsageSummary"].includes(kind)) {
+      assistantLikeSeen = true;
+    }
+  }
+  return {
+    itemKindSequence: kinds.slice(0, 60),
+    userAfterAssistantLikeCount,
+    userAtTail: kinds.length ? kinds[kinds.length - 1] === "userMessage" : false,
+  };
+}
+
 function duplicateLatestUserMessageEventCount(userItems = []) {
   const seen = new Set();
   let duplicates = 0;
@@ -784,6 +829,7 @@ function turnShapeExpectation(detail = {}) {
     const injectedTaskCardUserItems = userItems.filter(isInjectedThreadTaskCardItem);
     const itemTypes = items.map((item) => String(item && item.type || "unknown").trim() || "unknown");
     const timestampRange = turnItemTimestampRange(items);
+    const orderShape = itemOrderShape(items);
     return {
       index,
       turnHash: browserStableHash(turn && turn.id || ""),
@@ -797,8 +843,59 @@ function turnShapeExpectation(detail = {}) {
       expectedAssistantMessageCount: itemTypes.filter((type) => /^(agentMessage|plan)$/i.test(type)).length,
       expectedUsageRequired: Boolean(completedStatus(turn && turn.status) && itemTypes.includes("turnUsageSummary")),
       expectedTimestampItemCount: itemTypes.filter((type) => /^(userMessage|agentMessage|plan|turnDiagnostic)$/i.test(type)).length,
+      expectedItemKindSequence: orderShape.itemKindSequence,
+      expectedUserAfterAssistantLikeCount: orderShape.userAfterAssistantLikeCount,
+      expectedUserAtTail: orderShape.userAtTail,
     };
   });
+}
+
+function diagnosticTurnShape(row = {}) {
+  const source = row && typeof row === "object" ? row : {};
+  return {
+    index: Math.max(0, Math.trunc(Number(source.index || 0))),
+    turnHash: String(source.turnHash || "").slice(0, 32),
+    completed: source.completed === true,
+    expectedItemCount: Math.max(0, Math.trunc(Number(source.expectedItemCount || 0))),
+    itemCount: Math.max(0, Math.trunc(Number(source.itemCount || 0))),
+    expectedUserMessageCount: Math.max(0, Math.trunc(Number(source.expectedUserMessageCount || 0))),
+    userMessageCount: Math.max(0, Math.trunc(Number(source.userMessageCount || 0))),
+    expectedAssistantMessageCount: Math.max(0, Math.trunc(Number(source.expectedAssistantMessageCount || 0))),
+    assistantMessageCount: Math.max(0, Math.trunc(Number(source.assistantMessageCount || 0))),
+    expectedUserAfterAssistantLikeCount: Math.max(0, Math.trunc(Number(source.expectedUserAfterAssistantLikeCount || 0))),
+    userAfterAssistantLikeCount: Math.max(0, Math.trunc(Number(source.userAfterAssistantLikeCount || 0))),
+    expectedUserAtTail: source.expectedUserAtTail === true,
+    userAtTail: source.userAtTail === true,
+    expectedItemKindSequence: Array.isArray(source.expectedItemKindSequence) ? source.expectedItemKindSequence.slice(0, 40) : [],
+    itemKindSequence: Array.isArray(source.itemKindSequence) ? source.itemKindSequence.slice(0, 40) : [],
+  };
+}
+
+function boundedDiagnosticSamples(samples = []) {
+  return (Array.isArray(samples) ? samples : [])
+    .filter((sample) => sample && typeof sample === "object" && sample.probeKind !== "thread-list-interaction")
+    .slice(-12)
+    .map((sample) => ({
+      label: String(sample.label || "").slice(0, 80),
+      threadHash: String(sample.threadHash || "").slice(0, 32),
+      delayMs: Math.max(0, Math.trunc(Number(sample.delayMs || 0))),
+      latestTurnHash: String(sample.latestTurnHash || "").slice(0, 32),
+      latestTurnMatchesTarget: sample.latestTurnMatchesTarget === true,
+      latestTurnAtDomBottom: sample.latestTurnAtDomBottom === true,
+      expectedLatestItemCount: Math.max(0, Math.trunc(Number(sample.expectedLatestItemCount || 0))),
+      latestTurnItemCount: Math.max(0, Math.trunc(Number(sample.latestTurnItemCount || 0))),
+      expectedLatestUserMessageCount: Math.max(0, Math.trunc(Number(sample.expectedLatestUserMessageCount || 0))),
+      latestTurnUserMessageCount: Math.max(0, Math.trunc(Number(sample.latestTurnUserMessageCount || 0))),
+      latestTurnAssistantMessageCount: Math.max(0, Math.trunc(Number(sample.latestTurnAssistantMessageCount || 0))),
+      latestTurnOperationItemCount: Math.max(0, Math.trunc(Number(sample.latestTurnOperationItemCount || 0))),
+      latestTurnReasoningItemCount: Math.max(0, Math.trunc(Number(sample.latestTurnReasoningItemCount || 0))),
+      clientSubmissionCount: Math.max(0, Math.trunc(Number(sample.clientSubmissionCount || 0))),
+      latestTurnUserTextDuplicateCount: Math.max(0, Math.trunc(Number(sample.latestTurnUserTextDuplicateCount || 0))),
+      allUserEventDuplicateCount: Math.max(0, Math.trunc(Number(sample.allUserEventDuplicateCount || 0))),
+      latestTurnUserNodeDetails: Array.isArray(sample.latestTurnUserNodeDetails) ? sample.latestTurnUserNodeDetails.slice(0, 6) : [],
+      expectedTurnShapes: (Array.isArray(sample.expectedTurnShapes) ? sample.expectedTurnShapes : []).slice(-3).map(diagnosticTurnShape),
+      domTurnShapes: (Array.isArray(sample.domTurnShapes) ? sample.domTurnShapes : []).slice(-3).map(diagnosticTurnShape),
+    }));
 }
 
 function safeThreadPlan(ids = []) {
@@ -2463,11 +2560,31 @@ function snapshotExpression(input = {}) {
           const closestTurn = node.closest("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]");
           return closestTurn === turnNode;
         });
+      const domItemKind = (node) => {
+        const className = String(node && node.className || "");
+        if (className.includes("userMessage")) return "userMessage";
+        if (className.includes("agentMessage")) return "agentMessage";
+        if (className.includes("plan")) return "plan";
+        if (className.includes("turnUsageSummary")) return "turnUsageSummary";
+        if (className.includes("reasoning")) return "reasoning";
+        if (className.includes("thread-task-card-injected")) return "threadTaskCard";
+        if (className.includes("commandExecution")
+          || className.includes("fileChange")
+          || className.includes("dynamicToolCall")
+          || className.includes("mcpToolCall")
+          || className.includes("collabAgentToolCall")) return "operation";
+        if (className.includes("contextCompaction")) return "contextCompaction";
+        if (className.includes("turnDiagnostic")) return "turnDiagnostic";
+        return "other";
+      };
       const domTurnShapes = turnNodes.slice(-20).map((turnNode, index) => {
         const nodes = itemNodesForTurn(turnNode);
         const timestampRange = timestampRangeForNodes(nodes);
         const usageIndexes = [];
         const userIndexes = [];
+        const itemKindSequence = [];
+        let assistantLikeSeen = false;
+        let userAfterAssistantLikeCount = 0;
         let assistantMessageCount = 0;
         let taskCardUserMessageCount = 0;
         let timestampExpectedItems = 0;
@@ -2475,6 +2592,13 @@ function snapshotExpression(input = {}) {
         const timestampMissingKindCounts = {};
         nodes.forEach((node, itemIndex) => {
           const className = String(node.className || "");
+          const kind = domItemKind(node);
+          itemKindSequence.push(kind);
+          if (kind === "userMessage") {
+            if (assistantLikeSeen) userAfterAssistantLikeCount += 1;
+          } else if (["agentMessage", "plan", "operation", "reasoning", "contextCompaction", "turnUsageSummary"].includes(kind)) {
+            assistantLikeSeen = true;
+          }
           if (className.includes("turnUsageSummary")) usageIndexes.push(itemIndex);
           if (className.includes("userMessage")) userIndexes.push(itemIndex);
           if (className.includes("thread-task-card-injected")) taskCardUserMessageCount += 1;
@@ -2507,6 +2631,9 @@ function snapshotExpression(input = {}) {
           timestampMissingItems,
           timestampMissingKindCounts,
           userAfterUsageCount: lastUsageIndex >= 0 ? userIndexes.filter((itemIndex) => itemIndex > lastUsageIndex).length : 0,
+          userAfterAssistantLikeCount,
+          userAtTail: itemKindSequence.length ? itemKindSequence[itemKindSequence.length - 1] === "userMessage" : false,
+          itemKindSequence: itemKindSequence.slice(0, 60),
         };
       });
       const imageFigures = Array.from(renderRoot.querySelectorAll(".input-image, .image-view, .markdown-image"));
@@ -2958,6 +3085,8 @@ async function run(options = parseArgs(), deps = {}) {
       ok: false,
       targetThreadHash: "",
       messageHash: shortHash(options.submitMessage),
+      requestedCount: options.submitRepeat,
+      successCount: 0,
       code: "not_run",
     } : null,
   };
@@ -3195,13 +3324,44 @@ async function run(options = parseArgs(), deps = {}) {
           appVisible: false,
           errorCode: boundedToken(err && err.message, "snapshot_failed"),
         })));
-        const submitResult = await evaluate(cdp, submitComposerExpression(options.submitMessage), options.timeoutMs).catch((err) => ({
-          ok: false,
-          code: boundedToken(err && err.message, "submit_failed"),
-        }));
-        report.submitExercise.ok = Boolean(submitResult && submitResult.ok);
-        report.submitExercise.code = boundedToken(submitResult && submitResult.code, report.submitExercise.ok ? "submitted" : "submit_failed");
-        report.submitExercise.disabledBeforeSubmit = Boolean(submitResult && submitResult.disabledBeforeSubmit);
+        const submitResults = [];
+        for (let submitIndex = 0; submitIndex < options.submitRepeat; submitIndex += 1) {
+          const submitMessage = options.submitRepeat > 1
+            ? `${options.submitMessage} [${submitIndex + 1}/${options.submitRepeat}]`.slice(0, 500)
+            : options.submitMessage;
+          const submitResult = await evaluate(cdp, submitComposerExpression(submitMessage), options.timeoutMs).catch((err) => ({
+            ok: false,
+            code: boundedToken(err && err.message, "submit_failed"),
+          }));
+          submitResults.push(submitResult);
+          const attemptPhase = `after-${submitIndex + 1}`;
+          const submitAttemptPlan = await refreshThreadPlanEntry(options, key, submitTarget);
+          samples.push(await evaluate(cdp, snapshotExpression(snapshotInputForPlanEntry(submitAttemptPlan, {
+            label: `submit-${attemptPhase}`,
+            delayMs: 0,
+            exerciseSubmit: true,
+            submitPhase: attemptPhase,
+            submitOk: Boolean(submitResult && submitResult.ok),
+          })), options.timeoutMs).catch((err) => ({
+            label: `submit-${attemptPhase}`,
+            threadHash: submitTarget.threadHash,
+            delayMs: 0,
+            exerciseSubmit: true,
+            submitPhase: attemptPhase,
+            submitOk: Boolean(submitResult && submitResult.ok),
+            appVisible: false,
+            errorCode: boundedToken(err && err.message, "snapshot_failed"),
+          })));
+          if (submitIndex + 1 < options.submitRepeat && options.submitIntervalMs > 0) {
+            await sleep(options.submitIntervalMs);
+          }
+        }
+        report.submitExercise.successCount = submitResults.filter((entry) => entry && entry.ok).length;
+        report.submitExercise.ok = report.submitExercise.successCount === options.submitRepeat;
+        report.submitExercise.code = report.submitExercise.ok
+          ? "submitted"
+          : boundedToken(submitResults.find((entry) => entry && !entry.ok) && submitResults.find((entry) => entry && !entry.ok).code, "submit_failed");
+        report.submitExercise.disabledBeforeSubmit = submitResults.some((entry) => entry && entry.disabledBeforeSubmit);
         for (const delayMs of options.submitSampleDelaysMs) {
           await sleep(delayMs);
           const phase = `post-${delayMs}`;
@@ -3211,14 +3371,14 @@ async function run(options = parseArgs(), deps = {}) {
             delayMs,
             exerciseSubmit: true,
             submitPhase: phase,
-            submitOk: Boolean(submitResult && submitResult.ok),
+            submitOk: report.submitExercise.ok,
           })), options.timeoutMs).catch((err) => ({
             label: `submit-${phase}`,
             threadHash: submitTarget.threadHash,
             delayMs,
             exerciseSubmit: true,
             submitPhase: phase,
-            submitOk: Boolean(submitResult && submitResult.ok),
+            submitOk: report.submitExercise.ok,
             appVisible: false,
             errorCode: boundedToken(err && err.message, "snapshot_failed"),
           })));
@@ -3272,6 +3432,12 @@ async function run(options = parseArgs(), deps = {}) {
     exceptions,
     minSettledDelayMs: options.minSettledDelayMs,
   });
+  if (options.diagnosticSamples) {
+    report.browserDiagnostics = {
+      sampleCount: samples.length,
+      samples: boundedDiagnosticSamples(samples),
+    };
+  }
   applyStartupGateIssues(report, samples.find((sample) => sample && sample.probeKind === "startup") || {}, staticShell);
   applyThreadRefreshStatusHintGateIssue(report);
   if (appPreviewRuntime) {

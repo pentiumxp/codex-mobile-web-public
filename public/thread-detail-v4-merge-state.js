@@ -131,6 +131,38 @@
       return changed;
     }
 
+    function timestampMsFromValue(value) {
+      if (value === undefined || value === null || value === "") return 0;
+      const number = Number(value);
+      if (Number.isFinite(number) && number > 0) {
+        return number > 1_000_000_000 && number < 1_000_000_000_000
+          ? Math.trunc(number * 1000)
+          : Math.trunc(number);
+      }
+      const parsed = Date.parse(String(value || ""));
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    }
+
+    function itemOrderMs(item) {
+      if (!item || typeof item !== "object") return 0;
+      for (const field of [
+        "mobileDisplayTimestampMs",
+        "startedAtMs",
+        "createdAtMs",
+        "updatedAtMs",
+        "timestampMs",
+        "mobileDisplayTimestamp",
+        "startedAt",
+        "createdAt",
+        "updatedAt",
+        "timestamp",
+      ]) {
+        const value = timestampMsFromValue(item[field]);
+        if (value > 0) return value;
+      }
+      return 0;
+    }
+
     function appendV4PendingOverlayItem(turn, item) {
       if (!turn || !item) return;
       turn.items = Array.isArray(turn.items) ? turn.items : [];
@@ -141,7 +173,13 @@
         || userMessagesCanShadow(existing, item)
       ));
       if (alreadyPresent) return;
-      const insertAt = turn.items.findIndex((existing) => existing && existing.type !== "userMessage");
+      const pendingOrder = itemOrderMs(item);
+      const insertAt = pendingOrder > 0
+        ? turn.items.findIndex((existing) => {
+          const existingOrder = itemOrderMs(existing);
+          return existingOrder > 0 && existingOrder > pendingOrder;
+        })
+        : -1;
       if (insertAt < 0) {
         turn.items.push(item);
       } else {
