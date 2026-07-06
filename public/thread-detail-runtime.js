@@ -279,7 +279,33 @@ function createThreadDetailRuntime(deps = {}) {
       }
       visible.push({ item, sourceIndex: index });
     });
-    const filtered = visible.filter(Boolean);
+    const filtered = [];
+    for (const entry of visible.filter(Boolean)) {
+      const item = entry && entry.item;
+      if (item && item.type === "userMessage") {
+        const existingIndex = filtered.findIndex((candidate) => candidate
+          && candidate.item
+          && candidate.item.type === "userMessage"
+          && userMessagesAreSameTurnDuplicateEvent(candidate.item, item));
+        if (existingIndex >= 0) {
+          const existingEntry = filtered[existingIndex];
+          const existingPriority = userMessageShadowPriority(existingEntry && existingEntry.item);
+          const incomingPriority = userMessageShadowPriority(item);
+          const preferredEntry = incomingPriority >= existingPriority ? entry : existingEntry;
+          const sourceIndex = Number.isInteger(preferredEntry && preferredEntry.sourceIndex)
+            ? preferredEntry.sourceIndex
+            : Number.isInteger(existingEntry && existingEntry.sourceIndex)
+              ? existingEntry.sourceIndex
+              : entry.sourceIndex;
+          filtered[existingIndex] = {
+            item: mergeLikelySameUserMessage(existingEntry && existingEntry.item, item),
+            sourceIndex,
+          };
+          continue;
+        }
+      }
+      filtered.push(entry);
+    }
     const supersededLive = isSupersededLiveTurn(turn);
     if (supersededLive && filtered.length && filtered.every((entry) => isTurnUsageSummaryItem(entry.item))) return [];
     return limitRawThreadVisibleEntries(filtered, thread);

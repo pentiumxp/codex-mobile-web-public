@@ -108,6 +108,102 @@
     }
   }
 
+  function classText(node) {
+    if (!node) return "";
+    if (typeof node.className === "string") return node.className;
+    if (node.getAttribute) return String(node.getAttribute("class") || "");
+    return "";
+  }
+
+  function hasClasses(node, names) {
+    const classes = new Set(classText(node).split(/\s+/).filter(Boolean));
+    return names.every((name) => classes.has(name));
+  }
+
+  function attributeText(node, name) {
+    return node && typeof node.getAttribute === "function" ? String(node.getAttribute(name) || "") : "";
+  }
+
+  function nodeText(node) {
+    if (!node) return "";
+    if (typeof node.innerText === "string") return node.innerText;
+    if (typeof node.textContent === "string") return node.textContent;
+    if (node.nodeType === TEXT_NODE) return String(node.nodeValue || "");
+    return Array.from(node.childNodes || []).map(nodeText).join("");
+  }
+
+  function walkElementNodes(root, callback) {
+    if (!root || typeof callback !== "function") return;
+    if (root.nodeType === ELEMENT_NODE) callback(root);
+    for (const child of Array.from(root.childNodes || [])) walkElementNodes(child, callback);
+  }
+
+  function turnArticleNodes(root) {
+    const nodes = [];
+    walkElementNodes(root, (node) => {
+      const isTurn = hasClasses(node, ["turn"]) && attributeText(node, "data-turn");
+      const isThreadTileTurn = hasClasses(node, ["thread-tile-turn"]) && attributeText(node, "data-thread-tile-turn");
+      if (node.tagName === "ARTICLE" && (isTurn || isThreadTileTurn)) nodes.push(node);
+    });
+    return nodes;
+  }
+
+  function userMessageItemNodes(article) {
+    const nodes = [];
+    walkElementNodes(article, (node) => {
+      if (hasClasses(node, ["item", "userMessage"])) nodes.push(node);
+    });
+    return nodes;
+  }
+
+  function userMessageDomDuplicateSignature(node) {
+    const body = Array.from(node && node.childNodes || [])
+      .find((child) => hasClasses(child, ["item-body"])) || node;
+    const text = nodeText(body).replace(/\s+/g, " ").trim();
+    const submissionHash = attributeText(node, "data-client-submission-hash").trim();
+    if (text) return `text:${text}`;
+    if (submissionHash) return `submission:${submissionHash}`;
+    return "";
+  }
+
+  function userMessageDomNodePriority(node) {
+    const item = attributeText(node, "data-item") || attributeText(node, "data-item-id");
+    const renderKey = renderKeyForNode(node);
+    const submissionHash = attributeText(node, "data-client-submission-hash");
+    const localLike = /^local-user\b/.test(item)
+      || /(?:^|[|:])local-user/.test(renderKey)
+      || /(?:^|[|:])mux-user/.test(renderKey)
+      || Boolean(submissionHash);
+    return localLike ? 0 : 1;
+  }
+
+  function removeDuplicateUserMessageDomNodes(input = {}) {
+    const root = input.root || input.conversation || input.article || input;
+    if (!root) return result(true, "no-root", { removed: 0 });
+    let removed = 0;
+    for (const article of turnArticleNodes(root)) {
+      const seen = new Map();
+      for (const node of userMessageItemNodes(article)) {
+        const signature = userMessageDomDuplicateSignature(node);
+        if (!signature) continue;
+        const current = seen.get(signature);
+        if (!current) {
+          seen.set(signature, node);
+          continue;
+        }
+        const currentPriority = userMessageDomNodePriority(current);
+        const nextPriority = userMessageDomNodePriority(node);
+        const removeNode = nextPriority > currentPriority ? current : node;
+        const keepNode = removeNode === current ? node : current;
+        if (typeof removeNode.remove === "function") removeNode.remove();
+        else if (removeNode.parentNode) removeNode.parentNode.removeChild(removeNode);
+        removed += 1;
+        seen.set(signature, keepNode);
+      }
+    }
+    return result(true, removed ? "duplicate-user-messages-removed" : "no-duplicate-user-messages", { removed });
+  }
+
   function placeVisibleItemNode(article, node, lastPatchedNode) {
     if (!article || typeof article.insertBefore !== "function" || !node) return node;
     const anchor = lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild || null;
@@ -1194,6 +1290,7 @@
     patchChildNodes,
     patchHtml,
     patchNode,
+    removeDuplicateUserMessageDomNodes,
     planConversationHtmlUpdate,
     planConversationHtmlUpdateEffects,
     planConversationHtmlUpdateApplication,

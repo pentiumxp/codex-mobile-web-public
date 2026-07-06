@@ -53,6 +53,7 @@ test("quota popup harness parses service worker and thread options", () => {
     "--server", "http://127.0.0.1:8897/",
     "--thread-id", "thread-123",
     "--service-workers", "both",
+    "--entry-surface", "direct",
     "--timeout-ms", "12000",
     "--json",
   ], {});
@@ -60,6 +61,7 @@ test("quota popup harness parses service worker and thread options", () => {
   assert.equal(options.server, "http://127.0.0.1:8897");
   assert.equal(options.threadId, "thread-123");
   assert.equal(options.serviceWorkers, "both");
+  assert.equal(options.entrySurface, "direct");
   assert.equal(options.timeoutMs, 12000);
   assert.equal(options.json, true);
 });
@@ -68,7 +70,16 @@ test("quota popup harness entry URL targets the requested thread", () => {
   const options = parseArgs(["--server", "http://127.0.0.1:8897", "--thread-id", "thread-123"], {});
   const url = new URL(entryUrlForScenario(options, "run-1"));
 
+  assert.equal(url.pathname, "/vite-shell/app-preview.html");
   assert.equal(url.searchParams.get("thread"), "thread-123");
   assert.equal(url.searchParams.get("threadId"), "thread-123");
   assert.equal(url.searchParams.get("quotaHarness"), "run-1");
+});
+
+test("quota popup harness can target the legacy direct root explicitly", () => {
+  const options = parseArgs(["--server", "http://127.0.0.1:8897", "--thread-id", "thread-123", "--entry-surface", "direct"], {});
+  const url = new URL(entryUrlForScenario(options, "run-1"));
+
+  assert.equal(url.pathname, "/");
+  assert.equal(url.searchParams.get("threadId"), "thread-123");
 });

@@ -15,6 +15,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     keyFile: env.CODEX_MOBILE_KEY_FILE || path.join(process.env.HOME || "", ".codex-mobile-web", "access_key"),
     key: env.CODEX_MOBILE_KEY || "",
     entryUrl: "",
+    entrySurface: env.CODEX_MOBILE_QUOTA_HARNESS_ENTRY_SURFACE || "app-preview",
     serviceWorkers: "block",
     playwrightModuleDir: env.PLAYWRIGHT_NODE_MODULE_DIR || "",
     timeoutMs: 30_000,
@@ -29,6 +30,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--key-file") options.keyFile = next();
     else if (arg === "--key") options.key = next();
     else if (arg === "--entry-url") options.entryUrl = next();
+    else if (arg === "--entry-surface") options.entrySurface = next();
     else if (arg === "--service-workers") options.serviceWorkers = next();
     else if (arg === "--playwright-module-dir") options.playwrightModuleDir = next();
     else if (arg === "--timeout-ms") options.timeoutMs = Math.max(1000, Number(next()) || options.timeoutMs);
@@ -38,6 +40,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else throw new Error(`unknown_arg:${arg}`);
   }
   options.server = normalizeServerUrl(options.server);
+  options.entrySurface = ["app-preview", "direct", "custom"].includes(options.entrySurface) ? options.entrySurface : "app-preview";
   options.serviceWorkers = ["block", "allow", "both"].includes(options.serviceWorkers) ? options.serviceWorkers : "block";
   return options;
 }
@@ -52,6 +55,7 @@ function usage() {
     "  --server <url>                Codex Mobile server. Default: http://127.0.0.1:8787.",
     "  --key-file <path>             Access key file. Default: ~/.codex-mobile-web/access_key.",
     "  --entry-url <url>             Exact browser entry URL for custom embedded/proxy checks.",
+    "  --entry-surface <app-preview|direct|custom> Default: app-preview.",
     "  --service-workers <block|allow|both>",
     "  --playwright-module-dir <dir> Directory used to resolve the Playwright package.",
     "  --json                        Print metadata-only JSON.",
@@ -89,7 +93,8 @@ function loadPlaywright(options = {}) {
 
 function entryUrlForScenario(options, runId = Date.now()) {
   if (options.entryUrl) return options.entryUrl;
-  const url = new URL(`${options.server}/`);
+  const basePath = options.entrySurface === "direct" ? "/" : "/vite-shell/app-preview.html";
+  const url = new URL(`${options.server}${basePath}`);
   if (options.threadId) {
     url.searchParams.set("thread", options.threadId);
     url.searchParams.set("threadId", options.threadId);
@@ -193,7 +198,16 @@ async function ensureLoggedIn(page, key) {
   await installBrowserSession(page, key, "");
   if (await page.locator("#loginKey").isVisible().catch(() => false)) {
     await page.fill("#loginKey", key);
-    await page.keyboard.press("Enter");
+    const submit = page.locator("#loginForm button[type='submit'], #loginForm button").first();
+    if (await submit.isVisible().catch(() => false)) await submit.click({ force: true });
+    else await page.keyboard.press("Enter");
+    await page.waitForFunction(() => {
+      const login = document.querySelector("#loginKey");
+      if (!login) return true;
+      const style = getComputedStyle(login);
+      const rect = login.getBoundingClientRect();
+      return rect.width <= 0 || rect.height <= 0 || style.display === "none" || style.visibility === "hidden";
+    }, null, { timeout: 15_000 }).catch(() => {});
   }
 }
 

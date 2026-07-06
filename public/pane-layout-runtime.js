@@ -3260,7 +3260,7 @@ function updateConversationHtml(html, signature, options = {}) {
   } else if (updatePlan.action === "set-inner-html") {
     conversation.innerHTML = html;
   }
-  const postDomShape = conversationDomShape();
+  let postDomShape = conversationDomShape();
   const postApplyConsistencyPlan = threadDetailDomPatchApi.planConversationPostApplyDomConsistency({
     updatePlan,
     applicationPlan,
@@ -3283,6 +3283,10 @@ function updateConversationHtml(html, signature, options = {}) {
       patchRejectReason: postApplyConsistencyPlan.reason,
       reason: "post-apply-dom-inconsistent",
     });
+  }
+  if (conversation && threadDetailDomPatchApi.removeDuplicateUserMessageDomNodes) {
+    threadDetailDomPatchApi.removeDuplicateUserMessageDomNodes({ root: conversation });
+    postDomShape = conversationDomShape();
   }
   if (postApplyConsistencyPlan.shouldReport) {
     recordHomeAiDiagnosticFailure(
@@ -4017,6 +4021,9 @@ function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurr
   })();
   const completionPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletion(completionSnapshot);
   if (!completionPlan.complete) return false;
+  if (threadDetailDomPatchApi.removeDuplicateUserMessageDomNodes && canPatchSingleThreadConversationDom()) {
+    threadDetailDomPatchApi.removeDuplicateUserMessageDomNodes({ root: $("conversation") });
+  }
   const effectsPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionEffects(completionPlan);
   applyLocalConversationDomUpdateCompletionEffectsPlan(effectsPlan, { root });
   restoreConversationViewportAnchor(options.scrollAnchor || null);

@@ -5842,3 +5842,76 @@ The previous full handoff was archived and should be opened only when old proven
   on `019f316b-27cd-7622-9944-0b909fec3c70`, expected hash `d9f0435feebd`;
   the known previous failure code pair was `visible_user_card_duplicate` and
   `transient_visible_user_duplicate_clears_after_reopen`.
+
+## 2026-07-07T03:45Z - Production validation for V4 pending overlay settlement
+
+- MCP-prefixed deploy card sent to Codex Mobile Deploy Lane:
+  `ttc_32653e3b7701dc7697`, requesting deployment of
+  `c7c44b9ee74ae058d57d4958cf64b89137d8c105`.
+- Production `/api/public-config` switched to
+  `0.1.11|codex-mobile-shell-v625-d9f0435feebd`; shell cache matched.
+- Production Home AI main thread submitted-message harness:
+  - thread `019f316b-27cd-7622-9944-0b909fec3c70`;
+  - service workers `block` and `allow`;
+  - expected hash `d9f0435feebd`;
+  - result `ok=true`, issue codes `[]`;
+  - block mode, which previously failed, now showed one POST, one durable API
+    user item, one visible user article/node at 100/350/900/1600/2800/6000ms,
+    and one visible user node after reopen.
+- Production Codex source thread submitted-message evidence:
+  - combined `block`/`allow` run had `allow` green but one `block` scenario
+    reported `durable_user_item_missing`; the visible samples still had one
+    visible user node, so this was not the duplicate-node bug;
+  - immediate `block` rerun on `019f2d75-39bd-7462-8dca-de24f97aeaf6`
+    passed with one POST, one durable API user item, one visible user node at
+    all samples, and one after reopen.
+- Production quota popup harness on `019f2d75-39bd-7462-8dca-de24f97aeaf6`
+  passed with service workers `block` and `allow`; quota panel opened and
+  labels were visible.
+- Residual: the one-off Codex `block` `durable_user_item_missing` result is a
+  separate persistence/readback-window signal, not the duplicate user-message
+  symptom. The submitted-message harness should be enhanced later to record
+  POST response status/summary so this class can be classified without guessing.
+
+## 2026-07-06T19:24Z - Submitted user DOM duplicate cleanup hardening
+
+- New local reproduction after the V4 overlay settlement showed the remaining
+  duplicate was a current-page DOM residue, not a durable backend duplicate:
+  Home AI main thread had one POST and one durable API user item, but the
+  visible DOM temporarily contained two `.item.userMessage` nodes for the same
+  marker before reopen collapsed to one.
+- Fixes in this slice:
+  - `thread-detail-runtime` collapses same-turn submitted-user durable/local
+    visible-item echoes before render;
+  - `thread-detail-dom-patch` exposes `removeDuplicateUserMessageDomNodes()`
+    and removes same-turn duplicate user DOM nodes by visible text, preferring
+    durable/non-local nodes over local/mux/client-submission residue;
+  - `pane-layout-runtime` runs the DOM cleanup after conversation patch/full
+    render and after local completion cleanup;
+  - submitted-message and quota Playwright harnesses now default to the Vite
+    `app-preview` surface and submit login by clicking the form button, matching
+    embedded/plugin startup more closely while still allowing `--entry-surface direct`.
+- Rebuilt frontend artifacts. Current local client/cache:
+  `0.1.11|codex-mobile-shell-v625-503cbb124641`.
+- Source validation:
+  - `node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js test/thread-detail-v4-merge-state.test.js test/submitted-message-harness.test.js test/quota-popup-harness.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js`
+    -> `425/425` pass;
+  - `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Local browser/harness validation on `127.0.0.1:8897`, expected hash
+  `503cbb124641`:
+  - Home AI main thread `019f316b-27cd-7622-9944-0b909fec3c70` submitted-message
+    harness passed with service workers `block` and `allow`; both modes showed
+    one POST, one durable API user item, one visible user node at every sample
+    and after reopen;
+  - Codex source thread `019f2d75-39bd-7462-8dca-de24f97aeaf6` submitted-message
+    harness passed with service workers `block` and `allow`; both modes showed
+    one POST, one durable API user item, one visible user node at every sample
+    and after reopen;
+  - quota popup harness passed on the Codex source thread in `block` and
+    `allow` modes; the combined `both` run hung during browser cleanup, so the
+    acceptance evidence is the two single-mode runs.
+- Production acceptance still required: deploy this ref and rerun the same
+  Home AI main submitted-message harness in `block` and `allow` modes against
+  expected hash `503cbb124641`, plus Codex source submitted-message and quota
+  harnesses.

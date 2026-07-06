@@ -99,7 +99,7 @@ const threadDetailRuntimeFunctionNames = new Set([
   "userMessagesCanShadow",
   "userMessageTimestampMs",
   "userMessagesHaveNearbyTimestamps",
-  "isProjectionIndexUserMessage",
+    "isProjectionIndexUserMessage",
   "userMessagesAreSameEventAcrossTurns",
   "durableTurnCanReceivePendingEcho",
   "isLocalPendingSubmissionEcho",
@@ -1327,11 +1327,14 @@ function evaluatedVisibleItemsForTurn() {
     "userMessageTimestampMs",
     "userMessagesHaveNearbyTimestamps",
   "isProjectionIndexUserMessage",
-  "userMessagesAreSameEventAcrossTurns",
+    "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
     "isLocalPendingSubmissionEcho",
     "completedDurableTurnSettlesOptimisticEcho",
     "optimisticEchoCanMatchEarlierDurable",
+    "mergeItemPreservingVisibleFields",
+    "userMessageShadowPriority",
+    "mergeLikelySameUserMessage",
     "pruneRecentSubmittedUserMessages",
     "recentSubmittedUserRecordBelongsToThread",
     "isRecentlySubmittedUserMessage",
@@ -2047,7 +2050,8 @@ test("context compaction notices update status and collapse repeated turn notice
   assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn, contextThread\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(!notice\) return/);
   assert.match(functionBody("visibleItemsForTurn"), /visible\[existing\.visibleIndex\] = null/);
-  assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /const filtered = \[\]/);
+  assert.match(functionBody("visibleItemsForTurn"), /visible\.filter\(Boolean\)/);
   assert.match(functionBody("isSupersededLiveTurn"), /mobileSupersededLive/);
   assert.match(functionBody("visibleItemsForTurn"), /shouldHideSupersededLiveUserMessage\(turn, item\)/);
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
@@ -2208,6 +2212,36 @@ test("superseded live usage-only shells do not render as blank completed receipt
     }).map((entry) => entry.item.id),
     ["normal-usage"],
   );
+});
+
+test("visible items collapse same-turn submitted user durable and local echoes", () => {
+  const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
+  const turn = {
+    id: "turn-submitted",
+    status: { type: "running" },
+    items: [
+      {
+        id: "local-user-submit-1",
+        type: "userMessage",
+        clientSubmissionId: "submit-1",
+        mobilePendingSubmission: true,
+        startedAtMs: 1000,
+        content: [{ type: "input_text", text: "submitted text" }],
+      },
+      {
+        id: "item-704",
+        type: "userMessage",
+        startedAtMs: 1200,
+        content: [{ type: "input_text", text: "submitted text" }],
+      },
+      { id: "assistant-progress", type: "agentMessage", text: "working" },
+    ],
+  };
+
+  const visible = visibleItemsForTurn(turn).map((entry) => entry.item);
+
+  assert.deepEqual(visible.map((item) => item.id), ["item-704", "assistant-progress"]);
+  assert.equal(visible.filter((item) => item.type === "userMessage").length, 1);
 });
 
 test("superseded live turns keep uploaded image user messages while hiding stale text steering", () => {

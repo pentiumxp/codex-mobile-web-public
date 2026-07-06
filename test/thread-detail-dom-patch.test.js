@@ -1386,6 +1386,58 @@ test("visible item dom patch removes stale visible item nodes after filtering", 
   );
 });
 
+test("duplicate user message DOM cleanup removes same-message local residue", () => {
+  const local = createDomElement("section", {
+    class: "item userMessage entry-animate",
+    "data-render-key": "item|thread|turn|local-user-submit",
+    "data-item": "local-user-submit",
+    "data-client-submission-hash": "h_local",
+  }, [
+    createDomElement("div", { class: "item-body" }, [createDomText("same submitted text")]),
+  ]);
+  const durable = createDomElement("section", {
+    class: "item userMessage",
+    "data-render-key": "item|thread|turn|durable-user",
+    "data-item": "durable-user",
+  }, [
+    createDomElement("div", { class: "item-body" }, [createDomText("same submitted text")]),
+  ]);
+  const article = createDomElement("article", { class: "turn", "data-turn": "turn-1" }, [local, durable]);
+  const root = createDomElement("div", {}, [article]);
+
+  const result = domPatch.removeDuplicateUserMessageDomNodes({ root });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.removed, 1);
+  assert.equal(local.parentNode, null);
+  assert.equal(durable.parentNode, article);
+  assert.deepEqual(article.childNodes, [durable]);
+});
+
+test("duplicate user message DOM cleanup preserves distinct user messages", () => {
+  const first = createDomElement("section", {
+    class: "item userMessage",
+    "data-render-key": "item|thread|turn|user-a",
+    "data-item": "user-a",
+  }, [
+    createDomElement("div", { class: "item-body" }, [createDomText("first submitted text")]),
+  ]);
+  const second = createDomElement("section", {
+    class: "item userMessage",
+    "data-render-key": "item|thread|turn|user-b",
+    "data-item": "user-b",
+  }, [
+    createDomElement("div", { class: "item-body" }, [createDomText("second submitted text")]),
+  ]);
+  const article = createDomElement("article", { class: "turn", "data-turn": "turn-1" }, [first, second]);
+
+  const result = domPatch.removeDuplicateUserMessageDomNodes({ root: article });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.removed, 0);
+  assert.deepEqual(article.childNodes, [first, second]);
+});
+
 test("visible item dom patch returns bounded failure reasons", () => {
   const article = createArticle([createNode("a")]);
 

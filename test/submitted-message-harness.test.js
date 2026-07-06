@@ -203,6 +203,7 @@ test("submitted message harness parses repeat and service worker flags", () => {
     "--thread-id", "thread-1",
     "--repeat", "2",
     "--service-workers", "both",
+    "--entry-surface", "direct",
     "--submit-method", "auto",
     "--sample-delays-ms", "350,100,350",
   ], {});
@@ -210,6 +211,7 @@ test("submitted message harness parses repeat and service worker flags", () => {
   assert.equal(options.threadId, "thread-1");
   assert.equal(options.repeat, 2);
   assert.equal(options.serviceWorkers, "both");
+  assert.equal(options.entrySurface, "direct");
   assert.equal(options.submitMethod, "auto");
   assert.deepEqual(options.sampleDelaysMs, [100, 350]);
 });
@@ -310,7 +312,16 @@ test("submitted message harness opens the requested thread explicitly", async ()
   await installBrowserThreadTarget(page, "thread-123");
 
   const url = new URL(entryUrlForScenario(options, "run-1"));
+  assert.equal(url.pathname, "/vite-shell/app-preview.html");
   assert.equal(url.searchParams.get("thread"), "thread-123");
   assert.equal(url.searchParams.get("threadId"), "thread-123");
   assert.deepEqual(calls, [[["codexMobileCurrentThreadId", "thread-123"]]]);
+});
+
+test("submitted message harness can target the legacy direct root explicitly", () => {
+  const options = parseArgs(["--server", "http://127.0.0.1:8897", "--thread-id", "thread-123", "--entry-surface", "direct"], {});
+  const url = new URL(entryUrlForScenario(options, "run-1"));
+
+  assert.equal(url.pathname, "/");
+  assert.equal(url.searchParams.get("threadId"), "thread-123");
 });

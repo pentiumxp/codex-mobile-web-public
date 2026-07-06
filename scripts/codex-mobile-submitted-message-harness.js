@@ -24,7 +24,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     keyFile: env.CODEX_MOBILE_KEY_FILE || path.join(process.env.HOME || "", ".codex-mobile-web", "access_key"),
     key: env.CODEX_MOBILE_KEY || "",
     entryUrl: "",
-    entrySurface: "direct",
+    entrySurface: env.CODEX_MOBILE_SUBMITTED_HARNESS_ENTRY_SURFACE || "app-preview",
     serviceWorkers: "block",
     sampleDelaysMs: DEFAULT_SAMPLE_DELAYS_MS.slice(),
     missingAfterMs: DEFAULT_MISSING_AFTER_MS,
@@ -65,7 +65,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else throw new Error(`unknown_arg:${arg}`);
   }
   options.server = normalizeServerUrl(options.server);
-  options.entrySurface = ["direct", "custom"].includes(options.entrySurface) ? options.entrySurface : "direct";
+  options.entrySurface = ["app-preview", "direct", "custom"].includes(options.entrySurface) ? options.entrySurface : "app-preview";
   options.serviceWorkers = ["block", "allow", "both"].includes(options.serviceWorkers) ? options.serviceWorkers : "block";
   options.submitMethod = ["button", "enter", "auto"].includes(options.submitMethod) ? options.submitMethod : "button";
   options.sampleDelaysMs = Array.from(new Set(options.sampleDelaysMs)).sort((a, b) => a - b);
@@ -82,7 +82,7 @@ function usage() {
     "  --server <url>                Codex Mobile server. Default: http://127.0.0.1:8787.",
     "  --key-file <path>             Access key file. Default: ~/.codex-mobile-web/access_key.",
     "  --entry-url <url>             Exact browser entry URL for custom embedded/proxy checks.",
-    "  --entry-surface <direct|custom>",
+    "  --entry-surface <app-preview|direct|custom> Default: app-preview.",
     "  --service-workers <block|allow|both>",
     "  --sample-delays-ms <csv>      Default: 100,350,900,1600,2800,6000.",
     "  --repeat <n>                  Submit 1-5 unique markers. Default: 1.",
@@ -283,7 +283,8 @@ async function fetchThreadDetail(options, key) {
 
 function entryUrlForScenario(options, runId) {
   if (options.entryUrl) return options.entryUrl;
-  const url = new URL(`${options.server}/`);
+  const basePath = options.entrySurface === "direct" ? "/" : "/vite-shell/app-preview.html";
+  const url = new URL(`${options.server}${basePath}`);
   url.searchParams.set("thread", options.threadId);
   url.searchParams.set("threadId", options.threadId);
   url.searchParams.set("submittedHarness", String(runId));
@@ -339,7 +340,16 @@ async function ensureLoggedIn(page, key) {
   await installBrowserSessionKey(page, key);
   if (await page.locator("#loginKey").isVisible().catch(() => false)) {
     await page.fill("#loginKey", key);
-    await page.keyboard.press("Enter");
+    const submit = page.locator("#loginForm button[type='submit'], #loginForm button").first();
+    if (await submit.isVisible().catch(() => false)) await submit.click({ force: true });
+    else await page.keyboard.press("Enter");
+    await page.waitForFunction(() => {
+      const login = document.querySelector("#loginKey");
+      if (!login) return true;
+      const style = getComputedStyle(login);
+      const rect = login.getBoundingClientRect();
+      return rect.width <= 0 || rect.height <= 0 || style.display === "none" || style.visibility === "hidden";
+    }, null, { timeout: 15_000 }).catch(() => {});
   }
 }
 
@@ -484,8 +494,20 @@ async function collectDomSnapshot(page, markerEntries) {
       const dataItemNodes = Array.from(document.querySelectorAll("[data-item-id]"))
         .filter((el) => visible(el) && (el.innerText || "").includes(marker));
       const markerArticles = allArticles.filter((el) => (el.innerText || "").includes(marker));
-      const userNodes = Array.from(document.querySelectorAll(".userMessage, [data-author=\"user\"], [data-role=\"user\"], article.userMessage, section.userMessage"))
+      const userNodes = Array.from(document.querySelectorAll(
+        "article.turn[data-turn] .item.userMessage, article.thread-tile-turn[data-thread-tile-turn] .item.userMessage, section.item.userMessage",
+      ))
         .filter((el) => visible(el) && (el.innerText || "").includes(marker));
+      const visibleUserNodeDetails = userNodes.slice(0, 4).map((el) => {
+        const renderKey = String(el.getAttribute("data-render-key") || "");
+        const text = String(el.innerText || "");
+        return {
+          item: String(el.getAttribute("data-item") || el.getAttribute("data-item-id") || "").slice(0, 96),
+          renderKeyTail: renderKey.slice(-96),
+          clientSubmissionHash: String(el.getAttribute("data-client-submission-hash") || "").slice(0, 40),
+          markerOccurrenceCount: text.split(marker).length - 1,
+        };
+      });
       const articleIndexes = markerArticles.map((article) => allArticles.indexOf(article)).filter((index) => index >= 0);
       const markerIndex = articleIndexes.length ? Math.min(...articleIndexes) : -1;
       const usageLikeBeforeMarker = markerIndex > 0
@@ -496,6 +518,7 @@ async function collectDomSnapshot(page, markerEntries) {
         dataItemCount: dataItemNodes.length,
         visibleUserArticleCount: markerArticles.length,
         visibleUserNodeCount: userNodes.length,
+        visibleUserNodeDetails,
         markerArticleIndexes: articleIndexes.slice(0, 5),
         usageLikeBeforeMarker,
       };
