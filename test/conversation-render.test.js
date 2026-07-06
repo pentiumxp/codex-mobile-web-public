@@ -102,6 +102,8 @@ const threadDetailRuntimeFunctionNames = new Set([
   "isProjectionIndexUserMessage",
   "userMessagesAreSameEventAcrossTurns",
   "durableTurnCanReceivePendingEcho",
+  "isLocalPendingSubmissionEcho",
+  "completedDurableTurnSettlesOptimisticEcho",
   "optimisticEchoCanMatchEarlierDurable",
   "hasMatchingIncomingUserMessage",
   "hasMatchingRealUserMessage",
@@ -819,6 +821,8 @@ function evaluatedMergeItemsPreservingLocalVisible() {
   "isProjectionIndexUserMessage",
   "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
+    "isLocalPendingSubmissionEcho",
+    "completedDurableTurnSettlesOptimisticEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
@@ -914,6 +918,8 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
   "isProjectionIndexUserMessage",
   "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
+    "isLocalPendingSubmissionEcho",
+    "completedDurableTurnSettlesOptimisticEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
@@ -1016,6 +1022,8 @@ function evaluatedMergeThreadPreservingVisibleItems() {
   "isProjectionIndexUserMessage",
   "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
+    "isLocalPendingSubmissionEcho",
+    "completedDurableTurnSettlesOptimisticEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
@@ -1171,6 +1179,8 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
   "isProjectionIndexUserMessage",
   "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
+    "isLocalPendingSubmissionEcho",
+    "completedDurableTurnSettlesOptimisticEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -1228,6 +1238,8 @@ function evaluatedLiveUserMessageUpsert() {
   "isProjectionIndexUserMessage",
   "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
+    "isLocalPendingSubmissionEcho",
+    "completedDurableTurnSettlesOptimisticEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -1307,6 +1319,8 @@ function evaluatedVisibleItemsForTurn() {
   "isProjectionIndexUserMessage",
   "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
+    "isLocalPendingSubmissionEcho",
+    "completedDurableTurnSettlesOptimisticEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "pruneRecentSubmittedUserMessages",
     "recentSubmittedUserRecordBelongsToThread",
@@ -1490,6 +1504,8 @@ function evaluatedLocalSubmissionInserter() {
   "isProjectionIndexUserMessage",
   "userMessagesAreSameEventAcrossTurns",
     "durableTurnCanReceivePendingEcho",
+    "isLocalPendingSubmissionEcho",
+    "completedDurableTurnSettlesOptimisticEcho",
     "optimisticEchoCanMatchEarlierDurable",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -5743,6 +5759,88 @@ test("cross-turn normalization keeps nearby repeated send after completed durabl
           id: "local-user-submit-repeat",
           type: "userMessage",
           startedAtMs: 1782907392500,
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-repeat",
+          content: [{ type: "text", text: "repeat   prompt" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["real-user-earlier"]);
+  assert.deepEqual(thread.turns[1].items.map((item) => item.id), ["local-user-submit-repeat"]);
+});
+
+test("cross-turn normalization drops local pending echo settled before completed durable turn", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "server-completed-turn",
+        status: { type: "completed" },
+        startedAtMs: 1782907390000,
+        completedAtMs: 1782907400000,
+        items: [
+          {
+            id: "real-user-current",
+            type: "userMessage",
+            startedAtMs: 1782907391000,
+            content: [{ type: "input_text", text: "same submitted prompt" }],
+          },
+          { id: "assistant-final", type: "agentMessage", text: "done" },
+          { id: "usage", type: "turnUsageSummary" },
+        ],
+      },
+      {
+        id: "local-turn-submit-current",
+        status: { type: "active" },
+        items: [{
+          id: "local-user-submit-current",
+          type: "userMessage",
+          startedAtMs: 1782907392000,
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-current",
+          content: [{ type: "text", text: "same   submitted prompt" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), [
+    "real-user-current",
+    "assistant-final",
+    "usage",
+  ]);
+  assert.deepEqual(thread.turns[1].items, []);
+});
+
+test("cross-turn normalization keeps repeated send started after completed durable turn", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "server-completed-turn",
+        status: { type: "completed" },
+        startedAtMs: 1782907390000,
+        completedAtMs: 1782907400000,
+        items: [{
+          id: "real-user-earlier",
+          type: "userMessage",
+          startedAtMs: 1782907391000,
+          content: [{ type: "input_text", text: "repeat prompt" }],
+        }],
+      },
+      {
+        id: "local-turn-submit-repeat",
+        status: { type: "active" },
+        items: [{
+          id: "local-user-submit-repeat",
+          type: "userMessage",
+          startedAtMs: 1782907410000,
           mobilePendingSubmission: true,
           clientSubmissionId: "submit-repeat",
           content: [{ type: "text", text: "repeat   prompt" }],

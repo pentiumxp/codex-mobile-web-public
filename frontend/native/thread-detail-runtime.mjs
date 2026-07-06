@@ -784,6 +784,50 @@ function createThreadDetailRuntime(deps = {}) {
     return Boolean(turn.live || turn.mobileLive || turn.mobileActiveLiveTurn || turn.mobilePendingOverlay);
   }
 
+  function isLocalPendingSubmissionEcho(item) {
+    return Boolean(
+      item
+      && item.type === "userMessage"
+      && item.mobilePendingSubmission
+      && String(item.clientSubmissionId || "").trim()
+      && /^local-user-/.test(String(item.id || "")),
+    );
+  }
+
+  function completedDurableTurnSettlesOptimisticEcho(durableItem, optimisticItem, durableTurn = null) {
+    if (!durableTurn) return false;
+    const status = durableTurn.status;
+    const statusType = status && typeof status === "object"
+      ? String(status.type || status.status || status.state || "")
+      : String(status || "");
+    const timestampMs = (value) => {
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+      if (typeof value === "string" && value.trim()) {
+        const numeric = Number(value);
+        if (Number.isFinite(numeric) && numeric > 0) return numeric;
+        const parsed = Date.parse(value);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      }
+      return 0;
+    };
+    const durableCompletedMs = [
+      "completedAtMs",
+      "completedAt",
+      "completed_at_ms",
+      "completed_at",
+      "updatedAtMs",
+      "updatedAt",
+      "updated_at_ms",
+      "updated_at",
+    ].reduce((value, field) => value || timestampMs(durableTurn[field]), 0);
+    if (!durableCompletedMs && !/completed|failed|cancel|error|interrupted/i.test(statusType)) return false;
+    if (!isLocalPendingSubmissionEcho(optimisticItem)) return false;
+    if (!userMessagesLikelySame(durableItem, optimisticItem)) return false;
+    const optimisticMs = userMessageTimestampMs(optimisticItem);
+    if (!optimisticMs) return Boolean(durableCompletedMs);
+    return Boolean(durableCompletedMs && optimisticMs <= durableCompletedMs);
+  }
+
   function optimisticEchoCanMatchEarlierDurable(durableItem, optimisticItem, durableTurn = null) {
     if (!durableItem || !optimisticItem) return false;
     if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
@@ -806,14 +850,11 @@ function createThreadDetailRuntime(deps = {}) {
         return userMessagesLikelySame(durableItem, optimisticItem);
       }
     }
+    if (completedDurableTurnSettlesOptimisticEcho(durableItem, optimisticItem, durableTurn)) return true;
     const likelySameNearby = userMessagesLikelySame(durableItem, optimisticItem)
       && userMessagesHaveNearbyTimestamps(durableItem, optimisticItem);
     if (optimisticItem.mobileSendError) return likelySameNearby;
-    const localPendingEcho = Boolean(
-      optimisticItem.mobilePendingSubmission
-      && String(optimisticItem.clientSubmissionId || "").trim()
-      && /^local-user-/.test(String(optimisticItem.id || "")),
-    );
+    const localPendingEcho = isLocalPendingSubmissionEcho(optimisticItem);
     if (!localPendingEcho || !durableTurnCanReceivePendingEcho(durableTurn)) return false;
     return likelySameNearby;
   }
