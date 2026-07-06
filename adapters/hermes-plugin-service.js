@@ -544,6 +544,21 @@ function createHermesPluginService(options = {}) {
     };
   }
 
+  function pluginSessionResponse(record) {
+    if (!record || record.expiresAtMs <= nowMs()) return null;
+    const registrationRecord = registration({ workspaceId: record.workspaceId });
+    const response = {
+      ok: true,
+      session_key: record.token,
+      expires_in: Math.max(1, Math.floor((record.expiresAtMs - nowMs()) / 1000)),
+      token_type: "codex_mobile_plugin_session",
+    };
+    if (record.target) response.target = record.target;
+    if (record.appearance) response.appearance = record.appearance;
+    if (registrationRecord && registrationRecord.appOrigin) response.hermes_origin = registrationRecord.appOrigin;
+    return response;
+  }
+
   function createSession(input = {}) {
     pruneLaunchTokens();
     prunePluginSessions();
@@ -558,25 +573,23 @@ function createHermesPluginService(options = {}) {
     const sessionKey = pluginSessionTokenFromRequestValue(randomSessionToken()) || `cps_${crypto.randomBytes(32).toString("base64url")}`;
     const createdAtMs = nowMs();
     const expiresAtMs = createdAtMs + sessionTtlMs;
-    pluginSessions.set(sessionKey, {
+    const record = {
       token: sessionKey,
       workspaceId: launch.workspaceId,
       target: launch.target || null,
       appearance: launch.appearance || null,
       createdAtMs,
       expiresAtMs,
-    });
-    const registrationRecord = registration({ workspaceId: launch.workspaceId });
-    const response = {
-      ok: true,
-      session_key: sessionKey,
-      expires_in: Math.max(1, Math.floor(sessionTtlMs / 1000)),
-      token_type: "codex_mobile_plugin_session",
     };
-    if (launch.target) response.target = launch.target;
-    if (launch.appearance) response.appearance = launch.appearance;
-    if (registrationRecord && registrationRecord.appOrigin) response.hermes_origin = registrationRecord.appOrigin;
-    return response;
+    pluginSessions.set(sessionKey, record);
+    return pluginSessionResponse(record);
+  }
+
+  function readSession(input = {}) {
+    prunePluginSessions();
+    const token = pluginSessionTokenFromRequestValue(input.sessionKey || input.session_key || input.pluginSession || input.plugin_session || input.token || input.key);
+    const record = token ? pluginSessions.get(token) : null;
+    return pluginSessionResponse(record);
   }
 
   function isLaunchTokenAuthorized(value) {
@@ -600,6 +613,7 @@ function createHermesPluginService(options = {}) {
     isSessionAuthorized,
     loadState,
     manifest,
+    readSession,
     registeredOrigins,
     registerOrigin,
     registerWorkspace,

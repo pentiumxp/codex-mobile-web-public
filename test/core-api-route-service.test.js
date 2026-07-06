@@ -169,6 +169,75 @@ test("core settings route persists frontend diagnostic log settings", async () =
   assert.equal(sent.body.frontendDiagnosticLog.source, "runtime");
 });
 
+test("core Hermes plugin session route replays existing plugin sessions without reusing launch tokens", async () => {
+  const calls = [];
+  let sent = null;
+  const service = createCoreApiRouteService({
+    hermesPluginService: {
+      isLaunchTokenAuthorized: (token) => token === "cpl_live_launch",
+      readSession: ({ token }) => token === "cps_live_session"
+        ? { ok: true, session_key: "cps_live_session", expires_in: 300, token_type: "codex_mobile_plugin_session" }
+        : null,
+      createSession: (body) => {
+        calls.push(body);
+        return { ok: true, session_key: "cps_new_session", expires_in: 300, token_type: "codex_mobile_plugin_session" };
+      },
+    },
+    pluginSessionCookieHeader: (_req, session) => `codex_mobile_plugin_session=${session.session_key}; Path=/`,
+    requestAuthToken: () => "cpl_consumed_launch",
+    requestAuthTokens: () => ["cpl_consumed_launch", "cps_live_session"],
+  });
+
+  const handled = await service.handleAuthorizedRoute({
+    url: new URL("http://127.0.0.1:8787/api/v1/hermes/plugin/session?codexPluginLaunch=cpl_consumed_launch"),
+    req: { method: "POST", headers: { cookie: "codex_mobile_plugin_session=cps_live_session" } },
+    res: {},
+    readBody: async () => ({}),
+    sendJson: (status, body, headers) => {
+      sent = { status, body, headers };
+    },
+  });
+
+  assert.deepEqual(handled, { handled: true });
+  assert.equal(sent.status, 200);
+  assert.equal(sent.body.session_key, "cps_live_session");
+  assert.match(sent.headers["Set-Cookie"], /cps_live_session/);
+  assert.deepEqual(calls, []);
+});
+
+test("core Hermes plugin session route still exchanges explicit launch tokens once", async () => {
+  let createSessionBody = null;
+  let sent = null;
+  const service = createCoreApiRouteService({
+    hermesPluginService: {
+      isLaunchTokenAuthorized: (token) => token === "cpl_live_launch",
+      readSession: () => null,
+      createSession: (body) => {
+        createSessionBody = body;
+        return { ok: true, session_key: "cps_new_session", expires_in: 300, token_type: "codex_mobile_plugin_session" };
+      },
+    },
+    pluginSessionCookieHeader: (_req, session) => `codex_mobile_plugin_session=${session.session_key}; Path=/`,
+    requestAuthToken: () => "cpl_live_launch",
+    requestAuthTokens: () => ["cpl_live_launch"],
+  });
+
+  const handled = await service.handleAuthorizedRoute({
+    url: new URL("http://127.0.0.1:8787/api/v1/hermes/plugin/session"),
+    req: { method: "POST", headers: {} },
+    res: {},
+    readBody: async () => ({ codexPluginLaunch: "cpl_explicit_launch" }),
+    sendJson: (status, body) => {
+      sent = { status, body };
+    },
+  });
+
+  assert.deepEqual(handled, { handled: true });
+  assert.equal(sent.status, 200);
+  assert.equal(sent.body.session_key, "cps_new_session");
+  assert.equal(createSessionBody.token, "cpl_explicit_launch");
+});
+
 test("core status route exposes runtime pressure without blocking on quota hydration", async () => {
   let ensured = false;
   let refreshedRateLimits = false;

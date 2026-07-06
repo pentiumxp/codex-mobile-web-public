@@ -937,23 +937,45 @@ async function login(key) {
 
 async function exchangePluginLaunchSession() {
   if (!isHermesEmbedMode() || !state.pluginLaunchSession || !state.key) return;
-  const result = await api("/api/v1/hermes/plugin/session", {
-    method: "POST",
-    body: JSON.stringify({ codexPluginLaunch: state.key }),
-    timeoutMs: 12000,
-  });
-  if (!result || !result.session_key) throw new Error("Plugin session exchange failed");
-  setAuthKey(result.session_key);
-  const hermesOrigin = normalizePluginParentOrigin(result && result.hermes_origin);
-  if (hermesOrigin) state.pluginParentOrigin = hermesOrigin;
-  state.pluginLaunchTarget = result && result.target && typeof result.target === "object" ? result.target : null;
-  applyPluginAppearancePreference(result && result.appearance);
-  if (state.pluginLaunchTarget && state.pluginLaunchTarget.cwd && !state.currentThreadId) {
-    state.selectedCwd = String(state.pluginLaunchTarget.cwd || "").trim();
+  const launchKey = String(state.key || "").trim();
+  if (!launchKey) return;
+  if (state.pluginLaunchExchangeCompletedKey === launchKey && state.pluginSessionActive) {
+    state.pluginLaunchSession = false;
+    scrubPluginLaunchUrl();
+    return;
   }
-  state.pluginLaunchSession = false;
-  state.pluginSessionActive = true;
-  scrubPluginLaunchUrl();
+  if (state.pluginLaunchExchangeKey === launchKey && state.pluginLaunchExchangePromise) {
+    return state.pluginLaunchExchangePromise;
+  }
+  const exchangePromise = (async () => {
+    const result = await api("/api/v1/hermes/plugin/session", {
+      method: "POST",
+      body: JSON.stringify({ codexPluginLaunch: launchKey }),
+      timeoutMs: 12000,
+    });
+    if (!result || !result.session_key) throw new Error("Plugin session exchange failed");
+    setAuthKey(result.session_key);
+    const hermesOrigin = normalizePluginParentOrigin(result && result.hermes_origin);
+    if (hermesOrigin) state.pluginParentOrigin = hermesOrigin;
+    state.pluginLaunchTarget = result && result.target && typeof result.target === "object" ? result.target : null;
+    applyPluginAppearancePreference(result && result.appearance);
+    if (state.pluginLaunchTarget && state.pluginLaunchTarget.cwd && !state.currentThreadId) {
+      state.selectedCwd = String(state.pluginLaunchTarget.cwd || "").trim();
+    }
+    state.pluginLaunchSession = false;
+    state.pluginSessionActive = true;
+    state.pluginLaunchExchangeCompletedKey = launchKey;
+    scrubPluginLaunchUrl();
+  })();
+  state.pluginLaunchExchangeKey = launchKey;
+  state.pluginLaunchExchangePromise = exchangePromise;
+  try {
+    await exchangePromise;
+  } finally {
+    if (state.pluginLaunchExchangePromise === exchangePromise) {
+      state.pluginLaunchExchangePromise = null;
+    }
+  }
 }
 
 async function applyPluginLaunchTarget() {

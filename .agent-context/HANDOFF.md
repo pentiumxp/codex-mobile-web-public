@@ -21,6 +21,542 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## Current Addendum - 2026-07-06T09:55Z Server-switchable frontend diagnostics
+
+- Owner reproduced the submitted-user duplicate/disappearing-message issue, but
+  production log inspection only showed Home AI `conversation_projection_mismatch`
+  / `active-thread-window-downgrade` reports. No `frontend_diagnostic_log`
+  submitted-echo lifecycle rows reached the server.
+- Root cause for the diagnostic gap: the first diagnostic switch was
+  URL/localStorage/console controlled, not server-controlled, and server
+  `client-event` logging would also throttle same-named
+  `frontend_diagnostic_log` rows inside the normal 30s event coalescing window.
+- Committed source fix `6f0301a9` (`fix: make frontend diagnostics server
+  switchable`):
+  - persisted runtime setting `frontendDiagnosticLog`;
+  - `/api/public-config` now exposes the setting;
+  - authorized `/api/settings/frontend-diagnostic-log` can enable/disable it;
+  - app shell applies the public config on startup;
+  - `frontend_diagnostic_log` client events bypass same-event runtime log
+    throttling while retaining bounded/sanitized metadata;
+  - classic public runtime and native ESM/Vite artifacts were regenerated.
+- Validation passed:
+  - `node --test test/runtime-settings-service.test.js
+    test/server-http-runtime-service.test.js test/core-api-route-service.test.js
+    test/api-client-runtime-ui.test.js test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js` (`59/59`);
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - central fallback governance check for changed source/test files
+    returned `ok=true`.
+- Deployment is delegated, not completed in this source thread:
+  `ttc_622e1aef9a91b00f5a` to Codex Mobile Deploy Lane, requesting central
+  deploy of `6f0301a9`, production enablement of submitted-echo diagnostics,
+  `/api/public-config`/settings readback, Vite artifact readback, SHA parity,
+  focused production tests, and a three-row `frontend_diagnostic_log` server log
+  smoke proving no throttle collapse.
+- Follow-up 2026-07-06: production readback served the new cache but
+  `POST /api/settings/frontend-diagnostic-log` returned
+  `frontend_diagnostic_log_settings_unavailable`. Root cause was a wiring miss
+  in `server-routes/server-route-composition-service.js`: the composition layer
+  did not forward the new frontend diagnostic settings dependencies into the
+  core route service. Commit `9754fbab6258` (`fix: forward frontend diagnostic
+  settings route deps`) fixes this and adds regression coverage in
+  `test/api-route-boundary-service.test.js`.
+- Follow-up deployment is delegated as `ttc_29be196cf4a35e7215`, requesting
+  central deploy of `9754fbab6258`, settings POST/GET success, public-config
+  readback with diagnostics enabled, Vite artifact readback, SHA parity,
+  focused production tests, and three-row `frontend_diagnostic_log` log-channel
+  smoke.
+- Active Home AI diagnostic card `ttc_59016aa654d05b4990` remains open until
+  the deploy/readback evidence returns; do not close it without bounded
+  production evidence or an explicit partial/blocked reason.
+
+## Current Addendum - 2026-07-06T07:36Z Frontend diagnostic log switch
+
+- Owner asked to stop guessing the submitted-user duplicate/disappearance
+  issue and add persistent client-side diagnostics that can be enabled during
+  reproduction and disabled normally.
+- Implemented default-off frontend diagnostics in
+  `frontend/native/api-client-runtime.mjs` with localStorage-backed ring
+  buffer, optional upload through existing client events, URL toggles, and
+  `window.CodexFrontendLog`.
+- Operator controls:
+  - enable: `CodexFrontendLog.enable({ scopes: ["submitted_echo"], upload:
+    true, maxEntries: 400 })` or URL `?codexFrontendLog=1`;
+  - disable: `CodexFrontendLog.disable()` or URL `?codexFrontendLog=0`;
+  - export local entries: `CodexFrontendLog.export()`;
+  - clear entries: `CodexFrontendLog.clear()`.
+- Logged submitted-message stages across composer/settings/pane refresh:
+  `submit-start`, local insert/apply/render, POST response, reconcile,
+  refresh merge, early shell render, full render, DOM probe, errors/finally.
+  Entries include ids/hashes/counts/order/DOM tail positions only; raw message
+  text, HTML, paths, tokens, cookies, and file names are hashed or omitted.
+- Classic fallback files under `public/*.js` and native ESM/Vite artifacts were
+  regenerated. New readback: `0.1.11|codex-mobile-shell-v625-75ff8c622f17`,
+  `productionExecution=vite-app-preview-native-esm`, published files `24`.
+- Validation passed:
+  - `node --test test/api-client-runtime-ui.test.js
+    test/conversation-render.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js` (`331/331`);
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Next step: commit this diagnostic facility and deploy through the central
+  Codex Mobile deploy lane so the Owner can reproduce in production and we can
+  inspect bounded client-side logs instead of inferring from code.
+
+## Current Addendum - 2026-07-05 Frontend native ESM migration pane-layout slice
+
+- Objective remains active: finish the source-side native ESM migration in
+  development and deploy only after Owner approval.
+- Migrated `pane-layout-runtime` for Vite/app-preview by adding
+  `frontend/native/pane-layout-runtime.mjs`, wiring its `nativeSource` in
+  `scripts/frontend-shell-asset-graph.mjs`, and regenerating
+  `public/vite-shell/*` artifacts.
+- Classic fallback remains present at `public/pane-layout-runtime.js`.
+- Readback after `npm run --silent build:frontend`:
+  `nativeEsmModuleCount=41`, `classicGlobalCompatibilityModuleCount=8`.
+  Remaining classic modules are `thread-list-runtime`, `composer-runtime`,
+  `composer-bridge-runtime`, `api-client-runtime`, `thread-detail-runtime`,
+  `task-card-runtime`, `conversation-render-runtime`, and
+  `event-stream-runtime`.
+- Validation passed:
+  - `node --check frontend/native/pane-layout-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs
+    test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js test/conversation-render.test.js
+    test/thread-detail-runtime-ui.test.js
+    test/client-event-stall-self-check-service.test.js` (`316/316`);
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev server on `127.0.0.1:8917` with
+    `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview`: browser startup gate
+    `ok=true`, app visible, runtime ready, blocking issue count `0`, browser
+    exception count `0`. The dev server was stopped.
+- Source-only status: no production deploy was run for this ESM slice.
+
+## Current Addendum - 2026-07-05 Frontend native ESM migration thread-list slice
+
+- Objective remains active: continue source-only native ESM migration with
+  development validation; production deploy still requires Owner approval.
+- Migrated `thread-list-runtime` by adding
+  `frontend/native/thread-list-runtime.mjs`, wiring `nativeSource` in
+  `scripts/frontend-shell-asset-graph.mjs`, and regenerating
+  `public/vite-shell/*` artifacts.
+- Classic fallback remains present at `public/thread-list-runtime.js`.
+- Readback after `npm run --silent build:frontend`:
+  `nativeEsmModuleCount=42`, `classicGlobalCompatibilityModuleCount=7`.
+  Remaining classic modules are `composer-runtime`, `composer-bridge-runtime`,
+  `api-client-runtime`, `thread-detail-runtime`, `task-card-runtime`,
+  `conversation-render-runtime`, and `event-stream-runtime`.
+- Validation passed:
+  - `node --check frontend/native/thread-list-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs
+    test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js test/conversation-render.test.js
+    test/thread-detail-runtime-ui.test.js
+    test/client-event-stall-self-check-service.test.js` (`316/316`);
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev server on `127.0.0.1:8918` with
+    `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview`: browser startup gate
+    `ok=true`, app visible, runtime ready, blocking issue count `0`, browser
+    exception count `0`. The dev server was stopped.
+- Source-only status: no production deploy was run for this ESM slice.
+
+## Current Addendum - 2026-07-05 Frontend native ESM migration api-client-runtime slice
+
+- Objective remains active: continue source-only native ESM migration with
+  development validation; production deploy still requires Owner approval.
+- Migrated `api-client-runtime` by adding
+  `frontend/native/api-client-runtime.mjs`, wiring `nativeSource` in
+  `scripts/frontend-shell-asset-graph.mjs`, and regenerating
+  `public/vite-shell/*` artifacts.
+- Classic fallback remains present at `public/api-client-runtime.js`.
+- Readback after `npm run --silent build:frontend`:
+  `nativeEsmModuleCount=43`, `classicGlobalCompatibilityModuleCount=6`.
+  Remaining classic modules are `composer-runtime`, `composer-bridge-runtime`,
+  `thread-detail-runtime`, `task-card-runtime`,
+  `conversation-render-runtime`, and `event-stream-runtime`.
+- Validation passed:
+  - `node --check frontend/native/api-client-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs
+    test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js test/conversation-render.test.js
+    test/thread-detail-runtime-ui.test.js
+    test/client-event-stall-self-check-service.test.js` (`316/316`);
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev server on `127.0.0.1:8919` with
+    `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview`: browser startup gate
+    `ok=true`, app visible, runtime ready, blocking issue count `0`, browser
+    exception count `0`. The dev server was stopped.
+- Source-only status: no production deploy was run for this ESM slice.
+
+## Current Addendum - 2026-07-05 Frontend native ESM migration composer-bridge slice
+
+- Objective remains active: continue source-only native ESM migration with
+  development validation; production deploy still requires Owner approval.
+- Migrated `composer-bridge-runtime` by adding
+  `frontend/native/composer-bridge-runtime.mjs`, wiring `nativeSource` in
+  `scripts/frontend-shell-asset-graph.mjs`, and regenerating
+  `public/vite-shell/*` artifacts.
+- Classic fallback remains present at `public/composer-bridge-runtime.js`.
+- Readback after `npm run --silent build:frontend`:
+  `nativeEsmModuleCount=44`, `classicGlobalCompatibilityModuleCount=5`.
+  Remaining classic modules are `composer-runtime`, `thread-detail-runtime`,
+  `task-card-runtime`, `conversation-render-runtime`, and
+  `event-stream-runtime`.
+- Validation passed:
+  - `node --check frontend/native/composer-bridge-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs
+    test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js test/conversation-render.test.js
+    test/thread-detail-runtime-ui.test.js
+    test/client-event-stall-self-check-service.test.js` (`316/316`);
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev server on `127.0.0.1:8920` with
+    `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview`: browser startup gate
+    `ok=true`, app visible, runtime ready, blocking issue count `0`, browser
+    exception count `0`. The dev server was stopped.
+- Source-only status: no production deploy was run for this ESM slice.
+
+## Current Addendum - 2026-07-05 Frontend native ESM migration task-card slice
+
+- Objective remains active: continue source-only native ESM migration with
+  development validation; production deploy still requires Owner approval.
+- Migrated `task-card-runtime` by adding
+  `frontend/native/task-card-runtime.mjs`, wiring `nativeSource` in
+  `scripts/frontend-shell-asset-graph.mjs`, and regenerating
+  `public/vite-shell/*` artifacts.
+- Classic fallback remains present at `public/task-card-runtime.js`.
+- Readback after `npm run --silent build:frontend`:
+  `nativeEsmModuleCount=45`, `classicGlobalCompatibilityModuleCount=4`.
+  Remaining classic modules are `composer-runtime`, `thread-detail-runtime`,
+  `conversation-render-runtime`, and `event-stream-runtime`.
+- Validation passed:
+  - `node --check frontend/native/task-card-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs
+    test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js test/conversation-render.test.js
+    test/thread-detail-runtime-ui.test.js
+    test/client-event-stall-self-check-service.test.js` (`316/316`);
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev server on `127.0.0.1:8921` with
+    `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview`: browser startup gate
+    `ok=true`, app visible, runtime ready, blocking issue count `0`, browser
+    exception count `0`. The dev server was stopped.
+- Source-only status: no production deploy was run for this ESM slice.
+
+## Current Addendum - 2026-07-05 Frontend native ESM migration composer-runtime slice
+
+- Objective remains active: continue source-only native ESM migration with
+  development validation; production deploy still requires Owner approval.
+- Migrated `composer-runtime` by adding
+  `frontend/native/composer-runtime.mjs`, wiring `nativeSource` in
+  `scripts/frontend-shell-asset-graph.mjs`, and regenerating
+  `public/vite-shell/*` artifacts.
+- Classic fallback remains present at `public/composer-runtime.js`.
+- Readback after `npm run --silent build:frontend`:
+  `nativeEsmModuleCount=46`, `classicGlobalCompatibilityModuleCount=3`.
+  Remaining classic modules are `thread-detail-runtime`,
+  `conversation-render-runtime`, and `event-stream-runtime`.
+- Validation passed:
+  - `node --check frontend/native/composer-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs
+    test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js test/conversation-render.test.js
+    test/thread-detail-runtime-ui.test.js
+    test/client-event-stall-self-check-service.test.js` (`316/316`);
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev server on `127.0.0.1:8922` with
+    `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview`: browser startup gate
+    `ok=true`, app visible, runtime ready, blocking issue count `0`, browser
+    exception count `0`. The dev server was stopped.
+- Source-only status: no production deploy was run for this ESM slice.
+
+## Current Addendum - 2026-07-05 Frontend native ESM migration conversation-render slice
+
+- Objective remains active: continue source-only native ESM migration with
+  development validation; production deploy still requires Owner approval.
+- Migrated `conversation-render-runtime` by adding
+  `frontend/native/conversation-render-runtime.mjs`, wiring `nativeSource` in
+  `scripts/frontend-shell-asset-graph.mjs`, and regenerating
+  `public/vite-shell/*` artifacts.
+- Classic fallback remains present at `public/conversation-render-runtime.js`.
+- Readback after `npm run --silent build:frontend`:
+  `nativeEsmModuleCount=47`, `classicGlobalCompatibilityModuleCount=2`.
+  Remaining classic modules are `thread-detail-runtime` and
+  `event-stream-runtime`.
+- Validation passed:
+  - `node --check frontend/native/conversation-render-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs
+    test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js test/conversation-render.test.js
+    test/thread-detail-runtime-ui.test.js
+    test/client-event-stall-self-check-service.test.js` (`316/316`);
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev server on `127.0.0.1:8923` with
+    `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview`: browser startup gate
+    `ok=true`, app visible, runtime ready, blocking issue count `0`, browser
+    exception count `0`. The dev server was stopped.
+- Source-only status: no production deploy was run for this ESM slice.
+
+## Current Addendum - 2026-07-05 Independent submitted-message echo hotfix deploy request
+
+- Owner asked to deploy the non-ESM duplicate/disappearing submitted-message
+  fix independently because the issue was impacting usage.
+- ESM migration work in the main worktree remains paused and uncommitted; do
+  not mix those files into this hotfix deploy.
+- Created isolated worktree
+  `tmp/hotfix-submitted-echo-order` from non-ESM base `dcb2cb63`
+  (`fix: retire submitted echoes by submission identity`) and applied the
+  submitted-message stash patch only.
+- Hotfix commit: `5d4515ab42e7` (`fix: drop stale same-submission user echoes`).
+  Preservation branch: `hotfix/submitted-echo-order-5d4515ab`.
+- Source behavior: `public/thread-detail-runtime.js` now treats shared
+  `clientSubmissionId` as authoritative regardless of candidate direction, so
+  durable/higher-authority same-submission user messages shadow stale later
+  projection/optimistic echoes; equal authority keeps the earlier visible item.
+- Regression added in `test/conversation-render.test.js` for a later
+  same-submission projected user bubble below newer receipts.
+- Regenerated frontend artifacts for client/cache
+  `0.1.11|codex-mobile-shell-v625-14d250f3a235`.
+- Validation in the isolated worktree passed:
+  - `node --check public/thread-detail-runtime.js test/conversation-render.test.js`;
+  - `node --test test/conversation-render.test.js
+    test/thread-detail-v4-merge-state.test.js
+    test/thread-user-message-echo-normalizer-service.test.js
+    test/message-pending-echo-service.test.js` (`201/201`);
+  - `npm run --silent build:frontend`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/vite-shell-artifact-service.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` (`135/135`);
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Deployment delegated to Codex Mobile Deploy Lane card
+  `ttc_8f8683b8421cd5aad1` for ref `5d4515ab42e7`; no local production
+  deploy was run from this thread.
+
+## Current Addendum - 2026-07-05 Frontend native ESM migration Phase 4 helper slice
+
+- Objective remains active: continue `docs/FRONTEND_ESM_MIGRATION_PLAN.md`
+  native ESM migration, run development tests, and deploy only after Owner
+  approval.
+- Phase 4 helper slice in the main worktree is implemented but not committed
+  because the Owner requested the independent submitted-message hotfix first.
+- Added native ESM helper sources:
+  `frontend/native/thread-list-stable-order.mjs`,
+  `frontend/native/thread-status-hints.mjs`, and
+  `frontend/native/thread-detail-actions.mjs`.
+- Wired `nativeSource` entries in `scripts/frontend-shell-asset-graph.mjs` and
+  extended `test/vite-shell-asset-graph.test.js` with classic/native behavior
+  parity and manifest assertions.
+- Regenerated artifacts in the main worktree; readback shows native modules
+  increased to `19` and classic compatibility modules reduced to `30`.
+- Validation passed before the hotfix interruption:
+  - `npm run --silent build:frontend`;
+  - focused helper/artifact tests (`39/39`);
+  - broader thread-detail/browser/artifact tests (`441/441`);
+  - supplemental UI/route shell tests (`63/63`);
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev server on `127.0.0.1:8901` with
+    `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview`: startup/browser gate
+    `deployPass=true`, blocking `0`, actionable issue codes `[]`; only existing
+    H3 `active_codex_app_server_rss_elevated` advisory. The dev server was
+    stopped.
+- Do not deploy this ESM slice until the Owner explicitly approves the ESM
+  migration deploy path.
+
+## Current Addendum - 2026-07-05 Frontend native ESM migration Phase 4 tile helper slice
+
+- Objective remains active: continue `docs/FRONTEND_ESM_MIGRATION_PLAN.md`
+  native ESM migration with development validation; production deploy still
+  requires Owner approval.
+- Migrated the thread tile helper policies, not the main tile runtime:
+  `frontend/native/thread-tile-layout.mjs`,
+  `frontend/native/thread-tile-actions.mjs`, and
+  `frontend/native/thread-tile-state.mjs`.
+- Wired `nativeSource` entries in `scripts/frontend-shell-asset-graph.mjs` and
+  extended `test/vite-shell-asset-graph.test.js` with classic/native parity
+  coverage for tile layout, tile actions, and tile state planning.
+- Regenerated artifacts; `public/vite-shell/vite-shell-readback.json` now
+  reports `nativeEsmModuleCount=22` and
+  `classicGlobalCompatibilityModuleCount=27`.
+- Validation passed:
+  - `node --check frontend/native/thread-tile-layout.mjs
+    frontend/native/thread-tile-actions.mjs
+    frontend/native/thread-tile-state.mjs
+    scripts/frontend-shell-asset-graph.mjs
+    test/vite-shell-asset-graph.test.js`;
+  - focused tile/artifact tests (`26/26`);
+  - broader shell/browser/artifact set (`151/151`);
+  - thread-detail/conversation/task-card/mobile coverage (`371/371`);
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev server on `127.0.0.1:8902` with
+    `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview`: startup/browser gate
+    `deployPass=true`, blocking `0`, actionable issue codes `[]`; only existing
+    H3 `active_codex_app_server_rss_elevated` advisory. The dev server was
+    stopped.
+- This slice is source-validated only. No production deployment was performed.
+
+## Current Addendum - 2026-07-05 Submitted message same-submission authority fix
+
+- Symptom: submitted user messages could alternate between disappearing after
+  send and later reappearing as duplicates, including stale duplicate user
+  bubbles below newer assistant receipts.
+- Root cause: local optimistic echo, mux/server pending echo, V4 projected
+  echo, and durable user history did not all treat `clientSubmissionId` as the
+  authoritative identity. A durable user message could already exist earlier in
+  the thread while a synthetic pending echo with the same submission id remained
+  in a later turn and survived frontend normalization.
+- Fix in source:
+  - `adapters/message-pending-echo-service.js` now scans the whole thread for a
+    durable same-submission user message and removes matching synthetic pending
+    echoes anywhere in the thread before deleting the pending store entry;
+  - `adapters/thread-user-message-echo-normalizer-service.js` treats shared
+    submission id as stronger than content equivalence;
+  - `public/thread-detail-runtime.js` lets durable same-submission user
+    messages shadow optimistic/local/mux echoes regardless of turn order;
+  - `public/thread-detail-v4-merge-state.js` drops stale same-submission
+    synthetic overlays once durable projection authority exists.
+- Tests added/updated: pending echo removal when durable same-submission history
+  already exists earlier, V4 stale overlay same-submission drop, echo normalizer
+  same-submission authority, and visible conversation cross-turn normalization
+  after durable receipt.
+- Validation passed:
+  - `node --test test/message-pending-echo-service.test.js test/thread-detail-v4-merge-state.test.js test/thread-user-message-echo-normalizer-service.test.js test/conversation-render.test.js` (`200/200`);
+  - `node --test test/thread-detail-projection-service.test.js test/thread-detail-self-check-service.test.js test/browser-runtime-self-check-service.test.js` (`170/170`);
+  - `node --check adapters/message-pending-echo-service.js adapters/thread-user-message-echo-normalizer-service.js public/thread-detail-runtime.js public/thread-detail-v4-merge-state.js`;
+  - `npm run --silent build:frontend`;
+  - `node --test test/vite-shell-asset-graph.test.js test/vite-shell-artifact-service.test.js test/runtime-self-check-loop.test.js test/browser-runtime-self-check-service.test.js test/client-event-stall-self-check-service.test.js` (`150/150`);
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - production-matching temporary dev server on `127.0.0.1:8897` with
+    `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview` and controlled submit thread
+    `019f307c-56fb-7261-a584-2636051ee724`: full behavior gate
+    `deployPass=true`, blocking `0`, actionable issue codes `[]`.
+- Deployment status: not deployed from this source workspace yet. Temporary dev
+  server was stopped after validation.
+- Residual/local state:
+  - H3 runtime pressure advisory and non-blocking browser downgrade advisories
+    remained in the dev behavior gate;
+  - unrelated untracked `frontend/native/*.mjs` ESM migration files remain in
+    the worktree and must not be included in this submitted-message fix.
+
+## Current Addendum - 2026-07-05 Frontend native ESM migration Phase 2 diagnostics
+
+- Objective: continue `docs/FRONTEND_ESM_MIGRATION_PLAN.md` without deployment
+  until Owner explicitly approves.
+- Current migration state after this source-workspace slice:
+  - `esmCompatibility.moduleCount=49`;
+  - `nativeEsmModuleCount=10`;
+  - `classicGlobalCompatibilityModuleCount=39`;
+  - native modules are `build-refresh-policy`, `runtime-settings`,
+    `viewport-metrics`, `thread-performance-metrics`, `draft-store`,
+    `image-compressor`, `frontend-runtime-health`,
+    `home-ai-diagnostic-reporting`, `thread-diagnostic-events`, and
+    `thread-list-load-policy`.
+- Source changes in progress:
+  - added native ESM sources for diagnostic/metrics helpers:
+    `frontend/native/thread-performance-metrics.mjs`,
+    `frontend/native/frontend-runtime-health.mjs`,
+    `frontend/native/home-ai-diagnostic-reporting.mjs`, and
+    `frontend/native/thread-diagnostic-events.mjs`;
+  - wired their `nativeSource` entries in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - extended `test/vite-shell-asset-graph.test.js` with classic/native API
+    equivalence samples and exact native module manifest assertions;
+  - regenerated `public/vite-shell/*` artifacts. Current client/cache remains
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/thread-performance-metrics.mjs
+    frontend/native/frontend-runtime-health.mjs
+    frontend/native/home-ai-diagnostic-reporting.mjs
+    frontend/native/thread-diagnostic-events.mjs
+    scripts/frontend-shell-asset-graph.mjs
+    test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js` (`11/11`);
+  - `npm run --silent build:frontend`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/vite-shell-artifact-service.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` (`136/136`);
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - temporary dev server on `127.0.0.1:8897` with
+    `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview`: browser-only full runtime
+    gate with startup-only/skip-api/skip-client-events returned
+    `deployPass=true`, blocking `0`, actionable issue codes `[]`.
+- Blocking evidence before deploy:
+  - full deploy-mode dev behavior gate with API and controlled submit returned
+    `deployPass=false` due `latest_completed_assistant_projection_gap`;
+  - all Vite/app-preview browser jobs in that run were `ok=true`;
+  - therefore this ESM slice is not deploy-ready until the projection-gap
+    behavior-gate blocker is fixed or cleared in current runtime evidence.
+- Deployment status: not deployed from this source workspace. Temporary dev
+  server was stopped after validation.
+
+## Current Addendum - 2026-07-05 Frontend native ESM migration Phase 1
+
+- Objective: make the Vite/app-preview ESM migration measurable and begin
+  moving runtime modules from classic-global compatibility to native ESM without
+  switching the default production shell away from `classic-script-fallback`.
+- Implemented Phase 1 migration contract in
+  `scripts/frontend-shell-asset-graph.mjs`,
+  `scripts/publish-vite-shell-artifact.mjs`,
+  `scripts/verify-vite-shell-manifest.mjs`, and
+  `services/runtime/vite-shell-artifact-service.js`.
+- Added `frontend/native/build-refresh-policy.mjs` as the first native ESM
+  runtime module. The existing `public/build-refresh-policy.js` remains present
+  for classic fallback; app-preview/Vite imports the native source and publishes
+  the same `CodexBuildRefreshPolicy` global.
+- Added docs: `docs/FRONTEND_ESM_MIGRATION_PLAN.md`; linked from
+  `docs/README.md`.
+- Regenerated `public/vite-shell/*` artifacts. Readback now reports
+  `esmCompatibility.moduleCount=49`, `nativeEsmModuleCount=1`,
+  `classicGlobalCompatibilityModuleCount=48`, native module
+  `build-refresh-policy`, published files `23`, retained artifact files `507`.
+- Validation passed:
+  - `npm run --silent build:frontend`
+  - `node --test test/vite-shell-asset-graph.test.js test/vite-shell-artifact-service.test.js`
+  - `node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js`
+  - `npm run --silent check`
+  - `git diff --check -- ':!.agent-context'`
+- Remaining migration: 48 classic-global compatibility modules. Next low-risk
+  candidates are `thread-list-load-policy`, `viewport-metrics`,
+  `runtime-settings`, `draft-store`, and `image-compressor`.
+
 ## Current Addendum - 2026-07-04 POST/detail latency and settled large-window fix
 
 - Existing-thread `POST /api/threads/:threadId/messages` is not the current
@@ -2184,3 +2720,2823 @@ The previous full handoff was archived and should be opened only when old proven
   provider payloads, DB rows, screenshots, raw auth URLs, password paths, full
   prompts, rollout contents, raw message text, raw cache JSON, or long logs were
   exposed.
+
+## 2026-07-05T09:58:00+08:00 - Protect active detail state from stale partial projections
+
+- User reported that Home AI main still behaved as running and produced new
+  receipts, but the Codex Mobile UI showed the thread footer/list state as
+  `completed`; user bubbles and receipts could also appear late or duplicate.
+- Bounded live evidence from Home AI main
+  `019eed86-2002-7cc2-b0b7-937eb5355f36` showed a state-source inconsistency:
+  - a list/detail read reported an active thread and active turn;
+  - the following partial projection read returned the same latest turn as
+    stale/completed with `summary-resting-active-window`;
+  - that non-authoritative partial result could then update the fallback/list
+    cache and clear visible active state.
+- Root cause fixed in source:
+  - `summary-resting-active-window` stale partial detail reads are marked
+    `mobileDetailStatusAuthority=false`;
+  - thread-list fallback/detail sync no longer treats that partial status as
+    terminal active-clear evidence;
+  - runtime-active fallback state is protected when a partial detail read is
+    explicitly non-authoritative;
+  - API self-check now detects active-turn downgrade across consecutive detail
+    readbacks with `thread_detail_refresh_active_status_downgrade`.
+- User-behavior self-check/Honeycomb follow-up:
+  - existing behavior harness entrypoints were found in
+    `scripts/codex-mobile-runtime-self-check-loop.js`,
+    `scripts/codex-mobile-browser-runtime-self-check.js`,
+    `services/runtime/browser-runtime-self-check-service.js`, and
+    `adapters/thread-detail-self-check-service.js`;
+  - no current source implementation named `Honeycomb` was found in the plugin
+    or central Home AI code search; current deploy gates mainly run startup
+    checks, so the full behavior harness must be restored to deployment and
+    incident validation;
+  - a source-directed Home AI task card was sent to fix the central deploy gate
+    gap so Codex Mobile deploys do not rely only on browser startup checks.
+- Validation passed locally:
+  - `node --check services/thread-list/thread-summary-state-service.js &&
+    node --check adapters/thread-detail-self-check-service.js` -> pass;
+  - `node --test test/thread-list-service-boundary.test.js
+    test/thread-detail-self-check-service.test.js` -> 45/45;
+  - `node --test test/thread-visibility.test.js
+    test/thread-detail-read-orchestration-service.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` -> 215/215;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Commit/deploy status:
+  - committed as `6d020289` `fix: protect active detail from stale partials`;
+  - deployment request sent to Codex Mobile Deploy Lane
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`) as task card
+    `ttc_2f040c134ac5448293`;
+  - deploy lane returned `completed` as receipt `ttc_85adbbd5d879369bbf`;
+  - central private macOS deploy returned `ok=true`, listener pid `82384`,
+    socket `*:8787`, and selected live mux/app-server pid/port/start time were
+    preserved through listener restart;
+  - production readback passed `/api/public-config`, `/api/status?detail=1`,
+    `/api/vite-shell-artifact`, SHA parity for changed files, focused tests
+    45/45, broader behavior/unit tests 215/215, and deploy-mode runtime
+    self-check without submit exercise.
+- Production residual:
+  - Home AI main was already settled during deploy readback, so the active-turn
+    stale-partial edge could not be observed live;
+  - metadata self-check was `ok=true` with one existing H3
+    `thread_list_updated_order_mismatch` advisory;
+  - compact detail samples were `projection-stale-partial-hit` with completed
+    status and no active turn, foreground `thread/read` and `turns/list` both
+    zero;
+  - final pressure still showed H3 `active_codex_app_server_rss_elevated`, but
+    active/stale mux counts were normal at 1/0.
+- Privacy boundary respected: only bounded ids, route names, issue codes,
+  timings, status labels, hashes, and file paths were recorded; no raw secrets,
+  access keys, cookies, launch tokens, private thread/task-card bodies, provider
+  payloads, DB rows, screenshots, raw auth URLs, password paths, full prompts,
+  rollout contents, raw cache JSON, raw message text, or long logs were exposed.
+
+## 2026-07-05T10:25:00+08:00 - Public publish readiness check
+
+- User asked whether the current Codex Mobile state is ready to submit Public.
+- Current source state:
+  - HEAD is `6d020289` `fix: protect active detail from stale partials`;
+  - `main` is `45` commits ahead of `origin/main`;
+  - worktree has only `.agent-context/HANDOFF.md` modified from this status
+    update;
+  - `public/main` fetched at `dd642363`, and `public/main` is an ancestor of
+    `main`.
+- Validation run during the check:
+  - `npm run --silent check` -> pass;
+  - public/update/Vite/browser focused set
+    (`test/public-pull-request-service.test.js`,
+    `test/app-maintenance-service.test.js`, `test/app-update.test.js`,
+    `test/vite-shell-artifact-service.test.js`,
+    `test/vite-shell-asset-graph.test.js`,
+    `test/browser-runtime-self-check-service.test.js`) -> 137/137;
+  - `git diff --check public/main..main -- ':!.agent-context'` -> pass;
+  - staged changed-file name scan found no runtime/upload/log/key/DB-style
+    file paths outside `.agent-context`;
+  - staged diff secret-pattern scan only matched privacy-policy prose, not raw
+    secrets.
+- Public delta:
+  - `git diff public/main..main -- ':!.agent-context'` contains 214 product
+    files, about 81 non-merge commits, and Vite generated artifact changes;
+  - this is a release-batch-sized sync, not a single-fix public patch.
+- Blocking workflow observation:
+  - public GitHub repo currently has one open non-draft PR, #82
+    `修复 Session 列表活动后不自动排序`;
+  - fetched PR head is `23857d18` and is not an ancestor of current `main`;
+  - it changes thread-list runtime/stable-order files and Vite artifacts, so it
+    must be merged, superseded, or explicitly closed before final public sync
+    per `docs/COMPLEX_FEATURE_PATHS.md` public/private publish guidance.
+- Readiness verdict recorded:
+  - production/private validation is sufficient to prepare a Public sync;
+  - direct push of private `main` to `public/main` is not the correct path;
+  - final Public submission should use a clean public workspace/branch, sync
+    only product files, handle PR #82 first, add the required detailed Chinese
+    README/release commit message, then rerun public checks/privacy scan before
+    push.
+
+## 2026-07-05T10:37:00+08:00 - Public PR #82 triage
+
+- User asked whether Public PR #82 needs to be absorbed before Public sync.
+- PR metadata:
+  - GitHub PR #82 title: `修复 Session 列表活动后不自动排序`;
+  - head `23857d18` `fix: reorder thread list on activity`;
+  - non-draft, open, mergeable, GitHub mergeable state `unstable`;
+  - PR head is not an ancestor of current private `main`.
+- Patch summary:
+  - adds activity-aware invalidation to `public/thread-list-stable-order.js`;
+  - passes `threadUpdatedAtMs` into `public/thread-list-runtime.js`;
+  - updates `updateThreadListStatus(..., { eventAtMs })` calls in
+    `public/event-stream-runtime.js`;
+  - adds `promoteThreadListActivity` so active/status events bump local
+    `updatedAt` and sort the sidebar list by updated activity;
+  - adds a focused `test/thread-list-stable-order.test.js` case for newer
+    activity breaking the stable-order hold;
+  - includes generated Vite/shell artifacts tied to the old public base.
+- Current private `main` behavior check:
+  - the same focused activity scenario still returns `held=true` and keeps
+    order `["a","b","c"]` instead of adopting the incoming active order
+    `["a","c","b"]`;
+  - current event-stream code still calls `updateThreadListStatus` without
+    passing `eventAtMs`;
+  - current `thread-list-runtime` lacks `promoteThreadListActivity`.
+- Triage verdict:
+  - absorb the logic from #82 before Public sync; it likely corresponds to the
+    remaining H3 `thread_list_updated_order_mismatch` advisory and is a real
+    user-visible list freshness issue;
+  - do not directly merge the whole PR into current private `main`, because
+    merge-tree shows conflicts in shell/Vite generated artifacts and the
+    artifacts are based on the older public cache/build;
+  - manually reapply the source/test logic on current private `main`, rebuild
+    frontend artifacts, run focused and public checks, then close/supersede PR
+    #82 in the Public release path.
+
+## 2026-07-05T11:08:00+08:00 - Submitted user-message stability and PR #82 absorption
+
+- User reported current-thread submitted user-message instability:
+  - some messages were accepted but not immediately visible;
+  - after the latest visibility fixes, a new regression showed duplicate
+    identical `You` bubbles for one submitted message;
+  - user also approved absorbing public PR #82 before stabilizing and preparing
+    Public release.
+- Root-cause boundary:
+  - duplicate submitted user bubbles were fixed at the message/projection
+    convergence boundary, not by hiding DOM rows;
+  - PR #82 was absorbed at the thread-list stable-order policy/event boundary,
+    not by merging the stale public PR generated artifacts.
+- Source fix committed:
+  - commit `af027848` `fix: stabilize submitted user messages`;
+  - `adapters/thread-user-message-echo-normalizer-service.js` now collapses
+    same-turn durable duplicate user-message echoes only when content matches
+    and timestamps are within the bounded duplicate window, while preserving
+    repeated durable messages without same-event evidence;
+  - `public/thread-detail-runtime.js` adds same-turn duplicate-event convergence
+    for visible user messages, and `public/event-stream-runtime.js` uses that
+    convergence in live `upsertItem` before render;
+  - PR #82 logic was manually applied: `public/thread-list-stable-order.js`
+    tracks `updatedAtById`; `public/thread-list-runtime.js` promotes local
+    thread activity timestamps and sorts by activity; `public/event-stream-runtime.js`
+    passes `eventAtMs` to status updates;
+  - frontend artifacts were regenerated with client/cache
+    `0.1.11|codex-mobile-shell-v625-634d1204a898`.
+- Local validation passed:
+  - `node --test test/thread-list-stable-order.test.js
+    test/thread-user-message-echo-normalizer-service.test.js
+    test/conversation-render.test.js test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js test/browser-runtime-self-check-service.test.js`
+    -> 293/293;
+  - `npm run --silent build:frontend` -> ok, published files `23`;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Deploy status:
+  - deployment request sent to Codex Mobile Deploy Lane
+    (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`) as task card
+    `ttc_82c4d1e4efc89f327c`;
+  - deploy lane was asked to use the central private macOS plugin deploy
+    contract, prove `/api/public-config`, `/api/status?detail=1`,
+    `/api/vite-shell-artifact`, SHA parity, focused production tests, and the
+    repaired full Codex Mobile behavior gate;
+  - Public publishing remains blocked until this production deploy/readback
+    returns clean and the user confirms the runtime is stable.
+- Privacy boundary respected: only bounded ids, route names, hashes, status
+  labels, timings, test counts, and artifact cache ids were recorded; no raw
+  secrets, access keys, cookies, launch tokens, private thread/task-card bodies,
+  provider payloads, DB rows, screenshots, raw auth URLs, password paths, full
+  prompts, rollout contents, raw cache JSON, raw message text, command output
+  bodies, or long logs were exposed.
+
+## 2026-07-05T11:35:00+08:00 - Behavior gate/runtime-pressure preflight repair
+
+- After `af027848` deploy, Deploy Lane returned `partially_completed`:
+  - source ref synced and focused production tests passed;
+  - central full behavior gate failed with
+    `browser_dom_visible_items_downgraded_after_nonempty` plus browser
+    exception codes;
+  - production still had active mux/app-server `1/1` and stale
+    mux/app-server `1/1`.
+- Current production pressure probe before this repair showed:
+  - active mux endpoint pid `25124`;
+  - active codex app-server RSS around `4GB`;
+  - stale codex app-server RSS around `4GB`;
+  - old stale mux itself was only around `304MB`, so previous
+    stale-mux-only thresholds reported it as H3 and did not block deploy
+    behavior checks.
+- Source fix in progress:
+  - `services/runtime/runtime-process-pressure-service.js` now reports H2
+    `stale_codex_app_server_pressure` when stale codex app-server count/RSS
+    crosses bounded thresholds, independent of stale mux RSS;
+  - `scripts/codex-mobile-runtime-self-check-loop.js` now runs a deploy-mode
+    process-pressure preflight before high-cost browser behavior jobs and
+    returns a bounded gate failure without starting browser self-checks when
+    process pressure is already blocking.
+- Validation performed:
+  - `node --test test/runtime-process-pressure-service.test.js
+    test/runtime-self-check-loop.test.js` -> 23/23;
+  - repaired local deploy-mode full gate against current production returned
+    in about 8s with actionable code `stale_codex_app_server_pressure` and
+    `viteAppPreviewDefaultRootGate=skipped-process-pressure-preflight`;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Remaining work:
+  - deployment request `ttc_f921959ebbbc2ae7d7` was sent for `275da035`, but
+    it should be superseded by the follow-up V4 window downgrade fix below;
+  - Public release remains blocked until process pressure is clean and the full
+    behavior gate no longer reports visible-item downgrade.
+
+## 2026-07-05T11:50:00+08:00 - V4 partial window downgrade guard
+
+- Deploy Lane behavior-gate evidence for the previous production deploy showed
+  `browser_dom_visible_items_downgraded_after_nonempty`:
+  - one thread hash had visible items first reach `87`, then fall to `28/32`
+    while turn count stayed `10`;
+  - this indicates a later smaller detail/projection window was allowed to
+    overwrite an already confirmed richer window.
+- Source fix:
+  - `public/thread-detail-v4-merge-state.js` now treats a V4 projection refresh
+    as a regressive visible window only when it is multi-turn, static
+    (no active-like turns), substantially smaller than the existing confirmed
+    window, and has no newer turn evidence;
+  - in that bounded case, merge keeps the existing richer turns while accepting
+    incoming metadata such as projection revision/read mode;
+  - single-turn active progress, final receipts, durable user reconciliation,
+    and server-suppressed upload-image echoes continue through the normal merge
+    path.
+- Artifact rebuild:
+  - `npm run --silent build:frontend` regenerated client/cache
+    `0.1.11|codex-mobile-shell-v625-d15e7368401c`;
+  - Vite shell published files remain `23`.
+- Validation passed:
+  - `node --test test/conversation-render.test.js
+    test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-process-pressure-service.test.js
+    test/runtime-self-check-loop.test.js` -> 297/297;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Next deployment must supersede `275da035` and deploy the new head containing:
+  - runtime process-pressure preflight;
+  - V4 partial window downgrade guard;
+  - regenerated frontend/Vite artifacts.
+- Source commits and routing:
+  - `275da035` committed runtime pressure preflight;
+  - `8f31294b` committed the V4 partial-window downgrade guard and regenerated
+    artifacts;
+  - deployment request `ttc_a6a247431557afb716` was sent to Codex Mobile Deploy
+    Lane (`019f16e6-9131-79e2-9b6b-ad41f7e65d92`) to supersede
+    `ttc_f921959ebbbc2ae7d7`, clean stale mux/app-server state, deploy
+    `8f31294b`, and run the full behavior gate.
+  - follow-up urgent card `ttc_97889e47d0009b67e9` was sent after a read-only
+    process check still showed the old `275da035` deploy path running; it asks
+    Deploy Lane to stop/return the old path and use `8f31294b` instead.
+- Post-card source-thread readback:
+  - stale mux/app-server had been cleaned to `0/0`;
+  - active mux/app-server remained `1/1`;
+  - process-pressure blocking issue count was `0`;
+  - `/api/public-config` still reported the earlier cache
+    `0.1.11|codex-mobile-shell-v625-634d1204a898`, so `8f31294b` was not yet
+    observed as deployed at the time this handoff entry was written.
+
+## 2026-07-05T12:05:27+08:00 - Home AI stale-active behavior harness and fix
+
+- User reported Home AI main thread still showing old/lagging receipts, a
+  bottom `completed` state while new activity/receipts were expected, and user
+  messages appearing above receipts in a way that broke reading order.
+- Current production was already serving source cache
+  `0.1.11|codex-mobile-shell-v625-d15e7368401c` from `8f31294b`, so this was
+  not an old-client issue.
+- Read-only current Home AI detail sample showed:
+  - thread status `{ type: "completed", mobileClearedStaleActiveSummary: true,
+    previousType: "active" }`;
+  - latest visible turn status `{ type: "completed", mobileStaleActiveTurn:
+    true, previousType: "active", reason: "summary-resting-active-window" }`;
+  - existing metadata self-check returned `ok=true` and only H3 list-order
+    advisory, so the user-visible stale-active tail state was not being gated.
+- Local source fix:
+  - `services/thread-detail/thread-detail-read-orchestration-service.js`
+    preserves active projection windows when their activity timestamp is newer
+    than, or near, the resting summary timestamp;
+  - active-looking turns with terminal `turnUsageSummary` are normalized to
+    ordinary completed state with `mobileCompletedActiveTurn`, not
+    `mobileStaleActiveTurn`;
+  - stale active tail turns are now H2 in
+    `adapters/thread-detail-self-check-service.js`;
+  - browser behavior harness now carries `staleActive` API turn-shape metadata
+    and reports H2 `browser_api_stale_active_turn_downgraded`.
+- Development harness proof:
+  - local analyzer fed with current production Home AI detail returns
+    `ok=false` with H2 `thread_detail_stale_active_turn_downgraded`;
+  - local browser self-check script against current production Home AI returns
+    `ok=false` with H2 `browser_api_stale_active_turn_downgraded`, proving the
+    behavior gate now detects the screenshot-class issue before deployment.
+- Validation passed:
+  - `node --test test/thread-detail-read-orchestration-service.test.js` ->
+    47/47;
+  - `node --test test/thread-detail-self-check-service.test.js
+    test/browser-runtime-self-check-service.test.js` -> 129/129;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Deployment should use a new source commit and require full behavior gate
+  closure; do not publish Public until production Home AI detail no longer
+  reports stale-active tail downgrade and behavior self-check is clean.
+
+## 2026-07-05T12:40:29+08:00 - Dev user-behavior harness closure before deploy
+
+- User requested that Codex Mobile user-visible behavior regressions be found
+  and fixed in the development environment before any further production/Public
+  deployment.
+- Controlled submit fixture:
+  - thread id `019f307c-56fb-7261-a584-2636051ee724`;
+  - title `Codex Mobile Behavior Harness`;
+  - used only for bounded submit exercise, not Home AI private content.
+- Root causes fixed in source:
+  - first `turns-list-initial` detail responses skipped bounded usage-summary
+    decoration, so first paint could later gain a Usage/receipt row and trigger
+    visible item downgrade behavior;
+  - `event-stream-runtime` referenced detail-runtime user-message merge helpers
+    that were not exposed across the split Vite/module runtime boundary, causing
+    bounded browser `ReferenceError` during submit/event refresh;
+  - completed-turn Usage backfill refresh waited too long after submit, so the
+    API could contain the completed/Usage state while the DOM stayed temporarily
+    stale inside the behavior window.
+- Source changes:
+  - `services/thread-detail/thread-detail-response-preparation-service.js`
+    always attaches bounded usage summaries, including turns-list window reads;
+  - `public/thread-detail-runtime.js` exports
+    `userMessagesAreSameTurnDuplicateEvent`;
+  - `public/runtime-wiring-runtime.js` exposes the detail-runtime merge helpers
+    to the split runtime boundary;
+  - `public/event-stream-runtime.js` and `public/pane-layout-runtime.js` shorten
+    Usage backfill scheduling after `turn/completed`;
+  - browser self-check now reports bounded exception codes/labels/hashes.
+- Rebuilt frontend artifacts:
+  - `npm run --silent build:frontend` -> client/cache
+    `0.1.11|codex-mobile-shell-v625-92a6f52f98e3`.
+- Development validation passed on local listener `127.0.0.1:18878`:
+  - `node scripts/codex-mobile-thread-self-check.js --server
+    http://127.0.0.1:18878 --thread-id 019f307c-56fb-7261-a584-2636051ee724
+    --repeat 2 --json` -> `ok=true`, no issues;
+  - narrowed submit browser harness against the controlled thread with
+    `--exercise-submit` and submit sample delays
+    `100,350,900,1600,2800,6000` -> `ok=true`, issue count `0`, exception
+    count `0`, max client submissions `1`;
+  - full browser behavior harness against both Home AI main
+    `019eed86-2002-7cc2-b0b7-937eb5355f36` and the controlled submit thread
+    with two rounds plus submit exercise -> `ok=true`, issue count `0`,
+    blocking issue count `0`, exception count `0`;
+  - `node --test test/thread-rollout-size-consistency.test.js
+    test/thread-detail-self-check-service.test.js
+    test/thread-detail-read-orchestration-service.test.js
+    test/turn-usage-summary-service.test.js` -> 100/100;
+  - `node --test test/turn-scroll-controls.test.js
+    test/event-stream-runtime-ui.test.js test/thread-detail-runtime-ui.test.js
+    test/browser-runtime-self-check-service.test.js` -> 105/105;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Deployment status:
+  - not deployed/Public at this handoff point;
+  - next step is to commit deployable source/artifacts, run central deploy plan,
+  then send a `cardKind=plugin_deployment`, `pluginId=codex-mobile-web`
+  request to Codex Mobile Deploy Lane with the controlled submit thread id so
+  production `codex-mobile-behavior-gate` includes submit exercise.
+
+## 2026-07-05T14:50:12+08:00 - Platform Worker lifecycle interface implementation
+
+- Received Home AI task card `ttc_e7c0e29c8b74dab586` requesting explicit
+  platform-controlled Worker lane lifecycle operations, plus follow-up
+  `ttc_55fcc9c777728b0774` clarifying that plugin main threads must use the
+  same mechanism through `plugin_worker` lanes.
+- Source implementation is complete but not deployed:
+  - `/api/at-loop/thread-lifecycle` now supports Worker lifecycle actions for
+    explicit roles `home_ai_worker` and `plugin_worker`: list, resolve,
+    ensure/create, retire, disable, archive, mark_available, mark_idle,
+    mark_completed, status, and heartbeat;
+  - Worker state is stored as metadata-only `workerLanes` in the existing
+    at-loop state file, keeping ordinary Worker lanes distinct from Loop role
+    slices;
+  - plugin Worker lanes require `pluginId`, workspace cwd, source thread id,
+    purpose, and stable request/idempotency keys;
+  - `completed` lifecycle status remains deliverable, while retired/disabled
+    / archived Worker lanes become non-deliverable;
+  - task-card target routing now rejects retired/disabled Worker lanes through
+    the canonical target deliverability check, so lifecycle state prevents
+    later task-card delivery without Home AI-side fallback logic;
+  - MCP `thread_lifecycle` schema exposes plugin/worker fields and the new
+    Worker actions.
+- Focused validation passed:
+  - `node --test test/loop-task-runtime.test.js
+    test/thread-task-card-routing-service.test.js
+    test/codex-mobile-mcp-server.test.js test/at-loop-route-service.test.js
+    test/thread-task-card-loop-routing-service.test.js
+    test/thread-task-card-runtime-service.test.js` -> 64/64;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass.
+- Bounded behavior covered by tests:
+  - Home AI Worker ensure creates/returns a `home_ai_worker` lane, duplicate
+    idempotency returns the same lane, completed remains deliverable, retired
+    becomes non-deliverable and is excluded from normal list;
+  - plugin Worker ensure requires `pluginId`, creates/returns `plugin_worker`,
+    excludes plugin Loop/deploy lanes, supports metadata-only heartbeat, and
+    retires without deleting history;
+  - routing rejects a retired Worker target with a bounded lifecycle error.
+- Residual state:
+  - no production deploy was performed for this lifecycle card;
+  - the broader Codex Mobile user-behavior stability/Public-release WIP remains
+    separate and should still be validated/deployed through the central behavior
+    gate before Public publishing.
+
+## 2026-07-05T15:10:00+08:00 - Deployable stability + Worker lifecycle commit
+
+- User requested commit and deployment after the behavior-stability and Worker
+  lifecycle implementation work.
+- Created deployable source commit:
+  - `d4b0add0dff2fb423c0c068f79d84435c7805663`
+    `fix: stabilize Codex Mobile behavior and worker lanes`;
+  - staged source, tests, docs, and current Vite shell manifest/readback assets
+    referenced by the current artifact graph;
+  - left this handoff file unstaged as local/shared operating context.
+- Pre-commit validation:
+  - `git diff --check --cached` -> pass;
+  - `npm run --silent check` -> pass.
+- Deployment must be routed as a routine `plugin_deployment` card for
+  `pluginId=codex-mobile-web` to the Codex Mobile dedicated deploy lane, using
+  the central Home AI Mac deploy contract and the full Codex Mobile behavior
+  gate with controlled submit thread
+  `019f307c-56fb-7261-a584-2636051ee724`.
+
+## 2026-07-05T15:16:43+08:00 - Stale v4 detail projection invalidation WIP
+
+- Deploy lane returned the `d4b0add0dff2` deployment as
+  `partially_completed`: production synced and focused tests passed, but the
+  full Codex Mobile behavior gate failed with stale-active/detail downgrade
+  and conversation patch fallback issue codes.
+- Root-cause hypothesis after source/prod self-checks: the previous behavior
+  work changed active/stale visible-item authority, but persisted v4 detail
+  projections still used policy version `state-relevant-receipt-v4`; cold
+  first paint after deploy could therefore reuse old partial windows until a
+  later refresh rebuilt the corrected projection.
+- Source patch bumps the v4 detail projection policy to
+  `state-relevant-receipt-v5` in both the projection service default and the
+  runtime wiring, and adds a regression test proving persisted v4 entries are
+  ignored after the bump.
+- Validation passed before commit/deploy request:
+  - `node --test test/thread-detail-projection-v4-service.test.js
+    test/thread-detail-read-orchestration-service.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` -> 175/175;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass;
+  - local cold listener on `127.0.0.1:18879` plus full runtime behavior gate
+    with controlled submit thread `019f307c-56fb-7261-a584-2636051ee724` ->
+    `ok=true`, `deployPass=true`, no actionable behavior issue codes.
+- Local listener `127.0.0.1:18879` was stopped after validation.
+
+## 2026-07-05T15:39:00+08:00 - Development behavior gate repair before Public
+
+- User reported two remaining behavior regressions after the `0b12d81f`
+  production sync failed the full behavior gate:
+  - Home AI large thread submit could appear slow, disappear, then reappear
+    after several seconds;
+  - current Codex Mobile thread submit could render duplicate visible user
+    messages.
+- Root-cause finding in development self-check:
+  - production/browser controlled submit previously raised an uncaught
+    `approvalThreadId is not defined` exception from the split event-stream
+    runtime path;
+  - `public/event-stream-runtime.js` calls `approvalThreadId(request)`, but
+    `public/navigation-runtime.js` did not expose that helper through the
+    runtime global wiring.
+- Source repair:
+  - expose `approvalThreadId` from `navigation-runtime`;
+  - add a regression test proving the event-stream split runtime helper is
+    exported by navigation runtime;
+  - rebuild Vite shell artifacts, producing client/cache
+    `0.1.11|codex-mobile-shell-v625-ce84215bc072`.
+- PR #82 readback:
+  - public PR `pentiumxp/codex-mobile-web-public#82` is closed but not merged
+    (`mergedAt=null`);
+  - its core thread-list stable-order test and activity-ordering behavior are
+    already present in current `main`;
+  - direct merge/cherry-pick of PR #82 would now regress newer runtime wiring,
+    so no further absorption is required.
+- Development validation passed:
+  - `node --test test/conversation-render.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js test/thread-list-stable-order.test.js`
+    -> 277/277;
+  - `npm run --silent check:frontend-manifest` -> pass;
+  - `npm run --silent check` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass;
+  - local API behavior self-check on `127.0.0.1:18879` for current thread,
+    Home AI main, and controlled submit thread -> `ok=true`, only H3
+    `thread_list_updated_order_mismatch`;
+  - local full browser controlled-submit self-check on
+    `127.0.0.1:18879` / thread `019f307c-56fb-7261-a584-2636051ee724` ->
+    `ok=true`, no duplicate user message, no runtime exception, no status-hint
+    drop.
+- Next required steps:
+  - deploy the newer source ref that supersedes the earlier `d5daa3f5`
+    deploy request through the configured Codex Mobile/Home AI deploy lane
+    using the central Mac deploy contract;
+  - require the full `codex-mobile-behavior-gate` with automatic controlled
+    submit before declaring this Public-ready.
+
+## 2026-07-05T15:48:43+08:00 - Codex Mobile MCP tool namespace guidance repair
+
+- User reported that the Codex Mobile task-card tool itself being unavailable
+  is a product bug, after the current thread had to use
+  `scripts/create-thread-task-card.js` instead of a direct tool call.
+- Root-cause finding:
+  - the Codex Mobile MCP backend/tooling is available through deferred tool
+    discovery as `mcp__codex_mobile.*`;
+  - existing generated instructions and task-card injected text only named the
+    older app-server dynamic namespace `codex_mobile.*`, so models could treat
+    the direct tool as unavailable and fall back to scripts.
+- Source repair:
+  - update task-card route runtime guidance to prefer
+    `mcp__codex_mobile.delegate_to_thread` / `mcp__codex_mobile.return_to_source`
+    when MCP tools are visible, while retaining `codex_mobile.*` as the
+    equivalent app-server dynamic namespace;
+  - update injected task-card, watchdog, and continuation text to name both
+    return tool surfaces before the local script fallback;
+  - update MCP initialize instructions to document the `mcp__codex_mobile`
+    namespace explicitly;
+  - update focused tests for task-card route/service and MCP initialize text,
+    plus align one route-boundary assertion with the current
+    latest-completed-assistant preparation stage.
+- Validation passed:
+  - `node --test test/thread-task-card-service.test.js
+    test/thread-task-card-route.test.js test/codex-mobile-mcp-server.test.js`
+    -> 87/87;
+  - `git diff --check -- ':!.agent-context'` -> pass;
+  - `npm run --silent check` -> pass.
+- Next required step: commit this namespace guidance repair and send a newer
+  deployment card that supersedes the earlier `d5daa3f5` deployment request.
+
+## 2026-07-05T15:56:52+08:00 - Listener OOM causing 8787 unavailable
+
+- User reported that every deploy can leave Codex Mobile unreachable for a long
+  time: direct 8787 access and PWA both fail, and recovery is uncertain.
+- Production readback before source repair:
+  - `127.0.0.1:8787` had no listener;
+  - system launchd service `com.hermesmobile.plugin.codex-mobile` existed but
+    was `spawn scheduled`, `active count=0`, with last exit code `78`;
+  - recent stderr showed V8 heap OOM around 4GB during `JSON.parse` /
+    string-processing paths;
+  - non-root `launchctl kickstart` was rejected with `Operation not permitted`,
+    so local kickstart is not a reliable closure path.
+- Root-cause hypothesis:
+  - listener still accepted unbounded app-server inbound messages over JSONL /
+    WebSocket;
+  - when a large Home AI thread path produced a huge app-server response, the
+    listener buffered the full line/message and then tried to `JSON.parse`,
+    allowing a single RPC response to kill the process and trigger launchd
+    throttling.
+- Source repair:
+  - add a bounded app-server inbound message limit, defaulting to 64MB and
+    configurable through `CODEX_MOBILE_APP_SERVER_MAX_MESSAGE_BYTES`;
+  - enforce the limit in JSONL streaming before buffering beyond the cap;
+  - enforce the same cap before WebSocket/RPC `JSON.parse`;
+  - fail pending RPCs with bounded `APP_SERVER_MESSAGE_TOO_LARGE` diagnostics
+    and reset the app-server transport instead of OOM-crashing the listener;
+  - expose `maxInboundMessageBytes` in app-server client status.
+- Validation passed:
+  - `node --test test/codex-app-server-client-service.test.js
+    test/runtime-process-pressure-service.test.js test/runtime-self-check-loop.test.js`
+    -> 36/36;
+  - `node --test test/codex-app-server-client-service.test.js
+    test/thread-task-card-service.test.js test/thread-task-card-route.test.js
+    test/codex-mobile-mcp-server.test.js test/runtime-process-pressure-service.test.js
+    test/runtime-self-check-loop.test.js` -> 123/123;
+  - `node --check services/runtime/codex-app-server-client-service.js
+    services/runtime/server-runtime-config-service.js server.js
+    test/codex-app-server-client-service.test.js` -> pass;
+  - `git diff --check -- ':!.agent-context'` -> pass;
+  - `npm run --silent check` -> pass.
+- Next required steps:
+  - commit the OOM guard repair;
+  - deploy latest source ref through the central Mac plugin deploy path;
+  - production readback must prove `*:8787` is listening, status is ready,
+    `maxInboundMessageBytes` is visible, and MCP task-card delegation works
+    without script fallback.
+
+## 2026-07-05T16:01:49+08:00 - Listener OOM guard deployed and 8787 restored
+
+- Source commit deployed:
+  - `dec625ced01d2a9a6438989809d7f567f5f02e07`
+    `fix: bound app-server inbound messages`.
+- Deployment path:
+  - central private Mac plugin deploy contract;
+  - reason `codex-mobile-listener-inbound-cap-dec625ce`;
+  - plan `ok=true`, source ref `dec625ced01d`, deployable dirty files `[]`;
+  - execute `ok=true`;
+  - backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260705T075756Z-plugin-codex-mobile-web-codex-mobile-listener-inbound-cap-dec625ce`.
+- Central gate/readback results:
+  - launchd print: service `com.hermesmobile.plugin.codex-mobile` active and
+    running;
+  - listener startup gate: `ok=true`, `deployPass=true`, blocking issues `0`,
+    actionable issue codes `[]`;
+  - full behavior gate: `ok=true`, `deployPass=true`, blocking issues `0`,
+    actionable issue codes `[]`;
+  - codex auth profile audit: `auditOk=true`, blocking issues `0`.
+- Independent production readback:
+  - listener socket restored as `*:8787`, pid observed as `93655`;
+  - `/api/public-config`: HTTP 200, default shell `vite-app-preview`, client /
+    cache `0.1.11|codex-mobile-shell-v625-ce84215bc072`;
+  - `/api/status?detail=1`: HTTP 200, `ready=true`, issue codes `[]`;
+  - `/api/vite-shell-artifact`: HTTP 200, `ok=true`, issue codes `[]`,
+    published files `23`;
+  - runtime app-server client status exposes `maxInboundMessageBytes=67108864`.
+- Source/production SHA parity matched for:
+  - `server.js`;
+  - `services/runtime/codex-app-server-client-service.js`;
+  - `services/runtime/server-runtime-config-service.js`;
+  - `test/codex-app-server-client-service.test.js`;
+  - `scripts/codex-mobile-mcp-server.js`;
+  - `server-routes/thread-task-card-route-service.js`;
+  - `services/task-cards/thread-task-card-service.js`.
+- Production focused tests passed:
+  - `node --test test/codex-app-server-client-service.test.js
+    test/codex-mobile-mcp-server.test.js test/thread-task-card-route.test.js
+    test/thread-task-card-service.test.js` -> 98/98.
+- MCP direct tool path recovered:
+  - `mcp__codex_mobile.list_threads` returned `ok=true` after deploy;
+  - no script fallback was needed for the read-only MCP probe.
+- Residual:
+  - deploy behavior gate still reported submit exercise as manual because no
+    controlled submit thread was configured for this deploy invocation;
+  - this OOM guard prevents listener death from oversized app-server inbound
+    messages, but user-behavior submit harness coverage should still be wired
+    to a controlled thread before Public readiness decisions.
+
+## 2026-07-05T16:57:35+08:00 - Approval and continuation routing repairs
+
+- File-change approval click repair:
+  - source commit `70ff34529ca6af0ce9d13633feea312cab2cf037`
+    `fix: submit stale approval decisions`;
+  - root cause: visible `item/fileChange/requestApproval` actions could remain
+    in the DOM after the client pending-approval map no longer contained the
+    request, causing approval buttons to no-op instead of submitting a bounded
+    approval decision;
+  - source validation passed:
+    - `node --test test/conversation-render.test.js
+      test/thread-detail-actions.test.js test/protocol.test.js` -> 187/187;
+    - `npm run --silent build:frontend`;
+    - `npm run --silent check`;
+    - `git diff --check -- ':!.agent-context'`;
+  - production deploy lane synced the ref and passed focused production tests,
+    but central behavior acceptance failed with `thread_detail_empty`, so the
+    Home AI task card was returned as partially completed via
+    `ttc_82ad2bb64b2425ed7a`.
+- Continuation main-thread role inheritance repair:
+  - source commit `ed7db4950e894282f7922f6b4907f68c25266db0`
+    `fix: resolve main thread continuations`;
+  - root cause: continuation creation recorded lineage/started-thread cache
+    only, while current-main lookup could still classify Worker, deploy, audit,
+    task-intake, or plugin lanes as deliverable `home_ai_main` candidates;
+  - source repair:
+    - added `services/runtime/workspace-main-thread-routing-service.js`;
+    - continuation creation now records inherited/preferred-main metadata for
+      true main-thread continuations;
+    - `thread_lifecycle` now supports `home_ai_main`, `plugin_main`, and
+      `workspace_main` resolution/listing through role-aware filtering;
+    - Worker lanes, deploy lanes, audit lanes, task intake, Public PR lanes,
+      source/current self-targets, and non-deliverable threads are excluded from
+      ordinary current-main selection;
+    - exact task-card return metadata remains unchanged and is not rewritten to
+      a continuation.
+  - source validation passed:
+    - `node --test test/workspace-main-thread-routing-service.test.js
+      test/loop-task-runtime.test.js` -> 40/40;
+    - `node --test test/new-thread-route.test.js
+      test/codex-mobile-mcp-server.test.js
+      test/thread-task-card-routing-service.test.js
+      test/thread-task-card-route.test.js` -> 78/78;
+    - `npm run --silent check`;
+    - `git diff --check -- ':!.agent-context'`.
+  - deployment was delegated to Codex Mobile Deploy Lane as
+    `ttc_93049c19049876f4f3`; at last readback that deploy card was still
+    `approved` with an active resume-required execution lease, so no formal
+    terminal deploy receipt had arrived yet.
+  - direct production readback after sync showed the intended behavior live:
+    - `/api/public-config`, `/api/status?detail=1`, and
+      `/api/vite-shell-artifact` all returned HTTP 200 with ready/artifact OK;
+    - source/production SHA parity matched the new routing service,
+      continuation service, loop runtime service, focused tests, and docs;
+    - production focused tests passed:
+      `node --test test/workspace-main-thread-routing-service.test.js
+      test/loop-task-runtime.test.js test/codex-mobile-mcp-server.test.js`
+      -> 45/45;
+    - `thread_lifecycle list role=home_ai_main
+      cwd=/Users/hermes-dev/HermesMobileDev/app` returned only
+      `Home AI 07-05` as the deliverable main candidate, excluding legacy
+      Worker/deploy lanes that were returned by the old path.
+- Residual:
+  - central deploy card `ttc_93049c19049876f4f3` still needs its formal terminal
+    receipt or watchdog recovery;
+  - the live model-facing MCP tool schema exposed to this thread did not include
+    `pluginId` for `plugin_worker ensure`, even though the source MCP schema
+    includes it; direct authenticated `/api/at-loop/thread-lifecycle` verified
+    the production service can create Codex Mobile plugin Worker lanes.
+- Codex Mobile plugin Worker scheduling:
+  - ensured `plugin_worker` lane for `pluginId=codex-mobile-web` and cwd
+    `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`;
+  - created/deliverable worker thread:
+    `019f3181-4f2f-7aa3-8ae8-d12f6e23e7a5`
+    (`codex mobile 07-04 Worker implementation`);
+  - delegated Home AI task `ttc_04235144d871ef0e05` (Worker lifecycle exact
+    target retirement repair) to that plugin Worker as child task card
+    `ttc_dbc9bc03896b9ca845`;
+  - sent heartbeat on `ttc_04235144d871ef0e05` with status
+    `delegated-to-plugin-worker`.
+
+## 2026-07-05T17:04:51+08:00 - Exact Worker lifecycle target repair
+
+- Source task:
+  - Home AI card `ttc_04235144d871ef0e05`
+    `Repair Worker lifecycle exact target retirement`.
+- Source commit:
+  - `98730995d406f891dd4c985797b3b7c3dd15df18`
+    `fix: honor exact worker lifecycle targets`.
+- Root cause:
+  - Worker lifecycle mutation used `findWorkerLaneRecord()`; when a supplied
+    exact `targetThreadId` / `threadId` / `workerLaneId` was not present in the
+    managed Worker lane state, lookup continued to request-id or
+    role/cwd/purpose fallback;
+  - this allowed an exact retirement request for a legacy title-based Worker to
+    mutate the current/default managed Worker lane instead;
+  - `achieve` / `mark_role_complete` for Worker roles also fell through to Loop
+    role-slice logic and could return `thread_lifecycle_loop_not_found`.
+- Repair:
+  - added exact Worker lifecycle target parsing;
+  - exact Worker selectors now stop lookup if they do not match a managed lane;
+  - exact visible legacy Worker lanes can be adopted into lifecycle metadata and
+    then retired/disabled/archived safely;
+  - non-manageable exact targets return bounded
+    `worker_lifecycle_target_not_manageable` with the requested id metadata;
+  - Worker `achieve` / `mark_role_complete` now use Worker lifecycle completion
+    instead of Loop slice lookup.
+- Validation passed:
+  - `node --test test/loop-task-runtime.test.js` -> 38/38;
+  - `node --test test/loop-task-runtime.test.js
+    test/thread-task-card-routing-service.test.js
+    test/codex-mobile-mcp-server.test.js test/at-loop-route-service.test.js
+    test/thread-task-card-loop-routing-service.test.js
+    test/thread-task-card-runtime-service.test.js` -> 67/67;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Deployment:
+  - delegated to Codex Mobile Deploy Lane as `ttc_48405ebdf271a6d24d`;
+  - original Home AI card heartbeat updated with status `deploy-delegated`.
+- Source return:
+  - returned Home AI card `ttc_04235144d871ef0e05` as
+    `partially_completed`;
+  - return receipt card `ttc_8aa7f1478a226a21b4`;
+  - reason: source fix is committed and validated, but deploy lane card
+    `ttc_48405ebdf271a6d24d` was still approved/active/resume-required without
+    terminal deployment readback at return time.
+- Residual:
+  - wait for deploy lane terminal readback before marking the Home AI source
+    task fully completed;
+  - if the deploy lane is blocked by the known `thread_detail_empty` behavior
+    gate, return the Home AI task as partially completed with source/test
+    evidence and deploy blocker metadata.
+
+## 2026-07-05T20:05:00+08:00 - Worker approval full-access repair
+
+- User-visible symptoms:
+  - Worker lane showed an in-thread `item/fileChange/requestApproval` card with
+    approve/reject buttons, but clicking did not resume the Worker;
+  - screenshot showed the Worker footer already in full-access mode, while
+    `/api/approvals` no longer listed the visible request, so the approval card
+    was stale client/detail state rather than a live server approval request.
+- Root-cause hypothesis and owning layer:
+  - Worker task-card execution inherited approval settings instead of forcing
+    Worker lanes through the trusted full-access task-card path;
+  - composer approval handling did not clear local pending approval UI when the
+    server replied that a file-change approval request was no longer pending.
+- Repair implemented in source:
+  - Worker lane task-card execution now applies full-access runtime settings by
+    default for `home_ai_worker`, `plugin_worker`, and title/classified Worker
+    lanes;
+  - runtime result metadata exposes `workerLaneFullAccess`;
+  - stale/missing approval request responses clear the local pending approval
+    card, surface a bounded "approval ended" activity state, and schedule a
+    current-thread refresh instead of leaving a dead waiting card.
+- Validation passed before commit/deploy:
+  - `node --test test/thread-task-card-runtime-service.test.js
+    test/conversation-render.test.js` -> 168/168;
+  - `npm run --silent build:frontend`;
+  - `node --test test/thread-task-card-runtime-service.test.js
+    test/conversation-render.test.js test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js` -> 284/284;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Deployment state:
+  - source commit `cbfcc0b6` (`fix: grant worker lanes full access by
+    default`);
+  - delegated to Codex Mobile Deploy Lane as `ttc_da2f944240dee8fc20`;
+  - deployment receipt still pending at handoff update time.
+
+## 2026-07-05T21:32:00+08:00 - Task-card MCP namespace guidance repair
+
+- Symptom:
+  - current model turn attempted `codex_mobile.delegate_to_thread` because the
+    prompt included an app-server dynamic-tool namespace, but the runtime
+    rejected it with `Unsupported dynamic tool namespace: codex_mobile`;
+  - after `tool_search`, the callable MCP surface appeared under
+    `mcp__codex_mobile.*`.
+- Root cause:
+  - task-card injected return/delegation guidance still treated
+    `mcp__codex_mobile.*` and `codex_mobile.*` as near-equal options;
+  - in deferred-tool sessions, this can steer the model toward an unsupported
+    namespace before discovering the MCP-prefixed tool.
+- Repair:
+  - task-card continuation/return hints now say to use
+    `mcp__codex_mobile.return_to_source` after Codex Mobile MCP discovery when
+    needed;
+  - runtime guidance now explicitly tells the model to call `tool_search` for
+    Codex Mobile task-card tools if the MCP-prefixed tool is not visible yet;
+  - unprefixed `codex_mobile.*` is now documented as valid only when that
+    app-server namespace is directly visible and actually callable, and
+    unsupported-namespace errors must switch to MCP or script fallback.
+- Validation passed:
+  - `node --test test/thread-task-card-service.test.js
+    test/thread-task-card-route.test.js` -> 82/82;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Source commit pending at handoff update time.
+- Follow-up root cause found in MCP delegate:
+  - `mcp__codex_mobile.delegate_to_thread` itself was callable, but the MCP
+    schema/payload did not include `sourceWorkspaceId`;
+  - direct task-card route currently requires source workspace metadata, so the
+    MCP call failed with `source_workspace_id_required`;
+  - script fallback succeeded earlier only because the request JSON manually
+    included `sourceWorkspaceId`.
+- Additional repair:
+  - MCP `delegate_to_thread` schema now exposes `sourceWorkspaceId` /
+    `sourceWorkspace`;
+  - MCP delegate payload forwards source workspace metadata to
+    `/api/threads/:sourceThreadId/task-cards`.
+- Additional validation passed:
+  - `node --test test/codex-mobile-mcp-server.test.js
+    test/thread-task-card-service.test.js test/thread-task-card-route.test.js`
+    -> 87/87;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Source commits:
+  - `f8500851` (`fix: prefer mcp task-card tool guidance`);
+  - `5b032df3` (`fix: include source workspace in mcp delegation`).
+- Deployment:
+  - delegated to Codex Mobile Deploy Lane as `ttc_243548611f1de4348d`;
+  - deployment receipt still pending at handoff update time.
+
+## 2026-07-05T22:05:00+08:00 - Worker lane ownership inheritance on main continuation
+
+- Task card:
+  - source `Home AI 07-05` card `ttc_bfcf9577acaa83523e`;
+  - requested repair: when Home AI main continues from `Home AI 06-22` to
+    `Home AI 07-05`, eligible Worker lanes owned by the old main should inherit
+    current-main ownership, while active or terminal lanes must not be stolen.
+- Source repair:
+  - commit `03337c5e` (`fix: inherit worker lanes across main continuations`);
+  - changed files:
+    - `services/at-loop/loop-task-runtime-service.js`;
+    - `test/loop-task-runtime.test.js`.
+- Behavior after fix:
+  - Worker lifecycle `list` / `resolve` / `ensure` reconciles same-workspace
+    continuation ownership before selecting Worker lanes;
+  - eligible `home_ai_worker` / `plugin_worker` lane records update
+    `sourceThreadId` to the current main and retain bounded metadata:
+    `previousSourceThreadIds`, `inheritedFromSourceThreadId`,
+    `currentMainThreadId`, and `ownershipInheritanceStatus`;
+  - retired / disabled / archived lanes are not inherited;
+  - lanes with active heartbeat or active task-card evidence become
+    non-deliverable with bounded `ownership_inheritance_blocked_*` reason, so a
+    current main `ensure` can create or select a different safe Worker;
+  - historical task-card return metadata is not rewritten.
+- Validation passed:
+  - `node --test test/loop-task-runtime.test.js` -> 40/40;
+  - `node --test test/loop-task-runtime.test.js
+    test/thread-task-card-routing-service.test.js
+    test/codex-mobile-mcp-server.test.js test/at-loop-route-service.test.js
+    test/thread-task-card-loop-routing-service.test.js
+    test/thread-task-card-runtime-service.test.js` -> 70/70;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Deployment status:
+  - source-only repair committed; not deployed from this implementation turn.
+  - If production readback is required, route `03337c5e` through the Codex
+    Mobile Deploy Lane and verify `thread_lifecycle list/resolve` for
+    `home_ai_worker` in `/Users/hermes-dev/HermesMobileDev/app`.
+- Residual:
+  - Public behavior-gate blocker remains separate from this card:
+    `browser_latest_turn_item_below_api_expectation` /
+    `browser_latest_turn_usage_missing` after controlled submit.
+
+## 2026-07-05T18:45:00+08:00 - Submit catch-up refresh fix staged
+
+- Current public-readiness blocker before this fix: production browser behavior gate after `6f28eaf4` still failed on controlled-submit DOM/API mismatch with `browser_latest_turn_item_below_api_expectation` and `browser_latest_turn_usage_missing`; API thread self-checks for deploy lane/source/control threads were clean.
+- Root-cause hypothesis/fix: ordinary existing-thread submit success only scheduled one `message-submit` refresh plus live polling. The stronger completion path (`turn/completed`) owns post-completion full refreshes and forced usage backfill, so browser DOM could stay behind API when completion/event-stream delivery arrived late or was missed. `public/composer-runtime.js` now injects and calls bounded post-submit catch-up using `scheduleComposerTargetRefresh(..., 250)`, `schedulePostCompletionThreadRefreshes(..., [900, 2200, 5200])`, and `scheduleUsageBackfillRefresh(900, { force: true })` for the current thread.
+- Wiring: `public/runtime-wiring-runtime.js` now passes `schedulePostCompletionThreadRefreshes` and `scheduleUsageBackfillRefresh` into the composer runtime. This keeps the fix on the same current-thread refresh/suppression path as the existing completion handler rather than adding an unbounded fallback.
+- Frontend artifacts regenerated with `npm run --silent build:frontend`; new client/cache is `0.1.11|codex-mobile-shell-v625-85de3721f5c1`.
+- Source validation passed: `node --test test/conversation-render.test.js`; `node --check public/composer-runtime.js public/runtime-wiring-runtime.js test/conversation-render.test.js`; `node --test test/conversation-render.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js` (`296/296`); `npm run --silent check`; `git diff --check -- ':!.agent-context'`.
+- Not yet deployed at this handoff update. Required next validation: commit this source fix, delegate central Codex Mobile deploy with controlled submit thread `019f307c-56fb-7261-a584-2636051ee724`, and require full behavior gate to clear `browser_latest_turn_item_below_api_expectation` / `browser_latest_turn_usage_missing` before Public.
+
+## 2026-07-05T18:47:00+08:00 - Submit catch-up refresh commit and deploy handoff
+
+- Source commit created: `e0617964` (`fix: refresh submitted turns after send`). `.agent-context/HANDOFF.md` remained uncommitted by design.
+- Commit includes regenerated frontend shell/Vite artifacts for client/cache `0.1.11|codex-mobile-shell-v625-85de3721f5c1`.
+- Deploy handoff sent through MCP Codex Mobile task-card tool to Codex Mobile Deploy Lane:
+  - deploy card `ttc_1670c8e9f32e5a48b1`;
+  - target thread `019f16e6-9131-79e2-9b6b-ad41f7e65d92`;
+  - request id `codex-mobile-submit-catchup-refresh-e0617964`;
+  - required controlled submit thread `019f307c-56fb-7261-a584-2636051ee724`;
+  - required acceptance: full `codex-mobile-behavior-gate` clears `browser_latest_turn_item_below_api_expectation` and `browser_latest_turn_usage_missing` before Public.
+- Deploy receipt was still pending at this handoff update time.
+
+## 2026-07-05T19:05:00+08:00 - Preserve submitted user through completion refresh
+
+- Follow-up after `e0617964` deploy receipt:
+  - production synced `e0617964` but full behavior gate still failed on
+    `browser_latest_turn_item_below_api_expectation` and
+    `browser_latest_turn_user_message_below_api_expectation`;
+  - local full behavior gate against production also reproduced transient
+    submit/refresh issues including `thread_detail_refresh_lost_user_input`,
+    `duplicate_item_ids`, and `browser_latest_turn_usage_missing`.
+- Root-cause fix:
+  - `public/thread-detail-state.js` now preserves a pending submitted
+    `userMessage` with `mobilePendingSubmission` / `clientSubmissionId` when a
+    completed incoming turn contains authoritative assistant/usage content but
+    does not yet contain the durable server `userMessage`;
+  - stale local-only user history without pending-submit identity still drops,
+    and local-only assistant receipts still drop when server authoritative
+    receipts arrive.
+- Submit catch-up timing:
+  - `public/composer-runtime.js` now schedules post-submit full refreshes at
+    `[450, 1100, 2400, 5200]` and forced usage backfill at `450ms`, reducing
+    the window where the behavior harness can sample a half-populated
+    completion frame.
+- Source commit:
+  - `eac76bf9` (`fix: preserve submitted users through completion refresh`);
+  - regenerated frontend shell/Vite artifacts;
+  - new client/cache `0.1.11|codex-mobile-shell-v625-e2b1a7428fa9`.
+- Source validation passed:
+  - `node --check public/thread-detail-state.js public/composer-runtime.js test/conversation-render.test.js`;
+  - `node --test test/conversation-render.test.js` -> 165/165;
+  - `npm run --silent build:frontend`;
+  - `node --test test/conversation-render.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js` -> 297/297;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Deployment status:
+  - delegated to Codex Mobile Deploy Lane as task card
+    `ttc_9a08e9ab095d2f1a5b`;
+  - target thread `019f16e6-9131-79e2-9b6b-ad41f7e65d92`;
+  - request id `codex-mobile-submitted-user-completion-refresh-eac76bf9`;
+  - required central private macOS deploy with controlled submit thread
+    `019f307c-56fb-7261-a584-2636051ee724` and full behavior gate.
+  - Public readiness requires clearing latest-turn item/user-message/usage
+    blockers plus refresh lost-user / duplicate-id regressions.
+
+## 2026-07-05T19:24:00+08:00 - Semantic refresh self-check and pre-900ms submit catch-up
+
+- Follow-up after `eac76bf9` deploy receipt:
+  - production synced `eac76bf9` and cleared prior latest-turn
+    item/user-message/usage blockers;
+  - remaining deploy blocker was `thread_detail_refresh_lost_user_input`.
+- Local full behavior gate with `eac76bf9` production and local source changes
+  showed the issue had moved to semantic refresh comparison:
+  - `thread_detail_refresh_lost_user_input` cleared after unique user-input
+    comparison;
+  - remaining API refresh issues were item/assistant count drops caused by
+    assistant progress consolidation;
+  - browser still showed `browser_latest_turn_usage_missing` at
+    `submit-post-900`, which requires a production frontend timing change.
+- Source repair:
+  - commit `3e38466b` (`fix: compare semantic refresh items in self-check`);
+  - `adapters/thread-detail-self-check-service.js` now compares semantic
+    unique user-input and assistant receipt counts for refresh downgrades,
+    avoiding false H2s when pending/durable user echoes or progressive/final
+    assistant receipts collapse to one visible semantic item;
+  - real distinct user-input / assistant-output loss remains H2.
+  - `public/composer-runtime.js` schedules submit catch-up full refreshes at
+    `[350, 750, 1200, 2400, 5200]` and usage backfill at `750ms`, so the
+    browser `submit-post-900` sample has a refresh opportunity before it runs.
+- Frontend artifacts regenerated:
+  - client/cache `0.1.11|codex-mobile-shell-v625-19d47a01beb9`.
+- Validation passed:
+  - `node --test test/thread-detail-self-check-service.test.js test/thread-self-check-script.test.js test/conversation-render.test.js` -> 210/210;
+  - `npm run --silent build:frontend`;
+  - `node --test test/thread-detail-self-check-service.test.js test/thread-self-check-script.test.js test/conversation-render.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js` -> 342/342;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local API thread self-check for deploy lane and controlled submit thread
+    repeated 4 times returned `ok=true` with only H3
+    `thread_list_updated_order_mismatch`.
+- Deployment status:
+  - delegated to Codex Mobile Deploy Lane as task card
+    `ttc_05a03ed837e7810e49`;
+  - target thread `019f16e6-9131-79e2-9b6b-ad41f7e65d92`;
+  - request id `codex-mobile-semantic-refresh-selfcheck-3e38466b`;
+  - deploy must use controlled submit thread
+    `019f307c-56fb-7261-a584-2636051ee724` and full behavior gate.
+
+## 2026-07-05T22:45:00+08:00 - ESM migration phase 3 conversation scroll slice
+
+- Goal context:
+  - continuing `docs/FRONTEND_ESM_MIGRATION_PLAN.md` migration under the
+    "development environment first, Owner approval before deploy" rule.
+- Source repair:
+  - added native ESM module `frontend/native/conversation-scroll.mjs`;
+  - wired `conversation-scroll` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - extended `test/vite-shell-asset-graph.test.js` to prove the native ESM
+    export surface and representative behavior match the classic fallback.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `10` to `11`;
+  - `classicGlobalCompatibilityModuleCount` moved from `39` to `38`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/conversation-scroll.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/conversation-scroll.test.js` -> 27/27;
+  - `node --test test/conversation-scroll.test.js
+    test/turn-scroll-controls.test.js test/conversation-render.test.js
+    test/vite-shell-asset-graph.test.js test/vite-shell-artifact-service.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` -> 325/325;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev browser startup/full shell gate against `127.0.0.1:8897`
+    returned `deployPass=true`, blocking issues `0`, actionable codes `[]`,
+    with only existing H3 `active_codex_app_server_rss_elevated`.
+- Deployment status:
+  - source-only ESM slice; no production deploy requested or performed.
+  - Full production/Public readiness remains governed separately by the
+    behavior gate and Owner approval.
+
+## 2026-07-05T22:52:00+08:00 - ESM migration phase 3 thread detail state slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` Phase 3 in source/dev
+    only; no production deploy without Owner approval.
+- Source repair:
+  - added native ESM module `frontend/native/thread-detail-state.mjs`;
+  - wired `thread-detail-state` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - extended `test/vite-shell-asset-graph.test.js` with native/classic
+    equivalence checks for loaded-state, cache reuse, summary-only recovery,
+    and visible item preservation policy behavior.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `11` to `12`;
+  - `classicGlobalCompatibilityModuleCount` moved from `38` to `37`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/thread-detail-state.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/thread-detail-state.test.js` -> 37/37;
+  - `node --test test/thread-detail-state.test.js
+    test/conversation-render.test.js test/thread-detail-render-plan.test.js
+    test/thread-detail-patch-plan.test.js test/thread-detail-merge-state.test.js
+    test/thread-detail-v4-merge-state.test.js test/vite-shell-asset-graph.test.js
+    test/vite-shell-artifact-service.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` -> 454/454;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev browser startup/full shell gate against `127.0.0.1:8898`
+    returned `deployPass=true`, blocking issues `0`, actionable codes `[]`,
+    with only existing H3 `active_codex_app_server_rss_elevated`.
+- Deployment status:
+  - source-only ESM slice; no production deploy requested or performed.
+  - Remaining Phase 3 modules in order include `thread-detail-render-plan`,
+    `thread-detail-patch-plan`, `thread-detail-merge-state`, and
+    `thread-detail-v4-merge-state`.
+
+## 2026-07-05T22:57:00+08:00 - ESM migration phase 3 thread detail render-plan slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` Phase 3 in source/dev
+    only; no production deploy without Owner approval.
+- Source repair:
+  - added native ESM module `frontend/native/thread-detail-render-plan.mjs`;
+  - wired `thread-detail-render-plan` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - extended `test/vite-shell-asset-graph.test.js` with native/classic
+    equivalence checks for refresh request planning, history auto-backfill,
+    single-thread shell planning, and refresh outcome execution.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `12` to `13`;
+  - `classicGlobalCompatibilityModuleCount` moved from `37` to `36`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/thread-detail-render-plan.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/thread-detail-render-plan.test.js` -> 106/106;
+  - `node --test test/thread-detail-render-plan.test.js
+    test/thread-detail-state.test.js test/conversation-render.test.js
+    test/thread-detail-patch-plan.test.js test/thread-detail-merge-state.test.js
+    test/thread-detail-v4-merge-state.test.js test/vite-shell-asset-graph.test.js
+    test/vite-shell-artifact-service.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` -> 455/455;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev browser startup/full shell gate against `127.0.0.1:8899`
+    returned `deployPass=true`, blocking issues `0`, actionable codes `[]`,
+    with only existing H3 `active_codex_app_server_rss_elevated`.
+- Deployment status:
+  - source-only ESM slice; no production deploy requested or performed.
+  - Remaining Phase 3 helper modules: `thread-detail-patch-plan`,
+    `thread-detail-merge-state`, and `thread-detail-v4-merge-state`.
+
+## 2026-07-05T23:08:00+08:00 - Submitted user message duplicate/order residual
+
+- User evidence:
+  - Xcode thread screenshot still showed an older `You` user message below
+    newer Codex receipts after the same submitted-message duplicate class was
+    previously reported as only partially deployed.
+- Current diagnosis:
+  - the prior same-submission authority fix was not sufficient for a stale
+    projected/local user item that appears in a later turn after the durable
+    user message has already appeared earlier;
+  - `shouldDropDuplicateUserMessageEvent` only let later candidates shadow
+    earlier items, so a lower-authority same-submission duplicate could survive
+    at the bottom of the visible window.
+- Source fix in progress:
+  - `public/thread-detail-runtime.js` now treats shared `clientSubmissionId`
+    as a cross-turn identity regardless of candidate direction, keeps the
+    higher-authority item, and on equal authority keeps the earlier visible
+    item so stale tail duplicates cannot remain below newer receipts.
+  - `test/conversation-render.test.js` adds
+    `cross-turn normalization drops later same-submission projected user after
+    durable receipt`.
+- Validation passed:
+  - `node --check public/thread-detail-runtime.js
+    test/conversation-render.test.js`;
+  - `node --test test/conversation-render.test.js
+    test/thread-detail-v4-merge-state.test.js
+    test/thread-user-message-echo-normalizer-service.test.js
+    test/message-pending-echo-service.test.js` -> 201/201.
+- Deployment status:
+  - not deployed and not committed yet;
+  - current local `HEAD` includes ESM migration commits that are not approved
+    for deploy, so this duplicate/order fix must either be isolated onto the
+    current production/public baseline as a hotfix or wait for the ESM slice to
+    complete and pass full behavior gates before deployment.
+
+## 2026-07-05T23:12:00+08:00 - ESM migration phase 3 thread detail helper slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` Phase 3 in source/dev
+    only; no production deploy without Owner approval.
+- Source repair:
+  - added native ESM modules
+    `frontend/native/thread-detail-patch-plan.mjs`,
+    `frontend/native/thread-detail-merge-state.mjs`, and
+    `frontend/native/thread-detail-v4-merge-state.mjs`;
+  - wired their `nativeSource` entries in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - extended `test/vite-shell-asset-graph.test.js` with native/classic
+    equivalence checks for patch planning, thread-detail merge policy, and V4
+    projection merge policy.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `13` to `16`;
+  - `classicGlobalCompatibilityModuleCount` moved from `36` to `33`;
+  - native helper modules now include `thread-detail-patch-plan`,
+    `thread-detail-merge-state`, and `thread-detail-v4-merge-state`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/thread-detail-patch-plan.mjs
+    frontend/native/thread-detail-merge-state.mjs
+    frontend/native/thread-detail-v4-merge-state.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/thread-detail-patch-plan.test.js
+    test/thread-detail-merge-state.test.js
+    test/thread-detail-v4-merge-state.test.js` -> 49/49;
+  - `node --test test/thread-detail-render-plan.test.js
+    test/thread-detail-state.test.js test/conversation-render.test.js
+    test/thread-detail-patch-plan.test.js test/thread-detail-merge-state.test.js
+    test/thread-detail-v4-merge-state.test.js test/vite-shell-asset-graph.test.js
+    test/vite-shell-artifact-service.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` -> 456/456;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev browser startup/full shell gate against `127.0.0.1:8900`
+    returned `deployPass=true`, blocking issues `0`, actionable codes `[]`,
+    with only existing H3 `active_codex_app_server_rss_elevated`.
+- Deployment status:
+  - source-only ESM slice; no production deploy requested or performed.
+  - Phase 3 rendering planners/state helpers are now migrated through
+    `thread-detail-v4-merge-state`. Remaining ESM migration is the larger UI
+    runtime group from Phase 4.
+
+## 2026-07-05T23:27:00+08:00 - Submitted echo hotfix deploy residual
+
+- Independent non-ESM hotfix:
+  - isolated ref `5d4515ab42e7` (`fix: drop stale same-submission user
+    echoes`) was deployed/synced by the Codex Mobile Deploy Lane;
+  - production served client/cache
+    `0.1.11|codex-mobile-shell-v625-14d250f3a235`;
+  - source/prod SHA parity matched `28/28`;
+  - focused production tests passed `336/336`;
+  - deploy-lane and controlled-submit API self-checks returned `ok=true`.
+- Acceptance blocker:
+  - central full behavior gate failed, so this ref is not Public-ready;
+  - blocking codes were `thread_detail_refresh_item_downgrade` and
+    `thread_detail_refresh_lost_assistant_items`;
+  - startup gate and API/Vite artifact health were green.
+- Runtime notes:
+  - `GET /api/threads/:threadId` had slow count `0`;
+  - the single sampled `POST /api/threads/:threadId/messages` was slow at
+    about `1473ms`;
+  - listener RSS/heap at readback were about `961MB/301MB`.
+- Boundary:
+  - do not mix this hotfix state into ESM migration commits;
+  - continue ESM as source/dev-only until the Owner explicitly approves a
+    production deploy.
+
+## 2026-07-05T23:31:00+08:00 - ESM migration phase 4 standalone helper slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed for this ESM slice.
+- Source repair:
+  - added native ESM modules
+    `frontend/native/plugin-voice-input.mjs`,
+    `frontend/native/api-client.mjs`,
+    `frontend/native/markdown-renderer.mjs`, and
+    `frontend/native/plugin-embed.mjs`;
+  - wired their `nativeSource` entries in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - extended `test/vite-shell-asset-graph.test.js` with classic/native
+    equivalence coverage for voice-input protocol messages, API request
+    behavior, markdown rendering, and Hermes plugin embed route/navigation
+    helpers.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `22` to `26`;
+  - `classicGlobalCompatibilityModuleCount` moved from `27` to `23`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/plugin-voice-input.mjs
+    frontend/native/api-client.mjs frontend/native/markdown-renderer.mjs
+    frontend/native/plugin-embed.mjs scripts/frontend-shell-asset-graph.mjs
+    test/vite-shell-asset-graph.test.js`;
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/plugin-voice-input.test.js test/api-client.test.js
+    test/markdown-render.test.js test/mermaid-render.test.js
+    test/plugin-embed.test.js` -> `67/67`;
+  - broader shell/runtime helper set -> `222/222`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev browser startup/full shell gate against `127.0.0.1:8903`
+    returned `deployPass=true`, blocking issues `0`, actionable codes `[]`,
+    with only existing H3 `active_codex_app_server_rss_elevated`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-05T23:34:00+08:00 - ESM migration phase 4 app update runtime slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/app-update-runtime.mjs`;
+  - wired `app-update-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - extended `test/vite-shell-asset-graph.test.js` with classic/native
+    equivalence checks for update status text, public release matching,
+    Public PR prompt keys/summaries, and workspace routing helpers.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `26` to `27`;
+  - `classicGlobalCompatibilityModuleCount` moved from `23` to `22`;
+  - `app-update-runtime` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/app-update-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused app-update/mobile viewport set -> `50/50`;
+  - broader shell/runtime/update/helper set -> `224/224`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev browser startup/full shell gate against `127.0.0.1:8904`
+    returned `deployPass=true`, blocking issues `0`, actionable codes `[]`,
+    with only existing H3 `active_codex_app_server_rss_elevated`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-05T23:39:00+08:00 - ESM migration phase 4 modal runtime slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/modal-runtime.mjs`;
+  - wired `modal-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - extended `test/vite-shell-asset-graph.test.js` with classic/native
+    equivalence checks for modal global helper exposure, profile-switch stage
+    labels, and progress formatting.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `27` to `28`;
+  - `classicGlobalCompatibilityModuleCount` moved from `22` to `21`;
+  - `modal-runtime` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/modal-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused app-update/mobile/voice set -> `50/50`;
+  - broader shell/runtime/update/helper set -> `225/225`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev browser startup/full shell gate against `127.0.0.1:8905`
+    returned `deployPass=true`, blocking issues `0`, actionable codes `[]`,
+    with only existing H3 `active_codex_app_server_rss_elevated`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-05T23:43:00+08:00 - ESM migration phase 4 small policy helper slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM modules
+    `frontend/native/client-render-stability-guard.mjs` and
+    `frontend/native/live-operation-dock-state.mjs`;
+  - wired both modules to `nativeSource` entries in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - extended `test/vite-shell-asset-graph.test.js` with classic/native
+    equivalence checks for submitted-turn identity keys and live operation dock
+    policy planning.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `28` to `30`;
+  - `classicGlobalCompatibilityModuleCount` moved from `21` to `19`;
+  - both modules read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/client-render-stability-guard.mjs
+    frontend/native/live-operation-dock-state.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused guard/dock/render set -> `37/37`;
+  - broader shell/runtime/render set -> `331/331`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev browser startup/full shell gate against `127.0.0.1:8906`
+    returned `deployPass=true`, blocking issues `0`, actionable codes `[]`,
+    with only existing H3 `active_codex_app_server_rss_elevated`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-05T23:46:00+08:00 - ESM migration phase 4 runtime wiring slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/runtime-wiring-runtime.mjs`;
+  - wired `runtime-wiring-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - extended `test/vite-shell-asset-graph.test.js` to verify the startup
+    factory is exposed without executing initialization during unit tests.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `30` to `31`;
+  - `classicGlobalCompatibilityModuleCount` moved from `19` to `18`;
+  - `runtime-wiring-runtime` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/runtime-wiring-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused startup/runtime set -> `135/135`;
+  - broader startup/render/runtime set -> `317/317`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local dev browser startup/full shell gate against `127.0.0.1:8907`
+    returned `deployPass=true`, blocking issues `0`, actionable codes `[]`,
+    with only existing H3 `active_codex_app_server_rss_elevated`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-05T23:52:00+08:00 - ESM migration phase 4 app entry slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/app-entry.mjs`;
+  - wired `app-entry` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - updated `test/vite-shell-asset-graph.test.js` native-count and native
+    module contract assertions.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `31` to `32`;
+  - `classicGlobalCompatibilityModuleCount` moved from `18` to `17`;
+  - `app-entry` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/app-entry.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused shell/runtime set -> `132/132`;
+  - broader shell/render/runtime set -> `331/331`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - targeted local dev browser startup gate against `127.0.0.1:8908`
+    returned `ok=true`, app visible, runtime/loadThread/shell-refresh ready,
+    exception count `0`.
+- Note:
+  - the broader runtime-loop invocation that includes legacy `browser-vite-preview`
+    still reports `vite_preview_esm_compatibility_missing`; the targeted
+    app-preview default-root gate passed and is the relevant coverage for this
+    `app-entry` migration slice.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-05T23:55:00+08:00 - ESM migration phase 4 DOM patch slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/thread-detail-dom-patch.mjs`
+    by mechanically removing the classic IIFE/CommonJS wrapper from the
+    existing DOM patch helper and exporting the same API surface;
+  - wired `thread-detail-dom-patch` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - updated `test/vite-shell-asset-graph.test.js` native-count and native
+    module contract assertions.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `32` to `33`;
+  - `classicGlobalCompatibilityModuleCount` moved from `17` to `16`;
+  - `thread-detail-dom-patch` read back as `compatibilityMode=native-esm`
+    with all `33` expected functions present;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/thread-detail-dom-patch.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused DOM patch/render set -> `206/206`;
+  - broader shell/render/runtime set -> `331/331`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - targeted local dev browser startup gate against `127.0.0.1:8909`
+    returned `ok=true`, app visible, runtime/loadThread/shell-refresh ready,
+    exception count `0`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-05T23:57:00+08:00 - ESM migration phase 4 side chat slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/side-chat-runtime.mjs`
+    by mechanically removing the classic IIFE/CommonJS wrapper while
+    preserving the `createSideChatRuntime` factory/deps boundary;
+  - wired `side-chat-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - updated `test/vite-shell-asset-graph.test.js` native-count and native
+    module contract assertions.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `33` to `34`;
+  - `classicGlobalCompatibilityModuleCount` moved from `16` to `15`;
+  - `side-chat-runtime` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/side-chat-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused side-chat/shell/render set -> `301/301`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - targeted local dev browser startup gate against `127.0.0.1:8910`
+    returned `ok=true`, app visible, runtime/loadThread/shell-refresh ready,
+    exception count `0`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-06T00:02:00+08:00 - ESM migration phase 4 settings runtime slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/settings-runtime.mjs`
+    by mechanically removing the classic IIFE/CommonJS wrapper while
+    preserving the `createSettingsRuntime` factory and legacy global
+    publication used by the shell;
+  - wired `settings-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - updated `test/vite-shell-asset-graph.test.js` native-count and native
+    module contract assertions.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `34` to `35`;
+  - `classicGlobalCompatibilityModuleCount` moved from `15` to `14`;
+  - `settings-runtime` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/settings-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - broader shell/render/runtime set -> `331/331`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - targeted local dev browser startup gate against `127.0.0.1:8911`
+    returned `ok=true`, app visible, runtime/loadThread/shell-refresh ready,
+    exception count `0`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-06T00:04:00+08:00 - ESM migration phase 4 media preview slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/media-preview-runtime.mjs`
+    by mechanically removing the classic IIFE/CommonJS wrapper while
+    preserving the `createMediaPreviewRuntime` factory and legacy
+    `CodexMediaPreviewRuntime` global;
+  - wired `media-preview-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - updated `test/vite-shell-asset-graph.test.js` native-count and native
+    module contract assertions.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `35` to `36`;
+  - `classicGlobalCompatibilityModuleCount` moved from `14` to `13`;
+  - `media-preview-runtime` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/media-preview-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused shell/render/runtime set -> `301/301`;
+  - broader shell/render/runtime set -> `331/331`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - targeted local dev browser startup gate against `127.0.0.1:8912`
+    returned `ok=true`, app visible, runtime/loadThread/shell-refresh ready,
+    exception count `0`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-06T00:06:00+08:00 - ESM migration phase 4 notification UI slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/notification-ui-runtime.mjs`
+    by converting the existing top-level runtime plus expose wrapper into
+    an ESM export while preserving legacy globals and
+    `CodexNotificationUiRuntime`;
+  - wired `notification-ui-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - updated `test/vite-shell-asset-graph.test.js` native-count and native
+    module contract assertions.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `36` to `37`;
+  - `classicGlobalCompatibilityModuleCount` moved from `13` to `12`;
+  - `notification-ui-runtime` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/notification-ui-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused shell/render/runtime set -> `298/298`;
+  - broader shell/render/runtime set -> `331/331`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - targeted local dev browser startup gate against `127.0.0.1:8913`
+    returned `ok=true`, app visible, runtime/loadThread/shell-refresh ready,
+    exception count `0`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-06T00:08:00+08:00 - ESM migration phase 4 thread tile runtime slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/thread-tile-runtime.mjs`
+    by mechanically removing the classic IIFE/CommonJS wrapper while
+    preserving the `createThreadTileRuntime` factory/deps boundary and
+    `CodexThreadTileRuntime` global;
+  - wired `thread-tile-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - updated `test/vite-shell-asset-graph.test.js` native-count and native
+    module contract assertions.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `37` to `38`;
+  - `classicGlobalCompatibilityModuleCount` moved from `12` to `11`;
+  - `thread-tile-runtime` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/thread-tile-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused shell/render/runtime set -> `301/301`;
+  - broader shell/render/runtime set -> `331/331`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - targeted local dev browser startup gate against `127.0.0.1:8914`
+    returned `ok=true`, app visible, runtime/loadThread/shell-refresh ready,
+    exception count `0`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-06T00:10:00+08:00 - ESM migration phase 4 navigation runtime slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/navigation-runtime.mjs`
+    by converting the top-level navigation helper set plus expose wrapper
+    into an ESM export while preserving legacy globals, approval helper
+    globals, and `CodexNavigationRuntime`;
+  - wired `navigation-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - updated `test/vite-shell-asset-graph.test.js` native-count and native
+    module contract assertions.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `38` to `39`;
+  - `classicGlobalCompatibilityModuleCount` moved from `11` to `10`;
+  - `navigation-runtime` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/navigation-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused shell/render/runtime/action set -> `307/307`;
+  - broader shell/render/runtime/action set -> `337/337`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - targeted local dev browser startup gate against `127.0.0.1:8915`
+    returned `ok=true`, app visible, runtime/loadThread/shell-refresh ready,
+    exception count `0`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-06T00:12:00+08:00 - ESM migration phase 4 app shell runtime slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/app-shell-runtime.mjs`
+    by converting the app shell expose wrapper into an ESM export while
+    preserving `CodexAppShellRuntime`;
+  - wired `app-shell-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - updated `test/vite-shell-asset-graph.test.js` native-count and native
+    module contract assertions.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced from `39` to `40`;
+  - `classicGlobalCompatibilityModuleCount` moved from `10` to `9`;
+  - `app-shell-runtime` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/app-shell-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused shell/render/runtime set -> `301/301`;
+  - broader shell/render/runtime set -> `331/331`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - targeted local dev browser startup gate against `127.0.0.1:8916`
+    returned `ok=true`, app visible, runtime/loadThread/shell-refresh ready,
+    exception count `0`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-06T00:30:00+08:00 - ESM migration phase 4 event stream runtime slice
+
+- Goal context:
+  - continued `docs/FRONTEND_ESM_MIGRATION_PLAN.md` in source/dev only;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/event-stream-runtime.mjs`
+    by converting the event stream expose wrapper into an ESM export while
+    preserving legacy globals and `CodexEventStreamRuntime`;
+  - wired `event-stream-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - updated `test/vite-shell-asset-graph.test.js` native-count and native
+    module contract assertions.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` advanced to `48`;
+  - `classicGlobalCompatibilityModuleCount` moved to `1`;
+  - remaining classic compatibility module: `thread-detail-runtime`;
+  - `event-stream-runtime` read back as `compatibilityMode=native-esm`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/event-stream-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused shell/render/runtime set -> `316/316`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - targeted local dev browser startup gate against `127.0.0.1:8924`
+    returned `ok=true`, app visible, runtime/loadThread/shell-refresh ready,
+    exception count `0`.
+- Deployment status:
+  - source-only ESM slice; do not deploy until Owner approves.
+
+## 2026-07-06T00:35:00+08:00 - ESM migration phase 4 complete native runtime slice
+
+- Goal context:
+  - completed the source/dev native ESM migration target from
+    `docs/FRONTEND_ESM_MIGRATION_PLAN.md`;
+  - no production deploy requested or performed.
+- Source repair:
+  - added native ESM module `frontend/native/thread-detail-runtime.mjs`
+    by converting the last remaining classic compatibility runtime into an
+    ESM export while preserving `CodexThreadDetailRuntime`;
+  - wired `thread-detail-runtime` to `nativeSource` in
+    `scripts/frontend-shell-asset-graph.mjs`;
+  - updated `test/vite-shell-asset-graph.test.js` native-count and native
+    module contract assertions.
+- Frontend build/readback:
+  - `npm run --silent build:frontend` regenerated Vite shell artifacts;
+  - `nativeEsmModuleCount` is now `49`;
+  - `classicGlobalCompatibilityModuleCount` is now `0`;
+  - `classicModules=[]`;
+  - app-preview classic loader script count is `0`;
+  - client/cache remained
+    `0.1.11|codex-mobile-shell-v625-cbb2ef9490a1`.
+- Validation passed:
+  - `node --check frontend/native/thread-detail-runtime.mjs
+    scripts/frontend-shell-asset-graph.mjs test/vite-shell-asset-graph.test.js`;
+  - focused shell/render/runtime set -> `316/316`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - targeted local dev browser startup gate against `127.0.0.1:8925`
+    returned `ok=true`, app visible, runtime/loadThread/shell-refresh ready,
+    exception count `0`.
+- Validation gap:
+  - a local full deploy-mode behavior gate with controlled submit thread
+    `019f307c-56fb-7261-a584-2636051ee724` was started against
+    `127.0.0.1:8925`, but produced no terminal JSON within about `120s`;
+    the process was stopped and the local server was cleaned up.
+- Deployment status:
+  - source-only ESM completion; do not deploy until Owner approves and the
+    behavior-gate execution path is either proven or separately repaired.
+
+## 2026-07-06T00:45:00+08:00 - ESM migration full behavior gate repair
+
+- Goal context:
+  - completion audit found the source-side ESM migration was structurally
+    complete (`49` native ESM modules, `0` classic compatibility modules), but
+    the local full deploy-mode behavior gate initially failed on
+    `/vite-shell/preview.html`.
+- Root cause:
+  - `frontend/native/app-entry.mjs` auto-started the full app when imported by
+    the Vite preview artifact page;
+  - `/vite-shell/preview.html` is an artifact/contract probe page, not an app
+    runtime page, so auto-start entered runtime wiring without classic global
+    script bindings and rejected ESM compatibility with
+    `threadDetailRuntime is not defined`.
+- Source repair:
+  - guarded native app-entry auto-start against the
+    `codex-vite-shell-preview` marker while preserving explicit manual start
+    and app-preview controlled startup;
+  - added focused regression coverage in `test/app-entry-ui.test.js`;
+  - regenerated Vite shell artifacts.
+- Frontend build/readback:
+  - `nativeEsmModuleCount=49`;
+  - `classicGlobalCompatibilityModuleCount=0`;
+  - `classicModules=[]`;
+  - app-preview classic loader script count `0`;
+  - `productionExecution` remains `classic-script-fallback` as required by the
+    current migration plan until Owner-approved deploy/release.
+- Validation passed:
+  - `node --test test/app-entry-ui.test.js` -> `4/4`;
+  - `npm run --silent build:frontend`;
+  - `/vite-shell/preview.html` browser probe returned `ok=true`,
+    `esmCompatibilityModuleCount=49`, `esmCompatibilityReadyCount=49`;
+  - full local deploy-mode runtime self-check against `127.0.0.1:8926` with
+    controlled submit thread `019f307c-56fb-7261-a584-2636051ee724` returned
+    `ok=true`, `deployPass=true`, `blockingIssueCount=0`,
+    `actionableIssueCodes=[]`;
+  - focused shell/render/runtime/artifact set -> `335/335`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Cleanup:
+  - local `8926` dev server stopped;
+  - no local 8926 self-check/browser process remained after cleanup.
+- Deployment status:
+  - source-only repair; production deploy still requires explicit Owner
+    approval.
+
+## 2026-07-06T01:10:00+08:00 - Public PR triage #83/#84/#85
+
+- Scope:
+  - read-only triage of public repo open PRs; no source merge/cherry-pick,
+    no production deploy.
+- Open PRs found:
+  - public PR #83 `fix-all-workspaces-session-pruning`
+    (`fix: keep all workspace sessions visible`);
+  - public PR #84 `fix-refresh-prompt-loop`
+    (`fix: stop stale page refresh prompts`);
+  - public PR #85 `fix-stale-running-spinner`
+    (`fix: clear stale running spinner hints`).
+- Shared finding:
+  - all three PRs are based on older public base `3e38466b` and each carries
+    old regenerated Vite/PWA artifacts, producing about 63k-line artifact
+    diffs against the current ESM source line;
+  - public CI for each PR reports `Node checks` failure / unstable merge
+    state;
+  - none of the three PR commit hashes are contained in current private
+    `main`.
+- Current source comparison:
+  - #83 core behavior is not covered: current thread-list runtime still
+    filters All Workspaces threads by the local workspace registry, and
+    `/api/workspaces` does not merge token-usage workspace cwds;
+  - #84 core behavior is not covered: current app-update runtime lacks
+    loaded-client build acceptance for stale refresh prompts;
+  - #85 core behavior is not covered: current status-hints policy still keeps
+    idle/no-terminal running hints before checking fresh submitted-processing
+    evidence.
+- Recommendation:
+  - do not GitHub-merge these PRs directly;
+  - absorb the three small business patches into the current ESM source
+    structure, including native modules plus classic fallback where applicable,
+    then regenerate current artifacts and close the public PRs as superseded
+    after equivalent source commits exist.
+
+## 2026-07-06T08:00:00+08:00 - Absorbed public PR #83/#84/#85 into current ESM main
+
+- Scope:
+  - source-only absorption of the three public PR business patches;
+  - no production deploy was requested or performed;
+  - GitHub PRs were not closed in this step.
+- Absorbed behavior:
+  - PR #83: `/api/workspaces` now reconciles `listWorkspaces()` rows with
+    shared token-usage workspace cwd snapshots, and All Workspaces no longer
+    hides server-visible threads just because the local workspace registry is
+    stale;
+  - PR #84: page refresh checks now accept the actually loaded
+    `CLIENT_BUILD_ID` when it already matches server public config, clearing
+    stale "New version available" loops instead of re-prompting;
+  - PR #85: idle/no-terminal running hints are kept only with fresh local
+    submitted-processing evidence, otherwise stale list spinners are cleared.
+- Files changed:
+  - server route wiring: `server-routes/api-dispatch-route-service.js`,
+    `server-routes/workspace-route-service.js`;
+  - ESM/classic runtime pairs:
+    `frontend/native/thread-list-runtime.mjs`, `public/thread-list-runtime.js`,
+    `frontend/native/app-update-runtime.mjs`, `public/app-update-runtime.js`,
+    `frontend/native/thread-status-hints.mjs`, `public/thread-status-hints.js`;
+  - regression tests:
+    `test/api-route-boundary-service.test.js`,
+    `test/thread-list-runtime-ui.test.js`, `test/app-update.test.js`,
+    `test/thread-status-hints.test.js`;
+  - regenerated current Vite/PWA artifacts under `public/shell-asset-manifest*`
+    and `public/vite-shell/*`.
+- Build/readback:
+  - `npm run --silent build:frontend` succeeded;
+  - new client/cache:
+    `0.1.11|codex-mobile-shell-v625-8aa93b62b26b`;
+  - `productionExecution` remains `classic-script-fallback`;
+  - app-preview classic loader script count remains `0`;
+  - published Vite shell files: `23`.
+- Validation passed:
+  - focused PR behavior set:
+    `node --test test/api-route-boundary-service.test.js
+    test/thread-list-runtime-ui.test.js test/app-update.test.js
+    test/build-refresh-policy.test.js test/client-render-stability-guard.test.js
+    test/thread-status-hints.test.js` -> `47/47`;
+  - shell/runtime/artifact set:
+    `node --test test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` -> `147/147`;
+  - `npm run --silent check:frontend-manifest`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Residual:
+  - production deploy still requires explicit Owner approval;
+  - public PRs #83/#84/#85 can be closed as superseded only after this source
+    absorption is committed/published according to the release order rule.
+
+## 2026-07-06T08:29:00+08:00 - Native ESM production switch validated locally
+
+- Owner approved production switching after the ESM migration.
+- Source switch:
+  - production shell execution contract changed from
+    `classic-script-fallback` to `vite-app-preview-native-esm`;
+  - classic public files are retained as rollback/fallback artifacts, but
+    app-preview production execution now expects native ESM compatibility;
+  - generated Vite readback/artifacts now report
+    `productionExecution=vite-app-preview-native-esm`.
+- Harness hardening:
+  - browser self-check now includes bounded `notReadyModuleIds` and
+    `notReadyModules` fields on ESM compatibility failures;
+  - root cause found by the new evidence path was an outdated
+    `thread-status-hints` compatibility sample: exports/global publication were
+    correct, but the sample expected idle/no-terminal running hints to expire,
+    which conflicts with the current status-hints policy;
+  - compatibility sample now uses the stable stale-active expiration semantic.
+- Build/readback:
+  - `npm run --silent build:frontend` succeeded;
+  - client/cache remains `0.1.11|codex-mobile-shell-v625-8aa93b62b26b`;
+  - app-preview loader script count remains `0`;
+  - ESM compatibility module count is `49`, ready count `49`;
+  - published Vite shell files: `23`.
+- Local browser validation:
+  - `node scripts/codex-mobile-browser-runtime-self-check.js --server
+    http://127.0.0.1:8927 --vite-app-preview-only --json` -> `ok=true`,
+    `49/49`;
+  - `node scripts/codex-mobile-browser-runtime-self-check.js --server
+    http://127.0.0.1:8927 --vite-preview-only --json` -> `ok=true`,
+    `49/49`;
+  - full deploy-mode behavior gate with controlled submit thread
+    `019f307c-56fb-7261-a584-2636051ee724` -> `deployPass=true`,
+    actionable issue codes `[]`;
+  - remaining findings were H3/advisory only:
+    `active_codex_app_server_rss_elevated`,
+    `codex_mobile_mcp_child_accumulation_elevated`, and active-progressive
+    latest-turn consolidation advisories.
+- Validation passed:
+  - `node --test test/browser-runtime-self-check-service.test.js
+    test/vite-shell-asset-graph.test.js test/vite-shell-artifact-service.test.js
+    test/runtime-self-check-loop.test.js` -> `147/147`;
+  - `npm run --silent check:frontend-manifest`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Next step:
+  - commit native ESM production switch and delegate central production deploy
+    to the Codex Mobile deploy lane with full behavior gate and controlled
+    submit enabled.
+
+## 2026-07-06T09:05:00+08:00 - Submitted user duplicate echo root-cause fix validated locally
+
+- User-visible symptom:
+  - current ESM build could still show two visible user messages after submit,
+    especially after thread navigation/refresh; recent client events showed
+    `conversation_patch_html_fallback` with
+    `reason=post-apply-duplicate-user-messages`.
+- Root cause / owning layer:
+  - browser/local pending echo reconciliation did not treat durable server
+    user-message `clientId` as the same submission identity as the local
+    `clientSubmissionId` / `local-user-*` echo;
+  - the server/API detail path could contain a single durable user message
+    while the browser merge/render layer kept a stale local echo, so the
+    duplicate belonged to the client projection/echo ownership boundary.
+- Source changes:
+  - expanded submitted-message identity candidates in native/classic
+    `thread-detail-runtime` and `thread-detail-state`;
+  - updated `thread-user-message-echo-normalizer-service` to compare
+    candidate identity sets, not only `clientSubmissionId`;
+  - added client build id to conversation patch fallback client events;
+  - made deploy-mode client-event self-check ignore pre-gate fallback events
+    and report bounded fallback reason/build metadata for post-gate events.
+- Build/readback:
+  - `npm run --silent build:frontend` succeeded;
+  - client/cache `0.1.11|codex-mobile-shell-v625-6d031619209f`;
+  - `productionExecution=vite-app-preview-native-esm`;
+  - native ESM ready modules `49/49`, classic compatibility modules `0`;
+  - app-preview classic loader script count `0`.
+- Validation passed:
+  - focused/browser/runtime test set:
+    `node --test test/conversation-render.test.js
+    test/thread-user-message-echo-normalizer-service.test.js
+    test/thread-detail-v4-merge-state.test.js
+    test/thread-detail-dom-patch.test.js
+    test/client-event-stall-self-check-service.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js
+    test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js` -> `416/416`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - `npm run --silent check:frontend-manifest`;
+  - local full behavior gate on `127.0.0.1:8927` with controlled submit
+    thread `019f307c-56fb-7261-a584-2636051ee724` -> `deployPass=true`,
+    blocking/actionable issue codes `[]`;
+  - same gate reported current-window
+    `conversationPatchFallbackEventCount=0`; two older fallback events were
+    outside the gate window and ignored by the hardened self-check.
+- Residual:
+  - production deploy still must be delegated through the central Codex Mobile
+    deploy lane before Public readiness can be claimed;
+  - process-pressure advisories remain separate H3 items:
+    `active_codex_app_server_rss_elevated` and
+    `codex_mobile_mcp_child_accumulation_elevated`.
+
+## 2026-07-06T09:18:00+08:00 - Follow-up for native ESM artifact missing deploy blocker
+
+- Deploy lane return for `aab5862a`:
+  - production synced/restarted, focused production tests passed, but central
+    listener startup gate failed before full behavior gate;
+  - blocking root code included `vite_artifact_file_missing`, which cascaded
+    into Vite app-preview/browser visibility startup failures.
+- Root cause:
+  - source commit accidentally omitted two current `publishedFiles` assets
+    from Git after a manual stale-hash cleanup:
+    `assets/app-bootstrap-CcMgmjtV.js` and
+    `assets/vite-deferred-entry-topology-DAKQEs19.js`;
+  - local HTML direct-reference checks were insufficient because
+    `vite-shell-readback.json.publishedFiles` is the authoritative deploy
+    artifact contract.
+- Fix:
+  - reran `npm run --silent build:frontend`, restoring the two missing
+    published assets and updating retained artifact readback;
+  - added a regression test in `test/vite-shell-artifact-service.test.js`
+    that checks the checked-in public Vite readback status and fails if any
+    `publishedFiles` entry is missing or mismatched.
+- Validation passed:
+  - `node --test test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js` -> `38/38`;
+  - focused duplicate-echo/browser/runtime/Vite set -> `417/417`;
+  - `npm run --silent check:frontend-manifest`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local startup-only deploy gate on `127.0.0.1:8927` ->
+    `deployPass=true`, blocking/actionable issue codes `[]`.
+- Next step:
+  - commit the artifact follow-up and redelegate central production deploy for
+    the follow-up ref; Public remains blocked until central full behavior gate
+    passes.
+
+## 2026-07-06T09:38:00+08:00 - Browser behavior gate latest completed-tail stability fix
+
+- Deploy lane return for `7ff587d1`:
+  - native ESM artifact/startup blocker was cleared in production;
+  - full behavior gate still failed only on
+    `browser_latest_turn_usage_missing`.
+- Reproduction / bounded evidence:
+  - reran full deploy-mode behavior gate against production `127.0.0.1:8787`
+    with controlled submit thread `019f307c-56fb-7261-a584-2636051ee724`;
+  - failing sample was a single dynamic submit catch-up window around
+    `submit-post-1600`;
+  - API latest turn was completed and expected completed tail usage, while DOM
+    had already kept the submitted user message and assistant content but had
+    not yet merged the completed tail/usage;
+  - per-turn mismatch logic already treated the one-off dynamic gap as H3, but
+    latest-turn aggregate usage/item logic still emitted H2.
+- Root cause / owning layer:
+  - browser behavior harness severity policy was inconsistent between
+    per-turn and latest-turn aggregate checks for dynamic thread plans;
+  - this was a self-check classification bug, not a duplicate user-message
+    rendering regression in the observed sample.
+- Fix:
+  - `browser_latest_turn_usage_missing` now uses the same observation-counted
+    latest-turn severity path as latest item/user checks;
+  - dynamic latest aggregate gaps are H3 for one observation and H2 only when
+    repeated/stable;
+  - latest usage issue details now include bounded turn-shape metadata.
+- Validation passed:
+  - `node --test test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` -> `112/112`;
+  - focused browser/ESM/echo/render/Vite set -> `307/307`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - full deploy-mode behavior gate against production using the fixed local
+    harness -> `ok=true`, `deployPass=true`, `blockingIssueCount=0`,
+    `executionFailureCount=0`, `actionableIssueCodes=[]`;
+  - the former latest usage/item gap remained H3-only advisory with
+    `observationCount=1`.
+- Next step:
+  - commit this harness fix and delegate central production deploy; Public
+    readiness still requires central deploy/readback to pass after production
+    sync.
+
+## 2026-07-06T09:47:00+08:00 - Public publish completed for native ESM / stability line
+
+- Production readiness source:
+  - deploy lane returned `completed` for `e4855d8c6a43`;
+  - central deploy `ok=true`;
+  - startup gate and full behavior gate passed with `blockingIssueCount=0`,
+    `executionFailureCount=0`, and `actionableIssueCodes=[]`;
+  - duplicate/disappearing submitted-message blockers,
+    `browser_conversation_patch_fallback`, artifact/startup blockers,
+    `thread_detail_refresh_lost_user_input`, `duplicate_item_ids`, and
+    `thread_detail_empty` were absent from blocking/actionable results.
+- Public push:
+  - pushed local `main` to `public/main`;
+  - public remote advanced `3e38466b..e4855d8c`;
+  - public readback confirmed `refs/heads/main` =
+    `e4855d8c6a43da9bc6d815d712259f1dceb83f45`;
+  - after fetching public, `git diff --name-only public/main..HEAD --
+    ':!.agent-context' | wc -l` returned `0`.
+- Release contents:
+  - includes native ESM production shell switch, current Vite shell artifacts,
+    absorbed public PR #83/#84/#85 business fixes, submitted echo duplicate
+    repairs, native ESM artifact follow-up, and the latest behavior-gate
+    usage self-check stabilization.
+- Local state:
+  - `.agent-context/HANDOFF.md` remains local private context and is not part
+    of the public diff.
+
+## 2026-07-06 submitted echo duplicate root-cause fix
+
+- Context: user screenshot showed a stale duplicate green `You` card at the bottom after the durable completed turn had already rendered the same user message and assistant receipt. API thread self-check and fresh browser self-check were clean, indicating a long-lived client local submitted-echo state defect rather than server/detail duplication.
+- Root cause: `reconcileSubmittedUserMessageTurn` transfers submission identity to the durable server turn via `mobileLocalSubmissionRenderKey`, but cross-turn optimistic echo cleanup only treated item-level submission ids as authoritative. When server projection omitted the item-level client submission id, a later stale local pending echo was preserved as a possible genuine repeated send.
+- Fix: `optimisticEchoCanMatchEarlierDurable` now also recognizes a durable turn's submitted render identity and drops the matching local pending echo only when the render key corresponds to the local `clientSubmissionId` and the user message content still matches. The existing repeated-send protection remains covered.
+- Changed source surfaces: `frontend/native/thread-detail-runtime.mjs`, `public/thread-detail-runtime.js`, generated Vite/native ESM shell artifacts, and `test/conversation-render.test.js`.
+- New regression: `cross-turn normalization drops local pending echo after completed durable turn keeps submitted render identity` covers the screenshot class while `cross-turn normalization keeps nearby repeated send after completed durable turn` continues to pass.
+- Validation: `node --test test/conversation-render.test.js`; `node --test test/thread-detail-v4-merge-state.test.js test/thread-user-message-echo-normalizer-service.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js`; `npm run --silent build:frontend`; `node --test test/conversation-render.test.js test/thread-detail-v4-merge-state.test.js test/thread-user-message-echo-normalizer-service.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js` (345 pass); `npm run --silent check`; `git diff --check -- ':!.agent-context'`; `node scripts/verify-vite-shell-manifest.mjs`.
+- Deploy status: source validated locally only at this point; deploy lane handoff still required before production/public readiness.
+
+## 2026-07-06 submitted echo turn-identity hotfix public push
+
+- Production deploy receipt: ref `22b006582d7aea75baf8c9b0a3ffaa236192494f` deployed by central Codex Mobile lane; startup gate and full behavior gate passed; controlled submit configured; duplicate/disappearing submitted-message blockers absent; focused production tests `345/345` passed.
+- Public push: `git push public main:main` advanced `public/main` from `e4855d8c6a43d` to `22b006582d7a`.
+- Public readback: `git ls-remote public refs/heads/main`, `git rev-parse public/main`, and local `git rev-parse HEAD` all returned `22b006582d7aea75baf8c9b0a3ffaa236192494f`.
+- Diff readback: `git diff --name-only public/main..HEAD -- ':!.agent-context'` returned no files.
+- Remaining local state: `.agent-context/HANDOFF.md` contains local operational notes only.
+
+## 2026-07-06T12:45:00+08:00 - Owner Console stale at-loop projection deployed, duplicate echo follow-up in source
+
+- Owner Console / at-loop task:
+  - source commit `e8b568739a97` (`fix: classify terminal at-loop residuals`) added
+    metadata-only `statusProjection` for terminal/rejected loops and role slices;
+  - production deploy lane synced the ref and focused production tests passed
+    `69/69`;
+  - production `/api/at-loop/status` readback showed `loopCount=5`,
+    `activeLoopCount=0`, `activeBlockedCount=0`,
+    `activeWaitingReturnCount=0`, `terminalLoopCount=5`, and
+    `terminalResidualRoleSliceCount=5`;
+  - target stale loop `loop_e5148ad7ed0b6fae` remained raw `rejected` with
+    `blockedReason=at_loop_dispatch_failed`, but projected
+    `terminal=true`, `active=false`, `activeBlocked=false`,
+    `nonBlockingReason=loop_terminal_rejected`;
+  - deploy lane returned `partially_completed` because the unrelated browser
+    behavior gate still reported duplicate/downgrade issues.
+- Duplicate submitted user-message follow-up:
+  - user screenshot still showed a duplicated green `You` bubble after the
+    durable completed turn had already rendered the same message;
+  - bounded API detail for `Home AI 07-05`
+    (`019f316b-27cd-7622-9944-0b909fec3c70`) showed no durable duplicate
+    user-message events, confirming this remains a long-lived client local
+    echo/projection issue rather than a server double-write;
+  - new source fix narrows cleanup to local pending submission echoes whose
+    text matches an earlier durable completed turn and whose local timestamp is
+    settled by that turn's completed/updated timestamp;
+  - repeated same-text sends remain protected when they have a distinct
+    submission and no settled timestamp evidence, or when they start after the
+    completed durable turn.
+- Changed duplicate-echo surfaces:
+  - `frontend/native/thread-detail-runtime.mjs`;
+  - `public/thread-detail-runtime.js`;
+  - generated Vite shell artifacts/readback;
+  - `test/conversation-render.test.js`.
+- Development validation passed:
+  - `node --test test/conversation-render.test.js` -> `170/170`;
+  - focused browser/echo/V4/Vite set -> `347/347`;
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - central fallback governance script from Home AI app -> `ok=true`.
+- Next step: commit the duplicate-echo follow-up and send a central Codex
+  Mobile deploy card; production/Public readiness depends on the central
+  startup and full behavior gate passing with controlled submit.
+
+## 2026-07-06T12:38Z - completed submitted echo follow-up deployed; behavior gate settled green
+
+- Source commit `95ab4c418a83` (`fix: settle completed submitted echoes`)
+  was committed and handed to the central Codex Mobile deploy lane.
+- Production sync/readback succeeded:
+  - listener stayed on single `*:8787`;
+  - `/api/public-config` returned client/cache
+    `0.1.11|codex-mobile-shell-v625-f1ced9d3357c`;
+  - `/api/status?detail=1` returned `ready=true` with issue codes `[]`;
+  - `/api/vite-shell-artifact` returned `ok=true`, native ESM execution, and
+    `49/49` native ESM modules.
+- Deploy lane parity/tests:
+  - source/prod SHA parity matched `28/28` changed files;
+  - focused production tests passed `347/347`.
+- First central full behavior gate after sync returned nonzero with latest-turn
+  assistant/user/usage blockers. A later independent full deploy-mode gate with
+  controlled submit thread `019f307c-56fb-7261-a584-2636051ee724` passed:
+  - `deployPass=true`;
+  - `blockingIssueCount=0`;
+  - `executionFailureCount=0`;
+  - `actionableIssueCodes=[]`.
+- Follow-up narrow thread self-checks were clean for:
+  - controlled submit thread `019f307c-56fb-7261-a584-2636051ee724`;
+  - Codex Mobile deploy lane `019f16e6-9131-79e2-9b6b-ad41f7e65d92`;
+  - Home AI 07-05 `019f316b-27cd-7622-9944-0b909fec3c70`.
+- Remaining observations were advisory only:
+  - `active_codex_app_server_rss_elevated`;
+  - `codex_mobile_mcp_child_accumulation_elevated`;
+  - transient `browser_dom_sparse_after_nonempty`.
+- Closure interpretation: the duplicate submitted echo root-cause fix is live,
+  and the production behavior gate is green after the post-deploy projection
+  window settled. A clean central deploy rerun can be used for final Public
+  release evidence if required by release policy.
+- Public push:
+  - pushed `main` to `public/main`;
+  - public remote advanced `22b00658..95ab4c41`;
+  - `git ls-remote public refs/heads/main` returned
+    `95ab4c418a83414ff0a349849edb8db368ea495f`;
+  - after `git fetch public main`, local `HEAD` and `public/main` both resolved
+    to `95ab4c418a83414ff0a349849edb8db368ea495f`;
+  - `git diff --name-only public/main..HEAD -- ':!.agent-context'` returned no
+    files.
+
+## 2026-07-06T14:36Z - submitted echo ordering root cause isolated in development
+
+- Owner-reported duplicate bottom user bubbles were reproduced with the
+  browser behavior harness using controlled repeat submit. The failing window:
+  API expected latest turn item order `userMessage -> agentMessage ->
+  userMessage`, while DOM temporarily rendered `userMessage -> userMessage ->
+  agentMessage` before a later projection corrected it.
+- Root cause: V4 pending overlay insertion still anchored unresolved submitted
+  user echoes before the first non-user item. For follow-up/interruption submits
+  after assistant progress already exists, that rule places the local echo above
+  the assistant receipt and creates the visual duplicate/order inversion.
+- Source fix in progress:
+  - `frontend/native/thread-detail-v4-merge-state.mjs` and
+    `public/thread-detail-v4-merge-state.js` now insert pending overlay items
+    by item timestamp when available, appending when no reliable timestamp is
+    present.
+  - `scripts/codex-mobile-browser-runtime-self-check.js` now supports bounded
+    repeat-submit diagnostics and item-kind sequence samples.
+  - `services/runtime/browser-runtime-self-check-service.js` now reports
+    `browser_turn_user_message_order_mismatch` when DOM/API user-after-assistant
+    order counts diverge.
+- Validation passed so far:
+  - `node --check` for changed runtime/harness/test files;
+  - `node --test test/thread-detail-v4-merge-state.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js` -> `148/148`;
+  - `node --test test/conversation-render.test.js
+    test/thread-detail-v4-merge-state.test.js
+    test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js
+    test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js` -> `334/334`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Next step: commit source fix and delegate a central Codex Mobile deploy with
+  post-deploy repeat-submit browser verification before any Public push.
+
+## 2026-07-06T15:00Z - repeat-submit delayed window fixed; immediate sample gate refined
+
+- Central deploy/readback for `1c012cda6f6e` confirmed production served
+  client/cache `0.1.11|codex-mobile-shell-v625-32fd5edc0dca`, artifact/readiness
+  were green, parity matched, and focused production tests passed.
+- The deploy lane still returned partial because the full behavior gate saw
+  `browser_turn_user_message_order_mismatch`.
+- A bounded production rerun with repeat submit showed the delayed observable
+  windows were actually correct:
+  - `submit-post-900` and `submit-post-1600` expected and DOM sequences both
+    matched `userMessage -> agentMessage -> userMessage`;
+  - `submit-post-2800` and `submit-post-6000` expected and DOM sequences both
+    matched `userMessage -> agentMessage -> userMessage -> agentMessage ->
+    turnUsageSummary`;
+  - user duplicate counters stayed `0` in delayed samples.
+- The remaining mismatch was at `submit-after-2` with `delayMs=0`, immediately
+  after the second submit completed and before the delayed/API refresh window.
+  That is useful diagnostic metadata but should not block release.
+- Committed `d8a5ae2342c2` (`fix: keep immediate submit order samples
+  diagnostic`) to keep `delayMs=0` submit-order divergences diagnostic-only
+  while preserving H2 blocking for any delayed sample (`delayMs > 0`).
+- Validation for `d8a5ae23` passed:
+  - `node --check services/runtime/browser-runtime-self-check-service.js
+    test/browser-runtime-self-check-service.test.js`;
+  - `node --test test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` -> `115/115`;
+  - wider behavior/Vite set -> `335/335`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Delegated deploy card `ttc_0df6a5d035f848d1b4` to Codex Mobile Deploy Lane
+  for central deploy/readback of `d8a5ae23`. Public push remains blocked until
+  that deploy/readback returns green.
+
+## 2026-07-06T14:25Z - duplicate submitted user message root-cause fix ready for deploy
+
+- Owner re-reported duplicate submitted user bubbles after `2201667e` failed
+  production behavior acceptance. Current work stayed in
+  `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`.
+- Root cause was split across two browser-owned layers:
+  - visible-item refresh patch could keep stale duplicate render-key nodes and
+    patch user-message shape changes instead of replacing the visible turn;
+  - local-only submitted user echoes were reinserted by previous array index
+    instead of timestamp, so repeat submits after assistant progress could
+    briefly render in the wrong position.
+- Source changes now:
+  - reject visible-item patch when user-message shape changes;
+  - remove unexpected/extra duplicate visible-item DOM nodes before validating
+    refresh patch order;
+  - anchor local pending submitted user echoes by timestamp relative to
+    timestamped assistant/user items during merge;
+  - treat a submit-post DOM tail that only contains extra local pending user
+    messages as API catch-up, not an order mismatch, while preserving true
+    duplicate/order disappearance checks.
+- Frontend artifacts rebuilt with native ESM readback:
+  `0.1.11|codex-mobile-shell-v625-6b37193bc613`,
+  `productionExecution=vite-app-preview-native-esm`,
+  `nativeEsmModuleCount=49`, published file count `23`.
+- Local dev browser validation:
+  - dev server `127.0.0.1:8898`;
+  - startup-only runtime gate passed with no blocking/actionable codes;
+  - fresh fixture `019f3619-a9a7-71f0-90a6-5b2fa50d5bbb`;
+  - repeat submit attempted/success `2/2`;
+  - browser behavior result `ok=true`, `browserReport.ok=true`, issue count
+    `0`; no order, pending disappearance, duplicate, thread-empty, or patch
+    fallback codes.
+- Validation passed:
+  - focused behavior/artifact tests `338/338`;
+  - earlier broader behavior set `354/354`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Next step: commit and delegate central production deploy/readback. Public push
+  remains blocked until the deploy lane full behavior gate passes.
+
+## 2026-07-06T06:55Z - submitted user duplicate false-positive identity fix
+
+- Owner re-reported duplicate user bubbles on V625 after the prior
+  submitted-user echo ordering deploy still failed with
+  `browser_conversation_patch_fallback` / `post-apply-duplicate-user-messages`.
+- Bounded production readback showed current served cache before this fix was
+  `0.1.11|codex-mobile-shell-v625-6b37193bc613`; a read-only current-thread
+  browser sample did not find a stable duplicate at rest, so the failure is a
+  timing/window issue rather than persistent dirty thread state.
+- Root cause identified in the browser shape identity contract:
+  same-submission user messages were counted by `data-client-submission-hash`
+  alone. Active turns can contain distinct durable user entries with the same
+  submission diagnostic hash but different text identity, so DOM/API duplicate
+  comparison could falsely trigger `post-apply-duplicate-user-messages` and
+  force a patch fallback.
+- Source changes:
+  - `frontend/native/api-client-runtime.mjs` and `public/api-client-runtime.js`
+    now use `submission + text` for user-message event duplicate signatures
+    when both are present, preserving duplicate detection for same submission
+    and same text;
+  - `scripts/codex-mobile-browser-runtime-self-check.js` uses the same
+    submission/text identity for bounded all-user event duplicate diagnostics;
+  - `test/conversation-render.test.js` and
+    `test/browser-runtime-self-check-service.test.js` cover the regression.
+- Frontend rebuilt with client/cache
+  `0.1.11|codex-mobile-shell-v625-17fc0ceb8cf6`,
+  native ESM production execution, and published file count `23`.
+- Validation passed:
+  - focused same-submission/browser snapshot set passed;
+  - broader behavior/artifact set `416/416` passed;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Local dev server `127.0.0.1:8899` startup-only gate passed. A local
+  repeat-submit fixture still hit `composer_disabled` on the second immediate
+  submit and is not used as acceptance evidence.
+- Next step: commit and delegate central production deploy/readback with full
+  behavior gate and controlled submit. Public push remains blocked until the
+  Deploy Lane returns green.
+
+## 2026-07-06T10:05Z - frontend diagnostic hot-refresh and visible client hash
+
+- Owner reproduced the submitted-user duplicate window again: a just-sent user
+  message could render twice immediately, then collapse to one after sending a
+  later message. Current evidence still points to a browser reconciliation
+  window between local submitted echo and durable/projection user item, not a
+  server-side double POST.
+- Bounded live log readback before this change showed iPhone client events and
+  `/api/public-config` on the same served client/cache
+  `0.1.11|codex-mobile-shell-v625-a3d371b929b9`. The app UI only displayed
+  `V625`, so screenshots could not prove which exact build was running.
+- Another observability gap was found: `frontendDiagnosticLog` settings from
+  `/api/public-config` were applied at startup only. Already-open PWA/shell
+  clients did not pick up a newly enabled runtime diagnostic switch during the
+  Owner's reproduction, so real `submitted_echo` lifecycle logs were missing.
+- Source changes now:
+  - `app-update-runtime` renders client text as
+    `客户端 v<seq> · <12-char build hash>`;
+  - page build/public-config polling hot-applies frontend diagnostic log
+    settings and emits one bounded metadata event when the setting signature
+    changes;
+  - classic fallback and native ESM behavior stay aligned through
+    `public/app-update-runtime.js`, `public/app-bootstrap.js`, and tests.
+- Frontend rebuilt with client/cache
+  `0.1.11|codex-mobile-shell-v625-7156a5d26073`, native ESM production
+  execution, and published file count `24`.
+- Validation passed:
+  - `node --test test/vite-shell-asset-graph.test.js
+    test/api-client-runtime-ui.test.js test/conversation-render.test.js`
+    -> `199/199`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Next step: commit and delegate central production deploy/readback. This does
+  not claim the submitted-user duplicate is fixed; it makes the next
+  production reproduction attributable from client-side lifecycle logs and
+  visible exact build id.
+
+## 2026-07-06T10:30Z - Vite app-preview proxy-safe entry and refresh failure telemetry
+
+- Owner reported the Home AI embedded plugin was again stuck on the inline
+  `Codex Mobile 没有正常启动` recovery screen while an already-open direct PWA
+  session still worked but would not refresh to the newest version. The direct
+  PWA session is the Owner's current communication path, so production restarts
+  must remain centralized and non-duplicated.
+- Bounded evidence before the fix:
+  - live client-event logs still contained iPhone/PWA events on old build
+    `0.1.11|codex-mobile-shell-v625-a3d371b929b9` while production had already
+    served newer cache ids, confirming a real stale-client/update problem;
+  - the visible failure page is the app shell boot recovery UI, meaning the
+    page shell loaded but the Vite app runtime did not reach
+    `codexMobileBoot.ready()`;
+  - the native ESM `app-preview-entry.js` first-hop import was absolute
+    `/vite-shell/assets/...`, which is fragile when mounted behind the Home AI
+    plugin proxy or stale PWA/SW refresh paths.
+- Commit `4311e7b9` (`fix: make vite preview entry proxy safe`) changes:
+  - `scripts/publish-vite-shell-artifact.mjs` now emits
+    `app-preview-entry.js` with relative first-hop import
+    `./assets/vite-shell-entry-*.js`, while preserving absolute
+    `targetEntryScript` metadata for readback;
+  - generated production artifacts now record
+    `targetEntryImportSpecifier` and source cache
+    `0.1.11|codex-mobile-shell-v625-0e3a8130de85`;
+  - `public/app-update-runtime.js` and
+    `frontend/native/app-update-runtime.mjs` upload bounded
+    `page_refresh_failed` events and keep the new-version refresh prompt
+    retryable instead of silently hiding it after failure.
+- Validation before deploy handoff:
+  - `npm run --silent build:frontend` passed and generated
+    `0.1.11|codex-mobile-shell-v625-0e3a8130de85`;
+  - `node --test test/vite-shell-artifact-service.test.js
+    test/app-update.test.js test/vite-shell-asset-graph.test.js
+    test/api-client-runtime-ui.test.js` -> `54/54`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Deployment was delegated to Codex Mobile Deploy Lane with task card
+  `ttc_41f77e97664d429a97`. At the time of this handoff update, the card is
+  approved/active but still shows `resumeRequired=true`; no central deploy
+  return has arrived yet. Do not treat production as updated until that return
+  confirms served cache `0.1.11|codex-mobile-shell-v625-0e3a8130de85`.
+
+## 2026-07-06T10:43Z - Vite app-preview query-preserving entry follow-up
+
+- Deploy return for `4311e7b9` later reported central execute `ok=true`,
+  startup gate and full behavior gate passed, and production served
+  `0.1.11|codex-mobile-shell-v625-0e3a8130de85`; however the Owner still
+  reported the embedded plugin could not start, and the already-open iPhone
+  PWA session remained on older build `a3d371b929b9`.
+- Follow-up root-cause evidence:
+  - 8787 static readback is healthy, but Home AI same-origin plugin proxy
+    requires `workspaceId`/authorized workspace context;
+  - `app-preview.html` is proxied with `workspaceId`, but a module import from
+    same-named `app-preview-entry.js` to `./assets/vite-shell-entry-*.js`
+    resolves to a new URL that does not preserve the entry script query;
+  - this makes the embedded Vite first-hop depend on referrer/cookie fallback
+    through the Home AI proxy, which is not a sound plugin boundary.
+- Source fix in progress:
+  - `scripts/publish-vite-shell-artifact.mjs` now emits
+    `app-preview.html` with `app-preview-entry.js?targetEntry=<hash>.js` so the
+    stable entry URL is cache-busted per target Vite entry;
+  - generated `app-preview-entry.js` now computes the target module URL from
+    `import.meta.url`, copies current search params to that target URL, and
+    dynamically imports it, preserving proxy workspace/query context instead
+    of relying on referrer inference;
+  - `services/runtime/vite-shell-artifact-service.js` accepts module script
+    srcs with query parameters in artifact validation.
+- Validation passed so far:
+  - `npm run --silent build:frontend`;
+  - `node --test test/vite-shell-artifact-service.test.js test/app-update.test.js
+    test/vite-shell-asset-graph.test.js test/api-client-runtime-ui.test.js`
+    -> `54/54`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local Vite default-root rehearsal with browser startup probe returned
+    `ok=true`, `appVisible=true`, `runtimeReady=true`, and `issueCodes=[]`.
+- Next step: commit the follow-up and delegate one central deploy/readback.
+  Do not run ad-hoc production restarts from this source thread because the
+  Owner's direct PWA session is still their communication fallback.
+
+## 2026-07-06T11:20Z - MCP-prefixed task-card tool contract cleanup
+
+- Owner reported that Codex Mobile task-card tools are exposed through the
+  MCP-prefixed names, not the app-server-style `codex_mobile.*` namespace, and
+  asked to remove the old dual-channel guidance.
+- Root cause: task-card runtime guidance, server runtime config, and tests still
+  exposed or accepted `codex_mobile.delegate_to_thread` /
+  `codex_mobile.return_to_source` as model-visible full names. That caused
+  injected task-card instructions to keep suggesting a namespace that can be
+  unsupported in current Codex threads.
+- Source changes now make the model-visible task-card tool contract exact:
+  `mcp__codex_mobile.delegate_to_thread`,
+  `mcp__codex_mobile.return_to_source`, and
+  `mcp__codex_mobile.task_card_heartbeat`. Local scripts remain documented as
+  the fallback only when the MCP tool surface is unavailable.
+- `[mcp_servers.codex_mobile]` remains the Codex Home MCP server config name;
+  docs now distinguish that config name from the model-visible
+  `mcp__codex_mobile.*` callable tool names.
+- Validation passed:
+  - exact old-callable scan returned no
+    `codex_mobile.delegate_to_thread` / `codex_mobile.return_to_source` /
+    `codex_mobile.task_card_heartbeat` full-name hits;
+  - focused task-card/MCP tests `90/90`;
+  - `node --check` on changed JS/test files;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - fallback-governance check `ok=true`.
+- Related deploy state: old `c71e9019` duplicate-user-message deploy synced but
+  failed startup/app-preview compatibility with `app-update-runtime` not ready,
+  so this MCP contract cleanup should be deployed as a newer ref rather than
+  accepting the old failed deploy.
+- Source commit: `b8ebbadc6d0074df19c1e5569412d83cf76c1b85`
+  (`fix: require mcp-prefixed task-card tools`).
+- Deployment delegated to Codex Mobile Deploy Lane with task card
+  `ttc_a494fa8e3b860e97d8`, targeting exact ref `b8ebbadc6d0074df19c1e5569412d83cf76c1b85`.
+  The deploy card explicitly requires production readback that generated
+  task-card/runtime guidance contains only `mcp__codex_mobile.*` callable names
+  and no app-server-style `codex_mobile.*` alternatives, plus startup/full
+  behavior gates and the prior `app-update-runtime` ESM compatibility check.
+- During this source-thread handoff, attempting the app-server dynamic tool
+  namespace returned `Unsupported dynamic tool namespace: codex_mobile`, so the
+  deploy card was created through `scripts/create-thread-task-card.js`.
+
+## 2026-07-06T11:39Z - app-update-runtime ESM readiness probe fix
+
+- Deploy Lane reported the MCP-prefix task-card contract deploy for `b8ebbadc`
+  passed that contract but failed startup/app-preview compatibility with
+  `vite_app_preview_esm_compatibility_missing` and
+  `vite_preview_esm_compatibility_missing`; the not-ready module was
+  `app-update-runtime` with ESM readiness `49/48`.
+- Root cause: `scripts/frontend-shell-asset-graph.mjs` still generated the
+  `app-update-runtime` compatibility probe with an old 12-character visible
+  client hash expectation (`客户端 v625 · a5a3d596240d`) while the runtime and UI
+  contract now intentionally use the compact 8-character hash
+  (`客户端 v625 · a5a3d596`). This made the module load but marked readiness
+  false in browser startup gates.
+- Source fix committed as `f636ef4765f11ee81a7e57e68a965594bb37d96b`
+  (`fix: align app update esm readiness probe`): updated the generated probe,
+  added a regression assertion in `test/vite-shell-asset-graph.test.js`, and
+  rebuilt active Vite app-preview/readback artifacts.
+- Source validation passed:
+  - `node --test test/vite-shell-asset-graph.test.js` -> `22/22`;
+  - `npm run --silent build:frontend` -> `0.1.11|codex-mobile-shell-v625-ebf0a8218576`, native ESM, published files `24`;
+  - `node --test test/vite-shell-asset-graph.test.js test/vite-shell-artifact-service.test.js test/app-update.test.js test/api-client-runtime-ui.test.js` -> `54/54`;
+  - `node scripts/codex-mobile-vite-default-root-rehearsal.js --json` -> `ok=true`, `issueCount=0`, `appVisible=true`, `runtimeReady=true`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - fallback-governance check `ok=true`.
+- Deployment delegated to Codex Mobile Deploy Lane with task card
+  `ttc_150d415af3fffbe62b`, targeting exact ref
+  `f636ef4765f11ee81a7e57e68a965594bb37d96b`. The deploy card asks the lane to
+  verify that `app-update-runtime` is no longer not-ready and the previous Vite
+  compatibility issue codes are absent, while confirming the MCP-prefixed tool
+  contract remains intact.
+
+## 2026-07-06T12:01Z - active overlay user-message dedupe local fix
+
+- Owner reported two current blockers after Vite/native ESM migration: plugin
+  embed/startup still failing in production and submitted user messages still
+  sometimes rendering twice at the bottom of a thread.
+- Local development server was run on `http://127.0.0.1:8897` with
+  `CODEX_MOBILE_DEFAULT_SHELL=vite-app-preview` and auth disabled. Local startup
+  gate passed for direct runtime, Vite preview, app-preview, app-preview root,
+  default root, embed, and session surfaces with `blockingIssueCount=0` and no
+  actionable startup codes. This confirms the source-side app-update-runtime ESM
+  readiness fix is green locally; production still needs central deploy/readback.
+- Frontend diagnostic log for Owner iPhone PWA reproduction showed the submitted
+  echo chain itself was not duplicated by POST: local insert had one matching
+  submission, post-response reconciled the local turn to a server turn, and the
+  later duplicate appeared after a refresh/patch fallback. Key bounded evidence:
+  after settlement, DOM probe reported `duplicateUserMessageCount=1`,
+  `domHasSubmission=false`, and `hasThreadSubmission=false`, with a preceding
+  `conversation_patch_html_fallback` reason `post-apply-duplicate-user-messages`.
+- Local API detail for the same current Home AI thread before the source fix
+  showed `projection-active-overlay` output with one visible active turn carrying
+  two `userMessage` items. That made the duplicate a server active-overlay merge
+  invariant issue, not a repeated POST or same-submission echo-retirement issue.
+- Root fix: `mergeProjectionThreadWithActiveOverlay` now applies the existing
+  `dedupeUserMessageEchoesInItems` policy before replacing/appending the active
+  overlay turn. This closes the gap where window-backfill overlay used the
+  normalizer but direct projection-overlay replacement did not.
+- Validation so far:
+  - `node --test test/thread-detail-active-window-overlay-policy-service.test.js test/thread-user-message-echo-normalizer-service.test.js` -> `39/39`;
+  - broader focused set including Vite startup/assets and app-update tests ->
+    `93/93`;
+  - local startup gate on `8897` -> `ok=true`, `deployPass=true`,
+    `blockingIssueCount=0`, `actionableIssueCodes=[]`;
+  - local browser sampling of thread `019f316b-27cd-7622-9944-0b909fec3c70` ->
+    `ok=true`, `issueCount=0`, `maxAllUserEventDuplicates=0`;
+  - local API detail of the same thread after restart -> `userMessageCount=10`,
+    `duplicateTurnGroups=[]`, latest user row count one;
+  - `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Source commit: `3283aa52ac83994e8c2b8d4f9822e3a5eb7215b5`
+  (`fix: dedupe active overlay user echoes`), on top of the app-update-runtime
+  ESM readiness fix `f636ef4765f1`.
+- Deployment handoff: sent central Deploy Lane task card
+  `ttc_e532a35fb80a9f8c3b` targeting exact ref
+  `3283aa52ac83994e8c2b8d4f9822e3a5eb7215b5`. The card requires production
+  startup/app-preview/embed/session gate readback and duplicate-user evidence
+  against a real active-overlay thread or controlled submit thread before
+  acceptance.
+- Task-card channel note: attempting `codex_mobile.delegate_to_thread` from this
+  thread returned `Unsupported Codex Mobile dynamic tool: codex_mobile.delegate_to_thread`.
+  The deploy request was therefore created through `scripts/create-thread-task-card.js`.
+
+## 2026-07-06T12:18Z - MCP-prefixed task-card tool contract hardening
+
+- Owner reported that task-card tools were still being attempted through the
+  non-MCP app-server namespace after the MCP-prefix repair. Live reproduction in
+  this source thread confirmed the failure mode: direct calls to the old
+  app-server dynamic namespace were rejected, while `tool_search` exposed
+  `mcp__codex_mobile.*` and `mcp__codex_mobile.list_threads` returned `ok=true`.
+- Source fix committed as `5232b22b010bca937c897ffc440e8d40fd73f211`
+  (`fix: require mcp-prefixed task card tools`), on top of the active-overlay
+  duplicate-user fix `3283aa52` and app-update-runtime ESM readiness fix
+  `f636ef47`.
+- Changed surfaces:
+  - `server-routes/thread-task-card-route-service.js`: dynamic tool
+    descriptions and script fallback guidance now state that only MCP-prefixed
+    Codex Mobile tool names are valid in model context, and non-MCP namespace
+    variants must be treated as unavailable.
+  - `services/task-cards/thread-task-card-service.js`: injected return-card
+    guidance now points to `mcp__codex_mobile.return_to_source` after MCP/tool
+    discovery and marks non-MCP namespace variants unsupported.
+  - `scripts/codex-mobile-mcp-server.js`: MCP initialize instructions now carry
+    the same exact-prefix contract.
+  - tests assert that non-MCP task-card callable names for delegation, return,
+    and heartbeat do not re-enter model-visible guidance.
+- Validation passed:
+  - `node --test test/thread-task-card-route.test.js test/thread-task-card-service.test.js test/codex-mobile-mcp-server.test.js` -> `87/87`;
+  - `node --check` for changed source/tests;
+  - `rg --pcre2 -n "(?<!mcp__)codex_mobile\\.(delegate_to_thread|return_to_source|task_card_heartbeat)" server.js services server-routes scripts docs test README.md frontend public --glob '!public/vite-shell/assets/**'` -> no matches;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`.
+- Deployment delegated through the actual MCP-prefixed tool
+  `mcp__codex_mobile.delegate_to_thread` and succeeded:
+  task card `ttc_71f1e320f5e3992556`, target deploy lane
+  `019f16e6-9131-79e2-9b6b-ad41f7e65d92`, exact ref `5232b22b010b...`.
+  This proves the source thread's own delegation path can use the MCP-prefixed
+  tool once discovered.
+
+## 2026-07-06T13:25Z - Steered submitted echo reconciliation root fix
+
+- Owner reproduced the remaining user-message duplicate/disappear issue with
+  frontend diagnostic logging enabled. Bounded runtime logs showed the client was
+  current at reproduction time (`0.1.11|codex-mobile-shell-v625-ebf0a8218576`),
+  so the issue was not a stale-client artifact.
+- Diagnostic chain for a steering submit:
+  - `submit-start`, `recent-submission-registered`, and `local-insert-applied`
+    created one optimistic submitted-user item inside the active turn
+    (`createdLocalTurn=false`);
+  - POST returned a server turn id (`post-response` had `turnId`);
+  - `post-reconcile-result` reported `reconciled=false`;
+  - later refreshes/patches could then show the optimistic active-turn user item
+    and the durable server user item in unstable order until another refresh
+    collapsed/moved it.
+- Root cause: the composer send path skipped submitted-user reconciliation when
+  `steering === true` even when the POST returned a concrete server turn id.
+  That left the optimistic user item owned by the active/live projection instead
+  of moving it to the returned server turn immediately.
+- Source fix committed as `a9fc316e32ec2abb49563d7710506f73e3971146`
+  (`fix: reconcile steered submitted echoes`):
+  - `frontend/native/composer-runtime.mjs`;
+  - `public/composer-runtime.js`;
+  - `test/conversation-render.test.js`;
+  - current Vite/native ESM artifacts for
+    `0.1.11|codex-mobile-shell-v625-410076677afd`.
+- Regression test added:
+  `steered send reconciles optimistic user message from active turn to returned server turn`.
+- Validation passed before deploy delegation:
+  - `node --test test/conversation-render.test.js` -> `178/178`;
+  - `node --check frontend/native/composer-runtime.mjs public/composer-runtime.js test/conversation-render.test.js`;
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check:frontend-build`;
+  - focused browser/runtime/Vite regression set -> `360/360`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - local startup gate on `127.0.0.1:8897` -> `deployPass=true`,
+    `blockingIssueCount=0`, direct/Vite/app-preview/embed/session startup green;
+  - local Playwright URL matrix for direct, app-preview, workspace, embed,
+    session, and shell embed query surfaces all loaded visible Codex Mobile UI
+    with no startup fallback and client label `客户端 v625 · 41007667`.
+- Deployment delegated via MCP-prefixed tool:
+  task card `ttc_914f1dd9adf5551de9`, target deploy lane
+  `019f16e6-9131-79e2-9b6b-ad41f7e65d92`, exact ref
+  `a9fc316e32ec2abb49563d7710506f73e3971146`.
+- Separate embedded Home AI shell startup note: local direct/app-preview/embed
+  Codex surfaces are green after the proxy-safe/Vite fixes. Owner-visible plugin
+  shell blank/fallback evidence points at the Home AI proxy/session asset path
+  side, so Home AI app mutation was delegated separately rather than edited from
+  this plugin workspace.
+- Urgent Home AI embedded-launch repair supplement sent through MCP-prefixed
+  task card `ttc_2b761cb0da427726fc` to current Home AI main thread
+  `019f316b-27cd-7622-9944-0b909fec3c70`. The card includes the local green
+  Codex direct/app-preview/embed/session evidence and asks Home AI to repair the
+  iframe/proxy/session asset path with embedded-browser validation.
+- Production deploy return for `a9fc316e` initially came back
+  `partially_completed` (`ttc_97e144de5593f6cdb8`) because the central full gate
+  ran with `submit exercise mode: manual` and failed on unrelated/default-thread
+  projection issues. The deployed production readback itself was healthy:
+  client/cache `0.1.11|codex-mobile-shell-v625-410076677afd`,
+  `/api/status?detail=1` ready, `/api/vite-shell-artifact` ok, and startup gate
+  green for direct/Vite/app-preview/root/default-root/embed/session surfaces.
+- Follow-up production full behavior self-check was run with both explicit
+  controlled submit and explicit target thread:
+  `--thread-id 019f307c-56fb-7261-a584-2636051ee724
+  --browser-exercise-submit --browser-submit-thread-id
+  019f307c-56fb-7261-a584-2636051ee724`. Result: `ok=true`,
+  `deployPass=true`, `blockingIssueCount=0`, `executionFailureCount=0`,
+  `actionableIssueCodes=[]`. The submitted-message acceptance blockers were
+  absent, including duplicate, disappearance, order mismatch, patch fallback,
+  duplicate item ids, empty detail, and Vite ESM compatibility codes.
+- Supplement card `ttc_0940df2b439f8feb34` was sent to the Deploy Lane with the
+  explicit controlled-submit readback so the earlier manual-submit partial does
+  not remain the final acceptance signal for the steered-submit fix.
+
+## 2026-07-06T14:25Z - Embedded plugin session replay repair
+
+- Home AI Owner-cookie embedded smoke after the Home AI proxy repair showed
+  visible Codex first paint and clean Vite assets, but `/api/v1/hermes/plugin/session`
+  produced `[200,401]` during embedded startup.
+- Root cause in Codex Mobile: the session endpoint mixed two different
+  semantics. It always passed `requestAuthToken(req)` into the one-shot launch
+  exchange path when the body lacked an explicit launch token. If the launch URL
+  still contained a consumed `codexPluginLaunch` query while the valid
+  `codex_mobile_plugin_session` cookie was also present, the route preferred the
+  already-consumed launch token and returned `plugin_launch_invalid_or_expired`.
+- Source fix prepared:
+  - `adapters/hermes-plugin-service.js` now has `readSession` for stable
+    existing plugin-session reads while keeping launch tokens one-shot.
+  - `server-routes/core-api-route-service.js`,
+    `server-routes/server-route-composition-service.js`, and `server.js` pass
+    and use `requestAuthTokens` so `/session` can find an authorized plugin
+    session from all request tokens instead of the first token only.
+  - `frontend/native/notification-ui-runtime.mjs`,
+    `public/notification-ui-runtime.js`, and `public/app-bootstrap.js` dedupe
+    the same embedded launch exchange with in-flight/completed launch markers.
+  - Vite/native ESM artifacts regenerated for
+    `0.1.11|codex-mobile-shell-v625-d64da72cac49`.
+- Regression coverage added:
+  - launch token remains one-shot but a plugin session can be read repeatedly;
+  - `/api/v1/hermes/plugin/session` replays an existing plugin session without
+    reusing a consumed launch token when both tokens are present;
+  - explicit launch-token exchange still works;
+  - frontend source retains same-launch exchange dedupe state.
+- Validation passed before deploy delegation:
+  - `node --test test/hermes-plugin-service.test.js test/core-api-route-service.test.js test/hermes-plugin-route.test.js test/conversation-render.test.js`
+    -> `206/206`;
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - focused post-build artifact set
+    `node --test test/hermes-plugin-service.test.js test/core-api-route-service.test.js test/hermes-plugin-route.test.js test/conversation-render.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js`
+    -> `244/244`;
+  - `git diff --cached --check`.
+- Pending after this handoff entry: commit source changes, delegate deployment
+  through the Codex Mobile Deploy Lane, then return task card
+  `ttc_db709e027679d0c94a` to Home AI with production readback or deploy blocker.

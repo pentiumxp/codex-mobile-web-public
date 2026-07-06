@@ -1937,6 +1937,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   rememberStartedThread,
   removeEventClient,
   requestAuthToken,
+  requestAuthTokens,
   requestBaseUrl,
   reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
   refreshAppUpdateStatus,

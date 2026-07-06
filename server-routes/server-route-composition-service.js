@@ -70,6 +70,7 @@ function createServerRouteCompositionService(dependencies = {}) {
     refreshPublicPullRequestStatus: dependencies.refreshPublicPullRequestStatus,
     refreshPublicReleaseStatus: dependencies.refreshPublicReleaseStatus,
     requestAuthToken: dependencies.requestAuthToken,
+    requestAuthTokens: dependencies.requestAuthTokens,
     requestBaseUrl: dependencies.requestBaseUrl,
     rolloutWarningBytes: dependencies.rolloutWarningBytes,
     runtimePressureDiagnostics: dependencies.runtimePressureDiagnostics,

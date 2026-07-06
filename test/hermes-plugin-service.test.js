@@ -181,6 +181,11 @@ test("launch returns only a short entry path and browser exchanges it for a plug
   assert.equal(session.expires_in, 120);
   assert.equal(service.isLaunchTokenAuthorized("cpl_testLaunchToken_1234567890"), false);
   assert.equal(service.isSessionAuthorized("cps_testSessionToken_1234567890"), true);
+  assert.equal(service.readSession({ token: "cps_testSessionToken_1234567890" }).session_key, "cps_testSessionToken_1234567890");
+  assert.throws(
+    () => service.createSession({ codexPluginLaunch: "cpl_testLaunchToken_1234567890" }),
+    /plugin_launch_invalid_or_expired/,
+  );
   assert.doesNotMatch(JSON.stringify(session), /codex_mobile_access_key|Authorization|Bearer/i);
   now += 60_001;
   assert.equal(service.isLaunchTokenAuthorized("cpl_testLaunchToken_1234567890"), false);

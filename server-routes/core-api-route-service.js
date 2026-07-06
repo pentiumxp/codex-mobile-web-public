@@ -75,6 +75,7 @@ function createCoreApiRouteService(deps = {}) {
     refreshPublicPullRequestStatus,
     refreshPublicReleaseStatus,
     requestAuthToken,
+    requestAuthTokens,
     requestBaseUrl,
     rolloutWarningBytes,
     runtimePressureDiagnostics,
@@ -99,6 +100,32 @@ function createCoreApiRouteService(deps = {}) {
     workspaceRegistryService,
     preflightCodexProfileSwitch,
   } = deps;
+
+  function requestAuthTokenCandidates(req) {
+    if (typeof requestAuthTokens === "function") {
+      return requestAuthTokens(req);
+    }
+    const token = typeof requestAuthToken === "function" ? requestAuthToken(req) : "";
+    return token ? [token] : [];
+  }
+
+  function readPluginSessionFromRequest(req) {
+    if (!hermesPluginService || typeof hermesPluginService.readSession !== "function") return null;
+    for (const token of requestAuthTokenCandidates(req)) {
+      const session = hermesPluginService.readSession({ token });
+      if (session && session.session_key) return session;
+    }
+    return null;
+  }
+
+  function launchTokenFromRequest(req) {
+    const candidates = requestAuthTokenCandidates(req);
+    if (hermesPluginService && typeof hermesPluginService.isLaunchTokenAuthorized === "function") {
+      const launchToken = candidates.find((token) => hermesPluginService.isLaunchTokenAuthorized(token));
+      if (launchToken) return launchToken;
+    }
+    return candidates[0] || "";
+  }
 
   function scheduleQuotaHydration() {
     if (typeof scheduleBackgroundTask !== "function") return;
@@ -435,8 +462,17 @@ function createCoreApiRouteService(deps = {}) {
     if (url.pathname === "/api/v1/hermes/plugin/session" && req.method === "POST") {
       try {
         const body = await readBody();
+        const explicitLaunchToken = body.codexPluginLaunch || body.pluginLaunch || body.launchToken || body.token || "";
+        if (!explicitLaunchToken) {
+          const existingSession = readPluginSessionFromRequest(req);
+          if (existingSession) {
+            const cookie = pluginSessionCookieHeader(req, existingSession);
+            sendJson(200, existingSession, cookie ? { "Set-Cookie": cookie } : {});
+            return { handled: true };
+          }
+        }
         const session = hermesPluginService.createSession(Object.assign({}, body, {
-          token: body.codexPluginLaunch || body.pluginLaunch || body.launchToken || body.token || requestAuthToken(req),
+          token: explicitLaunchToken || launchTokenFromRequest(req),
         }));
         const cookie = pluginSessionCookieHeader(req, session);
         sendJson(200, session, cookie ? { "Set-Cookie": cookie } : {});

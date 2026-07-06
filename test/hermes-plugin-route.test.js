@@ -52,6 +52,8 @@ test("server exposes Hermes plugin manifest, registration, origin, launch, sessi
   assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/origins"/);
   assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/launch"/);
   assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/session"/);
+  assert.match(coreApiRouteServiceJs, /readPluginSessionFromRequest/);
+  assert.match(coreApiRouteServiceJs, /requestAuthTokens/);
   assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/notifications"/);
   assert.match(serverJs, /createHermesNotificationDelegateService/);
   assert.match(serverJs, /createNotificationRuntimeService/);
@@ -102,6 +104,8 @@ test("Hermes plugin launch token is a browser-session key, not local storage log
   assert.match(appJs, /pluginAppearance: INITIAL_PLUGIN_EMBED\.appearance \|\| null/);
   assert.match(appJs, /queuedPluginRouteHint: INITIAL_PLUGIN_EMBED\.routeHint \|\| null/);
   assert.match(appJs, /\/api\/v1\/hermes\/plugin\/session/);
+  assert.match(appJs, /pluginLaunchExchangePromise/);
+  assert.match(appJs, /pluginLaunchExchangeCompletedKey/);
   assert.match(appJs, /state\.pluginLaunchTarget = result && result\.target/);
   assert.match(appJs, /applyPluginAppearancePreference\(result && result\.appearance\)/);
   assert.match(appJs, /function applyPluginAppearancePreference\(value\)/);
