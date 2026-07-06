@@ -1,5 +1,11 @@
 "use strict";
 
+const path = require("node:path");
+
+const {
+  sortWorkspaceRows,
+} = require("../services/thread-list/thread-list-workspace-merge-service");
+
 function methodValue(input) {
   return String(input.method || (input.req && input.req.method) || "").toUpperCase();
 }
@@ -20,10 +26,48 @@ function createWorkspaceRouteService(dependencies = {}) {
   const {
     CODEX_HOME,
     listWorkspaces,
+    normalizeFsPath,
+    tokenUsageWorkspaceCwds,
     workspaceRegistryService,
     syncRegisteredWorkspaceTrust,
     syncKnownCodexMobileMcpToolsets,
   } = dependencies;
+  const normalizePath = typeof normalizeFsPath === "function"
+    ? normalizeFsPath
+    : (value) => String(value || "").replace(/[\\/]+$/, "").toLowerCase();
+
+  function labelForCwd(cwd) {
+    return path.basename(String(cwd || "").replace(/^\\\\\?\\/, "")) || cwd;
+  }
+
+  function workspaceSnapshotCwds() {
+    if (typeof tokenUsageWorkspaceCwds !== "function") return [];
+    try {
+      const values = tokenUsageWorkspaceCwds();
+      return Array.isArray(values) ? values : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  async function workspaceRows() {
+    const rows = typeof listWorkspaces === "function" ? await listWorkspaces() : [];
+    const out = Array.isArray(rows) ? rows.slice() : [];
+    const byKey = new Set(out.map((row) => normalizePath(row && row.cwd)).filter(Boolean));
+    for (const cwd of workspaceSnapshotCwds()) {
+      const key = normalizePath(cwd);
+      if (!key || byKey.has(key)) continue;
+      byKey.add(key);
+      out.push({
+        cwd,
+        label: labelForCwd(cwd),
+        active: false,
+        recentThreadCount: 0,
+        source: "codex",
+      });
+    }
+    return sortWorkspaceRows(out);
+  }
 
   async function handleRoute(input = {}) {
     const url = input.url || null;
@@ -33,7 +77,7 @@ function createWorkspaceRouteService(dependencies = {}) {
     const sendJson = typeof input.sendJson === "function" ? input.sendJson : null;
 
     if (pathname === "/api/workspaces" && method === "GET") {
-      return jsonResponse(sendJson, 200, { data: await listWorkspaces() });
+      return jsonResponse(sendJson, 200, { data: await workspaceRows() });
     }
 
     if (pathname === "/api/workspaces" && method === "POST") {

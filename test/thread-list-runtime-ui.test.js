@@ -136,6 +136,21 @@ test("thread list runtime owns workspace menu labels and cwd visibility filterin
   assert.equal(runtime.threadMatchesWorkspaceCwd("/tmp/.codex/worktrees/abc/music", "/repos/music"), false);
 });
 
+test("all workspaces keeps server-visible threads when workspace registry lags", () => {
+  const state = {
+    selectedCwd: "",
+    workspaces: [{ cwd: "/repos/mobile-only", label: "Mobile Only", recentThreadCount: 1 }],
+    threads: [
+      { id: "desktop-a", cwd: "/repos/desktop-a", name: "Desktop A" },
+      { id: "mobile-a", cwd: "/repos/mobile-only", name: "Mobile A" },
+      { id: "archived-a", cwd: "/repos/desktop-a", archived: true, name: "Archived A" },
+    ],
+  };
+  const runtime = createRuntime(state);
+
+  assert.deepEqual(runtime.visibleThreads().map((thread) => thread.id), ["desktop-a", "mobile-a"]);
+});
+
 test("thread list deferred fallback waits while a thread detail is selected", () => {
   const timers = [];
   let apiCallCount = 0;
