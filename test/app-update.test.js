@@ -246,8 +246,10 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appUpdateSource, /function clearAllShellCaches\(\)/);
   assert.match(appUpdateSource, /function resetPageShellServiceWorker\(\)/);
   assert.match(appUpdateSource, /function pageReloadUrlWithBust\(\)/);
+  assert.match(appUpdateSource, /function postPageRefreshEvent\(stage, details = \{\}\)/);
   assert.match(appUpdateSource, /rememberRateLimitsFromConfig\(config\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\)/);
   assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /await clearAllShellCaches\(\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\);[\s\S]*await resetPageShellServiceWorker\(\);[\s\S]*window\.location\.replace\(pageReloadUrlWithBust\(\)\);/);
+  assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /catch \(err\) \{[\s\S]*postPageRefreshEvent\("fallback-reload"[\s\S]*window\.location\.replace\(pageReloadUrlWithBust\(\)\);[\s\S]*return;[\s\S]*\} finally \{/);
   assert.doesNotMatch(functionBody(appUpdateSource, "checkPageRefreshAvailability"), /preparePageShellAssets\(config, \{ populateCache: true \}\)/);
   assert.match(functionBody(appUpdateSource, "initializePageBuildState"), /shouldPromptForServerBuildChange\(currentServerBuildId, state\.serverBuildId\)/);
   assert.match(functionBody(appUpdateSource, "checkPageRefreshAvailability"), /if \(serverBuildMatchesLoadedClient\(config\)\) \{[\s\S]*acceptLoadedClientBuild\(config\);[\s\S]*return;/);

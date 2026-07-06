@@ -940,6 +940,33 @@ function createAppUpdateRuntime(deps = {}) {
     url.searchParams.set("shellReload", String(Date.now()));
     return url.href;
   }
+
+  function pageRefreshDiagnosticDetails(stage, details = {}) {
+    return Object.assign({
+      stage,
+      reason: String(state.pageRefreshReason || ""),
+      clientBuildId: loadedClientBuildId(),
+      serverBuildId: String(state.serverBuildId || ""),
+      targetBuildId: String(state.pageRefreshBuildId || ""),
+      reloading: Boolean(state.pageRefreshReloading),
+    }, details || {});
+  }
+
+  function postPageRefreshEvent(stage, details = {}) {
+    try {
+      postClientEvent("page_refresh_attempt", pageRefreshDiagnosticDetails(stage, details));
+    } catch (_) {}
+  }
+
+  function safeErrorCode(err, fallback = "failed") {
+    const message = String(err && (err.code || err.message) || err || fallback).toLowerCase();
+    if (/timeout/.test(message)) return "timeout";
+    if (/stale/.test(message)) return "stale_asset";
+    if (/unavailable|404|not found/.test(message)) return "asset_unavailable";
+    if (/service.?worker/.test(message)) return "service_worker_failed";
+    if (/cache/.test(message)) return "cache_failed";
+    return fallback;
+  }
   
   function initializePageBuildState(config) {
     state.serverBuildId = CLIENT_BUILD_ID || serverBuildIdFromConfig(config);
@@ -1133,13 +1160,28 @@ function createAppUpdateRuntime(deps = {}) {
     renderPageRefreshPrompt();
     saveCurrentDraftNow();
     let config = state.pageRefreshPreparedConfig;
+    let latestConfigError = null;
+    const recoveryFailures = [];
     try {
       const reconnectRefresh = state.pageRefreshReason === "reconnect" || state.pageRefreshReason === "restart";
-      const latestConfig = reconnectRefresh
-        ? await waitForPageBuildConfig()
-        : await fetchPageBuildConfig();
+      postPageRefreshEvent("start");
+      let latestConfig = null;
+      try {
+        latestConfig = reconnectRefresh
+          ? await waitForPageBuildConfig()
+          : await fetchPageBuildConfig();
+      } catch (err) {
+        latestConfigError = err;
+        postPageRefreshEvent("config-failed", { errorCode: safeErrorCode(err, "config_failed") });
+      }
       if (latestConfig) config = latestConfig;
-      if (!config) throw new Error("page refresh build config unavailable");
+      if (!config) {
+        postPageRefreshEvent("reload-without-config", {
+          errorCode: safeErrorCode(latestConfigError, "config_unavailable"),
+        });
+        window.location.replace(pageReloadUrlWithBust());
+        return;
+      }
       const nextBuildId = serverBuildIdFromConfig(config);
       const currentBuildId = state.serverBuildId || CLIENT_BUILD_ID || nextBuildId;
       if (serverBuildMatchesLoadedClient(config)) {
@@ -1152,6 +1194,7 @@ function createAppUpdateRuntime(deps = {}) {
         state.pageRefreshReason = state.pageRefreshAvailable ? "restart" : "";
         state.pageRefreshPreparedConfig = null;
         renderPageRefreshPrompt();
+        postPageRefreshEvent("accepted-loaded-client", { nextBuildId });
         return;
       }
       if (reconnectRefresh && !shouldPromptForServerBuildChange(nextBuildId, currentBuildId)) {
@@ -1165,16 +1208,41 @@ function createAppUpdateRuntime(deps = {}) {
         state.pageRefreshReason = state.pageRefreshAvailable ? "restart" : "";
         state.pageRefreshPreparedConfig = null;
         renderPageRefreshPrompt();
+        postPageRefreshEvent("accepted-reconnect", { nextBuildId });
         return;
       }
       rememberRateLimitsFromConfig(config);
       rememberCodexProfiles(config && config.codexProfiles || null);
-      await clearAllShellCaches();
-      if (config) await preparePageShellAssets(config, { populateCache: true });
-      await resetPageShellServiceWorker();
-      await pruneOldShellCaches(String(config && config.shellCacheName || "").trim());
+      try {
+        await clearAllShellCaches();
+      } catch (err) {
+        recoveryFailures.push(`clear-caches:${safeErrorCode(err, "failed")}`);
+      }
+      try {
+        await preparePageShellAssets(config, { populateCache: true });
+      } catch (err) {
+        recoveryFailures.push(`prepare-assets:${safeErrorCode(err, "failed")}`);
+      }
+      try {
+        await resetPageShellServiceWorker();
+      } catch (err) {
+        recoveryFailures.push(`service-worker:${safeErrorCode(err, "failed")}`);
+      }
+      try {
+        await pruneOldShellCaches(String(config && config.shellCacheName || "").trim());
+      } catch (err) {
+        recoveryFailures.push(`prune-caches:${safeErrorCode(err, "failed")}`);
+      }
+      postPageRefreshEvent("reload", {
+        nextBuildId,
+        recoveryFailures: recoveryFailures.slice(0, 8),
+      });
       window.location.replace(pageReloadUrlWithBust());
-    } catch (_) {
+    } catch (err) {
+      postPageRefreshEvent("fallback-reload", { errorCode: safeErrorCode(err, "refresh_failed") });
+      window.location.replace(pageReloadUrlWithBust());
+      return;
+    } finally {
       state.pageRefreshReloading = false;
       state.pageRefreshPreparedConfig = null;
       if (state.pageRefreshReason !== "reconnect" && state.pageRefreshReason !== "restart") {
