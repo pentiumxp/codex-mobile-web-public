@@ -7,11 +7,16 @@ const { test } = require("node:test");
 
 test("server client-event log lines include bounded server timestamp", () => {
   const serviceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "runtime", "server-http-runtime-service.js"), "utf8");
-  const start = serviceJs.indexOf("function logClientEvent");
-  assert.ok(start >= 0);
-  const body = serviceJs.slice(start, serviceJs.indexOf("function isTurnSteerUnsupportedError", start));
+  const appendStart = serviceJs.indexOf("function appendRuntimeEventLine");
+  assert.ok(appendStart >= 0);
+  const appendBody = serviceJs.slice(appendStart, serviceJs.indexOf("function logThreadDetail", appendStart));
+  const clientStart = serviceJs.indexOf("function logClientEvent");
+  assert.ok(clientStart >= 0);
+  const clientBody = serviceJs.slice(clientStart, serviceJs.indexOf("function isTurnSteerUnsupportedError", clientStart));
 
-  assert.match(body, /ts:\s*new Date\(\)\.toISOString\(\)/);
-  assert.match(body, /safeLogDetails\(details\)/);
-  assert.doesNotMatch(body, /threadId.*ts|details\.threadId/);
+  assert.match(appendBody, /ts:\s*new Date\(now\)\.toISOString\(\)/);
+  assert.match(appendBody, /safeLogDetails\(details\)/);
+  assert.match(clientBody, /appendRuntimeEventLine\("client-event", event, details/);
+  assert.match(clientBody, /frontend_diagnostic_log/);
+  assert.doesNotMatch(appendBody, /threadId.*ts|details\.threadId/);
 });

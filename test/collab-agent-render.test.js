@@ -212,7 +212,9 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(functionBody("updateOperationDurationBadges"), /querySelectorAll\("\.operation-duration"\)/);
   assert.match(functionBody("operationDetailText"), /join\(" \\| "\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(isOperationalItem\(item\)\) \{[\s\S]*return;/);
-  assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /for \(const entry of visible\.filter\(Boolean\)\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /userMessagesAreSameTurnDuplicateEvent/);
+  assert.match(functionBody("visibleItemsForTurn"), /mergeLikelySameUserMessage/);
   assert.match(functionBody("isSupersededLiveTurn"), /mobileSupersededLive/);
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
   assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered, thread\)/);
