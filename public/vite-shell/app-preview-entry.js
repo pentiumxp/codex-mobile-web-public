@@ -1,4 +1,4 @@
-const targetEntryImportSpecifier = "./assets/vite-shell-entry-NsO2bt2p.js";
+const targetEntryImportSpecifier = "./assets/vite-shell-entry-BLG8ylPt.js";
 const targetEntryImportUrl = new URL(targetEntryImportSpecifier, import.meta.url);
 try {
   const sourceUrl = new URL(import.meta.url);
@@ -10,7 +10,7 @@ const targetEntryImportPromise = import(targetEntryImportUrl.href);
 
 globalThis.__CODEX_MOBILE_VITE_STABLE_ENTRY__ = {
   source: "vite-shell-app-preview-stable-entry",
-  targetEntryScript: "/vite-shell/assets/vite-shell-entry-NsO2bt2p.js",
+  targetEntryScript: "/vite-shell/assets/vite-shell-entry-BLG8ylPt.js",
   targetEntryImportSpecifier,
   targetEntryImportUrl: targetEntryImportUrl.href,
   targetEntryImportPromise,

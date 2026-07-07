@@ -1721,7 +1721,7 @@ function setTurnTimerContent(el, seconds, detail = "") {
     detailEl.className = "turn-timer-detail";
     el.append(timeEl, detailEl);
   }
-  const timeText = `\u672c\u8f6e ${formatElapsedTime(seconds)}`;
+  const timeText = formatElapsedTime(seconds);
   if (timeEl.textContent !== timeText) timeEl.textContent = timeText;
   if (detailEl.textContent !== detail) detailEl.textContent = detail;
   detailEl.classList.toggle("empty", !detail);
@@ -1794,7 +1794,7 @@ function turnTimerStateHtml(timerState = {}) {
     timerState.active ? "active" : "",
     timerState.settled ? "settled" : "",
   ].filter(Boolean).join(" ");
-  const timeText = `\u672c\u8f6e ${formatElapsedTime(seconds)}`;
+  const timeText = formatElapsedTime(seconds);
   return `<div class="${escapeHtml(className)}">
     <span class="turn-timer-time">${escapeHtml(timeText)}</span><span class="turn-timer-detail${detail ? "" : " empty"}">${escapeHtml(detail)}</span>
   </div>`;

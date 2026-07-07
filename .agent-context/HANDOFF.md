@@ -6516,3 +6516,31 @@ The previous full handoff was archived and should be opened only when old proven
 - Privacy: metadata only. No raw user message text, endpoint bodies, cookies,
   launch tokens, screenshots, raw cache JSON, private thread/task bodies,
   provider payloads, database rows, or long logs stored.
+
+## 2026-07-07 - Compact Turn Timer Header
+
+- Request: reduce the top-right running status/timer box footprint on portrait
+  phones so the current thread title has more horizontal space.
+- Source/UI change:
+  - `frontend/native/navigation-runtime.mjs` and `public/navigation-runtime.js`
+    now render timer text as `00:00:00` instead of `本轮 00:00:00`;
+  - `public/index.html` and generated app-preview HTML initial placeholder now
+    use `00:00:00`;
+  - `public/styles.css` compresses topbar gap, timer padding/font size,
+    timer max-width, time column width, and mobile portrait max-width.
+- Generated frontend artifact:
+  - `npm run --silent build:frontend` produced
+    `clientBuildId=0.1.11|codex-mobile-shell-v625-7653c2f963e5`.
+- Validation:
+  - `node --check frontend/native/navigation-runtime.mjs
+    public/navigation-runtime.js test/mobile-viewport.test.js` passed;
+  - `node --test test/mobile-viewport.test.js` passed `12/12`;
+  - `node --test test/mobile-viewport.test.js
+    test/vite-shell-asset-graph.test.js` passed `34/34`;
+  - `npm run --silent check:frontend-manifest` passed;
+  - `node scripts/verify-vite-shell-manifest.mjs` passed;
+  - `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Privacy: source/layout-only change; no raw messages, endpoint bodies, secrets,
+  cookies, launch tokens, screenshots, private thread/task bodies, raw cache
+  JSON, or long logs stored.

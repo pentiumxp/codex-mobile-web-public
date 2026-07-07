@@ -325,13 +325,16 @@ test("composer sizing avoids one-pixel layout churn while typing and streaming",
 
 test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
   assert.match(stylesCss, /\.turn-timer\s*{[\s\S]*width:\s*auto;/);
-  assert.match(stylesCss, /\.turn-timer\s*{[\s\S]*max-width:\s*min\(58vw, 320px\);/);
+  assert.match(stylesCss, /\.turn-timer\s*{[\s\S]*max-width:\s*min\(44vw, 260px\);/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.turn-timer\s*{[\s\S]*max-width:\s*min\(36vw, 180px\);/);
   assert.match(stylesCss, /\.turn-timer\.visible\s*{[\s\S]*display:\s*inline-flex;/);
   assert.match(stylesCss, /\.turn-timer-time\s*{[\s\S]*flex:\s*0 0 auto;/);
-  assert.match(stylesCss, /\.turn-timer-time\s*{[\s\S]*min-width:\s*12\.75em;/);
+  assert.match(stylesCss, /\.turn-timer-time\s*{[\s\S]*min-width:\s*8ch;/);
   assert.match(stylesCss, /\.turn-timer-time\s*{[\s\S]*overflow:\s*visible;/);
   assert.match(stylesCss, /\.turn-timer-detail\s*{[\s\S]*flex:\s*1 1 auto;/);
   assert.match(stylesCss, /\.turn-timer-detail\s*{[\s\S]*text-overflow:\s*ellipsis;/);
+  assert.doesNotMatch(appJs, /\\u672c\\u8f6e \$\{formatElapsedTime/);
+  assert.doesNotMatch(appJs, /本轮 00:00:00/);
   assert.doesNotMatch(stylesCss, /\.turn-timer-time\s*{[\s\S]*flex:\s*0 0 104px;/);
 });
 
