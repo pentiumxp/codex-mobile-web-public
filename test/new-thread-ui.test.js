@@ -120,6 +120,7 @@ test("new-thread draft renders model, reasoning, and permission controls", () =>
   assert.match(appJs, /id="composerModelControl"|composerModelControl/, "composer should include a model control");
   assert.match(appJs, /id="composerEffortControl"|composerEffortControl/, "composer should include a reasoning control");
   assert.match(appJs, /id="composerPermissionControl"|composerPermissionControl/, "composer should include a permission control");
+  assert.match(indexHtml, /id="composerTargetIndicator"/, "composer should include a visible target slot for tile mode");
 
   const body = functionBody("renderNewThreadDraft");
   assert.doesNotMatch(body, /new-thread-settings/, "new-thread page should not duplicate runtime settings in the page body");
@@ -135,6 +136,25 @@ test("new-thread draft can send without selecting a workspace", () => {
   assert.match(body, /hasNewThreadDraft,/);
   assert.match(body, /threadTileStatePolicy\.composerActionControlPlan\(\{/);
   assert.doesNotMatch(body, /hasNewThreadDraft && state\.selectedCwd/);
+});
+
+test("tile composer target is rendered above the message input", () => {
+  assert.match(indexHtml, /class="composer-meta-row"/);
+  assert.match(indexHtml, /id="composerTargetLabel"[^>]*>发送到</);
+  assert.match(indexHtml, /id="composerTargetTitle"/);
+
+  const placeholderBody = composerRuntimeBody("composerPlaceholderText");
+  assert.match(placeholderBody, /threadTileStatePolicy\.composerTargetPlaceholderPlan\(\{/);
+  assert.match(placeholderBody, /tileContext:\s*false,/);
+
+  const indicatorBody = composerRuntimeBody("renderComposerTargetIndicator");
+  assert.match(indicatorBody, /threadTileStatePolicy\.composerTargetIndicatorPlan\(\{/);
+  assert.match(indicatorBody, /tileContext:\s*isThreadTileComposerContext\(\)/);
+  assert.match(indicatorBody, /visibleIds: state\.threadTileActiveIds/);
+  assert.match(indicatorBody, /composer\.classList\.toggle\("has-target-indicator", visible\)/);
+  assert.match(indicatorBody, /applyThreadIdentityColorVariables\(composer, visible \? plan\.cssVariables : \{\}\)/);
+  assert.match(composerRuntimeBody("applyThreadIdentityColorVariables"), /THREAD_IDENTITY_CSS_VARIABLE_NAMES/);
+  assert.match(composerRuntimeBody("updateComposerControls"), /renderComposerTargetIndicator\(\)/);
 });
 
 test("new-thread message submission includes selected runtime settings", () => {

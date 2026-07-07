@@ -11,6 +11,7 @@ const appJs = readFrontendSources(root);
 const composerRuntimeJs = fs.readFileSync(path.join(root, "public", "composer-runtime.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-list-runtime.js"), "utf8");
 const threadTileRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-tile-runtime.js"), "utf8");
+const threadTileStatePolicy = require(path.join(root, "public", "thread-tile-state.js"));
 const threadDetailRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-detail-runtime.js"), "utf8");
 const mediaPreviewRuntimeJs = fs.readFileSync(path.join(root, "public", "media-preview-runtime.js"), "utf8");
 const apiClientRuntimeJs = fs.readFileSync(path.join(root, "public", "api-client-runtime.js"), "utf8");
@@ -1964,7 +1965,7 @@ function evaluatedThreadTileApprovalRenderer() {
   ].map((name) => functionSourceFrom(appJs, name));
   sources.push(functionSourceFrom(threadTileRuntimeJs, "renderThreadTileTurn"));
   sources.push(functionSourceFrom(threadTileRuntimeJs, "renderThreadTilePane"));
-  return Function(`
+  return Function("threadTileStatePolicy", `
 const HIDDEN_SERVER_REQUEST_METHODS = new Set();
 const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
 const state = {
@@ -2018,7 +2019,7 @@ return {
   renderThreadTileTurn,
   renderThreadTilePane,
 };
-`)();
+`)(threadTileStatePolicy);
 }
 
 function evaluatedTurnUsageSummaryRenderer() {

@@ -396,6 +396,7 @@ var state = {
   continuationDialogThreadId: "",
   renameBusy: false,
   sidebarEdgeSwipe: null,
+  sidebarLayoutOverlay: false,
   androidBackSidebarSentinelReady: false,
   subagentSwipe: null,
   subagentPanelOpen: false,
@@ -885,6 +886,8 @@ var THEME_VALUES = new Set(["system", "dark", "light"]);
 var FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 var MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
 var TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
+var SIDEBAR_LAYOUT_TOGGLE_MIN_WIDTH = 900;
+var SIDEBAR_LAYOUT_TOGGLE_MIN_HEIGHT = 600;
 var SIDEBAR_EDGE_SWIPE_PX = 34;
 var ANDROID_SIDEBAR_EDGE_SWIPE_PX = 44;
 var PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44;
@@ -1128,6 +1131,8 @@ function classicGlobalBindingNamesFromManifest() {
     "FONT_SIZE_VALUES": FONT_SIZE_VALUES,
     "MENU_OVERLAY_MEDIA": MENU_OVERLAY_MEDIA,
     "TABLET_SPLIT_MEDIA": TABLET_SPLIT_MEDIA,
+    "SIDEBAR_LAYOUT_TOGGLE_MIN_WIDTH": SIDEBAR_LAYOUT_TOGGLE_MIN_WIDTH,
+    "SIDEBAR_LAYOUT_TOGGLE_MIN_HEIGHT": SIDEBAR_LAYOUT_TOGGLE_MIN_HEIGHT,
     "SIDEBAR_EDGE_SWIPE_PX": SIDEBAR_EDGE_SWIPE_PX,
     "ANDROID_SIDEBAR_EDGE_SWIPE_PX": ANDROID_SIDEBAR_EDGE_SWIPE_PX,
     "PLUGIN_EMBED_BACK_EDGE_SWIPE_PX": PLUGIN_EMBED_BACK_EDGE_SWIPE_PX,

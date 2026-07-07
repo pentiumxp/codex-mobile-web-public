@@ -430,6 +430,7 @@
           </div>
         </div>
         <div class="side-header-actions">
+          <button id="sidebarLayoutToggle" class="icon-button sidebar-layout-toggle" type="button" title="收起 Session List" aria-label="收起 Session List" hidden>‹</button>
           <button id="themeSettingsToggle" class="icon-button" type="button" title="设置" aria-label="设置" aria-expanded="false">⚙</button>
           <button id="closeMenu" class="icon-button mobile-only" type="button" title="Close menu">×</button>
         </div>
@@ -531,25 +532,31 @@
           <input id="fileInput" class="file-input" type="file" multiple disabled aria-label="Attach files" tabindex="-1">
         </div>
         <div class="composer-body">
-          <div class="composer-controls">
-            <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast tag off for this thread" aria-label="Fast tag off for this thread">
-              <svg class="composer-fast-icon" aria-hidden="true" viewBox="0 0 16 16" focusable="false">
-                <path d="M9.1 1.25 3.75 8.2h3.1l-.95 6.55 5.35-6.95H8.15z"></path>
-              </svg>
-            </button>
-            <button id="composerModelControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
-              <span class="composer-chip-label">模型</span>
-              <span class="composer-chip-value">--</span>
-            </button>
-            <button id="composerEffortControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
-              <span class="composer-chip-label">推理强度</span>
-              <span class="composer-chip-value">--</span>
-            </button>
-            <button id="composerPermissionControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
-              <span class="composer-chip-label">权限</span>
-              <span class="composer-chip-value">--</span>
-            </button>
-            <button id="quotaUsage" class="composer-control-card quota-usage unknown" type="button" title="Quota remaining" aria-live="polite">-- | --</button>
+          <div class="composer-meta-row">
+            <div id="composerTargetIndicator" class="composer-target-indicator" aria-live="polite" hidden>
+              <span id="composerTargetLabel" class="composer-target-label">发送到</span>
+              <span id="composerTargetTitle" class="composer-target-title"></span>
+            </div>
+            <div class="composer-controls">
+              <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast tag off for this thread" aria-label="Fast tag off for this thread">
+                <svg class="composer-fast-icon" aria-hidden="true" viewBox="0 0 16 16" focusable="false">
+                  <path d="M9.1 1.25 3.75 8.2h3.1l-.95 6.55 5.35-6.95H8.15z"></path>
+                </svg>
+              </button>
+              <button id="composerModelControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="composer-chip-label">模型</span>
+                <span class="composer-chip-value">--</span>
+              </button>
+              <button id="composerEffortControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="composer-chip-label">推理强度</span>
+                <span class="composer-chip-value">--</span>
+              </button>
+              <button id="composerPermissionControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="composer-chip-label">权限</span>
+                <span class="composer-chip-value">--</span>
+              </button>
+              <button id="quotaUsage" class="composer-control-card quota-usage unknown" type="button" title="Quota remaining" aria-live="polite">-- | --</button>
+            </div>
           </div>
           <div id="attachmentList" class="attachment-list hidden"></div>
           <div id="messageInput" class="message-input" contenteditable="false" role="textbox" aria-multiline="true" inputmode="text" enterkeyhint="send" data-placeholder="Message Codex"></div>

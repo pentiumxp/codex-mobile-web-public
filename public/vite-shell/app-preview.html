@@ -432,6 +432,7 @@
           </div>
         </div>
         <div class="side-header-actions">
+          <button id="sidebarLayoutToggle" class="icon-button sidebar-layout-toggle" type="button" title="收起 Session List" aria-label="收起 Session List" hidden>‹</button>
           <button id="themeSettingsToggle" class="icon-button" type="button" title="设置" aria-label="设置" aria-expanded="false">⚙</button>
           <button id="closeMenu" class="icon-button mobile-only" type="button" title="Close menu">×</button>
         </div>
@@ -533,25 +534,31 @@
           <input id="fileInput" class="file-input" type="file" multiple disabled aria-label="Attach files" tabindex="-1">
         </div>
         <div class="composer-body">
-          <div class="composer-controls">
-            <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast tag off for this thread" aria-label="Fast tag off for this thread">
-              <svg class="composer-fast-icon" aria-hidden="true" viewBox="0 0 16 16" focusable="false">
-                <path d="M9.1 1.25 3.75 8.2h3.1l-.95 6.55 5.35-6.95H8.15z"></path>
-              </svg>
-            </button>
-            <button id="composerModelControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
-              <span class="composer-chip-label">模型</span>
-              <span class="composer-chip-value">--</span>
-            </button>
-            <button id="composerEffortControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
-              <span class="composer-chip-label">推理强度</span>
-              <span class="composer-chip-value">--</span>
-            </button>
-            <button id="composerPermissionControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
-              <span class="composer-chip-label">权限</span>
-              <span class="composer-chip-value">--</span>
-            </button>
-            <button id="quotaUsage" class="composer-control-card quota-usage unknown" type="button" title="Quota remaining" aria-live="polite">-- | --</button>
+          <div class="composer-meta-row">
+            <div id="composerTargetIndicator" class="composer-target-indicator" aria-live="polite" hidden>
+              <span id="composerTargetLabel" class="composer-target-label">发送到</span>
+              <span id="composerTargetTitle" class="composer-target-title"></span>
+            </div>
+            <div class="composer-controls">
+              <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast tag off for this thread" aria-label="Fast tag off for this thread">
+                <svg class="composer-fast-icon" aria-hidden="true" viewBox="0 0 16 16" focusable="false">
+                  <path d="M9.1 1.25 3.75 8.2h3.1l-.95 6.55 5.35-6.95H8.15z"></path>
+                </svg>
+              </button>
+              <button id="composerModelControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="composer-chip-label">模型</span>
+                <span class="composer-chip-value">--</span>
+              </button>
+              <button id="composerEffortControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="composer-chip-label">推理强度</span>
+                <span class="composer-chip-value">--</span>
+              </button>
+              <button id="composerPermissionControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="composer-chip-label">权限</span>
+                <span class="composer-chip-value">--</span>
+              </button>
+              <button id="quotaUsage" class="composer-control-card quota-usage unknown" type="button" title="Quota remaining" aria-live="polite">-- | --</button>
+            </div>
           </div>
           <div id="attachmentList" class="attachment-list hidden"></div>
           <div id="messageInput" class="message-input" contenteditable="false" role="textbox" aria-multiline="true" inputmode="text" enterkeyhint="send" data-placeholder="Message Codex"></div>
@@ -818,18 +825,18 @@
     </div>
   </div>
 <!-- CODEX_MOBILE_VITE_APP_PREVIEW:BEGIN -->
-  <link rel="modulepreload" href="/vite-shell/assets/_virtual_codex-mobile-esm-compatibility-LApALI8t.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/_virtual_codex-mobile-esm-compatibility-Ce9m_bWi.js" data-codex-vite-esm-compatibility-chunk="true">
   <link rel="modulepreload" href="/vite-shell/assets/shard-01-moLdZTMf.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-02-Dx2JEKkJ.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-03-CY4b4lej.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-02-Ci6VBlQk.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-03-jzqA8PSp.js" data-codex-vite-esm-compatibility-chunk="true">
   <link rel="modulepreload" href="/vite-shell/assets/shard-04-CcTyLN9Q.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-05-Bj6_dFNG.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-06-D7d-wU65.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-05-9oDHZXGj.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-06-DWtTKUdC.js" data-codex-vite-esm-compatibility-chunk="true">
   <link rel="modulepreload" href="/vite-shell/assets/shard-07-x8PuRpeT.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/shard-08-Ckiy_JPI.js" data-codex-vite-esm-compatibility-chunk="true">
+  <link rel="modulepreload" href="/vite-shell/assets/shard-08-DWekEel9.js" data-codex-vite-esm-compatibility-chunk="true">
   <link rel="modulepreload" href="/vite-shell/assets/shard-09-Bu_1QFiF.js" data-codex-vite-esm-compatibility-chunk="true">
   <link rel="modulepreload" href="/vite-shell/assets/shard-10-DoJleEgX.js" data-codex-vite-esm-compatibility-chunk="true">
-  <link rel="modulepreload" href="/vite-shell/assets/vite-shell-entry-B513A7d7.js" data-codex-vite-stable-entry-target="true">
+  <link rel="modulepreload" href="/vite-shell/assets/vite-shell-entry-ieAFRchq.js" data-codex-vite-stable-entry-target="true">
   <script id="codex-vite-app-preview-loader-plan" type="application/json" data-codex-vite-app-preview-loader-plan="true">
 {
   "schemaVersion": 1,
@@ -843,10 +850,10 @@
   "byteCount": 0,
   "excludedEsmScriptCount": 49,
   "excludedEsmHashCount": 49,
-  "excludedEsmByteCount": 1820584,
+  "excludedEsmByteCount": 1838216,
   "excludedViteOwnedScriptCount": 2,
   "excludedViteOwnedHashCount": 2,
-  "excludedViteOwnedByteCount": 125917,
+  "excludedViteOwnedByteCount": 126773,
   "excludedEsmScripts": [
     {
       "index": 1,
@@ -899,8 +906,8 @@
       "startupCritical": true,
       "chunkTarget": "startup-foundation",
       "sourcePath": "public/composer-runtime.js",
-      "bytes": 89064,
-      "sha256": "debd59c91f4d313ca4da56fd087cc460d1b4e82fbdb0b2f6e7d9c121bf3cbc54",
+      "bytes": 90984,
+      "sha256": "930c4a747da94196d636369b65ae1f53c9c66c8c920749dc4fa8402b7c2ab3a0",
       "esmModuleId": "composer-runtime",
       "globalName": "CodexComposerRuntime"
     },
@@ -1263,8 +1270,8 @@
       "startupCritical": false,
       "chunkTarget": "deferred-feature-runtimes",
       "sourcePath": "public/thread-tile-state.js",
-      "bytes": 71980,
-      "sha256": "2977e432183e659be290af4a2b031d3fea856a25adf08e0954243f79e5290c37",
+      "bytes": 83691,
+      "sha256": "b2ce5b94b5e5f7a1fa761c3f2d252b1db6887d1164c7d96d9b346fb0287d8e55",
       "esmModuleId": "thread-tile-state",
       "globalName": "CodexThreadTileState"
     },
@@ -1291,8 +1298,8 @@
       "startupCritical": false,
       "chunkTarget": "deferred-feature-runtimes",
       "sourcePath": "public/thread-tile-runtime.js",
-      "bytes": 74532,
-      "sha256": "5267c2989337e87379de67491b87f5a09f2b89c1558d8cb6980b3939998ea617",
+      "bytes": 75347,
+      "sha256": "d34f54cdfba9a82112be7b0b71eb15628e73abb122f17eb2796b2f3e99f08cd6",
       "esmModuleId": "thread-tile-runtime",
       "globalName": "CodexThreadTileRuntime"
     },
@@ -1431,8 +1438,8 @@
       "startupCritical": false,
       "chunkTarget": "deferred-shell-services",
       "sourcePath": "public/pane-layout-runtime.js",
-      "bytes": 219629,
-      "sha256": "3cfa15976b912a619cf0afdca2cde7b8428c7c12833a21b16df345a99f2d35d2",
+      "bytes": 222598,
+      "sha256": "fa8d4ca6ced6e3cbad28dba455a91ee09e13608e10a300177fd2fa1018635c0c",
       "esmModuleId": "pane-layout-runtime",
       "globalName": "CodexPaneLayoutRuntime"
     },
@@ -1515,8 +1522,8 @@
       "startupCritical": true,
       "chunkTarget": "startup-app-shell",
       "sourcePath": "public/app-shell-runtime.js",
-      "bytes": 46626,
-      "sha256": "15a41232be0061a54d699439c83250c2ad03f334d3c1114582f249e91b7cba81",
+      "bytes": 46843,
+      "sha256": "81dfad1ff1d04840fed11034b2e5b4863bfc9693e306a9a25337ca3117061bbb",
       "esmModuleId": "app-shell-runtime",
       "globalName": "CodexAppShellRuntime"
     },
@@ -1545,8 +1552,8 @@
       "startupCritical": true,
       "chunkTarget": "startup-manifest",
       "sourcePath": "public/shell-asset-manifest.js",
-      "bytes": 76001,
-      "sha256": "205af27f96733ea9421b4fd84c237982aea11da28d894daff078647f310fdbda",
+      "bytes": 76593,
+      "sha256": "3de974f013098c6325914844386461e9d188f9d452f3edbf7a75a777cfb6b452",
       "ownerId": "shell-manifest",
       "globalName": "CODEX_MOBILE_SHELL_MANIFEST"
     },
@@ -1559,17 +1566,17 @@
       "startupCritical": true,
       "chunkTarget": "startup-bootstrap",
       "sourcePath": "public/app-bootstrap.js",
-      "bytes": 49916,
-      "sha256": "090182304e51b0a6c73ab8a577ab9b686272116510bebb2049df70e5682646ed",
+      "bytes": 50180,
+      "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f",
       "ownerId": "vite-app-bootstrap",
       "globalName": "CodexAppBootstrap"
     }
   ],
-  "sha256": "027d67aa780b2b7b2dd1e3fb584d716107d771f59ddd01943db370eff57a7953",
+  "sha256": "a349c62f0ade2d16abfd03466fc06123bed7d30e5de6d94b874219266897a7ee",
   "scripts": []
 }
   </script>
-  <script type="module" src="/vite-shell/app-preview-entry.js?targetEntry=vite-shell-entry-B513A7d7.js" data-codex-vite-app-preview-entry="true"></script>
+  <script type="module" src="/vite-shell/app-preview-entry.js?targetEntry=vite-shell-entry-ieAFRchq.js" data-codex-vite-app-preview-entry="true"></script>
 <!-- CODEX_MOBILE_VITE_APP_PREVIEW:END -->
 
 <script>

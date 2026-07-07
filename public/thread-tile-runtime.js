@@ -928,6 +928,8 @@ async function refreshThreadTileDetails(ids = [], options = {}) {
     ids: uniqueIds,
     visibleIds,
     currentThreadId: state.currentThread && state.currentThread.id,
+    loadedAtById: state.threadTileLoadedAtById,
+    nowMs: Date.now(),
   });
   if (!targetIds.length) return;
   await Promise.all(targetIds.map((id) => {
@@ -1290,6 +1292,11 @@ function closeThreadTilePane(threadId) {
 function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
   const thread = threadTileDisplayThread(threadId);
   const id = String(threadId || thread && thread.id || "");
+  const visiblePaneIds = threadTileStatePolicy.uniqueIds(
+    Array.isArray(layout && layout.columnGroups)
+      ? layout.columnGroups.flat()
+      : state.threadTileActiveIds,
+  );
   const title = threadTitleForDisplay(thread) || id;
   const summary = threadTileSummary(id);
   const paneStateHtml = turnTimerStateHtml(threadTilePaneTimerState(thread || summary));
@@ -1315,10 +1322,18 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
         turns.map((turn) => renderThreadTileTurn(thread, turn, previousKeys)).join("") || `<div class="thread-tile-empty">No visible turns.</div>`,
         approvalsHtml,
       ].join("");
-  const active = id && id === effectiveThreadTileSelectedThreadId() ? " active" : "";
+  const isActive = Boolean(id && id === effectiveThreadTileSelectedThreadId());
+  const active = isActive ? " active" : "";
+  const identityPlan = threadTileStatePolicy.threadIdentityColorPlan({ threadId: id, visibleIds: visiblePaneIds });
+  const identityStyle = Object.entries((identityPlan && identityPlan.cssVariables) || {})
+    .map(([name, value]) => `${name}: ${value};`)
+    .join(" ");
+  const composerDirection = isActive
+    ? `<div class="thread-tile-composer-direction" aria-hidden="true"><span></span><span></span><span></span></div>`
+    : "";
   const operationDock = renderThreadTileOperationDock(thread, previousKeys);
   const switchMenu = renderThreadTileSwitchMenu(id);
-  return `<section class="thread-tile-pane${active}" data-thread-tile-pane="${escapeHtml(id)}" data-render-key="${escapeHtml(`thread-tile|${id}`)}">
+  return `<section class="thread-tile-pane${active}" data-thread-tile-pane="${escapeHtml(id)}" data-render-key="${escapeHtml(`thread-tile|${id}`)}"${identityStyle ? ` style="${escapeHtml(identityStyle)}"` : ""}>
     <header class="thread-tile-pane-header">
       <div class="thread-tile-pane-title-wrap">
         <button class="thread-tile-pane-title-button" type="button" draggable="true" data-thread-tile-drag-handle="${escapeHtml(id)}" data-thread-tile-title="${escapeHtml(id)}" aria-haspopup="listbox" aria-expanded="${state.threadTileSwitchMenuPaneId === id ? "true" : "false"}">
@@ -1329,6 +1344,7 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
       <div class="thread-tile-pane-state-slot" data-thread-tile-pane-state>${paneStateHtml}</div>
     </header>
     <div class="thread-tile-pane-body"><div class="thread-tile-pane-content">${body}</div></div>
+    ${composerDirection}
     ${operationDock}
     <button class="thread-tile-bottom-button hidden" type="button" data-thread-tile-bottom="${escapeHtml(id)}" aria-label="跳到此线程底部" title="跳到底部" aria-hidden="true" tabindex="-1">↓</button>
   </section>`;
