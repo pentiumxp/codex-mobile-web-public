@@ -21,6 +21,25 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## Current Addendum - 2026-07-07 Public release sync
+
+- Current production/private source ref `1aa939ba` (`fix: suppress thread
+  tile self-healing diagnostics`) was deployed successfully by the central
+  Codex Mobile deploy lane and serves cache
+  `0.1.11|codex-mobile-shell-v625-82df4674ce40`.
+- Public repository `pentiumxp/codex-mobile-web-public` previously lagged at
+  `c138d92a` / cache `0.1.11|codex-mobile-shell-v625-63d53108eec7`.
+- Created public-clean sync commit `e97c0a08` (`chore: sync public release`)
+  from `public/main`, applying the current private non-`.agent-context`
+  publishable diff only. The large line count is generated Vite/ESM assets;
+  `.agent-context` private handoff changes were intentionally excluded.
+- Pushed `e97c0a08` to public `main`; GitHub Actions run `28855382981`
+  completed with conclusion `success`.
+- Merged public `main` back into private `main` with merge commit `15733b99`
+  (`chore: absorb public release baseline`) so public history is now an
+  ancestor of private history and future publishes should not keep equivalent
+  public/private SHA divergence.
+
 ## Current Addendum - 2026-07-07 Active overlay diagnostic and public CI
 
 - Active Home AI diagnostic card `ttc_5470d4a7c40dcc9f27`
