@@ -150,6 +150,8 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(tileLayoutBody, /const scrollState = captureThreadTilePaneScrollState\(\)/);
   assert.match(tileLayoutBody, /const displayLayout = threadTileDisplayLayout\(layout, ids\)/);
   assert.match(tileLayoutBody, /const columnGroups = Array\.isArray\(displayLayout\.columnGroups\)/);
+  assert.doesNotMatch(tileLayoutBody, /data-thread-tile-sidebar-toggle/);
+  assert.doesNotMatch(tileLayoutBody, /thread-tile-board-sidebar-toggle/);
   assert.match(tileLayoutBody, /class="thread-tile-column"/);
   assert.doesNotMatch(tileLayoutBody, /renderThreadTileWindowControls/);
   assert.match(tileLayoutBody, /ensureThreadTileDetails\(ids\)/);
@@ -304,6 +306,8 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(tileActionsBody, /conversation\.addEventListener\("scroll"/);
   assert.match(tileActionsBody, /updateThreadTileBottomButtonForBody\(plan\.body\)/);
   assert.match(tileActionsBody, /toggleThreadTileSwitchMenu\(plan\.paneId \|\| ""\)/);
+  assert.doesNotMatch(tileActionsBody, /toggle-sidebar/);
+  assert.doesNotMatch(tileActionsBody, /handleOpenMenuClick\(\)/);
   assert.doesNotMatch(tileActionsBody, /if \(!event\.detail\) toggleThreadTileSwitchMenu/);
   assert.match(tileActionsBody, /replaceThreadTilePaneThread/);
   assert.match(tileActionsBody, /changeThreadTilePaneCount/);
@@ -441,6 +445,8 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(appJs, /function rememberThreadTilePaneScrollPosition\(/);
   assert.match(functionBody(threadTileRuntimeJs, "scheduleThreadTileRefresh"), /threadTileStatePolicy\.refreshSchedulePlan/);
   assert.match(functionBody(threadTileRuntimeJs, "refreshThreadTileDetails"), /threadTileStatePolicy\.refreshTargetIds/);
+  assert.match(functionBody(threadTileRuntimeJs, "refreshThreadTileDetails"), /loadedAtById: state\.threadTileLoadedAtById/);
+  assert.match(functionBody(threadTileRuntimeJs, "refreshThreadTileDetails"), /nowMs: Date\.now\(\)/);
   assert.match(functionBody(threadTileRuntimeJs, "captureThreadTilePaneScrollState"), /threadTileStatePolicy\.paneScrollMetrics/);
   assert.match(functionBody(threadTileRuntimeJs, "captureThreadTilePaneElementScrollState"), /threadTileStatePolicy\.paneScrollMetrics/);
   assert.match(functionBody(threadTileRuntimeJs, "rememberThreadTilePaneScrollPosition"), /threadTileStatePolicy\.paneScrollHoldPlan/);
@@ -456,10 +462,17 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(functionBody(threadTileRuntimeJs, "updateThreadTilePaneStatusBadges"), /turnTimerStateHtml\(threadTilePaneTimerState\(threadTileDisplayThread\(id\)\)\)/);
   assert.match(stylesCss, /\.conversation\.thread-tile-mode\s*{/);
   assert.match(stylesCss, /html\.embed-hermes\.thread-tile-open\.keyboard-open \.app\s*{[\s\S]*transform:\s*none;/);
+  assert.match(stylesCss, /\.main\.thread-tile-main\s*{[\s\S]*--thread-tile-edge-gap:\s*8px;/);
   assert.match(stylesCss, /\.main\.thread-tile-main \.topbar\s*{/);
   assert.match(stylesCss, /\.main\.thread-tile-main > \.live-operation-dock\s*{/);
-  assert.match(stylesCss, /\.conversation\.thread-tile-mode\s*{[\s\S]*max\(env\(safe-area-inset-top, 0px\), var\(--host-top-safe-area, 0px\)\)/);
+  assert.match(stylesCss, /\.conversation\.thread-tile-mode\s*{[\s\S]*padding:\s*calc\(var\(--thread-tile-edge-gap\) \+ max\(env\(safe-area-inset-top, 0px\), var\(--host-top-safe-area, 0px\)\)\) var\(--thread-tile-edge-gap\) var\(--thread-tile-edge-gap\);/);
+  assert.match(stylesCss, /\.main\.thread-tile-main > \.composer\s*{[\s\S]*margin:\s*0 var\(--thread-tile-edge-gap\) var\(--thread-tile-edge-gap\);[\s\S]*border-radius:\s*8px;/);
+  assert.match(stylesCss, /\.main\.thread-tile-main > \.composer\.has-target-indicator\s*{[\s\S]*border-color:\s*var\(--thread-identity-ring-strong\);[\s\S]*box-shadow:\s*0 0 0 1px var\(--thread-identity-ring\)/);
   assert.match(stylesCss, /\.thread-tile-board\s*{/);
+  assert.doesNotMatch(stylesCss, /\.thread-tile-board-sidebar-toggle/);
+  assert.match(stylesCss, /html\.sidebar-layout-toggle-supported \.main\.thread-tile-main #openMenu\.sidebar-toggle-visible\s*{[\s\S]*pointer-events:\s*auto;[\s\S]*background:\s*transparent;/);
+  assert.match(stylesCss, /html\.sidebar-layout-toggle-supported\.sidebar-open \.main\.thread-tile-main #openMenu\.sidebar-toggle-visible\s*{[\s\S]*display:\s*none;[\s\S]*pointer-events:\s*none;/);
+  assert.match(stylesCss, /html\.sidebar-layout-toggle-supported\.sidebar-overlay-mode:not\(\.sidebar-open\) \.thread-tile-board \.thread-tile-column:first-child \.thread-tile-pane:first-child \.thread-tile-pane-header\s*{[\s\S]*padding-left:\s*48px;/);
   assert.match(stylesCss, /\.thread-tile-column\s*{/);
   assert.match(stylesCss, /grid-template-rows:\s*repeat\(var\(--thread-tile-column-rows, 1\), minmax\(0, 1fr\)\);/);
   assert.match(stylesCss, /\.thread-tile-pane\.drag-over\s*{/);
@@ -467,8 +480,8 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(stylesCss, /\.thread-tile-switch-action\s*{/);
   assert.doesNotMatch(stylesCss, /\.thread-tile-window-controls\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane\s*{/);
-  assert.match(stylesCss, /\.thread-tile-pane-header\s*{[\s\S]*background:\s*var\(--thread-tile-header-bg\);/);
-  assert.match(stylesCss, /\.thread-tile-pane\.active \.thread-tile-pane-header\s*{[\s\S]*background:\s*var\(--thread-tile-header-active-bg\);/);
+  assert.match(stylesCss, /\.thread-tile-pane-header\s*{[\s\S]*background:\s*linear-gradient\(0deg, var\(--thread-identity-tint\), var\(--thread-identity-tint\)\), var\(--thread-tile-header-bg\);/);
+  assert.match(stylesCss, /\.thread-tile-pane\.active \.thread-tile-pane-header\s*{[\s\S]*background:\s*linear-gradient\(0deg, var\(--thread-identity-tint-active\), var\(--thread-identity-tint-active\)\), var\(--thread-tile-header-active-bg\);/);
   assert.match(stylesCss, /\.message-input\.has-target-placeholder:empty::before\s*{[\s\S]*color:\s*var\(--composer-target-placeholder\);/);
   assert.match(stylesCss, /\.thread-tile-pane-body\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane-content\s*{/);
@@ -477,6 +490,10 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(stylesCss, /\.thread-tile-operation-dock\s*{/);
   assert.match(stylesCss, /\.thread-tile-operation-dock \.mobile-operation-stack\s*{/);
   assert.match(stylesCss, /\.thread-tile-bottom-button\s*{/);
+  assert.match(stylesCss, /\.thread-tile-composer-direction\s*{[\s\S]*width:\s*16px;[\s\S]*height:\s*16px;[\s\S]*color:\s*var\(--thread-identity-label\);/);
+  assert.match(stylesCss, /\.thread-tile-composer-direction span\s*{[\s\S]*width:\s*6px;[\s\S]*height:\s*6px;[\s\S]*animation:\s*thread-tile-composer-direction-pulse 1650ms ease-in-out infinite;/);
+  assert.match(stylesCss, /@keyframes thread-tile-composer-direction-pulse\s*{[\s\S]*opacity:\s*0\.72;[\s\S]*translateY\(calc\(var\(--thread-tile-composer-direction-y\) - 1px\)\)/);
+  assert.match(stylesCss, /@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*\.thread-tile-composer-direction span\s*{[\s\S]*animation:\s*none;/);
 
   const notificationBody = functionBody(appJs, "applyNotification");
   assert.match(notificationBody, /threadTilePaneIsVisible\(params\.threadId\)/);
@@ -567,6 +584,7 @@ test("thread tile visual fixture validates wide-screen panes without private con
     menuOverlay: false,
   });
   assert.match(html, /thread-tile-board/);
+  assert.doesNotMatch(threadTileRuntimeJs, /data-thread-tile-sidebar-toggle/);
   assert.match(html, /thread-tile-operation-dock/);
   assert.match(html, /mobile-operation-bubble-duration/);
   assert.match(html, /composer-control-card/);
@@ -654,6 +672,11 @@ test("thread tile composer targets the active pane without replacing the shared 
   assert.match(updateControlsBody, /applyComposerActionControlPlan\(sendButton, composerActionPlan\)/);
   assert.match(updateControlsBody, /messageInput\.dataset\.placeholder = composerPlaceholderText\(\);/);
   assert.match(updateControlsBody, /messageInput\.classList\.toggle\("has-target-placeholder", composerShowsTargetPlaceholder\(\)\);/);
+  assert.match(functionBody(composerRuntimeJs, "renderComposerTargetIndicator"), /applyThreadIdentityColorVariables\(composer, visible \? plan\.cssVariables : \{\}\)/);
+  assert.match(functionBody(composerRuntimeJs, "renderComposerTargetIndicator"), /visibleIds: state\.threadTileActiveIds/);
+  assert.match(functionBody(threadTileRuntimeJs, "renderThreadTilePane"), /visiblePaneIds = threadTileStatePolicy\.uniqueIds/);
+  assert.match(functionBody(threadTileRuntimeJs, "renderThreadTilePane"), /threadTileStatePolicy\.threadIdentityColorPlan\(\{ threadId: id, visibleIds: visiblePaneIds \}\)/);
+  assert.match(functionBody(threadTileRuntimeJs, "renderThreadTilePane"), /style="\$\{escapeHtml\(identityStyle\)\}"/);
 
   const sendMessageBody = functionBody(composerRuntimeJs, "sendMessage");
   assert.match(sendMessageBody, /const targetThreadId = currentComposerThreadId\(\)/);

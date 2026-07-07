@@ -337,9 +337,16 @@ function wireUi() {
   window.addEventListener("popstate", handleAndroidBackToSidebarPopState);
   ensureAndroidBackToSidebarSentinel();
   $("openMenu").addEventListener("click", handleOpenMenuClick);
+  if ($("sidebarLayoutToggle")) $("sidebarLayoutToggle").addEventListener("click", (event) => {
+    event.preventDefault();
+    handleSidebarLayoutToggle();
+  });
   window.addEventListener("resize", syncThreadDetailLayoutState);
   window.addEventListener("orientationchange", syncThreadDetailLayoutState);
-  $("closeMenu").addEventListener("click", closeSidebarMenu);
+  $("closeMenu").addEventListener("click", () => {
+    closeSidebarMenu();
+    syncThreadDetailLayoutState();
+  });
   const pageRefreshPrompt = $("pageRefreshPrompt");
   if (pageRefreshPrompt) pageRefreshPrompt.addEventListener("click", refreshPageForNewBuild);
   $("composer").addEventListener("submit", sendMessage);

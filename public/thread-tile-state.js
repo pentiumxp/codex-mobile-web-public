@@ -9,10 +9,190 @@
   }
 }(typeof globalThis !== "undefined" ? globalThis : null, function () {
   const DEFAULT_USER_MAX_PANES = 12;
-  const DEFAULT_DETAIL_LOAD_MAX_CONCURRENT = 4;
+  const DEFAULT_DETAIL_LOAD_MAX_CONCURRENT = 1;
+  const DEFAULT_BACKGROUND_REFRESH_MAX_TARGETS = 1;
+  const DEFAULT_BACKGROUND_REFRESH_MIN_AGE_MS = 9000;
   const DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
   const DEFAULT_PANE_NEAR_BOTTOM_PX = 48;
   const DEFAULT_PANE_SCROLLABLE_DELTA_PX = 96;
+  const THREAD_IDENTITY_CSS_VARIABLE_NAMES = Object.freeze([
+    "--thread-identity-ring-dark",
+    "--thread-identity-ring-strong-dark",
+    "--thread-identity-outline-dark",
+    "--thread-identity-tint-dark",
+    "--thread-identity-tint-active-dark",
+    "--thread-identity-label-dark",
+    "--thread-identity-ring-light",
+    "--thread-identity-ring-strong-light",
+    "--thread-identity-outline-light",
+    "--thread-identity-tint-light",
+    "--thread-identity-tint-active-light",
+    "--thread-identity-label-light",
+  ]);
+  const THREAD_IDENTITY_COLOR_SCHEMES = Object.freeze([
+    {
+      name: "ocean",
+      dark: {
+        ring: "rgba(111, 201, 224, 0.54)",
+        ringStrong: "rgba(154, 226, 244, 0.82)",
+        outline: "rgba(111, 201, 224, 0.25)",
+        tint: "rgba(111, 201, 224, 0.075)",
+        tintActive: "rgba(111, 201, 224, 0.12)",
+        label: "#a7e6f5",
+      },
+      light: {
+        ring: "rgba(30, 117, 142, 0.42)",
+        ringStrong: "rgba(24, 96, 118, 0.66)",
+        outline: "rgba(30, 117, 142, 0.18)",
+        tint: "rgba(30, 117, 142, 0.055)",
+        tintActive: "rgba(30, 117, 142, 0.09)",
+        label: "#1d6578",
+      },
+    },
+    {
+      name: "blue",
+      dark: {
+        ring: "rgba(139, 177, 242, 0.54)",
+        ringStrong: "rgba(178, 204, 255, 0.82)",
+        outline: "rgba(139, 177, 242, 0.24)",
+        tint: "rgba(139, 177, 242, 0.07)",
+        tintActive: "rgba(139, 177, 242, 0.115)",
+        label: "#c5d7ff",
+      },
+      light: {
+        ring: "rgba(63, 96, 160, 0.42)",
+        ringStrong: "rgba(48, 76, 138, 0.66)",
+        outline: "rgba(63, 96, 160, 0.18)",
+        tint: "rgba(63, 96, 160, 0.052)",
+        tintActive: "rgba(63, 96, 160, 0.086)",
+        label: "#334f93",
+      },
+    },
+    {
+      name: "violet",
+      dark: {
+        ring: "rgba(179, 157, 244, 0.52)",
+        ringStrong: "rgba(206, 192, 255, 0.8)",
+        outline: "rgba(179, 157, 244, 0.23)",
+        tint: "rgba(179, 157, 244, 0.068)",
+        tintActive: "rgba(179, 157, 244, 0.108)",
+        label: "#d7ccff",
+      },
+      light: {
+        ring: "rgba(95, 75, 156, 0.4)",
+        ringStrong: "rgba(78, 60, 135, 0.63)",
+        outline: "rgba(95, 75, 156, 0.17)",
+        tint: "rgba(95, 75, 156, 0.05)",
+        tintActive: "rgba(95, 75, 156, 0.083)",
+        label: "#55428e",
+      },
+    },
+    {
+      name: "plum",
+      dark: {
+        ring: "rgba(209, 144, 214, 0.5)",
+        ringStrong: "rgba(235, 186, 238, 0.78)",
+        outline: "rgba(209, 144, 214, 0.22)",
+        tint: "rgba(209, 144, 214, 0.064)",
+        tintActive: "rgba(209, 144, 214, 0.104)",
+        label: "#efc4f2",
+      },
+      light: {
+        ring: "rgba(128, 65, 132, 0.38)",
+        ringStrong: "rgba(105, 50, 110, 0.6)",
+        outline: "rgba(128, 65, 132, 0.16)",
+        tint: "rgba(128, 65, 132, 0.048)",
+        tintActive: "rgba(128, 65, 132, 0.08)",
+        label: "#723979",
+      },
+    },
+    {
+      name: "rosewood",
+      dark: {
+        ring: "rgba(218, 154, 177, 0.48)",
+        ringStrong: "rgba(243, 195, 211, 0.74)",
+        outline: "rgba(218, 154, 177, 0.2)",
+        tint: "rgba(218, 154, 177, 0.06)",
+        tintActive: "rgba(218, 154, 177, 0.098)",
+        label: "#f2c4d4",
+      },
+      light: {
+        ring: "rgba(139, 73, 96, 0.36)",
+        ringStrong: "rgba(116, 56, 78, 0.58)",
+        outline: "rgba(139, 73, 96, 0.155)",
+        tint: "rgba(139, 73, 96, 0.045)",
+        tintActive: "rgba(139, 73, 96, 0.076)",
+        label: "#7c3f58",
+      },
+    },
+    {
+      name: "ochre",
+      dark: {
+        ring: "rgba(210, 174, 111, 0.5)",
+        ringStrong: "rgba(236, 207, 153, 0.78)",
+        outline: "rgba(210, 174, 111, 0.22)",
+        tint: "rgba(210, 174, 111, 0.064)",
+        tintActive: "rgba(210, 174, 111, 0.104)",
+        label: "#efd3a1",
+      },
+      light: {
+        ring: "rgba(127, 94, 38, 0.38)",
+        ringStrong: "rgba(104, 75, 28, 0.6)",
+        outline: "rgba(127, 94, 38, 0.16)",
+        tint: "rgba(127, 94, 38, 0.047)",
+        tintActive: "rgba(127, 94, 38, 0.079)",
+        label: "#765321",
+      },
+    },
+    {
+      name: "sage",
+      dark: {
+        ring: "rgba(147, 196, 138, 0.5)",
+        ringStrong: "rgba(184, 225, 176, 0.76)",
+        outline: "rgba(147, 196, 138, 0.22)",
+        tint: "rgba(147, 196, 138, 0.062)",
+        tintActive: "rgba(147, 196, 138, 0.102)",
+        label: "#c6e8bd",
+      },
+      light: {
+        ring: "rgba(76, 116, 65, 0.38)",
+        ringStrong: "rgba(59, 96, 49, 0.6)",
+        outline: "rgba(76, 116, 65, 0.16)",
+        tint: "rgba(76, 116, 65, 0.047)",
+        tintActive: "rgba(76, 116, 65, 0.079)",
+        label: "#486d3d",
+      },
+    },
+    {
+      name: "mint",
+      dark: {
+        ring: "rgba(126, 204, 184, 0.5)",
+        ringStrong: "rgba(169, 232, 217, 0.76)",
+        outline: "rgba(126, 204, 184, 0.22)",
+        tint: "rgba(126, 204, 184, 0.064)",
+        tintActive: "rgba(126, 204, 184, 0.104)",
+        label: "#b6ece0",
+      },
+      light: {
+        ring: "rgba(43, 122, 102, 0.38)",
+        ringStrong: "rgba(32, 100, 83, 0.6)",
+        outline: "rgba(43, 122, 102, 0.16)",
+        tint: "rgba(43, 122, 102, 0.047)",
+        tintActive: "rgba(43, 122, 102, 0.079)",
+        label: "#2b6f5d",
+      },
+    },
+  ]);
+  const THREAD_IDENTITY_CONTRAST_ORDER = Object.freeze([
+    "ocean",
+    "ochre",
+    "blue",
+    "rosewood",
+    "sage",
+    "violet",
+    "mint",
+    "plum",
+  ]);
 
   function text(value) {
     return String(value || "");
@@ -69,6 +249,74 @@
   function idsEqual(a = [], b = []) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
     return a.every((id, index) => String(id || "") === String(b[index] || ""));
+  }
+
+  function stableTextHash(value) {
+    const source = text(value);
+    let hash = 2166136261;
+    for (let index = 0; index < source.length; index += 1) {
+      hash ^= source.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function threadIdentityColorVariables(scheme) {
+    if (!scheme) return {};
+    return {
+      "--thread-identity-ring-dark": scheme.dark.ring,
+      "--thread-identity-ring-strong-dark": scheme.dark.ringStrong,
+      "--thread-identity-outline-dark": scheme.dark.outline,
+      "--thread-identity-tint-dark": scheme.dark.tint,
+      "--thread-identity-tint-active-dark": scheme.dark.tintActive,
+      "--thread-identity-label-dark": scheme.dark.label,
+      "--thread-identity-ring-light": scheme.light.ring,
+      "--thread-identity-ring-strong-light": scheme.light.ringStrong,
+      "--thread-identity-outline-light": scheme.light.outline,
+      "--thread-identity-tint-light": scheme.light.tint,
+      "--thread-identity-tint-active-light": scheme.light.tintActive,
+      "--thread-identity-label-light": scheme.light.label,
+    };
+  }
+
+  function threadIdentityContrastSchemeIndex(slotIndex) {
+    const normalizedSlot = Math.max(0, Math.floor(Number(slotIndex)) || 0);
+    const schemeName = THREAD_IDENTITY_CONTRAST_ORDER[normalizedSlot % THREAD_IDENTITY_CONTRAST_ORDER.length];
+    const index = THREAD_IDENTITY_COLOR_SCHEMES.findIndex((scheme) => scheme && scheme.name === schemeName);
+    return index >= 0 ? index : (normalizedSlot % THREAD_IDENTITY_COLOR_SCHEMES.length);
+  }
+
+  function threadIdentityColorPlan(input = {}) {
+    const threadId = text(input.threadId || input.id).trim();
+    if (!threadId) {
+      return {
+        action: "thread-identity-color",
+        reason: "missing-thread",
+        threadId: "",
+        index: -1,
+        slotIndex: -1,
+        visibleCount: 0,
+        scheme: "",
+        cssVariables: {},
+      };
+    }
+    const visibleIds = uniqueIds(input.visibleIds || input.activeIds || input.contextIds || []);
+    const slotIndex = visibleIds.indexOf(threadId);
+    const useVisibleContrast = visibleIds.length > 1 && slotIndex >= 0;
+    const index = useVisibleContrast
+      ? threadIdentityContrastSchemeIndex(slotIndex)
+      : stableTextHash(threadId) % THREAD_IDENTITY_COLOR_SCHEMES.length;
+    const scheme = THREAD_IDENTITY_COLOR_SCHEMES[index];
+    return {
+      action: "thread-identity-color",
+      reason: useVisibleContrast ? "visible-pane-contrast" : "thread-id-hash",
+      threadId,
+      index,
+      slotIndex: useVisibleContrast ? slotIndex : -1,
+      visibleCount: useVisibleContrast ? visibleIds.length : 0,
+      scheme: scheme.name,
+      cssVariables: threadIdentityColorVariables(scheme),
+    };
   }
 
   function candidatePaneIdsPlan(input = {}, options = {}) {
@@ -914,6 +1162,41 @@
     };
   }
 
+  function composerTargetIndicatorPlan(input = {}) {
+    if (input.newThreadDraft === true || String(input.mode || "") === "new-thread") {
+      return {
+        action: "composer-target-indicator",
+        reason: "new-thread",
+        showTargetIndicator: false,
+        label: text(input.label || "发送到"),
+        text: "",
+        title: "",
+        ariaLabel: "",
+        colorScheme: "",
+        cssVariables: {},
+      };
+    }
+    const targetThreadId = text(input.targetThreadId).trim();
+    const targetTitle = text(input.targetTitle || targetThreadId).trim();
+    const showTargetIndicator = Boolean(input.tileContext === true && targetThreadId && input.hasTargetThread === true);
+    const label = text(input.label || "发送到");
+    const displayText = targetTitle || targetThreadId;
+    const identityPlan = showTargetIndicator
+      ? threadIdentityColorPlan({ threadId: targetThreadId, visibleIds: input.visibleIds || input.activeIds || [] })
+      : null;
+    return {
+      action: "composer-target-indicator",
+      reason: showTargetIndicator ? "tile-target" : "hidden",
+      showTargetIndicator,
+      label,
+      text: showTargetIndicator ? displayText : "",
+      title: showTargetIndicator ? `${label}：${displayText}` : "",
+      ariaLabel: showTargetIndicator ? `${label}：${displayText}` : "",
+      colorScheme: identityPlan ? identityPlan.scheme : "",
+      cssVariables: identityPlan ? identityPlan.cssVariables : {},
+    };
+  }
+
   function composerActionControlPlan(input = {}) {
     const newThreadDraft = input.newThreadDraft === true || input.hasNewThreadDraft === true;
     const hasThread = input.hasThread === true;
@@ -1512,10 +1795,47 @@
     const visibleInput = input.visibleIds;
     const visibleIds = Array.isArray(visibleInput) ? new Set(uniqueIds(visibleInput)) : null;
     const currentThreadId = text(input.currentThreadId).trim();
-    return ids.filter((id) => {
+    const nowMs = nowValue(input.nowMs);
+    const minRefreshAgeMs = Math.max(0, Number(
+      Object.prototype.hasOwnProperty.call(input, "minRefreshAgeMs")
+        ? input.minRefreshAgeMs
+        : DEFAULT_BACKGROUND_REFRESH_MIN_AGE_MS,
+    ) || 0);
+    const parsedMaxTargets = Math.floor(Number(
+      Object.prototype.hasOwnProperty.call(input, "maxRefreshTargets")
+        ? input.maxRefreshTargets
+        : DEFAULT_BACKGROUND_REFRESH_MAX_TARGETS,
+    ));
+    const maxRefreshTargets = Number.isFinite(parsedMaxTargets) && parsedMaxTargets > 0
+      ? parsedMaxTargets
+      : DEFAULT_BACKGROUND_REFRESH_MAX_TARGETS;
+    const loadedAtById = input.loadedAtById;
+    const loadedAtForId = (id) => {
+      if (loadedAtById && typeof loadedAtById.get === "function") {
+        return Math.max(0, Number(loadedAtById.get(id) || 0));
+      }
+      if (loadedAtById && typeof loadedAtById === "object") {
+        return Math.max(0, Number(loadedAtById[id] || 0));
+      }
+      return 0;
+    };
+    const candidates = ids.filter((id) => {
       if (visibleIds && !visibleIds.has(id)) return false;
       return !currentThreadId || id !== currentThreadId;
     });
+    const staleCandidates = candidates
+      .map((id, index) => {
+        const loadedAtMs = loadedAtForId(id);
+        return { id, index, loadedAtMs, ageMs: loadedAtMs ? nowMs - loadedAtMs : Number.POSITIVE_INFINITY };
+      })
+      .filter((entry) => !entry.loadedAtMs || minRefreshAgeMs <= 0 || entry.ageMs >= minRefreshAgeMs)
+      .sort((a, b) => {
+        if (!a.loadedAtMs && b.loadedAtMs) return -1;
+        if (a.loadedAtMs && !b.loadedAtMs) return 1;
+        if (a.loadedAtMs !== b.loadedAtMs) return a.loadedAtMs - b.loadedAtMs;
+        return a.index - b.index;
+      });
+    return staleCandidates.slice(0, maxRefreshTargets).map((entry) => entry.id);
   }
 
   function detailLoadQueuePlan(input = {}) {
@@ -1717,14 +2037,20 @@
   }
 
   return {
+    DEFAULT_BACKGROUND_REFRESH_MAX_TARGETS,
+    DEFAULT_BACKGROUND_REFRESH_MIN_AGE_MS,
     DEFAULT_DETAIL_LOAD_MAX_CONCURRENT,
     DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS,
     DEFAULT_USER_MAX_PANES,
+    THREAD_IDENTITY_COLOR_SCHEMES,
+    THREAD_IDENTITY_CONTRAST_ORDER,
+    THREAD_IDENTITY_CSS_VARIABLE_NAMES,
     activePaneSyncPlan,
     candidatePaneIdsPlan,
     closePanePlan,
     composerActionControlPlan,
     composerDraftRuntimeSelectionPlan,
+    composerTargetIndicatorPlan,
     composerTargetPlaceholderPlan,
     composerTargetPlan,
     displaySettingsPayload,
@@ -1779,6 +2105,7 @@
     switchMenuOptionsPlan,
     switchMenuPlan,
     syncPinnedIdsFromActiveIds,
+    threadIdentityColorPlan,
     threadTileVerticalChromePlan,
     threadTileViewportBaselinePlan,
     toggleOperationMode,

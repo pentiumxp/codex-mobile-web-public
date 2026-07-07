@@ -4,8 +4,8 @@
   var manifest = {
     "schemaVersion": 4,
     "generatedBy": "generate-frontend-shell-manifest",
-    "shellCacheName": "codex-mobile-shell-v625-82df4674ce40",
-    "clientBuildId": "0.1.11|codex-mobile-shell-v625-82df4674ce40",
+    "shellCacheName": "codex-mobile-shell-v625-6be7bd79e9fb",
+    "clientBuildId": "0.1.11|codex-mobile-shell-v625-6be7bd79e9fb",
     "scriptAssets": [
       "/shell-asset-manifest.js",
       "/api-client.js",
@@ -444,6 +444,8 @@
           "SIDEBAR_EDGE_OPEN_MIN_PX",
           "SIDEBAR_EDGE_OPEN_RATIO",
           "SIDEBAR_EDGE_SWIPE_PX",
+          "SIDEBAR_LAYOUT_TOGGLE_MIN_HEIGHT",
+          "SIDEBAR_LAYOUT_TOGGLE_MIN_WIDTH",
           "SIDE_CHAT_DRAFT_MAX_CHARS",
           "SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS",
           "STATUS_EVENT_FRESHNESS_TOLERANCE_MS",
@@ -1691,6 +1693,22 @@
         "present": true
       },
       {
+        "name": "SIDEBAR_LAYOUT_TOGGLE_MIN_HEIGHT",
+        "asset": "/app-bootstrap.js",
+        "groupId": "bootstrap-state",
+        "startupCritical": true,
+        "source": "app-bootstrap-script-global",
+        "present": true
+      },
+      {
+        "name": "SIDEBAR_LAYOUT_TOGGLE_MIN_WIDTH",
+        "asset": "/app-bootstrap.js",
+        "groupId": "bootstrap-state",
+        "startupCritical": true,
+        "source": "app-bootstrap-script-global",
+        "present": true
+      },
+      {
         "name": "sideChatRuntimeApi",
         "asset": "/app-bootstrap.js",
         "groupId": "bootstrap-state",
@@ -2510,8 +2528,8 @@
       "scriptAssets": 51,
       "entryGroups": 6,
       "classicGlobalExportAssets": 50,
-      "classicGlobalExports": 229,
-      "startupGlobalContracts": 208,
+      "classicGlobalExports": 231,
+      "startupGlobalContracts": 210,
       "linkAssets": 4,
       "iconAssets": 4,
       "precacheAssets": 60,

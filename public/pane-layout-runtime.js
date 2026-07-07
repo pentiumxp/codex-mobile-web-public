@@ -1674,6 +1674,10 @@ function pointInComposerGestureZone(point) {
   return point.clientY >= Math.max(0, rect.top - 10);
 }
 
+function syncSidebarOpenClass() {
+  document.documentElement.classList.toggle("sidebar-open", isSidebarOpen());
+}
+
 function closeSidebarMenu() {
   const sidebar = $("sidebar");
   if (!sidebar) return;
@@ -1684,6 +1688,7 @@ function closeSidebarMenu() {
   const settingsToggle = $("themeSettingsToggle");
   if (settingsPanel) settingsPanel.classList.add("hidden");
   if (settingsToggle) settingsToggle.setAttribute("aria-expanded", "false");
+  syncSidebarOpenClass();
   publishPluginNavigationState();
 }
 
@@ -1763,6 +1768,7 @@ function openSidebarMenu() {
   sidebar.style.removeProperty("--sidebar-edge-x");
   sidebar.classList.add("open");
   state.sidebarEdgeSwipe = null;
+  syncSidebarOpenClass();
   refreshSidebarListAfterOpen();
   publishPluginNavigationState({ force: true });
 }
@@ -1837,6 +1843,56 @@ function isSidebarOpen() {
   return Boolean(sidebar && sidebar.classList.contains("open"));
 }
 
+function sidebarLayoutToggleSupported() {
+  const width = Number(window.innerWidth || document.documentElement.clientWidth || 0);
+  const height = Number(window.innerHeight || document.documentElement.clientHeight || 0);
+  return width >= SIDEBAR_LAYOUT_TOGGLE_MIN_WIDTH && height >= SIDEBAR_LAYOUT_TOGGLE_MIN_HEIGHT;
+}
+
+function sidebarOverlayModeActive() {
+  return Boolean(state.sidebarLayoutOverlay && sidebarLayoutToggleSupported());
+}
+
+function syncSidebarLayoutOverlayState() {
+  const supported = sidebarLayoutToggleSupported();
+  const active = sidebarOverlayModeActive();
+  document.documentElement.classList.toggle("sidebar-layout-toggle-supported", supported);
+  document.documentElement.classList.toggle("sidebar-overlay-mode", active);
+  syncSidebarOpenClass();
+  if (!active) {
+    const sidebar = $("sidebar");
+    if (sidebar) {
+      sidebar.classList.remove("edge-dragging");
+      sidebar.style.removeProperty("--sidebar-edge-x");
+    }
+    state.sidebarEdgeSwipe = null;
+  }
+  return active;
+}
+
+function setSidebarLayoutOverlay(active, options = {}) {
+  const nextActive = Boolean(active) && sidebarLayoutToggleSupported();
+  state.sidebarLayoutOverlay = nextActive;
+  syncSidebarLayoutOverlayState();
+  if (nextActive && options.open === true) openSidebarMenu();
+  else closeSidebarMenu();
+  syncThreadDetailLayoutState();
+  if (state.threadTileMode) renderCurrentThread();
+  return nextActive;
+}
+
+function handleSidebarLayoutToggle() {
+  if (!sidebarLayoutToggleSupported()) return false;
+  if (!sidebarOverlayModeActive()) {
+    setSidebarLayoutOverlay(true);
+    return true;
+  }
+  if (isSidebarOpen()) closeSidebarMenu();
+  else openSidebarMenu();
+  syncThreadDetailLayoutState();
+  return true;
+}
+
 function sidebarTransformIsNone(transform) {
   const value = String(transform || "").replace(/\s+/g, "").toLowerCase();
   return !value
@@ -1895,10 +1951,30 @@ function threadDetailReturnButtonVisible() {
 function syncThreadDetailLayoutState() {
   const detailActive = Boolean(state.currentThreadId || state.currentThread);
   document.documentElement.classList.toggle("thread-detail-active", detailActive);
+  const sidebarToggle = sidebarLayoutToggleSupported();
+  const sidebarOverlay = syncSidebarLayoutOverlayState();
+  const sidebarOpen = isSidebarOpen();
+  const sidebarLayoutButton = $("sidebarLayoutToggle");
+  if (sidebarLayoutButton) {
+    const showSidebarLayoutButton = Boolean(sidebarToggle && !sidebarOverlay);
+    sidebarLayoutButton.hidden = !showSidebarLayoutButton;
+    sidebarLayoutButton.classList.toggle("sidebar-layout-toggle-visible", showSidebarLayoutButton);
+    sidebarLayoutButton.textContent = "‹";
+    sidebarLayoutButton.title = "收起 Session List";
+    sidebarLayoutButton.setAttribute("aria-label", "收起 Session List");
+  }
   const openMenuButton = $("openMenu");
   if (!openMenuButton) return;
-  const splitReturn = threadDetailReturnButtonVisible();
+  const splitReturn = !sidebarToggle && threadDetailReturnButtonVisible();
+  const sidebarOpenMenu = Boolean(sidebarToggle && sidebarOverlay && !sidebarOpen);
   openMenuButton.classList.toggle("split-return-visible", splitReturn);
+  openMenuButton.classList.toggle("sidebar-toggle-visible", sidebarOpenMenu);
+  if (sidebarToggle) {
+    openMenuButton.textContent = "☰";
+    openMenuButton.title = "打开 Session List";
+    openMenuButton.setAttribute("aria-label", "打开 Session List");
+    return;
+  }
   openMenuButton.textContent = splitReturn ? "←" : "☰";
   openMenuButton.title = splitReturn ? "返回线程列表" : "Menu";
   openMenuButton.setAttribute("aria-label", splitReturn ? "返回线程列表" : "Menu");
@@ -1918,6 +1994,7 @@ function returnToThreadListFromDetail() {
 }
 
 function handleOpenMenuClick() {
+  if (handleSidebarLayoutToggle()) return;
   if (threadDetailReturnButtonVisible() && returnToThreadListFromDetail()) return;
   openSidebarMenu();
 }

@@ -168,6 +168,14 @@ test("thread tile runtime owns viewport layout, candidate ids, and pane HTML", (
   const displayLayout = runtime.threadTileDisplayLayout(layout, ids);
   const html = runtime.renderThreadTilePane("thread-a", displayLayout, new Set());
   assert.match(html, /data-thread-tile-pane="thread-a"/);
+  assert.match(html, /style="[^"]*--thread-identity-ring-dark:/);
+  assert.match(html, /style="[^"]*--thread-identity-ring-light:/);
+  assert.match(html, /--thread-identity-label-dark: #a7e6f5;/);
+  assert.match(html, /class="thread-tile-composer-direction" aria-hidden="true"><span><\/span><span><\/span><span><\/span><\/div>/);
   assert.match(html, /Alpha Thread/);
   assert.ok(html.includes("No visible turns."));
+
+  const inactiveHtml = runtime.renderThreadTilePane("thread-b", displayLayout, new Set());
+  assert.match(inactiveHtml, /--thread-identity-label-dark: #efd3a1;/);
+  assert.doesNotMatch(inactiveHtml, /thread-tile-composer-direction/);
 });

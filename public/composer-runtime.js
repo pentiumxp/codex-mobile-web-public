@@ -1232,7 +1232,7 @@ function composerPlaceholderText() {
   const targetThread = composerTargetThread();
   return threadTileStatePolicy.composerTargetPlaceholderPlan({
     newThreadDraft: state.newThreadDraft,
-    tileContext: isThreadTileComposerContext(),
+    tileContext: false,
     targetThreadId,
     hasTargetThread: Boolean(targetThread),
     targetTitle: targetThread ? threadDisplayName(targetThread) : "",
@@ -1246,10 +1246,60 @@ function composerShowsTargetPlaceholder() {
   const targetThread = composerTargetThread();
   return threadTileStatePolicy.composerTargetPlaceholderPlan({
     newThreadDraft: state.newThreadDraft,
-    tileContext: isThreadTileComposerContext(),
+    tileContext: false,
     targetThreadId,
     hasTargetThread: Boolean(targetThread),
   }).showTargetPlaceholder === true;
+}
+
+function applyThreadIdentityColorVariables(el, cssVariables = {}) {
+  if (!el || !el.style) return;
+  const names = Array.isArray(threadTileStatePolicy.THREAD_IDENTITY_CSS_VARIABLE_NAMES)
+    ? threadTileStatePolicy.THREAD_IDENTITY_CSS_VARIABLE_NAMES
+    : [];
+  for (const name of names) {
+    if (Object.prototype.hasOwnProperty.call(cssVariables, name)) {
+      el.style.setProperty(name, cssVariables[name]);
+    } else {
+      el.style.removeProperty(name);
+    }
+  }
+}
+
+function renderComposerTargetIndicator() {
+  const composer = $("composer");
+  const indicator = $("composerTargetIndicator");
+  const labelEl = $("composerTargetLabel");
+  const titleEl = $("composerTargetTitle");
+  if (!indicator || !labelEl || !titleEl) {
+    if (composer) composer.classList.remove("has-target-indicator");
+    applyThreadIdentityColorVariables(composer, {});
+    return;
+  }
+  const targetThreadId = currentComposerThreadId();
+  const targetThread = composerTargetThread();
+  const plan = threadTileStatePolicy.composerTargetIndicatorPlan({
+    newThreadDraft: state.newThreadDraft,
+    tileContext: isThreadTileComposerContext(),
+    targetThreadId,
+    hasTargetThread: Boolean(targetThread),
+    targetTitle: targetThread ? threadDisplayName(targetThread) : "",
+    visibleIds: state.threadTileActiveIds,
+  });
+  const visible = plan.showTargetIndicator === true;
+  indicator.hidden = !visible;
+  indicator.classList.toggle("visible", visible);
+  if (composer) composer.classList.toggle("has-target-indicator", visible);
+  applyThreadIdentityColorVariables(composer, visible ? plan.cssVariables : {});
+  labelEl.textContent = plan.label || "发送到";
+  titleEl.textContent = plan.text || "";
+  if (visible) {
+    indicator.title = plan.title || "";
+    indicator.setAttribute("aria-label", plan.ariaLabel || plan.title || "");
+  } else {
+    indicator.removeAttribute("title");
+    indicator.removeAttribute("aria-label");
+  }
 }
 
 function applyComposerActionControlPlan(sendButton, plan) {
@@ -1344,6 +1394,7 @@ function updateComposerControls() {
     messageInput.dataset.placeholder = composerPlaceholderText();
     messageInput.classList.toggle("has-target-placeholder", composerShowsTargetPlaceholder());
   }
+  renderComposerTargetIndicator();
   setMessageInputDisabled(disabled);
   $("fileInput").disabled = disabled;
   attachButton.disabled = disabled;
