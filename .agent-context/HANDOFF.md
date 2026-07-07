@@ -6544,3 +6544,38 @@ The previous full handoff was archived and should be opened only when old proven
 - Privacy: source/layout-only change; no raw messages, endpoint bodies, secrets,
   cookies, launch tokens, screenshots, private thread/task bodies, raw cache
   JSON, or long logs stored.
+
+## 2026-07-07 - Plugin Main Routing Preflight Pointer
+
+- Task card: `ttc_5c84b8ce1f94953bd2`.
+- Request: update local Codex Mobile guidance after Home AI commit `1c9ab01a`
+  strengthened the plugin Worker preflight contract.
+- Scope stayed within allowed files: `AGENTS.md`,
+  `docs/HOME_AI_PLATFORM_CONTRACT.md`, and this handoff.
+- Added `AGENTS.md` pointer requiring plugin main/source threads to run:
+  `node /Users/hermes-dev/HermesMobileDev/app/scripts/main-thread-routing-preflight.js --source-thread-role plugin_main --task "<task>" --changed-file <path> --mode classify`
+  before non-trivial implementation, investigation, review, Harness,
+  deploy-routing, or cross-thread dispatch work.
+- Added fail-closed Worker routing guidance: when classification is
+  `plugin_worker`, dispatch a bounded `plugin_worker` card or return blocked
+  with the missing lane; do not use Task Intake, deploy lanes, audit lanes,
+  Loop lanes, or the current source thread as Worker fallback.
+- Updated `docs/HOME_AI_PLATFORM_CONTRACT.md` to Home AI platform contract
+  `20260707-v7`, added central references to
+  `autonomous-delivery-loop-contract.md` and
+  `worker-pool-lifecycle-contract.md`, and added local
+  `plugin_main_preflight_command` / `plugin_worker_dispatch_policy` rows.
+- Validation:
+  - initial routing preflight for this pointer update returned
+    `classification=inline`;
+  - required sample routing preflight returned
+    `classification=plugin_worker`, `reasonCode=plugin_worker_required`,
+    `inlineAllowed=false`, and issues `[]`;
+  - required `plugin-workspace-platform-contract-check.js --plugin codex-mobile
+    --json` passed with no issues and one existing nonblocking warning:
+    `handoff_pointer_missing`;
+  - plugin-local `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Privacy: metadata only. No raw secrets, access keys, cookies, launch tokens,
+  endpoint bodies, private thread/message bodies, screenshots, raw logs, or
+  long diffs stored.

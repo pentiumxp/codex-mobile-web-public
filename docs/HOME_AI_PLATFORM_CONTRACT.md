@@ -1,7 +1,7 @@
 # Home AI Platform Contract Pointer
 
-Last updated: 2026-06-25.
-Home AI platform contract version: `20260623-v5`.
+Last updated: 2026-07-07.
+Home AI platform contract version: `20260707-v7`.
 Home AI root-cause contract version: `20260623-v3`.
 Home AI fallback governance contract version: `20260623-v1`.
 
@@ -38,6 +38,8 @@ mobile visual behavior, fallback behavior, or cross-plugin reference behavior:
 - `/Users/hermes-dev/HermesMobileDev/app/docs/IMPLEMENTATION_NOTES/ai-operations-control-plane.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/plugin-workspace-platform-contract.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/plugin-mobile-ui-visual-contract.md`
+- `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/autonomous-delivery-loop-contract.md`
+- `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/worker-pool-lifecycle-contract.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/macos-production-access.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/mcp-tool-upgrade-closure.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/macos-ios-simulator-appium.md`
@@ -76,6 +78,8 @@ Mobile docs should link to that registry instead of copying entries.
 | `ai_ops_control_plane_command` | `cd /Users/hermes-dev/HermesMobileDev/app && node scripts/ai-ops-control-plane.js intake --task "<task>" --json` |
 | `ai_ops_required_flow` | `intake -> required-checks -> lane allocate if visual -> evidence append -> production smoke -> handoff` |
 | `ai_ops_evidence_ledger` | `$HOME/.homeai-qa/codex-mobile-evidence-ledger.jsonl` |
+| `plugin_main_preflight_command` | `cd /Users/hermes-dev/HermesMobileDev/app && node scripts/main-thread-routing-preflight.js --source-thread-role plugin_main --task "<task>" --changed-file <path> --mode classify` |
+| `plugin_worker_dispatch_policy` | `When classification is plugin_worker, dispatch a plugin_worker card with terminal return, privacy boundary, conflict rule, expected validation, and no Task Intake/deploy/audit/Loop/current-thread fallback.` |
 | `ios_live_debug_available` | `yes`; use Home AI `npm run ios:pwa:debug` for interactive embedded iOS PWA reproduction, with one Simulator/live-debug-port/WDA-port/MJPEG-port lane per concurrent plugin debug session. |
 | `ios_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-shell --plugin-id codex-mobile --debug-url http://127.0.0.1:19073/` |
 | `plugin_manifest_actions_status` | `not_applicable_special_plugin`; Codex plugin edition must not declare ordinary user quick actions. |

@@ -35,3 +35,18 @@ Before non-trivial fixes, identify the symptom, failing layer, owning workspace,
 violated invariant, root cause or strongest hypothesis, and closure validation.
 Fallbacks must be bounded, observable, temporary, validated, and have an owner
 and removal path.
+
+## Plugin Main Routing Preflight
+
+Plugin main/source threads must run the Home AI routing preflight before
+non-trivial implementation, investigation, review, Harness, deploy-routing, or
+cross-thread dispatch work:
+
+```bash
+node /Users/hermes-dev/HermesMobileDev/app/scripts/main-thread-routing-preflight.js --source-thread-role plugin_main --task "<task>" --changed-file <path> --mode classify
+```
+
+If the preflight returns `classification=plugin_worker`, dispatch a bounded
+`plugin_worker` card or return `blocked` with the missing lane. Do not use Task
+Intake, deploy lanes, audit lanes, Loop lanes, or the current plugin source
+thread as a Worker fallback.
