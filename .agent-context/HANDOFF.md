@@ -6710,3 +6710,45 @@ The previous full handoff was archived and should be opened only when old proven
 - Privacy: metadata only. No raw secrets, access keys, cookies, launch tokens,
   endpoint bodies, private thread/message bodies, screenshots, raw diagnostic
   logs, raw cache JSON, provider payloads, database rows, or long logs stored.
+
+## 2026-07-07 - Diagnostic/Worker Runtime Deploy Readback
+
+- Deploy lane return card: `ttc_e3a8b5efc99dc4cc14`.
+- Joined deployment request: `ttc_9bf965654f18b97ff7`.
+- Requested source ref: `671e8090d1e9417f1275ca587de7abc9074df106`;
+  included prior diagnostic fix `79098285`.
+- Production cache after deploy:
+  `0.1.11|codex-mobile-shell-v625-86de04383378`, newer than previous
+  `7653c2f963e5`.
+- Backup path:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260707T153621Z-plugin-codex-mobile-web-codex-mobile-worker-lane-creation-fix-671e8090`.
+- Readback:
+  - central plan/execute passed;
+  - listener PID `14781`, socket `*:8787`;
+  - `/api/status?detail=1` ready with no issue codes;
+  - `/api/vite-shell-artifact` passed with native ESM, 24 published files,
+    and zero not-ready modules;
+  - source/prod SHA parity matched `26/26` deployable changed files.
+- Validation:
+  - central startup-only gate passed;
+  - central full behavior gate passed;
+  - focused production tests for task-card runtime policy, thread-task-card
+    runtime, Codex Mobile MCP server, and loop task runtime passed `56/56`;
+  - Phase-B projection smoke for thread `019f2d75-39bd-7462-8dca-de24f97aeaf6`
+    passed with decision `ready`, read mode `projection-v4-partial`, read
+    decision `projection-partial-hit`, and no issue codes.
+- Worker lane side effect:
+  - production `thread_lifecycle.create` validated the worker-lane creation fix;
+  - created plugin worker `019f3d3c-6311-7431-8f10-31defdc62a43` for
+    `codex-mobile-web` purpose `pr_absorption`;
+  - deliverable `true`, lifecycle `available`, distinct from busy Worker
+    `019f3181-4f2f-7aa3-8ae8-d12f6e23e7a5`.
+- Residual:
+  - independent default full-gate follow-up after deploy reported
+    `thread_detail_empty`;
+  - deploy lane classified it as residual default-thread/projection follow-up
+    evidence, not a blocker for this joined deploy/readback because central
+    execute gates and explicit projection smoke were green.
+- Privacy: metadata only. No raw secrets, access keys, cookies, launch tokens,
+  endpoint bodies, private thread/message bodies, screenshots, raw cache JSON,
+  provider payloads, database rows, or long logs stored.
