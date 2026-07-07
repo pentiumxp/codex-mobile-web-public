@@ -3347,6 +3347,7 @@ test("large resting recent projection miss defers initial turns/list seed", asyn
 test("deferred initial turns/list seed timeout releases pending state with backoff", async () => {
   const deferredTasks = [];
   const deferredTaskOptions = [];
+  const timeoutTasks = [];
   let nowMs = 1_000;
   const { service, calls } = createHarness({
     now: () => {
@@ -3377,6 +3378,21 @@ test("deferred initial turns/list seed timeout releases pending state with backo
     }),
     deferredInitialTurnsListSeedTimeoutMs: 1,
     deferredInitialTurnsListSeedBackoffMs: 100,
+    timeoutScheduler: {
+      setTimeout: (callback, delayMs) => {
+        const task = {
+          callback,
+          delayMs,
+          cleared: false,
+        };
+        timeoutTasks.push(task);
+        return task;
+      },
+      clearTimeout: (task) => {
+        if (task) task.cleared = true;
+      },
+      unref: false,
+    },
   });
 
   const first = await service.readThreadDetail({
@@ -3391,7 +3407,13 @@ test("deferred initial turns/list seed timeout releases pending state with backo
   assert.equal(deferredTasks.length, 1);
   assert.equal(deferredTaskOptions[0].delayMs, 3000);
 
-  await deferredTasks[0]();
+  const seedTask = deferredTasks[0]();
+  await Promise.resolve();
+  assert.equal(timeoutTasks.length, 1);
+  assert.equal(timeoutTasks[0].delayMs, 1);
+  timeoutTasks[0].callback();
+  await seedTask;
+  assert.equal(timeoutTasks[0].cleared, true);
   assert.equal(calls.includes("log:deferred_turns_list_initial_seed_error"), true);
 
   const second = await service.readThreadDetail({
