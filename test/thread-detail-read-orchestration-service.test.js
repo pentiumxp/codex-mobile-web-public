@@ -3019,6 +3019,88 @@ test("notification active overlay seeds bounded window so repeated reads avoid t
   assert.equal(timings.projectionSeedSource, "");
 });
 
+test("active-turn bounded large window closes as projection overlay when snapshot is missing", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "running" },
+      activeTurnId: "active-turn",
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    preferBoundedReadBeforeFullRead: () => ({
+      prefer: true,
+      rolloutSizeBytes: 12_000_000,
+      thresholdBytes: 8_000_000,
+      source: "summary",
+      reason: "large-rollout",
+    }),
+    resolveActiveWindowOverlay: () => ({
+      activeTurnId: "active-turn",
+      overlaySource: "projection-live",
+      overlayUnavailableReason: "snapshot-missing",
+      operationCoverage: "unknown",
+      uploadCoverage: "unknown",
+      assistantDeltaCoverage: "unknown",
+      receiptCoverage: "unknown",
+    }),
+    turnsListThreadReadResult: async ({ mode }) => {
+      calls.push(`turns-list:${mode}`);
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [
+            { id: "older-turn", items: [{ id: "agent-old", type: "agentMessage" }] },
+            {
+              id: "active-turn",
+              status: { type: "running" },
+              items: [
+                { id: "cmd-1", type: "commandExecution" },
+                { id: "agent-1", type: "agentMessage", createdAtMs: 24000 },
+                { id: "usage-1", type: "turnUsageSummary" },
+              ],
+            },
+          ],
+          mobileReadMode: mode,
+        },
+      };
+    },
+    seedProjection: (input, result, options = {}) => {
+      calls.push(`seed:${options.partialKind || "full"}`);
+      return {
+        partial: options.partial === true,
+        partialKind: options.partialKind || "",
+        signatureHash: "seeded-active-window",
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: false,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-active-overlay");
+  assert.equal(calls.includes("turns-list:turns-list-large"), true);
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("seed:turns-list-active-overlay-window"), true);
+  assert.equal(response.body.thread.mobileReadMode, "projection-active-overlay");
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "projection-active-overlay");
+  assert.equal(timings.activeFullReadRequired, true);
+  assert.equal(timings.activeFullReadReason, "active-turn-id");
+  assert.equal(timings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
+  assert.equal(timings.activeOverlaySource, "server-active-overlay");
+  assert.equal(timings.activeOverlayItems, 3);
+  assert.equal(timings.activeOverlayAssistantItems, 1);
+  assert.equal(timings.activeOverlayWindowFirst, true);
+  assert.equal(timings.projectionSeedStatus, "seeded-partial");
+  assert.equal(timings.projectionSeedSource, "turns-list-large-active-window");
+});
+
 test("status-only active summary can use bounded turns/list before full thread/read", async () => {
   const { service, calls } = createHarness({
     summary: {
