@@ -16,6 +16,7 @@ Always start substantial work by reading:
 | Current architecture diagnosis and staged optimization plan | `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` |
 | Vite shell native ESM migration plan and remaining module order | `docs/FRONTEND_ESM_MIGRATION_PLAN.md` |
 | File/module ownership, where to implement changes, test map | `docs/MODULES.md` |
+| User-visible duplicate/disappearing messages, quota popup behavior, embedded/PWA workflow Harness requirements | `docs/USER_BEHAVIOR_HARNESS_CONTRACT.md` |
 | Live production issue, stuck turn, missing message, PWA cache, Push, mux drift | `docs/TROUBLESHOOTING.md` |
 | Model context size, image upload context, continuation bootstrap strategy, workspace context compaction | `docs/CONTEXT_STRATEGY.md` |
 | Non-trivial feature or cross-cutting fix | `docs/COMPLEX_FEATURE_PATHS.md` |

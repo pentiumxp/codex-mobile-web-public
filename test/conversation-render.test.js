@@ -4528,7 +4528,7 @@ test("primary shell selection conflicts are diagnosed instead of silently cleari
 test("empty visible detail mismatches are diagnosed from recent detail evidence", () => {
   assert.match(functionBody("recordEmptyVisibleDetailMismatch"), /threadDiagnosticEventsApi\.emptyVisibleDetailMismatchDiagnosticEvent/);
   assert.match(functionBody("recordEmptyVisibleDetailHealthy"), /threadDiagnosticEventsApi\.emptyVisibleDetailMismatchDiagnosticSuccess/);
-  assert.match(functionBody("checkConversationProjectionConsistency"), /recordEmptyVisibleDetailHealthy\(source, state\.currentThread\)/);
+  assert.match(functionBody("checkConversationProjectionConsistency"), /recordEmptyVisibleDetailHealthy\(source, state\.currentThread, extra\)/);
   assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /shellPlan\.emptyMessage !== "No visible turns\."/);
   assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /recentThreadDetailRenderEvidence\(\)/);
   assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /threadDetailStateApi\.hasNonemptyThreadDetailRenderEvidence\(/);
@@ -4590,8 +4590,12 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /threadDiagnosticEventsApi\.detailPatchRejectedDiagnosticEvent\(postApplyConsistencyPlan\.diagnosticInput \|\| \{\}\)/);
   assert.match(updateBody, /const shouldCheckProjectionConsistency = options\.checkProjectionConsistency === true;/);
   assert.match(updateBody, /const projectionConsistencySource = String\(options\.source \|\| "conversation-update"\);/);
-  assert.match(updateBody, /if \(shouldCheckProjectionConsistency\) \{[\s\S]*checkConversationProjectionConsistency\(projectionConsistencySource, \{[\s\S]*renderMode: String\(options\.renderMode \|\| updatePlan\.action \|\| ""\),[\s\S]*\}\);[\s\S]*\}/);
-  assert.match(updateBody, /if \(shouldCheckProjectionConsistency\) \{[\s\S]*checkConversationProjectionConsistency\(projectionConsistencySource, \{[\s\S]*renderMode: String\(options\.renderMode \|\| applicationPlan\.finalAction \|\| updatePlan\.action \|\| ""\),[\s\S]*\}\);[\s\S]*\}/);
+  assert.match(updateBody, /if \(shouldCheckProjectionConsistency\) \{[\s\S]*checkConversationProjectionConsistency\(projectionConsistencySource, \{[\s\S]*action: options\.action,[\s\S]*routeKind: options\.routeKind,[\s\S]*threadHash: options\.threadHash,[\s\S]*renderMode: String\(options\.renderMode \|\| updatePlan\.action \|\| ""\),[\s\S]*\}\);[\s\S]*\}/);
+  assert.match(updateBody, /if \(shouldCheckProjectionConsistency\) \{[\s\S]*checkConversationProjectionConsistency\(projectionConsistencySource, \{[\s\S]*action: options\.action,[\s\S]*routeKind: options\.routeKind,[\s\S]*threadHash: options\.threadHash,[\s\S]*renderMode: String\(options\.renderMode \|\| applicationPlan\.finalAction \|\| updatePlan\.action \|\| ""\),[\s\S]*\}\);[\s\S]*\}/);
+  assert.match(functionBody("recordEmptyVisibleDetailHealthy"), /action: details\.action \|\| "single-thread-empty-state"/);
+  assert.match(functionBody("recordEmptyVisibleDetailHealthy"), /routeKind: details\.routeKind \|\| "single-thread"/);
+  assert.match(functionBody("recordEmptyVisibleDetailHealthy"), /threadHash: details\.threadHash \|\| diagnosticThreadHash\(threadId\)/);
+  assert.match(functionBody("recordEmptyVisibleDetailHealthy"), /renderMode: details\.renderMode \|\| ""/);
   assert.match(updateBody, /threadDetailDomPatchApi\.planConversationHtmlPerformanceEvent\(\{/);
   assert.match(updateBody, /updatePlan,/);
   assert.match(updateBody, /applicationPlan,/);

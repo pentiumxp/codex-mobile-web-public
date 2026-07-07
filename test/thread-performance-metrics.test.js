@@ -708,6 +708,38 @@ test("thread performance metrics accept active projection partials with budget e
   assert.equal(planned.responseBudgetRetainedItemCount, 35);
 });
 
+test("thread performance metrics accept active overlay projection windows with visible evidence", () => {
+  const planned = metrics.planThreadDetailResponseContractDiagnostic({
+    source: "thread-tile",
+    readMode: "projection-active-overlay",
+    performancePhase: "turns-list-active-overlay-window",
+    status: "active",
+    detailShape: {
+      turns: 10,
+      items: 44,
+      visibleItems: 43,
+      activeTurns: 1,
+      completedTurns: 9,
+    },
+    turns: 10,
+  }, {
+    action: "thread-detail-refresh",
+    threadHash: "h_home_ai",
+    contract: {
+      projectionPartialKind: "turns-list-active-overlay-window",
+      olderCursor: true,
+      newerCursor: true,
+    },
+  });
+
+  assert.equal(planned.shouldReport, false);
+  assert.equal(planned.reason, "ok");
+  assert.equal(planned.readMode, "projection-active-overlay");
+  assert.equal(planned.projectionPartialKind, "turns-list-active-overlay-window");
+  assert.equal(planned.activeTurns, 1);
+  assert.equal(planned.visibleItems, 43);
+});
+
 test("thread performance metrics detect projection windows marked as full cache", () => {
   const planned = metrics.planThreadDetailResponseContractDiagnostic({
     source: "thread-list",

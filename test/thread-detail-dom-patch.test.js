@@ -573,6 +573,32 @@ test("conversation DOM authority invalidation covers non-empty projection shape 
   assert.equal(plan.reason, "stable-signature-dom-turn-mismatch");
 });
 
+test("conversation DOM authority invalidation keeps thread-tile self-healing out of Home AI failure reports", () => {
+  const plan = domPatch.planConversationDomAuthorityInvalidation({
+    updatePlan: {
+      action: "set-inner-html",
+      reason: "stable-signature-dom-item-mismatch",
+    },
+    action: "thread-tile-empty-state",
+    routeKind: "thread-tile",
+    expectedVisibleTurnCount: 3,
+    renderedDomTurnCount: 3,
+    expectedVisibleItemCount: 7,
+    renderedDomItemCount: 4,
+    previousChildCount: 2,
+    threadId: "thread-123",
+  });
+
+  assert.equal(plan.shouldRecordMismatch, false);
+  assert.equal(plan.mismatchReason, "");
+  assert.equal(plan.mismatchPayload, null);
+  assert.equal(plan.shouldPostClientEvent, true);
+  assert.equal(plan.clientEventName, "conversation_dom_authority_invalidated");
+  assert.equal(plan.clientEventPayload.diagnosticFailureSuppressed, true);
+  assert.equal(plan.clientEventPayload.diagnosticFailureSuppressedReason, "thread-tile-dom-authority-self-healing");
+  assert.equal(plan.reason, "stable-signature-dom-item-mismatch");
+});
+
 test("conversation DOM authority invalidation stays quiet for healthy updates", () => {
   assert.deepEqual(domPatch.planConversationDomAuthorityInvalidation({
     updatePlan: {

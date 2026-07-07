@@ -301,8 +301,10 @@ Minimum closure for Codex Mobile production changes:
 
 ## Open Gaps
 
-- Add a Codex-specific final acceptance harness that records bounded artifacts
-  from the Home AI live iOS PWA debug server for embedded keyboard, gesture,
-  and cache/PWA regressions.
+- Codex Mobile now exposes a central-compatible local evidence script through
+  `npm run visual:central-compatible`; keep it aligned with Home AI
+  `visual:central --delegate-local`. Final embedded keyboard, gesture, and
+  cache/PWA regressions still require bounded Home AI live iOS PWA debug
+  evidence through the central harness.
 - Keep Codex Mobile's Owner-only permission policy separate from normal
   workspace-grantable business plugin visibility.

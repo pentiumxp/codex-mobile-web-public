@@ -8,6 +8,7 @@ const STORAGE_FRONTEND_DIAGNOSTIC_LOG_SCOPES = "codexMobileFrontendDiagnosticLog
 const STORAGE_FRONTEND_DIAGNOSTIC_LOG_ENTRIES = "codexMobileFrontendDiagnosticLogEntries";
 const STORAGE_FRONTEND_DIAGNOSTIC_LOG_MAX_ENTRIES = "codexMobileFrontendDiagnosticLogMaxEntries";
 const STORAGE_FRONTEND_DIAGNOSTIC_LOG_SERVER_ENABLED = "codexMobileFrontendDiagnosticLogServerEnabled";
+const THREAD_LIST_RUNTIME_RECENT_INPUT_MS = 10000;
 let frontendDiagnosticLogUrlParamsApplied = false;
 
 async function api(path, options = {}) {
@@ -707,12 +708,17 @@ function recordThreadListRuntimeStall(input = {}) {
     || (metrics.present && document.visibilityState !== "hidden" && (
       routeKind === "embedded-primary" || routeKind === "standalone-root"
     ));
+  const lastInputAt = Number(state.threadListRuntimeLastInputAt || 0);
+  const recentInputAgeMs = lastInputAt > 0 ? Math.max(0, now - lastInputAt) : 0;
+  const recentThreadListInput = lastInputAt > 0 && recentInputAgeMs <= THREAD_LIST_RUNTIME_RECENT_INPUT_MS;
   const plan = frontendRuntimeHealthApi.threadListInteractionStallEffects(Object.assign({
     threadListVisible: metrics.visible,
     threadListMonitorable,
     routeKind,
     minDelayMs: THREAD_LIST_RUNTIME_STALL_MIN_MS,
     h2ThresholdMs: THREAD_LIST_RUNTIME_STALL_H2_MS,
+    recentThreadListInput,
+    recentInputAgeMs,
     threadListCount: metrics.threadListCount,
     scrollTop: metrics.scrollTop,
     scrollHeight: metrics.scrollHeight,
@@ -727,6 +733,8 @@ function recordThreadListRuntimeStall(input = {}) {
     maxScrollApplyMs: Math.max(0, Math.round(Number(input.maxScrollApplyMs || 0))),
     maxLongTaskMs: Math.max(0, Math.round(Number(input.maxLongTaskMs || 0))),
     longTaskCount: Math.max(0, Math.round(Number(input.longTaskCount || 0))),
+    recentThreadListInput,
+    recentInputAgeMs,
     threadListCount: metrics.threadListCount,
     threadListVisible: Boolean(metrics.visible),
     threadListMonitorable: Boolean(threadListMonitorable),
@@ -737,6 +745,7 @@ function recordThreadListRuntimeStall(input = {}) {
 function sampleThreadListInputDelay(action = "thread-list-input") {
   const metrics = threadListRuntimeMetrics();
   if (!metrics.visible) return;
+  state.threadListRuntimeLastInputAt = Date.now();
   const list = $("threadList");
   const startedAt = nowPerfMs();
   const startScrollTop = list ? Number(list.scrollTop || 0) : 0;
@@ -1229,18 +1238,19 @@ function recordEmptyVisibleDetailMismatch(reason, thread = state.currentThread, 
   );
 }
 
-function recordEmptyVisibleDetailHealthy(source, thread = state.currentThread) {
+function recordEmptyVisibleDetailHealthy(source, thread = state.currentThread, details = {}) {
   if (!thread || thread.mobileLoading || thread.mobileLoadError) return null;
   const threadId = String(thread.id || state.currentThreadId || "").trim();
   if (!threadId) return null;
   const shape = visibleConversationShape(thread);
   if (!shape.visibleTurnCount && !shape.visibleItemCount) return null;
   return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.emptyVisibleDetailMismatchDiagnosticSuccess({
-    action: "single-thread-empty-state",
-    routeKind: "single-thread",
+    action: details.action || "single-thread-empty-state",
+    routeKind: details.routeKind || "single-thread",
     sourceKind: source,
-    threadHash: diagnosticThreadHash(threadId),
+    threadHash: details.threadHash || diagnosticThreadHash(threadId),
     readMode: thread.mobileReadMode || "",
+    renderMode: details.renderMode || "",
   }));
 }
 
@@ -1460,7 +1470,7 @@ function applyConversationProjectionConsistencyEffectsPlan(plan) {
 function checkConversationProjectionConsistency(source, extra = {}) {
   if (!state.currentThread || state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return;
   recordPrimaryShellSelectionHealthy(source, state.currentThread);
-  recordEmptyVisibleDetailHealthy(source, state.currentThread);
+  recordEmptyVisibleDetailHealthy(source, state.currentThread, extra);
   const snapshot = conversationProjectionDiagnosticSnapshot(source, extra);
   if (!snapshot) return;
   const orderSnapshot = conversationTurnOrderDiagnosticSnapshot(source, extra);

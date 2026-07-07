@@ -170,6 +170,20 @@ function activeTurnIdFromThread(thread) {
   return "";
 }
 
+function activeTurnFromThread(thread, expectedTurnId = "") {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  const expected = nonEmptyText(expectedTurnId);
+  let fallback = null;
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (!isActiveTurn(turn)) continue;
+    const id = nonEmptyText(turn && (turn.id || turn.turnId || turn.turn_id));
+    if (expected && id === expected) return turn;
+    if (!fallback) fallback = turn;
+  }
+  return expected ? null : fallback;
+}
+
 function activeTurnIdFromOverlayInput(input) {
   return nonEmptyText(input && input.activeTurnId)
     || nonEmptyText(input && input.turnId)
@@ -178,6 +192,37 @@ function activeTurnIdFromOverlayInput(input) {
       || input.overlayTurn.turnId
       || input.overlayTurn.turn_id
     ));
+}
+
+function coverageForWindowCount(count) {
+  return Number(count || 0) > 0 ? "present" : "none";
+}
+
+function activeOverlayInputFromWindowThread(thread, summary, baseInput = {}) {
+  const expectedTurnId = summaryActiveTurnMarker(summary) || activeTurnIdFromThread(thread);
+  const overlayTurn = activeTurnFromThread(thread, expectedTurnId);
+  if (!overlayTurn) return null;
+  const evidence = summarizeActiveOverlayTurnEvidence(overlayTurn);
+  const activeTurnId = expectedTurnId || evidence.turnId || activeTurnIdFromThread(thread);
+  if (!activeTurnId) return null;
+  return Object.assign({}, baseInput || {}, {
+    activeTurnId,
+    overlaySource: "server-active-overlay",
+    overlayTurn,
+    overlayEvidence: evidence,
+    overlayCompleteness: "full",
+    overlayPartial: false,
+    overlayPartialKind: "",
+    overlaySignatureHashPresent: true,
+    overlayUnavailableReason: "",
+    operationCoverage: coverageForWindowCount(evidence.operationItems),
+    uploadCoverage: coverageForWindowCount(evidence.uploadItems),
+    assistantDeltaCoverage: evidence.assistantItems > 0 ? "fresh" : "none",
+    receiptCoverage: coverageForWindowCount(evidence.receiptItems),
+    overlayTimestampMs: safeNonNegativeNumber(baseInput && baseInput.overlayTimestampMs)
+      || evidence.latestItemTimestampMs
+      || 0,
+  });
 }
 
 function projectionThreadIsPartial(thread) {
@@ -2071,6 +2116,25 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           return hiddenResponse();
         }
         timer.mark("turnsListBeforeFullMs", turnsStartedAtMs);
+        if (activeReadPolicy.activeFullReadRequired
+          && activeFullReadCanCloseWithOverlay(activeReadPolicy)
+          && projection
+          && resolveActiveWindowOverlay
+          && result
+          && result.thread) {
+          const overlayInput = activeOverlayInputFromWindowThread(result.thread, summary);
+          if (overlayInput) {
+            const previousActiveOverlayWindowFirst = context.activeOverlayWindowFirst;
+            context.activeOverlayWindowFirst = true;
+            const overlayResponse = await tryActiveOverlayFromInitialWindow(result, {
+              source: "turns-list-large-active-window",
+              seed: true,
+              overlayInput,
+            });
+            if (overlayResponse) return overlayResponse;
+            context.activeOverlayWindowFirst = previousActiveOverlayWindowFirst;
+          }
+        }
         if (projection && result && result.thread) {
           try {
             seedProjection(projection, result);

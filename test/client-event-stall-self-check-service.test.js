@@ -62,6 +62,31 @@ test("client-event stall self-check reports H2 for recent severe thread-list sta
   assert.doesNotMatch(JSON.stringify(summary), /thread-secret|private/);
 });
 
+test("client-event stall self-check keeps passive heartbeat rAF pauses advisory", () => {
+  const text = [
+    '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:00.000Z","details":{"action":"thread-list-heartbeat","maxRafDelayMs":11155,"maxScrollApplyMs":0,"maxLongTaskMs":0,"longTaskCount":0,"threadListCount":49,"threadListVisible":true,"threadListMonitorable":true}}',
+    '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:15.000Z","details":{"action":"thread-list-heartbeat","recentThreadListInput":true,"recentInputAgeMs":450,"maxRafDelayMs":3400,"maxScrollApplyMs":0,"maxLongTaskMs":0,"threadListCount":49}}',
+  ].join("\n");
+
+  const summary = summarizeClientEventText(text, {
+    minStallMs: 1000,
+    h2ThresholdMs: 3000,
+    nowMs: Date.parse("2026-06-29T17:40:20.000Z"),
+    windowMs: 30 * 60 * 1000,
+  });
+
+  assert.equal(summary.ok, false);
+  assert.equal(summary.issueCount, 2);
+  assert.equal(summary.blockingIssueCount, 1);
+  assert.equal(summary.issues[0].severity, "H3");
+  assert.equal(summary.issues[0].code, "browser_thread_list_runtime_heartbeat_delayed");
+  assert.equal(summary.issues[0].counts.passive_heartbeat, 1);
+  assert.equal(summary.issues[1].severity, "H2");
+  assert.equal(summary.issues[1].code, "browser_thread_list_interaction_blocked");
+  assert.equal(summary.issues[1].counts.recent_thread_list_input, 1);
+  assert.equal(summary.sampleSummary.h2StallEventCount, 1);
+});
+
 test("client-event stall self-check keeps sub-H2 stalls advisory", () => {
   const text = '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:00.000Z","details":{"maxRafDelayMs":1200,"maxScrollApplyMs":1100,"maxLongTaskMs":0,"threadListCount":5}}';
   const summary = summarizeClientEventText(text, {

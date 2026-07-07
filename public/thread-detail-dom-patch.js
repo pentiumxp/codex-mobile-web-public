@@ -662,6 +662,9 @@
     const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount);
     const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount);
     const reason = String(updatePlan.reason || "");
+    const source = String(input.source || "conversation-update").slice(0, 120);
+    const action = optionalBoundedString(input, "action", 80);
+    const routeKind = optionalBoundedString(input, "routeKind", 80);
     const invalidationReasons = new Set([
       "stable-signature-dom-empty",
       "stable-signature-dom-turn-mismatch",
@@ -690,10 +693,11 @@
         reason: invalidationReasons.has(reason) ? "no-expected-visible-content" : "not-authority-invalidated",
       };
     }
+    const threadTileSelfHealingInvalidation = routeKind === "thread-tile" || action === "thread-tile-empty-state";
     const mismatchPayload = {
-      source: String(input.source || "conversation-update").slice(0, 120),
-      action: optionalBoundedString(input, "action", 80),
-      routeKind: optionalBoundedString(input, "routeKind", 80),
+      source,
+      action,
+      routeKind,
       threadHash: optionalBoundedString(input, "threadHash", 80),
       renderMode: String(updatePlan.action || "full-render").slice(0, 40),
       currentTurns: hasOwn(input, "currentTurns") ? input.currentTurns : undefined,
@@ -705,24 +709,29 @@
       expectedDuplicateUserMessageCount,
       previousCount: boundedCount(input.previousChildCount),
     };
+    const clientEventPayload = {
+      threadId: String(input.threadId || ""),
+      reason: reason.slice(0, 80),
+      expectedVisibleTurnCount,
+      renderedDomTurnCount,
+      expectedVisibleItemCount,
+      renderedDomItemCount,
+      duplicateRenderKeyCount,
+      duplicateUserMessageCount,
+      expectedDuplicateUserMessageCount,
+      action: String(updatePlan.action || "").slice(0, 40),
+    };
+    if (threadTileSelfHealingInvalidation) {
+      clientEventPayload.diagnosticFailureSuppressed = true;
+      clientEventPayload.diagnosticFailureSuppressedReason = "thread-tile-dom-authority-self-healing";
+    }
     return {
-      shouldRecordMismatch: true,
-      mismatchReason: compactMismatchReason(reason),
-      mismatchPayload,
+      shouldRecordMismatch: !threadTileSelfHealingInvalidation,
+      mismatchReason: threadTileSelfHealingInvalidation ? "" : compactMismatchReason(reason),
+      mismatchPayload: threadTileSelfHealingInvalidation ? null : mismatchPayload,
       shouldPostClientEvent: true,
       clientEventName: "conversation_dom_authority_invalidated",
-      clientEventPayload: {
-        threadId: String(input.threadId || ""),
-        reason: reason.slice(0, 80),
-        expectedVisibleTurnCount,
-        renderedDomTurnCount,
-        expectedVisibleItemCount,
-        renderedDomItemCount,
-        duplicateRenderKeyCount,
-        duplicateUserMessageCount,
-        expectedDuplicateUserMessageCount,
-        action: String(updatePlan.action || "").slice(0, 40),
-      },
+      clientEventPayload,
       reason,
     };
   }
