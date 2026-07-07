@@ -21,6 +21,45 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## Current Addendum - 2026-07-07 Active overlay diagnostic and public CI
+
+- Active Home AI diagnostic card `ttc_5470d4a7c40dcc9f27`
+  (`diagcase_5640b29d6b7827f84988`,
+  `conversation_projection_mismatch` /
+  `active-thread-window-downgrade`) was repaired in source.
+- Root cause: frontend thread-performance diagnostic planning did not treat
+  `projection-active-overlay` / `turns-list-active-overlay-window` as valid
+  active progressive projection evidence, so embedded/proxy diagnostics could
+  report a false active-window downgrade even when visible/budget evidence was
+  present.
+- Source fix commits:
+  - `451621d6` (`fix: accept active overlay projection diagnostics`) updates
+    `frontend/native/thread-performance-metrics.mjs`,
+    `public/thread-performance-metrics.js`, generated Vite artifacts, and
+    `test/thread-performance-metrics.test.js`.
+  - `a8490d99` (`test: align public ci assertions`) updates public CI
+    assertions for current source behavior.
+  - `d6cae0ac` (`test: stabilize deferred seed timeout`) makes the deferred
+    initial turns/list seed timeout test deterministic by injecting a test-only
+    timeout scheduler while preserving production timeout defaults.
+- Source validation passed after `d6cae0ac`:
+  - `npm test` (`2337/2337`);
+  - `npm run --silent check`;
+  - `npm run --silent check:macos`;
+  - `git diff --check -- ':!.agent-context'`;
+  - focused diagnostic slice (`97/97`) for thread-performance metrics,
+    diagnostic reporting, runtime gate, and Vite artifact/asset graph.
+- Public repo repair:
+  - Pushed public `main` fixes `788c33a0` and `c138d92a` to cover the two
+    failing public commits.
+  - GitHub Actions run `28837366858` on public `main` passed.
+- Deployment status:
+  - MCP-prefixed deployment card `ttc_590f606b0733b30f4e` was sent to Codex
+    Mobile Deploy Lane for central deploy/readback of ref `d6cae0ac`.
+  - Do not mark the diagnostic task fully completed until the deploy lane
+    returns bounded production readback; source-side status is complete,
+    production validation is delegated.
+
 ## Current Addendum - 2026-07-06T09:55Z Server-switchable frontend diagnostics
 
 - Owner reproduced the submitted-user duplicate/disappearing-message issue, but
