@@ -32,17 +32,24 @@ function timeoutError(message) {
   return err;
 }
 
-function withTimeout(promise, timeoutMs, message) {
+function withTimeout(promise, timeoutMs, message, scheduler = null) {
   const ms = Number(timeoutMs || 0);
   if (!Number.isFinite(ms) || ms <= 0) return promise;
+  const setTimeoutFn = scheduler && typeof scheduler.setTimeout === "function"
+    ? scheduler.setTimeout
+    : setTimeout;
+  const clearTimeoutFn = scheduler && typeof scheduler.clearTimeout === "function"
+    ? scheduler.clearTimeout
+    : clearTimeout;
+  const unrefTimers = !scheduler || scheduler.unref !== false;
   let timer = null;
   const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(timeoutError(message)), ms);
-    if (timer && typeof timer.unref === "function") timer.unref();
+    timer = setTimeoutFn(() => reject(timeoutError(message)), ms);
+    if (unrefTimers && timer && typeof timer.unref === "function") timer.unref();
   });
   return Promise.race([promise, timeout])
     .finally(() => {
-      if (timer) clearTimeout(timer);
+      if (timer) clearTimeoutFn(timer);
     });
 }
 
@@ -719,6 +726,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
   const deferredInitialTurnsListSeedDelayMs = configuredDeferredInitialTurnsListSeedDelayMs === undefined
     ? DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_DELAY_MS
     : boundedNonNegativeInteger(configuredDeferredInitialTurnsListSeedDelayMs, DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_DELAY_MS);
+  const timeoutScheduler = options.timeoutScheduler && typeof options.timeoutScheduler === "object"
+    ? options.timeoutScheduler
+    : null;
   const maxFullThreadTurns = Number(options.maxFullThreadTurns || 0);
   const maxThreadTurns = Number(options.maxThreadTurns || 0);
   const deferredInitialTurnsListSeeds = new Map();
@@ -1118,7 +1128,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             warning: "",
             mode: "turns-list-initial",
             threadLog,
-          }), deferredInitialTurnsListSeedTimeoutMs, "deferred turns-list initial seed timed out");
+          }), deferredInitialTurnsListSeedTimeoutMs, "deferred turns-list initial seed timed out", timeoutScheduler);
           const staleTurns = markWindowActiveTurnsStaleForRestingSummary(result && result.thread, summary);
           if (staleTurns) {
             threadLog("deferred_turns_list_initial_stale_active_turns_downgraded", {
