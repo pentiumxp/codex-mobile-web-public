@@ -6662,3 +6662,51 @@ The previous full handoff was archived and should be opened only when old proven
 - Privacy: metadata only. No raw secrets, access keys, cookies, launch tokens,
   endpoint bodies, private thread/message bodies, screenshots, raw logs, or
   long diffs stored.
+
+## 2026-07-07 - Active Window Downgrade Diagnostic Readback
+
+- Home AI diagnostic remediation card: `ttc_d2100a75e1b6bb5db1`;
+  case `diagcase_b2dc3ac22b104bd5eba7`, event
+  `diagevt_c940581bbf7e4e7a86385c8b`.
+- Bounded symptom: embedded-plugin `thread_detail_response_contract_mismatch`
+  with error code `active-thread-window-downgrade` on build
+  `20260707-account-boundary-v1129`.
+- Case-specific local/prod-readable log lookup did not find the exact
+  case/event/hash in the inspected bounded locations, so no raw diagnostic log
+  body was copied or stored.
+- Current source planner behavior:
+  - `projection-active-overlay` with active and visible projection evidence
+    returns `shouldReport=false`, `reason=ok`;
+  - an active window with no active/visible evidence still returns
+    `shouldReport=true`, `reason=active-thread-window-downgrade`, `H2`.
+- Production readback against `http://127.0.0.1:8787`:
+  - public config was `0.1.11|codex-mobile-shell-v625-7653c2f963e5`;
+  - Home AI source thread `019f316b-27cd-7622-9944-0b909fec3c70` Phase B
+    readback passed with warm partial projection and decision `ready`;
+  - Codex source thread `019f2d75-39bd-7462-8dca-de24f97aeaf6` with
+    `--require-active-overlay` passed with `projection-active-overlay` and
+    decision `ready`.
+- Diagnosis: current source and deployed active-overlay contract do not
+  reproduce the reported downgrade. The strongest bounded hypothesis is that
+  the event was stale/transient or came from an active response without
+  active/visible projection evidence; that condition remains a valid H2 signal
+  rather than a false-positive class to silence.
+- No code change or fallback was added for this active-window case.
+- Validation:
+  - local metadata-only planner probe passed for both accepted overlay and
+    empty active-window cases;
+  - `node --test test/thread-detail-read-orchestration-service.test.js
+    test/thread-performance-metrics.test.js test/thread-diagnostic-events.test.js
+    test/home-ai-diagnostic-reporting.test.js test/phase-b-readback-smoke.test.js
+    test/runtime-self-check-gate-service.test.js` passed `116/116`;
+  - central Home AI `scripts/fallback-governance-check.js --json` passed with
+    zero issues and warnings;
+  - `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Separate deploy note: the earlier task-card-only empty-detail source fix is
+  committed in `79098285` and included in current source `671e8090`, but
+  production public config still reports the previous cache. Central deploy
+  readback was delegated to deploy lane card `ttc_9bf965654f18b97ff7`.
+- Privacy: metadata only. No raw secrets, access keys, cookies, launch tokens,
+  endpoint bodies, private thread/message bodies, screenshots, raw diagnostic
+  logs, raw cache JSON, provider payloads, database rows, or long logs stored.
