@@ -3212,6 +3212,9 @@ function updateConversationHtml(html, signature, options = {}) {
     restoreConversationViewportAnchor(scrollAnchor);
     if (shouldCheckProjectionConsistency) {
       checkConversationProjectionConsistency(projectionConsistencySource, {
+        action: options.action,
+        routeKind: options.routeKind,
+        threadHash: options.threadHash,
         renderMode: String(options.renderMode || updatePlan.action || ""),
       });
     }
@@ -3306,6 +3309,9 @@ function updateConversationHtml(html, signature, options = {}) {
   restoreConversationViewportAnchor(scrollAnchor);
   if (shouldCheckProjectionConsistency) {
     checkConversationProjectionConsistency(projectionConsistencySource, {
+      action: options.action,
+      routeKind: options.routeKind,
+      threadHash: options.threadHash,
       renderMode: String(options.renderMode || applicationPlan.finalAction || updatePlan.action || ""),
     });
   }

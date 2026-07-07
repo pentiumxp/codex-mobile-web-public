@@ -1238,18 +1238,19 @@ function recordEmptyVisibleDetailMismatch(reason, thread = state.currentThread, 
   );
 }
 
-function recordEmptyVisibleDetailHealthy(source, thread = state.currentThread) {
+function recordEmptyVisibleDetailHealthy(source, thread = state.currentThread, details = {}) {
   if (!thread || thread.mobileLoading || thread.mobileLoadError) return null;
   const threadId = String(thread.id || state.currentThreadId || "").trim();
   if (!threadId) return null;
   const shape = visibleConversationShape(thread);
   if (!shape.visibleTurnCount && !shape.visibleItemCount) return null;
   return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.emptyVisibleDetailMismatchDiagnosticSuccess({
-    action: "single-thread-empty-state",
-    routeKind: "single-thread",
+    action: details.action || "single-thread-empty-state",
+    routeKind: details.routeKind || "single-thread",
     sourceKind: source,
-    threadHash: diagnosticThreadHash(threadId),
+    threadHash: details.threadHash || diagnosticThreadHash(threadId),
     readMode: thread.mobileReadMode || "",
+    renderMode: details.renderMode || "",
   }));
 }
 
@@ -1469,7 +1470,7 @@ function applyConversationProjectionConsistencyEffectsPlan(plan) {
 function checkConversationProjectionConsistency(source, extra = {}) {
   if (!state.currentThread || state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return;
   recordPrimaryShellSelectionHealthy(source, state.currentThread);
-  recordEmptyVisibleDetailHealthy(source, state.currentThread);
+  recordEmptyVisibleDetailHealthy(source, state.currentThread, extra);
   const snapshot = conversationProjectionDiagnosticSnapshot(source, extra);
   if (!snapshot) return;
   const orderSnapshot = conversationTurnOrderDiagnosticSnapshot(source, extra);

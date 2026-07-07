@@ -6401,3 +6401,46 @@ The previous full handoff was archived and should be opened only when old proven
   semantics, and non-secret dummy ids. No raw messages, keys, cookies, launch
   tokens, endpoint bodies, screenshots, private thread/task bodies, raw cache
   JSON, provider payloads, or long logs stored.
+
+## 2026-07-07 - Thread Tile DOM Authority Diagnostic Semantics
+
+- AI Ops diagnostic remediation card: `ttc_53a3023460cf7c25cc`;
+  case `diagcase_4cbec33fb7c2e9ea927b`.
+- Bounded symptom: Home AI embedded-plugin diagnostic
+  `empty_visible_detail_mismatch` / `stable_signature_dom_item_mismatch`
+  reached H2 threshold on client/cache `0.1.11|codex-mobile-shell-v625-778d0b55ee22`.
+- Minimal local log readback showed the event signature came from
+  `action=thread-tile-empty-state`, `routeKind=thread-tile`,
+  `sourceKind=thread-tile-render`, not the primary single-thread detail path.
+- Root cause: pre-render stable-signature DOM authority invalidation for
+  thread-tile self-healing reused `recordEmptyVisibleDetailMismatch`, so a
+  recoverable tile DOM rewrite was counted as a Home AI H2 failure. The later
+  healthy signal did not share the same action/route/thread-hash clear key.
+- Source fix:
+  - `frontend/native/thread-detail-dom-patch.mjs` and public counterpart now
+    suppress Home AI failure recording for thread-tile self-healing invalidation
+    while preserving bounded `conversation_dom_authority_invalidated` client
+    events with `diagnosticFailureSuppressed=true`;
+  - `frontend/native/api-client-runtime.mjs` and public counterpart now let
+    empty-detail healthy records inherit action/route/thread-hash/render-mode
+    details;
+  - `frontend/native/pane-layout-runtime.mjs` and public counterpart pass those
+    details from `updateConversationHtml` consistency checks.
+- Generated Vite/native ESM artifact after `npm run --silent build:frontend`:
+  `clientBuildId=0.1.11|codex-mobile-shell-v625-82df4674ce40`.
+- Validation:
+  - `node --test test/thread-detail-dom-patch.test.js
+    test/conversation-render.test.js test/thread-diagnostic-events.test.js
+    test/home-ai-diagnostic-reporting.test.js` passed `274/274`;
+  - `node --test test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js
+    test/user-behavior-harness-contract.test.js` passed `43/43`;
+  - `npm run --silent check` passed;
+  - `git diff --check` passed;
+  - Home AI fallback governance check over changed runtime/test files passed;
+  - `check:user-behavior` correctly failed closed without live target env vars,
+    and plan-only with known submitted/quota/runtime targets produced four
+    real Harness commands.
+- Privacy: metadata only. No raw messages, raw client logs, endpoint bodies,
+  cookies, launch tokens, private thread/task bodies, screenshots, raw cache
+  JSON, provider payloads, database rows, or long logs stored.
