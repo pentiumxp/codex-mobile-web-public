@@ -244,13 +244,15 @@ const DETAIL_ONLY_SUMMARY_FIELDS = Object.freeze([
       : 0;
     const pendingTaskCardCount = boundedCount(thread && thread.pendingTaskCardCount);
     const hasActiveTurnEvidence = Boolean(thread && (thread.activeTurnId || thread.mobileRolloutActiveTurn));
+    const hasConversationEvidence = rolloutSizeBytes > 0
+      || omittedTurns > 0
+      || visibleItemKeyCount > 0
+      || hasActiveTurnEvidence;
+    const hasTaskCardEvidence = taskCardCount > 0 || pendingTaskCardCount > 0;
     return {
-      hasEvidence: rolloutSizeBytes > 0
-        || omittedTurns > 0
-        || visibleItemKeyCount > 0
-        || hasActiveTurnEvidence
-        || taskCardCount > 0
-        || pendingTaskCardCount > 0,
+      hasEvidence: hasConversationEvidence,
+      hasConversationEvidence,
+      hasTaskCardOnlyEvidence: !hasConversationEvidence && hasTaskCardEvidence,
       rolloutSizeBytes,
       omittedTurns,
       visibleItemKeyCount,
@@ -277,7 +279,11 @@ const DETAIL_ONLY_SUMMARY_FIELDS = Object.freeze([
     }
     const evidence = emptyDetailHistoryEvidenceForThread(thread);
     if (!evidence.hasEvidence) {
-      return { shouldRecover: false, reason: "no-history-evidence", evidence };
+      return {
+        shouldRecover: false,
+        reason: evidence.hasTaskCardOnlyEvidence ? "task-card-only-evidence" : "no-history-evidence",
+        evidence,
+      };
     }
     const readMode = String(thread.mobileReadMode || "");
     const recoveryKey = [threadId, readMode, evidence.rolloutSizeBytes, evidence.omittedTurns, evidence.visibleItemKeyCount].join("|");

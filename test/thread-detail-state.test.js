@@ -707,6 +707,8 @@ test("thread detail empty-history recovery plans bounded detail refresh evidence
   assert.equal(rolloutSizeBytesFromThread(thread), 46888840);
   assert.deepEqual(emptyDetailHistoryEvidenceForThread(thread), {
     hasEvidence: true,
+    hasConversationEvidence: true,
+    hasTaskCardOnlyEvidence: false,
     rolloutSizeBytes: 46888840,
     omittedTurns: 79,
     visibleItemKeyCount: 2,
@@ -762,8 +764,20 @@ test("thread detail empty-history recovery fails closed for weak or cooling evid
     thread: { id: "t", pendingTaskCardCount: 1 },
     nowMs: 100,
   });
-  assert.equal(pendingEvidence.shouldRecover, true);
+  assert.equal(pendingEvidence.shouldRecover, false);
+  assert.equal(pendingEvidence.reason, "task-card-only-evidence");
+  assert.equal(pendingEvidence.evidence.hasEvidence, false);
+  assert.equal(pendingEvidence.evidence.hasConversationEvidence, false);
+  assert.equal(pendingEvidence.evidence.hasTaskCardOnlyEvidence, true);
   assert.equal(pendingEvidence.evidence.pendingTaskCardCount, 1);
+
+  const taskCardEvidence = planEmptyDetailHistoryRecovery({
+    thread: { id: "t", threadTaskCards: [{ id: "ttc_bounded" }] },
+    nowMs: 100,
+  });
+  assert.equal(taskCardEvidence.shouldRecover, false);
+  assert.equal(taskCardEvidence.reason, "task-card-only-evidence");
+  assert.equal(taskCardEvidence.evidence.taskCardCount, 1);
 
   const cooling = planEmptyDetailHistoryRecovery({
     thread: { id: "t", rolloutSizeBytes: 1 },

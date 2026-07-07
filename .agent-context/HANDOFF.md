@@ -21,6 +21,58 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## Current Addendum - 2026-07-07 Empty visible detail task-card-only diagnostic repair
+
+- Active Home AI diagnostic card `ttc_3ee119effd61a5ae27` was routed through
+  plugin Worker card `ttc_d00d4bf6aea26e2a7f` for
+  `diagcase_3fbdb02cf11e1d123f64` (`conversation_projection_mismatch` /
+  `empty_visible_detail_mismatch`, error
+  `empty_render_with_history_evidence`).
+- Bounded log/event lookup found no raw matching record in this plugin
+  workspace, Home AI diagnostics metadata workspace, or readable production
+  plugin path; direct broad host-root log access was denied. Diagnosis used
+  the task-card digest plus local bounded reproduction.
+- Root cause: `thread-detail-state` treated task-card metadata
+  (`threadTaskCards` / `pendingTaskCardCount`) as sufficient history evidence
+  for `planEmptyDetailHistoryRecovery()`. On embedded/plugin surfaces, a
+  no-turn detail with only task-card side metadata could report an H2 empty
+  visible detail projection mismatch even when no conversation projection
+  content was proven missing.
+- Source fix: `emptyDetailHistoryEvidenceForThread()` now separates
+  conversation projection evidence from task-card-only metadata. Recovery and
+  H2 `empty_visible_detail_mismatch` reporting require conversation evidence
+  (`rolloutSizeBytes`, omitted turns, visible item keys, or active-turn
+  evidence). Task-card-only evidence remains bounded in the evidence object but
+  fails closed with reason `task-card-only-evidence`.
+- Files changed: `frontend/native/thread-detail-state.mjs`,
+  `public/thread-detail-state.js`, generated frontend shell/Vite artifacts,
+  and `test/thread-detail-state.test.js`.
+- Validation passed:
+  - bounded reproduction before fix: `pendingTaskCardCount=1` planned recovery;
+    after fix it returns `shouldRecover=false`, reason
+    `task-card-only-evidence`;
+  - `node --test test/thread-detail-state.test.js` (`24/24`);
+  - focused diagnostic/runtime slice:
+    `node --test test/thread-detail-state.test.js test/conversation-render.test.js
+    test/thread-diagnostic-events.test.js test/home-ai-diagnostic-reporting.test.js`
+    (`237/237`);
+  - Vite/runtime artifact slice:
+    `node --test test/vite-shell-artifact-service.test.js
+    test/vite-shell-asset-graph.test.js test/browser-runtime-self-check-service.test.js
+    test/runtime-self-check-loop.test.js` (`154/154`);
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check:frontend-manifest`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - fallback governance classification: closure, no new fallback; Home AI
+    fallback-governance check `ok=true` and plugin changed-line scan
+    `ok=true`.
+- Runtime artifacts now read back cache/client build
+  `0.1.11|codex-mobile-shell-v625-86de04383378`.
+- Deployment/readback status is still pending at this handoff point and must be
+  delegated through the central Codex Mobile deploy lane before reporting full
+  production closure to Home AI.
+
 ## Current Addendum - 2026-07-07 Public release sync
 
 - Current production/private source ref `1aa939ba` (`fix: suppress thread
