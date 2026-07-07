@@ -6159,3 +6159,71 @@ The previous full handoff was archived and should be opened only when old proven
 - Privacy: bounded metadata only; no raw thread/message bodies, endpoint
   bodies, raw logs, screenshots, secrets, cookies, launch tokens, provider
   payloads, or raw cache JSON stored.
+
+## 2026-07-07 - Active Bounded Overlay Close Diagnostic Repair
+
+- Task card: `ttc_010c409066bd2356f2`, diagnostic case
+  `diagcase_3cd7d20ca8aa06e8fd47`.
+- Symptom: Home AI diagnostic reported `conversation_projection_mismatch` /
+  `active-thread-window-downgrade` for the embedded Codex Mobile proxy route at
+  `2026-07-07T05:18:06.271Z`.
+- Current production reproduction before the fix:
+  - build/cache was `0.1.11|codex-mobile-shell-v625-778d0b55ee22`;
+  - Home AI main thread `019f316b-27cd-7622-9944-0b909fec3c70` first read
+    `readMode=turns-list-large`, `readDecision=bounded-large-turns-list`,
+    `activeFullReadRequired=true`, `activeFullReadReason=active-turn-id`,
+    `activeOverlayGate=needs_repair`,
+    `activeOverlayReason=missing-projection-window`,
+    `responseBudgetActiveTurnCount=1`, and
+    `responseBudgetRetainedItemCount=49`;
+  - an immediate repeated read then returned `projection-active-overlay` with
+    `activeOverlayGate=ready`, proving the first response was a transient
+    server-orchestration window close gap rather than durable projection loss.
+- Root cause: when an active detail read missed an active overlay projection
+  window and fell through to bounded `turns-list-large`, the service seeded the
+  newly read window for the next request but returned the current response as
+  `turns-list-large`, allowing the frontend contract diagnostic to classify the
+  first response as an active-window downgrade.
+- Fix:
+  - `services/thread-detail/thread-detail-read-orchestration-service.js` now
+    derives bounded server-active overlay evidence from a freshly read active
+    `turns-list-large` window and reuses the existing
+    `planActiveWindowOverlay()` gate to close the same response as
+    `projection-active-overlay` when evidence is complete;
+  - `test/thread-detail-read-orchestration-service.test.js` covers the
+    snapshot-missing / bounded-active-window path.
+- Source commit: `bb995b95c790` (`fix: close active bounded windows as
+  overlays`).
+- Source validation:
+  - `node --test test/thread-detail-read-orchestration-service.test.js` passed
+    `49/49`;
+  - `node --test test/thread-detail-read-orchestration-service.test.js
+    test/thread-performance-metrics.test.js test/thread-diagnostic-events.test.js
+    test/home-ai-diagnostic-reporting.test.js test/phase-b-readback-smoke.test.js
+    test/runtime-self-check-gate-service.test.js` passed `116/116`;
+  - `npm run --silent check` passed;
+  - fallback governance scan passed with `issues=[]`;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Production deploy/readback:
+  - central deploy synced/restarted requested ref `bb995b95c790`;
+  - route/artifact health remained green with unchanged client/cache
+    `0.1.11|codex-mobile-shell-v625-778d0b55ee22` because this ref changed
+    server/test files only;
+  - startup-only browser gate passed with blocking/actionable/reportable issue
+    codes `[]`;
+  - Home AI main phase-B readback passed with `decision.status=ready`,
+    `readMode=projection-v4-partial`, `activeFullReadRequired=false`,
+    `activeOverlayGate=not-active`, and no active-window downgrade;
+  - Codex source/control thread readback passed with
+    `readMode=projection-active-overlay`, `activeOverlayGate=ready`, and
+    `responseBudgetActiveTurnCount=1`;
+  - focused production tests passed `116/116`;
+  - source/prod SHA parity matched for the two changed files.
+- Residual: default full behavior gate is still not Public-ready due unrelated
+  latest-turn/task-card/usage expectation codes:
+  `browser_latest_turn_item_below_api_expectation`,
+  `browser_turn_task_card_below_api_expectation`, and
+  `browser_turn_usage_missing`.
+- Privacy: bounded metadata only; no raw user messages, thread/task bodies,
+  endpoint bodies, raw logs, screenshots, secrets, cookies, launch tokens,
+  provider payloads, database rows, or raw cache JSON stored.
