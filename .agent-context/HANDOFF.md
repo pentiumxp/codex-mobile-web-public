@@ -6227,3 +6227,177 @@ The previous full handoff was archived and should be opened only when old proven
 - Privacy: bounded metadata only; no raw user messages, thread/task bodies,
   endpoint bodies, raw logs, screenshots, secrets, cookies, launch tokens,
   provider payloads, database rows, or raw cache JSON stored.
+
+## 2026-07-07 - Direct vs Embedded Plugin Startup AB Readback
+
+- User request: compare direct Codex Mobile startup with Home AI embedded plugin
+  startup because direct use felt faster.
+- Contract check: central Home AI root-cause contract requires real workflow
+  Harness evidence for iframe/plugin boot differences; embedded plugin bugs
+  require the embedded iframe path.
+- Codex 8787 startup gate:
+  - `node scripts/codex-mobile-runtime-self-check-loop.js --server
+    http://127.0.0.1:8787 --gate-mode deploy --browser-mode full
+    --browser-startup-only --skip-api --skip-client-events --iterations 1
+    --json`;
+  - passed with direct runtime, Vite preview, app-preview, root/default-root,
+    embed, and session surfaces green;
+  - served client/cache `0.1.11|codex-mobile-shell-v625-778d0b55ee22`;
+  - no blocking startup issue codes.
+- Central visual Harness:
+  - broker plan for `embedded-plugin-shell` / `codex-mobile` selected
+    `browser-mobile` and confirmed Playwright available;
+  - unauthenticated browser-mobile child stopped at Home AI login and is not
+    valid plugin startup evidence;
+  - iOS/PWA central visual path was available through debug server `19073` and
+    executed `embedded-plugin-shell` / `codex-mobile` successfully;
+  - iOS/PWA evidence: assertions `6/6` passed, plugin shell exists, iframe
+    exists with meaningful size, no horizontal overflow, screenshot present,
+    authenticated true, Home AI client
+    `20260707-wardrobe-action-icon-v1128`.
+- Same-debug-lane lightweight AB:
+  - direct `http://127.0.0.1:8787/vite-shell/app-preview.html?embed=hermes`
+    on iOS live-debug: URL/title correct, app visible, login false;
+  - Home AI `http://127.0.0.1:8797/?_hmv=ab-startup` then
+    `loadSelectedView:codex`: authenticated, plugin shell/frame meaningful;
+  - one URL-verified sample: direct navigation duration `57ms`; Home AI host
+    navigation duration `165ms`; plugin iframe prepare/readiness adds roughly
+    tens of milliseconds after Home AI is loaded;
+  - 5-sample warm-path median from the same live-debug lane: direct open+ready
+    `28ms`, plugin host open+prepare+ready `47ms`; navigation medians were
+    close (`166ms` direct vs `169ms` Home AI host), but the mixed-origin
+    WebView navigation entries showed cache/context reuse and should be treated
+    as directional rather than strict lab-grade performance numbers.
+- Interpretation: current evidence does not show an embedded plugin startup
+  failure. Direct Codex can feel faster because the plugin path includes the
+  Home AI shell plus iframe/proxy/session orchestration; the measured warm-path
+  overhead is small in current local/iOS debug samples, while cold cache,
+  service-worker refresh, or Home AI shell loading can amplify the perceived
+  difference.
+- Privacy: bounded metadata only. No raw keys, cookies, launch tokens,
+  screenshots, raw endpoint bodies, or private thread/message content stored.
+
+## 2026-07-07 - User Behavior Harness Coverage Review
+
+- User request: review whether current user-behavior self-check/Harness coverage
+  is broad enough, how the document contract defines it, and whether enforcement
+  is hard enough.
+- Contract readback:
+  - central root-cause contract requires real workflow Harness proof for
+    user-visible state synchronization bugs, including optimistic UI,
+    submitted echo, projection/detail refresh, message ordering, EventSource,
+    iframe/plugin boot, static cache/PWA/native shell differences, and visible
+    rows that disappear/duplicate/reorder;
+  - after repeated Owner reproduction, no Home AI/plugin/Worker/deploy/audit
+    thread should return `completed` from code inspection, logs, or unit tests
+    alone; it must include failing-then-passing Harness evidence, return
+    `blocked_missing_repro_harness`, or return `partially_completed` with the
+    missing Harness path;
+  - accepted evidence must stay metadata-only: counts, hashes, thread ids,
+    pending/durable item counts, visible DOM row counts, status codes, build ids,
+    and timing buckets;
+  - acceptance must enter through the owning symptom surface: embedded iframe
+    for embedded plugin bugs, installed PWA/native shell for PWA/native bugs,
+    production origin/client version for cache/version bugs.
+- Current Codex Mobile Harness surfaces found:
+  - submitted-message Playwright Harness:
+    `scripts/codex-mobile-submitted-message-harness.js`, with app-preview/direct/
+    custom entry surfaces, service-worker block/allow/both, button/enter/auto
+    submit, sampled windows, API durable item readback, visible DOM node counts,
+    POST count, build-hash expectation, and reopen verification;
+  - quota popup Playwright Harness:
+    `scripts/codex-mobile-quota-popup-harness.js`, with direct/custom/app-preview
+    entry surfaces, service-worker block/allow/both, repeated-click support, and
+    checks for runtime bridge, aria-expanded, visible panel, and quota labels;
+  - runtime/browser behavior gate:
+    `scripts/codex-mobile-runtime-self-check-loop.js` dispatches API thread
+    self-check, browser-runtime self-check, process-pressure preflight, Vite
+    preview/app-preview/root/default-root/embed/session startup surfaces, and
+    deploy gate classification;
+  - diagnostic/smoke scripts exist for phase-B readback, thread self-check,
+    projection replay visual smoke, media render visual smoke, image-order
+    visual smoke, PWA shell refresh smoke, and empty-detail cache smoke;
+  - Home AI central visual broker and iOS/PWA harness are documented through
+    `docs/HOME_AI_PLATFORM_CONTRACT.md`.
+- Coverage assessment:
+  - strong for the recently failing submitted-message duplicate/disappear/order
+    path and quota popup path;
+  - adequate for startup/app-preview/ESM/session checks through the runtime gate;
+  - partial for embedded/PWA/mobile visual entry paths because the authoritative
+    tools live in Home AI central visual harnesses and are not wrapped as a
+    first-class Codex Mobile local script;
+  - partial for visual smoke families because runtime diagnostic jobs are
+    registered as manual jobs with `deployDefaultEnabled=false`;
+  - weak as a repo-wide policy because `package.json` exposes
+    `check:submitted-harness` and `check:quota-harness`, while the main `check`
+    script mostly syntax-checks Harness scripts rather than executing the real
+    browser workflows.
+- Enforcement assessment:
+  - document-level contract is strong enough;
+  - implementation-level enforcement is not yet hard enough. Deploy gates can
+    fail and still leave a synced build live, then rely on return status/Public
+    readiness classification. Harness selection is still per-task/manual rather
+    than a mandatory symptom-to-command matrix.
+- Recommended closure path:
+  - add a Codex Mobile user-behavior Harness contract/matrix that maps symptom
+    class to required command(s), target threads/surfaces, service-worker modes,
+    and blocking status;
+  - add a single `check:user-behavior` entrypoint that runs the required
+    submitted-message/quota/runtime gate slices for local/dev validation;
+  - add a central-compatible visual script or npm alias so Home AI
+    `visual:central --delegate-local` can discover Codex Mobile evidence;
+  - make deploy/Public-ready status require the mapped Harness set for the
+    changed symptom class, with `completed` allowed only when required Harnesses
+    pass on the owning surface.
+
+## 2026-07-07 - User Behavior Harness Enforcement Entrypoints
+
+- User approved implementing the three recommended hardening items from the
+  Harness coverage review.
+- Added fixed user-behavior bundle:
+  - `scripts/codex-mobile-user-behavior-check.js`;
+  - npm script `check:user-behavior`;
+  - behavior: fails closed when submitted-message, quota, or runtime-submit
+    targets are missing; with targets, plans/runs submitted-message Harness for
+    each target, quota rapid-click Harness, and full runtime behavior gate with
+    submit exercise.
+- Added Home AI central visual delegate-local compatibility:
+  - `scripts/codex-mobile-central-compatible-visual.js`;
+  - npm scripts `visual:central-compatible` and `visual:plugin`;
+  - output matches Home AI central broker plugin-local evidence schema with
+    metadata-only `schemaVersion`, `pluginId`, `scenario`, `surface`,
+    `harnessKind`, `mode`, assertions, client version, and issue codes;
+  - when no access key is provided, authenticated Vite artifact readback 401 is
+    recorded as `authRequired` instead of failing local supplemental evidence.
+- Added local contract/matrix:
+  - `docs/USER_BEHAVIOR_HARNESS_CONTRACT.md`;
+  - `docs/README.md` now points user-visible duplicate/disappearing message,
+    quota popup, embedded/PWA workflow Harness work to that matrix;
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md` now records the
+    `visual:central-compatible` entry and keeps Home AI iOS/PWA visual evidence
+    as final signoff for embedded/PWA regressions.
+- Added executable contract tests:
+  - `test/user-behavior-harness-contract.test.js`;
+  - covers fail-closed missing targets, planned submitted/quota/runtime command
+    bundle, central-compatible evidence schema/privacy, package script presence,
+    and documented matrix anchors.
+- Validation:
+  - `node --check scripts/codex-mobile-user-behavior-check.js` passed;
+  - `node --check scripts/codex-mobile-central-compatible-visual.js` passed;
+  - `node --check test/user-behavior-harness-contract.test.js` passed;
+  - `node --test test/user-behavior-harness-contract.test.js` passed `5/5`;
+  - `npm run --silent check:user-behavior -- --plan-only
+    --submitted-thread-id controlled:019f-controlled --submitted-thread-id
+    reported:019f-reported --quota-thread-id 019f-quota
+    --runtime-submit-thread-id 019f-controlled --json` passed in plan-only mode
+    and produced four planned commands;
+  - Home AI central broker delegate-local execution passed:
+    `npm run --silent visual:central -- --plugin-id codex-mobile --scenario
+    embedded-plugin-shell --delegate-local --plugin-root
+    /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute
+    --json`;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Privacy: stored only bounded filenames, commands, status, counts, issue-code
+  semantics, and non-secret dummy ids. No raw messages, keys, cookies, launch
+  tokens, endpoint bodies, screenshots, private thread/task bodies, raw cache
+  JSON, provider payloads, or long logs stored.
