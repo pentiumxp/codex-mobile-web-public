@@ -5995,3 +5995,22 @@ The previous full handoff was archived and should be opened only when old proven
   - `node --test test/thread-list-service-boundary.test.js test/thread-list-summary-merge-service.test.js test/thread-list-runtime-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-route-service.test.js test/thread-visibility.test.js test/thread-title-source.test.js` passed `114/114`.
   - `npm run --silent check` passed.
 - Deployment status: not deployed; this is a source absorption of the public PR.
+
+## 2026-07-07 - Public PR #86 HTML File Preview Absorbed
+
+- Absorbed public PR #86 (`fix: render html file previews`) manually instead of merging the public branch, because the PR branch was based behind private `main` and carried unrelated/stale generated shell artifact churn.
+- Fix: local `.html`/`.htm` file previews now use `kind="html"`, receive a sandbox CSP on `/api/files/preview/content`, and render in a controlled sandboxed iframe with source/render tabs plus fullscreen support. Escape and dialog close clear fullscreen state.
+- Runtime surfaces updated in both native ESM and classic public outputs:
+  - `frontend/native/media-preview-runtime.mjs` / `public/media-preview-runtime.js`;
+  - `frontend/native/conversation-render-runtime.mjs` / `public/conversation-render-runtime.js`;
+  - `frontend/native/app-shell-runtime.mjs` / `public/app-shell-runtime.js`;
+  - `public/styles.css`;
+  - `adapters/media-file-service.js`.
+- Build: `npm run --silent build:frontend` produced `0.1.11|codex-mobile-shell-v625-63d53108eec7`.
+- Validation:
+  - syntax checks passed for edited service/runtime files;
+  - `node --test test/file-preview.test.js test/file-preview-ui.test.js test/media-preview-runtime-ui.test.js` passed `25/25`;
+  - `node --test test/file-preview.test.js test/file-preview-ui.test.js test/media-preview-runtime-ui.test.js test/vite-shell-artifact-service.test.js test/vite-shell-asset-graph.test.js` passed `63/63`;
+  - `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Deployment status: not deployed; this is source/public absorption and generated artifact sync.

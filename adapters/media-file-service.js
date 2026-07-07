@@ -282,6 +282,25 @@ function createMediaFileService(options = {}) {
     return FILE_PREVIEW_TEXT_CONTENT_TYPES.get(ext) || "text/plain; charset=utf-8";
   }
 
+  function isHtmlFilePreview(filePath) {
+    const ext = filePreviewExtension(filePath);
+    return ext === ".html" || ext === ".htm";
+  }
+
+  function filePreviewContentSecurityPolicy(filePath) {
+    if (!isHtmlFilePreview(filePath)) return "";
+    return [
+      "sandbox allow-scripts",
+      "default-src 'none'",
+      "script-src 'unsafe-inline'",
+      "style-src 'unsafe-inline'",
+      "img-src data: blob:",
+      "font-src data:",
+      "base-uri 'none'",
+      "form-action 'none'",
+    ].join("; ");
+  }
+
   function filePreviewExtensionPattern() {
     const extensions = [
       ...FILE_PREVIEW_TEXT_EXTENSIONS,
@@ -466,6 +485,7 @@ function createMediaFileService(options = {}) {
 
   function previewKindForPath(filePath) {
     const ext = filePreviewExtension(filePath);
+    if (isHtmlFilePreview(filePath)) return "html";
     if (ext === ".md" || ext === ".markdown") return "markdown";
     if (ext === ".json" || ext === ".jsonl") return "json";
     if (ext === ".yaml" || ext === ".yml") return "yaml";
@@ -538,13 +558,16 @@ function createMediaFileService(options = {}) {
       sendJson(413, { error: `File is too large for mobile preview (${Math.round(limit / 1024 / 1024)} MB limit)` });
       return;
     }
-    res.writeHead(200, {
+    const headers = {
       "Content-Type": filePreviewContentType(resolved.path),
       "Content-Length": resolved.stat.size,
       "Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",
       "Content-Disposition": filePreviewContentDisposition(resolved.path),
-    });
+    };
+    const csp = filePreviewContentSecurityPolicy(resolved.path);
+    if (csp) headers["Content-Security-Policy"] = csp;
+    res.writeHead(200, headers);
     fs.createReadStream(resolved.path).pipe(res);
   }
 
@@ -924,6 +947,7 @@ function createMediaFileService(options = {}) {
     buildTurnInput,
     cleanupDuplicateUploads,
     filePreviewAuthoritiesForThread,
+    filePreviewContentSecurityPolicy,
     filePreviewContentDisposition,
     filePreviewContentType,
     filePreviewImageContentTypes: FILE_PREVIEW_IMAGE_CONTENT_TYPES,
@@ -938,6 +962,7 @@ function createMediaFileService(options = {}) {
     hasDeniedPreviewPathSegment,
     imageContextPolicy,
     imageExtensions: IMAGE_EXTENSIONS,
+    isHtmlFilePreview,
     isPathInside,
     maxUploadBytes,
     maxUploadFiles,

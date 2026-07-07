@@ -1234,6 +1234,18 @@ async function openLocalFilePreview(...args) {
   return requireMediaPreviewRuntime().openLocalFilePreview(...args);
 }
 
+function handleFilePreviewHtmlViewClick(...args) {
+  return requireMediaPreviewRuntime().handleFilePreviewHtmlViewClick(...args);
+}
+
+function handleFilePreviewHtmlFullscreenClick(...args) {
+  return requireMediaPreviewRuntime().handleFilePreviewHtmlFullscreenClick(...args);
+}
+
+function closeFilePreviewHtmlFullscreen(...args) {
+  return requireMediaPreviewRuntime().closeFilePreviewHtmlFullscreen(...args);
+}
+
 function nestedStringValue(value, keys, depth = 0, seen = new Set()) {
   if (!value || typeof value !== "object" || depth > 3 || seen.has(value)) return "";
   seen.add(value);
@@ -1855,6 +1867,9 @@ const legacyGlobals = {
     scheduleVisibleImageFailureScan,
     showFilePreviewLoading,
     localFilePreviewThreadIdFromLink,
+    handleFilePreviewHtmlViewClick,
+    handleFilePreviewHtmlFullscreenClick,
+    closeFilePreviewHtmlFullscreen,
     nestedStringValue,
     collabAgentTaskText,
     collabAgentThreadText,

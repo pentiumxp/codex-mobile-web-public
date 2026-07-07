@@ -1331,6 +1331,7 @@ function closeFilePreview() {
   if (!dialog) return;
   state.filePreviewSwipe = null;
   state.filePreviewThreadId = "";
+  closeFilePreviewHtmlFullscreen();
   dialog.classList.add("hidden");
   $("filePreviewBody").innerHTML = "";
   $("filePreviewMeta").textContent = "";
@@ -1542,9 +1543,85 @@ function renderCsvPreview(content) {
   return `<div class="file-preview-table-wrap"><table class="file-preview-table"><thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
 }
 
+function renderFilePreviewSource(content) {
+  return `<pre class="file-preview-text"><code>${escapeHtml(content)}</code></pre>`;
+}
+
+function renderHtmlFilePreview(file, options = {}) {
+  const content = String((file && file.content) || "");
+  const src = filePreviewContentUrl(file, options);
+  const title = file && file.fileName ? file.fileName : "HTML preview";
+  return `<div class="file-preview-html" data-file-preview-html>
+    <div class="file-preview-html-toolbar" role="group" aria-label="HTML 预览模式">
+      <button class="file-preview-html-tab is-active" type="button" data-file-preview-html-view="render" aria-pressed="true">页面</button>
+      <button class="file-preview-html-tab" type="button" data-file-preview-html-view="source" aria-pressed="false">源码</button>
+      <span class="file-preview-html-toolbar-spacer" aria-hidden="true"></span>
+      <button class="file-preview-html-tool" type="button" data-file-preview-html-fullscreen aria-label="全屏预览 HTML" title="全屏预览">全屏</button>
+    </div>
+    <div class="file-preview-html-pane" data-file-preview-html-pane="render">
+      <iframe class="file-preview-html-frame" sandbox="allow-scripts" referrerpolicy="no-referrer" src="${escapeHtml(src)}" title="${escapeHtml(title)}"></iframe>
+    </div>
+    <div class="file-preview-html-pane" data-file-preview-html-pane="source" hidden>${renderFilePreviewSource(content)}</div>
+  </div>`;
+}
+
+function setFilePreviewHtmlView(root, view, activeButton = null) {
+  if (!root || view !== "render" && view !== "source") return false;
+  root.querySelectorAll("[data-file-preview-html-view]").forEach((entry) => {
+    const selected = activeButton ? entry === activeButton : entry.getAttribute("data-file-preview-html-view") === view;
+    entry.classList.toggle("is-active", selected);
+    entry.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+  root.querySelectorAll("[data-file-preview-html-pane]").forEach((pane) => {
+    pane.hidden = pane.getAttribute("data-file-preview-html-pane") !== view;
+  });
+  return true;
+}
+
+function handleFilePreviewHtmlViewClick(button) {
+  const view = button && button.dataset ? String(button.dataset.filePreviewHtmlView || "") : "";
+  const root = button && typeof button.closest === "function" ? button.closest("[data-file-preview-html]") : null;
+  return setFilePreviewHtmlView(root, view, button);
+}
+
+function setFilePreviewHtmlFullscreen(root, fullscreen) {
+  if (!root || !root.classList) return false;
+  root.classList.toggle("is-fullscreen", fullscreen);
+  const documentElement = document && document.documentElement;
+  if (documentElement && documentElement.classList) {
+    documentElement.classList.toggle("file-preview-html-fullscreen-open", fullscreen);
+  }
+  const button = typeof root.querySelector === "function" ? root.querySelector("[data-file-preview-html-fullscreen]") : null;
+  if (button) {
+    button.textContent = fullscreen ? "退出全屏" : "全屏";
+    button.setAttribute("aria-label", fullscreen ? "退出 HTML 全屏预览" : "全屏预览 HTML");
+    button.setAttribute("title", fullscreen ? "退出全屏" : "全屏预览");
+  }
+  if (fullscreen) {
+    const renderButton = typeof root.querySelector === "function" ? root.querySelector("[data-file-preview-html-view=\"render\"]") : null;
+    setFilePreviewHtmlView(root, "render", renderButton);
+  }
+  return true;
+}
+
+function handleFilePreviewHtmlFullscreenClick(button) {
+  const root = button && typeof button.closest === "function" ? button.closest("[data-file-preview-html]") : null;
+  if (!root || !root.classList) return false;
+  return setFilePreviewHtmlFullscreen(root, !root.classList.contains("is-fullscreen"));
+}
+
+function closeFilePreviewHtmlFullscreen() {
+  const root = document && typeof document.querySelector === "function"
+    ? document.querySelector("[data-file-preview-html].is-fullscreen")
+    : null;
+  if (!root) return false;
+  return setFilePreviewHtmlFullscreen(root, false);
+}
+
 function renderFilePreviewContent(file, options = {}) {
   const content = String((file && file.content) || "");
   if (file && file.kind === "markdown") return renderMarkdown(content, { orderedListMode: "source" });
+  if (file && file.kind === "html") return renderHtmlFilePreview(file, options);
   if (file && file.kind === "image") {
     const src = filePreviewContentUrl(file, options);
     return `<div class="file-preview-media"><img class="file-preview-image" src="${escapeHtml(src)}" alt="${escapeHtml(file.fileName || "image preview")}"></div>`;
@@ -1555,7 +1632,7 @@ function renderFilePreviewContent(file, options = {}) {
   }
   if (file && file.kind === "json") return renderJsonPreview(content);
   if (file && file.kind === "csv") return renderCsvPreview(content);
-  return `<pre class="file-preview-text"><code>${escapeHtml(content)}</code></pre>`;
+  return renderFilePreviewSource(content);
 }
 
 function imageViewPath(item) {
@@ -2361,6 +2438,13 @@ async function openLocalFilePreview(link, options = {}) {
     renderJsonPreview,
     parseCsvPreviewRows,
     renderCsvPreview,
+    renderFilePreviewSource,
+    renderHtmlFilePreview,
+    setFilePreviewHtmlView,
+    handleFilePreviewHtmlViewClick,
+    setFilePreviewHtmlFullscreen,
+    handleFilePreviewHtmlFullscreenClick,
+    closeFilePreviewHtmlFullscreen,
     renderFilePreviewContent,
     imageViewPath,
     imageViewUrl,

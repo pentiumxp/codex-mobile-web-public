@@ -2603,6 +2603,109 @@ html.visual-recovering body::before {
   background: var(--control-muted-bg);
 }
 
+.file-preview-html {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+html.file-preview-html-fullscreen-open,
+html.file-preview-html-fullscreen-open body {
+  overflow: hidden;
+}
+
+.file-preview-html-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.file-preview-html-tab {
+  min-height: 32px;
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  font-size: var(--content-small-font-size);
+}
+
+.file-preview-html-tab.is-active {
+  color: var(--text-on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.file-preview-html-toolbar-spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.file-preview-html-tool {
+  min-height: 32px;
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--control-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  font-size: var(--content-small-font-size);
+  white-space: nowrap;
+}
+
+.file-preview-html-pane {
+  min-width: 0;
+}
+
+.file-preview-html-frame {
+  display: block;
+  width: 100%;
+  height: min(66vh, 760px);
+  min-height: 420px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.file-preview-html.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  box-sizing: border-box;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding:
+    calc(10px + env(safe-area-inset-top))
+    calc(10px + env(safe-area-inset-right))
+    calc(10px + env(safe-area-inset-bottom))
+    calc(10px + env(safe-area-inset-left));
+  background: var(--panel);
+  overscroll-behavior: contain;
+}
+
+.file-preview-html.is-fullscreen .file-preview-html-toolbar {
+  min-height: 42px;
+  flex-wrap: nowrap;
+}
+
+.file-preview-html.is-fullscreen .file-preview-html-pane {
+  min-height: 0;
+}
+
+.file-preview-html.is-fullscreen .file-preview-html-pane[data-file-preview-html-pane="render"] {
+  height: 100%;
+}
+
+.file-preview-html.is-fullscreen .file-preview-html-pane[data-file-preview-html-pane="source"] {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.file-preview-html.is-fullscreen .file-preview-html-frame {
+  height: 100%;
+  min-height: 0;
+}
+
 .file-preview-table-wrap {
   max-width: 100%;
   overflow-x: hidden;
