@@ -6123,3 +6123,39 @@ The previous full handoff was archived and should be opened only when old proven
   recorded. No raw logs, raw thread/message bodies, endpoint bodies, secrets,
   cookies, launch tokens, screenshots, provider payloads, or raw cache JSON
   stored.
+
+## 2026-07-07 - Active Window Downgrade Diagnostic Readback
+
+- Task card: `ttc_8ce0ce8121d27fe3e3`, diagnostic case
+  `diagcase_194e1222606caf2fd4a8`.
+- Symptom: Home AI diagnostic reported `conversation_projection_mismatch` /
+  `active-thread-window-downgrade` for the embedded Codex Mobile proxy route at
+  `2026-07-07T03:19:54.998Z`.
+- Current production readback after `3394517f`:
+  - `/api/public-config` reports
+    `0.1.11|codex-mobile-shell-v625-778d0b55ee22`;
+  - current published `public/thread-performance-metrics.js` and current Vite
+    shard include the active-overlay projection acceptance rule;
+  - default phase-B readback passed with `readMode=projection-active-overlay`,
+    `activeOverlayGate=ready`, `activeOverlayAction=use-projection-overlay`,
+    response budget applied, active turn count `1`, and retained visible items;
+  - Codex source thread `019f2d75-39bd-7462-8dca-de24f97aeaf6` passed
+    active-overlay readback with `activeOverlayGate=ready`;
+  - Home AI main thread `019f316b-27cd-7622-9944-0b909fec3c70` returned
+    `projection-v4-partial` with `activeOverlayGate=not-active` because active
+    full read was not required, so `--require-active-overlay` is not applicable
+    for that current idle/non-active sample.
+- Validation:
+  - `node --test test/thread-performance-metrics.test.js
+    test/thread-diagnostic-events.test.js
+    test/home-ai-diagnostic-reporting.test.js
+    test/runtime-self-check-gate-service.test.js` passed `59/59`;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Classification: the exact `active-thread-window-downgrade` event was not
+  reproducible on current production. Current self-check still reports separate
+  assistant projection gaps (`active_turn_assistant_projection_gap` and
+  `latest_completed_assistant_projection_gap`) on a different invariant.
+- No Codex Mobile source repair was performed for this card in this slice.
+- Privacy: bounded metadata only; no raw thread/message bodies, endpoint
+  bodies, raw logs, screenshots, secrets, cookies, launch tokens, provider
+  payloads, or raw cache JSON stored.
