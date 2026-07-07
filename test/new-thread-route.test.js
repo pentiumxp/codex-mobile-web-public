@@ -537,7 +537,7 @@ test("existing-message route forwards runtime settings on next turn", () => {
 test("existing-thread message send refreshes the sidebar thread list", () => {
   const body = functionBody(composerRuntimeJs, "sendMessage");
 
-  assert.match(body, /scheduleComposerTargetRefresh\(targetThreadId, 600, "message-submit"\);[\s\S]*scheduleLivePollIfNeeded\(1200\);[\s\S]*loadThreads\(\{ silent: true \}\)\.catch\(showError\);/);
+  assert.match(body, /scheduleComposerTargetRefresh\(targetThreadId, 250, "message-submit"\);[\s\S]*schedulePostCompletionThreadRefreshes\(targetThreadId, \[350, 750, 1200, 2400, 5200\]\);[\s\S]*scheduleLivePollIfNeeded\(1200\);[\s\S]*loadThreads\(\{ silent: true \}\)\.catch\(showError\);/);
 });
 
 test("active-turn message send reports queued steering separately from delivered steering", () => {

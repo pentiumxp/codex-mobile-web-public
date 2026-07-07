@@ -87,6 +87,14 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     activeOverlayFullProjectionMs: 0,
     activeOverlayHistoryBaselineMs: 0,
     activeOverlayMergeMs: 0,
+    prepareCompletionBackfillMs: 0,
+    prepareUsageSummariesMs: 0,
+    prepareUserInputAnchorsMs: 0,
+    prepareActiveAssistantMs: 0,
+    prepareFinalizeActiveAssistantMs: 0,
+    prepareTaskCardsMs: 0,
+    prepareProjectionFinalizeMs: 0,
+    prepareResponseBudgetMs: 0,
   });
 });
 
