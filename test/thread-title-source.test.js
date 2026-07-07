@@ -56,7 +56,14 @@ test("thread display summary keeps local runtime fields while accepting display 
   const helperBody = threadSummaryStateServiceJs.slice(helperStart, helperEnd);
 
   assert.match(helperBody, /Object\.assign\(\{\}, base\)/);
-  assert.match(helperBody, /for \(const key of \["name", "preview", "cwd"\]\)/);
+  assert.match(threadSummaryStateServiceJs, /function preferredSessionIndexTitleEntry\(base, display\)/);
+  assert.match(threadSummaryStateServiceJs, /function applySessionIndexTitleMarker\(target, entry\)/);
+  assert.match(helperBody, /const sessionIndexTitle = preferredSessionIndexTitleEntry\(base, display\)/);
+  assert.match(helperBody, /for \(const key of \["name", "preview"\]\)/);
+  assert.match(helperBody, /if \(!sessionIndexTitle && value !== null && value !== undefined && String\(value\)\.trim\(\) !== ""\) next\[key\] = value;/);
+  assert.match(helperBody, /for \(const key of \["displayTitle", "threadTitle", "thread_name", "title"\]\)/);
+  assert.match(helperBody, /for \(const key of \["cwd"\]\)/);
+  assert.match(helperBody, /applySessionIndexTitleMarker\(next, sessionIndexTitle\)/);
   assert.match(helperBody, /displayUpdatedAtMs[\s\S]*>= baseUpdatedAtMs/);
   assert.match(helperBody, /shouldReplaceThreadDisplayStatus\(base\.status, display\.status, baseUpdatedAtMs, displayUpdatedAtMs\)/);
   assert.doesNotMatch(helperBody, /if \(display\.status\) next\.status = display\.status;/);

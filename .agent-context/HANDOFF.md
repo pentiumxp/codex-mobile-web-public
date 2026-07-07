@@ -5983,3 +5983,15 @@ The previous full handoff was archived and should be opened only when old proven
   - Local Playwright harness on `http://127.0.0.1:8897`, thread `019f2d75-39bd-7462-8dca-de24f97aeaf6`, `--service-workers both --click-count 2`, passed with issue codes `[]`; both block and allow modes ended with `ariaExpanded=true` and visible quota panel.
   - `npm run --silent check` passed.
 - Deployment status: not yet delegated/deployed in this local implementation slice.
+
+## 2026-07-07 - Public PR #87 Manual Title Preservation Absorbed
+
+- Triage: private `origin` had no open PRs. Public repo had PR #87 (`fix: preserve manual thread titles`) and PR #86 (`html-preview-render-fullscreen`). PR #87 was the latest and was not covered locally; PR #86 remains a separate HTML preview feature and was not absorbed in this slice.
+- Absorbed PR #87 code/test logic manually instead of merging the public branch, because public PR base is behind the private main and direct branch diff includes unrelated/stale generated artifacts.
+- Fix: `applySessionIndexTitleToThread()` now applies session-index/manual titles to `displayTitle`, `threadTitle`, `thread_name`, `name`, `title`, and `preview`, and records `mobileSessionIndexTitle` plus timestamp marker. `mergeThreadDisplaySummary()` now preserves the preferred session-index title marker over stale display/app-server summaries while still merging non-title fields such as `cwd`.
+- Validation:
+  - `node --check adapters/thread-visibility-service.js && node --check services/thread-list/thread-summary-state-service.js && node --check test/thread-visibility.test.js && node --check test/thread-title-source.test.js` passed.
+  - `node --test test/thread-visibility.test.js test/thread-title-source.test.js` passed `69/69`.
+  - `node --test test/thread-list-service-boundary.test.js test/thread-list-summary-merge-service.test.js test/thread-list-runtime-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-route-service.test.js test/thread-visibility.test.js test/thread-title-source.test.js` passed `114/114`.
+  - `npm run --silent check` passed.
+- Deployment status: not deployed; this is a source absorption of the public PR.
