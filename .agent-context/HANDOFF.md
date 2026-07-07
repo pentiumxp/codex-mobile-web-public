@@ -21,6 +21,41 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## Current Addendum - 2026-07-07 Public PR 88 tile-mode absorption
+
+- Worker lane `pr_absorption` absorbed public PR #88
+  (`pentiumxp/codex-mobile-web-public#88`, head
+  `5bf2de42b0b4971309a73d4e728eff60edf89db1`) into private `main`.
+- Source commit: `87d4aaed` (`feat: absorb tile mode optimization`).
+- Conflict handling: generated shell/Vite conflict files were not merged from
+  the public PR build. The PR source/test intent was applied on top of current
+  private fixes, then frontend artifacts were regenerated with
+  `npm run --silent build:frontend`.
+- Absorbed behavior: shell-owned Session List hide/show control for tile mode,
+  active pane/composer target visual identity, shared Composer target
+  indicator, initial detail-load concurrency reduced to one, and stale
+  background tile refresh limited by target count and age.
+- Private-main preservation: compact mobile turn-timer changes in
+  `public/index.html`, `public/styles.css`, and `test/mobile-viewport.test.js`
+  were retained.
+- Regenerated frontend readback:
+  `0.1.11|codex-mobile-shell-v625-6a359bd0e7fd`.
+- Validation passed:
+  - `node --test test/thread-tile-state.test.js
+    test/thread-tile-runtime-ui.test.js test/thread-tile-layout-ui.test.js
+    test/mobile-viewport.test.js test/new-thread-ui.test.js` (`67/67`);
+  - `npm run --silent build:frontend`;
+  - `npm run --silent check:frontend-manifest`;
+  - `npm run --silent check`;
+  - `git diff --check -- ':!.agent-context'`;
+  - `git diff --cached --check -- ':!.agent-context'` before commit.
+- Browser plugin visual smoke was attempted but not completed because the
+  in-app Browser bootstrap failed before setup with
+  `sandboxCwd must be an absolute file URI`.
+- Public PR #88 was not mutated or closed. Recommendation after private push:
+  mark/close it as absorbed, or leave open only if a later public-main sync
+  policy needs the public branch preserved.
+
 ## Current Addendum - 2026-07-07 Empty visible detail task-card-only diagnostic repair
 
 - Active Home AI diagnostic card `ttc_3ee119effd61a5ae27` was routed through
