@@ -6014,3 +6014,23 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run --silent check` passed;
   - `git diff --check -- ':!.agent-context'` passed.
 - Deployment status: not deployed; this is source/public absorption and generated artifact sync.
+
+## 2026-07-07 - Active Overlay Projection Diagnostic Contract
+
+- Task card: `ttc_5470d4a7c40dcc9f27`, diagnostic case `diagcase_5640b29d6b7827f84988`.
+- Symptom: Home AI diagnostic reported `conversation_projection_mismatch` / `active-thread-window-downgrade` on the Codex Mobile embedded thread detail route.
+- Failing layer: Codex Mobile frontend diagnostic planner, not the Home AI proxy. Current production readback for Home AI main and Codex source threads showed valid active overlay responses: `mobileReadMode=projection-active-overlay`, `partialKind=turns-list-active-overlay-window`, active turns present, visible items present, and response budget evidence present.
+- Root-cause fix: `planThreadDetailResponseContractDiagnostic()` now treats explicit `projection-active-overlay` / `active-overlay-window` projection windows as valid active progressive projection evidence when active and visible evidence are present. The existing downgrade detector still reports real active window downgrades when the response lacks projection/budget evidence.
+- Files changed:
+  - `frontend/native/thread-performance-metrics.mjs`;
+  - `public/thread-performance-metrics.js`;
+  - `test/thread-performance-metrics.test.js`;
+  - generated Vite/native ESM shell artifacts.
+- Build: `npm run --silent build:frontend` produced `0.1.11|codex-mobile-shell-v625-6a2f01188284`, native ESM execution, published file count `24`.
+- Validation:
+  - focused diagnostic/runtime/Vite tests passed `97/97`;
+  - `npm run --silent check` passed;
+  - fallback governance scan passed with `issues=[]`;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Deployment status: source fix ready for central plugin deploy; production pre-fix read-only self-check against Home AI main thread was green and did not reproduce the H2 event during this local slice.
+- Privacy: only bounded ids, statuses, modes, counts, hashes, and issue-code summaries were recorded. No raw thread bodies, message text, endpoint bodies, secrets, cookies, launch tokens, screenshots, raw cache JSON, or long logs stored.

@@ -484,7 +484,11 @@
     const activeLike = Boolean(source.expectedActiveFullRead) || activeTurns > 0 || activeLikeStatus(status);
     const windowedMode = /turns-list|projection-v?\d*-partial|projection-partial|summary-timeout|unmaterialized|fallback/.test(readMode)
       || /bounded-large|turns-list|partial|fallback/.test(performancePhase);
-    const partialProjectionMode = projectionPartial || /projection-v?\d*-partial|projection-partial/.test(readMode);
+    const activeOverlayProjectionMode = /projection-active-overlay/.test(readMode)
+      || /active-overlay-window/.test(projectionPartialKind);
+    const partialProjectionMode = projectionPartial
+      || activeOverlayProjectionMode
+      || /projection-v?\d*-partial|projection-partial/.test(readMode);
     const hasActiveProjectionEvidence = activeTurns > 0 || responseBudgetActiveTurnCount > 0;
     const hasVisibleProjectionEvidence = visibleItems > 0 || responseBudgetRetainedItemCount > 0;
     const activePartialProjectionOk = !source.expectedActiveFullRead
@@ -494,6 +498,7 @@
       && (
         responseBudgetApplied
         || responseBudgetProgressiveActiveApplied
+        || activeOverlayProjectionMode
         || /warm-projection-partial|projection-partial/.test(performancePhase)
       );
     const projectionModeMarkedFull = /projection-v?\d*-(cache|dynamic)|projection-(cache|dynamic)/.test(readMode)
