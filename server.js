@@ -102,6 +102,7 @@ const { createServerSupportRuntimeService } = require("./services/runtime/server
 const { createRuntimePressureDiagnosticsService } = require("./services/runtime/runtime-pressure-diagnostics-service");
 const { createNotificationRuntimeService } = require("./services/runtime/notification-runtime-service");
 const { createAppServerRequestPolicyService } = require("./services/runtime/app-server-request-policy-service");
+const { createUserBehaviorRepairCardService } = require("./services/runtime/user-behavior-repair-card-service");
 const { createServerRouteCompositionService } = require("./server-routes/server-route-composition-service");
 const {
   createAutoTurnRecoveryService,
@@ -233,6 +234,11 @@ const {
   THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS,
   THREAD_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS,
   THREAD_TASK_CARD_EXECUTION_WATCHDOG_LIMIT,
+  USER_BEHAVIOR_REPAIR_CARDS_DISABLED,
+  USER_BEHAVIOR_REPAIR_TARGET_THREAD_ID,
+  USER_BEHAVIOR_REPAIR_TARGET_ROLE,
+  USER_BEHAVIOR_REPAIR_TARGET_WORKSPACE,
+  USER_BEHAVIOR_REPAIR_DEDUPE_WINDOW_MS,
   WORKSPACE_REGISTRY_FILE,
   TOKEN_USAGE_STATS_DB,
   TOKEN_USAGE_QUERY_CACHE_TTL_MS,
@@ -944,6 +950,15 @@ const {
   materializeThreadTaskCardDraftsForThread,
   prepareThreadTaskCardsToResult,
 } = threadTaskCardRuntimeService;
+const userBehaviorRepairCardService = createUserBehaviorRepairCardService({
+  createThreadTaskCardsFromSourceThread,
+  disabled: USER_BEHAVIOR_REPAIR_CARDS_DISABLED,
+  targetThreadId: USER_BEHAVIOR_REPAIR_TARGET_THREAD_ID,
+  targetRole: USER_BEHAVIOR_REPAIR_TARGET_ROLE,
+  targetWorkspace: USER_BEHAVIOR_REPAIR_TARGET_WORKSPACE,
+  dedupeWindowMs: USER_BEHAVIOR_REPAIR_DEDUPE_WINDOW_MS,
+  logger: console,
+});
 threadGoalActionService = createThreadGoalActionService({
   codexRequest: (...args) => codex.request(...args),
   goalForThread: (threadId) => threadGoalService.goalForThread(threadId),
@@ -1988,6 +2003,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   trackThreadDetailRequestLifecycle,
   tryUpdateThreadTitle,
   upsertThreadListFallbackCacheThreads,
+  userBehaviorRepairCardService,
   visibilityFromGlobalState,
   viteShellArtifactService,
   webPushRuntimeService: notificationRuntimeService.webPushRuntimeService,

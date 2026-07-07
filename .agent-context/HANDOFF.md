@@ -6463,3 +6463,56 @@ The previous full handoff was archived and should be opened only when old proven
 - Privacy: metadata only. No raw messages, raw client logs, endpoint bodies,
   cookies, launch tokens, private thread/task bodies, screenshots, raw cache
   JSON, provider payloads, database rows, or long logs stored.
+
+## 2026-07-07 - Submitted-User Incident Worker Repair Cards
+
+- Request: because submitted user-message duplication/disappearance is now rare
+  and hard to catch with later visual smoke, create a runtime path that sends a
+  repair task card when a real client session observes the issue.
+- Added `services/runtime/user-behavior-repair-card-service.js`.
+  - Classifies bounded `/api/client-events` metadata for
+    `submitted_message_dom_duplicate` and `submitted_message_dom_missing`;
+  - accepts both Home AI diagnostic failure events and frontend
+    `submitted_echo_lifecycle` `dom-probe` diagnostics;
+  - dedupes per source thread, issue code, client build, and time window;
+  - creates autonomous `plugin_worker` repair cards with the required
+    submitted-message Harness command for the exact source thread;
+  - keeps the card body metadata-only: ids, issue codes, build id/hash,
+    entry-surface flags, timing/count buckets, and privacy instructions.
+- Server wiring:
+  - `/api/client-events` now schedules the repair-card classifier in the
+    background after logging the original event; the route still returns `204`
+    and logs only bounded create/fail outcomes.
+  - `server.js` injects `createThreadTaskCardsFromSourceThread` into the new
+    service through route composition.
+- Runtime controls:
+  - default target role is `plugin_worker`;
+  - exact target override:
+    `CODEX_MOBILE_USER_BEHAVIOR_REPAIR_TARGET_THREAD_ID`;
+  - optional target role/workspace:
+    `CODEX_MOBILE_USER_BEHAVIOR_REPAIR_TARGET_ROLE`,
+    `CODEX_MOBILE_USER_BEHAVIOR_REPAIR_TARGET_WORKSPACE`;
+  - dedupe window:
+    `CODEX_MOBILE_USER_BEHAVIOR_REPAIR_DEDUPE_WINDOW_MS`;
+  - disable switches:
+    `CODEX_MOBILE_USER_BEHAVIOR_REPAIR_CARDS_DISABLED=1` or
+    `CODEX_MOBILE_USER_BEHAVIOR_REPAIR_CARDS=off`.
+- Docs updated:
+  - `docs/USER_BEHAVIOR_HARNESS_CONTRACT.md` now defines runtime repair-card
+    intake as incident routing, not completion evidence;
+  - `docs/MODULES.md` documents the new runtime service boundary.
+- Validation:
+  - `node --check services/runtime/user-behavior-repair-card-service.js
+    server.js test/user-behavior-repair-card-service.test.js
+    test/core-api-route-service.test.js test/server-runtime-config-service.test.js`
+    passed;
+  - `node --test test/user-behavior-repair-card-service.test.js
+    test/core-api-route-service.test.js test/server-runtime-config-service.test.js`
+    passed `20/20`;
+  - `node --test test/user-behavior-repair-card-service.test.js
+    test/user-behavior-harness-contract.test.js` passed `10/10`;
+  - `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Privacy: metadata only. No raw user message text, endpoint bodies, cookies,
+  launch tokens, screenshots, raw cache JSON, private thread/task bodies,
+  provider payloads, database rows, or long logs stored.

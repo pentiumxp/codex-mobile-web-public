@@ -90,6 +90,7 @@ function createServerRouteCompositionService(dependencies = {}) {
     threadDetailFirstPaintPrewarmStatus: dependencies.threadDetailFirstPaintPrewarmStatus,
     threadListFallbackPrewarmPublicStatus: dependencies.threadListFallbackPrewarmPublicStatus,
     timingSafeEquals: dependencies.timingSafeEquals,
+    userBehaviorRepairCardService: dependencies.userBehaviorRepairCardService,
     viteShellArtifactService: dependencies.viteShellArtifactService,
     workspaceDelegationPublicSettings: dependencies.workspaceDelegationPublicSettings,
     workspaceRegistryService: dependencies.workspaceRegistryService,

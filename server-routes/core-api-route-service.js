@@ -95,6 +95,7 @@ function createCoreApiRouteService(deps = {}) {
     threadDetailFirstPaintPrewarmStatus = () => null,
     threadListFallbackPrewarmPublicStatus,
     timingSafeEquals,
+    userBehaviorRepairCardService,
     viteShellArtifactService,
     workspaceDelegationPublicSettings,
     workspaceRegistryService,
@@ -570,6 +571,41 @@ function createCoreApiRouteService(deps = {}) {
         details,
         userAgent: String(req.headers["user-agent"] || "").slice(0, 160),
       });
+      if (userBehaviorRepairCardService && typeof userBehaviorRepairCardService.handleClientEvent === "function") {
+        scheduleBackgroundTask(async () => {
+          try {
+            const result = await userBehaviorRepairCardService.handleClientEvent(event, {
+              threadId: body.threadId || "",
+              path: body.path || "",
+              details,
+              userAgent: String(req.headers["user-agent"] || "").slice(0, 160),
+            });
+            if (result && result.created) {
+              logClientEvent("user_behavior_repair_card_created", {
+                threadId: body.threadId || "",
+                issueCode: result.issueCode || "",
+                cardId: result.cardId || "",
+                direct: result.direct === true,
+                autoApprove: result.autoApprove === true,
+              });
+            } else if (result && result.ok === false) {
+              logClientEvent("user_behavior_repair_card_failed", {
+                threadId: body.threadId || "",
+                issueCode: result.issueCode || "",
+                reason: result.reason || "",
+                error: result.error || "",
+              });
+            }
+          } catch (err) {
+            logClientEvent("user_behavior_repair_card_failed", {
+              threadId: body.threadId || "",
+              issueCode: "",
+              reason: "task_card_dispatch_exception",
+              error: err && err.message ? err.message : String(err || ""),
+            });
+          }
+        });
+      }
       res.writeHead(204, { "Cache-Control": "no-store" });
       res.end();
       return { handled: true };

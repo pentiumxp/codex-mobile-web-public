@@ -62,6 +62,39 @@ CODEX_MOBILE_USER_BEHAVIOR_RUNTIME_SUBMIT_THREAD_ID=<id>
 CODEX_MOBILE_USER_BEHAVIOR_EXPECT_BUILD_HASH=<hash>
 ```
 
+### Runtime Repair Cards
+
+Submitted-message duplicate/disappearing issues can be too intermittent for a
+later visual smoke to catch. When the runtime client reports bounded
+`submitted_message_dom_duplicate` or `submitted_message_dom_missing` evidence
+through `/api/client-events`, the server may create an autonomous repair card to
+the Codex Mobile Worker lane. This is an incident intake path, not completion
+evidence.
+
+The card body must remain metadata-only and include:
+
+- source thread id;
+- issue code and diagnostic type;
+- client build id or shell hash when available;
+- service-worker/entry-surface Harness command for the same source thread;
+- duplicate/missing DOM counters and timing buckets only.
+
+Default routing is `targetRole=plugin_worker`. Runtime operators can override or
+disable the path without source edits:
+
+```sh
+CODEX_MOBILE_USER_BEHAVIOR_REPAIR_TARGET_THREAD_ID=<exact-worker-thread-id>
+CODEX_MOBILE_USER_BEHAVIOR_REPAIR_TARGET_ROLE=plugin_worker
+CODEX_MOBILE_USER_BEHAVIOR_REPAIR_TARGET_WORKSPACE=<optional-cwd>
+CODEX_MOBILE_USER_BEHAVIOR_REPAIR_DEDUPE_WINDOW_MS=3600000
+CODEX_MOBILE_USER_BEHAVIOR_REPAIR_CARDS=off
+```
+
+Cards are deduped per source thread, issue code, client build, and time window.
+Completion still follows the matrix above: the Worker must return failing-then-
+passing submitted-message Harness evidence or a bounded partial/blocked
+classification.
+
 ### Central-Compatible Visual Evidence
 
 Home AI central visual broker discovers Codex Mobile local evidence through:

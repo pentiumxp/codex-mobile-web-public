@@ -169,6 +169,68 @@ test("core settings route persists frontend diagnostic log settings", async () =
   assert.equal(sent.body.frontendDiagnosticLog.source, "runtime");
 });
 
+test("core client-events route schedules user-behavior repair cards without blocking response", async () => {
+  const scheduled = [];
+  const logEvents = [];
+  const service = createCoreApiRouteService({
+    logClientEvent: (event, details) => {
+      logEvents.push({ event, details });
+    },
+    scheduleBackgroundTask: (fn) => {
+      scheduled.push(fn);
+    },
+    userBehaviorRepairCardService: {
+      handleClientEvent: async (event, envelope) => ({
+        ok: true,
+        created: event === "home_ai_diagnostic_failure_recorded",
+        issueCode: envelope.details && envelope.details.error_code || "",
+        cardId: "ttc_client_event_test",
+        direct: true,
+        autoApprove: true,
+      }),
+    },
+  });
+  const response = { statusCode: 0, headers: null, ended: false };
+
+  const handled = await service.handleAuthorizedRoute({
+    url: new URL("http://127.0.0.1:8787/api/client-events"),
+    req: { method: "POST", headers: { "user-agent": "CodexMobileTest/1.0" } },
+    res: {
+      writeHead: (statusCode, headers) => {
+        response.statusCode = statusCode;
+        response.headers = headers;
+      },
+      end: () => {
+        response.ended = true;
+      },
+    },
+    readBody: async () => ({
+      event: "home_ai_diagnostic_failure_recorded",
+      threadId: "thread-1",
+      path: "/thread/thread-1",
+      details: {
+        error_code: "submitted_message_dom_duplicate",
+      },
+    }),
+    sendJson: () => {
+      throw new Error("client-events route should use 204 response");
+    },
+  });
+
+  assert.deepEqual(handled, { handled: true });
+  assert.equal(response.statusCode, 204);
+  assert.equal(response.headers["Cache-Control"], "no-store");
+  assert.equal(response.ended, true);
+  assert.equal(scheduled.length, 1);
+  assert.equal(logEvents[0].event, "home_ai_diagnostic_failure_recorded");
+
+  await scheduled[0]();
+  assert.equal(logEvents[1].event, "user_behavior_repair_card_created");
+  assert.equal(logEvents[1].details.threadId, "thread-1");
+  assert.equal(logEvents[1].details.issueCode, "submitted_message_dom_duplicate");
+  assert.equal(logEvents[1].details.cardId, "ttc_client_event_test");
+});
+
 test("core Hermes plugin session route replays existing plugin sessions without reusing launch tokens", async () => {
   const calls = [];
   let sent = null;

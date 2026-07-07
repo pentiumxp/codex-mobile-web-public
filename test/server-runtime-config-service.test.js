@@ -61,6 +61,11 @@ test("server runtime config resolves default runtime paths and bounded ids", () 
   assert.equal(config.MOBILE_WEB_LOG_MAX_BYTES, 512 * 1024);
   assert.equal(config.MOBILE_WEB_LOG_KEEP_BYTES, 128 * 1024);
   assert.equal(config.MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS, 30000);
+  assert.equal(config.USER_BEHAVIOR_REPAIR_CARDS_DISABLED, false);
+  assert.equal(config.USER_BEHAVIOR_REPAIR_TARGET_THREAD_ID, "");
+  assert.equal(config.USER_BEHAVIOR_REPAIR_TARGET_ROLE, "plugin_worker");
+  assert.equal(config.USER_BEHAVIOR_REPAIR_TARGET_WORKSPACE, "");
+  assert.equal(config.USER_BEHAVIOR_REPAIR_DEDUPE_WINDOW_MS, 60 * 60 * 1000);
 });
 
 test("server runtime config applies env overrides and clamps hot-path limits", () => {
@@ -87,6 +92,11 @@ test("server runtime config applies env overrides and clamps hot-path limits", (
       CODEX_MOBILE_WEB_LOG_MAX_BYTES: "32768",
       CODEX_MOBILE_WEB_LOG_KEEP_BYTES: "8192",
       CODEX_MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS: "90000",
+      CODEX_MOBILE_USER_BEHAVIOR_REPAIR_CARDS: "off",
+      CODEX_MOBILE_USER_BEHAVIOR_REPAIR_TARGET_THREAD_ID: "019f3181-4f2f-7aa3-8ae8-d12f6e23e7a5",
+      CODEX_MOBILE_USER_BEHAVIOR_REPAIR_TARGET_ROLE: "plugin_worker",
+      CODEX_MOBILE_USER_BEHAVIOR_REPAIR_TARGET_WORKSPACE: "/repo/codex-mobile-web",
+      CODEX_MOBILE_USER_BEHAVIOR_REPAIR_DEDUPE_WINDOW_MS: "120000",
     },
     codexHome: "/codex/home",
   });
@@ -113,6 +123,11 @@ test("server runtime config applies env overrides and clamps hot-path limits", (
   assert.equal(config.MOBILE_WEB_LOG_MAX_BYTES, 64 * 1024);
   assert.equal(config.MOBILE_WEB_LOG_KEEP_BYTES, 16 * 1024);
   assert.equal(config.MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS, 60 * 1000);
+  assert.equal(config.USER_BEHAVIOR_REPAIR_CARDS_DISABLED, true);
+  assert.equal(config.USER_BEHAVIOR_REPAIR_TARGET_THREAD_ID, "019f3181-4f2f-7aa3-8ae8-d12f6e23e7a5");
+  assert.equal(config.USER_BEHAVIOR_REPAIR_TARGET_ROLE, "plugin_worker");
+  assert.equal(config.USER_BEHAVIOR_REPAIR_TARGET_WORKSPACE, "/repo/codex-mobile-web");
+  assert.equal(config.USER_BEHAVIOR_REPAIR_DEDUPE_WINDOW_MS, 120000);
 });
 
 test("server runtime config keeps duplicate desktop global state files unique", () => {
