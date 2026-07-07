@@ -277,8 +277,10 @@ function createTaskCardRuntimePolicyService(options = {}) {
     return applyWorkspaceDelegationRuntimeGuard(params, settings, { useSandboxPolicy: false });
   }
 
-  function applyStartThreadRuntimeSettings(params, settings) {
-    attachWorkspaceDelegationRuntimeGuidance(params);
+  function applyStartThreadRuntimeSettings(params, settings, applyOptions = {}) {
+    if (!applyOptions.skipWorkspaceDelegationRuntimeGuidance) {
+      attachWorkspaceDelegationRuntimeGuidance(params);
+    }
     if (settings) {
       if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
       if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;

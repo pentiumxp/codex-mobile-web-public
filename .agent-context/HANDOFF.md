@@ -6631,3 +6631,34 @@ The previous full handoff was archived and should be opened only when old proven
 - Privacy: metadata only. No raw secrets, access keys, cookies, launch tokens,
   endpoint bodies, private thread/message bodies, screenshots, raw logs, or
   long diffs stored.
+
+## 2026-07-07 - Worker Lane Creation Runtime Fix
+
+- Request: fix Worker creation after `thread_lifecycle.create` for
+  `plugin_worker` could not create a separate Worker lane.
+- Root cause:
+  - MCP/server source and production script schema already exposed
+    `thread_lifecycle.pluginId`;
+  - the current model-visible MCP schema was stale in this session, but the
+    deeper runtime blocker was that `createLoopRoleThread()` used
+    `applyStartThreadRuntimeSettings()` with default workspace-delegation
+    guidance injection;
+  - that injected `mcp__codex_mobile` dynamic-tool namespace into `thread/start`
+    for internally created Worker/Loop role threads, and app-server rejected it
+    as a reserved MCP namespace.
+- Fix:
+  - `services/task-cards/task-card-runtime-policy-service.js` now supports
+    `skipWorkspaceDelegationRuntimeGuidance` for start-thread runtime settings;
+  - `services/task-cards/thread-task-card-runtime-service.js` uses that option
+    only for internal Loop/Worker role thread creation;
+  - ordinary delegated task turns still receive workspace-delegation guidance.
+- Validation:
+  - `node --test test/task-card-runtime-policy-service.test.js
+    test/thread-task-card-runtime-service.test.js
+    test/codex-mobile-mcp-server.test.js test/loop-task-runtime.test.js`
+    passed `56/56`;
+  - `npm run --silent check` passed;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Privacy: metadata only. No raw secrets, access keys, cookies, launch tokens,
+  endpoint bodies, private thread/message bodies, screenshots, raw logs, or
+  long diffs stored.

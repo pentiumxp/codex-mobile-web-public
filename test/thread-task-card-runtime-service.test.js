@@ -17,6 +17,7 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   const homeAiEvents = [];
   const atLoopReturns = [];
   const codexRequests = [];
+  const startRuntimeCalls = [];
   let serviceOptions = null;
   let atLoopOptions = null;
   let rememberedLoopThread = null;
@@ -27,7 +28,10 @@ test("thread task-card runtime composition wires return hook, policy, route, and
     taskCardRuntimePolicyServiceFactory: () => ({
       applyCodexFastServiceTier: (params) => Object.assign({ codexFast: true }, params),
       applyResumeRuntimeSettings: (params, settings) => Object.assign({}, params, { resumeRuntime: settings.reasoningEffort }),
-      applyStartThreadRuntimeSettings: (params) => params,
+      applyStartThreadRuntimeSettings: (params, settings, applyOptions) => {
+        startRuntimeCalls.push({ params, settings, applyOptions });
+        return params;
+      },
       applyTurnRuntimeSettings: (params, settings) => Object.assign({}, params, { turnRuntime: settings.reasoningEffort }),
       requestedCodexFastMode: () => "",
       workspaceSourceWriteGuardDecisionForRequest: () => ({ ok: true }),
@@ -156,6 +160,8 @@ test("thread task-card runtime composition wires return hook, policy, route, and
   assert.equal(codexRequests[2].method, "thread/start");
   assert.equal(codexRequests[2].params.cwd, "/repo/plugin");
   assert.equal(codexRequests[2].params.developerInstructions, "AGENTS");
+  assert.equal(startRuntimeCalls.length, 1);
+  assert.equal(startRuntimeCalls[0].applyOptions.skipWorkspaceDelegationRuntimeGuidance, true);
 
   const sourceRequirementsTurn = await atLoopOptions.startSourceRequirementsTurn({
     loop: { loopId: "loop_source", sourceThreadId: "source-thread" },

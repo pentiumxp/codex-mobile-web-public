@@ -122,6 +122,21 @@ test("task-card runtime policy preserves codex-mobile and Home AI maintenance ex
   fs.rmSync(homeAi, { recursive: true, force: true });
 });
 
+test("task-card runtime policy can skip delegation guidance for internal role thread starts", () => {
+  const workspace = tempProjectRoot("target");
+  const service = createService();
+
+  const guided = service.applyStartThreadRuntimeSettings({ cwd: workspace }, {});
+  assert.match(guided.developerInstructions, /workspace delegation guidance/);
+
+  const internal = service.applyStartThreadRuntimeSettings({ cwd: workspace }, {}, {
+    skipWorkspaceDelegationRuntimeGuidance: true,
+  });
+  assert.doesNotMatch(internal.developerInstructions || "", /workspace delegation guidance/);
+
+  fs.rmSync(workspace, { recursive: true, force: true });
+});
+
 test("task-card runtime policy supports explicit full-access compatibility mode", () => {
   const workspace = tempProjectRoot("target");
   const service = createService({

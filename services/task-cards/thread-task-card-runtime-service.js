@@ -253,7 +253,9 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
         : "",
       persistExtendedHistory: true,
     };
-    const startParams = applyStartThreadRuntimeSettings(startParamsBase, inheritedRuntimeSettings || {});
+    const startParams = applyStartThreadRuntimeSettings(startParamsBase, inheritedRuntimeSettings || {}, {
+      skipWorkspaceDelegationRuntimeGuidance: true,
+    });
     const startResult = await dependencies.codex.request("thread/start", startParams, {
       timeoutMs: dependencies.mutationRpcTimeoutMs,
       retry: false,
