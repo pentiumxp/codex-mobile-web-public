@@ -6073,3 +6073,53 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check -- ':!.agent-context'` passed.
 - Deployment status: source fix ready for central plugin deploy; production pre-fix read-only self-check against Home AI main thread was green and did not reproduce the H2 event during this local slice.
 - Privacy: only bounded ids, statuses, modes, counts, hashes, and issue-code summaries were recorded. No raw thread bodies, message text, endpoint bodies, secrets, cookies, launch tokens, screenshots, raw cache JSON, or long logs stored.
+
+## 2026-07-07 - Thread List Runtime Stall Diagnostic Contract
+
+- Task card: `ttc_1022a3c5c713b700b7`, diagnostic case `diagcase_cb9cbfde7c2988626393`.
+- Symptom: Home AI diagnostic reported `frontend_runtime_mismatch` /
+  `browser_thread_list_interaction_blocked` from embedded Codex Mobile.
+- Bounded log replay since `2026-07-07T03:00:00Z` showed only
+  `thread_list_runtime_stall` heartbeat events:
+  - actions were `thread-list-heartbeat`;
+  - maximum rAF delay was about `11884ms`;
+  - `maxScrollApplyMs=0`, `maxLongTaskMs=0`, `longTaskCount=0`;
+  - thread list count was present, but no recent input evidence existed.
+- Failing layer: Codex Mobile frontend/runtime diagnostic classification.
+  Passive thread-list heartbeat rAF gaps were being promoted to H2
+  interaction-blocked diagnostics without requiring recent user input, delayed
+  scroll application, or long-task evidence.
+- Root-cause fix:
+  - frontend runtime now records `recentThreadListInput` and
+    `recentInputAgeMs` for thread-list input probes;
+  - passive `thread-list-heartbeat` rAF-only delays are classified as H3
+    `browser_thread_list_runtime_heartbeat_delayed`;
+  - recent-input, scroll-apply, or long-task stalls still remain eligible for
+    H2 `browser_thread_list_interaction_blocked` or
+    `browser_main_thread_long_task`.
+- Files changed:
+  - `frontend/native/api-client-runtime.mjs`;
+  - `frontend/native/frontend-runtime-health.mjs`;
+  - `public/api-client-runtime.js`;
+  - `public/frontend-runtime-health.js`;
+  - `services/runtime/client-event-stall-self-check-service.js`;
+  - `test/frontend-runtime-health.test.js`;
+  - `test/client-event-stall-self-check-service.test.js`;
+  - generated Vite/native ESM shell artifacts.
+- Build: `npm run --silent build:frontend` produced
+  `0.1.11|codex-mobile-shell-v625-778d0b55ee22`, native ESM execution, and
+  published file count `24`.
+- Validation:
+  - focused runtime/self-check/Vite tests passed `186/186`;
+  - replay of the original production client-event window returned `ok=true`,
+    `blockingIssueCount=0`, five H3
+    `browser_thread_list_runtime_heartbeat_delayed` issues, and H2 stall count
+    `0`;
+  - `npm run --silent check` passed;
+  - fallback governance scan passed with `issues=[]`;
+  - `git diff --check -- ':!.agent-context'` passed.
+- Deployment status: source fix ready for central plugin deploy.
+- Privacy: only bounded event codes, counts, timings, and log hash were
+  recorded. No raw logs, raw thread/message bodies, endpoint bodies, secrets,
+  cookies, launch tokens, screenshots, provider payloads, or raw cache JSON
+  stored.

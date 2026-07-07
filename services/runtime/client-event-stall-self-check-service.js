@@ -120,15 +120,28 @@ function maxDelayForDetails(details = {}) {
   );
 }
 
+function isPassiveHeartbeatOnlyStall(details = {}) {
+  const action = eventString(details, "action", "");
+  const recentThreadListInput = details.recentThreadListInput === true
+    || details.recent_thread_list_input === true;
+  return action === "thread-list-heartbeat"
+    && !recentThreadListInput
+    && boundedCount(details.maxLongTaskMs || details.max_long_task_ms) <= 0
+    && boundedCount(details.maxScrollApplyMs || details.max_scroll_apply_ms) <= 0;
+}
+
 function stallIssueFromEvent(entry = {}, options = {}) {
   const details = entry.details || {};
   const maxDelayMs = maxDelayForDetails(details);
   const h2ThresholdMs = boundedCount(options.h2ThresholdMs || DEFAULT_H2_STALL_MS) || DEFAULT_H2_STALL_MS;
-  const severity = maxDelayMs >= h2ThresholdMs ? "H2" : "H3";
   const longTaskMs = boundedCount(details.maxLongTaskMs || details.max_long_task_ms);
   const rafDelayMs = boundedCount(details.maxRafDelayMs || details.max_raf_delay_ms);
   const scrollApplyMs = boundedCount(details.maxScrollApplyMs || details.max_scroll_apply_ms);
-  const code = longTaskMs >= Math.max(rafDelayMs, scrollApplyMs)
+  const passiveHeartbeatOnly = isPassiveHeartbeatOnlyStall(details);
+  const severity = !passiveHeartbeatOnly && maxDelayMs >= h2ThresholdMs ? "H2" : "H3";
+  const code = passiveHeartbeatOnly
+    ? "browser_thread_list_runtime_heartbeat_delayed"
+    : longTaskMs >= Math.max(rafDelayMs, scrollApplyMs)
     ? "browser_main_thread_long_task"
     : "browser_thread_list_interaction_blocked";
   return {
@@ -146,6 +159,9 @@ function stallIssueFromEvent(entry = {}, options = {}) {
       long_task_ms: longTaskMs,
       long_task_count: boundedCount(details.longTaskCount || details.long_task_count),
       thread_list_count: boundedCount(details.threadListCount || details.thread_list_count),
+      passive_heartbeat: passiveHeartbeatOnly ? 1 : 0,
+      recent_thread_list_input: details.recentThreadListInput === true || details.recent_thread_list_input === true ? 1 : 0,
+      recent_input_age_ms: boundedCount(details.recentInputAgeMs || details.recent_input_age_ms),
     },
   };
 }

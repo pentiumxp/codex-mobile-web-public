@@ -301,6 +301,7 @@
   }
 
   function threadListInteractionStallEvent(input = {}) {
+    const action = compactToken(input.action || input.action_name, "thread-list-interaction", 80);
     const maxRafDelayMs = boundedCount(input.maxRafDelayMs || input.max_raf_delay_ms);
     const maxScrollApplyMs = boundedCount(input.maxScrollApplyMs || input.max_scroll_apply_ms);
     const maxLongTaskMs = boundedCount(input.maxLongTaskMs || input.max_long_task_ms);
@@ -308,15 +309,27 @@
     const maxDelayMs = Math.max(maxRafDelayMs, maxScrollApplyMs, maxLongTaskMs, elapsedMs);
     const context = baseContext(Object.assign({}, input, {
       surface: "thread-list-runtime",
-      action: input.action || "thread-list-interaction",
+      action,
     }));
-    const errorCode = maxLongTaskMs >= Math.max(maxRafDelayMs, maxScrollApplyMs)
+    const recentThreadListInput = input.recentThreadListInput === true || input.recent_thread_list_input === true;
+    const passiveHeartbeatOnly = action === "thread-list-heartbeat"
+      && !recentThreadListInput
+      && maxLongTaskMs <= 0
+      && maxScrollApplyMs <= 0;
+    const errorCode = passiveHeartbeatOnly
+      ? "browser_thread_list_runtime_heartbeat_delayed"
+      : maxLongTaskMs >= Math.max(maxRafDelayMs, maxScrollApplyMs)
       ? "browser_main_thread_long_task"
       : "browser_thread_list_interaction_blocked";
+    const severityHint = passiveHeartbeatOnly
+      ? "H3"
+      : maxDelayMs >= boundedCount(input.h2ThresholdMs || input.h2_threshold_ms || 3000)
+        ? "H2"
+        : "H3";
     return runtimeEvent({
       diagnosticType: "thread_list_interaction_stall",
-      severityHint: maxDelayMs >= boundedCount(input.h2ThresholdMs || input.h2_threshold_ms || 3000) ? "H2" : "H3",
-      evidenceConfidence: maxDelayMs >= 3000 ? 0.86 : 0.74,
+      severityHint,
+      evidenceConfidence: severityHint === "H2" ? 0.86 : 0.74,
       errorCode,
       context,
       counts: {
@@ -328,6 +341,9 @@
         thread_list_count: boundedCount(input.threadListCount || input.thread_list_count),
         thread_list_visible: boolCount(input.threadListVisible || input.thread_list_visible),
         thread_list_monitorable: boolCount(input.threadListMonitorable || input.thread_list_monitorable),
+        passive_heartbeat: boolCount(passiveHeartbeatOnly),
+        recent_thread_list_input: boolCount(recentThreadListInput),
+        recent_input_age_ms: boundedCount(input.recentInputAgeMs || input.recent_input_age_ms),
         scroll_top: boundedCount(input.scrollTop || input.scroll_top),
         scroll_height: boundedCount(input.scrollHeight || input.scroll_height),
       },
