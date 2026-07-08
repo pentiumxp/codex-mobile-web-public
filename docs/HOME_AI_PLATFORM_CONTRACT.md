@@ -1,7 +1,7 @@
 # Home AI Platform Contract Pointer
 
-Last updated: 2026-07-07.
-Home AI platform contract version: `20260707-v7`.
+Last updated: 2026-07-08.
+Home AI platform contract version: `20260708-v8`.
 Home AI root-cause contract version: `20260623-v3`.
 Home AI fallback governance contract version: `20260623-v1`.
 
@@ -79,7 +79,8 @@ Mobile docs should link to that registry instead of copying entries.
 | `ai_ops_required_flow` | `intake -> required-checks -> lane allocate if visual -> evidence append -> production smoke -> handoff` |
 | `ai_ops_evidence_ledger` | `$HOME/.homeai-qa/codex-mobile-evidence-ledger.jsonl` |
 | `plugin_main_preflight_command` | `cd /Users/hermes-dev/HermesMobileDev/app && node scripts/main-thread-routing-preflight.js --source-thread-role plugin_main --task "<task>" --changed-file <path> --mode classify` |
-| `plugin_worker_dispatch_policy` | `When classification is plugin_worker, dispatch a plugin_worker card with terminal return, privacy boundary, conflict rule, expected validation, and no Task Intake/deploy/audit/Loop/current-thread fallback.` |
+| `plugin_worker_dispatch_policy` | `When classification is plugin_worker, dispatch a plugin_worker card with terminal return, Chinese receipt, privacy boundary, conflict rule, expected validation, and no Task Intake/deploy/audit/Loop/current-thread fallback.` |
+| `plugin_worker_pool_lifecycle_policy` | `Use the stable plugin_worker Worker pool with resolve-before-create; reuse available lanes, mark lanes busy while a task card is active, require per-task-card heartbeat, activate the Watchdog for that task card after 1800000ms without heartbeat, batch limit 8, maximum auto-resume 1, release them after terminal return with Chinese receipt, reject task-title Worker names as sprawl, and create only for missing_role_lane, pool_exhausted, or no legal lane.` |
 | `ios_live_debug_available` | `yes`; use Home AI `npm run ios:pwa:debug` for interactive embedded iOS PWA reproduction, with one Simulator/live-debug-port/WDA-port/MJPEG-port lane per concurrent plugin debug session. |
 | `ios_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-shell --plugin-id codex-mobile --debug-url http://127.0.0.1:19073/` |
 | `plugin_manifest_actions_status` | `not_applicable_special_plugin`; Codex plugin edition must not declare ordinary user quick actions. |

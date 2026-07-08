@@ -68,6 +68,9 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   assert.ok(lifecycleSchema.properties.action.enum.includes("retire"));
   assert.ok(lifecycleSchema.properties.action.enum.includes("heartbeat"));
   assert.ok(lifecycleSchema.properties.action.enum.includes("mark_completed"));
+  const returnSchema = listedTools.find((entry) => entry.name === "return_to_source").inputSchema;
+  assert.ok(returnSchema.properties.threadId);
+  assert.ok(!returnSchema.required.includes("threadId"));
   assert.ok(listedTools.find((entry) => entry.name === "task_card_heartbeat").inputSchema.properties.threadId);
   const initialized = await handleMessage({ server: "http://127.0.0.1:1", key: "secret" }, { id: 1, method: "initialize" });
   assert.equal(initialized.serverInfo.name, "codex_mobile");
@@ -139,10 +142,11 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
       }));
       return;
     }
-    if (req.method === "POST" && req.url === "/api/thread-task-cards/ttc_inbound/reply") {
+    if (req.method === "POST" && (req.url === "/api/thread-task-cards/ttc_inbound/reply" || req.url === "/api/thread-task-cards/ttc_inbound_no_thread/reply")) {
+      const noThread = req.url.includes("ttc_inbound_no_thread");
       const body = JSON.parse(await readBody(req));
-      assert.equal(body.threadId, "target-1");
-      assert.equal(body.workflowId, "workflow-1");
+      assert.equal(body.threadId || "", noThread ? "" : "target-1");
+      assert.equal(body.workflowId || "", noThread ? "" : "workflow-1");
       assert.equal(body.title, "Return: completed");
       assert.equal(body.summary, "completed");
       assert.equal(body.body, "done");
@@ -151,13 +155,13 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({
         ok: true,
-        card: { id: "ttc_inbound", status: "replied" },
+        card: { id: noThread ? "ttc_inbound_no_thread" : "ttc_inbound", status: "replied" },
         returnResolution: {
-          requestedActorThreadId: "target-1",
+          requestedActorThreadId: noThread ? "" : "target-1",
           resolvedActorThreadId: "target-1",
           expectedTargetThreadId: "target-1",
-          workflowRecovered: true,
-          actorThreadInferred: false,
+          workflowRecovered: !noThread,
+          actorThreadInferred: noThread,
           resolverVersion: "task-card-exact-routing-v1",
         },
         replyCard: {
@@ -253,6 +257,18 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
   assert.equal(returned.replyCard.requiresReturn, false);
   assert.equal(returned.replyCard.ackPolicy, "none");
 
+  const inferredReturn = await returnToSource(context, {
+    taskCardId: "ttc_inbound_no_thread",
+    status: "completed",
+    title: "completed",
+    bodyMarkdown: "done",
+  });
+  assert.equal(inferredReturn.status, "replied");
+  assert.equal(inferredReturn.threadId, "target-1");
+  assert.equal(inferredReturn.requestedActorThreadId, "");
+  assert.equal(inferredReturn.resolvedActorThreadId, "target-1");
+  assert.equal(inferredReturn.actorThreadInferred, true);
+
   const heartbeat = await taskCardHeartbeat(context, {
     taskCardId: "ttc_inbound",
     threadId: "target-1",
@@ -331,6 +347,16 @@ test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
     }
     if (req.method === "POST" && req.url === "/api/at-loop/thread-lifecycle") {
       const body = JSON.parse(await readBody(req));
+      assert.equal(body.action, "ensure");
+      assert.equal(body.role, "plugin_worker");
+      assert.equal(body.pluginId, "movie");
+      assert.equal(body.sourceThreadId, "source-1");
+      assert.equal(body.workerPurpose, "worker_lane");
+      assert.equal(body.purpose, "worker_lane");
+      assert.equal(body.idempotencyKey, "ensure-movie-plugin-worker-lane-v8-20260708");
+      assert.equal(body.requestId, "movie-worker-v8");
+      assert.equal(body.cwd, "/Users/hermes-dev/HermesMobileDev/Movie");
+      assert.equal(body.workspaceCwd, "/Users/hermes-dev/HermesMobileDev/Movie");
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({
         ok: true,
@@ -377,7 +403,18 @@ test("Codex Mobile MCP server calls bounded at-loop API", async (t) => {
   assert.equal(status.loopCount, 1);
   assert.equal(status.loops[0].implementationWorkspaceCwd, "/Users/xuxin/Xcode/Home AI");
   assert.equal(status.loops[0].roleSlices[0].taskCardId, "ttc_1");
-  const lifecycle = await threadLifecycle(context, { action: "list", role: "implementation" });
+  const lifecycle = await threadLifecycle(context, {
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "movie",
+    sourceThreadId: "source-1",
+    workerPurpose: "worker_lane",
+    purpose: "worker_lane",
+    idempotencyKey: "ensure-movie-plugin-worker-lane-v8-20260708",
+    requestId: "movie-worker-v8",
+    cwd: "/Users/hermes-dev/HermesMobileDev/Movie",
+    workspaceCwd: "/Users/hermes-dev/HermesMobileDev/Movie",
+  });
   assert.equal(lifecycle.ok, true);
   assert.equal(lifecycle.threads[0].status, "completed");
   assert.equal(lifecycle.threads[0].deliverable, true);

@@ -1159,6 +1159,16 @@ test("workspace creation lives at the bottom of the Workspace menu", () => {
   assert.doesNotMatch(indexHtml, /newThreadButton[\s\S]{0,240}createWorkspace/i);
 });
 
+test("workspace selector opens from click and keyboard events", () => {
+  assert.match(appShellRuntimeJs, /sidebarWorkspaceSelect\.dataset\.workspaceSelectWired !== "true"/);
+  assert.match(appShellRuntimeJs, /sidebarWorkspaceSelect\.dataset\.workspaceSelectWired = "true"/);
+  assert.match(appShellRuntimeJs, /const toggleSidebarWorkspaceMenu = \(event\) => \{/);
+  assert.match(appShellRuntimeJs, /sidebarWorkspaceSelect\.addEventListener\("click", toggleSidebarWorkspaceMenu\)/);
+  assert.match(appShellRuntimeJs, /sidebarWorkspaceSelect\.addEventListener\("keydown", onSidebarWorkspaceKeydown\)/);
+  assert.match(appShellRuntimeJs, /event\.key !== "Enter" && event\.key !== " "/);
+  assert.doesNotMatch(appShellRuntimeJs, /sidebarWorkspaceSelect\.addEventListener\("pointerdown", toggleSidebarWorkspaceMenu\)/);
+});
+
 test("push notification control stays hidden when the browser cannot enable it", () => {
   assert.doesNotMatch(appJs, /HTTPS required/);
   assert.doesNotMatch(appJs, /Notifications unavailable/);

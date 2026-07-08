@@ -381,6 +381,7 @@ test("thread detail state plans open-thread cache reuse without accepting empty 
     currentThread: { id: "thread-1", turns: [{ id: "turn-1", items: [] }], mobileDetailLoaded: true },
   }), {
     shouldUseCachedCurrent: true,
+    shouldRefreshCurrent: true,
     shouldReportEmptyCachedDetail: false,
     reason: "reusable-loaded-detail",
   });

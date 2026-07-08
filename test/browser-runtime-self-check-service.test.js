@@ -220,6 +220,60 @@ test("browser runtime self-check reports API latest turn when it is missing from
   assert.ok(result.issues.some((issue) => issue.code === "browser_latest_turn_missing_from_dom"));
 });
 
+test("browser runtime self-check blocks completed assistant result missing after thread open without submit", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "thread-open-settled-no-submit",
+      threadHash: "thread-a",
+      delayMs: 1600,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      dynamicThreadPlan: true,
+      latestTurnMatchesTarget: true,
+      expectedLatestTurnHash: "completed-latest",
+      latestTurnHash: "completed-latest",
+      actualLatestTurnHash: "completed-latest",
+      latestTurnAtDomBottom: true,
+      clientSubmissionCount: 0,
+      expectedLatestItemCount: 5,
+      latestTurnItemCount: 4,
+      expectedLatestUserMessageCount: 1,
+      latestTurnUserMessageCount: 1,
+      expectedLatestAssistantMessageCount: 2,
+      latestTurnAssistantMessageCount: 1,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "completed-latest",
+        completed: true,
+        expectedItemCount: 5,
+        expectedUserMessageCount: 1,
+        expectedAssistantMessageCount: 2,
+        expectedUsageRequired: true,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "completed-latest",
+        itemCount: 4,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        usageCount: 1,
+      }],
+      turns: 1,
+      items: 4,
+      renderKeys: 4,
+    }],
+  });
+
+  const issue = result.issues.find((entry) => entry.code === "browser_latest_turn_assistant_below_api_expectation");
+  assert.equal(result.ok, true);
+  assert.equal(issue && issue.severity, "H3");
+  assert.equal(issue && issue.observationCount, 1);
+  assert.equal(result.sampleSummary.maxClientSubmissions, 0);
+});
+
 test("browser runtime self-check blocks stuck refresh activity after latest turn reaches DOM bottom", () => {
   const result = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,

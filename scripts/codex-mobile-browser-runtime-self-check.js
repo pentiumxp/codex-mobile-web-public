@@ -812,6 +812,7 @@ function latestTurnExpectation(detail = {}) {
     expectedLatestUsageRequired: Boolean(latest && completedStatus(latest.status) && itemTypes.includes("turnUsageSummary")),
     expectedLatestItemCount: items.length,
     expectedLatestUserMessageCount: Math.max(0, userItems.length - injectedTaskCardUserItems.length),
+    expectedLatestAssistantMessageCount: itemTypes.filter((type) => /^(agentMessage|plan)$/i.test(type)).length,
     expectedLatestUserMessageDuplicateCount: duplicateLatestUserMessageEventCount(ordinaryUserItems),
     expectedLatestTaskCardUserMessageCount: injectedTaskCardUserItems.length,
     expectedLatestOperationItemCount: itemTypes.filter((type) => /^(commandExecution|fileChange|dynamicToolCall|mcpToolCall|collabAgentToolCall)$/i.test(type)).length,
@@ -886,6 +887,7 @@ function boundedDiagnosticSamples(samples = []) {
       latestTurnItemCount: Math.max(0, Math.trunc(Number(sample.latestTurnItemCount || 0))),
       expectedLatestUserMessageCount: Math.max(0, Math.trunc(Number(sample.expectedLatestUserMessageCount || 0))),
       latestTurnUserMessageCount: Math.max(0, Math.trunc(Number(sample.latestTurnUserMessageCount || 0))),
+      expectedLatestAssistantMessageCount: Math.max(0, Math.trunc(Number(sample.expectedLatestAssistantMessageCount || 0))),
       latestTurnAssistantMessageCount: Math.max(0, Math.trunc(Number(sample.latestTurnAssistantMessageCount || 0))),
       latestTurnOperationItemCount: Math.max(0, Math.trunc(Number(sample.latestTurnOperationItemCount || 0))),
       latestTurnReasoningItemCount: Math.max(0, Math.trunc(Number(sample.latestTurnReasoningItemCount || 0))),
@@ -932,6 +934,7 @@ async function loadThreadPlan(options, key, ids) {
       expectedLatestUsageRequired: expectation.expectedLatestUsageRequired,
       expectedLatestItemCount: expectation.expectedLatestItemCount,
       expectedLatestUserMessageCount: expectation.expectedLatestUserMessageCount,
+      expectedLatestAssistantMessageCount: expectation.expectedLatestAssistantMessageCount,
       expectedLatestUserMessageDuplicateCount: expectation.expectedLatestUserMessageDuplicateCount,
       expectedLatestTaskCardUserMessageCount: expectation.expectedLatestTaskCardUserMessageCount,
       expectedLatestOperationItemCount: expectation.expectedLatestOperationItemCount,
@@ -963,6 +966,7 @@ function snapshotInputForPlanEntry(entry, extra = {}) {
     expectedLatestUsageRequired: entry.expectedLatestUsageRequired,
     expectedLatestItemCount: entry.expectedLatestItemCount,
     expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
+    expectedLatestAssistantMessageCount: entry.expectedLatestAssistantMessageCount,
     expectedLatestUserMessageDuplicateCount: entry.expectedLatestUserMessageDuplicateCount,
     expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
     expectedTurnShapes: entry.expectedTurnShapes,
@@ -2357,6 +2361,7 @@ function snapshotExpression(input = {}) {
   const expectedLatestUsageRequired = Boolean(input.expectedLatestUsageRequired);
   const expectedLatestItemCount = Math.max(0, Number(input.expectedLatestItemCount || 0) || 0);
   const expectedLatestUserMessageCount = Math.max(0, Number(input.expectedLatestUserMessageCount || 0) || 0);
+  const expectedLatestAssistantMessageCount = Math.max(0, Number(input.expectedLatestAssistantMessageCount || 0) || 0);
   const expectedLatestUserMessageDuplicateCount = Math.max(0, Number(input.expectedLatestUserMessageDuplicateCount || 0) || 0);
   const expectedLatestTaskCardUserMessageCount = Math.max(0, Number(input.expectedLatestTaskCardUserMessageCount || 0) || 0);
   const expectedTurnShapes = Array.isArray(input.expectedTurnShapes) ? input.expectedTurnShapes.slice(-20) : [];
@@ -2375,6 +2380,7 @@ function snapshotExpression(input = {}) {
       const expectedLatestUsageRequired = ${JSON.stringify(expectedLatestUsageRequired)};
       const expectedLatestItemCount = ${JSON.stringify(expectedLatestItemCount)};
       const expectedLatestUserMessageCount = ${JSON.stringify(expectedLatestUserMessageCount)};
+      const expectedLatestAssistantMessageCount = ${JSON.stringify(expectedLatestAssistantMessageCount)};
       const expectedLatestUserMessageDuplicateCount = ${JSON.stringify(expectedLatestUserMessageDuplicateCount)};
       const expectedLatestTaskCardUserMessageCount = ${JSON.stringify(expectedLatestTaskCardUserMessageCount)};
       const expectedTurnShapes = ${JSON.stringify(expectedTurnShapes)};
@@ -2775,6 +2781,7 @@ function snapshotExpression(input = {}) {
         expectedLatestUsageRequired,
         expectedLatestItemCount,
         expectedLatestUserMessageCount,
+        expectedLatestAssistantMessageCount,
         expectedLatestUserMessageDuplicateCount,
         expectedLatestTaskCardUserMessageCount,
         dynamicThreadPlan,
@@ -3070,6 +3077,7 @@ async function run(options = parseArgs(), deps = {}) {
       expectedLatestUsageRequired: Boolean(entry.expectedLatestUsageRequired),
       expectedLatestItemCount: entry.expectedLatestItemCount,
       expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
+      expectedLatestAssistantMessageCount: entry.expectedLatestAssistantMessageCount,
       expectedLatestUserMessageDuplicateCount: entry.expectedLatestUserMessageDuplicateCount,
       expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
       expectedLatestOperationItemCount: entry.expectedLatestOperationItemCount,

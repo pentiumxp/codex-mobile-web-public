@@ -49,4 +49,19 @@ node /Users/hermes-dev/HermesMobileDev/app/scripts/main-thread-routing-preflight
 If the preflight returns `classification=plugin_worker`, dispatch a bounded
 `plugin_worker` card or return `blocked` with the missing lane. Do not use Task
 Intake, deploy lanes, audit lanes, Loop lanes, or the current plugin source
-thread as a Worker fallback.
+thread as a Worker fallback. Worker terminal return-card bodies and
+Owner-visible receipts must be written in Chinese (`zh-CN`).
+
+Before creating any plugin Worker thread, resolve/list the stable
+`plugin_worker` Worker pool for this plugin workspace. Reuse an available
+compatible lane, mark the lane busy while a task card is active, require
+heartbeat per task card, and release the lane after terminal return. Do not
+create task-title Worker threads such as one-off diagnostic or fix-title lanes
+when a stable pool lane exists. Creating a Worker lane is allowed only for
+`missing_role_lane`, `pool_exhausted`, or `no_legal_lane`.
+
+Task-card heartbeat is card-scoped, not Worker-lane-scoped. If a Worker holds
+two active cards, heartbeat both task-card ids independently. The task-card
+Watchdog defaults are `1800000ms` / 30 minutes, batch limit `8`, and maximum
+automatic resume `1`; it must resume or activate the same stale task card
+rather than creating a replacement task-title Worker.

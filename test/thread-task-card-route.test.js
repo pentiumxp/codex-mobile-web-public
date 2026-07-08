@@ -343,6 +343,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(returnThreadTaskCardScript, /--status <value>/);
   assert.match(returnThreadTaskCardScript, /rejected/);
   assert.match(returnThreadTaskCardScript, /partially_completed/);
+  assert.doesNotMatch(returnThreadTaskCardScript, /threadId is required/);
   assert.match(returnThreadTaskCardScript, /returnToSource = true/);
   assert.match(returnThreadTaskCardScript, /task-card-return:/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnDynamicToolSpec"), /rejected/);
@@ -389,7 +390,8 @@ test("approved task cards inherit target thread model and effort", () => {
   assert.match(setupBlock, /const targetThread = readThreadTaskCardExecutionTargetSummary\(card\);/);
   assert.match(setupBlock, /const targetIsDeployLane = isHomeAiDeployLaneThread\(targetThread\);/);
   assert.match(setupBlock, /const targetIsWorkerLane = isWorkerLaneThread\(targetThread\);/);
-  assert.match(setupBlock, /const targetUsesFullAccess = targetIsDeployLane \|\| targetIsWorkerLane;/);
+  assert.match(setupBlock, /const targetIsImplementationExecution = isImplementationExecutionCard\(card, targetThread\);/);
+  assert.match(setupBlock, /const targetUsesFullAccess = targetIsDeployLane \|\| targetIsWorkerLane \|\| targetIsImplementationExecution;/);
   assert.match(setupBlock, /const baseRuntimeSettings = targetUsesFullAccess/);
   assert.match(setupBlock, /dependencies\.applyPermissionModeOverride\(inheritedRuntimeSettings, "full", targetThread && targetThread\.cwd \|\| null\)/);
   assert.match(setupBlock, /Object\.assign\(\{\}, baseRuntimeSettings, \{ reasoningEffort: requestedReasoningEffort \}\)/);
@@ -656,6 +658,68 @@ test("return_to_source dynamic tool prefers explicit target thread over app-serv
   assert.equal(calls.length, 1);
 });
 
+test("return_to_source dynamic tool defers omitted actor to task-card resolver", async () => {
+  const calls = [];
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {
+      reply: async (cardId, actorThreadId, body) => {
+        calls.push({ cardId, actorThreadId, body });
+        assert.equal(cardId, "ttc_pr_triage");
+        assert.equal(actorThreadId, "");
+        assert.equal(body.threadId, "");
+        assert.equal(body.returnToSource, true);
+        return {
+          card: { status: "replied" },
+          returnResolution: {
+            requestedActorThreadId: "",
+            resolvedActorThreadId: "pr-worker-thread",
+            expectedTargetThreadId: "pr-worker-thread",
+            actorThreadInferred: true,
+            workflowRecovered: false,
+            resolverVersion: "task-card-exact-routing-v1",
+          },
+          replyCard: {
+            id: "ttc_return_card",
+            status: "approved",
+            terminal: true,
+            requiresReturn: false,
+            ackPolicy: "none",
+            source: { threadId: "pr-worker-thread" },
+            target: { threadId: "source-thread" },
+          },
+        };
+      },
+    },
+    stableTextHash,
+    logger: { log() {}, error() {} },
+  });
+
+  const response = await service.dynamicToolServerRequestResponsePayload({
+    id: "request-return",
+    params: {
+      fullName: "mcp__codex_mobile.return_to_source",
+      threadId: "source-thread",
+      arguments: {
+        taskCardId: "ttc_pr_triage",
+        status: "completed",
+        title: "PR triage result",
+        body: "Completed.",
+      },
+    },
+  });
+  const payload = JSON.parse(response.result.contentItems[0].text);
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.actorThreadId, "");
+  assert.equal(payload.requestedActorThreadId, "");
+  assert.equal(payload.resolvedActorThreadId, "pr-worker-thread");
+  assert.equal(payload.actorThreadInferred, true);
+  assert.equal(payload.expectedTargetThreadId, "pr-worker-thread");
+  assert.equal(payload.sourceThreadId, "pr-worker-thread");
+  assert.equal(payload.targetThreadId, "source-thread");
+  assert.equal(calls.length, 1);
+});
+
 test("task_card_heartbeat dynamic tool records bounded target-thread progress", async () => {
   const calls = [];
   const service = createThreadTaskCardRouteService({
@@ -736,6 +800,7 @@ test("return_to_source dynamic tool reports workflow actor mismatch evidence", a
       workflowId: "home-ai-intake-workflow",
       arguments: {
         taskCardId: "ttc_stale_home_ai_card",
+        threadId: "home-ai-task-intake",
         status: "completed",
         title: "Owner Console result",
         body: "Completed in Home AI implementation.",

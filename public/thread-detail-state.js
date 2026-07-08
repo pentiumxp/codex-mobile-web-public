@@ -478,6 +478,7 @@
     if (threadHasReusableLoadedDetailState(thread)) {
       return {
         shouldUseCachedCurrent: true,
+        shouldRefreshCurrent: true,
         shouldReportEmptyCachedDetail: false,
         reason: "reusable-loaded-detail",
       };

@@ -468,6 +468,7 @@ const DETAIL_ONLY_SUMMARY_FIELDS = Object.freeze([
     if (threadHasReusableLoadedDetailState(thread)) {
       return {
         shouldUseCachedCurrent: true,
+        shouldRefreshCurrent: true,
         shouldReportEmptyCachedDetail: false,
         reason: "reusable-loaded-detail",
       };

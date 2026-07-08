@@ -1038,6 +1038,7 @@ test("source-thread direct approval bypasses target pending approval with audit 
   assert.equal(executions.length, 1);
   assert.match(executions[0].message.text, /\[Cross-thread task card sent by source thread\]/);
   assert.match(executions[0].message.text, /target approval bypassed/);
+  assert.match(executions[0].message.text, /Current target thread id: thread-dst/);
   assert.match(executions[0].message.text, /Task card id: ttc_/);
   assert.match(executions[0].message.text, /mcp__codex_mobile\.return_to_source/);
   assert.match(executions[0].message.text, /MCP\/tool discovery/);
@@ -1632,6 +1633,79 @@ test("reply can return an approved implementation card and is idempotent", async
   assert.equal(service.listForThread("thread-home").filter((card) => card.audit && card.audit.replyToCardId === created.id).length, 1);
 });
 
+test("return_to_source infers target actor from taskCardId when threadId is omitted", async () => {
+  const returnEvents = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: `turn-${card.id}` }),
+    onTerminalReturnCard: async (event) => {
+      returnEvents.push(event);
+      return { status: 200, eventId: `event-${returnEvents.length}` };
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "codex",
+    sourceThreadId: "thread-source",
+    sourceTurnId: "turn-source",
+    sourceThreadTitle: "Codex Mobile",
+    targetWorkspaceId: "worker",
+    targetThreadId: "thread-worker",
+    targetThreadTitle: "Worker Lane",
+    idempotencyKey: "codex:worker:repair",
+    format: "markdown",
+    title: "Repair return",
+    summary: "Repair and return.",
+    body: "Repair and return.",
+  });
+  await service.approveFromSource(created.id, "thread-source");
+
+  const returned = await service.reply(created.id, "", {
+    idempotencyKey: "codex:worker:return",
+    format: "markdown",
+    title: "Return: repaired",
+    status: "completed",
+    summary: "completed",
+    body: "Completed with bounded evidence.",
+    returnToSource: true,
+  });
+
+  assert.equal(returned.card.status, "replied");
+  assert.equal(returned.returnResolution.requestedActorThreadId, "");
+  assert.equal(returned.returnResolution.resolvedActorThreadId, "thread-worker");
+  assert.equal(returned.returnResolution.expectedTargetThreadId, "thread-worker");
+  assert.equal(returned.returnResolution.actorThreadInferred, true);
+  assert.equal(returned.replyCard.source.threadId, "thread-worker");
+  assert.equal(returned.replyCard.target.threadId, "thread-source");
+  assert.equal(returnEvents.length, 1);
+
+  const wrongActorCard = await service.create({
+    sourceWorkspaceId: "codex",
+    sourceThreadId: "thread-source",
+    sourceTurnId: "turn-source-2",
+    sourceThreadTitle: "Codex Mobile",
+    targetWorkspaceId: "worker",
+    targetThreadId: "thread-worker",
+    idempotencyKey: "codex:worker:wrong-actor",
+    format: "markdown",
+    title: "Repair wrong actor",
+    summary: "Repair and return.",
+    body: "Repair and return.",
+  });
+  await service.approveFromSource(wrongActorCard.id, "thread-source");
+  await assert.rejects(
+    () => service.reply(wrongActorCard.id, "thread-source", {
+      idempotencyKey: "codex:worker:wrong-actor:return",
+      format: "markdown",
+      title: "Return: wrong actor",
+      status: "completed",
+      summary: "completed",
+      body: "Wrong actor must not return.",
+      returnToSource: true,
+    }),
+    (err) => err && err.message === "reply_requires_target_thread" && err.statusCode === 403,
+  );
+});
+
 test("terminal return receipt cards are not exposed as pending approval requests", () => {
   const storageFile = tempFile("cards.json");
   const createdAt = "2026-07-01T01:00:00.000Z";
@@ -1996,7 +2070,7 @@ test("return_to_source recovers original card by workflow when visible card id i
   assert.deepEqual(repairCard.routeResolution.matchedThreadIds, ["thread-health"]);
   await service.approveFromSource(repairCard.id, "thread-xcode");
 
-  const returned = await service.reply("ttc_stale_visible_card", "thread-health", {
+  const returned = await service.reply("ttc_stale_visible_card", "", {
     idempotencyKey: "xcode:health:return",
     format: "markdown",
     title: "Health repair completed",
@@ -2008,10 +2082,15 @@ test("return_to_source recovers original card by workflow when visible card id i
 
   assert.equal(returned.card.id, repairCard.id);
   assert.equal(returned.card.status, "replied");
+  assert.equal(returned.returnResolution.workflowRecovered, true);
+  assert.equal(returned.returnResolution.actorThreadInferred, true);
+  assert.equal(returned.returnResolution.requestedActorThreadId, "");
+  assert.equal(returned.returnResolution.resolvedActorThreadId, "thread-health");
+  assert.equal(returned.returnResolution.expectedTargetThreadId, "thread-health");
   assert.equal(returned.replyCard.delivery.returnToSource, true);
   assert.equal(returned.replyCard.target.threadId, "thread-xcode");
 
-  const duplicate = await service.reply("ttc_stale_visible_card", "thread-health", {
+  const duplicate = await service.reply("ttc_stale_visible_card", "", {
     idempotencyKey: "xcode:health:return",
     format: "markdown",
     title: "Health repair completed",

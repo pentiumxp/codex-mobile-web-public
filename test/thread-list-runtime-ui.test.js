@@ -129,11 +129,28 @@ test("thread list runtime owns workspace menu labels and cwd visibility filterin
 
   assert.equal(runtime.selectedWorkspaceLabel(), "Music");
   const menuHtml = runtime.workspaceSidebarOptionsHtml();
+  assert.match(menuHtml, /data-workspace-value=""/);
   assert.ok(menuHtml.includes("Music (2) - /repos/music"));
+  assert.match(menuHtml, /data-workspace-value="\/repos\/music"/);
   assert.match(menuHtml, /Create Workspace/);
 
   assert.deepEqual(runtime.visibleThreads().map((thread) => thread.id), ["music-a"]);
   assert.equal(runtime.threadMatchesWorkspaceCwd("/tmp/.codex/worktrees/abc/music", "/repos/music"), false);
+});
+
+test("workspace menu shows an empty state without blocking the all-workspaces option", () => {
+  const state = {
+    workspaceCreateEnabled: false,
+    selectedCwd: "",
+    workspaces: [],
+    threads: [],
+  };
+  const runtime = createRuntime(state);
+  const menuHtml = runtime.workspaceSidebarOptionsHtml();
+
+  assert.match(menuHtml, /data-workspace-value=""/);
+  assert.match(menuHtml, /No Workspace yet/);
+  assert.doesNotMatch(menuHtml, /data-create-workspace/);
 });
 
 test("all workspaces keeps server-visible threads when workspace registry lags", () => {

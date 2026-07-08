@@ -50,7 +50,8 @@ function wireUi() {
   });
   const sidebarWorkspaceSelect = $("workspaceSelect");
   const sidebarWorkspaceMenu = $("workspaceSelectMenu");
-  if (sidebarWorkspaceSelect && sidebarWorkspaceMenu) {
+  if (sidebarWorkspaceSelect && sidebarWorkspaceMenu && sidebarWorkspaceSelect.dataset.workspaceSelectWired !== "true") {
+    sidebarWorkspaceSelect.dataset.workspaceSelectWired = "true";
     const closeSidebarWorkspaceMenu = () => {
       sidebarWorkspaceMenu.hidden = true;
       sidebarWorkspaceMenu.style.removeProperty("--workspace-menu-max-height");
@@ -95,7 +96,12 @@ function wireUi() {
         closeSidebarWorkspaceMenu();
       }
     };
-    sidebarWorkspaceSelect.addEventListener("pointerdown", toggleSidebarWorkspaceMenu);
+    const onSidebarWorkspaceKeydown = (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      toggleSidebarWorkspaceMenu(event);
+    };
+    sidebarWorkspaceSelect.addEventListener("click", toggleSidebarWorkspaceMenu);
+    sidebarWorkspaceSelect.addEventListener("keydown", onSidebarWorkspaceKeydown);
     sidebarWorkspaceMenu.addEventListener("click", onSidebarWorkspaceOption);
     closeSidebarWorkspaceMenu();
   }

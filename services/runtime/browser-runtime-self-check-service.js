@@ -427,6 +427,15 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       );
     }
     if (sample.latestTurnMatchesTarget
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && toNumber(sample.expectedLatestAssistantMessageCount) > 0
+      && toNumber(sample.latestTurnAssistantMessageCount) < toNumber(sample.expectedLatestAssistantMessageCount)) {
+      incrementMapCount(
+        turnShapeMismatchCounts,
+        turnShapeIssueKey("browser_latest_turn_assistant_below_api_expectation", sample, latestTurnShapeForIssue(sample)),
+      );
+    }
+    if (sample.latestTurnMatchesTarget
       && sample.expectedLatestUsageRequired === true
       && toNumber(sample.latestTurnUsageCount) <= 0) {
       incrementMapCount(
@@ -766,6 +775,18 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         expectedLatestUserMessageCount: toNumber(sample.expectedLatestUserMessageCount),
         latestTurnUserMessageCount: toNumber(sample.latestTurnUserMessageCount),
         latestTurnTaskCardItemCount: toNumber(sample.latestTurnTaskCardItemCount),
+      })));
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && toNumber(sample.expectedLatestAssistantMessageCount) > 0
+      && toNumber(sample.latestTurnAssistantMessageCount) < toNumber(sample.expectedLatestAssistantMessageCount)) {
+      const code = "browser_latest_turn_assistant_below_api_expectation";
+      const latestShape = latestTurnShapeForIssue(sample);
+      issues.push(issue(latestTurnMismatchSeverity(code, sample, latestShape), code, sample, latestTurnMismatchDetails(code, sample, latestShape, {
+        expectedLatestAssistantMessageCount: toNumber(sample.expectedLatestAssistantMessageCount),
+        latestTurnAssistantMessageCount: toNumber(sample.latestTurnAssistantMessageCount),
       })));
     }
     if (sampleIsConfirmed(sample)
