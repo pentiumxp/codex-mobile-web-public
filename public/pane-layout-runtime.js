@@ -1963,6 +1963,14 @@ function syncThreadDetailLayoutState() {
     sidebarLayoutButton.title = "收起 Session List";
     sidebarLayoutButton.setAttribute("aria-label", "收起 Session List");
   }
+  const closeMenuButton = $("closeMenu");
+  if (closeMenuButton) {
+    const sidebarOverlayClose = Boolean(sidebarToggle && sidebarOverlay);
+    closeMenuButton.classList.toggle("sidebar-layout-close", sidebarOverlayClose);
+    closeMenuButton.textContent = sidebarOverlayClose ? "‹" : "×";
+    closeMenuButton.title = sidebarOverlayClose ? "收起 Session List" : "Close menu";
+    closeMenuButton.setAttribute("aria-label", sidebarOverlayClose ? "收起 Session List" : "Close menu");
+  }
   const openMenuButton = $("openMenu");
   if (!openMenuButton) return;
   const splitReturn = !sidebarToggle && threadDetailReturnButtonVisible();

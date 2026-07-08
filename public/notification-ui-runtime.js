@@ -1009,14 +1009,25 @@ async function bootstrap() {
   const startupThreadId = applyUrlThreadSelection();
   const startupPluginRouteHint = applyUrlPluginRouteHint();
   const savedThreadId = isHermesEmbedMode() ? "" : (localStorage.getItem(STORAGE_THREAD_ID) || "");
-  state.startupThreadOpenPending = Boolean(startupThreadId || savedThreadId || (startupPluginRouteHint && startupPluginRouteHint.threadId));
+  const deferStartupRestoreForTileMode = Boolean(
+    savedThreadId
+    && !startupThreadId
+    && typeof localThreadDisplayMode === "function"
+    && localThreadDisplayMode() === "tile"
+  );
+  state.startupThreadOpenPending = Boolean(
+    startupThreadId
+    || (savedThreadId && !deferStartupRestoreForTileMode)
+    || (startupPluginRouteHint && startupPluginRouteHint.threadId)
+  );
   const startupThreadOpenPending = state.startupThreadOpenPending;
   postStartupStage("bootstrap_start", bootstrapStartedAt, {
     hasStartupThreadId: Boolean(startupThreadId),
     hasSavedThreadId: Boolean(savedThreadId),
     hasPluginRouteThreadId: Boolean(startupPluginRouteHint && startupPluginRouteHint.threadId),
+    deferStartupRestoreForTileMode,
   });
-  const earlyRestorePromise = savedThreadId && !startupThreadId
+  const earlyRestorePromise = savedThreadId && !startupThreadId && !deferStartupRestoreForTileMode
     ? loadThread(savedThreadId, { source: "restore-startup", suppressLoadFailureDiagnostic: true }).catch((err) => {
       localStorage.removeItem(STORAGE_THREAD_ID);
       showError(err);
@@ -1025,6 +1036,12 @@ async function bootstrap() {
     })
     : null;
   if (earlyRestorePromise) postStartupStage("restore_start", bootstrapStartedAt, { threadId: savedThreadId });
+  else if (deferStartupRestoreForTileMode) {
+    postStartupStage("restore_deferred", bootstrapStartedAt, {
+      threadId: savedThreadId,
+      reason: "tile-startup",
+    });
+  }
   const statusStartedAt = nowPerfMs();
   const status = await api("/api/status").catch((err) => {
     $("connectionState").textContent = err.message;

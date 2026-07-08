@@ -103,6 +103,37 @@ test("static compression leaves already-compressed images unencoded", async () =
   assert.ok(response.body.length > 0);
 });
 
+test("app.js shellBuild probe response carries the target build for stale client validators", async () => {
+  const targetBuild = "0.1.11|codex-mobile-shell-v625-target";
+  const response = await requestStatic(`/app.js?shellBuild=${encodeURIComponent(targetBuild)}&shellCheck=1`);
+  const normal = await requestStatic("/app.js");
+  const text = response.body.toString("utf8");
+  const normalText = normal.body.toString("utf8");
+
+  assert.equal(response.statusCode, 200);
+  assert.match(text, /function startCodexMobileApp\(\)/);
+  assert.ok(text.includes(targetBuild), "shellBuild probe must include the target build literal");
+  assert.doesNotMatch(normalText, /codex-mobile shellBuild probe/);
+});
+
+test("app.js shellBuild probe responses do not share static compression cache entries", async () => {
+  clearStaticCompressionCache();
+  const firstBuild = "0.1.11|codex-mobile-shell-v625-first";
+  const secondBuild = "0.1.11|codex-mobile-shell-v625-second";
+  const first = await requestStatic(`/app.js?shellBuild=${encodeURIComponent(firstBuild)}&shellCheck=1`, "gzip");
+  const second = await requestStatic(`/app.js?shellBuild=${encodeURIComponent(secondBuild)}&shellCheck=2`, "gzip");
+  const firstText = (await gunzip(first.body)).toString("utf8");
+  const secondText = (await gunzip(second.body)).toString("utf8");
+
+  assert.equal(first.statusCode, 200);
+  assert.equal(second.statusCode, 200);
+  assert.equal(first.headers["Content-Encoding"], "gzip");
+  assert.equal(second.headers["Content-Encoding"], "gzip");
+  assert.ok(firstText.includes(firstBuild));
+  assert.ok(secondText.includes(secondBuild));
+  assert.equal(staticCompressionCacheStats().entries, 0);
+});
+
 test("static root keeps classic shell unless Vite app-preview is explicitly requested", async () => {
   const classicStatic = createStaticFileService({
     publicRoot: path.join(root, "public"),

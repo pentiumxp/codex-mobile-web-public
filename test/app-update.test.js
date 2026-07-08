@@ -247,9 +247,14 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appUpdateSource, /function resetPageShellServiceWorker\(\)/);
   assert.match(appUpdateSource, /function pageReloadUrlWithBust\(\)/);
   assert.match(appUpdateSource, /function recordPageRefreshFailure\(err, phase = "refresh"\)/);
+  assert.match(appUpdateSource, /function forcePageShellReload\(options = \{\}\)/);
   assert.match(appUpdateSource, /rememberRateLimitsFromConfig\(config\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\)/);
+  assert.match(functionBody(appUpdateSource, "validatePageShellAsset"), /asset === "\/app\.js"[\s\S]*function startCodexMobileApp\(\)[\s\S]*CodexRuntimeWiringRuntime[\s\S]*CodexAppShellRuntime[\s\S]*CodexMobileAppEntry/);
+  assert.doesNotMatch(functionBody(appUpdateSource, "validatePageShellAsset"), /asset === "\/app\.js"[\s\S]*text\.includes\(buildId\)/);
   assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /await clearAllShellCaches\(\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\);[\s\S]*await resetPageShellServiceWorker\(\);[\s\S]*window\.location\.replace\(pageReloadUrlWithBust\(\)\);/);
-  assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /catch \(err\) \{[\s\S]*recordPageRefreshFailure\(err, "new-build-refresh"\);[\s\S]*state\.pageRefreshAvailable = true;[\s\S]*state\.pageRefreshReason = "build";/);
+  assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /catch \(err\) \{[\s\S]*recordPageRefreshFailure\(err, "new-build-refresh"\);[\s\S]*await forcePageShellReload\(\{[\s\S]*reason: "build",[\s\S]*allowWhileReloading: true,[\s\S]*new-build-refresh-hard-cache-reset/);
+  assert.match(functionBody(appUpdateSource, "forcePageShellReload"), /await clearAllShellCaches\(\);[\s\S]*await resetPageShellServiceWorker\(\);[\s\S]*window\.location\.replace\(pageReloadUrlWithBust\(\)\);/);
+  assert.doesNotMatch(functionBody(appUpdateSource, "forcePageShellReload"), /preparePageShellAssets/);
   assert.doesNotMatch(functionBody(appUpdateSource, "checkPageRefreshAvailability"), /preparePageShellAssets\(config, \{ populateCache: true \}\)/);
   assert.match(functionBody(appUpdateSource, "initializePageBuildState"), /shouldPromptForServerBuildChange\(currentServerBuildId, state\.serverBuildId\)/);
   assert.match(functionBody(appUpdateSource, "checkPageRefreshAvailability"), /if \(serverBuildMatchesLoadedClient\(config\)\) \{[\s\S]*acceptLoadedClientBuild\(config\);[\s\S]*return;/);
@@ -264,7 +269,8 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appUpdateSource, /key !== expectedCacheName/);
   assert.match(appUpdateSource, /window\.location\.replace\(pageReloadUrlWithBust\(\)\)/);
   assert.match(functionBody(appUpdateSource, "renderPageRefreshPrompt"), /renderHardRefreshButton\(\)/);
-  assert.match(functionBody(appUpdateSource, "handleHardRefreshClick"), /state\.pageRefreshPreparedConfig = null;[\s\S]*state\.pageRefreshReason = "build";[\s\S]*state\.pageRefreshAvailable = true;[\s\S]*await refreshPageForNewBuild\(\);/);
+  assert.match(functionBody(appUpdateSource, "handleHardRefreshClick"), /state\.pageRefreshPreparedConfig = null;[\s\S]*state\.pageRefreshReason = "build";[\s\S]*state\.pageRefreshAvailable = true;[\s\S]*await forcePageShellReload\(\{ reason: "build" \}\);/);
+  assert.doesNotMatch(functionBody(appUpdateSource, "handleHardRefreshClick"), /refreshPageForNewBuild/);
   assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /if \(serverBuildMatchesLoadedClient\(config\)\) \{[\s\S]*acceptLoadedClientBuild\(config\);[\s\S]*state\.pageRefreshReloading = false;[\s\S]*renderPageRefreshPrompt\(\);[\s\S]*return;/);
   assert.match(appUpdateSource, /hardRefreshButton"\)\.addEventListener\("click", \(\) => handleHardRefreshClick\(\)\.catch\(showError\)\)/);
   assert.match(appUpdateSource, /addEventListener\("click", refreshPageForNewBuild\)/);
@@ -273,6 +279,20 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(stylesCss, /html\.embed-hermes #connectionState\s*\{[\s\S]*display:\s*none;/);
   assert.match(stylesCss, /\.page-refresh-prompt/);
   assert.match(stylesCss, /\.hard-refresh-button/);
+});
+
+test("page shell app entry validation accepts the stable app shim without a build id literal", () => {
+  const validatePageShellAsset = Function(
+    `${functionBody(appUpdateSource, "serverBuildIdFromConfig")}\n`
+    + `${functionBody(appUpdateSource, "validatePageShellAsset")}\n`
+    + "return validatePageShellAsset;"
+  )();
+  const config = {
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-target",
+    shellCacheName: "codex-mobile-shell-v625-target",
+  };
+  assert.equal(validatePageShellAsset("/app.js", appJs, config), true);
+  assert.equal(validatePageShellAsset("/app.js", "\"use strict\";\nconsole.log(\"not the app entry\");", config), false);
 });
 
 test("page refresh prompt also handles server restart reconnects", () => {

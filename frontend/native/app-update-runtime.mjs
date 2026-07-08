@@ -910,8 +910,6 @@ function createAppUpdateRuntime(deps = {}) {
   }
 
   function validatePageShellAsset(asset, text, config) {
-    const buildId = serverBuildIdFromConfig(config);
-    const shellCacheName = String(config && config.shellCacheName || "").trim();
     if (asset === "/" || asset === "/index.html") {
       return text.includes('href="/styles.css"') && text.includes('src="/app.js"');
     }
@@ -919,7 +917,10 @@ function createAppUpdateRuntime(deps = {}) {
       return text.includes(".app") && text.includes(".composer");
     }
     if (asset === "/app.js") {
-      return !buildId || text.includes(buildId) || text.includes(shellCacheName);
+      return text.includes("function startCodexMobileApp()")
+        && text.includes("CodexRuntimeWiringRuntime")
+        && text.includes("CodexAppShellRuntime")
+        && text.includes("CodexMobileAppEntry");
     }
     if (asset === "/sw.js") {
       return text.includes("shell-asset-manifest.js");
@@ -1015,6 +1016,36 @@ function createAppUpdateRuntime(deps = {}) {
     }
   }
 
+  async function forcePageShellReload(options = {}) {
+    if (state.pageRefreshReloading && !options.allowWhileReloading) return;
+    const reason = String(options.reason || state.pageRefreshReason || "build");
+    state.pageRefreshReloading = true;
+    state.pageRefreshReason = reason;
+    state.pageRefreshAvailable = true;
+    state.pageRefreshPreparedConfig = null;
+    renderPageRefreshPrompt();
+    saveCurrentDraftNow();
+    try {
+      await clearAllShellCaches();
+    } catch (err) {
+      recordPageRefreshFailure(err, options.cacheFailurePhase || "hard-refresh-cache-reset");
+    }
+    try {
+      await resetPageShellServiceWorker();
+    } catch (err) {
+      recordPageRefreshFailure(err, options.serviceWorkerFailurePhase || "hard-refresh-service-worker-reset");
+    }
+    try {
+      window.location.replace(pageReloadUrlWithBust());
+    } catch (err) {
+      recordPageRefreshFailure(err, options.navigationFailurePhase || "hard-refresh-navigation");
+      state.pageRefreshReloading = false;
+      state.pageRefreshReason = reason === "reconnect" || reason === "restart" ? reason : "build";
+      state.pageRefreshAvailable = true;
+      renderPageRefreshPrompt();
+    }
+  }
+
   function initializePageBuildState(config) {
     state.serverBuildId = CLIENT_BUILD_ID || serverBuildIdFromConfig(config);
     state.serverAssetBuildId = String(config && config.buildId || "").trim();
@@ -1057,7 +1088,7 @@ function createAppUpdateRuntime(deps = {}) {
     state.pageRefreshPreparedConfig = null;
     state.pageRefreshReason = "build";
     state.pageRefreshAvailable = true;
-    await refreshPageForNewBuild();
+    await forcePageShellReload({ reason: "build" });
   }
 
   function showReconnectRefreshPrompt(reason = "reconnect") {
@@ -1250,12 +1281,18 @@ function createAppUpdateRuntime(deps = {}) {
       window.location.replace(pageReloadUrlWithBust());
     } catch (err) {
       recordPageRefreshFailure(err, "new-build-refresh");
+      if (state.pageRefreshReason !== "reconnect" && state.pageRefreshReason !== "restart") {
+        await forcePageShellReload({
+          reason: "build",
+          allowWhileReloading: true,
+          cacheFailurePhase: "new-build-refresh-hard-cache-reset",
+          serviceWorkerFailurePhase: "new-build-refresh-hard-service-worker-reset",
+          navigationFailurePhase: "new-build-refresh-hard-navigation",
+        });
+        return;
+      }
       state.pageRefreshReloading = false;
       state.pageRefreshPreparedConfig = null;
-      if (state.pageRefreshReason !== "reconnect" && state.pageRefreshReason !== "restart") {
-        state.pageRefreshAvailable = true;
-        state.pageRefreshReason = "build";
-      }
       renderPageRefreshPrompt();
     }
   }
@@ -1321,6 +1358,7 @@ function createAppUpdateRuntime(deps = {}) {
     clearAllShellCaches,
     resetPageShellServiceWorker,
     pageReloadUrlWithBust,
+    forcePageShellReload,
     initializePageBuildState,
     renderPageRefreshPrompt,
     handleHardRefreshClick,
