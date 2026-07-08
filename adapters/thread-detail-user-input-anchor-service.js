@@ -87,7 +87,12 @@ function timestampFields(entry = {}) {
 }
 
 function comparableAnchorText(item = {}) {
-  return text(item.text).replace(/\s+/g, " ");
+  const parts = [];
+  if (typeof item.text === "string") parts.push(item.text);
+  if (typeof item.message === "string") parts.push(item.message);
+  const contentText = rolloutContentText(item.content || item.input || item.input_text);
+  if (contentText) parts.push(contentText);
+  return text(parts.join("\n")).replace(/\s+/g, " ");
 }
 
 function userInputAnchorsLikelySame(left = {}, right = {}) {
@@ -183,17 +188,6 @@ function turnId(turn = {}) {
   return text(turn.id || turn.turnId || turn.turn_id);
 }
 
-function latestCompletedTurn(thread = {}) {
-  const turns = Array.isArray(thread.turns) ? thread.turns : [];
-  for (let index = turns.length - 1; index >= 0; index -= 1) {
-    const turn = turns[index];
-    if (!turn || !Array.isArray(turn.items) || !turn.items.length) continue;
-    if (isActiveTurn(turn) || !isCompletedTurn(turn)) continue;
-    return turn;
-  }
-  return null;
-}
-
 function displayTimestampMs(item = {}) {
   for (const key of ["startedAtMs", "startedAt", "timestampMs", "timestamp", "createdAtMs", "createdAt"]) {
     const ms = timestampToMs(item[key]);
@@ -216,30 +210,70 @@ function insertByTimestamp(items, item) {
   else items.splice(index, 0, item);
 }
 
-function appendLatestCompletedUserInputAnchors(thread = {}, anchorPayload = {}) {
-  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return { changed: false, thread };
-  const latest = latestCompletedTurn(thread);
-  if (!latest || latest.mobileSyntheticCompletionTurn === true) return { changed: false, thread };
-  const items = Array.isArray(latest.items) ? latest.items : [];
-  if (!items.length || items.some(isUserInputItem) || !items.some(isAssistantOrUsageItem)) return { changed: false, thread };
-  const id = turnId(latest);
-  const anchors = id && anchorPayload.byTurn instanceof Map ? anchorPayload.byTurn.get(id) : null;
-  if (!Array.isArray(anchors) || !anchors.length) return { changed: false, thread };
+function userInputAnchorMatchesExistingItem(existing = {}, anchor = {}) {
+  if (!isUserInputItem(existing) || !isUserInputItem(anchor)) return false;
+  const existingText = comparableAnchorText(existing);
+  const anchorText = comparableAnchorText(anchor);
+  if (!existingText || !anchorText || existingText !== anchorText) return false;
+  const existingTimestamp = displayTimestampMs(existing);
+  const anchorTimestamp = displayTimestampMs(anchor);
+  if (existingTimestamp && anchorTimestamp) {
+    return Math.abs(existingTimestamp - anchorTimestamp) <= SAME_INPUT_DEDUPE_WINDOW_MS;
+  }
+  const existingId = text(existing.id || existing.itemId || existing.item_id);
+  const anchorId = text(anchor.id || anchor.itemId || anchor.item_id);
+  if (existingId && anchorId && existingId === anchorId) return true;
+  return true;
+}
+
+function shouldBackfillUserInputAnchorsIntoTurn(turn = {}) {
+  if (!turn || turn.mobileSyntheticCompletionTurn === true) return false;
+  if (isActiveTurn(turn) || !isCompletedTurn(turn)) return false;
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  if (!items.length) return false;
+  return items.some(isAssistantOrUsageItem);
+}
+
+function appendMissingUserInputAnchorsToTurn(turn = {}, anchors = []) {
+  if (!shouldBackfillUserInputAnchorsIntoTurn(turn) || !Array.isArray(anchors) || !anchors.length) {
+    return 0;
+  }
+  const items = Array.isArray(turn.items) ? turn.items : [];
   const existingIds = new Set(items.map((item) => text(item.id || item.itemId || item.item_id)).filter(Boolean));
+  const existingUserInputs = items.filter(isUserInputItem);
   let inserted = 0;
-  latest.items = items.slice();
+  let nextItems = null;
   for (const anchor of anchors) {
     const anchorId = text(anchor && (anchor.id || anchor.itemId || anchor.item_id));
     if (!anchor || !anchorId || existingIds.has(anchorId)) continue;
-    insertByTimestamp(latest.items, Object.assign({}, anchor));
+    if (existingUserInputs.some((existing) => userInputAnchorMatchesExistingItem(existing, anchor))) continue;
+    const cloned = Object.assign({}, anchor);
+    if (!nextItems) nextItems = items.slice();
+    insertByTimestamp(nextItems, cloned);
     existingIds.add(anchorId);
+    existingUserInputs.push(cloned);
     inserted += 1;
   }
-  if (!inserted) return { changed: false, thread };
-  latest.mobileUserInputAnchorBackfilled = true;
-  latest.mobileUserInputAnchorBackfillCount = inserted;
-  thread.mobileUserInputAnchorBackfilled = id || true;
-  return { changed: true, thread };
+  if (nextItems) turn.items = nextItems;
+  return inserted;
+}
+
+function appendLatestCompletedUserInputAnchors(thread = {}, anchorPayload = {}) {
+  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return { changed: false, thread };
+  const byTurn = anchorPayload && anchorPayload.byTurn instanceof Map ? anchorPayload.byTurn : null;
+  if (!byTurn || !byTurn.size) return { changed: false, thread };
+  for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
+    const turn = thread.turns[index];
+    const id = turnId(turn);
+    if (!id || !byTurn.has(id)) continue;
+    const inserted = appendMissingUserInputAnchorsToTurn(turn, byTurn.get(id));
+    if (!inserted) continue;
+    turn.mobileUserInputAnchorBackfilled = true;
+    turn.mobileUserInputAnchorBackfillCount = Number(turn.mobileUserInputAnchorBackfillCount || 0) + inserted;
+    thread.mobileUserInputAnchorBackfilled = id || true;
+    return { changed: true, thread };
+  }
+  return { changed: false, thread };
 }
 
 module.exports = {

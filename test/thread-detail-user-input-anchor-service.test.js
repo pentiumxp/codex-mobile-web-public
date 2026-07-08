@@ -36,11 +36,11 @@ test("collects rollout user inputs and appends anchors to latest completed assis
   assert.equal(thread.turns[0].items[0].text, "Question");
 });
 
-test("does not append anchors when latest completed turn already has user input", () => {
+test("does not duplicate anchors when latest completed turn already has matching user input", () => {
   const turnId = "turn-1";
   const collected = collectRolloutUserInputAnchors([
     { type: "turn_context", payload: { turn_id: turnId } },
-    { type: "event_msg", payload: { type: "user_message", message: "Question" } },
+    { type: "event_msg", payload: { type: "user_message", message: "Existing" } },
   ]);
   const thread = {
     turns: [
@@ -60,6 +60,102 @@ test("does not append anchors when latest completed turn already has user input"
 
   assert.equal(result.changed, false);
   assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["u-existing", "a1", "usage"]);
+});
+
+test("appends missing same-turn user input anchors when a completed turn already has earlier user input", () => {
+  const turnId = "turn-1";
+  const collected = collectRolloutUserInputAnchors([
+    { type: "turn_context", payload: { turn_id: turnId } },
+    {
+      type: "response_item",
+      timestamp: "2026-07-07T05:18:40.000Z",
+      payload: { type: "message", role: "user", content: [{ type: "input_text", text: "First question" }] },
+    },
+    {
+      type: "event_msg",
+      timestamp: "2026-07-07T05:18:41.000Z",
+      payload: { type: "user_message", message: "Second clarification" },
+    },
+  ]);
+  const thread = {
+    turns: [
+      {
+        id: turnId,
+        status: "completed",
+        items: [
+          { id: "u-existing", type: "userMessage", text: "First question", startedAt: "2026-07-07T05:18:40.000Z" },
+          { id: "a1", type: "agentMessage", text: "Working" },
+        ],
+      },
+    ],
+  };
+
+  const result = appendLatestCompletedUserInputAnchors(thread, collected);
+
+  assert.equal(result.changed, true);
+  assert.equal(thread.turns[0].mobileUserInputAnchorBackfilled, true);
+  assert.deepEqual(
+    thread.turns[0].items.filter((item) => item.type === "userMessage").map((item) => item.text),
+    ["First question", "Second clarification"],
+  );
+});
+
+test("continues scanning older turns when the newest anchored turn has no missing user input", () => {
+  const olderTurnId = "turn-older";
+  const newerTurnId = "turn-newer";
+  const collected = collectRolloutUserInputAnchors([
+    { type: "turn_context", payload: { turn_id: olderTurnId } },
+    {
+      type: "response_item",
+      timestamp: "2026-07-07T05:18:40.000Z",
+      payload: { type: "message", role: "user", content: [{ type: "input_text", text: "First question" }] },
+    },
+    {
+      type: "event_msg",
+      timestamp: "2026-07-07T05:26:49.000Z",
+      payload: { type: "user_message", message: "Second clarification" },
+    },
+    { type: "turn_context", payload: { turn_id: newerTurnId } },
+    {
+      type: "event_msg",
+      timestamp: "2026-07-07T05:30:00.000Z",
+      payload: { type: "user_message", message: "Already visible" },
+    },
+  ]);
+  const thread = {
+    turns: [
+      {
+        id: olderTurnId,
+        status: "completed",
+        items: [
+          { id: "u-existing-older", type: "userMessage", text: "First question", startedAt: "2026-07-07T05:18:40.000Z" },
+          { id: "a-older", type: "agentMessage", text: "Answer" },
+        ],
+      },
+      {
+        id: newerTurnId,
+        status: "completed",
+        items: [
+          { id: "u-existing-newer", type: "userMessage", text: "Already visible", startedAt: "2026-07-07T05:30:00.000Z" },
+          { id: "a-newer", type: "agentMessage", text: "Done" },
+        ],
+      },
+    ],
+  };
+
+  const result = appendLatestCompletedUserInputAnchors(thread, collected);
+
+  assert.equal(result.changed, true);
+  assert.equal(thread.turns[0].mobileUserInputAnchorBackfilled, true);
+  assert.equal(thread.turns[1].mobileUserInputAnchorBackfilled, undefined);
+  assert.deepEqual(
+    thread.turns[0].items.filter((item) => item.type === "userMessage").map((item) => item.text),
+    ["First question", "Second clarification"],
+  );
+  assert.deepEqual(
+    thread.turns[1].items.filter((item) => item.type === "userMessage").map((item) => item.text),
+    ["Already visible"],
+  );
 });
 
 test("does not append anchors to synthetic completion turns", () => {
