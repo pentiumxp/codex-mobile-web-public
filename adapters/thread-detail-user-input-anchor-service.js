@@ -54,6 +54,10 @@ function rolloutMessageText(payload = {}) {
   return rolloutContentText(payload.content || payload.message || payload.text || payload.input || payload.input_text);
 }
 
+function isInternalEnvironmentContextText(value) {
+  return /^<environment_context>[\s\S]*<\/environment_context>$/.test(text(value));
+}
+
 function rolloutContentHasNonTextInput(value) {
   if (value == null) return false;
   if (Array.isArray(value)) return value.some(rolloutContentHasNonTextInput);
@@ -73,7 +77,9 @@ function isUserInputEntry(entry = {}) {
   if (entry.type === "event_msg" && text(payload.type).toLowerCase() === "user_message") return true;
   if (entry.type === "response_item"
     && text(payload.type).toLowerCase() === "message"
-    && text(payload.role).toLowerCase() === "user") return true;
+    && text(payload.role).toLowerCase() === "user") {
+    return !isInternalEnvironmentContextText(rolloutMessageText(payload));
+  }
   return false;
 }
 

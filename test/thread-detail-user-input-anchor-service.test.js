@@ -100,6 +100,37 @@ test("appends missing same-turn user input anchors when a completed turn already
   );
 });
 
+test("ignores internal environment context response items when collecting user input anchors", () => {
+  const turnId = "turn-1";
+  const collected = collectRolloutUserInputAnchors([
+    { type: "event_msg", payload: { type: "task_started", turn_id: turnId } },
+    {
+      type: "response_item",
+      timestamp: "2026-07-07T10:10:48.748Z",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "<environment_context>\n  <current_date>2026-07-07</current_date>\n</environment_context>" }],
+      },
+    },
+    { type: "turn_context", payload: { turn_id: turnId } },
+    {
+      type: "response_item",
+      timestamp: "2026-07-07T10:10:48.762Z",
+      payload: { type: "message", role: "user", content: [{ type: "input_text", text: "今天的市场怎么样？" }] },
+    },
+    {
+      type: "event_msg",
+      timestamp: "2026-07-07T10:10:48.762Z",
+      payload: { type: "user_message", message: "今天的市场怎么样？" },
+    },
+  ]);
+
+  const anchors = collected.byTurn.get(turnId);
+
+  assert.deepEqual(anchors.map((item) => item.text), ["今天的市场怎么样？"]);
+});
+
 test("continues scanning older turns when the newest anchored turn has no missing user input", () => {
   const olderTurnId = "turn-older";
   const newerTurnId = "turn-newer";
