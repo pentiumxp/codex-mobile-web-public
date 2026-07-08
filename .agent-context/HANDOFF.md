@@ -21,6 +21,32 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## Current Addendum - 2026-07-08 Classic startup root ReferenceError repair
+
+- User saw the boot recovery screen `Codex Mobile 没有正常启动` after 8789
+  restart.
+- Server evidence showed 8789 itself was healthy: `/` and
+  `/api/public-config` returned 200. Browser startup self-check failed with
+  `ReferenceError: root is not defined`.
+- Raw CDP exception located the error at
+  `public/runtime-wiring-runtime.js:60` in
+  `exposeThreadDetailRuntimeHelpers()`, called from `app.js` startup. The
+  classic runtime referenced `root[name]` but lacked the top-level
+  `const root = typeof globalThis !== "undefined" ? globalThis : window;`
+  that already existed in the native runtime.
+- Fix:
+  - Added the missing classic `root` binding to
+    `public/runtime-wiring-runtime.js`.
+  - Added a regression assertion in `test/thread-detail-runtime-ui.test.js`.
+  - Regenerated frontend manifests/assets.
+- Validation:
+  - `node --check public/runtime-wiring-runtime.js && node --test test/thread-detail-runtime-ui.test.js`
+    -> exit 0, 3/3 tests.
+  - `npm run --silent generate:frontend-manifest && npm run --silent build:frontend && npm run --silent check:frontend-manifest && npm run --silent check && git diff --check`
+    -> exit 0, `clientBuildId=0.1.11|codex-mobile-shell-v625-ee043ffa35f9`.
+  - `node scripts/codex-mobile-browser-runtime-self-check.js --server http://127.0.0.1:8789 --startup-only`
+    -> exit 0, `ok=true`, `exceptionCount=0`, `appVisible=true`.
+
 ## Current Addendum - 2026-07-07 Public PR 88 tile-mode absorption
 
 - Worker lane `pr_absorption` absorbed public PR #88

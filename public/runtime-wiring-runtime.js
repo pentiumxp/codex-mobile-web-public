@@ -1,5 +1,6 @@
 "use strict";
 
+const root = typeof globalThis !== "undefined" ? globalThis : window;
 
 function initializeThreadDetailRuntimeWiring() {
   if (threadDetailRuntime) return threadDetailRuntime;
