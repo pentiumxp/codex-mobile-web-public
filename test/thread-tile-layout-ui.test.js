@@ -490,9 +490,11 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(stylesCss, /\.thread-tile-operation-dock\s*{/);
   assert.match(stylesCss, /\.thread-tile-operation-dock \.mobile-operation-stack\s*{/);
   assert.match(stylesCss, /\.thread-tile-bottom-button\s*{/);
-  assert.match(stylesCss, /\.thread-tile-composer-direction\s*{[\s\S]*width:\s*16px;[\s\S]*height:\s*16px;[\s\S]*color:\s*var\(--thread-identity-label\);/);
-  assert.match(stylesCss, /\.thread-tile-composer-direction span\s*{[\s\S]*width:\s*6px;[\s\S]*height:\s*6px;[\s\S]*animation:\s*thread-tile-composer-direction-pulse 1650ms ease-in-out infinite;/);
-  assert.match(stylesCss, /@keyframes thread-tile-composer-direction-pulse\s*{[\s\S]*opacity:\s*0\.72;[\s\S]*translateY\(calc\(var\(--thread-tile-composer-direction-y\) - 1px\)\)/);
+  assert.match(stylesCss, /\.conversation\.thread-tile-mode\s*{[\s\S]*overflow:\s*visible;/);
+  assert.match(stylesCss, /\.thread-tile-pane\.active\s*{[\s\S]*z-index:\s*4;[\s\S]*overflow:\s*visible;/);
+  assert.match(stylesCss, /\.thread-tile-composer-direction\s*{[\s\S]*bottom:\s*-15px;[\s\S]*width:\s*28px;[\s\S]*height:\s*30px;[\s\S]*color:\s*var\(--thread-identity-label\);/);
+  assert.match(stylesCss, /\.thread-tile-composer-direction span\s*{[\s\S]*width:\s*10px;[\s\S]*height:\s*10px;[\s\S]*border-top:\s*2px solid currentColor;[\s\S]*animation:\s*thread-tile-composer-direction-pulse 1250ms ease-in-out infinite;/);
+  assert.match(stylesCss, /@keyframes thread-tile-composer-direction-pulse\s*{[\s\S]*opacity:\s*0\.95;[\s\S]*translateY\(calc\(var\(--thread-tile-composer-direction-y\) - 4px\)\)/);
   assert.match(stylesCss, /@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*\.thread-tile-composer-direction span\s*{[\s\S]*animation:\s*none;/);
 
   const notificationBody = functionBody(appJs, "applyNotification");

@@ -296,7 +296,7 @@ function createModalRuntime() {
   };
 }
 
-const api = { createModalRuntime };
+const modalRuntimeApi = Object.freeze({ createModalRuntime });
 
 Object.assign(root, {
   renderAppNativeDialog,
@@ -317,10 +317,10 @@ Object.assign(root, {
   startCodexProfileSwitchProgressPolling,
   performCodexProfileSwitch,
 });
-root.CodexModalRuntime = api;
+root.CodexModalRuntime = modalRuntimeApi;
 
 export {
   createModalRuntime,
 };
 
-export default api;
+export default modalRuntimeApi;

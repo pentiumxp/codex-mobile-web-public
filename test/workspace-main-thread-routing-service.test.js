@@ -6,6 +6,7 @@ const { test } = require("node:test");
 const {
   createWorkspaceMainThreadRoutingService,
   inheritedWorkspaceMainThreadRole,
+  normalizeWorkspaceMainRole,
 } = require("../services/runtime/workspace-main-thread-routing-service");
 
 const HOME_AI_CWD = "/Users/hermes-dev/HermesMobileDev/app";
@@ -41,6 +42,30 @@ test("worker and deploy sources are not promoted to workspace main", () => {
       threadRole: "home_ai_deploy",
     },
   }), "");
+});
+
+test("external project main is a workspace-main role without promoting worker audit or deploy lanes", () => {
+  assert.equal(normalizeWorkspaceMainRole("external_project_main"), "external_project_main");
+  assert.equal(normalizeWorkspaceMainRole("remote_managed_workspace_source"), "external_project_main");
+
+  const cwd = "/Users/remote/Project";
+  const service = createWorkspaceMainThreadRoutingService({
+    visibleThreads: () => [
+      { id: "external-main", title: "External Project Main", cwd, threadRole: "external_project_main", updatedAt: 20 },
+      { id: "external-worker", title: "External Worker Lane", cwd, threadRole: "external_project_worker", updatedAt: 30 },
+      { id: "external-audit", title: "External Audit Lane", cwd, threadRole: "external_project_audit", updatedAt: 40 },
+      { id: "external-deploy", title: "External Deploy Lane", cwd, threadRole: "external_project_deploy", updatedAt: 50 },
+    ],
+    readThreadSummary: () => ({ updatedAt: 20 }),
+  });
+
+  const resolved = service.resolve({ cwd, role: "external_project_main" });
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.thread.id, "external-main");
+  assert.equal(resolved.thread.role, "external_project_main");
+  assert.equal(service.mainCandidate({ id: "external-worker", title: "External Worker Lane", cwd, threadRole: "external_project_worker" }, { cwd }), null);
+  assert.equal(service.mainCandidate({ id: "external-audit", title: "External Audit Lane", cwd, threadRole: "external_project_audit" }, { cwd }), null);
+  assert.equal(service.mainCandidate({ id: "external-deploy", title: "External Deploy Lane", cwd, threadRole: "external_project_deploy" }, { cwd }), null);
 });
 
 test("main resolver prefers a live continuation over the old source thread", () => {

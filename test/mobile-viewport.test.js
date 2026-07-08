@@ -508,8 +508,10 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /postStartupStage\("public_config_done"/);
   assert.match(appJs, /postStartupStage\("public_config_failed"/);
   assert.match(appJs, /requestHermesPluginRefresh\("public_config_failed", \{ force: true \}\)/);
-  assert.match(appJs, /state\.startupThreadOpenPending = Boolean\(startupThreadId \|\| savedThreadId \|\| \(startupPluginRouteHint && startupPluginRouteHint\.threadId\)\);/);
-  assert.match(appJs, /(?:const|var) earlyRestorePromise = savedThreadId && !startupThreadId[\s\S]*loadThread\(savedThreadId, \{ source: "restore-startup", suppressLoadFailureDiagnostic: true \}\)/);
+  assert.match(appJs, /(?:const|var) deferStartupRestoreForTileMode = Boolean\([\s\S]*localThreadDisplayMode\(\) === "tile"[\s\S]*\);/);
+  assert.match(appJs, /state\.startupThreadOpenPending = Boolean\([\s\S]*savedThreadId && !deferStartupRestoreForTileMode[\s\S]*startupPluginRouteHint && startupPluginRouteHint\.threadId[\s\S]*\);/);
+  assert.match(appJs, /(?:const|var) earlyRestorePromise = savedThreadId && !startupThreadId && !deferStartupRestoreForTileMode[\s\S]*loadThread\(savedThreadId, \{ source: "restore-startup", suppressLoadFailureDiagnostic: true \}\)/);
+  assert.match(appJs, /postStartupStage\("restore_deferred"[\s\S]*reason: "tile-startup"/);
   assert.match(appJs, /(?:const|var) status = await api\("\/api\/status"\)\.catch/);
   assert.match(appJs, /(?:const|var) workspacesStartedAt = nowPerfMs\(\);\s*\n\s*await loadWorkspaces\(\);/);
   assert.match(appJs, /await loadWorkspaces\(\);[\s\S]*await loadThreads\(\{ silent: startupThreadOpenPending, deferFallback: true \}\);/);
@@ -526,7 +528,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /Refreshing Codex Mobile plugin launch\.\.\./);
   assert.match(appJs, /Refreshing plugin page from Hermes Mobile\.\.\./);
   assert.match(appJs, /state\.pluginRefreshPendingTimer = window\.setTimeout\(\(\) => \{/);
-  assert.match(appJs, /function clearPluginRefreshPendingNotice\(\)/);
+  assert.match(appJs, /function clearPluginRefreshPendingNotice\(reason = ""\)/);
   assert.match(appJs, /Generating cross-thread task card draft\.\.\./);
   assert.match(stylesCss, /\.plugin-refresh-pending/);
   assert.match(stylesCss, /\.approval-details/);
@@ -1074,6 +1076,11 @@ test("Android back and edge swipe open the mobile navigation menu", () => {
   assert.match(appJs, /(?:const|var) sidebarOpen = isSidebarOpen\(\)/);
   assert.match(appJs, /(?:const|var) sidebarLayoutButton = \$\("sidebarLayoutToggle"\)/);
   assert.match(appJs, /sidebarLayoutButton\.hidden = !showSidebarLayoutButton/);
+  assert.match(appJs, /(?:const|var) closeMenuButton = \$\("closeMenu"\)/);
+  assert.match(appJs, /(?:const|var) sidebarOverlayClose = Boolean\(sidebarToggle && sidebarOverlay\)/);
+  assert.match(appJs, /closeMenuButton\.classList\.toggle\("sidebar-layout-close", sidebarOverlayClose\)/);
+  assert.match(appJs, /closeMenuButton\.textContent = sidebarOverlayClose \? "‹" : "×"/);
+  assert.match(appJs, /closeMenuButton\.title = sidebarOverlayClose \? "收起 Session List" : "Close menu"/);
   assert.match(appJs, /(?:const|var) splitReturn = !sidebarToggle && threadDetailReturnButtonVisible\(\)/);
   assert.match(appJs, /(?:const|var) sidebarOpenMenu = Boolean\(sidebarToggle && sidebarOverlay && !sidebarOpen\)/);
   assert.match(appJs, /openMenuButton\.classList\.toggle\("split-return-visible", splitReturn\)/);
@@ -1090,7 +1097,7 @@ test("Android back and edge swipe open the mobile navigation menu", () => {
   assert.match(indexHtml, /id="sidebarLayoutToggle"/);
   assert.doesNotMatch(stylesCss, /html\.thread-detail-active #openMenu\.mobile-only\s*{[\s\S]*display:\s*grid;/);
   assert.match(stylesCss, /#openMenu\.split-return-visible,\s*\n#openMenu\.sidebar-toggle-visible\s*{[\s\S]*display:\s*grid;/);
-  assert.match(stylesCss, /\.sidebar-layout-toggle\s*{[\s\S]*font-size:\s*28px;/);
+  assert.match(stylesCss, /\.sidebar-layout-toggle,\s*\n\.sidebar-layout-close\s*{[\s\S]*font-size:\s*28px;/);
   assert.match(stylesCss, /\.sidebar-layout-toggle\[hidden\]\s*{[\s\S]*display:\s*none !important;/);
   assert.match(stylesCss, /html\.sidebar-layout-toggle-supported \.main\.thread-tile-main \.topbar\s*{[\s\S]*position:\s*absolute;[\s\S]*width:\s*40px;[\s\S]*pointer-events:\s*none;/);
   assert.match(stylesCss, /html\.sidebar-layout-toggle-supported \.main\.thread-tile-main\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\) auto;/);

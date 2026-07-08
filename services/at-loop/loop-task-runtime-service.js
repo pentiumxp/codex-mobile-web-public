@@ -336,6 +336,72 @@ function workspacePathTokens(cwd) {
   return compactOneLine(cwd).split(/[\\/]+/).map(workspaceToken).filter(Boolean);
 }
 
+function titleWord(value) {
+  const text = compactOneLine(value).replace(/[_-]+/g, " ").trim();
+  if (!text) return "";
+  const lower = text.toLowerCase();
+  if (lower === "ai") return "AI";
+  if (lower === "ui") return "UI";
+  if (lower === "api") return "API";
+  if (lower === "ios") return "iOS";
+  if (lower === "pwa") return "PWA";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function titleFromPathSegment(value) {
+  return compactOneLine(value)
+    .split(/[^a-zA-Z0-9\u4e00-\u9fff]+/)
+    .map(titleWord)
+    .filter(Boolean)
+    .join(" ");
+}
+
+function workspaceDisplayNameFromCwd(cwd = "", pluginId = "") {
+  const normalizedPlugin = workspaceToken(pluginId);
+  if (normalizedPlugin === "codexmobileweb" || normalizedPlugin === "codexmobile") return "Codex Mobile";
+  if (normalizedPlugin === "music") return "Music";
+  if (normalizedPlugin === "movie") return "Movie";
+  const parts = compactOneLine(cwd).split(/[\\/]+/).filter(Boolean);
+  const leaf = parts[parts.length - 1] || "";
+  const leafToken = workspaceToken(leaf);
+  if (leafToken === "app") return "Home AI";
+  if (leafToken === "codexmobileweb" || leafToken === "codexmobile") return "Codex Mobile";
+  if (leafToken === "homeai") return "Home AI";
+  if (leafToken === "music") return "Music";
+  if (leafToken === "movie") return "Movie";
+  return boundedText(titleFromPathSegment(leaf) || "Workspace", 60);
+}
+
+function laneTitleSuffix(index) {
+  const value = Math.max(0, Math.trunc(Number(index) || 0));
+  if (value <= 0) return "";
+  let remaining = value;
+  let out = "";
+  while (remaining > 0) {
+    remaining -= 1;
+    out = String.fromCharCode(65 + (remaining % 26)) + out;
+    remaining = Math.floor(remaining / 26);
+  }
+  return ` ${out}`;
+}
+
+function normalizeTitleForUniqueness(value) {
+  return compactOneLine(value).toLowerCase();
+}
+
+function uniqueLaneTitle(baseTitle, existingTitles = []) {
+  const base = boundedText(baseTitle || "Worker Lane", 110);
+  const used = new Set((Array.isArray(existingTitles) ? existingTitles : [])
+    .map(normalizeTitleForUniqueness)
+    .filter(Boolean));
+  if (!used.has(normalizeTitleForUniqueness(base))) return boundedText(base, 120);
+  for (let index = 1; index < 200; index += 1) {
+    const candidate = boundedText(`${base}${laneTitleSuffix(index)}`, 120);
+    if (!used.has(normalizeTitleForUniqueness(candidate))) return candidate;
+  }
+  return boundedText(`${base} ${stableHash(existingTitles.join("|"), 6)}`, 120);
+}
+
 function roleRequiresImplementationWorkspace(role) {
   return role === "implementation" || role === "repair";
 }
@@ -358,40 +424,36 @@ function roleThreadRole(role) {
   return "implementation";
 }
 
-function workspaceDisplayName(sourceThread, cwd) {
+function workspaceDisplayName(sourceThread, cwd, options = {}) {
+  const fromCwd = workspaceDisplayNameFromCwd(cwd, options.pluginId || sourceThread && sourceThread.pluginId);
+  if (fromCwd && fromCwd !== "Workspace") return fromCwd;
   const sourceTitle = compactOneLine(sourceThread && (sourceThread.title || sourceThread.name || sourceThread.preview))
     || compactOneLine(sourceThread && (sourceThread.id || sourceThread.threadId))
-    || "Loop";
+    || "Workspace";
   const compactTitle = sourceTitle
-    .replace(/\s+Loop\s+(?:Requirements|Implementation|Implement|Audit|Repair|Deploy Readback)\b.*$/i, "")
+    .replace(/\s+(?:Worker|Loop)\s+(?:Lane|Requirements|Implementation|Implement|Audit|Repair|Deploy Readback)\b.*$/i, "")
     .replace(/\s*[:：].*$/, "")
     .trim();
-  if (compactTitle) return boundedText(compactTitle, 60);
-  const parts = compactOneLine(cwd).split(/[\\/]+/).filter(Boolean);
-  return boundedText(parts[parts.length - 1] || "Workspace", 60);
+  return boundedText(compactTitle || "Workspace", 60);
 }
 
-function roleLaneTitle(sourceThread, role, _objectiveSummary, cwd = "") {
-  const workspace = workspaceDisplayName(sourceThread, cwd);
+function roleLaneTitle(sourceThread, role, _objectiveSummary, cwd = "", options = {}) {
+  const workspace = workspaceDisplayName(sourceThread, cwd, options);
   const suffix = role === "requirements"
-    ? "Loop Requirements"
+    ? "Loop Requirements Lane"
     : role === "product_audit"
-      ? "Loop Audit"
+      ? "Loop Audit Lane"
       : role === "deploy_readback"
-        ? "Loop Deploy Readback"
+        ? "Loop Deploy Readback Lane"
         : role === "repair"
-          ? "Loop Repair"
-          : "Loop Implement";
-  return boundedText(`${workspace} ${suffix}`, 120);
+          ? "Loop Repair Lane"
+          : "Loop Implementation Lane";
+  return uniqueLaneTitle(`${workspace} ${suffix}`, options.existingTitles);
 }
 
-function workerLaneTitle(sourceThread, purpose = "", cwd = "") {
-  const workspace = workspaceDisplayName(sourceThread, cwd);
-  const normalizedPurpose = compactOneLine(purpose).toLowerCase();
-  const suffix = normalizedPurpose && normalizedPurpose !== "default"
-    ? `Worker ${boundedText(normalizedPurpose.replace(/[_-]+/g, " "), 32)}`
-    : "Worker Lane";
-  return boundedText(`${workspace} ${suffix}`, 120);
+function workerLaneTitle(sourceThread, _purpose = "", cwd = "", options = {}) {
+  const workspace = workspaceDisplayName(sourceThread, cwd, options);
+  return uniqueLaneTitle(`${workspace} Worker Lane`, options.existingTitles);
 }
 
 function loopRoles(deployReadbackRequired) {
@@ -775,9 +837,20 @@ function productAuditBlockedRepairRoute(loop, auditVerdict) {
   return "";
 }
 
+function closeLoopAfterPassedAudit(loop, nextRoute = "closed") {
+  loop.status = "completed";
+  loop.currentRole = "";
+  loop.nextRoute = nextRoute;
+  loop.blockedReason = "";
+}
+
 function roleAfterTerminal(loop, slice, returnStatus, auditVerdict) {
   if (returnStatus === "blocked" && slice.role === "product_audit") {
     const verdictRoute = nextRouteForAuditVerdict(auditVerdict);
+    if (verdictRoute === "closed") {
+      if (loop.deployReadbackRequired) return { role: "deploy_readback", nextRoute: "deploy_readback" };
+      return { loopStatus: "completed", nextRoute: "closed" };
+    }
     if (verdictRoute === "requirements_revision" || verdictRoute === "audit_routing_error") {
       return { role: "requirements", nextRoute: verdictRoute, blockedReturnRole: slice.role };
     }
@@ -1031,6 +1104,14 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       if (visible) return visible;
     }
     return visibleThreads().find((thread) => compactOneLine(thread.id || thread.threadId) === id) || null;
+  }
+
+  function visibleLaneTitles(excludeThreadId = "") {
+    const exclude = compactOneLine(excludeThreadId);
+    return visibleThreads()
+      .filter((thread) => !exclude || !sameThreadId(threadIdOf(thread), exclude))
+      .map((thread) => compactOneLine(thread.title || thread.name || thread.preview))
+      .filter(Boolean);
   }
 
   function taskCardDeliverabilityCheck(loop, role, thread) {
@@ -1714,6 +1795,31 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return { role: "product_audit" };
   }
 
+  function reconcilePassedAuditBlockedRoleReturn(loop) {
+    if (!loop || compactOneLine(loop.status) !== "blocked") return false;
+    if (compactOneLine(loop.nextRoute) !== "blocked_role_return") return false;
+    if (compactOneLine(loop.lastAuditVerdict) !== "passed") return false;
+    if (loop.deployReadbackRequired) return false;
+    const slices = Array.isArray(loop.roleSlices) ? loop.roleSlices : [];
+    if (slices.some((slice) => ["pending", "planned", "blocked", "dispatched", "waiting"].includes(compactOneLine(slice.status)))) {
+      return false;
+    }
+    const passedAudit = slices.find((slice) => {
+      if (!slice || slice.role !== "product_audit") return false;
+      if (compactOneLine(slice.status) !== "returned") return false;
+      return compactOneLine(slice.auditVerdict) === "passed" || compactOneLine(loop.lastAuditVerdict) === "passed";
+    });
+    if (!passedAudit) return false;
+    closeLoopAfterPassedAudit(loop);
+    const timestamp = nowIso(clock);
+    passedAudit.routing = Object.assign({}, passedAudit.routing || {}, {
+      terminalReconciliation: "passed_audit_blocked_role_return",
+    });
+    passedAudit.updatedAt = timestamp;
+    loop.updatedAt = timestamp;
+    return true;
+  }
+
   function sourceRequirementsPrompt(loop, slice) {
     return [
       "# Codex Mobile @loop source requirements analysis",
@@ -1989,7 +2095,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       role,
       sourceThread: publicThread(source),
       cwd,
-      title: roleLaneTitle(source, role, loop.objectiveSummary, cwd),
+      title: roleLaneTitle(source, role, loop.objectiveSummary, cwd, {
+        existingTitles: visibleLaneTitles(),
+      }),
       threadRole: roleThreadRole(role),
     });
     return thread || null;
@@ -2024,8 +2132,8 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return compactOneLine(input.workerPurpose || input.worker_purpose || input.purpose || input.targetPurpose || input.target_purpose || "default").toLowerCase() || "default";
   }
 
-  function hasWorkerPurposeFilter(input = {}) {
-    return Boolean(compactOneLine(input.workerPurpose || input.worker_purpose || input.purpose || input.targetPurpose || input.target_purpose));
+  function canonicalWorkerPurpose(_input = {}) {
+    return "worker_lane";
   }
 
   function pluginIdFromLifecycle(input = {}) {
@@ -2040,8 +2148,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const role = roleFromLifecycle(input);
     const cwd = normalizeCwd(input.cwd || input.workspaceCwd || input.workspace || input.targetWorkspace);
     const pluginId = role === "plugin_worker" ? pluginIdFromLifecycle(input) : "";
-    const purpose = workerPurposeFromLifecycle(input);
-    return [role || "home_ai_worker", cwd, pluginId, purpose].join("|");
+    return [role || "home_ai_worker", cwd, pluginId].join("|");
   }
 
   function workerLaneIdFor(input = {}) {
@@ -2194,13 +2301,27 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     if (!isWorkerLifecycleRole(role)) return false;
     if (compactOneLine(record.role) !== role) return false;
     const requestedCwd = normalizeCwd(input.cwd || input.workspaceCwd || input.workspace || input.targetWorkspace);
-    const requestedPurpose = workerPurposeFromLifecycle(input);
-    const purposeFiltered = hasWorkerPurposeFilter(input);
     const requestedPluginId = pluginIdFromLifecycle(input);
     if (requestedCwd && normalizeCwd(record.cwd) !== requestedCwd) return false;
     if (role === "plugin_worker" && requestedPluginId && pluginIdFromLifecycle(record) !== requestedPluginId) return false;
-    if (purposeFiltered && workerPurposeFromLifecycle(record) !== requestedPurpose) return false;
     return true;
+  }
+
+  function workerLaneRecordRank(record = {}) {
+    const lifecycle = workerLaneTerminalState(record);
+    const purpose = workerPurposeFromLifecycle(record);
+    let score = 0;
+    if (lifecycle.unavailable) score += 1000;
+    if (record.legacy === true) score += 100;
+    if (purpose && purpose !== "worker_lane" && purpose !== "default") score += 20;
+    if (compactOneLine(record.lifecycleStatus || record.status).toLowerCase() === "completed") score += 5;
+    return score;
+  }
+
+  function compareWorkerLaneRecords(left = {}, right = {}) {
+    return workerLaneRecordRank(left) - workerLaneRecordRank(right)
+      || String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""))
+      || compactOneLine(left.threadId).localeCompare(compactOneLine(right.threadId));
   }
 
   function compactWorkerRequestId(input = {}) {
@@ -2272,17 +2393,20 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       thread,
     }).classification || routingService.classifyThreadPurpose(thread);
     const nonDeliverable = explicitNonDeliverability(thread);
-    const workerRecord = isWorkerLifecycleRole(role) ? workerLaneRecordForThread(thread) : null;
+    const workerLanePurpose = classification.purpose === "worker_lane";
+    const workerRecord = (isWorkerLifecycleRole(role) || workerLanePurpose) ? workerLaneRecordForThread(thread) : null;
     const workerLifecycle = workerRecord ? workerLaneTerminalState(workerRecord) : { unavailable: false, reason: "" };
     const cwd = compactOneLine(thread.cwd || thread.workspace || thread.targetWorkspace);
     const requestedCwd = compactOneLine(input.cwd || input.workspaceCwd || input.workspace || input.targetWorkspace);
     const cwdMatches = !requestedCwd || normalizeCwd(cwd) === normalizeCwd(requestedCwd);
     const requestedPluginId = pluginIdFromLifecycle(input);
+    const explicitThreadRole = compactOneLine(thread.threadRole || thread.thread_role || thread.role || thread.taskCardRole || thread.task_card_role).toLowerCase();
+    const genericWorkerWithoutLifecycleSignal = !role && workerLanePurpose && !workerRecord && !explicitThreadRole;
     const workerRoleMatches = !isWorkerLifecycleRole(role)
       ? true
       : workerRecord
         ? compactOneLine(workerRecord.role) === role
-        : compactOneLine(thread.threadRole || thread.thread_role || thread.role || thread.taskCardRole || thread.task_card_role).toLowerCase() === role
+        : explicitThreadRole === role
           || (role === "home_ai_worker" && classification.purpose === "worker_lane" && !requestedPluginId);
     const pluginMatches = role !== "plugin_worker" || !requestedPluginId
       || pluginIdFromLifecycle(workerRecord || thread) === requestedPluginId;
@@ -2290,7 +2414,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const selfTarget = sourceThreadId && sameThreadId(sourceThreadId, threadIdOf(thread));
     const roleSignal = isWorkerLifecycleRole(role)
       ? classification.purpose === "worker_lane" && workerRoleMatches && pluginMatches
-      : !role || role === "requirements" || role === "product_audit" || role === "deploy_readback" || threadHasRoleLaneSignal(role, thread);
+      : !role
+        ? !genericWorkerWithoutLifecycleSignal
+        : role === "requirements" || role === "product_audit" || role === "deploy_readback" || threadHasRoleLaneSignal(role, thread);
     const deliverable = !nonDeliverable.unavailable && !workerLifecycle.unavailable && !selfTarget && cwdMatches && lifecyclePurposeAllowed(role, classification) && roleSignal;
     let deliverabilityReason = "eligible";
     if (!deliverable) {
@@ -2410,7 +2536,9 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       const found = lanes.find((lane) => workerRecordHasRequestId(lane, requestId));
       if (found) return found;
     }
-    return lanes.find((lane) => workerLaneRecordMatchesInput(lane, input)) || null;
+    const matches = lanes.filter((lane) => workerLaneRecordMatchesInput(lane, input));
+    matches.sort(compareWorkerLaneRecords);
+    return matches[0] || null;
   }
 
   function workerLifecycleTargetNotManageable(input = {}, action = "status") {
@@ -2497,23 +2625,29 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       role,
       sourceThread: publicThread(sourceThread),
       cwd,
-      title: workerLaneTitle(sourceThread, purpose, cwd),
+      title: workerLaneTitle(sourceThread, purpose, cwd, {
+        pluginId,
+        existingTitles: visibleLaneTitles(),
+      }),
       threadRole: role,
       pluginId,
-      workerPurpose: purpose,
+      workerPurpose: canonicalWorkerPurpose(input),
     });
     const threadId = threadIdOf(thread);
     if (!threadId) return { ok: false, action, error: "thread_lifecycle_worker_create_missing_thread_id" };
     if (sameThreadId(threadId, sourceThreadId)) return { ok: false, action, error: "thread_lifecycle_target_self_disallowed" };
     const timestamp = nowIso(clock);
     const record = {
-      workerLaneId: `worker_${stableHash(`${workerLaneKey(Object.assign({}, input, { role, cwd, pluginId, purpose }))}|${threadId}`, 16)}`,
+      workerLaneId: `worker_${stableHash(`${workerLaneKey(Object.assign({}, input, { role, cwd, pluginId }))}|${threadId}`, 16)}`,
       threadId,
-      title: boundedText(thread.title || thread.name || thread.preview || workerLaneTitle(sourceThread, purpose, cwd), 120),
+      title: boundedText(thread.title || thread.name || thread.preview || workerLaneTitle(sourceThread, purpose, cwd, {
+        pluginId,
+        existingTitles: visibleLaneTitles(threadId),
+      }), 120),
       role,
       cwd,
       pluginId,
-      workerPurpose: purpose,
+      workerPurpose: canonicalWorkerPurpose(input),
       sourceThreadId,
       lifecycleStatus: "available",
       requestIds: [],
@@ -2562,6 +2696,8 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       status: boundedText(input.status || input.heartbeatStatus || "working", 80),
       taskCardId: boundedText(input.taskCardId || input.cardId || "", 120),
       summary: boundedText(input.summary || input.message || "", 240),
+      source: boundedText(input.source || input.heartbeatSource || "", 80),
+      turnId: boundedText(input.turnId || input.turn_id || "", 120),
       updatedAt: timestamp,
     };
     if (record.heartbeat.taskCardId) record.lastTaskCardId = record.heartbeat.taskCardId;
@@ -2997,6 +3133,15 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       existing.updatedAt = nowIso(clock);
       if (existing.status === "blocked") {
         rebuildAuditPacketFromReturnedRoleCards(existing);
+        if (reconcilePassedAuditBlockedRoleReturn(existing)) {
+          saveState();
+          return {
+            ok: true,
+            duplicateSuppressed: false,
+            recovered: true,
+            loop: publicLoop(existing),
+          };
+        }
         const packetStatus = auditPacketStatus(existing.auditPacket || sanitizeAuditPacket({}));
         if (existing.nextRoute === "max_iterations_reached" && packetStatus.complete) {
           const recoveredRole = prepareProductAuditPacketRetry(existing, "max_iterations_reached_packet_rebuilt");
@@ -3236,6 +3381,8 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   function status(input = {}) {
     const loopId = compactOneLine(input.loopId);
     const loops = loopId ? loadState().loops.filter((loop) => loop.loopId === loopId) : loadState().loops;
+    const reconciled = loops.reduce((changed, loop) => reconcilePassedAuditBlockedRoleReturn(loop) || changed, false);
+    if (reconciled) saveState();
     const publicLoops = loops.map(publicLoop);
     return {
       ok: true,

@@ -105,6 +105,20 @@ function clearThreadLoadWatchdog() {
   state.threadLoadWatchdogTimer = null;
 }
 
+function clearSettledServerBuildRefreshForThreadEntry(source = "") {
+  const runtime = window.CodexSettingsRuntime || null;
+  if (!runtime || typeof runtime.clearSettledServerBuildPluginRefreshAfterThreadEntry !== "function") return false;
+  try {
+    const result = runtime.clearSettledServerBuildPluginRefreshAfterThreadEntry({
+      source: String(source || "thread-entry").slice(0, 40),
+    });
+    if (result && typeof result.catch === "function") result.catch(() => {});
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function startThreadLoadWatchdog(threadId, details = {}) {
   clearThreadLoadWatchdog();
   const seq = state.threadLoadSeq;
@@ -149,6 +163,7 @@ async function loadThread(threadId, options = {}) {
   const switchStartedAt = nowPerfMs();
   const fromThreadId = state.currentThreadId || "";
   const source = String(options.source || "unknown").slice(0, 40);
+  clearSettledServerBuildRefreshForThreadEntry(source);
   const suppressLoadFailureDiagnostic = options.suppressLoadFailureDiagnostic === true;
   if (threadId !== fromThreadId) resetComposerRuntimeSelection();
   if (threadId !== fromThreadId) {
@@ -1962,6 +1977,14 @@ function syncThreadDetailLayoutState() {
     sidebarLayoutButton.textContent = "‹";
     sidebarLayoutButton.title = "收起 Session List";
     sidebarLayoutButton.setAttribute("aria-label", "收起 Session List");
+  }
+  const closeMenuButton = $("closeMenu");
+  if (closeMenuButton) {
+    const sidebarOverlayClose = Boolean(sidebarToggle && sidebarOverlay);
+    closeMenuButton.classList.toggle("sidebar-layout-close", sidebarOverlayClose);
+    closeMenuButton.textContent = sidebarOverlayClose ? "‹" : "×";
+    closeMenuButton.title = sidebarOverlayClose ? "收起 Session List" : "Close menu";
+    closeMenuButton.setAttribute("aria-label", sidebarOverlayClose ? "收起 Session List" : "Close menu");
   }
   const openMenuButton = $("openMenu");
   if (!openMenuButton) return;

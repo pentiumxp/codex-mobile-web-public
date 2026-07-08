@@ -581,6 +581,8 @@ test("checked-in Vite shell artifact readback files all exist", () => {
 
   assert.equal(status.ok, true, JSON.stringify(status.issueCodes));
   assert.deepEqual(status.issueCodes, []);
+  assert.ok(!status.issueCodes.includes("vite_shell_app_preview_classic_loader_plan_file_hash_mismatch"));
+  assert.ok(!status.issueCodes.includes("vite_shell_classic_asset_file_hash_mismatch"));
   assert.equal(status.publishedFiles.every((file) => file.exists), true);
 });
 
@@ -855,8 +857,14 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   }, null, 2));
 
   const readback = publishViteShellPublicArtifact({ root, buildRoot });
+  const status = service.createViteShellArtifactService({
+    appRoot: root,
+    readShellAssetManifest: () => JSON.parse(fs.readFileSync(path.join(root, "public", "shell-asset-manifest.json"), "utf8")),
+  }).readPublicArtifactStatus();
   const published = fs.readdirSync(path.join(root, "public", "vite-shell")).sort();
   assert.equal(readback.validation.ok, true);
+  assert.ok(!status.issueCodes.includes("vite_shell_app_preview_classic_loader_plan_file_hash_mismatch"));
+  assert.ok(!status.issueCodes.includes("vite_shell_classic_asset_file_hash_mismatch"));
   assert.deepEqual(published, ["app-preview-entry.js", "app-preview.html", "assets", "codex-mobile-shell-manifest.json", "preview.html", "vite-shell-readback.json"]);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "shell-extra.js")), false);
   assert.equal(fs.existsSync(path.join(root, "public", "vite-shell", "assets", "vite-shell-entry-old.js")), true);
@@ -908,6 +916,11 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.match(appPreviewHtml, /id="codex-vite-app-preview-loader-plan"/);
   assert.match(appPreviewHtml, /data-codex-vite-app-preview-loader-plan="true"/);
   assert.match(appPreviewHtml, /"owner": "vite-shell-entry"/);
+  assert.match(appPreviewHtml, /<script src="\/shell-asset-manifest\.js" data-codex-vite-current-shell-manifest="true"><\/script>/);
+  assert.ok(
+    appPreviewHtml.indexOf('data-codex-vite-current-shell-manifest="true"')
+      < appPreviewHtml.indexOf('data-codex-vite-app-preview-entry="true"')
+  );
   assert.match(appPreviewHtml, /type="module" src="\/vite-shell\/app-preview-entry\.js\?targetEntry=vite-shell-entry-test\.js" data-codex-vite-app-preview-entry="true"/);
   assert.doesNotMatch(appPreviewHtml, /CODEX_MOBILE_SHELL_SCRIPTS:BEGIN/);
   assert.doesNotMatch(appPreviewHtml, /<script src="\/app-bootstrap\.js"/);
@@ -996,10 +1009,10 @@ test("Vite shell artifact publisher copies only bounded preview artifacts", asyn
   assert.equal(readback.appPreviewClassicLoaderPlan.hashCount, 0);
   assert.equal(readback.appPreviewClassicLoaderPlan.excludedEsmScriptCount, 1);
   assert.equal(readback.appPreviewClassicLoaderPlan.excludedEsmHashCount, 1);
-  assert.deepEqual(readback.appPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.esmModuleId), ["app-shell-runtime"]);
+  assert.deepEqual(readback.appPreviewClassicLoaderPlan.excludedEsmScripts.map((entry) => entry.esmModuleId), ["app-entry"]);
   assert.equal(readback.appPreviewClassicLoaderPlan.excludedViteOwnedScriptCount, 2);
   assert.equal(readback.appPreviewClassicLoaderPlan.excludedViteOwnedHashCount, 2);
-  assert.deepEqual(readback.appPreviewClassicLoaderPlan.excludedViteOwnedScripts.map((entry) => entry.ownerId), ["shell-manifest", "app-bootstrap"]);
+  assert.deepEqual(readback.appPreviewClassicLoaderPlan.excludedViteOwnedScripts.map((entry) => entry.ownerId), ["shell-manifest", "vite-app-bootstrap"]);
   assert.equal(readback.appPreviewClassicLoaderPlan.firstScript, "");
   assert.equal(readback.appPreviewClassicLoaderPlan.lastScript, "");
   assert.match(readback.appPreviewClassicLoaderPlan.sha256, /^[a-f0-9]{64}$/);

@@ -1,4 +1,4 @@
-import shellManifest from "../public/shell-asset-manifest.json";
+import buildTimeShellManifest from "../public/shell-asset-manifest.json";
 import {
   codexMobileViteEntryGroupIds,
   loadCodexMobileViteEntryGroups,
@@ -10,6 +10,18 @@ import {
 // entry gives Vite a stable startup/deferred topology to validate before the
 // production shell switches to bundled runtime chunks.
 
+function runtimeShellManifest() {
+  const candidate = globalThis.CODEX_MOBILE_SHELL_MANIFEST;
+  if (candidate
+    && typeof candidate === "object"
+    && String(candidate.clientBuildId || "")
+    && (Array.isArray(candidate.indexScriptAssets) || Array.isArray(candidate.scriptAssets))) {
+    return candidate;
+  }
+  return buildTimeShellManifest;
+}
+
+const shellManifest = runtimeShellManifest();
 globalThis.CODEX_MOBILE_SHELL_MANIFEST = shellManifest;
 
 function compactEntryGroup(group) {

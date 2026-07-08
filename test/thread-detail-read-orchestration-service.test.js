@@ -1065,21 +1065,13 @@ test("large summary read uses bounded turns/list even when projection input is u
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "no-projection-input");
 });
 
-test("active large recent projection miss uses bounded foreground window instead of empty deferred seed", async () => {
-  const deferredTasks = [];
-  const deferredTaskOptions = [];
+test("active large recent projection miss uses bounded foreground window", async () => {
   const { service, calls } = createHarness({
     summary: {
       id: "thread-1",
       status: { type: "active" },
       activeTurnId: "turn-active",
       rolloutPath: "/tmp/rollout.jsonl",
-    },
-    scheduleDeferredTask: (task, options = {}) => {
-      calls.push("defer-task");
-      deferredTaskOptions.push(options);
-      deferredTasks.push(task);
-      return { unref() {} };
     },
     projectedThreadResult: (input, summary, runtimeSettings, options = {}) => {
       calls.push(`projection-allow-partial:${options.allowPartial === true}`);
@@ -1109,7 +1101,6 @@ test("active large recent projection miss uses bounded foreground window instead
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
   assert.equal(calls.includes("turns-list:turns-list-large"), true);
   assert.equal(calls.includes("thread-read"), false);
-  assert.equal(calls.includes("defer-task"), false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "bounded-large-turns-list");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadReason, "active-turn-id");
@@ -1119,8 +1110,6 @@ test("active large recent projection miss uses bounded foreground window instead
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "turns-list-large");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "active-thread-bounded-window");
-  assert.equal(deferredTasks.length, 0);
-  assert.equal(deferredTaskOptions.length, 0);
 });
 
 test("active overlay incomplete evidence still falls through to full thread/read", async () => {
@@ -3354,20 +3343,12 @@ test("recent thread detail can use initial bounded turns/list without full read"
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "turns-list-initial");
 });
 
-test("large resting recent projection miss defers initial turns/list seed", async () => {
-  const deferredTasks = [];
-  const deferredTaskOptions = [];
+test("large resting recent projection miss returns bounded initial window", async () => {
   const { service, calls } = createHarness({
     summary: {
       id: "thread-1",
       status: { type: "completed" },
       rolloutPath: "/tmp/rollout.jsonl",
-    },
-    scheduleDeferredTask: (task, options = {}) => {
-      calls.push("defer-task");
-      deferredTaskOptions.push(options);
-      deferredTasks.push(task);
-      return { unref() {} };
     },
     preferBoundedReadBeforeFullRead: () => ({
       prefer: true,
@@ -3386,140 +3367,15 @@ test("large resting recent projection miss defers initial turns/list seed", asyn
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.mode, "deferred-initial-turns-list");
-  assert.deepEqual(response.body.thread.turns, []);
-  assert.equal(response.body.thread.mobileDeferredProjectionSeed.scheduled, true);
-  assert.equal(response.body.thread.mobileDeferredProjectionSeed.targetMode, "turns-list-initial");
-  assert.equal(response.body.thread.mobileDeferredProjectionSeed.delayMs, 3000);
-  assert.equal(response.body.thread.mobileDeferredProjectionSeed.retryAfterMs, 3000);
-  assert.equal(response.body.thread.mobileDeferredProjectionSeed.refreshAfterMs, 3900);
-  assert.equal(calls.includes("turns-list:turns-list-initial"), false);
+  assert.equal(response.mode, "turns-list-initial");
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-from-list"]);
+  assert.equal(response.body.thread.mobileDeferredProjectionSeed, undefined);
+  assert.equal(calls.includes("turns-list:turns-list-initial"), true);
   assert.equal(calls.includes("thread-read"), false);
-  assert.equal(calls.includes("defer-task"), true);
-  assert.equal(calls.includes("log:turns_list_initial_deferred"), true);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "deferred-initial-turns-list");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "deferred");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, true);
-
-  assert.equal(deferredTasks.length, 1);
-  assert.equal(deferredTaskOptions.length, 1);
-  assert.equal(deferredTaskOptions[0].delayMs, 3000);
-  assert.equal(deferredTaskOptions[0].name, "deferred-initial-turns-list-seed");
-
-  const pending = await service.readThreadDetail({
-    codex: { transportKind: "mux", ready: true },
-    threadId: "thread-1",
-    preferRecentTurns: true,
-    threadLog: (event) => calls.push(`log:${event}`),
-  });
-  assert.equal(pending.body.thread.mobileDeferredProjectionSeed.scheduled, false);
-  assert.equal(pending.body.thread.mobileDeferredProjectionSeed.reason, "already-pending");
-  assert.equal(pending.body.thread.mobileDeferredProjectionSeed.delayMs, 3000);
-  assert.ok(pending.body.thread.mobileDeferredProjectionSeed.retryAfterMs > 0);
-  assert.ok(pending.body.thread.mobileDeferredProjectionSeed.refreshAfterMs > 900);
-  assert.equal(deferredTasks.length, 1);
-
-  await deferredTasks[0]();
-  assert.ok(calls.indexOf("turns-list:turns-list-initial") > calls.indexOf("defer-task"));
   assert.ok(calls.indexOf("seed:partial") > calls.indexOf("turns-list:turns-list-initial"));
-  assert.equal(calls.includes("log:deferred_turns_list_initial_seed_start"), true);
-  assert.equal(calls.includes("log:deferred_turns_list_initial_seed_done"), true);
-});
-
-test("deferred initial turns/list seed timeout releases pending state with backoff", async () => {
-  const deferredTasks = [];
-  const deferredTaskOptions = [];
-  const timeoutTasks = [];
-  let nowMs = 1_000;
-  const { service, calls } = createHarness({
-    now: () => {
-      nowMs += 3;
-      return nowMs;
-    },
-    summary: {
-      id: "thread-1",
-      status: { type: "completed" },
-      rolloutPath: "/tmp/rollout.jsonl",
-    },
-    scheduleDeferredTask: (task, options = {}) => {
-      calls.push("defer-task");
-      deferredTaskOptions.push(options);
-      deferredTasks.push(task);
-      return { unref() {} };
-    },
-    turnsListThreadReadResult: async ({ mode }) => {
-      calls.push(`turns-list:${mode}`);
-      return new Promise(() => {});
-    },
-    preferBoundedReadBeforeFullRead: () => ({
-      prefer: true,
-      rolloutSizeBytes: 600_000_000,
-      thresholdBytes: 8_000_000,
-      source: "rollout-size",
-      reason: "large-rollout",
-    }),
-    deferredInitialTurnsListSeedTimeoutMs: 1,
-    deferredInitialTurnsListSeedBackoffMs: 100,
-    timeoutScheduler: {
-      setTimeout: (callback, delayMs) => {
-        const task = {
-          callback,
-          delayMs,
-          cleared: false,
-        };
-        timeoutTasks.push(task);
-        return task;
-      },
-      clearTimeout: (task) => {
-        if (task) task.cleared = true;
-      },
-      unref: false,
-    },
-  });
-
-  const first = await service.readThreadDetail({
-    codex: { transportKind: "mux", ready: true },
-    threadId: "thread-1",
-    preferRecentTurns: true,
-    threadLog: (event) => calls.push(`log:${event}`),
-  });
-  assert.equal(first.body.thread.mobileDeferredProjectionSeed.reason, "large-projection-miss");
-  assert.equal(first.body.thread.mobileDeferredProjectionSeed.delayMs, 3000);
-  assert.equal(first.body.thread.mobileDeferredProjectionSeed.refreshAfterMs, 3900);
-  assert.equal(deferredTasks.length, 1);
-  assert.equal(deferredTaskOptions[0].delayMs, 3000);
-
-  const seedTask = deferredTasks[0]();
-  await Promise.resolve();
-  assert.equal(timeoutTasks.length, 1);
-  assert.equal(timeoutTasks[0].delayMs, 1);
-  timeoutTasks[0].callback();
-  await seedTask;
-  assert.equal(timeoutTasks[0].cleared, true);
-  assert.equal(calls.includes("log:deferred_turns_list_initial_seed_error"), true);
-
-  const second = await service.readThreadDetail({
-    codex: { transportKind: "mux", ready: true },
-    threadId: "thread-1",
-    preferRecentTurns: true,
-    threadLog: (event) => calls.push(`log:${event}`),
-  });
-  assert.equal(second.body.thread.mobileDeferredProjectionSeed.scheduled, false);
-  assert.equal(second.body.thread.mobileDeferredProjectionSeed.reason, "seed-backoff");
-  assert.ok(second.body.thread.mobileDeferredProjectionSeed.retryAfterMs > 0);
-  assert.equal(second.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "deferred-backoff");
-  assert.equal(deferredTasks.length, 1);
-
-  nowMs += 200;
-  const third = await service.readThreadDetail({
-    codex: { transportKind: "mux", ready: true },
-    threadId: "thread-1",
-    preferRecentTurns: true,
-    threadLog: (event) => calls.push(`log:${event}`),
-  });
-  assert.equal(third.body.thread.mobileDeferredProjectionSeed.scheduled, true);
-  assert.equal(third.body.thread.mobileDeferredProjectionSeed.reason, "large-projection-miss");
-  assert.equal(deferredTasks.length, 2);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "initial-turns-list");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "seeded-partial");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "turns-list-initial");
 });
 
 test("recent completed thread downgrades stale active initial window instead of full read", async () => {

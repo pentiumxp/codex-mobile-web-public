@@ -16,6 +16,9 @@ const {
   createThreadManagementRouteService,
 } = require("./thread-management-route-service");
 const {
+  createRemoteManagedWorkspaceRouteService,
+} = require("./remote-managed-workspace-route-service");
+const {
   createWorkspaceRouteService,
 } = require("./workspace-route-service");
 
@@ -70,6 +73,14 @@ function createApiDispatchRouteService(dependencies = {}) {
   const readStateDbThread = dependencies.readStateDbThread;
   const readThreadListCachedFallback = dependencies.readThreadListCachedFallback;
   const readThreadListFallback = dependencies.readThreadListFallback;
+  const remoteManagedWorkspaceService = dependencies.remoteManagedWorkspaceService;
+  const remoteManagedWorkspaceRouteService = dependencies.remoteManagedWorkspaceRouteService
+    || (dependencies.remoteManagedWorkspaceCentralSimulator === true && remoteManagedWorkspaceService
+      ? createRemoteManagedWorkspaceRouteService({
+        remoteManagedWorkspaceService,
+        centralSimulator: true,
+      })
+      : null);
   const rememberStartedThread = dependencies.rememberStartedThread;
   const removeEventClient = dependencies.removeEventClient;
   const rolloutStatsForPath = dependencies.rolloutStatsForPath;
@@ -184,6 +195,16 @@ function createApiDispatchRouteService(dependencies = {}) {
       sendJson: trackedSendJson,
     });
     if (publicCoreRouteResult.handled) return;
+    if (remoteManagedWorkspaceRouteService && typeof remoteManagedWorkspaceRouteService.handleRoute === "function") {
+      const remoteManagedWorkspaceRouteResult = await remoteManagedWorkspaceRouteService.handleRoute({
+        url,
+        method: req.method,
+        req,
+        readBody: () => readBody(req),
+        sendJson: trackedSendJson,
+      });
+      if (remoteManagedWorkspaceRouteResult.handled) return;
+    }
     if (!isAuthorized(req)) {
       trackedSendJson(401, { error: "Unauthorized" });
       return;

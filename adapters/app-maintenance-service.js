@@ -117,6 +117,10 @@ function createAppMaintenanceService(options = {}) {
   const publicReleaseBranch = String(options.publicReleaseBranch || "main");
   const publicReleaseCheckCacheMs = normalizePositiveNumber(options.publicReleaseCheckCacheMs, 900000, 30000);
   const fetchImpl = typeof options.fetch === "function" ? options.fetch : globalThis.fetch;
+  const hasCurrentPublicBuildConfigProvider = typeof options.currentPublicBuildConfig === "function";
+  const currentPublicBuildConfig = hasCurrentPublicBuildConfigProvider
+    ? options.currentPublicBuildConfig
+    : null;
   const runGitImpl = typeof options.runGit === "function" ? options.runGit : null;
   const spawnImpl = typeof options.spawn === "function" ? options.spawn : spawn;
   const setTimeoutImpl = typeof options.setTimeout === "function" ? options.setTimeout : setTimeout;
@@ -241,12 +245,49 @@ function createAppMaintenanceService(options = {}) {
     const value = status || unsupportedAppUpdateStatus("not checked");
     const publicValue = Object.assign({}, value);
     delete publicValue.checkedAtMs;
+    const currentBuild = currentAppUpdateBuildIdentity();
+    const currentBuildIssueCodes = Array.isArray(currentBuild.issueCodes) ? currentBuild.issueCodes.slice() : [];
     return Object.assign({}, publicValue, {
       version: appVersion,
+      clientBuildId: currentBuild.clientBuildId,
+      shellCacheName: currentBuild.shellCacheName,
+      classicShellCacheName: currentBuild.classicShellCacheName,
+      currentBuild,
+      currentBuildIssueCodes,
       checking: Boolean(appUpdateCheckInFlight),
       applying: appUpdateApplying,
       restartScheduled: appUpdateRestartScheduled,
     }, overrides);
+  }
+
+  function currentAppUpdateBuildIdentity() {
+    let config = {};
+    const issueCodes = [];
+    if (!hasCurrentPublicBuildConfigProvider) {
+      issueCodes.push("app_update_current_build_provider_missing");
+    } else {
+      try {
+        config = currentPublicBuildConfig() || {};
+      } catch (_) {
+        issueCodes.push("app_update_current_build_provider_error");
+        config = {};
+      }
+    }
+    const clientBuildId = String(config.clientBuildId || "").trim();
+    const shellCacheName = String(config.shellCacheName || "").trim();
+    const classicShellCacheName = String(config.classicShellCacheName || "").trim();
+    if (!clientBuildId || !shellCacheName) {
+      issueCodes.push("app_update_current_build_identity_empty");
+    }
+    return {
+      buildId: String(config.buildId || "").trim(),
+      clientBuildId,
+      shellCacheName,
+      classicShellCacheName,
+      identity: clientBuildId || shellCacheName || String(config.buildId || "").trim(),
+      ok: Boolean(clientBuildId && shellCacheName),
+      issueCodes,
+    };
   }
 
   async function readAppUpdateStatus(readOptions = {}) {

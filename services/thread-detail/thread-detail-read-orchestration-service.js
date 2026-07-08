@@ -20,39 +20,6 @@ function safeErrorMessage(err) {
   return err && err.message ? err.message : String(err);
 }
 
-const DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_TIMEOUT_MS = 2_500;
-const DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_BACKOFF_MS = 10_000;
-const DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_DELAY_MS = 3_000;
-const DEFERRED_INITIAL_TURNS_LIST_SEED_REFRESH_BUFFER_MS = 900;
-
-function timeoutError(message) {
-  const err = new Error(message || "operation timed out");
-  err.code = "RPC_TIMEOUT";
-  err.timeout = true;
-  return err;
-}
-
-function withTimeout(promise, timeoutMs, message, scheduler = null) {
-  const ms = Number(timeoutMs || 0);
-  if (!Number.isFinite(ms) || ms <= 0) return promise;
-  const setTimeoutFn = scheduler && typeof scheduler.setTimeout === "function"
-    ? scheduler.setTimeout
-    : setTimeout;
-  const clearTimeoutFn = scheduler && typeof scheduler.clearTimeout === "function"
-    ? scheduler.clearTimeout
-    : clearTimeout;
-  const unrefTimers = !scheduler || scheduler.unref !== false;
-  let timer = null;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeoutFn(() => reject(timeoutError(message)), ms);
-    if (unrefTimers && timer && typeof timer.unref === "function") timer.unref();
-  });
-  return Promise.race([promise, timeout])
-    .finally(() => {
-      if (timer) clearTimeoutFn(timer);
-    });
-}
-
 function createThreadDetailTimer(now = defaultNow) {
   const startedAtMs = now();
   const timings = {};
@@ -90,12 +57,6 @@ function isPromiseLike(value) {
 function safeNonNegativeNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : 0;
-}
-
-function boundedNonNegativeInteger(value, fallback = 0) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) return Math.max(0, Math.trunc(Number(fallback) || 0));
-  return Math.max(0, Math.trunc(number));
 }
 
 function normalizeBoundedReadDecision(value) {
@@ -691,18 +652,6 @@ function asActiveOverlayProjectionWindow(result, overlayInput = {}) {
 
 function createThreadDetailReadOrchestrationService(options = {}) {
   const now = typeof options.now === "function" ? options.now : defaultNow;
-  const scheduleDeferredTask = typeof options.scheduleDeferredTask === "function"
-    ? options.scheduleDeferredTask
-    : (task, scheduleOptions = {}) => {
-      const delayMs = boundedNonNegativeInteger(scheduleOptions && scheduleOptions.delayMs, 0);
-      const timer = setTimeout(() => {
-        Promise.resolve()
-          .then(task)
-          .catch(() => {});
-      }, delayMs);
-      if (timer && typeof timer.unref === "function") timer.unref();
-      return timer;
-    };
   const attachDiagnostics = typeof options.attachDiagnostics === "function"
     ? options.attachDiagnostics
     : (result) => result;
@@ -757,27 +706,8 @@ function createThreadDetailReadOrchestrationService(options = {}) {
   const threadRolloutSizeBytes = typeof options.threadRolloutSizeBytes === "function" ? options.threadRolloutSizeBytes : () => 0;
   const readTimeoutMs = Number(options.readTimeoutMs || 0);
   const threadDetailRpcTimeoutMs = Number(options.threadDetailRpcTimeoutMs || 0);
-  const configuredDeferredInitialTurnsListSeedTimeoutMs = Number(options.deferredInitialTurnsListSeedTimeoutMs || 0);
-  const deferredInitialTurnsListSeedTimeoutMs = configuredDeferredInitialTurnsListSeedTimeoutMs > 0
-    ? configuredDeferredInitialTurnsListSeedTimeoutMs
-    : threadDetailRpcTimeoutMs > 0
-      ? Math.min(threadDetailRpcTimeoutMs, DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_TIMEOUT_MS)
-      : DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_TIMEOUT_MS;
-  const configuredDeferredInitialTurnsListSeedBackoffMs = Number(options.deferredInitialTurnsListSeedBackoffMs || 0);
-  const deferredInitialTurnsListSeedBackoffMs = configuredDeferredInitialTurnsListSeedBackoffMs > 0
-    ? configuredDeferredInitialTurnsListSeedBackoffMs
-    : DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_BACKOFF_MS;
-  const configuredDeferredInitialTurnsListSeedDelayMs = options.deferredInitialTurnsListSeedDelayMs;
-  const deferredInitialTurnsListSeedDelayMs = configuredDeferredInitialTurnsListSeedDelayMs === undefined
-    ? DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_DELAY_MS
-    : boundedNonNegativeInteger(configuredDeferredInitialTurnsListSeedDelayMs, DEFAULT_DEFERRED_INITIAL_TURNS_LIST_SEED_DELAY_MS);
-  const timeoutScheduler = options.timeoutScheduler && typeof options.timeoutScheduler === "object"
-    ? options.timeoutScheduler
-    : null;
   const maxFullThreadTurns = Number(options.maxFullThreadTurns || 0);
   const maxThreadTurns = Number(options.maxThreadTurns || 0);
-  const deferredInitialTurnsListSeeds = new Map();
-  const deferredInitialTurnsListSeedFailures = new Map();
 
   function attachDetailDiagnostics(result, context, details = {}) {
     const boundedDecision = context.boundedReadBeforeFullRead || null;
@@ -1123,188 +1053,6 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       return rawBoundedReadDecision;
     }
 
-    function scheduleDeferredInitialTurnsListSeed(reason) {
-      if (!projection || !turnsListThreadReadResult) {
-        return { scheduled: false, reason: projection ? "turns-list-unavailable" : "projection-input-unavailable" };
-      }
-      const existing = deferredInitialTurnsListSeeds.get(threadId);
-      if (existing) {
-        return {
-          scheduled: false,
-          reason: "already-pending",
-          delayMs: Math.max(0, Number(existing.delayMs || 0)),
-          retryAfterMs: Math.max(0, Number(existing.readyAtMs || 0) - now()),
-          startedAtMs: existing.startedAtMs || 0,
-        };
-      }
-      const failed = deferredInitialTurnsListSeedFailures.get(threadId);
-      if (failed && Number(failed.retryAfterMs || 0) > now()) {
-        return {
-          scheduled: false,
-          reason: "seed-backoff",
-          retryAfterMs: Math.max(0, Number(failed.retryAfterMs || 0) - now()),
-          lastError: failed.error || "",
-        };
-      }
-      if (failed) deferredInitialTurnsListSeedFailures.delete(threadId);
-      const delayMs = deferredInitialTurnsListSeedDelayMs;
-      const scheduledAtMs = now();
-      const entry = {
-        scheduledAtMs,
-        startedAtMs: 0,
-        readyAtMs: scheduledAtMs + delayMs,
-        delayMs,
-        reason: nonEmptyText(reason) || "large-projection-miss",
-      };
-      deferredInitialTurnsListSeeds.set(threadId, entry);
-      scheduleDeferredTask(async () => {
-        entry.startedAtMs = now();
-        const seedStartedAtMs = now();
-        threadLog("deferred_turns_list_initial_seed_start", {
-          delayMs,
-          scheduledWaitMs: Math.max(0, seedStartedAtMs - scheduledAtMs),
-          reason: entry.reason,
-        });
-        try {
-          const result = await withTimeout(turnsListThreadReadResult({
-            threadId,
-            summary,
-            runtimeSettings,
-            warning: "",
-            mode: "turns-list-initial",
-            threadLog,
-          }), deferredInitialTurnsListSeedTimeoutMs, "deferred turns-list initial seed timed out", timeoutScheduler);
-          const staleTurns = markWindowActiveTurnsStaleForRestingSummary(result && result.thread, summary);
-          if (staleTurns) {
-            threadLog("deferred_turns_list_initial_stale_active_turns_downgraded", {
-              count: staleTurns,
-              reason: "summary-resting-active-window",
-            });
-          }
-          let seedStatus = "skipped";
-          let seedSource = "turns-list-initial-deferred";
-          if (projection && result && result.thread) {
-            const seeded = seedProjection(projection, result, {
-              partial: true,
-              partialKind: "recent-window",
-              replaceReusableFullCacheReason: context.projectionMissReason === "result-missing"
-                ? "projection-result-missing"
-                : "",
-            });
-            seedStatus = seeded && seeded.skipped
-              ? "skipped"
-              : seeded && seeded.partial
-                ? "seeded-partial"
-                : "seeded";
-            seedSource = seeded && seeded.reason || seedSource;
-          }
-          threadLog("deferred_turns_list_initial_seed_done", {
-            durationMs: now() - seedStartedAtMs,
-            seedStatus,
-            seedSource,
-            returnedTurns: result && result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
-          });
-          deferredInitialTurnsListSeedFailures.delete(threadId);
-        } catch (err) {
-          deferredInitialTurnsListSeedFailures.set(threadId, {
-            retryAfterMs: now() + deferredInitialTurnsListSeedBackoffMs,
-            error: safeErrorMessage(err),
-          });
-          threadLog("deferred_turns_list_initial_seed_error", {
-            durationMs: now() - seedStartedAtMs,
-            timeoutMs: deferredInitialTurnsListSeedTimeoutMs,
-            backoffMs: deferredInitialTurnsListSeedBackoffMs,
-            timeout: isReadTimeoutError(err),
-            error: safeErrorMessage(err),
-          });
-        } finally {
-          if (deferredInitialTurnsListSeeds.get(threadId) === entry) {
-            deferredInitialTurnsListSeeds.delete(threadId);
-          }
-        }
-      }, {
-        name: "deferred-initial-turns-list-seed",
-        threadId,
-        reason: entry.reason,
-        delayMs,
-      });
-      return {
-        scheduled: true,
-        reason: entry.reason,
-        delayMs,
-        retryAfterMs: delayMs,
-      };
-    }
-
-    function shouldDeferInitialTurnsListSeed() {
-      if (!preferRecentTurns) return false;
-      if (summaryHasActiveRuntimeMarker(summary)) return false;
-      const boundedDecision = boundedReadBeforeFullReadDecision();
-      context.boundedReadBeforeFullRead = boundedDecision;
-      const activeLargeReadCanDefer = Boolean(
-        activeReadPolicy.activeFullReadRequired
-          && activeFullReadCanCloseWithOverlay(activeReadPolicy)
-          && boundedDecision
-          && boundedDecision.prefer,
-      );
-      if (!activeReadPolicy.shouldUseInitialTurnsList && !activeLargeReadCanDefer) return false;
-      if (activeReadPolicy.activeFullReadRequired && !activeLargeReadCanDefer) return false;
-      if (!projection || !turnsListThreadReadResult) return false;
-      if (context.projectionState !== "miss") return false;
-      if (summaryRejectsWindowActiveTurns(summary) !== true && !activeLargeReadCanDefer) return false;
-      return Boolean(boundedDecision && boundedDecision.prefer);
-    }
-
-    function deferredInitialTurnsListResponse() {
-      const scheduled = scheduleDeferredInitialTurnsListSeed("large-projection-miss");
-      const seedRetryAfterMs = Math.max(0, Number(scheduled.retryAfterMs || 0));
-      const seedDelayMs = Math.max(0, Number(scheduled.delayMs || 0));
-      const seedRefreshAfterMs = scheduled.reason === "seed-backoff"
-        ? Math.min(10_000, Math.max(900, seedRetryAfterMs))
-        : Math.max(900, seedRetryAfterMs || seedDelayMs) + DEFERRED_INITIAL_TURNS_LIST_SEED_REFRESH_BUFFER_MS;
-      context.projectionSeedStatus = scheduled.scheduled
-        ? "deferred"
-        : scheduled.reason === "seed-backoff"
-          ? "deferred-backoff"
-          : "deferred-pending";
-      context.projectionSeedSource = scheduled.reason || "turns-list-initial-deferred";
-      const mode = "deferred-initial-turns-list";
-      const result = fallbackThreadReadResult({
-        threadId,
-        summary,
-        runtimeSettings,
-        warning: "",
-        mode,
-      });
-      if (result && result.thread) {
-        result.thread.mobileReadMode = mode;
-        result.thread.mobileDeferredProjectionSeed = {
-          version: "thread-detail-deferred-seed-v1",
-          scheduled: scheduled.scheduled === true,
-          reason: scheduled.reason || "",
-          targetMode: "turns-list-initial",
-          delayMs: seedDelayMs,
-          refreshAfterMs: seedRefreshAfterMs,
-          retryAfterMs: seedRetryAfterMs,
-        };
-      }
-      threadLog("turns_list_initial_deferred", {
-        scheduled: scheduled.scheduled === true,
-        reason: scheduled.reason || "",
-        delayMs: seedDelayMs,
-        retryAfterMs: seedRetryAfterMs,
-        refreshAfterMs: seedRefreshAfterMs,
-      });
-      return {
-        status: 200,
-        mode,
-        body: attachDetailDiagnostics(result, context, {
-          threadId,
-          source: mode,
-          readDecision: "deferred-initial-turns-list",
-        }),
-      };
-    }
     const projectionStartedAtMs = now();
     const allowPartialProjection = activeReadPolicy.allowPartialProjection;
     const shouldUseActiveOverlayWindowFirst = Boolean(
@@ -1853,10 +1601,6 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       context.activeOverlayReason = activeFullReadCanCloseWithOverlay(activeReadPolicy)
         ? resolveActiveWindowOverlay ? "projection-input-unavailable" : "overlay-provider-unavailable"
         : "active-full-read-not-overlay-closable";
-    }
-
-    if (shouldDeferInitialTurnsListSeed()) {
-      return deferredInitialTurnsListResponse();
     }
 
     if (!activeReadPolicy.activeFullReadRequired

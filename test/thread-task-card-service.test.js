@@ -549,6 +549,93 @@ test("approve runs injected execution and marks the card approved", async () => 
   assert.equal(stored.executionLease.currentTurnId, "turn-approved");
 });
 
+test("task-card execution lifecycle callbacks track start, heartbeat, and terminal release", async () => {
+  const lifecycleEvents = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: "turn-worker-1" }),
+    onExecutionLeaseStarted: async (event) => lifecycleEvents.push({ type: "started", event }),
+    onExecutionHeartbeat: async (event) => lifecycleEvents.push({ type: "heartbeat", event }),
+    onExecutionLeaseCompleted: async (event) => lifecycleEvents.push({ type: "completed", event }),
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "codex-mobile",
+    targetThreadId: "thread-worker",
+    targetRole: "plugin_worker",
+    idempotencyKey: "worker:lifecycle",
+    format: "markdown",
+    title: "Worker task",
+    summary: "Bind lifecycle metadata.",
+    body: "Private Worker task body.",
+  });
+
+  await service.approveFromSource(created.id, "thread-home");
+  assert.equal(lifecycleEvents.length, 1);
+  assert.equal(lifecycleEvents[0].type, "started");
+  assert.equal(lifecycleEvents[0].event.taskCardId, created.id);
+  assert.equal(lifecycleEvents[0].event.targetThreadId, "thread-worker");
+  assert.equal(lifecycleEvents[0].event.heartbeat.status, "started");
+  assert.equal(lifecycleEvents[0].event.heartbeat.turnId, "turn-worker-1");
+
+  await service.heartbeatExecution(created.id, "thread-worker", {
+    status: "validating",
+    source: "unit-test",
+    turnId: "turn-worker-1",
+  });
+  assert.equal(lifecycleEvents.length, 2);
+  assert.equal(lifecycleEvents[1].type, "heartbeat");
+  assert.equal(lifecycleEvents[1].event.heartbeat.status, "validating");
+  assert.equal(lifecycleEvents[1].event.heartbeat.source, "unit-test");
+
+  await service.reply(created.id, "thread-worker", {
+    idempotencyKey: "worker:lifecycle:return",
+    format: "markdown",
+    title: "Return: Worker task",
+    status: "completed",
+    summary: "completed",
+    body: "Completed.",
+    sourceWorkspaceId: "codex-mobile",
+    sourceThreadId: "thread-worker",
+    sourceThreadTitle: "Worker lane",
+  });
+  assert.equal(lifecycleEvents.length, 3);
+  assert.equal(lifecycleEvents[2].type, "completed");
+  assert.equal(lifecycleEvents[2].event.returnStatus, "completed");
+  assert.equal(lifecycleEvents[2].event.heartbeat.status, "completed");
+  assert.equal(lifecycleEvents[2].event.heartbeat.summary, "completed");
+});
+
+test("task-card execution lifecycle callback failures are recorded as bounded audit metadata", async () => {
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: "turn-worker-1" }),
+    onExecutionLeaseStarted: async () => ({ ok: false, error: "worker_lifecycle_target_not_manageable" }),
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    targetWorkspaceId: "codex-mobile",
+    targetThreadId: "thread-worker",
+    targetRole: "plugin_worker",
+    idempotencyKey: "worker:lifecycle:failure",
+    format: "markdown",
+    title: "Worker task",
+    summary: "Bind lifecycle metadata.",
+    body: "Private Worker task body.",
+  });
+
+  await service.approveFromSource(created.id, "thread-home");
+  const stored = service.get(created.id, "thread-worker");
+  assert.equal(stored.audit.executionLifecycleSyncPhase, "started");
+  assert.equal(stored.audit.executionLifecycleSyncError, "worker_lifecycle_target_not_manageable");
+  assert.equal(typeof stored.audit.executionLifecycleSyncFailedAt, "string");
+  assert.doesNotMatch(JSON.stringify(stored.audit), /Private Worker task body/);
+});
+
 test("ordinary user interruption resumes the active task-card execution lease", async () => {
   const executions = [];
   const service = createThreadTaskCardService({
@@ -1003,6 +1090,44 @@ test("approve preserves requested reasoning effort in injected task-card metadat
   assert.equal(result.card.injectionRuntime.deployLaneNoApproval, true);
   assert.equal(executions[0].card.delivery.reasoningEffort, "xhigh");
   assert.match(executions[0].message.text, /Requested reasoning effort: xhigh/);
+});
+
+test("approve readback distinguishes requested and effective main-source reasoning", async () => {
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({
+      threadId: card.target.threadId,
+      turnId: "turn-main-source",
+      runtime: {
+        reasoningEffort: "xhigh",
+        requestedReasoningEffort: card.delivery.reasoningEffort,
+        approvalPolicy: "on-request",
+        sandboxPolicyType: "workspaceWrite",
+        mainSourceReasoningFloor: "plugin_main",
+      },
+    }),
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "/Users/hermes-dev/HermesMobileDev/plugins/music",
+    targetThreadId: "thread-music-main",
+    idempotencyKey: "main-source:high",
+    format: "markdown",
+    title: "Continue Music main work",
+    summary: "Continue from return card.",
+    body: "Continue this main-thread task.",
+    reasoningEffort: "high",
+  });
+
+  const result = await service.approveFromSource(created.id, "thread-home");
+
+  assert.equal(result.card.delivery.reasoningEffort, "high");
+  assert.equal(result.card.injectionRuntime.requestedReasoningEffort, "high");
+  assert.equal(result.card.injectionRuntime.reasoningEffort, "xhigh");
+  assert.equal(result.card.injectionRuntime.mainSourceReasoningFloor, "plugin_main");
 });
 
 test("source-thread direct approval bypasses target pending approval with audit markers", async () => {

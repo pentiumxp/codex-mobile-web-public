@@ -37,6 +37,7 @@ function normalizeWorkspaceMainRole(value) {
   const role = normalizeLabel(value);
   if (role === "home_ai_main" || role === "home_ai_implementation" || role === "home_ai_scheduler" || role === "home_ai_main_scheduler") return "home_ai_main";
   if (role === "plugin_main" || role === "plugin_implementation" || role === "plugin_scheduler" || role === "plugin_main_scheduler") return "plugin_main";
+  if (role === "external_project_main" || role === "external_project_source" || role === "remote_managed_workspace_main" || role === "remote_managed_workspace_source") return "external_project_main";
   if (role === "workspace_main" || role === "workspace_implementation" || role === "main_scheduler" || role === "implementation_main") return "workspace_main";
   return "";
 }

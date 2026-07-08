@@ -1228,6 +1228,14 @@ DOM/projection checks.
 
 The public PR check is prompt-only. `server.js` checks the configured public GitHub repository for open pull requests through the unauthenticated public API, caches the result briefly, and exposes it through authenticated `/api/public-pull-requests/status`. The browser can prompt whether to prepare a merge/publish review task, but it must not merge, sync, commit, or push the public repository without an explicit user request. Accepted prompts target a visible review workspace: use `/api/public-config.workspacePath` when it is visible to Codex Desktop, otherwise use a visible workspace with the same basename so Mac production deployments under `/Users/hermes-host/.../plugins/codex-mobile-web` can route review tasks to the real source checkout under `/Users/hermes-dev/.../plugins/codex-mobile-web`. The browser first reuses a visible same-workspace thread titled `Codex Mobile Public PR`. If no such thread exists, the new-thread draft carries that title and `/api/threads/new-message` persists it through app-server rename plus the Mobile session-index fallback after creation.
 
+Scheduled PR handling uses a separate source-side automation boundary:
+`scripts/codex-mobile-pr-automation.js` runs one bounded planning pass and
+delegates all policy to `services/runtime/pr-automation-service.js`. It may
+discover private/public PRs, record bounded `.agent-context` state, and emit
+task-card/deploy/public-ready next-step requests with deterministic idempotency
+keys, but it must not directly merge, deploy, public-push, or close PRs. Public
+push and PR close remain gated on deploy/readback and public-ready evidence.
+
 ### GitHub Link Previews
 
 GitHub preview metadata is available through authenticated `GET /api/link-previews/github?url=...`. The server accepts only HTTPS `github.com` / `www.github.com` repository, issue, pull request, and commit URLs, canonicalizes them through `adapters/github-link-preview-service.js`, and fetches only the corresponding `api.github.com` REST endpoint. It must not fetch arbitrary user-supplied URLs, read local files, attach the Codex Mobile Access Key to GitHub requests, or persist preview payloads outside the in-memory cache. GitHub API failures return a bounded unsupported/error payload instead of blocking conversation rendering.

@@ -141,12 +141,15 @@ implementation/PR thread. Deploy-lane repair, target-discovery, and
 routing-visibility cards remain implementation work and are not treated as
 routine plugin deployments.
 
-Approved cards that execute inside configured Home AI deploy-lane threads run
-with a deploy-lane no-approval runtime override: `approvalPolicy=never` and
-`dangerFullAccess`. This is intentionally scoped to configured deploy lanes so
-routine deploy/readback/self-check commands do not block behind interactive
-command approvals, while ordinary implementation, repair, and audit cards keep
-the existing workspace-delegation approval/write-guard behavior.
+Approved cards that execute inside configured Home AI deploy-lane threads,
+Worker lanes, or Loop role-slice execution threads run with a no-approval
+runtime override: `approvalPolicy=never` and `dangerFullAccess`. For Loop
+`implementation` / `repair` roles this grants the writable runtime required to
+modify files. For Loop `product_audit` / `audit` / `requirements` roles the
+role remains responsibility-read-only, but the runtime is still non-blocking so
+read-only validation commands can create temporary directories and complete
+without an unapprovable sandbox request. Ordinary non-Loop review/audit cards
+keep the inherited workspace-delegation approval/write-guard behavior.
 The execution path must identify deploy lanes from the merged target card,
 visible target-thread metadata, and persisted thread summary, with the card
 target workspace used as a cwd fallback. This prevents sparse historical thread
@@ -284,6 +287,13 @@ The standalone `scripts/codex-mobile-mcp-server.js` also exposes
 `task_card_heartbeat`, so target Codex threads can report progress through the
 same MCP connector they use for `return_to_source` without reading or printing
 the access key.
+When an approved execution targets a platform Worker lane, the runtime
+composition layer also mirrors execution start and target heartbeat metadata
+into the Worker lane lifecycle record through `threadLifecycle heartbeat`. A
+terminal return writes a completed heartbeat and marks the Worker lane
+available again. If that lifecycle sync fails, the task-card audit metadata
+records a bounded `executionLifecycleSyncError` instead of hiding the binding
+failure.
 
 The execution Watchdog is a last-resort recovery path, not the normal progress
 mechanism. Fresh heartbeat/progress timestamps suppress stale recovery, and a
@@ -334,6 +344,13 @@ stored on the card delivery metadata, shown in the injected task-card message as
 inherited runtime effort during `thread/resume` / `turn/start`. The approved card
 records bounded `injectionRuntime.reasoningEffort` and
 `injectionRuntime.requestedReasoningEffort` evidence.
+Target-side injection also applies a runtime-only `xhigh` floor when the target
+thread is resolved as a Home AI, plugin, or workspace main/source thread. The
+delivery request remains unchanged for auditability, so a main-thread card can
+read back as `requestedReasoningEffort: high` with effective
+`reasoningEffort: xhigh`. Worker, audit, deploy, repair, and role-lane targets
+keep their requested or inherited reasoning policy unless another local policy
+explicitly changes it.
 
 Server-side `thread/start` and `turn/start` also receive the exact MCP-prefixed
 return tool:

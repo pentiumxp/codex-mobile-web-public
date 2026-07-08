@@ -38,6 +38,7 @@ function usage() {
     "",
     "Options:",
     "  --server <url>          Codex Mobile server. Default: http://127.0.0.1:8787",
+    "  --key-file <path>       Access key file. Default: $HOME/.codex-mobile-web/access_key",
     "  --thread-id <id>        Thread id to target. Repeatable.",
     "  --sample-threads <n>    Browser sample thread count when no id is passed. Default: 3.",
     "  --browser-rounds <n>    Browser switch/sample rounds. Default: 2.",
@@ -85,6 +86,7 @@ function defaultOutputPath() {
 function parseArgs(argv = process.argv.slice(2), env = process.env) {
   const options = {
     server: env.CODEX_MOBILE_BASE_URL || DEFAULT_SERVER,
+    keyFile: env.CODEX_MOBILE_KEY_FILE || path.join(os.homedir(), ".codex-mobile-web", "access_key"),
     threadIds: [],
     sampleThreads: positiveInt(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_SAMPLE_THREADS || "3", 3, 20),
     browserRounds: positiveInt(env.CODEX_MOBILE_RUNTIME_BROWSER_ROUNDS || "2", 2, 20),
@@ -122,6 +124,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     };
     if (arg === "--help" || arg === "-h") options.help = true;
     else if (arg === "--server") options.server = next();
+    else if (arg === "--key-file") options.keyFile = next();
     else if (arg === "--thread-id") options.threadIds.push(next());
     else if (arg === "--sample-threads") options.sampleThreads = positiveInt(next(), options.sampleThreads, 20);
     else if (arg === "--browser-rounds") options.browserRounds = positiveInt(next(), options.browserRounds, 20);
@@ -171,12 +174,15 @@ function serverUrlForPath(server, pathname) {
 }
 
 async function fetchRuntimeJson(url, deps = {}) {
-  if (typeof deps.fetchJson === "function") return deps.fetchJson(url);
+  const headers = { Accept: "application/json" };
+  const accessKey = String(deps.accessKey || "").trim();
+  if (accessKey) headers.Authorization = `Bearer ${accessKey}`;
+  if (typeof deps.fetchJson === "function") return deps.fetchJson(url, { headers });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), HTTP_FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
-      headers: { Accept: "application/json" },
+      headers,
       signal: controller.signal,
     });
     const text = await response.text();
@@ -193,6 +199,19 @@ async function fetchRuntimeJson(url, deps = {}) {
     };
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+function readAccessKey(options = {}, env = process.env, deps = {}) {
+  const inline = String(env.CODEX_MOBILE_KEY || env.CODEX_MOBILE_ACCESS_KEY || "").trim();
+  if (inline) return inline;
+  const keyFile = String(options.keyFile || "").trim();
+  if (!keyFile) return "";
+  const readFile = typeof deps.readFileSync === "function" ? deps.readFileSync : fs.readFileSync;
+  try {
+    return String(readFile(keyFile, "utf8") || "").trim();
+  } catch (_) {
+    return "";
   }
 }
 
@@ -228,11 +247,89 @@ function buildIdentityFromPublicConfig(publicConfig = {}) {
   const buildId = String(publicConfig.buildId || "").trim();
   const clientBuildId = String(publicConfig.clientBuildId || "").trim();
   const shellCacheName = String(publicConfig.shellCacheName || "").trim();
+  const classicShellCacheName = String(publicConfig.classicShellCacheName || "").trim();
   return {
     buildId,
     clientBuildId,
     shellCacheName,
+    classicShellCacheName,
     identity: clientBuildId || shellCacheName || buildId,
+  };
+}
+
+function compactIssueCodeList(values = []) {
+  return Array.from(new Set((Array.isArray(values) ? values : [])
+    .map((value) => boundedErrorCode(value))
+    .filter(Boolean)))
+    .slice(0, 20);
+}
+
+function currentBuildIdentityFromAppUpdateStatus(status = {}) {
+  const currentBuild = status && status.currentBuild && typeof status.currentBuild === "object"
+    ? status.currentBuild
+    : {};
+  const issueCodes = compactIssueCodeList([
+    ...(Array.isArray(currentBuild.issueCodes) ? currentBuild.issueCodes : []),
+    ...(Array.isArray(status.currentBuildIssueCodes) ? status.currentBuildIssueCodes : []),
+    ...(Array.isArray(status.issueCodes) ? status.issueCodes : []),
+  ]);
+  const clientBuildId = String(currentBuild.clientBuildId || status.clientBuildId || "").trim();
+  const shellCacheName = String(currentBuild.shellCacheName || status.shellCacheName || "").trim();
+  const classicShellCacheName = String(currentBuild.classicShellCacheName || status.classicShellCacheName || "").trim();
+  const buildId = String(currentBuild.buildId || status.buildId || "").trim();
+  return {
+    buildId,
+    clientBuildId,
+    shellCacheName,
+    classicShellCacheName,
+    identity: clientBuildId || shellCacheName || buildId,
+    issueCodes,
+  };
+}
+
+function runtimeCheckFromAppUpdateStatus(publicConfig = {}, status = {}) {
+  const expected = buildIdentityFromPublicConfig(publicConfig);
+  const actual = currentBuildIdentityFromAppUpdateStatus(status);
+  const issues = [];
+  const actualIssueCodeSet = new Set(actual.issueCodes);
+  for (const code of actualIssueCodeSet) {
+    if (/^app_update_current_build_/.test(code)) issues.push(checkIssue(code));
+  }
+  if ((expected.clientBuildId || expected.shellCacheName) && (!actual.clientBuildId || !actual.shellCacheName)) {
+    if (!actualIssueCodeSet.has("app_update_current_build_identity_empty")) {
+      issues.push(checkIssue("app_update_current_build_identity_empty"));
+    }
+  } else {
+    if (expected.clientBuildId && actual.clientBuildId && actual.clientBuildId !== expected.clientBuildId) {
+      issues.push(checkIssue("app_update_current_build_client_mismatch"));
+    }
+    if (expected.shellCacheName && actual.shellCacheName && actual.shellCacheName !== expected.shellCacheName) {
+      issues.push(checkIssue("app_update_current_build_shell_cache_mismatch"));
+    }
+  }
+  if (
+    expected.classicShellCacheName
+    && (actual.clientBuildId === expected.classicShellCacheName
+      || actual.shellCacheName === expected.classicShellCacheName
+      || (actual.clientBuildId && actual.clientBuildId.includes(expected.classicShellCacheName)))
+  ) {
+    issues.push(checkIssue("app_update_current_build_uses_classic_cache_identity"));
+  }
+  return {
+    name: "app-update-current-build",
+    ok: issues.length === 0,
+    issueCount: issues.length,
+    blockingIssueCount: issues.length,
+    diagnosticCandidateCount: 0,
+    clientBuildId: expected.clientBuildId.slice(0, 120),
+    shellCacheName: expected.shellCacheName.slice(0, 120),
+    errorCode: "",
+    issues,
+    diagnosticCandidates: [],
+    buildId: expected.buildId.slice(0, 120),
+    appUpdateClientBuildId: actual.clientBuildId.slice(0, 120),
+    appUpdateShellCacheName: actual.shellCacheName.slice(0, 120),
+    appUpdateCurrentBuildIssueCodes: actual.issueCodes,
   };
 }
 
@@ -296,8 +393,14 @@ function runtimeCheckFromHermesManifest(publicConfig = {}, manifest = {}) {
 async function checkHermesManifestBuildRefresh(options = {}, deps = {}) {
   const publicConfigUrl = serverUrlForPath(options.server || DEFAULT_SERVER, "/api/public-config");
   const manifestUrl = serverUrlForPath(options.server || DEFAULT_SERVER, "/api/v1/hermes/plugin/manifest");
+  const appUpdateStatusUrl = new URL(serverUrlForPath(options.server || DEFAULT_SERVER, "/api/app-update/status"));
+  appUpdateStatusUrl.searchParams.set("force", "1");
+  const accessKey = deps.accessKey !== undefined
+    ? String(deps.accessKey || "").trim()
+    : readAccessKey(options, deps.env || process.env, deps);
   let publicConfigResult = null;
   let manifestResult = null;
+  let appUpdateStatusResult = null;
   try {
     publicConfigResult = await fetchRuntimeJson(publicConfigUrl, deps);
   } catch (error) {
@@ -318,13 +421,39 @@ async function checkHermesManifestBuildRefresh(options = {}, deps = {}) {
       errorCode: boundedErrorCode(error && error.message),
     };
   }
+  try {
+    appUpdateStatusResult = await fetchRuntimeJson(appUpdateStatusUrl.toString(), { ...deps, accessKey });
+  } catch (error) {
+    appUpdateStatusResult = {
+      ok: false,
+      status: 0,
+      body: {},
+      errorCode: boundedErrorCode(error && error.message),
+    };
+  }
   const publicConfig = publicConfigResult && publicConfigResult.body && typeof publicConfigResult.body === "object"
     ? publicConfigResult.body
     : {};
   const manifest = manifestResult && manifestResult.body && typeof manifestResult.body === "object"
     ? manifestResult.body
     : {};
+  const appUpdateStatus = appUpdateStatusResult && appUpdateStatusResult.body && typeof appUpdateStatusResult.body === "object"
+    ? appUpdateStatusResult.body
+    : {};
   const check = runtimeCheckFromHermesManifest(publicConfig, manifest);
+  let appUpdateCheck = null;
+  if (appUpdateStatusResult && appUpdateStatusResult.ok) {
+    appUpdateCheck = runtimeCheckFromAppUpdateStatus(publicConfig, appUpdateStatus);
+    if (appUpdateCheck.issues.length) {
+      check.issues = check.issues.concat(appUpdateCheck.issues);
+      check.issueCount = check.issues.length;
+      check.blockingIssueCount = check.issues.length;
+      check.ok = false;
+    }
+  }
+  check.appUpdateClientBuildId = appUpdateCheck ? appUpdateCheck.appUpdateClientBuildId : "";
+  check.appUpdateShellCacheName = appUpdateCheck ? appUpdateCheck.appUpdateShellCacheName : "";
+  check.appUpdateCurrentBuildIssueCodes = appUpdateCheck ? appUpdateCheck.appUpdateCurrentBuildIssueCodes : [];
   const transportIssues = [];
   if (!publicConfigResult || !publicConfigResult.ok) {
     transportIssues.push(checkIssue("hermes_manifest_public_config_unavailable", {
@@ -334,6 +463,15 @@ async function checkHermesManifestBuildRefresh(options = {}, deps = {}) {
   if (!manifestResult || !manifestResult.ok) {
     transportIssues.push(checkIssue("hermes_manifest_unavailable", {
       status: Number(manifestResult && manifestResult.status || 0) || 0,
+    }));
+  }
+  if (!appUpdateStatusResult || !appUpdateStatusResult.ok) {
+    const status = Number(appUpdateStatusResult && appUpdateStatusResult.status || 0) || 0;
+    const code = status === 401 || status === 403
+      ? "post_deploy_harness_app_update_status_auth_gap"
+      : "app_update_status_unavailable";
+    transportIssues.push(checkIssue(code, {
+      status,
     }));
   }
   if (transportIssues.length) {
@@ -438,6 +576,7 @@ function sleep(ms) {
 
 function baseArgs(options = {}) {
   const args = ["--server", options.server || DEFAULT_SERVER, "--json"];
+  if (options.keyFile) args.push("--key-file", options.keyFile);
   for (const id of options.threadIds || []) args.push("--thread-id", id);
   return args;
 }
@@ -704,9 +843,11 @@ module.exports = {
   DEFAULT_INTERVAL_MS,
   normalizeBrowserMode,
   parseArgs,
+  readAccessKey,
   runLoop,
   runOnce,
   checkHermesManifestBuildRefresh,
+  runtimeCheckFromAppUpdateStatus,
   runtimeCheckFromHermesManifest,
   summarizeCheck,
   collectRuntimeProcessPressure,

@@ -1,8 +1,9 @@
 {
   "schemaVersion": 1,
   "generatedBy": "vite-codex-mobile-shell-asset-graph",
-  "shellCacheName": "codex-mobile-shell-v625-f42567014622",
-  "clientBuildId": "0.1.11|codex-mobile-shell-v625-f42567014622",
+  "shellCacheName": "codex-mobile-shell-v625-ca0275e10466",
+  "clientBuildId": "0.1.11|codex-mobile-shell-v625-ca0275e10466",
+  "classicShellCacheName": "codex-mobile-shell-v625-9daf89bd741f",
   "counts": {
     "indexScripts": 51,
     "swStaticAssets": 60,
@@ -2572,8 +2573,8 @@
       "role": "static",
       "sourcePath": "public/styles.css",
       "exists": true,
-      "bytes": 172674,
-      "sha256": "e1dabdc46f2ecce9b8a4af28db9ec363a7434ad812cd8eef0b74298b04703a0d"
+      "bytes": 172785,
+      "sha256": "876c5253c0f393d1409b5ed8372dad41a1c686b615cd60397341f3506186369e"
     },
     {
       "path": "/icons/icon-192.png",
@@ -2596,8 +2597,8 @@
       "role": "script",
       "sourcePath": "public/shell-asset-manifest.js",
       "exists": true,
-      "bytes": 76593,
-      "sha256": "ea0371d8e0f974dc342aaa882af7e09f6153b648a39992233dad71bf42dbbd79"
+      "bytes": 80933,
+      "sha256": "49d349892b8979c5bbb6021bd03c954e1e568de566573b9c018db1ef768aed42"
     },
     {
       "path": "/api-client.js",
@@ -2868,8 +2869,8 @@
       "role": "script",
       "sourcePath": "public/app-update-runtime.js",
       "exists": true,
-      "bytes": 56546,
-      "sha256": "e6ded2b0b7782da90d307671cefe716a5ab722125aa0d59bd08ebc435d79155d"
+      "bytes": 59801,
+      "sha256": "75076c7d13ae2a9e4b26e729dea7e86047b9b7de072dc8f0be7fa3e85626d1c7"
     },
     {
       "path": "/side-chat-runtime.js",
@@ -2892,16 +2893,16 @@
       "role": "script",
       "sourcePath": "public/app-bootstrap.js",
       "exists": true,
-      "bytes": 50180,
-      "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+      "bytes": 50219,
+      "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
     },
     {
       "path": "/settings-runtime.js",
       "role": "script",
       "sourcePath": "public/settings-runtime.js",
       "exists": true,
-      "bytes": 103193,
-      "sha256": "e63cab432b21df557508740247b714665b4e6362fa4efab97ac89374db6c8f3e"
+      "bytes": 103424,
+      "sha256": "786b5fd38338f4a5ffbcc41551ff084afe172976562c9fa01d5ce964960415fa"
     },
     {
       "path": "/modal-runtime.js",
@@ -2932,16 +2933,16 @@
       "role": "script",
       "sourcePath": "public/notification-ui-runtime.js",
       "exists": true,
-      "bytes": 55659,
-      "sha256": "f021be3477aaaa32bb86bf14cdf9a5cf58de22148da4968dffe699209b235bd2"
+      "bytes": 57015,
+      "sha256": "1d9c28fec3d2e8d1b893e29495e166a2d7c54c91aae32b15617c90d0ba69793a"
     },
     {
       "path": "/pane-layout-runtime.js",
       "role": "script",
       "sourcePath": "public/pane-layout-runtime.js",
       "exists": true,
-      "bytes": 222598,
-      "sha256": "fa8d4ca6ced6e3cbad28dba455a91ee09e13608e10a300177fd2fa1018635c0c"
+      "bytes": 223683,
+      "sha256": "5214d4131086be6627a48b7dc0868cf93eec7375ab32f1884f2ceaaf58d2c8ca"
     },
     {
       "path": "/task-card-runtime.js",
@@ -3004,8 +3005,8 @@
       "role": "static",
       "sourcePath": "public/shell-asset-manifest.json",
       "exists": true,
-      "bytes": 71365,
-      "sha256": "31cd40926a597f872ea7d254a3cdab9ccefd222df66b6c74df080d8dd39191aa"
+      "bytes": 75483,
+      "sha256": "f334a07623e8f2db0a66777c3e071e3bba658f9713598edc53c650a072226863"
     },
     {
       "path": "/sw.js",
@@ -3028,26 +3029,26 @@
     "entryDynamicImportGraph": {
       "owner": "vite-shell-entry",
       "actualFiles": [
-        "assets/vite-entry-group-manifest-B6H-Dchz.js",
-        "assets/vite-entry-group-foundation-BFeSS-Jz.js",
-        "assets/vite-entry-group-feature-runtimes-BKK2vGbk.js",
-        "assets/vite-entry-group-bootstrap-state-iOlj2Dao.js",
-        "assets/vite-entry-group-shell-services-Banajgp5.js",
-        "assets/vite-entry-group-app-entry-Cqt8LFEG.js",
-        "assets/_virtual_codex-mobile-esm-compatibility-CCLrpZNg.js",
-        "assets/app-bootstrap-D_k_aEAp.js",
-        "assets/vite-deferred-entry-topology-CdxPi3BI.js"
+        "assets/vite-entry-group-manifest-Bs2nalpO.js",
+        "assets/vite-entry-group-foundation-COlh8IrL.js",
+        "assets/vite-entry-group-feature-runtimes-BOJane4k.js",
+        "assets/vite-entry-group-bootstrap-state-ChxV_Lzv.js",
+        "assets/vite-entry-group-shell-services-gb29ZxTd.js",
+        "assets/vite-entry-group-app-entry-C3ot7owz.js",
+        "assets/_virtual_codex-mobile-esm-compatibility-BNQi4nad.js",
+        "assets/app-bootstrap-DdXZcTzS.js",
+        "assets/vite-deferred-entry-topology-CXVuismc.js"
       ],
       "expectedFiles": [
-        "assets/_virtual_codex-mobile-esm-compatibility-CCLrpZNg.js",
-        "assets/app-bootstrap-D_k_aEAp.js",
-        "assets/vite-deferred-entry-topology-CdxPi3BI.js",
-        "assets/vite-entry-group-app-entry-Cqt8LFEG.js",
-        "assets/vite-entry-group-bootstrap-state-iOlj2Dao.js",
-        "assets/vite-entry-group-feature-runtimes-BKK2vGbk.js",
-        "assets/vite-entry-group-foundation-BFeSS-Jz.js",
-        "assets/vite-entry-group-manifest-B6H-Dchz.js",
-        "assets/vite-entry-group-shell-services-Banajgp5.js"
+        "assets/_virtual_codex-mobile-esm-compatibility-BNQi4nad.js",
+        "assets/app-bootstrap-DdXZcTzS.js",
+        "assets/vite-deferred-entry-topology-CXVuismc.js",
+        "assets/vite-entry-group-app-entry-C3ot7owz.js",
+        "assets/vite-entry-group-bootstrap-state-ChxV_Lzv.js",
+        "assets/vite-entry-group-feature-runtimes-BOJane4k.js",
+        "assets/vite-entry-group-foundation-COlh8IrL.js",
+        "assets/vite-entry-group-manifest-Bs2nalpO.js",
+        "assets/vite-entry-group-shell-services-gb29ZxTd.js"
       ],
       "missingFiles": [],
       "extraFiles": [],
@@ -5404,8 +5405,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "ANDROID_BACK_SIDEBAR_BASE",
@@ -5416,8 +5417,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "ANDROID_BACK_SIDEBAR_STATE",
@@ -5428,8 +5429,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "ANDROID_BACK_SIDEBAR_TOP",
@@ -5440,8 +5441,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "ANDROID_SIDEBAR_EDGE_SWIPE_PX",
@@ -5452,8 +5453,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "apiClient",
@@ -5464,8 +5465,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "appBootstrapGlobalRoot",
@@ -5476,8 +5477,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "appUpdateRuntime",
@@ -5488,8 +5489,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "appUpdateRuntimeApi",
@@ -5500,8 +5501,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "AUTO_TURN_RECOVERY_COOLDOWN_MS",
@@ -5512,8 +5513,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "AUTOMATIC_CONVERSATION_REFRESH_SOURCES",
@@ -5524,8 +5525,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "buildRefreshPolicy",
@@ -5536,8 +5537,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "classicGlobalBindingNamesFromManifest",
@@ -5548,8 +5549,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "CLIENT_BUILD_ID",
@@ -5560,8 +5561,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "clientRenderStabilityGuard",
@@ -5572,8 +5573,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "CODEX_PROFILE_SWITCH_STAGES",
@@ -5584,8 +5585,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "CodexApiClient",
@@ -5620,8 +5621,8 @@
           "present": true,
           "exportedAsset": "/app-update-runtime.js",
           "hashPresent": true,
-          "bytes": 56546,
-          "sha256": "e6ded2b0b7782da90d307671cefe716a5ab722125aa0d59bd08ebc435d79155d"
+          "bytes": 59801,
+          "sha256": "75076c7d13ae2a9e4b26e729dea7e86047b9b7de072dc8f0be7fa3e85626d1c7"
         },
         {
           "name": "CodexClientRenderStabilityGuard",
@@ -5956,8 +5957,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "composerRuntime",
@@ -5968,8 +5969,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "composerRuntimeApi",
@@ -5980,8 +5981,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "CONTEXT_COMPACTION_COMPLETE_NOTICE",
@@ -5992,8 +5993,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "CONTEXT_COMPACTION_PENDING_NOTICE",
@@ -6004,8 +6005,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "CONVERSATION_SCROLL_INTENT_MS",
@@ -6016,8 +6017,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "conversationScroll",
@@ -6028,8 +6029,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "createAppBootstrapRuntime",
@@ -6040,8 +6041,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "DRAFT_SAVE_DEBOUNCE_MS",
@@ -6052,8 +6053,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "draftStore",
@@ -6064,8 +6065,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS",
@@ -6076,8 +6077,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "fetchJsonWithTimeout",
@@ -6088,8 +6089,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "fetchPublicConfigWithRetry",
@@ -6100,8 +6101,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "FILE_PREVIEW_SWIPE_CLOSE_MIN_PX",
@@ -6112,8 +6113,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "FONT_SIZE_VALUES",
@@ -6124,8 +6125,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "frontendRuntimeHealthApi",
@@ -6136,8 +6137,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "GITHUB_LINK_PREVIEW_TIMEOUT_MS",
@@ -6148,8 +6149,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "hasStartupThreadOpenIntent",
@@ -6160,8 +6161,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "HEAVY_VISUAL_RECOVERY_MIN_INTERVAL_MS",
@@ -6172,8 +6173,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "HIDDEN_SERVER_REQUEST_METHODS",
@@ -6184,8 +6185,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "homeAiDiagnosticReportingApi",
@@ -6196,8 +6197,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "HOST_EMBED_SPLIT_FRAME_MIN_PX",
@@ -6208,8 +6209,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "HOST_EMBED_SPLIT_LEFT_MIN_PX",
@@ -6220,8 +6221,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "HOST_EMBED_SPLIT_VIEWPORT_MIN_PX",
@@ -6232,8 +6233,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "IMAGE_DIAGNOSTICS_ENABLED",
@@ -6244,8 +6245,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "IMAGE_PREVIEW_MAX_SCALE",
@@ -6256,8 +6257,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "IMAGE_PREVIEW_MIN_SCALE",
@@ -6268,8 +6269,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "IMAGE_PREVIEW_ZOOM_STEP",
@@ -6280,8 +6281,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "imageCompressor",
@@ -6292,8 +6293,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "INITIAL_PLUGIN_EMBED",
@@ -6304,8 +6305,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "INITIAL_PLUGIN_LAUNCH_KEY",
@@ -6316,8 +6317,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "initialPluginLaunchKeyFromUrl",
@@ -6328,8 +6329,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "installClassicGlobalBindings",
@@ -6340,8 +6341,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS",
@@ -6352,8 +6353,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "liveOperationDockPolicy",
@@ -6364,8 +6365,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "loadJsonStorage",
@@ -6376,8 +6377,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "loadNumberMapStorage",
@@ -6388,8 +6389,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "loadStringSetStorage",
@@ -6400,8 +6401,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "LONG_RECEIPT_SCROLL_CHARS",
@@ -6412,8 +6413,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "MAX_COMMAND_OUTPUT_CHARS",
@@ -6424,8 +6425,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "MAX_EXPANDED_VISIBLE_TURNS",
@@ -6436,8 +6437,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "MAX_LIVE_TEXT_CHARS",
@@ -6448,8 +6449,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN",
@@ -6460,8 +6461,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "MAX_RAW_THREAD_VISIBLE_TURNS",
@@ -6472,8 +6473,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "MAX_VISIBLE_TURNS",
@@ -6484,8 +6485,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "mediaPreviewRuntimeApi",
@@ -6496,8 +6497,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "MENU_OVERLAY_MEDIA",
@@ -6508,8 +6509,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "MERMAID_MAX_SCALE",
@@ -6520,8 +6521,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "MERMAID_MIN_SCALE",
@@ -6532,8 +6533,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "MERMAID_SCRIPT_URL",
@@ -6544,8 +6545,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "MERMAID_ZOOM_STEP",
@@ -6556,8 +6557,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "normalizeFsPath",
@@ -6568,8 +6569,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "OPERATIONAL_ITEM_TYPES",
@@ -6580,8 +6581,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PAGE_REFRESH_CHECK_INTERVAL_MS",
@@ -6592,8 +6593,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PAGE_REFRESH_MIN_CHECK_INTERVAL_MS",
@@ -6604,8 +6605,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PAGE_SHELL_ASSETS",
@@ -6616,8 +6617,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PERF_EVENT_THROTTLE_MS",
@@ -6628,8 +6629,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PERF_RENDER_REPORT_MIN_MS",
@@ -6640,8 +6641,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PERF_SLOW_RENDER_REPORT_MS",
@@ -6652,8 +6653,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "planThreadOpenCacheReuse",
@@ -6664,8 +6665,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PLUGIN_EMBED_BACK_EDGE_SWIPE_PX",
@@ -6676,8 +6677,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PLUGIN_EMBED_BACK_RECENT_SCROLL_SUPPRESS_MS",
@@ -6688,8 +6689,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PLUGIN_EMBED_BACK_SWIPE_HORIZONTAL_RATIO",
@@ -6700,8 +6701,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PLUGIN_EMBED_BACK_SWIPE_MIN_PX",
@@ -6712,8 +6713,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PLUGIN_VOICE_INPUT_LONG_PRESS_MS",
@@ -6724,8 +6725,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "pluginEmbedApi",
@@ -6736,8 +6737,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "pluginVoiceInputApi",
@@ -6748,8 +6749,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "postStartupStage",
@@ -6760,8 +6761,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PRIMARY_SHELL_CONFLICT_EVIDENCE_MS",
@@ -6772,8 +6773,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PROTECTED_IMAGE_PLACEHOLDER_SRC",
@@ -6784,8 +6785,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PUBLIC_CONFIG_RETRY_DELAYS_MS",
@@ -6796,8 +6797,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PUBLIC_CONFIG_TIMEOUT_MS",
@@ -6808,8 +6809,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "PUBLIC_PR_REVIEW_THREAD_TITLE",
@@ -6820,8 +6821,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "readShellManifest",
@@ -6832,8 +6833,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "requireAppUpdateRuntime",
@@ -6844,8 +6845,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "requireThreadDetailRuntime",
@@ -6856,8 +6857,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "RUNNING_THREAD_HINT_STALE_MS",
@@ -6868,8 +6869,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "runtimeSettings",
@@ -6880,8 +6881,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "setAuthKey",
@@ -6892,8 +6893,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "shellManifestList",
@@ -6904,8 +6905,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SIDE_CHAT_DRAFT_MAX_CHARS",
@@ -6916,8 +6917,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS",
@@ -6928,8 +6929,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SIDEBAR_EDGE_OPEN_MIN_PX",
@@ -6940,8 +6941,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SIDEBAR_EDGE_OPEN_RATIO",
@@ -6952,8 +6953,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SIDEBAR_EDGE_SWIPE_PX",
@@ -6964,8 +6965,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SIDEBAR_LAYOUT_TOGGLE_MIN_HEIGHT",
@@ -6976,8 +6977,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SIDEBAR_LAYOUT_TOGGLE_MIN_WIDTH",
@@ -6988,8 +6989,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "sideChatRuntimeApi",
@@ -7000,8 +7001,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "state",
@@ -7012,8 +7013,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STATUS_EVENT_FRESHNESS_TOLERANCE_MS",
@@ -7024,8 +7025,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_CODEX_FAST_MODE",
@@ -7036,8 +7037,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_COMPOSER_INTENT_DRAFTS",
@@ -7048,8 +7049,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_CONTINUATION_JOB",
@@ -7060,8 +7061,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_DISMISSED_ROLLOUT_WARNINGS",
@@ -7072,8 +7073,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_FONT_SIZE",
@@ -7084,8 +7085,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_LEGACY_THREAD_TILE_MODE",
@@ -7096,8 +7097,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_PUBLIC_PR_PROMPT",
@@ -7108,8 +7109,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_RATE_LIMITS",
@@ -7120,8 +7121,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_RATE_LIMITS_BY_MODEL",
@@ -7132,8 +7133,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_RESTART_AUTO_RECOVER_THREADS",
@@ -7144,8 +7145,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_RUNNING_THREAD_HINTED_AT",
@@ -7156,8 +7157,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_RUNNING_THREAD_IDS",
@@ -7168,8 +7169,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_TASK_CARD_DRAFT_STATES",
@@ -7180,8 +7181,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_THREAD_DISPLAY_MODE",
@@ -7192,8 +7193,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_THREAD_ID",
@@ -7204,8 +7205,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_THREAD_VIEWED_AT",
@@ -7216,8 +7217,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "STORAGE_UNREAD_THREAD_IDS",
@@ -7228,8 +7229,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SUBAGENT_EDGE_SWIPE_MAX_PX",
@@ -7240,8 +7241,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SUBAGENT_EDGE_SWIPE_PX",
@@ -7252,8 +7253,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SUBAGENT_EDGE_SWIPE_RATIO",
@@ -7264,8 +7265,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SUBAGENT_SWIPE_MIN_PX",
@@ -7276,8 +7277,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SUBAGENT_WHEEL_SWIPE_MIN_PX",
@@ -7288,8 +7289,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "SUBMITTED_PROCESSING_HINT_STALE_MS",
@@ -7300,8 +7301,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "TABLET_SPLIT_MEDIA",
@@ -7312,8 +7313,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THEME_VALUES",
@@ -7324,8 +7325,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_GOAL_COMMAND_PREFIX",
@@ -7336,8 +7337,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_GOAL_MENTION_PATTERN",
@@ -7348,8 +7349,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_HISTORY_TOP_LOAD_PX",
@@ -7360,8 +7361,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS",
@@ -7372,8 +7373,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS",
@@ -7384,8 +7385,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_LIST_PAGE_LIMIT",
@@ -7396,8 +7397,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_LIST_RUNTIME_STALL_H2_MS",
@@ -7408,8 +7409,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_LIST_RUNTIME_STALL_MIN_MS",
@@ -7420,8 +7421,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS",
@@ -7432,8 +7433,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_LIST_SLOW_PATH_MS",
@@ -7444,8 +7445,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_LOAD_STALL_MS",
@@ -7456,8 +7457,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN",
@@ -7468,8 +7469,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TASK_CARD_BODY_MAX_CHARS",
@@ -7480,8 +7481,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TASK_CARD_COMMAND_PREFIX",
@@ -7492,8 +7493,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS",
@@ -7504,8 +7505,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS",
@@ -7516,8 +7517,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TASK_CARD_DRAFT_TAG",
@@ -7528,8 +7529,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX",
@@ -7540,8 +7541,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TASK_CARD_MENTION_PATTERN",
@@ -7552,8 +7553,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TASK_CARD_REQUEST_TAG",
@@ -7564,8 +7565,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS",
@@ -7576,8 +7577,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TILE_REFRESH_INTERVAL_MS",
@@ -7588,8 +7589,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TILE_REFRESH_MIN_INTERVAL_MS",
@@ -7600,8 +7601,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS",
@@ -7612,8 +7613,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "THREAD_TILE_USER_MAX_PANES",
@@ -7624,8 +7625,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadDetailActionsApi",
@@ -7636,8 +7637,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadDetailDomPatchApi",
@@ -7648,8 +7649,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadDetailMergeStateApi",
@@ -7660,8 +7661,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadDetailPatchPlanApi",
@@ -7672,8 +7673,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadDetailRenderPlanApi",
@@ -7684,8 +7685,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadDetailRuntime",
@@ -7696,8 +7697,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadDetailRuntimeApi",
@@ -7708,8 +7709,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadDetailStateApi",
@@ -7720,8 +7721,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadDetailV4MergeStateApi",
@@ -7732,8 +7733,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadDiagnosticEventsApi",
@@ -7744,8 +7745,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadHasReusableLoadedDetailState",
@@ -7756,8 +7757,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadListLoadPolicy",
@@ -7768,8 +7769,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadListRuntime",
@@ -7780,8 +7781,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadListStableOrderPolicy",
@@ -7792,8 +7793,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadListSummaryFromDetailThread",
@@ -7804,8 +7805,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadPerformanceMetrics",
@@ -7816,8 +7817,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadStatusHintPolicy",
@@ -7828,8 +7829,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadTileActionsApi",
@@ -7840,8 +7841,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadTileLayoutPolicy",
@@ -7852,8 +7853,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadTileRuntime",
@@ -7864,8 +7865,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadTileRuntimeApi",
@@ -7876,8 +7877,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "threadTileStatePolicy",
@@ -7888,8 +7889,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "USER_INPUT_REQUEST_METHODS",
@@ -7900,8 +7901,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         },
         {
           "name": "viewportMetrics",
@@ -7912,8 +7913,8 @@
           "present": true,
           "exportedAsset": "/app-bootstrap.js",
           "hashPresent": true,
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
         }
       ],
       "requiredGlobalNames": [
@@ -8131,7 +8132,7 @@
       "requiredGlobalCount": 210,
       "assetCount": 31,
       "hashCount": 210,
-      "byteCount": 10025069
+      "byteCount": 10035344
     },
     "appPreviewClassicLoaderPlan": {
       "schemaVersion": 1,
@@ -8145,7 +8146,7 @@
       "byteCount": 0,
       "excludedEsmScriptCount": 49,
       "excludedEsmHashCount": 49,
-      "excludedEsmByteCount": 1838692,
+      "excludedEsmByteCount": 1844619,
       "excludedEsmScripts": [
         {
           "index": 1,
@@ -8618,8 +8619,8 @@
           "startupCritical": false,
           "chunkTarget": "deferred-feature-runtimes",
           "sourcePath": "public/app-update-runtime.js",
-          "bytes": 56546,
-          "sha256": "e6ded2b0b7782da90d307671cefe716a5ab722125aa0d59bd08ebc435d79155d",
+          "bytes": 59801,
+          "sha256": "75076c7d13ae2a9e4b26e729dea7e86047b9b7de072dc8f0be7fa3e85626d1c7",
           "esmModuleId": "app-update-runtime",
           "globalName": "CodexAppUpdateRuntime"
         },
@@ -8660,8 +8661,8 @@
           "startupCritical": false,
           "chunkTarget": "deferred-shell-services",
           "sourcePath": "public/settings-runtime.js",
-          "bytes": 103193,
-          "sha256": "e63cab432b21df557508740247b714665b4e6362fa4efab97ac89374db6c8f3e",
+          "bytes": 103424,
+          "sha256": "786b5fd38338f4a5ffbcc41551ff084afe172976562c9fa01d5ce964960415fa",
           "esmModuleId": "settings-runtime",
           "globalName": "CodexSettingsRuntime"
         },
@@ -8716,8 +8717,8 @@
           "startupCritical": false,
           "chunkTarget": "deferred-shell-services",
           "sourcePath": "public/notification-ui-runtime.js",
-          "bytes": 55659,
-          "sha256": "f021be3477aaaa32bb86bf14cdf9a5cf58de22148da4968dffe699209b235bd2",
+          "bytes": 57015,
+          "sha256": "1d9c28fec3d2e8d1b893e29495e166a2d7c54c91aae32b15617c90d0ba69793a",
           "esmModuleId": "notification-ui-runtime",
           "globalName": "CodexNotificationUiRuntime"
         },
@@ -8730,8 +8731,8 @@
           "startupCritical": false,
           "chunkTarget": "deferred-shell-services",
           "sourcePath": "public/pane-layout-runtime.js",
-          "bytes": 222598,
-          "sha256": "fa8d4ca6ced6e3cbad28dba455a91ee09e13608e10a300177fd2fa1018635c0c",
+          "bytes": 223683,
+          "sha256": "5214d4131086be6627a48b7dc0868cf93eec7375ab32f1884f2ceaaf58d2c8ca",
           "esmModuleId": "pane-layout-runtime",
           "globalName": "CodexPaneLayoutRuntime"
         },
@@ -8836,7 +8837,7 @@
       ],
       "excludedViteOwnedScriptCount": 2,
       "excludedViteOwnedHashCount": 2,
-      "excludedViteOwnedByteCount": 126773,
+      "excludedViteOwnedByteCount": 131152,
       "excludedViteOwnedScripts": [
         {
           "index": 0,
@@ -8847,8 +8848,8 @@
           "startupCritical": true,
           "chunkTarget": "startup-manifest",
           "sourcePath": "public/shell-asset-manifest.js",
-          "bytes": 76593,
-          "sha256": "ea0371d8e0f974dc342aaa882af7e09f6153b648a39992233dad71bf42dbbd79",
+          "bytes": 80933,
+          "sha256": "49d349892b8979c5bbb6021bd03c954e1e568de566573b9c018db1ef768aed42",
           "ownerId": "shell-manifest",
           "globalName": "CODEX_MOBILE_SHELL_MANIFEST"
         },
@@ -8861,14 +8862,14 @@
           "startupCritical": true,
           "chunkTarget": "startup-bootstrap",
           "sourcePath": "public/app-bootstrap.js",
-          "bytes": 50180,
-          "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f",
+          "bytes": 50219,
+          "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed",
           "ownerId": "vite-app-bootstrap",
           "globalName": "CodexAppBootstrap"
         }
       ],
       "scripts": [],
-      "sha256": "62c1f3068315c64f31d699a9bfd7e1ebf5d35204b53069e3985e5ca084e88498"
+      "sha256": "f284d4931498cdece150976e2459c1217fd305137fbea5baba0ecab1d5a5f18a"
     },
     "esmCompatibility": {
       "schemaVersion": 1,
@@ -8925,7 +8926,7 @@
             "thread-tile-runtime",
             "app-update-runtime"
           ],
-          "byteCount": 215584
+          "byteCount": 218839
         },
         {
           "id": "shard-04",
@@ -8938,7 +8939,7 @@
             "navigation-runtime",
             "runtime-wiring-runtime"
           ],
-          "byteCount": 203610
+          "byteCount": 203841
         },
         {
           "id": "shard-05",
@@ -8959,7 +8960,7 @@
             "pane-layout-runtime",
             "app-entry"
           ],
-          "byteCount": 224077
+          "byteCount": 225162
         },
         {
           "id": "shard-07",
@@ -9002,7 +9003,7 @@
             "task-card-runtime",
             "notification-ui-runtime"
           ],
-          "byteCount": 217338
+          "byteCount": 218694
         },
         {
           "id": "shard-10",
@@ -9023,7 +9024,7 @@
       "classicGlobalCompatibilityModuleCount": 0,
       "expectedFunctionCount": 355,
       "hashCount": 49,
-      "byteCount": 1838692,
+      "byteCount": 1844619,
       "modules": [
         {
           "index": 0,
@@ -9705,8 +9706,8 @@
             "createAppUpdateRuntime"
           ],
           "expectedFunctionCount": 1,
-          "bytes": 56546,
-          "sha256": "e6ded2b0b7782da90d307671cefe716a5ab722125aa0d59bd08ebc435d79155d",
+          "bytes": 59801,
+          "sha256": "75076c7d13ae2a9e4b26e729dea7e86047b9b7de072dc8f0be7fa3e85626d1c7",
           "hashPresent": true
         },
         {
@@ -9723,8 +9724,8 @@
             "createSettingsRuntime"
           ],
           "expectedFunctionCount": 1,
-          "bytes": 103193,
-          "sha256": "e63cab432b21df557508740247b714665b4e6362fa4efab97ac89374db6c8f3e",
+          "bytes": 103424,
+          "sha256": "786b5fd38338f4a5ffbcc41551ff084afe172976562c9fa01d5ce964960415fa",
           "hashPresent": true
         },
         {
@@ -9813,8 +9814,8 @@
             "createPaneLayoutRuntime"
           ],
           "expectedFunctionCount": 1,
-          "bytes": 222598,
-          "sha256": "fa8d4ca6ced6e3cbad28dba455a91ee09e13608e10a300177fd2fa1018635c0c",
+          "bytes": 223683,
+          "sha256": "5214d4131086be6627a48b7dc0868cf93eec7375ab32f1884f2ceaaf58d2c8ca",
           "hashPresent": true
         },
         {
@@ -10129,8 +10130,8 @@
             "createNotificationUiRuntime"
           ],
           "expectedFunctionCount": 1,
-          "bytes": 55659,
-          "sha256": "f021be3477aaaa32bb86bf14cdf9a5cf58de22148da4968dffe699209b235bd2",
+          "bytes": 57015,
+          "sha256": "1d9c28fec3d2e8d1b893e29495e166a2d7c54c91aae32b15617c90d0ba69793a",
           "hashPresent": true
         },
         {
@@ -10216,44 +10217,44 @@
       ]
     },
     "viteEntry": {
-      "fileName": "assets/vite-shell-entry-B0edWmOQ.js",
+      "fileName": "assets/vite-shell-entry-ChU6xR2f.js",
       "name": "vite-shell-entry",
       "source": "frontend/vite-shell-entry.mjs",
       "isEntry": true,
       "isDynamicEntry": false,
       "imports": [],
       "dynamicImports": [
-        "assets/vite-entry-group-manifest-B6H-Dchz.js",
-        "assets/vite-entry-group-foundation-BFeSS-Jz.js",
-        "assets/vite-entry-group-feature-runtimes-BKK2vGbk.js",
-        "assets/vite-entry-group-bootstrap-state-iOlj2Dao.js",
-        "assets/vite-entry-group-shell-services-Banajgp5.js",
-        "assets/vite-entry-group-app-entry-Cqt8LFEG.js",
-        "assets/_virtual_codex-mobile-esm-compatibility-CCLrpZNg.js",
-        "assets/app-bootstrap-D_k_aEAp.js",
-        "assets/vite-deferred-entry-topology-CdxPi3BI.js"
+        "assets/vite-entry-group-manifest-Bs2nalpO.js",
+        "assets/vite-entry-group-foundation-COlh8IrL.js",
+        "assets/vite-entry-group-feature-runtimes-BOJane4k.js",
+        "assets/vite-entry-group-bootstrap-state-ChxV_Lzv.js",
+        "assets/vite-entry-group-shell-services-gb29ZxTd.js",
+        "assets/vite-entry-group-app-entry-C3ot7owz.js",
+        "assets/_virtual_codex-mobile-esm-compatibility-BNQi4nad.js",
+        "assets/app-bootstrap-DdXZcTzS.js",
+        "assets/vite-deferred-entry-topology-CXVuismc.js"
       ]
     },
     "viteEsmCompatibilityChunks": [
       {
-        "fileName": "assets/_virtual_codex-mobile-esm-compatibility-CCLrpZNg.js",
+        "fileName": "assets/_virtual_codex-mobile-esm-compatibility-BNQi4nad.js",
         "name": "_virtual_codex-mobile-esm-compatibility",
         "source": "virtual:codex-mobile-esm-compatibility",
         "isEntry": false,
         "isDynamicEntry": true,
         "imports": [
-          "assets/vite-shell-entry-B0edWmOQ.js"
+          "assets/vite-shell-entry-ChU6xR2f.js"
         ],
         "dynamicImports": [
           "assets/shard-01-Bf9X2Xn_.js",
           "assets/shard-02-Ci6VBlQk.js",
-          "assets/shard-03-jzqA8PSp.js",
-          "assets/shard-04-jt2hr3Gj.js",
+          "assets/shard-03-DksCt_-z.js",
+          "assets/shard-04-Bp8HLM8d.js",
           "assets/shard-05-BNbHUllq.js",
-          "assets/shard-06-DWtTKUdC.js",
+          "assets/shard-06-DFfLzZLJ.js",
           "assets/shard-07-x8PuRpeT.js",
           "assets/shard-08-DWekEel9.js",
-          "assets/shard-09-Bu_1QFiF.js",
+          "assets/shard-09-BmBNaZBe.js",
           "assets/shard-10-DoJleEgX.js"
         ]
       },
@@ -10276,7 +10277,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-03-jzqA8PSp.js",
+        "fileName": "assets/shard-03-DksCt_-z.js",
         "name": "shard-03",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-03",
         "isEntry": false,
@@ -10285,7 +10286,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-04-jt2hr3Gj.js",
+        "fileName": "assets/shard-04-Bp8HLM8d.js",
         "name": "shard-04",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-04",
         "isEntry": false,
@@ -10303,7 +10304,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-06-DWtTKUdC.js",
+        "fileName": "assets/shard-06-DFfLzZLJ.js",
         "name": "shard-06",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-06",
         "isEntry": false,
@@ -10330,7 +10331,7 @@
         "dynamicImports": []
       },
       {
-        "fileName": "assets/shard-09-Bu_1QFiF.js",
+        "fileName": "assets/shard-09-BmBNaZBe.js",
         "name": "shard-09",
         "source": "virtual:codex-mobile-esm-compatibility/shard/shard-09",
         "isEntry": false,
@@ -10350,33 +10351,33 @@
     ],
     "viteOwnedAppBootstrapChunks": [
       {
-        "fileName": "assets/app-bootstrap-D_k_aEAp.js",
+        "fileName": "assets/app-bootstrap-DdXZcTzS.js",
         "name": "app-bootstrap",
         "source": "public/app-bootstrap.js",
         "isEntry": false,
         "isDynamicEntry": true,
         "imports": [
-          "assets/vite-shell-entry-B0edWmOQ.js"
+          "assets/vite-shell-entry-ChU6xR2f.js"
         ],
         "dynamicImports": []
       }
     ],
     "viteDeferredChunks": [
       {
-        "fileName": "assets/vite-deferred-entry-topology-CdxPi3BI.js",
+        "fileName": "assets/vite-deferred-entry-topology-CXVuismc.js",
         "name": "vite-deferred-entry-topology",
         "source": "frontend/vite-deferred-entry-topology.mjs",
         "isEntry": false,
         "isDynamicEntry": true,
         "imports": [
-          "assets/vite-shell-entry-B0edWmOQ.js"
+          "assets/vite-shell-entry-ChU6xR2f.js"
         ],
         "dynamicImports": []
       }
     ],
     "viteEntryGroupChunks": [
       {
-        "fileName": "assets/vite-entry-group-app-entry-Cqt8LFEG.js",
+        "fileName": "assets/vite-entry-group-app-entry-C3ot7owz.js",
         "name": "vite-entry-group-app-entry",
         "source": "virtual:codex-mobile-shell-entry-group/app-entry",
         "isEntry": true,
@@ -10457,7 +10458,7 @@
         ]
       },
       {
-        "fileName": "assets/vite-entry-group-bootstrap-state-iOlj2Dao.js",
+        "fileName": "assets/vite-entry-group-bootstrap-state-ChxV_Lzv.js",
         "name": "vite-entry-group-bootstrap-state",
         "source": "virtual:codex-mobile-shell-entry-group/bootstrap-state",
         "isEntry": true,
@@ -10476,12 +10477,12 @@
           {
             "path": "/app-bootstrap.js",
             "sourcePath": "public/app-bootstrap.js",
-            "bytes": 50180,
-            "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+            "bytes": 50219,
+            "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
           }
         ],
         "classicAssetHashCount": 1,
-        "classicAssetBytes": 50180,
+        "classicAssetBytes": 50219,
         "classicGlobalExports": [
           {
             "asset": "/app-bootstrap.js",
@@ -12116,7 +12117,7 @@
         ]
       },
       {
-        "fileName": "assets/vite-entry-group-feature-runtimes-BKK2vGbk.js",
+        "fileName": "assets/vite-entry-group-feature-runtimes-BOJane4k.js",
         "name": "vite-entry-group-feature-runtimes",
         "source": "virtual:codex-mobile-shell-entry-group/feature-runtimes",
         "isEntry": true,
@@ -12249,8 +12250,8 @@
           {
             "path": "/app-update-runtime.js",
             "sourcePath": "public/app-update-runtime.js",
-            "bytes": 56546,
-            "sha256": "e6ded2b0b7782da90d307671cefe716a5ab722125aa0d59bd08ebc435d79155d"
+            "bytes": 59801,
+            "sha256": "75076c7d13ae2a9e4b26e729dea7e86047b9b7de072dc8f0be7fa3e85626d1c7"
           },
           {
             "path": "/side-chat-runtime.js",
@@ -12266,7 +12267,7 @@
           }
         ],
         "classicAssetHashCount": 19,
-        "classicAssetBytes": 703971,
+        "classicAssetBytes": 707226,
         "classicGlobalExports": [
           {
             "asset": "/thread-list-runtime.js",
@@ -12533,7 +12534,7 @@
         ]
       },
       {
-        "fileName": "assets/vite-entry-group-foundation-BFeSS-Jz.js",
+        "fileName": "assets/vite-entry-group-foundation-COlh8IrL.js",
         "name": "vite-entry-group-foundation",
         "source": "virtual:codex-mobile-shell-entry-group/foundation",
         "isEntry": true,
@@ -12860,7 +12861,7 @@
         ]
       },
       {
-        "fileName": "assets/vite-entry-group-manifest-B6H-Dchz.js",
+        "fileName": "assets/vite-entry-group-manifest-Bs2nalpO.js",
         "name": "vite-entry-group-manifest",
         "source": "virtual:codex-mobile-shell-entry-group/manifest",
         "isEntry": true,
@@ -12879,19 +12880,19 @@
           {
             "path": "/shell-asset-manifest.js",
             "sourcePath": "public/shell-asset-manifest.js",
-            "bytes": 76593,
-            "sha256": "ea0371d8e0f974dc342aaa882af7e09f6153b648a39992233dad71bf42dbbd79"
+            "bytes": 80933,
+            "sha256": "49d349892b8979c5bbb6021bd03c954e1e568de566573b9c018db1ef768aed42"
           }
         ],
         "classicAssetHashCount": 1,
-        "classicAssetBytes": 76593,
+        "classicAssetBytes": 80933,
         "classicGlobalExports": [],
         "classicGlobalExportAssetCount": 0,
         "classicGlobalExportCount": 0,
         "startupGlobalContracts": []
       },
       {
-        "fileName": "assets/vite-entry-group-shell-services-Banajgp5.js",
+        "fileName": "assets/vite-entry-group-shell-services-gb29ZxTd.js",
         "name": "vite-entry-group-shell-services",
         "source": "virtual:codex-mobile-shell-entry-group/shell-services",
         "isEntry": true,
@@ -12919,8 +12920,8 @@
           {
             "path": "/settings-runtime.js",
             "sourcePath": "public/settings-runtime.js",
-            "bytes": 103193,
-            "sha256": "e63cab432b21df557508740247b714665b4e6362fa4efab97ac89374db6c8f3e"
+            "bytes": 103424,
+            "sha256": "786b5fd38338f4a5ffbcc41551ff084afe172976562c9fa01d5ce964960415fa"
           },
           {
             "path": "/modal-runtime.js",
@@ -12943,14 +12944,14 @@
           {
             "path": "/notification-ui-runtime.js",
             "sourcePath": "public/notification-ui-runtime.js",
-            "bytes": 55659,
-            "sha256": "f021be3477aaaa32bb86bf14cdf9a5cf58de22148da4968dffe699209b235bd2"
+            "bytes": 57015,
+            "sha256": "1d9c28fec3d2e8d1b893e29495e166a2d7c54c91aae32b15617c90d0ba69793a"
           },
           {
             "path": "/pane-layout-runtime.js",
             "sourcePath": "public/pane-layout-runtime.js",
-            "bytes": 222598,
-            "sha256": "fa8d4ca6ced6e3cbad28dba455a91ee09e13608e10a300177fd2fa1018635c0c"
+            "bytes": 223683,
+            "sha256": "5214d4131086be6627a48b7dc0868cf93eec7375ab32f1884f2ceaaf58d2c8ca"
           },
           {
             "path": "/task-card-runtime.js",
@@ -12978,7 +12979,7 @@
           }
         ],
         "classicAssetHashCount": 10,
-        "classicAssetBytes": 777526,
+        "classicAssetBytes": 780198,
         "classicGlobalExports": [
           {
             "asset": "/settings-runtime.js",
@@ -13088,8 +13089,8 @@
         "path": "/styles.css",
         "sourcePath": "public/styles.css",
         "fileName": "shell-assets/styles.css",
-        "bytes": 172674,
-        "sha256": "e1dabdc46f2ecce9b8a4af28db9ec363a7434ad812cd8eef0b74298b04703a0d"
+        "bytes": 172785,
+        "sha256": "876c5253c0f393d1409b5ed8372dad41a1c686b615cd60397341f3506186369e"
       },
       {
         "path": "/icons/icon-192.png",
@@ -13109,8 +13110,8 @@
         "path": "/shell-asset-manifest.js",
         "sourcePath": "public/shell-asset-manifest.js",
         "fileName": "shell-assets/shell-asset-manifest.js",
-        "bytes": 76593,
-        "sha256": "ea0371d8e0f974dc342aaa882af7e09f6153b648a39992233dad71bf42dbbd79"
+        "bytes": 80933,
+        "sha256": "49d349892b8979c5bbb6021bd03c954e1e568de566573b9c018db1ef768aed42"
       },
       {
         "path": "/api-client.js",
@@ -13347,8 +13348,8 @@
         "path": "/app-update-runtime.js",
         "sourcePath": "public/app-update-runtime.js",
         "fileName": "shell-assets/app-update-runtime.js",
-        "bytes": 56546,
-        "sha256": "e6ded2b0b7782da90d307671cefe716a5ab722125aa0d59bd08ebc435d79155d"
+        "bytes": 59801,
+        "sha256": "75076c7d13ae2a9e4b26e729dea7e86047b9b7de072dc8f0be7fa3e85626d1c7"
       },
       {
         "path": "/side-chat-runtime.js",
@@ -13368,15 +13369,15 @@
         "path": "/app-bootstrap.js",
         "sourcePath": "public/app-bootstrap.js",
         "fileName": "shell-assets/app-bootstrap.js",
-        "bytes": 50180,
-        "sha256": "fb9894b8b0d642213650206507c75a6a9fce764b1f04d7f7842ae980c9fba91f"
+        "bytes": 50219,
+        "sha256": "3a3bd794c6f1bcbea2265a9ab98141370a544cfed09b848e373812cd473e21ed"
       },
       {
         "path": "/settings-runtime.js",
         "sourcePath": "public/settings-runtime.js",
         "fileName": "shell-assets/settings-runtime.js",
-        "bytes": 103193,
-        "sha256": "e63cab432b21df557508740247b714665b4e6362fa4efab97ac89374db6c8f3e"
+        "bytes": 103424,
+        "sha256": "786b5fd38338f4a5ffbcc41551ff084afe172976562c9fa01d5ce964960415fa"
       },
       {
         "path": "/modal-runtime.js",
@@ -13403,15 +13404,15 @@
         "path": "/notification-ui-runtime.js",
         "sourcePath": "public/notification-ui-runtime.js",
         "fileName": "shell-assets/notification-ui-runtime.js",
-        "bytes": 55659,
-        "sha256": "f021be3477aaaa32bb86bf14cdf9a5cf58de22148da4968dffe699209b235bd2"
+        "bytes": 57015,
+        "sha256": "1d9c28fec3d2e8d1b893e29495e166a2d7c54c91aae32b15617c90d0ba69793a"
       },
       {
         "path": "/pane-layout-runtime.js",
         "sourcePath": "public/pane-layout-runtime.js",
         "fileName": "shell-assets/pane-layout-runtime.js",
-        "bytes": 222598,
-        "sha256": "fa8d4ca6ced6e3cbad28dba455a91ee09e13608e10a300177fd2fa1018635c0c"
+        "bytes": 223683,
+        "sha256": "5214d4131086be6627a48b7dc0868cf93eec7375ab32f1884f2ceaaf58d2c8ca"
       },
       {
         "path": "/task-card-runtime.js",
@@ -13466,8 +13467,8 @@
         "path": "/shell-asset-manifest.json",
         "sourcePath": "public/shell-asset-manifest.json",
         "fileName": "shell-assets/shell-asset-manifest.json",
-        "bytes": 71365,
-        "sha256": "31cd40926a597f872ea7d254a3cdab9ccefd222df66b6c74df080d8dd39191aa"
+        "bytes": 75483,
+        "sha256": "f334a07623e8f2db0a66777c3e071e3bba658f9713598edc53c650a072226863"
       },
       {
         "path": "/sw.js",
@@ -13478,26 +13479,26 @@
       }
     ],
     "outputFiles": [
-      "assets/_virtual_codex-mobile-esm-compatibility-CCLrpZNg.js",
-      "assets/app-bootstrap-D_k_aEAp.js",
+      "assets/_virtual_codex-mobile-esm-compatibility-BNQi4nad.js",
+      "assets/app-bootstrap-DdXZcTzS.js",
       "assets/shard-01-Bf9X2Xn_.js",
       "assets/shard-02-Ci6VBlQk.js",
-      "assets/shard-03-jzqA8PSp.js",
-      "assets/shard-04-jt2hr3Gj.js",
+      "assets/shard-03-DksCt_-z.js",
+      "assets/shard-04-Bp8HLM8d.js",
       "assets/shard-05-BNbHUllq.js",
-      "assets/shard-06-DWtTKUdC.js",
+      "assets/shard-06-DFfLzZLJ.js",
       "assets/shard-07-x8PuRpeT.js",
       "assets/shard-08-DWekEel9.js",
-      "assets/shard-09-Bu_1QFiF.js",
+      "assets/shard-09-BmBNaZBe.js",
       "assets/shard-10-DoJleEgX.js",
-      "assets/vite-deferred-entry-topology-CdxPi3BI.js",
-      "assets/vite-entry-group-app-entry-Cqt8LFEG.js",
-      "assets/vite-entry-group-bootstrap-state-iOlj2Dao.js",
-      "assets/vite-entry-group-feature-runtimes-BKK2vGbk.js",
-      "assets/vite-entry-group-foundation-BFeSS-Jz.js",
-      "assets/vite-entry-group-manifest-B6H-Dchz.js",
-      "assets/vite-entry-group-shell-services-Banajgp5.js",
-      "assets/vite-shell-entry-B0edWmOQ.js",
+      "assets/vite-deferred-entry-topology-CXVuismc.js",
+      "assets/vite-entry-group-app-entry-C3ot7owz.js",
+      "assets/vite-entry-group-bootstrap-state-ChxV_Lzv.js",
+      "assets/vite-entry-group-feature-runtimes-BOJane4k.js",
+      "assets/vite-entry-group-foundation-COlh8IrL.js",
+      "assets/vite-entry-group-manifest-Bs2nalpO.js",
+      "assets/vite-entry-group-shell-services-gb29ZxTd.js",
+      "assets/vite-shell-entry-ChU6xR2f.js",
       "codex-mobile-shell-manifest.json",
       "shell-assets/api-client-runtime.js",
       "shell-assets/api-client.js",
@@ -13564,5 +13565,115 @@
       "ok": true,
       "issues": []
     }
+  },
+  "viteArtifactCache": {
+    "schemaVersion": 1,
+    "source": "vite-shell-public-artifact",
+    "baseShellCacheName": "codex-mobile-shell-v625-9daf89bd741f",
+    "fingerprint": "ed1cd144fd85b61d7837e7c5831428d3265aadb4439f71ee6bb78034df0361b2",
+    "fileCount": 20,
+    "byteCount": 2850214,
+    "files": [
+      {
+        "fileName": "assets/_virtual_codex-mobile-esm-compatibility-BNQi4nad.js",
+        "bytes": 6491,
+        "sha256": "4c35cbedefa4e2d67b148ba6a5a4d363d67929c086822eeaba01eae4056b496e"
+      },
+      {
+        "fileName": "assets/app-bootstrap-DdXZcTzS.js",
+        "bytes": 50381,
+        "sha256": "77594529f5cd7ce975ca9bb02d918604b9ea2963289597291fb63c0bab2c3db5"
+      },
+      {
+        "fileName": "assets/shard-01-Bf9X2Xn_.js",
+        "bytes": 297025,
+        "sha256": "0d4904cbd988afbec6ea572a959b598b2484dd3e9206bcc12ea58c53d7d940c3"
+      },
+      {
+        "fileName": "assets/shard-02-Ci6VBlQk.js",
+        "bytes": 226801,
+        "sha256": "c516e5f52a99eac953127e5162e188b217886380d365312fea2f922f19fecbd5"
+      },
+      {
+        "fileName": "assets/shard-03-DksCt_-z.js",
+        "bytes": 285735,
+        "sha256": "810f7d22e27cd4adf3153d3d3ca25c90df2cb7c70119a09ff7724dabfa6e6728"
+      },
+      {
+        "fileName": "assets/shard-04-Bp8HLM8d.js",
+        "bytes": 286231,
+        "sha256": "78d173fda82647e89ece1b5dfb02747b51350ca5dc48e90448c68a70c62555ff"
+      },
+      {
+        "fileName": "assets/shard-05-BNbHUllq.js",
+        "bytes": 134540,
+        "sha256": "af9dda18a15b8b41fa66bfb1e0a038c479b1dfbc2692010feeb2d52e238e8dbf"
+      },
+      {
+        "fileName": "assets/shard-06-DFfLzZLJ.js",
+        "bytes": 299330,
+        "sha256": "debdfb53299a9aea6c9627f35105c57a57e8b5b0cf4be5577714e3a8c0331ab9"
+      },
+      {
+        "fileName": "assets/shard-07-x8PuRpeT.js",
+        "bytes": 276238,
+        "sha256": "93b6b48b1326daf3eda59c724d6ba8daedfae65cbd370fcfc2c295e5f74c0df3"
+      },
+      {
+        "fileName": "assets/shard-08-DWekEel9.js",
+        "bytes": 303989,
+        "sha256": "bd7220da3e1293ae29a1ff6f84cde246646038be0dd8a6fc02d0b434abbc274b"
+      },
+      {
+        "fileName": "assets/shard-09-BmBNaZBe.js",
+        "bytes": 296516,
+        "sha256": "20a085790fcf4fa49c3ffe415711cbad073d72d6e2553d3b74ba2bd4ddc62270"
+      },
+      {
+        "fileName": "assets/shard-10-DoJleEgX.js",
+        "bytes": 228612,
+        "sha256": "60aa377202aa983f883444eaf6757525fdf57883e3be4b839ef8c803f7168d9f"
+      },
+      {
+        "fileName": "assets/vite-deferred-entry-topology-CXVuismc.js",
+        "bytes": 748,
+        "sha256": "3c25d48d348f91267f8658e38270144723e98414776cc8ea647262fa06a8fd9c"
+      },
+      {
+        "fileName": "assets/vite-entry-group-app-entry-C3ot7owz.js",
+        "bytes": 2207,
+        "sha256": "d1ab6b05f144fe3d92a77680f30ebf0c4b58d13dbab0f94db360bdde18867197"
+      },
+      {
+        "fileName": "assets/vite-entry-group-bootstrap-state-ChxV_Lzv.js",
+        "bytes": 44195,
+        "sha256": "a846b8770806a411e2f30157d3ab3d35c0f44d2464eea3b75e57762226e9c373"
+      },
+      {
+        "fileName": "assets/vite-entry-group-feature-runtimes-BOJane4k.js",
+        "bytes": 10924,
+        "sha256": "05390111b2e9742c9a1e4fceedb29722e4556d11b5ebea92fb53c74bececaa35"
+      },
+      {
+        "fileName": "assets/vite-entry-group-foundation-COlh8IrL.js",
+        "bytes": 8277,
+        "sha256": "152a062151998ed27742327953c53a53c89c3489d9b5615bbb1af4d9583717a6"
+      },
+      {
+        "fileName": "assets/vite-entry-group-manifest-Bs2nalpO.js",
+        "bytes": 1164,
+        "sha256": "3fc4e82986a922f28c94cd3d630d5541fa38b1c34f2878ecfc8016d447feef0b"
+      },
+      {
+        "fileName": "assets/vite-entry-group-shell-services-gb29ZxTd.js",
+        "bytes": 4161,
+        "sha256": "ecce23d4e0e55f523f910667fc09ef2182d6e9509211908366d535b58490327b"
+      },
+      {
+        "fileName": "assets/vite-shell-entry-ChU6xR2f.js",
+        "bytes": 86649,
+        "sha256": "13ffe74c933f72bf98f70817499a1847d5fc6abd2a8efe7232cf9f3c0378b64d"
+      }
+    ]
   }
 }

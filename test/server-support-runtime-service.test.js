@@ -29,11 +29,13 @@ test("server support runtime owns bounded helpers and app maintenance wiring", a
   assert.equal(service.lastString("", "  value  "), "value");
   assert.equal(service.isUnmaterializedThreadError(new Error("includeTurns is unavailable before first user message")), true);
 
+  const currentPublicBuildConfig = () => ({ clientBuildId: "client-current" });
   const runtime = service.createServerSupportRuntimeService({
     appRoot: "/app",
     appVersion: "0.1.test",
     appUpdateRemote: "origin",
     appUpdateBranch: "main",
+    currentPublicBuildConfig,
     appMaintenanceServiceFactory: (options) => ({
       options,
       applyAppUpdate: async () => ({ updated: false }),
@@ -48,6 +50,7 @@ test("server support runtime owns bounded helpers and app maintenance wiring", a
   });
 
   assert.equal(runtime.appMaintenanceService.options.appRoot, "/app");
+  assert.equal(runtime.appMaintenanceService.options.currentPublicBuildConfig, currentPublicBuildConfig);
   assert.equal(typeof runtime.refreshAppUpdateStatus, "function");
   assert.equal((await runtime.refreshAppUpdateStatus()).ok, true);
   const statusErr = runtime.httpStatusErrorWithDetails(409, "conflict", "Conflict", { id: "x" });

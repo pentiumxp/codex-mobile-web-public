@@ -878,6 +878,7 @@ function summarizePublicCard(card) {
       approvalPolicy: boundedMetadataString(card && card.injectionRuntime && card.injectionRuntime.approvalPolicy, 40),
       sandboxPolicyType: boundedMetadataString(card && card.injectionRuntime && card.injectionRuntime.sandboxPolicyType, 80),
       deployLaneNoApproval: card && card.injectionRuntime && card.injectionRuntime.deployLaneNoApproval === true,
+      mainSourceReasoningFloor: boundedMetadataString(card && card.injectionRuntime && card.injectionRuntime.mainSourceReasoningFloor, 40),
     }),
     injectedTurnId: boundedMetadataString(card && card.injectedTurnId, 120),
     injectedThreadId: boundedMetadataString(card && card.injectedThreadId, 120),
@@ -1259,6 +1260,15 @@ function createThreadTaskCardService(options = {}) {
   const onTerminalReturnCard = typeof options.onTerminalReturnCard === "function"
     ? options.onTerminalReturnCard
     : null;
+  const onExecutionLeaseStarted = typeof options.onExecutionLeaseStarted === "function"
+    ? options.onExecutionLeaseStarted
+    : null;
+  const onExecutionHeartbeat = typeof options.onExecutionHeartbeat === "function"
+    ? options.onExecutionHeartbeat
+    : null;
+  const onExecutionLeaseCompleted = typeof options.onExecutionLeaseCompleted === "function"
+    ? options.onExecutionLeaseCompleted
+    : null;
   const idGenerator = typeof options.idGenerator === "function"
     ? options.idGenerator
     : () => `ttc_${crypto.randomBytes(9).toString("hex")}`;
@@ -1370,6 +1380,36 @@ function createThreadTaskCardService(options = {}) {
         error: err && err.message ? err.message : String(err || "home_ai_return_event_failed"),
       });
     }
+  }
+
+  async function notifyExecutionLifecycle(callback, event = {}) {
+    if (!callback) return null;
+    const taskCardId = stringValue(event.taskCardId || event.card && event.card.id);
+    const phase = boundedMetadataString(event.phase || event.heartbeat && event.heartbeat.status || "execution_lifecycle", 80);
+    let result = null;
+    try {
+      result = await callback(event);
+    } catch (err) {
+      result = {
+        ok: false,
+        error: boundedErrorMessage(err),
+      };
+    }
+    if (result && result.ok === false && taskCardId) {
+      await withStore(async (store) => {
+        const card = findById(store, taskCardId);
+        if (!card) return null;
+        const timestamp = nowIso(options.now);
+        card.audit = Object.assign({}, card.audit || {}, {
+          executionLifecycleSyncFailedAt: timestamp,
+          executionLifecycleSyncPhase: phase,
+          executionLifecycleSyncError: boundedMetadataString(result.error || "execution_lifecycle_sync_failed", 160),
+        });
+        card.updatedAt = timestamp;
+        return null;
+      });
+    }
+    return result;
   }
 
   function findByIdempotency(store, key) {
@@ -1595,7 +1635,7 @@ function createThreadTaskCardService(options = {}) {
       throw err;
     }
 
-    return withStore(async (store) => {
+    const approvedResult = await withStore(async (store) => {
       const card = findById(store, id);
       if (!card) throw errorWithStatus("task_card_not_found", 404);
       const timestamp = nowIso(options.now);
@@ -1632,6 +1672,7 @@ function createThreadTaskCardService(options = {}) {
           approvalPolicy: boundedMetadataString(execution.runtime.approvalPolicy, 40),
           sandboxPolicyType: boundedMetadataString(execution.runtime.sandboxPolicyType, 80),
           deployLaneNoApproval: execution.runtime.deployLaneNoApproval === true,
+          mainSourceReasoningFloor: boundedMetadataString(execution.runtime.mainSourceReasoningFloor, 40),
         };
       }
       if (cardCanOwnExecutionLease(card)) {
@@ -1642,6 +1683,23 @@ function createThreadTaskCardService(options = {}) {
         execution,
       };
     });
+    if (approvedResult.card && approvedResult.card.executionLease) {
+      await notifyExecutionLifecycle(onExecutionLeaseStarted, {
+        phase: "started",
+        taskCardId: approvedResult.card.id || id,
+        targetThreadId: approvedResult.card.target && approvedResult.card.target.threadId || "",
+        card: approvedResult.card,
+        execution: approvedResult.execution,
+        heartbeat: {
+          taskCardId: approvedResult.card.id || id,
+          targetThreadId: approvedResult.card.target && approvedResult.card.target.threadId || "",
+          source: "approval-injection",
+          status: "started",
+          turnId: approvedResult.execution && approvedResult.execution.turnId || approvedResult.card.executionLease.currentTurnId || "",
+        },
+      });
+    }
+    return approvedResult;
   }
 
   async function maybeAutoApprovePublicCard(card, publicThreadId) {
@@ -1986,6 +2044,22 @@ function createThreadTaskCardService(options = {}) {
       };
     });
     if (result && result.noOp) return result;
+    await notifyExecutionLifecycle(onExecutionLeaseCompleted, {
+      phase: "completed",
+      taskCardId: result.card && result.card.id || id,
+      targetThreadId: result.card && result.card.target && result.card.target.threadId || "",
+      card: result.card,
+      returnStatus: replyRequest.status || "completed",
+      replyCardId: result.replyCard && result.replyCard.id || "",
+      heartbeat: {
+        taskCardId: result.card && result.card.id || id,
+        targetThreadId: result.card && result.card.target && result.card.target.threadId || "",
+        source: "terminal-return",
+        status: "completed",
+        summary: replyRequest.status || "completed",
+        turnId: result.card && result.card.executionLease && result.card.executionLease.currentTurnId || "",
+      },
+    });
     if (replyRequest.returnToSource === true) {
       const approved = await executeCardApproval(result.replyCard.id, result.returnResolution && result.returnResolution.resolvedActorThreadId || actorThreadId, {
         sourceDirect: true,
@@ -2186,7 +2260,7 @@ function createThreadTaskCardService(options = {}) {
     const actorThread = stringValue(actorThreadId || payload.threadId || payload.actorThreadId);
     if (!id) throw errorWithStatus("task_card_id_required");
     if (!actorThread) throw errorWithStatus("actor_thread_id_required");
-    return withStore(async (store) => {
+    const result = await withStore(async (store) => {
       const card = findById(store, id);
       if (!card) throw errorWithStatus("task_card_not_found", 404);
       if (!cardCanOwnExecutionLease(card)) throw errorWithStatus(`task_card_execution_not_active:${card && card.status}`, 409);
@@ -2235,6 +2309,14 @@ function createThreadTaskCardService(options = {}) {
         },
       };
     });
+    await notifyExecutionLifecycle(onExecutionHeartbeat, {
+      phase: "heartbeat",
+      taskCardId: result.heartbeat && result.heartbeat.taskCardId || id,
+      targetThreadId: result.heartbeat && result.heartbeat.targetThreadId || actorThread,
+      card: result.card,
+      heartbeat: result.heartbeat,
+    });
+    return result;
   }
 
   async function resumeStaleExecutionLeases(resumeOptions = {}) {

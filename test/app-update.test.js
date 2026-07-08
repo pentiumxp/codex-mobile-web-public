@@ -8,6 +8,7 @@ const vm = require("node:vm");
 const { readFrontendSources } = require("./frontend-source-helper");
 
 const root = path.resolve(__dirname, "..");
+const { createAppUpdateRuntime } = require("../public/app-update-runtime.js");
 const appJs = readFrontendSources(root);
 const appUpdateRuntimeJs = fs.readFileSync(path.join(root, "public", "app-update-runtime.js"), "utf8");
 const appUpdateSource = `${appUpdateRuntimeJs}\n${appJs}`;
@@ -20,6 +21,8 @@ const swJs = fs.readFileSync(path.join(root, "public", "sw.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const shellManifest = JSON.parse(fs.readFileSync(path.join(root, "public", "shell-asset-manifest.json"), "utf8"));
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const settingsRuntimeJs = fs.readFileSync(path.join(root, "public", "settings-runtime.js"), "utf8");
+const paneLayoutRuntimeJs = fs.readFileSync(path.join(root, "public", "pane-layout-runtime.js"), "utf8");
 const threadListRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-list-runtime.js"), "utf8");
 const serverRuntimeUtilsJs = fs.readFileSync(path.join(root, "services", "runtime", "server-runtime-utils.js"), "utf8");
 const serverSupportRuntimeServiceJs = fs.readFileSync(path.join(root, "services", "runtime", "server-support-runtime-service.js"), "utf8");
@@ -133,6 +136,234 @@ async function runServiceWorkerFetch(harness, request) {
   return responsePromise;
 }
 
+function createEmbeddedBuildRefreshHarness(options = {}) {
+  const previousGlobals = {
+    window: global.window,
+    document: global.document,
+    navigatorDescriptor: Object.getOwnPropertyDescriptor(global, "navigator"),
+    fetch: global.fetch,
+  };
+  const elements = new Map();
+  const state = Object.assign({
+    key: "test-key",
+    serverBuildId: String(options.serverBuildId || "0.1.11|codex-mobile-shell-v625-old"),
+    serverAssetBuildId: "asset-old",
+    pageRefreshLastCheckAt: 0,
+    pageRefreshBusy: false,
+    pageRefreshReloading: false,
+    pageRefreshAvailable: false,
+    pageRefreshReason: "",
+    pageRefreshBuildId: "",
+    pageRefreshPreparedConfig: null,
+    codexProfileRestarting: false,
+  }, options.state || {});
+  const config = Object.assign({
+    clientBuildId: String(options.configClientBuildId || "0.1.11|codex-mobile-shell-v625-current"),
+    shellCacheName: "codex-mobile-shell-v625-current",
+    buildId: "asset-current",
+  }, options.config || {});
+  const refreshRequests = [];
+  const clearedReasons = [];
+  const renders = [];
+  const replacedUrls = [];
+
+  global.window = {
+    location: {
+      href: "https://codex.example.test/?thread=thread-1",
+      origin: "https://codex.example.test",
+      replace(url) {
+        replacedUrls.push(url);
+      },
+    },
+    setTimeout(fn) {
+      return setTimeout(fn, 0);
+    },
+    clearTimeout(id) {
+      clearTimeout(id);
+    },
+    setInterval() {
+      return 1;
+    },
+    clearInterval() {},
+    caches: {
+      async keys() {
+        return [];
+      },
+      async delete() {
+        return true;
+      },
+      async open() {
+        return {
+          async put() {},
+        };
+      },
+    },
+  };
+  global.document = { visibilityState: "visible" };
+  Object.defineProperty(global, "navigator", {
+    configurable: true,
+    writable: true,
+    value: {
+    serviceWorker: {
+      async getRegistrations() {
+        return [];
+      },
+      async register() {
+        return {
+          async update() {},
+        };
+      },
+    },
+    },
+  });
+  global.fetch = async (url) => {
+    assert.match(String(url), /\/api\/public-config\?buildCheck=/);
+    return new Response(JSON.stringify(config), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const runtime = createAppUpdateRuntime({
+    state,
+    CLIENT_BUILD_ID: String(options.clientBuildId || config.clientBuildId),
+    PAGE_REFRESH_MIN_CHECK_INTERVAL_MS: 0,
+    buildRefreshPolicy: {
+      shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
+        return Boolean(serverBuildId && clientBuildId && serverBuildId !== clientBuildId);
+      },
+    },
+    $: (id) => {
+      if (!elements.has(id)) {
+        elements.set(id, {
+          id,
+          textContent: "",
+          disabled: false,
+          classList: { toggle() {} },
+        });
+      }
+      return elements.get(id);
+    },
+    isHermesEmbedMode: () => true,
+    requestHermesPluginRefresh: (reason, requestOptions = {}) => {
+      refreshRequests.push({ reason, force: Boolean(requestOptions.force) });
+      return true;
+    },
+    clearPluginRefreshPendingNotice: (reason) => {
+      clearedReasons.push(reason);
+      return true;
+    },
+    renderPageRefreshPrompt: () => {},
+    renderCurrentThread: () => {
+      renders.push("thread");
+    },
+    saveCurrentDraftNow: () => {},
+    rememberRateLimitsFromConfig: () => {},
+    rememberCodexProfiles: () => {},
+    applyFrontendDiagnosticLogPublicConfig: () => null,
+  });
+
+  return {
+    config,
+    state,
+    runtime,
+    refreshRequests,
+    clearedReasons,
+    replacedUrls,
+    restore() {
+      global.window = previousGlobals.window;
+      global.document = previousGlobals.document;
+      if (previousGlobals.navigatorDescriptor) {
+        Object.defineProperty(global, "navigator", previousGlobals.navigatorDescriptor);
+      } else {
+        delete global.navigator;
+      }
+      global.fetch = previousGlobals.fetch;
+    },
+  };
+}
+
+function createNotificationRefreshHarness() {
+  const previousGlobals = {
+    window: global.window,
+    document: global.document,
+    state: global.state,
+    pluginEmbedApi: global.pluginEmbedApi,
+    currentPluginAppearanceForHost: global.currentPluginAppearanceForHost,
+    postClientEvent: global.postClientEvent,
+    renderCurrentThread: global.renderCurrentThread,
+    renderNewThreadDraft: global.renderNewThreadDraft,
+    $: global.$,
+  };
+  const elements = new Map();
+  const refreshMessages = [];
+  const clientEvents = [];
+  let renderCount = 0;
+  global.window = {
+    parent: { location: { origin: "https://hermes.example.test" } },
+    location: {
+      href: "https://codex.example.test/?thread=thread-1",
+      origin: "https://codex.example.test",
+    },
+    setTimeout() {
+      return 1001;
+    },
+    clearTimeout() {},
+  };
+  global.document = { referrer: "https://hermes.example.test/plugin" };
+  global.state = {
+    pluginEmbed: { embedded: true },
+    pluginParentOrigin: "https://hermes.example.test",
+    currentThreadId: "thread-1",
+    currentThread: { id: "thread-1" },
+    newThreadDraft: false,
+  };
+  global.pluginEmbedApi = {
+    parentOriginFromReferrer: () => "https://hermes.example.test",
+    normalizeRouteHint: () => null,
+    postRefreshRequired: (_parent, payload) => {
+      refreshMessages.push(payload);
+    },
+  };
+  global.currentPluginAppearanceForHost = () => ({ theme: "dark" });
+  global.postClientEvent = (type, payload) => {
+    clientEvents.push({ type, payload });
+  };
+  global.renderCurrentThread = () => {
+    renderCount += 1;
+  };
+  global.renderNewThreadDraft = () => {};
+  global.$ = (id) => {
+    if (!elements.has(id)) {
+      elements.set(id, { id, textContent: "" });
+    }
+    return elements.get(id);
+  };
+
+  delete require.cache[require.resolve("../public/notification-ui-runtime.js")];
+  require("../public/notification-ui-runtime.js");
+
+  return {
+    elements,
+    refreshMessages,
+    clientEvents,
+    get renderCount() {
+      return renderCount;
+    },
+    restore() {
+      global.window = previousGlobals.window;
+      global.document = previousGlobals.document;
+      global.state = previousGlobals.state;
+      global.pluginEmbedApi = previousGlobals.pluginEmbedApi;
+      global.currentPluginAppearanceForHost = previousGlobals.currentPluginAppearanceForHost;
+      global.postClientEvent = previousGlobals.postClientEvent;
+      global.renderCurrentThread = previousGlobals.renderCurrentThread;
+      global.renderNewThreadDraft = previousGlobals.renderNewThreadDraft;
+      global.$ = previousGlobals.$;
+    },
+  };
+}
+
 test("self-update UI explains supervisor-dependent restart", () => {
   assert.match(appUpdateSource, /等待重启…/);
   assert.match(appUpdateSource, /服务会退出并等待启动任务或守护脚本拉起/);
@@ -241,15 +472,24 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appUpdateSource, /function shouldPromptForServerBuildChange\(/);
   assert.match(appUpdateSource, /function serverBuildMatchesLoadedClient\(config\)/);
   assert.match(appUpdateSource, /function acceptLoadedClientBuild\(config\)/);
+  assert.match(appUpdateSource, /function clearSettledServerBuildPluginRefreshAfterThreadEntry\(/);
+  assert.match(settingsRuntimeJs, /clearSettledServerBuildPluginRefreshAfterThreadEntry\(\.\.\.args\)/);
+  assert.match(paneLayoutRuntimeJs, /clearSettledServerBuildRefreshForThreadEntry\(source\)/);
+  assert.match(functionBody(paneLayoutRuntimeJs, "loadThread"), /clearSettledServerBuildRefreshForThreadEntry\(source\);/);
   assert.match(appUpdateSource, /function rememberRateLimitsFromConfig\(config\)/);
   assert.match(appUpdateSource, /function preparePageShellAssets\(config, options = \{\}\)/);
   assert.match(appUpdateSource, /function clearAllShellCaches\(\)/);
   assert.match(appUpdateSource, /function resetPageShellServiceWorker\(\)/);
   assert.match(appUpdateSource, /function pageReloadUrlWithBust\(\)/);
   assert.match(appUpdateSource, /function recordPageRefreshFailure\(err, phase = "refresh"\)/);
+  assert.match(appUpdateSource, /function forcePageShellReload\(options = \{\}\)/);
   assert.match(appUpdateSource, /rememberRateLimitsFromConfig\(config\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\)/);
+  assert.match(functionBody(appUpdateSource, "validatePageShellAsset"), /asset === "\/app\.js"[\s\S]*function startCodexMobileApp\(\)[\s\S]*CodexRuntimeWiringRuntime[\s\S]*CodexAppShellRuntime[\s\S]*CodexMobileAppEntry/);
+  assert.doesNotMatch(functionBody(appUpdateSource, "validatePageShellAsset"), /asset === "\/app\.js"[\s\S]*text\.includes\(buildId\)/);
   assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /await clearAllShellCaches\(\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\);[\s\S]*await resetPageShellServiceWorker\(\);[\s\S]*window\.location\.replace\(pageReloadUrlWithBust\(\)\);/);
-  assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /catch \(err\) \{[\s\S]*recordPageRefreshFailure\(err, "new-build-refresh"\);[\s\S]*state\.pageRefreshAvailable = true;[\s\S]*state\.pageRefreshReason = "build";/);
+  assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /catch \(err\) \{[\s\S]*recordPageRefreshFailure\(err, "new-build-refresh"\);[\s\S]*await forcePageShellReload\(\{[\s\S]*reason: "build",[\s\S]*allowWhileReloading: true,[\s\S]*new-build-refresh-hard-cache-reset/);
+  assert.match(functionBody(appUpdateSource, "forcePageShellReload"), /await clearAllShellCaches\(\);[\s\S]*await resetPageShellServiceWorker\(\);[\s\S]*window\.location\.replace\(pageReloadUrlWithBust\(\)\);/);
+  assert.doesNotMatch(functionBody(appUpdateSource, "forcePageShellReload"), /preparePageShellAssets/);
   assert.doesNotMatch(functionBody(appUpdateSource, "checkPageRefreshAvailability"), /preparePageShellAssets\(config, \{ populateCache: true \}\)/);
   assert.match(functionBody(appUpdateSource, "initializePageBuildState"), /shouldPromptForServerBuildChange\(currentServerBuildId, state\.serverBuildId\)/);
   assert.match(functionBody(appUpdateSource, "checkPageRefreshAvailability"), /if \(serverBuildMatchesLoadedClient\(config\)\) \{[\s\S]*acceptLoadedClientBuild\(config\);[\s\S]*return;/);
@@ -264,7 +504,8 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appUpdateSource, /key !== expectedCacheName/);
   assert.match(appUpdateSource, /window\.location\.replace\(pageReloadUrlWithBust\(\)\)/);
   assert.match(functionBody(appUpdateSource, "renderPageRefreshPrompt"), /renderHardRefreshButton\(\)/);
-  assert.match(functionBody(appUpdateSource, "handleHardRefreshClick"), /state\.pageRefreshPreparedConfig = null;[\s\S]*state\.pageRefreshReason = "build";[\s\S]*state\.pageRefreshAvailable = true;[\s\S]*await refreshPageForNewBuild\(\);/);
+  assert.match(functionBody(appUpdateSource, "handleHardRefreshClick"), /state\.pageRefreshPreparedConfig = null;[\s\S]*state\.pageRefreshReason = "build";[\s\S]*state\.pageRefreshAvailable = true;[\s\S]*await forcePageShellReload\(\{ reason: "build" \}\);/);
+  assert.doesNotMatch(functionBody(appUpdateSource, "handleHardRefreshClick"), /refreshPageForNewBuild/);
   assert.match(functionBody(appUpdateSource, "refreshPageForNewBuild"), /if \(serverBuildMatchesLoadedClient\(config\)\) \{[\s\S]*acceptLoadedClientBuild\(config\);[\s\S]*state\.pageRefreshReloading = false;[\s\S]*renderPageRefreshPrompt\(\);[\s\S]*return;/);
   assert.match(appUpdateSource, /hardRefreshButton"\)\.addEventListener\("click", \(\) => handleHardRefreshClick\(\)\.catch\(showError\)\)/);
   assert.match(appUpdateSource, /addEventListener\("click", refreshPageForNewBuild\)/);
@@ -273,6 +514,121 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(stylesCss, /html\.embed-hermes #connectionState\s*\{[\s\S]*display:\s*none;/);
   assert.match(stylesCss, /\.page-refresh-prompt/);
   assert.match(stylesCss, /\.hard-refresh-button/);
+});
+
+test("embedded build refresh requests remain visible while server build is newer", () => {
+  const harness = createEmbeddedBuildRefreshHarness({
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-old",
+    configClientBuildId: "0.1.11|codex-mobile-shell-v625-new",
+  });
+  try {
+    harness.runtime.initializePageBuildState(harness.config);
+    assert.deepEqual(harness.refreshRequests, [{
+      reason: "server_build_changed",
+      force: true,
+    }]);
+    assert.deepEqual(harness.clearedReasons, []);
+    assert.equal(harness.state.pageRefreshReason, "build");
+  } finally {
+    harness.restore();
+  }
+});
+
+test("embedded build refresh notice clears when public config matches loaded client", async () => {
+  const harness = createEmbeddedBuildRefreshHarness({
+    serverBuildId: "0.1.11|codex-mobile-shell-v625-old",
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-current",
+    configClientBuildId: "0.1.11|codex-mobile-shell-v625-current",
+    state: {
+      pageRefreshAvailable: true,
+      pageRefreshReason: "build",
+      pageRefreshBuildId: "0.1.11|codex-mobile-shell-v625-current",
+    },
+  });
+  try {
+    harness.runtime.initializePageBuildState(harness.config);
+    await harness.runtime.checkPageRefreshAvailability({ force: true });
+    harness.state.pageRefreshAvailable = true;
+    harness.state.pageRefreshReason = "build";
+    harness.state.pageRefreshPreparedConfig = harness.config;
+    await harness.runtime.refreshPageForNewBuild();
+    assert.deepEqual(harness.refreshRequests, []);
+    assert.deepEqual(harness.clearedReasons, [
+      "server_build_changed",
+      "server_build_changed",
+      "server_build_changed",
+    ]);
+    assert.equal(harness.state.pageRefreshAvailable, false);
+    assert.equal(harness.state.pageRefreshReason, "");
+    assert.deepEqual(harness.replacedUrls, []);
+  } finally {
+    harness.restore();
+  }
+});
+
+test("thread entry clears settled server-build refresh notice when loaded client is current", async () => {
+  const currentBuild = "0.1.11|codex-mobile-shell-v625-current";
+  const harness = createEmbeddedBuildRefreshHarness({
+    serverBuildId: currentBuild,
+    clientBuildId: currentBuild,
+    configClientBuildId: currentBuild,
+    state: {
+      pluginRefreshPendingReason: "server_build_changed",
+      pluginRefreshPendingNotice: "Refreshing plugin page for a new Mobile Web build...",
+      pluginRefreshRequestReason: "server_build_changed",
+      pluginRefreshRequestSignature: "seeded-thread-entry",
+    },
+  });
+  try {
+    const cleared = await harness.runtime.clearSettledServerBuildPluginRefreshAfterThreadEntry();
+    assert.equal(cleared, true);
+    assert.deepEqual(harness.refreshRequests, []);
+    assert.deepEqual(harness.clearedReasons, ["server_build_changed"]);
+  } finally {
+    harness.restore();
+  }
+});
+
+test("plugin refresh pending notice clears only for the matching reason", () => {
+  const harness = createNotificationRefreshHarness();
+  try {
+    assert.equal(typeof global.requestHermesPluginRefresh, "function");
+    assert.equal(typeof global.clearPluginRefreshPendingNotice, "function");
+
+    assert.equal(global.requestHermesPluginRefresh("auth_state_changed", { force: true }), true);
+    assert.equal(global.state.pluginRefreshPendingReason, "auth_state_changed");
+    assert.match(global.state.pluginRefreshPendingNotice, /auth\/session state changed/);
+    assert.equal(global.clearPluginRefreshPendingNotice("server_build_changed"), false);
+    assert.equal(global.state.pluginRefreshPendingReason, "auth_state_changed");
+
+    assert.equal(global.requestHermesPluginRefresh("server_build_changed", { force: true }), true);
+    assert.equal(global.state.pluginRefreshPendingReason, "server_build_changed");
+    assert.equal(global.$("connectionState").textContent, "Refreshing plugin page for a new Mobile Web build...");
+    assert.equal(global.clearPluginRefreshPendingNotice("server_build_changed"), true);
+    assert.equal(global.state.pluginRefreshPendingNotice, "");
+    assert.equal(global.state.pluginRefreshPendingReason, "");
+    assert.equal(global.state.pluginRefreshRequestSignature, "");
+    assert.equal(global.state.pluginRefreshRequestReason, "");
+    assert.equal(global.$("connectionState").textContent, "");
+    assert.equal(harness.refreshMessages.length, 2);
+    assert.equal(harness.renderCount >= 2, true);
+  } finally {
+    harness.restore();
+  }
+});
+
+test("page shell app entry validation accepts the stable app shim without a build id literal", () => {
+  const validatePageShellAsset = Function(
+    `${functionBody(appUpdateSource, "serverBuildIdFromConfig")}\n`
+    + `${functionBody(appUpdateSource, "validatePageShellAsset")}\n`
+    + "return validatePageShellAsset;"
+  )();
+  const config = {
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-target",
+    shellCacheName: "codex-mobile-shell-v625-target",
+  };
+  assert.equal(validatePageShellAsset("/app.js", appJs, config), true);
+  assert.equal(validatePageShellAsset("/app.js", "\"use strict\";\nconsole.log(\"not the app entry\");", config), false);
 });
 
 test("page refresh prompt also handles server restart reconnects", () => {
@@ -449,6 +805,14 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(functionBody(appUpdateSource, "handlePublicPrStatusClick"), /await requestAppConfirmation\(publicPrMergeConfirmationMessage\(status\)/);
 });
 
+test("server support runtime receives current public build config provider for app-update status", () => {
+  const match = serverJs.match(/createServerSupportRuntimeService\(\{([\s\S]*?)\n\}\);/);
+  assert.ok(match, "createServerSupportRuntimeService call not found");
+  assert.match(match[1], /currentPublicBuildConfig\s*,/);
+  assert.match(serverSupportRuntimeServiceJs, /currentPublicBuildConfig:\s*dependencies\.currentPublicBuildConfig/);
+  assert.match(appMaintenanceServiceJs, /app_update_current_build_identity_empty/);
+});
+
 test("mobile shell action dialogs do not depend on native browser modals", () => {
   assert.match(indexHtml, /id="appNativeDialog"/);
   assert.match(indexHtml, /id="appNativeDialogInput"/);
@@ -528,6 +892,29 @@ test("version button opens an update panel with Public release status", () => {
   assert.match(appUpdateSource, /当前客户端 \$\{CLIENT_BUILD_ID\}/);
   assert.match(appUpdateSource, /appUpdateStatus"\)\.addEventListener\("click", openUpdatePanel\)/);
   assert.match(appUpdateSource, /updateActionButton\("apply-current"/);
+});
+
+test("updates modal full client version uses current artifact identity instead of classic cache fallback", () => {
+  const runtime = createAppUpdateRuntime({
+    state: {},
+    CLIENT_BUILD_ID: "0.1.11|codex-mobile-shell-v625-classic",
+  });
+  const text = runtime.fullClientBuildVersionText({
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-classic",
+    shellCacheName: "codex-mobile-shell-v625-classic",
+    classicShellCacheName: "codex-mobile-shell-v625-classic",
+    currentBuild: {
+      clientBuildId: "0.1.11|codex-mobile-shell-v625-current",
+      shellCacheName: "codex-mobile-shell-v625-current",
+      classicShellCacheName: "codex-mobile-shell-v625-classic",
+    },
+  });
+
+  assert.equal(
+    text,
+    "clientBuildId 0.1.11|codex-mobile-shell-v625-current · shellCacheName codex-mobile-shell-v625-current",
+  );
+  assert.doesNotMatch(text, /classic/);
 });
 
 test("README documents manual-start update restart requirement", () => {

@@ -43,6 +43,9 @@ const {
   normalizeHomeAiDeployLaneSummary,
 } = require("./services/task-cards/thread-task-card-deploy-lane-policy-service");
 const { createThreadTaskCardRuntimeService } = require("./services/task-cards/thread-task-card-runtime-service");
+const {
+  createRemoteManagedWorkspaceService,
+} = require("./services/remote-managed-workspaces/remote-managed-workspace-service");
 const { createThreadSideChatService } = require("./adapters/thread-side-chat-service");
 const {
   continuationGoalMigrationPlan,
@@ -472,6 +475,7 @@ const serverSupportRuntimeService = createServerSupportRuntimeService({
   publicReleaseRepository: PUBLIC_RELEASE_REPOSITORY,
   publicReleaseBranch: PUBLIC_RELEASE_BRANCH,
   publicReleaseCheckCacheMs: PUBLIC_RELEASE_CHECK_CACHE_MS,
+  currentPublicBuildConfig,
   shutdown,
 });
 const {
@@ -950,6 +954,23 @@ const {
   materializeThreadTaskCardDraftsForThread,
   prepareThreadTaskCardsToResult,
 } = threadTaskCardRuntimeService;
+const REMOTE_MANAGED_WORKSPACE_CENTRAL_SIMULATOR_ENABLED = /^(1|true|yes|on)$/i.test(String(
+  process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_CENTRAL_SIMULATOR || "",
+));
+const remoteManagedWorkspaceService = REMOTE_MANAGED_WORKSPACE_CENTRAL_SIMULATOR_ENABLED
+  ? createRemoteManagedWorkspaceService({
+    fs,
+    path,
+    crypto,
+    stateFile: process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_STATE_FILE
+      || path.join(RUNTIME_ROOT, "remote-managed-workspaces-simulator.json"),
+    enrollmentTokens: [
+      process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_TOKEN,
+      process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_ENROLLMENT_TOKEN,
+    ].filter(Boolean),
+    requireEnrollmentToken: true,
+  })
+  : null;
 const userBehaviorRepairCardService = createUserBehaviorRepairCardService({
   createThreadTaskCardsFromSourceThread,
   disabled: USER_BEHAVIOR_REPAIR_CARDS_DISABLED,
@@ -1949,6 +1970,8 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   readStateDbThread,
   readThreadListCachedFallback,
   readThreadListFallback,
+  remoteManagedWorkspaceCentralSimulator: REMOTE_MANAGED_WORKSPACE_CENTRAL_SIMULATOR_ENABLED,
+  remoteManagedWorkspaceService,
   rememberStartedThread,
   removeEventClient,
   requestAuthToken,

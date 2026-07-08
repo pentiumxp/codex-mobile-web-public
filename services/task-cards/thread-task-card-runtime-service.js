@@ -2,7 +2,10 @@
 
 const { createHomeAiAutonomousDeliveryReturnService } = require("./home-ai-autonomous-delivery-return-service");
 const { createHomeAiSecretRefService } = require("../runtime/home-ai-secret-ref-service");
-const { createTaskCardRuntimePolicyService } = require("./task-card-runtime-policy-service");
+const {
+  applyReasoningEffortFloor: defaultApplyReasoningEffortFloor,
+  createTaskCardRuntimePolicyService,
+} = require("./task-card-runtime-policy-service");
 const { createThreadTaskCardService } = require("./thread-task-card-service");
 const {
   isHomeAiDeployLaneThread,
@@ -10,6 +13,9 @@ const {
 const {
   classifyThreadPurpose,
 } = require("../at-loop/thread-task-card-loop-routing-service");
+const {
+  createWorkspaceMainThreadRoutingService,
+} = require("../runtime/workspace-main-thread-routing-service");
 const { createLoopTaskRuntimeService } = require("../at-loop/loop-task-runtime-service");
 const { createAtLoopRouteService } = require("../../server-routes/at-loop-route-service");
 const { createThreadTaskCardRouteService } = require("../../server-routes/thread-task-card-route-service");
@@ -29,6 +35,9 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     || createLoopTaskRuntimeService;
   const atLoopRouteServiceFactory = dependencies.atLoopRouteServiceFactory
     || createAtLoopRouteService;
+  const workspaceMainThreadRoutingService = createWorkspaceMainThreadRoutingService({
+    path: dependencies.path,
+  });
 
   const homeAiAutonomousDeliveryReturnService = homeAiAutonomousDeliveryReturnServiceFactory({
     baseUrl: dependencies.hermesPluginNotificationBaseUrl,
@@ -56,6 +65,85 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     return classification && classification.purpose === "worker_lane";
   }
 
+  function workerLifecycleRole(thread = {}, card = {}) {
+    const role = String(
+      thread && (thread.role || thread.threadRole || thread.thread_role || thread.taskCardRole || thread.task_card_role)
+        || card && card.target && card.target.role
+        || card && card.routeResolution && card.routeResolution.targetRole
+        || "",
+    ).trim().toLowerCase();
+    if (role === "home_ai_worker" || role === "plugin_worker") return role;
+    if (isWorkerLaneThread(thread)) return role || "plugin_worker";
+    return "";
+  }
+
+  function workerLifecyclePluginId(thread = {}, card = {}) {
+    return String(
+      thread && (thread.pluginId || thread.plugin_id)
+        || card && card.target && (card.target.pluginId || card.target.plugin_id)
+        || card && card.routeResolution && (card.routeResolution.pluginId || card.routeResolution.plugin_id)
+        || "",
+    ).trim();
+  }
+
+  function workerLifecycleCwd(thread = {}, card = {}) {
+    return String(
+      thread && (thread.cwd || thread.workspace || thread.targetWorkspace)
+        || card && card.target && (card.target.workspaceId || card.target.workspace || card.target.cwd)
+        || "",
+    ).trim();
+  }
+
+  async function recordWorkerLifecycleHeartbeat(event = {}, release = false) {
+    const card = event.card && typeof event.card === "object" ? event.card : {};
+    const heartbeat = event.heartbeat && typeof event.heartbeat === "object" ? event.heartbeat : {};
+    const targetThreadId = String(
+      event.targetThreadId
+        || heartbeat.targetThreadId
+        || card && card.target && card.target.threadId
+        || "",
+    ).trim();
+    if (!targetThreadId) return null;
+    const targetThread = readThreadTaskCardExecutionTargetSummary({ target: Object.assign({}, card.target || {}, { threadId: targetThreadId }) });
+    const role = workerLifecycleRole(targetThread, card);
+    if (!role || !isWorkerLaneThread(Object.assign({}, targetThread, { threadRole: role }))) return null;
+    if (!atLoopRuntimeService || typeof atLoopRuntimeService.threadLifecycle !== "function") {
+      return { ok: false, error: "worker_lifecycle_runtime_unavailable" };
+    }
+    const sourceThreadId = String(card && card.source && card.source.threadId || "").trim();
+    const taskCardId = String(event.taskCardId || heartbeat.taskCardId || card.id || "").trim();
+    const cwd = workerLifecycleCwd(targetThread, card);
+    const pluginId = workerLifecyclePluginId(targetThread, card);
+    const heartbeatResult = await atLoopRuntimeService.threadLifecycle({
+      action: "heartbeat",
+      role,
+      targetThreadId,
+      sourceThreadId,
+      workspaceCwd: cwd,
+      cwd,
+      pluginId,
+      taskCardId,
+      status: String(heartbeat.status || event.status || (release ? "completed" : "working") || "").trim(),
+      source: String(heartbeat.source || event.source || "").trim(),
+      turnId: String(heartbeat.turnId || event.turnId || event.execution && event.execution.turnId || "").trim(),
+      summary: String(heartbeat.summary || event.summary || "").trim(),
+    });
+    if (!release || !heartbeatResult || heartbeatResult.ok === false) return heartbeatResult;
+    const releaseResult = await atLoopRuntimeService.threadLifecycle({
+      action: "mark_available",
+      role,
+      targetThreadId,
+      sourceThreadId,
+      workspaceCwd: cwd,
+      cwd,
+      pluginId,
+      taskCardId,
+    });
+    return Object.assign({}, releaseResult || {}, {
+      heartbeat: heartbeatResult,
+    });
+  }
+
   function taskCardRoleText(...values) {
     return values
       .map((value) => String(value || "").trim().toLowerCase())
@@ -63,18 +151,102 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
       .join(" ");
   }
 
-  function isImplementationExecutionCard(card = {}, targetThread = {}) {
-    const routeKind = String(
+  function taskCardRouteKind(card = {}) {
+    return String(
       card.routeResolution && (card.routeResolution.routeKind || card.routeResolution.kind)
         || card.routeKind
         || "",
     ).trim().toLowerCase();
-    const workflowId = String(card.workflow && card.workflow.id || "").trim();
-    const roleText = taskCardRoleText(
+  }
+
+  function taskCardWorkflowId(card = {}) {
+    return String(card.workflow && card.workflow.id || "").trim();
+  }
+
+  function isAtLoopRoleSliceCard(card = {}) {
+    return taskCardRouteKind(card) === "at_loop_role_slice" || taskCardWorkflowId(card).startsWith("at-loop:");
+  }
+
+  function taskCardTargetRoleText(card = {}, targetThread = {}) {
+    return taskCardRoleText(
       card.target && card.target.role,
       card.routeResolution && card.routeResolution.targetRole,
       targetThread && (targetThread.threadRole || targetThread.thread_role || targetThread.role || targetThread.taskCardRole || targetThread.task_card_role),
     );
+  }
+
+  function targetThreadIdentityValue(thread = {}, target = {}, keyNames = []) {
+    for (const key of keyNames) {
+      const value = thread && thread[key] || target && target[key];
+      if (String(value || "").trim()) return String(value || "").trim();
+    }
+    return "";
+  }
+
+  function mergedTaskCardTargetThread(card = {}, targetThread = {}) {
+    const target = card && card.target && typeof card.target === "object" ? card.target : {};
+    const routeResolution = card && card.routeResolution && typeof card.routeResolution === "object" ? card.routeResolution : {};
+    const merged = Object.assign({}, targetThread || {});
+    merged.id = targetThreadIdentityValue(merged, target, ["id", "threadId", "thread_id"]);
+    merged.threadId = merged.id;
+    merged.title = targetThreadIdentityValue(merged, target, ["title", "name", "threadTitle", "thread_title"]);
+    merged.cwd = targetThreadIdentityValue(merged, target, [
+      "cwd",
+      "workspace",
+      "workspaceId",
+      "workspace_id",
+      "targetWorkspace",
+      "target_workspace",
+      "targetWorkspaceId",
+      "target_workspace_id",
+    ]);
+    const role = String(
+      merged.threadRole
+        || merged.thread_role
+        || merged.role
+        || merged.taskCardRole
+        || merged.task_card_role
+        || target.role
+        || routeResolution.targetRole
+        || "",
+    ).trim();
+    if (role) merged.threadRole = role;
+    return merged;
+  }
+
+  function targetMainSourceRuntimeRole(card = {}, targetThread = {}) {
+    const merged = mergedTaskCardTargetThread(card, targetThread);
+    if (!merged.id) return "";
+    const candidate = workspaceMainThreadRoutingService.mainCandidate(merged, {
+      cwd: merged.cwd,
+      role: merged.threadRole || merged.role || "",
+    });
+    return candidate && candidate.role || "";
+  }
+
+  function isLoopReadOnlyRoleExecutionCard(card = {}, targetThread = {}) {
+    if (!isAtLoopRoleSliceCard(card)) return false;
+    const roleText = taskCardTargetRoleText(card, targetThread);
+    if (/(^|[\s_-])(implementation|implementer|repair|deploy|deployment)([\s_-]|$)/.test(roleText)) return false;
+    return /(^|[\s_-])(product[\s_-]*audit|audit|requirements?|review|validation)([\s_-]|$)/.test(roleText);
+  }
+
+  function nonBlockingRuntimeSettings(inheritedRuntimeSettings, cwd) {
+    if (typeof dependencies.applyPermissionModeOverride === "function") {
+      return dependencies.applyPermissionModeOverride(inheritedRuntimeSettings, "full", cwd || null);
+    }
+    return Object.assign({}, inheritedRuntimeSettings || {}, {
+      approvalPolicy: "never",
+      sandboxPolicy: { type: "dangerFullAccess" },
+      sandboxMode: "danger-full-access",
+      permissionProfile: null,
+    });
+  }
+
+  function isImplementationExecutionCard(card = {}, targetThread = {}) {
+    const routeKind = taskCardRouteKind(card);
+    const workflowId = taskCardWorkflowId(card);
+    const roleText = taskCardTargetRoleText(card, targetThread);
     if (!/(^|[\s_-])(implementation|implementer|repair)([\s_-]|$)/.test(roleText)) return false;
     if (routeKind === "at_loop_role_slice" || workflowId.startsWith("at-loop:")) return true;
     return isWorkerLaneThread(targetThread);
@@ -142,6 +314,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
   });
   const {
     applyCodexFastServiceTier,
+    applyReasoningEffortFloor = defaultApplyReasoningEffortFloor,
     applyResumeRuntimeSettings,
     applyStartThreadRuntimeSettings,
     applyTurnRuntimeSettings,
@@ -153,6 +326,9 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
   const threadTaskCardService = threadTaskCardServiceFactory({
     storageFile: dependencies.threadTaskCardFile,
     returnThreadTaskCardScriptPath: dependencies.returnThreadTaskCardScriptPath,
+    onExecutionLeaseStarted: async (event) => recordWorkerLifecycleHeartbeat(event, false),
+    onExecutionHeartbeat: async (event) => recordWorkerLifecycleHeartbeat(event, false),
+    onExecutionLeaseCompleted: async (event) => recordWorkerLifecycleHeartbeat(event, true),
     onTerminalReturnCard: async (event) => {
       await recordAtLoopTerminalReturn(event);
       const externalEvent = Object.assign({}, event || {});
@@ -166,13 +342,18 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
       const targetIsDeployLane = isHomeAiDeployLaneThread(targetThread);
       const targetIsWorkerLane = isWorkerLaneThread(targetThread);
       const targetIsImplementationExecution = isImplementationExecutionCard(card, targetThread);
-      const targetUsesFullAccess = targetIsDeployLane || targetIsWorkerLane || targetIsImplementationExecution;
+      const targetIsLoopReadOnlyRoleExecution = isLoopReadOnlyRoleExecutionCard(card, targetThread);
+      const targetMainSourceRole = targetMainSourceRuntimeRole(card, targetThread);
+      const targetUsesFullAccess = targetIsDeployLane || targetIsWorkerLane || targetIsImplementationExecution || targetIsLoopReadOnlyRoleExecution;
       const baseRuntimeSettings = targetUsesFullAccess
-        ? dependencies.applyPermissionModeOverride(inheritedRuntimeSettings, "full", targetThread && targetThread.cwd || null)
+        ? nonBlockingRuntimeSettings(inheritedRuntimeSettings, targetThread && targetThread.cwd || null)
         : inheritedRuntimeSettings;
-      const runtimeSettings = requestedReasoningEffort
+      const requestedRuntimeSettings = requestedReasoningEffort
         ? Object.assign({}, baseRuntimeSettings, { reasoningEffort: requestedReasoningEffort })
         : baseRuntimeSettings;
+      const runtimeSettings = targetMainSourceRole
+        ? applyReasoningEffortFloor(requestedRuntimeSettings, "xhigh")
+        : requestedRuntimeSettings;
       try {
         await dependencies.codex.request("thread/resume", applyResumeRuntimeSettings({
           threadId: card.target.threadId,
@@ -205,6 +386,8 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
           deployLaneNoApproval: targetIsDeployLane,
           workerLaneFullAccess: targetIsWorkerLane,
           implementationFullAccess: targetIsImplementationExecution,
+          loopReadOnlyRoleNoApproval: targetIsLoopReadOnlyRoleExecution,
+          mainSourceReasoningFloor: targetMainSourceRole || "",
         },
       };
     },
@@ -326,10 +509,14 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     if (!dependencies.codex || typeof dependencies.codex.request !== "function") {
       throw new Error("at_loop_source_requirements_turn_unavailable");
     }
-    const runtimeSettings = typeof dependencies.resolveThreadRuntimeSettings === "function"
+    const inheritedRuntimeSettings = typeof dependencies.resolveThreadRuntimeSettings === "function"
       ? await dependencies.resolveThreadRuntimeSettings(threadId)
       : {};
     const cwd = String(sourceThread.cwd || sourceThread.workspace || sourceThread.targetWorkspace || "").trim();
+    const runtimeSettings = applyReasoningEffortFloor(
+      nonBlockingRuntimeSettings(inheritedRuntimeSettings, cwd || null),
+      "xhigh",
+    );
     try {
       await dependencies.codex.request("thread/resume", applyResumeRuntimeSettings({
         threadId,

@@ -273,8 +273,8 @@ test("loop runtime waits for source-thread requirements before implementation di
   assert.equal(returnedRequirements.status, "returned");
   assert.equal(returnedRequirements.returnStatus, "completed");
   assert.equal(afterRequirements.loop.sourceRequirementsStatus.readyForImplementation, true);
-  assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").title, "Xcode Loop Implement");
-  assert.equal(createdThreads.find((thread) => thread.id === "product_audit-created").title, "Xcode Loop Audit");
+  assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").title, "Xcode HomeAI Loop Implementation Lane");
+  assert.equal(createdThreads.find((thread) => thread.id === "product_audit-created").title, "Xcode HomeAI Loop Audit Lane");
   const implementation = first.loop.roleSlices.find((slice) => slice.role === "implementation");
   assert.equal(implementation.status, "pending");
   const dispatchedImplementation = afterRequirements.loop.roleSlices.find((slice) => slice.role === "implementation");
@@ -894,6 +894,48 @@ test("loop runtime routes product-audit missing-evidence blocks to repair", asyn
   assert.equal(repairSlice.status, "dispatched");
 });
 
+test("loop runtime closes product-audit returns whose structured verdict passed even when return status is blocked", async () => {
+  const { cards, runtime } = makeRuntime({ name: "audit-blocked-passed-verdict" });
+  const started = await startLoopWithSourceRequirements(runtime, {
+    sourceThreadId: "source-thread",
+    text: "@loop verify terminal passed audit",
+  });
+  assert.equal(started.loop.currentRole, "implementation");
+
+  const implementation = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_1",
+    status: "completed",
+    summary: "implementation done with validation and privacy evidence",
+    returnBody: [
+      "## Validation Packet",
+      "- focused validation passed",
+      "",
+      "## Privacy Packet",
+      "- privacy boundary confirmed",
+    ].join("\n"),
+  });
+  assert.equal(implementation.loop.currentRole, "product_audit");
+
+  const audit = await runtime.recordTerminalReturn({
+    taskCardId: "ttc_2",
+    status: "blocked",
+    auditVerdict: "passed",
+    summary: "audit passed with no remaining role work",
+  });
+
+  assert.equal(audit.ok, true);
+  assert.equal(audit.loop.status, "completed");
+  assert.equal(audit.loop.currentRole, "");
+  assert.equal(audit.loop.nextRoute, "closed");
+  assert.equal(audit.loop.waitingReturnCount, 0);
+  assert.equal(audit.loop.lastAuditVerdict, "passed");
+  assert.equal(cards.length, 2);
+  const auditSlice = audit.loop.roleSlices.find((slice) => slice.role === "product_audit");
+  assert.equal(auditSlice.status, "returned");
+  assert.equal(auditSlice.returnStatus, "blocked");
+  assert.equal(auditSlice.auditVerdict, "passed");
+});
+
 test("loop runtime normalizes blocked product-audit UX findings without explicit verdict to repair", async () => {
   const { cards, runtime } = makeRuntime({ name: "audit-blocked-ux-text-repair" });
   const started = await startLoopWithSourceRequirements(runtime, {
@@ -1011,6 +1053,86 @@ test("loop runtime marks malformed completed product-audit return with explicit 
   const auditSlice = audit.loop.roleSlices.find((slice) => slice.role === "product_audit");
   assert.equal(auditSlice.auditVerdict, "blocked_audit_verdict_missing");
   assert.equal(auditSlice.routing.auditVerdictNormalization, "completed_missing_structured_verdict");
+});
+
+test("loop status reconciles historical blocked_role_return after passed product audit", async () => {
+  const { runtime, storageFile } = makeRuntime({ name: "historical-blocked-role-return-passed-audit" });
+  const loopId = testLoopId({
+    sourceThreadId: "source-thread",
+    targetThreadId: "source-thread",
+    objective: "recover passed audit terminal state",
+  });
+  fs.writeFileSync(storageFile, `${JSON.stringify({ version: 1, loops: [{
+    loopId,
+    sourceThreadId: "source-thread",
+    targetThreadId: "",
+    requirementsThreadId: "source-thread",
+    implementationThreadId: "implementation-thread",
+    auditThreadId: "audit-thread",
+    domainAdapter: "generic",
+    objectiveSummary: "recover passed audit terminal state",
+    status: "blocked",
+    currentRole: "",
+    iteration: 2,
+    maxIterations: 3,
+    nextRoute: "blocked_role_return",
+    blockedReason: "product_audit_blocked",
+    sourceRequestId: `at-loop:${loopId}:source`,
+    requirementsLocal: true,
+    lastAuditVerdict: "passed",
+    auditPacket: {},
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+    roleSlices: [{
+      role: "requirements",
+      roleSliceId: `${loopId}:requirements:1`,
+      iteration: 1,
+      status: "returned",
+      returnStatus: "completed",
+      taskCardId: "",
+      targetThreadId: "source-thread",
+      targetPurpose: "workspace_implementation",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "implementation",
+      roleSliceId: `${loopId}:implementation:1`,
+      iteration: 1,
+      status: "returned",
+      returnStatus: "completed",
+      taskCardId: "ttc_impl",
+      targetThreadId: "implementation-thread",
+      targetPurpose: "workspace_implementation",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }, {
+      role: "product_audit",
+      roleSliceId: `${loopId}:product_audit:2`,
+      iteration: 2,
+      status: "returned",
+      returnStatus: "blocked",
+      auditVerdict: "passed",
+      taskCardId: "ttc_audit",
+      targetThreadId: "audit-thread",
+      targetPurpose: "audit_lane",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    }] }],
+  }, null, 2)}\n`, "utf8");
+
+  const status = runtime.status({ loopId });
+
+  assert.equal(status.ok, true);
+  assert.equal(status.loops[0].status, "completed");
+  assert.equal(status.loops[0].currentRole, "");
+  assert.equal(status.loops[0].nextRoute, "closed");
+  assert.equal(status.loops[0].waitingReturnCount, 0);
+  assert.equal(status.loops[0].lastAuditVerdict, "passed");
+  assert.equal(status.terminalLoopCount, 1);
+  const persisted = JSON.parse(fs.readFileSync(storageFile, "utf8"));
+  assert.equal(persisted.loops[0].status, "completed");
+  assert.equal(persisted.loops[0].nextRoute, "closed");
+  assert.equal(persisted.loops[0].roleSlices.find((slice) => slice.role === "product_audit").routing.terminalReconciliation, "passed_audit_blocked_role_return");
 });
 
 test("loop runtime recovers duplicate blocked after historical audit missing-evidence return", async () => {
@@ -2398,7 +2520,7 @@ test("loop thread lifecycle ensures and marks role lanes complete without title 
   });
   assert.equal(ensured.ok, true);
   assert.equal(ensured.thread.id, "implementation-created");
-  assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").title, "Movie Loop Implement");
+  assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").title, "Movie Loop Implementation Lane");
 
   const completed = await runtime.threadLifecycle({
     action: "mark_role_complete",
@@ -2441,8 +2563,9 @@ test("thread lifecycle ensures home ai worker lanes with idempotency and retirem
   assert.equal(ensured.ok, true);
   assert.equal(ensured.created, true);
   assert.equal(ensured.thread.threadRole, "home_ai_worker");
-  assert.equal(ensured.thread.workerPurpose, "implementation");
+  assert.equal(ensured.thread.workerPurpose, "worker_lane");
   assert.equal(createdThreads[0].threadRole, "home_ai_worker");
+  assert.equal(createdThreads[0].title, "Home AI Worker Lane");
 
   const duplicate = await runtime.threadLifecycle({
     action: "ensure",
@@ -2493,6 +2616,41 @@ test("thread lifecycle ensures home ai worker lanes with idempotency and retirem
   assert.equal(listed.threads.some((thread) => thread.id === "home-ai-task-intake"), false);
   assert.equal(listed.threads.some((thread) => thread.id === "home-ai-deploy"), false);
   assert.equal(listed.threads.some((thread) => thread.id === ensured.thread.id), false);
+
+  const genericListed = await runtime.threadLifecycle({
+    action: "list",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    includeIneligible: true,
+  });
+  const retiredGeneric = genericListed.threads.find((thread) => thread.id === ensured.thread.id);
+  assert.equal(retiredGeneric.deliverable, false);
+  assert.equal(retiredGeneric.deliverabilityReason, "lifecycle_retired");
+});
+
+test("thread lifecycle generic list rejects title-only worker lanes without lifecycle signal", async () => {
+  const cwd = "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web";
+  const { runtime } = makeRuntime({
+    name: "thread-lifecycle-title-only-worker-generic-list",
+    visibleThreads: [{
+      id: "codex-main",
+      title: "codex mobile 07-04",
+      cwd,
+    }, {
+      id: "title-only-worker",
+      title: "Codex Mobile Worker Lane A",
+      cwd,
+      status: "completed",
+    }],
+  });
+
+  const listed = await runtime.threadLifecycle({
+    action: "list",
+    cwd,
+    includeIneligible: true,
+  });
+  const titleOnly = listed.threads.find((thread) => thread.id === "title-only-worker");
+  assert.equal(titleOnly.deliverable, false);
+  assert.equal(titleOnly.deliverabilityReason, "role_signal_missing");
 });
 
 test("thread lifecycle worker exact target retirement does not mutate default lane", async () => {
@@ -2810,8 +2968,9 @@ test("thread lifecycle supports plugin worker lanes distinct from plugin loop an
   assert.equal(ensured.ok, true);
   assert.equal(ensured.created, true);
   assert.equal(ensured.thread.pluginId, "movie");
-  assert.equal(ensured.thread.workerPurpose, "review");
+  assert.equal(ensured.thread.workerPurpose, "worker_lane");
   assert.equal(createdThreads[0].threadRole, "plugin_worker");
+  assert.equal(createdThreads[0].title, "Movie Worker Lane");
 
   const duplicate = await runtime.threadLifecycle({
     action: "ensure",
@@ -2834,10 +2993,14 @@ test("thread lifecycle supports plugin worker lanes distinct from plugin loop an
     targetThreadId: ensured.thread.id,
     taskCardId: "ttc_plugin_worker",
     status: "working",
+    source: "unit-test",
+    turnId: "turn-plugin-worker",
     summary: "bounded progress",
   });
   assert.equal(heartbeat.ok, true);
   assert.equal(heartbeat.thread.heartbeat.taskCardId, "ttc_plugin_worker");
+  assert.equal(heartbeat.thread.heartbeat.source, "unit-test");
+  assert.equal(heartbeat.thread.heartbeat.turnId, "turn-plugin-worker");
   assert.equal(heartbeat.thread.heartbeat.summary, "bounded progress");
 
   const listed = await runtime.threadLifecycle({
@@ -2859,6 +3022,147 @@ test("thread lifecycle supports plugin worker lanes distinct from plugin loop an
   });
   assert.equal(retired.ok, true);
   assert.equal(retired.thread.deliverable, false);
+});
+
+test("thread lifecycle reuses canonical plugin worker lane across task purposes", async () => {
+  const cwd = "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web";
+  const { createdThreads, runtime } = makeRuntime({
+    name: "thread-lifecycle-plugin-worker-canonical-purpose",
+    visibleThreads: [{
+      id: "codex-main",
+      title: "codex mobile 07-04",
+      cwd,
+    }],
+  });
+
+  const implementation = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    sourceThreadId: "codex-main",
+    cwd,
+    purpose: "implementation",
+    requestId: "codex-worker-implementation",
+  });
+  assert.equal(implementation.ok, true);
+  assert.equal(implementation.created, true);
+  assert.equal(implementation.thread.title, "Codex Mobile Worker Lane");
+  assert.equal(implementation.thread.workerPurpose, "worker_lane");
+  assert.equal(createdThreads[0].title, "Codex Mobile Worker Lane");
+
+  const repair = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    sourceThreadId: "codex-main",
+    cwd,
+    purpose: "repair",
+    requestId: "codex-worker-repair",
+  });
+  assert.equal(repair.ok, true);
+  assert.equal(repair.created, false);
+  assert.equal(repair.thread.id, implementation.thread.id);
+  assert.equal(repair.thread.workerPurpose, "worker_lane");
+  assert.equal(createdThreads.length, 1);
+});
+
+test("thread lifecycle names worker lanes by workspace and plugin without duplicate titles", async () => {
+  const appCwd = "/Users/hermes-dev/HermesMobileDev/app";
+  const movieCwd = "/Users/hermes-dev/HermesMobileDev/Movie";
+  const codexCwd = "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web";
+  const { createdThreads, runtime } = makeRuntime({
+    name: "thread-lifecycle-worker-title-uniqueness",
+    visibleThreads: [{
+      id: "home-main",
+      title: "Home AI 07-05",
+      cwd: appCwd,
+    }, {
+      id: "movie-main",
+      title: "Home AI 07-05",
+      cwd: movieCwd,
+    }, {
+      id: "codex-main",
+      title: "codex mobile 07-04",
+      cwd: codexCwd,
+    }],
+  });
+
+  const home = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "home_ai_worker",
+    sourceThreadId: "home-main",
+    cwd: appCwd,
+    purpose: "implementation",
+    requestId: "home-worker",
+  });
+  const movie = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "movie",
+    sourceThreadId: "movie-main",
+    cwd: movieCwd,
+    purpose: "implementation",
+    requestId: "movie-worker",
+  });
+  const codex = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    sourceThreadId: "codex-main",
+    cwd: codexCwd,
+    purpose: "implementation",
+    requestId: "codex-worker",
+  });
+
+  assert.equal(home.ok, true);
+  assert.equal(movie.ok, true);
+  assert.equal(codex.ok, true);
+  assert.deepEqual(createdThreads.map((thread) => thread.title), [
+    "Home AI Worker Lane",
+    "Movie Worker Lane",
+    "Codex Mobile Worker Lane",
+  ]);
+  assert.equal(new Set(createdThreads.map((thread) => thread.title)).size, createdThreads.length);
+});
+
+test("loop role lane titles are workspace-stable and disambiguated", async () => {
+  const cwd = "/Users/hermes-dev/HermesMobileDev/Movie";
+  const { createdThreads, runtime } = makeRuntime({
+    name: "thread-lifecycle-loop-role-title-disambiguation",
+    visibleThreads: [{
+      id: "movie-main",
+      title: "Home AI 07-05",
+      cwd,
+    }, {
+      id: "old-audit",
+      title: "Movie Loop Audit Lane",
+      cwd: "/Users/hermes-dev/HermesMobileDev/Other",
+      threadRole: "product_audit",
+    }, {
+      id: "old-repair",
+      title: "Movie Loop Repair Lane",
+      cwd: "/Users/hermes-dev/HermesMobileDev/Other",
+      threadRole: "repair",
+    }],
+  });
+
+  const started = await startLoopWithSourceRequirements(runtime, {
+    sourceThreadId: "movie-main",
+    text: "@loop repair movie lane titles",
+    implementationWorkspaceCwd: cwd,
+  });
+  assert.equal(started.ok, true);
+  assert.equal(createdThreads.find((thread) => thread.id === "implementation-created").title, "Movie Loop Implementation Lane");
+  assert.equal(createdThreads.find((thread) => thread.id === "product_audit-created").title, "Movie Loop Audit Lane A");
+
+  const repaired = await runtime.threadLifecycle({
+    action: "ensure",
+    loopId: started.loop.loopId,
+    role: "repair",
+    excludedTargetThreadIds: ["implementation-created"],
+  });
+  assert.equal(repaired.ok, true);
+  assert.equal(createdThreads.find((thread) => thread.id === "repair-created").title, "Movie Loop Repair Lane A");
 });
 
 test("loop status classifies rejected pending slices as terminal residuals, not active blockers", () => {

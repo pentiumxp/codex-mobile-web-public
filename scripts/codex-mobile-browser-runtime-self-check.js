@@ -894,6 +894,8 @@ function boundedDiagnosticSamples(samples = []) {
       clientSubmissionCount: Math.max(0, Math.trunc(Number(sample.clientSubmissionCount || 0))),
       latestTurnUserTextDuplicateCount: Math.max(0, Math.trunc(Number(sample.latestTurnUserTextDuplicateCount || 0))),
       allUserEventDuplicateCount: Math.max(0, Math.trunc(Number(sample.allUserEventDuplicateCount || 0))),
+      pluginRefreshBannerSeededForThreadEntry: sample.pluginRefreshBannerSeededForThreadEntry === true,
+      pluginRefreshBannerVisibleAfterThreadEntry: sample.pluginRefreshBannerVisibleAfterThreadEntry === true,
       latestTurnUserNodeDetails: Array.isArray(sample.latestTurnUserNodeDetails) ? sample.latestTurnUserNodeDetails.slice(0, 6) : [],
       expectedTurnShapes: (Array.isArray(sample.expectedTurnShapes) ? sample.expectedTurnShapes : []).slice(-3).map(diagnosticTurnShape),
       domTurnShapes: (Array.isArray(sample.domTurnShapes) ? sample.domTurnShapes : []).slice(-3).map(diagnosticTurnShape),
@@ -1253,23 +1255,90 @@ function browserInitScript(key, initialThreadId = "") {
 
 function startupProbeExpression(input = {}) {
   const expectedClientBuildId = String(input.clientBuildId || "").slice(0, 120);
+  const expectedShellCacheName = String(input.shellCacheName || "").slice(0, 120);
+  const expectedClassicShellCacheName = String(input.classicShellCacheName || "").slice(0, 120);
   return `
-    (() => {
+    (async () => {
       const visible = (node) => {
         if (!node || typeof node.getBoundingClientRect !== "function") return false;
         const style = typeof getComputedStyle === "function" ? getComputedStyle(node) : {};
         const rect = node.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.height > 0 && rect.width > 0;
       };
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
       let clientBuildId = "";
       try {
         clientBuildId = typeof CLIENT_BUILD_ID === "string" ? CLIENT_BUILD_ID : "";
       } catch (_) {}
+      const shellManifest = window.CODEX_MOBILE_SHELL_MANIFEST || {};
+      const appPreviewStatus = window.__CODEX_MOBILE_VITE_APP_PREVIEW__ || {};
+      const runtimeClientBuildUsesClassicCache = Boolean(${JSON.stringify(expectedClassicShellCacheName)} && clientBuildId.includes(${JSON.stringify(expectedClassicShellCacheName)}));
+      let updateStatusCurrentBuildIdentityPresent = false;
+      let updateStatusCurrentBuildIssueCodes = [];
+      let updateStatusCurrentClientBuildMatches = false;
+      let updateStatusCurrentShellCacheMatches = false;
+      let updateFullClientVersionPresent = false;
+      let updateFullClientVersionMatches = false;
+      let updateFullClientVersionUsesClassicCache = false;
+      let updateFullClientVersionErrorCode = "";
+      try {
+        const settingsRuntime = window.CodexSettingsRuntime || null;
+        if (settingsRuntime && typeof settingsRuntime.refreshAppUpdateStatus === "function") {
+          const status = await settingsRuntime.refreshAppUpdateStatus({ force: true, silent: true });
+          const currentBuild = status && status.currentBuild && typeof status.currentBuild === "object"
+            ? status.currentBuild
+            : {};
+          const statusClientBuildId = String(currentBuild.clientBuildId || status && status.clientBuildId || "");
+          const statusShellCacheName = String(currentBuild.shellCacheName || status && status.shellCacheName || "");
+          const classicShellCacheName = String(currentBuild.classicShellCacheName || status && status.classicShellCacheName || "");
+          const statusIssueCodes = new Set();
+          for (const values of [currentBuild.issueCodes, status && status.currentBuildIssueCodes, status && status.issueCodes]) {
+            if (!Array.isArray(values)) continue;
+            values.forEach((value) => {
+              const code = String(value || "").replace(/[^a-z0-9_.:-]+/gi, "_").slice(0, 80);
+              if (code) statusIssueCodes.add(code);
+            });
+          }
+          updateStatusCurrentBuildIdentityPresent = Boolean(statusClientBuildId && statusShellCacheName);
+          updateStatusCurrentBuildIssueCodes = Array.from(statusIssueCodes).slice(0, 8);
+          updateStatusCurrentClientBuildMatches = ${JSON.stringify(expectedClientBuildId)}
+            ? statusClientBuildId === ${JSON.stringify(expectedClientBuildId)}
+            : Boolean(statusClientBuildId);
+          updateStatusCurrentShellCacheMatches = ${JSON.stringify(expectedShellCacheName)}
+            ? statusShellCacheName === ${JSON.stringify(expectedShellCacheName)}
+            : Boolean(statusShellCacheName);
+          if (window.state && typeof window.state === "object") window.state.updatePanelOpen = true;
+          if (typeof settingsRuntime.renderUpdatePanel === "function") settingsRuntime.renderUpdatePanel();
+          await wait(0);
+          const versionNode = document.querySelector(".update-version-card .update-row-meta");
+          const versionText = String(versionNode && versionNode.textContent || "");
+          updateFullClientVersionPresent = Boolean(versionText);
+          updateFullClientVersionMatches = ${JSON.stringify(expectedClientBuildId)}
+            ? versionText.includes(${JSON.stringify(expectedClientBuildId)})
+            : Boolean(versionText);
+          updateFullClientVersionUsesClassicCache = Boolean((classicShellCacheName || ${JSON.stringify(expectedClassicShellCacheName)}) && versionText.includes(classicShellCacheName || ${JSON.stringify(expectedClassicShellCacheName)}));
+          if (window.state && typeof window.state === "object") window.state.updatePanelOpen = false;
+          if (typeof settingsRuntime.renderUpdatePanel === "function") settingsRuntime.renderUpdatePanel();
+        } else {
+          updateFullClientVersionErrorCode = "settings_runtime_unavailable";
+        }
+      } catch (err) {
+        updateFullClientVersionErrorCode = String(err && err.message || "update_version_probe_failed").slice(0, 160);
+      }
       const app = document.getElementById("app");
       const login = document.getElementById("loginPanel");
       const bootRecovery = document.getElementById("bootRecovery");
       const hardRefreshButton = document.getElementById("hardRefreshButton");
       const pageRefreshPrompt = document.getElementById("pageRefreshPrompt");
+      const pluginRefreshPending = document.querySelector(".plugin-refresh-pending");
+      const connectionStateText = String(document.getElementById("connectionState") && document.getElementById("connectionState").textContent || "");
+      const pluginRefreshBannerVisibleAfterBuildSettled = Boolean(
+        ${JSON.stringify(expectedClientBuildId)}
+        && clientBuildId === ${JSON.stringify(expectedClientBuildId)}
+        && updateStatusCurrentClientBuildMatches
+        && updateStatusCurrentShellCacheMatches
+        && (visible(pluginRefreshPending) || /Refreshing plugin page/i.test(connectionStateText))
+      );
       const refreshFunctions = {
         refreshPageForNewBuild: typeof window.refreshPageForNewBuild === "function",
         clearAllShellCaches: typeof window.clearAllShellCaches === "function",
@@ -1298,6 +1367,9 @@ function startupProbeExpression(input = {}) {
         renderKeys: 0,
         clientBuildPresent: Boolean(clientBuildId),
         clientBuildMatches: ${JSON.stringify(expectedClientBuildId)} ? clientBuildId === ${JSON.stringify(expectedClientBuildId)} : Boolean(clientBuildId),
+        shellCacheMatches: ${JSON.stringify(expectedShellCacheName)} ? String(shellManifest.shellCacheName || "") === ${JSON.stringify(expectedShellCacheName)} : Boolean(shellManifest.shellCacheName),
+        appStartPending: appPreviewStatus.appStartPending === true,
+        runtimeClientBuildUsesClassicCache,
         composerRuntimeReady: Boolean(window.CodexComposerRuntime && typeof window.CodexComposerRuntime.createComposerRuntime === "function"),
         threadListRuntimeReady: Boolean(window.CodexThreadListRuntime && typeof window.CodexThreadListRuntime.createThreadListRuntime === "function"),
         threadTileRuntimeReady: Boolean(window.CodexThreadTileRuntime && typeof window.CodexThreadTileRuntime.createThreadTileRuntime === "function"),
@@ -1311,6 +1383,15 @@ function startupProbeExpression(input = {}) {
         shellRefreshResetServiceWorkerReady: refreshFunctions.resetPageShellServiceWorker,
         shellRefreshServiceWorkerCapable: Boolean(window.navigator && window.navigator.serviceWorker),
         shellRefreshCachesCapable: Boolean(window.caches),
+        updateStatusCurrentBuildIdentityPresent,
+        updateStatusCurrentBuildIssueCodes,
+        updateStatusCurrentClientBuildMatches,
+        updateStatusCurrentShellCacheMatches,
+        updateFullClientVersionPresent,
+        updateFullClientVersionMatches,
+        updateFullClientVersionUsesClassicCache,
+        updateFullClientVersionErrorCode,
+        pluginRefreshBannerVisibleAfterBuildSettled,
       };
     })();
   `;
@@ -1697,9 +1778,83 @@ function analyzeVitePreviewProbe(sample = {}, runtimeSignals = {}) {
   };
 }
 
+function clientVersionSwitchConfirmed(sample = {}) {
+  return Boolean(
+    sample
+    && (clientVersionSwitchProbeDeferred(sample) || (
+      sample.updateStatusCurrentBuildIdentityPresent !== false
+      && sample.updateStatusCurrentClientBuildMatches === true
+      && sample.updateStatusCurrentShellCacheMatches === true
+      && sample.updateFullClientVersionPresent === true
+      && sample.updateFullClientVersionMatches === true
+      && sample.updateFullClientVersionUsesClassicCache !== true
+      && sample.runtimeClientBuildUsesClassicCache !== true
+      && sample.pluginRefreshBannerVisibleAfterBuildSettled !== true
+    ))
+  );
+}
+
+function clientVersionSwitchProbeDeferred(sample = {}) {
+  return Boolean(
+    sample
+    && sample.updateFullClientVersionErrorCode === "settings_runtime_unavailable"
+    && sample.appStartPending === true
+    && sample.clientBuildMatches === true
+    && sample.shellCacheMatches === true
+    && sample.runtimeClientBuildUsesClassicCache !== true
+    && sample.pluginRefreshBannerVisibleAfterBuildSettled !== true
+  );
+}
+
+function hasClientVersionSwitchProbe(sample = {}) {
+  return Boolean(sample && (
+    Object.prototype.hasOwnProperty.call(sample, "updateStatusCurrentBuildIdentityPresent")
+    || Object.prototype.hasOwnProperty.call(sample, "updateStatusCurrentBuildIssueCodes")
+    || Object.prototype.hasOwnProperty.call(sample, "updateStatusCurrentClientBuildMatches")
+    || Object.prototype.hasOwnProperty.call(sample, "updateStatusCurrentShellCacheMatches")
+    || Object.prototype.hasOwnProperty.call(sample, "updateFullClientVersionPresent")
+    || Object.prototype.hasOwnProperty.call(sample, "updateFullClientVersionMatches")
+    || Object.prototype.hasOwnProperty.call(sample, "updateFullClientVersionUsesClassicCache")
+    || Object.prototype.hasOwnProperty.call(sample, "updateFullClientVersionErrorCode")
+    || Object.prototype.hasOwnProperty.call(sample, "runtimeClientBuildUsesClassicCache")
+    || Object.prototype.hasOwnProperty.call(sample, "pluginRefreshBannerVisibleAfterBuildSettled")
+  ));
+}
+
+function clientVersionSwitchIssueDescriptors(sample = {}) {
+  const issues = [];
+  const issueCodes = Array.isArray(sample && sample.updateStatusCurrentBuildIssueCodes)
+    ? sample.updateStatusCurrentBuildIssueCodes
+    : [];
+  const reason = boundedToken(issueCodes[0] || sample.updateFullClientVersionErrorCode || "", "");
+  if (sample && sample.updateStatusCurrentBuildIdentityPresent === false && !clientVersionSwitchProbeDeferred(sample)) {
+    issues.push({
+      severity: "H2",
+      code: "app_update_current_build_identity_empty",
+      statusClientBuildMatches: sample.updateStatusCurrentClientBuildMatches === true,
+      statusShellCacheMatches: sample.updateStatusCurrentShellCacheMatches === true,
+      reason,
+    });
+  }
+  if (sample && sample.runtimeClientBuildUsesClassicCache === true) {
+    issues.push({
+      severity: "H2",
+      code: "client_runtime_stuck_on_classic_cache_identity",
+    });
+  }
+  if (sample && sample.pluginRefreshBannerVisibleAfterBuildSettled === true) {
+    issues.push({
+      severity: "H2",
+      code: "plugin_refresh_banner_stuck_after_build_settled",
+    });
+  }
+  return issues;
+}
+
 function viteAppPreviewProbeExpression(input = {}) {
   const expectedClientBuildId = String(input.clientBuildId || "");
   const expectedShellCacheName = String(input.shellCacheName || "");
+  const expectedClassicShellCacheName = String(input.classicShellCacheName || "");
   const expectEmbed = input.expectEmbed === true;
   const expectPluginSession = input.expectPluginSession === true;
   const expectRoot = input.expectRoot === true;
@@ -1904,6 +2059,69 @@ function viteAppPreviewProbeExpression(input = {}) {
         } catch (_) {}
         return result;
       })();
+      const currentClientBuildId = String(window.CLIENT_BUILD_ID || "");
+      const runtimeClientBuildUsesClassicCache = Boolean(${JSON.stringify(expectedClassicShellCacheName)} && currentClientBuildId.includes(${JSON.stringify(expectedClassicShellCacheName)}));
+      let updateStatusCurrentBuildIdentityPresent = false;
+      let updateStatusCurrentBuildIssueCodes = [];
+      let updateStatusCurrentClientBuildMatches = false;
+      let updateStatusCurrentShellCacheMatches = false;
+      let updateFullClientVersionPresent = false;
+      let updateFullClientVersionMatches = false;
+      let updateFullClientVersionUsesClassicCache = false;
+      let updateFullClientVersionErrorCode = "";
+      try {
+        const settingsRuntime = window.CodexSettingsRuntime || null;
+        if (settingsRuntime && typeof settingsRuntime.refreshAppUpdateStatus === "function") {
+          const appUpdateStatus = await settingsRuntime.refreshAppUpdateStatus({ force: true, silent: true });
+          const currentBuild = appUpdateStatus && appUpdateStatus.currentBuild && typeof appUpdateStatus.currentBuild === "object"
+            ? appUpdateStatus.currentBuild
+            : {};
+          const statusClientBuildId = String(currentBuild.clientBuildId || appUpdateStatus && appUpdateStatus.clientBuildId || "");
+          const statusShellCacheName = String(currentBuild.shellCacheName || appUpdateStatus && appUpdateStatus.shellCacheName || "");
+          const classicShellCacheName = String(currentBuild.classicShellCacheName || appUpdateStatus && appUpdateStatus.classicShellCacheName || "");
+          const statusIssueCodes = new Set();
+          for (const values of [currentBuild.issueCodes, appUpdateStatus && appUpdateStatus.currentBuildIssueCodes, appUpdateStatus && appUpdateStatus.issueCodes]) {
+            if (!Array.isArray(values)) continue;
+            values.forEach((value) => {
+              const code = String(value || "").replace(/[^a-z0-9_.:-]+/gi, "_").slice(0, 80);
+              if (code) statusIssueCodes.add(code);
+            });
+          }
+          updateStatusCurrentBuildIdentityPresent = Boolean(statusClientBuildId && statusShellCacheName);
+          updateStatusCurrentBuildIssueCodes = Array.from(statusIssueCodes).slice(0, 8);
+          updateStatusCurrentClientBuildMatches = ${JSON.stringify(expectedClientBuildId)}
+            ? statusClientBuildId === ${JSON.stringify(expectedClientBuildId)}
+            : Boolean(statusClientBuildId);
+          updateStatusCurrentShellCacheMatches = ${JSON.stringify(expectedShellCacheName)}
+            ? statusShellCacheName === ${JSON.stringify(expectedShellCacheName)}
+            : Boolean(statusShellCacheName);
+          if (window.state && typeof window.state === "object") window.state.updatePanelOpen = true;
+          if (typeof settingsRuntime.renderUpdatePanel === "function") settingsRuntime.renderUpdatePanel();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const versionNode = document.querySelector(".update-version-card .update-row-meta");
+          const versionText = String(versionNode && versionNode.textContent || "");
+          updateFullClientVersionPresent = Boolean(versionText);
+          updateFullClientVersionMatches = ${JSON.stringify(expectedClientBuildId)}
+            ? versionText.includes(${JSON.stringify(expectedClientBuildId)})
+            : Boolean(versionText);
+          updateFullClientVersionUsesClassicCache = Boolean((classicShellCacheName || ${JSON.stringify(expectedClassicShellCacheName)}) && versionText.includes(classicShellCacheName || ${JSON.stringify(expectedClassicShellCacheName)}));
+          if (window.state && typeof window.state === "object") window.state.updatePanelOpen = false;
+          if (typeof settingsRuntime.renderUpdatePanel === "function") settingsRuntime.renderUpdatePanel();
+        } else {
+          updateFullClientVersionErrorCode = "settings_runtime_unavailable";
+        }
+      } catch (err) {
+        updateFullClientVersionErrorCode = String(err && err.message || "update_version_probe_failed").slice(0, 160);
+      }
+      const pluginRefreshPending = document.querySelector(".plugin-refresh-pending");
+      const connectionStateText = String(document.getElementById("connectionState") && document.getElementById("connectionState").textContent || "");
+      const pluginRefreshBannerVisibleAfterBuildSettled = Boolean(
+        ${JSON.stringify(expectedClientBuildId)}
+        && currentClientBuildId === ${JSON.stringify(expectedClientBuildId)}
+        && updateStatusCurrentClientBuildMatches
+        && updateStatusCurrentShellCacheMatches
+        && (visible(pluginRefreshPending) || /Refreshing plugin page/i.test(connectionStateText))
+      );
       return {
         label: "vite-app-preview",
         probeKind: "vite-app-preview",
@@ -2015,8 +2233,18 @@ function viteAppPreviewProbeExpression(input = {}) {
         pluginAppPreviewPathPreserved: window.location.pathname === "/vite-shell/app-preview.html",
         pluginStartupLoadingCleared: state.pluginStartupLoading === false,
         clientBuildPresent: Boolean(window.CLIENT_BUILD_ID),
-        clientBuildMatches: ${JSON.stringify(expectedClientBuildId)} ? window.CLIENT_BUILD_ID === ${JSON.stringify(expectedClientBuildId)} : Boolean(window.CLIENT_BUILD_ID),
+        clientBuildMatches: ${JSON.stringify(expectedClientBuildId)} ? currentClientBuildId === ${JSON.stringify(expectedClientBuildId)} : Boolean(currentClientBuildId),
+        runtimeClientBuildUsesClassicCache,
         shellCacheMatches: ${JSON.stringify(expectedShellCacheName)} ? String(shellManifest.shellCacheName || "") === ${JSON.stringify(expectedShellCacheName)} : Boolean(shellManifest.shellCacheName),
+        updateStatusCurrentBuildIdentityPresent,
+        updateStatusCurrentBuildIssueCodes,
+        updateStatusCurrentClientBuildMatches,
+        updateStatusCurrentShellCacheMatches,
+        updateFullClientVersionPresent,
+        updateFullClientVersionMatches,
+        updateFullClientVersionUsesClassicCache,
+        updateFullClientVersionErrorCode,
+        pluginRefreshBannerVisibleAfterBuildSettled,
         appVisible: visible(app),
         loginVisible: visible(login),
         bootRecoveryVisible: visible(bootRecovery),
@@ -2113,6 +2341,21 @@ function analyzeViteAppPreviewProbe(sample = {}, runtimeSignals = {}, options = 
   }
   if (sample && sample.clientBuildMatches !== true) append("vite_app_preview_client_build_mismatch");
   if (sample && sample.shellCacheMatches !== true) append("vite_app_preview_shell_cache_mismatch");
+  for (const issue of clientVersionSwitchIssueDescriptors(sample)) {
+    const { code, severity, ...extra } = issue;
+    append(code, severity, extra);
+  }
+  if (sample && hasClientVersionSwitchProbe(sample) && !clientVersionSwitchConfirmed(sample)) append("client_version_switch_not_confirmed", "H2", {
+    statusIdentityPresent: sample.updateStatusCurrentBuildIdentityPresent === true,
+    statusClientBuildMatches: sample.updateStatusCurrentClientBuildMatches === true,
+    statusShellCacheMatches: sample.updateStatusCurrentShellCacheMatches === true,
+    fullVersionPresent: sample.updateFullClientVersionPresent === true,
+    fullVersionMatches: sample.updateFullClientVersionMatches === true,
+    fullVersionUsesClassicCache: sample.updateFullClientVersionUsesClassicCache === true,
+    runtimeUsesClassicCache: sample.runtimeClientBuildUsesClassicCache === true,
+    refreshBannerStuck: sample.pluginRefreshBannerVisibleAfterBuildSettled === true,
+    reason: boundedToken(sample.updateFullClientVersionErrorCode, ""),
+  });
   const expectEmbed = options.expectEmbed === true || (sample && sample.embedExpected === true);
   const expectPluginSession = options.expectPluginSession === true || (sample && sample.pluginSessionExpected === true);
   const expectRoot = options.expectRoot === true || (sample && sample.rootPreviewExpected === true);
@@ -2305,12 +2548,37 @@ function threadListStressProbeExpression(label = "thread-list-stress", rounds = 
   `;
 }
 
-function openThreadExpression(threadId) {
+function openThreadExpression(threadId, input = {}) {
+  const expectedClientBuildId = String(input.clientBuildId || "");
   return `
     (async () => {
       const id = ${JSON.stringify(threadId)};
       try { localStorage.setItem("codexMobileCurrentThreadId", id); } catch (_) {}
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const visible = (node) => {
+        if (!node || typeof node.getBoundingClientRect !== "function") return false;
+        const style = typeof getComputedStyle === "function" ? getComputedStyle(node) : {};
+        const rect = node.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.height > 0 && rect.width > 0;
+      };
+      const refreshBannerVisible = () => {
+        const pluginRefreshPending = document.querySelector(".plugin-refresh-pending");
+        const connectionText = String(document.getElementById("connectionState") && document.getElementById("connectionState").textContent || "");
+        return Boolean(visible(pluginRefreshPending) || /Refreshing plugin page/i.test(connectionText));
+      };
+      const seedRefreshNotice = () => {
+        const expectedBuild = ${JSON.stringify(expectedClientBuildId)};
+        const currentBuild = String(window.CLIENT_BUILD_ID || "");
+        if (!expectedBuild || currentBuild !== expectedBuild) return false;
+        const sourceState = typeof state !== "undefined" ? state : window.state;
+        if (!sourceState || typeof sourceState !== "object") return false;
+        sourceState.pluginRefreshPendingReason = "server_build_changed";
+        sourceState.pluginRefreshPendingNotice = "Refreshing plugin page for a new Mobile Web build...";
+        sourceState.pluginRefreshRequestReason = "server_build_changed";
+        sourceState.pluginRefreshRequestSignature = "self-check-thread-entry-seed";
+        return true;
+      };
+      const seededThreadEntryRefreshBanner = seedRefreshNotice();
       const confirmedOpen = () => {
         try {
           const sourceState = typeof state !== "undefined" ? state : window.state;
@@ -2335,20 +2603,28 @@ function openThreadExpression(threadId) {
         }
         return false;
       };
-      if (clickCard() && await waitForConfirmedOpen()) return { ok: true, method: "thread-card" };
+      const finish = async (ok, method) => {
+        await wait(0);
+        window.__codexSelfCheckThreadEntryRefreshBanner = {
+          seeded: seededThreadEntryRefreshBanner,
+          visibleAfterOpen: Boolean(seededThreadEntryRefreshBanner && refreshBannerVisible()),
+        };
+        return { ok, method };
+      };
+      if (clickCard() && await waitForConfirmedOpen()) return finish(true, "thread-card");
       if (typeof window.loadThread === "function") {
         try {
           await window.loadThread(id, { source: "browser-runtime-self-check" });
-          return { ok: true, method: "loadThread" };
+          return finish(true, "loadThread");
         } catch (_) {
-          return { ok: false, method: "loadThread-failed" };
+          return finish(false, "loadThread-failed");
         }
       }
       for (let index = 0; index < 20; index += 1) {
         await wait(100);
-        if (clickCard() && await waitForConfirmedOpen()) return { ok: true, method: "thread-card-delayed" };
+        if (clickCard() && await waitForConfirmedOpen()) return finish(true, "thread-card-delayed");
       }
-      return { ok: false, method: "unavailable" };
+      return finish(false, "unavailable");
     })();
   `;
 }
@@ -2706,6 +2982,10 @@ function snapshotExpression(input = {}) {
       const turnTimerDetail = turnTimer ? turnTimer.querySelector(".turn-timer-detail") : null;
       const connectionStateKind = safeStatusKind(connectionState && connectionState.textContent);
       const turnTimerDetailKind = safeStatusKind(turnTimerDetail && turnTimerDetail.textContent);
+      const threadEntryRefreshBanner = window.__codexSelfCheckThreadEntryRefreshBanner
+        && typeof window.__codexSelfCheckThreadEntryRefreshBanner === "object"
+        ? window.__codexSelfCheckThreadEntryRefreshBanner
+        : {};
       const currentLiveTurnValue = (() => {
         try {
           if (typeof currentLiveTurn === "function") return currentLiveTurn();
@@ -2770,6 +3050,8 @@ function snapshotExpression(input = {}) {
         latestTurnMatchesTarget: latestMatches,
         expectedLatestTurnHash,
         connectionStateKind,
+        pluginRefreshBannerSeededForThreadEntry: threadEntryRefreshBanner.seeded === true,
+        pluginRefreshBannerVisibleAfterThreadEntry: threadEntryRefreshBanner.visibleAfterOpen === true,
         turnTimerVisible: Boolean(turnTimer && turnTimer.classList && turnTimer.classList.contains("visible")),
         turnTimerActive: Boolean(turnTimer && turnTimer.classList && turnTimer.classList.contains("active")),
         turnTimerSettled: Boolean(turnTimer && turnTimer.classList && turnTimer.classList.contains("settled")),
@@ -2988,6 +3270,28 @@ function applyStartupGateIssues(report, startupSample = {}, staticShell = {}) {
       surface: "browser-runtime",
     });
   }
+  for (const issue of clientVersionSwitchIssueDescriptors(startupSample)) {
+    appendBrowserIssue(report, {
+      surface: "browser-runtime",
+      ...issue,
+    });
+  }
+  if (startupSample && hasClientVersionSwitchProbe(startupSample) && !clientVersionSwitchConfirmed(startupSample)) {
+    appendBrowserIssue(report, {
+      severity: "H2",
+      code: "client_version_switch_not_confirmed",
+      surface: "browser-runtime",
+      statusIdentityPresent: startupSample.updateStatusCurrentBuildIdentityPresent === true,
+      statusClientBuildMatches: startupSample.updateStatusCurrentClientBuildMatches === true,
+      statusShellCacheMatches: startupSample.updateStatusCurrentShellCacheMatches === true,
+      fullVersionPresent: startupSample.updateFullClientVersionPresent === true,
+      fullVersionMatches: startupSample.updateFullClientVersionMatches === true,
+      fullVersionUsesClassicCache: startupSample.updateFullClientVersionUsesClassicCache === true,
+      runtimeUsesClassicCache: startupSample.runtimeClientBuildUsesClassicCache === true,
+      refreshBannerStuck: startupSample.pluginRefreshBannerVisibleAfterBuildSettled === true,
+      reason: boundedToken(startupSample.updateFullClientVersionErrorCode, ""),
+    });
+  }
   const runtimeReady = startupSample
     && startupSample.composerRuntimeReady === true
     && startupSample.threadListRuntimeReady === true
@@ -3064,6 +3368,7 @@ async function run(options = parseArgs(), deps = {}) {
       version: String(config && config.version || "").slice(0, 40),
       clientBuildId: String(config && config.clientBuildId || "").slice(0, 120),
       shellCacheName: String(config && config.shellCacheName || "").slice(0, 120),
+      classicShellCacheName: String(config && config.classicShellCacheName || "").slice(0, 120),
       defaultShellMode: String(config && config.defaultShellMode || "").slice(0, 40),
       authRequired: config && config.authRequired === true,
     },
@@ -3278,7 +3583,7 @@ async function run(options = parseArgs(), deps = {}) {
 
       for (let round = 0; round < options.rounds; round += 1) {
         for (const entry of threadPlan) {
-          await evaluate(cdp, openThreadExpression(entry.id), options.timeoutMs).catch(() => null);
+          await evaluate(cdp, openThreadExpression(entry.id, report.publicConfig), options.timeoutMs).catch(() => null);
           let snapshotPlan = await refreshThreadPlanEntry(options, key, entry);
           for (const delayMs of options.sampleDelaysMs) {
             await sleep(delayMs);
@@ -3315,7 +3620,7 @@ async function run(options = parseArgs(), deps = {}) {
         : null) || threadPlan[0];
       if (submitTarget) {
         report.submitExercise.targetThreadHash = submitTarget.threadHash;
-        await evaluate(cdp, openThreadExpression(submitTarget.id), options.timeoutMs).catch(() => null);
+        await evaluate(cdp, openThreadExpression(submitTarget.id, report.publicConfig), options.timeoutMs).catch(() => null);
         await sleep(500);
         const submitPrePlan = await refreshThreadPlanEntry(options, key, submitTarget);
         samples.push(await evaluate(cdp, snapshotExpression(snapshotInputForPlanEntry(submitPrePlan, {
@@ -3522,6 +3827,7 @@ module.exports = {
   snapshotInputForPlanEntry,
   snapshotExpression,
   startupProbeExpression,
+  openThreadExpression,
   submitComposerExpression,
   threadListInteractionProbeExpression,
   threadListStressProbeExpression,

@@ -35,6 +35,10 @@ function defaultRequestUrl(req) {
   return new URL(req.url, `http://${req.headers.host || "localhost"}`);
 }
 
+function safeJsCommentText(value) {
+  return String(value == null ? "" : value).replace(/\*\//g, "* /");
+}
+
 function normalizeDefaultShellMode(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return DEFAULT_SHELL_MODE_CLASSIC;
@@ -147,6 +151,14 @@ function createStaticFileService(options = {}) {
     res.end(body);
   }
 
+  function appJsShellBuildProbeSuffix(url, rel) {
+    const pathname = `/${String(rel || "").replace(/^\/+/, "")}`;
+    if (pathname !== "/app.js") return "";
+    const shellBuild = String(url.searchParams.get("shellBuild") || "").trim();
+    if (!shellBuild) return "";
+    return `\n;/* codex-mobile shellBuild probe ${safeJsCommentText(shellBuild)} */\n`;
+  }
+
   function staticPathnameForRequestUrl(url) {
     if (url.pathname === "/") {
       const requestedShell = String(url.searchParams.get("codexViteShell") || "").trim().toLowerCase();
@@ -192,8 +204,9 @@ function createStaticFileService(options = {}) {
         if (target.endsWith(".html")) {
           headers["Content-Security-Policy"] = `frame-ancestors ${frameAncestorsHeader()}`;
         }
-        const encoding = staticCompressionEncoding(req, target, stat.size);
-        const cacheKey = encoding ? staticCompressionCacheKey(target, stat, encoding) : "";
+        const responseSuffix = appJsShellBuildProbeSuffix(url, rel);
+        const encoding = staticCompressionEncoding(req, target, stat.size + Buffer.byteLength(responseSuffix));
+        const cacheKey = encoding && !responseSuffix ? staticCompressionCacheKey(target, stat, encoding) : "";
         const cached = cacheKey ? getStaticCompressionCache(cacheKey) : null;
         if (cached) {
           headers["Content-Encoding"] = encoding;
@@ -207,13 +220,16 @@ function createStaticFileService(options = {}) {
             res.end("Not found");
             return;
           }
+          const body = responseSuffix
+            ? Buffer.concat([data, Buffer.from(responseSuffix, "utf8")])
+            : data;
           if (!encoding) {
-            writeStaticResponse(res, headers, data);
+            writeStaticResponse(res, headers, body);
             return;
           }
-          compressStaticBody(data, encoding, (compressErr, compressed) => {
+          compressStaticBody(body, encoding, (compressErr, compressed) => {
             if (compressErr) {
-              writeStaticResponse(res, headers, data);
+              writeStaticResponse(res, headers, body);
               return;
             }
             headers["Content-Encoding"] = encoding;

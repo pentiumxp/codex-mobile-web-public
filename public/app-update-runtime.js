@@ -47,6 +47,7 @@ function createAppUpdateRuntime(deps = {}) {
     roundedDurationMs = (startedAt) => Math.max(0, Date.now() - Number(startedAt || Date.now())),
     isHermesEmbedMode = () => false,
     requestHermesPluginRefresh = () => {},
+    clearPluginRefreshPendingNotice = () => {},
     rememberRateLimitsFromConfig = () => {},
     rememberCodexProfiles = () => {},
     renderCodexProfileSettings = () => {},
@@ -71,11 +72,15 @@ function createAppUpdateRuntime(deps = {}) {
   }
 
   function fullClientBuildVersionText(status = state.appUpdateStatus) {
-    const clientBuildId = String((status && status.clientBuildId) || CLIENT_BUILD_ID || "").trim();
-    const shellCacheName = String((status && status.shellCacheName) || "").trim();
+    const currentBuild = status && status.currentBuild && typeof status.currentBuild === "object"
+      ? status.currentBuild
+      : {};
+    const clientBuildId = String(currentBuild.clientBuildId || status && status.clientBuildId || CLIENT_BUILD_ID || "").trim();
+    const shellCacheName = String(currentBuild.shellCacheName || status && status.shellCacheName || "").trim();
+    const classicShellCacheName = String(currentBuild.classicShellCacheName || status && status.classicShellCacheName || "").trim();
     const parts = [];
     if (clientBuildId) parts.push(`clientBuildId ${clientBuildId}`);
-    if (shellCacheName && shellCacheName !== clientBuildId) parts.push(`shellCacheName ${shellCacheName}`);
+    if (shellCacheName && shellCacheName !== clientBuildId && shellCacheName !== classicShellCacheName) parts.push(`shellCacheName ${shellCacheName}`);
     return parts.join(" · ") || "clientBuildId unknown";
   }
   
@@ -850,6 +855,35 @@ function createAppUpdateRuntime(deps = {}) {
     return Boolean(nextBuildId && clientBuildId && !shouldPromptForServerBuildChange(nextBuildId, clientBuildId));
   }
 
+  function clearSettledServerBuildPluginRefresh(config) {
+    if (!isHermesEmbedMode() || !serverBuildMatchesLoadedClient(config)) return false;
+    return Boolean(clearPluginRefreshPendingNotice("server_build_changed"));
+  }
+
+  function clearSettledServerBuildPluginRefreshFromState() {
+    const clientBuildId = loadedClientBuildId();
+    const currentStateConfig = {
+      buildId: state.serverAssetBuildId || "",
+      clientBuildId: state.serverBuildId || clientBuildId,
+      shellCacheName: state.serverBuildId || "",
+    };
+    return clearSettledServerBuildPluginRefresh(currentStateConfig);
+  }
+
+  async function clearSettledServerBuildPluginRefreshAfterThreadEntry() {
+    if (!isHermesEmbedMode()) return false;
+    if (clearSettledServerBuildPluginRefreshFromState()) return true;
+    let config = null;
+    try {
+      config = await fetchPageBuildConfig();
+    } catch (_) {
+      return false;
+    }
+    if (!serverBuildMatchesLoadedClient(config)) return false;
+    acceptLoadedClientBuild(config);
+    return clearSettledServerBuildPluginRefresh(config);
+  }
+
   function acceptLoadedClientBuild(config) {
     const clientBuildId = loadedClientBuildId();
     const nextBuildId = serverBuildIdFromConfig(config);
@@ -909,8 +943,6 @@ function createAppUpdateRuntime(deps = {}) {
   }
   
   function validatePageShellAsset(asset, text, config) {
-    const buildId = serverBuildIdFromConfig(config);
-    const shellCacheName = String(config && config.shellCacheName || "").trim();
     if (asset === "/" || asset === "/index.html") {
       return text.includes('href="/styles.css"') && text.includes('src="/app.js"');
     }
@@ -918,7 +950,10 @@ function createAppUpdateRuntime(deps = {}) {
       return text.includes(".app") && text.includes(".composer");
     }
     if (asset === "/app.js") {
-      return !buildId || text.includes(buildId) || text.includes(shellCacheName);
+      return text.includes("function startCodexMobileApp()")
+        && text.includes("CodexRuntimeWiringRuntime")
+        && text.includes("CodexAppShellRuntime")
+        && text.includes("CodexMobileAppEntry");
     }
     if (asset === "/sw.js") {
       return text.includes("shell-asset-manifest.js");
@@ -1013,6 +1048,36 @@ function createAppUpdateRuntime(deps = {}) {
       // Best-effort diagnostic only; refresh state must not depend on telemetry.
     }
   }
+
+  async function forcePageShellReload(options = {}) {
+    if (state.pageRefreshReloading && !options.allowWhileReloading) return;
+    const reason = String(options.reason || state.pageRefreshReason || "build");
+    state.pageRefreshReloading = true;
+    state.pageRefreshReason = reason;
+    state.pageRefreshAvailable = true;
+    state.pageRefreshPreparedConfig = null;
+    renderPageRefreshPrompt();
+    saveCurrentDraftNow();
+    try {
+      await clearAllShellCaches();
+    } catch (err) {
+      recordPageRefreshFailure(err, options.cacheFailurePhase || "hard-refresh-cache-reset");
+    }
+    try {
+      await resetPageShellServiceWorker();
+    } catch (err) {
+      recordPageRefreshFailure(err, options.serviceWorkerFailurePhase || "hard-refresh-service-worker-reset");
+    }
+    try {
+      window.location.replace(pageReloadUrlWithBust());
+    } catch (err) {
+      recordPageRefreshFailure(err, options.navigationFailurePhase || "hard-refresh-navigation");
+      state.pageRefreshReloading = false;
+      state.pageRefreshReason = reason === "reconnect" || reason === "restart" ? reason : "build";
+      state.pageRefreshAvailable = true;
+      renderPageRefreshPrompt();
+    }
+  }
   
   function initializePageBuildState(config) {
     state.serverBuildId = CLIENT_BUILD_ID || serverBuildIdFromConfig(config);
@@ -1028,6 +1093,7 @@ function createAppUpdateRuntime(deps = {}) {
         return;
       }
     }
+    clearSettledServerBuildPluginRefresh(config);
     renderPageRefreshPrompt();
   }
   
@@ -1056,7 +1122,7 @@ function createAppUpdateRuntime(deps = {}) {
     state.pageRefreshPreparedConfig = null;
     state.pageRefreshReason = "build";
     state.pageRefreshAvailable = true;
-    await refreshPageForNewBuild();
+    await forcePageShellReload({ reason: "build" });
   }
   
   function showReconnectRefreshPrompt(reason = "reconnect") {
@@ -1137,6 +1203,7 @@ function createAppUpdateRuntime(deps = {}) {
       }
       if (serverBuildMatchesLoadedClient(config)) {
         acceptLoadedClientBuild(config);
+        clearSettledServerBuildPluginRefresh(config);
         return;
       }
       const serverBuildChanged = Boolean(nextBuildId && nextBuildId !== state.serverBuildId);
@@ -1219,6 +1286,7 @@ function createAppUpdateRuntime(deps = {}) {
         rememberRateLimitsFromConfig(config);
         rememberCodexProfiles(config && config.codexProfiles || null);
         acceptLoadedClientBuild(config);
+        clearSettledServerBuildPluginRefresh(config);
         const restartFinished = reconnectRefresh ? finishRestartingUiIfReady() : false;
         state.pageRefreshReloading = false;
         state.pageRefreshAvailable = !restartFinished && state.codexProfileRestarting;
@@ -1249,12 +1317,18 @@ function createAppUpdateRuntime(deps = {}) {
       window.location.replace(pageReloadUrlWithBust());
     } catch (err) {
       recordPageRefreshFailure(err, "new-build-refresh");
+      if (state.pageRefreshReason !== "reconnect" && state.pageRefreshReason !== "restart") {
+        await forcePageShellReload({
+          reason: "build",
+          allowWhileReloading: true,
+          cacheFailurePhase: "new-build-refresh-hard-cache-reset",
+          serviceWorkerFailurePhase: "new-build-refresh-hard-service-worker-reset",
+          navigationFailurePhase: "new-build-refresh-hard-navigation",
+        });
+        return;
+      }
       state.pageRefreshReloading = false;
       state.pageRefreshPreparedConfig = null;
-      if (state.pageRefreshReason !== "reconnect" && state.pageRefreshReason !== "restart") {
-        state.pageRefreshAvailable = true;
-        state.pageRefreshReason = "build";
-      }
       renderPageRefreshPrompt();
     }
   }
@@ -1311,6 +1385,8 @@ function createAppUpdateRuntime(deps = {}) {
     handleSharedRestartClick,
     serverBuildIdFromConfig,
     shouldPromptForServerBuildChange,
+    clearSettledServerBuildPluginRefresh,
+    clearSettledServerBuildPluginRefreshAfterThreadEntry,
     pageShellAssetUrl,
     validatePageShellAsset,
     fetchPageShellAsset,
@@ -1320,6 +1396,7 @@ function createAppUpdateRuntime(deps = {}) {
     clearAllShellCaches,
     resetPageShellServiceWorker,
     pageReloadUrlWithBust,
+    forcePageShellReload,
     initializePageBuildState,
     renderPageRefreshPrompt,
     handleHardRefreshClick,

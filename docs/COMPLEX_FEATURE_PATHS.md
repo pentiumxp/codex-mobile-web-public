@@ -798,7 +798,7 @@ Use when user explicitly asks to publish public or sync public.
 Implementation path:
 
 1. Re-read `.agent-context/PROJECT_CONTEXT.md` public release rules.
-2. If the sidebar public PR check reports open pull requests, prompt the user whether to handle them. The check can prepare a review task, but merge/sync/commit/push still require explicit user approval.
+2. If the sidebar public PR check reports open pull requests, prompt the user whether to handle them. The check can prepare a review task, but merge/sync/commit/push still require explicit user approval. Scheduled PR automation may run `scripts/codex-mobile-pr-automation.js` to create bounded absorption/deploy/public-ready next-step requests, but it does not directly merge, deploy, push public, or close PRs.
 3. Sync only product files to the clean public repo.
 4. Do not copy `.agent-context`, runtime state, uploads, logs, raw key paths, VAPID/subscription files, or local-only scripts unless explicitly public-safe.
 5. Public commit must include detailed Chinese README update and detailed Chinese commit message.

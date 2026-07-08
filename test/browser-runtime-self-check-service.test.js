@@ -193,6 +193,59 @@ test("browser runtime self-check reports API latest turn when it is not the DOM 
   assert.ok(result.issues.some((issue) => issue.code === "browser_latest_turn_not_at_dom_bottom"));
 });
 
+test("browser runtime self-check reports thread-entry refresh banner stuck after settled build", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "thread-entry-settled",
+      threadHash: "thread-a",
+      delayMs: 1200,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      loadingNote: false,
+      turns: 10,
+      items: 40,
+      expectedTurnHashCount: 6,
+      expectedTurnMatchCount: 6,
+      latestTurnMatchesTarget: true,
+      latestTurnAtDomBottom: true,
+      pluginRefreshBannerSeededForThreadEntry: true,
+      pluginRefreshBannerVisibleAfterThreadEntry: true,
+      connectionStateKind: "refreshing-plugin-page",
+    }],
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "plugin_refresh_banner_stuck_after_thread_entry"));
+});
+
+test("browser runtime self-check accepts cleared thread-entry refresh banner after settled build", () => {
+  const result = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [{
+      label: "thread-entry-settled",
+      threadHash: "thread-a",
+      delayMs: 1200,
+      appVisible: true,
+      loginVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      loadingNote: false,
+      turns: 10,
+      items: 40,
+      expectedTurnHashCount: 6,
+      expectedTurnMatchCount: 6,
+      latestTurnMatchesTarget: true,
+      latestTurnAtDomBottom: true,
+      pluginRefreshBannerSeededForThreadEntry: true,
+      pluginRefreshBannerVisibleAfterThreadEntry: false,
+      connectionStateKind: "connected",
+    }],
+  });
+  assert.equal(result.issues.some((issue) => issue.code === "plugin_refresh_banner_stuck_after_thread_entry"), false);
+});
+
 test("browser runtime self-check reports API latest turn when it is missing from settled DOM", () => {
   const result = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,
@@ -1373,6 +1426,8 @@ test("browser runtime self-check reads client build from shell manifest assets",
   assert.ok(scriptSource.includes("vite_preview_esm_compatibility_missing"));
   assert.ok(scriptSource.includes("vite_app_preview_esm_compatibility_missing"));
   assert.ok(scriptSource.includes("shellRefreshContractReady"));
+  assert.ok(scriptSource.includes("shellCacheMatches"));
+  assert.ok(scriptSource.includes("appStartPending"));
   assert.ok(scriptSource.includes("refreshPageForNewBuild"));
   assert.ok(scriptSource.includes("clearAllShellCaches"));
   assert.ok(scriptSource.includes("resetPageShellServiceWorker"));
@@ -1428,6 +1483,260 @@ test("browser runtime startup gate blocks missing shell refresh contract", () =>
   assert.equal(issue.severity, "H2");
   assert.equal(issue.resetServiceWorkerReady, false);
   assert.equal(issue.serviceWorkerCapable, true);
+});
+
+test("browser runtime deploy gate blocks unconfirmed client version switch", () => {
+  const report = {
+    browserReport: {
+      ok: true,
+      issues: [],
+      issueCount: 0,
+      blockingIssueCount: 0,
+    },
+  };
+  script.applyStartupGateIssues(report, {
+    clientBuildMatches: true,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    bootRecoveryVisible: false,
+    shellRefreshContractReady: true,
+    updateStatusCurrentClientBuildMatches: true,
+    updateStatusCurrentShellCacheMatches: true,
+    updateFullClientVersionPresent: true,
+    updateFullClientVersionMatches: false,
+    updateFullClientVersionUsesClassicCache: true,
+  }, { ok: true });
+
+  const startupIssue = report.browserReport.issues.find((item) => item.code === "client_version_switch_not_confirmed");
+  assert.ok(startupIssue);
+  assert.equal(startupIssue.severity, "H2");
+  assert.equal(startupIssue.fullVersionMatches, false);
+  assert.equal(startupIssue.fullVersionUsesClassicCache, true);
+
+  const appPreview = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    classicScriptCount: 51,
+    expectedClassicScriptCount: 51,
+    classicScriptOrderMatches: true,
+    loaderPlanPresent: true,
+    loaderPlanOwnerOk: true,
+    loaderPlanHashPresent: true,
+    loaderPlanScriptCount: 51,
+    loaderPlanHashCount: 51,
+    loaderPlanMatchesShellScripts: true,
+    loaderPlanMatchesInjectedScripts: true,
+    loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    updateStatusCurrentClientBuildMatches: true,
+    updateStatusCurrentShellCacheMatches: true,
+    updateFullClientVersionPresent: true,
+    updateFullClientVersionMatches: true,
+    updateFullClientVersionUsesClassicCache: false,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] });
+  assert.equal(appPreview.issues.some((item) => item.code === "client_version_switch_not_confirmed"), false);
+
+  const appPreviewClassic = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    classicScriptCount: 51,
+    expectedClassicScriptCount: 51,
+    classicScriptOrderMatches: true,
+    loaderPlanPresent: true,
+    loaderPlanOwnerOk: true,
+    loaderPlanHashPresent: true,
+    loaderPlanScriptCount: 51,
+    loaderPlanHashCount: 51,
+    loaderPlanMatchesShellScripts: true,
+    loaderPlanMatchesInjectedScripts: true,
+    loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    updateStatusCurrentClientBuildMatches: true,
+    updateStatusCurrentShellCacheMatches: true,
+    updateFullClientVersionPresent: true,
+    updateFullClientVersionMatches: true,
+    updateFullClientVersionUsesClassicCache: true,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] });
+  assert.ok(appPreviewClassic.issues.some((item) => item.code === "client_version_switch_not_confirmed"));
+
+  const emptyBuildReport = {
+    browserReport: {
+      ok: true,
+      issues: [],
+      issueCount: 0,
+      blockingIssueCount: 0,
+    },
+  };
+  script.applyStartupGateIssues(emptyBuildReport, {
+    clientBuildMatches: true,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    bootRecoveryVisible: false,
+    shellRefreshContractReady: true,
+    updateStatusCurrentBuildIdentityPresent: false,
+    updateStatusCurrentBuildIssueCodes: ["app_update_current_build_identity_empty"],
+    updateStatusCurrentClientBuildMatches: false,
+    updateStatusCurrentShellCacheMatches: false,
+    updateFullClientVersionPresent: true,
+    updateFullClientVersionMatches: false,
+    updateFullClientVersionUsesClassicCache: false,
+  }, { ok: true });
+  assert.ok(emptyBuildReport.browserReport.issues.some((item) => item.code === "app_update_current_build_identity_empty"));
+  assert.ok(emptyBuildReport.browserReport.issues.some((item) => item.code === "client_version_switch_not_confirmed"));
+
+  const stuckClassicReport = {
+    browserReport: {
+      ok: true,
+      issues: [],
+      issueCount: 0,
+      blockingIssueCount: 0,
+    },
+  };
+  script.applyStartupGateIssues(stuckClassicReport, {
+    clientBuildMatches: false,
+    runtimeClientBuildUsesClassicCache: true,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    bootRecoveryVisible: false,
+    shellRefreshContractReady: true,
+    updateStatusCurrentBuildIdentityPresent: true,
+    updateStatusCurrentClientBuildMatches: true,
+    updateStatusCurrentShellCacheMatches: true,
+    updateFullClientVersionPresent: true,
+    updateFullClientVersionMatches: true,
+    updateFullClientVersionUsesClassicCache: false,
+  }, { ok: true });
+  assert.ok(stuckClassicReport.browserReport.issues.some((item) => item.code === "client_runtime_stuck_on_classic_cache_identity"));
+
+  const settledBannerReport = {
+    browserReport: {
+      ok: true,
+      issues: [],
+      issueCount: 0,
+      blockingIssueCount: 0,
+    },
+  };
+  script.applyStartupGateIssues(settledBannerReport, {
+    clientBuildMatches: true,
+    pluginRefreshBannerVisibleAfterBuildSettled: true,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    bootRecoveryVisible: false,
+    shellRefreshContractReady: true,
+    updateStatusCurrentBuildIdentityPresent: true,
+    updateStatusCurrentClientBuildMatches: true,
+    updateStatusCurrentShellCacheMatches: true,
+    updateFullClientVersionPresent: true,
+    updateFullClientVersionMatches: true,
+    updateFullClientVersionUsesClassicCache: false,
+  }, { ok: true });
+  assert.ok(settledBannerReport.browserReport.issues.some((item) => item.code === "plugin_refresh_banner_stuck_after_build_settled"));
+
+  const deferredStartupReport = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    classicScriptCount: 0,
+    expectedClassicScriptCount: 0,
+    classicScriptOrderMatches: true,
+    loaderPlanPresent: true,
+    loaderPlanOwnerOk: true,
+    loaderPlanHashPresent: true,
+    loaderPlanScriptCount: 0,
+    loaderPlanHashCount: 0,
+    loaderPlanSourceScriptCount: 51,
+    shellScriptCount: 51,
+    loaderPlanExcludedEsmScriptCount: 49,
+    loaderPlanExcludedEsmHashCount: 49,
+    loaderPlanExcludedEsmGlobalsReady: true,
+    loaderPlanExcludedViteOwnedScriptCount: 2,
+    loaderPlanExcludedViteOwnedHashCount: 2,
+    loaderPlanExcludedViteOwnedGlobalsReady: true,
+    loaderPlanMatchesShellScripts: true,
+    loaderPlanMatchesInjectedScripts: true,
+    loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    appStartPending: true,
+    updateStatusCurrentBuildIdentityPresent: false,
+    updateStatusCurrentClientBuildMatches: false,
+    updateStatusCurrentShellCacheMatches: false,
+    updateFullClientVersionPresent: false,
+    updateFullClientVersionMatches: false,
+    updateFullClientVersionUsesClassicCache: false,
+    updateFullClientVersionErrorCode: "settings_runtime_unavailable",
+    runtimeClientBuildUsesClassicCache: false,
+    pluginRefreshBannerVisibleAfterBuildSettled: false,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] }, { expectRoot: true, expectDefaultRoot: true });
+  assert.equal(deferredStartupReport.issues.some((item) => item.code === "app_update_current_build_identity_empty"), false);
+  assert.equal(deferredStartupReport.issues.some((item) => item.code === "client_version_switch_not_confirmed"), false);
+
+  const appPreviewEmptyBuild = script.analyzeViteAppPreviewProbe({
+    markerPresent: true,
+    metaPresent: true,
+    moduleScriptMatchesPreview: true,
+    loaderOk: true,
+    classicScriptCount: 51,
+    expectedClassicScriptCount: 51,
+    classicScriptOrderMatches: true,
+    loaderPlanPresent: true,
+    loaderPlanOwnerOk: true,
+    loaderPlanHashPresent: true,
+    loaderPlanScriptCount: 51,
+    loaderPlanHashCount: 51,
+    loaderPlanMatchesShellScripts: true,
+    loaderPlanMatchesInjectedScripts: true,
+    loaderPlanLoadedMatches: true,
+    ...viteEsmCompatibilityReady,
+    clientBuildMatches: true,
+    shellCacheMatches: true,
+    updateStatusCurrentBuildIdentityPresent: false,
+    updateStatusCurrentBuildIssueCodes: ["app_update_current_build_identity_empty"],
+    updateStatusCurrentClientBuildMatches: false,
+    updateStatusCurrentShellCacheMatches: false,
+    updateFullClientVersionPresent: true,
+    updateFullClientVersionMatches: false,
+    updateFullClientVersionUsesClassicCache: false,
+    appVisible: true,
+    bootRecoveryVisible: false,
+    composerRuntimeReady: true,
+    threadListRuntimeReady: true,
+    threadTileRuntimeReady: true,
+    loadThreadReady: true,
+  }, { consoleEvents: [], exceptions: [] });
+  assert.ok(appPreviewEmptyBuild.issues.some((item) => item.code === "app_update_current_build_identity_empty"));
 });
 
 test("browser runtime self-check treats startup exceptions as blocking", () => {
@@ -3561,8 +3870,23 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /conversationTopPx/);
   assert.match(expression, /loadingNote/);
   assert.match(expression, /emptyState/);
+  assert.match(expression, /pluginRefreshBannerSeededForThreadEntry/);
+  assert.match(expression, /pluginRefreshBannerVisibleAfterThreadEntry/);
   assert.match(expression, /codexMobileCurrentThreadId/);
   assert.doesNotMatch(expression, /innerText|location\.href|document\.cookie|Authorization|Bearer/);
+});
+
+test("browser runtime self-check seeds settled thread-entry refresh banner probe", () => {
+  const expression = script.openThreadExpression("thread-private-id", {
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-current",
+  });
+
+  assert.match(expression, /pluginRefreshPendingReason = "server_build_changed"/);
+  assert.match(expression, /Refreshing plugin page for a new Mobile Web build/);
+  assert.match(expression, /__codexSelfCheckThreadEntryRefreshBanner/);
+  assert.match(expression, /visibleAfterOpen/);
+  assert.match(script.run.toString(), /openThreadExpression\(entry\.id, report\.publicConfig\)/);
+  assert.doesNotMatch(expression, /document\.cookie|Authorization|Bearer/);
 });
 
 test("browser runtime self-check refreshes API plan before settled delayed samples", () => {

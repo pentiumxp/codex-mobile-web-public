@@ -14,6 +14,10 @@ async function loadShellManifestGenerator() {
   return import("../scripts/generate-frontend-shell-manifest.mjs");
 }
 
+async function loadViteShellArtifactPublisher() {
+  return import("../scripts/publish-vite-shell-artifact.mjs");
+}
+
 function createMemoryStorage(initial = {}) {
   const values = new Map(Object.entries(initial));
   return {
@@ -169,6 +173,87 @@ test("classic shell cache name changes when static shell asset contents change",
   assert.match(second.shellCacheName, /^codex-mobile-shell-v625-[a-f0-9]{12}$/);
   assert.notEqual(second.shellCacheName, first.shellCacheName);
   assert.notEqual(second.clientBuildId, first.clientBuildId);
+});
+
+test("Vite artifact cache identity changes the service worker shell cache", async () => {
+  const { buildViteArtifactCacheIdentity } = await loadViteShellArtifactPublisher();
+  const baseReadback = {
+    stage: "vite-shell-preview-html-v1",
+    sourceBuildStage: "vite-shell-artifact-contract-v1",
+    shellCacheName: "codex-mobile-shell-v625-aaaaaaaaaaaa",
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-aaaaaaaaaaaa",
+    publishedFiles: [
+      { fileName: "codex-mobile-shell-manifest.json", bytes: 100, sha256: "0".repeat(64) },
+      { fileName: "assets/shard-04-before.js", bytes: 20, sha256: "1".repeat(64) },
+      { fileName: "preview.html", bytes: 30, sha256: "2".repeat(64) },
+    ],
+  };
+  const first = buildViteArtifactCacheIdentity(baseReadback);
+  const second = buildViteArtifactCacheIdentity({
+    ...baseReadback,
+    publishedFiles: [
+      ...baseReadback.publishedFiles.slice(0, 1),
+      { fileName: "assets/shard-04-after.js", bytes: 21, sha256: "3".repeat(64) },
+      ...baseReadback.publishedFiles.slice(2),
+    ],
+  });
+
+  assert.ok(first);
+  assert.ok(second);
+  assert.equal(first.viteArtifactCache.baseShellCacheName, baseReadback.shellCacheName);
+  assert.equal(first.viteArtifactCache.fileCount, 1);
+  assert.match(first.shellCacheName, /^codex-mobile-shell-v625-[a-f0-9]{12}$/);
+  assert.match(first.clientBuildId, /^0\.1\.11\|codex-mobile-shell-v625-[a-f0-9]{12}$/);
+  assert.notEqual(first.viteArtifactCache.fingerprint, second.viteArtifactCache.fingerprint);
+  assert.notEqual(first.shellCacheName, second.shellCacheName);
+  assert.notEqual(first.clientBuildId, second.clientBuildId);
+});
+
+test("Vite artifact cache identity is preserved only for the current classic shell hash", async () => {
+  const { buildPublicShellManifest } = await loadShellManifestGenerator();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-cache-identity-"));
+  fs.mkdirSync(path.join(root, "public"), { recursive: true });
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ version: "0.1.11" }));
+  fs.writeFileSync(path.join(root, "public", "manifest.json"), JSON.stringify({ icons: [] }));
+  fs.writeFileSync(path.join(root, "public", "styles.css"), ".app{}\n");
+  fs.writeFileSync(path.join(root, "public", "sw.js"), "importScripts(\"/shell-asset-manifest.js\");\n");
+  fs.writeFileSync(path.join(root, "public", "a.js"), "\"use strict\";\nwindow.A = 1;\n");
+  fs.writeFileSync(path.join(root, "public", "index.html"), [
+    "<!doctype html>",
+    "<link rel=\"stylesheet\" href=\"/styles.css\">",
+    "<script src=\"/shell-asset-manifest.js\"></script>",
+    "<script src=\"/a.js\"></script>",
+  ].join("\n"));
+
+  const classic = buildPublicShellManifest(root);
+  const cacheIdentity = {
+    shellCacheName: "codex-mobile-shell-v625-bbbbbbbbbbbb",
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-bbbbbbbbbbbb",
+    viteArtifactCache: {
+      schemaVersion: 1,
+      source: "vite-shell-public-artifact",
+      baseShellCacheName: classic.classicShellCacheName,
+      fingerprint: "f".repeat(64),
+      fileCount: 1,
+      byteCount: 20,
+      files: [{ fileName: "assets/a.js", bytes: 20, sha256: "e".repeat(64) }],
+    },
+  };
+  fs.writeFileSync(
+    path.join(root, "public", "shell-asset-manifest.json"),
+    `${JSON.stringify({ ...classic, ...cacheIdentity }, null, 2)}\n`
+  );
+
+  const preserved = buildPublicShellManifest(root);
+  assert.equal(preserved.shellCacheName, cacheIdentity.shellCacheName);
+  assert.equal(preserved.clientBuildId, cacheIdentity.clientBuildId);
+  assert.deepEqual(preserved.viteArtifactCache, cacheIdentity.viteArtifactCache);
+
+  fs.writeFileSync(path.join(root, "public", "a.js"), "\"use strict\";\nwindow.A = 2;\n");
+  const changed = buildPublicShellManifest(root);
+  assert.notEqual(changed.classicShellCacheName, classic.classicShellCacheName);
+  assert.notEqual(changed.shellCacheName, cacheIdentity.shellCacheName);
+  assert.equal(changed.viteArtifactCache, undefined);
 });
 
 test("native ESM build refresh policy matches the classic public API", async () => {
@@ -1124,16 +1209,32 @@ test("native ESM app update runtime matches classic fallback behavior", async ()
     nativeRuntime.fullClientBuildVersionText({
       clientBuildId: "0.1.11|codex-mobile-shell-v625-cbb2ef9490a1",
       shellCacheName: "codex-mobile-shell-v625-cbb2ef9490a1",
+      classicShellCacheName: "codex-mobile-shell-v625-basebasebase",
     }),
     classicRuntime.fullClientBuildVersionText({
       clientBuildId: "0.1.11|codex-mobile-shell-v625-cbb2ef9490a1",
       shellCacheName: "codex-mobile-shell-v625-cbb2ef9490a1",
+      classicShellCacheName: "codex-mobile-shell-v625-basebasebase",
     }),
   );
   assert.equal(
     nativeRuntime.fullClientBuildVersionText({
       clientBuildId: "0.1.11|codex-mobile-shell-v625-cbb2ef9490a1",
       shellCacheName: "codex-mobile-shell-v625-cbb2ef9490a1",
+      classicShellCacheName: "codex-mobile-shell-v625-basebasebase",
+    }),
+    "clientBuildId 0.1.11|codex-mobile-shell-v625-cbb2ef9490a1 · shellCacheName codex-mobile-shell-v625-cbb2ef9490a1",
+  );
+  assert.equal(
+    nativeRuntime.fullClientBuildVersionText({
+      clientBuildId: "0.1.11|codex-mobile-shell-v625-basebasebase",
+      shellCacheName: "codex-mobile-shell-v625-basebasebase",
+      classicShellCacheName: "codex-mobile-shell-v625-basebasebase",
+      currentBuild: {
+        clientBuildId: "0.1.11|codex-mobile-shell-v625-cbb2ef9490a1",
+        shellCacheName: "codex-mobile-shell-v625-cbb2ef9490a1",
+        classicShellCacheName: "codex-mobile-shell-v625-basebasebase",
+      },
     }),
     "clientBuildId 0.1.11|codex-mobile-shell-v625-cbb2ef9490a1 · shellCacheName codex-mobile-shell-v625-cbb2ef9490a1",
   );
@@ -1497,6 +1598,10 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   const root = path.resolve(__dirname, "..");
   const source = fs.readFileSync(path.join(root, "frontend", "vite-shell-entry.mjs"), "utf8");
   assert.match(source, /virtual:codex-mobile-esm-compatibility/);
+  assert.match(source, /import buildTimeShellManifest from "\.\.\/public\/shell-asset-manifest\.json"/);
+  assert.match(source, /function runtimeShellManifest\(\)/);
+  assert.match(source, /globalThis\.CODEX_MOBILE_SHELL_MANIFEST/);
+  assert.match(source, /return buildTimeShellManifest/);
   assert.match(source, /import\("virtual:codex-mobile-esm-compatibility"\)/);
   assert.doesNotMatch(source, /import\s+\{\s*codexMobileViteEsmCompatibility\s*\}\s+from\s+"virtual:codex-mobile-esm-compatibility"/);
   assert.match(source, /__CODEX_MOBILE_VITE_ESM_COMPATIBILITY_PROMISE__/);

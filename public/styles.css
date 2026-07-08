@@ -753,7 +753,8 @@ html.visual-recovering body::before {
   gap: 8px;
 }
 
-.sidebar-layout-toggle {
+.sidebar-layout-toggle,
+.sidebar-layout-close {
   font-size: 28px;
   line-height: 1;
 }
@@ -3732,7 +3733,7 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .conversation.thread-tile-mode {
-  overflow: hidden;
+  overflow: visible;
   padding: calc(var(--thread-tile-edge-gap) + max(env(safe-area-inset-top, 0px), var(--host-top-safe-area, 0px))) var(--thread-tile-edge-gap) var(--thread-tile-edge-gap);
 }
 
@@ -3799,6 +3800,8 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .thread-tile-pane.active {
+  z-index: 4;
+  overflow: visible;
   border-color: var(--thread-identity-ring-strong);
   box-shadow: 0 0 0 1px var(--thread-identity-ring), inset 0 0 0 1px var(--thread-identity-outline);
 }
@@ -4006,13 +4009,14 @@ html.keyboard-open .side-chat-form textarea {
 .thread-tile-composer-direction {
   position: absolute;
   left: 50%;
-  bottom: 7px;
-  z-index: 3;
-  width: 16px;
-  height: 16px;
+  bottom: -15px;
+  z-index: 8;
+  width: 28px;
+  height: 30px;
   transform: translateX(-50%);
   color: var(--thread-identity-label);
-  opacity: 0.68;
+  opacity: 0.94;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.32));
   pointer-events: none;
 }
 
@@ -4025,17 +4029,17 @@ html.keyboard-open .side-chat-form textarea {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 6px;
-  height: 6px;
-  border-top: 1.35px solid currentColor;
-  border-left: 1.35px solid currentColor;
-  opacity: 0.16;
+  width: 10px;
+  height: 10px;
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+  opacity: 0.18;
   transform: translate(-50%, -50%) translateY(var(--thread-tile-composer-direction-y)) rotate(45deg);
-  animation: thread-tile-composer-direction-pulse 1650ms ease-in-out infinite;
+  animation: thread-tile-composer-direction-pulse 1250ms ease-in-out infinite;
 }
 
 .thread-tile-composer-direction span:nth-child(1) {
-  --thread-tile-composer-direction-y: 4px;
+  --thread-tile-composer-direction-y: 7px;
   animation-delay: 0ms;
 }
 
@@ -4045,7 +4049,7 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .thread-tile-composer-direction span:nth-child(3) {
-  --thread-tile-composer-direction-y: -4px;
+  --thread-tile-composer-direction-y: -7px;
   animation-delay: 360ms;
 }
 
@@ -4057,8 +4061,8 @@ html.keyboard-open .side-chat-form textarea {
   }
 
   45% {
-    opacity: 0.72;
-    transform: translate(-50%, -50%) translateY(calc(var(--thread-tile-composer-direction-y) - 1px)) rotate(45deg);
+    opacity: 0.95;
+    transform: translate(-50%, -50%) translateY(calc(var(--thread-tile-composer-direction-y) - 4px)) rotate(45deg);
   }
 }
 
@@ -8523,11 +8527,11 @@ html:not(.embed-hermes).sidebar-overlay-mode .sidebar .mobile-only {
 
   .thread-tile-composer-direction span {
     animation: none;
-    opacity: 0.46;
+    opacity: 0.62;
   }
 
   .thread-tile-composer-direction span:first-child,
   .thread-tile-composer-direction span:last-child {
-    opacity: 0.22;
+    opacity: 0.34;
   }
 }

@@ -72,6 +72,81 @@ test("app update status is read through the maintenance service with safe public
   ]);
 });
 
+test("app update status exposes current Vite artifact identity without promoting classic cache", async () => {
+  const service = createAppMaintenanceService({
+    appRoot: "/repo/codex-mobile-web",
+    appVersion: "0.1.11",
+    appUpdateRemote: "origin",
+    appUpdateBranch: "main",
+    now: () => Date.parse("2026-07-08T13:12:00Z"),
+    currentPublicBuildConfig: () => ({
+      buildId: "asset-current",
+      clientBuildId: "0.1.11|codex-mobile-shell-v625-current",
+      shellCacheName: "codex-mobile-shell-v625-current",
+      classicShellCacheName: "codex-mobile-shell-v625-classic",
+    }),
+    runGit: async (args) => {
+      const command = args.join(" ");
+      if (command === "rev-parse --is-inside-work-tree") return gitResult("true\n");
+      if (command === "branch --show-current") return gitResult("main\n");
+      if (command === "remote get-url origin") return gitResult("https://github.com/owner/repo.git\n");
+      if (command === "rev-parse HEAD") return gitResult("1111111111111111111111111111111111111111\n");
+      if (command === "rev-parse --verify origin/main^{commit}") return gitResult("1111111111111111111111111111111111111111\n");
+      if (command === "status --porcelain --untracked-files=all") return gitResult("");
+      if (command === "rev-list --left-right --count HEAD...origin/main") return gitResult("0\t0\n");
+      throw new Error(`unexpected git command ${command}`);
+    },
+  });
+
+  const status = await service.refreshAppUpdateStatus({ force: true });
+
+  assert.equal(status.clientBuildId, "0.1.11|codex-mobile-shell-v625-current");
+  assert.equal(status.shellCacheName, "codex-mobile-shell-v625-current");
+  assert.equal(status.classicShellCacheName, "codex-mobile-shell-v625-classic");
+  assert.deepEqual(status.currentBuild, {
+    buildId: "asset-current",
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-current",
+    shellCacheName: "codex-mobile-shell-v625-current",
+    classicShellCacheName: "codex-mobile-shell-v625-classic",
+    identity: "0.1.11|codex-mobile-shell-v625-current",
+    ok: true,
+    issueCodes: [],
+  });
+  assert.deepEqual(status.currentBuildIssueCodes, []);
+});
+
+test("app update status reports missing current build provider as explicit issue", async () => {
+  const service = createAppMaintenanceService({
+    appRoot: "/repo/codex-mobile-web",
+    appVersion: "0.1.11",
+    appUpdateRemote: "origin",
+    appUpdateBranch: "main",
+    now: () => Date.parse("2026-07-08T13:12:00Z"),
+    runGit: async (args) => {
+      const command = args.join(" ");
+      if (command === "rev-parse --is-inside-work-tree") return gitResult("true\n");
+      if (command === "branch --show-current") return gitResult("main\n");
+      if (command === "remote get-url origin") return gitResult("https://github.com/owner/repo.git\n");
+      if (command === "rev-parse HEAD") return gitResult("1111111111111111111111111111111111111111\n");
+      if (command === "rev-parse --verify origin/main^{commit}") return gitResult("1111111111111111111111111111111111111111\n");
+      if (command === "status --porcelain --untracked-files=all") return gitResult("");
+      if (command === "rev-list --left-right --count HEAD...origin/main") return gitResult("0\t0\n");
+      throw new Error(`unexpected git command ${command}`);
+    },
+  });
+
+  const status = await service.refreshAppUpdateStatus({ force: true });
+
+  assert.equal(status.clientBuildId, "");
+  assert.equal(status.shellCacheName, "");
+  assert.equal(status.currentBuild.ok, false);
+  assert.deepEqual(status.currentBuild.issueCodes, [
+    "app_update_current_build_provider_missing",
+    "app_update_current_build_identity_empty",
+  ]);
+  assert.deepEqual(status.currentBuildIssueCodes, status.currentBuild.issueCodes);
+});
+
 test("GitHub preview status uses bounded normalization and an in-flight/cache owner", async () => {
   let fetchCount = 0;
   const service = createAppMaintenanceService({

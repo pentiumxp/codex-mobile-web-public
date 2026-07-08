@@ -391,10 +391,14 @@ test("approved task cards inherit target thread model and effort", () => {
   assert.match(setupBlock, /const targetIsDeployLane = isHomeAiDeployLaneThread\(targetThread\);/);
   assert.match(setupBlock, /const targetIsWorkerLane = isWorkerLaneThread\(targetThread\);/);
   assert.match(setupBlock, /const targetIsImplementationExecution = isImplementationExecutionCard\(card, targetThread\);/);
-  assert.match(setupBlock, /const targetUsesFullAccess = targetIsDeployLane \|\| targetIsWorkerLane \|\| targetIsImplementationExecution;/);
+  assert.match(setupBlock, /const targetIsLoopReadOnlyRoleExecution = isLoopReadOnlyRoleExecutionCard\(card, targetThread\);/);
+  assert.match(setupBlock, /const targetMainSourceRole = targetMainSourceRuntimeRole\(card, targetThread\);/);
+  assert.match(setupBlock, /const targetUsesFullAccess = targetIsDeployLane \|\| targetIsWorkerLane \|\| targetIsImplementationExecution \|\| targetIsLoopReadOnlyRoleExecution;/);
   assert.match(setupBlock, /const baseRuntimeSettings = targetUsesFullAccess/);
-  assert.match(setupBlock, /dependencies\.applyPermissionModeOverride\(inheritedRuntimeSettings, "full", targetThread && targetThread\.cwd \|\| null\)/);
+  assert.match(setupBlock, /nonBlockingRuntimeSettings\(inheritedRuntimeSettings, targetThread && targetThread\.cwd \|\| null\)/);
+  assert.match(setupBlock, /const requestedRuntimeSettings = requestedReasoningEffort/);
   assert.match(setupBlock, /Object\.assign\(\{\}, baseRuntimeSettings, \{ reasoningEffort: requestedReasoningEffort \}\)/);
+  assert.match(setupBlock, /applyReasoningEffortFloor\(requestedRuntimeSettings, "xhigh"\)/);
   assert.match(setupBlock, /thread\/resume", applyResumeRuntimeSettings\(/);
   assert.match(setupBlock, /const turnParams = applyTurnRuntimeSettings\(/);
   assert.match(setupBlock, /codex\.request\("turn\/start", turnParams/);
@@ -403,11 +407,14 @@ test("approved task cards inherit target thread model and effort", () => {
   assert.match(setupBlock, /approvalPolicy: runtimeSettings\.approvalPolicy \|\| ""/);
   assert.match(setupBlock, /sandboxPolicyType: runtimeSettings\.sandboxPolicy && runtimeSettings\.sandboxPolicy\.type \|\| ""/);
   assert.match(setupBlock, /deployLaneNoApproval: targetIsDeployLane/);
+  assert.match(setupBlock, /loopReadOnlyRoleNoApproval: targetIsLoopReadOnlyRoleExecution/);
+  assert.match(setupBlock, /mainSourceReasoningFloor: targetMainSourceRole \|\| ""/);
   assert.match(setupBlock, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{/);
   assert.match(setupBlock, /source: "thread-task-card-approval"/);
   assert.match(notificationRuntimeServiceJs, /const webPushRuntimeService = webPushRuntimeServiceFactory/);
   assert.match(webPushRuntimeServiceJs, /function maybeSendTurnCompletedPush\(method, params\)/);
   assert.match(functionBody(taskCardRuntimePolicyServiceJs, "applyTurnRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
+  assert.match(functionBody(taskCardRuntimePolicyServiceJs, "applyResumeRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
   assert.match(functionBody(taskCardRuntimePolicyServiceJs, "applyTurnRuntimeSettings"), /if \(settings\.model\) params\.model = settings\.model;/);
 });
 

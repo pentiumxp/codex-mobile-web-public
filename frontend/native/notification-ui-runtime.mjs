@@ -553,11 +553,13 @@ function requestHermesPluginRefresh(reason, options = {}) {
   });
   if (!options.force && signature === state.pluginRefreshRequestSignature) return false;
   state.pluginRefreshRequestSignature = signature;
+  state.pluginRefreshRequestReason = normalizedReason;
   if (targetOrigin) state.pluginParentOrigin = targetOrigin;
   if (state.pluginRefreshPendingTimer) {
     clearTimeout(state.pluginRefreshPendingTimer);
     state.pluginRefreshPendingTimer = null;
   }
+  state.pluginRefreshPendingReason = normalizedReason;
   state.pluginRefreshPendingNotice = pluginRefreshPendingMessage(normalizedReason);
   state.pluginRefreshPendingTimer = window.setTimeout(() => {
     state.pluginRefreshPendingTimer = null;
@@ -591,15 +593,29 @@ function pluginRefreshPendingMessage(reason) {
   return "Refreshing plugin page from Hermes Mobile...";
 }
 
-function clearPluginRefreshPendingNotice() {
+function clearPluginRefreshPendingNotice(reason = "") {
+  const normalizedReason = boundedPluginRefreshValue(reason || "", 80);
+  const pendingReason = boundedPluginRefreshValue(state.pluginRefreshPendingReason || "", 80);
+  if (normalizedReason && pendingReason && normalizedReason !== pendingReason) return false;
   if (state.pluginRefreshPendingTimer) {
     clearTimeout(state.pluginRefreshPendingTimer);
     state.pluginRefreshPendingTimer = null;
   }
-  if (!state.pluginRefreshPendingNotice) return;
+  if (!state.pluginRefreshPendingNotice && !pendingReason) return false;
+  const previousNotice = state.pluginRefreshPendingNotice;
   state.pluginRefreshPendingNotice = "";
+  state.pluginRefreshPendingReason = "";
+  if (normalizedReason && state.pluginRefreshRequestReason === normalizedReason) {
+    state.pluginRefreshRequestSignature = "";
+    state.pluginRefreshRequestReason = "";
+  }
+  const connection = $("connectionState");
+  if (connection && previousNotice && connection.textContent === previousNotice) {
+    connection.textContent = "";
+  }
   if (state.currentThreadId || state.currentThread) renderCurrentThread();
   else if (state.newThreadDraft) renderNewThreadDraft();
+  return true;
 }
 
 function boundedViewportNumber(value, max = 4096) {
@@ -1011,14 +1027,25 @@ async function bootstrap() {
   const startupThreadId = applyUrlThreadSelection();
   const startupPluginRouteHint = applyUrlPluginRouteHint();
   const savedThreadId = isHermesEmbedMode() ? "" : (localStorage.getItem(STORAGE_THREAD_ID) || "");
-  state.startupThreadOpenPending = Boolean(startupThreadId || savedThreadId || (startupPluginRouteHint && startupPluginRouteHint.threadId));
+  const deferStartupRestoreForTileMode = Boolean(
+    savedThreadId
+    && !startupThreadId
+    && typeof localThreadDisplayMode === "function"
+    && localThreadDisplayMode() === "tile"
+  );
+  state.startupThreadOpenPending = Boolean(
+    startupThreadId
+    || (savedThreadId && !deferStartupRestoreForTileMode)
+    || (startupPluginRouteHint && startupPluginRouteHint.threadId)
+  );
   const startupThreadOpenPending = state.startupThreadOpenPending;
   postStartupStage("bootstrap_start", bootstrapStartedAt, {
     hasStartupThreadId: Boolean(startupThreadId),
     hasSavedThreadId: Boolean(savedThreadId),
     hasPluginRouteThreadId: Boolean(startupPluginRouteHint && startupPluginRouteHint.threadId),
+    deferStartupRestoreForTileMode,
   });
-  const earlyRestorePromise = savedThreadId && !startupThreadId
+  const earlyRestorePromise = savedThreadId && !startupThreadId && !deferStartupRestoreForTileMode
     ? loadThread(savedThreadId, { source: "restore-startup", suppressLoadFailureDiagnostic: true }).catch((err) => {
       localStorage.removeItem(STORAGE_THREAD_ID);
       showError(err);
@@ -1027,6 +1054,12 @@ async function bootstrap() {
     })
     : null;
   if (earlyRestorePromise) postStartupStage("restore_start", bootstrapStartedAt, { threadId: savedThreadId });
+  else if (deferStartupRestoreForTileMode) {
+    postStartupStage("restore_deferred", bootstrapStartedAt, {
+      threadId: savedThreadId,
+      reason: "tile-startup",
+    });
+  }
   const statusStartedAt = nowPerfMs();
   const status = await api("/api/status").catch((err) => {
     $("connectionState").textContent = err.message;

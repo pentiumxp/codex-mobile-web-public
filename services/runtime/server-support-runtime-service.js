@@ -107,6 +107,7 @@ function createServerSupportRuntimeService(dependencies = {}) {
     publicReleaseRepository: dependencies.publicReleaseRepository,
     publicReleaseBranch: dependencies.publicReleaseBranch,
     publicReleaseCheckCacheMs: dependencies.publicReleaseCheckCacheMs,
+    currentPublicBuildConfig: dependencies.currentPublicBuildConfig,
     shutdown: dependencies.shutdown,
   });
 

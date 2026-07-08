@@ -2360,6 +2360,9 @@ function serverBuildIdFromConfig(...args) {
 function shouldPromptForServerBuildChange(...args) {
   return requireAppUpdateRuntime().shouldPromptForServerBuildChange(...args);
 }
+function clearSettledServerBuildPluginRefreshAfterThreadEntry(...args) {
+  return requireAppUpdateRuntime().clearSettledServerBuildPluginRefreshAfterThreadEntry(...args);
+}
 function pageShellAssetUrl(...args) {
   return requireAppUpdateRuntime().pageShellAssetUrl(...args);
 }
@@ -2678,6 +2681,7 @@ function createSettingsRuntime() {
     handleSharedRestartClick,
     serverBuildIdFromConfig,
     shouldPromptForServerBuildChange,
+    clearSettledServerBuildPluginRefreshAfterThreadEntry,
     pageShellAssetUrl,
     validatePageShellAsset,
     fetchPageShellAsset,

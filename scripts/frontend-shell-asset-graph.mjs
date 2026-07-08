@@ -1102,6 +1102,8 @@ export function buildShellAssetManifest(root = process.cwd()) {
     generatedBy: "vite-codex-mobile-shell-asset-graph",
     shellCacheName: graph.shellCacheName,
     clientBuildId: graph.clientBuildId,
+    classicShellCacheName: String(graph.publicManifest && graph.publicManifest.classicShellCacheName || graph.expectedManifest && graph.expectedManifest.classicShellCacheName || ""),
+    ...(graph.publicManifest && graph.publicManifest.viteArtifactCache ? { viteArtifactCache: graph.publicManifest.viteArtifactCache } : {}),
     counts: {
       indexScripts: graph.indexScriptAssets.length,
       swStaticAssets: graph.swStaticAssets.length,
@@ -3448,6 +3450,63 @@ export function buildViteEntryGroupInputs(root = process.cwd()) {
     inputs[`vite-entry-group-${groupId}`] = viteEntryGroupSourceId(groupId);
   }
   return inputs;
+}
+
+export function refreshViteShellBuildClassicContracts(manifest, viteBuild = {}, root = process.cwd()) {
+  const entryGroupChunks = (Array.isArray(viteBuild.viteEntryGroupChunks) ? viteBuild.viteEntryGroupChunks : [])
+    .map((chunk) => {
+      const groupId = sanitizeEntryGroupId(chunk && chunk.groupId);
+      const group = (Array.isArray(manifest.entryGroups) ? manifest.entryGroups : [])
+        .find((entryGroup) => sanitizeEntryGroupId(entryGroup && entryGroup.id) === groupId) || {};
+      const assets = Array.isArray(group.assets) ? group.assets.slice() : [];
+      const classicGlobalExports = classicGlobalExportsForAssets(manifest, assets);
+      const classicAssetRecords = classicAssetRecordsForAssets(manifest, assets);
+      const groupStartupGlobalContracts = startupGlobalContracts(manifest)
+        .filter((entry) => assets.includes(entry.asset));
+      return {
+        ...chunk,
+        groupId,
+        phase: String(group.phase || ""),
+        startupCritical: Boolean(group.startupCritical),
+        chunkTarget: String(group.chunkTarget || ""),
+        assets,
+        assetCount: assets.length,
+        classicAssetRecords,
+        classicAssetHashCount: classicAssetRecords.filter((entry) => entry.sha256).length,
+        classicAssetBytes: classicAssetRecords.reduce((total, entry) => total + (Number(entry.bytes) || 0), 0),
+        classicGlobalExports,
+        classicGlobalExportAssetCount: classicGlobalExports.length,
+        classicGlobalExportCount: classicGlobalExports.reduce((total, entry) => (
+          total + (Array.isArray(entry && entry.globals) ? entry.globals.length : 0)
+        ), 0),
+        startupGlobalContracts: groupStartupGlobalContracts,
+      };
+    })
+    .sort((a, b) => a.groupId.localeCompare(b.groupId));
+  const classicShellAssets = assetOutputRecords(manifest);
+  const outputFiles = [
+    ...(Array.isArray(viteBuild.outputFiles) ? viteBuild.outputFiles : []),
+    ...classicShellAssets.map((asset) => asset.fileName),
+    "codex-mobile-shell-manifest.json",
+  ];
+  return {
+    ...viteBuild,
+    classicFallback: {
+      ...(viteBuild.classicFallback || {}),
+      indexHtmlAsset: "/index.html",
+      outputRoot: "shell-assets",
+      indexScriptAssets: manifest.indexScriptAssets,
+      entryGroups: manifest.entryGroups,
+      classicGlobalExports: manifest.classicGlobalExports,
+      startupGlobalContracts: manifest.startupGlobalContracts,
+      scriptBlock: classicShellScriptBlockContract(manifest),
+    },
+    startupCompatibility: startupCompatibilityContract(manifest),
+    appPreviewClassicLoaderPlan: appPreviewClassicLoaderPlanContract(manifest),
+    viteEntryGroupChunks: entryGroupChunks,
+    classicShellAssets,
+    outputFiles: [...new Set(outputFiles)].sort(),
+  };
 }
 
 function bundleValues(bundle) {

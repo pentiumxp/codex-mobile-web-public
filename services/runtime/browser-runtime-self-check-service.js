@@ -530,6 +530,17 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     if (sampleIsConfirmed(sample)
       && toNumber(sample.delayMs) >= minSettledDelayMs
       && !sample.loadingNote
+      && sample.pluginRefreshBannerSeededForThreadEntry === true
+      && sample.pluginRefreshBannerVisibleAfterThreadEntry === true) {
+      issues.push(issue("H2", "plugin_refresh_banner_stuck_after_thread_entry", sample, {
+        connectionStateKind: safeLabel(sample.connectionStateKind, ""),
+        domTurnCount: toNumber(sample.turns),
+        expectedTurnHashCount: toNumber(sample.expectedTurnHashCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
       && toNumber(sample.expectedTurnHashCount) > 0
       && toNumber(sample.turns) > 0
       && sample.latestTurnMatchesTarget === false

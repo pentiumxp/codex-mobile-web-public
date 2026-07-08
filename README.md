@@ -10785,6 +10785,34 @@ node --test test/thread-detail-dom-patch.test.js \
 Result: focused tests passed. This slice is not deployed by itself; keep batching
 Phase A frontend ownership work before the next production deployment.
 
+### 2026-07-08 Public 发布说明（PR #90/#91 与刷新可靠性）
+
+本次 public 发布同步 private 中已经生产验证的 Codex Mobile Web 版本，
+并吸收 public PR `#90` / `#91` 的产品意图。版本仍为 `0.1.11`，
+PWA shell cache 升到 `codex-mobile-shell-v625-ca0275e10466`。已经打开的
+浏览器或 PWA 需要接受刷新提示、硬刷新或关闭重开后，才能使用新的前端资源。
+
+- 吸收 PR `#91` 的续接 fallback reason 格式化修复，补上单行截断 helper
+  和 source-thread resume failure 回归测试，避免 fallback handoff reason
+  路径触发运行时错误。
+- 吸收 PR `#90` 的平铺模式和 PWA 刷新可靠性改进，包括 hard refresh
+  fallback、tile mode startup restore deferral、sidebar close affordance、
+  tile composer visual hardening，以及 app.js shell build probe。
+- 修正 Profile 切换和 Updates 面板版本显示相关问题：当前版本显示使用
+  public build identity，不再把 classic/base cache identity 当作当前客户端版本。
+- 修正 embedded plugin 在版本已匹配后仍持续显示
+  `Refreshing plugin page` 的刷新生命周期问题；部署 harness 现在会验证
+  public-config、app-update current build、浏览器 runtime 与线程进入后的刷新提示状态。
+- 新增 Remote Managed Workspace 的 Codex Mobile remote-node client / local
+  Home AI central simulator 边界、PR automation planner，以及 Loop/task-card
+  runtime 可靠性修复。Home AI 仍是 Remote Managed Workspace 的生产 control
+  plane owner，Codex Mobile 不作为中心 registry 或 policy system-of-record。
+- 发布前 private production 读回已经确认 `clientBuildId` / `shellCacheName`
+  为 `0.1.11|codex-mobile-shell-v625-ca0275e10466`，`/api/status` 与
+  `/api/vite-shell-artifact` 健康，focused production tests 通过。Public
+  发布只同步产品源码、文档、测试和生成前端资产；不包含本机 runtime state、
+  `.agent-context` 私有 handoff、access key、token、上传内容、日志或数据库。
+
 ## Troubleshooting
 
 ### Mobile Web Shows `Loading thread`

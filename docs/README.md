@@ -22,6 +22,8 @@ Always start substantial work by reading:
 | Non-trivial feature or cross-cutting fix | `docs/COMPLEX_FEATURE_PATHS.md` |
 | Thread detail projection redesign, visible-item contract, v3/v4 migration | `docs/THREAD_DETAIL_PROJECTION_V4_DESIGN.md` |
 | Cross-thread task-card collaboration planning | `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md` |
+| Remote external project node client and local Home AI central simulator | `docs/REMOTE_MANAGED_WORKSPACE.md` |
+| Scheduled private/public PR intake, absorption, release gates, public sync, PR close policy | `docs/PR_AUTOMATION.md` |
 | Current-thread side chat planning | `docs/THREAD_SIDE_CHAT_REQUIREMENTS.md`, `docs/THREAD_SIDE_CHAT_DESIGN.md`, `docs/THREAD_SIDE_CHAT_IMPLEMENTATION.md` |
 | ChatGPT Pro planner / MCP connector planning | `docs/CHATGPT_PRO_PLANNER_CONNECTOR_DESIGN.md` |
 | Multi-account Codex CLI on this Windows machine | `docs/MULTI_ACCOUNT_CODEX_CLI.md` |
