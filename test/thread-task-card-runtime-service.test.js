@@ -255,6 +255,166 @@ test("thread task-card runtime grants worker lanes full access by default", asyn
   assert.equal(codexRequests[1].params.turnSandboxPolicyType, "dangerFullAccess");
 });
 
+test("thread task-card runtime grants at-loop implementation roles writable execution policy", async () => {
+  const codexRequests = [];
+  const overrides = [];
+  let serviceOptions = null;
+  createThreadTaskCardRuntimeService({
+    homeAiAutonomousDeliveryReturnServiceFactory: () => ({ send: async () => ({ ok: true }) }),
+    taskCardRuntimePolicyServiceFactory: () => ({
+      applyCodexFastServiceTier: (params) => params,
+      applyResumeRuntimeSettings: (params, settings) => Object.assign({}, params, {
+        resumeApprovalPolicy: settings.approvalPolicy,
+        resumeSandboxPolicyType: settings.sandboxPolicy && settings.sandboxPolicy.type,
+      }),
+      applyStartThreadRuntimeSettings: (params) => params,
+      applyTurnRuntimeSettings: (params, settings) => Object.assign({}, params, {
+        turnApprovalPolicy: settings.approvalPolicy,
+        turnSandboxPolicyType: settings.sandboxPolicy && settings.sandboxPolicy.type,
+      }),
+      requestedCodexFastMode: () => "",
+      workspaceSourceWriteGuardDecisionForRequest: () => null,
+      workspaceSourceWriteGuardLogPayload: () => ({}),
+    }),
+    threadTaskCardServiceFactory: (options) => {
+      serviceOptions = options;
+      return { kind: "task-card-service" };
+    },
+    threadTaskCardRouteServiceFactory: () => ({
+      attachWorkspaceDelegationRuntimeGuidance: (value) => value,
+      assertThreadTaskCardTargetDeliverable: () => "implementation-thread",
+      resolveThreadTaskCardTargetReference: (threadId) => threadId,
+      readThreadTaskCardExecutionTargetSummary: () => ({
+        id: "implementation-thread",
+        title: "Plugin Loop Implementation",
+        cwd: "/repo/plugin",
+        threadRole: "implementation",
+      }),
+    }),
+    atLoopRuntimeServiceFactory: () => ({ recordTerminalReturn: async () => ({ ok: true }) }),
+    atLoopRouteServiceFactory: () => ({ kind: "at-loop-route" }),
+    codex: {
+      request: async (method, params, options) => {
+        codexRequests.push({ method, params, options });
+        return method === "turn/start" ? { turnId: "turn-implementation" } : { ok: true };
+      },
+    },
+    resolveThreadRuntimeSettings: async () => ({
+      reasoningEffort: "medium",
+      approvalPolicy: "on-request",
+      sandboxPolicy: { type: "readOnly" },
+    }),
+    applyPermissionModeOverride: (settings, approvalPolicy, cwd) => {
+      overrides.push({ approvalPolicy, cwd });
+      return Object.assign({}, settings, {
+        approvalPolicy: "never",
+        sandboxPolicy: { type: "dangerFullAccess" },
+        cwd,
+      });
+    },
+    mutationRpcTimeoutMs: 1234,
+    notifyLocalTurnStarted: () => "turn-implementation",
+  });
+
+  const result = await serviceOptions.executeApprovedCard({
+    target: { threadId: "implementation-thread", role: "implementation" },
+    routeResolution: {
+      routeKind: "at_loop_role_slice",
+      targetRole: "implementation",
+    },
+    workflow: { id: "at-loop:loop_implementation" },
+    delivery: {},
+  }, { text: "run implementation task" });
+
+  assert.deepEqual(overrides, [{ approvalPolicy: "full", cwd: "/repo/plugin" }]);
+  assert.equal(result.runtime.implementationFullAccess, true);
+  assert.equal(result.runtime.approvalPolicy, "never");
+  assert.equal(result.runtime.sandboxPolicyType, "dangerFullAccess");
+  assert.equal(codexRequests[0].params.resumeApprovalPolicy, "never");
+  assert.equal(codexRequests[1].params.turnApprovalPolicy, "never");
+  assert.equal(codexRequests[1].params.turnSandboxPolicyType, "dangerFullAccess");
+});
+
+test("thread task-card runtime keeps at-loop audit roles on inherited policy", async () => {
+  const codexRequests = [];
+  const overrides = [];
+  let serviceOptions = null;
+  createThreadTaskCardRuntimeService({
+    homeAiAutonomousDeliveryReturnServiceFactory: () => ({ send: async () => ({ ok: true }) }),
+    taskCardRuntimePolicyServiceFactory: () => ({
+      applyCodexFastServiceTier: (params) => params,
+      applyResumeRuntimeSettings: (params, settings) => Object.assign({}, params, {
+        resumeApprovalPolicy: settings.approvalPolicy,
+        resumeSandboxPolicyType: settings.sandboxPolicy && settings.sandboxPolicy.type,
+      }),
+      applyStartThreadRuntimeSettings: (params) => params,
+      applyTurnRuntimeSettings: (params, settings) => Object.assign({}, params, {
+        turnApprovalPolicy: settings.approvalPolicy,
+        turnSandboxPolicyType: settings.sandboxPolicy && settings.sandboxPolicy.type,
+      }),
+      requestedCodexFastMode: () => "",
+      workspaceSourceWriteGuardDecisionForRequest: () => null,
+      workspaceSourceWriteGuardLogPayload: () => ({}),
+    }),
+    threadTaskCardServiceFactory: (options) => {
+      serviceOptions = options;
+      return { kind: "task-card-service" };
+    },
+    threadTaskCardRouteServiceFactory: () => ({
+      attachWorkspaceDelegationRuntimeGuidance: (value) => value,
+      assertThreadTaskCardTargetDeliverable: () => "audit-thread",
+      resolveThreadTaskCardTargetReference: (threadId) => threadId,
+      readThreadTaskCardExecutionTargetSummary: () => ({
+        id: "audit-thread",
+        title: "Product Audit Lane",
+        cwd: "/repo/plugin",
+        threadRole: "product_audit",
+      }),
+    }),
+    atLoopRuntimeServiceFactory: () => ({ recordTerminalReturn: async () => ({ ok: true }) }),
+    atLoopRouteServiceFactory: () => ({ kind: "at-loop-route" }),
+    codex: {
+      request: async (method, params, options) => {
+        codexRequests.push({ method, params, options });
+        return method === "turn/start" ? { turnId: "turn-audit" } : { ok: true };
+      },
+    },
+    resolveThreadRuntimeSettings: async () => ({
+      reasoningEffort: "medium",
+      approvalPolicy: "on-request",
+      sandboxPolicy: { type: "readOnly" },
+    }),
+    applyPermissionModeOverride: (settings, approvalPolicy, cwd) => {
+      overrides.push({ approvalPolicy, cwd });
+      return Object.assign({}, settings, {
+        approvalPolicy: "never",
+        sandboxPolicy: { type: "dangerFullAccess" },
+        cwd,
+      });
+    },
+    mutationRpcTimeoutMs: 1234,
+    notifyLocalTurnStarted: () => "turn-audit",
+  });
+
+  const result = await serviceOptions.executeApprovedCard({
+    target: { threadId: "audit-thread", role: "product_audit" },
+    routeResolution: {
+      routeKind: "at_loop_role_slice",
+      targetRole: "product_audit",
+    },
+    workflow: { id: "at-loop:loop_audit" },
+    delivery: {},
+  }, { text: "run audit task" });
+
+  assert.deepEqual(overrides, []);
+  assert.equal(result.runtime.implementationFullAccess, false);
+  assert.equal(result.runtime.approvalPolicy, "on-request");
+  assert.equal(result.runtime.sandboxPolicyType, "readOnly");
+  assert.equal(codexRequests[0].params.resumeApprovalPolicy, "on-request");
+  assert.equal(codexRequests[1].params.turnApprovalPolicy, "on-request");
+  assert.equal(codexRequests[1].params.turnSandboxPolicyType, "readOnly");
+});
+
 test("thread task-card runtime fails at-loop terminal return before external notification when local correlation fails", async () => {
   const homeAiEvents = [];
   let serviceOptions = null;

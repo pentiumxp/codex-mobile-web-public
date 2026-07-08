@@ -238,7 +238,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         additionalProperties: false,
         properties: {
           taskCardId: { type: "string", description: "Original task-card id shown in the injected card message." },
-          threadId: { type: "string", description: "Current target thread id. Usually the server can infer this from turnId." },
+          threadId: { type: "string", description: "Optional current target thread id. When omitted, the server recovers the expected actor from taskCardId metadata." },
           status: {
             type: "string",
             enum: ["completed", "blocked", "redirected", "rejected", "partially_completed"],
@@ -939,6 +939,17 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     return "";
   }
 
+  function returnActorThreadIdFromDynamicToolCall(params = {}, args = {}) {
+    const fromArgs = String(args.threadId || args.thread_id || args.actorThreadId || args.actor_thread_id || "").trim();
+    if (fromArgs) return fromArgs;
+    const turnId = String((params && (params.turnId || params.turn_id))
+      || (params && params.turn && (params.turn.id || params.turn.turnId || params.turn.turn_id))
+      || "").trim();
+    const inferred = turnId ? String(threadIdForTurnId(turnId) || "") : "";
+    if (inferred) return inferred;
+    return "";
+  }
+
   function dynamicToolErrorPayload(code, message, extra = {}) {
     return dynamicToolJsonResponse(Object.assign({
       ok: false,
@@ -1019,7 +1030,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
 
   function taskCardReturnDynamicToolBody(params = {}, args = {}) {
     const taskCardId = String(args.taskCardId || args.task_card_id || args.cardId || args.card_id || "").trim();
-    const actorThreadId = actorThreadIdFromDynamicToolCall(params, args);
+    const actorThreadId = returnActorThreadIdFromDynamicToolCall(params, args);
     const rawBody = String(args.body || args.bodyMarkdown || args.message || "").trim();
     const status = normalizedTaskCardReturnStatus(args.status);
     const title = String(args.title || "").trim();
@@ -1049,7 +1060,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       logger.log(`[task-card-return-tool-call] ${JSON.stringify(Object.assign({
         requestId: shortIdentifier(request && request.id),
         tool: truncateToolDescriptionText(dynamicToolCallIdentity(params).fullName || taskCardReturnToolFullName, 160),
-        actorThreadId: truncateToolDescriptionText(actorThreadIdFromDynamicToolCall(params, args), 80),
+        actorThreadId: truncateToolDescriptionText(returnActorThreadIdFromDynamicToolCall(params, args), 80),
         turnId: truncateToolDescriptionText(params.turnId || params.turn_id || "", 80),
         callId: truncateToolDescriptionText(params.callId || params.call_id || "", 80),
         taskCardId: truncateToolDescriptionText(args.taskCardId || args.task_card_id || args.cardId || args.card_id || "", 80),
@@ -1128,12 +1139,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         return dynamicToolErrorPayload("task_card_id_required", "Original task card id is required for return_to_source.");
       }
       if (!prepared.actorThreadId && !prepared.body.workflowId) {
-        logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "actor_thread_id_required" });
-        return dynamicToolErrorPayload(
-          "actor_thread_id_required",
-          "Codex Mobile could not infer the target thread id for this return card.",
-          { turnId: params.turnId || params.turn_id || "" },
-        );
+        logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "actor_thread_id_deferred_to_task_card" });
       }
       if (args.status && !prepared.body.status) {
         logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "status_invalid" });

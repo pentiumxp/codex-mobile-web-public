@@ -9,14 +9,14 @@ const path = require("node:path");
 function usage() {
   return [
     "Usage:",
-    "  node scripts/return-thread-task-card.js --task-card <id> --thread <target-thread-id> --title <title> --body-file <file>",
+    "  node scripts/return-thread-task-card.js --task-card <id> --title <title> --body-file <file>",
     "  node scripts/return-thread-task-card.js --json-file <request.json>",
     "",
     "Options:",
     "  --server <url>             Codex Mobile server. Default: http://127.0.0.1:8787",
     "  --key-file <path>          Access key file. Default: $HOME/.codex-mobile-web/access_key",
     "  --task-card <id>           Original task-card id being returned.",
-    "  --thread <id>              Current target thread id; used as reply actor.",
+    "  --thread <id>              Optional current target thread id; omitted means recover actor from taskCardId metadata.",
     "  --status <value>           completed, blocked, redirected, rejected, or partially_completed.",
     "  --title <text>             Return-card title.",
     "  --summary <text>           Optional summary.",
@@ -104,7 +104,6 @@ function readRequest(options) {
   if (!taskCardId) throw new Error("taskCardId is required");
   if (options.bodyFile) request.body = readTextFile(options.bodyFile).trim();
   const threadId = String(request.threadId || request.actorThreadId || "").trim();
-  if (!threadId) throw new Error("threadId is required");
   const status = normalizeStatus(request.status);
   if (status && !String(request.summary || "").trim()) request.summary = status;
   if (status && !/^Return:/i.test(String(request.title || ""))) {
@@ -120,7 +119,7 @@ function readRequest(options) {
     });
     request.idempotencyKey = `task-card-return:${stableTextHash(`${taskCardId}|${threadId}`)}:${stableTextHash(seed)}`;
   }
-  request.threadId = threadId;
+  if (threadId) request.threadId = threadId;
   request.returnToSource = true;
   request.format = request.format || "markdown";
   if (!request.body && request.bodyMarkdown) request.body = request.bodyMarkdown;

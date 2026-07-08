@@ -56,6 +56,30 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     return classification && classification.purpose === "worker_lane";
   }
 
+  function taskCardRoleText(...values) {
+    return values
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function isImplementationExecutionCard(card = {}, targetThread = {}) {
+    const routeKind = String(
+      card.routeResolution && (card.routeResolution.routeKind || card.routeResolution.kind)
+        || card.routeKind
+        || "",
+    ).trim().toLowerCase();
+    const workflowId = String(card.workflow && card.workflow.id || "").trim();
+    const roleText = taskCardRoleText(
+      card.target && card.target.role,
+      card.routeResolution && card.routeResolution.targetRole,
+      targetThread && (targetThread.threadRole || targetThread.thread_role || targetThread.role || targetThread.taskCardRole || targetThread.task_card_role),
+    );
+    if (!/(^|[\s_-])(implementation|implementer|repair)([\s_-]|$)/.test(roleText)) return false;
+    if (routeKind === "at_loop_role_slice" || workflowId.startsWith("at-loop:")) return true;
+    return isWorkerLaneThread(targetThread);
+  }
+
   function atLoopLoopIdFromTerminalReturnEvent(event = {}) {
     const metadata = event && typeof event.metadata === "object" ? event.metadata : {};
     const workflowId = String(metadata.workflowId || "").trim();
@@ -141,7 +165,8 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
       const targetThread = readThreadTaskCardExecutionTargetSummary(card);
       const targetIsDeployLane = isHomeAiDeployLaneThread(targetThread);
       const targetIsWorkerLane = isWorkerLaneThread(targetThread);
-      const targetUsesFullAccess = targetIsDeployLane || targetIsWorkerLane;
+      const targetIsImplementationExecution = isImplementationExecutionCard(card, targetThread);
+      const targetUsesFullAccess = targetIsDeployLane || targetIsWorkerLane || targetIsImplementationExecution;
       const baseRuntimeSettings = targetUsesFullAccess
         ? dependencies.applyPermissionModeOverride(inheritedRuntimeSettings, "full", targetThread && targetThread.cwd || null)
         : inheritedRuntimeSettings;
@@ -179,6 +204,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
           sandboxPolicyType: runtimeSettings.sandboxPolicy && runtimeSettings.sandboxPolicy.type || "",
           deployLaneNoApproval: targetIsDeployLane,
           workerLaneFullAccess: targetIsWorkerLane,
+          implementationFullAccess: targetIsImplementationExecution,
         },
       };
     },

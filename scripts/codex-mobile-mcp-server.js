@@ -226,10 +226,10 @@ function toolsList() {
       {
         type: "object",
         additionalProperties: false,
-        required: ["taskCardId", "threadId", "title", "bodyMarkdown"],
+        required: ["taskCardId", "title", "bodyMarkdown"],
         properties: {
           taskCardId: { type: "string", minLength: 1, maxLength: 120 },
-          threadId: { type: "string", minLength: 1, maxLength: 120 },
+          threadId: { type: "string", maxLength: 120, description: "Optional current target thread id. When omitted, the server recovers the expected actor from taskCardId metadata." },
           status: { type: "string", enum: ["completed", "blocked", "redirected", "rejected", "partially_completed"] },
           title: { type: "string", minLength: 1, maxLength: 120 },
           summary: { type: "string", maxLength: 300 },
@@ -406,7 +406,7 @@ async function delegateToThread(context, args = {}) {
 
 async function returnToSource(context, args = {}) {
   const taskCardId = boundedString(args.taskCardId || args.cardId, "task_card_id", 120, true);
-  const threadId = boundedString(args.threadId || args.actorThreadId, "thread_id", 120, true);
+  const threadId = boundedString(args.threadId || args.actorThreadId, "thread_id", 120, false);
   const title = boundedString(args.title, "title", 120, true);
   const bodyMarkdown = boundedString(args.bodyMarkdown || args.body, "body_markdown", 50_000, true);
   const status = normalizedReturnStatus(args.status);
@@ -436,7 +436,7 @@ async function returnToSource(context, args = {}) {
   return {
     ok: result.ok !== false,
     taskCardId,
-    threadId,
+    threadId: String(result.returnResolution && result.returnResolution.resolvedActorThreadId || threadId),
     status: String(result.card && result.card.status || ""),
     requestedActorThreadId: String(result.returnResolution && result.returnResolution.requestedActorThreadId || threadId),
     resolvedActorThreadId: String(result.returnResolution && result.returnResolution.resolvedActorThreadId || threadId),
@@ -566,6 +566,16 @@ async function threadLifecycle(context, args = {}) {
     action: boundedString(args.action || "list", "action", 80, false) || "list",
     loopId: boundedString(args.loopId || args.loop_id, "loop_id", 120, false),
     role: boundedString(args.role || args.threadRole || args.thread_role, "role", 80, false),
+    pluginId: boundedString(args.pluginId || args.plugin_id || args.plugin || args.targetPlugin || args.target_plugin, "plugin_id", 120, false),
+    purpose: boundedString(args.purpose || args.targetPurpose || args.target_purpose, "purpose", 120, false),
+    workerPurpose: boundedString(args.workerPurpose || args.worker_purpose, "worker_purpose", 120, false),
+    sourceThreadId: boundedString(args.sourceThreadId || args.source_thread_id, "source_thread_id", 220, false),
+    workerLaneId: boundedString(args.workerLaneId || args.worker_lane_id, "worker_lane_id", 120, false),
+    taskCardId: boundedString(args.taskCardId || args.task_card_id || args.cardId || args.card_id, "task_card_id", 120, false),
+    status: boundedString(args.status || args.heartbeatStatus || args.heartbeat_status, "status", 80, false),
+    summary: boundedString(args.summary || args.message, "summary", 300, false),
+    requestId: boundedString(args.requestId || args.request_id, "request_id", 180, false),
+    idempotencyKey: boundedString(args.idempotencyKey || args.idempotency_key, "idempotency_key", 180, false),
     threadId: boundedString(args.threadId || args.thread_id, "thread_id", 220, false),
     targetThreadId: boundedString(args.targetThreadId || args.target_thread_id, "target_thread_id", 220, false),
     cwd: boundedString(args.cwd, "cwd", 1000, false),

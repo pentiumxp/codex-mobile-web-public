@@ -1148,6 +1148,9 @@ function injectedMessageText(card, returnScriptPath = "scripts/return-thread-tas
     `Source workspace: ${card.source.workspaceId}`,
     `Source thread: ${card.source.title || card.source.threadId}`,
     `Source thread id: ${card.source.threadId}`,
+    `Target workspace: ${card.target.workspaceId}`,
+    `Current target thread: ${card.target.title || card.target.threadId}`,
+    `Current target thread id: ${card.target.threadId}`,
     returnTargetDiffers ? `Return target thread: ${returnTarget.title || returnTarget.threadId}` : "",
     returnTargetDiffers ? `Return target thread id: ${returnTarget.threadId}` : "",
     `Task card id: ${card.id}`,
@@ -1762,6 +1765,7 @@ function createThreadTaskCardService(options = {}) {
       const requestedActorThreadId = stringValue(actorThreadId);
       let resolvedActorThreadId = requestedActorThreadId;
       let workflowRecovered = false;
+      let actorThreadInferred = false;
       const directCard = findById(store, id);
       const card = directCard || (replyRequest.returnToSource === true
         ? findReturnCardByWorkflow(store, replyRequest.workflowId, requestedActorThreadId, existing)
@@ -1788,9 +1792,14 @@ function createThreadTaskCardService(options = {}) {
       if (card && replyRequest.returnToSource === true) {
         const expectedTargetThreadId = stringValue(card.workflow && card.workflow.expectedActorThreadId)
           || stringValue(card.target && card.target.threadId);
+        if (!resolvedActorThreadId && expectedTargetThreadId) {
+          resolvedActorThreadId = expectedTargetThreadId;
+          actorThreadInferred = true;
+        }
         const workflowMatches = replyRequest.workflowId
           && stringValue(card.workflow && card.workflow.id) === replyRequest.workflowId;
         if (expectedTargetThreadId
+          && requestedActorThreadId
           && requestedActorThreadId !== expectedTargetThreadId
           && workflowMatches) {
           const err = errorWithStatus("workflow_actor_mismatch", 403);
@@ -1818,7 +1827,7 @@ function createThreadTaskCardService(options = {}) {
             resolvedActorThreadId,
             expectedTargetThreadId: stringValue(card.workflow && card.workflow.expectedActorThreadId) || stringValue(card.target && card.target.threadId),
             workflowRecovered,
-            actorThreadInferred: false,
+            actorThreadInferred,
             resolverVersion: stringValue(card.workflow && card.workflow.resolverVersion) || TASK_CARD_RESOLVER_VERSION,
           },
         };
@@ -1838,7 +1847,7 @@ function createThreadTaskCardService(options = {}) {
             resolvedActorThreadId,
             expectedTargetThreadId: stringValue(card.workflow && card.workflow.expectedActorThreadId) || stringValue(card.target && card.target.threadId),
             workflowRecovered,
-            actorThreadInferred: false,
+            actorThreadInferred,
             resolverVersion: stringValue(card.workflow && card.workflow.resolverVersion) || TASK_CARD_RESOLVER_VERSION,
           },
         };
@@ -1971,7 +1980,7 @@ function createThreadTaskCardService(options = {}) {
           resolvedActorThreadId,
           expectedTargetThreadId: stringValue(card.workflow && card.workflow.expectedActorThreadId) || stringValue(card.target && card.target.threadId),
           workflowRecovered,
-          actorThreadInferred: false,
+          actorThreadInferred,
           resolverVersion: stringValue(card.workflow && card.workflow.resolverVersion) || TASK_CARD_RESOLVER_VERSION,
         },
       };
