@@ -2,8 +2,10 @@
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
+const { createContinuationThreadService } = require("../adapters/continuation-thread-service");
 const { readFrontendSources } = require("./frontend-source-helper");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
@@ -447,6 +449,10 @@ test("embedded plugin continuations carry plugin mode into the bootstrap", () =>
 });
 
 test("continuation can fall back when source thread cannot write a handoff", () => {
+  assert.match(continuationThreadServiceJs, /function truncateSingleLine\(/, "fallback reason formatting should have a local helper");
+  const fallbackReasonBody = functionBody(continuationThreadServiceJs, "continuationFallbackReason");
+  assert.match(fallbackReasonBody, /truncateSingleLine\(/, "fallback reason formatting should use the local single-line truncation helper");
+
   const sourceHandoffBody = functionBody(continuationThreadServiceJs, "createSourceContinuationHandoff");
   assert.match(sourceHandoffBody, /sourceSnapshot/, "source handoff generation should receive the source snapshot for fallback");
   assert.match(sourceHandoffBody, /writeFallbackSourceContinuationHandoff\(/, "source handoff generation should have a server fallback path");
@@ -467,6 +473,41 @@ test("continuation can fall back when source thread cannot write a handoff", () 
   const handoffSectionBody = functionBody(continuationThreadServiceJs, "sourceHandoffSection");
   assert.match(handoffSectionBody, /sourceHandoff\.fallback/, "bootstrap should disclose fallback handoff mode");
   assert.match(handoffSectionBody, /fallbackReason/, "bootstrap should include a bounded fallback reason");
+});
+
+test("continuation fallback handoff formats resume errors without ReferenceError", async (t) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "codex-continuation-fallback-"));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  const progress = [];
+  const service = createContinuationThreadService({
+    codexRequest: async (method) => {
+      if (method === "thread/resume") {
+        const err = new Error("resume failed\nwith multiline whitespace that must be compacted");
+        err.code = "TEST_RESUME";
+        throw err;
+      }
+      throw new Error(`unexpected request ${method}`);
+    },
+  });
+
+  const handoff = await service.createSourceContinuationHandoff({
+    cwd: workspace,
+    sourceThreadId: "thread-fallback-1",
+    sourceThreadTitle: "Fallback Source",
+    sourceSnapshot: {
+      threadId: "thread-fallback-1",
+      title: "Fallback Source",
+      turns: [],
+      readWarnings: [],
+    },
+    onProgress: (step, message, details) => progress.push({ step, message, details }),
+  });
+
+  assert.equal(handoff.fallback, true);
+  assert.match(handoff.fallbackReason, /^resume: resume failed with multiline whitespace/);
+  assert.doesNotMatch(handoff.fallbackReason, /\n/);
+  assert.equal(fs.existsSync(handoff.path), true);
+  assert.ok(progress.some((entry) => entry.step === "handoff-fallback"));
 });
 
 test("continuation titles survive app-server rename gaps", () => {

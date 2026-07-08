@@ -141,6 +141,13 @@ function formatByteCount(bytes) {
   return `${size.toFixed(precision)} ${units[unitIndex]}`;
 }
 
+function truncateSingleLine(value, maxChars = 240) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  const limit = Math.max(20, Number(maxChars || 0));
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 3)).trimEnd()}...`;
+}
+
 function readWorkspaceContextFile(cwd, relativePath, maxChars) {
   const workspace = String(cwd || "").trim();
   const file = workspace ? path.join(workspace, ...String(relativePath || "").split(/[\\/]+/).filter(Boolean)) : "";
