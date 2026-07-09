@@ -43,6 +43,16 @@ function createRemoteManagedWorkspaceRouteService(dependencies = {}) {
     const taskCardId = parts[4] ? decodeURIComponent(parts[4]) : "";
     const options = { token };
     try {
+      if (method === "POST" && url.pathname === "/api/remote-managed-workspaces/pairing-requests") {
+        const body = await readBody();
+        sendJson(200, remoteManagedWorkspaceService.requestPairing(body, options));
+        return { handled: true };
+      }
+      if (method === "GET" && parts.length === 4 && parts[2] === "pairing-requests") {
+        const requestId = decodeURIComponent(parts[3]);
+        sendJson(200, remoteManagedWorkspaceService.pairingStatus(requestId, options));
+        return { handled: true };
+      }
       if (method === "POST" && url.pathname === "/api/remote-managed-workspaces/register") {
         const body = await readBody();
         sendJson(200, remoteManagedWorkspaceService.register(body, options));

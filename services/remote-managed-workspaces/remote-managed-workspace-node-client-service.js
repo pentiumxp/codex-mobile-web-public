@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const defaultFs = require("node:fs");
 const defaultPath = require("node:path");
 
@@ -36,6 +37,10 @@ function normalizeUrl(value, fieldName) {
 function normalizeStringList(value) {
   const source = Array.isArray(value) ? value : (value ? [value] : []);
   return source.map((entry) => compactOneLine(entry)).filter(Boolean);
+}
+
+function stableHash(value, length = 20) {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex").slice(0, length);
 }
 
 function isPathInside(pathModule, child, parent) {
@@ -98,8 +103,8 @@ function createRemoteManagedWorkspaceNodeClientService(dependencies = {}) {
     const workspaceId = compactOneLine(config.workspaceId);
     if (!workspaceId) throw errorWithStatus("workspace_id_required");
     const centralUrl = normalizeUrl(config.centralUrl, "central_url");
-    const enrollmentToken = compactOneLine(config.enrollmentToken || config.token);
-    if (!enrollmentToken) throw errorWithStatus("enrollment_token_required");
+    const enrollmentToken = compactOneLine(config.scopedCredential || config.enrollmentToken || config.token);
+    if (!enrollmentToken) throw errorWithStatus("scoped_node_credential_required");
     const workspaceKind = compactOneLine(config.workspaceKind || WORKSPACE_KIND);
     if (workspaceKind !== WORKSPACE_KIND) throw errorWithStatus("workspace_kind_invalid");
     return {
@@ -113,18 +118,46 @@ function createRemoteManagedWorkspaceNodeClientService(dependencies = {}) {
       roles: normalizeStringList(config.roles || DEFAULT_ROLES),
       capabilities: normalizeStringList(config.capabilities || []),
       enrollmentToken,
+      scopedCredential: enrollmentToken,
       projectRootEvidence: evidence,
     };
   }
 
-  async function request(config, method, routePath, body) {
+  function normalizePairingConfig(config = {}) {
+    const { projectRoot, evidence } = validateProjectRoot(config, { fs, path: pathModule });
+    const workspaceId = compactOneLine(config.workspaceId);
+    if (!workspaceId) throw errorWithStatus("workspace_id_required");
+    const centralUrl = normalizeUrl(config.centralUrl, "central_url");
+    const workspaceKind = compactOneLine(config.workspaceKind || WORKSPACE_KIND);
+    if (workspaceKind !== WORKSPACE_KIND) throw errorWithStatus("workspace_kind_invalid");
+    const nodeName = compactOneLine(config.nodeName || "remote-node");
+    return {
+      workspaceId,
+      workspaceKind,
+      projectType: compactOneLine(config.projectType || "unknown"),
+      projectRoot,
+      projectRootLabel: compactOneLine(config.projectRootLabel || pathModule.basename(projectRoot) || "workspace").slice(0, 120),
+      centralUrl,
+      nodeId: compactOneLine(config.nodeId || `rmn_${stableHash(`${workspaceId}:${nodeName}`, 20)}`).slice(0, 120),
+      nodeName,
+      contractVersion: compactOneLine(config.contractVersion || "remote-managed-workspace.v1"),
+      roles: normalizeStringList(config.roles || DEFAULT_ROLES),
+      capabilities: normalizeStringList(config.capabilities || []),
+      projectRootEvidence: evidence,
+    };
+  }
+
+  async function request(config, method, routePath, body, options = {}) {
     const url = new URL(routePath, `${config.centralUrl}/`);
+    const credential = compactOneLine(config.scopedCredential || config.enrollmentToken || config.token);
+    const headers = { "content-type": "application/json" };
+    if (!options.skipAuth) {
+      if (!credential) throw errorWithStatus("scoped_node_credential_required");
+      headers.authorization = `Bearer ${credential}`;
+    }
     const response = await fetchImpl(url.toString(), {
       method,
-      headers: {
-        "authorization": `Bearer ${config.enrollmentToken}`,
-        "content-type": "application/json",
-      },
+      headers,
       body: body == null ? undefined : JSON.stringify(body),
     });
     const payload = await readJsonResponse(response);
@@ -150,6 +183,33 @@ function createRemoteManagedWorkspaceNodeClientService(dependencies = {}) {
       projectRootEvidence: config.projectRootEvidence,
     };
     const result = await request(config, "POST", "/api/remote-managed-workspaces/register", payload);
+    return { config, result };
+  }
+
+  async function requestPairing(rawConfig) {
+    const config = normalizePairingConfig(rawConfig);
+    const payload = {
+      workspaceId: config.workspaceId,
+      workspaceKind: config.workspaceKind,
+      projectType: config.projectType,
+      projectRootLabel: config.projectRootLabel,
+      centralUrl: config.centralUrl,
+      nodeId: config.nodeId,
+      nodeName: config.nodeName,
+      contractVersion: config.contractVersion,
+      roles: config.roles,
+      capabilities: config.capabilities,
+      projectRootEvidence: config.projectRootEvidence,
+    };
+    const result = await request(config, "POST", "/api/remote-managed-workspaces/pairing-requests", payload, { skipAuth: true });
+    return { config, result };
+  }
+
+  async function pollPairingStatus(rawConfig, pairingRequestId) {
+    const config = normalizePairingConfig(rawConfig);
+    const requestId = compactOneLine(pairingRequestId);
+    if (!requestId) throw errorWithStatus("pairing_request_id_required");
+    const result = await request(config, "GET", `/api/remote-managed-workspaces/pairing-requests/${encodeURIComponent(requestId)}`, null, { skipAuth: true });
     return { config, result };
   }
 
@@ -216,9 +276,12 @@ function createRemoteManagedWorkspaceNodeClientService(dependencies = {}) {
     heartbeatTaskCard,
     nodeHeartbeat,
     normalizeConfig,
+    normalizePairingConfig,
     pollTaskCards,
+    pollPairingStatus,
     processNextTaskCard,
     register,
+    requestPairing,
     returnTaskCard,
     sendDailySummary,
     sendEscalation,

@@ -16,6 +16,35 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-07-09 Public 候选说明（RMW 自动配对客户端）
+
+本次 public 候选同步 private 已验证的
+`codex-mobile-shell-v625-0cfbf675b852` RMW 自动配对客户端流程，
+版本仍为 `0.1.11`。该候选尚未推送 public；它用于在 Owner 确认后发布
+Remote Managed Workspace 的 URL-only 配对、Owner 审批和 scoped node
+credential 客户端支持。
+
+本次候选包含以下公开可复用改动：
+
+- Remote Managed Workspace 设置页普通流程只要求填写 Home AI Server URL；
+  不再要求普通用户输入登记令牌、Owner 级访问密钥或原始凭据。
+- 节点连接状态区分未配置、请求配对、等待 Home AI 审批、已批准/已配对、
+  已连接、已拒绝、认证失败和离线/重试中，避免把“URL 可达”误显示成已可收卡。
+- Codex Mobile 发送 bounded pairing intent / registration intent，包含
+  workspace/node/project/capability/contract metadata；Home AI central 仍拥有
+  审批 UI、registry、policy 和 production system-of-record。
+- Owner 批准后，客户端只做 write-only scoped credential 持久化；公开 API、
+  设置页、status/readback 和 harness 输出只显示 masked/credential-present 状态。
+- runner/register/heartbeat/poll/ack/per-card heartbeat/terminal return 在批准并拥有
+  scoped credential 后才进入 trusted 路径；拒绝或未批准状态不会启动可信 poll。
+- 本地 two-port simulator/harness 与 Home AI central ownership 边界保持一致，
+  仅用于公开安全的客户端、runner 和协议回归验证。
+
+发布边界保持不变：本次候选只包含公开源码、README、scripts、tests 和生成前端资产；
+不包含 `.agent-context`、runtime state、本地密钥、访问密钥、启动令牌、
+原始 scoped 凭据、上传内容、私有 endpoint 内容、私有线程正文、原始日志、
+原始 cache JSON、数据库行或机器特定诊断。
+
 ## 2026-07-09 Public 发布说明（v625 回卡、Worker 生命周期和 iPad 平铺修复）
 
 本次 public 同步 private/production 已验证的 `codex-mobile-shell-v625-b1a27c2e7c44`

@@ -53,6 +53,88 @@ test("remote managed workspace registration returns bounded identity without tok
   assert.doesNotMatch(JSON.stringify(result), /token|secret|Bearer/i);
 });
 
+test("remote managed workspace pairing approval issues scoped credential without snapshot leakage", () => {
+  const service = createRemoteManagedWorkspaceService({
+    fs,
+    path,
+    crypto,
+    stateFile: "",
+    enrollmentTokens: [],
+    now: () => new Date("2026-07-08T00:00:00.000Z"),
+  });
+  const requested = service.requestPairing({
+    workspaceId: "rmw_pairing_test",
+    workspaceKind: "remote_managed_workspace",
+    projectType: "node",
+    projectRootLabel: "GMK-test",
+    centralUrl: "http://127.0.0.1:8797",
+    nodeId: "rmn_pairing",
+    nodeName: "node-pairing",
+    contractVersion: "remote-managed-workspace.v1",
+    roles: ["external_project_main", "external_project_worker"],
+    capabilities: ["task-card-poll", "task-card-return"],
+    projectRootEvidence: { exists: true, withinAllowedRoot: true },
+  });
+  assert.equal(requested.ok, true);
+  assert.equal(requested.pairing.status, "pending_approval");
+  assert.doesNotMatch(JSON.stringify(requested), /scoped-node-credential/);
+
+  const approved = service.approvePairing(requested.pairing.requestId, {
+    scopedCredential: "scoped-node-credential",
+  });
+  assert.equal(approved.pairing.status, "approved");
+  assert.equal(approved.pairing.scopedCredential, "scoped-node-credential");
+
+  const registered = service.register({
+    workspaceId: "rmw_pairing_test",
+    workspaceKind: "remote_managed_workspace",
+    projectType: "node",
+    projectRoot: "/tmp/project",
+    centralUrl: "http://127.0.0.1:8797",
+    nodeName: "node-pairing",
+    contractVersion: "remote-managed-workspace.v1",
+    roles: ["external_project_main", "external_project_worker"],
+    capabilities: ["task-card-poll", "task-card-return"],
+    projectRootEvidence: { exists: true, withinAllowedRoot: true },
+  }, { token: "scoped-node-credential" });
+  assert.equal(registered.ok, true);
+
+  const snapshot = service.snapshot();
+  assert.equal(snapshot.pairingRequests[requested.pairing.requestId].status, "approved");
+  assert.doesNotMatch(JSON.stringify(snapshot), /scoped-node-credential/);
+  assert.doesNotMatch(JSON.stringify(snapshot), /credentialHash/);
+});
+
+test("remote managed workspace pairing rejection remains bounded and unauthenticated", () => {
+  const service = makeService();
+  const requested = service.requestPairing({
+    workspaceId: "rmw_pairing_reject",
+    workspaceKind: "remote_managed_workspace",
+    projectType: "node",
+    projectRootLabel: "Reject Demo",
+    centralUrl: "http://127.0.0.1:8797",
+    nodeName: "node-reject",
+    contractVersion: "remote-managed-workspace.v1",
+    roles: ["external_project_main", "external_project_worker"],
+    capabilities: ["task-card-poll"],
+  });
+  const rejected = service.rejectPairing(requested.pairing.requestId, { reason: "owner_rejected" });
+  assert.equal(rejected.pairing.status, "rejected");
+  assert.equal(service.pairingStatus(requested.pairing.requestId).pairing.reason, "owner_rejected");
+  assert.throws(() => service.register({
+    workspaceId: "rmw_pairing_reject",
+    workspaceKind: "remote_managed_workspace",
+    projectType: "node",
+    projectRoot: "/tmp/project",
+    centralUrl: "http://127.0.0.1:8797",
+    nodeName: "node-reject",
+    contractVersion: "remote-managed-workspace.v1",
+    roles: ["external_project_main", "external_project_worker"],
+    capabilities: ["task-card-poll"],
+    projectRootEvidence: { exists: true, withinAllowedRoot: true },
+  }, { token: "not-approved" }), /remote_managed_workspace_enrollment_token_invalid/);
+});
+
 test("remote node projectRoot validation requires an existing directory inside an allowed root", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-root-"));
   const projectRoot = path.join(root, "project");

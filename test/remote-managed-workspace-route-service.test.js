@@ -74,6 +74,56 @@ test("remote managed workspace simulator route uses route-local enrollment auth"
   assert.equal(heartbeat.payload.nodeStatus.status, "idle");
 });
 
+test("remote managed workspace simulator route accepts unauthenticated pairing then scoped credential", async () => {
+  const service = createRemoteManagedWorkspaceService({
+    crypto,
+    stateFile: "",
+    enrollmentTokens: [],
+  });
+  const route = createRemoteManagedWorkspaceRouteService({
+    remoteManagedWorkspaceService: service,
+    centralSimulator: true,
+  });
+  const requested = await callRoute(route, "POST", "/api/remote-managed-workspaces/pairing-requests", {
+    workspaceId: "rmw_route_pairing",
+    workspaceKind: "remote_managed_workspace",
+    projectType: "node",
+    projectRootLabel: "GMK-test",
+    centralUrl: "http://127.0.0.1:8797",
+    nodeId: "rmn_route_pairing",
+    nodeName: "node-route-pairing",
+    contractVersion: "remote-managed-workspace.v1",
+    roles: ["external_project_main", "external_project_worker"],
+    capabilities: ["task-card-poll", "task-card-return"],
+  }, "");
+  assert.equal(requested.status, 200);
+  assert.equal(requested.payload.pairing.status, "pending_approval");
+
+  service.approvePairing(requested.payload.pairing.requestId, {
+    scopedCredential: "route-scoped-credential",
+  });
+  const status = await callRoute(route, "GET", `/api/remote-managed-workspaces/pairing-requests/${requested.payload.pairing.requestId}`, null, "");
+  assert.equal(status.status, 200);
+  assert.equal(status.payload.pairing.status, "approved");
+  assert.equal(status.payload.pairing.scopedCredential, "route-scoped-credential");
+
+  const registered = await callRoute(route, "POST", "/api/remote-managed-workspaces/register", {
+    workspaceId: "rmw_route_pairing",
+    workspaceKind: "remote_managed_workspace",
+    projectType: "node",
+    projectRoot: "/tmp/project",
+    centralUrl: "http://127.0.0.1:8797",
+    nodeName: "node-route-pairing",
+    contractVersion: "remote-managed-workspace.v1",
+    roles: ["external_project_main", "external_project_worker"],
+    capabilities: ["task-card-poll", "task-card-return"],
+    projectRootEvidence: { exists: true, withinAllowedRoot: true },
+  }, "route-scoped-credential");
+  assert.equal(registered.status, 200);
+  assert.equal(registered.payload.workspace.workspaceId, "rmw_route_pairing");
+  assert.doesNotMatch(JSON.stringify(service.snapshot()), /route-scoped-credential/);
+});
+
 test("remote managed workspace route is not handled unless explicitly configured as simulator", async () => {
   const service = createRemoteManagedWorkspaceService({
     crypto,

@@ -14,6 +14,16 @@ const DEFAULT_PROJECT_TYPE = "vite_game";
 const DEFAULT_CONNECTION_MODE = "persistent";
 const EFFECTIVE_CONNECTION_MODE = "http_polling";
 const SECRET_PREVIEW = "********";
+const PAIRING_STATUS_VALUES = new Set([
+  "unconfigured",
+  "requesting_pairing",
+  "pending_approval",
+  "approved",
+  "connected",
+  "rejected",
+  "auth_failed",
+  "offline_retrying",
+]);
 const STATUS_VALUES = new Set([
   "disconnected",
   "connecting",
@@ -95,6 +105,11 @@ function normalizeStatus(value) {
   return STATUS_VALUES.has(text) ? text : "disconnected";
 }
 
+function normalizePairingStatus(value) {
+  const text = compactOneLine(value).toLowerCase();
+  return PAIRING_STATUS_VALUES.has(text) ? text : "unconfigured";
+}
+
 function isPathInside(pathModule, child, parent) {
   const relative = pathModule.relative(parent, child);
   return relative === "" || (!relative.startsWith("..") && !pathModule.isAbsolute(relative));
@@ -155,6 +170,13 @@ function blankState() {
     lastExecutionBridgeStatus: "",
     lastRegisterAt: "",
     lastConnectionCheckAt: "",
+    pairingStatus: "unconfigured",
+    pairingRequestId: "",
+    pairingRequestedAt: "",
+    pairingApprovedAt: "",
+    pairingRejectedAt: "",
+    pairingRejectionReason: "",
+    lastPairingCheckAt: "",
     consecutiveFailures: 0,
     nextRetryAt: "",
     queuedTerminalReturns: [],
@@ -263,6 +285,7 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
   function readState() {
     const loaded = Object.assign(blankState(), readJsonFile(fs, stateFile, {}));
     loaded.connectionStatus = normalizeStatus(loaded.connectionStatus);
+    loaded.pairingStatus = normalizePairingStatus(loaded.pairingStatus);
     loaded.issueCodes = boundedIssueCodes(loaded.issueCodes);
     loaded.diagnostics = normalizeDiagnostics(loaded.diagnostics);
     loaded.queuedTerminalReturns = Array.isArray(loaded.queuedTerminalReturns) ? loaded.queuedTerminalReturns.slice(-20) : [];
@@ -276,6 +299,7 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
       updatedAt: nowIso(now),
     });
     next.connectionStatus = normalizeStatus(next.connectionStatus);
+    next.pairingStatus = normalizePairingStatus(next.pairingStatus);
     next.issueCodes = boundedIssueCodes(next.issueCodes);
     next.diagnostics = normalizeDiagnostics(next.diagnostics);
     next.activeTaskCardId = compactOneLine(next.activeTaskCardId).slice(0, 180);
@@ -287,6 +311,12 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     next.lastLocalTurnId = compactOneLine(next.lastLocalTurnId).slice(0, 180);
     next.lastReturnStatus = compactOneLine(next.lastReturnStatus).slice(0, 80);
     next.lastExecutionBridgeStatus = compactOneLine(next.lastExecutionBridgeStatus).slice(0, 120);
+    next.pairingRequestId = compactOneLine(next.pairingRequestId).slice(0, 180);
+    next.pairingRequestedAt = compactOneLine(next.pairingRequestedAt).slice(0, 80);
+    next.pairingApprovedAt = compactOneLine(next.pairingApprovedAt).slice(0, 80);
+    next.pairingRejectedAt = compactOneLine(next.pairingRejectedAt).slice(0, 80);
+    next.pairingRejectionReason = compactOneLine(next.pairingRejectionReason).slice(0, 240);
+    next.lastPairingCheckAt = compactOneLine(next.lastPairingCheckAt).slice(0, 80);
     next.queuedTerminalReturns = Array.isArray(next.queuedTerminalReturns) ? next.queuedTerminalReturns.slice(-20) : [];
     next.executedIdempotencyKeys = normalizeStringList(next.executedIdempotencyKeys, [], 200);
     writeJsonFile(fs, pathModule, stateFile, next);
@@ -323,6 +353,10 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
       fs.chmodSync(enrollmentTokenFile, 0o600);
     } catch (_) {}
     return true;
+  }
+
+  function writeScopedCredential(value) {
+    return writeEnrollmentToken(value);
   }
 
   function clearEnrollmentToken() {
@@ -409,6 +443,13 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     return text || DEFAULT_PROJECT_TYPE;
   }
 
+  function stateWithoutLegacyCredentialIssues(state = readState()) {
+    return Object.assign({}, state, {
+      issueCodes: boundedIssueCodes((state.issueCodes || []).filter((code) => code !== "enrollment_token_required")),
+      diagnostics: normalizeDiagnostics((state.diagnostics || []).filter((entry) => entry && entry.code !== "enrollment_token_required")),
+    });
+  }
+
   function enableWorkspace(input = {}) {
     const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
     const current = readSettings();
@@ -439,23 +480,19 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     }
     const saved = writeSettings(next);
     const state = withoutIssueCodes(readState(), GENERATED_WORKSPACE_CONFIG_ISSUES);
-    if (!readEnrollmentToken(saved)) {
-      writeState(Object.assign({}, state, {
-        connectionStatus: "auth_failed",
-        issueCodes: boundedIssueCodes([...(state.issueCodes || []), "enrollment_token_required"]),
-        diagnostics: normalizeDiagnostics([...(state.diagnostics || []), {
-          code: "enrollment_token_required",
-          status: "auth_failed",
-          at: nowIso(now),
-        }]),
-      }));
-    } else if ((state.issueCodes || []).includes("enrollment_token_required")) {
-      writeState(Object.assign({}, state, {
-        connectionStatus: state.connectionStatus === "auth_failed" ? "disconnected" : state.connectionStatus,
-        issueCodes: boundedIssueCodes((state.issueCodes || []).filter((code) => code !== "enrollment_token_required")),
-        diagnostics: normalizeDiagnostics((state.diagnostics || []).filter((entry) => entry && entry.code !== "enrollment_token_required")),
-      }));
-    }
+    const credentialConfigured = Boolean(readEnrollmentToken(saved));
+    writeState(Object.assign({}, stateWithoutLegacyCredentialIssues(state), {
+      connectionStatus: "disconnected",
+      pairingStatus: credentialConfigured ? "approved" : "unconfigured",
+      pairingRequestId: "",
+      pairingRequestedAt: "",
+      pairingApprovedAt: credentialConfigured ? nowIso(now) : "",
+      pairingRejectedAt: "",
+      pairingRejectionReason: "",
+      lastPairingCheckAt: "",
+      consecutiveFailures: 0,
+      nextRetryAt: "",
+    }));
     return publicSettings();
   }
 
@@ -490,22 +527,28 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
       const token = compactOneLine(source.enrollmentToken);
       if (token) writeEnrollmentToken(token);
     }
+    if (Object.prototype.hasOwnProperty.call(source, "scopedCredential")) {
+      const credential = compactOneLine(source.scopedCredential);
+      if (credential) writeScopedCredential(credential);
+    }
     if (source.clearEnrollmentToken === true) clearEnrollmentToken();
+    if (source.clearScopedCredential === true) clearEnrollmentToken();
     const saved = writeSettings(next);
     const state = readState();
     if (!saved.enabled) {
       writeState(Object.assign({}, state, {
         connectionStatus: "disconnected",
+        pairingStatus: readEnrollmentToken(saved) ? "approved" : "unconfigured",
         issueCodes: [],
         diagnostics: [],
         consecutiveFailures: 0,
         nextRetryAt: "",
       }));
-    } else if (readEnrollmentToken(saved) && (state.issueCodes || []).includes("enrollment_token_required")) {
-      writeState(Object.assign({}, state, {
+    } else if (readEnrollmentToken(saved) && ((state.issueCodes || []).includes("enrollment_token_required") || state.pairingStatus === "unconfigured")) {
+      writeState(Object.assign({}, stateWithoutLegacyCredentialIssues(state), {
         connectionStatus: state.connectionStatus === "auth_failed" ? "disconnected" : state.connectionStatus,
-        issueCodes: boundedIssueCodes((state.issueCodes || []).filter((code) => code !== "enrollment_token_required")),
-        diagnostics: normalizeDiagnostics((state.diagnostics || []).filter((entry) => entry && entry.code !== "enrollment_token_required")),
+        pairingStatus: state.pairingStatus === "connected" ? "connected" : "approved",
+        pairingApprovedAt: state.pairingApprovedAt || nowIso(now),
       }));
     }
     return publicSettings(saved);
@@ -515,14 +558,85 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     const settings = normalizeSettings(readSettings());
     const token = readEnrollmentToken(settings);
     if (options.requireEnabled !== false && !settings.enabled) throw errorWithStatus("remote_managed_workspace_disabled", 409);
-    if (options.requireToken !== false && !token) throw errorWithStatus("enrollment_token_secret_unavailable", 409);
+    if (options.requireToken !== false && !token) throw errorWithStatus("scoped_node_credential_unavailable", 409);
     const roots = validateProjectRoots(settings, { requirePaths: true });
     return Object.assign({}, settings, {
       allowedRoots: [roots.allowedRoot],
       projectRoot: roots.projectRoot,
       enrollmentToken: token,
+      scopedCredential: token,
       projectRootEvidence: roots.evidence,
     });
+  }
+
+  function configForPairingIntent(options = {}) {
+    const settings = normalizeSettings(readSettings());
+    if (options.requireEnabled !== false && !settings.enabled) throw errorWithStatus("remote_managed_workspace_disabled", 409);
+    const roots = validateProjectRoots(settings, { requirePaths: true });
+    return Object.assign({}, settings, {
+      allowedRoots: [roots.allowedRoot],
+      projectRoot: roots.projectRoot,
+      projectRootLabel: pathModule.basename(roots.projectRoot) || "workspace",
+      projectRootEvidence: roots.evidence,
+    });
+  }
+
+  function applyPairingResult(result = {}) {
+    const source = result && typeof result === "object" && !Array.isArray(result)
+      ? (result.pairing || result.registration || result)
+      : {};
+    const current = readState();
+    const timestamp = nowIso(now);
+    const requestId = compactOneLine(
+      source.requestId
+      || source.pairingRequestId
+      || result.requestId
+      || result.pairingRequestId
+      || current.pairingRequestId,
+    ).slice(0, 180);
+    const credential = compactOneLine(
+      source.scopedCredential
+      || source.nodeCredential
+      || source.credential
+      || result.scopedCredential
+      || result.nodeCredential
+      || result.credential,
+    );
+    if (credential) writeScopedCredential(credential);
+    const rawStatus = source.status || result.status || "";
+    const normalized = credential ? "approved" : normalizePairingStatus(rawStatus || "pending_approval");
+    const reason = compactOneLine(
+      source.reason
+      || source.rejectionReason
+      || result.reason
+      || result.rejectionReason,
+    ).slice(0, 240);
+    const next = Object.assign({}, stateWithoutLegacyCredentialIssues(current), {
+      pairingStatus: normalized,
+      pairingRequestId: requestId,
+      lastPairingCheckAt: timestamp,
+    });
+    if (normalized === "pending_approval" || normalized === "requesting_pairing") {
+      next.connectionStatus = "connecting";
+      next.pairingRequestedAt = next.pairingRequestedAt || timestamp;
+      next.pairingApprovedAt = "";
+      next.pairingRejectedAt = "";
+      next.pairingRejectionReason = "";
+    } else if (normalized === "approved") {
+      next.connectionStatus = current.connectionStatus === "connected" ? "connected" : "connecting";
+      next.pairingApprovedAt = next.pairingApprovedAt || timestamp;
+      next.pairingRejectedAt = "";
+      next.pairingRejectionReason = "";
+    } else if (normalized === "rejected") {
+      next.connectionStatus = "auth_failed";
+      next.pairingRejectedAt = timestamp;
+      next.pairingRejectionReason = reason || "pairing_rejected";
+    } else if (normalized === "auth_failed") {
+      next.connectionStatus = "auth_failed";
+    } else if (normalized === "offline_retrying") {
+      next.connectionStatus = "offline";
+    }
+    return writeState(next);
   }
 
   function updateConnectionState(patch = {}) {
@@ -572,6 +686,9 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
   function publicSettings(settings = readSettings(), state = readState()) {
     const tokenConfigured = Boolean(readEnrollmentToken(settings));
     const effectiveMode = EFFECTIVE_CONNECTION_MODE;
+    const pairingStatus = tokenConfigured && state.pairingStatus === "unconfigured"
+      ? "approved"
+      : normalizePairingStatus(state.pairingStatus);
     return {
       enabled: Boolean(settings.enabled),
       workspaceKind: settings.workspaceKind || WORKSPACE_KIND,
@@ -588,10 +705,20 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
       roles: Array.isArray(settings.roles) ? settings.roles.slice() : DEFAULT_ROLES.slice(),
       capabilities: Array.isArray(settings.capabilities) ? settings.capabilities.slice() : DEFAULT_CAPABILITIES.slice(),
       reasoningFloorByRole: { external_project_main: "xhigh" },
+      scopedCredentialConfigured: tokenConfigured,
+      scopedCredentialRef: settings.enrollmentTokenRef || (tokenConfigured ? "local_secret_entry" : ""),
+      scopedCredentialPreview: tokenConfigured ? SECRET_PREVIEW : "",
       enrollmentTokenConfigured: tokenConfigured,
       enrollmentTokenRef: settings.enrollmentTokenRef || (tokenConfigured ? "local_secret_entry" : ""),
       enrollmentTokenPreview: tokenConfigured ? SECRET_PREVIEW : "",
       connectionStatus: normalizeStatus(state.connectionStatus),
+      pairingStatus,
+      pairingRequestId: state.pairingRequestId || "",
+      pairingRequestedAt: state.pairingRequestedAt || "",
+      pairingApprovedAt: state.pairingApprovedAt || "",
+      pairingRejectedAt: state.pairingRejectedAt || "",
+      pairingRejectionReason: state.pairingRejectionReason || "",
+      lastPairingCheckAt: state.lastPairingCheckAt || "",
       activeTaskCardId: state.activeTaskCardId || "",
       activeLocalThreadId: state.activeLocalThreadId || "",
       activeLocalTurnId: state.activeLocalTurnId || "",
@@ -614,7 +741,9 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
   }
 
   return {
+    applyPairingResult,
     configForClient,
+    configForPairingIntent,
     disableWorkspace,
     enableWorkspace,
     publicSettings,

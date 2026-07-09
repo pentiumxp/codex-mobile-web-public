@@ -75,6 +75,7 @@ test("remote managed workspace settings persist masked readback and separate tok
     assert.equal(saved.enabled, true);
     assert.equal(saved.workspaceKind, "remote_managed_workspace");
     assert.equal(saved.projectType, "vite_game");
+    assert.equal(saved.scopedCredentialConfigured, true);
     assert.equal(saved.enrollmentTokenConfigured, true);
     assert.equal(saved.enrollmentTokenPreview, "********");
     assert.equal(saved.effectiveConnectionMode, "http_polling");
@@ -166,8 +167,10 @@ test("remote managed workspace settings auto-generate remote node fields from wo
     assert.equal(missingToken.projectType, "vite_game");
     assert.equal(missingToken.connectionMode, "persistent");
     assert.equal(missingToken.effectiveConnectionMode, "http_polling");
+    assert.equal(missingToken.scopedCredentialConfigured, false);
     assert.equal(missingToken.enrollmentTokenConfigured, false);
-    assert.equal(missingToken.issueCodes.includes("enrollment_token_required"), true);
+    assert.equal(missingToken.pairingStatus, "unconfigured");
+    assert.equal(missingToken.issueCodes.includes("enrollment_token_required"), false);
     assert.equal(missingToken.issueCodes.includes("project_root_required"), false);
     assert.doesNotMatch(JSON.stringify(missingToken), /generated-secret-token/);
 
@@ -176,6 +179,8 @@ test("remote managed workspace settings auto-generate remote node fields from wo
       enrollmentToken: "later-secret-token",
     });
     assert.equal(savedToken.enrollmentTokenConfigured, true);
+    assert.equal(savedToken.scopedCredentialConfigured, true);
+    assert.equal(savedToken.pairingStatus, "approved");
     assert.equal(savedToken.issueCodes.includes("enrollment_token_required"), false);
     assert.doesNotMatch(JSON.stringify(savedToken), /later-secret-token/);
 
@@ -250,5 +255,54 @@ test("remote managed workspace settings auto-generate Windows remote node fields
   assert.equal(status.allowedRoot, windowsWorkspace);
   assert.match(status.workspaceId, /^rmw_gmk-test_[a-f0-9]{12}$/);
   assert.match(status.nodeName, /^[a-z0-9._-]+_gmk-test_[a-f0-9]{8}$/);
-  assert.equal(status.issueCodes.includes("enrollment_token_required"), true);
+  assert.equal(status.scopedCredentialConfigured, false);
+  assert.equal(status.pairingStatus, "unconfigured");
+  assert.equal(status.issueCodes.includes("enrollment_token_required"), false);
+});
+
+test("remote managed workspace settings consume pairing approval as write-only scoped credential", () => {
+  const { root, projectRoot, service } = makeTempService();
+  try {
+    service.enableWorkspace({
+      centralUrl: "http://127.0.0.1:8797",
+      workspace: {
+        cwd: projectRoot,
+        label: "Approval Demo",
+      },
+    });
+    const pairing = service.applyPairingResult({
+      pairing: {
+        requestId: "rmw_pair_test",
+        status: "pending_approval",
+      },
+    });
+    assert.equal(pairing.pairingStatus, "pending_approval");
+    assert.equal(service.publicSettings().pairingRequestId, "rmw_pair_test");
+
+    const approved = service.applyPairingResult({
+      pairing: {
+        requestId: "rmw_pair_test",
+        status: "approved",
+        scopedCredential: "scoped-node-credential",
+      },
+    });
+    const publicStatus = service.publicSettings(undefined, approved);
+    assert.equal(publicStatus.pairingStatus, "approved");
+    assert.equal(publicStatus.scopedCredentialConfigured, true);
+    assert.equal(publicStatus.scopedCredentialPreview, "********");
+    assert.doesNotMatch(JSON.stringify(publicStatus), /scoped-node-credential/);
+    assert.equal(service.configForClient({ requireEnabled: true, requireToken: true }).scopedCredential, "scoped-node-credential");
+
+    const rejected = service.applyPairingResult({
+      pairing: {
+        requestId: "rmw_pair_rejected",
+        status: "rejected",
+        reason: "owner_rejected",
+      },
+    });
+    assert.equal(rejected.pairingStatus, "rejected");
+    assert.equal(service.publicSettings(undefined, rejected).pairingRejectionReason, "owner_rejected");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

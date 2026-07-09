@@ -95,9 +95,11 @@ function installRemoteManagedWorkspaceDomHarness(options = {}) {
 
   globalThis.state = {
     remoteManagedWorkspace: {
-      enabled: false,
+      enabled: Boolean(options.enabled),
       centralUrl: String(options.initialCentralUrl || ""),
       connectionStatus: "disconnected",
+      pairingStatus: String(options.pairingStatus || "unconfigured"),
+      scopedCredentialConfigured: Boolean(options.scopedCredentialConfigured),
     },
     remoteManagedWorkspaceBusy: false,
     remoteManagedWorkspaceWorkspaceLoadAttempted: true,
@@ -126,9 +128,23 @@ function installRemoteManagedWorkspaceDomHarness(options = {}) {
     if (url === "/api/settings/remote-managed-workspace") {
       return {
         remoteManagedWorkspace: {
-          enabled: false,
+          enabled: Boolean(options.enabled),
           centralUrl: options.readbackCentralUrl === undefined ? savedCentralUrl : options.readbackCentralUrl,
           connectionStatus: "disconnected",
+          pairingStatus: String(options.pairingStatus || "unconfigured"),
+          scopedCredentialConfigured: Boolean(options.scopedCredentialConfigured),
+        },
+      };
+    }
+    if (url === "/api/settings/remote-managed-workspace/register" && request.method === "POST") {
+      return {
+        remoteManagedWorkspace: {
+          enabled: true,
+          centralUrl: savedCentralUrl || String(options.initialCentralUrl || ""),
+          connectionStatus: "connecting",
+          pairingStatus: String(options.registerPairingStatus || "pending_approval"),
+          pairingRequestId: "rmw_pair_ui",
+          scopedCredentialConfigured: Boolean(options.registerScopedCredentialConfigured),
         },
       };
     }
@@ -178,6 +194,10 @@ test("settings runtime preserves CommonJS and legacy global entry points", () =>
   assert.match(settingsRuntimeJs, /"enable-workspace"/);
   assert.match(settingsRuntimeJs, /"disable-workspace"/);
   assert.match(settingsRuntimeJs, /Advanced \/ Diagnostics/);
+  assert.match(settingsRuntimeJs, /scopedCredentialConfigured/);
+  assert.match(settingsRuntimeJs, /请求配对/);
+  assert.doesNotMatch(settingsRuntimeJs, /Enrollment token/);
+  assert.doesNotMatch(settingsRuntimeJs, /data-rmw-field="enrollmentToken"/);
   assert.match(settingsRuntimeJs, /\/api\/settings\/remote-managed-workspace\/workspace/);
   assert.doesNotMatch(settingsRuntimeJs, /data-rmw-field="workspaceId"/);
   assert.doesNotMatch(settingsRuntimeJs, /data-rmw-field="nodeName"/);
@@ -204,6 +224,7 @@ test("remote managed workspace save preserves typed central URL through busy ren
   assert.equal(harness.container.querySelector("[data-rmw-field=\"centralUrl\"]").value, "http://127.0.0.1:8797");
   assert.match(harness.container.innerHTML, /GMK-test/);
   assert.match(harness.container.innerHTML, /远程受控/);
+  assert.doesNotMatch(harness.container.innerHTML, /Enrollment token/);
 });
 
 test("remote managed workspace save reports readback failure instead of success toast", async () => {
@@ -219,4 +240,26 @@ test("remote managed workspace save reports readback failure instead of success 
   assert.equal(harness.errors.length, 1);
   assert.equal(harness.errors[0].message, "Remote Managed Workspace 保存读回失败");
   assert.equal(harness.connectionState.textContent, "Remote Managed Workspace 保存读回失败");
+});
+
+test("remote managed workspace register button requests pairing and renders pending approval without token input", async () => {
+  const harness = installRemoteManagedWorkspaceDomHarness({
+    enabled: true,
+    initialCentralUrl: "http://127.0.0.1:8797",
+    pairingStatus: "unconfigured",
+  });
+  globalThis.renderRemoteManagedWorkspaceSettings();
+
+  assert.match(harness.container.innerHTML, /请求配对/);
+  assert.doesNotMatch(harness.container.innerHTML, /Enrollment token/);
+  assert.equal(harness.container.querySelector("[data-rmw-field=\"enrollmentToken\"]"), null);
+
+  await globalThis.handleRemoteManagedWorkspaceSettingsClick({
+    target: new FakeButton("register"),
+  });
+
+  assert.equal(harness.calls.some((call) => call.url === "/api/settings/remote-managed-workspace/register"), true);
+  assert.match(harness.connectionState.textContent, /等待 Home AI 审批/);
+  assert.match(harness.container.innerHTML, /等待 Home AI 审批/);
+  assert.doesNotMatch(harness.container.innerHTML, /rmw-secret|route-scoped|Bearer/i);
 });

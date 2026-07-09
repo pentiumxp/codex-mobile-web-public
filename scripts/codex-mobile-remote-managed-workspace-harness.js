@@ -133,13 +133,12 @@ async function runRemoteManagedWorkspaceHarness() {
   fs.mkdirSync(projectRoot, { recursive: true });
   fs.writeFileSync(path.join(projectRoot, "package.json"), "{\"private\":true}\n");
 
-  const enrollmentToken = "rmw-harness-token";
   const homeAiCentralService = createRemoteManagedWorkspaceService({
     fs,
     path,
     crypto,
     stateFile: "",
-    enrollmentTokens: [enrollmentToken],
+    enrollmentTokens: [],
   });
   const central = await startHomeAiCentralSimulator(homeAiCentralService);
   const remoteProject = await startRemoteProjectSimulator();
@@ -199,7 +198,6 @@ async function runRemoteManagedWorkspaceHarness() {
     connectionMode: "persistent",
     roles: ["external_project_main", "external_project_worker", "external_project_audit", "external_project_deploy"],
     capabilities: ["task-card-relay", "daily-summary", "bounded-escalation"],
-    enrollmentToken,
   });
   const runner = createRemoteManagedWorkspaceNodeRunnerService({
     settingsService,
@@ -209,9 +207,13 @@ async function runRemoteManagedWorkspaceHarness() {
   });
 
   try {
-    const config = settingsService.configForClient();
     const connectionCheck = await runner.testConnection();
+    const requestedPairing = await runner.registerNow();
+    const pendingStatus = settingsService.publicSettings();
+    const pairingRequestId = pendingStatus.pairingRequestId;
+    const approvedPairing = homeAiCentralService.approvePairing(pairingRequestId);
     const registeredNow = await runner.registerNow();
+    const config = settingsService.configForClient();
     const created = homeAiCentralService.enqueueTaskCard(config.workspaceId, {
       taskCardId: "ttc_remote_fixture",
       idempotencyKey: "remote-fixture-card",
@@ -251,8 +253,8 @@ async function runRemoteManagedWorkspaceHarness() {
 
     const snapshot = homeAiCentralService.snapshot();
     assertNoForbiddenPayloadClasses(snapshot, "harness_snapshot");
-    assertNoRawTokenMaterial(savedSettings, enrollmentToken);
-    assertNoRawTokenMaterial(settingsService.publicSettings(), enrollmentToken);
+    assertNoRawTokenMaterial(savedSettings, "rmw_scoped_");
+    assertNoRawTokenMaterial(settingsService.publicSettings(), config.scopedCredential);
     return {
       ok: true,
       centralSimulatorOwner: central.owner,
@@ -260,8 +262,10 @@ async function runRemoteManagedWorkspaceHarness() {
       centralPort: central.port,
       remoteProjectPort: remoteProject.port,
       settingsPersisted: savedSettings.enabled === true,
-      settingsTokenMasked: savedSettings.enrollmentTokenConfigured === true && !JSON.stringify(savedSettings).includes(enrollmentToken),
+      settingsCredentialMasked: settingsService.publicSettings().scopedCredentialConfigured === true && !JSON.stringify(settingsService.publicSettings()).includes(config.scopedCredential),
       connectionCheckOk: connectionCheck.ok === true,
+      pairingRequested: requestedPairing.skipped === "pending_approval",
+      pairingApproved: approvedPairing.pairing.status === "approved",
       registered: registeredNow.ok === true && processed.registered === true,
       createdDuplicateSuppressed: duplicate.duplicate === true,
       createdTaskCardId: created.card.taskCardId,

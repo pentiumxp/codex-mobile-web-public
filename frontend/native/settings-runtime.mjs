@@ -2230,10 +2230,20 @@ function normalizeRemoteManagedWorkspaceConfig(value) {
     effectiveConnectionMode: String(input.effectiveConnectionMode || "http_polling"),
     persistentSession: String(input.persistentSession || ""),
     fallbackReason: String(input.fallbackReason || ""),
+    scopedCredentialConfigured: Boolean(input.scopedCredentialConfigured || input.enrollmentTokenConfigured),
+    scopedCredentialRef: String(input.scopedCredentialRef || input.enrollmentTokenRef || ""),
+    scopedCredentialPreview: String(input.scopedCredentialPreview || input.enrollmentTokenPreview || ""),
     enrollmentTokenConfigured: Boolean(input.enrollmentTokenConfigured),
     enrollmentTokenRef: String(input.enrollmentTokenRef || ""),
     enrollmentTokenPreview: String(input.enrollmentTokenPreview || ""),
     connectionStatus: String(input.connectionStatus || "disconnected"),
+    pairingStatus: String(input.pairingStatus || "unconfigured"),
+    pairingRequestId: String(input.pairingRequestId || ""),
+    pairingRequestedAt: String(input.pairingRequestedAt || ""),
+    pairingApprovedAt: String(input.pairingApprovedAt || ""),
+    pairingRejectedAt: String(input.pairingRejectedAt || ""),
+    pairingRejectionReason: String(input.pairingRejectionReason || ""),
+    lastPairingCheckAt: String(input.lastPairingCheckAt || ""),
     lastHeartbeatAt: String(input.lastHeartbeatAt || ""),
     lastPollAt: String(input.lastPollAt || ""),
     activeTaskCardId: String(input.activeTaskCardId || ""),
@@ -2261,15 +2271,30 @@ function rememberRemoteManagedWorkspaceConfig(value) {
   renderRemoteManagedWorkspaceSettings();
 }
 
-function remoteManagedWorkspaceStatusLabel(status) {
+function remoteManagedWorkspaceStatusLabel(status, config = {}) {
+  switch (String(config && config.pairingStatus || "")) {
+    case "requesting_pairing": return "正在请求配对";
+    case "pending_approval": return "等待 Home AI 审批";
+    case "approved": return "已批准/已配对";
+    case "connected": return "已连接";
+    case "rejected": return "已拒绝";
+    case "auth_failed": return "认证失败";
+    case "offline_retrying": return "离线/重试中";
+    case "unconfigured":
+      if (config && config.enabled && config.centralUrl) return "未配对";
+      if (!(config && config.centralUrl)) return "未配置";
+      break;
+    default:
+      break;
+  }
   switch (String(status || "")) {
-    case "connected": return "connected";
-    case "connecting": return "connecting";
+    case "connected": return "已连接";
+    case "connecting": return "连接中";
     case "stale": return "stale";
-    case "auth_failed": return "auth failed";
-    case "config_invalid": return "config invalid";
-    case "offline": return "offline";
-    default: return "disconnected";
+    case "auth_failed": return "认证失败";
+    case "config_invalid": return "配置无效";
+    case "offline": return "离线/重试中";
+    default: return "未配置";
   }
 }
 
@@ -2300,15 +2325,15 @@ function remoteManagedWorkspaceRowStatus(config, workspace) {
   if (!cwd) return { label: "Invalid path", className: "invalid" };
   const active = Boolean(config.enabled && remoteManagedWorkspacePathKey(config.projectRoot) === remoteManagedWorkspacePathKey(cwd));
   if (!active) return { label: "Local", className: "local" };
-  if (!config.enrollmentTokenConfigured) return { label: "Auth required", className: "auth" };
-  const status = remoteManagedWorkspaceStatusLabel(config.connectionStatus);
-  if (status === "connected") return { label: "Connected", className: "connected" };
-  if (status === "connecting") return { label: "Connecting", className: "connecting" };
-  if (status === "offline") return { label: "Offline", className: "offline" };
+  const status = remoteManagedWorkspaceStatusLabel(config.connectionStatus, config);
+  if (status === "已连接") return { label: "Connected", className: "connected" };
+  if (status === "连接中" || status === "正在请求配对" || status === "等待 Home AI 审批") return { label: status, className: "connecting" };
+  if (status === "离线/重试中") return { label: status, className: "offline" };
+  if (status === "已拒绝" || status === "认证失败") return { label: status, className: "auth" };
+  if (status === "已批准/已配对") return { label: status, className: "remote" };
   if (status === "stale") return { label: "Remote managed", className: "stale" };
-  if (status === "auth failed") return { label: "Auth required", className: "auth" };
-  if (status === "config invalid") return { label: "Invalid path", className: "invalid" };
-  return { label: "Remote managed", className: "remote" };
+  if (status === "配置无效") return { label: "Invalid path", className: "invalid" };
+  return { label: status || "Remote managed", className: "remote" };
 }
 
 function remoteManagedWorkspaceRowsHtml(config, busy) {
@@ -2340,6 +2365,7 @@ function remoteManagedWorkspaceRowsHtml(config, busy) {
 
 function remoteManagedWorkspaceAdvancedHtml(config) {
   const issueText = config.issueCodes.length ? config.issueCodes.slice(0, 8).join(", ") : "";
+  const credentialText = config.scopedCredentialConfigured ? (config.scopedCredentialRef || config.scopedCredentialPreview || "configured") : "not configured";
   return `<details class="remote-managed-workspace-advanced">`
     + `<summary>Advanced / Diagnostics</summary>`
     + `<div class="remote-managed-workspace-advanced-grid">`
@@ -2349,8 +2375,11 @@ function remoteManagedWorkspaceAdvancedHtml(config) {
     + remoteManagedWorkspaceReadonlyField("project root", config.projectRoot)
     + remoteManagedWorkspaceReadonlyField("allowed root", config.allowedRoot)
     + remoteManagedWorkspaceReadonlyField("project type", config.projectType)
+    + remoteManagedWorkspaceReadonlyField("pairing", config.pairingStatus)
+    + remoteManagedWorkspaceReadonlyField("pairing request", config.pairingRequestId)
+    + remoteManagedWorkspaceReadonlyField("pairing check", config.lastPairingCheckAt)
     + remoteManagedWorkspaceReadonlyField("connection", `${config.connectionMode} -> ${config.effectiveConnectionMode}`)
-    + remoteManagedWorkspaceReadonlyField("token", config.enrollmentTokenConfigured ? (config.enrollmentTokenRef || config.enrollmentTokenPreview || "configured") : "not configured")
+    + remoteManagedWorkspaceReadonlyField("credential", credentialText)
     + remoteManagedWorkspaceReadonlyField("roles", config.roles.join(", "))
     + remoteManagedWorkspaceReadonlyField("capabilities", config.capabilities.join(", "))
     + remoteManagedWorkspaceReadonlyField("heartbeat", config.lastHeartbeatAt)
@@ -2359,10 +2388,6 @@ function remoteManagedWorkspaceAdvancedHtml(config) {
     + remoteManagedWorkspaceReadonlyField("return", config.lastReturnStatus)
     + remoteManagedWorkspaceReadonlyField("queued returns", String(config.queuedTerminalReturnCount || 0))
     + remoteManagedWorkspaceReadonlyField("issues", issueText)
-    + `</div>`
-    + `<div class="remote-managed-workspace-token-entry">`
-    + remoteManagedWorkspaceFieldHtml("Enrollment token", "enrollmentToken", "", { type: "password", placeholder: config.enrollmentTokenConfigured ? "configured" : "write-only" })
-    + `<button type="button" data-rmw-action="save" ${state.remoteManagedWorkspaceBusy ? "disabled" : ""}>Save secure entry</button>`
     + `</div>`
     + `</details>`;
 }
@@ -2392,8 +2417,13 @@ function renderRemoteManagedWorkspaceSettings() {
   }
   const config = normalizeRemoteManagedWorkspaceConfig(state.remoteManagedWorkspace);
   const busy = Boolean(state.remoteManagedWorkspaceBusy);
-  const status = remoteManagedWorkspaceStatusLabel(config.connectionStatus);
+  const status = remoteManagedWorkspaceStatusLabel(config.connectionStatus, config);
   const issueText = config.issueCodes.length ? ` · ${config.issueCodes.slice(0, 3).join(", ")}` : "";
+  const registerLabel = config.pairingStatus === "pending_approval"
+    ? "检查审批"
+    : (config.pairingStatus === "rejected"
+      ? "重新请求配对"
+      : (config.scopedCredentialConfigured ? "连接" : "请求配对"));
   el.innerHTML = `<div class="remote-managed-workspace-row${config.enabled ? " enabled" : ""}">`
     + `<div class="remote-managed-workspace-main">`
     + `<strong>${escapeHtml(config.enabled ? "已开启" : "已关闭")} · ${escapeHtml(status)}</strong>`
@@ -2401,14 +2431,14 @@ function renderRemoteManagedWorkspaceSettings() {
     + `<small>${escapeHtml(config.effectiveConnectionMode || "http_polling")} fallback active${escapeHtml(issueText)}</small>`
     + `</div>`
     + `<div class="remote-managed-workspace-side">`
-    + `<button type="button" data-rmw-action="poll-once" ${busy || !config.enabled ? "disabled" : ""}>Poll</button>`
+    + `<button type="button" data-rmw-action="poll-once" ${busy || !config.enabled || !config.scopedCredentialConfigured ? "disabled" : ""}>Poll</button>`
     + `</div>`
     + `</div>`
     + `<div class="remote-managed-workspace-simple-form">`
     + remoteManagedWorkspaceFieldHtml("中央服务器地址", "centralUrl", config.centralUrl, { placeholder: "https://home-ai.example" })
     + `<div class="remote-managed-workspace-actions">`
     + `<button type="button" data-rmw-action="save-central" ${busy ? "disabled" : ""}>${busy ? "保存中" : "保存"}</button>`
-    + `<button type="button" data-rmw-action="register" ${busy || !config.enabled ? "disabled" : ""}>Register</button>`
+    + `<button type="button" data-rmw-action="register" ${busy || !config.enabled ? "disabled" : ""}>${escapeHtml(registerLabel)}</button>`
     + `</div>`
     + `</div>`
     + `<div class="remote-managed-workspace-workspaces">`
@@ -2427,7 +2457,6 @@ function remoteManagedWorkspaceFormPayload() {
   el.querySelectorAll("[data-rmw-field]").forEach((field) => {
     const name = field.getAttribute("data-rmw-field");
     if (!name) return;
-    if (name === "enrollmentToken" && !String(field.value || "").trim()) return;
     payload[name] = String(field.value || "").trim();
   });
   return payload;
@@ -2497,7 +2526,6 @@ async function handleRemoteManagedWorkspaceSettingsClick(event) {
       body = JSON.stringify({
         action: action === "disable-workspace" ? "disable" : "enable",
         centralUrl: formPayload.centralUrl,
-        enrollmentToken: formPayload.enrollmentToken,
         workspace,
       });
     }
@@ -2518,7 +2546,10 @@ async function handleRemoteManagedWorkspaceSettingsClick(event) {
         throw new Error("Remote Managed Workspace 保存读回失败");
       }
     }
-    $("connectionState").textContent = "Remote Managed Workspace 已保存";
+    const latestStatus = remoteManagedWorkspaceStatusLabel(config && config.connectionStatus, normalizeRemoteManagedWorkspaceConfig(config));
+    $("connectionState").textContent = action === "register"
+      ? `Remote Managed Workspace ${latestStatus}`
+      : "Remote Managed Workspace 已保存";
   } catch (err) {
     showError(err);
     $("connectionState").textContent = err.message || "Remote Managed Workspace 设置失败";

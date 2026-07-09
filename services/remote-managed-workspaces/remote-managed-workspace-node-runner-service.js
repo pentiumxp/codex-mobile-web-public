@@ -19,7 +19,7 @@ function classifyConnectionStatus(err) {
   if (statusCode === 401 || statusCode === 403 || /auth|token|unauthorized|forbidden/i.test(errorCode(err))) {
     return "auth_failed";
   }
-  if (/config|workspace_id_required|central_url|project_root|allowed_root|enrollment_token_secret_unavailable/i.test(errorCode(err))) {
+  if (/config|workspace_id_required|central_url|project_root|allowed_root|enrollment_token_secret_unavailable|scoped_node_credential_unavailable|scoped_node_credential_required/i.test(errorCode(err))) {
     return "config_invalid";
   }
   if (/fetch failed|econn|enotfound|etimedout|offline|network|socket/i.test(errorCode(err))) {
@@ -177,11 +177,24 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
   }
 
   async function registerNow() {
+    const currentPublic = settingsService.publicSettings();
+    const approval = await ensurePairingApproved({
+      requireEnabled: false,
+      forceRequest: currentPublic.pairingStatus === "rejected",
+    });
+    if (!approval.approved) {
+      return {
+        ok: true,
+        skipped: approval.skipped || "pending_approval",
+        status: approval.status || publicStatus(),
+      };
+    }
     const config = settingsService.configForClient({ requireEnabled: false, requireToken: true });
-    setState({ connectionStatus: "connecting" });
+    setState({ connectionStatus: "connecting", pairingStatus: "approved" });
     const registered = await nodeClientService.register(config);
     const state = setState({
       connectionStatus: "connected",
+      pairingStatus: "connected",
       issueCodes: [],
       diagnostics: [],
       lastRegisterAt: nowIso(now),
@@ -189,6 +202,59 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       nextRetryAt: "",
     });
     return { ok: true, result: registered.result, status: settingsService.publicSettings(undefined, state) };
+  }
+
+  async function ensurePairingApproved(options = {}) {
+    const publicSettings = settingsService.publicSettings();
+    if (publicSettings.scopedCredentialConfigured || publicSettings.enrollmentTokenConfigured) {
+      return { approved: true, status: publicSettings };
+    }
+    const pairingStatus = compactOneLine(publicSettings.pairingStatus || "");
+    if (pairingStatus === "rejected" && options.forceRequest !== true) {
+      return { approved: false, skipped: "pairing_rejected", status: publicSettings };
+    }
+    if (!nodeClientService || typeof nodeClientService.requestPairing !== "function" || typeof nodeClientService.pollPairingStatus !== "function") {
+      const state = setState({
+        connectionStatus: "config_invalid",
+        pairingStatus: "auth_failed",
+        issueCode: "remote_managed_workspace_pairing_client_unavailable",
+        lastPairingCheckAt: nowIso(now),
+      });
+      return { approved: false, skipped: "pairing_client_unavailable", status: settingsService.publicSettings(undefined, state) };
+    }
+    const config = settingsService.configForPairingIntent({ requireEnabled: options.requireEnabled !== false });
+    const state = settingsService.readState();
+    setState({
+      connectionStatus: "connecting",
+      pairingStatus: state.pairingRequestId && state.pairingStatus === "pending_approval" ? "pending_approval" : "requesting_pairing",
+      lastPairingCheckAt: nowIso(now),
+    });
+    const response = state.pairingRequestId && state.pairingStatus === "pending_approval" && options.forceRequest !== true
+      ? await nodeClientService.pollPairingStatus(config, state.pairingRequestId)
+      : await nodeClientService.requestPairing(config);
+    const nextState = settingsService.applyPairingResult(response.result || response);
+    const nextPublic = settingsService.publicSettings(undefined, nextState);
+    if (nextPublic.scopedCredentialConfigured || nextPublic.enrollmentTokenConfigured) {
+      return { approved: true, status: nextPublic };
+    }
+    if (nextPublic.pairingStatus === "approved") {
+      const state = setState({
+        connectionStatus: "auth_failed",
+        pairingStatus: "auth_failed",
+        issueCode: "scoped_node_credential_missing_after_approval",
+        lastPairingCheckAt: nowIso(now),
+      });
+      return {
+        approved: false,
+        skipped: "approval_missing_scoped_credential",
+        status: settingsService.publicSettings(undefined, state),
+      };
+    }
+    return {
+      approved: false,
+      skipped: nextPublic.pairingStatus === "rejected" ? "pairing_rejected" : "pending_approval",
+      status: nextPublic,
+    };
   }
 
   async function flushQueuedTerminalReturns(config) {
@@ -354,8 +420,17 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
         const state = setState({ connectionStatus: "disconnected", nextRetryAt: "" });
         return { ok: true, skipped: "disabled", status: settingsService.publicSettings(undefined, state) };
       }
+      const approval = await ensurePairingApproved({ requireEnabled: options.requireEnabled !== false });
+      if (!approval.approved) {
+        if (started && approval.skipped !== "pairing_rejected") schedule(pollIntervalMs);
+        return {
+          ok: true,
+          skipped: approval.skipped || "pending_approval",
+          status: approval.status || publicStatus(),
+        };
+      }
       const config = settingsService.configForClient({ requireEnabled: options.requireEnabled !== false, requireToken: true });
-      setState({ connectionStatus: "connecting" });
+      setState({ connectionStatus: "connecting", pairingStatus: "approved" });
       const registered = await nodeClientService.register(config);
       const heartbeat = await nodeClientService.nodeHeartbeat(config, {
         status: "idle",
@@ -369,6 +444,7 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       if (card) processed = await processCard(config, card);
       const state = setState({
         connectionStatus: "connected",
+        pairingStatus: "connected",
         issueCodes: [],
         diagnostics: [],
         lastRegisterAt: nowIso(now),
@@ -391,8 +467,16 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       const current = settingsService.readState();
       const failures = Number(current.consecutiveFailures || 0) + 1;
       const delay = backoffMs(failures, { minBackoffMs, maxBackoffMs });
+      const classified = classifyConnectionStatus(err);
+      const pairingPatch = settingsService.publicSettings().scopedCredentialConfigured
+        ? {}
+        : {
+            pairingStatus: classified === "offline" ? "offline_retrying" : (classified === "auth_failed" ? "auth_failed" : current.pairingStatus),
+            lastPairingCheckAt: nowIso(now),
+          };
       const state = setState({
-        connectionStatus: classifyConnectionStatus(err),
+        connectionStatus: classified,
+        ...pairingPatch,
         issueCode: errorCode(err),
         consecutiveFailures: failures,
         nextRetryAt: new Date(Date.now() + delay).toISOString(),

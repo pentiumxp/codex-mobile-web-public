@@ -168,6 +168,7 @@ function blankState() {
   return {
     version: 1,
     workspaces: {},
+    pairingRequests: {},
     taskCards: {},
     dailySummaries: [],
     escalations: [],
@@ -205,6 +206,30 @@ function publicWorkspace(row = {}) {
   };
 }
 
+function publicPairingRequest(row = {}) {
+  return {
+    requestId: row.requestId || "",
+    workspaceId: row.workspaceId || "",
+    workspaceKind: row.workspaceKind || WORKSPACE_KIND,
+    controlPlaneOwner: CONTROL_PLANE_OWNER,
+    serviceMode: SERVICE_MODE,
+    projectType: row.projectType || "",
+    projectRootLabel: row.projectRootLabel || "",
+    centralUrl: row.centralUrl || "",
+    nodeId: row.nodeId || "",
+    nodeName: row.nodeName || "",
+    contractVersion: row.contractVersion || DEFAULT_CONTRACT_VERSION,
+    roles: Array.isArray(row.roles) ? row.roles.slice() : [],
+    capabilities: Array.isArray(row.capabilities) ? row.capabilities.slice() : [],
+    status: row.status || "pending_approval",
+    reason: row.reason || "",
+    requestedAt: row.requestedAt || "",
+    approvedAt: row.approvedAt || "",
+    rejectedAt: row.rejectedAt || "",
+    updatedAt: row.updatedAt || "",
+  };
+}
+
 function publicTaskCard(card = {}) {
   return {
     taskCardId: card.taskCardId || "",
@@ -231,6 +256,8 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
   const stateFile = compactOneLine(dependencies.stateFile || "");
   const requireEnrollmentToken = dependencies.requireEnrollmentToken !== false;
   const enrollmentTokens = normalizeTokenList(dependencies.enrollmentTokens || dependencies.enrollmentToken || "");
+  const authorizedCredentials = new Set(enrollmentTokens);
+  const pairingCredentialsByRequestId = new Map();
   let state = null;
 
   function loadState() {
@@ -243,6 +270,7 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
       const parsed = JSON.parse(fs.readFileSync(stateFile, "utf8"));
       state = Object.assign(blankState(), parsed && typeof parsed === "object" ? parsed : {});
       state.workspaces = state.workspaces && typeof state.workspaces === "object" ? state.workspaces : {};
+      state.pairingRequests = state.pairingRequests && typeof state.pairingRequests === "object" ? state.pairingRequests : {};
       state.taskCards = state.taskCards && typeof state.taskCards === "object" ? state.taskCards : {};
       state.dailySummaries = Array.isArray(state.dailySummaries) ? state.dailySummaries : [];
       state.escalations = Array.isArray(state.escalations) ? state.escalations : [];
@@ -261,9 +289,9 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
   function assertAuthorized(token) {
     if (!requireEnrollmentToken) return true;
     const supplied = compactOneLine(token);
-    if (enrollmentTokens.length === 0) throw errorWithStatus("remote_managed_workspace_enrollment_token_unconfigured", 503);
+    if (authorizedCredentials.size === 0) throw errorWithStatus("remote_managed_workspace_enrollment_token_unconfigured", 503);
     if (!supplied) throw errorWithStatus("remote_managed_workspace_enrollment_token_required", 401);
-    const allowed = enrollmentTokens.some((entry) => {
+    const allowed = Array.from(authorizedCredentials).some((entry) => {
       try {
         const left = Buffer.from(entry);
         const right = Buffer.from(supplied);
@@ -274,6 +302,122 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
     });
     if (!allowed) throw errorWithStatus("remote_managed_workspace_enrollment_token_invalid", 403);
     return true;
+  }
+
+  function normalizePairingRequest(input = {}) {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw errorWithStatus("remote_managed_workspace_pairing_request_must_be_object");
+    }
+    const workspaceId = safeId(input.workspaceId, "workspace_id");
+    const workspaceKind = compactOneLine(input.workspaceKind || WORKSPACE_KIND);
+    if (workspaceKind !== WORKSPACE_KIND) throw errorWithStatus("workspace_kind_invalid");
+    const roles = boundedStringList(input.roles || DEFAULT_ROLES, "roles", { maxItems: 12, maxLength: 80, required: true });
+    if (!roles.includes("external_project_main")) throw errorWithStatus("external_project_main_role_required");
+    return {
+      workspaceId,
+      workspaceKind,
+      projectType: boundedString(input.projectType, "project_type", 80, true),
+      projectRootLabel: boundedString(input.projectRootLabel || input.projectLabel || "workspace", "project_root_label", 120, true),
+      centralUrl: normalizeUrl(input.centralUrl, "central_url"),
+      nodeId: boundedString(input.nodeId || "", "node_id", 120, false),
+      nodeName: boundedString(input.nodeName, "node_name", 120, true),
+      contractVersion: boundedString(input.contractVersion || DEFAULT_CONTRACT_VERSION, "contract_version", 80, true),
+      roles,
+      capabilities: boundedStringList(input.capabilities || [], "capabilities", { maxItems: 24, maxLength: 100 }),
+      projectRootEvidence: normalizeProjectRootEvidence(input.projectRootEvidence || {}),
+    };
+  }
+
+  function requestPairing(input = {}) {
+    const config = normalizePairingRequest(input);
+    assertNoForbiddenPayloadClasses({
+      workspaceId: config.workspaceId,
+      workspaceKind: config.workspaceKind,
+      projectType: config.projectType,
+      projectRootLabel: config.projectRootLabel,
+      centralUrl: config.centralUrl,
+      nodeId: config.nodeId,
+      nodeName: config.nodeName,
+      contractVersion: config.contractVersion,
+      roles: config.roles,
+      capabilities: config.capabilities,
+      projectRootEvidence: config.projectRootEvidence,
+    }, "pairing_request");
+    const loaded = loadState();
+    const existing = Object.values(loaded.pairingRequests || {}).find((row) => row
+      && row.workspaceId === config.workspaceId
+      && row.nodeName === config.nodeName
+      && row.status !== "rejected");
+    if (existing) {
+      const pairing = publicPairingRequest(existing);
+      const credential = pairingCredentialsByRequestId.get(existing.requestId);
+      if (existing.status === "approved" && credential) pairing.scopedCredential = credential;
+      return { ok: true, duplicate: true, pairing };
+    }
+    const timestamp = nowIso(now);
+    const requestId = `rmw_pair_${stableHash(cryptoModule, `${config.workspaceId}:${config.nodeName}:${timestamp}`).slice(0, 18)}`;
+    const row = Object.assign({}, config, {
+      requestId,
+      status: "pending_approval",
+      reason: "",
+      requestedAt: timestamp,
+      approvedAt: "",
+      rejectedAt: "",
+      updatedAt: timestamp,
+    });
+    loaded.pairingRequests[requestId] = row;
+    persist();
+    return { ok: true, duplicate: false, pairing: publicPairingRequest(row) };
+  }
+
+  function pairingStatus(requestId) {
+    const id = safeId(requestId, "pairing_request_id");
+    const row = loadState().pairingRequests[id];
+    if (!row) throw errorWithStatus("remote_managed_workspace_pairing_request_not_found", 404);
+    const pairing = publicPairingRequest(row);
+    const credential = pairingCredentialsByRequestId.get(id);
+    if (row.status === "approved" && credential) {
+      pairing.scopedCredential = credential;
+    }
+    return { ok: true, pairing };
+  }
+
+  function approvePairing(requestId, input = {}) {
+    const id = safeId(requestId, "pairing_request_id");
+    const loaded = loadState();
+    const row = loaded.pairingRequests[id];
+    if (!row) throw errorWithStatus("remote_managed_workspace_pairing_request_not_found", 404);
+    const timestamp = nowIso(now);
+    const scopedCredential = compactOneLine(input.scopedCredential)
+      || `rmw_scoped_${stableHash(cryptoModule, `${id}:${row.workspaceId}:${timestamp}`).slice(0, 32)}`;
+    authorizedCredentials.add(scopedCredential);
+    pairingCredentialsByRequestId.set(id, scopedCredential);
+    row.status = "approved";
+    row.reason = "";
+    row.approvedAt = row.approvedAt || timestamp;
+    row.rejectedAt = "";
+    row.updatedAt = timestamp;
+    row.credentialHash = stableHash(cryptoModule, scopedCredential);
+    loaded.pairingRequests[id] = row;
+    persist();
+    return { ok: true, pairing: Object.assign(publicPairingRequest(row), { scopedCredential }) };
+  }
+
+  function rejectPairing(requestId, input = {}) {
+    const id = safeId(requestId, "pairing_request_id");
+    const loaded = loadState();
+    const row = loaded.pairingRequests[id];
+    if (!row) throw errorWithStatus("remote_managed_workspace_pairing_request_not_found", 404);
+    const timestamp = nowIso(now);
+    row.status = "rejected";
+    row.reason = boundedString(input.reason || "owner_rejected", "pairing_rejection_reason", 240, false) || "owner_rejected";
+    row.rejectedAt = row.rejectedAt || timestamp;
+    row.approvedAt = "";
+    row.updatedAt = timestamp;
+    pairingCredentialsByRequestId.delete(id);
+    loaded.pairingRequests[id] = row;
+    persist();
+    return { ok: true, pairing: publicPairingRequest(row) };
   }
 
   function normalizeRegistration(input = {}) {
@@ -582,9 +726,14 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
 
   function snapshot() {
     const loaded = loadState();
+    const pairingRequests = {};
+    for (const [id, row] of Object.entries(loaded.pairingRequests || {})) {
+      pairingRequests[id] = publicPairingRequest(row);
+    }
     return JSON.parse(JSON.stringify({
       version: loaded.version,
       workspaces: loaded.workspaces,
+      pairingRequests,
       taskCards: loaded.taskCards,
       dailySummaries: loaded.dailySummaries,
       escalations: loaded.escalations,
@@ -594,13 +743,17 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
 
   return {
     assertAuthorized,
+    approvePairing,
     dailySummary,
     enqueueTaskCard,
     escalation,
     heartbeatTaskCard,
     nodeHeartbeat,
+    pairingStatus,
     pollTaskCards,
     register,
+    rejectPairing,
+    requestPairing,
     returnTaskCard,
     ackTaskCard,
     snapshot,

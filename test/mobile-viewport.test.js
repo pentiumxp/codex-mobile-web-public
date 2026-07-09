@@ -304,10 +304,10 @@ test("mobile settings panel scrolls to Remote Managed Workspace controls", () =>
   assert.match(stylesCss, /html\.embed-hermes\.embed-hermes-primary \.theme-settings\s*{[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;[\s\S]*max-height:\s*none;/);
   assert.match(stylesCss, /html\.embed-hermes\.embed-hermes-primary \.theme-settings:not\(\.hidden\) ~ \*\s*{[\s\S]*display:\s*none !important;/);
   assert.match(stylesCss, /@media \(max-width: 720px\)\s*{[\s\S]*\.remote-managed-workspace-simple-form,[\s\S]*\.remote-managed-workspace-item,[\s\S]*\.remote-managed-workspace-advanced-grid\s*{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\);/);
-  for (const label of ["中央服务器地址", "workspace id", "project root", "allowed root", "Enrollment token"]) {
+  for (const label of ["中央服务器地址", "workspace id", "project root", "allowed root", "pairing", "credential"]) {
     assert.match(settingsRuntimeJs, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-  for (const action of ["save-central", "save", "test-connection", "register", "poll-once"]) {
+  for (const action of ["save-central", "test-connection", "register", "poll-once"]) {
     assert.match(settingsRuntimeJs, new RegExp(`data-rmw-action="${action}"`));
   }
   assert.match(settingsRuntimeJs, /const mainAction = active \? "disable-workspace" : "enable-workspace";/);

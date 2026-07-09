@@ -16,8 +16,10 @@ test("remote managed workspace two-port harness completes relay lifecycle once",
   assert.notEqual(result.centralPort, 8787);
   assert.notEqual(result.remoteProjectPort, 8787);
   assert.equal(result.settingsPersisted, true);
-  assert.equal(result.settingsTokenMasked, true);
+  assert.equal(result.settingsCredentialMasked, true);
   assert.equal(result.connectionCheckOk, true);
+  assert.equal(result.pairingRequested, true);
+  assert.equal(result.pairingApproved, true);
   assert.equal(result.registered, true);
   assert.equal(result.createdDuplicateSuppressed, true);
   assert.equal(result.createdTaskCardId, "ttc_remote_fixture");
